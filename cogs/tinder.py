@@ -1,9 +1,27 @@
 import discord
 from discord.ext import commands
+from discord.ui import View, Button
 import json
 import os
 
 DATA_FILE = 'data/tinder.json'
+
+# 宣告一個 ViewClass 類別，繼承 discord.ui.View
+
+
+class ViewClass(View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+        @discord.ui.Button(label="Nope", style=discord.ButtonStyle.secondary)
+        async def nope(self, interaction: discord.Interaction, button: Button):
+            pass
+            await interaction.response.send_message(view=self)
+
+        @discord.ui.Button(label="Like", style=discord.ButtonStyle.primary)
+        async def like(self, interaction: discord.Interaction, button: Button):
+            pass
+            await interaction.response.send_message(view=self)
 
 
 class Tinder(commands.Cog):
@@ -30,10 +48,10 @@ class Tinder(commands.Cog):
             await ctx.send()
 
     # 前綴指令
-
     @commands.command()
     async def tinder(self, ctx: commands.Context):
-        await ctx.send("MATCH!!!")
+        view = ViewClass()
+        await ctx.send(view=view)
 
     # 關鍵字觸發
     @commands.Cog.listener()
