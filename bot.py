@@ -1,16 +1,17 @@
-import os
 import asyncio
+import os
+
 import discord
 from discord.ext import commands
 
 intents = discord.Intents.all()
-bot = commands.Bot(command_prefix="$", intents=intents)
+bot = commands.Bot(command_prefix="?", intents=intents)
 
 
 @bot.event
 async def on_ready():
     print(f"目前登入身份 --> {bot.user}")
-    game = discord.Game("$help")
+    game = discord.Game("?help")
     await bot.change_presence(status=discord.Status.online, activity=game)
 
 
@@ -41,7 +42,10 @@ async def load_extensions():
 async def main():
     async with bot:
         await load_extensions()
-        await bot.start("MTM2NDEwMzgxODMyMDgwNTkxOA.GfuAe_.fE6_EXgaIm663NsMwRna8_QvB-yivw02TOJ3zI")
+        await bot.start(
+            "MTM2NDEwMzgxODMyMDgwNTkxOA.GfuAe_.fE6_EXgaIm663NsMwRna8_QvB-yivw02TOJ3zI"
+        )
+
 
 if __name__ == "__main__":
     asyncio.run(main())
