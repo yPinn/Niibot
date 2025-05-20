@@ -1,65 +1,73 @@
+import datetime
+
 import discord
 from discord.ext import commands
-from discord.ui import View, Button
-import json
-import os
-
-DATA_FILE = 'data/tinder.json'
-
-# 宣告一個 ViewClass 類別，繼承 discord.ui.View
+from discord.ui import Button, View
 
 
 class ViewClass(View):
+
     def __init__(self):
         super().__init__(timeout=None)
 
-        @discord.ui.Button(label="Nope", style=discord.ButtonStyle.secondary)
-        async def nope(self, interaction: discord.Interaction, button: Button):
-            pass
-            await interaction.response.send_message(view=self)
+    @discord.ui.button(label="❌",
+                       style=discord.ButtonStyle.secondary,
+                       custom_id="nope_button")
+    async def nope(self, interaction: discord.Interaction, button: Button):
+        await interaction.response.send_message("You clicked ❌ Nope",
+                                                ephemeral=True)
 
-        @discord.ui.Button(label="Like", style=discord.ButtonStyle.primary)
-        async def like(self, interaction: discord.Interaction, button: Button):
-            pass
-            await interaction.response.send_message(view=self)
+    @discord.ui.button(label="💚",
+                       style=discord.ButtonStyle.primary,
+                       custom_id="like_button")
+    async def like(self, interaction: discord.Interaction, button: Button):
+        await interaction.response.send_message("You clicked 💚 Like",
+                                                ephemeral=True)
 
 
 class Tinder(commands.Cog):
+
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.user_data = self.load_data()
-
-    def load_data(self):
-        if os.path.exists(DATA_FILE):
-            with open(DATA_FILE, "r") as f:
-                return json.load(f)
-
-        return {}
-
-    def save_data(self):
-        with open(DATA_FILE, "w") as f:
-            json.dump(self.user_data, f, indent=4)
+        self.user_data = {}
 
     @commands.command()
     async def status(self, ctx: commands.Context):
         uid = str(ctx.author.id)
         if uid in self.user_data:
-            data = self.user_data[uid]
-            await ctx.send()
+            await ctx.send("You have data stored.")
+        else:
+            await ctx.send("No data found.")
 
-    # 前綴指令
-    @commands.command()
+    @commands.command(name="t")
     async def tinder(self, ctx: commands.Context):
-        view = ViewClass()
-        await ctx.send(view=view)
+        user = ctx.author
+        avatar = user.display_avatar.url
+        username = user.display_name
+        activity = user.activity.name
+        wrap_activity = self.wrap_text(activity, 20)
+        bot_avatar = self.bot.user.display_avatar.url
 
-    # 關鍵字觸發
-    @commands.Cog.listener()
-    async def on_message(self, message: discord.Message):
-        if message.author == self.bot.user:
-            return
-        if message.content.startswith("Hello"):
-            await message.channel.send("Hello, world!")
+        embed = discord.Embed(title=f"{username}",
+                              description=f" _{wrap_activity}_ ",
+                              colour=0xff6b6b,
+                              timestamp=datetime.datetime.now())
+
+        embed.set_author(
+            name="Tinder",
+            icon_url="https://tinder.com/static/android-chrome-192x192.png")
+
+        embed.set_image(url=avatar)
+
+        embed.set_footer(text="Niibot", icon_url=bot_avatar)
+
+        view = ViewClass()
+        await ctx.send(embed=embed, view=view)
+
+    def wrap_text(self, text: str, line_length: int) -> str:
+        return '\n'.join([
+            text[i:i + line_length] for i in range(0, len(text), line_length)
+        ])
 
 
 async def setup(bot: commands.Bot):
