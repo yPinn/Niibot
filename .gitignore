@@ -13,62 +13,15 @@
 *.ini
 *.log
 
-# 套件/環境資料夾
-venv/
-env/
-.venv/
-.python-version
-
-# pip
-pip-log.txt
-pip-delete-this-directory.txt
-
 # VSCode
 .vscode/
 .settings/
-
-# IDE 專屬
-.idea/
-*.sublime-workspace
-*.sublime-project
-
-# macOS / Linux / Windows 系統檔
-.DS_Store
-Thumbs.db
-ehthumbs.db
-Icon?
-desktop.ini
-
-# SQLite / Database
-*.sqlite3
-*.db
-*.bak
-
-# Jupyter Notebook（若有用）
-.ipynb_checkpoints
-
-# Replit（若有用）
-.replit
-*.replit
 
 # 緩存 / 快取 / 中介檔
 *.cache
 *.log
 *.tmp
 
-# 編譯器產物
-build/
-dist/
-*.egg-info
-*.eggs/
 
-# 測試資料
-coverage.xml
-htmlcov/
-.tox/
-.nox/
-
-# 單元測試快照
-__snapshots__/
 
 
