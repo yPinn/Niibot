@@ -6,7 +6,7 @@ class Clear(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.command(name="clear")
+    @commands.command(name="clear", help="Delete all messages in current channel.")
     @commands.has_permissions(manage_messages=True)
     async def clear_all_messages(self, ctx: commands.Context):
         deleted = await ctx.channel.purge(limit=None)
