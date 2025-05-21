@@ -5,8 +5,9 @@ import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 
-if os.environ.get('xxx') is None:  # 用 Replit 預設變數判斷是否在 Replit 執行
-    load_dotenv()
+if os.environ.get('REPL_ID') is None:
+    load_dotenv()  # 本機載入 .env
+
 TOKEN = os.environ.get("TOKEN")
 
 intents = discord.Intents.all()
@@ -46,6 +47,11 @@ async def load_extensions():
 
 
 async def main():
+    # 如果在 Replit 環境，啟動 keep_alive Flask server
+    if os.environ.get('REPL_ID'):
+        import web
+        web.keep_alive()
+
     async with bot:
         await load_extensions()
         await bot.start(TOKEN)
