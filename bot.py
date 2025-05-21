@@ -5,8 +5,9 @@ import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 
-load_dotenv()
-TOKEN = os.getenv("TOKEN")
+if os.environ.get('xxx') is None:  # 用 Replit 預設變數判斷是否在 Replit 執行
+    load_dotenv()
+TOKEN = os.environ.get("TOKEN")
 
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="?", intents=intents)
