@@ -3,6 +3,10 @@ import os
 
 import discord
 from discord.ext import commands
+from dotenv import load_dotenv
+
+load_dotenv()
+TOKEN = os.getenv("TOKEN")
 
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="?", intents=intents)
@@ -43,9 +47,7 @@ async def load_extensions():
 async def main():
     async with bot:
         await load_extensions()
-        await bot.start(
-            "MTM2NDEwMzgxODMyMDgwNTkxOA.GfuAe_.fE6_EXgaIm663NsMwRna8_QvB-yivw02TOJ3zI"
-        )
+        await bot.start(TOKEN)
 
 
 if __name__ == "__main__":
