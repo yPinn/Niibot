@@ -3,12 +3,10 @@ import os
 
 import discord
 from discord.ext import commands
-from dotenv import load_dotenv
 
-if os.environ.get('REPL_ID') is None:
-    load_dotenv()  # 本機載入 .env
+from keep_alive import keep_alive
 
-TOKEN = os.environ.get("TOKEN")
+TOKEN = os.getenv("TOKEN")
 
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="?", intents=intents)
@@ -17,8 +15,8 @@ bot = commands.Bot(command_prefix="?", intents=intents)
 @bot.event
 async def on_ready():
     print(f"使用者 --> {bot.user}")
-    activity = discord.Streaming(
-        name="?help", url="https://twitch.tv/llazypilot")
+    activity = discord.Streaming(name="?help",
+                                 url="https://twitch.tv/llazypilot")
     await bot.change_presence(status=discord.Status.online, activity=activity)
 
 
@@ -47,10 +45,7 @@ async def load_extensions():
 
 
 async def main():
-    # 如果在 Replit 環境，啟動 keep_alive Flask server
-    if os.environ.get('REPL_ID'):
-        import web
-        web.keep_alive()
+    keep_alive()
 
     async with bot:
         await load_extensions()

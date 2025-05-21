@@ -5,7 +5,7 @@ from discord.ext import commands
 from discord.ui import Button, View
 
 
-class ViewClass(View):
+class EmbedView(View):
 
     def __init__(self):
         super().__init__(timeout=None)
@@ -61,7 +61,7 @@ class Tinder(commands.Cog):
 
         embed.set_footer(text="Niibot", icon_url=bot_avatar)
 
-        view = ViewClass()
+        view = EmbedView()
         await ctx.send(embed=embed, view=view)
 
     def wrap_text(self, text: str, line_length: int) -> str:
