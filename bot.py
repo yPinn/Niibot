@@ -16,7 +16,7 @@ bot = commands.Bot(command_prefix="?", intents=intents)
 
 @bot.event
 async def on_ready():
-    print(f"目前登入身份 --> {bot.user}")
+    print(f"使用者 --> {bot.user}")
     activity = discord.Streaming(
         name="?help", url="https://twitch.tv/llazypilot")
     await bot.change_presence(status=discord.Status.online, activity=activity)
