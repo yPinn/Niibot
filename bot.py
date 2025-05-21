@@ -11,26 +11,27 @@ bot = commands.Bot(command_prefix="?", intents=intents)
 @bot.event
 async def on_ready():
     print(f"目前登入身份 --> {bot.user}")
-    game = discord.Game("?help")
-    await bot.change_presence(status=discord.Status.online, activity=game)
+    activity = discord.Streaming(
+        name="?help", url="https://twitch.tv/llazypilot")
+    await bot.change_presence(status=discord.Status.online, activity=activity)
 
 
-@bot.command()
+@bot.command(name="l", help="load")
 async def load(ctx, extension):
     await bot.load_extension(f"cogs.{extension}")
-    await ctx.send(f"Loaded {extension} done.")
+    await ctx.send(f"L: {extension} done.")
 
 
-@bot.command()
+@bot.command(name="u", help="unload")
 async def unload(ctx, extension):
     await bot.unload_extension(f"cogs.{extension}")
-    await ctx.send(f"UnLoaded {extension} done.")
+    await ctx.send(f"U: {extension} done.")
 
 
-@bot.command()
+@bot.command(name="rl", help="reload")
 async def reload(ctx, extension):
     await bot.reload_extension(f"cogs.{extension}")
-    await ctx.send(f"ReLoaded {extension} done.")
+    await ctx.send(f"RL: {extension} done.")
 
 
 async def load_extensions():
