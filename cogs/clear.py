@@ -11,7 +11,7 @@ class Clear(commands.Cog):
     @commands.has_permissions(manage_messages=True)
     async def clear_all_messages(self, ctx: commands.Context):
         deleted = await ctx.channel.purge(limit=None)
-        await ctx.send(f"✅ 已清除 {len(deleted)} 則訊息", delete_after=3)
+        await ctx.send(f"✅ 已清除 {len(deleted)} 則訊息", delete_after=1)
 
     @clear_all_messages.error
     async def clear_error(self, ctx, error):
