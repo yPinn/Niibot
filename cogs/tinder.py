@@ -29,40 +29,34 @@ class Tinder(commands.Cog):
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.user_data = {}
-
-    @commands.command()
-    async def status(self, ctx: commands.Context):
-        uid = str(ctx.author.id)
-        if uid in self.user_data:
-            await ctx.send("You have data stored.")
-        else:
-            await ctx.send("No data found.")
 
     @commands.command(name="t")
     async def tinder(self, ctx: commands.Context):
-        user = ctx.author
-        avatar = user.display_avatar.url
-        username = user.display_name
-        activity = user.activity.name
-        wrap_activity = self.wrap_text(activity, 20)
-        bot_avatar = self.bot.user.display_avatar.url
+        try:
+            user = ctx.author
+            avatar = user.display_avatar.url
+            username = user.display_name
+            activity = user.activity.name if user.activity else "目前沒有活動狀態"
+            wrap_activity = self.wrap_text(activity, 20)
+            bot_avatar = self.bot.user.display_avatar.url
 
-        embed = discord.Embed(title=f"{username}",
-                              description=f" _{wrap_activity}_ ",
-                              colour=0xff6b6b,
-                              timestamp=datetime.datetime.now())
+            embed = discord.Embed(title=f"{username}",
+                                  description=f" _{wrap_activity}_ ",
+                                  colour=0xff6b6b,
+                                  timestamp=datetime.datetime.now())
 
-        embed.set_author(
-            name="Tinder",
-            icon_url="https://tinder.com/static/android-chrome-192x192.png")
+            embed.set_author(
+                name="Tinder",
+                icon_url="https://tinder.com/static/android-chrome-192x192.png"
+            )
+            embed.set_image(url=avatar)
+            embed.set_footer(text="Niibot", icon_url=bot_avatar)
 
-        embed.set_image(url=avatar)
+            view = EmbedView()
+            await ctx.send(embed=embed, view=view)
 
-        embed.set_footer(text="Niibot", icon_url=bot_avatar)
-
-        view = EmbedView()
-        await ctx.send(embed=embed, view=view)
+        except Exception as e:
+            await ctx.send(f"❌ 發生錯誤：{e}")
 
     def wrap_text(self, text: str, line_length: int) -> str:
         return '\n'.join([
