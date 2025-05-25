@@ -38,8 +38,7 @@ class Clock(commands.Cog):
             self.reminder_after_9_hours(ctx, uid, end_time))
         self.tasks[uid] = task
 
-    async def reminder_after_9_hours(self, ctx: commands.Context, uid: int,
-                                     end_time: datetime):
+    async def reminder_after_9_hours(self, ctx: commands.Context, uid: int, end_time: datetime):
         try:
             await asyncio.sleep(9 * 3600)  # 9 小時
             if uid in self.clocked_in:  # 如果還沒下班
