@@ -3,9 +3,9 @@ import os
 
 import discord
 from discord.ext import commands
-from keep_alive import keep_alive
-
 from dotenv import load_dotenv
+
+# from keep_alive import keep_alive
 
 load_dotenv()
 
@@ -19,6 +19,8 @@ bot = commands.Bot(command_prefix="?", intents=intents)
 async def on_ready():
     print(f"使用者 --> {bot.user}")
     activity = discord.Game(name="Visual Studio Code")
+    # activity = discord.Streaming(
+    #     name="?help", url="https://www.twitch.tv/llazypilot")
     await bot.change_presence(status=discord.Status.dnd, activity=activity)
 
 
