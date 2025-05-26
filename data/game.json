@@ -5,7 +5,8 @@
     { "name": "CodeNames", "url": "https://codenames.game/room/create" },
     { "name": "Board Game Arena", "url": "https://zh.boardgamearena.com/" },
     { "name": "Song Trivia", "url": "https://songtrivia2.io/" },
-    { "name": "GeoGuessr", "url": "https://www.geoguessr.com/" }
+    { "name": "GeoGuessr", "url": "https://www.geoguessr.com/" },
+    { "name": "Rummikub", "url": "https://rummikub-apps.com/" }
   ],
   "CodeNames": {
     "themes": [
