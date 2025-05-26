@@ -66,14 +66,14 @@ class Party(commands.Cog):
         self.queue = {}  # dict user_id -> display_name
         self.lock = asyncio.Lock()
 
-    @commands.command(name="q")
+    @commands.command(name="q", help="分隊大廳")
     async def queue(self, ctx: commands.Context):
         """顯示配對大廳與加入/離開排隊按鈕"""
         view = InviteView(self.queue, lock=self.lock)
         msg = await ctx.send("配對大廳：", view=view)
         view.message = msg
 
-    @commands.command(name="tu")
+    @commands.command(name="tu", help="分隊(語音)")
     async def teamup(self, ctx: commands.Context):
         """將排隊玩家隨機分兩隊並建立語音頻道"""
         async with self.lock:
@@ -139,16 +139,53 @@ class Party(commands.Cog):
 
     @commands.command(name="game")
     async def list_games(self, ctx: commands.Context):
-        """讀取 game.json 並列出遊戲清單"""
         games = await read_json(GAME_FILE)
-        if not games or not isinstance(games, dict):
-            await ctx.send("⚠️ 找不到遊戲資料或資料為空。")
+        print("讀取的 games:", games)  # 加印 debug
+
+        if not games or not isinstance(games, dict) or "urls" not in games:
+            await ctx.send("⚠️ 找不到遊戲資料或資料格式錯誤。")
             return
 
-        lines = [f"**{name}**: {url}" for name, url in games.items()]
+        url_list = games.get("urls", [])
+        if not url_list:
+            await ctx.send("⚠️ 遊戲網址清單為空。")
+            return
+
+        lines = [
+            f"**{entry['name']}**: {entry['url']}" for entry in url_list if 'name' in entry and 'url' in entry]
         msg = "\n".join(lines)
 
         await ctx.send(f"🎮 目前遊戲列表：\n{msg}")
+
+    @commands.command(name="codenames")
+    async def list_codenames_themes(self, ctx: commands.Context, *, topic_name: str = None):
+        """列出 Codenames 的主題，或顯示特定主題的所有詞語"""
+        games = await read_json(GAME_FILE)
+        codenames = games.get("CodeNames", {})
+        themes = codenames.get("themes", [])
+
+        if not themes:
+            await ctx.send("⚠️ 找不到 Codenames 主題資料。")
+            return
+
+        if topic_name:
+            # 查詢特定主題
+            for theme in themes:
+                if theme.get("topic") == topic_name:
+                    words = theme.get("words", [])
+                    if not words:
+                        await ctx.send(f"⚠️ 主題 **{topic_name}** 沒有任何詞語。")
+                        return
+                    word_list = "\n".join(words)
+                    await ctx.send(f"🧠 **{topic_name}** 主題共有 {len(words)} 個詞：\n{word_list}")
+
+                    return
+            await ctx.send(f"⚠️ 找不到主題 **{topic_name}**，請確認名稱是否正確。")
+        else:
+            # 顯示所有主題與數量
+            lines = [
+                f"🔹 **{theme.get('topic', '未命名主題')}**（{len(theme.get('words', []))} 個詞）" for theme in themes]
+            await ctx.send(f"🧠 Codenames 主題列表：\n" + "\n".join(lines))
 
 
 async def setup(bot: commands.Bot):

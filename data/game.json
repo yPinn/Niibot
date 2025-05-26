@@ -1,13 +1,104 @@
 {
-  "Gartic": "https://gartic.io/",
-
-  "Gartic Phone": "https://garticphone.com/zh-TW",
-
-  "CodeNames": "https://codenames.game/room/create",
-
-  "Board Game Arena": "https://zh.boardgamearena.com/",
-
-  "Song Trivia": "https://songtrivia2.io/",
-
-  "GeoGuessr": "https://www.geoguessr.com/"
+  "urls": [
+    { "name": "Gartic", "url": "https://gartic.io/" },
+    { "name": "Gartic Phone", "url": "https://garticphone.com/zh-TW" },
+    { "name": "CodeNames", "url": "https://codenames.game/room/create" },
+    { "name": "Board Game Arena", "url": "https://zh.boardgamearena.com/" },
+    { "name": "Song Trivia", "url": "https://songtrivia2.io/" },
+    { "name": "GeoGuessr", "url": "https://www.geoguessr.com/" }
+  ],
+  "CodeNames": {
+    "themes": [
+      {
+        "topic": "遊戲",
+        "words": [
+          "馬力歐",
+          "音速小子",
+          "薩爾達",
+          "洛克人",
+          "星海爭霸",
+          "任天堂",
+          "索尼",
+          "微軟",
+          "刺客教條",
+          "魔獸",
+          "英雄聯盟",
+          "傳說對決",
+          "地下城",
+          "寶可夢",
+          "薩諾斯",
+          "洛杉磯",
+          "模擬市民",
+          "暗黑破壞神",
+          "密室逃脫",
+          "主機",
+          "實況",
+          "手把",
+          "VR",
+          "外掛",
+          "攻略"
+        ]
+      },
+      {
+        "topic": "旅遊",
+        "words": [
+          "巴黎",
+          "東京",
+          "紐約",
+          "曼谷",
+          "羅馬",
+          "倫敦",
+          "雪梨",
+          "馬爾地夫",
+          "冰島",
+          "長城",
+          "金字塔",
+          "熱氣球",
+          "背包客",
+          "機場",
+          "護照",
+          "地鐵",
+          "城堡",
+          "紀念品",
+          "沙灘",
+          "溫泉",
+          "美食",
+          "民宿",
+          "自由女神",
+          "地圖",
+          "旅館"
+        ]
+      },
+      {
+        "topic": "校園",
+        "words": [
+          "老師",
+          "校車",
+          "考試",
+          "課本",
+          "書包",
+          "黑板",
+          "粉筆",
+          "鈴聲",
+          "作業",
+          "體育課",
+          "音樂課",
+          "美術",
+          "英文",
+          "數學",
+          "課堂",
+          "圖書館",
+          "校長",
+          "同學",
+          "校園",
+          "畢業",
+          "午餐",
+          "實驗室",
+          "教室",
+          "操場",
+          "校服"
+        ]
+      }
+    ]
+  }
 }

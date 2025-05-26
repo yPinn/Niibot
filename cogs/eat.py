@@ -43,7 +43,7 @@ class Eat(commands.Cog):
         else:
             await ctx.send(f"找不到「{category}」的資料。")
 
-    @commands.command(name="menu")
+    @commands.command(name="menu", help="菜單")
     async def eat_list(self, ctx: commands.Context):
         if not self.data:
             await ctx.send("目前沒有任何分類，請先新增一些內容。")

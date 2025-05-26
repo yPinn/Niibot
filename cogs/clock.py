@@ -78,11 +78,11 @@ class Clock(commands.Cog):
                 ctx = DummyCtx(channel, guild)
 
                 task = asyncio.create_task(
-                    self.reminder_after_9_hours(ctx, uid, end_time)
+                    self.work_reminder(ctx, uid, end_time)
                 )
                 self.tasks[uid] = task
 
-    @commands.command(name="cin", help="打卡，開始工作")
+    @commands.command(name="cin", help="上班打卡")
     async def clock_in(self, ctx: commands.Context):
         if ctx.guild is None:
             await ctx.send("❌ 此指令只能在伺服器中使用。")
@@ -120,11 +120,11 @@ class Clock(commands.Cog):
         await ctx.send(embed=embed)
 
         task = asyncio.create_task(
-            self.reminder_after_9_hours(ctx, uid, end_time)
+            self.work_reminder(ctx, uid, end_time)
         )
         self.tasks[uid] = task
 
-    async def reminder_after_9_hours(self, ctx: commands.Context, uid: int, end_time: datetime):
+    async def work_reminder(self, ctx: commands.Context, uid: int, end_time: datetime):
         try:
             await asyncio.sleep(WORK_SECONDS)
             if uid in self.clocked_in:
@@ -139,7 +139,7 @@ class Clock(commands.Cog):
         except asyncio.CancelledError:
             pass
 
-    @commands.command(name="cout", help="下班，結束工作")
+    @commands.command(name="cout", help="下班打卡")
     async def clock_out(self, ctx: commands.Context):
         if ctx.guild is None:
             await ctx.send("❌ 此指令只能在伺服器中使用。")
@@ -168,7 +168,7 @@ class Clock(commands.Cog):
             f"🕒 工作時長：**{int(hours)} 小時 {int(minutes)} 分鐘**"
         )
 
-    @commands.command(name="attendance", help="查詢目前上班狀態")
+    @commands.command(name="wS", help="查詢目前上班狀態")
     async def check_status(self, ctx: commands.Context):
         if ctx.guild is None:
             await ctx.send("❌ 此指令只能在伺服器中使用。")
@@ -184,7 +184,7 @@ class Clock(commands.Cog):
             hours, remainder = divmod(elapsed.total_seconds(), 3600)
             minutes, _ = divmod(remainder, 60)
             await ctx.send(
-                f"🕒 {ctx.author.mention} 你於 **{start_time.strftime('%Y-%m-%d %H:%M:%S')}** 打卡，"
+                f"🕒 {ctx.author.mention} \n你於 **{start_time.strftime('%Y-%m-%d %H:%M:%S')}** 打卡，\n"
                 f"目前已工作 **{int(hours)} 小時 {int(minutes)} 分鐘**。"
             )
 
