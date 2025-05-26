@@ -1,9 +1,10 @@
 import datetime
+
 import discord
 from discord.ext import commands
 from discord.ui import Button, View
 
-from utils.util import format_error_msg, format_success_msg, format_datetime, normalize_text
+from utils.util import format_datetime, format_error_msg, format_success_msg, normalize_text
 
 
 class EmbedView(View):
@@ -32,7 +33,7 @@ class Tinder(commands.Cog):
         self.bot = bot
 
     @commands.command(name="t")
-    async def tinder(self, ctx: commands.Context):
+    async def my_profile(self, ctx: commands.Context):
         try:
             user = ctx.author
             avatar = user.display_avatar.url

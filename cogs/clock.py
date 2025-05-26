@@ -1,9 +1,10 @@
 import asyncio
-from datetime import datetime, timedelta
 import os
+from datetime import datetime, timedelta
 
 import discord
 from discord.ext import commands
+
 from utils.util import read_json, write_json  # 你的 async 讀寫函數
 
 DATA_DIR = "data"
@@ -76,7 +77,7 @@ class Clock(commands.Cog):
 
                 elif time_left <= 0:
                     await channel.send(
-                        f"🔔 {member.mention} 該下班囉！\n已經是 **{now.strftime('%Y-%m-%d %H:%M:%S')}** 啦！"
+                        f"🔔 {member.mention} 該下班囉！\n已經是 **{now.strftime('%Y-%m-%d %H:%M')}** 啦！"
                     )
                     to_remove.append(uid)
 
@@ -100,7 +101,7 @@ class Clock(commands.Cog):
         if uid in self.clocked_in:
             old_time = self.clocked_in[uid]["time"]
             await ctx.send(
-                f"🕒 {ctx.author.mention} 你已經打過卡了（{old_time.strftime('%Y-%m-%d %H:%M:%S')}）"
+                f"🕒 {ctx.author.mention} 你已經打過卡了（{old_time.strftime('%Y-%m-%d %H:%M')}）"
             )
             return
 
@@ -117,9 +118,9 @@ class Clock(commands.Cog):
         embed.set_author(name=ctx.author.display_name,
                          icon_url=ctx.author.avatar.url if ctx.author.avatar else None)
         embed.add_field(name="🕑 打卡時間", value=now.strftime(
-            '%Y-%m-%d %H:%M:%S'), inline=False)
+            '%Y-%m-%d %H:%M'), inline=False)
         embed.add_field(name="⏰ 預計下班時間", value=end_time.strftime(
-            '%Y-%m-%d %H:%M:%S'), inline=False)
+            '%Y-%m-%d %H:%M'), inline=False)
         embed.set_footer(text=f"工作時間為 {WORK_HOURS} 小時")
 
         await ctx.send(embed=embed)
@@ -166,7 +167,7 @@ class Clock(commands.Cog):
             hours, remainder = divmod(elapsed.total_seconds(), 3600)
             minutes, _ = divmod(remainder, 60)
             await ctx.send(
-                f"🕒 {ctx.author.mention} \n你於 **{start_time.strftime('%Y-%m-%d %H:%M:%S')}** 打卡，\n"
+                f"🕒 {ctx.author.mention} \n你於 **{start_time.strftime('%Y-%m-%d %H:%M')}** 打卡，\n"
                 f"目前已工作 **{int(hours)} 小時 {int(minutes)} 分鐘**。"
             )
 
