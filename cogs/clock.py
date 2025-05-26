@@ -1,16 +1,86 @@
 import asyncio
 from datetime import datetime, timedelta
+import os
 
 import discord
 from discord.ext import commands
+from utils.util import read_json, write_json  # 你的 async 讀寫函數
+
+DATA_DIR = "data"
+DATA_FILE = os.path.join(DATA_DIR, "clock.json")
+
+WORK_HOURS = 9
+WORK_SECONDS = WORK_HOURS * 3600
 
 
 class Clock(commands.Cog):
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.clocked_in = {}  # user_id: datetime
-        self.tasks = {}  # user_id: asyncio.Task
+        # clocked_in: user_id -> {"time": datetime, "channel_id": int}
+        self.clocked_in = {}
+        self.tasks = {}
+
+    async def initialize(self):
+        if not os.path.exists(DATA_DIR):
+            os.mkdir(DATA_DIR)
+        if not os.path.exists(DATA_FILE) or os.stat(DATA_FILE).st_size == 0:
+            await write_json(DATA_FILE, {})
+            self.clocked_in = {}
+            return
+
+        raw_data = await read_json(DATA_FILE) or {}
+        # raw_data 格式: {user_id: {"time": iso_str, "channel_id": int}}
+        self.clocked_in = {
+            int(uid): {
+                "time": datetime.fromisoformat(info["time"]),
+                "channel_id": info["channel_id"]
+            }
+            for uid, info in raw_data.items()
+        }
+
+    async def save_clock_data(self):
+        to_save = {
+            str(uid): {
+                "time": info["time"].isoformat(),
+                "channel_id": info["channel_id"]
+            }
+            for uid, info in self.clocked_in.items()
+        }
+        await write_json(DATA_FILE, to_save)
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        await self.initialize()
+
+        now = datetime.now()
+        for uid, info in self.clocked_in.items():
+            start_time = info["time"]
+            channel_id = info["channel_id"]
+            end_time = start_time + timedelta(hours=WORK_HOURS)
+            delay = (end_time - now).total_seconds()
+            if delay > 0:
+                channel = self.bot.get_channel(channel_id)
+                if channel is None:
+                    # 無法取得頻道，跳過提醒
+                    continue
+
+                # 用一個臨時的 ctx-like 物件（這樣你原本 reminder 裡的 ctx.send 能正常用）
+                class DummyCtx:
+                    def __init__(self, channel, guild):
+                        self.channel = channel
+                        self.guild = guild
+
+                    async def send(self, content):
+                        await self.channel.send(content)
+
+                guild = channel.guild
+                ctx = DummyCtx(channel, guild)
+
+                task = asyncio.create_task(
+                    self.reminder_after_9_hours(ctx, uid, end_time)
+                )
+                self.tasks[uid] = task
 
     @commands.command(name="cin", help="打卡，開始工作")
     async def clock_in(self, ctx: commands.Context):
@@ -22,26 +92,42 @@ class Clock(commands.Cog):
         now = datetime.now()
 
         if uid in self.clocked_in:
+            old_time = self.clocked_in[uid]["time"]
             await ctx.send(
-                f"🕒 {ctx.author.mention} 你已經打過卡了（{self.clocked_in[uid].strftime('%Y-%m-%d %H:%M:%S')}）"
+                f"🕒 {ctx.author.mention} 你已經打過卡了（{old_time.strftime('%Y-%m-%d %H:%M:%S')}）"
             )
             return
 
-        self.clocked_in[uid] = now
-        end_time = now + timedelta(hours=9)
-        await ctx.send(
-            f"✅ {ctx.author.mention} 成功打卡！\n🕑 打卡時間：**{now.strftime('%Y-%m-%d %H:%M:%S')}**\n⏰ 預計下班時間：**{end_time.strftime('%Y-%m-%d %H:%M:%S')}**"
-        )
+        self.clocked_in[uid] = {"time": now, "channel_id": ctx.channel.id}
+        await self.save_clock_data()
 
-        # 啟動 countdown 任務
+        WORK_HOURS = 9
+        end_time = now + timedelta(hours=WORK_HOURS)
+
+        embed = discord.Embed(
+            title="✅ 打卡成功！",
+            color=discord.Color.green(),
+            timestamp=now
+        )
+        embed.set_author(name=ctx.author.display_name,
+                         icon_url=ctx.author.avatar.url if ctx.author.avatar else None)
+        embed.add_field(name="🕑 打卡時間", value=now.strftime(
+            '%Y-%m-%d %H:%M:%S'), inline=False)
+        embed.add_field(name="⏰ 預計下班時間", value=end_time.strftime(
+            '%Y-%m-%d %H:%M:%S'), inline=False)
+        embed.set_footer(text=f"工作時間為 {WORK_HOURS} 小時")
+
+        await ctx.send(embed=embed)
+
         task = asyncio.create_task(
-            self.reminder_after_9_hours(ctx, uid, end_time))
+            self.reminder_after_9_hours(ctx, uid, end_time)
+        )
         self.tasks[uid] = task
 
     async def reminder_after_9_hours(self, ctx: commands.Context, uid: int, end_time: datetime):
         try:
-            await asyncio.sleep(9 * 3600)  # 9 小時
-            if uid in self.clocked_in:  # 如果還沒下班
+            await asyncio.sleep(WORK_SECONDS)
+            if uid in self.clocked_in:
                 member = ctx.guild.get_member(uid)
                 if member:
                     await ctx.send(
@@ -49,8 +135,9 @@ class Clock(commands.Cog):
                     )
                 self.clocked_in.pop(uid, None)
                 self.tasks.pop(uid, None)
+                await self.save_clock_data()
         except asyncio.CancelledError:
-            pass  # 被提前下班取消就安靜結束
+            pass
 
     @commands.command(name="cout", help="下班，結束工作")
     async def clock_out(self, ctx: commands.Context):
@@ -65,17 +152,20 @@ class Clock(commands.Cog):
             await ctx.send(f"❌ {ctx.author.mention} 你還沒有打卡，無法下班。")
             return
 
-        start_time = self.clocked_in.pop(uid)
+        start_time = self.clocked_in.pop(uid)["time"]
         if uid in self.tasks:
             self.tasks[uid].cancel()
             self.tasks.pop(uid)
+
+        await self.save_clock_data()
 
         worked_time = now - start_time
         hours, remainder = divmod(worked_time.total_seconds(), 3600)
         minutes, _ = divmod(remainder, 60)
 
         await ctx.send(
-            f"👋 {ctx.author.mention} 下班成功！\n🕒 工作時長：**{int(hours)} 小時 {int(minutes)} 分鐘**"
+            f"👋 {ctx.author.mention} 下班成功！\n"
+            f"🕒 工作時長：**{int(hours)} 小時 {int(minutes)} 分鐘**"
         )
 
     @commands.command(name="attendance", help="查詢目前上班狀態")
@@ -88,13 +178,14 @@ class Clock(commands.Cog):
         if uid not in self.clocked_in:
             await ctx.send(f"📋 {ctx.author.mention} 你目前沒有打卡。")
         else:
-            start_time = self.clocked_in[uid]
+            start_time = self.clocked_in[uid]["time"]
             now = datetime.now()
             elapsed = now - start_time
             hours, remainder = divmod(elapsed.total_seconds(), 3600)
             minutes, _ = divmod(remainder, 60)
             await ctx.send(
-                f"🕒 {ctx.author.mention} 你於 **{start_time.strftime('%Y-%m-%d %H:%M:%S')}** 打卡，目前已工作 **{int(hours)} 小時 {int(minutes)} 分鐘**。"
+                f"🕒 {ctx.author.mention} 你於 **{start_time.strftime('%Y-%m-%d %H:%M:%S')}** 打卡，"
+                f"目前已工作 **{int(hours)} 小時 {int(minutes)} 分鐘**。"
             )
 
 

@@ -1,8 +1,9 @@
 import datetime
-
 import discord
 from discord.ext import commands
 from discord.ui import Button, View
+
+from utils.util import format_error_msg, format_success_msg, format_datetime, normalize_text
 
 
 class EmbedView(View):
@@ -14,14 +15,14 @@ class EmbedView(View):
                        style=discord.ButtonStyle.secondary,
                        custom_id="nope_button")
     async def nope(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.send_message("You clicked ❌ Nope",
+        await interaction.response.send_message(format_success_msg("You clicked ❌ Nope"),
                                                 ephemeral=True)
 
     @discord.ui.button(label="💚",
                        style=discord.ButtonStyle.primary,
                        custom_id="like_button")
     async def like(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.send_message("You clicked 💚 Like",
+        await interaction.response.send_message(format_success_msg("You clicked 💚 Like"),
                                                 ephemeral=True)
 
 
@@ -35,15 +36,17 @@ class Tinder(commands.Cog):
         try:
             user = ctx.author
             avatar = user.display_avatar.url
-            username = user.display_name
+            username = normalize_text(user.display_name)
             activity = user.activity.name if user.activity else "目前沒有活動狀態"
             wrap_activity = self.wrap_text(activity, 20)
             bot_avatar = self.bot.user.display_avatar.url
 
-            embed = discord.Embed(title=f"{username}",
-                                  description=f" _{wrap_activity}_ ",
-                                  colour=0xff6b6b,
-                                  timestamp=datetime.datetime.now())
+            embed = discord.Embed(
+                title=f"{username}",
+                description=f" _{wrap_activity}_ ",
+                colour=0xff6b6b,
+                timestamp=datetime.datetime.now()
+            )
 
             embed.set_author(
                 name="Tinder",
@@ -56,7 +59,7 @@ class Tinder(commands.Cog):
             await ctx.send(embed=embed, view=view)
 
         except Exception as e:
-            await ctx.send(f"❌ 發生錯誤：{e}")
+            await ctx.send(format_error_msg(str(e)))
 
     def wrap_text(self, text: str, line_length: int) -> str:
         return '\n'.join([
