@@ -1,12 +1,12 @@
 {
   "urls": [
+    { "name": "Board Game Arena", "url": "https://zh.boardgamearena.com/" },
+    { "name": "CodeNames", "url": "https://codenames.game/room/create" },
     { "name": "Gartic", "url": "https://gartic.io/" },
     { "name": "Gartic Phone", "url": "https://garticphone.com/zh-TW" },
-    { "name": "CodeNames", "url": "https://codenames.game/room/create" },
-    { "name": "Board Game Arena", "url": "https://zh.boardgamearena.com/" },
-    { "name": "Song Trivia", "url": "https://songtrivia2.io/" },
     { "name": "GeoGuessr", "url": "https://www.geoguessr.com/" },
-    { "name": "Rummikub", "url": "https://rummikub-apps.com/" }
+    { "name": "Rummikub", "url": "https://rummikub-apps.com/" },
+    { "name": "Song Trivia", "url": "https://songtrivia2.io/" }
   ],
   "CodeNames": {
     "themes": [
