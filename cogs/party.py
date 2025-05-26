@@ -1,10 +1,11 @@
+import asyncio
 import os
 import random
-import asyncio
 
 import discord
 from discord.ext import commands
 from discord.ui import View
+
 from utils.util import read_json  # 你的同步讀json函式，建議改非同步版本 await read_json_async()
 
 DATA_DIR = "data"
@@ -66,14 +67,14 @@ class Party(commands.Cog):
         self.queue = {}  # dict user_id -> display_name
         self.lock = asyncio.Lock()
 
-    @commands.command(name="q", help="分隊大廳")
+    @commands.command(name="queue", help="分隊大廳")
     async def queue(self, ctx: commands.Context):
         """顯示配對大廳與加入/離開排隊按鈕"""
         view = InviteView(self.queue, lock=self.lock)
         msg = await ctx.send("配對大廳：", view=view)
         view.message = msg
 
-    @commands.command(name="tu", help="分隊(語音)")
+    @commands.command(name="mf", help="分隊(語音)")
     async def teamup(self, ctx: commands.Context):
         """將排隊玩家隨機分兩隊並建立語音頻道"""
         async with self.lock:
