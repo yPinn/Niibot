@@ -25,7 +25,7 @@ class Eat(commands.Cog):
             json.dump(self.data, f, ensure_ascii=False, indent=4)
 
     # 前綴指令
-    @commands.command()
+    @commands.command(help="幫你想要吃什麼")
     async def eat(self, ctx: commands.Context, category: str = None):
         if category is None:
             await ctx.send("要吃什麼？請輸入 `!eat 類別` 例如 `!eat 早餐`")
