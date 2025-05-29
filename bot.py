@@ -45,6 +45,7 @@ async def reload(ctx, extension):
 async def load_extensions():
     for filename in os.listdir("./cogs"):
         if filename.endswith(".py"):
+            print(f"載入 {filename}")
             await bot.load_extension(f"cogs.{filename[:-3]}")
 
 
