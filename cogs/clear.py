@@ -1,6 +1,7 @@
 import discord
 from discord.ext import commands
-from utils.util import format_error_msg, format_success_msg, Cooldown
+
+from utils.util import Cooldown, format_error_msg, format_success_msg
 
 
 class Clear(commands.Cog):
@@ -28,40 +29,56 @@ class Clear(commands.Cog):
                 return not m.author.bot
 
             messages_to_delete = []
-            user_message_count = 0
+            user_msg_count = 0
 
             async for msg in ctx.channel.history(limit=1000, oldest_first=False):
                 if msg.id == ctx.message.id:
                     continue  # 跳過指令訊息
 
                 messages_to_delete.append(msg)
-
                 if is_user_message(msg):
-                    user_message_count += 1
+                    user_msg_count += 1
 
-                if user_message_count >= amount:
+                if user_msg_count >= amount:
                     break
 
             if not messages_to_delete:
                 await ctx.send(format_error_msg("找不到可刪除的訊息。"))
                 return
 
-            # 分開刪除
+            # 過濾超過 14 天的訊息，Discord 批次刪除限制
+            from datetime import datetime, timedelta, timezone
+            cutoff = datetime.now(timezone.utc) - timedelta(days=14)
+
+            deletable_messages = [
+                m for m in messages_to_delete if m.created_at > cutoff]
+
             deleted_count = 0
-            if len(messages_to_delete) == 1:
+            user_deleted_count = 0
+
+            if len(deletable_messages) == 1:
                 try:
-                    await messages_to_delete[0].delete()
-                    if is_user_message(messages_to_delete[0]):
-                        deleted_count = 1
-                except:
+                    await deletable_messages[0].delete()
+                    deleted_count = 1
+                    if is_user_message(deletable_messages[0]):
+                        user_deleted_count = 1
+                except Exception:
                     pass
             else:
-                deleted = await ctx.channel.delete_messages(messages_to_delete)
+                deleted = await ctx.channel.delete_messages(deletable_messages)
                 if deleted is not None:
-                    deleted_count = sum(
+                    deleted_count = len(deleted)
+                    user_deleted_count = sum(
                         1 for m in deleted if is_user_message(m))
+                else:
+                    # 沒回傳時用預估數量
+                    deleted_count = len(deletable_messages)
+                    user_deleted_count = sum(
+                        1 for m in deletable_messages if is_user_message(m))
 
-            confirm = await ctx.send(format_success_msg(f"已刪除 {amount} 則使用者訊息（共 {len(messages_to_delete)} 則訊息被清除）。"))
+            confirm = await ctx.send(format_success_msg(
+                f"已刪除 {user_deleted_count} 則使用者訊息(總共清除 {deleted_count} 則訊息)"
+            ))
             await confirm.delete(delay=2)
 
             self.cooldown.update_timestamp(user_id)

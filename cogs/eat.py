@@ -1,5 +1,5 @@
-import random
 import os
+import random
 
 import discord
 from discord.ext import commands
@@ -27,7 +27,7 @@ class Eat(commands.Cog):
     async def on_ready(self):
         await self.initialize()
 
-    @commands.command(help="幫你想要吃什麼")
+    @commands.command(aliases=["點"], help="幫你想要吃什麼")
     async def eat(self, ctx: commands.Context, category: str = None):
         if not category:
             await ctx.send("❓ 要吃什麼？請輸入 `!eat 類別`，例如 `!eat 早餐`")
@@ -39,7 +39,7 @@ class Eat(commands.Cog):
             options = self.data[category_key]
             if options:
                 choice = random.choice(options)
-                await ctx.send(f"🍽️ 推薦你吃：**{choice}**")
+                await ctx.send(f"🍽️ 推薦你點：**{choice}**")
             else:
                 await ctx.send(f"⚠️ 「{category}」的選項是空的！")
         else:

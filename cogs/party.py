@@ -19,11 +19,8 @@ class InviteView(View):
         self.message = message
         self.lock = lock  # 用來保護 queue 同步操作
 
-    @discord.ui.button(label="Queue",
-                       style=discord.ButtonStyle.success,
-                       custom_id="toggle_queue")
-    async def toggle_queue(self, interaction: discord.Interaction,
-                           button: discord.ui.Button):
+    @discord.ui.button(label="Queue", style=discord.ButtonStyle.success, custom_id="toggle_queue")
+    async def toggle_queue(self, interaction: discord.Interaction, button: discord.ui.Button):
         user_id = interaction.user.id
         display_name = interaction.user.display_name
 
@@ -41,7 +38,8 @@ class InviteView(View):
                 lobby = '\n'.join(self.queue.values())
                 if self.message:
                     await self.message.edit(
-                        content=f"[目前有 {len(self.queue)} / 10 人]\n{lobby}", view=self)
+                        content=f"[目前有 {len(self.queue)} / 10 人]\n{lobby}", view=self
+                    )
         else:
             # 若沒提供鎖，直接操作（不推薦）
             if user_id in self.queue:
@@ -56,7 +54,8 @@ class InviteView(View):
             lobby = '\n'.join(self.queue.values())
             if self.message:
                 await self.message.edit(
-                    content=f"[目前有 {len(self.queue)} / 10 人]\n{lobby}", view=self)
+                    content=f"[目前有 {len(self.queue)} / 10 人]\n{lobby}", view=self
+                )
 
         await interaction.response.send_message(msg_text, ephemeral=True)
 
@@ -66,6 +65,25 @@ class Party(commands.Cog):
         self.bot = bot
         self.queue = {}  # dict user_id -> display_name
         self.lock = asyncio.Lock()
+        # 背景任務啟動，自動清理空語音頻道
+        self.cleanup_task = self.bot.loop.create_task(
+            self.cleanup_empty_voice_channels())
+
+    def cog_unload(self):
+        self.cleanup_task.cancel()  # Cog 卸載時取消任務
+
+    async def cleanup_empty_voice_channels(self):
+        await self.bot.wait_until_ready()
+        while not self.bot.is_closed():
+            for guild in self.bot.guilds:
+                for channel in guild.voice_channels:
+                    if channel.name.startswith("team-") and len(channel.members) == 0:
+                        try:
+                            await channel.delete()
+                            print(f"自動刪除空語音頻道：{channel.name}")
+                        except Exception as e:
+                            print(f"刪除語音頻道失敗: {e}")
+            await asyncio.sleep(60)  # 每 60 秒檢查一次
 
     @commands.command(name="queue", help="分隊大廳")
     async def queue(self, ctx: commands.Context):
@@ -94,9 +112,7 @@ class Party(commands.Cog):
         def format_team(team):
             return '\n'.join([f"<@{uid}>" for uid in team])
 
-        await ctx.send(
-            f"**Team 1**:\n{format_team(team1)}\n\n**Team 2**:\n{format_team(team2)}"
-        )
+        await ctx.send(f"**Team 1**:\n{format_team(team1)}\n\n**Team 2**:\n{format_team(team2)}")
 
         try:
             guild = ctx.guild
@@ -128,8 +144,9 @@ class Party(commands.Cog):
                     print(f"無法移動 {member.display_name}: {e}")
 
     @commands.Cog.listener()
-    async def on_voice_state_update(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
-
+    async def on_voice_state_update(
+        self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState
+    ):
         # 如果離開了一個語音頻道，且該語音頻道以 team- 開頭且無人，則刪除它
         if before.channel and before.channel.name.startswith("team-"):
             if len(before.channel.members) == 0:
@@ -153,7 +170,10 @@ class Party(commands.Cog):
             return
 
         lines = [
-            f"**{entry['name']}**: {entry['url']}" for entry in url_list if 'name' in entry and 'url' in entry]
+            f"**{entry['name']}**: {entry['url']}"
+            for entry in url_list
+            if 'name' in entry and 'url' in entry
+        ]
         msg = "\n".join(lines)
 
         await ctx.send(f"🎮 目前遊戲列表：\n{msg}")
@@ -185,7 +205,9 @@ class Party(commands.Cog):
         else:
             # 顯示所有主題與數量
             lines = [
-                f"🔹 **{theme.get('topic', '未命名主題')}**（{len(theme.get('words', []))} 個詞）" for theme in themes]
+                f"🔹 **{theme.get('topic', '未命名主題')}**（{len(theme.get('words', []))} 個詞）"
+                for theme in themes
+            ]
             await ctx.send(f"🧠 Codenames 主題列表：\n" + "\n".join(lines))
 
 

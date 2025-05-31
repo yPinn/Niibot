@@ -13,6 +13,8 @@
 *.ini
 *.log
 
+*.json
+
 # VSCode
 .vscode/
 .settings/
