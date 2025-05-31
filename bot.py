@@ -3,11 +3,13 @@ import os
 
 import discord
 from discord.ext import commands
-from dotenv import load_dotenv
 
-# from keep_alive import keep_alive
+from keep_alive import keep_alive
 
-load_dotenv()
+# from dotenv import load_dotenv
+
+
+# load_dotenv()
 
 TOKEN = os.getenv("TOKEN")
 
@@ -18,9 +20,9 @@ bot = commands.Bot(command_prefix="?", intents=intents)
 @bot.event
 async def on_ready():
     print(f"使用者 --> {bot.user}")
-    activity = discord.Game(name="Visual Studio Code")
-    # activity = discord.Streaming(
-    #     name="?help", url="https://www.twitch.tv/llazypilot")
+    # activity = discord.Game(name="Visual Studio Code")
+    activity = discord.Streaming(
+        name="?help", url="https://www.twitch.tv/llazypilot")
     await bot.change_presence(status=discord.Status.dnd, activity=activity)
 
 
@@ -50,7 +52,7 @@ async def load_extensions():
 
 
 async def main():
-    # keep_alive()
+    keep_alive()
 
     async with bot:
         await load_extensions()
