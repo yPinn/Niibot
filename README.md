@@ -16,4 +16,3 @@ a Discord bot with Python
 
 > > 遊戲準心代碼+預覽圖
 
-> > Valorant 每日商店(要先處理 api 問題)
