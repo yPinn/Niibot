@@ -15,10 +15,10 @@ class Reply(commands.Cog):
             return
 
         target_role_id = 1378242954929639514  # 這是 "陳玥黎" 的角色 ID
-        target_user_id = 478194275360964608  # 這是 "31" 的 ID
+        # target_user_id = 478194275360964608  # 這是 "31" 的 ID
 
         mentioned_role_ids = [role.id for role in message.role_mentions]
-        mentioned_user_ids = [user.id for user in message.mentions]
+        # mentioned_user_ids = [user.id for user in message.mentions]
 
         msg = [
             "不要 @ 我，幹你娘！！！",
@@ -26,12 +26,12 @@ class Reply(commands.Cog):
             "?",
             "幹你娘機掰標三小",
             "皮 ↘ 炎 ↗",
-            f"不用標 標<@{target_user_id}>就好",
+            # f"不用標 標<@{target_user_id}>就好",
             "uu：愛是寂寞人",
             "不要再冒充我的身分了",
         ]
 
-        if target_role_id in mentioned_role_ids or target_user_id in mentioned_user_ids:
+        if target_role_id in mentioned_role_ids:
             await message.reply(random.choice(msg), mention_author=True)
 
     @commands.command(name="cc", aliases=["複製", "ditto"], help="複製人，顯示頭像和橫幅")
