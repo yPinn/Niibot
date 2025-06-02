@@ -1,12 +1,13 @@
 # config_local.py
-from dotenv import load_dotenv
 import os
+
+from dotenv import load_dotenv
 
 load_dotenv()  # 載入 .env 檔案
 
-TOKEN = os.getenv("TOKEN")
-STATUS = "online"
-STREAM_NAME = "?help"
-STREAM_URL = "https://www.twitch.tv/llazypilot"
-USE_KEEP_ALIVE = False
-COMMAND_PREFIX = "?"
+TOKEN: str | None = os.getenv("TOKEN")
+STATUS: str = "online"
+STREAM_NAME: str = "?help"
+STREAM_URL: str = "https://www.twitch.tv/llazypilot"
+USE_KEEP_ALIVE: bool = False
+COMMAND_PREFIX: list[str] = ["?", "❓"]
