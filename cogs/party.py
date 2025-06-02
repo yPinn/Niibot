@@ -6,7 +6,7 @@ import discord
 from discord.ext import commands
 from discord.ui import View
 
-from utils.util import read_json  # 你的同步讀json函式，建議改非同步版本 await read_json_async()
+from utils.util import read_json  # 假設是非同步版本
 
 DATA_DIR = "data"
 GAME_FILE = os.path.join(DATA_DIR, "game.json")
@@ -65,7 +65,6 @@ class Party(commands.Cog):
         self.bot = bot
         self.queue = {}  # dict user_id -> display_name
         self.lock = asyncio.Lock()
-        # 背景任務啟動，自動清理空語音頻道
         self.cleanup_task = self.bot.loop.create_task(
             self.cleanup_empty_voice_channels())
 
@@ -85,69 +84,132 @@ class Party(commands.Cog):
                             print(f"刪除語音頻道失敗: {e}")
             await asyncio.sleep(60)  # 每 60 秒檢查一次
 
-    @commands.command(name="queue", help="分隊大廳")
+    @commands.command(name="queue", aliases=["q"], help="分隊大廳")
     async def queue(self, ctx: commands.Context):
         """顯示配對大廳與加入/離開排隊按鈕"""
         view = InviteView(self.queue, lock=self.lock)
         msg = await ctx.send("配對大廳：", view=view)
         view.message = msg
 
-    @commands.command(name="mf", help="分隊(語音)")
-    async def teamup(self, ctx: commands.Context):
-        """將排隊玩家隨機分兩隊並建立語音頻道"""
-        async with self.lock:
-            ids = list(self.queue.keys())
-            if len(ids) < 2:
-                await ctx.send("⚠️ 隊列中人數不足，無法分隊。")
-                return
+    async def _distribute_and_move(self, ctx, teams, players_per_team, player_ids):
+        # 洗牌
+        random.shuffle(player_ids)
 
-            random.shuffle(ids)
-            mid = len(ids) // 2
-            team1 = ids[:mid]
-            team2 = ids[mid:]
+        # 切割分隊
+        team_lists = []
+        start = 0
+        for i in range(teams):
+            team = player_ids[start: start + players_per_team]
+            team_lists.append(team)
+            start += players_per_team
 
-            # 清空隊列
-            self.queue.clear()
+        # 發送分隊訊息
+        msg_lines = []
+        for i, team in enumerate(team_lists, start=1):
+            mentions = '\n'.join(f"<@{uid}>" for uid in team)
+            msg_lines.append(f"**Team {i}** ({len(team)} 人):\n{mentions}")
 
-        def format_team(team):
-            return '\n'.join([f"<@{uid}>" for uid in team])
+        await ctx.send("⚡ **分隊結果：**\n" + "\n\n".join(msg_lines))
 
-        await ctx.send(f"**Team 1**:\n{format_team(team1)}\n\n**Team 2**:\n{format_team(team2)}")
-
+        guild = ctx.guild
         try:
-            guild = ctx.guild
             category = discord.utils.get(guild.categories, name="Voice / 2")
             if not category:
                 category = await guild.create_category("Voice / 2")
         except Exception as e:
             await ctx.send(f"⚠️ 建立分類頻道失敗: {e}")
-            return
+            return False
 
-        # 建立語音頻道
-        vc1 = await guild.create_voice_channel("team-1", category=category)
-        vc2 = await guild.create_voice_channel("team-2", category=category)
+        voice_channels = []
+        for i in range(teams):
+            try:
+                vc = await guild.create_voice_channel(f"team-{i+1}", category=category)
+                voice_channels.append(vc)
+            except Exception as e:
+                await ctx.send(f"⚠️ 建立語音頻道 team-{i+1} 失敗: {e}")
+                return False
 
-        for uid in team1:
-            member = guild.get_member(uid)
-            if member and member.voice:
-                try:
-                    await member.move_to(vc1)
-                except Exception as e:
-                    print(f"無法移動 {member.display_name}: {e}")
+        for i, team in enumerate(team_lists):
+            vc = voice_channels[i]
+            for uid in team:
+                member = guild.get_member(uid)
+                if member and member.voice and member.voice.channel:
+                    try:
+                        await member.move_to(vc)
+                    except Exception as e:
+                        print(f"無法移動 {member.display_name} 至 {vc.name}: {e}")
 
-        for uid in team2:
-            member = guild.get_member(uid)
-            if member and member.voice:
-                try:
-                    await member.move_to(vc2)
-                except Exception as e:
-                    print(f"無法移動 {member.display_name}: {e}")
+        return True
+
+    @commands.command(name="start", help="開始分隊，用法: !start [隊伍數] [每隊人數]")
+    async def start_teams(self, ctx: commands.Context, teams: int = None, players_per_team: int = None):
+        async with self.lock:
+            total_players = len(self.queue)
+
+            # 預設值（沒輸入時）
+            if teams is None and players_per_team is None:
+                teams = 2
+                players_per_team = total_players // teams if total_players >= 2 else 1
+
+            elif teams is not None and players_per_team is None:
+                # 只輸入隊伍數
+                players_per_team = total_players // teams if total_players >= teams else 1
+
+            elif teams is None and players_per_team is not None:
+                # 只輸入每隊人數，算隊伍數
+                teams = (total_players + players_per_team -
+                         1) // players_per_team  # 向上取整
+
+            # 檢查合理性
+            if teams < 1:
+                await ctx.send("⚠️ 隊伍數必須至少 1 隊。")
+                return
+            if players_per_team < 1:
+                await ctx.send("⚠️ 每隊人數必須至少 1 人。")
+                return
+
+            max_players_possible = teams * players_per_team
+            if max_players_possible > total_players:
+                await ctx.send(f"⚠️ 目前隊列中有 {total_players} 人，無法分成 {teams} 隊，每隊 {players_per_team} 人。")
+                return
+
+            # 依照隊伍數和每隊人數，來決定分隊
+            selected_ids = list(self.queue.keys())[:max_players_possible]
+
+            # 清空已加入隊列的玩家（只清空被分隊的人）
+            for uid in selected_ids:
+                self.queue.pop(uid, None)
+
+        await self._distribute_and_move(ctx, teams, players_per_team, selected_ids)
+
+    @commands.command(name="start-f", help="強制開始分隊（管理員專用）")
+    @commands.has_permissions(administrator=True)
+    async def force_start(self, ctx: commands.Context, teams: int = 2):
+        async with self.lock:
+            total_players = len(self.queue)
+            if teams < 1:
+                await ctx.send("⚠️ 隊伍數必須至少 1 隊。")
+                return
+            if total_players == 0:
+                await ctx.send("⚠️ 隊列沒有人，無法分隊。")
+                return
+
+            # 不限制隊伍數要小於人數，強制開始
+            selected_ids = list(self.queue.keys())
+
+            # 清空已加入隊列的玩家
+            for uid in selected_ids:
+                self.queue.pop(uid, None)
+
+        # 計算平均每隊人數（平均分配）
+        players_per_team = (total_players + teams - 1) // teams  # 向上取整
+
+        await self._distribute_and_move(ctx, teams, players_per_team, selected_ids)
 
     @commands.Cog.listener()
     async def on_voice_state_update(
         self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState
     ):
-        # 如果離開了一個語音頻道，且該語音頻道以 team- 開頭且無人，則刪除它
         if before.channel and before.channel.name.startswith("team-"):
             if len(before.channel.members) == 0:
                 try:
@@ -158,58 +220,13 @@ class Party(commands.Cog):
     @commands.command(name="game")
     async def list_games(self, ctx: commands.Context):
         games = await read_json(GAME_FILE)
-        print("讀取的 games:", games)  # 加印 debug
-
         if not games or not isinstance(games, dict) or "urls" not in games:
-            await ctx.send("⚠️ 找不到遊戲資料或資料格式錯誤。")
+            await ctx.send("目前沒有遊戲清單。")
             return
-
-        url_list = games.get("urls", [])
-        if not url_list:
-            await ctx.send("⚠️ 遊戲網址清單為空。")
-            return
-
-        lines = [
-            f"**{entry['name']}**: {entry['url']}"
-            for entry in url_list
-            if 'name' in entry and 'url' in entry
-        ]
-        msg = "\n".join(lines)
-
-        await ctx.send(f"🎮 目前遊戲列表：\n{msg}")
-
-    @commands.command(name="codenames")
-    async def list_codenames_themes(self, ctx: commands.Context, *, topic_name: str = None):
-        """列出 Codenames 的主題，或顯示特定主題的所有詞語"""
-        games = await read_json(GAME_FILE)
-        codenames = games.get("CodeNames", {})
-        themes = codenames.get("themes", [])
-
-        if not themes:
-            await ctx.send("⚠️ 找不到 Codenames 主題資料。")
-            return
-
-        if topic_name:
-            # 查詢特定主題
-            for theme in themes:
-                if theme.get("topic") == topic_name:
-                    words = theme.get("words", [])
-                    if not words:
-                        await ctx.send(f"⚠️ 主題 **{topic_name}** 沒有任何詞語。")
-                        return
-                    word_list = "\n".join(words)
-                    await ctx.send(f"🧠 **{topic_name}** 主題共有 {len(words)} 個詞：\n{word_list}")
-
-                    return
-            await ctx.send(f"⚠️ 找不到主題 **{topic_name}**，請確認名稱是否正確。")
-        else:
-            # 顯示所有主題與數量
-            lines = [
-                f"🔹 **{theme.get('topic', '未命名主題')}**（{len(theme.get('words', []))} 個詞）"
-                for theme in themes
-            ]
-            await ctx.send(f"🧠 Codenames 主題列表：\n" + "\n".join(lines))
+        urls = games["urls"]
+        msg = "\n".join(f"{name}: {url}" for name, url in urls.items())
+        await ctx.send(f"目前遊戲清單：\n{msg}")
 
 
-async def setup(bot: commands.Bot):
+async def setup(bot):
     await bot.add_cog(Party(bot))

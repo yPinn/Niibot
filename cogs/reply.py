@@ -1,43 +1,62 @@
-import datetime
 import random
 
 import discord
 from discord.ext import commands
 
+from utils import util  # 改成 utils 內的 util.py
+
 
 class Reply(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self.target_role_id = 1378242954929639514
+        self.reply_msgs_path = "data/reply_msgs.json"
+        self.reply_msgs = []
+
+    async def load_reply_msgs(self):
+        """非同步載入回覆訊息列表，若檔案不存在或格式錯誤，使用預設訊息"""
+        msgs = await util.read_json(self.reply_msgs_path)
+        if isinstance(msgs, list) and msgs:
+            self.reply_msgs = msgs
+        else:
+            # 預設訊息，避免空列表導致無法回覆
+            self.reply_msgs = [
+                "不要 @ 我，幹你娘！！！",
+                "不熟N標",
+                "?",
+                "幹你娘機掰標三小",
+                "皮 ↘ 炎 ↗",
+                "uu：愛是寂寞人",
+                "不要再冒充我的身分了",
+            ]
 
     @commands.Cog.listener()
-    async def on_message(self, message: discord.Message):
-        if message.author.bot:
-            return
+    async def on_ready(self):
+        """Bot 啟動完成時載入回覆訊息"""
+        await self.load_reply_msgs()
 
-        target_role_id = 1378242954929639514  # 這是 "陳玥黎" 的角色 ID
-        target_user_id = 478194275360964608  # 這是 "31" 的 ID
+    # @commands.Cog.listener()
+    # async def on_message(self, message: discord.Message):
+    #     """監聽訊息，當被指定角色標註時隨機回覆"""
+    #     if message.author.bot:
+    #         return  # 忽略機器人訊息
 
-        mentioned_role_ids = [role.id for role in message.role_mentions]
-        mentioned_user_ids = [user.id for user in message.mentions]
+    #     mentioned_role_ids = [role.id for role in message.role_mentions]
+    #     if self.target_role_id in mentioned_role_ids:
+    #         reply_text = random.choice(self.reply_msgs)
+    #         # 利用 util.format_success_msg 統一格式
+    #         reply_text = util.format_success_msg(reply_text)
+    #         await message.reply(reply_text, mention_author=True)
 
-        msg = [
-            "不要 @ 我，幹你娘！！！",
-            "不熟N標",
-            "?",
-            "幹你娘機掰標三小",
-            "皮 ↘ 炎 ↗",
-            f"不用標 標<@{target_user_id}>就好",
-            "uu：愛是寂寞人",
-            "不要再冒充我的身分了",
-        ]
-
-        if target_role_id in mentioned_role_ids or target_user_id in mentioned_user_ids:
-            await message.reply(random.choice(msg), mention_author=True)
+    #     # 確保其他命令正常運行
+    #     await self.bot.process_commands(message)
 
     @commands.command(name="cc", aliases=["複製", "ditto"], help="複製人，顯示頭像和橫幅")
     async def copycat(self, ctx: commands.Context, *, user_input: str):
+        """複製用戶資料（頭像、橫幅、主題色）"""
         user = None
 
+        # 優先從提及獲取用戶
         if ctx.message.mentions:
             user = ctx.message.mentions[0]
         else:
@@ -53,42 +72,38 @@ class Reply(commands.Cog):
                     if user is None:
                         user = await self.bot.fetch_user(user_id)
                 except ValueError:
-                    await ctx.send(
-                        embed=discord.Embed(
-                            description="⚠️ 請提供有效的用戶 ID、名稱或 @提及",
-                            color=discord.Color.red(),
-                        )
-                    )
+                    await ctx.send(util.format_error_msg("請提供有效的用戶 ID、名稱或 @提及"))
                     return
                 except discord.NotFound:
-                    await ctx.send("⚠️ 找不到該用戶")
+                    await ctx.send(util.format_error_msg("找不到該用戶"))
                     return
 
         if user is None:
-            await ctx.send("⚠️ 找不到該用戶，請確認輸入是否正確")
+            await ctx.send(util.format_error_msg("找不到該用戶，請確認輸入是否正確"))
             return
 
         avatar_url = user.display_avatar.url
-
         banner_url = None
         accent_color = None
         try:
             fetched_user = await self.bot.fetch_user(user.id)
-            banner_url = fetched_user.banner.url if fetched_user.banner else None
+            banner_url = getattr(fetched_user.banner, "url", None)
             accent_color = fetched_user.accent_color
         except Exception:
+            # 無法取得橫幅或主題色，忽略錯誤
             pass
 
-        embed_color = accent_color if accent_color else discord.Color.green()
-
+        embed_color = accent_color or discord.Color.green()
         embed = discord.Embed(
             title=f"{user.display_name} 的資料",
             color=embed_color,
-            timestamp=datetime.datetime.now(),
+            timestamp=util.now_utc(),  # 使用 util 時間函式
         )
 
         embed.set_author(
-            name="Ditto", icon_url="https://i.pinimg.com/736x/41/0b/a5/410ba54a0c7ca00f359d008f4fcebcd0.jpg")
+            name="Ditto",
+            icon_url="https://i.pinimg.com/736x/41/0b/a5/410ba54a0c7ca00f359d008f4fcebcd0.jpg",
+        )
         embed.set_thumbnail(url=avatar_url)
         embed.add_field(name="頭像", value=f"[點我查看]({avatar_url})", inline=False)
 
