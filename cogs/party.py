@@ -63,7 +63,7 @@ class InviteView(View):
 class Party(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.queue = {}  # dict user_id -> display_name
+        self.lobby = {}  # dict user_id -> display_name
         self.lock = asyncio.Lock()
         self.cleanup_task = self.bot.loop.create_task(
             self.cleanup_empty_voice_channels())
@@ -87,7 +87,7 @@ class Party(commands.Cog):
     @commands.command(name="queue", aliases=["q"], help="分隊大廳")
     async def queue(self, ctx: commands.Context):
         """顯示配對大廳與加入/離開排隊按鈕"""
-        view = InviteView(self.queue, lock=self.lock)
+        view = InviteView(self.lobby, lock=self.lock)
         msg = await ctx.send("配對大廳：", view=view)
         view.message = msg
 
@@ -121,13 +121,19 @@ class Party(commands.Cog):
             return False
 
         voice_channels = []
-        for i in range(teams):
-            try:
+        try:
+            for i in range(teams):
                 vc = await guild.create_voice_channel(f"team-{i+1}", category=category)
                 voice_channels.append(vc)
-            except Exception as e:
-                await ctx.send(f"⚠️ 建立語音頻道 team-{i+1} 失敗: {e}")
-                return False
+        except Exception as e:
+            # 刪除已建立的語音頻道
+            for vc in voice_channels:
+                try:
+                    await vc.delete()
+                except Exception as del_e:
+                    print(f"刪除語音頻道 {vc.name} 失敗: {del_e}")
+            await ctx.send(f"⚠️ 建立語音頻道 team-{len(voice_channels)+1} 失敗: {e}")
+            return False
 
         for i, team in enumerate(team_lists):
             vc = voice_channels[i]
@@ -142,9 +148,11 @@ class Party(commands.Cog):
         return True
 
     @commands.command(name="start", help="開始分隊，用法: !start [隊伍數] [每隊人數]")
-    async def start_teams(self, ctx: commands.Context, teams: int = None, players_per_team: int = None):
+    async def start_teams(
+        self, ctx: commands.Context, teams: int = None, players_per_team: int = None
+    ):
         async with self.lock:
-            total_players = len(self.queue)
+            total_players = len(self.lobby)
 
             # 預設值（沒輸入時）
             if teams is None and players_per_team is None:
@@ -170,23 +178,29 @@ class Party(commands.Cog):
 
             max_players_possible = teams * players_per_team
             if max_players_possible > total_players:
-                await ctx.send(f"⚠️ 目前隊列中有 {total_players} 人，無法分成 {teams} 隊，每隊 {players_per_team} 人。")
+                await ctx.send(
+                    f"⚠️ 目前隊列中有 {total_players} 人，無法分成 {teams} 隊，每隊 {players_per_team} 人。"
+                )
                 return
 
             # 依照隊伍數和每隊人數，來決定分隊
-            selected_ids = list(self.queue.keys())[:max_players_possible]
+            selected_ids = list(self.lobby.keys())[:max_players_possible]
 
             # 清空已加入隊列的玩家（只清空被分隊的人）
             for uid in selected_ids:
-                self.queue.pop(uid, None)
+                self.lobby.pop(uid, None)
 
-        await self._distribute_and_move(ctx, teams, players_per_team, selected_ids)
+        success = await self._distribute_and_move(ctx, teams, players_per_team, selected_ids)
+        if not success:
+            return
+
+        # 分隊後的額外處理（如有需要）
 
     @commands.command(name="start-f", help="強制開始分隊（管理員專用）")
     @commands.has_permissions(administrator=True)
     async def force_start(self, ctx: commands.Context, teams: int = 2):
         async with self.lock:
-            total_players = len(self.queue)
+            total_players = len(self.lobby)
             if teams < 1:
                 await ctx.send("⚠️ 隊伍數必須至少 1 隊。")
                 return
@@ -195,16 +209,20 @@ class Party(commands.Cog):
                 return
 
             # 不限制隊伍數要小於人數，強制開始
-            selected_ids = list(self.queue.keys())
+            selected_ids = list(self.lobby.keys())
 
             # 清空已加入隊列的玩家
             for uid in selected_ids:
-                self.queue.pop(uid, None)
+                self.lobby.pop(uid, None)
 
         # 計算平均每隊人數（平均分配）
         players_per_team = (total_players + teams - 1) // teams  # 向上取整
 
-        await self._distribute_and_move(ctx, teams, players_per_team, selected_ids)
+        success = await self._distribute_and_move(ctx, teams, players_per_team, selected_ids)
+        if not success:
+            return
+
+        # 強制分隊後的額外處理（如有需要）
 
     @commands.Cog.listener()
     async def on_voice_state_update(

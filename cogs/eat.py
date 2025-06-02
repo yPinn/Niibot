@@ -1,3 +1,4 @@
+import asyncio
 import os
 import random
 
@@ -14,6 +15,7 @@ class Eat(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.data = {}
+        self._lock = asyncio.Lock()          # ← add
 
     async def initialize(self):
         os.makedirs(DATA_DIR, exist_ok=True)
@@ -61,33 +63,32 @@ class Eat(commands.Cog):
     async def add_eat(self, ctx, category: str, *, item: str):
         category_key = normalize_text(category)
         item_key = normalize_text(item)
-        self.data.setdefault(category_key, [])
-
-        # 先將現有選項正規化比對，避免重複
-        normalized_items = [normalize_text(x) for x in self.data[category_key]]
-        if item_key in normalized_items:
-            await ctx.send("⚠️ 該選項已存在。")
-            return
-
-        self.data[category_key].append(item)
-        await self.save_data()
+        async with self._lock:
+            self.data.setdefault(category_key, [])
+            # 先將現有選項正規化比對，避免重複
+            normalized_items = [normalize_text(x)
+                                for x in self.data[category_key]]
+            if item_key in normalized_items:
+                await ctx.send("⚠️ 該選項已存在。")
+                return
+            self.data[category_key].append(item)
+            await self.save_data()
         await ctx.send(f"✅ 已將「{item}」新增到「{category}」中。")
 
     @commands.command(name="delitem", help="從分類中移除選項，例如：!delitem 主餐 蛋餅")
     async def remove_eat(self, ctx, category: str, *, item: str):
         category_key = normalize_text(category)
         item_key = normalize_text(item)
-
-        if category_key in self.data:
-            # 找出符合正規化的項目原文索引
-            for idx, existing_item in enumerate(self.data[category_key]):
-                if normalize_text(existing_item) == item_key:
-                    removed = self.data[category_key].pop(idx)
-                    await self.save_data()
-                    await ctx.send(f"🗑️ 已移除「{removed}」從「{category}」。")
-                    return
-
-        await ctx.send("⚠️ 找不到該分類或選項。")
+        async with self._lock:
+            if category_key in self.data:
+                # 找出符合正規化的項目原文索引
+                for idx, existing_item in enumerate(self.data[category_key]):
+                    if normalize_text(existing_item) == item_key:
+                        removed = self.data[category_key].pop(idx)
+                        await self.save_data()
+                        await ctx.send(f"🗑️ 已移除「{removed}」從「{category}」。")
+                        return
+            await ctx.send("⚠️ 找不到該分類或選項。")
 
     @commands.command(name="menu", help="顯示某分類的所有選項，例如：!menu 主餐")
     async def show_eat(self, ctx, *, category: str):
@@ -107,12 +108,13 @@ class Eat(commands.Cog):
     @commands.command(name="delcat", help="刪除整個分類，例如：!delcat 早餐")
     async def delete_category(self, ctx, *, category: str):
         category_key = normalize_text(category)
-        if category_key in self.data:
-            del self.data[category_key]
-            await self.save_data()
-            await ctx.send(f"🗑️ 已刪除分類「{category}」。")
-        else:
-            await ctx.send("⚠️ 沒有該分類。")
+        async with self._lock:
+            if category_key in self.data:
+                del self.data[category_key]
+                await self.save_data()
+                await ctx.send(f"🗑️ 已刪除分類「{category}」。")
+            else:
+                await ctx.send("⚠️ 沒有該分類。")
 
 
 async def setup(bot: commands.Bot):
