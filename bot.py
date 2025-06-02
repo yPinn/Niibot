@@ -1,28 +1,29 @@
 import asyncio
 import os
-
 import discord
 from discord.ext import commands
 
-# from keep_alive import keep_alive
+# 根據 BOT_ENV 匯入不同設定
+ENV = os.getenv("BOT_ENV", "local")
+if ENV == "prod":
+    import config_prod as config
+else:
+    import config_local as config
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
-TOKEN = os.getenv("TOKEN")
+if config.USE_KEEP_ALIVE:
+    from keep_alive import keep_alive
+    keep_alive()
 
 intents = discord.Intents.all()
-bot = commands.Bot(command_prefix="?", intents=intents)
+bot = commands.Bot(command_prefix=config.COMMAND_PREFIX, intents=intents)
 
 
 @bot.event
 async def on_ready():
     print(f"使用者 --> {bot.user}")
-    activity = discord.Game(name="Visual Studio Code")
-    # activity = discord.Streaming(
-    #     name="若能向上天祈祷一睡不醒", url="https://www.twitch.tv/llazypilot")
-    await bot.change_presence(status=discord.Status.dnd, activity=activity)
+    activity = discord.Streaming(
+        name=config.STREAM_NAME, url=config.STREAM_URL)
+    await bot.change_presence(status=getattr(discord.Status, config.STATUS), activity=activity)
 
 
 @bot.command(name="l", help="load")
@@ -51,11 +52,9 @@ async def load_extensions():
 
 
 async def main():
-    # keep_alive()
-
     async with bot:
         await load_extensions()
-        await bot.start(TOKEN)
+        await bot.start(config.TOKEN)
 
 
 if __name__ == "__main__":
