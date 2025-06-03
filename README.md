@@ -8,6 +8,10 @@ a Discord bot with Python
 
 - repo
 
+- Twitch bot 整合
+
+
+
 ## repo 功能構想：
 
 > 目前想法為設計一個資料庫查詢，能根據使用者提示，跳出回復(embed+view)
@@ -16,3 +20,4 @@ a Discord bot with Python
 
 > > 遊戲準心代碼+預覽圖
 
+> > dc guild 邀請
