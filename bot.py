@@ -1,9 +1,10 @@
 import asyncio
 import os
-import config
-from utils.util import create_activity
+
 import discord
 from discord.ext import commands
+
+from utils.util import create_activity
 
 # 根據 BOT_ENV 匯入不同設定
 ENV = os.getenv("BOT_ENV", "local")
