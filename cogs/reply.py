@@ -1,7 +1,8 @@
+import random
+
 import discord
 from discord.ext import commands
 
-import random
 from utils import util
 
 
@@ -48,25 +49,6 @@ class Reply(commands.Cog):
     async def on_ready(self):
         await self.load_reply_msgs()
 
-<<<<<<< HEAD
-    # @commands.Cog.listener()
-    # async def on_message(self, message: discord.Message):
-    #     """監聽訊息，當被指定角色標註時隨機回覆"""
-    #     if message.author.bot:
-    #         return  # 忽略機器人訊息
-
-    #     mentioned_role_ids = [role.id for role in message.role_mentions]
-    #     if self.target_role_id in mentioned_role_ids:
-    #         reply_text = random.choice(self.reply_msgs)
-    #         # 利用 util.format_success_msg 統一格式
-    #         reply_text = util.format_success_msg(reply_text)
-    #         await message.reply(reply_text, mention_author=True)
-
-    #     # 確保其他命令正常運行
-    #     await self.bot.process_commands(message)
-
-=======
->>>>>>> dev
     @commands.command(name="cc", aliases=["複製", "ditto"], help="複製人，顯示頭像和橫幅")
     async def copycat(self, ctx: commands.Context, *, user_input: str):
         user = None
