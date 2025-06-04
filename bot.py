@@ -23,6 +23,7 @@ bot = commands.Bot(command_prefix=config.COMMAND_PREFIX, intents=intents)
 @bot.event
 async def on_ready():
     print(f"使用者 --> {bot.user}")
+    print(f"目前環境 --> {ENV}")
     activity = create_activity(config.ACTIVITY_TYPE, config.ACTIVITY_NAME, getattr(
         config, "ACTIVITY_URL", None))
     await bot.change_presence(status=getattr(discord.Status, config.STATUS), activity=activity)
@@ -51,6 +52,7 @@ async def load_extensions():
         if filename.endswith(".py"):
             print(f"載入 {filename}")
             await bot.load_extension(f"cogs.{filename[:-3]}")
+    print("----------------------------")
 
 
 async def main():
