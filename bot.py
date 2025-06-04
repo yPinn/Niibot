@@ -1,7 +1,10 @@
 import asyncio
 import os
+
 import discord
 from discord.ext import commands
+
+from utils.util import create_activity
 
 # 根據 BOT_ENV 匯入不同設定
 ENV = os.getenv("BOT_ENV", "local")
@@ -21,8 +24,9 @@ bot = commands.Bot(command_prefix=config.COMMAND_PREFIX, intents=intents)
 @bot.event
 async def on_ready():
     print(f"使用者 --> {bot.user}")
-    activity = discord.Streaming(
-        name=config.STREAM_NAME, url=config.STREAM_URL)
+    print(f"目前環境 --> {ENV}")
+    activity = create_activity(config.ACTIVITY_TYPE, config.ACTIVITY_NAME, getattr(
+        config, "ACTIVITY_URL", None))
     await bot.change_presence(status=getattr(discord.Status, config.STATUS), activity=activity)
 
 
@@ -49,6 +53,7 @@ async def load_extensions():
         if filename.endswith(".py"):
             print(f"載入 {filename}")
             await bot.load_extension(f"cogs.{filename[:-3]}")
+    print("----------------------------")
 
 
 async def main():

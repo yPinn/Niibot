@@ -6,6 +6,8 @@ import os
 import asyncio
 import aiofiles
 from typing import Any
+import discord
+
 # --- 文字處理工具 ---
 
 
@@ -99,6 +101,23 @@ def format_error_msg(msg: str) -> str:
 def format_success_msg(msg: str) -> str:
     """格式化成功訊息字串"""
     return f"✅ {msg}"
+
+
+def create_activity(activity_type: str, name: str, url: str = None) -> discord.Activity:
+    activity_type = activity_type.lower()
+
+    if activity_type == "playing":
+        return discord.Game(name=name)
+    elif activity_type == "streaming":
+        return discord.Streaming(name=name, url=url or "https://twitch.tv/")
+    elif activity_type == "listening":
+        return discord.Activity(type=discord.ActivityType.listening, name=name)
+    elif activity_type == "watching":
+        return discord.Activity(type=discord.ActivityType.watching, name=name)
+    elif activity_type == "competing":
+        return discord.Activity(type=discord.ActivityType.competing, name=name)
+    else:
+        raise ValueError(f"未知的 ACTIVITY_TYPE: {activity_type}")
 
 # --- 簡易冷卻機制 ---
 
