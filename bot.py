@@ -1,5 +1,7 @@
 import asyncio
 import os
+import config
+from utils.util import create_activity
 import discord
 from discord.ext import commands
 
@@ -21,8 +23,8 @@ bot = commands.Bot(command_prefix=config.COMMAND_PREFIX, intents=intents)
 @bot.event
 async def on_ready():
     print(f"使用者 --> {bot.user}")
-    activity = discord.Streaming(
-        name=config.STREAM_NAME, url=config.STREAM_URL)
+    activity = create_activity(config.ACTIVITY_TYPE, config.ACTIVITY_NAME, getattr(
+        config, "ACTIVITY_URL", None))
     await bot.change_presence(status=getattr(discord.Status, config.STATUS), activity=activity)
 
 
