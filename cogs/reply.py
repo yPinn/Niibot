@@ -1,52 +1,54 @@
-import random
-
 import discord
 from discord.ext import commands
 
-from utils import util  # 改成 utils 內的 util.py
+import random
+from utils import util
 
 
 class Reply(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.target_role_id = 1378242954929639514
+        self.target_role_id = 1378242954929639514  # 直接寫在 class 內
         self.reply_msgs_path = "data/reply_msgs.json"
         self.reply_msgs = []
 
     async def load_reply_msgs(self):
-        """非同步載入回覆訊息列表，若檔案不存在或格式錯誤，使用預設訊息"""
         try:
             msgs = await util.read_json(self.reply_msgs_path)
-            if isinstance(msgs, list) and msgs:
-                self.reply_msgs = msgs
-            else:
-                # 預設訊息，避免空列表導致無法回覆
-                self.reply_msgs = [
-                    "不要 @ 我，幹你娘！！！",
-                    "不熟N標",
-                    "?",
-                    "幹你娘機掰標三小",
-                    "皮 ↘ 炎 ↗",
-                    "uu：愛是寂寞人",
-                    "不要再冒充我的身分了",
-                ]
+            self.reply_msgs = msgs if isinstance(
+                msgs, list) and msgs else self.default_msgs()
         except Exception as e:
             print(f"[Reply] failed to load msgs: {e}")
-            self.reply_msgs = [
-                "不要 @ 我，幹你娘！！！",
-                "不熟N標",
-                "?",
-                "幹你娘機掰標三小",
-                "皮 ↘ 炎 ↗",
-                "uu：愛是寂寞人",
-                "不要再冒充我的身分了",
-            ]
+            self.reply_msgs = self.default_msgs()
+
+    def default_msgs(self):
+        return [
+            "不要 @ 我，幹你娘！！！",
+            "不熟N標",
+            "?",
+            "幹你娘機掰標三小",
+            "皮 ↘ 炎 ↗",
+            "uu：愛是寂寞人",
+            "不要再冒充我的身分了",
+        ]
+
+    async def handle_on_message(self, message: discord.Message):
+        # 不回應機器人自己
+        if message.author.bot:
+            return
+
+        # 例如：當訊息中含有特定關鍵字或符合某條件時，隨機回覆
+        keywords = ["@機器人", "呼叫", "喂"]
+        if any(k in message.content for k in keywords):
+            if self.reply_msgs:
+                reply = random.choice(self.reply_msgs)
+                await message.channel.send(reply)
 
     @commands.Cog.listener()
     async def on_ready(self):
-        """Bot 啟動完成時載入回覆訊息"""
         await self.load_reply_msgs()
 
+<<<<<<< HEAD
     # @commands.Cog.listener()
     # async def on_message(self, message: discord.Message):
     #     """監聽訊息，當被指定角色標註時隨機回覆"""
@@ -63,12 +65,12 @@ class Reply(commands.Cog):
     #     # 確保其他命令正常運行
     #     await self.bot.process_commands(message)
 
+=======
+>>>>>>> dev
     @commands.command(name="cc", aliases=["複製", "ditto"], help="複製人，顯示頭像和橫幅")
     async def copycat(self, ctx: commands.Context, *, user_input: str):
-        """複製用戶資料（頭像、橫幅、主題色）"""
         user = None
 
-        # 優先從提及獲取用戶
         if ctx.message.mentions:
             user = ctx.message.mentions[0]
         else:
@@ -102,16 +104,13 @@ class Reply(commands.Cog):
             banner_url = getattr(fetched_user.banner, "url", None)
             accent_color = fetched_user.accent_color
         except Exception:
-            # 無法取得橫幅或主題色，忽略錯誤
             pass
 
-        embed_color = accent_color or discord.Color.green()
         embed = discord.Embed(
             title=f"{user.display_name} 的資料",
-            color=embed_color,
-            timestamp=util.now_utc(),  # 使用 util 時間函式
+            color=accent_color or discord.Color.green(),
+            timestamp=util.now_utc(),
         )
-
         embed.set_author(
             name="Ditto",
             icon_url="https://i.pinimg.com/736x/41/0b/a5/410ba54a0c7ca00f359d008f4fcebcd0.jpg",
@@ -139,4 +138,7 @@ class Reply(commands.Cog):
 
 
 async def setup(bot: commands.Bot):
-    await bot.add_cog(Reply(bot))
+    reply = Reply(bot)
+    await reply.load_reply_msgs()
+    await bot.add_cog(reply)
+    bot.reply = reply  # 方便 Listener 拿到
