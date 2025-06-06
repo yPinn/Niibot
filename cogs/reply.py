@@ -9,7 +9,7 @@ from utils import util
 class Reply(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.target_role_id = 1378242954929639514  # 直接寫在 class 內
+        self.target_role_id = 1378242954929639514
         self.reply_msgs_path = "data/reply_msgs.json"
         self.reply_msgs = []
 
@@ -24,13 +24,14 @@ class Reply(commands.Cog):
 
     def default_msgs(self):
         return [
-            "不要 @ 我，幹你娘！！！",
+            "不要 @ 我，白目嗎！！！",
             "不熟N標",
             "?",
-            "幹你娘機掰標三小",
+            # "幹你娘機掰標三小",
             "皮 ↘ 炎 ↗",
-            "uu：愛是寂寞人",
+            # "uu：愛是寂寞人",
             "不要再冒充我的身分了",
+            "請問你誰？交叉燒查榜除了我以外沒有同時需要考慮這兩間麵店的..如果你是要分顆肉包 那真心祝你加油粿 而且你也昨天搶票 如果你是真人希望有機會能成為志同道合作社的朋友 但如果你是用我的身分起號 我覺得有點噁心 如果有冒犯到你的話很抱歉，只是因為你連帳號都跟我很像、通通跟我一樣才有點敏感"
         ]
 
     async def handle_on_message(self, message: discord.Message):
@@ -38,9 +39,16 @@ class Reply(commands.Cog):
         if message.author.bot:
             return
 
-        # 例如：當訊息中含有特定關鍵字或符合某條件時，隨機回覆
-        keywords = ["@機器人", "呼叫", "喂"]
-        if any(k in message.content for k in keywords):
+        # 原本的關鍵字條件
+        keywords = ["呼叫"]
+        match_keyword = any(k in message.content for k in keywords)
+
+        # 新增：提及指定身分組的條件
+        match_role_mention = any(
+            role.id == self.target_role_id for role in message.role_mentions)
+
+        # 如果符合任一條件，隨機回覆
+        if match_keyword or match_role_mention:
             if self.reply_msgs:
                 reply = random.choice(self.reply_msgs)
                 await message.channel.send(reply)
