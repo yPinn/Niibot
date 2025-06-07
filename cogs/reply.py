@@ -51,7 +51,7 @@ class Reply(commands.Cog):
         if match_keyword or match_role_mention:
             if self.reply_msgs:
                 reply = random.choice(self.reply_msgs)
-                await message.channel.send(reply)
+                await message.reply(reply, mention_author=False)
 
     @commands.Cog.listener()
     async def on_ready(self):
