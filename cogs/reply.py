@@ -126,6 +126,28 @@ class Reply(commands.Cog):
 
         await ctx.send(embed=embed)
 
+    @commands.commands(name="皮一下")
+    async def twitch_notice(self):
+        # channel_id = 1305512362526380053
+        channel_id = 1330760022912925777
+        twitch_url = "https://www.twitch.tv/31xuy"
+        role_mention = "@開台通知"  # 如果你要 mention 特定角色，請改為 f"<@&角色ID>"
+
+        channel = self.bot.get_channel(channel_id)
+        if channel:
+            message_text = f"開台ㄌ\n{role_mention}\n{twitch_url}"
+
+            embed = discord.Embed(
+                title="點我看直播！",
+                url=twitch_url,
+                description="🎮 31xuy 開台囉～快來收看！",
+                color=discord.Color.purple()
+            )
+            embed.set_author(
+                name="Twitch Live", icon_url="https://static.twitchcdn.net/assets/favicon-32-e29e246c157142c94346.png")
+
+            await channel.send(content=message_text, embed=embed)
+
 
 async def setup(bot: commands.Bot):
     reply = Reply(bot)
