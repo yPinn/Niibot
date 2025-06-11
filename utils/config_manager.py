@@ -54,7 +54,7 @@ class ConfigManager:
                 'MAX_QUEUE_SIZE': int(os.getenv('MAX_QUEUE_SIZE', '50')),
                 'DEFAULT_TEAMS': int(os.getenv('DEFAULT_TEAMS', '2')),
                 'LOG_LEVEL': os.getenv('LOG_LEVEL', 'INFO'),
-                'LOG_FILE': os.getenv('LOG_FILE', 'logs/niibot.log' if env == 'prod' else None),
+                'LOG_FILE': os.getenv('LOG_FILE', None),  # 生產環境不寫入檔案，避免權限問題
                 'DATA_DIR': os.getenv('DATA_DIR', 'data'),
                 'EMOJI_SAVE_INTERVAL': int(os.getenv('EMOJI_SAVE_INTERVAL', '30')),
                 'REMINDER_CLEANUP_HOURS': int(os.getenv('REMINDER_CLEANUP_HOURS', '24')),

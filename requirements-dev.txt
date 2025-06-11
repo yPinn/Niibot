@@ -1,0 +1,15 @@
+# Development Dependencies - 開發環境依賴
+# 繼承主要依賴套件
+-r requirements.txt
+
+# Code Quality Tools - 程式碼品質工具
+black>=23.0.0,<24.0.0
+flake8>=6.0.0,<7.0.0
+isort>=5.12.0,<6.0.0
+
+# Testing Framework - 測試框架
+pytest>=7.4.0,<8.0.0
+pytest-asyncio>=0.21.0,<1.0.0
+
+# Development Utilities - 開發工具
+pipreqs>=0.4.13,<1.0.0

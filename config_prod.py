@@ -2,7 +2,9 @@
 
 import os
 
-TOKEN: str = os.getenv("TOKEN", "")  # 使用環境變數
+TOKEN: str = os.getenv("TOKEN")  # 使用環境變數，無預設值以避免空 token 問題
+if not TOKEN:
+    raise ValueError("TOKEN 環境變數未設定或為空值")
 STATUS: str = "online"
 # 可選: playing, streaming, listening, watching, competing
 ACTIVITY_TYPE: str = "streaming"
