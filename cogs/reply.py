@@ -4,22 +4,25 @@ import discord
 from discord.ext import commands
 
 from utils import util
+from utils.logger import BotLogger
+from utils.config_manager import config
+from utils.util import BaseDataManager
 
 
 class Reply(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.target_role_id = 1378242954929639514
-        self.reply_msgs_path = "data/reply_msgs.json"
+        self.target_role_id = config.target_role_id
+        self.data_manager = BaseDataManager("reply_msgs.json", self.default_msgs())
         self.reply_msgs = []
 
     async def load_reply_msgs(self):
         try:
-            msgs = await util.read_json(self.reply_msgs_path)
-            self.reply_msgs = msgs if isinstance(
-                msgs, list) and msgs else self.default_msgs()
+            msgs = await self.data_manager.get_data()
+            self.reply_msgs = msgs if isinstance(msgs, list) and msgs else self.default_msgs()
+            BotLogger.info("Reply", f"載入了 {len(self.reply_msgs)} 條回覆訊息")
         except Exception as e:
-            print(f"[Reply] failed to load msgs: {e}")
+            BotLogger.error("Reply", "載入回覆訊息失敗", e)
             self.reply_msgs = self.default_msgs()
 
     def default_msgs(self):
@@ -52,6 +55,15 @@ class Reply(commands.Cog):
             if self.reply_msgs:
                 reply = random.choice(self.reply_msgs)
                 await message.reply(reply, mention_author=False)
+                
+                # 記錄觸發情況
+                trigger_type = "關鍵字" if match_keyword else "身分組提及"
+                BotLogger.user_action(
+                    "回覆觸發", 
+                    message.author.id, 
+                    message.guild.id if message.guild else 0,
+                    f"觸發類型: {trigger_type}, 訊息: {util.truncate_text(message.content)}"
+                )
 
     @commands.Cog.listener()
     async def on_ready(self):
@@ -76,14 +88,20 @@ class Reply(commands.Cog):
                     if user is None:
                         user = await self.bot.fetch_user(user_id)
                 except ValueError:
-                    await ctx.send(util.format_error_msg("請提供有效的用戶 ID、名稱或 @提及"))
+                    error_msg = "請提供有效的用戶 ID、名稱或 @提及"
+                    await ctx.send(util.format_error_msg(error_msg))
+                    BotLogger.command_used("cc", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"錯誤: {error_msg}")
                     return
                 except discord.NotFound:
-                    await ctx.send(util.format_error_msg("找不到該用戶"))
+                    error_msg = "找不到該用戶"
+                    await ctx.send(util.format_error_msg(error_msg))
+                    BotLogger.command_used("cc", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"錯誤: {error_msg}")
                     return
 
         if user is None:
-            await ctx.send(util.format_error_msg("找不到該用戶，請確認輸入是否正確"))
+            error_msg = "找不到該用戶，請確認輸入是否正確"
+            await ctx.send(util.format_error_msg(error_msg))
+            BotLogger.command_used("cc", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"錯誤: {error_msg}")
             return
 
         avatar_url = user.display_avatar.url
@@ -93,8 +111,8 @@ class Reply(commands.Cog):
             fetched_user = await self.bot.fetch_user(user.id)
             banner_url = getattr(fetched_user.banner, "url", None)
             accent_color = fetched_user.accent_color
-        except Exception:
-            pass
+        except Exception as e:
+            BotLogger.warning("Reply", f"取得用戶 {user.id} 的詳細資料失敗", e)
 
         embed = discord.Embed(
             title=f"{user.display_name} 的資料",
@@ -125,6 +143,14 @@ class Reply(commands.Cog):
         )
 
         await ctx.send(embed=embed)
+        
+        # 記錄成功的指令使用
+        BotLogger.command_used(
+            "cc", 
+            ctx.author.id, 
+            ctx.guild.id if ctx.guild else 0, 
+            f"目標用戶: {user.display_name} ({user.id})"
+        )
 
 
 async def setup(bot: commands.Bot):
@@ -132,3 +158,4 @@ async def setup(bot: commands.Bot):
     await reply.load_reply_msgs()
     await bot.add_cog(reply)
     bot.reply = reply  # 方便 Listener 拿到
+    BotLogger.system_event("Cog載入", "Reply cog 已成功載入")

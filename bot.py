@@ -4,63 +4,117 @@ import os
 import discord
 from discord.ext import commands
 
-from utils.util import create_activity
+from utils.util import create_activity, ensure_data_dir
+from utils.logger import BotLogger
+from utils.config_manager import config
 
-# 根據 BOT_ENV 匯入不同設定
-ENV = os.getenv("BOT_ENV", "local")
-if ENV == "prod":
-    import config_prod as config
-else:
-    import config_local as config
+ENV = config.get('BOT_ENV', 'local')
 
-if config.USE_KEEP_ALIVE:
-    from keep_alive import keep_alive
-    keep_alive()
+# 初始化日誌系統
+BotLogger.initialize(config.log_level, config.log_file)
+
+# 確保資料目錄存在
+ensure_data_dir()
+
+if config.use_keep_alive:
+    try:
+        from keep_alive import keep_alive
+        keep_alive()
+        BotLogger.system_event("保持連線", "Flask 伺服器已啟動")
+    except ImportError as e:
+        BotLogger.error("KeepAlive", "無法匯入 keep_alive 模組", e)
 
 intents = discord.Intents.all()
-bot = commands.Bot(command_prefix=config.COMMAND_PREFIX, intents=intents)
+bot = commands.Bot(command_prefix=config.command_prefix, intents=intents)
+
+BotLogger.system_event("機器人初始化", f"環境: {ENV}, 前綴: {config.command_prefix}")
 
 
 @bot.event
 async def on_ready():
-    print(f"使用者 --> {bot.user}")
-    print(f"目前環境 --> {ENV}")
-    activity = create_activity(config.ACTIVITY_TYPE, config.ACTIVITY_NAME, getattr(
-        config, "ACTIVITY_URL", None))
-    await bot.change_presence(status=getattr(discord.Status, config.STATUS), activity=activity)
+    BotLogger.system_event("機器人上線", f"使用者: {bot.user}, 環境: {ENV}")
+    
+    try:
+        activity = create_activity()
+        await bot.change_presence(status=getattr(discord.Status, config.status), activity=activity)
+        BotLogger.system_event("狀態設定", f"狀態: {config.status}, 活動: {config.activity_name}")
+    except Exception as e:
+        BotLogger.error("BotStatus", "設定機器人狀態失敗", e)
 
 
 @bot.command(name="l", help="load")
 async def load(ctx, extension):
-    await bot.load_extension(f"cogs.{extension}")
-    await ctx.send(f"L: {extension} done.")
+    try:
+        await bot.load_extension(f"cogs.{extension}")
+        await ctx.send(f"L: {extension} done.")
+        BotLogger.command_used("load", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"載入: {extension}")
+    except Exception as e:
+        error_msg = f"載入 {extension} 失敗: {str(e)}"
+        await ctx.send(error_msg)
+        BotLogger.error("CogLoader", error_msg, e)
 
 
 @bot.command(name="u", help="unload")
 async def unload(ctx, extension):
-    await bot.unload_extension(f"cogs.{extension}")
-    await ctx.send(f"U: {extension} done.")
+    try:
+        await bot.unload_extension(f"cogs.{extension}")
+        await ctx.send(f"U: {extension} done.")
+        BotLogger.command_used("unload", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"卸載: {extension}")
+    except Exception as e:
+        error_msg = f"卸載 {extension} 失敗: {str(e)}"
+        await ctx.send(error_msg)
+        BotLogger.error("CogLoader", error_msg, e)
 
 
 @bot.command(name="rl", help="reload")
 async def reload(ctx, extension):
-    await bot.reload_extension(f"cogs.{extension}")
-    await ctx.send(f"RL: {extension} done.")
+    try:
+        await bot.reload_extension(f"cogs.{extension}")
+        await ctx.send(f"RL: {extension} done.")
+        BotLogger.command_used("reload", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"重載: {extension}")
+    except Exception as e:
+        error_msg = f"重載 {extension} 失敗: {str(e)}"
+        await ctx.send(error_msg)
+        BotLogger.error("CogLoader", error_msg, e)
 
 
 async def load_extensions():
+    loaded_count = 0
+    failed_count = 0
+    
     for filename in os.listdir("./cogs"):
         if filename.endswith(".py"):
-            print(f"載入 {filename}")
-            await bot.load_extension(f"cogs.{filename[:-3]}")
-    print("----------------------------")
+            cog_name = filename[:-3]
+            try:
+                await bot.load_extension(f"cogs.{cog_name}")
+                BotLogger.info("CogLoader", f"成功載入: {cog_name}")
+                loaded_count += 1
+            except Exception as e:
+                BotLogger.error("CogLoader", f"載入 {cog_name} 失敗", e)
+                failed_count += 1
+    
+    BotLogger.system_event(
+        "Cog載入完成", 
+        f"成功: {loaded_count}, 失敗: {failed_count}"
+    )
 
 
 async def main():
-    async with bot:
-        await load_extensions()
-        await bot.start(config.TOKEN)
+    try:
+        async with bot:
+            await load_extensions()
+            BotLogger.system_event("機器人啟動", "正在連接到 Discord...")
+            await bot.start(config.token)
+    except Exception as e:
+        BotLogger.critical("BotMain", "機器人啟動失敗", e)
+        raise
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        BotLogger.system_event("機器人關閉", "接收到中斷信號")
+    except Exception as e:
+        BotLogger.critical("BotMain", "機器人執行失敗", e)
+        raise

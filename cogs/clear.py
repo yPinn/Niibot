@@ -4,12 +4,15 @@ import discord
 from discord.ext import commands
 
 from utils.util import Cooldown, format_error_msg, format_success_msg
+from utils.logger import BotLogger
+from utils.config_manager import config
 
 
 class Clear(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.cooldown = Cooldown(10)  # 10 秒冷卻
+        BotLogger.info("Clear", "Clear cog 初始化完成")
 
     @commands.command(
         name="clear",
@@ -20,11 +23,16 @@ class Clear(commands.Cog):
         user_id = ctx.author.id
 
         if self.cooldown.is_on_cooldown(user_id):
-            await ctx.send(format_error_msg("請稍等，指令冷卻中。"))
+            remaining = self.cooldown.get_remaining_time(user_id)
+            error_msg = f"請稍等，指令冷卻中（剩餘 {remaining:.1f} 秒）。"
+            await ctx.send(format_error_msg(error_msg))
+            BotLogger.command_used("clear", user_id, ctx.guild.id if ctx.guild else 0, f"冷卻中: {remaining:.1f}s")
             return
 
-        if amount < 1:
-            await ctx.send(format_error_msg("請輸入正確的數量（大於 0）。"))
+        if amount < 1 or amount > 1000:
+            error_msg = "請輸入正確的數量（1-1000）。"
+            await ctx.send(format_error_msg(error_msg))
+            BotLogger.command_used("clear", user_id, ctx.guild.id if ctx.guild else 0, f"無效數量: {amount}")
             return
 
         try:
@@ -33,7 +41,7 @@ class Clear(commands.Cog):
             except discord.NotFound:
                 pass
             except discord.HTTPException as e:
-                print(format_error_msg(f"刪除指令訊息失敗：{e}"))
+                BotLogger.warning("Clear", f"刪除指令訊息失敗", e)
 
             def is_user_message(m: discord.Message):
                 return not m.author.bot
@@ -51,7 +59,9 @@ class Clear(commands.Cog):
                     break
 
             if not messages_to_delete:
-                await ctx.send(format_error_msg("找不到可刪除的訊息。"))
+                error_msg = "找不到可刪除的訊息。"
+                await ctx.send(format_error_msg(error_msg))
+                BotLogger.command_used("clear", user_id, ctx.guild.id if ctx.guild else 0, "無訊息可刪除")
                 return
 
             cutoff = datetime.now(timezone.utc) - timedelta(days=14)
@@ -78,7 +88,9 @@ class Clear(commands.Cog):
                         user_deleted_count = sum(
                             1 for m in deletable_messages if is_user_message(m))
             except discord.HTTPException as e:
-                await ctx.send(format_error_msg(f"刪除訊息失敗：{e}"))
+                error_msg = f"刪除訊息失敗：{e}"
+                await ctx.send(format_error_msg(error_msg))
+                BotLogger.error("Clear", "刪除訊息失敗", e)
                 return
 
             try:
@@ -87,25 +99,45 @@ class Clear(commands.Cog):
                 ))
                 await confirm.delete(delay=2)
             except discord.HTTPException as e:
-                print(format_error_msg(f"無法發送或刪除確認訊息：{e}"))
+                BotLogger.warning("Clear", f"無法發送或刪除確認訊息", e)
 
             self.cooldown.update_timestamp(user_id)
+            
+            # 記錄成功的清理操作
+            BotLogger.command_used(
+                "clear", 
+                user_id, 
+                ctx.guild.id if ctx.guild else 0,
+                f"清理成功: {user_deleted_count} 則用戶訊息，總共 {deleted_count} 則"
+            )
 
         except Exception as e:
+            error_msg = f"發生未知錯誤：{str(e)}"
+            BotLogger.error("Clear", "清理指令發生異常", e)
             try:
-                await ctx.send(format_error_msg(f"發生錯誤：{str(e)}"))
+                await ctx.send(format_error_msg(error_msg))
             except discord.NotFound:
                 pass
 
     @clear_all_messages.error
     async def clear_error(self, ctx: commands.Context, error):
+        user_id = ctx.author.id
+        guild_id = ctx.guild.id if ctx.guild else 0
+        
         if isinstance(error, commands.MissingPermissions):
-            await ctx.send(format_error_msg("你沒有管理訊息的權限，無法執行此指令。"))
+            error_msg = "你沒有管理訊息的權限，無法執行此指令。"
+            await ctx.send(format_error_msg(error_msg))
+            BotLogger.command_used("clear", user_id, guild_id, "權限不足")
         elif isinstance(error, commands.BadArgument):
-            await ctx.send(format_error_msg("參數錯誤，請輸入數字，例如：`?clear 50`。"))
+            error_msg = "參數錯誤，請輸入數字，例如：`?clear 50`。"
+            await ctx.send(format_error_msg(error_msg))
+            BotLogger.command_used("clear", user_id, guild_id, "參數錯誤")
         else:
-            await ctx.send(format_error_msg(f"發生錯誤：{error}"))
+            error_msg = f"發生錯誤：{error}"
+            await ctx.send(format_error_msg(error_msg))
+            BotLogger.error("Clear", "指令錯誤處理", error)
 
 
 async def setup(bot):
     await bot.add_cog(Clear(bot))
+    BotLogger.system_event("Cog載入", "Clear cog 已成功載入")

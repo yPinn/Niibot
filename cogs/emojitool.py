@@ -1,52 +1,80 @@
 import os
 import re
+import asyncio
 import discord
 from discord.ext import commands
 from utils import util
+from utils.logger import BotLogger
+from utils.config_manager import config
+from utils.util import GuildDataManager
 
 
 class EmojiTool(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.emoji_data = {}
-        self.keyword_reply_map = {}
-        self.emoji_usage_stats = {}
-        self.emoji_json_path = "data/emoji.json"
-        self.keyword_reply_json_path = "data/keyword_replies.json"
-        self.emoji_stats_json_path = "data/emoji_stats.json"
+        self.emoji_data_manager = GuildDataManager("emoji.json", {})
+        self.keyword_reply_manager = GuildDataManager("keyword_replies.json", {})
+        self.emoji_stats_manager = GuildDataManager("emoji_stats.json", {})
+        self._save_task = None
+        self._pending_stats = {}
+        BotLogger.info("EmojiTool", "EmojiTool cog 初始化完成")
 
     async def load_data(self):
-        await self._load_emojis()
-        await self._load_keyword_replies()
-        await self._load_emoji_stats()
+        try:
+            await self.emoji_data_manager.load_data()
+            await self.keyword_reply_manager.load_data()
+            await self.emoji_stats_manager.load_data()
+            self._start_periodic_save()
+            BotLogger.info("EmojiTool", "資料載入完成")
+        except Exception as e:
+            BotLogger.error("EmojiTool", "載入資料失敗", e)
 
-    async def _load_emojis(self):
-        if not os.path.exists(self.emoji_json_path):
-            os.makedirs(os.path.dirname(self.emoji_json_path), exist_ok=True)
-            await util.write_json(self.emoji_json_path, {"guild_emojis": {}})
-        data = await util.read_json(self.emoji_json_path)
-        self.emoji_data = data.get("guild_emojis", {})
+    def _start_periodic_save(self):
+        """啟動定期儲存任務"""
+        if self._save_task is None or self._save_task.done():
+            self._save_task = asyncio.create_task(self._periodic_save())
+    
+    async def _periodic_save(self):
+        """定期儲存表情符號統計"""
+        while True:
+            try:
+                await asyncio.sleep(config.emoji_save_interval)
+                if self._pending_stats:
+                    await self._flush_pending_stats()
+            except Exception as e:
+                BotLogger.error("EmojiTool", "定期儲存失敗", e)
+    
+    async def _flush_pending_stats(self):
+        """清空待處理的統計資料"""
+        if not self._pending_stats:
+            return
+            
+        try:
+            for guild_id, stats in self._pending_stats.items():
+                current_stats = await self.emoji_stats_manager.get_guild_data(guild_id)
+                for emoji_name, count in stats.items():
+                    current_stats[emoji_name] = current_stats.get(emoji_name, 0) + count
+                await self.emoji_stats_manager.update_guild_data(guild_id, current_stats)
+            
+            saved_count = sum(len(stats) for stats in self._pending_stats.values())
+            self._pending_stats.clear()
+            BotLogger.debug("EmojiTool", f"已儲存 {saved_count} 個表情符號統計")
+        except Exception as e:
+            BotLogger.error("EmojiTool", "清空待處理統計失敗", e)
 
-    async def _load_keyword_replies(self):
-        if not os.path.exists(self.keyword_reply_json_path):
-            await util.write_json(self.keyword_reply_json_path, {})
-        self.keyword_reply_map = await util.read_json(self.keyword_reply_json_path)
+    async def replace_emojis_in_text(self, guild_id: int, text: str) -> str:
+        try:
+            emoji_map = await self.emoji_data_manager.get_guild_data(guild_id)
+            pattern = re.compile(r":([a-zA-Z0-9_]+):")
 
-    async def _load_emoji_stats(self):
-        if not os.path.exists(self.emoji_stats_json_path):
-            await util.write_json(self.emoji_stats_json_path, {})
-        self.emoji_usage_stats = await util.read_json(self.emoji_stats_json_path)
-
-    async def save_emoji_stats(self):
-        await util.write_json(self.emoji_stats_json_path, self.emoji_usage_stats)
-
-    def replace_emojis_in_text(self, guild_id: int, text: str) -> str:
-        emoji_map = self.emoji_data.get(str(guild_id), {})
-        pattern = re.compile(r":([a-zA-Z0-9_]+):")
-
-        def replacer(match):
-            name = match.group(1)
-            return emoji_map.get(name, match.group(0))
+            def replacer(match):
+                name = match.group(1)
+                return emoji_map.get(name, match.group(0))
+                
+            return pattern.sub(replacer, text)
+        except Exception as e:
+            BotLogger.error("EmojiTool", f"替換表情符號失敗 (Guild: {guild_id})", e)
+            return text
 
         return pattern.sub(replacer, text)
 
