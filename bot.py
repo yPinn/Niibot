@@ -109,6 +109,7 @@ async def main():
     
     try:
         async with bot:
+            BotLogger.system_event("開始載入擴充功能", "準備載入 cogs...")
             await load_extensions()
             BotLogger.system_event("機器人啟動", "正在連接到 Discord...")
             BotLogger.info("TokenDebug", f"Token 長度: {len(config.token)} 字符")
