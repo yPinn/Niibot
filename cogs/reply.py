@@ -1,3 +1,4 @@
+import asyncio
 import random
 
 import discord
@@ -155,7 +156,7 @@ class Reply(commands.Cog):
 
 async def setup(bot: commands.Bot):
     reply = Reply(bot)
-    await reply.load_reply_msgs()
+    # 延遲載入資料，避免阻塞 cog 載入過程
+    asyncio.create_task(reply.load_reply_msgs())
     await bot.add_cog(reply)
-    bot.reply = reply  # 方便 Listener 拿到
     BotLogger.system_event("Cog載入", "Reply cog 已成功載入")
