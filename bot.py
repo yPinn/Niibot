@@ -98,12 +98,15 @@ async def load_extensions():
 
 
 async def main():
-    # 啟動 Flask keep_alive 服務
+    # 先啟動 Flask keep_alive 服務，讓 Render 檢測到開放端口
     if config.use_keep_alive:
         try:
             from keep_alive import keep_alive
             keep_alive()
             BotLogger.system_event("保持連線", "Flask 伺服器已啟動")
+            # 給 Flask 時間完全啟動並讓 Render 檢測到
+            import asyncio
+            await asyncio.sleep(2)
         except ImportError as e:
             BotLogger.error("KeepAlive", "無法匯入 keep_alive 模組", e)
     
