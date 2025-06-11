@@ -16,13 +16,7 @@ BotLogger.initialize(config.log_level, config.log_file)
 # 確保資料目錄存在
 ensure_data_dir()
 
-if config.use_keep_alive:
-    try:
-        from keep_alive import keep_alive
-        keep_alive()
-        BotLogger.system_event("保持連線", "Flask 伺服器已啟動")
-    except ImportError as e:
-        BotLogger.error("KeepAlive", "無法匯入 keep_alive 模組", e)
+# keep_alive 將在 main() 函數中啟動
 
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix=config.command_prefix, intents=intents)
@@ -104,6 +98,15 @@ async def load_extensions():
 
 
 async def main():
+    # 啟動 Flask keep_alive 服務
+    if config.use_keep_alive:
+        try:
+            from keep_alive import keep_alive
+            keep_alive()
+            BotLogger.system_event("保持連線", "Flask 伺服器已啟動")
+        except ImportError as e:
+            BotLogger.error("KeepAlive", "無法匯入 keep_alive 模組", e)
+    
     try:
         async with bot:
             await load_extensions()
