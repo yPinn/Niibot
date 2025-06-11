@@ -247,4 +247,6 @@ class Eat(commands.Cog):
 
 
 async def setup(bot: commands.Bot):
-    await bot.add_cog(Eat(bot))
+    eat_cog = Eat(bot)
+    await eat_cog.initialize()  # 確保資料初始化完成
+    await bot.add_cog(eat_cog)
