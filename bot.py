@@ -80,9 +80,16 @@ async def load_extensions():
     import os
     cogs_dir = os.path.join(os.path.dirname(__file__), "cogs")
     
+    # 暫時只載入基本 cogs 測試 Discord 連線
+    basic_cogs = ["party", "clock", "draw"]
+    
     for filename in os.listdir(cogs_dir):
         if filename.endswith(".py"):
             cog_name = filename[:-3]
+            if cog_name not in basic_cogs:
+                BotLogger.info("CogLoader", f"跳過載入: {cog_name} (測試模式)")
+                continue
+                
             try:
                 await bot.load_extension(f"cogs.{cog_name}")
                 BotLogger.info("CogLoader", f"成功載入: {cog_name}")
