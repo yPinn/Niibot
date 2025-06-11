@@ -18,7 +18,11 @@ python bot.py
 
 **Installing dependencies 安裝依賴套件:**
 ```bash
+# 生產環境
 pip install -r requirements.txt
+
+# 開發環境（包含程式碼品質工具）
+pip install -r requirements-dev.txt
 ```
 
 ## Architecture 架構
@@ -26,8 +30,10 @@ pip install -r requirements.txt
 ### Configuration System 配置系統
 - `config_local.py` - Local development configuration (uses .env file)  
   本機開發配置（使用 .env 文件）
-- `config_prod.py` - Production configuration (uses environment variables)  
-  生產環境配置（使用環境變數）
+- `config_prod.py` - Production configuration (uses environment variables with validation)  
+  生產環境配置（使用環境變數並進行驗證）
+- `utils/config_manager.py` - Centralized configuration management with singleton pattern  
+  集中式配置管理，採用單例模式
 - Environment determined by `BOT_ENV` environment variable (defaults to "local")  
   環境由 `BOT_ENV` 環境變數決定（預設為 "local"）
 
@@ -40,8 +46,10 @@ pip install -r requirements.txt
   文字處理、時間處理、JSON I/O 和 Discord 活動的共用工具
 - `data/` - JSON data storage directory  
   JSON 資料儲存目錄
-- `keep_alive.py` - Flask server for keeping bot alive in production (controlled by `USE_KEEP_ALIVE` config)  
-  Flask 伺服器用於在生產環境中保持機器人運行（由 `USE_KEEP_ALIVE` 配置控制）
+- `keep_alive.py` - Flask server for keeping bot alive in production with dynamic port allocation  
+  Flask 伺服器用於在生產環境中保持機器人運行，支援動態埠號分配
+- `utils/logger.py` - Centralized logging system with different levels and optional file output  
+  集中式日誌系統，支援不同級別和可選檔案輸出
 
 ### Key Components 核心組件
 
@@ -108,3 +116,19 @@ pip install -r requirements.txt
   中文語言介面和訊息
 - **IMPORTANT: Always respond in Traditional Chinese (繁體中文) when working on this codebase**  
   **重要：在處理此程式庫時，請一律使用繁體中文回覆**
+
+### Deployment 部署
+- Production environment requires `BOT_ENV=prod` environment variable  
+  生產環境需要設定 `BOT_ENV=prod` 環境變數
+- TOKEN validation prevents bot startup with invalid/empty tokens  
+  TOKEN 驗證機制可防止使用無效或空白 token 啟動機器人
+- Dynamic port allocation supports various hosting platforms (Render, Railway, etc.)  
+  動態埠號分配支援各種託管平台（Render、Railway 等）
+- Absolute path usage ensures consistent file loading across different environments  
+  使用絕對路徑確保在不同環境中檔案載入的一致性
+
+### Code Quality 程式碼品質
+- Use `requirements-dev.txt` for development tools (black, flake8, pytest)  
+  使用 `requirements-dev.txt` 安裝開發工具（black、flake8、pytest）
+- Dependency versions use semantic versioning ranges for stability  
+  依賴套件版本使用語意化版本範圍以確保穩定性

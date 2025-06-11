@@ -82,7 +82,11 @@ async def load_extensions():
     loaded_count = 0
     failed_count = 0
     
-    for filename in os.listdir("./cogs"):
+    # 使用絕對路徑避免部署環境路徑問題
+    import os
+    cogs_dir = os.path.join(os.path.dirname(__file__), "cogs")
+    
+    for filename in os.listdir(cogs_dir):
         if filename.endswith(".py"):
             cog_name = filename[:-3]
             try:

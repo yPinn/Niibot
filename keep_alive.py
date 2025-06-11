@@ -11,7 +11,9 @@ def home():
 
 
 def run():
-    app.run(host='0.0.0.0', port=8080)
+    import os
+    port = int(os.environ.get("PORT", 8080))  # Render 會自動設定 PORT 環境變數
+    app.run(host='0.0.0.0', port=port)
 
 
 def keep_alive():
