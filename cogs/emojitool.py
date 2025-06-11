@@ -24,11 +24,17 @@ class EmojiTool(commands.Cog):
             await self.emoji_data_manager.load_data()
             await self.keyword_reply_manager.load_data()
             await self.emoji_stats_manager.load_data()
-            self._start_periodic_save()
             BotLogger.info("EmojiTool", "資料載入完成")
+            # 延遲啟動定期儲存，避免載入時阻塞
+            asyncio.create_task(self._delayed_start_periodic_save())
         except Exception as e:
             BotLogger.error("EmojiTool", "載入資料失敗", e)
 
+    async def _delayed_start_periodic_save(self):
+        """延遲啟動定期儲存，避免載入時阻塞"""
+        await asyncio.sleep(2)  # 等待 2 秒確保其他載入完成
+        self._start_periodic_save()
+    
     def _start_periodic_save(self):
         """啟動定期儲存任務"""
         if self._save_task is None or self._save_task.done():
