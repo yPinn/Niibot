@@ -108,9 +108,17 @@ async def main():
         async with bot:
             await load_extensions()
             BotLogger.system_event("機器人啟動", "正在連接到 Discord...")
+            BotLogger.info("TokenDebug", f"Token 長度: {len(config.token)} 字符")
+            BotLogger.info("TokenDebug", f"Token 開頭: {config.token[:20]}...")
             await bot.start(config.token)
+    except discord.HTTPException as e:
+        BotLogger.critical("BotMain", f"Discord HTTP 錯誤: {e.status} - {e.text}", e)
+        raise
+    except discord.LoginFailure as e:
+        BotLogger.critical("BotMain", "Discord 登入失敗 - 檢查 TOKEN 是否正確", e)
+        raise
     except Exception as e:
-        BotLogger.critical("BotMain", "機器人啟動失敗", e)
+        BotLogger.critical("BotMain", f"機器人啟動失敗: {type(e).__name__}", e)
         raise
 
 
