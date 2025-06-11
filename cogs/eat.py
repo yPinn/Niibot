@@ -6,24 +6,37 @@ import discord
 from discord.ext import commands
 
 from utils import util
-
-DATA_DIR = "./data"
-DATA_FILE = os.path.join(DATA_DIR, "eat.json")
+from utils.logger import BotLogger
+from utils.config_manager import config
+from utils.util import BaseDataManager
 
 
 class Eat(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self.data_manager = BaseDataManager("eat.json", {})
         self.data = {}
         self._lock = asyncio.Lock()
+        BotLogger.info("Eat", "Eat cog 初始化完成")
 
     async def initialize(self):
-        os.makedirs(DATA_DIR, exist_ok=True)
-        raw = await util.read_json(DATA_FILE)
-        self.data = raw if isinstance(raw, dict) else {}
+        try:
+            raw = await self.data_manager.get_data()
+            self.data = raw if isinstance(raw, dict) else {}
+            category_count = len(self.data)
+            item_count = sum(len(items) for items in self.data.values())
+            BotLogger.info("Eat", f"載入了 {category_count} 個分類，共 {item_count} 個項目")
+        except Exception as e:
+            BotLogger.error("Eat", "初始化資料失敗", e)
+            self.data = {}
 
     async def save_data(self):
-        await util.write_json(DATA_FILE, self.data)
+        try:
+            success = await self.data_manager.update_data(self.data)
+            if not success:
+                BotLogger.error("Eat", "儲存資料失敗")
+        except Exception as e:
+            BotLogger.error("Eat", "儲存資料異常", e)
 
     @commands.Cog.listener()
     async def on_ready(self):
