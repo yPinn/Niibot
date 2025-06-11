@@ -1,5 +1,5 @@
-from threading import Thread
-
+import asyncio
+import threading
 from flask import Flask
 
 app = Flask('')
@@ -10,12 +10,17 @@ def home():
     return "Bot is alive!"
 
 
-def run():
+def run_flask():
     import os
-    port = int(os.environ.get("PORT", 8080))  # Render 會自動設定 PORT 環境變數
-    app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False, threaded=True)
 
 
 def keep_alive():
-    t = Thread(target=run, daemon=True)  # daemon=True 確保主程式結束時 Flask 也會結束
-    t.start()
+    # 在完全獨立的執行緒中啟動 Flask
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+    
+    # 給 Flask 一點時間啟動
+    import time
+    time.sleep(1)
