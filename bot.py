@@ -80,16 +80,20 @@ async def load_extensions():
     import os
     cogs_dir = os.path.join(os.path.dirname(__file__), "cogs")
     
-    for filename in os.listdir(cogs_dir):
-        if filename.endswith(".py"):
-            cog_name = filename[:-3]
-            try:
-                await bot.load_extension(f"cogs.{cog_name}")
-                BotLogger.info("CogLoader", f"成功載入: {cog_name}")
-                loaded_count += 1
-            except Exception as e:
-                BotLogger.error("CogLoader", f"載入 {cog_name} 失敗", e)
-                failed_count += 1
+    # 按字母順序載入 cogs 以便於除錯
+    cog_files = sorted([f for f in os.listdir(cogs_dir) if f.endswith(".py")])
+    BotLogger.info("CogLoader", f"準備載入 cogs: {[f[:-3] for f in cog_files]}")
+    
+    for filename in cog_files:
+        cog_name = filename[:-3]
+        BotLogger.info("CogLoader", f"正在載入: {cog_name}")
+        try:
+            await bot.load_extension(f"cogs.{cog_name}")
+            BotLogger.info("CogLoader", f"成功載入: {cog_name}")
+            loaded_count += 1
+        except Exception as e:
+            BotLogger.error("CogLoader", f"載入 {cog_name} 失敗", e)
+            failed_count += 1
     
     BotLogger.system_event(
         "Cog載入完成", 
