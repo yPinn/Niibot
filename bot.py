@@ -80,8 +80,8 @@ async def load_extensions():
     import os
     cogs_dir = os.path.join(os.path.dirname(__file__), "cogs")
     
-    # 暫時只載入基本 cogs 測試 Discord 連線
-    basic_cogs = ["party", "clock", "draw"]
+    # 逐步測試更多 cogs - 先加入簡單的
+    basic_cogs = ["party", "clock", "draw", "clear", "reply", "tinder"]
     
     for filename in os.listdir(cogs_dir):
         if filename.endswith(".py"):
