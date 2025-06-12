@@ -132,7 +132,7 @@ class EmojiTool(commands.Cog):
         await self.load_data()
         BotLogger.info("EmojiTool", "EmojiTool 已就緒")
 
-    @commands.command(name="emoji_add", help="新增自訂表情符號對應 - 用法: !emoji_add 名稱 表情符號")
+    @commands.command(name="emoji_add", help="新增自訂表情符號對應 - 用法: ?emoji_add 名稱 表情符號")
     @commands.has_permissions(manage_messages=True)
     async def add_emoji(self, ctx: commands.Context, name: str, emoji: str):
         """新增自訂表情符號對應"""
@@ -176,7 +176,7 @@ class EmojiTool(commands.Cog):
             await ctx.send(f"❌ 列表取得失敗：{str(e)}")
             BotLogger.error("EmojiTool", "列出表情符號失敗", e)
 
-    @commands.command(name="keyword_add", help="新增關鍵字自動回覆 - 用法: !keyword_add 關鍵字 回覆內容")
+    @commands.command(name="keyword_add", help="新增關鍵字自動回覆 - 用法: ?keyword_add 關鍵字 回覆內容")
     @commands.has_permissions(manage_messages=True)
     async def add_keyword_reply(self, ctx: commands.Context, keyword: str, *, reply: str):
         """新增關鍵字自動回覆"""
@@ -193,6 +193,39 @@ class EmojiTool(commands.Cog):
         except Exception as e:
             await ctx.send(f"❌ 新增失敗：{str(e)}")
             BotLogger.error("EmojiTool", "新增關鍵字回覆失敗", e)
+
+    @commands.command(name="emoji_help", help="顯示表情符號工具的使用說明")
+    async def emoji_help(self, ctx: commands.Context):
+        """顯示表情符號工具的詳細使用說明"""
+        embed = discord.Embed(
+            title="🎭 表情符號工具使用說明",
+            description="自訂表情符號對應和關鍵字自動回覆功能",
+            color=discord.Color.gold()
+        )
+        
+        # 一般使用者功能
+        embed.add_field(
+            name="📝 查看功能",
+            value="• `?emoji_list` - 查看所有自訂表情符號\n• `?emoji_help` - 顯示此說明",
+            inline=False
+        )
+        
+        # 管理員功能
+        embed.add_field(
+            name="⚙️ 管理功能 (需要管理訊息權限)",
+            value="• `?emoji_add 名稱 表情符號` - 新增表情符號對應\n• `?keyword_add 關鍵字 回覆內容` - 新增關鍵字回覆",
+            inline=False
+        )
+        
+        # 使用範例
+        embed.add_field(
+            name="💡 使用範例",
+            value="```\n?emoji_add happy 😄\n輸入 :happy: 會顯示為 😄\n\n?keyword_add 你好 歡迎！:happy:\n有人說「你好」時自動回覆```",
+            inline=False
+        )
+        
+        embed.set_footer(text="表情符號會在關鍵字回覆中自動替換")
+        await ctx.send(embed=embed)
 
 
 async def setup(bot):
