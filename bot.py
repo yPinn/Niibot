@@ -102,34 +102,72 @@ async def load_extensions():
 
 
 async def main():
-    # 先啟動 Flask keep_alive 服務，讓 Render 檢測到開放端口
+    # 先啟動 Flask keep_alive 服務，確保 Render 能檢測到開放端口
     if config.use_keep_alive:
         try:
-            from keep_alive import keep_alive
-            keep_alive()
-            BotLogger.system_event("保持連線", "Flask 伺服器已啟動")
-            # 給 Flask 時間完全啟動並讓 Render 檢測到
-            import asyncio
-            await asyncio.sleep(2)
+            from keep_alive import keep_alive, set_bot_ready
+            
+            BotLogger.system_event("保持連線", "正在啟動 Flask 伺服器...")
+            
+            # 啟動並驗證 Flask 伺服器
+            if keep_alive():
+                BotLogger.system_event("保持連線", "Flask 伺服器啟動並驗證成功")
+            else:
+                BotLogger.error("KeepAlive", "Flask 伺服器啟動失敗，但繼續啟動機器人")
+            
+            # 額外等待時間，確保 Render 檢測到服務
+            await asyncio.sleep(1)
+            
         except ImportError as e:
             BotLogger.error("KeepAlive", "無法匯入 keep_alive 模組", e)
+        except Exception as e:
+            BotLogger.error("KeepAlive", "keep_alive 啟動過程發生錯誤", e)
     
     try:
         async with bot:
             BotLogger.system_event("開始載入擴充功能", "準備載入 cogs...")
             await load_extensions()
+            
+            # 更新機器人就緒狀態
+            if config.use_keep_alive:
+                try:
+                    from keep_alive import set_bot_ready
+                    set_bot_ready(True)
+                except ImportError:
+                    pass
+            
             BotLogger.system_event("機器人啟動", "正在連接到 Discord...")
             BotLogger.info("TokenDebug", f"Token 長度: {len(config.token)} 字符")
             BotLogger.info("TokenDebug", f"Token 開頭: {config.token[:20]}...")
             await bot.start(config.token)
+            
     except discord.HTTPException as e:
         BotLogger.critical("BotMain", f"Discord HTTP 錯誤: {e.status} - {e.text}", e)
+        # 更新狀態為失敗
+        if config.use_keep_alive:
+            try:
+                from keep_alive import set_bot_ready
+                set_bot_ready(False)
+            except ImportError:
+                pass
         raise
     except discord.LoginFailure as e:
         BotLogger.critical("BotMain", "Discord 登入失敗 - 檢查 TOKEN 是否正確", e)
+        if config.use_keep_alive:
+            try:
+                from keep_alive import set_bot_ready
+                set_bot_ready(False)
+            except ImportError:
+                pass
         raise
     except Exception as e:
         BotLogger.critical("BotMain", f"機器人啟動失敗: {type(e).__name__}", e)
+        if config.use_keep_alive:
+            try:
+                from keep_alive import set_bot_ready
+                set_bot_ready(False)
+            except ImportError:
+                pass
         raise
 
 
