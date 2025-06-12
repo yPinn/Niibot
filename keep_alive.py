@@ -80,6 +80,7 @@ def verify_flask_startup(port: int, max_attempts: int = 10) -> bool:
 def keep_alive():
     """啟動並驗證 Flask keep-alive 服務"""
     global _flask_ready
+    import os  # 確保 os 已導入
     
     # 在獨立執行緒中啟動 Flask，但不設為 daemon
     flask_thread = threading.Thread(target=run_flask)
