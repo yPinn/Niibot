@@ -82,42 +82,121 @@ class EmojiTool(commands.Cog):
             BotLogger.error("EmojiTool", f"替換表情符號失敗 (Guild: {guild_id})", e)
             return text
 
-        return pattern.sub(replacer, text)
-
     def track_emoji_usage(self, guild_id: int, text: str):
-        pattern = re.compile(r":([a-zA-Z0-9_]+):")
-        matches = pattern.findall(text)
-        stats = self.emoji_usage_stats.setdefault(str(guild_id), {})
-        for name in matches:
-            stats[name] = stats.get(name, 0) + 1
+        """追蹤表情符號使用次數"""
+        try:
+            pattern = re.compile(r":([a-zA-Z0-9_]+):")
+            matches = pattern.findall(text)
+            
+            if matches:
+                guild_stats = self._pending_stats.setdefault(guild_id, {})
+                for name in matches:
+                    guild_stats[name] = guild_stats.get(name, 0) + 1
+                    
+        except Exception as e:
+            BotLogger.error("EmojiTool", f"追蹤表情符號使用失敗 (Guild: {guild_id})", e)
 
     async def handle_on_message(self, message: discord.Message):
         # 忽略機器人訊息
         if message.author.bot:
             return
 
-        guild_id = str(message.guild.id)
+        if not message.guild:
+            return
 
-        # 關鍵字回覆
-        for keyword, reply in self.keyword_reply_map.items():
-            if keyword in message.content:
-                replaced = self.replace_emojis_in_text(message.guild.id, reply)
-                await message.channel.send(replaced)
-                break
+        guild_id = message.guild.id
 
-        # 記錄 emoji 使用次數
-        self.track_emoji_usage(message.guild.id, message.content)
-        await self.save_emoji_stats()
+        try:
+            # 關鍵字回覆
+            keyword_replies = await self.keyword_reply_manager.get_guild_data(guild_id)
+            for keyword, reply in keyword_replies.items():
+                if keyword.lower() in message.content.lower():
+                    replaced_reply = await self.replace_emojis_in_text(guild_id, reply)
+                    await message.channel.send(replaced_reply)
+                    BotLogger.user_action(
+                        "關鍵字回覆", 
+                        message.author.id, 
+                        guild_id, 
+                        f"關鍵字: {keyword}"
+                    )
+                    break
+
+            # 記錄 emoji 使用次數
+            self.track_emoji_usage(guild_id, message.content)
+            
+        except Exception as e:
+            BotLogger.error("EmojiTool", f"處理訊息失敗 (Guild: {guild_id})", e)
 
     @commands.Cog.listener()
     async def on_ready(self):
         await self.load_data()
-        # 這裡可以做預先匯出或其他啟動工作
-        print("[EmojiTool] 已載入資料。")
+        BotLogger.info("EmojiTool", "EmojiTool 已就緒")
+
+    @commands.command(name="emoji_add", help="新增自訂表情符號對應 - 用法: !emoji_add 名稱 表情符號")
+    @commands.has_permissions(manage_messages=True)
+    async def add_emoji(self, ctx: commands.Context, name: str, emoji: str):
+        """新增自訂表情符號對應"""
+        try:
+            guild_id = ctx.guild.id
+            emoji_map = await self.emoji_data_manager.get_guild_data(guild_id)
+            
+            emoji_map[name.lower()] = emoji
+            await self.emoji_data_manager.update_guild_data(guild_id, emoji_map)
+            
+            await ctx.send(f"✅ 已新增表情符號對應：`:{name}:` → {emoji}")
+            BotLogger.command_used("emoji_add", ctx.author.id, guild_id, f"{name} -> {emoji}")
+            
+        except Exception as e:
+            await ctx.send(f"❌ 新增失敗：{str(e)}")
+            BotLogger.error("EmojiTool", "新增表情符號失敗", e)
+
+    @commands.command(name="emoji_list", help="列出所有自訂表情符號")
+    async def list_emoji(self, ctx: commands.Context):
+        """列出所有自訂表情符號"""
+        try:
+            guild_id = ctx.guild.id
+            emoji_map = await self.emoji_data_manager.get_guild_data(guild_id)
+            
+            if not emoji_map:
+                await ctx.send("📝 目前沒有自訂表情符號對應")
+                return
+            
+            embed = discord.Embed(title="🎭 自訂表情符號列表", color=discord.Color.blue())
+            
+            for name, emoji in list(emoji_map.items())[:25]:  # 限制顯示數量
+                embed.add_field(name=f":{name}:", value=emoji, inline=True)
+            
+            if len(emoji_map) > 25:
+                embed.set_footer(text=f"顯示前 25 個，總共 {len(emoji_map)} 個")
+            
+            await ctx.send(embed=embed)
+            BotLogger.command_used("emoji_list", ctx.author.id, guild_id, f"顯示 {len(emoji_map)} 個表情符號")
+            
+        except Exception as e:
+            await ctx.send(f"❌ 列表取得失敗：{str(e)}")
+            BotLogger.error("EmojiTool", "列出表情符號失敗", e)
+
+    @commands.command(name="keyword_add", help="新增關鍵字自動回覆 - 用法: !keyword_add 關鍵字 回覆內容")
+    @commands.has_permissions(manage_messages=True)
+    async def add_keyword_reply(self, ctx: commands.Context, keyword: str, *, reply: str):
+        """新增關鍵字自動回覆"""
+        try:
+            guild_id = ctx.guild.id
+            keyword_replies = await self.keyword_reply_manager.get_guild_data(guild_id)
+            
+            keyword_replies[keyword.lower()] = reply
+            await self.keyword_reply_manager.update_guild_data(guild_id, keyword_replies)
+            
+            await ctx.send(f"✅ 已新增關鍵字回覆：`{keyword}` → {reply}")
+            BotLogger.command_used("keyword_add", ctx.author.id, guild_id, f"{keyword} -> {reply[:50]}")
+            
+        except Exception as e:
+            await ctx.send(f"❌ 新增失敗：{str(e)}")
+            BotLogger.error("EmojiTool", "新增關鍵字回覆失敗", e)
 
 
 async def setup(bot):
     emoji_tool = EmojiTool(bot)
     await emoji_tool.load_data()
     await bot.add_cog(emoji_tool)
-    bot.emoji_tool = emoji_tool
+    BotLogger.system_event("Cog載入", "EmojiTool cog 已成功載入")
