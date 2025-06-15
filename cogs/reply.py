@@ -164,7 +164,7 @@ class Reply(commands.Cog):
 
 async def setup(bot: commands.Bot):
     reply = Reply(bot)
-    # 延遲載入資料，避免阻塞 cog 載入過程
-    asyncio.create_task(reply.load_reply_msgs())
+    # 同步載入資料，確保載入完成後才開始處理訊息
+    await reply.load_reply_msgs()
     await bot.add_cog(reply)
     BotLogger.system_event("Cog載入", "Reply cog 已成功載入")
