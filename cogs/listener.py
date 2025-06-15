@@ -25,12 +25,16 @@ class Listener(commands.Cog):
         if message.author.bot:
             return
 
+        # 先處理自定義的 handle_on_message
         for handler in self.handlers:
             if handler:
                 try:
                     await handler.handle_on_message(message)
                 except Exception as e:
-                    print(f"Error in handle_on_message of {handler}: {e}")
+                    BotLogger.error("Listener", f"處理器 {handler.__class__.__name__} 錯誤", e)
+        
+        # 🔧 重要：確保 Discord.py 的指令處理機制正常運作
+        await self.bot.process_commands(message)
 
 
 async def setup(bot):
