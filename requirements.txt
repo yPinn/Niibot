@@ -1,9 +1,4 @@
-# Core Dependencies - 核心依賴
-discord.py>=2.4.0,<2.5.0
-aiofiles>=24.1.0,<25.0.0
-Flask>=3.1.0,<4.0.0
-python-dotenv>=1.1.0,<2.0.0
-requests>=2.31.0,<3.0.0
-
-# Production Web Server - 生產環境網頁伺服器 (可選)
-# gunicorn>=21.0.0,<22.0.0
+aiofiles==24.1.0
+discord.py==2.4.0
+Flask==3.1.1
+python-dotenv==1.1.0
