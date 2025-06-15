@@ -36,6 +36,24 @@ async def on_ready():
     except Exception as e:
         BotLogger.error("BotStatus", "設定機器人狀態失敗", e)
 
+@bot.event
+async def on_message(message):
+    """全域訊息處理 - 覆蓋Discord.py內建機制"""
+    if message.author.bot:
+        return
+    
+    # 處理自定義handler（如果listener已載入）
+    if 'Listener' in bot.cogs:
+        listener = bot.cogs['Listener']
+        for handler in listener.handlers:
+            try:
+                await handler.handle_on_message(message)
+            except Exception as e:
+                BotLogger.error("GlobalHandler", f"處理器錯誤: {e}")
+    
+    # 處理Discord指令（只調用一次）
+    await bot.process_commands(message)
+
 
 @bot.command(name="l", help="load")
 async def load(ctx, extension):
