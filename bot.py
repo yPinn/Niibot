@@ -109,13 +109,23 @@ async def reload_all(ctx):
             except Exception as e:
                 failed.append(f"listener: {str(e)}")
         
-        result_msg = f"✅ 重載完成！\n成功: {len(reloaded)} 個 cog\n"
+        result_msg = f"✅ 重載完成！\n成功: {len(reloaded)} 個 cog"
+        if reloaded:
+            result_msg += f"\n📋 成功重載: {', '.join(reloaded)}"
+            
         if failed:
-            result_msg += f"失敗: {len(failed)} 個 cog\n"
-            result_msg += "\n".join(f"❌ {fail}" for fail in failed[:5])  # 限制顯示前5個錯誤
+            result_msg += f"\n\n❌ 失敗: {len(failed)} 個 cog"
+            result_msg += "\n" + "\n".join(f"❌ {fail}" for fail in failed[:5])  # 限制顯示前5個錯誤
+            if len(failed) > 5:
+                result_msg += f"\n... 還有 {len(failed) - 5} 個錯誤"
         
         await ctx.send(result_msg)
         BotLogger.command_used("rla", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"重載: 成功{len(reloaded)}, 失敗{len(failed)}")
+        
+        # 記錄詳細的錯誤信息到日誌
+        if failed:
+            for fail in failed:
+                BotLogger.error("CogLoader", f"重載失敗詳情: {fail}")
         
     except Exception as e:
         error_msg = f"批量重載失敗: {str(e)}"

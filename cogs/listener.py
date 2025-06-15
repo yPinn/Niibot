@@ -65,22 +65,45 @@ class Listener(commands.Cog):
         self._registered_handlers.clear()
         self._registered_cog_names.clear()
         self._processing_messages.clear()
+        
+        # 清理重複訊息快取
+        if hasattr(self, '_recent_messages'):
+            self._recent_messages.clear()
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         if message.author.bot:
             return
+        
+        # 忽略編輯過的訊息，避免重複觸發
+        if message.edited_at is not None:
+            BotLogger.debug("Listener", f"忽略編輯訊息 {message.id}")
+            return
 
-        # 防止同時處理同一訊息的改進鎖機制
+        # 強化的防重複機制：使用訊息內容哈希和時間戳
         message_id = message.id
+        message_hash = hash((message.content, message.author.id, message.channel.id))
+        current_time = asyncio.get_event_loop().time()
         
         # 檢查是否已經在處理此訊息
         if message_id in self._processing_messages:
-            BotLogger.debug("Listener", f"訊息 {message_id} 已在處理中，跳過重複處理")
+            BotLogger.warning("Listener", f"訊息 {message_id} 已在處理中，跳過重複處理")
             return
         
-        # 標記正在處理
+        # 防止短時間內重複處理相同內容的訊息（Discord重傳問題）
+        if hasattr(self, '_recent_messages'):
+            recent_threshold = current_time - 2.0  # 2秒內的重複訊息
+            self._recent_messages = {k: v for k, v in self._recent_messages.items() if v > recent_threshold}
+            
+            if message_hash in self._recent_messages:
+                BotLogger.warning("Listener", f"偵測到重複訊息內容，跳過處理（內容哈希: {message_hash}）")
+                return
+        else:
+            self._recent_messages = {}
+        
+        # 標記正在處理和記錄訊息
         self._processing_messages.add(message_id)
+        self._recent_messages[message_hash] = current_time
         
         try:
             # 先處理自定義的 handle_on_message
@@ -94,6 +117,7 @@ class Listener(commands.Cog):
                         BotLogger.error("Listener", f"處理器 {handler.__class__.__name__} 錯誤", e)
             
             # 🔧 重要：確保 Discord.py 的指令處理機制正常運作
+            BotLogger.debug("Listener", f"處理指令: {message.content[:50]}...")
             await self.bot.process_commands(message)
             
         finally:
