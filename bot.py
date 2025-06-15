@@ -92,37 +92,54 @@ async def reload_all(ctx):
         reloaded = []
         failed = []
         
-        # 先重載除了 listener 以外的所有 cog
+        # 先卸載所有已載入的 cog（除了 listener）
+        BotLogger.info("CogLoader", "開始卸載現有 cog...")
+        for cog_name in cog_files:
+            if cog_name != "listener":
+                extension_name = f"cogs.{cog_name}"
+                if extension_name in bot.extensions:
+                    try:
+                        await bot.unload_extension(extension_name)
+                        BotLogger.debug("CogLoader", f"卸載: {cog_name}")
+                    except Exception as e:
+                        BotLogger.warning("CogLoader", f"卸載 {cog_name} 失敗: {e}")
+
+        # 卸載 listener（如果存在）
+        if "listener" in cog_files:
+            extension_name = "cogs.listener"
+            if extension_name in bot.extensions:
+                try:
+                    await bot.unload_extension(extension_name)
+                    BotLogger.debug("CogLoader", f"卸載: listener")
+                except Exception as e:
+                    BotLogger.warning("CogLoader", f"卸載 listener 失敗: {e}")
+
+        # 等待一下確保卸載完成
+        await asyncio.sleep(0.5)
+        
+        # 重新載入除了 listener 以外的所有 cog
+        BotLogger.info("CogLoader", "開始重新載入 cog...")
         for cog_name in cog_files:
             if cog_name != "listener":
                 extension_name = f"cogs.{cog_name}"
                 try:
-                    # 檢查是否已載入，如果是則重載，否則載入
-                    if extension_name in bot.extensions:
-                        await bot.reload_extension(extension_name)
-                        BotLogger.debug("CogLoader", f"重載: {cog_name}")
-                    else:
-                        await bot.load_extension(extension_name)
-                        BotLogger.debug("CogLoader", f"載入: {cog_name}")
+                    await bot.load_extension(extension_name)
+                    BotLogger.debug("CogLoader", f"載入: {cog_name}")
                     reloaded.append(cog_name)
                 except Exception as e:
                     failed.append(f"{cog_name}: {str(e)}")
-                    BotLogger.error("CogLoader", f"處理 {cog_name} 失敗", e)
+                    BotLogger.error("CogLoader", f"載入 {cog_name} 失敗", e)
         
-        # 最後處理 listener，確保它能正確註冊所有處理器
+        # 最後載入 listener，確保它能正確註冊所有處理器
         if "listener" in cog_files:
             extension_name = "cogs.listener"
             try:
-                if extension_name in bot.extensions:
-                    await bot.reload_extension(extension_name)
-                    BotLogger.debug("CogLoader", f"重載: listener")
-                else:
-                    await bot.load_extension(extension_name)
-                    BotLogger.debug("CogLoader", f"載入: listener")
+                await bot.load_extension(extension_name)
+                BotLogger.debug("CogLoader", f"載入: listener")
                 reloaded.append("listener")
             except Exception as e:
                 failed.append(f"listener: {str(e)}")
-                BotLogger.error("CogLoader", f"處理 listener 失敗", e)
+                BotLogger.error("CogLoader", f"載入 listener 失敗", e)
         
         result_msg = f"✅ 重載完成！\n成功: {len(reloaded)} 個 cog"
         if reloaded:
