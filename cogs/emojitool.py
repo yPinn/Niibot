@@ -109,8 +109,8 @@ class EmojiTool(commands.Cog):
         if any(message.content.startswith(prefix) for prefix in config.command_prefix):
             return
 
-        # 🔍 除錯日誌：追蹤方法被調用的次數
-        BotLogger.info("EmojiDebug", f"handle_on_message 被調用 - 訊息內容: '{message.content}' - 作者: {message.author.display_name}")
+        # 除錯用：可以啟用以追蹤方法調用
+        # BotLogger.debug("EmojiTool", f"處理訊息: {message.author.display_name}")
 
         guild_id = message.guild.id
 
