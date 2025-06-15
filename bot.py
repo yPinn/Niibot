@@ -27,7 +27,7 @@ BotLogger.system_event("機器人初始化", f"環境: {ENV}, 前綴: {config.co
 
 @bot.event
 async def on_ready():
-    BotLogger.system_event("機器人上線", f"使用者: {bot.user}, 環境: {ENV}")
+    BotLogger.warning("BotMain", f"🤖 機器人上線: {bot.user} (環境: {ENV})")
     
     try:
         activity = create_activity()
@@ -167,9 +167,9 @@ async def load_extensions():
             BotLogger.error("CogLoader", f"載入 {cog_name} 失敗", e)
             failed_count += 1
     
-    BotLogger.system_event(
-        "Cog載入完成", 
-        f"成功: {loaded_count}, 失敗: {failed_count}"
+    BotLogger.warning(
+        "CogLoader", 
+        f"📦 Cog載入完成: 成功 {loaded_count}, 失敗 {failed_count}"
     )
 
 

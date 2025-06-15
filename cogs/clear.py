@@ -99,7 +99,7 @@ class Clear(commands.Cog):
                 ))
                 await confirm.delete(delay=2)
             except discord.HTTPException as e:
-                BotLogger.warning("Clear", f"無法發送或刪除確認訊息", e)
+                BotLogger.debug("Clear", f"無法發送或刪除確認訊息: {e}")
 
             self.cooldown.update_timestamp(user_id)
             
