@@ -154,6 +154,15 @@ class TeamSetupSelect(View):
 
     @discord.ui.button(label="確認分隊", style=discord.ButtonStyle.success, emoji="✅")
     async def confirm_setup(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # 停用此設定 View
+        for item in self.children:
+            item.disabled = True
+        try:
+            await interaction.response.edit_message(view=self)
+        except:
+            pass
+        
+        # 執行分隊
         await self.party_cog.execute_team_division(interaction, self.guild_state, self.teams, self.players_per_team)
 
     @discord.ui.button(label="取消", style=discord.ButtonStyle.secondary, emoji="❌")
@@ -555,6 +564,9 @@ class Party(commands.Cog):
                     'teams': teams,
                     'players_per_team': players_per_team
                 }
+                
+                # 更新所有相關的 InviteView
+                await self._update_all_invite_views(guild_state)
 
     async def _perform_team_division(self, interaction: discord.Interaction, guild_state, teams: int, players_per_team: int, player_ids: list, is_reshuffle: bool = False):
         """執行分隊和語音頻道操作"""
@@ -610,6 +622,15 @@ class Party(commands.Cog):
                 print(f"創建語音頻道失敗: {e}")
 
         return True
+    
+    async def _update_all_invite_views(self, guild_state):
+        """更新所有活躍的 InviteView"""
+        for view in guild_state.active_views.copy():
+            if isinstance(view, InviteView) and view.message:
+                try:
+                    await view._update_queue_message()
+                except Exception as e:
+                    print(f"更新 InviteView 失敗: {e}")
 
     async def _create_voice_channels(self, guild: discord.Guild, team_count: int):
         """創建語音頻道"""
