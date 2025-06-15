@@ -3,6 +3,9 @@ import discord
 from discord.ext import commands
 from utils.logger import BotLogger
 
+# 全域變數來追蹤當前活躍的listener實例
+_active_listener_id = None
+
 
 class Listener(commands.Cog):
     def __init__(self, bot):
@@ -16,7 +19,12 @@ class Listener(commands.Cog):
         
         # 記錄listener實例，用於除錯
         self._instance_id = id(self)
-        BotLogger.info("Listener", f"建立新的Listener實例 (ID: {hex(self._instance_id)})")
+        
+        # 設定為當前活躍的listener
+        global _active_listener_id
+        _active_listener_id = self._instance_id
+        
+        BotLogger.info("Listener", f"建立新的Listener實例 (ID: {hex(self._instance_id)}) - 設定為活躍實例")
         
         self._start_registration_task()
     
@@ -85,8 +93,13 @@ class Listener(commands.Cog):
             BotLogger.debug("Listener", f"忽略編輯訊息 {message.id}")
             return
         
-        # 確保只有主要的listener實例處理訊息
-        BotLogger.debug("Listener", f"Listener實例 {hex(self._instance_id)} 接收到訊息: {message.content[:30]}...")
+        # 確保只有活躍的listener實例處理訊息
+        global _active_listener_id
+        if self._instance_id != _active_listener_id:
+            BotLogger.warning("Listener", f"❌ 非活躍實例 {hex(self._instance_id)} 嘗試處理訊息，忽略（活躍實例: {hex(_active_listener_id)}）")
+            return
+        
+        BotLogger.debug("Listener", f"✅ 活躍實例 {hex(self._instance_id)} 處理訊息: {message.content[:30]}...")
 
         # 強化的防重複機制：使用訊息內容哈希和時間戳
         message_id = message.id
