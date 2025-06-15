@@ -4,6 +4,7 @@ import os
 import discord
 from discord.ext import commands
 
+from utils import util
 from utils.util import create_activity, ensure_data_dir
 from utils.logger import BotLogger
 from utils.config_manager import config
@@ -120,6 +121,61 @@ async def reload_all(ctx):
         error_msg = f"批量重載失敗: {str(e)}"
         await ctx.send(error_msg)
         BotLogger.error("CogLoader", error_msg, e)
+
+
+@bot.command(name="debug_handlers", help="顯示訊息處理器診斷資訊")
+async def debug_handlers(ctx):
+    """顯示訊息處理器的詳細診斷資訊"""
+    try:
+        listener_cog = bot.get_cog("Listener")
+        if not listener_cog:
+            await ctx.send("❌ Listener cog 未載入")
+            return
+        
+        # 收集診斷資訊
+        handler_info = []
+        for i, handler in enumerate(listener_cog.handlers):
+            handler_info.append(f"{i+1}. {handler.__class__.__name__} (ID: {hex(id(handler))})")
+        
+        # 構建診斷報告
+        embed = discord.Embed(
+            title="🔍 訊息處理器診斷",
+            color=discord.Color.blue(),
+            timestamp=util.now_utc()
+        )
+        
+        embed.add_field(
+            name="註冊的處理器數量",
+            value=f"{len(listener_cog.handlers)} 個",
+            inline=False
+        )
+        
+        if handler_info:
+            embed.add_field(
+                name="處理器列表",
+                value="\n".join(handler_info),
+                inline=False
+            )
+        
+        embed.add_field(
+            name="記錄的名稱",
+            value="\n".join(listener_cog._registered_cog_names) or "無",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="記錄的ID數量", 
+            value=f"{len(listener_cog._registered_handlers)} 個",
+            inline=False
+        )
+        
+        await ctx.send(embed=embed)
+        BotLogger.command_used("debug_handlers", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"處理器數量: {len(listener_cog.handlers)}")
+        
+    except Exception as e:
+        error_msg = f"診斷失敗: {str(e)}"
+        await ctx.send(error_msg)
+        BotLogger.error("BotDebug", error_msg, e)
 
 
 async def load_extensions():

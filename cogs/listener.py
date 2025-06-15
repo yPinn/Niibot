@@ -10,8 +10,18 @@ class Listener(commands.Cog):
         self.handlers = []
         self._registered_handlers = set()  # 追蹤已註冊的處理器，避免重複
         self._registered_cog_names = set()  # 使用類別名稱去重，避免記憶體位址重用問題
+        self._registration_task = None  # 追蹤註冊任務，避免重複執行
+        self._processing_messages = set()  # 追蹤正在處理的訊息ID，避免重複處理
 
-        bot.loop.create_task(self.wait_and_register_handlers())
+        self._start_registration_task()
+    
+    def _start_registration_task(self):
+        """啟動註冊任務，確保不會重複執行"""
+        if self._registration_task is None or self._registration_task.done():
+            self._registration_task = self.bot.loop.create_task(self.wait_and_register_handlers())
+            BotLogger.debug("Listener", "啟動新的處理器註冊任務")
+        else:
+            BotLogger.warning("Listener", "註冊任務已在執行中，跳過重複啟動")
 
     async def wait_and_register_handlers(self):
         await self.bot.wait_until_ready()
@@ -44,26 +54,33 @@ class Listener(commands.Cog):
     def cog_unload(self):
         """Cog 卸載時清理處理器"""
         BotLogger.info("Listener", "清理訊息處理器...")
+        
+        # 取消註冊任務
+        if self._registration_task and not self._registration_task.done():
+            self._registration_task.cancel()
+            BotLogger.debug("Listener", "取消註冊任務")
+        
+        # 清理處理器
         self.handlers.clear()
         self._registered_handlers.clear()
         self._registered_cog_names.clear()
+        self._processing_messages.clear()
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         if message.author.bot:
             return
 
-        # 防止同時處理同一訊息的簡單鎖機制
+        # 防止同時處理同一訊息的改進鎖機制
         message_id = message.id
-        processing_key = f"processing_{message_id}"
         
         # 檢查是否已經在處理此訊息
-        if hasattr(self, processing_key):
+        if message_id in self._processing_messages:
             BotLogger.debug("Listener", f"訊息 {message_id} 已在處理中，跳過重複處理")
             return
         
         # 標記正在處理
-        setattr(self, processing_key, True)
+        self._processing_messages.add(message_id)
         
         try:
             # 先處理自定義的 handle_on_message
@@ -81,8 +98,12 @@ class Listener(commands.Cog):
             
         finally:
             # 清理處理標記
-            if hasattr(self, processing_key):
-                delattr(self, processing_key)
+            self._processing_messages.discard(message_id)
+            
+            # 定期清理舊的訊息ID，避免記憶體洩漏
+            if len(self._processing_messages) > 1000:
+                BotLogger.warning("Listener", f"處理訊息集合過大 ({len(self._processing_messages)})，清理中...")
+                self._processing_messages.clear()
 
     @commands.command(name="debug_handlers", help="顯示當前註冊的訊息處理器狀態")
     async def debug_handlers(self, ctx):
@@ -134,6 +155,79 @@ class Listener(commands.Cog):
         
         await ctx.send(embed=embed)
         BotLogger.command_used("debug_handlers", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"處理器數量: {len(self.handlers)}")
+    
+    @commands.command(name="debug_listeners", help="檢查所有 cog 的 on_message 監聽器")
+    async def debug_listeners(self, ctx):
+        """全面檢查所有可能的 on_message 重複監聽問題"""
+        import discord
+        
+        embed = discord.Embed(
+            title="🚨 on_message 監聽器診斷",
+            description="檢查所有可能導致重複回復的監聽器",
+            color=discord.Color.red()
+        )
+        
+        # 檢查所有 cogs 的 listener 裝飾器
+        direct_listeners = []
+        handle_on_message_cogs = []
+        
+        for cog_name, cog in self.bot.cogs.items():
+            # 檢查是否有直接的 @commands.Cog.listener() on_message
+            if hasattr(cog, '__cog_listeners__'):
+                listeners = getattr(cog, '__cog_listeners__', {})
+                if 'on_message' in listeners:
+                    direct_listeners.append(f"{cog_name} (有直接監聽器)")
+            
+            # 檢查是否有 handle_on_message 方法
+            if hasattr(cog, 'handle_on_message'):
+                handle_on_message_cogs.append(f"{cog_name} (有 handle_on_message)")
+        
+        # 顯示直接監聽器
+        if direct_listeners:
+            embed.add_field(
+                name="⚠️ 直接 on_message 監聽器",
+                value="\n".join(direct_listeners),
+                inline=False
+            )
+        else:
+            embed.add_field(
+                name="✅ 直接 on_message 監聽器",
+                value="沒有發現額外的直接監聽器",
+                inline=False
+            )
+        
+        # 顯示 handle_on_message 方法
+        if handle_on_message_cogs:
+            embed.add_field(
+                name="📋 handle_on_message 方法",
+                value="\n".join(handle_on_message_cogs),
+                inline=False
+            )
+        
+        # 檢查潛在的重複問題
+        potential_issues = []
+        if len(direct_listeners) > 1:
+            potential_issues.append("發現多個直接 on_message 監聽器！")
+        
+        if len(self.handlers) != len(handle_on_message_cogs) - 1:  # -1 因為 listener 自己也算
+            potential_issues.append(f"註冊的處理器數量({len(self.handlers)}) 與 handle_on_message 方法數量不符")
+        
+        if potential_issues:
+            embed.add_field(
+                name="🚨 潛在問題",
+                value="\n".join(potential_issues),
+                inline=False
+            )
+        else:
+            embed.add_field(
+                name="✅ 狀態",
+                value="沒有發現明顯的重複監聽問題",
+                inline=False
+            )
+        
+        await ctx.send(embed=embed)
+        BotLogger.command_used("debug_listeners", ctx.author.id, ctx.guild.id if ctx.guild else 0, 
+                             f"直接監聽器: {len(direct_listeners)}, handle方法: {len(handle_on_message_cogs)}")
 
 
 async def setup(bot):
