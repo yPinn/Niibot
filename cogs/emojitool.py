@@ -104,6 +104,11 @@ class EmojiTool(commands.Cog):
         if not message.guild:
             return
 
+        # 忽略指令訊息（避免與機器人指令衝突）
+        from utils.config_manager import config
+        if any(message.content.startswith(prefix) for prefix in config.command_prefix):
+            return
+
         guild_id = message.guild.id
 
         try:
