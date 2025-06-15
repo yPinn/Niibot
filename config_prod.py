@@ -11,4 +11,4 @@ ACTIVITY_TYPE: str = "streaming"
 ACTIVITY_NAME: str = "若能向上天祈祷一睡不醒"
 ACTIVITY_URL: str = "https://twitch.tv/xxx"  # 僅 streaming 需要
 USE_KEEP_ALIVE: bool = True  # 重新啟用，但改變啟動順序
-COMMAND_PREFIX: list[str] = ["?"]
+COMMAND_PREFIX: str = "?"

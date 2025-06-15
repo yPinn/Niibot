@@ -60,6 +60,12 @@ async def unload(ctx, extension):
         await ctx.send(error_msg)
         BotLogger.error("CogLoader", error_msg, e)
 
+@bot.command(name="test")
+async def test_command(ctx):
+    """極簡測試指令"""
+    BotLogger.info("TestCommand", f"🧪 測試指令被執行 - 用戶: {ctx.author.id}")
+    await ctx.send("✅ 測試指令執行完成")
+
 
 @bot.command(name="rl", help="reload")
 async def reload(ctx, extension):

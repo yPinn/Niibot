@@ -11,4 +11,4 @@ STATUS: str = "dnd"
 ACTIVITY_TYPE: str = "playing"
 ACTIVITY_NAME: str = "Visual Studio Code"
 USE_KEEP_ALIVE: bool = False
-COMMAND_PREFIX: list[str] = ["?", "❓"]
+COMMAND_PREFIX: str = "?"
