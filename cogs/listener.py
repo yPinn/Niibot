@@ -42,10 +42,15 @@ class Listener(commands.Cog):
             self._registration_task.cancel()
         self.handlers.clear()
 
-    @commands.Cog.listener()
-    async def on_message(self, message: discord.Message):
+    # @commands.Cog.listener()
+    async def on_message_disabled(self, message: discord.Message):
         if message.author.bot:
             return
+        
+        # 檢查是否有多個listener實例在處理同一訊息
+        BotLogger.info("Listener", f"🔍 Cog實例列表: {list(self.bot.cogs.keys())}")
+        listener_cogs = [name for name in self.bot.cogs.keys() if 'listener' in name.lower()]
+        BotLogger.info("Listener", f"🔍 Listener相關Cog: {listener_cogs}")
         
         # 最基本的日誌記錄
         BotLogger.info("Listener", f"📨 實例{hex(self._instance_id)} 收到: {message.content[:30]}...")
