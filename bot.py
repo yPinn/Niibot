@@ -80,29 +80,9 @@ async def unload(ctx, extension):
 
 @bot.command(name="test")
 async def test_command(ctx):
-    """極簡測試指令"""
-    import traceback
-    import time
-    import asyncio
-    
-    # 獲取當前任務和事件循環資訊
-    current_task = asyncio.current_task()
-    loop = asyncio.get_event_loop()
-    
-    stack_trace = ''.join(traceback.format_stack()[-5:])  # 更多堆疊資訊
-    timestamp = time.time()
-    
-    BotLogger.info("TestCommand", f"🧪 測試指令被執行 - 用戶: {ctx.author.id}")
-    BotLogger.info("TestCommand", f"⏰ 時間戳: {timestamp}")
-    BotLogger.info("TestCommand", f"🔄 當前任務: {current_task.get_name() if current_task else 'None'}")
-    BotLogger.info("TestCommand", f"📍 完整調用堆疊:\n{stack_trace}")
-    
-    # 檢查是否有其他相同的任務在運行
-    all_tasks = asyncio.all_tasks()
-    test_tasks = [task for task in all_tasks if 'test' in str(task).lower()]
-    BotLogger.info("TestCommand", f"🔍 相關任務數量: {len(test_tasks)}")
-    
-    await ctx.send("✅ 測試指令執行完成")
+    """簡化測試指令"""
+    BotLogger.info("TestCommand", f"測試指令執行 - 用戶: {ctx.author.id}")
+    await ctx.send("✅ 測試完成")
 
 
 @bot.command(name="rl", help="reload")
@@ -229,8 +209,6 @@ async def main():
                     pass
             
             BotLogger.system_event("機器人啟動", "正在連接到 Discord...")
-            BotLogger.info("TokenDebug", f"Token 長度: {len(config.token)} 字符")
-            BotLogger.info("TokenDebug", f"Token 開頭: {config.token[:20]}...")
             await bot.start(config.token)
             
     except discord.HTTPException as e:

@@ -79,7 +79,7 @@ async def read_json(path: str) -> dict[str, Any]:
                 BotLogger.debug("DataAccess", f"檔案內容為空: {path}")
                 return {}
             data = json.loads(content)
-            BotLogger.data_operation("讀取", path, True)
+            BotLogger.debug("DataAccess", f"成功讀取: {path}")
             return data
     except Exception as e:
         BotLogger.error("DataAccess", f"讀取 JSON 檔案失敗: {path}", e)
@@ -100,7 +100,7 @@ async def write_json(path: str, data: Any) -> bool:
         async with aiofiles.open(path, 'w', encoding='utf-8') as f:
             await f.write(json.dumps(data, indent=2, ensure_ascii=False))
         
-        BotLogger.data_operation("寫入", path, True)
+        BotLogger.debug("DataAccess", f"成功寫入: {path}")
         return True
     except Exception as e:
         BotLogger.error("DataAccess", f"寫入 JSON 檔案失敗: {path}", e)
@@ -174,7 +174,6 @@ class Cooldown:
     def update_timestamp(self, user_id: int):
         """更新用戶時間戳"""
         self._user_timestamps[user_id] = time.monotonic()
-        BotLogger.debug("Cooldown", f"用戶 {user_id} 冷卻時間戳已更新")
     
     def get_remaining_time(self, user_id: int) -> float:
         """取得剩餘冷卻時間（秒）"""
@@ -210,102 +209,27 @@ class Cooldown:
             await asyncio.sleep(1)
 
 
-# --- 資料管理基礎類別 ---
+# --- 資料管理工具函數 ---
 
-class BaseDataManager:
-    """基礎資料管理類別，提供統一的資料存取介面"""
+async def load_guild_data(file_name: str, guild_id: int, default_data: Any = None) -> Any:
+    """載入特定伺服器的資料"""
+    file_path = get_data_file_path(file_name)
+    data = await read_json(file_path)
+    guild_id_str = str(guild_id)
     
-    def __init__(self, file_name: str, default_data: Any = None):
-        """
-        Args:
-            file_name: 檔案名稱（不含路徑）
-            default_data: 預設資料結構
-        """
-        self.file_name = file_name
-        self.file_path = os.path.join(config.data_dir, file_name)
-        self.default_data = default_data or {}
-        self._data = None
-        self._lock = asyncio.Lock()
+    if guild_id_str not in data:
+        data[guild_id_str] = default_data or {}
+        await write_json(file_path, data)
+        BotLogger.debug("DataManager", f"建立新伺服器資料: {guild_id}")
     
-    async def load_data(self) -> Any:
-        """載入資料"""
-        async with self._lock:
-            if self._data is None:
-                data = await read_json(self.file_path)
-                if not data and self.default_data:
-                    data = self.default_data.copy() if isinstance(self.default_data, dict) else self.default_data
-                    await self.save_data(data)
-                self._data = data
-                BotLogger.info("DataManager", f"資料載入完成: {self.file_name}")
-            return self._data
-    
-    async def save_data(self, data: Any = None) -> bool:
-        """儲存資料"""
-        async with self._lock:
-            data_to_save = data if data is not None else self._data
-            if data_to_save is None:
-                BotLogger.warning("DataManager", f"嘗試儲存空資料: {self.file_name}")
-                return False
-            
-            success = await write_json(self.file_path, data_to_save)
-            if success and data is not None:
-                self._data = data
-            return success
-    
-    async def get_data(self) -> Any:
-        """取得資料（自動載入）"""
-        if self._data is None:
-            await self.load_data()
-        return self._data
-    
-    async def update_data(self, data: Any) -> bool:
-        """更新並儲存資料"""
-        self._data = data
-        return await self.save_data()
-    
-    async def reload_data(self) -> Any:
-        """重新載入資料"""
-        async with self._lock:
-            self._data = None
-            return await self.load_data()
+    return data[guild_id_str]
 
-
-class GuildDataManager(BaseDataManager):
-    """伺服器別資料管理器"""
-    
-    def __init__(self, file_name: str, default_guild_data: Any = None):
-        super().__init__(file_name, {})
-        self.default_guild_data = default_guild_data or {}
-    
-    async def get_guild_data(self, guild_id: int) -> Any:
-        """取得特定伺服器的資料"""
-        data = await self.get_data()
-        guild_id_str = str(guild_id)
-        
-        if guild_id_str not in data:
-            data[guild_id_str] = self.default_guild_data.copy() if isinstance(self.default_guild_data, dict) else self.default_guild_data
-            await self.save_data()
-            BotLogger.info("GuildDataManager", f"建立新伺服器資料: {guild_id}")
-        
-        return data[guild_id_str]
-    
-    async def update_guild_data(self, guild_id: int, guild_data: Any) -> bool:
-        """更新特定伺服器的資料"""
-        data = await self.get_data()
-        data[str(guild_id)] = guild_data
-        return await self.save_data()
-    
-    async def remove_guild_data(self, guild_id: int) -> bool:
-        """移除特定伺服器的資料"""
-        data = await self.get_data()
-        guild_id_str = str(guild_id)
-        
-        if guild_id_str in data:
-            del data[guild_id_str]
-            await self.save_data()
-            BotLogger.info("GuildDataManager", f"移除伺服器資料: {guild_id}")
-            return True
-        return False
+async def save_guild_data(file_name: str, guild_id: int, guild_data: Any) -> bool:
+    """儲存特定伺服器的資料"""
+    file_path = get_data_file_path(file_name)
+    data = await read_json(file_path)
+    data[str(guild_id)] = guild_data
+    return await write_json(file_path, data)
 
 
 # --- 常用工具函數 ---

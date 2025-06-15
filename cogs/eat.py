@@ -8,21 +8,115 @@ from discord.ext import commands
 from utils import util
 from utils.logger import BotLogger
 from utils.config_manager import config
-from utils.util import BaseDataManager
+
+
+# 簡化的 UI 類別
+class CategoryButtonsView(discord.ui.View):
+    def __init__(self, data: dict, user: discord.User):
+        super().__init__(timeout=120)
+        self.data = data
+        self.user = user
+        # 一次最多顯示25個按鈕
+        for category in sorted(data.keys())[:25]:
+            button = CategoryButton(category)
+            self.add_item(button)
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.user.id:
+            await interaction.response.send_message("❌ 只能由原始使用者操作", ephemeral=True)
+            return False
+        return True
+
+
+class CategoryButton(discord.ui.Button):
+    def __init__(self, category: str):
+        super().__init__(label=category, style=discord.ButtonStyle.primary)
+        self.category = category
+
+    async def callback(self, interaction: discord.Interaction):
+        options = self.view.data.get(self.category, [])
+        if not options:
+            await interaction.response.send_message(f"❌ 「{self.category}」分類沒有餐點", ephemeral=True)
+            return
+
+        choice = random.choice(options)
+        embed = discord.Embed(
+            title=f"🍽️ {self.category} 推薦餐點",
+            description=f"**{choice}**",
+            color=discord.Color.blurple()
+        )
+        view = DishButtonsView(self.category, options, interaction.user)
+        await interaction.response.edit_message(embed=embed, view=view)
+
+
+class DishButtonsView(discord.ui.View):
+    def __init__(self, category: str, options: list[str], user: discord.User):
+        super().__init__(timeout=120)
+        self.category = category
+        self.options = options
+        self.user = user
+        
+        reload_btn = ReloadButton(category, options)
+        back_btn = BackButton()
+        self.add_item(reload_btn)
+        self.add_item(back_btn)
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.user.id:
+            await interaction.response.send_message("❌ 只能由原始使用者操作", ephemeral=True)
+            return False
+        return True
+
+
+class ReloadButton(discord.ui.Button):
+    def __init__(self, category: str, options: list[str]):
+        super().__init__(label="換一個", style=discord.ButtonStyle.success)
+        self.category = category
+        self.options = options
+
+    async def callback(self, interaction: discord.Interaction):
+        choice = random.choice(self.options)
+        embed = discord.Embed(
+            title=f"🍽️ {self.category} 推薦餐點",
+            description=f"**{choice}**",
+            color=discord.Color.blurple()
+        )
+        view = DishButtonsView(self.category, self.options, interaction.user)
+        await interaction.response.edit_message(embed=embed, view=view)
+
+
+class BackButton(discord.ui.Button):
+    def __init__(self):
+        super().__init__(label="回分類列表", style=discord.ButtonStyle.secondary)
+
+    async def callback(self, interaction: discord.Interaction):
+        cog = interaction.client.get_cog("Eat")
+        if not cog:
+            await interaction.response.send_message("系統錯誤", ephemeral=True)
+            return
+        
+        embed = discord.Embed(
+            title="🍽️ 請選擇餐點分類",
+            description="點選下方按鈕以獲得該分類的推薦餐點。",
+            color=discord.Color.green()
+        )
+        view = CategoryButtonsView(cog.data, interaction.user)
+        await interaction.response.edit_message(embed=embed, view=view)
 
 
 class Eat(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.data_manager = BaseDataManager("eat.json", {})
+        self.data_file = "eat.json"
         self.data = {}
         self._lock = asyncio.Lock()
         BotLogger.info("Eat", "Eat cog 初始化完成")
 
     async def initialize(self):
         try:
-            raw = await self.data_manager.get_data()
-            self.data = raw if isinstance(raw, dict) else {}
+            self.data = await util.read_json(util.get_data_file_path(self.data_file))
+            if not isinstance(self.data, dict):
+                self.data = {}
             category_count = len(self.data)
             item_count = sum(len(items) for items in self.data.values())
             BotLogger.info("Eat", f"載入了 {category_count} 個分類，共 {item_count} 個項目")
@@ -32,7 +126,7 @@ class Eat(commands.Cog):
 
     async def save_data(self):
         try:
-            success = await self.data_manager.update_data(self.data)
+            success = await util.write_json(util.get_data_file_path(self.data_file), self.data)
             if not success:
                 BotLogger.error("Eat", "儲存資料失敗")
         except Exception as e:
@@ -56,7 +150,7 @@ class Eat(commands.Cog):
                 description="點選下方按鈕以獲得該分類的推薦餐點。",
                 color=discord.Color.green()
             )
-            view = self.CategoryButtonsView(self.data, ctx.author)
+            view = CategoryButtonsView(self.data, ctx.author)
             await ctx.send(embed=embed, view=view, reference=ctx.message, mention_author=False)
         else:
             # 有參數時，舊版隨機抽餐點
@@ -136,114 +230,6 @@ class Eat(commands.Cog):
             else:
                 await ctx.send("⚠️ 沒有該分類。")
 
-    # 以下是按鈕的 View 與按鈕定義
-
-    class CategoryButtonsView(discord.ui.View):
-        def __init__(self, data: dict, user: discord.User):
-            super().__init__(timeout=120)
-            self.data = data
-            self.user = user
-            # 一次最多顯示25個按鈕（Discord限制）
-            count = 0
-            for category in sorted(data.keys()):
-                if count >= 25:
-                    break
-                self.add_item(Eat.CategoryButton(category))
-                count += 1
-
-        async def interaction_check(self, interaction: discord.Interaction) -> bool:
-            # 限制只能原使用者使用按鈕
-            if interaction.user.id != self.user.id:
-                await interaction.response.send_message(
-                    "❌ 這些按鈕只能由原始命令使用者操作。", ephemeral=True)
-                return False
-            return True
-
-    class CategoryButton(discord.ui.Button):
-        def __init__(self, category: str):
-            super().__init__(label=category, style=discord.ButtonStyle.primary)
-            self.category = category
-
-        async def callback(self, interaction: discord.Interaction):
-            # 點擊後送該分類隨機餐點 + 換一個按鈕
-            if not self.view or not hasattr(self.view, 'data'):
-                await interaction.response.send_message("資料錯誤，請稍後再試。", ephemeral=True)
-                return
-
-            options = self.view.data.get(self.category)
-            if not options:
-                await interaction.response.send_message(f"❌ 「{self.category}」分類沒有餐點。", ephemeral=True)
-                return
-
-            choice = random.choice(options)
-
-            embed = discord.Embed(
-                title=f"🍽️ {self.category} 推薦餐點",
-                description=f"**{choice}**",
-                color=discord.Color.blurple()
-            )
-            view = Eat.DishButtonsView(
-                self.category, options, interaction.user)
-            await interaction.response.edit_message(embed=embed, view=view)
-
-    class DishButtonsView(discord.ui.View):
-        def __init__(self, category: str, options: list[str], user: discord.User):
-            super().__init__(timeout=120)
-            self.category = category
-            self.options = options
-            self.user = user
-            self.add_item(Eat.ReloadButton(category, options, user))
-            self.add_item(Eat.BackButton(user))
-
-        async def interaction_check(self, interaction: discord.Interaction) -> bool:
-            # 限制只能原使用者使用按鈕
-            if interaction.user.id != self.user.id:
-                await interaction.response.send_message(
-                    "❌ 這些按鈕只能由原始命令使用者操作。", ephemeral=True)
-                return False
-            return True
-
-    class ReloadButton(discord.ui.Button):
-        def __init__(self, category: str, options: list[str], user: discord.User):
-            super().__init__(label="換一個", style=discord.ButtonStyle.success)
-            self.category = category
-            self.options = options
-            self.user = user
-
-        async def callback(self, interaction: discord.Interaction):
-            choice = random.choice(self.options)
-            embed = discord.Embed(
-                title=f"🍽️ {self.category} 推薦餐點",
-                description=f"**{choice}**",
-                color=discord.Color.blurple()
-            )
-            # 保留按鈕
-            view = Eat.DishButtonsView(self.category, self.options, self.user)
-            await interaction.response.edit_message(embed=embed, view=view)
-
-    class BackButton(discord.ui.Button):
-        def __init__(self, user: discord.User):
-            super().__init__(label="回分類列表", style=discord.ButtonStyle.secondary)
-            self.user = user
-
-        async def callback(self, interaction: discord.Interaction):
-            if not self.view or not hasattr(self.view, 'user'):
-                await interaction.response.send_message("資料錯誤，請稍後再試。", ephemeral=True)
-                return
-            # 回到分類按鈕列表
-            # 重新讀取資料 (假設 data 有變化也可反映)
-            bot = interaction.client
-            cog = bot.get_cog("Eat")
-            if cog is None:
-                await interaction.response.send_message("資料錯誤，請稍後再試。", ephemeral=True)
-                return
-            embed = discord.Embed(
-                title="🍽️ 請選擇餐點分類",
-                description="點選下方按鈕以獲得該分類的推薦餐點。",
-                color=discord.Color.green()
-            )
-            view = cog.CategoryButtonsView(cog.data, self.user)
-            await interaction.response.edit_message(embed=embed, view=view)
 
 
 async def setup(bot: commands.Bot):
