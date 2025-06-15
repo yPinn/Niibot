@@ -48,6 +48,9 @@ class Reply(commands.Cog):
         if any(message.content.startswith(prefix) for prefix in config.command_prefix):
             return
 
+        # 🔍 除錯日誌：追蹤方法被調用的次數
+        BotLogger.info("ReplyDebug", f"handle_on_message 被調用 - 訊息內容: '{message.content}' - 作者: {message.author.display_name}")
+
         # 原本的關鍵字條件
         keywords = ["呼叫"]
         match_keyword = any(k in message.content for k in keywords)
