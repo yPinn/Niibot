@@ -12,7 +12,12 @@ class Listener(commands.Cog):
         self._registered_cog_names = set()  # 使用類別名稱去重，避免記憶體位址重用問題
         self._registration_task = None  # 追蹤註冊任務，避免重複執行
         self._processing_messages = set()  # 追蹤正在處理的訊息ID，避免重複處理
-
+        self._recent_messages = {}  # 追蹤最近處理的訊息，防止重複
+        
+        # 記錄listener實例，用於除錯
+        self._instance_id = id(self)
+        BotLogger.info("Listener", f"建立新的Listener實例 (ID: {hex(self._instance_id)})")
+        
         self._start_registration_task()
     
     def _start_registration_task(self):
@@ -79,6 +84,9 @@ class Listener(commands.Cog):
         if message.edited_at is not None:
             BotLogger.debug("Listener", f"忽略編輯訊息 {message.id}")
             return
+        
+        # 確保只有主要的listener實例處理訊息
+        BotLogger.debug("Listener", f"Listener實例 {hex(self._instance_id)} 接收到訊息: {message.content[:30]}...")
 
         # 強化的防重複機制：使用訊息內容哈希和時間戳
         message_id = message.id
@@ -87,16 +95,17 @@ class Listener(commands.Cog):
         
         # 檢查是否已經在處理此訊息
         if message_id in self._processing_messages:
-            BotLogger.warning("Listener", f"訊息 {message_id} 已在處理中，跳過重複處理")
+            BotLogger.warning("Listener", f"⚠️ 訊息 {message_id} 已在處理中，跳過重複處理 - 內容: {message.content[:30]}...")
             return
         
         # 防止短時間內重複處理相同內容的訊息（Discord重傳問題）
         if hasattr(self, '_recent_messages'):
-            recent_threshold = current_time - 2.0  # 2秒內的重複訊息
+            recent_threshold = current_time - 3.0  # 增加到3秒內的重複訊息
             self._recent_messages = {k: v for k, v in self._recent_messages.items() if v > recent_threshold}
             
             if message_hash in self._recent_messages:
-                BotLogger.warning("Listener", f"偵測到重複訊息內容，跳過處理（內容哈希: {message_hash}）")
+                time_diff = current_time - self._recent_messages[message_hash]
+                BotLogger.warning("Listener", f"🔄 偵測到重複訊息內容，跳過處理 - 內容: {message.content[:30]}... (間隔: {time_diff:.2f}s)")
                 return
         else:
             self._recent_messages = {}
@@ -104,6 +113,9 @@ class Listener(commands.Cog):
         # 標記正在處理和記錄訊息
         self._processing_messages.add(message_id)
         self._recent_messages[message_hash] = current_time
+        
+        # 記錄開始處理
+        BotLogger.debug("Listener", f"🚀 開始處理訊息 {message_id}: {message.content[:30]}...")
         
         try:
             # 先處理自定義的 handle_on_message
