@@ -64,10 +64,60 @@ async def unload(ctx, extension):
 async def reload(ctx, extension):
     try:
         await bot.reload_extension(f"cogs.{extension}")
+        
+        # 如果重載的不是 listener，且 listener 已載入，則重新觸發處理器註冊
+        if extension != "listener" and "cogs.listener" in bot.extensions:
+            listener_cog = bot.get_cog("Listener")
+            if listener_cog and hasattr(listener_cog, 'wait_and_register_handlers'):
+                BotLogger.info("CogLoader", f"重新註冊 {extension} 的訊息處理器...")
+                bot.loop.create_task(listener_cog.wait_and_register_handlers())
+        
         await ctx.send(f"RL: {extension} done.")
         BotLogger.command_used("reload", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"重載: {extension}")
     except Exception as e:
         error_msg = f"重載 {extension} 失敗: {str(e)}"
+        await ctx.send(error_msg)
+        BotLogger.error("CogLoader", error_msg, e)
+
+
+@bot.command(name="rla", help="reload all cogs")
+async def reload_all(ctx):
+    """重載所有 cog，確保正確的載入順序"""
+    try:
+        import os
+        cogs_dir = os.path.join(os.path.dirname(__file__), "cogs")
+        cog_files = sorted([f[:-3] for f in os.listdir(cogs_dir) if f.endswith(".py")])
+        
+        reloaded = []
+        failed = []
+        
+        # 先重載除了 listener 以外的所有 cog
+        for cog_name in cog_files:
+            if cog_name != "listener":
+                try:
+                    await bot.reload_extension(f"cogs.{cog_name}")
+                    reloaded.append(cog_name)
+                except Exception as e:
+                    failed.append(f"{cog_name}: {str(e)}")
+        
+        # 最後重載 listener，確保它能正確註冊所有處理器
+        if "listener" in cog_files:
+            try:
+                await bot.reload_extension("cogs.listener")
+                reloaded.append("listener")
+            except Exception as e:
+                failed.append(f"listener: {str(e)}")
+        
+        result_msg = f"✅ 重載完成！\n成功: {len(reloaded)} 個 cog\n"
+        if failed:
+            result_msg += f"失敗: {len(failed)} 個 cog\n"
+            result_msg += "\n".join(f"❌ {fail}" for fail in failed[:5])  # 限制顯示前5個錯誤
+        
+        await ctx.send(result_msg)
+        BotLogger.command_used("rla", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"重載: 成功{len(reloaded)}, 失敗{len(failed)}")
+        
+    except Exception as e:
+        error_msg = f"批量重載失敗: {str(e)}"
         await ctx.send(error_msg)
         BotLogger.error("CogLoader", error_msg, e)
 
