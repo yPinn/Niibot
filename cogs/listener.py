@@ -51,12 +51,12 @@ class Listener(commands.Cog):
         BotLogger.info("Listener", f"📨 實例{hex(self._instance_id)} 收到: {message.content[:30]}...")
         
         try:
-            # 處理自定義handler
-            for handler in self.handlers:
-                try:
-                    await handler.handle_on_message(message)
-                except Exception as e:
-                    BotLogger.error("Listener", f"處理器錯誤: {e}")
+            # 暫時禁用handler，專注測試process_commands
+            # for handler in self.handlers:
+            #     try:
+            #         await handler.handle_on_message(message)
+            #     except Exception as e:
+            #         BotLogger.error("Listener", f"處理器錯誤: {e}")
             
             # 處理Discord指令
             BotLogger.info("Listener", f"🚀 實例{hex(self._instance_id)} 處理指令: {message.content[:30]}...")
