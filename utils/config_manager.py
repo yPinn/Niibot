@@ -53,7 +53,7 @@ class ConfigManager:
                 'DRAW_COOLDOWN': int(os.getenv('DRAW_COOLDOWN', '30')),
                 'MAX_QUEUE_SIZE': int(os.getenv('MAX_QUEUE_SIZE', '50')),
                 'DEFAULT_TEAMS': int(os.getenv('DEFAULT_TEAMS', '2')),
-                'LOG_LEVEL': os.getenv('LOG_LEVEL', 'INFO'),
+                'LOG_LEVEL': os.getenv('LOG_LEVEL', 'INFO' if env == 'local' else 'WARNING'),
                 'LOG_FILE': os.getenv('LOG_FILE', None),  # 生產環境不寫入檔案，避免權限問題
                 'DATA_DIR': os.getenv('DATA_DIR', 'data'),
                 'EMOJI_SAVE_INTERVAL': int(os.getenv('EMOJI_SAVE_INTERVAL', '30')),

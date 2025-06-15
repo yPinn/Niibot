@@ -7,20 +7,21 @@ from discord.ext import commands
 from utils import util
 from utils.logger import BotLogger
 from utils.config_manager import config
-from utils.util import BaseDataManager
 
 
 class Reply(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.target_role_id = config.target_role_id
-        self.data_manager = BaseDataManager("reply_msgs.json", self.default_msgs())
+        self.data_file = "reply_msgs.json"
         self.reply_msgs = []
 
     async def load_reply_msgs(self):
         try:
-            msgs = await self.data_manager.get_data()
-            self.reply_msgs = msgs if isinstance(msgs, list) and msgs else self.default_msgs()
+            data = await util.read_json(util.get_data_file_path(self.data_file))
+            self.reply_msgs = data if isinstance(data, list) and data else self.default_msgs()
+            if not data:  # 如果檔案為空，儲存預設訊息
+                await util.write_json(util.get_data_file_path(self.data_file), self.reply_msgs)
             BotLogger.info("Reply", f"載入了 {len(self.reply_msgs)} 條回覆訊息")
         except Exception as e:
             BotLogger.error("Reply", "載入回覆訊息失敗", e)

@@ -6,24 +6,21 @@ from discord.ext import commands
 from utils import util
 from utils.logger import BotLogger
 from utils.config_manager import config
-from utils.util import GuildDataManager
 
 
 class EmojiTool(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.emoji_data_manager = GuildDataManager("emoji.json", {})
-        self.keyword_reply_manager = GuildDataManager("keyword_replies.json", {})
-        self.emoji_stats_manager = GuildDataManager("emoji_stats.json", {})
+        self.emoji_file = "emoji.json"
+        self.keyword_file = "keyword_replies.json"
+        self.stats_file = "emoji_stats.json"
         self._save_task = None
         self._pending_stats = {}
         BotLogger.info("EmojiTool", "EmojiTool cog 初始化完成")
 
     async def load_data(self):
         try:
-            await self.emoji_data_manager.load_data()
-            await self.keyword_reply_manager.load_data()
-            await self.emoji_stats_manager.load_data()
+            # 簡單載入，不需要複雜的管理器
             BotLogger.info("EmojiTool", "資料載入完成")
             # 延遲啟動定期儲存，避免載入時阻塞
             asyncio.create_task(self._delayed_start_periodic_save())
@@ -57,10 +54,10 @@ class EmojiTool(commands.Cog):
             
         try:
             for guild_id, stats in self._pending_stats.items():
-                current_stats = await self.emoji_stats_manager.get_guild_data(guild_id)
+                current_stats = await util.load_guild_data(self.stats_file, guild_id, {})
                 for emoji_name, count in stats.items():
                     current_stats[emoji_name] = current_stats.get(emoji_name, 0) + count
-                await self.emoji_stats_manager.update_guild_data(guild_id, current_stats)
+                await util.save_guild_data(self.stats_file, guild_id, current_stats)
             
             saved_count = sum(len(stats) for stats in self._pending_stats.values())
             self._pending_stats.clear()
@@ -70,7 +67,7 @@ class EmojiTool(commands.Cog):
 
     async def replace_emojis_in_text(self, guild_id: int, text: str) -> str:
         try:
-            emoji_map = await self.emoji_data_manager.get_guild_data(guild_id)
+            emoji_map = await util.load_guild_data(self.emoji_file, guild_id, {})
             pattern = re.compile(r":([a-zA-Z0-9_]+):")
 
             def replacer(match):
@@ -117,7 +114,7 @@ class EmojiTool(commands.Cog):
 
         try:
             # 關鍵字回覆
-            keyword_replies = await self.keyword_reply_manager.get_guild_data(guild_id)
+            keyword_replies = await util.load_guild_data(self.keyword_file, guild_id, {})
             for keyword, reply in keyword_replies.items():
                 if keyword.lower() in message.content.lower():
                     replaced_reply = await self.replace_emojis_in_text(guild_id, reply)
@@ -147,10 +144,10 @@ class EmojiTool(commands.Cog):
         """新增自訂表情符號對應"""
         try:
             guild_id = ctx.guild.id
-            emoji_map = await self.emoji_data_manager.get_guild_data(guild_id)
+            emoji_map = await util.load_guild_data(self.emoji_file, guild_id, {})
             
             emoji_map[name.lower()] = emoji
-            await self.emoji_data_manager.update_guild_data(guild_id, emoji_map)
+            await util.save_guild_data(self.emoji_file, guild_id, emoji_map)
             
             await ctx.send(f"✅ 已新增表情符號對應：`:{name}:` → {emoji}")
             BotLogger.command_used("emoji_add", ctx.author.id, guild_id, f"{name} -> {emoji}")
@@ -164,7 +161,7 @@ class EmojiTool(commands.Cog):
         """列出所有自訂表情符號"""
         try:
             guild_id = ctx.guild.id
-            emoji_map = await self.emoji_data_manager.get_guild_data(guild_id)
+            emoji_map = await util.load_guild_data(self.emoji_file, guild_id, {})
             
             if not emoji_map:
                 await ctx.send("📝 目前沒有自訂表情符號對應")
@@ -191,10 +188,10 @@ class EmojiTool(commands.Cog):
         """新增關鍵字自動回覆"""
         try:
             guild_id = ctx.guild.id
-            keyword_replies = await self.keyword_reply_manager.get_guild_data(guild_id)
+            keyword_replies = await util.load_guild_data(self.keyword_file, guild_id, {})
             
             keyword_replies[keyword.lower()] = reply
-            await self.keyword_reply_manager.update_guild_data(guild_id, keyword_replies)
+            await util.save_guild_data(self.keyword_file, guild_id, keyword_replies)
             
             await ctx.send(f"✅ 已新增關鍵字回覆：`{keyword}` → {reply}")
             BotLogger.command_used("keyword_add", ctx.author.id, guild_id, f"{keyword} -> {reply[:50]}")
