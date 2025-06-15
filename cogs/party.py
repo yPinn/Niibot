@@ -822,7 +822,7 @@ class Party(commands.Cog):
 
         return True
 
-    @commands.command(name="clear", help="清空當前伺服器的分隊狀態")
+    @commands.command(name="party-clear", help="清空當前伺服器的分隊狀態")
     @commands.has_permissions(administrator=True)
     async def clear_party_state(self, ctx: commands.Context):
         """清理當前伺服器的分隊狀態"""
