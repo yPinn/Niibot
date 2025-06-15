@@ -45,7 +45,8 @@ class Reply(commands.Cog):
 
         # 忽略指令訊息（避免與機器人指令衝突）
         from utils.config_manager import config
-        if any(message.content.startswith(prefix) for prefix in config.command_prefix):
+        prefixes = config.command_prefix if isinstance(config.command_prefix, list) else [config.command_prefix]
+        if any(message.content.startswith(prefix) for prefix in prefixes):
             return
 
         # 除錯用：可以啟用以追蹤方法調用
