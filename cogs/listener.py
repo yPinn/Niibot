@@ -134,6 +134,89 @@ class Listener(commands.Cog):
         await ctx.send(embed=embed)
         BotLogger.command_used("debug", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"類型: {debug_type}")
 
+    @commands.command(name="logs", help="查看系統日誌 - 用法: ?logs [數量] 或 ?logs stats")
+    @commands.has_permissions(manage_messages=True)
+    async def view_logs(self, ctx, action_or_limit: str = "10"):
+        """查看系統日誌"""
+        import discord
+        
+        if action_or_limit.lower() == "stats":
+            # 顯示日誌統計
+            stats = BotLogger.get_log_stats()
+            if not stats:
+                await ctx.send("❌ 無法取得日誌統計資訊")
+                return
+            
+            embed = discord.Embed(title="📊 日誌統計資訊", color=discord.Color.blue())
+            embed.add_field(
+                name="📋 基本資訊",
+                value=f"總日誌數: {stats.get('total_logs', 0)}\n"
+                      f"檔案大小: {stats.get('file_size', 0):,} bytes\n"
+                      f"最後修改: {stats.get('last_modified', 'N/A')[:19] if stats.get('last_modified') else 'N/A'}",
+                inline=False
+            )
+            
+            # 按級別統計
+            by_level = stats.get('by_level', {})
+            if by_level:
+                level_info = "\n".join([f"{level}: {count}" for level, count in by_level.items()])
+                embed.add_field(name="📈 按級別統計", value=level_info, inline=True)
+            
+            # 最近錯誤
+            recent_errors = stats.get('recent_errors', [])
+            if recent_errors:
+                error_info = []
+                for err in recent_errors[:3]:  # 只顯示前3個
+                    time_str = err.get('timestamp', '')[:16] if err.get('timestamp') else ''
+                    error_info.append(f"[{time_str}] {err.get('message', '')[:50]}...")
+                embed.add_field(
+                    name="🚨 最近錯誤",
+                    value="\n".join(error_info) if error_info else "無",
+                    inline=False
+                )
+            
+            await ctx.send(embed=embed)
+            
+        else:
+            # 顯示最近的日誌
+            try:
+                limit = min(int(action_or_limit), 50)  # 最多 50 條
+            except ValueError:
+                limit = 10
+            
+            logs = BotLogger.get_json_logs(limit)
+            if not logs:
+                await ctx.send("❌ 無法取得日誌記錄")
+                return
+            
+            embed = discord.Embed(
+                title=f"📝 最近 {len(logs)} 條日誌",
+                color=discord.Color.green()
+            )
+            
+            log_lines = []
+            for log in logs[-10:]:  # 只顯示最後 10 條
+                timestamp = log.get('timestamp', '')[:16]
+                level = log.get('level', 'INFO')
+                message = log.get('message', '')[:80]
+                
+                level_emoji = {
+                    'DEBUG': '🔍',
+                    'INFO': 'ℹ️',
+                    'WARNING': '⚠️',
+                    'ERROR': '❌',
+                    'CRITICAL': '🔥'
+                }.get(level, 'ℹ️')
+                
+                log_lines.append(f"{level_emoji} `{timestamp}` {message}")
+            
+            embed.description = "\n".join(log_lines)
+            embed.set_footer(text=f"共 {len(logs)} 條記錄，使用 ?logs stats 查看統計")
+            
+            await ctx.send(embed=embed)
+        
+        BotLogger.command_used("logs", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"查看: {action_or_limit}")
+
 
 async def setup(bot):
     listener = Listener(bot)

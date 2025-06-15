@@ -55,6 +55,7 @@ class ConfigManager:
                 'DEFAULT_TEAMS': int(os.getenv('DEFAULT_TEAMS', '2')),
                 'LOG_LEVEL': os.getenv('LOG_LEVEL', 'WARNING'),
                 'LOG_FILE': os.getenv('LOG_FILE', None),  # 生產環境不寫入檔案，避免權限問題
+                'JSON_LOG_FILE': os.getenv('JSON_LOG_FILE', f'logs/niibot_{env}.json'),  # JSON 日誌檔案
                 'DATA_DIR': os.getenv('DATA_DIR', 'data'),
                 'EMOJI_SAVE_INTERVAL': int(os.getenv('EMOJI_SAVE_INTERVAL', '30')),
                 'REMINDER_CLEANUP_HOURS': int(os.getenv('REMINDER_CLEANUP_HOURS', '24')),
@@ -189,6 +190,11 @@ class ConfigManager:
     def log_file(self) -> Optional[str]:
         """日誌檔案路徑"""
         return self.get('LOG_FILE')
+    
+    @property
+    def json_log_file(self) -> Optional[str]:
+        """JSON 日誌檔案路徑"""
+        return self.get('JSON_LOG_FILE')
     
     @property
     def data_dir(self) -> str:

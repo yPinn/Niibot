@@ -2,6 +2,7 @@ import logging
 import os
 from datetime import datetime
 from typing import Optional
+from .json_logger import JSONLogger
 
 class BotLogger:
     """統一的機器人日誌系統"""
@@ -10,12 +11,13 @@ class BotLogger:
     _initialized = False
     
     @classmethod
-    def initialize(cls, log_level: str = "INFO", log_file: Optional[str] = None):
+    def initialize(cls, log_level: str = "INFO", log_file: Optional[str] = None, json_file: Optional[str] = None):
         """初始化日誌系統
         
         Args:
             log_level: 日誌級別 (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-            log_file: 日誌檔案路徑，若為 None 則不寫入檔案
+            log_file: 文字日誌檔案路徑，若為 None 則不寫入檔案
+            json_file: JSON 日誌檔案路徑，若為 None 則不寫入 JSON 檔案
         """
         if cls._initialized:
             return
@@ -37,13 +39,21 @@ class BotLogger:
         console_handler.setFormatter(formatter)
         cls._logger.addHandler(console_handler)
         
-        # 檔案處理器 (如果指定)
+        # 文字檔案處理器 (如果指定)
         if log_file:
             # 確保日誌目錄存在
             os.makedirs(os.path.dirname(log_file), exist_ok=True)
             file_handler = logging.FileHandler(log_file, encoding='utf-8')
             file_handler.setFormatter(formatter)
             cls._logger.addHandler(file_handler)
+        
+        # JSON 檔案處理器 (如果指定)
+        if json_file:
+            success = JSONLogger.setup_json_logging(cls._logger, json_file)
+            if success:
+                cls.info("BotLogger", f"JSON 日誌檔案已啟用: {json_file}")
+            else:
+                cls.warning("BotLogger", f"JSON 日誌檔案設定失敗: {json_file}")
         
         cls._initialized = True
         cls.info("BotLogger", "日誌系統初始化完成")
@@ -89,22 +99,77 @@ class BotLogger:
     @classmethod
     def command_used(cls, command_name: str, user_id: int, guild_id: int, args: str = ""):
         """記錄指令使用情況"""
-        cls.info("COMMAND", f"指令 '{command_name}' 被使用 - 用戶: {user_id}, 伺服器: {guild_id}, 參數: {args}")
+        logger = cls._get_logger()
+        message = f"指令 '{command_name}' 被使用 - 用戶: {user_id}, 伺服器: {guild_id}, 參數: {args}"
+        logger.info(f"[COMMAND] {message}", extra={
+            'command_name': command_name,
+            'user_id': user_id,
+            'guild_id': guild_id,
+            'args': args
+        })
     
     @classmethod
     def data_operation(cls, operation: str, file_path: str, success: bool = True, error: Exception = None):
         """記錄資料操作"""
+        logger = cls._get_logger()
         if success:
-            cls.info("DATA", f"資料操作成功 - 操作: {operation}, 檔案: {file_path}")
+            message = f"資料操作成功 - 操作: {operation}, 檔案: {file_path}"
+            logger.info(f"[DATA] {message}", extra={
+                'operation': operation,
+                'file_path': file_path,
+                'success': success
+            })
         else:
-            cls.error("DATA", f"資料操作失敗 - 操作: {operation}, 檔案: {file_path}", error)
+            message = f"資料操作失敗 - 操作: {operation}, 檔案: {file_path}"
+            if error:
+                message += f" - 錯誤詳情: {type(error).__name__}: {str(error)}"
+            logger.error(f"[DATA] {message}", extra={
+                'operation': operation,
+                'file_path': file_path,
+                'success': success,
+                'error_type': type(error).__name__ if error else None
+            })
     
     @classmethod
     def user_action(cls, action: str, user_id: int, guild_id: int, details: str = ""):
         """記錄用戶行為"""
-        cls.info("USER", f"用戶行為 - 動作: {action}, 用戶: {user_id}, 伺服器: {guild_id}, 詳情: {details}")
+        logger = cls._get_logger()
+        message = f"用戶行為 - 動作: {action}, 用戶: {user_id}, 伺服器: {guild_id}, 詳情: {details}"
+        logger.info(f"[USER] {message}", extra={
+            'action': action,
+            'user_id': user_id,
+            'guild_id': guild_id,
+            'details': details
+        })
     
     @classmethod
     def system_event(cls, event: str, details: str = ""):
         """記錄系統事件"""
-        cls.info("SYSTEM", f"系統事件 - 事件: {event}, 詳情: {details}")
+        logger = cls._get_logger()
+        message = f"系統事件 - 事件: {event}, 詳情: {details}"
+        logger.info(f"[SYSTEM] {message}", extra={
+            'event': event,
+            'details': details
+        })
+    
+    @classmethod
+    def get_json_logs(cls, limit: int = 100) -> list:
+        """取得 JSON 日誌記錄"""
+        from .json_logger import JSONLogger
+        from .config_manager import config
+        
+        json_file = getattr(config, 'json_log_file', None)
+        if json_file:
+            return JSONLogger.parse_json_logs(json_file, limit)
+        return []
+    
+    @classmethod
+    def get_log_stats(cls) -> dict:
+        """取得日誌統計資訊"""
+        from .json_logger import JSONLogger
+        from .config_manager import config
+        
+        json_file = getattr(config, 'json_log_file', None)
+        if json_file:
+            return JSONLogger.get_log_stats(json_file)
+        return {}
