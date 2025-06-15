@@ -117,7 +117,7 @@ class Clear(commands.Cog):
             try:
                 await ctx.send(format_error_msg(error_msg))
             except discord.NotFound:
-                pass
+                pass  # 頻道不存在或無權限，忽略錯誤
 
     @clear_all_messages.error
     async def clear_error(self, ctx: commands.Context, error):
