@@ -65,6 +65,38 @@ class Listener(commands.Cog):
         except Exception as e:
             BotLogger.error("Listener", f"on_message錯誤: {e}")
 
+    @commands.command(name="debug_commands", help="顯示當前註冊的指令")
+    async def debug_commands(self, ctx):
+        """除錯指令：顯示所有註冊的指令"""
+        import discord
+        
+        embed = discord.Embed(
+            title="🔍 指令註冊診斷",
+            color=discord.Color.blue()
+        )
+        
+        # 檢查所有註冊的指令
+        commands_list = []
+        for name, command in self.bot.all_commands.items():
+            commands_list.append(f"• {name}: {command.callback.__name__} (在 {command.callback.__module__})")
+        
+        embed.add_field(
+            name="📋 已註冊指令",
+            value="\n".join(commands_list[:10]) + ("\n..." if len(commands_list) > 10 else ""),
+            inline=False
+        )
+        
+        # 特別檢查test指令
+        test_command = self.bot.get_command("test")
+        if test_command:
+            embed.add_field(
+                name="🧪 test指令詳情",
+                value=f"回調: {test_command.callback}\n模組: {test_command.callback.__module__}",
+                inline=False
+            )
+        
+        await ctx.send(embed=embed)
+
     @commands.command(name="debug_handlers", help="顯示當前註冊的訊息處理器狀態")
     async def debug_handlers(self, ctx):
         """除錯指令：顯示當前處理器註冊狀態"""
