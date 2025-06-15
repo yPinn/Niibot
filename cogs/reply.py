@@ -43,6 +43,11 @@ class Reply(commands.Cog):
         if message.author.bot:
             return
 
+        # 忽略指令訊息（避免與機器人指令衝突）
+        from utils.config_manager import config
+        if any(message.content.startswith(prefix) for prefix in config.command_prefix):
+            return
+
         # 原本的關鍵字條件
         keywords = ["呼叫"]
         match_keyword = any(k in message.content for k in keywords)
