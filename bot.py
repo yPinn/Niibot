@@ -63,7 +63,16 @@ async def unload(ctx, extension):
 @bot.command(name="test")
 async def test_command(ctx):
     """極簡測試指令"""
+    import traceback
+    import time
+    
+    stack_trace = ''.join(traceback.format_stack()[-3:-1])  # 獲取調用堆疊
+    timestamp = time.time()
+    
     BotLogger.info("TestCommand", f"🧪 測試指令被執行 - 用戶: {ctx.author.id}")
+    BotLogger.info("TestCommand", f"⏰ 時間戳: {timestamp}")
+    BotLogger.info("TestCommand", f"📍 調用堆疊:\n{stack_trace}")
+    
     await ctx.send("✅ 測試指令執行完成")
 
 
