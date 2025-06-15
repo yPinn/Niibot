@@ -8,6 +8,7 @@ class Listener(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.handlers = []
+        self._registered_handlers = set()  # 追蹤已註冊的處理器，避免重複
 
         bot.loop.create_task(self.wait_and_register_handlers())
 
@@ -15,10 +16,27 @@ class Listener(commands.Cog):
         await self.bot.wait_until_ready()
         # 給其他 cogs 時間載入完成
         await asyncio.sleep(1)
+        
+        # 清空現有處理器列表，重新註冊（避免重載時重複）
+        self.handlers.clear()
+        self._registered_handlers.clear()
+        
         for cog in self.bot.cogs.values():
             if hasattr(cog, "handle_on_message") and cog != self:
-                self.handlers.append(cog)
-                BotLogger.info("Listener", f"註冊訊息處理器: {cog.__class__.__name__}")
+                # 使用 cog 的記憶體位址作為唯一識別符，避免重複註冊
+                cog_id = id(cog)
+                if cog_id not in self._registered_handlers:
+                    self.handlers.append(cog)
+                    self._registered_handlers.add(cog_id)
+                    BotLogger.info("Listener", f"註冊訊息處理器: {cog.__class__.__name__}")
+                else:
+                    BotLogger.debug("Listener", f"跳過重複註冊: {cog.__class__.__name__}")
+
+    def cog_unload(self):
+        """Cog 卸載時清理處理器"""
+        BotLogger.info("Listener", "清理訊息處理器...")
+        self.handlers.clear()
+        self._registered_handlers.clear()
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -26,7 +44,8 @@ class Listener(commands.Cog):
             return
 
         # 先處理自定義的 handle_on_message
-        for handler in self.handlers:
+        # 使用 copy() 避免在迭代過程中列表被修改
+        for handler in self.handlers.copy():
             if handler:
                 try:
                     await handler.handle_on_message(message)
