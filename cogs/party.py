@@ -176,6 +176,7 @@ class InviteView(View):
         self.party_cog = party_cog
         self.guild_state = guild_state
         self.message = message
+        self._cached_voice_permission = None  # 快取權限狀態
         # 註冊到狀態管理
         guild_state.active_views.add(self)
     
@@ -188,7 +189,8 @@ class InviteView(View):
             item.disabled = True
         if self.message:
             try:
-                await self.message.edit(content=f"{await self._generate_queue_content()}\n\n⏰ **此分隊大廳已超時失效**", view=self)
+                content = await self._generate_queue_content()
+                await self.message.edit(content=f"{content}\n\n⏰ **此分隊大廳已超時失效**", view=self)
             except discord.NotFound:
                 pass
 
@@ -308,7 +310,14 @@ class InviteView(View):
 
         # 檢查語音權限
         if not await self._check_voice_permissions(interaction.guild):
-            await interaction.response.send_message("⚠️ 機器人缺少語音頻道管理權限，無法移動玩家", ephemeral=True)
+            await interaction.response.send_message(
+                "🚫 **機器人缺少必要權限**\n"
+                "需要以下權限才能移動玩家到語音頻道：\n"
+                "• `管理頻道` (manage_channels)\n"
+                "• `移動成員` (move_members)\n\n"
+                "請聯繫伺服器管理員設定權限後再試。",
+                ephemeral=True
+            )
             return
 
         if not self.guild_state.current_teams:
@@ -326,7 +335,14 @@ class InviteView(View):
 
         # 檢查語音權限
         if not await self._check_voice_permissions(interaction.guild):
-            await interaction.response.send_message("⚠️ 機器人缺少語音頻道管理權限，無法移動玩家", ephemeral=True)
+            await interaction.response.send_message(
+                "🚫 **機器人缺少必要權限**\n"
+                "需要以下權限才能移動玩家：\n"
+                "• `管理頻道` (manage_channels)\n"
+                "• `移動成員` (move_members)\n\n"
+                "請聯繫伺服器管理員設定權限後再試。",
+                ephemeral=True
+            )
             return
 
         if not self.guild_state.original_voice_channel:
@@ -341,11 +357,11 @@ class InviteView(View):
         if not self.message:
             return
 
-        content = await self._generate_queue_content()
-
         # 檢查語音權限並動態更新按鈕狀態
         has_voice_perm = await self._check_voice_permissions(self.message.guild)
         self._update_button_states(has_voice_perm)
+        
+        content = await self._generate_queue_content(has_voice_perm)
 
         try:
             await self.message.edit(content=content, view=self)
@@ -355,8 +371,11 @@ class InviteView(View):
     def _update_button_states(self, has_voice_permission: bool):
         """根據權限和狀態更新按鈕"""
         has_teams = bool(self.guild_state.current_teams)
+        
+        # 快取權限狀態以供其他方法使用
+        self._cached_voice_permission = has_voice_permission
 
-        # 找到對應的按鈕
+        # 找到對應的按鈕並更新狀態
         for item in self.children:
             if item.custom_id == "start_team":
                 item.disabled = has_teams
@@ -365,11 +384,27 @@ class InviteView(View):
             elif item.custom_id == "reconfig":
                 item.disabled = not has_teams
             elif item.custom_id == "move_voice":
+                # 語音按鈕：需要有分隊結果 且 有權限
                 item.disabled = not has_teams or not has_voice_permission
+                # 如果無權限，修改按鈕標籤提示
+                if not has_voice_permission:
+                    item.label = "移動到語音 (無權限)"
+                    item.emoji = "🚫"
+                else:
+                    item.label = "移動到語音"
+                    item.emoji = "🔊"
             elif item.custom_id == "return_voice":
+                # 拉回按鈕：需要有分隊結果 且 有權限
                 item.disabled = not has_teams or not has_voice_permission
+                # 如果無權限，修改按鈕標籤提示
+                if not has_voice_permission:
+                    item.label = "拉回原頻道 (無權限)"
+                    item.emoji = "🚫"
+                else:
+                    item.label = "拉回原頻道"
+                    item.emoji = "🏠"
 
-    async def _generate_queue_content(self) -> str:
+    async def _generate_queue_content(self, has_voice_perm: bool = None) -> str:
         """生成隊列內容字符串"""
         # 隊列狀態
         queue_list = []
@@ -413,9 +448,10 @@ class InviteView(View):
 
         # 權限提示
         if self.guild_state.current_teams:
-            has_voice_perm = await self._check_voice_permissions(self.message.guild)
+            if has_voice_perm is None:
+                has_voice_perm = await self._check_voice_permissions(self.message.guild)
             if not has_voice_perm:
-                content += f"\n⚠️ **機器人缺少語音頻道管理權限**\n無法創建/移動語音頻道，請聯繫管理員"
+                content += f"\n\n🚫 **語音功能受限**\n機器人缺少 `管理頻道` 和 `移動成員` 權限\n分隊功能正常，但無法操作語音頻道"
 
         return content
 
@@ -443,6 +479,12 @@ class Party(commands.Cog):
             for view in guild_state.active_views.copy():
                 view.stop()
         self.guild_states.clear()
+
+    async def _check_voice_permissions_static(self, guild: discord.Guild) -> bool:
+        """靜態方法：檢查機器人是否有語音頻道權限"""
+        bot_member = guild.me
+        return (bot_member.guild_permissions.manage_channels and
+                bot_member.guild_permissions.move_members)
 
 
     def _get_original_voice_channel(self, ctx: commands.Context):
@@ -478,6 +520,22 @@ class Party(commands.Cog):
         guild_state.queue_creator = ctx.author.id
         guild_state.original_voice_channel = self._get_original_voice_channel(ctx)
         guild_state.max_players = max_players
+
+        # 檢查權限並顯示初始提示
+        has_voice_perm = await self._check_voice_permissions_static(ctx.guild)
+        if not has_voice_perm:
+            warning_msg = await ctx.send(
+                "⚠️ **注意：機器人缺少語音頻道權限**\n"
+                "分隊功能可正常使用，但無法自動創建或移動語音頻道。\n"
+                "如需完整功能，請給予機器人 `管理頻道` 和 `移動成員` 權限。\n\n"
+                "正在創建分隊大廳..."
+            )
+            # 2秒後刪除提示訊息
+            await asyncio.sleep(2)
+            try:
+                await warning_msg.delete()
+            except:
+                pass
 
         view = InviteView(self, guild_state)
         content = await view._generate_queue_content()
@@ -612,14 +670,15 @@ class Party(commands.Cog):
 
         # 嘗試創建語音頻道（如果有權限）
         guild = interaction.guild
-        bot_member = guild.me
-
-        if (bot_member.guild_permissions.manage_channels and
-                bot_member.guild_permissions.move_members):
+        has_voice_permissions = await self._check_voice_permissions_static(guild)
+        
+        if has_voice_permissions:
             try:
                 await self._create_voice_channels(guild, len(team_lists))
             except Exception as e:
                 print(f"創建語音頻道失敗: {e}")
+        else:
+            print("機器人缺少語音頻道管理權限，跳過語音頻道創建")
 
         return True
     
@@ -628,6 +687,9 @@ class Party(commands.Cog):
         for view in guild_state.active_views.copy():
             if isinstance(view, InviteView) and view.message:
                 try:
+                    # 強制刷新按鈕狀態
+                    has_voice_perm = await view._check_voice_permissions(view.message.guild)
+                    view._update_button_states(has_voice_perm)
                     await view._update_queue_message()
                 except Exception as e:
                     print(f"更新 InviteView 失敗: {e}")
