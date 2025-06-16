@@ -116,6 +116,20 @@ class Party(commands.Cog):
             return True
             
         return False
+    
+    def _bot_has_voice_permissions(self, guild: discord.Guild) -> tuple[bool, str]:
+        """檢查機器人是否有語音頻道操作權限"""
+        bot_member = guild.me
+        missing_perms = []
+        
+        if not bot_member.guild_permissions.manage_channels:
+            missing_perms.append("管理頻道")
+        if not bot_member.guild_permissions.move_members:
+            missing_perms.append("移動成員")
+            
+        if missing_perms:
+            return False, f"權限不足：{', '.join(missing_perms)}"
+        return True, "權限檢查通過"
 
     async def cog_unload(self):
         """清理資源"""
@@ -236,6 +250,15 @@ class Party(commands.Cog):
             # 權限檢查
             if not self._can_manage_queue(guild_state, interaction.user):
                 await interaction.response.send_message("❌ 只有隊列創建者或管理員可以開始分隊！", ephemeral=True)
+                return
+            
+            # 檢查機器人權限
+            has_perms, perm_msg = self._bot_has_voice_permissions(interaction.guild)
+            if not has_perms:
+                await interaction.response.send_message(
+                    f"❌ 機器人{perm_msg}，無法執行語音頻道操作", 
+                    ephemeral=True
+                )
                 return
             
             total_players = guild_state.get_player_count()

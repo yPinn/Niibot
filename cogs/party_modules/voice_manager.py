@@ -254,8 +254,10 @@ class VoiceChannelManager:
                             stats['failed'] += 1
                             continue
                             
-                        if not member.voice or not member.voice.channel:
-                            BotLogger.debug("VoiceManager", f"成員 {member.display_name} 不在語音頻道中")
+                        # 詳細的用戶狀態檢查
+                        can_move, reason = await self._can_move_member(member, target_channel)
+                        if not can_move:
+                            BotLogger.debug("VoiceManager", f"無法移動 {member.display_name}: {reason}")
                             stats['failed'] += 1
                             continue
                             
@@ -267,13 +269,17 @@ class VoiceChannelManager:
                         await asyncio.sleep(0.5)
                         
                     except discord.Forbidden:
-                        BotLogger.warning("VoiceManager", f"沒有移動成員的權限: {user_id}")
+                        BotLogger.warning("VoiceManager", f"沒有移動成員的權限: {member.display_name} ({user_id})")
+                        stats['failed'] += 1
+                    except discord.NotFound:
+                        BotLogger.warning("VoiceManager", f"頻道或用戶不存在: {member.display_name} ({user_id})")
                         stats['failed'] += 1
                     except discord.HTTPException as e:
-                        BotLogger.warning("VoiceManager", f"移動成員失敗: {user_id}, 錯誤: {e}")
+                        error_detail = f"HTTP {e.status}" if hasattr(e, 'status') else str(e)
+                        BotLogger.warning("VoiceManager", f"移動成員網路錯誤: {member.display_name} ({user_id}), 錯誤: {error_detail}")
                         stats['failed'] += 1
                     except Exception as e:
-                        BotLogger.error("VoiceManager", f"移動成員時發生未知錯誤: {e}", e)
+                        BotLogger.error("VoiceManager", f"移動成員時發生未知錯誤: {member.display_name} ({user_id}), 錯誤: {e}", e)
                         stats['failed'] += 1
                         
         except Exception as e:
@@ -281,6 +287,26 @@ class VoiceChannelManager:
             
         BotLogger.info("VoiceManager", f"移動完成: 成功 {stats['moved']}, 失敗 {stats['failed']}")
         return stats
+    
+    async def _can_move_member(self, member: discord.Member, target_channel: discord.VoiceChannel) -> tuple[bool, str]:
+        """檢查是否可以移動成員到目標頻道"""
+        # 檢查用戶是否在語音頻道
+        if not member.voice or not member.voice.channel:
+            return False, "用戶不在語音頻道中"
+        
+        # 檢查目標頻道是否已滿
+        if target_channel.user_limit and len(target_channel.members) >= target_channel.user_limit:
+            return False, "目標頻道已滿"
+        
+        # 檢查用戶是否已經在目標頻道
+        if member.voice.channel.id == target_channel.id:
+            return False, "用戶已經在目標頻道中"
+        
+        # 檢查用戶是否被伺服器靜音（可能影響移動）
+        if member.voice.mute or member.voice.deaf:
+            BotLogger.debug("VoiceManager", f"用戶 {member.display_name} 被靜音或禁音，但仍嘗試移動")
+        
+        return True, "可以移動"
     
     # 已移除舊的延遲清理功能，現在使用實時監控
     
