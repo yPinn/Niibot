@@ -13,9 +13,10 @@ from utils.config_manager import config
 # 簡化的 UI 類別
 class CategoryButtonsView(discord.ui.View):
     def __init__(self, data: dict, user: discord.User):
-        super().__init__(timeout=120)
+        super().__init__(timeout=60)
         self.data = data
         self.user = user
+        self.message = None
         # 一次最多顯示25個按鈕
         for category in sorted(data.keys())[:25]:
             button = CategoryButton(category)
@@ -26,6 +27,26 @@ class CategoryButtonsView(discord.ui.View):
             await interaction.response.send_message("❌ 只能由原始使用者操作", ephemeral=True)
             return False
         return True
+
+    async def on_timeout(self):
+        """逾時時將所有按鈕變灰並禁用"""
+        try:
+            for item in self.children:
+                if isinstance(item, discord.ui.Button):
+                    item.disabled = True
+                    item.style = discord.ButtonStyle.grey
+            
+            if self.message:
+                embed = discord.Embed(
+                    title="🍽️ 請選擇餐點分類",
+                    description="⏰ 操作已逾時，請重新使用指令",
+                    color=discord.Color.light_grey()
+                )
+                await self.message.edit(embed=embed, view=self)
+        except discord.NotFound:
+            pass
+        except Exception as e:
+            BotLogger.error("Eat", f"逾時處理失敗: {e}")
 
 
 class CategoryButton(discord.ui.Button):
@@ -47,14 +68,16 @@ class CategoryButton(discord.ui.Button):
         )
         view = DishButtonsView(self.category, options, interaction.user)
         await interaction.response.edit_message(embed=embed, view=view)
+        view.message = await interaction.original_response()
 
 
 class DishButtonsView(discord.ui.View):
     def __init__(self, category: str, options: list[str], user: discord.User):
-        super().__init__(timeout=120)
+        super().__init__(timeout=60)
         self.category = category
         self.options = options
         self.user = user
+        self.message = None
         
         reload_btn = ReloadButton(category, options)
         back_btn = BackButton()
@@ -66,6 +89,35 @@ class DishButtonsView(discord.ui.View):
             await interaction.response.send_message("❌ 只能由原始使用者操作", ephemeral=True)
             return False
         return True
+
+    async def on_timeout(self):
+        """逾時時將所有按鈕變灰並禁用"""
+        try:
+            for item in self.children:
+                if isinstance(item, discord.ui.Button):
+                    item.disabled = True
+                    item.style = discord.ButtonStyle.grey
+            
+            if self.message:
+                # 保持原有的 embed 內容但改變顏色
+                old_embed = self.message.embeds[0] if self.message.embeds else None
+                if old_embed:
+                    embed = discord.Embed(
+                        title=old_embed.title,
+                        description=f"{old_embed.description}\n\n⏰ 操作已逾時，請重新使用指令",
+                        color=discord.Color.light_grey()
+                    )
+                else:
+                    embed = discord.Embed(
+                        title="🍽️ 餐點推薦",
+                        description="⏰ 操作已逾時，請重新使用指令",
+                        color=discord.Color.light_grey()
+                    )
+                await self.message.edit(embed=embed, view=self)
+        except discord.NotFound:
+            pass
+        except Exception as e:
+            BotLogger.error("Eat", f"逾時處理失敗: {e}")
 
 
 class ReloadButton(discord.ui.Button):
@@ -83,6 +135,7 @@ class ReloadButton(discord.ui.Button):
         )
         view = DishButtonsView(self.category, self.options, interaction.user)
         await interaction.response.edit_message(embed=embed, view=view)
+        view.message = await interaction.original_response()
 
 
 class BackButton(discord.ui.Button):
@@ -102,6 +155,7 @@ class BackButton(discord.ui.Button):
         )
         view = CategoryButtonsView(cog.data, interaction.user)
         await interaction.response.edit_message(embed=embed, view=view)
+        view.message = await interaction.original_response()
 
 
 class Eat(commands.Cog):
@@ -151,7 +205,8 @@ class Eat(commands.Cog):
                 color=discord.Color.green()
             )
             view = CategoryButtonsView(self.data, ctx.author)
-            await ctx.send(embed=embed, view=view, reference=ctx.message, mention_author=False)
+            message = await ctx.send(embed=embed, view=view, reference=ctx.message, mention_author=False)
+            view.message = message
         else:
             # 有參數時，舊版隨機抽餐點
             category_key = util.normalize_text(category)
