@@ -12,7 +12,7 @@ from utils.config_manager import config
 ENV = config.get('BOT_ENV', 'local')
 
 # 初始化日誌系統
-BotLogger.initialize(config.log_level, config.log_file, config.json_log_file)
+BotLogger.initialize(config.log_level, config.log_file)
 
 # 確保資料目錄存在
 ensure_data_dir()

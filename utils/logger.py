@@ -2,7 +2,6 @@ import logging
 import os
 from datetime import datetime
 from typing import Optional
-from .json_logger import JSONLogger
 
 class BotLogger:
     """統一的機器人日誌系統"""
@@ -11,13 +10,12 @@ class BotLogger:
     _initialized = False
     
     @classmethod
-    def initialize(cls, log_level: str = "INFO", log_file: Optional[str] = None, json_file: Optional[str] = None):
+    def initialize(cls, log_level: str = "INFO", log_file: Optional[str] = None):
         """初始化日誌系統
         
         Args:
             log_level: 日誌級別 (DEBUG, INFO, WARNING, ERROR, CRITICAL)
             log_file: 文字日誌檔案路徑，若為 None 則不寫入檔案
-            json_file: JSON 日誌檔案路徑，若為 None 則不寫入 JSON 檔案
         """
         if cls._initialized:
             return
@@ -47,13 +45,7 @@ class BotLogger:
             file_handler.setFormatter(formatter)
             cls._logger.addHandler(file_handler)
         
-        # JSON 檔案處理器 (如果指定)
-        if json_file:
-            success = JSONLogger.setup_json_logging(cls._logger, json_file)
-            if success:
-                cls.info("BotLogger", f"JSON 日誌檔案已啟用: {json_file}")
-            else:
-                cls.warning("BotLogger", f"JSON 日誌檔案設定失敗: {json_file}")
+        # JSON 功能已移除，簡化日誌系統
         
         cls._initialized = True
         cls.info("BotLogger", "日誌系統初始化完成")
