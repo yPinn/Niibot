@@ -49,7 +49,7 @@ async def on_message(message):
     # 訊息去重保護機制
     message_id = f"{message.id}_{message.channel.id}"
     if message_id in bot._processed_messages:
-        BotLogger.debug("MessageHandler", f"訊息已處理過，跳過: {message_id}")
+        BotLogger.warning("MessageHandler", f"⚠️ 重複訊息被阻擋: {message_id}, 內容: {message.content[:50]}")
         return
     
     bot._processed_messages.add(message_id)
@@ -62,6 +62,8 @@ async def on_message(message):
         bot._message_cleanup_counter = 0
     
     try:
+        BotLogger.debug("MessageHandler", f"📨 處理訊息: {message_id}, 內容: {message.content[:30]}")
+        
         # 處理自定義handler（如果listener已載入）
         if 'Listener' in bot.cogs:
             listener = bot.cogs['Listener']
@@ -69,6 +71,8 @@ async def on_message(message):
         
         # 處理Discord指令（只調用一次）
         await bot.process_commands(message)
+        
+        BotLogger.debug("MessageHandler", f"✅ 完成處理: {message_id}")
         
     except Exception as e:
         BotLogger.error("MessageHandler", f"訊息處理發生未預期錯誤: {e}", e)
