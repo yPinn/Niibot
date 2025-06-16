@@ -4,15 +4,31 @@ from discord.ext import commands
 from utils.logger import BotLogger
 
 
+class HandlerInfo:
+    """處理器資訊類別"""
+    def __init__(self, handler, priority=0, name=None):
+        self.handler = handler
+        self.priority = priority  # 數字越大優先級越高
+        self.name = name or handler.__class__.__name__
+        self.error_count = 0
+        self.last_error = None
+        self.disabled = False
+
+
 class Listener(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.handlers = []
+        self.handlers = []  # List[HandlerInfo]
         self._registration_task = None
         
         # 簡單的實例ID用於除錯
         self._instance_id = id(self)
         BotLogger.info("Listener", f"🔧 建立Listener實例 {hex(self._instance_id)}")
+        
+        # 處理器管理設定
+        self.max_errors_per_handler = 5  # 每個處理器最大錯誤次數
+        self.error_reset_threshold = 100  # 處理多少訊息後重置錯誤計數
+        self.message_count = 0
         
         self._start_registration_task()
     
@@ -30,11 +46,63 @@ class Listener(commands.Cog):
         for cog in self.bot.cogs.values():
             if hasattr(cog, "handle_on_message") and cog != self:
                 cog_name = cog.__class__.__name__
-                self.handlers.append(cog)
-                BotLogger.info("Listener", f"✅ 註冊處理器: {cog_name}")
+                
+                # 取得處理器優先級（如果有定義的話）
+                priority = getattr(cog, 'message_handler_priority', 0)
+                
+                handler_info = HandlerInfo(cog, priority, cog_name)
+                self.handlers.append(handler_info)
+                BotLogger.info("Listener", f"✅ 註冊處理器: {cog_name} (優先級: {priority})")
+        
+        # 按優先級排序（高優先級先執行）
+        self.handlers.sort(key=lambda h: h.priority, reverse=True)
         
         BotLogger.info("Listener", f"📋 註冊完成，共 {len(self.handlers)} 個處理器")
+        for handler_info in self.handlers:
+            BotLogger.debug("Listener", f"處理器順序: {handler_info.name} (優先級: {handler_info.priority})")
 
+    async def handle_message_dispatch(self, message: discord.Message):
+        """改進的訊息分發機制"""
+        self.message_count += 1
+        
+        # 定期重置錯誤計數
+        if self.message_count % self.error_reset_threshold == 0:
+            for handler_info in self.handlers:
+                if handler_info.error_count > 0:
+                    BotLogger.info("Listener", f"重置 {handler_info.name} 的錯誤計數: {handler_info.error_count} -> 0")
+                    handler_info.error_count = 0
+                    handler_info.disabled = False
+        
+        # 按優先級順序處理
+        for handler_info in self.handlers:
+            if handler_info.disabled:
+                continue
+                
+            try:
+                # 檢查處理器是否有條件處理方法
+                if hasattr(handler_info.handler, 'should_handle_message'):
+                    if not await handler_info.handler.should_handle_message(message):
+                        continue
+                
+                await handler_info.handler.handle_on_message(message)
+                
+            except Exception as e:
+                handler_info.error_count += 1
+                handler_info.last_error = str(e)
+                
+                BotLogger.error(
+                    "MessageDispatch", 
+                    f"處理器 {handler_info.name} 錯誤 (第{handler_info.error_count}次): {e}", e
+                )
+                
+                # 如果錯誤次數過多，暫時停用處理器
+                if handler_info.error_count >= self.max_errors_per_handler:
+                    handler_info.disabled = True
+                    BotLogger.warning(
+                        "MessageDispatch", 
+                        f"處理器 {handler_info.name} 因錯誤過多被暫停 (錯誤次數: {handler_info.error_count})"
+                    )
+    
     def cog_unload(self):
         """Cog 卸載時清理"""
         BotLogger.info("Listener", f"🗑️ 清理實例 {hex(self._instance_id)}")
@@ -95,11 +163,27 @@ class Listener(commands.Cog):
             embed = discord.Embed(title="🔍 訊息處理器診斷", color=discord.Color.green())
             
             if self.handlers:
-                handler_info = [f"• {h.__class__.__name__}" for h in self.handlers]
+                handler_info = []
+                for h in self.handlers:
+                    status = "🔴 已停用" if h.disabled else "🟢 運行中"
+                    error_info = f" (錯誤: {h.error_count})" if h.error_count > 0 else ""
+                    handler_info.append(f"• {h.name} [P{h.priority}] {status}{error_info}")
+                    
                 embed.add_field(
                     name=f"🎯 已註冊處理器 ({len(self.handlers)})",
                     value="\n".join(handler_info),
                     inline=False
+                )
+                
+                # 添加統計資訊
+                active_count = sum(1 for h in self.handlers if not h.disabled)
+                total_errors = sum(h.error_count for h in self.handlers)
+                embed.add_field(
+                    name="📊 統計",
+                    value=f"活躍處理器: {active_count}/{len(self.handlers)}\n"
+                          f"總錯誤數: {total_errors}\n"
+                          f"處理訊息數: {self.message_count}",
+                    inline=True
                 )
             else:
                 embed.add_field(name="⚠️ 狀態", value="沒有註冊任何處理器", inline=False)

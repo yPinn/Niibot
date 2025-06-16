@@ -6,6 +6,7 @@ from discord.ext import commands
 from utils.util import Cooldown, format_error_msg, format_success_msg
 from utils.logger import BotLogger
 from utils.config_manager import config
+from utils.permissions import moderator_only, guild_only
 
 
 class Clear(commands.Cog):
@@ -18,7 +19,8 @@ class Clear(commands.Cog):
         name="clear",
         help="刪除上方包含 bot 訊息在內的 X 則使用者訊息區塊（預設 100）"
     )
-    @commands.has_permissions(manage_messages=True)
+    @moderator_only(rate_limit=(2, 60))  # 版主權限，每分鐘最多2次
+    @guild_only()
     async def clear_all_messages(self, ctx: commands.Context, amount: int = 100):
         user_id = ctx.author.id
 
