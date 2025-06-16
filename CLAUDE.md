@@ -69,15 +69,23 @@ pip install -r requirements-dev.txt
 - Prevents need for multiple `@commands.Cog.listener()` decorators  
   避免需要多個 `@commands.Cog.listener()` 裝飾器
 
-**Party System (`party.py`) 分隊系統:**
-- Complex team division and voice channel management  
-  複雜的隊伍分組和語音頻道管理
+**Party System (`party.py` + `party_modules/`) 分隊系統:**
+- Modularized architecture with separate components for different responsibilities  
+  模組化架構，不同職責分離到獨立組件
+- `party_modules/state_manager.py` - Guild-specific party state management with async locks  
+  公會特定的分隊狀態管理，使用非同步鎖定機制
+- `party_modules/team_divider.py` - Intelligent team division algorithms with multiple modes  
+  智能分隊演算法，支援多種分隊模式
+- `party_modules/voice_manager.py` - Dynamic voice channel creation and automatic cleanup  
+  動態語音頻道建立和自動清理機制
 - Persistent queue system with interactive UI using Discord Views/Modals  
   使用 Discord Views/Modals 的持久化佇列系統和互動式 UI
-- Auto-cleanup of empty voice channels  
-  自動清理空的語音頻道
+- Real-time voice channel monitoring with 30-second cleanup cycles  
+  即時語音頻道監控，30秒清理週期
 - Support for moving players between voice channels (requires manage_channels and move_members permissions)  
   支援在語音頻道間移動玩家（需要 manage_channels 和 move_members 權限）
+- Manual queue lifecycle control (auto-timeout removed)  
+  手動佇列生命週期控制（移除自動逾時機制）
 
 ### Utilities (`utils/util.py`) 工具程式
 
@@ -86,6 +94,8 @@ pip install -r requirements-dev.txt
   非同步 JSON 檔案操作，具備錯誤處理
 - `create_activity()` - Discord bot status/activity creation  
   Discord 機器人狀態/活動建立
+- `get_deployment_info()` - Deployment environment information for debugging  
+  部署環境資訊，用於除錯目的
 - `Cooldown` class - Simple per-user cooldown system  
   簡單的每用戶冷卻系統
 - Time utilities with timezone support (defaults to UTC+8)  
@@ -124,6 +134,10 @@ pip install -r requirements-dev.txt
   TOKEN 驗證機制可防止使用無效或空白 token 啟動機器人
 - Dynamic port allocation supports various hosting platforms (Render, Railway, etc.)  
   動態埠號分配支援各種託管平台（Render、Railway 等）
+- `runtime.txt` specifies Python version for deployment platforms  
+  `runtime.txt` 指定部署平台的 Python 版本
+- Deployment information available via `?test` command for debugging  
+  可透過 `?test` 指令取得部署資訊以供除錯
 - Absolute path usage ensures consistent file loading across different environments  
   使用絕對路徑確保在不同環境中檔案載入的一致性
 
