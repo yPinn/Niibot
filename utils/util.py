@@ -300,3 +300,61 @@ def validate_input(text: str, max_length: int = 100, allowed_chars: str = None) 
         return False
         
     return True
+
+
+def get_deployment_info() -> str:
+    """獲取部署環境信息
+    
+    Returns:
+        str: 部署環境的詳細信息
+    """
+    deployment_info = []
+    
+    # 環境變數
+    env = config.get('BOT_ENV', 'local')
+    deployment_info.append(f"環境: {env}")
+    
+    # 主機名稱
+    hostname = os.environ.get('HOSTNAME', 'unknown')
+    deployment_info.append(f"主機: {hostname}")
+    
+    # 平台檢測
+    platform_indicators = {
+        'RENDER': 'Render',
+        'RAILWAY_ENVIRONMENT': 'Railway', 
+        'HEROKU_APP_NAME': 'Heroku',
+        'VERCEL': 'Vercel',
+        'REPLIT_ENVIRONMENT': 'Replit',
+        'GITPOD_WORKSPACE_ID': 'Gitpod',
+        'CODESPACE_NAME': 'GitHub Codespaces'
+    }
+    
+    detected_platform = None
+    for env_var, platform_name in platform_indicators.items():
+        if os.environ.get(env_var):
+            detected_platform = platform_name
+            break
+    
+    if detected_platform:
+        deployment_info.append(f"平台: {detected_platform}")
+    else:
+        deployment_info.append("平台: 本地或未知")
+    
+    # 特殊環境變數
+    if os.environ.get('PORT'):
+        deployment_info.append(f"端口: {os.environ.get('PORT')}")
+    
+    if os.environ.get('RENDER_SERVICE_NAME'):
+        deployment_info.append(f"Render服務: {os.environ.get('RENDER_SERVICE_NAME')}")
+    
+    if os.environ.get('RAILWAY_SERVICE_NAME'):
+        deployment_info.append(f"Railway服務: {os.environ.get('RAILWAY_SERVICE_NAME')}")
+    
+    # Python 版本
+    import sys
+    deployment_info.append(f"Python: {sys.version.split()[0]}")
+    
+    # 進程ID
+    deployment_info.append(f"PID: {os.getpid()}")
+    
+    return " | ".join(deployment_info)

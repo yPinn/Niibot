@@ -21,6 +21,7 @@ class GuildPartyState:
         self.team_settings: Dict[str, Any] = {}  # {'teams': int, 'players_per_team': int}
         self.active_views: Set[Any] = set()  # 追蹤活躍的 View 實例
         self.created_channels: List[discord.VoiceChannel] = []  # 創建的語音頻道
+        self.original_message: Optional[Any] = None  # 原始隊列訊息
     
     async def cleanup_state(self):
         """清理所有狀態"""
@@ -31,6 +32,7 @@ class GuildPartyState:
             self.max_players = None
             self.queue_creator = None
             self.original_voice_channel = None
+            self.original_message = None
             
             # 停用所有活躍的 Views
             for view in self.active_views.copy():
@@ -114,15 +116,24 @@ class PartyStateManager:
         """清理指定伺服器的狀態"""
         async with self._global_lock:
             if guild_id in self.guild_states:
+                # 先清理個別狀態
                 await self.guild_states[guild_id].cleanup_state()
+                # 然後從字典中移除
                 del self.guild_states[guild_id]
+            else:
+                # 即使沒有記錄的狀態，也創建一個空狀態並清理（以防萬一）
+                temp_state = GuildPartyState()
+                await temp_state.cleanup_state()
     
     async def has_active_queue(self, guild_id: int) -> bool:
         """檢查伺服器是否有活躍隊列"""
         if guild_id not in self.guild_states:
             return False
         state = self.guild_states[guild_id]
-        return state.get_player_count() > 0 or state.has_teams()
+        return (state.get_player_count() > 0 or 
+                state.has_teams() or 
+                state.original_message is not None or
+                state.queue_creator is not None)
     
     async def get_all_active_guilds(self) -> List[int]:
         """取得所有有活躍隊列的伺服器ID"""

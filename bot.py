@@ -5,7 +5,7 @@ import discord
 from discord.ext import commands
 
 from utils import util
-from utils.util import create_activity, ensure_data_dir
+from utils.util import create_activity, ensure_data_dir, get_deployment_info
 from utils.logger import BotLogger
 from utils.config_manager import config
 
@@ -80,9 +80,38 @@ async def unload(ctx, extension):
 
 @bot.command(name="test")
 async def test_command(ctx):
-    """簡化測試指令"""
+    """測試指令 - 顯示機器人狀態和部署信息"""
     BotLogger.info("TestCommand", f"測試指令執行 - 用戶: {ctx.author.id}")
-    await ctx.send("✅ 測試完成")
+    
+    try:
+        deployment_info = get_deployment_info()
+        
+        embed = discord.Embed(
+            title="🤖 機器人測試",
+            description="機器人運行正常",
+            color=0x00ff00
+        )
+        
+        embed.add_field(
+            name="📍 部署信息",
+            value=f"```{deployment_info}```",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="⚡ 狀態",
+            value=f"延遲: {round(bot.latency * 1000)}ms\n伺服器數量: {len(bot.guilds)}",
+            inline=True
+        )
+        
+        embed.timestamp = discord.utils.utcnow()
+        embed.set_footer(text=f"請求者: {ctx.author.display_name}")
+        
+        await ctx.send(embed=embed)
+        
+    except Exception as e:
+        BotLogger.error("TestCommand", "測試指令執行失敗", e)
+        await ctx.send(f"✅ 測試完成（簡化模式）\n環境: {ENV}")
 
 
 @bot.command(name="rl", help="reload")
