@@ -60,6 +60,13 @@ class Listener(commands.Cog):
         BotLogger.info("Listener", f"📋 註冊完成，共 {len(self.handlers)} 個處理器")
         for handler_info in self.handlers:
             BotLogger.debug("Listener", f"處理器順序: {handler_info.name} (優先級: {handler_info.priority})")
+        
+        # 檢查是否有重複的處理器
+        handler_names = [h.name for h in self.handlers]
+        unique_names = set(handler_names)
+        if len(handler_names) != len(unique_names):
+            duplicates = [name for name in unique_names if handler_names.count(name) > 1]
+            BotLogger.warning("Listener", f"⚠️ 發現重複的處理器: {duplicates}")
 
     async def handle_message_dispatch(self, message: discord.Message):
         """改進的訊息分發機制"""

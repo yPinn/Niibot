@@ -26,6 +26,10 @@ bot = commands.Bot(command_prefix=config.command_prefix, intents=intents)
 bot._processed_messages = set()
 bot._message_cleanup_counter = 0
 
+# 指令去重保護機制 (針對Discord重複投遞)
+bot._processed_commands = set()
+bot._command_cleanup_counter = 0
+
 BotLogger.system_event("機器人初始化", f"環境: {ENV}, 前綴: {config.command_prefix}")
 
 
@@ -70,6 +74,27 @@ async def on_message(message):
             await listener.handle_message_dispatch(message)
         
         # 處理Discord指令（只調用一次）
+        # 先檢查是否為指令
+        content = message.content
+        prefixes = config.command_prefix if isinstance(config.command_prefix, list) else [config.command_prefix]
+        is_command = any(content.startswith(prefix) for prefix in prefixes)
+        
+        if is_command:
+            # 指令去重檢查
+            command_id = f"{message.id}_{message.author.id}_{content}"
+            if command_id in bot._processed_commands:
+                BotLogger.warning("CommandHandler", f"⚠️ 重複指令被阻擋: {content[:30]}")
+                return
+            
+            bot._processed_commands.add(command_id)
+            bot._command_cleanup_counter += 1
+            
+            # 定期清理指令記錄
+            if bot._command_cleanup_counter > 500:
+                bot._processed_commands.clear()
+                bot._command_cleanup_counter = 0
+                BotLogger.debug("CommandHandler", "清理指令去重記錄")
+        
         await bot.process_commands(message)
         
         BotLogger.debug("MessageHandler", f"✅ 完成處理: {message_id}")
@@ -131,8 +156,54 @@ async def unload(ctx, extension):
 @bot.command(name="test")
 async def test_command(ctx):
     """簡化測試指令"""
-    BotLogger.info("TestCommand", f"測試指令執行 - 用戶: {ctx.author.id}")
-    await ctx.send("✅ 測試完成")
+    import time
+    import os
+    timestamp = time.time()
+    pid = os.getpid()
+    BotLogger.info("TestCommand", f"🔍 測試指令執行 - 用戶: {ctx.author.id}, PID: {pid}, 時間戳: {timestamp}")
+    await ctx.send(f"✅ 測試完成 (PID: {pid}, 時間: {timestamp:.3f})")
+
+@bot.command(name="debug_bot")
+async def debug_bot_status(ctx):
+    """檢查機器人狀態和可能的重複問題"""
+    import time
+    import os
+    
+    pid = os.getpid()
+    timestamp = time.time()
+    
+    # 檢查指令註冊情況
+    test_commands = [name for name in bot.all_commands.keys() if 'test' in name.lower()]
+    total_commands = len(bot.all_commands)
+    
+    # 檢查 cog 載入情況
+    loaded_cogs = list(bot.cogs.keys())
+    
+    info = f"""🔍 **機器人除錯資訊**
+**進程資訊:**
+- PID: {pid}
+- 時間戳: {timestamp:.3f}
+
+**指令統計:**
+- 總指令數: {total_commands}
+- 測試相關指令: {test_commands}
+
+**載入的 Cogs:**
+- 總數: {len(loaded_cogs)}
+- 列表: {', '.join(loaded_cogs)}
+
+**事件處理器:**
+- 訊息去重集合大小: {len(bot._processed_messages)}
+- 訊息計數器: {bot._message_cleanup_counter}
+- 指令去重集合大小: {len(bot._processed_commands)}
+- 指令計數器: {bot._command_cleanup_counter}
+
+**多實例檢測:**
+請檢查是否有其他機器人進程在運行！
+"""
+    
+    await ctx.send(info)
+    BotLogger.info("DebugBot", f"除錯資訊請求 - PID: {pid}, 指令數: {total_commands}")
 
 
 @bot.command(name="rl", help="reload")
