@@ -22,14 +22,6 @@ ensure_data_dir()
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix=config.command_prefix, intents=intents)
 
-# 訊息去重保護機制
-bot._processed_messages = set()
-bot._message_cleanup_counter = 0
-
-# 指令去重保護機制 (針對Discord重複投遞)
-bot._processed_commands = set()
-bot._command_cleanup_counter = 0
-
 BotLogger.system_event("機器人初始化", f"環境: {ENV}, 前綴: {config.command_prefix}")
 
 
@@ -50,79 +42,24 @@ async def on_message(message):
     if message.author.bot:
         return
     
-    # 訊息去重保護機制
-    message_id = f"{message.id}_{message.channel.id}"
-    if message_id in bot._processed_messages:
-        BotLogger.warning("MessageHandler", f"⚠️ 重複訊息被阻擋: {message_id}, 內容: {message.content[:50]}")
-        return
+    # 處理自定義handler（如果listener已載入）
+    if 'Listener' in bot.cogs:
+        listener = bot.cogs['Listener']
+        for handler in listener.handlers:
+            try:
+                await handler.handle_on_message(message)
+            except Exception as e:
+                BotLogger.error("GlobalHandler", f"處理器錯誤: {e}")
     
-    bot._processed_messages.add(message_id)
-    bot._message_cleanup_counter += 1
-    
-    # 定期清理舊的訊息 ID（避免記憶體洩漏）
-    if bot._message_cleanup_counter > 1000:
-        BotLogger.debug("MessageHandler", "清理已處理訊息記錄")
-        bot._processed_messages.clear()
-        bot._message_cleanup_counter = 0
-    
-    try:
-        BotLogger.debug("MessageHandler", f"📨 處理訊息: {message_id}, 內容: {message.content[:30]}")
-        
-        # 處理自定義handler（如果listener已載入）
-        if 'Listener' in bot.cogs:
-            listener = bot.cogs['Listener']
-            await listener.handle_message_dispatch(message)
-        
-        # 處理Discord指令（只調用一次）
-        # 先檢查是否為指令
-        content = message.content
-        prefixes = config.command_prefix if isinstance(config.command_prefix, list) else [config.command_prefix]
-        is_command = any(content.startswith(prefix) for prefix in prefixes)
-        
-        if is_command:
-            # 指令去重檢查
-            command_id = f"{message.id}_{message.author.id}_{content}"
-            if command_id in bot._processed_commands:
-                BotLogger.warning("CommandHandler", f"⚠️ 重複指令被阻擋: {content[:30]}")
-                return
-            
-            bot._processed_commands.add(command_id)
-            bot._command_cleanup_counter += 1
-            
-            # 定期清理指令記錄
-            if bot._command_cleanup_counter > 500:
-                bot._processed_commands.clear()
-                bot._command_cleanup_counter = 0
-                BotLogger.debug("CommandHandler", "清理指令去重記錄")
-        
-        await bot.process_commands(message)
-        
-        BotLogger.debug("MessageHandler", f"✅ 完成處理: {message_id}")
-        
-    except Exception as e:
-        BotLogger.error("MessageHandler", f"訊息處理發生未預期錯誤: {e}", e)
-        # 從已處理集合中移除，允許重試
-        bot._processed_messages.discard(message_id)
+    # 處理Discord指令（只調用一次）
+    await bot.process_commands(message)
 
 
 @bot.command(name="l", help="load")
 async def load(ctx, extension):
-    # 權限檢查：僅管理員可用
-    from utils.permissions import permission_manager, PermissionLevel
-    has_permission = await permission_manager.check_permission(ctx, PermissionLevel.ADMIN)
-    if not has_permission:
-        await ctx.send("❌ 您沒有執行此指令的權限")
-        return
-    
-    # 模組白名單檢查
-    allowed_modules = ['clear', 'eat', 'draw', 'clock', 'emojitool', 'party', 'reply', 'tinder', 'listener', 'permissions_admin']
-    if extension not in allowed_modules:
-        await ctx.send(f"❌ 不允許載入此模組: {extension}")
-        return
-    
     try:
         await bot.load_extension(f"cogs.{extension}")
-        await ctx.send(f"✅ L: {extension} done.")
+        await ctx.send(f"L: {extension} done.")
         BotLogger.command_used("load", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"載入: {extension}")
     except Exception as e:
         error_msg = f"載入 {extension} 失敗: {str(e)}"
@@ -132,21 +69,9 @@ async def load(ctx, extension):
 
 @bot.command(name="u", help="unload")
 async def unload(ctx, extension):
-    # 權限檢查：僅管理員可用
-    from utils.permissions import permission_manager, PermissionLevel
-    has_permission = await permission_manager.check_permission(ctx, PermissionLevel.ADMIN)
-    if not has_permission:
-        await ctx.send("❌ 您沒有執行此指令的權限")
-        return
-    
-    # 防止卸載重要模組
-    if extension == "listener":
-        await ctx.send("⚠️ 不允許卸載 listener 模組")
-        return
-    
     try:
         await bot.unload_extension(f"cogs.{extension}")
-        await ctx.send(f"✅ U: {extension} done.")
+        await ctx.send(f"U: {extension} done.")
         BotLogger.command_used("unload", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"卸載: {extension}")
     except Exception as e:
         error_msg = f"卸載 {extension} 失敗: {str(e)}"
@@ -156,65 +81,12 @@ async def unload(ctx, extension):
 @bot.command(name="test")
 async def test_command(ctx):
     """簡化測試指令"""
-    import time
-    import os
-    timestamp = time.time()
-    pid = os.getpid()
-    BotLogger.info("TestCommand", f"🔍 測試指令執行 - 用戶: {ctx.author.id}, PID: {pid}, 時間戳: {timestamp}")
-    await ctx.send(f"✅ 測試完成 (PID: {pid}, 時間: {timestamp:.3f})")
-
-@bot.command(name="debug_bot")
-async def debug_bot_status(ctx):
-    """檢查機器人狀態和可能的重複問題"""
-    import time
-    import os
-    
-    pid = os.getpid()
-    timestamp = time.time()
-    
-    # 檢查指令註冊情況
-    test_commands = [name for name in bot.all_commands.keys() if 'test' in name.lower()]
-    total_commands = len(bot.all_commands)
-    
-    # 檢查 cog 載入情況
-    loaded_cogs = list(bot.cogs.keys())
-    
-    info = f"""🔍 **機器人除錯資訊**
-**進程資訊:**
-- PID: {pid}
-- 時間戳: {timestamp:.3f}
-
-**指令統計:**
-- 總指令數: {total_commands}
-- 測試相關指令: {test_commands}
-
-**載入的 Cogs:**
-- 總數: {len(loaded_cogs)}
-- 列表: {', '.join(loaded_cogs)}
-
-**事件處理器:**
-- 訊息去重集合大小: {len(bot._processed_messages)}
-- 訊息計數器: {bot._message_cleanup_counter}
-- 指令去重集合大小: {len(bot._processed_commands)}
-- 指令計數器: {bot._command_cleanup_counter}
-
-**多實例檢測:**
-請檢查是否有其他機器人進程在運行！
-"""
-    
-    await ctx.send(info)
-    BotLogger.info("DebugBot", f"除錯資訊請求 - PID: {pid}, 指令數: {total_commands}")
+    BotLogger.info("TestCommand", f"測試指令執行 - 用戶: {ctx.author.id}")
+    await ctx.send("✅ 測試完成")
 
 
 @bot.command(name="rl", help="reload")
 async def reload(ctx, extension):
-    # 權限檢查：僅管理員可用
-    from utils.permissions import permission_manager, PermissionLevel
-    has_permission = await permission_manager.check_permission(ctx, PermissionLevel.ADMIN)
-    if not has_permission:
-        await ctx.send("❌ 您沒有執行此指令的權限")
-        return
-    
     try:
         await bot.reload_extension(f"cogs.{extension}")
         
@@ -225,7 +97,7 @@ async def reload(ctx, extension):
                 BotLogger.info("CogLoader", f"重新註冊 {extension} 的訊息處理器...")
                 bot.loop.create_task(listener_cog.wait_and_register_handlers())
         
-        await ctx.send(f"✅ RL: {extension} done.")
+        await ctx.send(f"RL: {extension} done.")
         BotLogger.command_used("reload", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"重載: {extension}")
     except Exception as e:
         error_msg = f"重載 {extension} 失敗: {str(e)}"
@@ -236,13 +108,6 @@ async def reload(ctx, extension):
 @bot.command(name="rla", help="reload all")
 async def reload_all(ctx):
     """最簡單的重載所有cog"""
-    # 權限檢查：僅管理員可用
-    from utils.permissions import permission_manager, PermissionLevel
-    has_permission = await permission_manager.check_permission(ctx, PermissionLevel.ADMIN)
-    if not has_permission:
-        await ctx.send("❌ 您沒有執行此指令的權限")
-        return
-    
     BotLogger.info("CogLoader", "🔄 開始簡單重載...")
     
     try:
