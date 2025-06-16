@@ -166,7 +166,7 @@ class PermissionManager:
         return False
     
     async def check_rate_limit(self, user_id: int, command_name: str, 
-                             rate: int = 1, per: float = 1.0) -> tuple[bool, float]:
+                             rate: int = 1, per: float = 1.0):
         """
         檢查速率限制
         

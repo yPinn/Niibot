@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 import discord
 from discord.ext import commands
 
-from utils.util import Cooldown, format_error_msg, format_success_msg
+from utils.util import format_error_msg, format_success_msg
 from utils.logger import BotLogger
 from utils.config_manager import config
 from utils.permissions import moderator_only, guild_only
@@ -12,7 +12,6 @@ from utils.permissions import moderator_only, guild_only
 class Clear(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.cooldown = Cooldown(10)  # 10 秒冷卻
         BotLogger.info("Clear", "Clear cog 初始化完成")
 
     @commands.command(
@@ -23,14 +22,8 @@ class Clear(commands.Cog):
     @guild_only()
     async def clear_all_messages(self, ctx: commands.Context, amount: int = 100):
         user_id = ctx.author.id
-
-        if self.cooldown.is_on_cooldown(user_id):
-            remaining = self.cooldown.get_remaining_time(user_id)
-            error_msg = f"請稍等，指令冷卻中（剩餘 {remaining:.1f} 秒）。"
-            await ctx.send(format_error_msg(error_msg))
-            BotLogger.command_used("clear", user_id, ctx.guild.id if ctx.guild else 0, f"冷卻中: {remaining:.1f}s")
-            return
-
+        
+        # 權限系統已經處理了速率限制，這裡只需要檢查參數
         if amount < 1 or amount > 1000:
             error_msg = "請輸入正確的數量（1-1000）。"
             await ctx.send(format_error_msg(error_msg))
@@ -102,8 +95,6 @@ class Clear(commands.Cog):
                 await confirm.delete(delay=2)
             except discord.HTTPException as e:
                 BotLogger.debug("Clear", f"無法發送或刪除確認訊息: {e}")
-
-            self.cooldown.update_timestamp(user_id)
             
             # 記錄成功的清理操作
             BotLogger.command_used(

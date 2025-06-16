@@ -110,33 +110,8 @@ class Listener(commands.Cog):
             self._registration_task.cancel()
         self.handlers.clear()
 
-    # @commands.Cog.listener()
-    async def on_message_disabled(self, message: discord.Message):
-        if message.author.bot:
-            return
-        
-        # 檢查是否有多個listener實例在處理同一訊息
-        BotLogger.info("Listener", f"🔍 Cog實例列表: {list(self.bot.cogs.keys())}")
-        listener_cogs = [name for name in self.bot.cogs.keys() if 'listener' in name.lower()]
-        BotLogger.info("Listener", f"🔍 Listener相關Cog: {listener_cogs}")
-        
-        # 最基本的日誌記錄
-        BotLogger.info("Listener", f"📨 實例{hex(self._instance_id)} 收到: {message.content[:30]}...")
-        
-        try:
-            # 暫時禁用handler，專注測試process_commands
-            # for handler in self.handlers:
-            #     try:
-            #         await handler.handle_on_message(message)
-            #     except Exception as e:
-            #         BotLogger.error("Listener", f"處理器錯誤: {e}")
-            
-            # 處理Discord指令
-            BotLogger.info("Listener", f"🚀 實例{hex(self._instance_id)} 處理指令: {message.content[:30]}...")
-            await self.bot.process_commands(message)
-            
-        except Exception as e:
-            BotLogger.error("Listener", f"on_message錯誤: {e}")
+    # 此方法已被移除，避免與 bot.py 中的統一訊息處理衝突
+    # 現在所有訊息處理都通過 bot.py 的 on_message -> handle_message_dispatch 流程
 
     @commands.command(name="debug", help="系統除錯資訊 - 用法: ?debug [commands|handlers|listeners]")
     async def debug(self, ctx, debug_type: str = "all"):

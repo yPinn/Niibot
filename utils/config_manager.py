@@ -154,7 +154,13 @@ class ConfigManager:
     @property
     def command_prefix(self) -> List[str]:
         """指令前綴"""
-        return self.get('COMMAND_PREFIX', ['?'])
+        prefix = self.get('COMMAND_PREFIX', '?')
+        if isinstance(prefix, str):
+            return [prefix]
+        elif isinstance(prefix, list):
+            return prefix
+        else:
+            return ['?']
     
     @property
     def target_role_id(self) -> int:
