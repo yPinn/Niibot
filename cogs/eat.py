@@ -32,14 +32,15 @@ class CategoryButtonsView(discord.ui.View):
     async def on_timeout(self):
         """逾時時將所有按鈕變灰並禁用"""
         try:
-            BotLogger.debug("Eat", f"CategoryButtonsView 超時觸發，message: {self.message is not None}")
-            
+            BotLogger.debug(
+                "Eat", f"CategoryButtonsView 超時觸發，message: {self.message is not None}")
+
             # 禁用所有按鈕
             for item in self.children:
                 if isinstance(item, discord.ui.Button):
                     item.disabled = True
                     item.style = discord.ButtonStyle.grey
-            
+
             if self.message:
                 embed = discord.Embed(
                     title="🍽️ 請選擇餐點分類",
@@ -49,7 +50,8 @@ class CategoryButtonsView(discord.ui.View):
                 await self.message.edit(embed=embed, view=self)
                 BotLogger.debug("Eat", "CategoryButtonsView 超時更新成功")
             else:
-                BotLogger.warning("Eat", "CategoryButtonsView 超時時 message 為 None，無法更新 UI")
+                BotLogger.warning(
+                    "Eat", "CategoryButtonsView 超時時 message 為 None，無法更新 UI")
         except discord.NotFound:
             BotLogger.debug("Eat", "CategoryButtonsView 超時更新失敗：訊息已被刪除")
         except discord.HTTPException as e:
@@ -78,7 +80,8 @@ class CategoryButton(discord.ui.Button):
         await interaction.response.edit_message(embed=embed, view=None)
         # 先編輯訊息，再取得回應並設置到新 view
         response_message = await interaction.original_response()
-        view = DishButtonsView(self.category, options, interaction.user, response_message)
+        view = DishButtonsView(self.category, options,
+                               interaction.user, response_message)
         await response_message.edit(embed=embed, view=view)
 
 
@@ -89,7 +92,7 @@ class DishButtonsView(discord.ui.View):
         self.options = options
         self.user = user
         self.message = message
-        
+
         reload_btn = ReloadButton(category, options)
         back_btn = BackButton()
         self.add_item(reload_btn)
@@ -104,14 +107,15 @@ class DishButtonsView(discord.ui.View):
     async def on_timeout(self):
         """逾時時將所有按鈕變灰並禁用"""
         try:
-            BotLogger.debug("Eat", f"DishButtonsView 超時觸發，message: {self.message is not None}")
-            
+            BotLogger.debug(
+                "Eat", f"DishButtonsView 超時觸發，message: {self.message is not None}")
+
             # 禁用所有按鈕
             for item in self.children:
                 if isinstance(item, discord.ui.Button):
                     item.disabled = True
                     item.style = discord.ButtonStyle.grey
-            
+
             if self.message:
                 # 保持原有的 embed 內容但改變顏色
                 old_embed = self.message.embeds[0] if self.message.embeds else None
@@ -130,7 +134,8 @@ class DishButtonsView(discord.ui.View):
                 await self.message.edit(embed=embed, view=self)
                 BotLogger.debug("Eat", "DishButtonsView 超時更新成功")
             else:
-                BotLogger.warning("Eat", "DishButtonsView 超時時 message 為 None，無法更新 UI")
+                BotLogger.warning(
+                    "Eat", "DishButtonsView 超時時 message 為 None，無法更新 UI")
         except discord.NotFound:
             BotLogger.debug("Eat", "DishButtonsView 超時更新失敗：訊息已被刪除")
         except discord.HTTPException as e:
@@ -155,7 +160,8 @@ class ReloadButton(discord.ui.Button):
         await interaction.response.edit_message(embed=embed, view=None)
         # 先編輯訊息，再取得回應並設置到新 view
         response_message = await interaction.original_response()
-        view = DishButtonsView(self.category, self.options, interaction.user, response_message)
+        view = DishButtonsView(self.category, self.options,
+                               interaction.user, response_message)
         await response_message.edit(embed=embed, view=view)
 
 
@@ -168,16 +174,17 @@ class BackButton(discord.ui.Button):
         if not cog:
             await interaction.response.send_message("系統錯誤", ephemeral=True)
             return
-        
+
         embed = discord.Embed(
             title="🍽️ 請選擇餐點分類",
             description="點選下方按鈕以獲得該分類的推薦餐點。",
             color=discord.Color.green()
         )
         await interaction.response.edit_message(embed=embed, view=None)
-        # 先編輯訊息，再取得回應並設置到新 view  
+        # 先編輯訊息，再取得回應並設置到新 view
         response_message = await interaction.original_response()
-        view = CategoryButtonsView(cog.data, interaction.user, response_message)
+        view = CategoryButtonsView(
+            cog.data, interaction.user, response_message)
         await response_message.edit(embed=embed, view=view)
 
 
@@ -196,7 +203,8 @@ class Eat(commands.Cog):
                 self.data = {}
             category_count = len(self.data)
             item_count = sum(len(items) for items in self.data.values())
-            BotLogger.info("Eat", f"載入了 {category_count} 個分類，共 {item_count} 個項目")
+            BotLogger.info(
+                "Eat", f"載入了 {category_count} 個分類，共 {item_count} 個項目")
         except Exception as e:
             BotLogger.error("Eat", "初始化資料失敗", e)
             self.data = {}
@@ -244,14 +252,15 @@ class Eat(commands.Cog):
         try:
             # 獲取所有分類並過濾符合當前輸入的選項
             categories = list(self.data.keys())
-            filtered = [cat for cat in categories if current.lower() in cat.lower()][:25]  # Discord限制最多25個選項
+            filtered = [cat for cat in categories if current.lower(
+            ) in cat.lower()][:25]  # Discord限制最多25個選項
             return [app_commands.Choice(name=cat, value=cat) for cat in filtered]
         except Exception as e:
             BotLogger.error("Eat", f"自動完成功能錯誤: {e}")
             return []
 
     # 斜線指令版本
-    @app_commands.command(name="吃什麼", description="幫你選擇要吃什麼")
+    @app_commands.command(name="e", description="幫你選擇要吃什麼")
     @app_commands.describe(category="餐點分類（可選）")
     @app_commands.autocomplete(category=category_autocomplete)
     async def eat_slash(self, interaction: discord.Interaction, category: str = None):
@@ -270,7 +279,8 @@ class Eat(commands.Cog):
             await interaction.response.send_message(embed=embed, view=None)
             # 取得回應訊息並設置view
             response_message = await interaction.original_response()
-            view = CategoryButtonsView(self.data, interaction.user, response_message)
+            view = CategoryButtonsView(
+                self.data, interaction.user, response_message)
             await response_message.edit(embed=embed, view=view)
         else:
             # 有參數時，隨機抽餐點
@@ -351,10 +361,7 @@ class Eat(commands.Cog):
                 await ctx.send("⚠️ 沒有該分類。")
 
 
-
 async def setup(bot: commands.Bot):
     eat_cog = Eat(bot)
     await eat_cog.initialize()  # 確保資料初始化完成
     await bot.add_cog(eat_cog)
-    # 將斜線指令添加到命令樹
-    bot.tree.add_command(eat_cog.eat_slash)
