@@ -270,7 +270,7 @@ class Eat(commands.Cog):
 
     async def _show_dish_recommendation(self, user: discord.User, category: str, is_interaction: bool,
                                         ctx: commands.Context = None, interaction: discord.Interaction = None):
-        """顯示餐點推薦（帶按鈕）"""
+        """顯示餐點推薦（簡單模式，無按鈕）"""
         category_key = util.normalize_text(category)
         if category_key not in self.data or not self.data[category_key]:
             error_msg = f"❌ 找不到「{category}」的資料或該分類為空。"
@@ -281,21 +281,12 @@ class Eat(commands.Cog):
             return
 
         choice = random.choice(self.data[category_key])
-        embed = discord.Embed(
-            title=f"🍽️ {category} 推薦餐點",
-            description=f"**{choice}**",
-            color=discord.Color.blurple()
-        )
+        message = f"🍽️ 推薦你點：**{choice}**"
         
         if is_interaction:
-            await interaction.response.send_message(embed=embed, view=None)
-            response_message = await interaction.original_response()
+            await interaction.response.send_message(message)
         else:
-            response_message = await ctx.send(embed=embed, view=None, reference=ctx.message, mention_author=False)
-        
-        # 添加「換一個」和「回分類列表」按鈕
-        view = DishButtonsView(category, self.data[category_key], user, response_message)
-        await response_message.edit(embed=embed, view=view)
+            await ctx.send(message)
 
     # 文字指令：!eat 類別
     @commands.command(aliases=["點"], help="幫你想要吃什麼，使用方法：!eat 類別 或 !eat")
