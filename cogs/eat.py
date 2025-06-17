@@ -3,7 +3,6 @@ import os
 import random
 
 import discord
-from discord import app_commands
 from discord.ext import commands
 
 from utils import util
@@ -221,36 +220,21 @@ class Eat(commands.Cog):
     async def on_ready(self):
         await self.initialize()
 
-    async def _handle_eat_command(self, user: discord.User, category: str = None, 
-                                  is_interaction: bool = False, 
-                                  ctx: commands.Context = None, 
-                                  interaction: discord.Interaction = None):
-        """統一處理 eat 指令邏輯"""
+    async def _handle_eat_command(self, user: discord.User, category: str = None, ctx: commands.Context = None):
+        """處理 eat 指令邏輯"""
         try:
             if category is None:
-                await self._show_category_selection(user, is_interaction, ctx, interaction)
+                await self._show_category_selection(user, ctx)
             else:
-                await self._show_dish_recommendation(user, category, is_interaction, ctx, interaction)
+                await self._show_dish_recommendation(user, category, ctx)
         except Exception as e:
             BotLogger.error("Eat", f"處理eat指令時發生錯誤: {e}")
-            error_msg = "❌ 系統發生錯誤，請稍後再試。"
-            if is_interaction:
-                if not interaction.response.is_done():
-                    await interaction.response.send_message(error_msg, ephemeral=True)
-                else:
-                    await interaction.followup.send(error_msg, ephemeral=True)
-            else:
-                await ctx.send(error_msg)
+            await ctx.send("❌ 系統發生錯誤，請稍後再試。")
 
-    async def _show_category_selection(self, user: discord.User, is_interaction: bool, 
-                                       ctx: commands.Context = None, interaction: discord.Interaction = None):
+    async def _show_category_selection(self, user: discord.User, ctx: commands.Context):
         """顯示分類選擇界面"""
         if not self.data:
-            error_msg = "📭 目前沒有任何分類，請先新增一些內容。"
-            if is_interaction:
-                await interaction.response.send_message(error_msg, ephemeral=True)
-            else:
-                await ctx.send(error_msg)
+            await ctx.send("📭 目前沒有任何分類，請先新增一些內容。")
             return
 
         embed = discord.Embed(
@@ -259,59 +243,25 @@ class Eat(commands.Cog):
             color=discord.Color.green()
         )
         
-        if is_interaction:
-            await interaction.response.send_message(embed=embed, view=None)
-            response_message = await interaction.original_response()
-        else:
-            response_message = await ctx.send(embed=embed, view=None, reference=ctx.message, mention_author=False)
-        
+        response_message = await ctx.send(embed=embed, view=None, reference=ctx.message, mention_author=False)
         view = CategoryButtonsView(self.data, user, response_message)
         await response_message.edit(embed=embed, view=view)
 
-    async def _show_dish_recommendation(self, user: discord.User, category: str, is_interaction: bool,
-                                        ctx: commands.Context = None, interaction: discord.Interaction = None):
+    async def _show_dish_recommendation(self, user: discord.User, category: str, ctx: commands.Context):
         """顯示餐點推薦（簡單模式，無按鈕）"""
         category_key = util.normalize_text(category)
         if category_key not in self.data or not self.data[category_key]:
-            error_msg = f"❌ 找不到「{category}」的資料或該分類為空。"
-            if is_interaction:
-                await interaction.response.send_message(error_msg, ephemeral=True)
-            else:
-                await ctx.send(error_msg)
+            await ctx.send(f"❌ 找不到「{category}」的資料或該分類為空。")
             return
 
         choice = random.choice(self.data[category_key])
-        message = f"🍽️ 推薦你點：**{choice}**"
-        
-        if is_interaction:
-            await interaction.response.send_message(message)
-        else:
-            await ctx.send(message)
+        await ctx.send(f"🍽️ 推薦你點：**{choice}**")
 
     # 文字指令：!eat 類別
     @commands.command(aliases=["點"], help="幫你想要吃什麼，使用方法：!eat 類別 或 !eat")
     async def eat(self, ctx: commands.Context, *, category: str = None):
-        await self._handle_eat_command(ctx.author, category, False, ctx, None)
+        await self._handle_eat_command(ctx.author, category, ctx)
 
-    async def category_autocomplete(self, interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
-        """分類自動完成功能"""
-        try:
-            # 獲取所有分類並過濾符合當前輸入的選項
-            categories = list(self.data.keys())
-            filtered = [cat for cat in categories if current.lower(
-            ) in cat.lower()][:25]  # Discord限制最多25個選項
-            return [app_commands.Choice(name=cat, value=cat) for cat in filtered]
-        except Exception as e:
-            BotLogger.error("Eat", f"自動完成功能錯誤: {e}")
-            return []
-
-    # 斜線指令版本
-    @app_commands.command(name="eat", description="幫你選擇要吃什麼")
-    @app_commands.describe(category="餐點分類（可選）")
-    @app_commands.autocomplete(category=category_autocomplete)
-    async def eat_slash(self, interaction: discord.Interaction, category: str = None):
-        """斜線指令版本的eat指令"""
-        await self._handle_eat_command(interaction.user, category, True, None, interaction)
 
     # 其他管理指令不動...
 
