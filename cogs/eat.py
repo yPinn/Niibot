@@ -239,10 +239,21 @@ class Eat(commands.Cog):
             else:
                 await ctx.send(f"❌ 找不到「{category}」的資料或該分類為空。")
 
+    async def category_autocomplete(self, interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
+        """分類自動完成功能"""
+        try:
+            # 獲取所有分類並過濾符合當前輸入的選項
+            categories = list(self.data.keys())
+            filtered = [cat for cat in categories if current.lower() in cat.lower()][:25]  # Discord限制最多25個選項
+            return [app_commands.Choice(name=cat, value=cat) for cat in filtered]
+        except Exception as e:
+            BotLogger.error("Eat", f"自動完成功能錯誤: {e}")
+            return []
+
     # 斜線指令版本
     @app_commands.command(name="eat", description="幫你選擇要吃什麼")
     @app_commands.describe(category="餐點分類（可選）")
-    @app_commands.autocomplete(category=lambda self, interaction, current: self.category_autocomplete(interaction, current))
+    @app_commands.autocomplete(category=category_autocomplete)
     async def eat_slash(self, interaction: discord.Interaction, category: str = None):
         """斜線指令版本的eat指令"""
         if category is None:
@@ -269,17 +280,6 @@ class Eat(commands.Cog):
                 await interaction.response.send_message(f"🍽️ 推薦你點：**{choice}**")
             else:
                 await interaction.response.send_message(f"❌ 找不到「{category}」的資料或該分類為空。", ephemeral=True)
-
-    async def category_autocomplete(self, interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
-        """分類自動完成功能"""
-        try:
-            # 獲取所有分類並過濾符合當前輸入的選項
-            categories = list(self.data.keys())
-            filtered = [cat for cat in categories if current.lower() in cat.lower()][:25]  # Discord限制最多25個選項
-            return [app_commands.Choice(name=cat, value=cat) for cat in filtered]
-        except Exception as e:
-            BotLogger.error("Eat", f"自動完成功能錯誤: {e}")
-            return []
 
     # 其他管理指令不動...
 
