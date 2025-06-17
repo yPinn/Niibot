@@ -24,14 +24,80 @@ bot = commands.Bot(command_prefix=config.command_prefix, intents=intents)
 
 # 設定斜線指令同步
 @bot.command(name="sync", help="同步斜線指令")
-async def sync_commands(ctx: commands.Context):
-    """同步斜線指令到Discord"""
+async def sync_commands(ctx: commands.Context, guild_id: str = None):
+    """同步斜線指令到Discord
+    
+    Args:
+        guild_id: 指定公會ID進行同步，留空則全域同步
+    """
     try:
-        synced = await bot.tree.sync()
-        await ctx.send(f"✅ 已同步 {len(synced)} 個斜線指令")
-        BotLogger.command_used("sync", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"同步 {len(synced)} 個指令")
+        if guild_id:
+            # 公會特定同步（即時生效）
+            try:
+                guild_id_int = int(guild_id)
+                guild = discord.Object(id=guild_id_int)
+                bot.tree.copy_global_to(guild=guild)
+                synced = await bot.tree.sync(guild=guild)
+                await ctx.send(f"✅ 已同步 {len(synced)} 個斜線指令到公會 {guild_id}")
+                BotLogger.command_used("sync", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"公會同步 {guild_id}: {len(synced)} 個指令")
+            except ValueError:
+                await ctx.send("❌ 公會ID必須是數字")
+                return
+        else:
+            # 全域同步（需要等待Discord更新）
+            synced = await bot.tree.sync()
+            await ctx.send(f"✅ 已全域同步 {len(synced)} 個斜線指令（需等待Discord更新，約1小時）")
+            BotLogger.command_used("sync", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"全域同步: {len(synced)} 個指令")
     except Exception as e:
         error_msg = f"同步指令失敗: {str(e)}"
+        await ctx.send(error_msg)
+        BotLogger.error("CommandSync", error_msg, e)
+
+@bot.command(name="synchere", help="同步斜線指令到當前公會（即時生效）")
+async def sync_here(ctx: commands.Context):
+    """同步斜線指令到當前公會"""
+    if not ctx.guild:
+        await ctx.send("❌ 此指令只能在伺服器中使用")
+        return
+    
+    try:
+        guild = discord.Object(id=ctx.guild.id)
+        bot.tree.copy_global_to(guild=guild)
+        synced = await bot.tree.sync(guild=guild)
+        await ctx.send(f"✅ 已同步 {len(synced)} 個斜線指令到當前伺服器（即時生效）")
+        BotLogger.command_used("synchere", ctx.author.id, ctx.guild.id, f"即時同步: {len(synced)} 個指令")
+    except Exception as e:
+        error_msg = f"同步指令失敗: {str(e)}"
+        await ctx.send(error_msg)
+        BotLogger.error("CommandSync", error_msg, e)
+
+@bot.command(name="unsync", help="清除公會斜線指令")
+async def unsync_guild(ctx: commands.Context, guild_id: str = None):
+    """清除指定公會的斜線指令
+    
+    Args:
+        guild_id: 指定公會ID，留空則清除當前公會
+    """
+    if guild_id:
+        try:
+            guild_id_int = int(guild_id)
+            guild = discord.Object(id=guild_id_int)
+        except ValueError:
+            await ctx.send("❌ 公會ID必須是數字")
+            return
+    else:
+        if not ctx.guild:
+            await ctx.send("❌ 此指令只能在伺服器中使用，或提供公會ID")
+            return
+        guild = discord.Object(id=ctx.guild.id)
+    
+    try:
+        bot.tree.clear_commands(guild=guild)
+        await bot.tree.sync(guild=guild)
+        await ctx.send(f"✅ 已清除公會 {guild.id} 的所有斜線指令")
+        BotLogger.command_used("unsync", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"清除公會 {guild.id} 指令")
+    except Exception as e:
+        error_msg = f"清除指令失敗: {str(e)}"
         await ctx.send(error_msg)
         BotLogger.error("CommandSync", error_msg, e)
 
