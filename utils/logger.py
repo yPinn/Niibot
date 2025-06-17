@@ -89,15 +89,15 @@ class BotLogger:
         cls._get_logger().critical(error_msg, extra=kwargs)
     
     @classmethod
-    def command_used(cls, command_name: str, user_id: int, guild_id: int, args: str = ""):
+    def command_used(cls, command_name: str, user_id: int, guild_id: int, command_args: str = ""):
         """記錄指令使用情況"""
         logger = cls._get_logger()
-        message = f"指令 '{command_name}' 被使用 - 用戶: {user_id}, 伺服器: {guild_id}, 參數: {args}"
+        message = f"指令 '{command_name}' 被使用 - 用戶: {user_id}, 伺服器: {guild_id}, 參數: {command_args}"
         logger.info(f"[COMMAND] {message}", extra={
             'command_name': command_name,
             'user_id': user_id,
             'guild_id': guild_id,
-            'args': args
+            'command_args': command_args
         })
     
     @classmethod

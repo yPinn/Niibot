@@ -260,7 +260,7 @@ class Eat(commands.Cog):
             return []
 
     # 斜線指令版本
-    @app_commands.command(name="e", description="幫你選擇要吃什麼")
+    @app_commands.command(name="eat", description="幫你選擇要吃什麼")
     @app_commands.describe(category="餐點分類（可選）")
     @app_commands.autocomplete(category=category_autocomplete)
     async def eat_slash(self, interaction: discord.Interaction, category: str = None):
