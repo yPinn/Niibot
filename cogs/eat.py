@@ -292,6 +292,13 @@ class Eat(commands.Cog):
             await self.save_data()
         await ctx.send(f"✅ 已將「{item}」新增到「{category}」中。")
 
+    @add_eat.error
+    async def add_eat_error(self, ctx, error):
+        if isinstance(error, commands.MissingRequiredArgument):
+            await ctx.send("❌ 請提供分類和餐點名稱，例如：`?additem 主餐 蛋餅`")
+        else:
+            BotLogger.error("Eat", f"additem 指令錯誤: {error}")
+
     @commands.command(name="delitem", help="從分類中移除選項，例如：!delitem 主餐 蛋餅")
     async def remove_eat(self, ctx, category: str, *, item: str):
         category_key = util.normalize_text(category)
@@ -306,10 +313,17 @@ class Eat(commands.Cog):
                         return
             await ctx.send("⚠️ 找不到該分類或選項。")
 
+    @remove_eat.error
+    async def remove_eat_error(self, ctx, error):
+        if isinstance(error, commands.MissingRequiredArgument):
+            await ctx.send("❌ 請提供分類和餐點名稱，例如：`?delitem 主餐 蛋餅`")
+        else:
+            BotLogger.error("Eat", f"delitem 指令錯誤: {error}")
+
     @commands.command(name="menu", help="顯示某分類的所有選項，例如：!menu 主餐")
     async def show_eat(self, ctx, *, category: str):
         if not category:
-            await ctx.send("❓ 要吃什麼？請輸入 `!menu 類別`，例如 `!menu 主餐`")
+            await ctx.send("❓ 要吃什麼？請輸入 `?menu 類別`，例如 `?menu 主餐`")
             return
         category_key = util.normalize_text(category)
         if category_key in self.data and self.data[category_key]:
@@ -321,6 +335,13 @@ class Eat(commands.Cog):
         else:
             await ctx.send("⚠️ 沒有找到資料或該分類為空。")
 
+    @show_eat.error
+    async def show_eat_error(self, ctx, error):
+        if isinstance(error, commands.MissingRequiredArgument):
+            await ctx.send("❓ 請輸入要查看的分類，例如：`?menu 主餐`")
+        else:
+            BotLogger.error("Eat", f"menu 指令錯誤: {error}")
+
     @commands.command(name="delcat", help="刪除整個分類，例如：!delcat 早餐")
     async def delete_category(self, ctx, *, category: str):
         category_key = util.normalize_text(category)
@@ -331,6 +352,13 @@ class Eat(commands.Cog):
                 await ctx.send(f"🗑️ 已刪除分類「{category}」。")
             else:
                 await ctx.send("⚠️ 沒有該分類。")
+
+    @delete_category.error
+    async def delete_category_error(self, ctx, error):
+        if isinstance(error, commands.MissingRequiredArgument):
+            await ctx.send("❌ 請提供要刪除的分類名稱，例如：`?delcat 早餐`")
+        else:
+            BotLogger.error("Eat", f"delcat 指令錯誤: {error}")
 
 
 async def setup(bot: commands.Bot):

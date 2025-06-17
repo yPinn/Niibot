@@ -156,6 +156,15 @@ class EmojiTool(commands.Cog):
             await ctx.send(f"❌ 新增失敗：{str(e)}")
             BotLogger.error("EmojiTool", "新增表情符號失敗", e)
 
+    @add_emoji.error
+    async def add_emoji_error(self, ctx, error):
+        if isinstance(error, commands.MissingRequiredArgument):
+            await ctx.send("❌ 請提供名稱和表情符號，例如：`?emoji_add smile 😀`")
+        elif isinstance(error, commands.MissingPermissions):
+            await ctx.send("❌ 您沒有權限使用此指令（需要管理訊息權限）")
+        else:
+            BotLogger.error("EmojiTool", f"emoji_add 指令錯誤: {error}")
+
     @commands.command(name="emoji_list", help="列出所有自訂表情符號")
     async def list_emoji(self, ctx: commands.Context):
         """列出所有自訂表情符號"""
@@ -199,6 +208,15 @@ class EmojiTool(commands.Cog):
         except Exception as e:
             await ctx.send(f"❌ 新增失敗：{str(e)}")
             BotLogger.error("EmojiTool", "新增關鍵字回覆失敗", e)
+
+    @add_keyword_reply.error
+    async def add_keyword_reply_error(self, ctx, error):
+        if isinstance(error, commands.MissingRequiredArgument):
+            await ctx.send("❌ 請提供關鍵字和回覆內容，例如：`?keyword_add hello 你好！`")
+        elif isinstance(error, commands.MissingPermissions):
+            await ctx.send("❌ 您沒有權限使用此指令（需要管理訊息權限）")
+        else:
+            BotLogger.error("EmojiTool", f"keyword_add 指令錯誤: {error}")
 
     @commands.command(name="emoji_help", help="顯示表情符號工具的使用說明")
     async def emoji_help(self, ctx: commands.Context):
