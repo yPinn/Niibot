@@ -2,6 +2,7 @@ import asyncio
 import random
 
 import discord
+from discord import app_commands
 from discord.ext import commands
 
 from utils import util
@@ -162,6 +163,88 @@ class Reply(commands.Cog):
             ctx.guild.id if ctx.guild else 0, 
             f"目標用戶: {user.display_name} ({user.id})"
         )
+
+    @copycat.error
+    async def copycat_error(self, ctx, error):
+        if isinstance(error, commands.MissingRequiredArgument):
+            await ctx.send("❌ 請提供用戶資訊，例如：`?cc @用戶名` 或 `?cc 用戶ID` 或 `?cc 用戶名稱`")
+        else:
+            BotLogger.error("Reply", f"cc 指令錯誤: {error}")
+
+    # 斜線指令版本
+    @app_commands.command(name="copycat", description="複製用戶的頭像和橫幅")
+    @app_commands.describe(user="要複製的用戶")
+    async def slash_copycat(self, interaction: discord.Interaction, user: discord.User):
+        """斜線指令版本的 copycat"""
+        try:
+            # 嘗試獲取完整的用戶信息以便獲取橫幅
+            try:
+                full_user = await self.bot.fetch_user(user.id)
+            except:
+                full_user = user
+
+            embed = discord.Embed(
+                title=f"🎭 {full_user.display_name}",
+                color=discord.Color.blurple()
+            )
+
+            # 設置頭像
+            if full_user.display_avatar:
+                embed.set_image(url=full_user.display_avatar.url)
+                embed.add_field(
+                    name="🖼️ 頭像",
+                    value=f"[點擊查看]({full_user.display_avatar.url})",
+                    inline=True
+                )
+
+            # 設置橫幅（如果有的話）
+            if hasattr(full_user, 'banner') and full_user.banner:
+                embed.set_thumbnail(url=full_user.banner.url)
+                embed.add_field(
+                    name="🎨 橫幅",
+                    value=f"[點擊查看]({full_user.banner.url})",
+                    inline=True
+                )
+            else:
+                embed.add_field(
+                    name="🎨 橫幅",
+                    value="無橫幅",
+                    inline=True
+                )
+
+            # 添加用戶資訊
+            embed.add_field(
+                name="👤 用戶資訊",
+                value=f"**用戶名**: {full_user.name}\n**ID**: {full_user.id}",
+                inline=False
+            )
+
+            # 設置創建時間
+            embed.timestamp = full_user.created_at
+            embed.set_footer(
+                text="Niibot",
+                icon_url=(
+                    self.bot.user.display_avatar.url if self.bot.user else discord.Embed.Empty),
+            )
+
+            await interaction.response.send_message(embed=embed)
+            
+            # 記錄成功的指令使用
+            BotLogger.command_used(
+                "copycat", 
+                interaction.user.id, 
+                interaction.guild.id if interaction.guild else 0, 
+                f"目標用戶: {full_user.display_name} ({full_user.id})"
+            )
+            
+        except discord.NotFound:
+            await interaction.response.send_message("❌ 找不到該用戶，請確認輸入是否正確", ephemeral=True)
+        except Exception as e:
+            BotLogger.error("Reply", f"slash copycat 指令錯誤: {e}")
+            if interaction.response.is_done():
+                await interaction.followup.send("❌ 系統發生錯誤，請稍後再試。", ephemeral=True)
+            else:
+                await interaction.response.send_message("❌ 系統發生錯誤，請稍後再試。", ephemeral=True)
 
 
 async def setup(bot: commands.Bot):
