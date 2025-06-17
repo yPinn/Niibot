@@ -580,37 +580,127 @@ class Party(commands.Cog):
                 ephemeral=True
             )
 
-    @commands.command(name="games", aliases=["game", "遊戲"], help="顯示遊戲清單")
+    @commands.command(name="games", aliases=["game", "遊戲"], help="顯示遊戲網站連結")
     async def show_games(self, ctx: commands.Context):
-        """顯示遊戲清單"""
+        """顯示遊戲網站連結"""
         try:
             data = await read_json("data/game.json")
-            if not data or "games" not in data:
-                await ctx.send("❌ 找不到遊戲清單")
+            if not data:
+                await ctx.send("❌ 找不到遊戲資料")
                 return
             
-            games = data["games"]
-            if not games:
-                await ctx.send("📝 遊戲清單是空的")
+            if "urls" not in data or not data["urls"]:
+                await ctx.send("❌ 找不到遊戲連結")
                 return
             
-            embed = discord.Embed(title="🎮 遊戲清單", color=discord.Color.blue())
+            embed = discord.Embed(title="🎮 遊戲網站連結", color=discord.Color.green())
             
-            game_list = []
-            for i, game in enumerate(games[:20], 1):  # 限制顯示20個
-                game_list.append(f"{i}. {game}")
+            url_list = []
+            for i, game in enumerate(data["urls"], 1):
+                url_list.append(f"{i}. [{game['name']}]({game['url']})")
             
-            embed.description = "\n".join(game_list)
-            
-            if len(games) > 20:
-                embed.set_footer(text=f"顯示前 20 個，總共 {len(games)} 個遊戲")
+            embed.description = "\n".join(url_list)
+            embed.set_footer(text="點擊連結直接前往遊戲網站")
             
             await ctx.send(embed=embed)
-            BotLogger.command_used("games", ctx.author.id, ctx.guild.id if ctx.guild else 0)
-            
+            BotLogger.command_used("games", ctx.author.id, ctx.guild.id if ctx.guild else 0, "遊戲連結")
+                
         except Exception as e:
-            await ctx.send("❌ 讀取遊戲清單失敗")
-            BotLogger.error("Party", f"讀取遊戲清單失敗: {e}", e)
+            await ctx.send(f"❌ 讀取遊戲資料失敗：{str(e)}")
+            BotLogger.error("Party", f"games 指令錯誤: {e}")
+
+    @commands.command(name="codenames", aliases=["代號", "cn"], help="CodeNames 主題詞彙")
+    async def show_codenames(self, ctx: commands.Context, theme: str = None):
+        """顯示 CodeNames 主題詞彙"""
+        try:
+            data = await read_json("data/game.json")
+            if not data or "CodeNames" not in data:
+                await ctx.send("❌ 找不到 CodeNames 資料")
+                return
+            
+            if theme is None:
+                # 顯示主題選單
+                await self._show_codenames_menu(ctx, data)
+            else:
+                # 顯示指定主題
+                await self._show_codenames_theme(ctx, data, theme)
+                
+        except Exception as e:
+            await ctx.send(f"❌ 讀取 CodeNames 資料失敗：{str(e)}")
+            BotLogger.error("Party", f"codenames 指令錯誤: {e}")
+
+    @show_codenames.error
+    async def show_codenames_error(self, ctx, error):
+        if isinstance(error, commands.MissingRequiredArgument):
+            await ctx.send("💡 使用方法：\n`?codenames` - 查看所有主題\n`?codenames 遊戲` - 查看遊戲主題詞彙")
+        else:
+            BotLogger.error("Party", f"codenames 指令錯誤: {error}")
+
+    async def _show_codenames_menu(self, ctx: commands.Context, data: dict):
+        """顯示 CodeNames 主題選單"""
+        if "CodeNames" not in data or "themes" not in data["CodeNames"]:
+            await ctx.send("❌ 找不到 CodeNames 主題資料")
+            return
+        
+        themes = data["CodeNames"]["themes"]
+        embed = discord.Embed(title="🕵️ CodeNames 主題選單", color=discord.Color.purple())
+        
+        theme_list = []
+        for i, theme in enumerate(themes, 1):
+            word_count = len(theme["words"])
+            theme_list.append(f"{i}. **{theme['topic']}** ({word_count} 個詞彙)")
+        
+        embed.description = "\n".join(theme_list)
+        embed.add_field(
+            name="💡 使用方法",
+            value="輸入 `?codenames 主題名稱` 來查看該主題的詞彙\n例如：`?codenames 遊戲`",
+            inline=False
+        )
+        
+        await ctx.send(embed=embed)
+        BotLogger.command_used("codenames", ctx.author.id, ctx.guild.id if ctx.guild else 0, "CodeNames選單")
+
+    async def _show_codenames_theme(self, ctx: commands.Context, data: dict, theme_name: str):
+        """顯示指定的 CodeNames 主題詞彙"""
+        if "CodeNames" not in data or "themes" not in data["CodeNames"]:
+            await ctx.send("❌ 找不到 CodeNames 主題資料")
+            return
+        
+        # 尋找匹配的主題
+        target_theme = None
+        for theme in data["CodeNames"]["themes"]:
+            if theme["topic"].lower() == theme_name.lower():
+                target_theme = theme
+                break
+        
+        if not target_theme:
+            # 如果找不到完全匹配，顯示可用主題
+            available_themes = [theme["topic"] for theme in data["CodeNames"]["themes"]]
+            await ctx.send(f"❌ 找不到主題「{theme_name}」\n\n📋 可用主題：{', '.join(available_themes)}")
+            return
+        
+        embed = discord.Embed(
+            title=f"🕵️ CodeNames - {target_theme['topic']}主題",
+            color=discord.Color.purple()
+        )
+        
+        words = target_theme["words"]
+        # 將詞彙分成多列顯示
+        words_per_column = 8
+        columns = [words[i:i+words_per_column] for i in range(0, len(words), words_per_column)]
+        
+        for i, column in enumerate(columns):
+            column_name = f"詞彙 {i*words_per_column+1}-{min((i+1)*words_per_column, len(words))}"
+            embed.add_field(
+                name=column_name,
+                value="\n".join([f"• {word}" for word in column]),
+                inline=True
+            )
+        
+        embed.set_footer(text=f"總共 {len(words)} 個詞彙")
+        
+        await ctx.send(embed=embed)
+        BotLogger.command_used("codenames", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"CodeNames-{target_theme['topic']}")
 
 
 async def setup(bot):
