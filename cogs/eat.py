@@ -3,6 +3,7 @@ import os
 import random
 
 import discord
+from discord import app_commands
 from discord.ext import commands
 
 from utils import util
@@ -238,6 +239,48 @@ class Eat(commands.Cog):
             else:
                 await ctx.send(f"❌ 找不到「{category}」的資料或該分類為空。")
 
+    # 斜線指令版本
+    @app_commands.command(name="eat", description="幫你選擇要吃什麼")
+    @app_commands.describe(category="餐點分類（可選）")
+    @app_commands.autocomplete(category=lambda self, interaction, current: self.category_autocomplete(interaction, current))
+    async def eat_slash(self, interaction: discord.Interaction, category: str = None):
+        """斜線指令版本的eat指令"""
+        if category is None:
+            # 無參數時，送出 embed + 分類按鈕介面
+            if not self.data:
+                await interaction.response.send_message("📭 目前沒有任何分類，請先新增一些內容。", ephemeral=True)
+                return
+
+            embed = discord.Embed(
+                title="🍽️ 請選擇餐點分類",
+                description="點選下方按鈕以獲得該分類的推薦餐點。",
+                color=discord.Color.green()
+            )
+            await interaction.response.send_message(embed=embed, view=None)
+            # 取得回應訊息並設置view
+            response_message = await interaction.original_response()
+            view = CategoryButtonsView(self.data, interaction.user, response_message)
+            await response_message.edit(embed=embed, view=view)
+        else:
+            # 有參數時，隨機抽餐點
+            category_key = util.normalize_text(category)
+            if category_key in self.data and self.data[category_key]:
+                choice = random.choice(self.data[category_key])
+                await interaction.response.send_message(f"🍽️ 推薦你點：**{choice}**")
+            else:
+                await interaction.response.send_message(f"❌ 找不到「{category}」的資料或該分類為空。", ephemeral=True)
+
+    async def category_autocomplete(self, interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
+        """分類自動完成功能"""
+        try:
+            # 獲取所有分類並過濾符合當前輸入的選項
+            categories = list(self.data.keys())
+            filtered = [cat for cat in categories if current.lower() in cat.lower()][:25]  # Discord限制最多25個選項
+            return [app_commands.Choice(name=cat, value=cat) for cat in filtered]
+        except Exception as e:
+            BotLogger.error("Eat", f"自動完成功能錯誤: {e}")
+            return []
+
     # 其他管理指令不動...
 
     @commands.command(name="cat", help="顯示所有分類")
@@ -313,3 +356,5 @@ async def setup(bot: commands.Bot):
     eat_cog = Eat(bot)
     await eat_cog.initialize()  # 確保資料初始化完成
     await bot.add_cog(eat_cog)
+    # 將斜線指令添加到命令樹
+    bot.tree.add_command(eat_cog.eat_slash)

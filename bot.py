@@ -22,6 +22,19 @@ ensure_data_dir()
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix=config.command_prefix, intents=intents)
 
+# 設定斜線指令同步
+@bot.command(name="sync", help="同步斜線指令")
+async def sync_commands(ctx: commands.Context):
+    """同步斜線指令到Discord"""
+    try:
+        synced = await bot.tree.sync()
+        await ctx.send(f"✅ 已同步 {len(synced)} 個斜線指令")
+        BotLogger.command_used("sync", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"同步 {len(synced)} 個指令")
+    except Exception as e:
+        error_msg = f"同步指令失敗: {str(e)}"
+        await ctx.send(error_msg)
+        BotLogger.error("CommandSync", error_msg, e)
+
 BotLogger.system_event("機器人初始化", f"環境: {ENV}, 前綴: {config.command_prefix}")
 
 
