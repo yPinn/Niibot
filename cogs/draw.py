@@ -165,25 +165,37 @@ class Draw(commands.Cog):
 
         await ctx.send(embed=embed)
     
-    @commands.command(name="choose", aliases=["選擇"], help="從選項中隨機選擇")
+    @commands.command(name="choose", aliases=["選擇"], help="從選項中隨機選擇，支援權重設定")
     async def choose_command(self, ctx, *, args: str = None):
         """
-        從提供的選項中隨機選擇
+        從提供的選項中隨機選擇，使用冒號語法設定權重
         
         使用方式:
-        ?choose A,B,C          - 從 A,B,C 中選1個
-        ?choose A,B,C,D 2      - 從 A,B,C,D 中選2個
-        ?choose "選項1,有逗號" "選項2" "選項3" 1  - 使用引號包含複雜選項
+        ?choose 蘋果:2 橘子:7 香蕉 2    - 權重比例 2:7:1，選2個
+        ?choose A B C                 - 等權重，選1個  
+        ?choose 選項1:10 選項2         - 部分權重，選1個
         """
         if not args:
-            await ctx.send("❌ 請提供選項，例如：`?choose A,B,C` 或 `?choose A,B,C 2`")
+            await ctx.send("❌ 請提供選項，例如：`?choose 蘋果:2 橘子:7 香蕉` 或 `?choose A B C 2`")
             return
         
         try:
-            # 解析輸入
-            options, count = self._parse_choose_args(args)
+            # 解析輸入 - 簡化版邏輯
+            tokens = args.split()
+            count = 1
             
-            if not options:
+            # 檢查最後一個是否為選擇數量
+            if len(tokens) > 1:
+                try:
+                    count = int(tokens[-1])
+                    tokens = tokens[:-1]  # 移除數量參數
+                except ValueError:
+                    pass
+            
+            # 使用冒號語法解析
+            options_with_weights = self._parse_colon_syntax_options(tokens)
+            
+            if not options_with_weights:
                 await ctx.send("❌ 請提供至少一個選項")
                 return
             
@@ -192,119 +204,218 @@ class Draw(commands.Cog):
                 await ctx.send("❌ 選擇數量必須大於 0")
                 return
             
-            if count > len(options):
-                await ctx.send(f"❌ 選擇數量 ({count}) 不能超過總選項數量 ({len(options)})")
+            if count > len(options_with_weights):
+                await ctx.send(f"❌ 選擇數量 ({count}) 不能超過總選項數量 ({len(options_with_weights)})")
                 return
             
-            # 隨機選擇
-            selected = random.sample(options, count)
+            # 根據權重進行選擇
+            selected = self._weighted_choose(options_with_weights, count)
             
-            # 建立回覆 embed
-            embed = self._create_choose_embed(ctx, options, selected, count)
-            await ctx.send(embed=embed)
+            # 建立回覆訊息 (簡化版)
+            message = self._create_choose_message(ctx, options_with_weights, selected)
+            await ctx.send(message)
             
         except Exception as e:
             await ctx.send(f"❌ 處理選項時發生錯誤: {str(e)}")
     
-    def _parse_choose_args(self, args: str) -> tuple[list[str], int]:
+    # 移除複雜的舊解析函數 - 現在只使用冒號語法
+    
+    def _parse_colon_syntax_options(self, options_list: list[str]) -> list[tuple[str, float]]:
         """
-        解析 choose 指令的參數
+        解析冒號語法的選項
         
-        支援格式:
-        1. "A,B,C" -> 選項用逗號分隔，預設選1個
-        2. "A,B,C 2" -> 最後的數字為選擇數量
-        3. "選項1" "選項2" "選項3" 2 -> 用引號包含複雜選項
+        格式: "選項名:權重" 或 "選項名" (無權重時等權重)
+        例如: ["蘋果:2", "橘子:7", "香蕉"] -> [(蘋果, 0.2), (橘子, 0.7), (香蕉, 0.1)]
         """
-        import shlex
+        options_with_weights = []
         
-        # 先嘗試用 shlex 解析（處理引號）
-        try:
-            parsed_args = shlex.split(args)
-        except ValueError:
-            # shlex 解析失敗，回退到空格分割
-            parsed_args = args.split()
-        
-        count = 1  # 預設選擇1個
-        
-        # 檢查最後一個參數是否為數字
-        if len(parsed_args) > 1:
-            try:
-                count = int(parsed_args[-1])
-                # 移除數字參數
-                options_args = parsed_args[:-1]
-            except ValueError:
-                # 最後一個不是數字，全部都是選項
-                options_args = parsed_args
-        else:
-            options_args = parsed_args
-        
-        # 解析選項
-        if len(options_args) == 1:
-            # 只有一個參數，檢查是否包含逗號
-            single_arg = options_args[0]
-            if ',' in single_arg:
-                # 用逗號分割
-                options = [opt.strip() for opt in single_arg.split(',') if opt.strip()]
+        for option in options_list:
+            if ':' in option:
+                # 有冒號，分離選項名和權重
+                parts = option.split(':', 1)  # 只分割第一個冒號
+                name = parts[0].strip()
+                try:
+                    weight = float(parts[1].strip())
+                    if weight > 0:
+                        options_with_weights.append((name, weight))
+                    else:
+                        # 權重無效，當作無權重處理
+                        options_with_weights.append((name, None))
+                except ValueError:
+                    # 權重解析失敗，當作無權重處理
+                    options_with_weights.append((name, None))
             else:
-                # 單一選項
-                options = [single_arg]
+                # 無冒號，無權重
+                options_with_weights.append((option.strip(), None))
+        
+        # 使用與舊邏輯相同的權重計算
+        specified_weights = [w for _, w in options_with_weights if w is not None]
+        unspecified_count = len([w for _, w in options_with_weights if w is None])
+        
+        if specified_weights:
+            # 檢查是否為整數比例模式 (任何權重 > 1)
+            is_ratio_mode = any(w > 1 for w in specified_weights)
+            
+            if is_ratio_mode:
+                # 整數比例模式：所有權重按比例正規化
+                if unspecified_count > 0:
+                    # 未指定的選項預設權重為1
+                    default_ratio = 1.0
+                    options_with_weights = [(name, w if w is not None else default_ratio) 
+                                          for name, w in options_with_weights]
+                
+                # 正規化為機率
+                total_ratio = sum(w for _, w in options_with_weights)
+                options_with_weights = [(name, w/total_ratio) for name, w in options_with_weights]
+            else:
+                # 小數模式：權重總和不超過1
+                total_specified = sum(specified_weights)
+                if total_specified > 1:
+                    # 權重總和超過1，正規化
+                    options_with_weights = [(name, w/total_specified if w is not None else None) 
+                                          for name, w in options_with_weights]
+                    remaining_weight = 0
+                else:
+                    remaining_weight = 1 - total_specified
+                
+                # 為未設定權重的選項分配權重
+                if unspecified_count > 0:
+                    default_weight = remaining_weight / unspecified_count
+                    options_with_weights = [(name, w if w is not None else default_weight) 
+                                          for name, w in options_with_weights]
         else:
-            # 多個參數，每個都是一個選項
-            options = options_args
+            # 所有選項等權重
+            equal_weight = 1.0 / len(options_with_weights)
+            options_with_weights = [(name, equal_weight) for name, _ in options_with_weights]
         
-        return options, count
+        return options_with_weights
     
-    def _create_choose_embed(self, ctx, all_options: list[str], selected: list[str], count: int) -> discord.Embed:
-        """建立選擇結果的 embed"""
+    def _weighted_choose(self, options_with_weights: list[tuple[str, float]], count: int) -> list[str]:
+        """根據權重進行選擇"""
+        if count == 1:
+            # 單選情況
+            return [random.choices([name for name, _ in options_with_weights], 
+                                 weights=[weight for _, weight in options_with_weights])[0]]
+        else:
+            # 多選情況，不重複選擇
+            selected = []
+            available_options = options_with_weights.copy()
+            
+            for _ in range(count):
+                if not available_options:
+                    break
+                    
+                names, weights = zip(*available_options)
+                chosen = random.choices(list(names), weights=list(weights))[0]
+                selected.append(chosen)
+                
+                # 移除已選中的選項
+                available_options = [(name, weight) for name, weight in available_options if name != chosen]
+            
+            return selected
+    
+    def _create_choose_message(self, ctx, options_with_weights: list[tuple[str, float]], selected: list[str]) -> str:
+        """建立簡化的選擇結果訊息"""
         
-        embed = discord.Embed(
-            title="🎲 隨機選擇結果",
-            color=discord.Color.gold()
-        )
-        
-        embed.set_author(
-            name=f"{ctx.author.display_name} 的選擇",
-            icon_url=ctx.author.avatar.url if ctx.author.avatar else None
-        )
-        
-        # 顯示所有選項
-        options_display = "、".join(all_options)
-        if len(options_display) > 200:
-            options_display = options_display[:200] + "..."
-        
-        embed.add_field(
-            name="📋 可選項目",
-            value=f"```\n{options_display}\n```",
-            inline=False
-        )
-        
-        # 顯示選中結果
+        # 簡化的結果顯示
         if len(selected) == 1:
-            embed.add_field(
-                name="🎯 選中結果",
-                value=f"🎉 **{selected[0]}**",
-                inline=False
-            )
+            result = f"🎯 **{selected[0]}**"
         else:
-            result_text = "\n".join(f"{i+1}. **{item}**" for i, item in enumerate(selected))
-            embed.add_field(
-                name=f"🎯 選中結果 (共 {len(selected)} 個)",
-                value=result_text,
-                inline=False
-            )
+            result = "、".join(f"**{item}**" for item in selected)
         
-        # 統計資訊
-        embed.set_footer(
-            text=f"從 {len(all_options)} 個選項中選擇了 {count} 個"
-        )
+        # 顯示權重資訊（如果有非等權重）
+        weights = [weight for _, weight in options_with_weights]
+        has_custom_weights = len(set(weights)) > 1  # 檢查是否有不同權重
         
-        return embed
+        message_parts = [f"🎲 {ctx.author.display_name} 的選擇結果：{result}"]
+        
+        if has_custom_weights:
+            weight_info = "、".join(f"{name}({weight:.1%})" for name, weight in options_with_weights)
+            message_parts.append(f"📋 權重設定：{weight_info}")
+        
+        return "\n".join(message_parts)
     
+    def _create_choose_message_for_slash(self, interaction: discord.Interaction, 
+                                       options_with_weights: list[tuple[str, float]], 
+                                       selected: list[str]) -> str:
+        """為slash指令建立選擇結果訊息"""
+        
+        # 簡化的結果顯示
+        if len(selected) == 1:
+            result = f"🎯 **{selected[0]}**"
+        else:
+            result = "、".join(f"**{item}**" for item in selected)
+        
+        # 顯示權重資訊（如果有非等權重）
+        weights = [weight for _, weight in options_with_weights]
+        has_custom_weights = len(set(weights)) > 1  # 檢查是否有不同權重
+        
+        message_parts = [f"🎲 {interaction.user.display_name} 的選擇結果：{result}"]
+        
+        if has_custom_weights:
+            weight_info = "、".join(f"{name}({weight:.1%})" for name, weight in options_with_weights)
+            message_parts.append(f"📋 權重設定：{weight_info}")
+        
+        return "\n".join(message_parts)
+    
+    @discord.app_commands.command(name="choose", description="從選項中隨機選擇，支援權重設定")
+    @discord.app_commands.describe(
+        option1="選項1 (可用 選項名:權重 格式，如: 蘋果:2)",
+        option2="選項2 (可用 選項名:權重 格式，如: 橘子:7)",
+        option3="選項3 (可用 選項名:權重 格式)",
+        option4="選項4 (可用 選項名:權重 格式)",
+        option5="選項5 (可用 選項名:權重 格式)",
+        count="要選擇的數量 (預設1個)"
+    )
+    async def choose_slash(self, interaction: discord.Interaction, 
+                          option1: str,
+                          option2: str = None,
+                          option3: str = None,
+                          option4: str = None,
+                          option5: str = None,
+                          count: int = 1):
+        """Slash指令版本的選擇器"""
+        
+        # 收集所有非空選項
+        options_list = [opt for opt in [option1, option2, option3, option4, option5] if opt]
+        
+        if not options_list:
+            await interaction.response.send_message("❌ 請至少提供一個選項", ephemeral=True)
+            return
+        
+        try:
+            # 使用冒號語法解析
+            options_with_weights = self._parse_colon_syntax_options(options_list)
+            
+            if not options_with_weights:
+                await interaction.response.send_message("❌ 請至少提供一個選項", ephemeral=True)
+                return
+            
+            if count <= 0:
+                await interaction.response.send_message("❌ 選擇數量必須大於 0", ephemeral=True)
+                return
+            
+            if count > len(options_with_weights):
+                await interaction.response.send_message(
+                    f"❌ 選擇數量 ({count}) 不能超過總選項數量 ({len(options_with_weights)})",
+                    ephemeral=True)
+                return
+            
+            # 進行選擇
+            selected = self._weighted_choose(options_with_weights, count)
+            
+            # 建立回覆訊息
+            message = self._create_choose_message_for_slash(interaction, options_with_weights, selected)
+            await interaction.response.send_message(message)
+            
+        except Exception as e:
+            await interaction.response.send_message(f"❌ 處理選項時發生錯誤: {str(e)}", ephemeral=True)
+
     @choose_command.error
     async def choose_error(self, ctx, error):
         """處理 choose 指令錯誤"""
         if isinstance(error, commands.MissingRequiredArgument):
-            await ctx.send("❌ 請提供選項，例如：`?choose A,B,C` 或 `?choose A,B,C 2`")
+            await ctx.send("❌ 請提供選項，例如：`?choose 蘋果:2 橘子:7 香蕉` 或 `?choose A B C 2`")
         else:
             await ctx.send("❌ 指令執行時發生錯誤")
 
