@@ -163,6 +163,16 @@ class Eat(commands.Cog):
             BotLogger.error("Eat", "初始化資料失敗", e)
             self.data = {}
 
+    async def load_data(self):
+        """重新載入數據"""
+        try:
+            self.data = await util.read_json(util.get_data_file_path(self.data_file))
+            if not isinstance(self.data, dict):
+                self.data = {}
+        except Exception as e:
+            BotLogger.error("Eat", "載入資料失敗", e)
+            self.data = {}
+
     async def save_data(self):
         try:
             success = await util.write_json(util.get_data_file_path(self.data_file), self.data)
