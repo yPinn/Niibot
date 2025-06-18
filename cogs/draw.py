@@ -164,6 +164,149 @@ class Draw(commands.Cog):
             embed.add_field(name=f"主持人：{r['host']}", value=desc, inline=False)
 
         await ctx.send(embed=embed)
+    
+    @commands.command(name="choose", aliases=["選擇"], help="從選項中隨機選擇")
+    async def choose_command(self, ctx, *, args: str = None):
+        """
+        從提供的選項中隨機選擇
+        
+        使用方式:
+        ?choose A,B,C          - 從 A,B,C 中選1個
+        ?choose A,B,C,D 2      - 從 A,B,C,D 中選2個
+        ?choose "選項1,有逗號" "選項2" "選項3" 1  - 使用引號包含複雜選項
+        """
+        if not args:
+            await ctx.send("❌ 請提供選項，例如：`?choose A,B,C` 或 `?choose A,B,C 2`")
+            return
+        
+        try:
+            # 解析輸入
+            options, count = self._parse_choose_args(args)
+            
+            if not options:
+                await ctx.send("❌ 請提供至少一個選項")
+                return
+            
+            # 驗證選擇數量
+            if count <= 0:
+                await ctx.send("❌ 選擇數量必須大於 0")
+                return
+            
+            if count > len(options):
+                await ctx.send(f"❌ 選擇數量 ({count}) 不能超過總選項數量 ({len(options)})")
+                return
+            
+            # 隨機選擇
+            selected = random.sample(options, count)
+            
+            # 建立回覆 embed
+            embed = self._create_choose_embed(ctx, options, selected, count)
+            await ctx.send(embed=embed)
+            
+        except Exception as e:
+            await ctx.send(f"❌ 處理選項時發生錯誤: {str(e)}")
+    
+    def _parse_choose_args(self, args: str) -> tuple[list[str], int]:
+        """
+        解析 choose 指令的參數
+        
+        支援格式:
+        1. "A,B,C" -> 選項用逗號分隔，預設選1個
+        2. "A,B,C 2" -> 最後的數字為選擇數量
+        3. "選項1" "選項2" "選項3" 2 -> 用引號包含複雜選項
+        """
+        import shlex
+        
+        # 先嘗試用 shlex 解析（處理引號）
+        try:
+            parsed_args = shlex.split(args)
+        except ValueError:
+            # shlex 解析失敗，回退到空格分割
+            parsed_args = args.split()
+        
+        count = 1  # 預設選擇1個
+        
+        # 檢查最後一個參數是否為數字
+        if len(parsed_args) > 1:
+            try:
+                count = int(parsed_args[-1])
+                # 移除數字參數
+                options_args = parsed_args[:-1]
+            except ValueError:
+                # 最後一個不是數字，全部都是選項
+                options_args = parsed_args
+        else:
+            options_args = parsed_args
+        
+        # 解析選項
+        if len(options_args) == 1:
+            # 只有一個參數，檢查是否包含逗號
+            single_arg = options_args[0]
+            if ',' in single_arg:
+                # 用逗號分割
+                options = [opt.strip() for opt in single_arg.split(',') if opt.strip()]
+            else:
+                # 單一選項
+                options = [single_arg]
+        else:
+            # 多個參數，每個都是一個選項
+            options = options_args
+        
+        return options, count
+    
+    def _create_choose_embed(self, ctx, all_options: list[str], selected: list[str], count: int) -> discord.Embed:
+        """建立選擇結果的 embed"""
+        
+        embed = discord.Embed(
+            title="🎲 隨機選擇結果",
+            color=discord.Color.gold()
+        )
+        
+        embed.set_author(
+            name=f"{ctx.author.display_name} 的選擇",
+            icon_url=ctx.author.avatar.url if ctx.author.avatar else None
+        )
+        
+        # 顯示所有選項
+        options_display = "、".join(all_options)
+        if len(options_display) > 200:
+            options_display = options_display[:200] + "..."
+        
+        embed.add_field(
+            name="📋 可選項目",
+            value=f"```\n{options_display}\n```",
+            inline=False
+        )
+        
+        # 顯示選中結果
+        if len(selected) == 1:
+            embed.add_field(
+                name="🎯 選中結果",
+                value=f"🎉 **{selected[0]}**",
+                inline=False
+            )
+        else:
+            result_text = "\n".join(f"{i+1}. **{item}**" for i, item in enumerate(selected))
+            embed.add_field(
+                name=f"🎯 選中結果 (共 {len(selected)} 個)",
+                value=result_text,
+                inline=False
+            )
+        
+        # 統計資訊
+        embed.set_footer(
+            text=f"從 {len(all_options)} 個選項中選擇了 {count} 個"
+        )
+        
+        return embed
+    
+    @choose_command.error
+    async def choose_error(self, ctx, error):
+        """處理 choose 指令錯誤"""
+        if isinstance(error, commands.MissingRequiredArgument):
+            await ctx.send("❌ 請提供選項，例如：`?choose A,B,C` 或 `?choose A,B,C 2`")
+        else:
+            await ctx.send("❌ 指令執行時發生錯誤")
 
 
 async def setup(bot):
