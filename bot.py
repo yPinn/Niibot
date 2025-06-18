@@ -22,50 +22,43 @@ ensure_data_dir()
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix=config.command_prefix, intents=intents)
 
+# 同步狀態追蹤
+_sync_cooldowns = {}
+
+def _should_sync(guild_id: int = None) -> bool:
+    """檢查是否應該進行同步（避免頻繁同步）"""
+    import time
+    key = guild_id or "global"
+    now = time.time()
+    if key in _sync_cooldowns and now - _sync_cooldowns[key] < 30:  # 30秒冷卻
+        return False
+    _sync_cooldowns[key] = now
+    return True
+
 # 設定斜線指令同步
 @bot.command(name="sync", help="同步斜線指令")
-async def sync_commands(ctx: commands.Context, guild_id: str = None):
-    """同步斜線指令到Discord
-    
-    Args:
-        guild_id: 指定公會ID進行同步，留空則全域同步
-    """
+async def sync_commands(ctx: commands.Context):
+    """同步斜線指令 - 在伺服器中自動選擇伺服器同步，否則全域同步"""
     try:
-        if guild_id:
-            # 公會特定同步（即時生效）
-            try:
-                guild_id_int = int(guild_id)
-                guild = discord.Object(id=guild_id_int)
-                bot.tree.copy_global_to(guild=guild)
-                synced = await bot.tree.sync(guild=guild)
-                await ctx.send(f"✅ 已同步 {len(synced)} 個斜線指令到公會 {guild_id}")
-                BotLogger.command_used("sync", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"公會同步 {guild_id}: {len(synced)} 個指令")
-            except ValueError:
-                await ctx.send("❌ 公會ID必須是數字")
+        if ctx.guild:
+            # 在伺服器中 - 執行伺服器同步（即時生效）
+            if not _should_sync(ctx.guild.id):
+                await ctx.send("⏱️ 此伺服器同步冷卻中，請稍後再試")
                 return
+            guild = discord.Object(id=ctx.guild.id)
+            bot.tree.copy_global_to(guild=guild)
+            synced = await bot.tree.sync(guild=guild)
+            await ctx.send(f"✅ 已同步 {len(synced)} 個斜線指令到當前伺服器（即時生效）")
+            BotLogger.command_used("sync", ctx.author.id, ctx.guild.id, f"公會同步: {len(synced)} 個指令")
         else:
-            # 全域同步（需要等待Discord更新）
+            # 在私訊中 - 執行全域同步
+            if not _should_sync():
+                await ctx.send("⏱️ 全域同步冷卻中，請稍後再試")
+                return
             synced = await bot.tree.sync()
             await ctx.send(f"✅ 已全域同步 {len(synced)} 個斜線指令（需等待Discord更新，約1小時）")
-            BotLogger.command_used("sync", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"全域同步: {len(synced)} 個指令")
-    except Exception as e:
-        error_msg = f"同步指令失敗: {str(e)}"
-        await ctx.send(error_msg)
-        BotLogger.error("CommandSync", error_msg, e)
-
-@bot.command(name="synchere", help="同步斜線指令到當前公會（即時生效）")
-async def sync_here(ctx: commands.Context):
-    """同步斜線指令到當前公會"""
-    if not ctx.guild:
-        await ctx.send("❌ 此指令只能在伺服器中使用")
-        return
-    
-    try:
-        guild = discord.Object(id=ctx.guild.id)
-        bot.tree.copy_global_to(guild=guild)
-        synced = await bot.tree.sync(guild=guild)
-        await ctx.send(f"✅ 已同步 {len(synced)} 個斜線指令到當前伺服器（即時生效）")
-        BotLogger.command_used("synchere", ctx.author.id, ctx.guild.id, f"即時同步: {len(synced)} 個指令")
+            BotLogger.command_used("sync", ctx.author.id, 0, f"全域同步: {len(synced)} 個指令")
+                
     except Exception as e:
         error_msg = f"同步指令失敗: {str(e)}"
         await ctx.send(error_msg)
@@ -101,6 +94,114 @@ async def unsync_guild(ctx: commands.Context, guild_id: str = None):
         await ctx.send(error_msg)
         BotLogger.error("CommandSync", error_msg, e)
 
+# 指令禁用系統
+_disabled_commands = {}  # {指令名稱: 禁用原因}
+_disabled_commands_file = "disabled_commands.json"
+
+async def _load_disabled_commands():
+    """載入禁用指令列表"""
+    global _disabled_commands
+    try:
+        from utils import util
+        file_path = util.get_data_file_path(_disabled_commands_file)
+        _disabled_commands = await util.read_json(file_path)
+        if not isinstance(_disabled_commands, dict):
+            _disabled_commands = {}
+        BotLogger.info("CommandDisable", f"載入 {len(_disabled_commands)} 個禁用指令")
+    except Exception as e:
+        BotLogger.warning("CommandDisable", f"載入禁用指令列表失敗: {e}")
+        _disabled_commands = {}
+
+async def _save_disabled_commands():
+    """儲存禁用指令列表"""
+    try:
+        from utils import util
+        file_path = util.get_data_file_path(_disabled_commands_file)
+        await util.write_json(file_path, _disabled_commands)
+    except Exception as e:
+        BotLogger.error("CommandDisable", f"儲存禁用指令列表失敗: {e}")
+
+async def _check_command_enabled(ctx):
+    """檢查指令是否被禁用"""
+    if ctx.command is None:
+        return True
+    
+    command_name = ctx.command.qualified_name
+    if command_name in _disabled_commands:
+        reason = _disabled_commands[command_name]
+        await ctx.send(f"❌ 指令 `{command_name}` 目前被禁用\n原因: {reason}")
+        BotLogger.info("CommandDisable", f"用戶 {ctx.author.id} 嘗試使用被禁用的指令: {command_name}")
+        return False
+    return True
+
+# 添加全域指令檢查
+bot.add_check(_check_command_enabled)
+
+@bot.command(name="disable", help="禁用指令")
+async def disable_command(ctx: commands.Context, command_name: str, *, reason: str = "管理員禁用"):
+    """禁用指定指令
+    
+    Args:
+        command_name: 要禁用的指令名稱
+        reason: 禁用原因
+    """
+    # 防止禁用關鍵管理指令
+    protected_commands = ["disable", "enable", "status"]
+    if command_name in protected_commands:
+        await ctx.send(f"❌ 無法禁用受保護的指令: `{command_name}`")
+        return
+    
+    # 檢查指令是否存在
+    command = bot.get_command(command_name)
+    if not command:
+        await ctx.send(f"❌ 找不到指令: `{command_name}`")
+        return
+    
+    # 禁用指令
+    _disabled_commands[command_name] = reason
+    await _save_disabled_commands()
+    await ctx.send(f"✅ 已禁用指令 `{command_name}`\n原因: {reason}")
+    BotLogger.command_used("disable", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"禁用指令: {command_name}")
+
+@bot.command(name="enable", help="啟用指令")
+async def enable_command(ctx: commands.Context, command_name: str):
+    """啟用指定指令
+    
+    Args:
+        command_name: 要啟用的指令名稱
+    """
+    if command_name not in _disabled_commands:
+        await ctx.send(f"ℹ️ 指令 `{command_name}` 並未被禁用")
+        return
+    
+    # 啟用指令
+    del _disabled_commands[command_name]
+    await _save_disabled_commands()
+    await ctx.send(f"✅ 已啟用指令 `{command_name}`")
+    BotLogger.command_used("enable", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"啟用指令: {command_name}")
+
+@bot.command(name="disabled", help="查看被禁用的指令")
+async def list_disabled_commands(ctx: commands.Context):
+    """查看當前被禁用的指令列表"""
+    if not _disabled_commands:
+        await ctx.send("✅ 目前沒有被禁用的指令")
+        return
+    
+    embed = discord.Embed(
+        title="🚫 被禁用的指令",
+        color=discord.Color.red()
+    )
+    
+    for cmd_name, reason in _disabled_commands.items():
+        embed.add_field(
+            name=f"`{cmd_name}`",
+            value=reason,
+            inline=False
+        )
+    
+    await ctx.send(embed=embed)
+    BotLogger.command_used("disabled", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"查看 {len(_disabled_commands)} 個禁用指令")
+
 BotLogger.system_event("機器人初始化", f"環境: {ENV}, 前綴: {config.command_prefix}")
 
 
@@ -114,6 +215,9 @@ async def on_ready():
         BotLogger.system_event("狀態設定", f"狀態: {config.status}, 活動: {config.activity_name}")
     except Exception as e:
         BotLogger.error("BotStatus", "設定機器人狀態失敗", e)
+    
+    # 載入禁用指令列表
+    await _load_disabled_commands()
 
 @bot.event
 async def on_message(message):
