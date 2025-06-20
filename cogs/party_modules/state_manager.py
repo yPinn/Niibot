@@ -22,6 +22,7 @@ class GuildPartyState:
         self.active_views: Set[Any] = set()  # 追蹤活躍的 View 實例
         self.created_channels: List[discord.VoiceChannel] = []  # 創建的語音頻道
         self.original_message: Optional[Any] = None  # 原始隊列訊息
+        self.team_result_messages: List[Any] = []  # 分隊結果訊息列表
     
     async def cleanup_state(self):
         """清理所有狀態"""
@@ -33,6 +34,7 @@ class GuildPartyState:
             self.queue_creator = None
             self.original_voice_channel = None
             self.original_message = None
+            self.team_result_messages.clear()
             
             # 停用所有活躍的 Views
             for view in self.active_views.copy():

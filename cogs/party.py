@@ -83,6 +83,10 @@ class TeamsManageView(View):
     async def reshuffle_teams(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.party_cog.handle_reshuffle(interaction)
 
+    @discord.ui.button(label="🔊 語音分配", style=discord.ButtonStyle.secondary)
+    async def voice_operations(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.party_cog.handle_voice_operations_manual(interaction)
+
     @discord.ui.button(label="🏁 結束並清理", style=discord.ButtonStyle.danger)
     async def end_and_cleanup(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.party_cog.handle_end_with_cleanup(interaction)
@@ -252,14 +256,7 @@ class Party(commands.Cog):
                 await interaction.response.send_message("❌ 只有隊列創建者或管理員可以開始分隊！", ephemeral=True)
                 return
             
-            # 檢查機器人權限
-            has_perms, perm_msg = self._bot_has_voice_permissions(interaction.guild)
-            if not has_perms:
-                await interaction.response.send_message(
-                    f"❌ 機器人{perm_msg}，無法執行語音頻道操作", 
-                    ephemeral=True
-                )
-                return
+            # 語音權限檢查已移除，分隊功能可獨立運作
             
             total_players = guild_state.get_player_count()
             if total_players < 2:
@@ -300,8 +297,9 @@ class Party(commands.Cog):
             guild_state.active_views.add(teams_view)
             await interaction.response.send_message(embed=embed, view=teams_view, ephemeral=False)
             
-            # 嘗試語音頻道操作
-            await self._handle_voice_operations(interaction, guild_state, team_lists)
+            # 保存分隊結果訊息引用
+            team_message = await interaction.original_response()
+            guild_state.team_result_messages.append(team_message)
             
             BotLogger.command_used("分隊", interaction.user.id, interaction.guild.id, 
                                  f"{teams}隊，每隊{players_per_team}人")
@@ -336,8 +334,9 @@ class Party(commands.Cog):
             guild_state.active_views.add(teams_view)
             await interaction.response.send_message(embed=embed, view=teams_view, ephemeral=False)
             
-            # 嘗試語音頻道操作
-            await self._handle_voice_operations(interaction, guild_state, team_lists)
+            # 保存分隊結果訊息引用
+            team_message = await interaction.original_response()
+            guild_state.team_result_messages.append(team_message)
             
             BotLogger.user_action("重新分隊", interaction.user.id, interaction.guild.id)
 
@@ -405,10 +404,55 @@ class Party(commands.Cog):
             # 禁用原始訊息的所有按鈕並更新embed（在清理狀態前）
             await self._disable_queue_buttons_and_update(guild_state, interaction.guild)
             
+            # 移除分隊結果的按鈕
+            await self._disable_teams_manage_buttons(guild_state, interaction)
+            
             # 清理狀態
             await guild_state.cleanup_state()
             
             BotLogger.user_action("結束隊列並清理", interaction.user.id, interaction.guild.id)
+
+    async def handle_voice_operations_manual(self, interaction: discord.Interaction):
+        """處理手動語音操作"""
+        guild_state = await self.state_manager.get_state(interaction.guild.id)
+        
+        async with guild_state.lock:
+            # 權限檢查
+            if not self._can_manage_queue(guild_state, interaction.user):
+                await interaction.response.send_message("❌ 只有隊列創建者或管理員可以執行語音操作！", ephemeral=True)
+                return
+            
+            # 檢查是否已分隊
+            if not guild_state.has_teams():
+                await interaction.response.send_message("❌ 尚未進行分隊，無法執行語音操作！", ephemeral=True)
+                return
+            
+            # 檢查機器人權限
+            has_perms, perm_msg = self._bot_has_voice_permissions(interaction.guild)
+            if not has_perms:
+                await interaction.response.send_message(
+                    f"❌ 機器人{perm_msg}，無法執行語音頻道操作", 
+                    ephemeral=True
+                )
+                return
+            
+            # 如果已經創建過語音頻道，詢問是否要重新創建
+            if guild_state.created_channels:
+                await interaction.response.send_message(
+                    "⚠️ 已經創建過語音頻道，請先清理舊頻道或使用「結束並清理」功能", 
+                    ephemeral=True
+                )
+                return
+            
+            # 執行語音操作
+            team_lists = guild_state.get_teams()
+            try:
+                await interaction.response.send_message("🔄 正在執行語音分配...", ephemeral=True)
+                await self._handle_voice_operations(interaction, guild_state, team_lists)
+                BotLogger.user_action("手動語音操作", interaction.user.id, interaction.guild.id)
+            except Exception as e:
+                BotLogger.error("Party", f"手動語音操作失敗: {e}", e)
+                await interaction.followup.send("❌ 語音操作執行失敗", ephemeral=True)
 
     async def _update_original_queue_message(self, interaction: discord.Interaction, guild_state):
         """更新原始隊列訊息"""
@@ -498,6 +542,31 @@ class Party(commands.Cog):
             
         except Exception as e:
             BotLogger.error("Party", f"禁用按鈕失敗: {e}", e)
+
+    async def _disable_teams_manage_buttons(self, guild_state, interaction: discord.Interaction):
+        """移除分隊管理按鈕，僅保留 embed"""
+        try:
+            # 更新所有分隊結果訊息，移除所有按鈕
+            for team_message in guild_state.team_result_messages:
+                try:
+                    # 直接移除 view，僅保留 embed
+                    await team_message.edit(view=None)
+                    BotLogger.debug("Party", f"已移除分隊結果訊息的所有按鈕")
+                    
+                except discord.NotFound:
+                    BotLogger.warning("Party", "分隊結果訊息已被刪除，跳過更新")
+                except Exception as e:
+                    BotLogger.warning("Party", f"移除分隊結果按鈕失敗: {e}")
+            
+            # 停用原有的活躍 Views
+            for view in guild_state.active_views.copy():
+                if isinstance(view, TeamsManageView):
+                    view.stop()
+                    
+            BotLogger.debug("Party", "已移除所有分隊管理按鈕")
+            
+        except Exception as e:
+            BotLogger.error("Party", f"移除分隊管理按鈕失敗: {e}", e)
 
     async def _create_team_result_embed(self, guild_state, team_lists, guild, is_reshuffle=False, operator=None):
         """創建分隊結果嵌入"""
