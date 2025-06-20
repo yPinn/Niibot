@@ -1,0 +1,20 @@
+name: Discord Notification
+
+on:
+  push:
+    branches:
+      - Claude # <- 修改成你要監聽的分支名稱（也可以用 main）
+
+jobs:
+  discord:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Discord Notification
+        uses: Ilshidur/action-discord@master
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK }}
+          message: |
+            📢 新的推送到 `${{ github.repository }}`！
+            🔀 分支：`${{ github.ref }}`
+            📝 Commit 訊息：`${{ github.event.head_commit.message }}`
+            🔗 查看 Commit：${{ github.event.head_commit.url }}
