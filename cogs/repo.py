@@ -1,3 +1,8 @@
+"""
+準心代碼庫 - 實用的預覽和選擇功能
+保留核心的翻頁預覽，移除過度複雜的分類系統
+"""
+
 import discord
 from discord.ext import commands
 from utils.logger import BotLogger
@@ -5,46 +10,83 @@ from utils import util
 
 
 class CrosshairView(discord.ui.View):
-    """準心瀏覽界面 - 包含遊戲分類選擇和翻頁功能"""
+    """準心瀏覽界面 - 支援遊戲分類和圖片預覽"""
     
     def __init__(self, all_crosshairs: list, user_id: int = None):
-        super().__init__(timeout=180)  # 3分鐘超時
+        super().__init__(timeout=300)  # 5分鐘超時
         self.all_crosshairs = all_crosshairs
         self.user_id = user_id
+        self.current_page = 0
         
-        # 建立遊戲分類字典
+        # 建立遊戲分類
         self.games_dict = {}
         for ch in all_crosshairs:
-            game = ch['game']
+            game = ch.get('game', '未知遊戲')
             if game not in self.games_dict:
                 self.games_dict[game] = []
             self.games_dict[game].append(ch)
         
-        # 當前狀態
+        # 當前選中的遊戲和準心列表
         self.selected_game = None
         self.current_crosshairs = []
-        self.current_page = 0
         
         # 如果只有一個遊戲，自動選中
         if len(self.games_dict) == 1:
             self.selected_game = list(self.games_dict.keys())[0]
             self.current_crosshairs = self.games_dict[self.selected_game]
+        else:
+            # 多個遊戲時顯示所有準心
+            self.current_crosshairs = all_crosshairs
         
-        # 建立下拉選單選項
-        self._setup_game_selector()
-        self._update_buttons()
+        self.update_buttons()
+        self.setup_game_selector()
     
-    def _setup_game_selector(self):
+    def _get_game_emoji(self, game: str) -> str:
+        """根據遊戲名稱返回對應的表情符號"""
+        game_lower = game.lower()
+        if "valorant" in game_lower:
+            return "🎯"
+        elif "cs2" in game_lower or "counter-strike" in game_lower:
+            return "🔫"
+        elif "apex" in game_lower:
+            return "⚡"
+        elif "overwatch" in game_lower:
+            return "🔶"
+        elif "call of duty" in game_lower or "cod" in game_lower:
+            return "💀"
+        elif "rainbow" in game_lower or "siege" in game_lower:
+            return "🌈"
+        elif "pubg" in game_lower:
+            return "🏗️"
+        else:
+            return "🎮"
+    
+    def setup_game_selector(self):
         """設置遊戲選擇下拉選單"""
-        if hasattr(self, 'game_selector'):
-            self.remove_item(self.game_selector)
+        # 清除現有的選單
+        for item in self.children[:]:
+            if isinstance(item, discord.ui.Select):
+                self.remove_item(item)
         
+        # 如果只有一個遊戲或沒有遊戲，不顯示選單
         if len(self.games_dict) <= 1:
-            return  # 只有一個或沒有遊戲時不顯示選單
+            return
         
+        # 建立選項
         options = []
+        
+        # 添加 "全部" 選項
+        options.append(discord.SelectOption(
+            label="全部遊戲",
+            value="all",
+            description=f"顯示所有 {len(self.all_crosshairs)} 個準心",
+            emoji="🎮",
+            default=(self.selected_game is None)
+        ))
+        
+        # 添加各遊戲選項
         for game, crosshairs in self.games_dict.items():
-            emoji = "🎯" if game == "Valorant" else "🔫" if game == "CS2" else "⚡" if "Apex" in game else "🎮"
+            emoji = self._get_game_emoji(game)
             options.append(discord.SelectOption(
                 label=game,
                 value=game,
@@ -53,267 +95,297 @@ class CrosshairView(discord.ui.View):
                 default=(game == self.selected_game)
             ))
         
-        self.game_selector = discord.ui.Select(
+        # 創建選單
+        game_selector = discord.ui.Select(
             placeholder="選擇遊戲分類",
             min_values=1,
             max_values=1,
             options=options,
-            row=0  # 放在第一排
+            row=0
         )
-        self.game_selector.callback = self._on_game_select
-        self.add_item(self.game_selector)
+        game_selector.callback = self.on_game_select
+        self.add_item(game_selector)
     
-    async def _on_game_select(self, interaction: discord.Interaction):
+    async def on_game_select(self, interaction: discord.Interaction):
         """處理遊戲選擇"""
-        if self.user_id and interaction.user.id != self.user_id:
-            await interaction.response.send_message("❌ 只有指令使用者可以操作此選單", ephemeral=True)
+        if not self.check_permission(interaction):
+            await interaction.response.send_message("❌ 只有指令使用者可以操作", ephemeral=True)
             return
         
-        selected_game = self.game_selector.values[0]
-        self.selected_game = selected_game
-        self.current_crosshairs = self.games_dict[selected_game]
+        selected_value = interaction.data['values'][0]
+        
+        if selected_value == "all":
+            self.selected_game = None
+            self.current_crosshairs = self.all_crosshairs
+        else:
+            self.selected_game = selected_value
+            self.current_crosshairs = self.games_dict[selected_value]
+        
         self.current_page = 0  # 重置到第一頁
+        self.setup_game_selector()  # 更新選單狀態
+        self.update_buttons()
         
-        # 更新選單的預設選項
-        self._setup_game_selector()
-        self._update_buttons()
-        
-        embed = self._create_embed()
+        embed = self.create_embed()
         await interaction.response.edit_message(embed=embed, view=self)
     
-    def _update_buttons(self):
-        """更新按鈕的啟用/停用狀態"""
-        max_page = len(self.current_crosshairs) - 1 if self.current_crosshairs else -1
+    def update_buttons(self):
+        """更新按鈕狀態"""
+        total_pages = len(self.current_crosshairs)
         
-        self.prev_button.disabled = (self.current_page <= 0 or not self.current_crosshairs)
-        self.next_button.disabled = (self.current_page >= max_page or not self.current_crosshairs)
+        self.prev_button.disabled = (self.current_page <= 0)
+        self.next_button.disabled = (self.current_page >= total_pages - 1)
         
         # 更新頁數顯示
-        if self.current_crosshairs:
-            self.page_info.label = f"{self.current_page + 1}/{max_page + 1}"
+        if total_pages > 0:
+            self.page_button.label = f"{self.current_page + 1}/{total_pages}"
         else:
-            self.page_info.label = "0/0"
+            self.page_button.label = "0/0"
     
-    def _create_embed(self) -> discord.Embed:
+    def create_embed(self) -> discord.Embed:
         """創建當前頁面的 embed"""
-        # 如果沒有選擇遊戲，顯示選擇提示
-        if not self.selected_game:
-            embed = discord.Embed(
-                title="🎯 準心代碼庫",
-                description="請使用上方的下拉選單選擇遊戲分類",
-                color=discord.Color.orange()
-            )
-            
-            # 顯示可用遊戲統計
-            game_stats = []
-            for game, crosshairs in self.games_dict.items():
-                emoji = "🎯" if game == "Valorant" else "🔫" if game == "CS2" else "⚡" if "Apex" in game else "🎮"
-                game_stats.append(f"{emoji} **{game}**: {len(crosshairs)} 個準心")
-            
-            if game_stats:
-                embed.add_field(
-                    name="📊 可用分類",
-                    value="\n".join(game_stats),
-                    inline=False
-                )
-            
-            return embed
-        
-        # 如果選中遊戲但沒有準心
         if not self.current_crosshairs:
             return discord.Embed(
-                title=f"🎮 {self.selected_game}",
-                description="此遊戲分類目前沒有準心資料",
-                color=discord.Color.red()
+                title="📦 準心代碼庫",
+                description="沒有找到準心資料",
+                color=discord.Color.orange()
             )
         
-        # 檢查頁數範圍
         if self.current_page < 0 or self.current_page >= len(self.current_crosshairs):
             return discord.Embed(
-                title="❌ 頁數錯誤",
+                title="❌ 頁面錯誤",
                 description="無法顯示此頁面",
                 color=discord.Color.red()
             )
         
         crosshair = self.current_crosshairs[self.current_page]
         
-        # 遊戲圖示映射
-        game_emoji = "🎯" if crosshair['game'] == "Valorant" else "🔫" if crosshair['game'] == "CS2" else "⚡" if "Apex" in crosshair['game'] else "🎮"
+        # 遊戲圖示
+        game = crosshair.get('game', '未知遊戲')
+        emoji = self._get_game_emoji(game)
         
-        # 創建 embed
+        # 建立標題
+        title = f"{emoji} {crosshair.get('tag', '無標籤')}"
+        
+        # 建立描述
+        description_parts = [
+            f"**🎮 遊戲：** {game}",
+            f"**🆔 ID：** `{crosshair.get('id', 'N/A')}`"
+        ]
+        
+        if self.selected_game:
+            description_parts.append(f"**📂 分類：** {self.selected_game}")
+        
         embed = discord.Embed(
-            title=f"{game_emoji} {crosshair['tag']}",
-            description=f"**遊戲：** {crosshair['game']}\n**ID：** `{crosshair['id']}`",
+            title=title,
+            description="\n".join(description_parts),
             color=discord.Color.blue()
         )
         
-        # 添加準心代碼
-        embed.add_field(
-            name="📋 準心代碼",
-            value=f"```\n{crosshair['code']}\n```",
-            inline=False
-        )
+        # 準心代碼顯示 (改為始終顯示完整代碼)
+        code = crosshair.get('code', '無代碼')
         
-        # 設定圖片（如果有的話）
-        if crosshair.get('image_url'):
-            embed.set_image(url=crosshair['image_url'])
+        # Discord embed field 最大長度是 1024，code block 佔用 6 個字符 (```)
+        max_code_length = 1018
+        
+        if len(code) > max_code_length:
+            # 如果代碼太長，分成多個field顯示
+            embed.add_field(
+                name="📋 準心代碼 (第1部分)",
+                value=f"```\n{code[:max_code_length]}\n```",
+                inline=False
+            )
+            remaining_code = code[max_code_length:]
+            if len(remaining_code) > max_code_length:
+                embed.add_field(
+                    name="📋 準心代碼 (第2部分)",
+                    value=f"```\n{remaining_code[:max_code_length]}\n```",
+                    inline=False
+                )
+                if len(remaining_code) > max_code_length:
+                    embed.add_field(
+                        name="📋 準心代碼 (剩餘部分)",
+                        value=f"```\n{remaining_code[max_code_length:]}\n```",
+                        inline=False
+                    )
+            else:
+                embed.add_field(
+                    name="📋 準心代碼 (第2部分)",
+                    value=f"```\n{remaining_code}\n```",
+                    inline=False
+                )
+        else:
+            embed.add_field(
+                name="📋 準心代碼",
+                value=f"```\n{code}\n```",
+                inline=False
+            )
+        
+        # 設定圖片預覽
+        image_url = crosshair.get('image_url')
+        if image_url and image_url.strip():
+            embed.set_image(url=image_url)
+            embed.add_field(
+                name="🖼️ 預覽圖片",
+                value="✅ 準心截圖如上所示",
+                inline=True
+            )
         else:
             embed.add_field(
                 name="🖼️ 預覽圖片",
-                value="無預覽圖片",
+                value="❌ 無預覽圖片",
                 inline=True
             )
         
-        # 添加頁數資訊
-        embed.set_footer(text=f"第 {self.current_page + 1} 頁，共 {len(self.current_crosshairs)} 個 {self.selected_game} 準心")
+        # 頁面資訊和使用提示
+        if self.selected_game:
+            footer_text = f"📄 第 {self.current_page + 1} 頁，共 {len(self.current_crosshairs)} 個 {self.selected_game} 準心 • 💡 直接複製上方代碼使用"
+        else:
+            footer_text = f"📄 第 {self.current_page + 1} 頁，共 {len(self.current_crosshairs)} 個準心 • 💡 直接複製上方代碼使用"
+        
+        embed.set_footer(text=footer_text)
         
         return embed
     
-    async def _update_message(self, interaction: discord.Interaction):
-        """更新訊息內容和按鈕"""
-        self._update_buttons()
-        embed = self._create_embed()
-        await interaction.response.edit_message(embed=embed, view=self)
-    
-    @discord.ui.button(label="上一個", style=discord.ButtonStyle.primary, emoji="⬅️", row=1)
-    async def prev_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # 檢查權限
+    def check_permission(self, interaction: discord.Interaction) -> bool:
+        """檢查用戶權限"""
         if self.user_id and interaction.user.id != self.user_id:
-            await interaction.response.send_message("❌ 只有指令使用者可以操作此按鈕", ephemeral=True)
-            return
-        
-        if not self.selected_game:
-            await interaction.response.send_message("❌ 請先選擇遊戲分類", ephemeral=True)
+            return False
+        return True
+    
+    @discord.ui.button(label="⬅️", style=discord.ButtonStyle.primary, row=1)
+    async def prev_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not self.check_permission(interaction):
+            await interaction.response.send_message("❌ 只有指令使用者可以操作", ephemeral=True)
             return
         
         if self.current_page > 0:
             self.current_page -= 1
-            await self._update_message(interaction)
+            self.update_buttons()
+            embed = self.create_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
         else:
-            await interaction.response.send_message("❌ 已經是第一個準心了", ephemeral=True)
+            await interaction.response.send_message("❌ 已經是第一個了", ephemeral=True)
     
     @discord.ui.button(label="1/1", style=discord.ButtonStyle.secondary, disabled=True, row=1)
-    async def page_info(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # 這個按鈕只用於顯示頁數，不做任何操作
-        current_game = self.selected_game or "未選擇"
-        await interaction.response.send_message(f"ℹ️ 當前分類：{current_game}", ephemeral=True)
-    
-    @discord.ui.button(label="下一個", style=discord.ButtonStyle.primary, emoji="➡️", row=1)
-    async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # 檢查權限
-        if self.user_id and interaction.user.id != self.user_id:
-            await interaction.response.send_message("❌ 只有指令使用者可以操作此按鈕", ephemeral=True)
-            return
-        
-        if not self.selected_game:
-            await interaction.response.send_message("❌ 請先選擇遊戲分類", ephemeral=True)
-            return
-        
-        max_page = len(self.current_crosshairs) - 1
-        if self.current_page < max_page:
-            self.current_page += 1
-            await self._update_message(interaction)
+    async def page_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # 顯示當前準心資訊
+        if self.current_crosshairs and 0 <= self.current_page < len(self.current_crosshairs):
+            current = self.current_crosshairs[self.current_page]
+            category_info = f" (分類: {self.selected_game})" if self.selected_game else ""
+            await interaction.response.send_message(
+                f"📍 當前: {current.get('game', '未知')} - {current.get('tag', '無標籤')}{category_info}", 
+                ephemeral=True
+            )
         else:
-            await interaction.response.send_message("❌ 已經是最後一個準心了", ephemeral=True)
+            await interaction.response.send_message("ℹ️ 無資料", ephemeral=True)
+    
+    @discord.ui.button(label="➡️", style=discord.ButtonStyle.primary, row=1)
+    async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not self.check_permission(interaction):
+            await interaction.response.send_message("❌ 只有指令使用者可以操作", ephemeral=True)
+            return
+        
+        if self.current_page < len(self.current_crosshairs) - 1:
+            self.current_page += 1
+            self.update_buttons()
+            embed = self.create_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
+        else:
+            await interaction.response.send_message("❌ 已經是最後一個了", ephemeral=True)
+    
     
     async def on_timeout(self):
         """處理超時"""
-        # 禁用所有按鈕
         for item in self.children:
             item.disabled = True
 
 
 class Repo(commands.Cog):
-    """準心代碼庫功能"""
+    """準心代碼庫功能 - 實用預覽版"""
     
     def __init__(self, bot):
         self.bot = bot
         self.data_file = "repo.json"
     
-    async def _load_repo_data(self) -> dict:
-        """載入準心資料和遊戲前綴"""
+    async def _load_crosshairs(self) -> list:
+        """載入準心資料"""
         try:
             file_path = util.get_data_file_path(self.data_file)
             data = await util.read_json(file_path)
-            return {
-                'crosshairs': data.get('crosshairs', []),
-                'game_prefixes': data.get('game_prefixes', {})
-            }
+            if isinstance(data, dict):
+                return data.get('crosshairs', [])
+            return data or []
         except Exception as e:
             BotLogger.error("Repo", f"載入準心資料失敗: {e}")
-            return {'crosshairs': [], 'game_prefixes': {}}
+            return []
     
-    async def _load_crosshairs(self) -> list:
-        """載入準心資料（向後相容）"""
-        data = await self._load_repo_data()
-        return data['crosshairs']
-    
-    async def _save_repo_data(self, crosshairs: list, game_prefixes: dict):
-        """儲存準心資料和遊戲前綴"""
+    async def _save_crosshairs(self, crosshairs: list):
+        """儲存準心資料"""
         try:
             file_path = util.get_data_file_path(self.data_file)
-            data = {
-                "crosshairs": crosshairs,
-                "game_prefixes": game_prefixes
-            }
-            await util.write_json(file_path, data)
+            await util.write_json(file_path, {"crosshairs": crosshairs})
             BotLogger.info("Repo", f"成功儲存 {len(crosshairs)} 個準心資料")
         except Exception as e:
             BotLogger.error("Repo", f"儲存準心資料失敗: {e}")
             raise
-    
-    def _generate_game_id(self, game: str, crosshairs: list, game_prefixes: dict) -> str:
+
+    def _generate_id(self, game: str, crosshairs: list) -> str:
         """為指定遊戲生成新的ID"""
-        # 獲取或創建遊戲前綴
-        if game in game_prefixes:
-            prefix = game_prefixes[game]
+        # 先檢查現有準心是否已有此遊戲的前綴
+        existing_prefix = None
+        for ch in crosshairs:
+            if ch.get('game', '').lower() == game.lower():
+                ch_id = str(ch.get('id', ''))
+                if '/' in ch_id:
+                    existing_prefix = ch_id.split('/')[0]
+                    break
+        
+        # 如果找到現有前綴就使用，否則生成新的
+        if existing_prefix:
+            prefix = existing_prefix
         else:
-            # 為新遊戲自動生成前綴（取前3個字母的小寫）
+            # 生成新前綴（取前3個字母）
             prefix = ''.join(c.lower() for c in game if c.isalpha())[:3]
-            game_prefixes[game] = prefix
         
         # 找出該遊戲現有的最大ID號碼
         max_num = 0
         for ch in crosshairs:
-            ch_id = ch.get('id', '')
+            ch_id = str(ch.get('id', ''))
             if ch_id.startswith(f"{prefix}/"):
                 try:
                     num = int(ch_id.split('/')[-1])
                     max_num = max(max_num, num)
-                except ValueError:
+                except (ValueError, IndexError):
                     continue
         
         return f"{prefix}/{max_num + 1}"
-    
-    @commands.command(name="repo", aliases=["準心", "crosshair"], help="瀏覽準心代碼庫")
+
+    @commands.command(name="repo", aliases=["準心"], help="瀏覽準心代碼庫")
     async def repo_browse(self, ctx, *, search_term: str = None):
-        """
-        瀏覽準心代碼庫
-        
-        Args:
-            search_term: 可選的搜尋關鍵字（遊戲名稱或標籤）
-        """
+        """瀏覽準心代碼庫 - 支援搜尋和翻頁預覽"""
         try:
             crosshairs = await self._load_crosshairs()
             
             if not crosshairs:
                 embed = discord.Embed(
-                    title="📦 準心代碼庫",
-                    description="目前沒有任何準心資料\n使用 `?repo_add` 來新增準心",
+                    title="📦 準心代碼庫", 
+                    description="目前沒有準心資料\n使用 `?repo_add` 來新增準心",
                     color=discord.Color.orange()
                 )
                 await ctx.send(embed=embed)
                 return
             
-            # 如果有搜尋關鍵字，進行過濾
+            # 搜尋過濾
             if search_term:
                 search_term = search_term.lower()
-                filtered_crosshairs = [
+                filtered = [
                     ch for ch in crosshairs 
-                    if search_term in ch['game'].lower() or search_term in ch['tag'].lower()
+                    if (search_term in ch.get('game', '').lower() or 
+                        search_term in ch.get('tag', '').lower() or
+                        search_term in str(ch.get('id', '')).lower())
                 ]
                 
-                if not filtered_crosshairs:
+                if not filtered:
                     embed = discord.Embed(
                         title="🔍 搜尋結果",
                         description=f"沒有找到包含 '{search_term}' 的準心",
@@ -322,14 +394,17 @@ class Repo(commands.Cog):
                     await ctx.send(embed=embed)
                     return
                 
-                crosshairs = filtered_crosshairs
+                crosshairs = filtered
             
             # 創建翻頁界面
             view = CrosshairView(crosshairs, user_id=ctx.author.id)
-            embed = view._create_embed()
+            embed = view.create_embed()
             
-            # 發送訊息
-            message = await ctx.send(embed=embed, view=view)
+            # 添加搜尋資訊到embed
+            if search_term:
+                embed.title += f" - 搜尋: {search_term}"
+            
+            await ctx.send(embed=embed, view=view)
             
             # 記錄日誌
             search_info = f" (搜尋: {search_term})" if search_term else ""
@@ -341,113 +416,106 @@ class Repo(commands.Cog):
             )
             
         except Exception as e:
-            error_msg = f"載入準心庫時發生錯誤: {str(e)}"
-            BotLogger.error("Repo", error_msg, e)
+            BotLogger.error("Repo", f"瀏覽準心庫失敗: {e}")
+            import traceback
+            traceback.print_exc()
             
-            embed = discord.Embed(
-                title="❌ 錯誤",
-                description="載入準心庫時發生錯誤，請稍後再試",
-                color=discord.Color.red()
-            )
-            await ctx.send(embed=embed)
-    
+            # 提供更詳細的錯誤資訊
+            error_msg = f"❌ 載入準心庫時發生錯誤: {str(e)[:100]}"
+            await ctx.send(error_msg)
+
     @commands.command(name="repo_add", aliases=["新增準心"], help="新增準心到代碼庫")
-    async def repo_add(self, ctx, game: str, tag: str, code: str, image_url: str = None):
-        """
-        新增準心到代碼庫
-        
-        Args:
-            game: 遊戲名稱
-            tag: 自訂標籤
-            code: 準心代碼
-            image_url: 可選的預覽圖片URL
-        """
+    async def repo_add(self, ctx, game: str, tag: str, *, code_and_image: str):
+        """新增準心到代碼庫"""
         try:
             crosshairs = await self._load_crosshairs()
             
-            # 生成新的ID
-            new_id = max([ch.get('id', 0) for ch in crosshairs], default=0) + 1
+            # 解析代碼和圖片URL
+            parts = code_and_image.strip().split()
             
-            # 創建新準心資料
+            # 如果最後一部分看起來像URL，就當作圖片
+            image_url = None
+            if parts and (parts[-1].startswith('http://') or parts[-1].startswith('https://')):
+                image_url = parts[-1]
+                code = ' '.join(parts[:-1])
+            else:
+                code = code_and_image
+            
+            # 生成新ID
+            new_id = self._generate_id(game, crosshairs)
+            
+            # 建立新準心
             new_crosshair = {
                 "id": new_id,
                 "game": game,
-                "code": code,
-                "image_url": image_url,
-                "tag": tag
+                "tag": tag,
+                "code": code.strip(),
+                "image_url": image_url
             }
             
-            # 添加到列表
+            # 新增並儲存
             crosshairs.append(new_crosshair)
-            
-            # 儲存資料
             await self._save_crosshairs(crosshairs)
             
-            # 創建確認 embed
+            # 確認訊息
             embed = discord.Embed(
                 title="✅ 準心新增成功",
                 color=discord.Color.green()
             )
             embed.add_field(name="遊戲", value=game, inline=True)
             embed.add_field(name="標籤", value=tag, inline=True)
-            embed.add_field(name="ID", value=str(new_id), inline=True)
-            embed.add_field(name="代碼", value=f"```\n{code}\n```", inline=False)
+            embed.add_field(name="ID", value=new_id, inline=True)
+            embed.add_field(name="代碼長度", value=f"{len(code)} 字符", inline=False)
             
             if image_url:
+                embed.add_field(name="預覽圖片", value="✅ 已設定", inline=True)
                 embed.set_thumbnail(url=image_url)
+            else:
+                embed.add_field(name="預覽圖片", value="❌ 未設定", inline=True)
             
             await ctx.send(embed=embed)
             
-            BotLogger.command_used(
-                "repo_add", 
-                ctx.author.id, 
-                ctx.guild.id if ctx.guild else 0, 
-                f"新增準心: {game} - {tag}"
-            )
+            BotLogger.command_used("repo_add", ctx.author.id, ctx.guild.id if ctx.guild else 0, 
+                                   f"新增準心: {new_id} - {game} {tag}")
             
         except Exception as e:
-            error_msg = f"新增準心失敗: {str(e)}"
-            BotLogger.error("Repo", error_msg, e)
-            await ctx.send(f"❌ {error_msg}")
-    
+            BotLogger.error("Repo", f"新增準心失敗: {e}")
+            await ctx.send("❌ 新增準心失敗")
+
     @repo_add.error
     async def repo_add_error(self, ctx, error):
-        """處理 repo_add 指令錯誤"""
+        """處理新增準心指令錯誤"""
         if isinstance(error, commands.MissingRequiredArgument):
             embed = discord.Embed(
                 title="❌ 參數錯誤",
-                description="請提供完整的參數\n\n**用法：**\n`?repo_add <遊戲> <標籤> <代碼> [圖片URL]`\n\n**範例：**\n`?repo_add Valorant 精準型 0;P;c;5;... https://imgur.com/image.png`",
+                description="**用法：** `?repo_add <遊戲> <標籤> <準心代碼> [圖片URL]`\n\n"
+                           "**範例：**\n"
+                           "`?repo_add Valorant 精準型 0;P;c;5;h;0;m;1;0l;2;0o;2;0a;1;0f;0;1b;0`\n"
+                           "`?repo_add CS2 點狀 CSGO_123... https://i.imgur.com/example.png`",
                 color=discord.Color.red()
             )
             await ctx.send(embed=embed)
-        else:
-            BotLogger.error("Repo", f"repo_add 指令錯誤: {error}")
-    
-    @commands.command(name="repo_del", aliases=["刪除準心"], help="刪除準心代碼")
-    async def repo_delete(self, ctx, crosshair_id: int):
-        """
-        刪除指定ID的準心
-        
-        Args:
-            crosshair_id: 要刪除的準心ID
-        """
+
+    @commands.command(name="repo_del", aliases=["刪除準心"], help="刪除指定ID的準心")
+    async def repo_delete(self, ctx, crosshair_id: str):
+        """刪除指定ID的準心"""
         try:
             crosshairs = await self._load_crosshairs()
             
             # 尋找要刪除的準心
-            target_crosshair = None
             target_index = -1
+            target_crosshair = None
             
             for i, ch in enumerate(crosshairs):
-                if ch.get('id') == crosshair_id:
-                    target_crosshair = ch
+                if str(ch.get('id', '')).lower() == crosshair_id.lower():
                     target_index = i
+                    target_crosshair = ch
                     break
             
-            if target_crosshair is None:
+            if target_index == -1:
                 embed = discord.Embed(
                     title="❌ 找不到準心",
-                    description=f"ID {crosshair_id} 的準心不存在",
+                    description=f"ID `{crosshair_id}` 的準心不存在",
                     color=discord.Color.red()
                 )
                 await ctx.send(embed=embed)
@@ -460,141 +528,23 @@ class Repo(commands.Cog):
             # 確認訊息
             embed = discord.Embed(
                 title="✅ 準心刪除成功",
-                description=f"已刪除 **{target_crosshair['tag']}** ({target_crosshair['game']})",
+                description=f"已刪除 **{target_crosshair.get('tag', '未知')}** ({target_crosshair.get('game', '未知遊戲')})",
                 color=discord.Color.green()
             )
             await ctx.send(embed=embed)
             
-            BotLogger.command_used(
-                "repo_del", 
-                ctx.author.id, 
-                ctx.guild.id if ctx.guild else 0, 
-                f"刪除準心 ID {crosshair_id}: {target_crosshair['tag']}"
-            )
+            BotLogger.command_used("repo_del", ctx.author.id, ctx.guild.id if ctx.guild else 0, 
+                                   f"刪除準心: {crosshair_id}")
             
         except Exception as e:
-            error_msg = f"刪除準心失敗: {str(e)}"
-            BotLogger.error("Repo", error_msg, e)
-            await ctx.send(f"❌ {error_msg}")
-    
+            BotLogger.error("Repo", f"刪除準心失敗: {e}")
+            await ctx.send("❌ 刪除準心失敗")
+
     @repo_delete.error
     async def repo_delete_error(self, ctx, error):
-        """處理 repo_del 指令錯誤"""
+        """處理刪除準心指令錯誤"""
         if isinstance(error, commands.MissingRequiredArgument):
-            await ctx.send("❌ 請提供要刪除的準心ID，例如：`?repo_del 1`")
-        elif isinstance(error, commands.BadArgument):
-            await ctx.send("❌ 準心ID必須是數字，例如：`?repo_del 1`")
-        else:
-            BotLogger.error("Repo", f"repo_del 指令錯誤: {error}")
-    
-    @commands.command(name="repo_list", aliases=["準心列表"], help="顯示所有準心的簡要列表")
-    async def repo_list(self, ctx):
-        """顯示所有準心的簡要列表"""
-        try:
-            crosshairs = await self._load_crosshairs()
-            
-            if not crosshairs:
-                embed = discord.Embed(
-                    title="📦 準心代碼庫",
-                    description="目前沒有任何準心資料",
-                    color=discord.Color.orange()
-                )
-                await ctx.send(embed=embed)
-                return
-            
-            # 創建列表 embed
-            embed = discord.Embed(
-                title="📋 準心代碼列表",
-                description=f"共有 {len(crosshairs)} 個準心",
-                color=discord.Color.blue()
-            )
-            
-            # 按遊戲分組顯示
-            games = {}
-            for ch in crosshairs:
-                game = ch['game']
-                if game not in games:
-                    games[game] = []
-                games[game].append(f"`{ch['id']}` {ch['tag']}")
-            
-            for game, items in games.items():
-                embed.add_field(
-                    name=f"🎮 {game}",
-                    value="\n".join(items),
-                    inline=False
-                )
-            
-            embed.set_footer(text="使用 ?repo [搜尋關鍵字] 來瀏覽詳細內容")
-            
-            await ctx.send(embed=embed)
-            
-            BotLogger.command_used(
-                "repo_list", 
-                ctx.author.id, 
-                ctx.guild.id if ctx.guild else 0, 
-                f"查看準心列表 - 共 {len(crosshairs)} 個"
-            )
-            
-        except Exception as e:
-            error_msg = f"載入準心列表失敗: {str(e)}"
-            BotLogger.error("Repo", error_msg, e)
-            await ctx.send(f"❌ {error_msg}")
-    
-    @commands.command(name="repo_help", aliases=["準心幫助"], help="顯示準心庫功能說明")
-    async def repo_help(self, ctx):
-        """顯示準心庫功能說明"""
-        embed = discord.Embed(
-            title="🎯 準心代碼庫功能說明",
-            color=discord.Color.blue()
-        )
-        
-        embed.add_field(
-            name="📖 瀏覽指令",
-            value="`?repo` - 瀏覽所有準心（翻頁模式）\n"
-                  "`?repo <關鍵字>` - 搜尋特定準心\n"
-                  "`?repo_list` - 顯示簡要列表",
-            inline=False
-        )
-        
-        embed.add_field(
-            name="✏️ 管理指令",
-            value="`?repo_add <遊戲> <標籤> <代碼> [圖片]` - 新增準心\n"
-                  "`?repo_del <ID>` - 刪除指定準心",
-            inline=False
-        )
-        
-        embed.add_field(
-            name="💡 使用範例",
-            value="```\n"
-                  "?repo Valorant          # 搜尋 Valorant 準心\n"
-                  "?repo_add CS2 點狀型 CSGO_123... https://imgur.com/pic.png\n"
-                  "?repo_del val/1         # 刪除 ID val/1 的準心\n"
-                  "```",
-            inline=False
-        )
-        
-        embed.add_field(
-            name="🎮 支援遊戲",
-            value="Valorant, CS2, Apex Legends 等各種 FPS 遊戲",
-            inline=False
-        )
-        
-        embed.add_field(
-            name="🆔 ID 格式說明",
-            value="ID 採用 `遊戲前綴/編號` 格式\n"
-                  "例如：`val/1`, `cs/2`, `apex/1`\n"
-                  "每個遊戲的編號獨立計算",
-            inline=False
-        )
-        
-        await ctx.send(embed=embed)
-        
-        BotLogger.command_used(
-            "repo_help", 
-            ctx.author.id, 
-            ctx.guild.id if ctx.guild else 0, 
-            "查看準心庫說明"
-        )
+            await ctx.send("❌ 請提供要刪除的準心ID，例如：`?repo_del val/1`")
 
 
 async def setup(bot):
