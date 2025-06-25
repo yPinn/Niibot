@@ -20,7 +20,8 @@ class Reply(commands.Cog):
     async def load_reply_msgs(self):
         try:
             data = await util.read_json(util.get_data_file_path(self.data_file))
-            self.reply_msgs = data if isinstance(data, list) and data else self.default_msgs()
+            self.reply_msgs = data if isinstance(
+                data, list) and data else self.default_msgs()
             if not data:  # 如果檔案為空，儲存預設訊息
                 await util.write_json(util.get_data_file_path(self.data_file), self.reply_msgs)
             BotLogger.info("Reply", f"載入了 {len(self.reply_msgs)} 條回覆訊息")
@@ -31,13 +32,6 @@ class Reply(commands.Cog):
     def default_msgs(self):
         return [
             "不要 @ 我，白目嗎！！！",
-            "不熟N標",
-            "?",
-            # "幹你娘機掰標三小",
-            "皮 ↘ 炎 ↗",
-            # "uu：愛是寂寞人",
-            "不要再冒充我的身分了",
-            "請問你誰？交叉燒查榜除了我以外沒有同時需要考慮這兩間麵店的..如果你是要分顆肉包 那真心祝你加油粿 而且你也昨天搶票 如果你是真人希望有機會能成為志同道合作社的朋友 但如果你是用我的身分起號 我覺得有點噁心 如果有冒犯到你的話很抱歉，只是因為你連帳號都跟我很像、通通跟我一樣才有點敏感"
         ]
 
     async def handle_on_message(self, message: discord.Message):
@@ -47,7 +41,8 @@ class Reply(commands.Cog):
 
         # 忽略指令訊息（避免與機器人指令衝突）
         from utils.config_manager import config
-        prefixes = config.command_prefix if isinstance(config.command_prefix, list) else [config.command_prefix]
+        prefixes = config.command_prefix if isinstance(
+            config.command_prefix, list) else [config.command_prefix]
         if any(message.content.startswith(prefix) for prefix in prefixes):
             return
 
@@ -67,12 +62,12 @@ class Reply(commands.Cog):
             if self.reply_msgs:
                 reply = random.choice(self.reply_msgs)
                 await message.reply(reply, mention_author=False)
-                
+
                 # 記錄觸發情況
                 trigger_type = "關鍵字" if match_keyword else "身分組提及"
                 BotLogger.user_action(
-                    "回覆觸發", 
-                    message.author.id, 
+                    "回覆觸發",
+                    message.author.id,
                     message.guild.id if message.guild else 0,
                     f"觸發類型: {trigger_type}, 訊息: {util.truncate_text(message.content)}"
                 )
@@ -80,6 +75,11 @@ class Reply(commands.Cog):
     @commands.Cog.listener()
     async def on_ready(self):
         await self.load_reply_msgs()
+
+    @commands.command(name="milktea", aliases=["珍珠", "抹茶", "奶茶"], help="https://www.twitch.tv/31xuy/clip/SuccessfulNastyWitchPraiseIt-k85ZcLWoG7qjo0yR")
+    async def matcha_milktea(self, ctx: commands.Context):
+        text = f"他幹嘛啦 😰 他@#$%^&*（咕嚕咕嚕 💦）\n珍珠抹茶奶茶要怎麼做啦 😓\n珍珠抹茶奶茶 😰 不要關我燈 😨\n他長得很恐怖啦 👻 他長得很恐怖啦 😱\n哇 😓 珍珠抹茶奶茶 😰 珍珠抹茶奶茶 😥\n啊 😱 啊 💀 啊 😰 啊 👻 啊 😵"
+        await ctx.reply(text)
 
     @commands.command(name="cc", aliases=["複製", "ditto"], help="複製人，顯示頭像和橫幅")
     async def copycat(self, ctx: commands.Context, *, user_input: str):
@@ -102,18 +102,21 @@ class Reply(commands.Cog):
                 except ValueError:
                     error_msg = "請提供有效的用戶 ID、名稱或 @提及"
                     await ctx.send(util.format_error_msg(error_msg))
-                    BotLogger.command_used("cc", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"錯誤: {error_msg}")
+                    BotLogger.command_used(
+                        "cc", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"錯誤: {error_msg}")
                     return
                 except discord.NotFound:
                     error_msg = "找不到該用戶"
                     await ctx.send(util.format_error_msg(error_msg))
-                    BotLogger.command_used("cc", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"錯誤: {error_msg}")
+                    BotLogger.command_used(
+                        "cc", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"錯誤: {error_msg}")
                     return
 
         if user is None:
             error_msg = "找不到該用戶，請確認輸入是否正確"
             await ctx.send(util.format_error_msg(error_msg))
-            BotLogger.command_used("cc", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"錯誤: {error_msg}")
+            BotLogger.command_used(
+                "cc", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"錯誤: {error_msg}")
             return
 
         avatar_url = user.display_avatar.url
@@ -155,12 +158,12 @@ class Reply(commands.Cog):
         )
 
         await ctx.send(embed=embed)
-        
+
         # 記錄成功的指令使用
         BotLogger.command_used(
-            "cc", 
-            ctx.author.id, 
-            ctx.guild.id if ctx.guild else 0, 
+            "cc",
+            ctx.author.id,
+            ctx.guild.id if ctx.guild else 0,
             f"目標用戶: {user.display_name} ({user.id})"
         )
 
@@ -228,15 +231,15 @@ class Reply(commands.Cog):
             )
 
             await interaction.response.send_message(embed=embed)
-            
+
             # 記錄成功的指令使用
             BotLogger.command_used(
-                "copycat", 
-                interaction.user.id, 
-                interaction.guild.id if interaction.guild else 0, 
+                "copycat",
+                interaction.user.id,
+                interaction.guild.id if interaction.guild else 0,
                 f"目標用戶: {full_user.display_name} ({full_user.id})"
             )
-            
+
         except discord.NotFound:
             await interaction.response.send_message("❌ 找不到該用戶，請確認輸入是否正確", ephemeral=True)
         except Exception as e:
