@@ -72,15 +72,19 @@ class CopycatToggleView(discord.ui.View):
         self.author_id = author_id
         self.user_cache = user_cache
         self.message = None
-        self.show_guild = True  # 預設顯示伺服器設定（如果有的話）
         
         # 檢查是否有伺服器專用設定
         self.has_guild_settings = self._check_guild_settings()
         
-        # 如果沒有伺服器設定，預設顯示主要設定並鎖定按鈕
-        if not self.has_guild_settings:
+        # 決定顯示模式和按鈕狀態
+        if self.guild and self.has_guild_settings:
+            # 在伺服器中且有伺服器設定 → 預設顯示伺服器設定，按鈕可用
+            self.show_guild = True
+            # 設定按鈕文字（顯示伺服器時，按鈕顯示"切換為主要"）
+            self._update_button_label()
+        else:
+            # 不在伺服器中或沒有伺服器設定 → 顯示主要設定，按鈕鎖住
             self.show_guild = False
-            # 移除所有按鈕並添加鎖定按鈕
             self.clear_items()
             self.add_item(self.create_locked_button())
     
@@ -106,6 +110,17 @@ class CopycatToggleView(discord.ui.View):
             custom_id="locked_button"
         )
         return button
+    
+    def _update_button_label(self):
+        """更新切換按鈕的文字"""
+        # 找到切換按鈕並更新文字
+        for item in self.children:
+            if isinstance(item, discord.ui.Button) and hasattr(item.callback, '__name__') and item.callback.__name__ == 'toggle_setting':
+                if self.show_guild:
+                    item.label = "🔄 切換為主要"  # 當前顯示伺服器，下一個切換到主要
+                else:
+                    item.label = "🔄 切換為伺服器"  # 當前顯示主要，下一個切換到伺服器
+                break
     
     async def _fetch_user_data(self) -> Optional[discord.User]:
         """獲取完整的用戶資料"""
@@ -146,44 +161,52 @@ class CopycatToggleView(discord.ui.View):
             fetched_user = await self._fetch_user_data()
             
             if use_guild and self.guild and isinstance(self.user, discord.Member) and self.has_guild_settings:
-                # 伺服器設定模式
+                # 伺服器設定模式 - 優先使用Member的伺服器專用設定
                 BotLogger.debug("Reply", "使用伺服器設定模式")
                 
-                # 優先使用guild_avatar，沒有則使用主要avatar
+                # 優先使用guild_avatar，沒有則fallback到主要avatar
                 if hasattr(self.user, 'guild_avatar') and self.user.guild_avatar:
                     assets['avatar_url'] = self.user.guild_avatar.url
-                    BotLogger.debug("Reply", "使用guild_avatar")
+                    BotLogger.debug("Reply", "使用Member的guild_avatar")
+                elif fetched_user and hasattr(fetched_user, 'avatar') and fetched_user.avatar:
+                    assets['avatar_url'] = fetched_user.avatar.url
+                    BotLogger.debug("Reply", "fallback到User的全域avatar")
                 else:
-                    assets['avatar_url'] = self.user.display_avatar.url
-                    BotLogger.debug("Reply", "使用display_avatar")
+                    assets['avatar_url'] = self.user.default_avatar.url
+                    BotLogger.debug("Reply", "使用預設avatar")
                 
                 # 檢查guild_banner (目前Discord可能尚未支援，預留功能)
                 if hasattr(self.user, 'guild_banner') and self.user.guild_banner:
                     assets['banner_url'] = self.user.guild_banner.url
-                    BotLogger.debug("Reply", "使用guild_banner")
-                else:
-                    # 使用主要banner
-                    if fetched_user and hasattr(fetched_user, 'banner') and fetched_user.banner:
-                        assets['banner_url'] = fetched_user.banner.url
-                        BotLogger.debug("Reply", "使用主要banner")
+                    BotLogger.debug("Reply", "使用Member的guild_banner")
+                elif fetched_user and hasattr(fetched_user, 'banner') and fetched_user.banner:
+                    assets['banner_url'] = fetched_user.banner.url
+                    BotLogger.debug("Reply", "fallback使用User的主要banner")
                 
-                # 獲取accent_color（只能從主要設定獲取）
+                # 獲取accent_color（只能從User獲取）
                 if fetched_user and hasattr(fetched_user, 'accent_color'):
                     assets['accent_color'] = fetched_user.accent_color
-                    BotLogger.debug("Reply", f"獲取accent_color: {fetched_user.accent_color}")
+                    BotLogger.debug("Reply", f"獲取User的accent_color: {fetched_user.accent_color}")
             else:
-                # 主要設定模式
+                # 主要設定模式 - 使用User的全域設定
                 BotLogger.debug("Reply", "使用主要設定模式")
-                assets['avatar_url'] = self.user.display_avatar.url
                 
-                # 獲取完整用戶資料
+                # 使用User的真正全域avatar，不是display_avatar
+                if fetched_user and hasattr(fetched_user, 'avatar') and fetched_user.avatar:
+                    assets['avatar_url'] = fetched_user.avatar.url
+                    BotLogger.debug("Reply", "使用User的全域avatar")
+                else:
+                    assets['avatar_url'] = self.user.default_avatar.url
+                    BotLogger.debug("Reply", "使用預設avatar")
+                
+                # 獲取User的完整資料
                 if fetched_user:
                     if hasattr(fetched_user, 'banner') and fetched_user.banner:
                         assets['banner_url'] = fetched_user.banner.url
-                        BotLogger.debug("Reply", "獲取主要banner")
+                        BotLogger.debug("Reply", "獲取User的主要banner")
                     if hasattr(fetched_user, 'accent_color'):
                         assets['accent_color'] = fetched_user.accent_color
-                        BotLogger.debug("Reply", f"獲取主要accent_color: {fetched_user.accent_color}")
+                        BotLogger.debug("Reply", f"獲取User的主要accent_color: {fetched_user.accent_color}")
         
         except Exception as e:
             BotLogger.error("Reply", f"獲取用戶資產時發生嚴重錯誤", e)
@@ -248,11 +271,11 @@ class CopycatToggleView(discord.ui.View):
             # 切換顯示模式
             self.show_guild = not self.show_guild
             
-            # 更新按鈕文字
+            # 更新按鈕文字（按鈕顯示的是下一個要切換到的模式）
             if self.show_guild:
-                button.label = "🔄 切換為主要"
+                button.label = "🔄 切換為主要"  # 當前顯示伺服器，下一個切換到主要
             else:
-                button.label = "🔄 切換為伺服器"
+                button.label = "🔄 切換為伺服器"  # 當前顯示主要，下一個切換到伺服器
             
             # 更新embed
             embed = await self.create_embed()
