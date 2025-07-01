@@ -1,24 +1,76 @@
 import asyncio
 import random
+import time
+from typing import Optional, Dict, Any
 
 import discord
 from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks
 
 from utils import util
 from utils.logger import BotLogger
 from utils.config_manager import config
 
 
+# 常數定義
+class CopycatConfig:
+    CACHE_TTL = 300  # 5分鐘快取
+    VIEW_TIMEOUT = 60  # View逾時時間
+    DITTO_ICON = "https://i.pinimg.com/736x/41/0b/a5/410ba54a0c7ca00f359d008f4fcebcd0.jpg"
+
+
+class UserDataCache:
+    """用戶資料快取系統"""
+    
+    def __init__(self):
+        self._cache: Dict[int, Dict[str, Any]] = {}
+        self._timestamps: Dict[int, float] = {}
+    
+    def get(self, user_id: int) -> Optional[Dict[str, Any]]:
+        """獲取快取的用戶資料"""
+        current_time = time.time()
+        
+        if user_id in self._cache and user_id in self._timestamps:
+            if current_time - self._timestamps[user_id] < CopycatConfig.CACHE_TTL:
+                return self._cache[user_id]
+            else:
+                # 快取過期，清除
+                self._clear_user(user_id)
+        
+        return None
+    
+    def set(self, user_id: int, data: Dict[str, Any]) -> None:
+        """設定用戶資料快取"""
+        self._cache[user_id] = data
+        self._timestamps[user_id] = time.time()
+    
+    def _clear_user(self, user_id: int) -> None:
+        """清除特定用戶的快取"""
+        self._cache.pop(user_id, None)
+        self._timestamps.pop(user_id, None)
+    
+    def clear_expired(self) -> None:
+        """清除所有過期的快取"""
+        current_time = time.time()
+        expired_users = [
+            user_id for user_id, timestamp in self._timestamps.items()
+            if current_time - timestamp >= CopycatConfig.CACHE_TTL
+        ]
+        
+        for user_id in expired_users:
+            self._clear_user(user_id)
+
+
 class CopycatToggleView(discord.ui.View):
     """簡化版Copycat切換介面 - 單一按鈕切換主要/伺服器"""
     
-    def __init__(self, user, guild, bot, author_id, timeout=300):
+    def __init__(self, user, guild, bot, author_id, user_cache, timeout=CopycatConfig.VIEW_TIMEOUT):
         super().__init__(timeout=timeout)
         self.user = user
         self.guild = guild
         self.bot = bot
         self.author_id = author_id
+        self.user_cache = user_cache
         self.message = None
         self.show_guild = True  # 預設顯示伺服器設定（如果有的話）
         
@@ -55,6 +107,30 @@ class CopycatToggleView(discord.ui.View):
         )
         return button
     
+    async def _fetch_user_data(self) -> Optional[discord.User]:
+        """獲取完整的用戶資料"""
+        try:
+            # 直接從Discord API獲取（暫時禁用快取進行測試）
+            BotLogger.debug("Reply", f"從API獲取用戶 {self.user.id} 的詳細資料")
+            
+            # 如果當前用戶已經是完整的User對象且有banner/accent_color屬性，直接使用
+            if isinstance(self.user, discord.User) and hasattr(self.user, 'banner') and hasattr(self.user, 'accent_color'):
+                BotLogger.debug("Reply", f"使用現有User對象 - banner: {self.user.banner is not None}, accent_color: {self.user.accent_color}")
+                return self.user
+            
+            # 否則fetch完整資料
+            fetched_user = await self.bot.fetch_user(self.user.id)
+            BotLogger.debug("Reply", f"已獲取用戶 {self.user.id} 的詳細資料 - banner: {fetched_user.banner is not None}, accent_color: {fetched_user.accent_color}")
+            
+            return fetched_user
+            
+        except (discord.NotFound, discord.HTTPException) as e:
+            BotLogger.warning("Reply", f"無法獲取用戶 {self.user.id} 的詳細資料: {e}")
+            return None
+        except Exception as e:
+            BotLogger.warning("Reply", f"獲取用戶 {self.user.id} 詳細資料時發生未預期錯誤", e)
+            return None
+
     async def get_user_assets(self, use_guild=True):
         """獲取用戶資產（頭像、橫幅、主題顏色）"""
         assets = {
@@ -63,49 +139,51 @@ class CopycatToggleView(discord.ui.View):
             'accent_color': None
         }
         
+        BotLogger.debug("Reply", f"開始獲取用戶 {self.user.id} 的資產 - 模式: {'伺服器' if use_guild else '全域'}")
+        
         try:
+            # 獲取完整用戶資料（無論哪種模式都需要）
+            fetched_user = await self._fetch_user_data()
+            
             if use_guild and self.guild and isinstance(self.user, discord.Member) and self.has_guild_settings:
                 # 伺服器設定模式
+                BotLogger.debug("Reply", "使用伺服器設定模式")
+                
                 # 優先使用guild_avatar，沒有則使用主要avatar
                 if hasattr(self.user, 'guild_avatar') and self.user.guild_avatar:
                     assets['avatar_url'] = self.user.guild_avatar.url
+                    BotLogger.debug("Reply", "使用guild_avatar")
                 else:
                     assets['avatar_url'] = self.user.display_avatar.url
+                    BotLogger.debug("Reply", "使用display_avatar")
                 
                 # 檢查guild_banner (目前Discord可能尚未支援，預留功能)
                 if hasattr(self.user, 'guild_banner') and self.user.guild_banner:
                     assets['banner_url'] = self.user.guild_banner.url
-                    # 伺服器banner通常不包含accent_color，所以不需要fetch
+                    BotLogger.debug("Reply", "使用guild_banner")
                 else:
-                    # 如果沒有guild_banner，獲取主要banner和accent_color
-                    try:
-                        fetched_user = await self.bot.fetch_user(self.user.id)
-                        if hasattr(fetched_user, 'banner') and fetched_user.banner:
-                            assets['banner_url'] = fetched_user.banner.url
-                        assets['accent_color'] = fetched_user.accent_color
-                    except (discord.NotFound, discord.HTTPException) as e:
-                        BotLogger.warning("Reply", f"無法獲取用戶 {self.user.id} 的詳細資料: {e}")
-                    except Exception as e:
-                        BotLogger.warning("Reply", f"獲取用戶 {self.user.id} 詳細資料時發生未預期錯誤", e)
+                    # 使用主要banner
+                    if fetched_user and hasattr(fetched_user, 'banner') and fetched_user.banner:
+                        assets['banner_url'] = fetched_user.banner.url
+                        BotLogger.debug("Reply", "使用主要banner")
+                
+                # 獲取accent_color（只能從主要設定獲取）
+                if fetched_user and hasattr(fetched_user, 'accent_color'):
+                    assets['accent_color'] = fetched_user.accent_color
+                    BotLogger.debug("Reply", f"獲取accent_color: {fetched_user.accent_color}")
             else:
                 # 主要設定模式
+                BotLogger.debug("Reply", "使用主要設定模式")
                 assets['avatar_url'] = self.user.display_avatar.url
                 
-                try:
-                    # 避免重複fetch，如果user已經是完整的User對象就直接使用
-                    if hasattr(self.user, 'banner') and hasattr(self.user, 'accent_color'):
-                        fetched_user = self.user
-                    else:
-                        fetched_user = await self.bot.fetch_user(self.user.id)
-                    
+                # 獲取完整用戶資料
+                if fetched_user:
                     if hasattr(fetched_user, 'banner') and fetched_user.banner:
                         assets['banner_url'] = fetched_user.banner.url
-                    assets['accent_color'] = fetched_user.accent_color
-                    
-                except (discord.NotFound, discord.HTTPException) as e:
-                    BotLogger.warning("Reply", f"無法獲取用戶 {self.user.id} 的詳細資料: {e}")
-                except Exception as e:
-                    BotLogger.warning("Reply", f"獲取用戶 {self.user.id} 詳細資料時發生未預期錯誤", e)
+                        BotLogger.debug("Reply", "獲取主要banner")
+                    if hasattr(fetched_user, 'accent_color'):
+                        assets['accent_color'] = fetched_user.accent_color
+                        BotLogger.debug("Reply", f"獲取主要accent_color: {fetched_user.accent_color}")
         
         except Exception as e:
             BotLogger.error("Reply", f"獲取用戶資產時發生嚴重錯誤", e)
@@ -116,6 +194,7 @@ class CopycatToggleView(discord.ui.View):
         if not assets['avatar_url']:
             assets['avatar_url'] = self.user.default_avatar.url if self.user else None
         
+        BotLogger.debug("Reply", f"最終資產結果 - avatar: {assets['avatar_url'] is not None}, banner: {assets['banner_url'] is not None}, accent_color: {assets['accent_color']}")
         return assets
     
     async def create_embed(self):
@@ -124,12 +203,12 @@ class CopycatToggleView(discord.ui.View):
         
         embed = discord.Embed(
             title=f"{self.user.display_name} 的資料",
-            color=assets['accent_color'] or discord.Color.green(),
+            color=assets['accent_color'] or discord.Color.blurple(),
             timestamp=util.now_utc(),
         )
         embed.set_author(
             name="Ditto",
-            icon_url="https://i.pinimg.com/736x/41/0b/a5/410ba54a0c7ca00f359d008f4fcebcd0.jpg",
+            icon_url=CopycatConfig.DITTO_ICON,
         )
         
         # 設置頭像
@@ -147,6 +226,8 @@ class CopycatToggleView(discord.ui.View):
         # 設置主題顏色
         if assets['accent_color']:
             embed.add_field(name="主題顏色", value=str(assets['accent_color']), inline=False)
+        else:
+            embed.add_field(name="主題顏色", value="無主題顏色", inline=False)
         
         embed.set_footer(
             text="Niibot",
@@ -221,6 +302,7 @@ class Reply(commands.Cog):
         self.target_role_id = config.target_role_id
         self.data_file = "reply_msgs.json"
         self.reply_msgs = []
+        self.user_cache = UserDataCache()
 
     async def load_reply_msgs(self):
         try:
@@ -238,6 +320,35 @@ class Reply(commands.Cog):
         return [
             "不要 @ 我，白目嗎！！！",
         ]
+    
+    async def _find_user_by_input(self, ctx: commands.Context, user_input: str) -> Optional[discord.User]:
+        """根據輸入查找用戶（mention、ID或名稱）"""
+        # 檢查是否有mention
+        if ctx.message.mentions:
+            return ctx.message.mentions[0]
+        
+        # 嘗試按名稱在伺服器中查找
+        if ctx.guild:
+            user = discord.utils.find(
+                lambda m: m.name == user_input or m.display_name == user_input,
+                ctx.guild.members,
+            )
+            if user:
+                return user
+        
+        # 嘗試按ID查找
+        try:
+            user_id = int(user_input)
+            user = ctx.guild.get_member(user_id) if ctx.guild else None
+            if user is None:
+                user = await self.bot.fetch_user(user_id)
+            return user
+        except ValueError:
+            pass
+        except discord.NotFound:
+            pass
+        
+        return None
 
     async def handle_on_message(self, message: discord.Message):
         # 不回應機器人自己
@@ -280,6 +391,14 @@ class Reply(commands.Cog):
     @commands.Cog.listener()
     async def on_ready(self):
         await self.load_reply_msgs()
+        # 啟動快取清理任務
+        self.cache_cleanup_task.start()
+    
+    @tasks.loop(minutes=10)
+    async def cache_cleanup_task(self):
+        """定期清理過期的快取"""
+        self.user_cache.clear_expired()
+        BotLogger.debug("Reply", "已清理過期的用戶快取")
 
     @commands.command(name="milktea", aliases=["珍珠", "抹茶", "奶茶"], help="https://www.twitch.tv/31xuy/clip/SuccessfulNastyWitchPraiseIt-k85ZcLWoG7qjo0yR")
     async def matcha_milktea(self, ctx: commands.Context):
@@ -288,35 +407,9 @@ class Reply(commands.Cog):
 
     @commands.command(name="cc", aliases=["複製", "ditto"], help="複製人，顯示頭像和橫幅")
     async def copycat(self, ctx: commands.Context, *, user_input: str):
-        user = None
-
-        if ctx.message.mentions:
-            user = ctx.message.mentions[0]
-        else:
-            if ctx.guild:
-                user = discord.utils.find(
-                    lambda m: m.name == user_input or m.display_name == user_input,
-                    ctx.guild.members,
-                )
-            if not user:
-                try:
-                    user_id = int(user_input)
-                    user = ctx.guild.get_member(user_id) if ctx.guild else None
-                    if user is None:
-                        user = await self.bot.fetch_user(user_id)
-                except ValueError:
-                    error_msg = "請提供有效的用戶 ID、名稱或 @提及"
-                    await ctx.send(util.format_error_msg(error_msg))
-                    BotLogger.command_used(
-                        "cc", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"錯誤: {error_msg}")
-                    return
-                except discord.NotFound:
-                    error_msg = "找不到該用戶"
-                    await ctx.send(util.format_error_msg(error_msg))
-                    BotLogger.command_used(
-                        "cc", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"錯誤: {error_msg}")
-                    return
-
+        # 查找用戶
+        user = await self._find_user_by_input(ctx, user_input)
+        
         if user is None:
             error_msg = "找不到該用戶，請確認輸入是否正確"
             await ctx.send(util.format_error_msg(error_msg))
@@ -325,7 +418,7 @@ class Reply(commands.Cog):
             return
 
         # 創建切換式View
-        view = CopycatToggleView(user, ctx.guild, self.bot, ctx.author.id)
+        view = CopycatToggleView(user, ctx.guild, self.bot, ctx.author.id, self.user_cache)
         embed = await view.create_embed()
         
         message = await ctx.send(embed=embed, view=view)
@@ -353,7 +446,7 @@ class Reply(commands.Cog):
         """斜線指令版本的 copycat"""
         try:
             # 創建切換式View
-            view = CopycatToggleView(user, interaction.guild, self.bot, interaction.user.id)
+            view = CopycatToggleView(user, interaction.guild, self.bot, interaction.user.id, self.user_cache)
             embed = await view.create_embed()
             
             await interaction.response.send_message(embed=embed, view=view)
