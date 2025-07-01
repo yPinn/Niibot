@@ -10,6 +10,211 @@ from utils.logger import BotLogger
 from utils.config_manager import config
 
 
+class CopycatToggleView(discord.ui.View):
+    """簡化版Copycat切換介面 - 單一按鈕切換主要/伺服器"""
+    
+    def __init__(self, user, guild, bot, author_id, timeout=300):
+        super().__init__(timeout=timeout)
+        self.user = user
+        self.guild = guild
+        self.bot = bot
+        self.author_id = author_id
+        self.message = None
+        self.show_guild = True  # 預設顯示伺服器設定（如果有的話）
+        
+        # 檢查是否有伺服器專用設定
+        self.has_guild_settings = self._check_guild_settings()
+        
+        # 如果沒有伺服器設定，預設顯示主要設定並鎖定按鈕
+        if not self.has_guild_settings:
+            self.show_guild = False
+            # 移除所有按鈕並添加鎖定按鈕
+            self.clear_items()
+            self.add_item(self.create_locked_button())
+    
+    def _check_guild_settings(self):
+        """檢查用戶是否有伺服器專用設定"""
+        if not self.guild or not isinstance(self.user, discord.Member):
+            return False
+        
+        # 檢查guild_avatar
+        has_guild_avatar = hasattr(self.user, 'guild_avatar') and self.user.guild_avatar is not None
+        
+        # 檢查guild_banner (目前Discord可能尚未支援，但為未來準備)
+        has_guild_banner = hasattr(self.user, 'guild_banner') and self.user.guild_banner is not None
+        
+        return has_guild_avatar or has_guild_banner
+    
+    def create_locked_button(self):
+        """創建鎖定狀態的按鈕"""
+        button = discord.ui.Button(
+            label="🔒 無伺服器設定",
+            style=discord.ButtonStyle.secondary,
+            disabled=True,
+            custom_id="locked_button"
+        )
+        return button
+    
+    async def get_user_assets(self, use_guild=True):
+        """獲取用戶資產（頭像、橫幅、主題顏色）"""
+        assets = {
+            'avatar_url': None,
+            'banner_url': None,
+            'accent_color': None
+        }
+        
+        try:
+            if use_guild and self.guild and isinstance(self.user, discord.Member) and self.has_guild_settings:
+                # 伺服器設定模式
+                # 優先使用guild_avatar，沒有則使用主要avatar
+                if hasattr(self.user, 'guild_avatar') and self.user.guild_avatar:
+                    assets['avatar_url'] = self.user.guild_avatar.url
+                else:
+                    assets['avatar_url'] = self.user.display_avatar.url
+                
+                # 檢查guild_banner (目前Discord可能尚未支援，預留功能)
+                if hasattr(self.user, 'guild_banner') and self.user.guild_banner:
+                    assets['banner_url'] = self.user.guild_banner.url
+                    # 伺服器banner通常不包含accent_color，所以不需要fetch
+                else:
+                    # 如果沒有guild_banner，獲取主要banner和accent_color
+                    try:
+                        fetched_user = await self.bot.fetch_user(self.user.id)
+                        if hasattr(fetched_user, 'banner') and fetched_user.banner:
+                            assets['banner_url'] = fetched_user.banner.url
+                        assets['accent_color'] = fetched_user.accent_color
+                    except (discord.NotFound, discord.HTTPException) as e:
+                        BotLogger.warning("Reply", f"無法獲取用戶 {self.user.id} 的詳細資料: {e}")
+                    except Exception as e:
+                        BotLogger.warning("Reply", f"獲取用戶 {self.user.id} 詳細資料時發生未預期錯誤", e)
+            else:
+                # 主要設定模式
+                assets['avatar_url'] = self.user.display_avatar.url
+                
+                try:
+                    # 避免重複fetch，如果user已經是完整的User對象就直接使用
+                    if hasattr(self.user, 'banner') and hasattr(self.user, 'accent_color'):
+                        fetched_user = self.user
+                    else:
+                        fetched_user = await self.bot.fetch_user(self.user.id)
+                    
+                    if hasattr(fetched_user, 'banner') and fetched_user.banner:
+                        assets['banner_url'] = fetched_user.banner.url
+                    assets['accent_color'] = fetched_user.accent_color
+                    
+                except (discord.NotFound, discord.HTTPException) as e:
+                    BotLogger.warning("Reply", f"無法獲取用戶 {self.user.id} 的詳細資料: {e}")
+                except Exception as e:
+                    BotLogger.warning("Reply", f"獲取用戶 {self.user.id} 詳細資料時發生未預期錯誤", e)
+        
+        except Exception as e:
+            BotLogger.error("Reply", f"獲取用戶資產時發生嚴重錯誤", e)
+            # 使用最基本的備用方案
+            assets['avatar_url'] = self.user.display_avatar.url if self.user else None
+        
+        # 確保至少有基本的avatar
+        if not assets['avatar_url']:
+            assets['avatar_url'] = self.user.default_avatar.url if self.user else None
+        
+        return assets
+    
+    async def create_embed(self):
+        """創建embed（保持原有UI格式）"""
+        assets = await self.get_user_assets(self.show_guild)
+        
+        embed = discord.Embed(
+            title=f"{self.user.display_name} 的資料",
+            color=assets['accent_color'] or discord.Color.green(),
+            timestamp=util.now_utc(),
+        )
+        embed.set_author(
+            name="Ditto",
+            icon_url="https://i.pinimg.com/736x/41/0b/a5/410ba54a0c7ca00f359d008f4fcebcd0.jpg",
+        )
+        
+        # 設置頭像
+        if assets['avatar_url']:
+            embed.set_thumbnail(url=assets['avatar_url'])
+            embed.add_field(name="頭像", value=f"[點我查看]({assets['avatar_url']})", inline=False)
+        
+        # 設置橫幅
+        if assets['banner_url']:
+            embed.set_image(url=assets['banner_url'])
+            embed.add_field(name="橫幅", value=f"[點我查看]({assets['banner_url']})", inline=False)
+        else:
+            embed.add_field(name="橫幅", value="無橫幅", inline=False)
+        
+        # 設置主題顏色
+        if assets['accent_color']:
+            embed.add_field(name="主題顏色", value=str(assets['accent_color']), inline=False)
+        
+        embed.set_footer(
+            text="Niibot",
+            icon_url=(self.bot.user.display_avatar.url if self.bot.user else discord.Embed.Empty),
+        )
+        
+        return embed
+    
+    @discord.ui.button(label="🔄 切換為主要", style=discord.ButtonStyle.primary)
+    async def toggle_setting(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """切換按鈕處理"""
+        # 權限檢查
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message("❌ 只有指令發起者可以操作", ephemeral=True)
+            return
+        
+        try:
+            # 切換顯示模式
+            self.show_guild = not self.show_guild
+            
+            # 更新按鈕文字
+            if self.show_guild:
+                button.label = "🔄 切換為主要"
+            else:
+                button.label = "🔄 切換為伺服器"
+            
+            # 更新embed
+            embed = await self.create_embed()
+            
+            # 安全的回應處理
+            if interaction.response.is_done():
+                await interaction.followup.edit_message(interaction.message.id, embed=embed, view=self)
+            else:
+                await interaction.response.edit_message(embed=embed, view=self)
+                
+            # 記錄切換動作
+            BotLogger.info("Reply", f"用戶 {interaction.user.id} 切換copycat顯示為: {'伺服器' if self.show_guild else '主要'}")
+            
+        except discord.NotFound:
+            await interaction.response.send_message("❌ 訊息已被刪除，無法更新", ephemeral=True)
+        except discord.HTTPException as e:
+            BotLogger.error("Reply", f"Discord API錯誤: {e}")
+            try:
+                await interaction.response.send_message("❌ 更新失敗，請重新使用指令", ephemeral=True)
+            except:
+                pass
+        except Exception as e:
+            BotLogger.error("Reply", f"切換設定時發生未預期錯誤", e)
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message("❌ 切換時發生錯誤，請稍後再試", ephemeral=True)
+                else:
+                    await interaction.followup.send("❌ 切換時發生錯誤，請稍後再試", ephemeral=True)
+            except:
+                pass
+    
+    async def on_timeout(self):
+        """按鈕逾時處理"""
+        try:
+            for item in self.children:
+                item.disabled = True
+            
+            if self.message:
+                await self.message.edit(view=self)
+        except Exception as e:
+            BotLogger.warning("Reply", f"處理按鈕逾時時發生錯誤", e)
+
+
 class Reply(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -119,45 +324,12 @@ class Reply(commands.Cog):
                 "cc", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"錯誤: {error_msg}")
             return
 
-        avatar_url = user.display_avatar.url
-        banner_url = None
-        accent_color = None
-        try:
-            fetched_user = await self.bot.fetch_user(user.id)
-            banner_url = getattr(fetched_user.banner, "url", None)
-            accent_color = fetched_user.accent_color
-        except Exception as e:
-            BotLogger.warning("Reply", f"取得用戶 {user.id} 的詳細資料失敗", e)
-
-        embed = discord.Embed(
-            title=f"{user.display_name} 的資料",
-            color=accent_color or discord.Color.green(),
-            timestamp=util.now_utc(),
-        )
-        embed.set_author(
-            name="Ditto",
-            icon_url="https://i.pinimg.com/736x/41/0b/a5/410ba54a0c7ca00f359d008f4fcebcd0.jpg",
-        )
-        embed.set_thumbnail(url=avatar_url)
-        embed.add_field(name="頭像", value=f"[點我查看]({avatar_url})", inline=False)
-
-        if banner_url:
-            embed.set_image(url=banner_url)
-            embed.add_field(
-                name="橫幅", value=f"[點我查看]({banner_url})", inline=False)
-        else:
-            embed.add_field(name="橫幅", value="無橫幅", inline=False)
-
-        if accent_color:
-            embed.add_field(name="主題顏色", value=str(accent_color), inline=False)
-
-        embed.set_footer(
-            text="Niibot",
-            icon_url=(
-                self.bot.user.display_avatar.url if self.bot.user else discord.Embed.Empty),
-        )
-
-        await ctx.send(embed=embed)
+        # 創建切換式View
+        view = CopycatToggleView(user, ctx.guild, self.bot, ctx.author.id)
+        embed = await view.create_embed()
+        
+        message = await ctx.send(embed=embed, view=view)
+        view.message = message
 
         # 記錄成功的指令使用
         BotLogger.command_used(
@@ -180,64 +352,22 @@ class Reply(commands.Cog):
     async def slash_copycat(self, interaction: discord.Interaction, user: discord.User):
         """斜線指令版本的 copycat"""
         try:
-            # 嘗試獲取完整的用戶信息以便獲取橫幅
-            try:
-                full_user = await self.bot.fetch_user(user.id)
-            except:
-                full_user = user
-
-            embed = discord.Embed(
-                title=f"🎭 {full_user.display_name}",
-                color=discord.Color.blurple()
-            )
-
-            # 設置頭像
-            if full_user.display_avatar:
-                embed.set_image(url=full_user.display_avatar.url)
-                embed.add_field(
-                    name="🖼️ 頭像",
-                    value=f"[點擊查看]({full_user.display_avatar.url})",
-                    inline=True
-                )
-
-            # 設置橫幅（如果有的話）
-            if hasattr(full_user, 'banner') and full_user.banner:
-                embed.set_thumbnail(url=full_user.banner.url)
-                embed.add_field(
-                    name="🎨 橫幅",
-                    value=f"[點擊查看]({full_user.banner.url})",
-                    inline=True
-                )
-            else:
-                embed.add_field(
-                    name="🎨 橫幅",
-                    value="無橫幅",
-                    inline=True
-                )
-
-            # 添加用戶資訊
-            embed.add_field(
-                name="👤 用戶資訊",
-                value=f"**用戶名**: {full_user.name}\n**ID**: {full_user.id}",
-                inline=False
-            )
-
-            # 設置創建時間
-            embed.timestamp = full_user.created_at
-            embed.set_footer(
-                text="Niibot",
-                icon_url=(
-                    self.bot.user.display_avatar.url if self.bot.user else discord.Embed.Empty),
-            )
-
-            await interaction.response.send_message(embed=embed)
-
+            # 創建切換式View
+            view = CopycatToggleView(user, interaction.guild, self.bot, interaction.user.id)
+            embed = await view.create_embed()
+            
+            await interaction.response.send_message(embed=embed, view=view)
+            
+            # 取得訊息reference
+            message = await interaction.original_response()
+            view.message = message
+            
             # 記錄成功的指令使用
             BotLogger.command_used(
                 "copycat",
                 interaction.user.id,
                 interaction.guild.id if interaction.guild else 0,
-                f"目標用戶: {full_user.display_name} ({full_user.id})"
+                f"目標用戶: {user.display_name} ({user.id})"
             )
 
         except discord.NotFound:

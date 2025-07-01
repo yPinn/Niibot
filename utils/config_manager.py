@@ -59,6 +59,10 @@ class ConfigManager:
                 'DATA_DIR': os.getenv('DATA_DIR', 'data'),
                 'EMOJI_SAVE_INTERVAL': int(os.getenv('EMOJI_SAVE_INTERVAL', '30')),
                 'REMINDER_CLEANUP_HOURS': int(os.getenv('REMINDER_CLEANUP_HOURS', '24')),
+                
+                # Twitter 監控 API 金鑰
+                'TWITTER_BEARER_TOKEN': os.getenv('TWITTER_BEARER_TOKEN'),
+                'GOOGLE_TRANSLATE_API_KEY': os.getenv('GOOGLE_TRANSLATE_API_KEY'),
             }
             
             BotLogger.system_event("配置載入", f"環境: {env}, 配置項目數: {len(self._config)}")
@@ -216,6 +220,16 @@ class ConfigManager:
     def reminder_cleanup_hours(self) -> int:
         """提醒清理間隔（小時）"""
         return self.get('REMINDER_CLEANUP_HOURS', 24)
+    
+    @property
+    def twitter_bearer_token(self) -> Optional[str]:
+        """Twitter Bearer Token"""
+        return self.get('TWITTER_BEARER_TOKEN')
+    
+    @property
+    def google_translate_api_key(self) -> Optional[str]:
+        """Google Translate API Key"""
+        return self.get('GOOGLE_TRANSLATE_API_KEY')
 
 # 全域配置實例
 config = ConfigManager()

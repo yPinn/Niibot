@@ -297,6 +297,119 @@ async def test_command(ctx):
         await ctx.send(f"✅ 測試完成（簡化模式）\n環境: {ENV}")
 
 
+# 斜線指令版本的help
+@bot.tree.command(name="help", description="顯示所有可用的斜線指令")
+async def slash_help(interaction: discord.Interaction):
+    """斜線指令版本的幫助指令"""
+    try:
+        # 收集所有斜線指令
+        commands_by_cog = {}
+        
+        # 遍歷所有已載入的cogs
+        for cog_name, cog in bot.cogs.items():
+            cog_commands = []
+            
+            # 獲取cog中的斜線指令
+            if hasattr(cog, '__cog_app_commands__'):
+                for command in cog.__cog_app_commands__:
+                    if hasattr(command, 'name') and hasattr(command, 'description'):
+                        cog_commands.append({
+                            'name': command.name,
+                            'description': command.description[:100] + '...' if len(command.description) > 100 else command.description
+                        })
+            
+            if cog_commands:
+                commands_by_cog[cog_name] = cog_commands
+        
+        # 添加bot級別的斜線指令
+        bot_commands = []
+        for command in bot.tree.get_commands():
+            if hasattr(command, 'name') and hasattr(command, 'description'):
+                # 檢查是否已在cog中列出
+                found_in_cog = False
+                for cog_cmds in commands_by_cog.values():
+                    if any(cmd['name'] == command.name for cmd in cog_cmds):
+                        found_in_cog = True
+                        break
+                
+                if not found_in_cog:
+                    bot_commands.append({
+                        'name': command.name,
+                        'description': command.description[:100] + '...' if len(command.description) > 100 else command.description
+                    })
+        
+        if bot_commands:
+            commands_by_cog['系統指令'] = bot_commands
+        
+        # 創建embed
+        embed = discord.Embed(
+            title="📚 Niibot 斜線指令列表",
+            description="以下是所有可用的斜線指令：",
+            color=discord.Color.blue(),
+            timestamp=discord.utils.utcnow()
+        )
+        
+        # 按模組分組顯示指令
+        for cog_name, commands in commands_by_cog.items():
+            if commands:
+                # 轉換cog名稱為中文
+                cog_display_name = {
+                    'Reply': '🎭 回覆系統',
+                    'Party': '👥 分隊系統', 
+                    'Eat': '🍽️ 用餐推薦',
+                    'Draw': '🎲 抽獎系統',
+                    'Clock': '⏰ 打卡系統',
+                    'Clear': '🧹 清理工具',
+                    'Emojitool': '😊 表情工具',
+                    'Repo': '🎯 準心庫',
+                    'Tinder': '💕 配對系統',
+                    'TwitterMonitor': '🐦 Twitter監控',
+                    '系統指令': '⚙️ 系統指令'
+                }.get(cog_name, f"📦 {cog_name}")
+                
+                commands_text = []
+                for cmd in commands[:5]:  # 限制每個分類最多5個指令，避免embed過長
+                    commands_text.append(f"`/{cmd['name']}` - {cmd['description']}")
+                
+                if len(commands) > 5:
+                    commands_text.append(f"... 還有 {len(commands) - 5} 個指令")
+                
+                embed.add_field(
+                    name=cog_display_name,
+                    value="\n".join(commands_text) if commands_text else "無可用指令",
+                    inline=False
+                )
+        
+        # 添加傳統指令提示
+        embed.add_field(
+            name="💡 提示",
+            value="• 斜線指令以 `/` 開頭\n• 傳統指令以 `?` 開頭\n• 使用 `?help` 查看傳統指令列表",
+            inline=False
+        )
+        
+        embed.set_footer(
+            text="Niibot",
+            icon_url=bot.user.display_avatar.url if bot.user else None
+        )
+        
+        await interaction.response.send_message(embed=embed)
+        
+        # 記錄指令使用
+        BotLogger.command_used(
+            "help",
+            interaction.user.id,
+            interaction.guild.id if interaction.guild else 0,
+            f"查看斜線指令列表，共 {sum(len(cmds) for cmds in commands_by_cog.values())} 個指令"
+        )
+        
+    except Exception as e:
+        BotLogger.error("SlashHelp", f"斜線help指令執行失敗", e)
+        await interaction.response.send_message(
+            "❌ 獲取指令列表時發生錯誤，請稍後再試",
+            ephemeral=True
+        )
+
+
 @bot.command(name="rl", help="reload")
 async def reload(ctx, extension):
     try:
