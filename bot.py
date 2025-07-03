@@ -486,17 +486,23 @@ async def on_ready():
     global startup_time
     startup_time = datetime.now(datetime.UTC)
     
-    BotLogger.warning("BotMain", f"🤖 機器人上線: {bot.user} (環境: {ENV})")
-    
     try:
-        activity = create_activity()
-        await bot.change_presence(status=getattr(discord.Status, config.status), activity=activity)
-        BotLogger.system_event("狀態設定", f"狀態: {config.status}, 活動: {config.activity_name}")
+        BotLogger.warning("BotMain", f"🤖 機器人上線: {bot.user} (環境: {ENV})")
+        
+        try:
+            activity = create_activity()
+            await bot.change_presence(status=getattr(discord.Status, config.status), activity=activity)
+            BotLogger.system_event("狀態設定", f"狀態: {config.status}, 活動: {config.activity_name}")
+        except Exception as e:
+            BotLogger.error("BotStatus", "設定機器人狀態失敗", e)
+        
+        # 載入禁用指令列表
+        await _load_disabled_commands()
+        
+        BotLogger.system_event("機器人就緒", "所有初始化完成")
+        
     except Exception as e:
-        BotLogger.error("BotStatus", "設定機器人狀態失敗", e)
-    
-    # 載入禁用指令列表
-    await _load_disabled_commands()
+        BotLogger.error("BotMain", "on_ready 執行失敗", e)
 
 @bot.event
 async def on_message(message):
