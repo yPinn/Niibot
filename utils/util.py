@@ -435,7 +435,7 @@ def get_uptime_info(startup_time) -> str:
         return "啟動時間未知"
     
     from datetime import datetime
-    current_time = datetime.utcnow()
+    current_time = datetime.now(datetime.UTC)
     uptime = current_time - startup_time
     
     # 計算天、小時、分鐘

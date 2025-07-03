@@ -650,7 +650,7 @@ async def system_status(ctx):
         uptime_str = ""
         if startup_time:
             from datetime import datetime
-            current_time = datetime.utcnow()
+            current_time = datetime.now(datetime.UTC)
             uptime = current_time - startup_time
             days = uptime.days
             hours, remainder = divmod(uptime.seconds, 3600)
