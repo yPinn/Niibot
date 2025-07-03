@@ -475,14 +475,14 @@ class TwitterMonitor(commands.Cog):
             BotLogger.error("TwitterMonitor", "建立 embed 失敗", e)
             return None
 
-    @app_commands.command(name="twitter_setup", description="設定 Twitter 監控")
+    @app_commands.command(name="twitter_add", description="新增 Twitter 帳號監控")
     @app_commands.describe(
         username="要監控的 Twitter 用戶名（不含 @）",
         channel="發送貼文的 Discord 頻道",
         interval="檢查間隔（秒，建議1800秒以上）",
         enable_translation="是否啟用翻譯功能（需要 Google API）"
     )
-    async def setup_twitter_monitor(
+    async def add_twitter_monitor(
         self,
         interaction: discord.Interaction,
         username: str,
@@ -530,7 +530,7 @@ class TwitterMonitor(commands.Cog):
                 self.monitor_task.start()
 
             embed = discord.Embed(
-                title="✅ Twitter 監控設定完成",
+                title="✅ Twitter 監控新增完成",
                 color=0x00ff00
             )
             embed.add_field(name="監控用戶", value=f"@{username}", inline=True)
@@ -542,15 +542,15 @@ class TwitterMonitor(commands.Cog):
             await interaction.followup.send(embed=embed)
 
             BotLogger.command_used(
-                "twitter_setup",
+                "twitter_add",
                 interaction.user.id,
                 interaction.guild.id if interaction.guild else 0,
                 f"用戶: @{username}, 頻道: {channel.id}, 翻譯: {enable_translation}"
             )
 
         except Exception as e:
-            BotLogger.error("TwitterMonitor", "設定監控失敗", e)
-            await interaction.followup.send("❌ 設定失敗，請稍後再試")
+            BotLogger.error("TwitterMonitor", "新增監控失敗", e)
+            await interaction.followup.send("❌ 新增失敗，請稍後再試")
 
     async def get_user_id_by_username(self, username: str) -> Optional[str]:
         """根據用戶名取得用戶 ID"""
@@ -576,6 +576,61 @@ class TwitterMonitor(commands.Cog):
         except Exception as e:
             BotLogger.error("TwitterMonitor", "取得用戶 ID 失敗", e)
             return None
+
+    @app_commands.command(name="twitter_remove", description="清空 Twitter 監控設定")
+    async def remove_twitter_monitor(self, interaction: discord.Interaction):
+        """清空監控設定"""
+        try:
+            # 檢查是否有監控設定
+            username = self.monitor_config.get("target_username", "")
+            if not username:
+                await interaction.response.send_message("❌ 目前沒有設定任何監控", ephemeral=True)
+                return
+
+            # 停止監控任務
+            if self.monitor_task.is_running():
+                self.monitor_task.cancel()
+
+            # 清空配置
+            self.monitor_config.update({
+                "enabled": False,
+                "target_username": "",
+                "target_user_id": "",
+                "discord_channel_id": 0,
+                "last_check": None,
+                "translation_enabled": False
+            })
+
+            # 清空已處理貼文記錄
+            self.processed_posts.clear()
+
+            # 儲存變更
+            await self.save_data()
+
+            embed = discord.Embed(
+                title="🗑️ Twitter 監控已清空",
+                description=f"已移除對 @{username} 的監控設定",
+                color=0xff9900
+            )
+            embed.add_field(
+                name="📋 清空內容", 
+                value="• 監控目標\n• 頻道設定\n• 已處理貼文記錄", 
+                inline=False
+            )
+            embed.set_footer(text="使用 /twitter_add 重新設定監控")
+
+            await interaction.response.send_message(embed=embed)
+
+            BotLogger.command_used(
+                "twitter_remove",
+                interaction.user.id,
+                interaction.guild.id if interaction.guild else 0,
+                f"移除用戶: @{username}"
+            )
+
+        except Exception as e:
+            BotLogger.error("TwitterMonitor", "清空監控失敗", e)
+            await interaction.response.send_message("❌ 清空失敗，請稍後再試", ephemeral=True)
 
     @app_commands.command(name="twitter_status", description="查看 Twitter 監控狀態")
     async def twitter_status(self, interaction: discord.Interaction):
@@ -656,7 +711,7 @@ class TwitterMonitor(commands.Cog):
                 inline=True
             )
 
-            embed.set_footer(text="使用 /twitter_setup 來設定監控\n翻譯功能默認關閉，可在設定時開啟")
+            embed.set_footer(text="使用 /twitter_add 來新增監控\n翻譯功能默認關閉，可在設定時開啟")
 
             await interaction.response.send_message(embed=embed)
 
@@ -664,41 +719,102 @@ class TwitterMonitor(commands.Cog):
             BotLogger.error("TwitterMonitor", "查看狀態失敗", e)
             await interaction.response.send_message("❌ 查看狀態失敗", ephemeral=True)
 
-    @app_commands.command(name="twitter_toggle", description="開啟/關閉 Twitter 監控")
-    async def toggle_twitter_monitor(self, interaction: discord.Interaction):
-        """切換監控狀態"""
+    @app_commands.command(name="twitter_start", description="啟動 Twitter 監控")
+    async def start_twitter_monitor(self, interaction: discord.Interaction):
+        """啟動監控"""
         try:
-            current_status = self.monitor_config.get("enabled", False)
-            new_status = not current_status
+            # 檢查是否有監控設定
+            username = self.monitor_config.get("target_username", "")
+            if not username:
+                await interaction.response.send_message("❌ 請先使用 /twitter_add 設定監控目標", ephemeral=True)
+                return
 
-            self.monitor_config["enabled"] = new_status
+            # 檢查是否已經啟動
+            if self.monitor_config.get("enabled", False):
+                await interaction.response.send_message("⚠️ 監控已經在運行中", ephemeral=True)
+                return
+
+            # 檢查 API 金鑰
+            if not self.twitter_bearer_token:
+                await interaction.response.send_message("❌ Twitter API 金鑰未設定，請聯繫管理員", ephemeral=True)
+                return
+
+            # 啟動監控
+            self.monitor_config["enabled"] = True
             await self.save_data()
 
-            if new_status and not self.monitor_task.is_running():
+            if not self.monitor_task.is_running():
                 self.monitor_task.start()
-            elif not new_status and self.monitor_task.is_running():
-                self.monitor_task.cancel()
-
-            status_text = "已啟用" if new_status else "已停用"
-            color = 0x00ff00 if new_status else 0xff0000
 
             embed = discord.Embed(
-                title=f"🐦 Twitter 監控{status_text}",
-                color=color
+                title="▶️ Twitter 監控已啟動",
+                description=f"開始監控 @{username} 的新貼文",
+                color=0x00ff00
+            )
+            channel_id = self.monitor_config.get("discord_channel_id")
+            if channel_id:
+                channel = self.bot.get_channel(channel_id)
+                if channel:
+                    embed.add_field(name="發送頻道", value=channel.mention, inline=True)
+
+            await interaction.response.send_message(embed=embed)
+
+            BotLogger.command_used(
+                "twitter_start",
+                interaction.user.id,
+                interaction.guild.id if interaction.guild else 0,
+                f"啟動監控: @{username}"
+            )
+
+        except Exception as e:
+            BotLogger.error("TwitterMonitor", "啟動監控失敗", e)
+            await interaction.response.send_message("❌ 啟動失敗，請稍後再試", ephemeral=True)
+
+    @app_commands.command(name="twitter_stop", description="停止 Twitter 監控")
+    async def stop_twitter_monitor(self, interaction: discord.Interaction):
+        """停止監控"""
+        try:
+            # 檢查是否有監控設定
+            username = self.monitor_config.get("target_username", "")
+            if not username:
+                await interaction.response.send_message("❌ 目前沒有設定任何監控", ephemeral=True)
+                return
+
+            # 檢查是否已經停止
+            if not self.monitor_config.get("enabled", False):
+                await interaction.response.send_message("⚠️ 監控已經停止", ephemeral=True)
+                return
+
+            # 停止監控
+            self.monitor_config["enabled"] = False
+            await self.save_data()
+
+            if self.monitor_task.is_running():
+                self.monitor_task.cancel()
+
+            embed = discord.Embed(
+                title="⏹️ Twitter 監控已停止",
+                description=f"已停止監控 @{username}",
+                color=0xff0000
+            )
+            embed.add_field(
+                name="💡 提示", 
+                value="使用 /twitter_start 重新啟動監控\n使用 /twitter_remove 清空設定", 
+                inline=False
             )
 
             await interaction.response.send_message(embed=embed)
 
             BotLogger.command_used(
-                "twitter_toggle",
+                "twitter_stop",
                 interaction.user.id,
                 interaction.guild.id if interaction.guild else 0,
-                f"狀態: {status_text}"
+                f"停止監控: @{username}"
             )
 
         except Exception as e:
-            BotLogger.error("TwitterMonitor", "切換監控狀態失敗", e)
-            await interaction.response.send_message("❌ 操作失敗", ephemeral=True)
+            BotLogger.error("TwitterMonitor", "停止監控失敗", e)
+            await interaction.response.send_message("❌ 停止失敗，請稍後再試", ephemeral=True)
 
 
 async def setup(bot: commands.Bot):

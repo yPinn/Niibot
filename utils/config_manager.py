@@ -27,13 +27,15 @@ class ConfigManager:
             if env == "prod":
                 from config_prod import (
                     TOKEN, STATUS, ACTIVITY_TYPE, ACTIVITY_NAME, 
-                    USE_KEEP_ALIVE, COMMAND_PREFIX
+                    USE_KEEP_ALIVE, COMMAND_PREFIX, TWITTER_BEARER_TOKEN, 
+                    GOOGLE_TRANSLATE_API_KEY
                 )
                 activity_url = getattr(__import__('config_prod'), 'ACTIVITY_URL', None)
             else:
                 from config_local import (
                     TOKEN, STATUS, ACTIVITY_TYPE, ACTIVITY_NAME, 
-                    USE_KEEP_ALIVE, COMMAND_PREFIX
+                    USE_KEEP_ALIVE, COMMAND_PREFIX, TWITTER_BEARER_TOKEN, 
+                    GOOGLE_TRANSLATE_API_KEY
                 )
                 activity_url = getattr(__import__('config_local'), 'ACTIVITY_URL', None)
             
@@ -47,6 +49,10 @@ class ConfigManager:
                 'COMMAND_PREFIX': COMMAND_PREFIX,
                 'BOT_ENV': env,
                 
+                # API 金鑰配置（從配置檔案載入）
+                'TWITTER_BEARER_TOKEN': TWITTER_BEARER_TOKEN,
+                'GOOGLE_TRANSLATE_API_KEY': GOOGLE_TRANSLATE_API_KEY,
+                
                 # 從環境變數或預設值載入其他配置
                 'TARGET_ROLE_ID': int(os.getenv('TARGET_ROLE_ID', '1378242954929639514')),
                 'WORK_HOURS': int(os.getenv('WORK_HOURS', '9')),
@@ -59,10 +65,6 @@ class ConfigManager:
                 'DATA_DIR': os.getenv('DATA_DIR', 'data'),
                 'EMOJI_SAVE_INTERVAL': int(os.getenv('EMOJI_SAVE_INTERVAL', '30')),
                 'REMINDER_CLEANUP_HOURS': int(os.getenv('REMINDER_CLEANUP_HOURS', '24')),
-                
-                # Twitter 監控 API 金鑰
-                'TWITTER_BEARER_TOKEN': os.getenv('TWITTER_BEARER_TOKEN'),
-                'GOOGLE_TRANSLATE_API_KEY': os.getenv('GOOGLE_TRANSLATE_API_KEY'),
             }
             
             BotLogger.system_event("配置載入", f"環境: {env}, 配置項目數: {len(self._config)}")
@@ -121,8 +123,11 @@ class ConfigManager:
     def get_all(self) -> dict:
         """取得所有配置（去除敏感資訊）"""
         safe_config = self._config.copy()
-        if 'TOKEN' in safe_config:
-            safe_config['TOKEN'] = '*' * 8  # 隱藏 token
+        # 隱藏敏感資訊
+        sensitive_keys = ['TOKEN', 'TWITTER_BEARER_TOKEN', 'GOOGLE_TRANSLATE_API_KEY']
+        for key in sensitive_keys:
+            if key in safe_config and safe_config[key]:
+                safe_config[key] = '*' * 8
         return safe_config
     
     @property
