@@ -484,7 +484,7 @@ BotLogger.system_event("機器人初始化", f"環境: {ENV}, 前綴: {config.co
 @bot.event
 async def on_ready():
     global startup_time
-    startup_time = datetime.utcnow()
+    startup_time = datetime.now(datetime.UTC)
     
     BotLogger.warning("BotMain", f"🤖 機器人上線: {bot.user} (環境: {ENV})")
     
