@@ -1048,38 +1048,6 @@ class Clock(commands.Cog):
         
         await ctx.send(embed=embed)
     
-    @commands.hybrid_command(name="status", aliases=["工時"])
-    async def work_status_compat(self, ctx):
-        """查看工作狀態 - 向後相容指令（調用新系統）"""
-        # 直接調用新系統的狀態查詢
-        await self.personal_status(ctx)
-    
-    @commands.command(name="clockadmin")
-    @commands.has_permissions(manage_guild=True)
-    async def admin_panel_compat(self, ctx):
-        """管理面板 - 向後相容說明"""
-        embed = discord.Embed(
-            title="📢 系統變更通知",
-            description="打卡系統已升級為個人化模式",
-            color=discord.Color.orange()
-        )
-        
-        embed.add_field(
-            name="🔄 變更內容",
-            value="• 不再需要管理員設定\n• 每位用戶獨立設定\n• 系統自動運行",
-            inline=False
-        )
-        
-        embed.add_field(
-            name="👥 用戶指引",
-            value="請告知用戶使用 `/pclock` 進行個人設定",
-            inline=False
-        )
-        
-        embed.set_footer(text="個人化系統更靈活且易於管理")
-        
-        await ctx.send(embed=embed)
-    
     # 舊系統內部方法已移除
     
     # 舊系統互動處理方法已移除

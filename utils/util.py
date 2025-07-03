@@ -358,3 +358,100 @@ def get_deployment_info() -> str:
     deployment_info.append(f"PID: {os.getpid()}")
     
     return " | ".join(deployment_info)
+
+
+def get_version_info() -> str:
+    """獲取版本資訊
+    
+    Returns:
+        str: 版本資訊字串
+    """
+    import subprocess
+    
+    version_info = []
+    
+    try:
+        # 嘗試獲取 Git commit hash
+        result = subprocess.run(['git', 'rev-parse', '--short', 'HEAD'], 
+                              capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            commit_hash = result.stdout.strip()
+            version_info.append(f"Commit: {commit_hash}")
+        else:
+            version_info.append("Commit: unknown")
+    except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+        version_info.append("Commit: unknown")
+    
+    try:
+        # 嘗試獲取 Git branch
+        result = subprocess.run(['git', 'branch', '--show-current'], 
+                              capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            branch = result.stdout.strip()
+            if branch:
+                version_info.append(f"Branch: {branch}")
+            else:
+                version_info.append("Branch: detached")
+        else:
+            version_info.append("Branch: unknown")
+    except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+        version_info.append("Branch: unknown")
+    
+    try:
+        # 嘗試獲取最後提交時間
+        result = subprocess.run(['git', 'log', '-1', '--format=%cd', '--date=iso'], 
+                              capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            commit_date = result.stdout.strip()
+            version_info.append(f"Last commit: {commit_date}")
+        else:
+            version_info.append("Last commit: unknown")
+    except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+        version_info.append("Last commit: unknown")
+    
+    # 檢查環境變數中的版本資訊
+    if os.environ.get('HEROKU_SLUG_COMMIT'):
+        version_info.append(f"Heroku commit: {os.environ.get('HEROKU_SLUG_COMMIT')[:7]}")
+    
+    if os.environ.get('RENDER_GIT_COMMIT'):
+        version_info.append(f"Render commit: {os.environ.get('RENDER_GIT_COMMIT')[:7]}")
+    
+    if os.environ.get('RAILWAY_GIT_COMMIT_SHA'):
+        version_info.append(f"Railway commit: {os.environ.get('RAILWAY_GIT_COMMIT_SHA')[:7]}")
+    
+    return " | ".join(version_info) if version_info else "Version info unavailable"
+
+
+def get_uptime_info(startup_time) -> str:
+    """獲取運行時間資訊
+    
+    Args:
+        startup_time: 機器人啟動時間 (datetime object)
+        
+    Returns:
+        str: 運行時間資訊字串
+    """
+    if not startup_time:
+        return "啟動時間未知"
+    
+    from datetime import datetime
+    current_time = datetime.utcnow()
+    uptime = current_time - startup_time
+    
+    # 計算天、小時、分鐘
+    days = uptime.days
+    hours, remainder = divmod(uptime.seconds, 3600)
+    minutes, _ = divmod(remainder, 60)
+    
+    # 格式化啟動時間
+    startup_str = startup_time.strftime("%Y-%m-%d %H:%M:%S UTC")
+    
+    # 格式化運行時間
+    if days > 0:
+        uptime_str = f"{days}天 {hours}小時 {minutes}分鐘"
+    elif hours > 0:
+        uptime_str = f"{hours}小時 {minutes}分鐘"
+    else:
+        uptime_str = f"{minutes}分鐘"
+    
+    return f"啟動時間: {startup_str} | 運行時間: {uptime_str}"

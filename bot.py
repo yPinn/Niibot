@@ -2,12 +2,13 @@ import asyncio
 import os
 import math
 from typing import Dict, List, Any
+from datetime import datetime
 
 import discord
 from discord.ext import commands
 
 from utils import util
-from utils.util import create_activity, ensure_data_dir, get_deployment_info
+from utils.util import create_activity, ensure_data_dir, get_deployment_info, get_version_info, get_uptime_info
 from utils.logger import BotLogger
 from utils.config_manager import config
 
@@ -24,6 +25,9 @@ ensure_data_dir()
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix=config.command_prefix, intents=intents)
 
+# 機器人啟動時間記錄
+startup_time = None
+
 # 同步狀態追蹤
 _sync_cooldowns = {}
 
@@ -37,6 +41,75 @@ def _should_sync(guild_id: int = None) -> bool:
     _sync_cooldowns[key] = now
     return True
 
+# 同步相關輔助函數
+async def _handle_sync_error(ctx: commands.Context, error: Exception, operation: str):
+    """統一處理同步錯誤"""
+    error_msg = f"{operation}失敗: {str(error)}"
+    
+    embed = discord.Embed(
+        title="❌ 同步失敗",
+        description=error_msg,
+        color=discord.Color.red()
+    )
+    embed.add_field(
+        name="💡 可能原因",
+        value="• Discord API 暫時無法訪問\n• 權限不足\n• 網路連線問題",
+        inline=False
+    )
+    embed.add_field(
+        name="🔄 建議操作",
+        value="請稍後再試，或聯繫管理員檢查",
+        inline=False
+    )
+    
+    try:
+        await ctx.send(embed=embed)
+    except discord.HTTPException:
+        await ctx.send(error_msg)
+    
+    BotLogger.error("CommandSync", error_msg, error)
+
+async def _send_sync_result(ctx: commands.Context, synced_count: int, sync_type: str, guild_id: int = None):
+    """統一發送同步結果"""
+    if sync_type == "guild":
+        title = "✅ 伺服器同步完成"
+        description = f"已同步 {synced_count} 個斜線指令到當前伺服器"
+        note = "指令立即生效"
+        log_msg = f"公會同步: {synced_count} 個指令"
+    elif sync_type == "global":
+        title = "✅ 全域同步完成"
+        description = f"已全域同步 {synced_count} 個斜線指令"
+        note = "需等待 Discord 更新（約1小時）"
+        log_msg = f"全域同步: {synced_count} 個指令"
+    else:  # unsync
+        title = "✅ 清除完成"
+        description = f"已清除公會 {guild_id} 的所有斜線指令"
+        note = "指令立即失效"
+        log_msg = f"清除公會 {guild_id} 指令"
+    
+    embed = discord.Embed(
+        title=title,
+        description=description,
+        color=discord.Color.green()
+    )
+    embed.add_field(
+        name="⏰ 生效時間",
+        value=note,
+        inline=True
+    )
+    embed.add_field(
+        name="📊 同步數量", 
+        value=f"{synced_count} 個指令" if sync_type != "unsync" else "全部清除",
+        inline=True
+    )
+    embed.set_footer(text=f"操作者: {ctx.author.display_name}")
+    
+    await ctx.send(embed=embed)
+    BotLogger.command_used("sync" if sync_type != "unsync" else "unsync", 
+                          ctx.author.id, 
+                          ctx.guild.id if ctx.guild else 0, 
+                          log_msg)
+
 # 設定斜線指令同步
 @bot.command(name="sync", help="同步斜線指令")
 async def sync_commands(ctx: commands.Context):
@@ -45,26 +118,36 @@ async def sync_commands(ctx: commands.Context):
         if ctx.guild:
             # 在伺服器中 - 執行伺服器同步（即時生效）
             if not _should_sync(ctx.guild.id):
-                await ctx.send("⏱️ 此伺服器同步冷卻中，請稍後再試")
+                embed = discord.Embed(
+                    title="⏱️ 同步冷卻中",
+                    description="此伺服器同步冷卻中，請稍後再試",
+                    color=discord.Color.orange()
+                )
+                embed.add_field(name="🕐 冷卻時間", value="30秒", inline=True)
+                await ctx.send(embed=embed)
                 return
+                
             guild = discord.Object(id=ctx.guild.id)
-            bot.tree.copy_global_to(guild=guild)
+            await bot.tree.copy_global_to(guild=guild)
             synced = await bot.tree.sync(guild=guild)
-            await ctx.send(f"✅ 已同步 {len(synced)} 個斜線指令到當前伺服器（即時生效）")
-            BotLogger.command_used("sync", ctx.author.id, ctx.guild.id, f"公會同步: {len(synced)} 個指令")
+            await _send_sync_result(ctx, len(synced), "guild")
         else:
             # 在私訊中 - 執行全域同步
             if not _should_sync():
-                await ctx.send("⏱️ 全域同步冷卻中，請稍後再試")
+                embed = discord.Embed(
+                    title="⏱️ 同步冷卻中",
+                    description="全域同步冷卻中，請稍後再試",
+                    color=discord.Color.orange()
+                )
+                embed.add_field(name="🕐 冷卻時間", value="30秒", inline=True)
+                await ctx.send(embed=embed)
                 return
+                
             synced = await bot.tree.sync()
-            await ctx.send(f"✅ 已全域同步 {len(synced)} 個斜線指令（需等待Discord更新，約1小時）")
-            BotLogger.command_used("sync", ctx.author.id, 0, f"全域同步: {len(synced)} 個指令")
+            await _send_sync_result(ctx, len(synced), "global")
                 
     except Exception as e:
-        error_msg = f"同步指令失敗: {str(e)}"
-        await ctx.send(error_msg)
-        BotLogger.error("CommandSync", error_msg, e)
+        await _handle_sync_error(ctx, e, "同步指令")
 
 @bot.command(name="unsync", help="清除公會斜線指令")
 async def unsync_guild(ctx: commands.Context, guild_id: str = None):
@@ -78,23 +161,41 @@ async def unsync_guild(ctx: commands.Context, guild_id: str = None):
             guild_id_int = int(guild_id)
             guild = discord.Object(id=guild_id_int)
         except ValueError:
-            await ctx.send("❌ 公會ID必須是數字")
+            embed = discord.Embed(
+                title="❌ 參數錯誤",
+                description="公會ID必須是數字",
+                color=discord.Color.red()
+            )
+            embed.add_field(
+                name="💡 使用方式",
+                value="`?unsync` - 清除當前伺服器\n`?unsync <公會ID>` - 清除指定伺服器",
+                inline=False
+            )
+            await ctx.send(embed=embed)
             return
     else:
         if not ctx.guild:
-            await ctx.send("❌ 此指令只能在伺服器中使用，或提供公會ID")
+            embed = discord.Embed(
+                title="❌ 使用錯誤",
+                description="此指令只能在伺服器中使用，或提供公會ID",
+                color=discord.Color.red()
+            )
+            embed.add_field(
+                name="💡 使用方式",
+                value="`?unsync <公會ID>` - 在私訊中使用需提供公會ID",
+                inline=False
+            )
+            await ctx.send(embed=embed)
             return
         guild = discord.Object(id=ctx.guild.id)
+        guild_id_int = ctx.guild.id
     
     try:
-        bot.tree.clear_commands(guild=guild)
+        await bot.tree.clear_commands(guild=guild)
         await bot.tree.sync(guild=guild)
-        await ctx.send(f"✅ 已清除公會 {guild.id} 的所有斜線指令")
-        BotLogger.command_used("unsync", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"清除公會 {guild.id} 指令")
+        await _send_sync_result(ctx, 0, "unsync", guild_id_int)
     except Exception as e:
-        error_msg = f"清除指令失敗: {str(e)}"
-        await ctx.send(error_msg)
-        BotLogger.error("CommandSync", error_msg, e)
+        await _handle_sync_error(ctx, e, "清除指令")
 
 # 指令禁用系統
 _disabled_commands = {}  # {指令名稱: 禁用原因}
@@ -131,8 +232,35 @@ async def _check_command_enabled(ctx):
     command_name = ctx.command.qualified_name
     if command_name in _disabled_commands:
         reason = _disabled_commands[command_name]
-        await ctx.send(f"❌ 指令 `{command_name}` 目前被禁用\n原因: {reason}")
-        BotLogger.info("CommandDisable", f"用戶 {ctx.author.id} 嘗試使用被禁用的指令: {command_name}")
+        
+        # 創建更詳細的禁用提示 embed
+        embed = discord.Embed(
+            title="🚫 指令被禁用",
+            description=f"指令 `{command_name}` 目前無法使用",
+            color=discord.Color.red()
+        )
+        
+        embed.add_field(
+            name="📝 禁用原因",
+            value=reason,
+            inline=False
+        )
+        
+        embed.add_field(
+            name="💡 說明",
+            value="如需啟用此指令，請聯繫管理員",
+            inline=False
+        )
+        
+        embed.set_footer(text=f"請求者: {ctx.author.display_name}")
+        
+        try:
+            await ctx.send(embed=embed)
+        except discord.HTTPException:
+            # 如果 embed 發送失敗，使用簡單訊息
+            await ctx.send(f"❌ 指令 `{command_name}` 目前被禁用\n原因: {reason}")
+        
+        BotLogger.info("CommandDisable", f"用戶 {ctx.author.display_name} ({ctx.author.id}) 嘗試使用被禁用的指令: {command_name}")
         return False
     return True
 
@@ -148,22 +276,93 @@ async def disable_command(ctx: commands.Context, command_name: str, *, reason: s
         reason: 禁用原因
     """
     # 防止禁用關鍵管理指令
-    protected_commands = ["disable", "enable", "status"]
+    protected_commands = ["disable", "enable", "sys"]
     if command_name in protected_commands:
-        await ctx.send(f"❌ 無法禁用受保護的指令: `{command_name}`")
+        embed = discord.Embed(
+            title="🛡️ 受保護指令",
+            description=f"指令 `{command_name}` 是系統核心指令，無法被禁用",
+            color=discord.Color.orange()
+        )
+        embed.add_field(
+            name="🔒 受保護指令列表",
+            value="• `disable` - 禁用指令管理\n• `enable` - 啟用指令管理\n• `sys` - 系統狀態檢查",
+            inline=False
+        )
+        await ctx.send(embed=embed)
         return
     
     # 檢查指令是否存在
     command = bot.get_command(command_name)
     if not command:
-        await ctx.send(f"❌ 找不到指令: `{command_name}`")
+        # 提供相似指令建議
+        all_commands = [cmd.name for cmd in bot.commands]
+        suggestions = [cmd for cmd in all_commands if command_name.lower() in cmd.lower() or cmd.lower() in command_name.lower()]
+        
+        embed = discord.Embed(
+            title="❌ 指令不存在",
+            description=f"找不到指令: `{command_name}`",
+            color=discord.Color.red()
+        )
+        
+        if suggestions:
+            embed.add_field(
+                name="💡 相似指令建議",
+                value="\n".join([f"• `{cmd}`" for cmd in suggestions[:5]]),
+                inline=False
+            )
+        
+        embed.add_field(
+            name="📝 提示",
+            value="使用 `?help` 查看所有可用指令",
+            inline=False
+        )
+        
+        await ctx.send(embed=embed)
+        return
+    
+    # 檢查指令是否已被禁用
+    if command_name in _disabled_commands:
+        embed = discord.Embed(
+            title="⚠️ 指令已被禁用",
+            description=f"指令 `{command_name}` 已經被禁用",
+            color=discord.Color.orange()
+        )
+        embed.add_field(
+            name="📝 當前禁用原因",
+            value=_disabled_commands[command_name],
+            inline=False
+        )
+        embed.add_field(
+            name="💡 操作選項",
+            value=f"如需修改原因，請先使用 `?enable {command_name}` 然後重新禁用",
+            inline=False
+        )
+        await ctx.send(embed=embed)
         return
     
     # 禁用指令
     _disabled_commands[command_name] = reason
     await _save_disabled_commands()
-    await ctx.send(f"✅ 已禁用指令 `{command_name}`\n原因: {reason}")
-    BotLogger.command_used("disable", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"禁用指令: {command_name}")
+    
+    embed = discord.Embed(
+        title="✅ 指令已禁用",
+        description=f"成功禁用指令 `{command_name}`",
+        color=discord.Color.green()
+    )
+    embed.add_field(
+        name="📝 禁用原因",
+        value=reason,
+        inline=False
+    )
+    embed.add_field(
+        name="🔄 恢復方式",
+        value=f"使用 `?enable {command_name}` 重新啟用",
+        inline=False
+    )
+    embed.set_footer(text=f"操作者: {ctx.author.display_name}")
+    
+    await ctx.send(embed=embed)
+    BotLogger.command_used("disable", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"禁用指令: {command_name} - 原因: {reason}")
 
 @bot.command(name="enable", help="啟用指令")
 async def enable_command(ctx: commands.Context, command_name: str):
@@ -173,33 +372,108 @@ async def enable_command(ctx: commands.Context, command_name: str):
         command_name: 要啟用的指令名稱
     """
     if command_name not in _disabled_commands:
-        await ctx.send(f"ℹ️ 指令 `{command_name}` 並未被禁用")
+        embed = discord.Embed(
+            title="ℹ️ 指令狀態",
+            description=f"指令 `{command_name}` 目前未被禁用",
+            color=discord.Color.blue()
+        )
+        
+        # 檢查指令是否存在
+        command = bot.get_command(command_name)
+        if command:
+            embed.add_field(
+                name="✅ 指令狀態",
+                value="此指令正常可用，無需啟用",
+                inline=False
+            )
+        else:
+            embed.add_field(
+                name="❌ 指令狀態", 
+                value="此指令不存在於系統中",
+                inline=False
+            )
+            
+        embed.add_field(
+            name="📋 查看禁用列表",
+            value="使用 `?disabled` 查看所有被禁用的指令",
+            inline=False
+        )
+        
+        await ctx.send(embed=embed)
         return
+    
+    # 記錄原因用於日誌
+    original_reason = _disabled_commands[command_name]
     
     # 啟用指令
     del _disabled_commands[command_name]
     await _save_disabled_commands()
-    await ctx.send(f"✅ 已啟用指令 `{command_name}`")
-    BotLogger.command_used("enable", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"啟用指令: {command_name}")
+    
+    embed = discord.Embed(
+        title="✅ 指令已啟用",
+        description=f"成功啟用指令 `{command_name}`",
+        color=discord.Color.green()
+    )
+    embed.add_field(
+        name="📝 原禁用原因",
+        value=original_reason,
+        inline=False
+    )
+    embed.add_field(
+        name="🎯 當前狀態",
+        value="指令現在可以正常使用",
+        inline=False
+    )
+    embed.set_footer(text=f"操作者: {ctx.author.display_name}")
+    
+    await ctx.send(embed=embed)
+    BotLogger.command_used("enable", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"啟用指令: {command_name} - 原因: {original_reason}")
 
 @bot.command(name="disabled", help="查看被禁用的指令")
 async def list_disabled_commands(ctx: commands.Context):
     """查看當前被禁用的指令列表"""
     if not _disabled_commands:
-        await ctx.send("✅ 目前沒有被禁用的指令")
+        embed = discord.Embed(
+            title="✅ 指令狀態良好",
+            description="目前沒有被禁用的指令",
+            color=discord.Color.green()
+        )
+        embed.add_field(
+            name="🎯 系統狀態",
+            value="所有指令都正常可用",
+            inline=False
+        )
+        embed.add_field(
+            name="🔧 管理指令",
+            value="• `?disable <指令名> [原因]` - 禁用指令\n• `?enable <指令名>` - 啟用指令",
+            inline=False
+        )
+        await ctx.send(embed=embed)
         return
     
     embed = discord.Embed(
         title="🚫 被禁用的指令",
+        description=f"共有 {len(_disabled_commands)} 個指令被禁用",
         color=discord.Color.red()
     )
     
-    for cmd_name, reason in _disabled_commands.items():
+    # 按字母順序排序
+    sorted_commands = sorted(_disabled_commands.items())
+    
+    for cmd_name, reason in sorted_commands:
         embed.add_field(
-            name=f"`{cmd_name}`",
-            value=reason,
+            name=f"🔒 `{cmd_name}`",
+            value=f"**原因:** {reason}\n**啟用:** `?enable {cmd_name}`",
             inline=False
         )
+    
+    embed.add_field(
+        name="💡 批量管理",
+        value="如需啟用多個指令，請逐一使用 `?enable` 指令",
+        inline=False
+    )
+    
+    embed.set_footer(text=f"查詢者: {ctx.author.display_name}")
     
     await ctx.send(embed=embed)
     BotLogger.command_used("disabled", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"查看 {len(_disabled_commands)} 個禁用指令")
@@ -209,6 +483,9 @@ BotLogger.system_event("機器人初始化", f"環境: {ENV}, 前綴: {config.co
 
 @bot.event
 async def on_ready():
+    global startup_time
+    startup_time = datetime.utcnow()
+    
     BotLogger.warning("BotMain", f"🤖 機器人上線: {bot.user} (環境: {ENV})")
     
     try:
@@ -240,28 +517,78 @@ async def on_message(message):
     await bot.process_commands(message)
 
 
-@bot.command(name="l", help="load")
-async def load(ctx, extension):
+# Cog 管理指令群組
+@bot.group(name="cog", invoke_without_subcommand=True)
+async def cog_group(ctx):
+    """Cog 管理指令群組"""
+    if ctx.invoked_subcommand is None:
+        embed = discord.Embed(
+            title="🔧 Cog 管理指令",
+            description="管理機器人模組的載入、卸載和重載",
+            color=discord.Color.blue()
+        )
+        
+        embed.add_field(
+            name="📥 載入指令",
+            value="`?cog load <名稱>` 或 `?l <名稱>`\n載入指定的 Cog 模組",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="📤 卸載指令", 
+            value="`?cog unload <名稱>` 或 `?u <名稱>`\n卸載指定的 Cog 模組",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="🔄 重載指令",
+            value="`?cog reload <名稱>` 或 `?rl <名稱>`\n重新載入指定的 Cog 模組",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="🔄 全部重載",
+            value="`?cog reload_all` 或 `?rla`\n重新載入所有 Cog 模組",
+            inline=False
+        )
+        
+        embed.set_footer(text="💡 舊指令 ?l, ?u, ?rl, ?rla 仍可使用")
+        await ctx.send(embed=embed)
+
+@cog_group.command(name="load", aliases=["l"])
+async def cog_load(ctx, extension):
+    """載入指定的 Cog 模組"""
     try:
         await bot.load_extension(f"cogs.{extension}")
-        await ctx.send(f"L: {extension} done.")
-        BotLogger.command_used("load", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"載入: {extension}")
+        await ctx.send(f"✅ 載入: {extension}")
+        BotLogger.command_used("cog.load", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"載入: {extension}")
     except Exception as e:
         error_msg = f"載入 {extension} 失敗: {str(e)}"
-        await ctx.send(error_msg)
+        await ctx.send(f"❌ {error_msg}")
         BotLogger.error("CogLoader", error_msg, e)
 
-
-@bot.command(name="u", help="unload")
-async def unload(ctx, extension):
+@cog_group.command(name="unload", aliases=["u"])
+async def cog_unload(ctx, extension):
+    """卸載指定的 Cog 模組"""
     try:
         await bot.unload_extension(f"cogs.{extension}")
-        await ctx.send(f"U: {extension} done.")
-        BotLogger.command_used("unload", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"卸載: {extension}")
+        await ctx.send(f"✅ 卸載: {extension}")
+        BotLogger.command_used("cog.unload", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"卸載: {extension}")
     except Exception as e:
         error_msg = f"卸載 {extension} 失敗: {str(e)}"
-        await ctx.send(error_msg)
+        await ctx.send(f"❌ {error_msg}")
         BotLogger.error("CogLoader", error_msg, e)
+
+# 向後相容的獨立指令
+@bot.command(name="l", help="load cog (alias for ?cog load)")
+async def load_compat(ctx, extension):
+    """載入 Cog - 向後相容指令"""
+    await cog_load(ctx, extension)
+
+@bot.command(name="u", help="unload cog (alias for ?cog unload)")
+async def unload_compat(ctx, extension):
+    """卸載 Cog - 向後相容指令"""
+    await cog_unload(ctx, extension)
 
 @bot.command(name="test")
 async def test_command(ctx):
@@ -270,6 +597,8 @@ async def test_command(ctx):
     
     try:
         deployment_info = get_deployment_info()
+        version_info = get_version_info()
+        uptime_info = get_uptime_info(startup_time)
         
         embed = discord.Embed(
             title="🤖 機器人測試",
@@ -278,14 +607,26 @@ async def test_command(ctx):
         )
         
         embed.add_field(
-            name="📍 部署信息",
+            name="📦 版本資訊",
+            value=f"```{version_info}```",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="⏰ 運行資訊",
+            value=f"```{uptime_info}```",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="📍 部署資訊",
             value=f"```{deployment_info}```",
             inline=False
         )
         
         embed.add_field(
-            name="⚡ 狀態",
-            value=f"延遲: {round(bot.latency * 1000)}ms\n伺服器數量: {len(bot.guilds)}",
+            name="⚡ 即時狀態",
+            value=f"延遲: {round(bot.latency * 1000)}ms\n伺服器數量: {len(bot.guilds)}\n載入的 Cogs: {len(bot.cogs)}",
             inline=True
         )
         
@@ -297,6 +638,95 @@ async def test_command(ctx):
     except Exception as e:
         BotLogger.error("TestCommand", "測試指令執行失敗", e)
         await ctx.send(f"✅ 測試完成（簡化模式）\n環境: {ENV}")
+
+
+@bot.command(name="sys", aliases=["system"])
+async def system_status(ctx):
+    """快速系統狀態檢查 - 精簡版機器人健康狀態"""
+    BotLogger.info("SystemStatus", f"系統狀態查詢 - 用戶: {ctx.author.id}")
+    
+    try:
+        # 計算運行時間
+        uptime_str = ""
+        if startup_time:
+            from datetime import datetime
+            current_time = datetime.utcnow()
+            uptime = current_time - startup_time
+            days = uptime.days
+            hours, remainder = divmod(uptime.seconds, 3600)
+            minutes, _ = divmod(remainder, 60)
+            
+            if days > 0:
+                uptime_str = f"{days}天 {hours}小時 {minutes}分鐘"
+            elif hours > 0:
+                uptime_str = f"{hours}小時 {minutes}分鐘"
+            else:
+                uptime_str = f"{minutes}分鐘"
+        else:
+            uptime_str = "未知"
+        
+        # 基本狀態檢查
+        latency = round(bot.latency * 1000)
+        guild_count = len(bot.guilds)
+        cog_count = len(bot.cogs)
+        
+        # 狀態顏色判斷
+        if latency < 100:
+            color = 0x00ff00  # 綠色 - 良好
+        elif latency < 300:
+            color = 0xffff00  # 黃色 - 普通
+        else:
+            color = 0xff0000  # 紅色 - 較差
+        
+        embed = discord.Embed(
+            title="⚡ 系統狀態",
+            description="機器人系統健康狀況",
+            color=color
+        )
+        
+        # 核心狀態
+        embed.add_field(
+            name="🔄 運行狀態",
+            value=f"環境: {ENV}\n運行時間: {uptime_str}\n延遲: {latency}ms",
+            inline=True
+        )
+        
+        # 服務狀態
+        deployment_info = get_deployment_info()
+        try:
+            python_version = deployment_info.split('Python: ')[1].split(' | ')[0] if 'Python:' in deployment_info else 'unknown'
+        except (IndexError, AttributeError):
+            python_version = 'unknown'
+            
+        embed.add_field(
+            name="📊 服務統計",
+            value=f"伺服器: {guild_count}\nCogs: {cog_count}\nPython: {python_version}",
+            inline=True
+        )
+        
+        # 版本資訊（簡化）
+        try:
+            import subprocess
+            result = subprocess.run(['git', 'rev-parse', '--short', 'HEAD'], 
+                                  capture_output=True, text=True, timeout=3)
+            commit_hash = result.stdout.strip() if result.returncode == 0 else "unknown"
+        except:
+            commit_hash = "unknown"
+        
+        embed.add_field(
+            name="📦 版本",
+            value=f"Commit: {commit_hash}",
+            inline=True
+        )
+        
+        embed.timestamp = discord.utils.utcnow()
+        embed.set_footer(text=f"系統檢查 • 請求者: {ctx.author.display_name}")
+        
+        await ctx.send(embed=embed)
+        
+    except Exception as e:
+        BotLogger.error("SystemStatus", "系統狀態查詢失敗", e)
+        await ctx.send(f"⚡ 系統運行中\n環境: {ENV}\n延遲: {round(bot.latency * 1000)}ms")
 
 
 class HelpPaginationView(discord.ui.View):
@@ -629,8 +1059,9 @@ async def slash_help(interaction: discord.Interaction):
             pass
 
 
-@bot.command(name="rl", help="reload")
-async def reload(ctx, extension):
+@cog_group.command(name="reload", aliases=["rl"])
+async def cog_reload(ctx, extension):
+    """重新載入指定的 Cog 模組"""
     try:
         await bot.reload_extension(f"cogs.{extension}")
         
@@ -641,18 +1072,17 @@ async def reload(ctx, extension):
                 BotLogger.info("CogLoader", f"重新註冊 {extension} 的訊息處理器...")
                 bot.loop.create_task(listener_cog.wait_and_register_handlers())
         
-        await ctx.send(f"RL: {extension} done.")
-        BotLogger.command_used("reload", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"重載: {extension}")
+        await ctx.send(f"✅ 重載: {extension}")
+        BotLogger.command_used("cog.reload", ctx.author.id, ctx.guild.id if ctx.guild else 0, f"重載: {extension}")
     except Exception as e:
         error_msg = f"重載 {extension} 失敗: {str(e)}"
-        await ctx.send(error_msg)
+        await ctx.send(f"❌ {error_msg}")
         BotLogger.error("CogLoader", error_msg, e)
 
-
-@bot.command(name="rla", help="reload all")
-async def reload_all(ctx):
-    """最簡單的重載所有cog"""
-    BotLogger.info("CogLoader", "🔄 開始簡單重載...")
+@cog_group.command(name="reload_all", aliases=["rla"])
+async def cog_reload_all(ctx):
+    """重載所有 Cog 模組"""
+    BotLogger.info("CogLoader", "🔄 開始重載所有 Cogs...")
     
     try:
         import os
@@ -676,13 +1106,27 @@ async def reload_all(ctx):
                 failed.append(f"{cog_name}: {e}")
                 BotLogger.error("CogLoader", f"❌ {cog_name} 失敗: {e}")
         
-        result = f"✅ 完成: 成功{len(reloaded)}, 失敗{len(failed)}"
+        result = f"✅ 完成: 成功 {len(reloaded)}, 失敗 {len(failed)}"
+        if failed:
+            result += f"\n❌ 失敗列表: {', '.join([f.split(':')[0] for f in failed])}"
+        
         await ctx.send(result)
-        BotLogger.command_used("rla", ctx.author.id, ctx.guild.id if ctx.guild else 0, result)
+        BotLogger.command_used("cog.reload_all", ctx.author.id, ctx.guild.id if ctx.guild else 0, result)
         
     except Exception as e:
         await ctx.send(f"❌ 重載失敗: {e}")
-        BotLogger.error("CogLoader", f"rla錯誤: {e}")
+        BotLogger.error("CogLoader", f"重載所有 Cogs 錯誤: {e}")
+
+# 向後相容的獨立指令
+@bot.command(name="rl", help="reload cog (alias for ?cog reload)")
+async def reload_compat(ctx, extension):
+    """重載 Cog - 向後相容指令"""
+    await cog_reload(ctx, extension)
+
+@bot.command(name="rla", help="reload all cogs (alias for ?cog reload_all)")
+async def reload_all_compat(ctx):
+    """重載所有 Cogs - 向後相容指令"""
+    await cog_reload_all(ctx)
 
 
 # 移除重複的 debug_handlers 指令，改由 listener.py 提供
