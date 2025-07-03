@@ -1202,7 +1202,10 @@ async def main():
                 except ImportError:
                     pass
             
-            BotLogger.system_event("機器人啟動", "正在連接到 Discord...")
+            # 驗證 TOKEN 格式
+            token_preview = f"{config.token[:10]}...{config.token[-10:]}" if config.token else "None"
+            BotLogger.system_event("機器人啟動", f"正在連接到 Discord... (Token: {token_preview})")
+            
             await bot.start(config.token)
             
     except discord.HTTPException as e:
