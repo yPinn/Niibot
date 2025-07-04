@@ -49,34 +49,16 @@ async def on_ready():
     global startup_time
     startup_time = datetime.now(datetime.UTC)
     bot._startup_time = startup_time  # 供 cogs 使用
-    
-    BotLogger.warning("BotMain", "=== on_ready 事件開始執行 ===")
-    
-    try:
-        BotLogger.warning("BotMain", f"🤖 機器人上線: {bot.user} (環境: {ENV})")
-        
-        try:
-            BotLogger.info("BotMain", "正在設定機器人狀態...")
-            activity = create_activity()
-            await bot.change_presence(status=getattr(discord.Status, config.status), activity=activity)
-            BotLogger.system_event("狀態設定", f"狀態: {config.status}, 活動: {config.activity_name}")
-        except Exception as e:
-            BotLogger.error("BotStatus", "設定機器人狀態失敗", e)
-        
-        # 指令禁用系統將在首次使用時延遲載入
-        
-        BotLogger.system_event("機器人就緒", "所有初始化完成")
-        BotLogger.warning("BotMain", "=== on_ready 事件執行完成 ===")
-        
-    except Exception as e:
-        BotLogger.error("BotMain", "on_ready 執行失敗", e)
+
+    BotLogger.system_event("機器人就緒", f"🤖 {bot.user} 已上線 (環境: {ENV})")
+
 
 @bot.event
 async def on_message(message):
     """全域訊息處理 - 覆蓋Discord.py內建機制"""
     if message.author.bot:
         return
-    
+
     # 處理自定義handler（如果listener已載入）
     if 'Listener' in bot.cogs:
         listener = bot.cogs['Listener']
@@ -85,7 +67,7 @@ async def on_message(message):
                 await handler.handle_on_message(message)
             except Exception as e:
                 BotLogger.error("GlobalHandler", f"處理器錯誤: {e}")
-    
+
     # 處理Discord指令（只調用一次）
     await bot.process_commands(message)
 
@@ -101,11 +83,11 @@ async def slash_help(interaction: discord.Interaction):
     try:
         # 收集所有斜線指令
         commands_by_cog = {}
-        
+
         # 遍歷所有已載入的cogs
         for cog_name, cog in bot.cogs.items():
             cog_commands = []
-            
+
             # 獲取cog中的斜線指令
             if hasattr(cog, '__cog_app_commands__'):
                 for command in cog.__cog_app_commands__:
@@ -114,10 +96,10 @@ async def slash_help(interaction: discord.Interaction):
                             'name': command.name,
                             'description': command.description
                         })
-            
+
             if cog_commands:
                 commands_by_cog[cog_name] = cog_commands
-        
+
         # 添加bot級別的斜線指令
         bot_commands = []
         for command in bot.tree.get_commands():
@@ -128,30 +110,30 @@ async def slash_help(interaction: discord.Interaction):
                     if any(cmd['name'] == command.name for cmd in cog_cmds):
                         found_in_cog = True
                         break
-                
+
                 if not found_in_cog:
                     bot_commands.append({
                         'name': command.name,
                         'description': command.description
                     })
-        
+
         if bot_commands:
             commands_by_cog['系統指令'] = bot_commands
-        
+
         # 創建分頁視圖
         view = HelpPaginationView(commands_by_cog, bot)
         view.update_select_options()  # 更新下拉選單選項
-        
+
         # 創建初始embed（總覽頁面）
         embed = view.create_overview_embed()
-        
+
         # 發送訊息
         await interaction.response.send_message(embed=embed, view=view)
-        
+
         # 保存訊息reference給view使用
         message = await interaction.original_response()
         view.message = message
-        
+
         # 記錄指令使用
         total_commands = sum(len(cmds) for cmds in commands_by_cog.values())
         BotLogger.command_used(
@@ -160,7 +142,7 @@ async def slash_help(interaction: discord.Interaction):
             interaction.guild.id if interaction.guild else 0,
             f"查看分頁式指令列表，共 {total_commands} 個指令"
         )
-        
+
     except Exception as e:
         BotLogger.error("SlashHelp", f"分頁式help指令執行失敗", e)
         try:
@@ -181,30 +163,37 @@ async def slash_help(interaction: discord.Interaction):
 async def load_extensions():
     loaded_count = 0
     failed_count = 0
-    
+    loaded_cogs = []
+    failed_cogs = []
+
     # 使用絕對路徑避免部署環境路徑問題
     import os
     cogs_dir = os.path.join(os.path.dirname(__file__), "cogs")
-    
+
     # 按字母順序載入 cogs 以便於除錯
     cog_files = sorted([f for f in os.listdir(cogs_dir) if f.endswith(".py")])
-    BotLogger.info("CogLoader", f"準備載入 cogs: {[f[:-3] for f in cog_files]}")
     
+    BotLogger.system_event("Cog載入", f"開始載入 {len(cog_files)} 個模組...")
+
     for filename in cog_files:
         cog_name = filename[:-3]
-        BotLogger.info("CogLoader", f"正在載入: {cog_name}")
         try:
             await bot.load_extension(f"cogs.{cog_name}")
-            BotLogger.info("CogLoader", f"成功載入: {cog_name}")
+            loaded_cogs.append(cog_name)
             loaded_count += 1
         except Exception as e:
             BotLogger.error("CogLoader", f"載入 {cog_name} 失敗", e)
+            failed_cogs.append(cog_name)
             failed_count += 1
+
+    # 總結載入結果
+    if loaded_count > 0:
+        BotLogger.system_event("Cog載入", f"✅ 成功載入 {loaded_count} 個模組: {', '.join(loaded_cogs)}")
     
-    BotLogger.warning(
-        "CogLoader", 
-        f"📦 Cog載入完成: 成功 {loaded_count}, 失敗 {failed_count}"
-    )
+    if failed_count > 0:
+        BotLogger.error("CogLoader", f"❌ 載入失敗 {failed_count} 個模組: {', '.join(failed_cogs)}")
+    else:
+        BotLogger.system_event("Cog載入", "🎉 所有模組載入成功！")
 
 
 async def main():
@@ -212,28 +201,28 @@ async def main():
     if config.use_keep_alive:
         try:
             from keep_alive import keep_alive, set_bot_ready
-            
+
             BotLogger.system_event("保持連線", "正在啟動 Flask 伺服器...")
-            
+
             # 啟動並驗證 Flask 伺服器
             if keep_alive():
                 BotLogger.system_event("保持連線", "Flask 伺服器啟動並驗證成功")
             else:
                 BotLogger.error("KeepAlive", "Flask 伺服器啟動失敗，但繼續啟動機器人")
-            
+
             # 額外等待時間，確保 Render 檢測到服務
             await asyncio.sleep(1)
-            
+
         except ImportError as e:
             BotLogger.error("KeepAlive", "無法匯入 keep_alive 模組", e)
         except Exception as e:
             BotLogger.error("KeepAlive", "keep_alive 啟動過程發生錯誤", e)
-    
+
     try:
         async with bot:
             BotLogger.system_event("開始載入擴充功能", "準備載入 cogs...")
             await load_extensions()
-            
+
             # 更新機器人就緒狀態
             if config.use_keep_alive:
                 try:
@@ -241,15 +230,17 @@ async def main():
                     set_bot_ready(True)
                 except ImportError:
                     pass
-            
+
             # 驗證 TOKEN 格式
             token_preview = f"{config.token[:10]}...{config.token[-10:]}" if config.token else "None"
-            BotLogger.system_event("機器人啟動", f"正在連接到 Discord... (Token: {token_preview})")
-            
+            BotLogger.system_event(
+                "機器人啟動", f"正在連接到 Discord... (Token: {token_preview})")
+
             await bot.start(config.token)
-            
+
     except discord.HTTPException as e:
-        BotLogger.critical("BotMain", f"Discord HTTP 錯誤: {e.status} - {e.text}", e)
+        BotLogger.critical(
+            "BotMain", f"Discord HTTP 錯誤: {e.status} - {e.text}", e)
         # 更新狀態為失敗
         if config.use_keep_alive:
             try:
