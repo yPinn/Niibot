@@ -5,6 +5,94 @@ from discord.ext import commands
 from utils.util import get_deployment_info, get_version_info, get_uptime_info
 from utils.logger import BotLogger
 from utils.config_manager import config
+from ui.components import EmbedBuilder
+
+
+class SystemCommandsEmbeds:
+    """SystemCommands 專用的 Embed 建立器"""
+    
+    @staticmethod
+    def create_test_status(version_info: str, uptime_info: str, deployment_info: str, 
+                          latency: int, guild_count: int, cog_count: int, author_name: str):
+        """建立測試指令的 Embed"""
+        embed = EmbedBuilder.success(
+            title="🤖 機器人測試",
+            description="機器人運行正常"
+        )
+        
+        embed.add_field(
+            name="📦 版本資訊",
+            value=f"```{version_info}```",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="⏰ 運行資訊",
+            value=f"```{uptime_info}```",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="📍 部署資訊",
+            value=f"```{deployment_info}```",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="⚡ 即時狀態",
+            value=f"延遲: {latency}ms\n伺服器數量: {guild_count}\n載入的 Cogs: {cog_count}",
+            inline=True
+        )
+        
+        embed.timestamp = discord.utils.utcnow()
+        embed.set_footer(text=f"請求者: {author_name}")
+        
+        return embed
+    
+    @staticmethod
+    def create_system_status(environment: str, uptime_str: str, latency: int, 
+                           guild_count: int, cog_count: int, python_version: str, 
+                           commit_hash: str, author_name: str):
+        """建立系統狀態的 Embed"""
+        # 狀態顏色判斷
+        if latency < 100:
+            embed = EmbedBuilder.success(
+                title="⚡ 系統狀態",
+                description="機器人系統健康狀況"
+            )
+        elif latency < 300:
+            embed = EmbedBuilder.warning(
+                title="⚡ 系統狀態",
+                description="機器人系統健康狀況"
+            )
+        else:
+            embed = EmbedBuilder.error(
+                title="⚡ 系統狀態",
+                description="機器人系統健康狀況"
+            )
+        
+        embed.add_field(
+            name="🔄 運行狀態",
+            value=f"環境: {environment}\n運行時間: {uptime_str}\n延遲: {latency}ms",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="📊 服務統計",
+            value=f"伺服器: {guild_count}\nCogs: {cog_count}\nPython: {python_version}",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="📦 版本",
+            value=f"Commit: {commit_hash}",
+            inline=True
+        )
+        
+        embed.timestamp = discord.utils.utcnow()
+        embed.set_footer(text=f"系統檢查 • 請求者: {author_name}")
+        
+        return embed
 
 
 class SystemCommands(commands.Cog):
@@ -26,38 +114,11 @@ class SystemCommands(commands.Cog):
             startup_time = getattr(self.bot, '_startup_time', None)
             uptime_info = get_uptime_info(startup_time)
             
-            embed = discord.Embed(
-                title="🤖 機器人測試",
-                description="機器人運行正常",
-                color=0x00ff00
+            embed = SystemCommandsEmbeds.create_test_status(
+                version_info, uptime_info, deployment_info,
+                round(self.bot.latency * 1000), len(self.bot.guilds), 
+                len(self.bot.cogs), ctx.author.display_name
             )
-            
-            embed.add_field(
-                name="📦 版本資訊",
-                value=f"```{version_info}```",
-                inline=False
-            )
-            
-            embed.add_field(
-                name="⏰ 運行資訊",
-                value=f"```{uptime_info}```",
-                inline=False
-            )
-            
-            embed.add_field(
-                name="📍 部署資訊",
-                value=f"```{deployment_info}```",
-                inline=False
-            )
-            
-            embed.add_field(
-                name="⚡ 即時狀態",
-                value=f"延遲: {round(self.bot.latency * 1000)}ms\n伺服器數量: {len(self.bot.guilds)}\n載入的 Cogs: {len(self.bot.cogs)}",
-                inline=True
-            )
-            
-            embed.timestamp = discord.utils.utcnow()
-            embed.set_footer(text=f"請求者: {ctx.author.display_name}")
             
             await ctx.send(embed=embed)
             
@@ -95,39 +156,12 @@ class SystemCommands(commands.Cog):
             guild_count = len(self.bot.guilds)
             cog_count = len(self.bot.cogs)
             
-            # 狀態顏色判斷
-            if latency < 100:
-                color = 0x00ff00  # 綠色 - 良好
-            elif latency < 300:
-                color = 0xffff00  # 黃色 - 普通
-            else:
-                color = 0xff0000  # 紅色 - 較差
-            
-            embed = discord.Embed(
-                title="⚡ 系統狀態",
-                description="機器人系統健康狀況",
-                color=color
-            )
-            
-            # 核心狀態
-            embed.add_field(
-                name="🔄 運行狀態",
-                value=f"環境: {config.get('BOT_ENV', 'unknown')}\n運行時間: {uptime_str}\n延遲: {latency}ms",
-                inline=True
-            )
-            
             # 服務狀態
             deployment_info = get_deployment_info()
             try:
                 python_version = deployment_info.split('Python: ')[1].split(' | ')[0] if 'Python:' in deployment_info else 'unknown'
             except (IndexError, AttributeError):
                 python_version = 'unknown'
-                
-            embed.add_field(
-                name="📊 服務統計",
-                value=f"伺服器: {guild_count}\nCogs: {cog_count}\nPython: {python_version}",
-                inline=True
-            )
             
             # 版本資訊（簡化）
             try:
@@ -137,14 +171,11 @@ class SystemCommands(commands.Cog):
             except:
                 commit_hash = "unknown"
             
-            embed.add_field(
-                name="📦 版本",
-                value=f"Commit: {commit_hash}",
-                inline=True
+            embed = SystemCommandsEmbeds.create_system_status(
+                config.get('BOT_ENV', 'unknown'), uptime_str, latency,
+                guild_count, cog_count, python_version, commit_hash,
+                ctx.author.display_name
             )
-            
-            embed.timestamp = discord.utils.utcnow()
-            embed.set_footer(text=f"系統檢查 • 請求者: {ctx.author.display_name}")
             
             await ctx.send(embed=embed)
             

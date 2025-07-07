@@ -2,6 +2,47 @@ import os
 import discord
 from discord.ext import commands
 from utils.logger import BotLogger
+from ui.components import EmbedBuilder
+
+
+class AdminCommandsEmbeds:
+    """AdminCommands 專用的 Embed 建立器"""
+    
+    @staticmethod
+    def create_cog_help():
+        """建立 Cog 管理指令幫助的 Embed"""
+        embed = EmbedBuilder.info(
+            title="🔧 Cog 管理指令",
+            description="管理機器人模組的載入、卸載和重載"
+        )
+        
+        embed.add_field(
+            name="📥 載入指令",
+            value="`?cog load <名稱>` 或 `?l <名稱>`\n載入指定的 Cog 模組",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="📤 卸載指令", 
+            value="`?cog unload <名稱>` 或 `?u <名稱>`\n卸載指定的 Cog 模組",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="🔄 重載指令",
+            value="`?cog reload <名稱>` 或 `?rl <名稱>`\n重新載入指定的 Cog 模組",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="🔄 全部重載",
+            value="`?cog reload_all` 或 `?rla`\n重新載入所有 Cog 模組",
+            inline=False
+        )
+        
+        embed.set_footer(text="💡 舊指令 ?l, ?u, ?rl, ?rla 仍可使用")
+        
+        return embed
 
 
 class AdminCommands(commands.Cog):
@@ -14,37 +55,7 @@ class AdminCommands(commands.Cog):
     async def admin_cog_group(self, ctx):
         """Cog 管理指令群組"""
         if ctx.invoked_subcommand is None:
-            embed = discord.Embed(
-                title="🔧 Cog 管理指令",
-                description="管理機器人模組的載入、卸載和重載",
-                color=discord.Color.blue()
-            )
-            
-            embed.add_field(
-                name="📥 載入指令",
-                value="`?cog load <名稱>` 或 `?l <名稱>`\n載入指定的 Cog 模組",
-                inline=False
-            )
-            
-            embed.add_field(
-                name="📤 卸載指令", 
-                value="`?cog unload <名稱>` 或 `?u <名稱>`\n卸載指定的 Cog 模組",
-                inline=False
-            )
-            
-            embed.add_field(
-                name="🔄 重載指令",
-                value="`?cog reload <名稱>` 或 `?rl <名稱>`\n重新載入指定的 Cog 模組",
-                inline=False
-            )
-            
-            embed.add_field(
-                name="🔄 全部重載",
-                value="`?cog reload_all` 或 `?rla`\n重新載入所有 Cog 模組",
-                inline=False
-            )
-            
-            embed.set_footer(text="💡 舊指令 ?l, ?u, ?rl, ?rla 仍可使用")
+            embed = AdminCommandsEmbeds.create_cog_help()
             await ctx.send(embed=embed)
 
     @admin_cog_group.command(name="load", aliases=["l"])

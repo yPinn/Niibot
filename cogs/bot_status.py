@@ -11,6 +11,27 @@ from discord.ext import commands, tasks
 from utils.logger import BotLogger
 from utils.config_manager import config
 from utils.util import create_activity
+from ui.components import EmbedBuilder
+
+
+class BotStatusEmbeds:
+    """BotStatus 專用的 Embed 建立器"""
+    
+    @staticmethod
+    def create_status_success(status: str, activity: str):
+        """建立狀態設定成功的 Embed"""
+        return EmbedBuilder.success(
+            title="狀態設定成功",
+            description=f"狀態: {status}\n活動: {activity}"
+        )
+    
+    @staticmethod
+    def create_current_status(status: str, activity: str):
+        """建立當前狀態顯示的 Embed"""
+        return EmbedBuilder.info(
+            title="🤖 當前機器人狀態",
+            description=f"狀態: {status}\n活動: {activity or '無'}"
+        )
 
 
 class BotStatus(commands.Cog):
@@ -111,11 +132,8 @@ class BotStatus(commands.Cog):
                     
                     await self.bot.change_presence(status=status_obj, activity=activity_obj)
                     
-                    embed = discord.Embed(
-                        title="✅ 狀態設定成功",
-                        description=f"狀態: {status}\n活動: {activity or config.activity_name}",
-                        color=discord.Color.green()
-                    )
+                    embed = BotStatusEmbeds.create_status_success(
+                        status, activity or config.activity_name)
                     await ctx.send(embed=embed)
                     
                     BotLogger.command_used("status", ctx.author.id, ctx.guild.id if ctx.guild else 0, 
@@ -124,11 +142,9 @@ class BotStatus(commands.Cog):
                     await ctx.send("❌ 無效的狀態，請使用: online, idle, dnd, invisible")
             else:
                 # 顯示當前狀態
-                embed = discord.Embed(
-                    title="🤖 當前機器人狀態",
-                    description=f"狀態: {self.bot.status}\n活動: {self.bot.activity.name if self.bot.activity else '無'}",
-                    color=discord.Color.blue()
-                )
+                embed = BotStatusEmbeds.create_current_status(
+                    str(self.bot.status), 
+                    self.bot.activity.name if self.bot.activity else None)
                 await ctx.send(embed=embed)
                 
         except Exception as e:
