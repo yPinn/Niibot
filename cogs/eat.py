@@ -9,30 +9,60 @@ from discord.ext import commands
 from utils import util
 from utils.config_manager import config
 from utils.logger import BotLogger
+from ui.components import BaseView, EmbedBuilder, ErrorHandler
 
 
-# 基礎 UI 類別 - 消除重複的互動檢查和逾時處理
-class BaseView(discord.ui.View):
-    def __init__(self, user: discord.User, timeout: int = 60):
-        super().__init__(timeout=timeout)
-        self.user = user
-        self.message = None
-
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        """統一的互動檢查邏輯"""
-        if interaction.user.id != self.user.id:
-            await interaction.response.send_message("❌ 只能由原始使用者操作", ephemeral=True)
-            return False
-        return True
-
-    async def on_timeout(self):
-        """統一的逾時處理邏輯"""
-        if self.message:
-            try:
-                # 只移除 view，保留原本的 embed 內容
-                await self.message.edit(view=None)
-            except (discord.NotFound, discord.HTTPException):
-                pass  # 訊息已被刪除或其他錯誤，忽略
+# Eat 模組專用的 Embed 輔助類
+class EatEmbeds:
+    """Eat 模組專用的 Embed 建立器"""
+    
+    @staticmethod
+    def category_selection():
+        """分類選擇的 Embed"""
+        return EmbedBuilder.selection_prompt(
+            title="🍽️ 請選擇餐點分類",
+            description="點選下方按鈕以獲得該分類的推薦餐點。"
+        )
+    
+    @staticmethod
+    def dish_recommendation(category: str, choice: str):
+        """餐點推薦的 Embed"""
+        return discord.Embed(
+            title=f"🍽️ {category} 推薦餐點",
+            description=f"**{choice}**",
+            color=EmbedBuilder.Colors.PRIMARY
+        )
+    
+    @staticmethod
+    def categories_list(categories: list[str]):
+        """分類列表的 Embed"""
+        return EmbedBuilder.list_display(
+            title="📋 可用分類清單",
+            items=[f"{cat}" for cat in categories],
+            color=EmbedBuilder.Colors.INFO
+        )
+    
+    @staticmethod
+    def menu_display(category: str, items: list[str]):
+        """選單顯示的 Embed"""
+        return EmbedBuilder.list_display(
+            title=f"🍽️ {category} 的餐點選項",
+            items=[f"{opt}" for opt in sorted(items)],
+            color=EmbedBuilder.Colors.WARNING
+        )
+    
+    @staticmethod
+    def categories_info(data: dict):
+        """分類資訊的 Embed"""
+        categories_info = []
+        for category_key, items in data.items():
+            categories_info.append(f"**{category_key}** ({len(items)} 項)")
+        
+        return EmbedBuilder.list_display(
+            title="🗂️ 所有餐點分類",
+            items=categories_info,
+            color=EmbedBuilder.Colors.SUCCESS
+        )
 
 
 class CategoryButtonsView(BaseView):
@@ -59,7 +89,7 @@ class CategoryButton(discord.ui.Button):
             return
 
         choice = random.choice(options)
-        embed = EmbedHelper.create_dish_recommendation(self.category, choice)
+        embed = EatEmbeds.dish_recommendation(self.category, choice)
         view = DishButtonsView(self.category, options, interaction.user)
         await interaction.response.edit_message(embed=embed, view=view)
         view.message = await interaction.original_response()
@@ -85,7 +115,7 @@ class ReloadButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction):
         choice = random.choice(self.options)
-        embed = EmbedHelper.create_dish_recommendation(self.category, choice)
+        embed = EatEmbeds.dish_recommendation(self.category, choice)
         view = DishButtonsView(self.category, self.options, interaction.user)
         await interaction.response.edit_message(embed=embed, view=view)
         view.message = await interaction.original_response()
@@ -101,70 +131,10 @@ class BackButton(discord.ui.Button):
             await interaction.response.send_message("系統錯誤", ephemeral=True)
             return
 
-        embed = EmbedHelper.create_category_selection()
+        embed = EatEmbeds.category_selection()
         view = CategoryButtonsView(cog.data, interaction.user)
         await interaction.response.edit_message(embed=embed, view=view)
         view.message = await interaction.original_response()
-
-
-# 輔助類 - 消除重複的 Embed 建立
-class EmbedHelper:
-    @staticmethod
-    def create_category_selection():
-        return discord.Embed(
-            title="🍽️ 請選擇餐點分類",
-            description="點選下方按鈕以獲得該分類的推薦餐點。",
-            color=discord.Color.green(),
-        )
-
-    @staticmethod
-    def create_dish_recommendation(category: str, choice: str):
-        return discord.Embed(
-            title=f"🍽️ {category} 推薦餐點",
-            description=f"**{choice}**",
-            color=discord.Color.blurple(),
-        )
-
-    @staticmethod
-    def create_categories_list(categories: list[str]):
-        return discord.Embed(
-            title="📋 可用分類清單",
-            description="\n".join(f"- {cat}" for cat in categories),
-            color=discord.Color.blue(),
-        )
-
-    @staticmethod
-    def create_menu_display(category: str, items: list[str]):
-        return discord.Embed(
-            title=f"🍽️ {category} 的餐點選項",
-            description="\n".join(f"- {opt}" for opt in sorted(items)),
-            color=discord.Color.orange(),
-        )
-
-    @staticmethod
-    def create_categories_info(data: dict):
-        categories_info = []
-        for category_key, items in data.items():
-            categories_info.append(f"• **{category_key}** ({len(items)} 項)")
-
-        return discord.Embed(
-            title="🗂️ 所有餐點分類",
-            description="\n".join(categories_info),
-            color=discord.Color.green(),
-        )
-
-
-# 錯誤處理輔助類 - 消除重複的錯誤處理
-class ErrorHandler:
-    @staticmethod
-    async def handle_missing_argument(ctx, command_name: str, example: str):
-        """處理缺少參數的錯誤"""
-        await ctx.send(f"❌ 請提供必要參數，例如：`?{command_name} {example}`")
-
-    @staticmethod
-    def log_command_error(command_name: str, error: Exception):
-        """記錄指令錯誤"""
-        BotLogger.error("Eat", f"{command_name} 指令錯誤: {error}")
 
 
 class Eat(commands.Cog):
@@ -234,7 +204,7 @@ class Eat(commands.Cog):
                 await ctx_or_interaction.send(message)
             return
 
-        embed = EmbedHelper.create_category_selection()
+        embed = EatEmbeds.category_selection()
         view = CategoryButtonsView(self.data, user)
 
         if is_slash:
@@ -303,7 +273,7 @@ class Eat(commands.Cog):
             return
 
         categories = sorted(self.data.keys())
-        embed = EmbedHelper.create_categories_list(categories)
+        embed = EatEmbeds.categories_list(categories)
         await ctx.send(embed=embed)
 
     @commands.command(name="additem", help="新增餐點選項到分類，例如：!additem 主餐 蛋餅")
@@ -340,7 +310,7 @@ class Eat(commands.Cog):
         async with self._lock:
             await self.load_data()
             if self.data:
-                embed = EmbedHelper.create_categories_info(self.data)
+                embed = EatEmbeds.categories_info(self.data)
                 await interaction.response.send_message(embed=embed)
             else:
                 await interaction.response.send_message(
@@ -437,7 +407,7 @@ class Eat(commands.Cog):
             return
 
         items = self._get_category_items(category)
-        embed = EmbedHelper.create_menu_display(category, items)
+        embed = EatEmbeds.menu_display(category, items)
 
         if is_slash:
             await ctx_or_interaction.response.send_message(embed=embed)

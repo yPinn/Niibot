@@ -6,15 +6,54 @@ from discord import ui
 from discord.ext import commands
 
 from utils import util
+from ui.components import BaseView, EmbedBuilder
 
 DRAW_COOLDOWN = util.Cooldown(30)
 DRAW_HISTORY_PATH = "data/draw_history.json"
 
 
-class DrawView(ui.View):
-    def __init__(self, author_id: int, prizes: dict[str, int], note: str):
-        super().__init__(timeout=None)
-        self.author_id = author_id
+# Draw 模組專用的 Embed 建立器
+class DrawEmbeds:
+    """Draw 模組專用的 Embed 建立器"""
+    
+    @staticmethod
+    def create_draw_announcement(prizes: dict[str, int], note: str, author_name: str):
+        """創建抽獎公告的 Embed"""
+        embed = discord.Embed(title="🎁 抽獎時間！", color=discord.Color.gold())
+        embed.add_field(name="獎項內容", 
+                       value="\n".join(f"{name} × {qty}" for name, qty in prizes.items()), 
+                       inline=False)
+        if note:
+            embed.add_field(name="備註", value=note, inline=False)
+        embed.set_footer(text=f"由 {author_name} 發起")
+        return embed
+    
+    @staticmethod
+    def create_draw_history(records: list):
+        """創建抽獎紀錄的 Embed"""
+        embed = EmbedBuilder.info(
+            title="📜 抽獎紀錄（最近 20 筆）",
+            description="顯示最近 5 筆紀錄"
+        )
+        
+        for r in records[:5]:
+            prizes_str = ", ".join(f"{k}×{v}" for k, v in r["prizes"].items())
+            winners_str = ", ".join(
+                f"{k}:{'、'.join(v)}" for k, v in r["winners"].items() if v
+            )
+            desc = f"🎁 {prizes_str}\n👑 {winners_str or '無'}\n🕒 {r['time']}"
+            if r.get("note"):
+                desc += f"\n📌 {r['note']}"
+            embed.add_field(name=f"主持人：{r['host']}", value=desc, inline=False)
+        
+        return embed
+
+
+class DrawView(BaseView):
+    def __init__(self, author_user: discord.User, prizes: dict[str, int], note: str):
+        # DrawView 需要永久存在，所以使用 None timeout
+        super().__init__(author_user, timeout=None)
+        self.author_id = author_user.id  # 保持向後相容
         self.prizes = prizes
         self.note = note
         self.participants: list[discord.Member] = []
@@ -34,6 +73,29 @@ class DrawView(ui.View):
         self.add_item(self.join_button)
         self.add_item(self.draw_button)
         self.add_item(self.toggle_button)
+    
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        """重寫互動檢查：抽獎系統有特殊的權限需求"""
+        # 參加抽獎：任何人都可以
+        if interaction.data.get('custom_id') == self.join_button.custom_id:
+            return True
+        
+        # 切換設定：只有主持人可以
+        if interaction.data.get('custom_id') == self.toggle_button.custom_id:
+            if interaction.user.id != self.author_id:
+                await interaction.response.send_message("只有抽獎主持人可以切換設定。", ephemeral=True)
+                return False
+            return True
+        
+        # 開始抽獎：主持人或有管理權限的用戶
+        if interaction.data.get('custom_id') == self.draw_button.custom_id:
+            if (interaction.user.id == self.author_id or 
+                interaction.user.guild_permissions.manage_messages):
+                return True
+            await interaction.response.send_message("你沒有權限進行抽獎。", ephemeral=True)
+            return False
+        
+        return True
 
     async def join_callback(self, interaction: discord.Interaction):
         user = interaction.user
@@ -44,18 +106,13 @@ class DrawView(ui.View):
             await interaction.response.send_message("你已經加入抽獎池囉！", ephemeral=True)
 
     async def toggle_callback(self, interaction: discord.Interaction):
-        if interaction.user.id != self.author_id:
-            await interaction.response.send_message("只有抽獎主持人可以切換設定。", ephemeral=True)
-            return
+        # 權限檢查已在 interaction_check 中處理
         self.allow_duplicates = not self.allow_duplicates
         self.toggle_button.label = f"允許重複得獎 {'✅' if self.allow_duplicates else '❌'}"
         await interaction.response.edit_message(view=self)
 
     async def draw_callback(self, interaction: discord.Interaction):
-        if interaction.user.id != self.author_id and not interaction.user.guild_permissions.manage_messages:
-            await interaction.response.send_message("你沒有權限進行抽獎。", ephemeral=True)
-            return
-
+        # 權限檢查已在 interaction_check 中處理
         if not self.participants:
             await interaction.response.send_message("抽獎池是空的，無法抽獎。", ephemeral=True)
             return
@@ -133,14 +190,8 @@ class Draw(commands.Cog):
             await ctx.send("❌ 請輸入至少一個獎項與數量。")
             return
 
-        embed = discord.Embed(title="🎁 抽獎時間！", color=discord.Color.gold())
-        embed.add_field(name="獎項內容", value="\n".join(
-            f"{name} × {qty}" for name, qty in prizes.items()), inline=False)
-        if note:
-            embed.add_field(name="備註", value=note, inline=False)
-        embed.set_footer(text=f"由 {ctx.author.display_name} 發起")
-
-        view = DrawView(ctx.author.id, prizes, note)
+        embed = DrawEmbeds.create_draw_announcement(prizes, note, ctx.author.display_name)
+        view = DrawView(ctx.author, prizes, note)
         await ctx.send(embed=embed, view=view)
 
     @commands.command(aliases=["抽獎紀錄"], help="查看最近的抽獎紀錄")
@@ -151,18 +202,7 @@ class Draw(commands.Cog):
             await ctx.send("目前沒有抽獎紀錄。")
             return
 
-        embed = discord.Embed(title="📜 抽獎紀錄（最近 20 筆）",
-                              color=discord.Color.blue())
-        for r in records[:5]:
-            prizes_str = ", ".join(f"{k}×{v}" for k, v in r["prizes"].items())
-            winners_str = ", ".join(
-                f"{k}:{'、'.join(v)}" for k, v in r["winners"].items() if v
-            )
-            desc = f"🎁 {prizes_str}\n👑 {winners_str or '無'}\n🕒 {r['time']}"
-            if r.get("note"):
-                desc += f"\n📌 {r['note']}"
-            embed.add_field(name=f"主持人：{r['host']}", value=desc, inline=False)
-
+        embed = DrawEmbeds.create_draw_history(records)
         await ctx.send(embed=embed)
     
     @commands.command(name="choose", aliases=["選擇"], help="從選項中隨機選擇，支援權重設定")
