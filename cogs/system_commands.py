@@ -1,5 +1,6 @@
 import subprocess
 import discord
+import pytz
 from datetime import datetime, timezone
 from discord.ext import commands
 from utils.util import get_deployment_info, get_version_info, get_uptime_info
@@ -44,7 +45,8 @@ class SystemCommandsEmbeds:
             inline=True
         )
         
-        embed.timestamp = discord.utils.utcnow()
+        taipei_tz = pytz.timezone('Asia/Taipei')
+        embed.timestamp = datetime.now(taipei_tz)
         embed.set_footer(text=f"請求者: {author_name}")
         
         return embed
@@ -89,7 +91,8 @@ class SystemCommandsEmbeds:
             inline=True
         )
         
-        embed.timestamp = discord.utils.utcnow()
+        taipei_tz = pytz.timezone('Asia/Taipei')
+        embed.timestamp = datetime.now(taipei_tz)
         embed.set_footer(text=f"系統檢查 • 請求者: {author_name}")
         
         return embed
@@ -188,7 +191,7 @@ class SystemCommands(commands.Cog):
             # 版本資訊（簡化）
             try:
                 result = subprocess.run(['git', 'rev-parse', '--short', 'HEAD'], 
-                                      capture_output=True, text=True, timeout=3)
+                                      capture_output=True, text=True, encoding='utf-8', timeout=3)
                 commit_hash = result.stdout.strip() if result.returncode == 0 else "unknown"
             except:
                 commit_hash = "unknown"

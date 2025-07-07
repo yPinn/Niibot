@@ -389,7 +389,7 @@ def get_version_info() -> str:
     try:
         # 嘗試獲取 Git commit hash
         result = subprocess.run(['git', 'rev-parse', '--short', 'HEAD'], 
-                              capture_output=True, text=True, timeout=5)
+                              capture_output=True, text=True, encoding='utf-8', timeout=5)
         if result.returncode == 0:
             commit_hash = result.stdout.strip()
             version_info.append(f"Commit: {commit_hash}")
@@ -401,7 +401,7 @@ def get_version_info() -> str:
     try:
         # 嘗試獲取 Git branch
         result = subprocess.run(['git', 'branch', '--show-current'], 
-                              capture_output=True, text=True, timeout=5)
+                              capture_output=True, text=True, encoding='utf-8', timeout=5)
         if result.returncode == 0:
             branch = result.stdout.strip()
             if branch:
@@ -416,7 +416,7 @@ def get_version_info() -> str:
     try:
         # 嘗試獲取最後提交時間（本地時區格式）
         result = subprocess.run(['git', 'log', '-1', '--format=%cd', '--date=format:%Y-%m-%d %H:%M:%S %z'], 
-                              capture_output=True, text=True, timeout=5)
+                              capture_output=True, text=True, encoding='utf-8', timeout=5)
         if result.returncode == 0:
             commit_date = result.stdout.strip()
             version_info.append(f"Last commit: {commit_date}")
@@ -428,7 +428,7 @@ def get_version_info() -> str:
     try:
         # 嘗試獲取提交訊息（前40字符）
         result = subprocess.run(['git', 'log', '-1', '--format=%s'], 
-                              capture_output=True, text=True, timeout=5)
+                              capture_output=True, text=True, encoding='utf-8', timeout=5)
         if result.returncode == 0:
             commit_msg = result.stdout.strip()
             if commit_msg:
@@ -465,6 +465,8 @@ def get_uptime_info(startup_time) -> str:
         return "啟動時間未知"
     
     from datetime import datetime, timezone
+    import pytz
+    
     current_time = datetime.now(timezone.utc)
     uptime = current_time - startup_time
     
@@ -473,8 +475,10 @@ def get_uptime_info(startup_time) -> str:
     hours, remainder = divmod(uptime.seconds, 3600)
     minutes, _ = divmod(remainder, 60)
     
-    # 格式化啟動時間
-    startup_str = startup_time.strftime("%Y-%m-%d %H:%M:%S UTC")
+    # 格式化啟動時間為台北時間
+    taipei_tz = pytz.timezone('Asia/Taipei')
+    startup_taipei = startup_time.astimezone(taipei_tz)
+    startup_str = startup_taipei.strftime("%Y-%m-%d %H:%M:%S GMT+8")
     
     # 格式化運行時間
     if days > 0:
