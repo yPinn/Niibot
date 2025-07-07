@@ -13,7 +13,8 @@
 *.ini
 *.log
 
-*.json
+# 日誌目錄
+logs/
 
 # VSCode
 .vscode/

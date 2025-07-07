@@ -42,6 +42,10 @@ TOKEN=your_discord_bot_token_here
 # Bot 環境 (local 或 prod)
 BOT_ENV=local
 
+# 權限系統設定
+BOT_ADMIN_IDS=your_discord_user_id_here
+TRUSTED_USER_IDS=
+
 # Twitter 監控設定 (可選)
 TWITTER_BEARER_TOKEN=your_twitter_bearer_token_here
 GOOGLE_TRANSLATE_API_KEY=your_google_translate_api_key_here
@@ -319,7 +323,7 @@ GOOGLE_TRANSLATE_API_KEY=your_translate_key
 - **測試框架**: `pytest` 單元測試
 
 ### 部署須知
-- **Python 版本**: 見 `runtime.txt`
+- **Python 版本**: 3.11.9 (見 `runtime.txt`)
 - **支援平台**: Render、Railway、Heroku 等
 - **自動埠號**: 動態埠號分配
 - **健康檢查**: Flask keep_alive 端點

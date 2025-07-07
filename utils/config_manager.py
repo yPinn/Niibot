@@ -26,18 +26,18 @@ class ConfigManager:
         try:
             if env == "prod":
                 from config_prod import (
-                    TOKEN, STATUS, ACTIVITY_TYPE, ACTIVITY_NAME, 
+                    TOKEN, STATUS, ACTIVITY_TYPE, ACTIVITY_NAME, ACTIVITY_URL,
                     USE_KEEP_ALIVE, COMMAND_PREFIX, TWITTER_BEARER_TOKEN, 
-                    GOOGLE_TRANSLATE_API_KEY
+                    GOOGLE_TRANSLATE_API_KEY, BOT_ADMIN_IDS, TRUSTED_USER_IDS
                 )
-                activity_url = getattr(__import__('config_prod'), 'ACTIVITY_URL', None)
+                activity_url = ACTIVITY_URL
             else:
                 from config_local import (
-                    TOKEN, STATUS, ACTIVITY_TYPE, ACTIVITY_NAME, 
+                    TOKEN, STATUS, ACTIVITY_TYPE, ACTIVITY_NAME, ACTIVITY_URL,
                     USE_KEEP_ALIVE, COMMAND_PREFIX, TWITTER_BEARER_TOKEN, 
-                    GOOGLE_TRANSLATE_API_KEY
+                    GOOGLE_TRANSLATE_API_KEY, BOT_ADMIN_IDS, TRUSTED_USER_IDS
                 )
-                activity_url = getattr(__import__('config_local'), 'ACTIVITY_URL', None)
+                activity_url = ACTIVITY_URL
             
             self._config = {
                 'TOKEN': TOKEN,
@@ -48,6 +48,10 @@ class ConfigManager:
                 'USE_KEEP_ALIVE': USE_KEEP_ALIVE,
                 'COMMAND_PREFIX': COMMAND_PREFIX,
                 'BOT_ENV': env,
+                
+                # 權限系統配置
+                'BOT_ADMIN_IDS': BOT_ADMIN_IDS,
+                'TRUSTED_USER_IDS': TRUSTED_USER_IDS,
                 
                 # API 金鑰配置（從配置檔案載入）
                 'TWITTER_BEARER_TOKEN': TWITTER_BEARER_TOKEN,
@@ -235,6 +239,22 @@ class ConfigManager:
     def google_translate_api_key(self) -> Optional[str]:
         """Google Translate API Key"""
         return self.get('GOOGLE_TRANSLATE_API_KEY')
+    
+    @property
+    def bot_admin_ids(self) -> List[int]:
+        """機器人管理員ID列表"""
+        ids_str = self.get('BOT_ADMIN_IDS', '')
+        if not ids_str:
+            return []
+        return [int(id.strip()) for id in ids_str.split(',') if id.strip()]
+    
+    @property
+    def trusted_user_ids(self) -> List[int]:
+        """信任用戶ID列表"""
+        ids_str = self.get('TRUSTED_USER_IDS', '')
+        if not ids_str:
+            return []
+        return [int(id.strip()) for id in ids_str.split(',') if id.strip()]
 
 # 全域配置實例
 config = ConfigManager()

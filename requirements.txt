@@ -1,6 +1,11 @@
+# Core Dependencies - 核心依賴套件
 aiofiles==24.1.0
 aiohttp>=3.9.0,<4.0.0
 discord.py==2.5.2
 Flask==3.1.1
 python-dotenv==1.1.0
 pytz==2024.2
+
+# Optional Dependencies - 可選依賴套件
+# 以下套件為可選功能，如不需要可註解掉
+# googletrans==4.0.0rc1  # Google Translate 功能 (如需要請取消註解)
