@@ -2,7 +2,7 @@ import asyncio
 import os
 import math
 from typing import Dict, List, Any
-from datetime import datetime
+from datetime import datetime, timezone
 
 import discord
 from discord.ext import commands
@@ -32,8 +32,8 @@ bot = commands.Bot(command_prefix=config.command_prefix, intents=intents)
 command_manager = setup_command_manager(bot)
 sync_manager = setup_sync_manager(bot)
 
-# 機器人啟動時間記錄
-startup_time = None
+# 機器人啟動時間記錄 - 在模組載入時立即記錄
+startup_time = datetime.now(timezone.utc)
 
 # 同步指令系統已移至 core/sync_manager.py
 
@@ -47,10 +47,12 @@ BotLogger.system_event("機器人初始化", f"環境: {ENV}, 前綴: {config.co
 @bot.event
 async def on_ready():
     global startup_time
-    startup_time = datetime.now(datetime.UTC)
-    bot._startup_time = startup_time  # 供 cogs 使用
+    # 確保啟動時間已設定
+    if not hasattr(bot, '_startup_time'):
+        bot._startup_time = startup_time  # 供 cogs 使用
 
     BotLogger.system_event("機器人就緒", f"🤖 {bot.user} 已上線 (環境: {ENV})")
+    BotLogger.info("BotMain", f"機器人啟動時間: {startup_time.strftime('%Y-%m-%d %H:%M:%S UTC')}")
 
 
 @bot.event
@@ -220,6 +222,10 @@ async def main():
 
     try:
         async with bot:
+            # 確保啟動時間已設定
+            global startup_time
+            bot._startup_time = startup_time
+            
             BotLogger.system_event("開始載入擴充功能", "準備載入 cogs...")
             await load_extensions()
 

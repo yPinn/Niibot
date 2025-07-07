@@ -354,6 +354,22 @@ def get_deployment_info() -> str:
     import sys
     deployment_info.append(f"Python: {sys.version.split()[0]}")
     
+    # Discord.py 版本
+    try:
+        import discord
+        deployment_info.append(f"discord.py: {discord.__version__}")
+    except ImportError:
+        deployment_info.append("discord.py: unknown")
+    
+    # 系統記憶體使用情況
+    try:
+        import psutil
+        memory = psutil.virtual_memory()
+        memory_usage = f"{memory.percent:.1f}%"
+        deployment_info.append(f"記憶體: {memory_usage}")
+    except ImportError:
+        pass
+    
     # 進程ID
     deployment_info.append(f"PID: {os.getpid()}")
     
@@ -398,8 +414,8 @@ def get_version_info() -> str:
         version_info.append("Branch: unknown")
     
     try:
-        # 嘗試獲取最後提交時間
-        result = subprocess.run(['git', 'log', '-1', '--format=%cd', '--date=iso'], 
+        # 嘗試獲取最後提交時間（本地時區格式）
+        result = subprocess.run(['git', 'log', '-1', '--format=%cd', '--date=format:%Y-%m-%d %H:%M:%S %z'], 
                               capture_output=True, text=True, timeout=5)
         if result.returncode == 0:
             commit_date = result.stdout.strip()
@@ -408,6 +424,20 @@ def get_version_info() -> str:
             version_info.append("Last commit: unknown")
     except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
         version_info.append("Last commit: unknown")
+    
+    try:
+        # 嘗試獲取提交訊息（前40字符）
+        result = subprocess.run(['git', 'log', '-1', '--format=%s'], 
+                              capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            commit_msg = result.stdout.strip()
+            if commit_msg:
+                # 截斷過長的提交訊息
+                if len(commit_msg) > 40:
+                    commit_msg = commit_msg[:37] + "..."
+                version_info.append(f"Message: {commit_msg}")
+    except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+        pass
     
     # 檢查環境變數中的版本資訊
     if os.environ.get('HEROKU_SLUG_COMMIT'):
@@ -434,8 +464,8 @@ def get_uptime_info(startup_time) -> str:
     if not startup_time:
         return "啟動時間未知"
     
-    from datetime import datetime
-    current_time = datetime.now(datetime.UTC)
+    from datetime import datetime, timezone
+    current_time = datetime.now(timezone.utc)
     uptime = current_time - startup_time
     
     # 計算天、小時、分鐘

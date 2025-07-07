@@ -77,10 +77,24 @@ pytest                    # 運行測試
 **Slash Command Support 斜線指令支援:**
 - Full slash command integration with `/help` command for listing all available slash commands  
   完整斜線指令整合，包含 `/help` 指令列出所有可用斜線指令
-- Automatic command registration and synchronization with `?sync` command  
-  自動指令註冊和同步，使用 `?sync` 指令
+- Automatic command registration and synchronization with sync commands:  
+  自動指令註冊和同步，使用同步指令：
+  - `?sync` - Global slash command sync (全域斜線指令同步)
+  - `?syncguild` - Guild-specific slash command sync (公會特定斜線指令同步)  
+  - `?syncstatus` - Check sync status (檢查同步狀態)
+  - `?unsync` - Clear guild commands (清除公會指令)
 - Mixed traditional (`?`) and slash (`/`) command support  
   支援傳統（`?`）和斜線（`/`）指令混合使用
+- Centralized sync management via `core/sync_manager.py`  
+  透過 `core/sync_manager.py` 集中同步管理
+
+**Command Management 指令管理:**
+- Modular command system with enable/disable functionality  
+  模組化指令系統，支援啟用/停用功能
+- Dynamic command registration and management  
+  動態指令註冊和管理
+- Core modules: `core/command_manager.py` for command control, `core/sync_manager.py` for slash command synchronization  
+  核心模組：`core/command_manager.py` 指令控制，`core/sync_manager.py` 斜線指令同步
 
 **Event Handling 事件處理:**
 - `listener.py` implements a centralized message handling system  
@@ -173,6 +187,10 @@ pytest                    # 運行測試
   Twitter API Bearer Token 用於監控功能
 - `GOOGLE_TRANSLATE_API_KEY` - Google Translate API key for translation services  
   Google Translate API 金鑰用於翻譯服務
+- `BOT_ADMIN_IDS` - List of admin Discord user IDs for elevated permissions  
+  管理員 Discord 用戶 ID 列表，具備提升權限
+- `TRUSTED_USER_IDS` - List of trusted Discord user IDs for specific commands  
+  信任用戶 Discord 用戶 ID 列表，用於特定指令
 
 ### Development Notes 開發注意事項
 - Bot uses `discord.Intents.all()` for full Discord API access  
@@ -229,6 +247,14 @@ pytest                    # 運行測試
   **Twitter監控**：完整X平台監控，支援翻譯和媒體
 - **Personalized Clock**: Complete overhaul of clock system for individual user settings  
   **個人化打卡**：打卡系統完全改版，支援個人用戶設定
+- **Centralized Command Management**: Modular command and sync management system  
+  **集中化指令管理**：模組化指令和同步管理系統
+- **Improved Architecture**: Separated concerns into core modules (command_manager, sync_manager)  
+  **改良架構**：將關注點分離到核心模組 (command_manager, sync_manager)
+- **Enhanced System Commands**: Improved ?test and ?sys commands with detailed environment information  
+  **增強系統指令**：改進?test和?sys指令，包含詳細環境資訊
+- **Fixed Startup Time Tracking**: Reliable bot startup time recording and display  
+  **修復啟動時間追蹤**：可靠的機器人啟動時間記錄和顯示
 
 ### API Integrations API整合
 - **Discord API**: Full bot functionality with slash commands, embeds, UI components  

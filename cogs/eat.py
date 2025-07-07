@@ -517,19 +517,28 @@ class Eat(commands.Cog):
     # 為相關指令添加自動完成
     def setup_autocomplete(self):
         """設置自動完成功能"""
-        self.slash_eat.autocomplete('category')(self._category_autocomplete)
-        self.slash_menu.autocomplete('category')(self._category_autocomplete)
-        self.slash_add_food.autocomplete(
-            'category')(self._category_autocomplete)
-        self.slash_remove_food.autocomplete(
-            'category')(self._category_autocomplete)
-        self.slash_remove_food.autocomplete('item')(self._food_autocomplete)
-        self.slash_delete_category.autocomplete(
-            'category')(self._category_autocomplete)
+        try:
+            self.slash_eat.autocomplete('category')(self._category_autocomplete)
+            self.slash_menu.autocomplete('category')(self._category_autocomplete)
+            self.slash_add_food.autocomplete(
+                'category')(self._category_autocomplete)
+            self.slash_remove_food.autocomplete(
+                'category')(self._category_autocomplete)
+            self.slash_remove_food.autocomplete('item')(self._food_autocomplete)
+            self.slash_delete_category.autocomplete(
+                'category')(self._category_autocomplete)
+            BotLogger.info("Eat", "自動完成功能設置成功")
+        except Exception as e:
+            BotLogger.error("Eat", f"自動完成設置失敗: {e}", e)
 
 
 async def setup(bot: commands.Bot):
-    eat_cog = Eat(bot)
-    await eat_cog.initialize()  # 確保資料初始化完成
-    eat_cog.setup_autocomplete()  # 設置自動完成
-    await bot.add_cog(eat_cog)
+    try:
+        eat_cog = Eat(bot)
+        await eat_cog.initialize()  # 確保資料初始化完成
+        await bot.add_cog(eat_cog)
+        eat_cog.setup_autocomplete()  # 設置自動完成
+        BotLogger.info("Eat", "Eat模組載入成功")
+    except Exception as e:
+        BotLogger.error("Eat", f"Eat模組載入失敗: {e}", e)
+        raise
