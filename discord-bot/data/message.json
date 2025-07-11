@@ -1,0 +1,86 @@
+{
+  "errors": {
+    "already_in_queue": "⚠️ 您已經在隊列中了!",
+    "queue_full": "⚠️ 隊列已滿 ({max_players}人)",
+    "not_in_queue": "⚠️ 您不在隊列中!",
+    "no_permission": "⚠️ 您沒有權限{action}!",
+    "queue_empty": "⚠️ 隊列已經是空的!",
+    "insufficient_players": "⚠️ 隊列至少需要 2 人才能開始分隊",
+    "no_teams": "⚠️ 尚未進行過分隊!",
+    "invalid_number": "⚠️ 請輸入有效的數字",
+    "min_teams": "⚠️ 隊伍數必須至少為 1",
+    "min_players": "⚠️ 每隊人數必須至少為 1",
+    "teams_exceed_players": "⚠️ 隊伍數 ({teams}) 不能超過總人數 ({total})",
+    "max_players_positive": "⚠️ 人數上限必須大於 0!"
+  },
+  "success": {
+    "joined": "✅ {user} 已加入隊列",
+    "left": "❌ {user} 已離開隊列",
+    "cleared": "🗑️ 隊列已清空!"
+  },
+  "status": {
+    "queue_created": "✨ 已創建新的分隊大廳!{limit}",
+    "queue_expired": "⏰ 隊列已過期",
+    "queue_expired_desc": "此隊列已超時失效,請使用 `?queue` 創建新的隊列。",
+    "no_members": "目前沒有人在隊列中",
+    "waiting_next": "※ 待下次分隊"
+  },
+  "ui": {
+    "team_setup_title": "分隊設定",
+    "team_count_label": "隊伍數量",
+    "team_count_placeholder": "輸入隊伍數量 (例: 2)",
+    "players_label": "每隊人數",
+    "players_placeholder": "輸入每隊人數 或 'auto' 自動分配",
+    "select_team_settings": "🎯 請選擇分隊設定:",
+    "cancel_setup": "❌ 已取消分隊設定"
+  },
+  "titles": {
+    "lobby": "🎮 **{guild_name} - 配對大廳** 🎮{limit}",
+    "game_list": "🎮 遊戲清單"
+  },
+  "voice": {
+    "creating_channels": "🔊 正在創建語音頻道並移動隊伍成員...",
+    "channels_created": "🔊 語音頻道創建完成",
+    "channels_created_desc": "從 **{original_channel}** 移動了 {moved_total} 名隊伍成員到 {channel_count} 個暫時語音頻道",
+    "auto_cleanup": "當所有暫時語音頻道都空了時,會自動刪除這些頻道",
+    "manual_return": "點擊紅色按鈕可立即將暫時頻道中的人移回原頻道並清理",
+    "returning_members": "🔄 正在將成員移回原頻道並清理...",
+    "cleanup_complete": "✅ 清理完成",
+    "cleanup_desc": "已將 {moved_count} 名成員移回原頻道,刪除了 {deleted_count} 個暫時頻道",
+    "cleanup_failed": "❌ 清理失敗",
+    "creation_failed": "❌ 語音頻道創建失敗",
+    "no_original_channel": "⚠️ 沒有找到隊伍成員聚集的語音頻道,無法創建暫時頻道",
+    "no_temp_channels": "⚠️ 沒有找到需要清理的暫時語音頻道"
+  },
+  "team": {
+    "reshuffling": "🔄 正在重新分隊...",
+    "dividing": "⚡ 正在進行分隊...",
+    "division_confirmed": "✅ 分隊設定已確認",
+    "division_failed": "❌ **分隊失敗**: {error_msg}"
+  },
+  "rich_presence": {
+    "enabled": "💫 **Rich Presence 已啟用** - 您的隊伍狀態會顯示在 Discord 上",
+    "not_connected": "⚠️ **Rich Presence 未連接** - 安裝 pypresence 以啟用狀態顯示",
+    "not_available": "❌ Rich Presence 不可用,請先安裝 pypresence",
+    "reconnect_success": "✅ Rich Presence 重新連接成功",
+    "reconnect_failed": "❌ Rich Presence 重新連接失敗",
+    "reconnect_error": "❌ Rich Presence 重新連接時發生錯誤: {error}"
+  },
+  "hints": {
+    "voice_channels_exist": "🔊 **暫時語音頻道已創建** - 各隊伍已分配到專屬頻道",
+    "return_hint": "❌ **返回原頻道** - 點擊紅色按鈕將所有人移回並清理頻道",
+    "create_hint": "💡 **提示**: 點擊「創建語音頻道」可自動為各隊創建暫時語音頻道",
+    "management_options": "🔄 **管理選項**: 重新分隊 | 創建/清理語音頻道"
+  },
+  "games": {
+    "no_game_list": "📋 目前沒有遊戲清單。",
+    "empty_game_list": "📋 遊戲清單是空的。",
+    "invalid_format": "⚠️ 遊戲清單格式不正確。",
+    "no_valid_games": "📋 遊戲清單中沒有有效的遊戲項目。",
+    "read_error": "⚠️ 讀取遊戲清單時發生錯誤: {error}",
+    "play_link": "[點擊遊玩]({url})"
+  },
+  "test": {
+    "success": "✅ 測試成功!Party Cog 運作正常"
+  }
+}

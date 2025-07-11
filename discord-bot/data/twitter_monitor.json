@@ -1,0 +1,9 @@
+{
+  "enabled": false,
+  "target_username": "",
+  "target_user_id": "",
+  "discord_channel_id": 0,
+  "check_interval": 1800,
+  "last_check": null,
+  "translation_enabled": false
+}

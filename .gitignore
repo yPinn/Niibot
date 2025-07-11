@@ -1,0 +1,26 @@
+# Python
+**/__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# 環境/設定
+.env
+.env.*
+*.env
+*.secret
+*.ini
+*.log
+
+# 日誌目錄
+logs/
+
+# VSCode
+.vscode/
+.settings/
+
+# 緩存 / 快取 / 中介檔
+*.cache
+*.log
+*.tmp

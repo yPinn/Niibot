@@ -1,0 +1,96 @@
+{
+  "crosshairs": [
+    {
+      "id": "val/1",
+      "game": "Valorant",
+      "code": "0;P;c;5;t;2;o;1;d;1;z;3;a;1;f;0;0t;4;0l;3;0a;1;0f;0;1t;3;1l;1;1o;1;1a;1;1m;0;1f;0",
+      "image_url": "https://i.imgur.com/YjKzVQr.png",
+      "tag": "經典精準型"
+    },
+    {
+      "id": "val/2",
+      "game": "Valorant",
+      "code": "0;P;c;1;t;1;o;1;d;1;z;2;a;1;f;0;0t;1;0l;1;0a;1;0f;0;1t;1;1l;1;1o;1;1a;1;1m;0;1f;0",
+      "image_url": null,
+      "tag": "快速突擊型"
+    },
+    {
+      "id": "val/3",
+      "game": "Valorant",
+      "code": "0;P;c;7;t;3;o;1;d;1;z;4;a;1;f;0;0t;6;0l;4;0a;1;0f;0;1t;4;1l;2;1o;1;1a;1;1m;0;1f;0",
+      "image_url": "https://i.imgur.com/XbK9mNp.png",
+      "tag": "狙擊專用"
+    },
+    {
+      "id": "val/4",
+      "game": "Valorant",
+      "code": "0;P;c;8;t;1;o;0.5;d;1;z;1;a;1;f;0;0t;1;0l;1;0a;1;0f;0;1t;1;1l;1;1o;1;1a;1;1m;0;1f;0",
+      "image_url": "https://i.imgur.com/QwE8rTy.png",
+      "tag": "極簡點狀"
+    },
+    {
+      "id": "cs/1",
+      "game": "CS2",
+      "code": "CSGO_A59C8D3E-1234-5678-9ABC-DEF012345678",
+      "image_url": "https://i.imgur.com/AzX3cVb.png", 
+      "tag": "簡約點狀"
+    },
+    {
+      "id": "cs/2",
+      "game": "CS2",
+      "code": "CSGO_B12F9A7C-5678-9ABC-DEF0-123456789ABC",
+      "image_url": "https://i.imgur.com/MnB4vCx.png",
+      "tag": "職業十字"
+    },
+    {
+      "id": "cs/3",
+      "game": "CS2",
+      "code": "CSGO_C8E5D2F1-9ABC-DEF0-1234-56789ABCDEF0",
+      "image_url": null,
+      "tag": "透明準心"
+    },
+    {
+      "id": "apex/1",
+      "game": "Apex Legends",
+      "code": "crosshair_settings_classic_dot_small_red_opacity_100",
+      "image_url": "https://i.imgur.com/VbN8mKj.png",
+      "tag": "競技專用"
+    },
+    {
+      "id": "apex/2",
+      "game": "Apex Legends",
+      "code": "crosshair_settings_cross_medium_green_opacity_80_gap_2",
+      "image_url": "https://i.imgur.com/LpQ9nXc.png",
+      "tag": "突擊型十字"
+    },
+    {
+      "id": "ove/1",
+      "game": "Overwatch",
+      "code": "type=circle;color=green;thickness=2;crosshair_gap=3;outline=on;opacity=100",
+      "image_url": "https://i.imgur.com/ZxC7vBn.png",
+      "tag": "圓形綠色"
+    },
+    {
+      "id": "ove/2",
+      "game": "Overwatch",
+      "code": "type=cross;color=cyan;thickness=3;crosshair_gap=5;outline=on;opacity=90",
+      "image_url": null,
+      "tag": "青色十字"
+    },
+    {
+      "id": "cod/1",
+      "game": "Call of Duty",
+      "code": "crosshair_preset_default_modified_opacity_85_color_red_size_medium",
+      "image_url": "https://i.imgur.com/FgH3kLm.png",
+      "tag": "紅色經典"
+    }
+  ],
+  "game_prefixes": {
+    "Valorant": "val",
+    "CS2": "cs", 
+    "Apex Legends": "apex",
+    "CS:GO": "csgo",
+    "Overwatch": "ove",
+    "Call of Duty": "cod"
+  }
+}

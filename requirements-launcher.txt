@@ -1,0 +1,10 @@
+# Niibot 統一啟動器依賴
+# 基於統一基礎依賴，支援所有平台
+
+# 基礎依賴
+-r requirements-base.txt
+
+# 平台支援 (按需安裝)
+discord.py==2.5.2    # Discord Bot 支援
+twitchio==2.9.1      # Twitch Bot 支援
+Flask==3.1.1         # Web 服務支援

@@ -1,0 +1,5 @@
+# Twitch Bot Dependencies - 基於統一基礎依賴
+# 先安裝: pip install -r ../requirements-base.txt
+
+# Twitch 專用依賴
+twitchio==2.9.1

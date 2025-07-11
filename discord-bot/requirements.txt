@@ -1,0 +1,11 @@
+# Discord Bot Dependencies - 基於統一基礎依賴
+# 先安裝: pip install -r ../requirements-base.txt
+
+# Discord 專用依賴
+discord.py==2.5.2
+
+# Web 服務 (keep_alive)
+Flask==3.1.1
+
+# Optional Dependencies - 可選依賴套件
+# googletrans==4.0.0rc1  # Google Translate 功能 (如需要請取消註解)

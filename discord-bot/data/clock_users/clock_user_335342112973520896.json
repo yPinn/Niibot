@@ -1,0 +1,28 @@
+{
+  "user_info": {
+    "user_id": 335342112973520896,
+    "setup_completed": true,
+    "created_at": "2025-06-19T10:08:19.939910",
+    "last_updated": "2025-06-19T10:47:29.834846"
+  },
+  "settings": {
+    "work_start_time": "08:30",
+    "work_hours": 9.0,
+    "flexible_clock_in": true,
+    "flex_window_minutes": 30,
+    "clock_out_window": 15,
+    "timezone": "Asia/Taipei",
+    "enabled": true
+  },
+  "active_session": {
+    "is_working": true,
+    "clock_in_time": "2025-06-19T10:47:29.834846",
+    "clock_in_status": "遲到",
+    "expected_clock_out": "2025-06-19T19:47:29.834846",
+    "guild_id": 850323553823621130,
+    "channel_id": 1376426802519474316
+  },
+  "records": {
+    "daily": {}
+  }
+}

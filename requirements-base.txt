@@ -1,0 +1,22 @@
+# Niibot 基礎依賴 - 統一版本管理
+# 所有平台的共同依賴套件
+
+# 基礎異步支援
+aiofiles==24.1.0
+aiohttp==3.10.12
+python-dotenv==1.1.0
+
+# 系統監控
+psutil==6.1.0
+
+# 時區支援
+pytz==2024.2
+
+# 異步限流
+asyncio-throttle==1.0.2
+
+# 檔案監控
+watchdog==6.0.0
+
+# MQTT 支援
+asyncio-mqtt==0.16.2
