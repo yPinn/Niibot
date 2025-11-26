@@ -1,0 +1,11 @@
+# TwitchIO - Twitch Bot Framework
+twitchio>=3.1.0,<4.0.0
+
+# Database - PostgreSQL async driver
+asyncpg>=0.30.0,<1.0.0
+
+# Environment Variables
+python-dotenv>=1.0.0,<2.0.0
+
+# OpenAI API (for OpenRouter)
+openai>=1.0.0,<2.0.0
