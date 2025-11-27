@@ -64,25 +64,21 @@ python main.py
 ## 可用指令
 
 ### 一般指令
-
 - `!hi` / `!hello` - 打招呼
 - `!uptime` - 查看直播時長
-- `!socials` - 顯示社交媒體連結
-- `!ai <問題>` - AI 對話
+- `!ai <問題>` - AI 對話（需配置 OpenRouter）
 
 ### 版主指令
-
 - `!say <內容>` - 複讀訊息
 
 ### Channel Points（頻道點數）
-
-- `!redemptions` - 查看 Channel Points 功能說明
+- `!redemptions` - 查看功能說明
+- `!niibot` - 取得 OAuth 授權連結（僅 Bot Owner）
 - ✨ 自動監聽並記錄所有點數兌換事件
-- ✨ 根據獎勵標題執行自訂動作（可擴展）
-- 💡 請使用 Twitch 後台管理獎勵的創建/刪除
+- ✨ 支援 Niibot 獎勵自動發送 OAuth URL
+- 💡 使用 Twitch 後台管理獎勵的創建/刪除
 
 ### Owner 專用
-
 - `!load <module>` - 載入模組
 - `!unload <module>` - 卸載模組
 - `!reload <module>` - 重載模組
@@ -111,13 +107,37 @@ python main.py
 - Twitch EventSub + Conduit
 - OpenRouter AI
 
+## 開發工具
+
+### 類型檢查
+```bash
+python -m mypy main.py components/
+```
+
+### 日誌級別控制
+```bash
+# 開發環境 - 顯示所有訊息
+LOG_LEVEL=DEBUG python main.py
+
+# 生產環境 - 只顯示重要訊息
+LOG_LEVEL=INFO python main.py
+```
+
+### Rich Logging
+Bot 自動偵測並使用 [Rich](https://github.com/Textualize/rich) 提供美觀的終端輸出：
+- ✅ 彩色日誌
+- ✅ 美化的 traceback
+- ✅ 自動降級到標準格式（未安裝 Rich 時）
+
 ## 注意事項
 
-- `.env` 勿提交版本控制
-- Conduit 在離線 72 小時後過期
-- DATABASE_URL 格式: `postgresql://user:password@host:port/database`
+- ⚠️ `.env` 絕不要提交到版本控制
+- ⚠️ `CLIENT_SECRET` 必須保密
+- ⚠️ Conduit 在離線 72 小時後過期
+- ⚠️ 生產環境建議使用 `LOG_LEVEL=INFO`
 
 ## 文件說明
 
 - 📖 [設定與權限指南](docs/SETUP_GUIDE.md) - OAuth 授權、Scopes、權限架構完整說明
 - 🗄️ [database/schema.sql](database/schema.sql) - PostgreSQL 資料庫初始化腳本
+- 🔧 [mypy.ini](mypy.ini) - 靜態類型檢查配置

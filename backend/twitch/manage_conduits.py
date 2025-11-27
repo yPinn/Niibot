@@ -1,16 +1,30 @@
-"""Manage Twitch EventSub Conduits"""
+"""Manage Twitch EventSub Conduits
+
+此工具用於管理 Twitch EventSub Conduits：
+- 列出所有現有的 conduits
+- 刪除指定或所有 conduits
+
+使用情境：
+- 開發測試時清理舊的 conduits
+- 排查 EventSub 訂閱問題
+- Conduit 過期或異常時重置
+
+注意：Bot 會自動建立和管理 conduits，通常不需要手動操作
+"""
 import asyncio
 import os
+from typing import Optional
+
 import aiohttp
 from dotenv import load_dotenv
 
 load_dotenv()
 
-CLIENT_ID = os.getenv("CLIENT_ID", "")
-CLIENT_SECRET = os.getenv("CLIENT_SECRET", "")
+CLIENT_ID: str = os.getenv("CLIENT_ID", "")
+CLIENT_SECRET: str = os.getenv("CLIENT_SECRET", "")
 
 
-async def get_app_token():
+async def get_app_token() -> Optional[str]:
     """Get app access token from Twitch"""
     url = "https://id.twitch.tv/oauth2/token"
     params = {
@@ -25,7 +39,7 @@ async def get_app_token():
             return data.get("access_token")
 
 
-async def list_conduits():
+async def list_conduits() -> list[dict[str, str]]:
     """List all existing conduits"""
     token = await get_app_token()
 
@@ -49,7 +63,7 @@ async def list_conduits():
             return conduits
 
 
-async def delete_conduit(conduit_id: str):
+async def delete_conduit(conduit_id: str) -> None:
     """Delete a specific conduit"""
     token = await get_app_token()
 
@@ -68,7 +82,7 @@ async def delete_conduit(conduit_id: str):
                 print(f"✗ Failed to delete conduit: {error}")
 
 
-async def delete_all_conduits():
+async def delete_all_conduits() -> None:
     """Delete all conduits"""
     conduits = await list_conduits()
 
@@ -87,7 +101,8 @@ async def delete_all_conduits():
     print(f"\n✓ Deleted all {len(conduits)} conduit(s)")
 
 
-async def main():
+async def main() -> None:
+    """Main function for the conduit manager CLI"""
     print("=== Twitch Conduit Manager ===\n")
     print("1. List all conduits")
     print("2. Delete all conduits")

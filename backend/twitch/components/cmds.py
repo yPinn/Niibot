@@ -37,7 +37,8 @@ class GeneralCommands(commands.Component):
         Usage: !uptime
         """
         # Fetch stream info via API using the channel's user_id
-        streams = await ctx.bot.fetch_streams(user_ids=[ctx.channel.user_id])
+        channel_id = getattr(ctx.channel, 'user_id', ctx.channel.name)
+        streams = await ctx.bot.fetch_streams(user_ids=[channel_id] if isinstance(channel_id, str) else [])
 
         if streams:
             stream = streams[0]

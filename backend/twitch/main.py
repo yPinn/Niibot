@@ -10,6 +10,13 @@ import twitchio
 from twitchio import eventsub
 from twitchio.ext import commands
 
+try:
+    from rich.console import Console
+    from rich.logging import RichHandler
+    RICH_AVAILABLE: bool = True
+except ImportError:
+    RICH_AVAILABLE = False
+
 
 if TYPE_CHECKING:
     import asyncpg
@@ -70,19 +77,28 @@ class Bot(commands.AutoBot):
 
     def __init__(self, *, token_database: asyncpg.Pool, subs: list[eventsub.SubscriptionPayload]) -> None:
         self.token_database = token_database
-        init_kwargs = {
-            "client_id": CLIENT_ID,
-            "client_secret": CLIENT_SECRET,
-            "bot_id": BOT_ID,
-            "owner_id": OWNER_ID,
-            "prefix": "!",
-            "subscriptions": subs,
-            "force_subscribe": True,
-        }
         # Only add conduit_id if it's explicitly set
         if CONDUIT_ID:
-            init_kwargs["conduit_id"] = CONDUIT_ID
-        super().__init__(**init_kwargs)
+            super().__init__(
+                client_id=CLIENT_ID,
+                client_secret=CLIENT_SECRET,
+                bot_id=BOT_ID,
+                owner_id=OWNER_ID,
+                prefix="!",
+                subscriptions=subs,
+                force_subscribe=True,
+                conduit_id=CONDUIT_ID,
+            )
+        else:
+            super().__init__(
+                client_id=CLIENT_ID,
+                client_secret=CLIENT_SECRET,
+                bot_id=BOT_ID,
+                owner_id=OWNER_ID,
+                prefix="!",
+                subscriptions=subs,
+                force_subscribe=True,
+            )
 
     async def setup_hook(self) -> None:
         # Load the module that contains our component, commands, and listeners.
@@ -90,7 +106,7 @@ class Bot(commands.AutoBot):
         await self.load_module("components.owner_cmds")
         await self.load_module("components.cmds")
         await self.load_module("components.chat_gpt")
-        # await self.load_module("components.channel_points")
+        await self.load_module("components.channel_points")
 
     async def event_oauth_authorized(self, payload: twitchio.authentication.UserTokenPayload) -> None:
         """Handle OAuth authorization for multi-channel support.
@@ -143,17 +159,29 @@ class Bot(commands.AutoBot):
 
         resp: twitchio.MultiSubscribePayload = await self.multi_subscribe(subs)
         if resp.errors:
-            LOGGER.warning(
-                f"Failed to subscribe to: {resp.errors}, for user: {payload.user_id}")
+            # 過濾掉 409 Conflict 錯誤（訂閱已存在是正常情況）
+            non_conflict_errors = [
+                err for err in resp.errors
+                if "409" not in str(err.error) and "already exists" not in str(err.error)
+            ]
+
+            if non_conflict_errors:
+                # 只有非 409 錯誤才記錄為 WARNING
+                LOGGER.warning(
+                    f"Failed to subscribe to: {non_conflict_errors}, for user: {payload.user_id}")
+            else:
+                # 所有錯誤都是 409（訂閱已存在），記錄為 DEBUG
+                LOGGER.debug(
+                    f"EventSub subscriptions already exist for user: {payload.user_id}")
 
     async def event_message(self, payload: twitchio.ChatMessage) -> None:
         """Handle incoming chat messages."""
         channel_name = getattr(payload, 'channel', None)
         if channel_name:
-            LOGGER.info(
+            LOGGER.debug(
                 f"[{payload.chatter.name}#{channel_name.name}]: {payload.text}")
         else:
-            LOGGER.info(f"[{payload.chatter.name}]: {payload.text}")
+            LOGGER.debug(f"[{payload.chatter.name}]: {payload.text}")
         await super().event_message(payload)
 
     async def add_token(self, token: str, refresh: str) -> twitchio.authentication.ValidateTokenPayload:
@@ -250,7 +278,7 @@ class Bot(commands.AutoBot):
 
     async def event_eventsub_notification(self, payload) -> None:
         """記錄所有 EventSub 通知以進行調試"""
-        LOGGER.info(
+        LOGGER.debug(
             f"EventSub notification received: {type(payload).__name__}")
 
     async def event_eventsub_ready(self) -> None:
@@ -262,8 +290,80 @@ class Bot(commands.AutoBot):
         LOGGER.error(f"EventSub error: {error}")
 
 
+def setup_logging() -> None:
+    """設置日誌系統，優先使用 Rich，否則使用標準日誌。"""
+    # 獲取日誌級別（可從環境變數設定，預設 INFO）
+    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+    level = getattr(logging, log_level, logging.INFO)
+
+    if RICH_AVAILABLE:
+        try:
+            from rich.console import Console
+            from rich.logging import RichHandler
+
+            # 使用 Rich 提供更美觀的輸出
+            console = Console(
+                force_terminal=True,
+                color_system="auto",
+                width=120,
+            )
+
+            rich_handler = RichHandler(
+                console=console,
+                show_time=True,
+                show_level=True,
+                show_path=True,
+                markup=True,
+                rich_tracebacks=True,
+                tracebacks_show_locals=False,  # 生產環境設為 False
+                tracebacks_width=120,
+            )
+
+            rich_handler.setFormatter(
+                logging.Formatter(
+                    fmt="%(message)s",
+                    datefmt="[%Y-%m-%d %H:%M:%S]"
+                )
+            )
+
+            logging.basicConfig(
+                level=level,
+                format="%(message)s",
+                datefmt="[%Y-%m-%d %H:%M:%S]",
+                handlers=[rich_handler]
+            )
+            LOGGER.info(
+                "[bold green]✓[/bold green] Rich logging enabled", extra={"markup": True})
+        except Exception as e:
+            # Fallback 到標準日誌
+            logging.basicConfig(
+                level=level,
+                format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S"
+            )
+            LOGGER.warning(
+                f"Failed to setup Rich logging: {e}, using standard logging")
+    else:
+        # 使用標準日誌格式
+        logging.basicConfig(
+            level=level,
+            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S"
+        )
+        LOGGER.info(
+            "Standard logging enabled (install 'rich' for better output)")
+
+    # 調整第三方庫的日誌級別（減少噪音）
+    logging.getLogger("twitchio").setLevel(logging.WARNING)
+    logging.getLogger("asyncio").setLevel(logging.WARNING)
+    logging.getLogger("asyncpg").setLevel(logging.WARNING)
+    logging.getLogger("openai").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("aiohttp").setLevel(logging.WARNING)
+
+
 def main() -> None:
-    twitchio.utils.setup_logging(level=logging.INFO)
+    setup_logging()
 
     async def runner() -> None:
         # Create PostgreSQL connection pool

@@ -9,3 +9,10 @@ python-dotenv>=1.0.0,<2.0.0
 
 # OpenAI API (for OpenRouter)
 openai>=1.0.0,<2.0.0
+
+# Rich Logging - Beautiful terminal output
+rich>=13.0.0,<14.0.0
+
+# Development Tools
+mypy>=1.8.0,<2.0.0  # Static type checker
+types-aiofiles>=23.0.0  # Type stubs for async file operations
