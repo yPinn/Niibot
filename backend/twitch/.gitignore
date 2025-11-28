@@ -44,6 +44,7 @@ ENV/
 
 # Type Checking
 .mypy_cache/
+.ruff_cache/
 .dmypy.json
 dmypy.json
 .pyre/

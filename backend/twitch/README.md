@@ -52,7 +52,7 @@ https://id.twitch.tv/oauth2/authorize?client_id=YOUR_CLIENT_ID&redirect_uri=http
 **頻道授權**（Streamer 使用自己的帳號登入）：
 
 ```
-https://id.twitch.tv/oauth2/authorize?client_id=YOUR_CLIENT_ID&redirect_uri=http%3A%2F%2Flocalhost%3A4343%2Foauth%2Fcallback&response_type=code&scope=channel%3Abot+channel%3Amanage%3Aredemptions+channel%3Aread%3Aredemptions+moderator%3Aread%3Afollowers+channel%3Aread%3Asubscriptions+moderator%3Amanage%3Achat_messages+moderator%3Aread%3Achatters+channel%3Aread%3Ahype_train+channel%3Aread%3Apolls+channel%3Aread%3Apredictions+bits%3Aread
+https://id.twitch.tv/oauth2/authorize?client_id=YOUR_CLIENT_ID&redirect_uri=http%3A%2F%2Flocalhost%3A4343%2Foauth%2Fcallback&response_type=code&scope=channel%3Abot+channel%3Amanage%3Aredemptions+channel%3Aread%3Aredemptions+channel%3Amanage%3Avips+moderator%3Aread%3Afollowers+channel%3Aread%3Asubscriptions+moderator%3Amanage%3Achat_messages+moderator%3Aread%3Achatters+channel%3Aread%3Ahype_train+channel%3Aread%3Apolls+channel%3Aread%3Apredictions+bits%3Aread
 ```
 
 ### 4. 啟動
@@ -76,6 +76,7 @@ python main.py
 - `!niibot` - 取得 OAuth 授權連結（僅 Bot Owner）
 - ✨ 自動監聽並記錄所有點數兌換事件
 - ✨ 支援 Niibot 獎勵自動發送 OAuth URL
+- ✨ 支援 VIP 獎勵自動授予 VIP 身分
 - 💡 使用 Twitch 後台管理獎勵的創建/刪除
 
 ### Owner 專用
@@ -139,5 +140,6 @@ Bot 自動偵測並使用 [Rich](https://github.com/Textualize/rich) 提供美�
 ## 文件說明
 
 - 📖 [設定與權限指南](docs/SETUP_GUIDE.md) - OAuth 授權、Scopes、權限架構完整說明
+- 🔧 [TwitchIO 3 API 使用指南](docs/TWITCHIO3_API.md) - TwitchIO 3 官方 API 正確用法、常見錯誤與修正
 - 🗄️ [database/schema.sql](database/schema.sql) - PostgreSQL 資料庫初始化腳本
-- 🔧 [mypy.ini](mypy.ini) - 靜態類型檢查配置
+- 📝 [mypy.ini](mypy.ini) - 靜態類型檢查配置

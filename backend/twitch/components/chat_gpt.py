@@ -23,12 +23,10 @@ class AIComponent(commands.Component):
         model = os.getenv("OPENROUTER_MODEL", "")
 
         if not api_key or api_key.strip() == "":
-            raise ValueError(
-                "OPENROUTER_API_KEY is required but not set in .env file")
+            raise ValueError("OPENROUTER_API_KEY is required but not set in .env file")
 
         if not model or model.strip() == "":
-            raise ValueError(
-                "OPENROUTER_MODEL is required but not set in .env file")
+            raise ValueError("OPENROUTER_MODEL is required but not set in .env file")
 
         self.client = OpenAI(
             base_url="https://openrouter.ai/api/v1",
@@ -38,9 +36,11 @@ class AIComponent(commands.Component):
 
         LOGGER.info(f"AIComponent initialized with model: {model}")
 
-    @commands.cooldown(rate=1, per=10)  # type: ignore[misc]
+    @commands.cooldown(rate=1, per=10)
     @commands.command()
-    async def ai(self, ctx: commands.Context[Bot], *, message: Optional[str] = None) -> None:
+    async def ai(
+        self, ctx: commands.Context[Bot], *, message: Optional[str] = None
+    ) -> None:
         """Ask AI a question (text only).
 
         Usage:
@@ -57,12 +57,12 @@ class AIComponent(commands.Component):
         try:
             completion = self.client.chat.completions.create(
                 model=self.model,
-                max_tokens=500,  # Limit response length (Twitch has 500 char limit anyway)
+                # Limit response length (Twitch has 500 char limit anyway)
+                max_tokens=500,
                 messages=[
                     {
                         "role": "system",
-                        "content":
-                        """你是一個友善的 Twitch 聊天機器人助手。請遵守以下規範：
+                        "content": """你是一個友善的 Twitch 聊天機器人助手。請遵守以下規範：
                         1. 使用繁體中文回答，保持簡潔友善的語氣
                         2. 盡量在 50-100 字內簡短回答，最多不超過 150 字
                         3. 嚴格遵守 Twitch 社群規範：
@@ -73,13 +73,10 @@ class AIComponent(commands.Component):
                             - 保持尊重和包容的態度
                         4. 如果問題涉及不當內容，禮貌地拒絕回答
                         5. 提供有幫助、正面且安全的回應
-                        """
+                        """,
                     },
-                    {
-                        "role": "user",
-                        "content": message
-                    }
-                ]
+                    {"role": "user", "content": message},
+                ],
             )
 
             response = completion.choices[0].message.content or ""
@@ -108,5 +105,4 @@ async def setup(bot: commands.Bot) -> None:
     await bot.add_component(AIComponent(bot))
 
 
-async def teardown(bot: commands.Bot) -> None:
-    ...
+async def teardown(bot: commands.Bot) -> None: ...

@@ -31,7 +31,7 @@ https://id.twitch.tv/oauth2/authorize?client_id=YOUR_CLIENT_ID&redirect_uri=http
 
 #### 頻道授權（Streamer 使用自己的帳號登入）
 ```
-https://id.twitch.tv/oauth2/authorize?client_id=YOUR_CLIENT_ID&redirect_uri=http%3A%2F%2Flocalhost%3A4343%2Foauth%2Fcallback&response_type=code&scope=channel%3Abot+channel%3Amanage%3Aredemptions+channel%3Aread%3Aredemptions+moderator%3Aread%3Afollowers+channel%3Aread%3Asubscriptions+moderator%3Amanage%3Achat_messages+moderator%3Aread%3Achatters+channel%3Aread%3Ahype_train+channel%3Aread%3Apolls+channel%3Aread%3Apredictions+bits%3Aread
+https://id.twitch.tv/oauth2/authorize?client_id=YOUR_CLIENT_ID&redirect_uri=http%3A%2F%2Flocalhost%3A4343%2Foauth%2Fcallback&response_type=code&scope=channel%3Abot+channel%3Amanage%3Aredemptions+channel%3Aread%3Aredemptions+channel%3Amanage%3Avips+moderator%3Aread%3Afollowers+channel%3Aread%3Asubscriptions+moderator%3Amanage%3Achat_messages+moderator%3Aread%3Achatters+channel%3Aread%3Ahype_train+channel%3Aread%3Apolls+channel%3Aread%3Apredictions+bits%3Aread
 ```
 
 ---
@@ -50,6 +50,7 @@ user:bot            # Bot 功能
 channel:bot                      # 允許 Bot 進入頻道
 channel:manage:redemptions       # 管理 Channel Points 獎勵
 channel:read:redemptions         # 讀取 Channel Points 兌換記錄
+channel:manage:vips              # 管理 VIP 身分（VIP 獎勵功能需要）
 moderator:read:followers         # 讀取追隨者
 channel:read:subscriptions       # 讀取訂閱
 moderator:manage:chat_messages   # 管理聊天訊息
@@ -115,7 +116,7 @@ if ctx.chatter.id == ctx.bot.owner_id:
 
 **程式碼檢查**：
 ```python
-if ctx.chatter.id == ctx.channel.user_id:
+if ctx.chatter.id == ctx.channel.id:
     # 這是當前頻道的 Broadcaster
 ```
 

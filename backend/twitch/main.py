@@ -13,6 +13,7 @@ from twitchio.ext import commands
 try:
     from rich.console import Console
     from rich.logging import RichHandler
+
     RICH_AVAILABLE: bool = True
 except ImportError:
     RICH_AVAILABLE = False
@@ -45,8 +46,9 @@ def validate_env_vars() -> None:
             missing_vars.append(f"{var} ({description})")
 
     if missing_vars:
-        error_msg = "Missing or empty required environment variables:\n" + \
-            "\n".join(f"  - {var}" for var in missing_vars)
+        error_msg = "Missing or empty required environment variables:\n" + "\n".join(
+            f"  - {var}" for var in missing_vars
+        )
         LOGGER.error(error_msg)
         raise ValueError(error_msg)
 
@@ -75,7 +77,9 @@ class Bot(commands.AutoBot):
     # AutoBot automatically creates and connects to a Conduit for EventSub
     # Conduits make it easier to manage subscriptions - they last 72 hours after shutdown
 
-    def __init__(self, *, token_database: asyncpg.Pool, subs: list[eventsub.SubscriptionPayload]) -> None:
+    def __init__(
+        self, *, token_database: asyncpg.Pool, subs: list[eventsub.SubscriptionPayload]
+    ) -> None:
         self.token_database = token_database
         # Only add conduit_id if it's explicitly set
         if CONDUIT_ID:
@@ -108,7 +112,9 @@ class Bot(commands.AutoBot):
         await self.load_module("components.chat_gpt")
         await self.load_module("components.channel_points")
 
-    async def event_oauth_authorized(self, payload: twitchio.authentication.UserTokenPayload) -> None:
+    async def event_oauth_authorized(
+        self, payload: twitchio.authentication.UserTokenPayload
+    ) -> None:
         """Handle OAuth authorization for multi-channel support.
 
         When a user authorizes the bot via OAuth:
@@ -138,55 +144,68 @@ class Bot(commands.AutoBot):
             # Log with owner indicator if this is the owner's channel
             if payload.user_id == self.owner_id:
                 LOGGER.info(
-                    f"Owner channel authorized and added: {user.name} (ID: {user.id})")
+                    f"Owner channel authorized and added: {user.name} (ID: {user.id})"
+                )
             else:
                 LOGGER.info(
-                    f"Channel authorized and added: {user.name} (ID: {user.id})")
+                    f"Channel authorized and added: {user.name} (ID: {user.id})"
+                )
 
         # Subscribe to EventSub for this channel
         # broadcaster_user_id: the channel owner's user_id (who authorized)
         # user_id: the bot's user_id (who will read/send messages)
         subs: list[eventsub.SubscriptionPayload] = [
             eventsub.ChatMessageSubscription(
-                broadcaster_user_id=payload.user_id, user_id=self.bot_id),
-            eventsub.StreamOnlineSubscription(
-                broadcaster_user_id=payload.user_id),
+                broadcaster_user_id=payload.user_id, user_id=self.bot_id
+            ),
+            eventsub.StreamOnlineSubscription(broadcaster_user_id=payload.user_id),
             eventsub.ChannelPointsRedeemAddSubscription(
-                broadcaster_user_id=payload.user_id),
+                broadcaster_user_id=payload.user_id
+            ),
             eventsub.ChannelPointsRedeemUpdateSubscription(
-                broadcaster_user_id=payload.user_id),
+                broadcaster_user_id=payload.user_id
+            ),
         ]
 
         resp: twitchio.MultiSubscribePayload = await self.multi_subscribe(subs)
         if resp.errors:
             # 過濾掉 409 Conflict 錯誤（訂閱已存在是正常情況）
             non_conflict_errors = [
-                err for err in resp.errors
-                if "409" not in str(err.error) and "already exists" not in str(err.error)
+                err
+                for err in resp.errors
+                if "409" not in str(err.error)
+                and "already exists" not in str(err.error)
             ]
 
             if non_conflict_errors:
                 # 只有非 409 錯誤才記錄為 WARNING
                 LOGGER.warning(
-                    f"Failed to subscribe to: {non_conflict_errors}, for user: {payload.user_id}")
+                    f"Failed to subscribe to: {non_conflict_errors}, for user: {payload.user_id}"
+                )
             else:
                 # 所有錯誤都是 409（訂閱已存在），記錄為 DEBUG
                 LOGGER.debug(
-                    f"EventSub subscriptions already exist for user: {payload.user_id}")
+                    f"EventSub subscriptions already exist for user: {payload.user_id}"
+                )
 
     async def event_message(self, payload: twitchio.ChatMessage) -> None:
         """Handle incoming chat messages."""
-        channel_name = getattr(payload, 'channel', None)
-        if channel_name:
+        # payload.broadcaster 是 PartialUser，代表接收訊息的頻道
+        if payload.broadcaster:
             LOGGER.debug(
-                f"[{payload.chatter.name}#{channel_name.name}]: {payload.text}")
+                f"[{payload.chatter.name}#{payload.broadcaster.name}]: {payload.text}"
+            )
         else:
             LOGGER.debug(f"[{payload.chatter.name}]: {payload.text}")
         await super().event_message(payload)
 
-    async def add_token(self, token: str, refresh: str) -> twitchio.authentication.ValidateTokenPayload:
+    async def add_token(
+        self, token: str, refresh: str
+    ) -> twitchio.authentication.ValidateTokenPayload:
         # Make sure to call super() as it will add the tokens interally and return us some data...
-        resp: twitchio.authentication.ValidateTokenPayload = await super().add_token(token, refresh)
+        resp: twitchio.authentication.ValidateTokenPayload = await super().add_token(
+            token, refresh
+        )
 
         # Store our tokens in PostgreSQL Database when they are authorized...
         query = """
@@ -208,7 +227,9 @@ class Bot(commands.AutoBot):
         # We don't need to call this manually, it is called in .login() from .start() internally...
 
         async with self.token_database.acquire() as connection:
-            rows: list[asyncpg.Record] = await connection.fetch("""SELECT * from tokens""")
+            rows: list[asyncpg.Record] = await connection.fetch(
+                """SELECT * from tokens"""
+            )
 
         for row in rows:
             await self.add_token(row["token"], row["refresh"])
@@ -261,8 +282,7 @@ class Bot(commands.AutoBot):
         async with self.token_database.acquire() as connection:
             await connection.execute(query, channel_id, channel_name.lower())
 
-        LOGGER.info(
-            f"Added channel {channel_name} (ID: {channel_id}) to database")
+        LOGGER.info(f"Added channel {channel_name} (ID: {channel_id}) to database")
 
     async def remove_channel_from_db(self, channel_name: str) -> None:
         """Disable a channel in the database."""
@@ -276,10 +296,12 @@ class Bot(commands.AutoBot):
     async def event_ready(self) -> None:
         LOGGER.info("Successfully logged in as: %s", self.bot_id)
 
-    async def event_eventsub_notification(self, payload) -> None:
+    async def event_eventsub_notification(
+        self,
+        payload: eventsub.NotificationEvent,
+    ) -> None:
         """記錄所有 EventSub 通知以進行調試"""
-        LOGGER.debug(
-            f"EventSub notification received: {type(payload).__name__}")
+        LOGGER.debug(f"EventSub notification received: {type(payload).__name__}")
 
     async def event_eventsub_ready(self) -> None:
         """EventSub 已準備好接收通知"""
@@ -320,38 +342,35 @@ def setup_logging() -> None:
             )
 
             rich_handler.setFormatter(
-                logging.Formatter(
-                    fmt="%(message)s",
-                    datefmt="[%Y-%m-%d %H:%M:%S]"
-                )
+                logging.Formatter(fmt="%(message)s", datefmt="[%Y-%m-%d %H:%M:%S]")
             )
 
             logging.basicConfig(
                 level=level,
                 format="%(message)s",
                 datefmt="[%Y-%m-%d %H:%M:%S]",
-                handlers=[rich_handler]
+                handlers=[rich_handler],
             )
             LOGGER.info(
-                "[bold green]✓[/bold green] Rich logging enabled", extra={"markup": True})
+                "[bold green]✓[/bold green] Rich logging enabled",
+                extra={"markup": True},
+            )
         except Exception as e:
             # Fallback 到標準日誌
             logging.basicConfig(
                 level=level,
                 format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-                datefmt="%Y-%m-%d %H:%M:%S"
+                datefmt="%Y-%m-%d %H:%M:%S",
             )
-            LOGGER.warning(
-                f"Failed to setup Rich logging: {e}, using standard logging")
+            LOGGER.warning(f"Failed to setup Rich logging: {e}, using standard logging")
     else:
         # 使用標準日誌格式
         logging.basicConfig(
             level=level,
             format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S"
+            datefmt="%Y-%m-%d %H:%M:%S",
         )
-        LOGGER.info(
-            "Standard logging enabled (install 'rich' for better output)")
+        LOGGER.info("Standard logging enabled (install 'rich' for better output)")
 
     # 調整第三方庫的日誌級別（減少噪音）
     logging.getLogger("twitchio").setLevel(logging.WARNING)
@@ -408,16 +427,22 @@ def main() -> None:
                         continue
 
                     # Create EventSub subscriptions for each authorized channel
-                    subs.extend([
-                        eventsub.ChatMessageSubscription(
-                            broadcaster_user_id=broadcaster_user_id, user_id=BOT_ID),
-                        eventsub.StreamOnlineSubscription(
-                            broadcaster_user_id=broadcaster_user_id),
-                        eventsub.ChannelPointsRedeemAddSubscription(
-                            broadcaster_user_id=broadcaster_user_id),
-                        eventsub.ChannelPointsRedeemUpdateSubscription(
-                            broadcaster_user_id=broadcaster_user_id),
-                    ])
+                    subs.extend(
+                        [
+                            eventsub.ChatMessageSubscription(
+                                broadcaster_user_id=broadcaster_user_id, user_id=BOT_ID
+                            ),
+                            eventsub.StreamOnlineSubscription(
+                                broadcaster_user_id=broadcaster_user_id
+                            ),
+                            eventsub.ChannelPointsRedeemAddSubscription(
+                                broadcaster_user_id=broadcaster_user_id
+                            ),
+                            eventsub.ChannelPointsRedeemUpdateSubscription(
+                                broadcaster_user_id=broadcaster_user_id
+                            ),
+                        ]
+                    )
 
             LOGGER.info(f"Starting bot with {len(subs)} initial subscriptions")
 

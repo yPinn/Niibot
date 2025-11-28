@@ -11,6 +11,7 @@
 
 注意：Bot 會自動建立和管理 conduits，通常不需要手動操作
 """
+
 import asyncio
 import os
 from typing import Optional
@@ -30,7 +31,7 @@ async def get_app_token() -> Optional[str]:
     params = {
         "client_id": CLIENT_ID,
         "client_secret": CLIENT_SECRET,
-        "grant_type": "client_credentials"
+        "grant_type": "client_credentials",
     }
 
     async with aiohttp.ClientSession() as session:
@@ -44,10 +45,7 @@ async def list_conduits() -> list[dict[str, str]]:
     token = await get_app_token()
 
     url = "https://api.twitch.tv/helix/eventsub/conduits"
-    headers = {
-        "Client-ID": CLIENT_ID,
-        "Authorization": f"Bearer {token}"
-    }
+    headers = {"Client-ID": CLIENT_ID, "Authorization": f"Bearer {token}"}
 
     async with aiohttp.ClientSession() as session:
         async with session.get(url, headers=headers) as resp:
@@ -68,10 +66,7 @@ async def delete_conduit(conduit_id: str) -> None:
     token = await get_app_token()
 
     url = f"https://api.twitch.tv/helix/eventsub/conduits?id={conduit_id}"
-    headers = {
-        "Client-ID": CLIENT_ID,
-        "Authorization": f"Bearer {token}"
-    }
+    headers = {"Client-ID": CLIENT_ID, "Authorization": f"Bearer {token}"}
 
     async with aiohttp.ClientSession() as session:
         async with session.delete(url, headers=headers) as resp:
@@ -90,13 +85,15 @@ async def delete_all_conduits() -> None:
         print("No conduits to delete.")
         return
 
-    confirm = input(f"\nAre you sure you want to delete ALL {len(conduits)} conduit(s)? (yes/no): ")
+    confirm = input(
+        f"\nAre you sure you want to delete ALL {len(conduits)} conduit(s)? (yes/no): "
+    )
     if confirm.lower() != "yes":
         print("Cancelled.")
         return
 
     for conduit in conduits:
-        await delete_conduit(conduit['id'])
+        await delete_conduit(conduit["id"])
 
     print(f"\n✓ Deleted all {len(conduits)} conduit(s)")
 

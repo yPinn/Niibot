@@ -9,6 +9,7 @@ else:
 
 class NotOwnerError(commands.GuardFailure):
     """Custom exception for owner-only command guard."""
+
     ...
 
 
@@ -18,7 +19,9 @@ class OwnerCmds(commands.Component):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
 
-    async def component_command_error(self, payload: commands.CommandErrorPayload) -> Optional[bool]:
+    async def component_command_error(
+        self, payload: commands.CommandErrorPayload
+    ) -> Optional[bool]:
         """Handle component-specific errors."""
         error = payload.exception
         if isinstance(error, NotOwnerError):
@@ -30,7 +33,7 @@ class OwnerCmds(commands.Component):
     @commands.Component.guard()
     def is_owner(self, ctx: commands.Context[Bot]) -> bool:
         """Restrict all commands in this component to the owner.
-        
+
         Owner is defined by OWNER_ID in .env file.
         Owner does NOT need to authorize via OAuth to use these commands.
         Owner CAN also be a broadcaster (by authorizing via OAuth separately).

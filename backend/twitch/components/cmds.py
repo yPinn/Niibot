@@ -36,14 +36,15 @@ class GeneralCommands(commands.Component):
 
         Usage: !uptime
         """
-        # Fetch stream info via API using the channel's user_id
-        channel_id = getattr(ctx.channel, 'user_id', ctx.channel.name)
-        streams = await ctx.bot.fetch_streams(user_ids=[channel_id] if isinstance(channel_id, str) else [])
+        # ctx.channel 是 PartialUser，直接使用 .id 屬性
+        # 在 TwitchIO 3 中，PartialUser.id 就是 broadcaster_user_id
+        streams = await ctx.bot.fetch_streams(user_ids=[ctx.channel.id])
 
         if streams:
             stream = streams[0]
             if stream.started_at:
                 from datetime import datetime, timezone
+
                 now = datetime.now(timezone.utc)
                 uptime = now - stream.started_at
                 hours, remainder = divmod(int(uptime.total_seconds()), 3600)
@@ -67,6 +68,7 @@ class GeneralCommands(commands.Component):
     async def event_stream_online(self, payload: twitchio.StreamOnline) -> None:
         """Log when a subscribed channel goes live."""
         from main import LOGGER
+
         LOGGER.info(f"頻道 {payload.broadcaster.name} 開始直播！")
 
 
