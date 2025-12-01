@@ -31,20 +31,6 @@ class ChannelPointsComponent(commands.Component):
     def _generate_oauth_url(self) -> str:
         """生成統一的 OAuth 授權 URL。
 
-        包含所有必要的 scopes：
-        - channel:bot - Bot 基本功能
-        - user:manage:whispers - 發送私訊
-        - channel:manage:redemptions - 管理點數兌換
-        - channel:read:redemptions - 讀取點數兌換
-        - moderator:read:followers - 讀取追隨者
-        - channel:read:subscriptions - 讀取訂閱
-        - moderator:manage:chat_messages - 管理聊天訊息
-        - moderator:read:chatters - 讀取聊天者
-        - channel:read:hype_train - 讀取 Hype Train
-        - channel:read:polls - 讀取投票
-        - channel:read:predictions - 讀取預測
-        - bits:read - 讀取 Bits
-
         Returns:
             完整的 OAuth 授權 URL
         """
@@ -52,32 +38,34 @@ class ChannelPointsComponent(commands.Component):
         if not client_id:
             raise ValueError("CLIENT_ID 未設定")
 
-        # 所有需要的 scopes（統一管理）
+        # 從環境變數讀取 redirect URI，預設為 localhost
+        redirect_uri = os.getenv(
+            "OAUTH_REDIRECT_URI", "http://localhost:4343/oauth/callback"
+        )
+
         scopes = [
-            # Bot 核心功能（必要）
-            "user:bot",  # Bot 使用者身份
-            "channel:bot",  # Bot 頻道操作
-            "user:write:chat",  # 發送聊天訊息
-            "user:manage:whispers",  # 發送私訊
-            # Channel Points 功能（只讀）
-            "channel:read:redemptions",  # 讀取點數兌換
-            # 頻道管理功能
-            "channel:manage:vips",  # 管理 VIP 身分
-            # 頻道資訊讀取（只讀）
-            "channel:read:subscriptions",  # 讀取訂閱
-            "channel:read:hype_train",  # 讀取 Hype Train
-            "channel:read:polls",  # 讀取投票
-            "channel:read:predictions",  # 讀取預測
-            "bits:read",  # 讀取 Bits
+            "user:bot",
+            "channel:bot",
+            "user:write:chat",
+            "user:manage:whispers",
+            "channel:read:redemptions",
+            "channel:manage:vips",
+            "channel:read:subscriptions",
+            "channel:read:hype_train",
+            "channel:read:polls",
+            "channel:read:predictions",
+            "bits:read",
         ]
 
-        # URL encode 並用 + 連接
+        from urllib.parse import quote
+
         scope_string = "+".join(scope.replace(":", "%3A") for scope in scopes)
+        encoded_redirect_uri = quote(redirect_uri, safe="")
 
         oauth_url = (
             f"https://id.twitch.tv/oauth2/authorize"
             f"?client_id={client_id}"
-            f"&redirect_uri=http%3A%2F%2Flocalhost%3A4343%2Foauth%2Fcallback"
+            f"&redirect_uri={encoded_redirect_uri}"
             f"&response_type=code"
             f"&scope={scope_string}"
         )

@@ -67,6 +67,9 @@ python main.py
 - `!hi` / `!hello` - 打招呼
 - `!uptime` - 查看直播時長
 - `!ai <問題>` - AI 對話（需配置 OpenRouter）
+- `!運勢` / `!fortune` / `!占卜` - 查看今日運勢
+- `!rk` - 查看 TFT 台服挑戰者/宗師門檻
+- `!rk <玩家名稱>` - 查詢特定玩家的 TFT 排名
 
 ### 版主指令
 - `!say <內容>` - 複讀訊息
@@ -140,6 +143,7 @@ Bot 自動偵測並使用 [Rich](https://github.com/Textualize/rich) 提供美�
 ## 文件說明
 
 - 📖 [設定與權限指南](docs/SETUP_GUIDE.md) - OAuth 授權、Scopes、權限架構完整說明
+- 🚀 [部署指南](docs/DEPLOYMENT.md) - Docker、Docker Compose、Render 部署完整流程
 - 🔧 [TwitchIO 3 API 使用指南](docs/TWITCHIO3_API.md) - TwitchIO 3 官方 API 正確用法、常見錯誤與修正
 - 🗄️ [database/schema.sql](database/schema.sql) - PostgreSQL 資料庫初始化腳本
 - 📝 [mypy.ini](mypy.ini) - 靜態類型檢查配置

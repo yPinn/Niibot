@@ -11,8 +11,8 @@ from twitchio import eventsub
 from twitchio.ext import commands
 
 try:
-    from rich.console import Console
-    from rich.logging import RichHandler
+    from rich.console import Console  # noqa: F401
+    from rich.logging import RichHandler  # noqa: F401
 
     RICH_AVAILABLE: bool = True
 except ImportError:
@@ -111,6 +111,8 @@ class Bot(commands.AutoBot):
         await self.load_module("components.cmds")
         await self.load_module("components.chat_gpt")
         await self.load_module("components.channel_points")
+        await self.load_module("components.tft")
+        await self.load_module("components.sukaoMao")
 
     async def event_oauth_authorized(
         self, payload: twitchio.authentication.UserTokenPayload
@@ -296,9 +298,9 @@ class Bot(commands.AutoBot):
     async def event_ready(self) -> None:
         LOGGER.info("Successfully logged in as: %s", self.bot_id)
 
-    async def event_eventsub_notification(
+    async def event_eventsub_notification(  # type: ignore[no-untyped-def]
         self,
-        payload: eventsub.NotificationEvent,
+        payload,
     ) -> None:
         """記錄所有 EventSub 通知以進行調試"""
         LOGGER.debug(f"EventSub notification received: {type(payload).__name__}")

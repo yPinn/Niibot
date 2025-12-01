@@ -15,26 +15,37 @@ LOGGER: logging.Logger = logging.getLogger("AIComponent")
 
 
 class AIComponent(commands.Component):
+    # Reasoning models need more tokens for reasoning process + answer
+    REASONING_MODELS = ["glm-4.5-air", "deepseek-r1t2-chimera"]
+
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
 
-        # Validate required environment variables
         api_key = os.getenv("OPENROUTER_API_KEY", "")
         model = os.getenv("OPENROUTER_MODEL", "")
 
         if not api_key or api_key.strip() == "":
-            raise ValueError("OPENROUTER_API_KEY is required but not set in .env file")
+            raise ValueError(
+                "OPENROUTER_API_KEY is required but not set in .env file")
 
         if not model or model.strip() == "":
-            raise ValueError("OPENROUTER_MODEL is required but not set in .env file")
+            raise ValueError(
+                "OPENROUTER_MODEL is required but not set in .env file")
 
         self.client = OpenAI(
             base_url="https://openrouter.ai/api/v1",
             api_key=api_key,
         )
         self.model = model
+        self.is_reasoning = any(rm in model for rm in self.REASONING_MODELS)
+        # Reasoning models: ~200 for reasoning + ~150 for answer = 350
+        # Non-reasoning models: ~150 for answer
+        self.max_tokens = 350 if self.is_reasoning else 150
 
-        LOGGER.info(f"AIComponent initialized with model: {model}")
+        LOGGER.info(
+            f"AIComponent initialized: model={model}, "
+            f"reasoning={self.is_reasoning}, max_tokens={self.max_tokens}"
+        )
 
     @commands.cooldown(rate=1, per=10)
     @commands.command()
@@ -55,36 +66,59 @@ class AIComponent(commands.Component):
             return
 
         try:
+            LOGGER.debug(f"AI request: user={ctx.author.name}, message={message[:100]}")
+
             completion = self.client.chat.completions.create(
                 model=self.model,
-                # Limit response length (Twitch has 500 char limit anyway)
-                max_tokens=500,
+                max_tokens=self.max_tokens,
                 messages=[
                     {
                         "role": "system",
-                        "content": """你是一個友善的 Twitch 聊天機器人助手。請遵守以下規範：
-                        1. 使用繁體中文回答，保持簡潔友善的語氣
-                        2. 盡量在 50-100 字內簡短回答，最多不超過 150 字
-                        3. 嚴格遵守 Twitch 社群規範：
-                            - 禁止任何形式的仇恨言論、歧視性內容（種族、性別、宗教、性取向等）
-                            - 禁止暴力、威脅或騷擾內容
-                            - 禁止成人或露骨的性內容
-                            - 禁止非法活動或危險行為的推廣
-                            - 保持尊重和包容的態度
-                        4. 如果問題涉及不當內容，禮貌地拒絕回答
-                        5. 提供有幫助、正面且安全的回應
-                        """,
+                        "content":
+                            """你是 Twitch 聊天機器人。
+
+                            規則：
+                            - 語言：繁體中文
+                            - 長度：50-100字，最多150字
+                            - 語氣：友善、簡潔
+
+                            禁止內容：
+                            - 仇恨言論、歧視（種族/性別/宗教/性取向）
+                            - 暴力、威脅、騷擾
+                            - 成人/性相關內容
+                            - 非法活動
+
+                            遇到不當問題請禮貌拒絕。提供正面、安全的回應。
+                            """,
                     },
                     {"role": "user", "content": message},
                 ],
             )
 
-            response = completion.choices[0].message.content or ""
+            if not completion.choices:
+                LOGGER.error("No choices in API response")
+                await ctx.reply("AI 回應格式錯誤")
+                return
+
+            msg = completion.choices[0].message
+            response = msg.content or ""
+
+            # Reasoning models put content in reasoning field
+            if not response and hasattr(msg, 'reasoning') and msg.reasoning:
+                response = msg.reasoning
+                LOGGER.debug("Using reasoning field")
+
+            LOGGER.debug(f"Response length: {len(response)}")
+
             # Twitch message limit is 500 characters
             if len(response) > 500:
                 response = response[:497] + "..."
 
-            await ctx.reply(response if response else "無法生成回應")
+            if response:
+                await ctx.reply(response)
+            else:
+                LOGGER.warning("Empty content from API")
+                await ctx.reply("AI 回應為空，請重試")
         except Exception as e:
             error_msg = str(e)
             # Provide more specific error messages for text-only mode

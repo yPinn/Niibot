@@ -20,7 +20,7 @@ class GeneralCommands(commands.Component):
 
         Usage: !hi, !hello, !hey
         """
-        await ctx.reply(f"你好 {ctx.chatter.mention}！")
+        await ctx.reply(f"你好 {ctx.chatter.display_name}！")
 
     @commands.command(aliases=["commands"])
     async def help(self, ctx: commands.Context[Bot]) -> None:
