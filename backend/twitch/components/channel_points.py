@@ -44,12 +44,12 @@ class ChannelPointsComponent(commands.Component):
         )
 
         scopes = [
-            "user:bot",
             "channel:bot",
             "user:write:chat",
             "user:manage:whispers",
             "channel:read:redemptions",
             "channel:manage:vips",
+            "moderator:manage:announcements",  # 搶第一公告功能
             "channel:read:subscriptions",
             "channel:read:hype_train",
             "channel:read:polls",
@@ -94,13 +94,12 @@ class ChannelPointsComponent(commands.Component):
             f"[DEBUG] event_custom_redemption_add 觸發！Payload 類型: {type(payload)}"
         )
 
-        user_name = payload.user.name
+        user_name = payload.user.display_name or payload.user.name
         reward_title = payload.reward.title
         reward_cost = payload.reward.cost
         user_input = payload.user_input or ""
-        redemption_id = payload.id
 
-        # 記錄兌換事件
+        # 記錄兌換事件（作為指令觸發）
         LOGGER.info(
             f"[Channel Points] {user_name} 兌換「{reward_title}」"
             f"(花費 {reward_cost} 點數，頻道: {payload.broadcaster.name})"
@@ -111,17 +110,6 @@ class ChannelPointsComponent(commands.Component):
         # 根據獎勵標題執行不同的動作
         # 您可以在這裡添加自訂邏輯
         await self._handle_redemption(payload)
-
-    @commands.Component.listener()
-    async def event_custom_redemption_update(
-        self,
-        payload: twitchio.ChannelPointsRedemptionUpdate,
-    ) -> None:
-        """當兌換狀態更新時觸發（例如：標記為完成或取消）。"""
-        LOGGER.debug(
-            f"[Channel Points] 兌換狀態更新: "
-            f"{payload.user.name} 的「{payload.reward.title}」-> {payload.status}"
-        )
 
     # ==================== 兌換處理邏輯 ====================
 
@@ -135,12 +123,15 @@ class ChannelPointsComponent(commands.Component):
         以下是一些範例，您可以根據需求修改。
         """
         reward_title = payload.reward.title.lower()
-        user_name = payload.user.name
+        user_name = payload.user.display_name or payload.user.name
         user_input = payload.user_input or ""
 
         # 🤖 Niibot 獎勵 - 發送 OAuth 授權連結
         if "niibot" in reward_title and user_name:
             await self._handle_niibot_redemption(payload, user_name)
+
+        elif reward_title == "1" and user_name:
+            await self._handle_first_redemption(payload, user_name)
 
         # 範例 1: 打招呼獎勵
         elif "打招呼" in reward_title or "say hi" in reward_title:
@@ -198,7 +189,7 @@ class ChannelPointsComponent(commands.Component):
             await broadcaster.add_vip(user=payload.user)
 
             # 在聊天室發送確認訊息
-            success_message = f"恭喜 @{user_name} 成為尊榮的 VIP 大人 👑"
+            success_message = f"恭喜 {user_name} 成為尊榮的 VIP 大人!"
             try:
                 await broadcaster.send_message(
                     message=success_message,
@@ -219,19 +210,19 @@ class ChannelPointsComponent(commands.Component):
                     LOGGER.warning(
                         f"[VIP] {user_name} 已經是 Moderator，無法授予 VIP（Twitch 限制）"
                     )
-                    error_message = f"@{user_name} 你已經是 Moderator 了！"
+                    error_message = f"{user_name} 你已經是 Moderator 了!"
                 elif "already a vip" in error_str.lower():
                     # 用戶已經是 VIP
                     LOGGER.info(f"[VIP] {user_name} 已經是 VIP")
-                    error_message = f"@{user_name} 你已經是 VIP 了！👑"
+                    error_message = f"{user_name} 你已經是 VIP 了!"
                 else:
                     # 其他 422 錯誤
                     LOGGER.error(f"[VIP] 授予 VIP 身分失敗 (422): {e}")
-                    error_message = f"@{user_name} ⚠️ VIP 授予失敗，請聯繫管理員"
+                    error_message = f"{user_name} VIP 授予失敗，請聯繫管理員"
             else:
                 # 其他錯誤
                 LOGGER.error(f"[VIP] 授予 VIP 身分失敗: {e}")
-                error_message = f"@{user_name} ⚠️ VIP 授予失敗，請聯繫管理員"
+                error_message = f"{user_name} VIP 授予失敗，請聯繫管理員"
 
             # 發送錯誤訊息
             try:
@@ -242,6 +233,52 @@ class ChannelPointsComponent(commands.Component):
                 )
             except Exception:
                 pass  # 如果連錯誤訊息都發送失敗，就只記錄在 log
+
+    async def _handle_first_redemption(
+        self,
+        payload: twitchio.ChannelPointsRedemptionAdd,
+        user_name: str,
+    ) -> None:
+        """處理搶第一遊戲兌換 - 使用公告功能突顯第一名。
+
+        當用戶兌換「搶第一」獎勵時：
+        1. 使用 Twitch 公告功能（帶顏色）發送特殊訊息
+        2. 記錄到日誌
+
+        注意：
+        - Twitch 後台設定「每場串流限制 1 次」
+        - 不需要在程式碼中追蹤狀態
+        - 需要 moderator:manage:announcements scope
+        """
+        try:
+            broadcaster = payload.broadcaster
+
+            # 使用公告功能發送特殊訊息（紫色 = purple，最醒目）
+            announcement_message = f"恭喜 {user_name} 搶到沙發!"
+
+            try:
+                await broadcaster.send_announcement(
+                    message=announcement_message,
+                    moderator=self.bot.bot_id,
+                    color="primary",  # purple, blue, green, orange, primary
+                )
+                LOGGER.info(f"[First] {user_name} 搶到第一！已發送公告")
+            except Exception as e:
+                # 如果公告功能失敗（可能是權限不足），fallback 到普通訊息
+                LOGGER.warning(f"[First] 發送公告失敗: {e}，fallback 到普通訊息")
+                fallback_message = f"恭喜 {user_name} 搶到第一"
+                try:
+                    await broadcaster.send_message(
+                        message=fallback_message,
+                        sender=self.bot.bot_id,
+                        token_for=self.bot.bot_id,
+                    )
+                    LOGGER.info(f"[First] 已發送普通訊息給 {user_name}")
+                except Exception as fallback_error:
+                    LOGGER.error(f"[First] 連 fallback 都失敗: {fallback_error}")
+
+        except Exception as e:
+            LOGGER.error(f"[First] 處理搶第一兌換時發生錯誤: {e}")
 
     async def _handle_niibot_redemption(
         self,
@@ -266,9 +303,7 @@ class ChannelPointsComponent(commands.Component):
             broadcaster = payload.broadcaster
 
             # 1. 在聊天室發送公開確認訊息
-            public_message = (
-                f"@{user_name} 已將授權連結發送至你的 Twitch 私訊 "
-            )
+            public_message = f"已將授權連結發送至您的 Twitch 私訊"
             try:
                 await broadcaster.send_message(
                     message=public_message,
@@ -297,9 +332,7 @@ class ChannelPointsComponent(commands.Component):
             except Exception as e:
                 LOGGER.error(f"[Niibot] 發送私訊失敗: {e}")
                 # 如果私訊失敗，fallback 到聊天室發送提示訊息（不包含 URL，避免超過 500 字元）
-                fallback_message = (
-                    f"@{user_name} ⚠️ 私訊發送失敗，請聯繫 Bot Owner 獲取授權連結"
-                )
+                fallback_message = f"{user_name} 私訊發送失敗，請聯繫 Bot Owner 獲取授權連結"
                 try:
                     await broadcaster.send_message(
                         message=fallback_message,
@@ -316,46 +349,6 @@ class ChannelPointsComponent(commands.Component):
             LOGGER.error(f"[Niibot] 處理兌換時發生錯誤: {e}")
 
     # ==================== 資訊查詢命令 ====================
-
-    @commands.command()
-    async def niibot(self, ctx: commands.Context[Bot]) -> None:
-        """提供 Niibot OAuth 授權連結（僅限 Bot Owner 使用）。
-
-        Usage: !niibot
-
-        此命令僅供 Bot Owner 使用，用於控管授權用戶數量。
-        """
-        try:
-            # 檢查權限：僅 Bot Owner 可使用
-            if not ctx.message:
-                LOGGER.warning("[Niibot] 無法獲取訊息資訊")
-                return
-
-            chatter = ctx.message.chatter
-
-            # 檢查是否為 Bot Owner
-            if chatter.id != self.bot.owner_id:
-                LOGGER.warning(
-                    f"[Niibot] {chatter.name} (ID: {chatter.id}) 嘗試使用命令但不是 Bot Owner"
-                )
-                await ctx.reply(f"@{chatter.name} ⚠️ 此命令僅供 Bot Owner 使用")
-                return
-
-            # 生成 OAuth 授權 URL（使用統一的方法）
-            try:
-                oauth_url = self._generate_oauth_url()
-            except ValueError:
-                await ctx.reply("❌ OAuth 設定錯誤，請聯繫管理員")
-                return
-
-            await ctx.reply(
-                f"@{ctx.author.name} 請點擊以下連結授權 Niibot 存取你的頻道：{oauth_url}"
-            )
-            LOGGER.info(f"[Niibot] 已回覆 OAuth 連結給 {ctx.author.name}")
-
-        except Exception as e:
-            LOGGER.error(f"[Niibot] 命令執行錯誤: {e}")
-            await ctx.reply("❌ 生成授權連結時發生錯誤")
 
     @commands.command()
     async def redemptions(self, ctx: commands.Context["Bot"]) -> None:

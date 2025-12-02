@@ -111,6 +111,7 @@ class Bot(commands.AutoBot):
         await self.load_module("components.cmds")
         await self.load_module("components.chat_gpt")
         await self.load_module("components.channel_points")
+        await self.load_module("components.event")
         await self.load_module("components.tft")
         await self.load_module("components.sukaoMao")
 
@@ -440,7 +441,11 @@ def main() -> None:
                             eventsub.ChannelPointsRedeemAddSubscription(
                                 broadcaster_user_id=broadcaster_user_id
                             ),
-                            eventsub.ChannelPointsRedeemUpdateSubscription(
+                            eventsub.ChannelFollowSubscription(
+                                broadcaster_user_id=broadcaster_user_id,
+                                moderator_user_id=BOT_ID
+                            ),
+                            eventsub.ChannelSubscriptionSubscription(
                                 broadcaster_user_id=broadcaster_user_id
                             ),
                         ]

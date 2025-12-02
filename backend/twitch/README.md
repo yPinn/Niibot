@@ -41,19 +41,13 @@ psql -U user -d database -f init_db.sql
 
 ### 3. OAuth 授權
 
-將 `YOUR_CLIENT_ID` 替換為你的 Client ID：
-
-**Bot 帳號授權**（使用 Bot 帳號登入）：
-
-```
-https://id.twitch.tv/oauth2/authorize?client_id=YOUR_CLIENT_ID&redirect_uri=http%3A%2F%2Flocalhost%3A4343%2Foauth%2Fcallback&response_type=code&scope=user%3Aread%3Achat+user%3Awrite%3Achat+user%3Abot
+```bash
+python Script/oauth.py
 ```
 
-**頻道授權**（Streamer 使用自己的帳號登入）：
-
-```
-https://id.twitch.tv/oauth2/authorize?client_id=YOUR_CLIENT_ID&redirect_uri=http%3A%2F%2Flocalhost%3A4343%2Foauth%2Fcallback&response_type=code&scope=channel%3Abot+channel%3Amanage%3Aredemptions+channel%3Aread%3Aredemptions+channel%3Amanage%3Avips+moderator%3Aread%3Afollowers+channel%3Aread%3Asubscriptions+moderator%3Amanage%3Achat_messages+moderator%3Aread%3Achatters+channel%3Aread%3Ahype_train+channel%3Aread%3Apolls+channel%3Aread%3Apredictions+bits%3Aread
-```
+複製輸出的授權 URL：
+- **Bot 帳號授權**：使用 Bot 帳號登入
+- **頻道授權**：使用 Streamer 帳號登入
 
 ### 4. 啟動
 
@@ -76,10 +70,10 @@ python main.py
 
 ### Channel Points（頻道點數）
 - `!redemptions` - 查看功能說明
-- `!niibot` - 取得 OAuth 授權連結（僅 Bot Owner）
 - ✨ 自動監聽並記錄所有點數兌換事件
 - ✨ 支援 Niibot 獎勵自動發送 OAuth URL
 - ✨ 支援 VIP 獎勵自動授予 VIP 身分
+- 🥇 支援搶第一獎勵（名稱 "1"）使用公告功能突顯
 - 💡 使用 Twitch 後台管理獎勵的創建/刪除
 
 ### Owner 專用
@@ -113,6 +107,17 @@ python main.py
 
 ## 開發工具
 
+### OAuth URL 生成
+```bash
+python Script/oauth.py
+```
+
+### Token 狀態檢查
+```bash
+python Script/tokens.py
+```
+顯示所有 token 的角色（Bot/Broadcaster）、scopes 與有效性。
+
 ### 類型檢查
 ```bash
 python -m mypy main.py components/
@@ -142,8 +147,13 @@ Bot 自動偵測並使用 [Rich](https://github.com/Textualize/rich) 提供美�
 
 ## 文件說明
 
-- 📖 [設定與權限指南](docs/SETUP_GUIDE.md) - OAuth 授權、Scopes、權限架構完整說明
-- 🚀 [部署指南](docs/DEPLOYMENT.md) - Docker、Docker Compose、Render 部署完整流程
-- 🔧 [TwitchIO 3 API 使用指南](docs/TWITCHIO3_API.md) - TwitchIO 3 官方 API 正確用法、常見錯誤與修正
-- 🗄️ [database/schema.sql](database/schema.sql) - PostgreSQL 資料庫初始化腳本
-- 📝 [mypy.ini](mypy.ini) - 靜態類型檢查配置
+### 核心文檔
+- 📖 [OAuth 設定與權限指南](docs/SETUP_GUIDE.md) - OAuth 授權、Scopes、權限架構
+- 🚀 [部署指南](docs/DEPLOYMENT.md) - Docker、Render 部署流程
+- 🔧 [TwitchIO 3 API 指南](docs/TWITCHIO3_API.md) - API 用法與常見錯誤
+
+### 其他資源
+- 🗄️ [database/schema.sql](database/schema.sql) - 資料庫結構
+- 📝 [mypy.ini](mypy.ini) - 類型檢查配置
+- 🔨 [Script/oauth.py](Script/oauth.py) - OAuth URL 生成
+- 🔍 [Script/tokens.py](Script/tokens.py) - Token 狀態檢查

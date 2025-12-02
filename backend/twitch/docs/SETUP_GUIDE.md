@@ -1,37 +1,51 @@
-# Bot 設定與權限指南
+# OAuth 設定與權限指南
+
+完整的 OAuth 授權設定、Scopes 說明與權限架構文檔。
 
 ## 目錄
-- [OAuth 授權流程](#oauth-授權流程)
+- [快速開始](#快速開始)
 - [OAuth Scopes 說明](#oauth-scopes-說明)
+- [遠端部署設定](#遠端部署設定)
 - [權限架構](#權限架構)
 - [常見問題](#常見問題)
 
 ---
 
-## OAuth 授權流程
+## 快速開始
 
-### 授權說明
+### 1. 生成授權 URL
 
-AutoBot 在 `http://localhost:4343` 提供 OAuth server 處理授權。
-
-**流程**：
-1. 用戶訪問 Twitch 授權 URL
-2. 同意授權後，Twitch 重定向到 `http://localhost:4343/oauth/callback`
-3. Bot 自動交換並儲存 tokens
-4. 訂閱頻道的 EventSub 事件
-
-### 授權 URL
-
-將 `YOUR_CLIENT_ID` 替換為你的 Twitch Client ID：
-
-#### Bot 帳號授權（使用 Bot 帳號登入）
-```
-https://id.twitch.tv/oauth2/authorize?client_id=YOUR_CLIENT_ID&redirect_uri=http%3A%2F%2Flocalhost%3A4343%2Foauth%2Fcallback&response_type=code&scope=user%3Aread%3Achat+user%3Awrite%3Achat+user%3Abot
+```bash
+python Script/oauth.py
 ```
 
-#### 頻道授權（Streamer 使用自己的帳號登入）
+### 2. Bot 帳號授權
+
+1. 複製「Bot 帳號授權」URL
+2. 在瀏覽器中打開
+3. **使用 Bot 帳號登入** Twitch
+4. 點擊「授權」
+5. Bot 會自動處理回調並儲存 token
+
+### 3. 頻道授權
+
+1. 複製「頻道授權」URL
+2. 在瀏覽器中打開
+3. **使用 Streamer 帳號登入** Twitch
+4. 點擊「授權」
+5. Bot 會自動處理回調並儲存 token
+
+### 4. 驗證授權
+
+啟動 Bot 並檢查日誌：
+
+```bash
+LOG_LEVEL=DEBUG python main.py
 ```
-https://id.twitch.tv/oauth2/authorize?client_id=YOUR_CLIENT_ID&redirect_uri=http%3A%2F%2Flocalhost%3A4343%2Foauth%2Fcallback&response_type=code&scope=channel%3Abot+channel%3Amanage%3Aredemptions+channel%3Aread%3Aredemptions+channel%3Amanage%3Avips+moderator%3Aread%3Afollowers+channel%3Aread%3Asubscriptions+moderator%3Amanage%3Achat_messages+moderator%3Aread%3Achatters+channel%3Aread%3Ahype_train+channel%3Aread%3Apolls+channel%3Aread%3Apredictions+bits%3Aread
+
+應該看到類似訊息：
+```
+Successfully logged in as: bot_user_id
 ```
 
 ---
@@ -39,22 +53,25 @@ https://id.twitch.tv/oauth2/authorize?client_id=YOUR_CLIENT_ID&redirect_uri=http
 ## OAuth Scopes 說明
 
 ### Bot 帳號需要的 Scopes
+
 ```
-user:read:chat      # 讀取聊天訊息
-user:write:chat     # 發送聊天訊息
-user:bot            # Bot 功能
+user:read:chat                    # 讀取聊天訊息
+user:write:chat                   # 發送聊天訊息
+user:bot                          # Bot 功能
+moderator:manage:announcements    # 發送公告（搶第一功能）
+user:manage:whispers              # 發送私訊（Niibot OAuth URL）
 ```
 
 ### Broadcaster 需要的 Scopes
+
 ```
 channel:bot                      # 允許 Bot 進入頻道
-channel:manage:redemptions       # 管理 Channel Points 獎勵
+user:write:chat                  # 發送聊天訊息
+user:manage:whispers             # 發送私訊（OAuth URL 功能）
 channel:read:redemptions         # 讀取 Channel Points 兌換記錄
-channel:manage:vips              # 管理 VIP 身分（VIP 獎勵功能需要）
-moderator:read:followers         # 讀取追隨者
+channel:manage:vips              # 管理 VIP 身分（VIP 獎勵功能）
+moderator:manage:announcements   # 發送公告（搶第一功能）
 channel:read:subscriptions       # 讀取訂閱
-moderator:manage:chat_messages   # 管理聊天訊息
-moderator:read:chatters          # 讀取聊天用戶
 channel:read:hype_train          # 讀取 Hype Train
 channel:read:polls               # 讀取投票
 channel:read:predictions         # 讀取預測
@@ -62,6 +79,8 @@ bits:read                        # 讀取 Bits
 ```
 
 ### 可選的進階 Scopes
+
+如果需要更多功能，可以添加以下 scopes（需修改 `Script/oauth.py`）：
 
 #### 管理功能
 - `moderator:manage:banned_users` - 管理封禁用戶
@@ -75,6 +94,46 @@ bits:read                        # 讀取 Bits
 - `channel:manage:raids` - 管理 Raid
 - `clips:edit` - 建立剪輯
 - `channel:read:goals` - 讀取目標進度
+
+---
+
+## 遠端部署設定
+
+### 本地開發環境
+
+預設使用 `http://localhost:4343/oauth/callback`，無需額外設定。
+
+### 雲端部署（Render、AWS、GCP 等）
+
+#### 1. 設定環境變數
+
+在 `.env` 或部署平台的環境變數中添加：
+
+```bash
+OAUTH_REDIRECT_URI=https://your-domain.com/oauth/callback
+```
+
+#### 2. 更新 Twitch Developer Console
+
+1. 前往 [Twitch Developer Console](https://dev.twitch.tv/console)
+2. 選擇你的應用程式
+3. 在「OAuth 重定向 URL」中添加：
+   ```
+   https://your-domain.com/oauth/callback
+   ```
+4. 點擊「儲存」
+
+#### 3. 重新生成 URL
+
+```bash
+python Script/oauth.py
+```
+
+新的 URL 會使用你設定的 Redirect URI。
+
+#### 4. 重新授權
+
+使用新的 URL 重新執行 Bot 和 Broadcaster 授權流程。
 
 ---
 
@@ -92,15 +151,9 @@ bits:read                        # 讀取 Bits
 - ✅ 管理 Bot 模組：`!load`, `!unload`, `!reload`, `!shutdown`
 - ✅ 查看所有模組：`!loaded`
 
-**範例**：
+**設定範例**：
 ```env
 OWNER_ID=120247692  # 這個用戶是 Bot Owner
-```
-
-**程式碼檢查**：
-```python
-if ctx.chatter.id == ctx.bot.owner_id:
-    # 這是 Bot Owner
 ```
 
 ---
@@ -114,12 +167,6 @@ if ctx.chatter.id == ctx.bot.owner_id:
 - ❌ 無法管理 Bot 模組
 - ❌ 無法管理其他頻道
 
-**程式碼檢查**：
-```python
-if ctx.chatter.id == ctx.channel.id:
-    # 這是當前頻道的 Broadcaster
-```
-
 ---
 
 #### 3. Moderator（版主）
@@ -130,13 +177,6 @@ if ctx.chatter.id == ctx.channel.id:
 - ✅ 使用特定版主命令（例如 `!say`）
 - ❌ 無法管理 Bot 模組
 
-**程式碼檢查**：
-```python
-@commands.is_moderator()
-async def my_command(self, ctx):
-    # 只有 Moderator 可以使用
-```
-
 ---
 
 #### 4. Regular User（一般用戶）
@@ -144,7 +184,7 @@ async def my_command(self, ctx):
 **定義**：頻道中的一般觀眾
 
 **權限**：
-- ✅ 使用一般命令：`!hi`, `!uptime`, `!socials`, `!ai`
+- ✅ 使用一般命令：`!hi`, `!uptime`, `!ai`, `!運勢`, `!rk`
 - ✅ 兌換 Channel Points
 - ❌ 無法使用版主或管理命令
 
@@ -177,9 +217,9 @@ Regular User (一般用戶)
 |------|-----------|-------------|-----------|--------------|
 | `!hi` | ✅ | ✅ | ✅ | ✅ |
 | `!uptime` | ✅ | ✅ | ✅ | ✅ |
-| `!socials` | ✅ | ✅ | ✅ | ✅ |
 | `!ai` | ✅ | ✅ | ✅ | ✅ |
-| `!redemptions` | ✅ | ✅ | ✅ | ✅ |
+| `!運勢` | ✅ | ✅ | ✅ | ✅ |
+| `!rk` | ✅ | ✅ | ✅ | ✅ |
 | `!say` | ✅ | ✅ (如果是 Mod) | ✅ | ❌ |
 | `!load` | ✅ | ❌ | ❌ | ❌ |
 | `!unload` | ✅ | ❌ | ❌ | ❌ |
@@ -222,6 +262,25 @@ Regular User (一般用戶)
 - 新 token 包含所有新舊 scopes
 - Bot 會自動使用最新的 token
 
+### Q5: 授權後顯示「無法連接」
+
+**A**: 確認 Bot 正在運行並監聽 port 4343。TwitchIO AutoBot 會自動處理 OAuth 回調。
+
+### Q6: 如何撤銷授權？
+
+**A**: 前往 [Twitch 設定 > 連接](https://www.twitch.tv/settings/connections)，找到你的應用並點擊「中斷連接」。
+
+---
+
+## 安全注意事項
+
+⚠️ **重要提醒**：
+
+- ✅ 絕不要分享 OAuth URL（包含你的 CLIENT_ID）
+- ✅ 絕不要提交 `.env` 到 git
+- ✅ 定期檢查已授權的應用
+- ✅ 生產環境使用 HTTPS redirect URI
+
 ---
 
 ## 參考資源
@@ -229,3 +288,4 @@ Regular User (一般用戶)
 - [Twitch OAuth 文檔](https://dev.twitch.tv/docs/authentication)
 - [Twitch Scopes 列表](https://dev.twitch.tv/docs/authentication/scopes)
 - [TwitchIO 官方文檔](https://twitchio.dev/)
+- [部署指南](DEPLOYMENT.md)
