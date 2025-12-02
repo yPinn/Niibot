@@ -445,7 +445,7 @@ def main() -> None:
                                 broadcaster_user_id=broadcaster_user_id,
                                 moderator_user_id=BOT_ID
                             ),
-                            eventsub.ChannelSubscriptionSubscription(
+                            eventsub.ChannelSubscribeSubscription(
                                 broadcaster_user_id=broadcaster_user_id
                             ),
                         ]

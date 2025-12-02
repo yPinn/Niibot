@@ -1,7 +1,7 @@
 import logging
 import twitchio
 from twitchio.ext import commands
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from main import Bot
@@ -28,7 +28,7 @@ class EventComponent(commands.Component):
     @commands.Component.listener()
     async def event_channel_follow(
         self,
-        payload: twitchio.ChannelFollowData,
+        payload: twitchio.ChannelFollow,
     ) -> None:
         """Triggered when someone follows the channel.
 
@@ -60,7 +60,7 @@ class EventComponent(commands.Component):
     @commands.Component.listener()
     async def event_subscription(
         self,
-        payload: twitchio.SubscriptionData,
+        payload: Any,
     ) -> None:
         """Triggered when someone receives a subscription (self-sub or gifted).
 
