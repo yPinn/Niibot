@@ -1,10 +1,11 @@
-"""統一的配置檔案"""
+"""統一配置"""
 
 BOT_SCOPES = [
     "user:read:chat",
     "user:write:chat",
     "user:bot",
     "moderator:manage:announcements",
+    "moderator:read:followers",
     "user:manage:whispers",
 ]
 

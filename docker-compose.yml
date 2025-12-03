@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend/twitch
+      dockerfile: Dockerfile
+    container_name: niibot-backend
+    restart: unless-stopped
+    ports:
+      - "4343:4343"
+    env_file:
+      - ./backend/twitch/.env
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - niibot-network
+
+networks:
+  niibot-network:
+    driver: bridge

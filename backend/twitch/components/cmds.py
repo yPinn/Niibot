@@ -20,7 +20,7 @@ class GeneralCommands(commands.Component):
 
         Usage: !hi, !hello, !hey
         """
-        await ctx.reply(f"你好 {ctx.chatter.display_name}！")
+        await ctx.reply(f"你好，{ctx.chatter.display_name}！")
 
     @commands.command(aliases=["commands"])
     async def help(self, ctx: commands.Context[Bot]) -> None:
@@ -28,7 +28,7 @@ class GeneralCommands(commands.Component):
 
         Usage: !help, !commands
         """
-        await ctx.reply("可用指令: !hi, !uptime, !ai <問題>")
+        await ctx.reply("可用指令：!hi, !uptime, !ai <問題>, !運勢, !rk [玩家ID], !redemptions")
 
     @commands.command()
     async def uptime(self, ctx: commands.Context[Bot]) -> None:
@@ -54,15 +54,6 @@ class GeneralCommands(commands.Component):
                 await ctx.reply("目前未開播")
         else:
             await ctx.reply("目前未開播")
-
-    @commands.command(aliases=["repeat"])
-    @commands.is_moderator()
-    async def say(self, ctx: commands.Context[Bot], *, content: str) -> None:
-        """Moderator: Make bot repeat a message.
-
-        Usage: !say <message>, !repeat <message>
-        """
-        await ctx.send(content)
 
     @commands.Component.listener()
     async def event_stream_online(self, payload: twitchio.StreamOnline) -> None:

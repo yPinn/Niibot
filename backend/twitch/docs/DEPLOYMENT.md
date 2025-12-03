@@ -52,22 +52,30 @@ docker rm niibot-twitch
 2. Connect your GitHub repository
 3. Set build command: `pip install -r requirements.txt`
 4. Set start command: `python main.py`
-5. Add environment variables from `.env.example`
-6. Set **OAUTH_REDIRECT_URI** to: `https://your-app.onrender.com/oauth/callback`
-7. Update Twitch Developer Console with the new redirect URI
+5. Add environment variables from `.env`:
+   - `CLIENT_ID`
+   - `CLIENT_SECRET`
+   - `BOT_ID`
+   - `OWNER_ID`
+   - `DATABASE_URL`
+   - `OPENROUTER_API_KEY`
+   - `OPENROUTER_MODEL`
+   - `OAUTH_REDIRECT_URI=https://your-app.onrender.com/oauth/callback`
+6. Update Twitch Developer Console with the new redirect URI
 
 ## Important Notes
 
 - **Port 4343**: TwitchIO AutoBot uses this port for OAuth callbacks
 - **OAUTH_REDIRECT_URI**: Must match your deployment URL
-- **Database**: Already configured to use Render PostgreSQL
-- **Logs**: Use `LOG_LEVEL=INFO` for production
+- **LOG_LEVEL**: Use `INFO` for production (default)
+- **Database**: Configure PostgreSQL connection URL
 
-## OAuth Setup
+## OAuth Setup for Remote Deployment
 
 When deployed to a public server:
 
 1. Get your public URL (e.g., `https://your-app.onrender.com`)
-2. Set in `.env`: `OAUTH_REDIRECT_URI=https://your-app.onrender.com/oauth/callback`
-3. Add this URL to Twitch Developer Console → OAuth Redirect URLs
-4. Users can now authorize from any device
+2. Set in environment variables: `OAUTH_REDIRECT_URI=https://your-app.onrender.com/oauth/callback`
+3. Add this URL to [Twitch Developer Console](https://dev.twitch.tv/console) → OAuth Redirect URLs
+4. Generate new OAuth URLs: `python scripts/oauth.py`
+5. Re-authorize Bot and Broadcaster accounts using the new URLs

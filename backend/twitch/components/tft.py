@@ -112,7 +112,7 @@ class LeaderboardComponent(commands.Component):
         if user_id is None:
             c_lp = thresholds[0] if thresholds else 0
             gm_lp = thresholds[1] if len(thresholds) > 1 else 0
-            await ctx.reply(f"[TW] C：{c_lp} LP | GM：{gm_lp} LP")
+            await ctx.reply(f"[TW] 挑戰者：{c_lp} LP，宗師：{gm_lp} LP")
             return
 
         # 查找玩家
@@ -124,7 +124,7 @@ class LeaderboardComponent(commands.Component):
                 LOGGER.debug(f"Query success - {user_id}: {lp} LP #{rank}")
                 return
 
-        await ctx.reply(f"該玩家未上榜：{user_id}")
+        await ctx.reply(f"該玩家未上榜：{user_id}！")
 
 
 async def setup(bot: commands.Bot) -> None:

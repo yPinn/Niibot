@@ -154,9 +154,6 @@ class Bot(commands.AutoBot):
                     f"Channel authorized and added: {user.name} (ID: {user.id})"
                 )
 
-        # Subscribe to EventSub for this channel
-        # broadcaster_user_id: the channel owner's user_id (who authorized)
-        # user_id: the bot's user_id (who will read/send messages)
         subs: list[eventsub.SubscriptionPayload] = [
             eventsub.ChatMessageSubscription(
                 broadcaster_user_id=payload.user_id, user_id=self.bot_id
@@ -165,14 +162,17 @@ class Bot(commands.AutoBot):
             eventsub.ChannelPointsRedeemAddSubscription(
                 broadcaster_user_id=payload.user_id
             ),
-            eventsub.ChannelPointsRedeemUpdateSubscription(
+            eventsub.ChannelFollowSubscription(
+                broadcaster_user_id=payload.user_id,
+                moderator_user_id=self.bot_id
+            ),
+            eventsub.ChannelSubscribeSubscription(
                 broadcaster_user_id=payload.user_id
             ),
         ]
 
         resp: twitchio.MultiSubscribePayload = await self.multi_subscribe(subs)
         if resp.errors:
-            # 過濾掉 409 Conflict 錯誤（訂閱已存在是正常情況）
             non_conflict_errors = [
                 err
                 for err in resp.errors
@@ -223,7 +223,9 @@ class Bot(commands.AutoBot):
         async with self.token_database.acquire() as connection:
             await connection.execute(query, resp.user_id, token, refresh)
 
-        LOGGER.info("Added token to the database for user: %s", resp.user_id)
+        # Log with username
+        login = resp.login or "unknown"
+        LOGGER.info(f"Added token to database: {login} ({resp.user_id})")
         return resp
 
     async def load_tokens(self, path: str | None = None) -> None:
@@ -375,12 +377,26 @@ def setup_logging() -> None:
         )
         LOGGER.info("Standard logging enabled (install 'rich' for better output)")
 
-    # 調整第三方庫的日誌級別（減少噪音）
-    logging.getLogger("twitchio").setLevel(logging.WARNING)
-    logging.getLogger("asyncio").setLevel(logging.WARNING)
+    # 調整第三方庫的日誌級別
+    # 開發模式 (LOG_LEVEL=DEBUG) 時啟用詳細日誌
+    if level == logging.DEBUG:
+        logging.getLogger("twitchio").setLevel(logging.DEBUG)
+        logging.getLogger("twitchio.eventsub").setLevel(logging.DEBUG)
+        logging.getLogger("twitchio.http").setLevel(logging.DEBUG)
+        logging.getLogger("twitchio.websockets").setLevel(logging.DEBUG)
+        logging.getLogger("httpx").setLevel(logging.INFO)
+    else:
+        # 生產模式 (LOG_LEVEL=INFO) 減少噪音
+        logging.getLogger("twitchio").setLevel(logging.INFO)
+        logging.getLogger("twitchio.eventsub").setLevel(logging.INFO)
+        logging.getLogger("twitchio.http").setLevel(logging.WARNING)
+        logging.getLogger("twitchio.websockets").setLevel(logging.WARNING)
+        logging.getLogger("httpx").setLevel(logging.WARNING)
+
+    # 這些庫始終保持 WARNING/ERROR
+    logging.getLogger("asyncio").setLevel(logging.ERROR)  # 隱藏 Windows socket 警告
     logging.getLogger("asyncpg").setLevel(logging.WARNING)
     logging.getLogger("openai").setLevel(logging.WARNING)
-    logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("aiohttp").setLevel(logging.WARNING)
 
 

@@ -3,7 +3,11 @@
 
 import os
 import sys
+from pathlib import Path
 from urllib.parse import quote
+
+# Add parent directory to path to import config
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 try:
     from dotenv import load_dotenv
@@ -11,27 +15,7 @@ try:
 except ImportError:
     pass
 
-BOT_SCOPES = [
-    "user:read:chat",
-    "user:write:chat",
-    "user:bot",
-    "moderator:manage:announcements",
-    "user:manage:whispers",
-]
-
-BROADCASTER_SCOPES = [
-    "channel:bot",
-    "user:write:chat",
-    "user:manage:whispers",
-    "channel:read:redemptions",
-    "channel:manage:vips",
-    "moderator:manage:announcements",
-    "channel:read:subscriptions",
-    "channel:read:hype_train",
-    "channel:read:polls",
-    "channel:read:predictions",
-    "bits:read",
-]
+from config import BOT_SCOPES, BROADCASTER_SCOPES
 
 
 def gen_url(cid: str, uri: str, scopes: list[str]) -> str:

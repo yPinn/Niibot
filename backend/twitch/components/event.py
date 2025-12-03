@@ -1,51 +1,39 @@
 import logging
 import twitchio
 from twitchio.ext import commands
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from main import Bot
+    pass
 else:
-    from twitchio.ext.commands import Bot
+    pass
 
 
 LOGGER: logging.Logger = logging.getLogger("EventComponent")
 
 
 class EventComponent(commands.Component):
-    """EventSub event listener component.
-
-    Features:
-    - Listen to follow events and send thank you messages
-    - Listen to subscription events and send thank you messages
-    """
+    """EventSub 事件監聽組件"""
 
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
 
-    # ==================== Follow Events ====================
-
     @commands.Component.listener()
-    async def event_channel_follow(
+    async def event_follow(
         self,
         payload: twitchio.ChannelFollow,
     ) -> None:
-        """Triggered when someone follows the channel.
+        """追隨事件"""
+        LOGGER.debug(f"[Follow] Event triggered! Payload type: {type(payload)}")
+        LOGGER.debug(f"[Follow] Payload data: user={payload.user}, broadcaster={payload.broadcaster}")
 
-        Args:
-            payload: Follow data containing:
-                - user: Follower info (user.name, user.display_name)
-                - broadcaster: Channel info
-                - followed_at: Follow time
-        """
         user_name = payload.user.display_name or payload.user.name
         broadcaster_name = payload.broadcaster.name
 
         LOGGER.info(f"[Follow] {user_name} followed {broadcaster_name}")
 
-        # Send thank you message
         try:
-            message = f"感謝 {user_name} 的追隨"
+            message = f"感謝 {user_name} 的追隨！"
             await payload.broadcaster.send_message(
                 message=message,
                 sender=self.bot.bot_id,
@@ -55,22 +43,15 @@ class EventComponent(commands.Component):
         except Exception as e:
             LOGGER.error(f"[Follow] Failed to send message: {e}")
 
-    # ==================== Subscription Events ====================
-
     @commands.Component.listener()
-    async def event_subscription(
+    async def event_subscribe(
         self,
-        payload: Any,
+        payload: twitchio.ChannelSubscribe,
     ) -> None:
-        """Triggered when someone receives a subscription (self-sub or gifted).
+        """訂閱事件"""
+        LOGGER.debug(f"[Sub] Event triggered! Payload type: {type(payload)}")
+        LOGGER.debug(f"[Sub] Payload data: user={payload.user}, broadcaster={payload.broadcaster}, is_gift={payload.is_gift}")
 
-        Args:
-            payload: Subscription data containing:
-                - user: Subscriber info
-                - broadcaster: Channel info
-                - tier: Subscription tier (1000, 2000, 3000)
-                - is_gift: Whether it's a gift sub
-        """
         user_name = payload.user.display_name or payload.user.name
         broadcaster_name = payload.broadcaster.name
         tier_name = {
@@ -84,9 +65,8 @@ class EventComponent(commands.Component):
         else:
             LOGGER.info(f"[Sub] {user_name} subscribed {tier_name} in {broadcaster_name}")
 
-        # Send thank you message (unified for both self-sub and gift)
         try:
-            message = f"感謝 {user_name} 的訂閱"
+            message = f"感謝 {user_name} 的訂閱！"
 
             await payload.broadcaster.send_message(
                 message=message,
@@ -99,10 +79,10 @@ class EventComponent(commands.Component):
 
 
 async def setup(bot: commands.Bot) -> None:
-    """Entry point for the module."""
-    await bot.add_component(EventComponent(bot))
+    component = EventComponent(bot)
+    await bot.add_component(component)
+    LOGGER.info("EventComponent loaded with listeners: event_follow, event_subscribe")
 
 
 async def teardown(bot: commands.Bot) -> None:
-    """Optional teardown coroutine for cleanup."""
     ...
