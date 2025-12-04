@@ -4,15 +4,6 @@
 /* FontAwesome */
 @import '@/assets/fontawesome/css/all.css';
 
-/* Custom Fonts */
-@font-face {
-  font-family: 'Chen Yuluoyan';
-  src: url('@/assets/fonts/ChenYuluoyan-Thin-Monospaced.woff2') format('woff2');
-  font-weight: 100;
-  font-style: normal;
-  font-display: swap;
-}
-
 @font-face {
   font-family: 'Fira Code';
   src: url('@/assets/fonts/FiraCode-Regular.woff2') format('woff2');
@@ -144,5 +135,11 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-family:
+      'Fira Code',
+      'Gen Sen Rounded',
+      system-ui,
+      -apple-system,
+      sans-serif;
   }
 }
