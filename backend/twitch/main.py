@@ -81,6 +81,8 @@ class Bot(commands.AutoBot):
         self, *, token_database: asyncpg.Pool, subs: list[eventsub.SubscriptionPayload]
     ) -> None:
         self.token_database = token_database
+        self.frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+
         # Only add conduit_id if it's explicitly set
         if CONDUIT_ID:
             super().__init__(
@@ -92,6 +94,7 @@ class Bot(commands.AutoBot):
                 subscriptions=subs,
                 force_subscribe=True,
                 conduit_id=CONDUIT_ID,
+                oauth_success_url=f"{self.frontend_url}/auth/success",
             )
         else:
             super().__init__(
@@ -102,6 +105,7 @@ class Bot(commands.AutoBot):
                 prefix="!",
                 subscriptions=subs,
                 force_subscribe=True,
+                oauth_success_url=f"{self.frontend_url}/auth/success",
             )
 
     async def setup_hook(self) -> None:

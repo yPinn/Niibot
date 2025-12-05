@@ -22,27 +22,9 @@ class ChannelPointsComponent(commands.Component):
         self.bot = bot
 
     def _generate_oauth_url(self) -> str:
-        """生成 Broadcaster OAuth 授權 URL"""
-        from urllib.parse import quote
-
-        client_id = os.getenv("CLIENT_ID", "")
-        if not client_id:
-            raise ValueError("CLIENT_ID 未設定")
-
-        redirect_uri = os.getenv(
-            "OAUTH_REDIRECT_URI", "http://localhost:4343/oauth/callback"
-        )
-
-        scope_string = "+".join(scope.replace(":", "%3A") for scope in BROADCASTER_SCOPES)
-        encoded_redirect_uri = quote(redirect_uri, safe="")
-
-        return (
-            f"https://id.twitch.tv/oauth2/authorize"
-            f"?client_id={client_id}"
-            f"&redirect_uri={encoded_redirect_uri}"
-            f"&response_type=code"
-            f"&scope={scope_string}"
-        )
+        """返回前端登入頁面 URL"""
+        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+        return f"{frontend_url}/login"
 
     @commands.Component.listener()
     async def event_custom_redemption_add(

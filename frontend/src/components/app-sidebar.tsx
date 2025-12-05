@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 
+import { getCurrentUser, type User } from '@/api/user'
 import { NavMain } from '@/components/nav-main'
 import { NavUser } from '@/components/nav-user'
 import { TeamSwitcher } from '@/components/team-switcher'
@@ -15,11 +16,6 @@ import {
 
 // This is sample data.
 const data = {
-  user: {
-    name: '皮先森',
-    email: 'm@example.com',
-    avatar: '/images/Avatar.png',
-  },
   teams: [
     {
       name: 'Twitch',
@@ -32,40 +28,43 @@ const data = {
   ],
   navMain: [
     {
-      title: 'Playground',
+      title: 'Information',
       url: '#',
-      icon: 'fa-solid fa-terminal',
+      icon: 'fa-solid fa-home',
       isActive: true,
       items: [
         {
-          title: 'History',
-          url: '#',
+          title: 'Dashboard',
+          url: '/dashboard',
         },
         {
-          title: 'Starred',
-          url: '#',
-        },
-        {
-          title: 'Settings',
+          title: 'Get Started',
           url: '#',
         },
       ],
     },
     {
-      title: 'Models',
+      title: 'Commands',
       url: '#',
-      icon: 'fa-solid fa-robot',
+      icon: 'fa-solid fa-terminal',
       items: [
         {
-          title: 'Genesis',
+          title: 'List',
           url: '#',
         },
         {
-          title: 'Explorer',
+          title: 'Timer',
           url: '#',
         },
+      ],
+    },
+    {
+      title: 'Analytics',
+      url: '#',
+      icon: 'fa-solid fa-chart-line',
+      items: [
         {
-          title: 'Quantum',
+          title: 'Leaderboard',
           url: '#',
         },
       ],
@@ -80,10 +79,6 @@ const data = {
           url: '#',
         },
         {
-          title: 'Get Started',
-          url: '#',
-        },
-        {
           title: 'Tutorials',
           url: '#',
         },
@@ -93,33 +88,21 @@ const data = {
         },
       ],
     },
-    {
-      title: 'Settings',
-      url: '#',
-      icon: 'fa-solid fa-gear',
-      items: [
-        {
-          title: 'General',
-          url: '#',
-        },
-        {
-          title: 'Team',
-          url: '#',
-        },
-        {
-          title: 'Billing',
-          url: '#',
-        },
-        {
-          title: 'Limits',
-          url: '#',
-        },
-      ],
-    },
   ],
 }
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  const [user, setUser] = React.useState<User | null>(null)
+
+  React.useEffect(() => {
+    // 獲取使用者資訊
+    getCurrentUser().then(userData => {
+      if (userData) {
+        setUser(userData)
+      }
+    })
+  }, [])
+
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
@@ -129,7 +112,13 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <NavMain items={data.navMain} />
       </SidebarContent>
       <SidebarFooter>
-        <NavUser user={data.user} />
+        {user ? (
+          <NavUser user={user} />
+        ) : (
+          <div className="flex items-center justify-center p-4">
+            <span className="text-muted-foreground text-sm">Loading...</span>
+          </div>
+        )}
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>

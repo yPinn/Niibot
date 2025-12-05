@@ -1,16 +1,11 @@
+import { openTwitchOAuth } from '@/api/TwitchOauth'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { Field, FieldGroup, FieldLabel, FieldSeparator } from '@/components/ui/field'
+import { Field, FieldGroup } from '@/components/ui/field'
 import { Icon } from '@/components/ui/icon'
-import { Input } from '@/components/ui/input'
-import { getDiscordAuthUrl } from '@/lib/discord-oauth'
 import { cn } from '@/lib/utils'
 
 export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) {
-  const handleDiscordLogin = () => {
-    window.location.href = getDiscordAuthUrl()
-  }
-
   return (
     <div className={cn('flex flex-col gap-6', className)} {...props}>
       <Card className="overflow-hidden p-0">
@@ -18,45 +13,51 @@ export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) 
           <form className="p-6 md:p-8">
             <FieldGroup>
               <div className="flex flex-col items-center gap-2 text-center">
-                <h1 className="text-2xl font-bold">Welcome back</h1>
-                <p className="text-muted-foreground text-balance">Login to Niibot</p>
+                <h1 className="text-2xl font-bold">歡迎使用 Niibot</h1>
+                <p className="text-muted-foreground text-balance text-sm">
+                  一個功能強大的 Twitch 聊天機器人
+                </p>
+              </div>
+              <div className="my-6 space-y-4">
+                <p className="text-foreground/80 text-sm leading-relaxed">
+                  Niibot
+                  提供豐富的互動功能，讓您的直播更加生動有趣。透過簡單的設定，即可為您的頻道增添更多樂趣。
+                </p>
+                <ul className="text-muted-foreground space-y-2 text-sm">
+                  <li className="flex items-start gap-2">
+                    <Icon
+                      icon="fa-solid fa-check"
+                      className="text-primary mt-0.5"
+                      wrapperClassName=""
+                    />
+                    <span>自訂指令與自動回覆</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <Icon
+                      icon="fa-solid fa-check"
+                      className="text-primary mt-0.5"
+                      wrapperClassName=""
+                    />
+                    <span>即時聊天室管理</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <Icon
+                      icon="fa-solid fa-check"
+                      className="text-primary mt-0.5"
+                      wrapperClassName=""
+                    />
+                    <span>觀眾互動遊戲</span>
+                  </li>
+                </ul>
               </div>
               <Field>
-                <FieldLabel htmlFor="email">Email</FieldLabel>
-                <Input id="email" type="email" placeholder="m@example.com" required />
-              </Field>
-              <Field>
-                <div className="flex items-center">
-                  <FieldLabel htmlFor="password">Password</FieldLabel>
-                  <a href="#" className="ml-auto text-sm underline-offset-2 hover:underline">
-                    Forgot your password?
-                  </a>
-                </div>
-                <Input id="password" type="password" required />
-              </Field>
-              <Field>
-                <Button type="submit">Login</Button>
-              </Field>
-              <FieldSeparator className="*:data-[slot=field-separator-content]:bg-card">
-                Or continue with
-              </FieldSeparator>
-              <Field className="grid grid-cols-2 gap-6">
                 <Button
-                  variant="outline"
                   type="button"
-                  className="bg-[#9146FF]/75 hover:bg-[#9146FF] text-white border-none"
+                  onClick={openTwitchOAuth}
+                  className="bg-[#9146FF] hover:bg-[#7d3dd4] text-white w-full"
                 >
-                  <Icon icon="fa-brands fa-twitch" className="text-lg" wrapperClassName="" />
-                  <span className="sr-only">Login with Twitch</span>
-                </Button>
-                <Button
-                  variant="outline"
-                  type="button"
-                  onClick={handleDiscordLogin}
-                  className="bg-[#5865F2]/75 hover:bg-[#5865F2] text-white border-none"
-                >
-                  <Icon icon="fa-brands fa-discord" className="text-lg" wrapperClassName="" />
-                  <span className="sr-only">Login with Discord</span>
+                  <Icon icon="fa-brands fa-twitch" className="text-lg mr-2" wrapperClassName="" />
+                  使用 Twitch 登入
                 </Button>
               </Field>
             </FieldGroup>
