@@ -1,5 +1,6 @@
-import discord
 from discord.ext import commands
+
+import discord
 
 # 定義名為 Main 的 Cog
 
@@ -10,7 +11,7 @@ class Main(commands.Cog):
 
     # 前綴指令
     @commands.command()
-    async def Hello(self, ctx: commands.Context):
+    async def hello(self, ctx: commands.Context):
         await ctx.send("Hello, world!")
 
     # 關鍵字觸發

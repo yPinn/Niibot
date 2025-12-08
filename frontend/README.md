@@ -1,73 +1,62 @@
-# React + TypeScript + Vite
+# Niibot Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React + TypeScript + Vite 前端應用
 
-Currently, two official plugins are available:
+## 技術棧
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- **React 19** - UI 框架
+- **TypeScript** - 型別安全
+- **Vite** - 建置工具
+- **Tailwind CSS** - 樣式框架
+- **shadcn/ui** - UI 元件庫
+- **React Router** - 路由管理
 
-## React Compiler
+## 開發
 
-The React Compiler is currently not compatible with SWC. See [this issue](https://github.com/vitejs/vite-plugin-react/issues/428) for tracking the progress.
+```bash
+# 安裝依賴
+npm install
 
-## Expanding the ESLint configuration
+# 啟動開發伺服器 (http://localhost:3000)
+npm run dev
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+# 建置生產版本
+npm run build
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+# Lint 檢查
+npm run lint
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+# Lint 自動修復
+npm run lint:fix
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## 專案結構
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
 ```
+src/
+├── api/              # API 調用層
+├── components/       # React 元件
+│   ├── ui/          # shadcn/ui 元件
+│   └── layouts/     # 佈局元件
+├── pages/           # 頁面元件
+├── hooks/           # 自訂 Hooks
+└── lib/             # 工具函數
+```
+
+## 環境變數
+
+複製 `.env.example` 為 `.env` 並設定：
+
+```bash
+VITE_API_URL=http://localhost:8000
+```
+
+## API 整合
+
+所有 API 調用統一在 `src/api/` 目錄管理：
+
+- `config.ts` - API 端點配置
+- `user.ts` - 使用者相關 API
+- `TwitchOauth.ts` - Twitch OAuth API
+
+開發環境 API 請求會通過 Vite proxy 轉發到後端。

@@ -1,0 +1,27 @@
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N"]
+ignore = ["E501"]  # line too long (handled by formatter)
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+show_error_codes = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+namespace_packages = true
+explicit_package_bases = true
+exclude = [
+    "discord/cogs/main\\.py$",
+]
+
+# Third-party library stubs
+[[tool.mypy.overrides]]
+module = ["twitchio.*", "asyncpg.*", "openai.*", "aiohttp.*"]
+ignore_missing_imports = true

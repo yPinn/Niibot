@@ -3,16 +3,16 @@
 import logging
 import os
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Optional
 
 import jwt
 from dotenv import load_dotenv
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# Load environment variables
-env_path = Path(__file__).parent.parent.parent / "twitch" / ".env"
+# Load environment variables from backend directory
+env_path = Path(__file__).parent.parent.parent / ".env"
 load_dotenv(dotenv_path=env_path)
 
 # JWT 設定

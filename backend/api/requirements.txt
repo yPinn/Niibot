@@ -1,6 +1,0 @@
-fastapi
-uvicorn[standard]
-httpx
-asyncpg
-python-dotenv
-pyjwt[crypto]

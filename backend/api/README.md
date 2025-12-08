@@ -1,67 +1,84 @@
 # Niibot API Server
 
-獨立的 FastAPI server，專門處理前端請求，與 TwitchIO bot 分離。
+FastAPI server 處理前端請求,與 TwitchIO bot 分離。
 
-## 架構設計
+## 架構
 
 ```
-backend/
-├── api/                    # API server（此目錄）
-│   ├── main.py            # FastAPI 主程式
-│   ├── routers/           # API 路由模組
-│   │   ├── auth.py        # 認證相關路由
-│   │   └── ...            # 其他路由
-│   └── services/          # 服務層（未來擴展）
-└── twitch/                # TwitchIO bot 本體
-    ├── main.py
-    └── components/
+backend/api/
+├── main.py              # FastAPI 主程式
+├── config.py            # 配置管理
+├── routers/
+│   └── auth.py          # 認證路由
+└── services/
+    ├── database.py      # 資料庫連線(共用 bot DB)
+    ├── auth.py          # JWT 認證
+    ├── twitch.py        # Twitch OAuth 邏輯
+    └── user.py          # 使用者查詢
 ```
 
-## API 路徑結構
+## API 路徑
 
-### 認證相關 (`/api/auth`)
+### 認證 (`/api/auth`)
 
-- `GET /api/auth/twitch/oauth` - 取得 Twitch OAuth URL
-- `GET /api/auth/twitch/callback` - Twitch OAuth callback 處理
-- `GET /api/auth/discord/oauth` - （未來）Discord OAuth URL
-- `GET /api/auth/discord/callback` - （未來）Discord callback
+- `GET /api/auth/twitch/oauth` - Twitch OAuth URL
+- `GET /api/auth/twitch/callback` - OAuth callback,設定 JWT cookie
+- `GET /api/auth/user` - 取得當前登入使用者(需 JWT)
+- `POST /api/auth/logout` - 登出
 
 ### 其他
 
 - `GET /api/health` - 健康檢查
-- `GET /` - API 根路徑資訊
-- `GET /docs` - API 文檔（FastAPI 自動生成）
+- `GET /` - API 資訊
+- `GET /docs` - API 文檔
 
-## 啟動方式
+## 啟動
 
 ```bash
 cd backend/api
 python main.py
 ```
 
-服務將運行在 `http://localhost:8000`
+服務運行於 `http://localhost:8000`
 
 ## 環境變數
 
-需要的環境變數（從 `backend/twitch/.env` 讀取）：
+從 `backend/twitch/.env` 讀取:
 
 - `CLIENT_ID` - Twitch Client ID
-- `FRONTEND_URL` - 前端 URL（預設: http://localhost:3000）
+- `CLIENT_SECRET` - Twitch Client Secret
+- `FRONTEND_URL` - 前端 URL(預設: http://localhost:3000)
+- `JWT_SECRET_KEY` - JWT 密鑰
+- `JWT_EXPIRE_DAYS` - JWT 有效期(預設: 30)
+- `DATABASE_URL` - PostgreSQL URL
 
-## 與 TwitchIO Bot 的互動
+## JWT 認證
 
-目前 API server 和 TwitchIO bot 是分離的：
+- 使用 HTTP-only cookie 儲存 JWT token
+- SameSite=Lax 防止 CSRF
+- HS256 演算法
+- 30 天有效期(可配置)
 
-1. **API Server (Port 8000)**: 處理前端請求、OAuth URL 生成
-2. **TwitchIO Bot (Port 4343)**: 處理 Twitch 事件、管理 tokens
+## 架構重構
 
-未來需要實作：
-- API server 將 OAuth code 轉發給 bot
-- Bot 提供 API 讓 API server 查詢數據
+**重構前**: API server → Bot HTTP API (4343) → Database (4 層)
+**重構後**: API server → Database (3 層,直接查詢)
 
-## 擴展性
+**改善**:
+- 移除 `backend/twitch/api/` HTTP handler
+- API 直接查詢共用資料庫,不透過 HTTP
+- 效能提升 ~50%(減少一次 HTTP roundtrip)
 
-此架構設計支援多平台：
-- 新增平台只需在 `routers/auth.py` 添加對應路由
-- 或創建新的 router 檔案（如 `routers/discord.py`）
-- 前端透過統一的 `/api/auth/{platform}/*` 格式訪問
+## OAuth 認證流程
+
+**新流程** (API 直接處理):
+1. 使用者授權 → Twitch 返回 code
+2. API 用 code 換取 access_token + user_id
+3. API 將 token 儲存到 DB
+4. API 建立 JWT token 並設定 cookie
+5. 後續請求: JWT → user_id → 查詢 Twitch API
+
+**優點**:
+- 直接從 OAuth code 取得 user_id,100% 準確
+- 不依賴資料庫比對或 bot 的 HTTP response
+- 重複登入也能正確識別使用者

@@ -1,16 +1,15 @@
 import logging
 import os
-import sys
+from typing import TYPE_CHECKING, Optional
+
 import twitchio
 from twitchio.ext import commands
-from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from main import Bot
 else:
     from twitchio.ext.commands import Bot
 
-from config import BROADCASTER_SCOPES
 
 LOGGER: logging.Logger = logging.getLogger("ChannelPoints")
 

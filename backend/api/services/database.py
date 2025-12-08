@@ -8,8 +8,6 @@ from typing import Optional
 
 import asyncpg
 
-from config import BOT_URL
-
 logger = logging.getLogger(__name__)
 
 # 全域連線池
@@ -29,10 +27,11 @@ async def get_database_pool() -> asyncpg.Pool:
     # 從環境變數讀取資料庫 URL
     import os
     from pathlib import Path
+
     from dotenv import load_dotenv
 
-    # Load environment variables from twitch directory
-    env_path = Path(__file__).parent.parent.parent / "twitch" / ".env"
+    # Load environment variables from backend directory
+    env_path = Path(__file__).parent.parent.parent / ".env"
     load_dotenv(dotenv_path=env_path)
 
     database_url = os.getenv("DATABASE_URL")

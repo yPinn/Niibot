@@ -1,8 +1,9 @@
 // Twitch OAuth API
+import { API_ENDPOINTS } from './config'
 
 // 從後端獲取 Twitch OAuth URL
 export async function getTwitchOAuthUrl(): Promise<string> {
-  const response = await fetch('/api/auth/twitch/oauth')
+  const response = await fetch(API_ENDPOINTS.auth.twitchOAuth)
   if (!response.ok) {
     throw new Error('Failed to fetch OAuth URL')
   }

@@ -7,12 +7,10 @@ from pathlib import Path
 import httpx
 from dotenv import load_dotenv
 
-from services.database import get_database_pool
-
 logger = logging.getLogger(__name__)
 
-# Load Twitch credentials
-env_path = Path(__file__).parent.parent.parent / "twitch" / ".env"
+# Load Twitch credentials from backend directory
+env_path = Path(__file__).parent.parent.parent / ".env"
 load_dotenv(dotenv_path=env_path)
 
 CLIENT_ID = os.getenv("CLIENT_ID", "")

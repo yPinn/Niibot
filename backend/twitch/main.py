@@ -1,12 +1,12 @@
 import asyncio
 import logging
 import os
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import asyncpg
-from dotenv import load_dotenv
-
 import twitchio
+from dotenv import load_dotenv
 from twitchio import eventsub
 from twitchio.ext import commands
 
@@ -25,8 +25,9 @@ if TYPE_CHECKING:
 
 LOGGER: logging.Logger = logging.getLogger("Bot")
 
-# Load environment variables from .env file
-load_dotenv()
+# Load environment variables from backend/.env file
+env_path = Path(__file__).parent.parent / ".env"
+load_dotenv(dotenv_path=env_path)
 
 
 def validate_env_vars() -> None:
@@ -118,6 +119,9 @@ class Bot(commands.AutoBot):
         await self.load_module("components.event")
         await self.load_module("components.tft")
         await self.load_module("components.sukaoMao")
+
+        # 啟動定時任務:檢查新 token
+        asyncio.create_task(self.check_new_tokens_task())
 
     async def event_oauth_authorized(
         self, payload: twitchio.authentication.UserTokenPayload
@@ -242,6 +246,47 @@ class Bot(commands.AutoBot):
 
         for row in rows:
             await self.add_token(row["token"], row["refresh"])
+
+    async def check_new_tokens_task(self) -> None:
+        """定時檢查資料庫中的新 token 並載入
+
+        每 30 秒檢查一次資料庫,如果有新的 token 就載入
+        """
+        # 記錄已載入的 user_ids
+        loaded_user_ids: set[str] = set()
+
+        # 初始化:載入當前所有 user_ids
+        async with self.token_database.acquire() as connection:
+            rows = await connection.fetch("SELECT user_id FROM tokens")
+            loaded_user_ids = {row["user_id"] for row in rows}
+
+        LOGGER.info(f"Token watcher started, tracking {len(loaded_user_ids)} existing users")
+
+        while True:
+            try:
+                await asyncio.sleep(30)  # 每 30 秒檢查一次
+
+                async with self.token_database.acquire() as connection:
+                    rows = await connection.fetch("SELECT user_id, token, refresh FROM tokens")
+
+                current_user_ids = {row["user_id"] for row in rows}
+                new_user_ids = current_user_ids - loaded_user_ids
+
+                if new_user_ids:
+                    LOGGER.info(f"Found {len(new_user_ids)} new users, loading tokens...")
+
+                    for row in rows:
+                        if row["user_id"] in new_user_ids:
+                            try:
+                                await self.add_token(row["token"], row["refresh"])
+                                loaded_user_ids.add(row["user_id"])
+                                LOGGER.info(f"Loaded new token for user_id: {row['user_id']}")
+                            except Exception as e:
+                                LOGGER.error(f"Failed to load token for user_id {row['user_id']}: {e}")
+
+            except Exception as e:
+                LOGGER.exception(f"Error in check_new_tokens_task: {e}")
+                await asyncio.sleep(60)  # 發生錯誤時等待更久
 
     async def setup_database(self) -> None:
         # Create our token table, if it doesn't exist..

@@ -1,0 +1,50 @@
+# ===================================================================
+# Niibot Backend Requirements
+# ===================================================================
+# All backend services (API Server, Twitch Bot, Discord Bot) dependencies
+
+# === Shared Dependencies ===
+
+# Database - PostgreSQL async driver
+asyncpg>=0.30.0,<1.0.0
+
+# Environment Variables
+python-dotenv>=1.0.0,<2.0.0
+
+# === API Server Dependencies ===
+
+# Web Framework
+fastapi>=0.100.0,<1.0.0
+uvicorn[standard]>=0.23.0,<1.0.0
+
+# HTTP Client
+httpx>=0.24.0,<1.0.0
+
+# JWT Authentication
+pyjwt[crypto]>=2.8.0,<3.0.0
+
+# === Twitch Bot Dependencies ===
+
+# TwitchIO - Twitch Bot Framework
+twitchio>=3.1.0,<4.0.0
+
+# OpenAI API (for OpenRouter)
+openai>=1.0.0,<2.0.0
+
+# Rich Logging - Beautiful terminal output
+rich>=13.0.0,<14.0.0
+
+# === Discord Bot Dependencies ===
+# (Add Discord.py when needed)
+# discord.py>=2.0.0,<3.0.0
+
+# === Development Tools ===
+
+# Static type checker
+mypy>=1.8.0,<2.0.0
+
+# Type stubs
+types-aiofiles>=23.0.0
+
+# Linter and formatter
+ruff>=0.1.0,<1.0.0

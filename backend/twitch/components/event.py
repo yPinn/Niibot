@@ -1,8 +1,9 @@
 import logging
+from datetime import datetime, timedelta
+from typing import TYPE_CHECKING
+
 import twitchio
 from twitchio.ext import commands
-from typing import TYPE_CHECKING
-from datetime import datetime, timedelta
 
 if TYPE_CHECKING:
     pass

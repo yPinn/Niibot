@@ -1,14 +1,13 @@
 """認證相關的 API 路由
 
-此層只負責處理 HTTP 請求/響應，業務邏輯在 services 層
+此層只負責處理 HTTP 請求/響應,業務邏輯在 services 層
 """
 
 import logging
 
+from config import API_URL, CLIENT_ID, FRONTEND_URL
 from fastapi import APIRouter, Cookie, Response
 from fastapi.responses import RedirectResponse
-
-from config import API_URL, CLIENT_ID, FRONTEND_URL
 from services import auth as auth_service
 from services import twitch as twitch_service
 from services import user as user_service
@@ -35,8 +34,8 @@ async def get_twitch_oauth_url():
 async def twitch_oauth_callback(code: str | None = None, error: str | None = None, scope: str | None = None):
     """處理 Twitch OAuth 回調
 
-    接收 Twitch 的 OAuth code，將其轉發給 TwitchIO bot 的 OAuth endpoint 處理，
-    建立 JWT token，然後重定向到前端
+    接收 Twitch 的 OAuth code,直接換取 access token 和 user_id,
+    儲存到資料庫,建立 JWT token,然後重定向到前端
     """
     if error:
         logger.error(f"OAuth error from Twitch: {error}")
@@ -46,15 +45,25 @@ async def twitch_oauth_callback(code: str | None = None, error: str | None = Non
         logger.error("No OAuth code received from Twitch")
         return RedirectResponse(url=f"{FRONTEND_URL}/login?error=no_code")
 
-    # 將 code 轉發給 bot 處理,並取得 user_id
-    success, error_msg, user_id = await twitch_service.forward_oauth_code_to_bot(code, scope)
+    # 用 code 換取 access token 和 user_id
+    success, error_msg, token_data = await twitch_service.exchange_code_for_token(code)
 
-    if not success:
+    if not success or not token_data:
+        logger.error(f"Failed to exchange code: {error_msg}")
         return RedirectResponse(url=f"{FRONTEND_URL}/login?error={error_msg}")
 
-    if not user_id:
-        logger.error("No user_id returned from OAuth")
-        return RedirectResponse(url=f"{FRONTEND_URL}/login?error=no_user_id")
+    user_id = token_data["user_id"]
+    access_token = token_data["access_token"]
+    refresh_token = token_data.get("refresh_token")
+
+    # 儲存 token 到資料庫
+    save_success = await twitch_service.save_token_to_database(
+        user_id, access_token, refresh_token
+    )
+
+    if not save_success:
+        logger.error("Failed to save token to database")
+        return RedirectResponse(url=f"{FRONTEND_URL}/login?error=save_token_failed")
 
     # 建立 JWT token
     token = auth_service.create_access_token(user_id)
@@ -67,7 +76,7 @@ async def twitch_oauth_callback(code: str | None = None, error: str | None = Non
         httponly=True,
         secure=False,  # 開發環境設為 False,生產環境應為 True (HTTPS)
         samesite="lax",
-        max_age=7*24*60*60  # 7 days
+        max_age=30*24*60*60  # 30 days (配合 JWT 有效期)
     )
 
     logger.info(f"User {user_id} logged in successfully")

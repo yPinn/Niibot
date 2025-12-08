@@ -1,6 +1,7 @@
+from typing import TYPE_CHECKING
+
 import twitchio
 from twitchio.ext import commands
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from main import Bot

@@ -2,6 +2,8 @@
 .env
 .env.local
 .env.*.local
+# Keep .env.example for reference
+!.env.example
 
 # Python
 __pycache__/
@@ -42,7 +44,7 @@ ENV/
 *~
 .DS_Store
 
-# Type Checking
+# Type Checking & Linting
 .mypy_cache/
 .ruff_cache/
 .dmypy.json
@@ -65,9 +67,6 @@ logs/
 *.db
 *.sqlite
 *.sqlite3
-
-# Twitch Bot Specific
-# 不要忽略 .env.example，這是給其他開發者參考的範例文件
 
 # OS
 Thumbs.db
