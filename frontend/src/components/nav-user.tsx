@@ -1,5 +1,4 @@
-import { useNavigate } from 'react-router-dom'
-
+import { logout, type User } from '@/api'
 import { useTheme } from '@/components/theme-provider'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
@@ -19,28 +18,24 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar'
 
-export function NavUser({
-  user,
-}: {
-  user: {
-    name: string
-    display_name: string
-    avatar: string
-  }
-}) {
+export function NavUser({ user }: { user: User }) {
   const { isMobile } = useSidebar()
-  const navigate = useNavigate()
   const { theme, setTheme } = useTheme()
 
-  const handleLogout = () => {
-    // 清除用戶資料（如果有的話）
-    // localStorage.removeItem('token')
-    // 導航到登入頁面
-    navigate('/login')
+  const handleLogout = async () => {
+    try {
+      await logout()
+      // 登出後重定向到登入頁面
+      window.location.href = '/login'
+    } catch (error) {
+      console.error('Logout failed:', error)
+    }
   }
 
-  const toggleTheme = () => {
-    setTheme(theme === 'dark' ? 'light' : 'dark')
+  // Get initials from display_name or name, fallback to '??'
+  const getInitials = () => {
+    const name = user.display_name || user.name || '??'
+    return name.substring(0, 2).toUpperCase()
   }
 
   return (
@@ -50,16 +45,21 @@ export function NavUser({
           <DropdownMenuTrigger asChild>
             <SidebarMenuButton
               size="lg"
-              className="bg-sidebar-accent data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+              className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
             >
-              <Avatar className="h-8 w-8">
-                <AvatarImage src={user.avatar} alt={user.display_name} />
-                <AvatarFallback>{user.display_name.slice(0, 2).toUpperCase()}</AvatarFallback>
+              <Avatar className="h-8 w-8 rounded-full">
+                <AvatarImage src={user.avatar} alt={user.display_name || user.name} />
+                <AvatarFallback className="rounded-full">{getInitials()}</AvatarFallback>
               </Avatar>
               <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-medium">{user.display_name}</span>
+                <span className="truncate font-medium">{user.display_name || user.name}</span>
+                <span className="truncate text-xs">@{user.name}</span>
               </div>
-              <Icon icon="fa-solid fa-ellipsis-vertical" wrapperClassName="ml-auto" />
+              <Icon
+                icon="fa-solid fa-angles-up-down"
+                className="ml-auto"
+                wrapperClassName="size-4"
+              />
             </SidebarMenuButton>
           </DropdownMenuTrigger>
           <DropdownMenuContent
@@ -70,37 +70,38 @@ export function NavUser({
           >
             <DropdownMenuLabel className="p-0 font-normal">
               <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
-                <Avatar className="h-8 w-8">
-                  <AvatarImage src={user.avatar} alt={user.display_name} />
-                  <AvatarFallback>{user.display_name.slice(0, 2).toUpperCase()}</AvatarFallback>
+                <Avatar className="h-8 w-8 rounded-full">
+                  <AvatarImage src={user.avatar} alt={user.display_name || user.name} />
+                  <AvatarFallback className="rounded-full">{getInitials()}</AvatarFallback>
                 </Avatar>
                 <div className="grid flex-1 text-left text-sm leading-tight">
-                  <span className="truncate font-medium">{user.display_name}</span>
-                  <span className="text-muted-foreground truncate text-xs">@{user.name}</span>
+                  <span className="truncate font-medium">{user.display_name || user.name}</span>
+                  <span className="truncate text-xs">@{user.name}</span>
                 </div>
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <DropdownMenuItem onClick={toggleTheme}>
-                <Icon icon={theme === 'dark' ? 'fa-solid fa-sun' : 'fa-solid fa-moon'} />
-                {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
-              </DropdownMenuItem>
-            </DropdownMenuGroup>
-            <DropdownMenuSeparator />
-            <DropdownMenuGroup>
               <DropdownMenuItem>
-                <Icon icon="fa-solid fa-gear" />
-                Settings
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <Icon icon="fa-solid fa-user" />
+                <Icon icon="fa-solid fa-user" wrapperClassName="" />
                 Account
               </DropdownMenuItem>
+              <DropdownMenuItem>
+                <Icon icon="fa-solid fa-bell" wrapperClassName="" />
+                Notifications
+              </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
+              <Icon
+                icon={theme === 'dark' ? 'fa-solid fa-sun' : 'fa-solid fa-moon'}
+                wrapperClassName=""
+              />
+              {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleLogout}>
-              <Icon icon="fa-solid fa-arrow-right-from-bracket" />
+              <Icon icon="fa-solid fa-right-from-bracket" wrapperClassName="" />
               Log out
             </DropdownMenuItem>
           </DropdownMenuContent>

@@ -2,7 +2,9 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Icon } from '@/components/ui/icon'
 import {
   SidebarGroup,
+  SidebarGroupLabel,
   SidebarMenu,
+  SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSub,
@@ -16,7 +18,7 @@ export function NavMain({
   items: {
     title: string
     url: string
-    icon?: string
+    icon: string
     isActive?: boolean
     items?: {
       title: string
@@ -26,39 +28,40 @@ export function NavMain({
 }) {
   return (
     <SidebarGroup>
+      <SidebarGroupLabel>Platform</SidebarGroupLabel>
       <SidebarMenu>
         {items.map(item => (
-          <Collapsible
-            key={item.title}
-            asChild
-            defaultOpen={item.isActive}
-            className="group/collapsible"
-          >
+          <Collapsible key={item.title} asChild defaultOpen={item.isActive}>
             <SidebarMenuItem>
-              <CollapsibleTrigger asChild>
-                <SidebarMenuButton tooltip={item.title}>
-                  {item.icon && <Icon icon={item.icon} />}
+              <SidebarMenuButton asChild tooltip={item.title}>
+                <a href={item.url}>
+                  <Icon icon={item.icon} />
                   <span>{item.title}</span>
-                  <Icon
-                    icon="fa-solid fa-chevron-right"
-                    className="transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90"
-                    wrapperClassName="ml-auto"
-                  />
-                </SidebarMenuButton>
-              </CollapsibleTrigger>
-              <CollapsibleContent>
-                <SidebarMenuSub>
-                  {item.items?.map(subItem => (
-                    <SidebarMenuSubItem key={subItem.title}>
-                      <SidebarMenuSubButton asChild>
-                        <a href={subItem.url}>
-                          <span>{subItem.title}</span>
-                        </a>
-                      </SidebarMenuSubButton>
-                    </SidebarMenuSubItem>
-                  ))}
-                </SidebarMenuSub>
-              </CollapsibleContent>
+                </a>
+              </SidebarMenuButton>
+              {item.items?.length ? (
+                <>
+                  <CollapsibleTrigger asChild>
+                    <SidebarMenuAction className="data-[state=open]:rotate-90">
+                      <Icon icon="fa-solid fa-chevron-right" wrapperClassName="" />
+                      <span className="sr-only">Toggle</span>
+                    </SidebarMenuAction>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <SidebarMenuSub>
+                      {item.items?.map(subItem => (
+                        <SidebarMenuSubItem key={subItem.title}>
+                          <SidebarMenuSubButton asChild>
+                            <a href={subItem.url}>
+                              <span>{subItem.title}</span>
+                            </a>
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                      ))}
+                    </SidebarMenuSub>
+                  </CollapsibleContent>
+                </>
+              ) : null}
             </SidebarMenuItem>
           </Collapsible>
         ))}

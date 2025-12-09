@@ -6,7 +6,7 @@
 import logging
 
 from config import API_URL, CLIENT_ID, FRONTEND_URL
-from fastapi import APIRouter, Cookie, Response
+from fastapi import APIRouter, Cookie, HTTPException, Response
 from fastapi.responses import RedirectResponse
 from services import auth as auth_service
 from services import twitch as twitch_service
@@ -68,8 +68,8 @@ async def twitch_oauth_callback(code: str | None = None, error: str | None = Non
     # 建立 JWT token
     token = auth_service.create_access_token(user_id)
 
-    # 設定 HTTP-only cookie 並重定向
-    response = RedirectResponse(url=FRONTEND_URL)
+    # 設定 HTTP-only cookie 並重定向到 dashboard
+    response = RedirectResponse(url=f"{FRONTEND_URL}/dashboard")
     response.set_cookie(
         key="auth_token",
         value=token,
@@ -96,20 +96,20 @@ async def get_current_user(auth_token: str | None = Cookie(None)):
     """
     if not auth_token:
         logger.warning("No auth token provided")
-        return {"error": "Not logged in"}, 401
+        raise HTTPException(status_code=401, detail="Not logged in")
 
     # 驗證 JWT token
     user_id = auth_service.verify_token(auth_token)
 
     if not user_id:
         logger.warning("Invalid or expired token")
-        return {"error": "Invalid or expired token"}, 401
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     # 取得使用者資訊
     user_info = await user_service.get_user_info(user_id)
 
     if not user_info:
-        return {"error": "User not found"}, 404
+        raise HTTPException(status_code=404, detail="User not found")
 
     return user_info
 
@@ -117,5 +117,11 @@ async def get_current_user(auth_token: str | None = Cookie(None)):
 @router.post("/logout")
 async def logout(response: Response):
     """登出"""
-    response.delete_cookie("auth_token")
+    response.delete_cookie(
+        key="auth_token",
+        path="/",
+        httponly=True,
+        secure=False,
+        samesite="lax"
+    )
     return {"message": "Logged out successfully"}

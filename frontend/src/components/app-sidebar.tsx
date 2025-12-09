@@ -2,69 +2,59 @@
 
 import * as React from 'react'
 
-import { getCurrentUser, type User } from '@/api/user'
 import { NavMain } from '@/components/nav-main'
+import { NavProjects } from '@/components/nav-projects'
+import { NavSecondary } from '@/components/nav-secondary'
 import { NavUser } from '@/components/nav-user'
-import { TeamSwitcher } from '@/components/team-switcher'
+import { Icon } from '@/components/ui/icon'
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
   SidebarHeader,
-  SidebarRail,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
 } from '@/components/ui/sidebar'
+import { useAuth } from '@/contexts/AuthContext'
 
-// This is sample data.
 const data = {
-  teams: [
-    {
-      name: 'Twitch',
-      logo: 'fa-brands fa-twitch',
-    },
-    {
-      name: 'Discord',
-      logo: 'fa-brands fa-discord',
-    },
-  ],
   navMain: [
     {
-      title: 'Information',
+      title: 'Playground',
       url: '#',
-      icon: 'fa-solid fa-home',
+      icon: 'fa-solid fa-terminal',
       isActive: true,
       items: [
         {
-          title: 'Dashboard',
-          url: '/dashboard',
+          title: 'History',
+          url: '#',
         },
         {
-          title: 'Get Started',
+          title: 'Starred',
+          url: '#',
+        },
+        {
+          title: 'Settings',
           url: '#',
         },
       ],
     },
     {
-      title: 'Commands',
+      title: 'Models',
       url: '#',
-      icon: 'fa-solid fa-terminal',
+      icon: 'fa-solid fa-robot',
       items: [
         {
-          title: 'List',
+          title: 'Genesis',
           url: '#',
         },
         {
-          title: 'Timer',
+          title: 'Explorer',
           url: '#',
         },
-      ],
-    },
-    {
-      title: 'Analytics',
-      url: '#',
-      icon: 'fa-solid fa-chart-line',
-      items: [
         {
-          title: 'Leaderboard',
+          title: 'Quantum',
           url: '#',
         },
       ],
@@ -72,10 +62,14 @@ const data = {
     {
       title: 'Documentation',
       url: '#',
-      icon: 'fa-solid fa-book-open',
+      icon: 'fa-solid fa-book',
       items: [
         {
           title: 'Introduction',
+          url: '#',
+        },
+        {
+          title: 'Get Started',
           url: '#',
         },
         {
@@ -88,39 +82,103 @@ const data = {
         },
       ],
     },
+    {
+      title: 'Settings',
+      url: '#',
+      icon: 'fa-solid fa-gear',
+      items: [
+        {
+          title: 'General',
+          url: '#',
+        },
+        {
+          title: 'Team',
+          url: '#',
+        },
+        {
+          title: 'Billing',
+          url: '#',
+        },
+        {
+          title: 'Limits',
+          url: '#',
+        },
+      ],
+    },
+  ],
+  navSecondary: [
+    {
+      title: 'Github',
+      url: '#',
+      icon: 'fa-brands fa-github',
+    },
+    {
+      title: 'Discord',
+      url: 'https://discord.gg/GubS4Xcb7W',
+      icon: 'fa-brands fa-discord',
+    },
+  ],
+  projects: [
+    {
+      name: 'Design Engineering',
+      url: '#',
+      icon: 'fa-solid fa-border-all',
+    },
+    {
+      name: 'Sales & Marketing',
+      url: '#',
+      icon: 'fa-solid fa-chart-pie',
+    },
+    {
+      name: 'Travel',
+      url: '#',
+      icon: 'fa-solid fa-map-location-dot',
+    },
   ],
 }
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
-  const [user, setUser] = React.useState<User | null>(null)
-
-  React.useEffect(() => {
-    // 獲取使用者資訊
-    getCurrentUser().then(userData => {
-      if (userData) {
-        setUser(userData)
-      }
-    })
-  }, [])
+  const { user, isLoading } = useAuth()
 
   return (
-    <Sidebar collapsible="icon" {...props}>
+    <Sidebar variant="inset" {...props}>
       <SidebarHeader>
-        <TeamSwitcher teams={data.teams} />
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton size="lg" asChild>
+              <a href="/">
+                <div className="bg-sidebar-primary text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg">
+                  <Icon icon="fa-solid fa-terminal" className="size-4" />
+                </div>
+                <div className="grid flex-1 text-left text-sm leading-tight">
+                  <span className="truncate font-medium">Niibot</span>
+                  <span className="truncate text-xs">Twitch Bot</span>
+                </div>
+              </a>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={data.navMain} />
+        <NavProjects projects={data.projects} />
+        <NavSecondary items={data.navSecondary} className="mt-auto" />
       </SidebarContent>
       <SidebarFooter>
-        {user ? (
+        {isLoading ? (
+          <div className="flex items-center justify-center p-4">
+            <span className="text-sm text-muted-foreground">Loading...</span>
+          </div>
+        ) : user ? (
           <NavUser user={user} />
         ) : (
           <div className="flex items-center justify-center p-4">
-            <span className="text-muted-foreground text-sm">Loading...</span>
+            <a href="/login" className="text-sm text-primary hover:underline">
+              Login
+            </a>
           </div>
         )}
       </SidebarFooter>
-      <SidebarRail />
     </Sidebar>
   )
 }

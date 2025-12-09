@@ -1,4 +1,4 @@
-import { openTwitchOAuth } from '@/api/TwitchOauth'
+import { openTwitchOAuth } from '@/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Field, FieldGroup } from '@/components/ui/field'
@@ -66,7 +66,7 @@ export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) 
             <img
               src="/images/Rabbit.jpg"
               alt="Image"
-              className="absolute inset-0 h-full w-full object-cover dark:brightness-[0.2] dark:grayscale"
+              className="absolute inset-0 h-full w-full object-cover dark:brightness-[0.75] "
             />
           </div>
         </CardContent>
