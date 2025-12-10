@@ -1,7 +1,6 @@
 import { openTwitchOAuth } from '@/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { Field, FieldGroup } from '@/components/ui/field'
 import { Icon } from '@/components/ui/icon'
 import { cn } from '@/lib/utils'
 
@@ -11,7 +10,7 @@ export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) 
       <Card className="overflow-hidden p-0">
         <CardContent className="grid p-0 md:grid-cols-2">
           <form className="p-6 md:p-8">
-            <FieldGroup>
+            <div className="flex flex-col gap-6">
               <div className="flex flex-col items-center gap-2 text-center">
                 <h1 className="text-2xl font-bold">歡迎使用 Niibot</h1>
                 <p className="text-muted-foreground text-balance text-sm">
@@ -50,7 +49,7 @@ export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) 
                   </li>
                 </ul>
               </div>
-              <Field>
+              <div>
                 <Button
                   type="button"
                   onClick={openTwitchOAuth}
@@ -59,8 +58,8 @@ export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) 
                   <Icon icon="fa-brands fa-twitch" className="text-lg mr-2" wrapperClassName="" />
                   使用 Twitch 登入
                 </Button>
-              </Field>
-            </FieldGroup>
+              </div>
+            </div>
           </form>
           <div className="bg-muted relative hidden md:block">
             <img

@@ -1,10 +1,9 @@
-import { logout, type User } from '@/api'
+import { logout as apiLogout, type User } from '@/api'
 import { useTheme } from '@/components/theme-provider'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -17,18 +16,24 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from '@/components/ui/sidebar'
+import { useAuth } from '@/contexts/AuthContext'
 
 export function NavUser({ user }: { user: User }) {
   const { isMobile } = useSidebar()
   const { theme, setTheme } = useTheme()
+  const { logout } = useAuth()
 
   const handleLogout = async () => {
     try {
-      await logout()
+      await apiLogout()
+      logout() // 清除 context 和緩存
       // 登出後重定向到登入頁面
       window.location.href = '/login'
     } catch (error) {
       console.error('Logout failed:', error)
+      // 即使 API 失敗也清除本地狀態
+      logout()
+      window.location.href = '/login'
     }
   }
 
@@ -68,30 +73,36 @@ export function NavUser({ user }: { user: User }) {
             align="end"
             sideOffset={4}
           >
-            <DropdownMenuLabel className="p-0 font-normal">
-              <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
-                <Avatar className="h-8 w-8 rounded-full">
-                  <AvatarImage src={user.avatar} alt={user.display_name || user.name} />
-                  <AvatarFallback className="rounded-full">{getInitials()}</AvatarFallback>
-                </Avatar>
-                <div className="grid flex-1 text-left text-sm leading-tight">
-                  <span className="truncate font-medium">{user.display_name || user.name}</span>
-                  <span className="truncate text-xs">@{user.name}</span>
+            <a
+              href={`https://twitch.tv/${user.name}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="no-underline block"
+            >
+              <DropdownMenuLabel className="p-0 font-normal cursor-pointer">
+                <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm hover:bg-accent rounded-md transition-colors">
+                  <Avatar className="h-8 w-8 rounded-full">
+                    <AvatarImage src={user.avatar} alt={user.display_name || user.name} />
+                    <AvatarFallback className="rounded-full">{getInitials()}</AvatarFallback>
+                  </Avatar>
+
+                  <div className="grid flex-1 text-left text-sm leading-tight">
+                    <span className="truncate font-medium">{user.display_name || user.name}</span>
+                    <span className="truncate text-xs">@{user.name}</span>
+                  </div>
+
+                  <div className="mr-1">
+                    <Icon icon="fa-solid fa-arrow-up-right-from-square" wrapperClassName="" />
+                  </div>
                 </div>
-              </div>
-            </DropdownMenuLabel>
+              </DropdownMenuLabel>
+            </a>
+
             <DropdownMenuSeparator />
-            <DropdownMenuGroup>
-              <DropdownMenuItem>
-                <Icon icon="fa-solid fa-user" wrapperClassName="" />
-                Account
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <Icon icon="fa-solid fa-bell" wrapperClassName="" />
-                Notifications
-              </DropdownMenuItem>
-            </DropdownMenuGroup>
-            <DropdownMenuSeparator />
+            <DropdownMenuItem>
+              <Icon icon="fa-solid fa-gear" wrapperClassName="" />
+              Settings
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
               <Icon
                 icon={theme === 'dark' ? 'fa-solid fa-sun' : 'fa-solid fa-moon'}

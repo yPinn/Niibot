@@ -10,4 +10,7 @@ export const API_ENDPOINTS = {
     user: '/api/auth/user',
     logout: '/api/auth/logout',
   },
+  channels: {
+    list: '/api/channels/monitored',
+  },
 } as const

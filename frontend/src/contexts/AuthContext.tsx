@@ -1,40 +1,65 @@
 import React, { createContext, useContext, useEffect, useState } from 'react'
 
-import { getCurrentUser, type User } from '@/api'
+import { type Channel, getCurrentUser, getMonitoredChannels, type User } from '@/api'
 
 interface AuthContextType {
   user: User | null
-  isLoading: boolean
   isAuthenticated: boolean
-  refreshUser: () => Promise<void>
+  isInitialized: boolean
+  channels: Channel[]
+  logout: () => void
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
-
-  const refreshUser = async () => {
-    try {
-      const userData = await getCurrentUser()
-      setUser(userData)
-    } catch (error) {
-      console.error('Failed to load user:', error)
-      setUser(null)
-    } finally {
-      setIsLoading(false)
-    }
-  }
+  const [isInitialized, setIsInitialized] = useState(false)
+  const [channels, setChannels] = useState<Channel[]>([])
+  const hasLoaded = React.useRef(false)
 
   useEffect(() => {
-    refreshUser()
+    // 防止重複載入（例如 React Strict Mode）
+    if (hasLoaded.current) return
+    hasLoaded.current = true
+
+    // 載入 user
+    getCurrentUser()
+      .then(userData => {
+        setUser(userData)
+      })
+      .catch(error => {
+        console.error('Failed to load user:', error)
+        setUser(null)
+      })
+      .finally(() => {
+        setIsInitialized(true)
+      })
+
+    // 載入 channels
+    getMonitoredChannels()
+      .then(channelData => {
+        setChannels(channelData)
+      })
+      .catch(error => {
+        console.error('Failed to load channels:', error)
+        setChannels([])
+      })
   }, [])
 
-  const isAuthenticated = !!user
-
   return (
-    <AuthContext.Provider value={{ user, isLoading, isAuthenticated, refreshUser }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        isAuthenticated: !!user,
+        isInitialized,
+        channels,
+        logout: () => {
+          setUser(null)
+          setChannels([])
+        },
+      }}
+    >
       {children}
     </AuthContext.Provider>
   )

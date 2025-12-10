@@ -7,15 +7,12 @@ import { useAuth } from '@/contexts/AuthContext'
  * 保護需要登入才能訪問的路由
  */
 export function ProtectedRoute() {
-  const { isLoading, isAuthenticated } = useAuth()
+  const { isAuthenticated, isInitialized } = useAuth()
   const location = useLocation()
 
-  if (isLoading) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="text-muted-foreground">Loading...</div>
-      </div>
-    )
+  // 等待初始化完成，避免誤判未登入而重定向
+  if (!isInitialized) {
+    return null
   }
 
   if (!isAuthenticated) {
@@ -32,15 +29,12 @@ export function ProtectedRoute() {
  * 只允許未登入用戶訪問（如登入頁面）
  */
 export function PublicOnlyRoute() {
-  const { isLoading, isAuthenticated } = useAuth()
+  const { isAuthenticated, isInitialized } = useAuth()
   const location = useLocation()
 
-  if (isLoading) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="text-muted-foreground">Loading...</div>
-      </div>
-    )
+  // 等待初始化完成
+  if (!isInitialized) {
+    return null
   }
 
   if (isAuthenticated) {

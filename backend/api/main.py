@@ -10,7 +10,7 @@
 from config import CORS_ORIGINS
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import auth
+from routers import auth, channels
 
 app = FastAPI(
     title="Niibot API",
@@ -29,6 +29,7 @@ app.add_middleware(
 
 # 註冊路由
 app.include_router(auth.router)
+app.include_router(channels.router)
 
 
 @app.get("/api/health")
