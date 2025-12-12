@@ -6,7 +6,7 @@ import { ThemeProvider } from '@/components/theme-provider'
 import { AuthProvider } from '@/contexts/AuthContext'
 import About from '@/pages/About'
 import Dashboard from '@/pages/Dashboard'
-import LoginPage from '@/pages/login'
+import LoginPage from '@/pages/Login'
 import NotFound from '@/pages/NotFound'
 
 function App() {
@@ -15,12 +15,10 @@ function App() {
       <AuthProvider>
         <Routes>
           <Route path="/" element={<About />} />
-
-          {/* 只允許未登入用戶訪問 */}
+          {/* 只允許未登入用戶訪問 */}~
           <Route element={<PublicOnlyRoute />}>
             <Route path="/login" element={<LoginPage />} />
           </Route>
-
           {/* 需要登入才能訪問 */}
           <Route element={<ProtectedRoute />}>
             <Route element={<SidebarLayout />}>

@@ -1,3 +1,6 @@
+import { useEffect, useState } from 'react'
+import { useLocation } from 'react-router-dom'
+
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Icon } from '@/components/ui/icon'
 import {
@@ -25,12 +28,50 @@ export function NavMain({
     }[]
   }[]
 }) {
+  const location = useLocation()
+  const [openItems, setOpenItems] = useState<Set<string>>(new Set())
+
+  // 檢查該選單項目是否包含當前路由
+  const isItemActive = (item: (typeof items)[0]) => {
+    return item.items?.some(subItem => location.pathname === subItem.url) ?? false
+  }
+
+  // 路由變化時自動展開對應的選單
+  useEffect(() => {
+    const activeItem = items.find(item => isItemActive(item))
+    if (activeItem) {
+      setOpenItems(prev => {
+        const next = new Set(prev)
+        next.add(activeItem.title)
+        return next
+      })
+    }
+  }, [location.pathname])
+
+  // 切換選單展開/收起
+  const toggleItem = (title: string) => {
+    setOpenItems(prev => {
+      const next = new Set(prev)
+      if (next.has(title)) {
+        next.delete(title)
+      } else {
+        next.add(title)
+      }
+      return next
+    })
+  }
+
   return (
     <SidebarGroup>
       <SidebarGroupLabel>Console</SidebarGroupLabel>
       <SidebarMenu>
         {items.map(item => (
-          <Collapsible key={item.title} asChild defaultOpen={item.isActive}>
+          <Collapsible
+            key={item.title}
+            asChild
+            open={openItems.has(item.title)}
+            onOpenChange={() => toggleItem(item.title)}
+          >
             <SidebarMenuItem className="group/collapsible">
               <CollapsibleTrigger asChild>
                 <SidebarMenuButton tooltip={item.title}>
@@ -48,7 +89,7 @@ export function NavMain({
                   <SidebarMenuSub>
                     {item.items?.map(subItem => (
                       <SidebarMenuSubItem key={subItem.title}>
-                        <SidebarMenuSubButton asChild>
+                        <SidebarMenuSubButton asChild isActive={location.pathname === subItem.url}>
                           <a href={subItem.url}>
                             <span>{subItem.title}</span>
                           </a>

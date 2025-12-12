@@ -71,7 +71,8 @@ class LeaderboardComponent(commands.Component):
                 LOGGER.error("Data element not found, using cache")
                 return self._cache
 
-            data: dict[str, Any] = json.loads(match.group(1))["props"]["pageProps"]["data"]
+            data: dict[str, Any] = json.loads(match.group(1))[
+                "props"]["pageProps"]["data"]
 
             # 更新快取
             self._cache = data
@@ -97,7 +98,8 @@ class LeaderboardComponent(commands.Component):
             !rk - 顯示挑戰者和宗師門檻
             !rk <玩家名稱> - 查詢特定玩家排名
         """
-        LOGGER.debug(f"!rk command - {ctx.author.name} query: {user_id or 'threshold'}")
+        LOGGER.debug(
+            f"!rk command - {ctx.author.name} query: {user_id or 'threshold'}")
 
         data = await self.get_leaderboard_data()
 
@@ -120,7 +122,7 @@ class LeaderboardComponent(commands.Component):
             if player.get("playerName", "").lower() == user_id.lower():
                 rank = player.get("num")
                 lp = player.get("rank", [None, 0])[1]
-                await ctx.reply(f"{user_id}：{lp} LP #{rank} [TW]")
+                await ctx.reply(f"{user_id}：{lp} LP | [TW] #{rank}")
                 LOGGER.debug(f"Query success - {user_id}: {lp} LP #{rank}")
                 return
 
@@ -135,7 +137,8 @@ async def setup(bot: commands.Bot) -> None:
 
 async def teardown(bot: commands.Bot) -> None:
     # 關閉 httpx client
-    components = [c for c in bot._components if isinstance(c, LeaderboardComponent)]
+    components = [c for c in bot._components if isinstance(
+        c, LeaderboardComponent)]
     for component in components:
         await component._client.aclose()
     LOGGER.info("TFT leaderboard component unloaded")
