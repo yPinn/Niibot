@@ -1,4 +1,6 @@
 // Channels API
+import { apiCache, CACHE_KEYS } from '@/lib/apiCache'
+
 import { API_ENDPOINTS } from './config'
 
 export interface Channel {
@@ -11,8 +13,8 @@ export interface Channel {
   game_name?: string
 }
 
-// 獲取監聽的頻道列表
-export async function getMonitoredChannels(): Promise<Channel[]> {
+// 內部函數：實際的 API 調用
+async function fetchMonitoredChannels(): Promise<Channel[]> {
   try {
     const response = await fetch(API_ENDPOINTS.channels.list, {
       credentials: 'include', // 包含 cookies
@@ -26,4 +28,14 @@ export async function getMonitoredChannels(): Promise<Channel[]> {
     console.error('Failed to get channels:', error)
     return []
   }
+}
+
+// 獲取監聽的頻道列表（帶快取）
+export async function getMonitoredChannels(options?: {
+  forceRefresh?: boolean
+}): Promise<Channel[]> {
+  return apiCache.fetch(CACHE_KEYS.CHANNELS, fetchMonitoredChannels, {
+    ttl: 2 * 60 * 1000, // 2 分鐘（頻道狀態可能更頻繁變化）
+    forceRefresh: options?.forceRefresh,
+  })
 }

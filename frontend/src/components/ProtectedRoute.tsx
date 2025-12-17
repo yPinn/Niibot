@@ -1,5 +1,6 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom'
 
+import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { useAuth } from '@/contexts/AuthContext'
 
 /**
@@ -12,7 +13,7 @@ export function ProtectedRoute() {
 
   // 等待初始化完成，避免誤判未登入而重定向
   if (!isInitialized) {
-    return null
+    return <LoadingSpinner fullScreen text="載入中..." />
   }
 
   if (!isAuthenticated) {
@@ -34,7 +35,7 @@ export function PublicOnlyRoute() {
 
   // 等待初始化完成
   if (!isInitialized) {
-    return null
+    return <LoadingSpinner fullScreen text="載入中..." />
   }
 
   if (isAuthenticated) {

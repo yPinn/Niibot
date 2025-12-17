@@ -6,8 +6,8 @@
 import logging
 
 from fastapi import APIRouter, Cookie, HTTPException
-from services import twitch as twitch_service
 from services import auth as auth_service
+from services import twitch as twitch_service
 
 logger = logging.getLogger(__name__)
 

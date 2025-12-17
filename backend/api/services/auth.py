@@ -64,7 +64,7 @@ def verify_token(token: str) -> Optional[str]:
             logger.warning("Token missing user_id")
             return None
 
-        return user_id
+        return str(user_id) if user_id else None
 
     except jwt.ExpiredSignatureError:
         logger.warning("Token expired")

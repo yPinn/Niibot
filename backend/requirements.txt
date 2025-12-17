@@ -35,8 +35,12 @@ openai>=1.0.0,<2.0.0
 rich>=13.0.0,<14.0.0
 
 # === Discord Bot Dependencies ===
-# (Add Discord.py when needed)
-# discord.py>=2.0.0,<3.0.0
+
+# Discord.py - Discord Bot Framework (with voice support)
+discord.py[voice]>=2.3.2,<3.0.0
+
+# Async HTTP Client (for Discord bot features)
+aiohttp>=3.9.0,<4.0.0
 
 # === Development Tools ===
 

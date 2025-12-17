@@ -103,7 +103,7 @@ class EventComponent(commands.Component):
             "3000": "T3",
         }.get(payload.tier, payload.tier)
 
-        sub_type = "Gift" if payload.is_gift else "Sub"
+        sub_type = "Gift" if payload.gift else "Sub"
 
         try:
             message = f"感謝 {user_name} 的訂閱！"

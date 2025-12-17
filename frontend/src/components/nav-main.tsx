@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -29,36 +29,44 @@ export function NavMain({
   }[]
 }) {
   const location = useLocation()
-  const [openItems, setOpenItems] = useState<Set<string>>(new Set())
+  const [manuallyClosedItems, setManuallyClosedItems] = useState<Set<string>>(new Set())
 
   // 檢查該選單項目是否包含當前路由
-  const isItemActive = (item: (typeof items)[0]) => {
-    return item.items?.some(subItem => location.pathname === subItem.url) ?? false
-  }
+  const isItemActive = useCallback(
+    (item: (typeof items)[0]) => {
+      return item.items?.some(subItem => location.pathname === subItem.url) ?? false
+    },
+    [location.pathname]
+  )
 
-  // 路由變化時自動展開對應的選單
-  useEffect(() => {
-    const activeItem = items.find(item => isItemActive(item))
-    if (activeItem) {
-      setOpenItems(prev => {
+  // 計算哪些項目應該被打開（自動展開活躍項目，除非用戶手動關閉）
+  const openItems = useMemo(() => {
+    const open = new Set<string>()
+    items.forEach(item => {
+      if (isItemActive(item) && !manuallyClosedItems.has(item.title)) {
+        open.add(item.title)
+      }
+    })
+    return open
+  }, [items, isItemActive, manuallyClosedItems])
+
+  // 切換選單展開/收起
+  const toggleItem = (title: string, isOpen: boolean) => {
+    if (!isOpen) {
+      // 用戶手動關閉選單，記錄下來
+      setManuallyClosedItems(prev => {
         const next = new Set(prev)
-        next.add(activeItem.title)
+        next.add(title)
+        return next
+      })
+    } else {
+      // 用戶手動打開選單，從關閉記錄中移除
+      setManuallyClosedItems(prev => {
+        const next = new Set(prev)
+        next.delete(title)
         return next
       })
     }
-  }, [location.pathname])
-
-  // 切換選單展開/收起
-  const toggleItem = (title: string) => {
-    setOpenItems(prev => {
-      const next = new Set(prev)
-      if (next.has(title)) {
-        next.delete(title)
-      } else {
-        next.add(title)
-      }
-      return next
-    })
   }
 
   return (
@@ -70,7 +78,7 @@ export function NavMain({
             key={item.title}
             asChild
             open={openItems.has(item.title)}
-            onOpenChange={() => toggleItem(item.title)}
+            onOpenChange={isOpen => toggleItem(item.title, isOpen)}
           >
             <SidebarMenuItem className="group/collapsible">
               <CollapsibleTrigger asChild>

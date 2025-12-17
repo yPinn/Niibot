@@ -5,7 +5,9 @@ import { ProtectedRoute, PublicOnlyRoute } from '@/components/ProtectedRoute'
 import { ThemeProvider } from '@/components/theme-provider'
 import { AuthProvider } from '@/contexts/AuthContext'
 import About from '@/pages/About'
+import Commands from '@/pages/Commands'
 import Dashboard from '@/pages/Dashboard'
+import Events from '@/pages/Events'
 import LoginPage from '@/pages/Login'
 import NotFound from '@/pages/NotFound'
 
@@ -23,6 +25,8 @@ function App() {
           <Route element={<ProtectedRoute />}>
             <Route element={<SidebarLayout />}>
               <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/commands" element={<Commands />} />
+              <Route path="/events" element={<Events />} />
               <Route path="*" element={<NotFound />} />
             </Route>
           </Route>
