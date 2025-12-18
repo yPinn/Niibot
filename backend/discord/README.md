@@ -13,7 +13,12 @@ pip install -r requirements.txt
 
 ### 2. 設定環境變數
 
-複製 `.env.example` 為 `.env` 並填入：
+```bash
+cd discord
+cp .env.example .env
+```
+
+編輯 `.env` 並填入：
 
 ```bash
 # 必填
@@ -26,11 +31,11 @@ DISCORD_GUILD_ID=your_test_server_id
 ### 3. 啟動 Bot
 
 ```bash
-# 方法 1: 直接執行
-python discord/bot.py
+# 從 backend/discord 目錄執行
+python bot.py
 
-# 方法 2: 使用啟動腳本
-python discord/run.py
+# 或使用啟動腳本
+python run.py
 ```
 
 ## 架構說明

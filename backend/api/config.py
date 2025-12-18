@@ -5,8 +5,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-# Load environment variables from backend directory
-env_path = Path(__file__).parent.parent / ".env"
+# Load environment variables from api/.env file
+env_path = Path(__file__).parent / ".env"
 load_dotenv(dotenv_path=env_path)
 
 # API Server 配置

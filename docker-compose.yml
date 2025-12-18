@@ -1,11 +1,31 @@
 version: '3.8'
 
 services:
-  backend:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: niibot-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: twitchio_bot
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - niibot-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d twitchio_bot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Twitch Bot
+  twitch-bot:
     build:
       context: ./backend/twitch
       dockerfile: Dockerfile
-    container_name: niibot-backend
+    container_name: niibot-twitch
     restart: unless-stopped
     ports:
       - "4343:4343"
@@ -13,9 +33,64 @@ services:
       - ./backend/twitch/.env
     environment:
       - PYTHONUNBUFFERED=1
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - niibot-network
+
+  # Discord Bot
+  discord-bot:
+    build:
+      context: ./backend/discord
+      dockerfile: Dockerfile
+    container_name: niibot-discord
+    restart: unless-stopped
+    env_file:
+      - ./backend/discord/.env
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - niibot-network
+
+  # API Server
+  api:
+    build:
+      context: ./backend/api
+      dockerfile: Dockerfile
+    container_name: niibot-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./backend/api/.env
+    environment:
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - niibot-network
+
+  # Frontend (如果需要)
+  # frontend:
+  #   build:
+  #     context: ./frontend
+  #     dockerfile: Dockerfile
+  #   container_name: niibot-frontend
+  #   restart: unless-stopped
+  #   ports:
+  #     - "3000:3000"
+  #   env_file:
+  #     - ./frontend/.env
+  #   depends_on:
+  #     - api
+  #   networks:
+  #     - niibot-network
 
 networks:
   niibot-network:
     driver: bridge
+
+volumes:
+  postgres-data:

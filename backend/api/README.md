@@ -43,7 +43,7 @@ python main.py
 
 ## 環境變數
 
-從 `backend/twitch/.env` 讀取:
+從 `api/.env` 讀取（複製 `.env.example` 並填入）:
 
 - `CLIENT_ID` - Twitch Client ID
 - `CLIENT_SECRET` - Twitch Client Secret

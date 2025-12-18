@@ -4,7 +4,7 @@
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
 [![TwitchIO](https://img.shields.io/badge/TwitchIO-3.x-purple.svg)](https://twitchio.dev/)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](../../LICENSE)
 
 ## 特色
 
@@ -19,7 +19,9 @@
 ### 1. 安裝與設定
 
 ```bash
+cd backend
 pip install -r requirements.txt
+cd twitch
 cp .env.example .env
 ```
 
@@ -124,9 +126,9 @@ Bot 自動偵測並使用 [Rich](https://github.com/Textualize/rich) 提供美�
 
 ## 文件說明
 
-- [OAuth 設定與權限指南](docs/SETUP_GUIDE.md) - OAuth 授權、Scopes、權限架構
-- [部署指南](docs/DEPLOYMENT.md) - Docker、Render 部署流程
-- [TwitchIO 3 API 指南](docs/TWITCHIO3_API.md) - API 用法與常見錯誤
+- [OAuth 設定與權限指南](../../docs/backend/twitch/SETUP_GUIDE.md) - OAuth 授權、Scopes、權限架構
+- [部署指南](../../docs/backend/twitch/DEPLOYMENT.md) - Docker、Render 部署流程
+- [TwitchIO 3 API 指南](../../docs/backend/twitch/TWITCHIO3_API.md) - API 用法與常見錯誤
 
 ## 技術棧
 

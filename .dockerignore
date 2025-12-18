@@ -1,0 +1,65 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Environment files
+**/.env
+**/.env.*
+!**/.env.example
+
+# Python
+**/__pycache__/
+**/*.py[cod]
+**/*$py.class
+**/*.so
+.Python
+**/.mypy_cache/
+**/.ruff_cache/
+**/.pytest_cache/
+**/.coverage
+**/htmlcov/
+
+# Virtual environments
+**/venv/
+**/env/
+**/ENV/
+**/.venv/
+
+# Node
+**/node_modules/
+**/dist/
+**/dist-ssr/
+**/.next/
+**/out/
+**/build/
+
+# IDE
+.vscode/
+.idea/
+**/*.swp
+**/*.swo
+**/*~
+
+# Logs
+**/*.log
+**/logs/
+
+# Database
+**/*.db
+**/*.sqlite
+**/*.sqlite3
+
+# OS
+.DS_Store
+**/Thumbs.db
+
+# Documentation (build時不需要)
+README.md
+**/README.md
+docs/
+**/docs/
+
+# Development tools
+**/scripts/
+LICENSE
