@@ -3,7 +3,10 @@
 提供趣味指令
 """
 
+import json
 import random
+from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from discord.ext import commands
@@ -115,6 +118,41 @@ class Fun(commands.Cog):
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self._load_data()
+
+    def _load_data(self):
+        """載入所有數據檔案"""
+        data_dir = Path(__file__).parent.parent.parent / "data"
+
+        # 載入運勢數據
+        with open(data_dir / "fortunes.json", "r", encoding="utf-8") as f:
+            self.fortune_data = json.load(f)
+
+        # 載入 Embed 配置
+        with open(data_dir / "embed.json", "r", encoding="utf-8") as f:
+            self.embed_config = json.load(f)
+
+    def _get_fortune_level(self, date_modifier: float = 1.0) -> str:
+        """根據權重隨機選擇運勢等級"""
+        levels = list(self.fortune_data["fortune_levels"].keys())
+        weights = [
+            self.fortune_data["fortune_levels"][level]["weight"] *
+            date_modifier
+            for level in levels
+        ]
+        result = random.choices(levels, weights=weights, k=1)[0]
+        return str(result)
+
+    def _get_date_bonus(self) -> tuple[str | None, float]:
+        """檢查今日特殊日期加成"""
+        today = datetime.now()
+        date_key = f"{today.month}-{today.day}"
+
+        special_dates = self.fortune_data.get("special_dates", {})
+        if date_key in special_dates:
+            event = special_dates[date_key]
+            return event["name"], event["modifier"]
+        return None, 1.0
 
     @app_commands.command(name="roll", description="擲骰子")
     @app_commands.describe(sides="骰子面數")
@@ -167,29 +205,109 @@ class Fun(commands.Cog):
     @app_commands.command(name="fortune", description="今日運勢")
     async def fortune(self, interaction: discord.Interaction):
         """查看今日運勢"""
-        fortunes = ["大吉", "中吉", "小吉", "吉", "末吉", "凶", "小凶", "中凶", "大凶"]
-        weights = [5, 10, 15, 20, 25, 15, 5, 3, 2]  # 加權機率
+        try:
+            # 獲取特殊日期加成
+            special_event, date_modifier = self._get_date_bonus()
 
-        result = random.choices(fortunes, weights=weights, k=1)[0]
+            # 獲取運勢等級
+            fortune_level = self._get_fortune_level(date_modifier)
+            level_data = self.fortune_data["fortune_levels"][fortune_level]
+            category = level_data["category"]
+            description = level_data["description"]
 
-        # 根據運勢給出建議
-        advice = {
-            "大吉": "今天是你的幸運日！",
-            "中吉": "今天運氣不錯",
-            "小吉": "今天會有小確幸",
-            "吉": "今天平平穩穩",
-            "末吉": "今天還算可以",
-            "凶": "今天小心行事",
-            "小凶": "今天要多注意",
-            "中凶": "今天可能會不太順利",
-            "大凶": "今天最好待在家裡",
-        }
+            # 獲取各項運勢詳情
+            fortune_details = self.fortune_data["fortune_details"][category]
+            career = random.choice(fortune_details["事業"])
+            wealth = random.choice(fortune_details["財運"])
+            love = random.choice(fortune_details["愛情"])
+            health = random.choice(fortune_details["健康"])
 
-        embed = discord.Embed(title="今日運勢", color=discord.Color.purple())
-        embed.add_field(name="運勢", value=result, inline=True)
-        embed.add_field(name="建議", value=advice[result], inline=False)
+            # 獲取宜忌建議
+            advice_data = self.fortune_data["advice"]
+            good_advice = random.choice(advice_data["宜"][category])
+            avoid_advice = random.choice(advice_data["忌"][category])
 
-        await interaction.response.send_message(embed=embed)
+            # 獲取幸運元素
+            lucky_data = self.fortune_data["lucky_elements"][category]
+            lucky_color = random.choice(lucky_data["colors"])
+            lucky_number = random.choice(lucky_data["numbers"])
+            lucky_hour = random.choice(lucky_data["hours"])
+
+            # 根據運勢等級選擇顏色
+            color_map: dict[str, discord.Colour] = {
+                "好": discord.Colour.gold(),
+                "中": discord.Colour.blue(),
+                "差": discord.Colour.dark_gray(),  # type: ignore[misc]
+            }
+
+            # 建立 Embed
+            embed = discord.Embed(
+                title=f"今日運勢【{fortune_level}】",
+                description=f"{description}",
+                color=color_map.get(category, discord.Colour.purple()),
+                # timestamp=datetime.now(),
+            )
+
+            # 設定 author (Niibot - 統一發送者)
+            author_data = self.embed_config.get("author", {})
+            if author_data.get("name"):
+                embed.set_author(
+                    name=author_data.get("name"),
+                    icon_url=author_data.get("icon_url"),
+                    url=author_data.get("url") or None,
+                )
+
+            # 設定 thumbnail (酥烤貓圖片)
+            thumbnail_url = self.embed_config.get(
+                "thumbnail", {}).get("fortune")
+            if thumbnail_url:
+                embed.set_thumbnail(url=thumbnail_url)
+
+            # 設定 image (只有運勢「好」才顯示大圖)
+            if category == "好":
+                image_url = self.embed_config.get("image", {}).get("fortune")
+                if image_url:
+                    embed.set_image(url=image_url)
+
+            # 特殊日期提示
+            if special_event:
+                embed.add_field(
+                    name="🎊 特殊加成",
+                    value=f"今日是 **{special_event}**，運勢有額外加成！",
+                    inline=False,
+                )
+
+            # 各項運勢 (兩兩一行)
+            embed.add_field(name="📊 | 事業運", value=career, inline=False)
+            embed.add_field(name="💰 | 財　運", value=wealth, inline=False)
+            embed.add_field(name="💕 | 愛情運", value=love, inline=False)
+            embed.add_field(name="💪 | 健康運", value=health, inline=False)
+
+            # 幸運元素
+            embed.add_field(
+                name="🎨 幸運元素",
+                value=f"**顏色:** {lucky_color}\n**數字:** {lucky_number}\n**時辰:** {lucky_hour}",
+                inline=False,
+            )
+
+            # 宜忌建議
+            embed.add_field(name="✅ 宜", value=good_advice, inline=True)
+            embed.add_field(name="⛔ 忌", value=avoid_advice, inline=True)
+
+            # 設定 footer (可選)
+            footer_data = self.embed_config.get("footer", {})
+            footer_text = footer_data.get("text")
+            footer_icon = footer_data.get("icon_url")
+            if footer_text:
+                embed.set_footer(text=footer_text,
+                                 icon_url=footer_icon or None)
+
+            await interaction.response.send_message(embed=embed)
+
+        except Exception as e:
+            await interaction.response.send_message(
+                f"占卜過程中發生神秘干擾: {e}", ephemeral=True
+            )
 
 
 async def setup(bot: commands.Bot):

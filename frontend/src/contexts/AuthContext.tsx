@@ -25,10 +25,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isLoading: false,
   })
 
-  // 載入用戶資料的函數
-  const loadUserData = React.useCallback(async (forceRefresh = false) => {
+  // 載入用戶資料的函數（用於手動刷新）
+  const refreshUser = React.useCallback(async () => {
     try {
-      const userData = await getCurrentUser({ forceRefresh })
+      const userData = await getCurrentUser({ forceRefresh: true })
       setUser(userData)
     } catch (error) {
       console.error('Failed to load user:', error)
@@ -36,10 +36,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
-  // 載入頻道資料的函數
-  const loadChannelsData = React.useCallback(async (forceRefresh = false) => {
+  // 載入頻道資料的函數（用於手動刷新）
+  const refreshChannels = React.useCallback(async () => {
     try {
-      const channelData = await getMonitoredChannels({ forceRefresh })
+      const channelData = await getMonitoredChannels({ forceRefresh: true })
       setChannels(channelData)
     } catch (error) {
       console.error('Failed to load channels:', error)
@@ -50,22 +50,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // 防止重複載入
     if (initRef.current.hasLoaded || initRef.current.isLoading) {
-      // 如果已經載入過，立即設置為已初始化
-      if (!isInitialized && initRef.current.hasLoaded) {
-        setIsInitialized(true)
-      }
       return
     }
 
     initRef.current.isLoading = true
     initRef.current.hasLoaded = true
 
-    // 並行載入用戶和頻道資料
-    Promise.all([loadUserData(false), loadChannelsData(false)]).finally(() => {
-      setIsInitialized(true)
-      initRef.current.isLoading = false
-    })
-  }, [loadUserData, loadChannelsData, isInitialized])
+    // 初始載入用戶和頻道資料
+    const loadInitialData = async () => {
+      try {
+        const [userData, channelData] = await Promise.all([
+          getCurrentUser({ forceRefresh: false }),
+          getMonitoredChannels({ forceRefresh: false }),
+        ])
+        setUser(userData)
+        setChannels(channelData)
+      } catch (error) {
+        console.error('Failed to load initial data:', error)
+        setUser(null)
+        setChannels([])
+      } finally {
+        setIsInitialized(true)
+        initRef.current.isLoading = false
+      }
+    }
+
+    loadInitialData()
+  }, [])
 
   return (
     <AuthContext.Provider
@@ -78,8 +89,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser(null)
           setChannels([])
         },
-        refreshUser: () => loadUserData(true),
-        refreshChannels: () => loadChannelsData(true),
+        refreshUser,
+        refreshChannels,
       }}
     >
       {children}

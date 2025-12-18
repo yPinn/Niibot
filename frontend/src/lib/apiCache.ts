@@ -29,7 +29,7 @@ class ApiCache {
         const data = JSON.parse(stored)
         this.cache = new Map(Object.entries(data))
       }
-    } catch (error) {
+    } catch {
       // 靜默失敗，不影響功能
     }
   }
@@ -41,7 +41,7 @@ class ApiCache {
     try {
       const data = Object.fromEntries(this.cache.entries())
       sessionStorage.setItem(this.storageKey, JSON.stringify(data))
-    } catch (error) {
+    } catch {
       // 靜默失敗，不影響功能
     }
   }
