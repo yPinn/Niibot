@@ -2,20 +2,10 @@
   "author": {
     "name": "Niibot",
     "icon_url": "https://cdn.discordapp.com/attachments/1331063972996186192/1451125728857952382/Avatar.png?ex=694509a6&is=6943b826&hm=297998fa9f8c40135ca650eb113c9879f982931ea41bc6a6cecd88875f93668e&",
-    "url": ""
+    "url": "https://www.twitch.tv/llazypilot"
   },
   "footer": {
-    "text": "",
-    "icon_url": ""
-  },
-  "thumbnail": {
-    "fortune": "https://cdn.discordapp.com/attachments/1331063972996186192/1451124004470657177/SukaoMao.png?ex=6945080b&is=6943b68b&hm=7d80c4a09ebf7a856f47b5cc4ab8d532b9af0913800a8afefa6e67b79c901fa1&",
-    "8ball": "https://cdn.discordapp.com/attachments/placeholder/8ball_icon.png",
-    "rps": "https://cdn.discordapp.com/attachments/placeholder/rps_icon.png",
-    "coinflip": "https://cdn.discordapp.com/attachments/placeholder/coin_icon.png",
-    "roll": "https://cdn.discordapp.com/attachments/placeholder/dice_icon.png"
-  },
-  "image": {
-    "fortune": "https://cdn.discordapp.com/attachments/1427209651623039047/1451134925985157120/1757470559960-edab4f627a114bf098ef28e5f1d6b575-800x454.png?ex=69451237&is=6943c0b7&hm=43946f01b0d7476a3e2fa92ff8820a670372fd62e0d867e9bfa8f42863a2e8bf&"
+    "text": "Niibot",
+    "icon_url": "https://cdn.discordapp.com/attachments/1331063972996186192/1451125728857952382/Avatar.png?ex=694509a6&is=6943b826&hm=297998fa9f8c40135ca650eb113c9879f982931ea41bc6a6cecd88875f93668e&"
   }
 }

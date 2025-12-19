@@ -1,0 +1,16 @@
+{
+  "embed": {
+    "8ball": {
+      "thumbnail": "https://cdn.discordapp.com/attachments/placeholder/8ball_icon.png"
+    },
+    "rps": {
+      "thumbnail": "https://cdn.discordapp.com/attachments/placeholder/rps_icon.png"
+    },
+    "coinflip": {
+      "thumbnail": "https://cdn.discordapp.com/attachments/placeholder/coin_icon.png"
+    },
+    "roll": {
+      "thumbnail": "https://cdn.discordapp.com/attachments/placeholder/dice_icon.png"
+    }
+  }
+}

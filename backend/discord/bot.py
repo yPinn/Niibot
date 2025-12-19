@@ -38,7 +38,8 @@ except ImportError:
 
 def setup_logging():
     """設定日誌系統"""
-    level = getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO)
+    level = getattr(logging, os.getenv(
+        "LOG_LEVEL", "INFO").upper(), logging.INFO)
 
     if RICH_AVAILABLE:
         try:
@@ -73,7 +74,8 @@ def setup_logging():
             )
 
             rich_handler.setFormatter(
-                logging.Formatter(fmt="%(message)s", datefmt="[%Y-%m-%d %H:%M:%S]")
+                logging.Formatter(fmt="%(message)s",
+                                  datefmt="[%Y-%m-%d %H:%M:%S]")
             )
 
             logging.basicConfig(
@@ -128,32 +130,43 @@ class NiibotClient(commands.Bot):
         )
 
         self.initial_extensions = [
-            "cogs.utility",
+            "cogs.admin",
             "cogs.moderation",
-            "cogs.fun",
+            "cogs.utility",
             "cogs.events",
+            "cogs.fortune",
+            "cogs.giveaway",
+            "cogs.games",
+            "cogs.eat",
         ]
 
     async def setup_hook(self):
         """Bot 啟動時的初始化設置"""
         # 載入 Cogs
-        if RICH_AVAILABLE:
-            logger.info("[bold yellow]開始載入 Cogs...[/bold yellow]")
-        else:
-            logger.info("開始載入 Cogs...")
+        loaded = []
+        failed = []
 
         for extension in self.initial_extensions:
             try:
                 await self.load_extension(extension)
-                if RICH_AVAILABLE:
-                    logger.info(f"[green]✓[/green] {extension}")
-                else:
-                    logger.info(f"成功載入: {extension}")
+                loaded.append(extension.split('.')[-1])
             except Exception as e:
-                if RICH_AVAILABLE:
-                    logger.error(f"[red]✗[/red] {extension} - {e}")
-                else:
-                    logger.error(f"載入失敗: {extension} - {e}")
+                failed.append(f"{extension.split('.')[-1]} ({e})")
+
+        # 顯示載入結果
+        if loaded:
+            cogs_list = ", ".join(loaded)
+            if RICH_AVAILABLE:
+                logger.info(f"[green]已載入 Cogs:[/green] {cogs_list}")
+            else:
+                logger.info(f"已載入 Cogs: {cogs_list}")
+
+        if failed:
+            failures = ", ".join(failed)
+            if RICH_AVAILABLE:
+                logger.error(f"[red]載入失敗:[/red] {failures}")
+            else:
+                logger.error(f"載入失敗: {failures}")
 
         # 同步斜線指令到 Discord
         if RICH_AVAILABLE:
@@ -167,12 +180,14 @@ class NiibotClient(commands.Bot):
             guild = discord.Object(id=int(guild_id))
             self.tree.copy_global_to(guild=guild)
             await self.tree.sync(guild=guild)
+
+            # 保存 guild_id 供 on_ready 使用
+            self._sync_guild_id = guild_id
+
             if RICH_AVAILABLE:
-                logger.info(
-                    f"[magenta]已同步斜線指令到測試伺服器[/magenta] (ID: {guild_id})"
-                )
+                logger.info("[magenta]已同步斜線指令到測試伺服器[/magenta]")
             else:
-                logger.info(f"已同步斜線指令到測試伺服器 (ID: {guild_id})")
+                logger.info("已同步斜線指令到測試伺服器")
         else:
             # 全域同步 (較慢,可能需要 1 小時生效)
             await self.tree.sync()
@@ -188,31 +203,54 @@ class NiibotClient(commands.Bot):
 
     async def on_ready(self):
         """Bot 連接成功並就緒時觸發"""
+        # 記錄同步的測試伺服器資訊
+        if hasattr(self, '_sync_guild_id'):
+            guild_obj = self.get_guild(int(self._sync_guild_id))
+            if guild_obj:
+                if RICH_AVAILABLE:
+                    logger.info(
+                        f"[cyan]測試伺服器:[/cyan] {guild_obj.name} (ID: {self._sync_guild_id})")
+                else:
+                    logger.info(
+                        f"測試伺服器: {guild_obj.name} (ID: {self._sync_guild_id})")
+
+        # 取得並設定 Bot 擁有者 ID
+        if not self.owner_id:
+            app_info = await self.application_info()
+            self.owner_id = app_info.owner.id
+            # 優先使用 global_name（全局顯示名稱），否則使用 name（用戶名）
+            owner_name = app_info.owner.global_name or app_info.owner.name
+            if RICH_AVAILABLE:
+                logger.info(
+                    f"[cyan]Bot Owner:[/cyan] {owner_name} (ID: {self.owner_id})")
+            else:
+                logger.info(f"Bot Owner: {owner_name} (ID: {self.owner_id})")
+
         # 應用配置的狀態和活動
         await self.change_presence(
             status=BotConfig.get_status(), activity=BotConfig.get_activity()
         )
 
         # 記錄 Bot 資訊
-        if RICH_AVAILABLE:
-            logger.info("[bold green]Discord Bot 已就緒[/bold green]")
-            logger.info(f"[cyan]Bot 名稱:[/cyan] {self.user}")
-            logger.info(f"[cyan]Bot ID:[/cyan] {self.user.id}")
-            logger.info(f"[cyan]discord.py 版本:[/cyan] {discord.__version__}")
-            logger.info(f"[cyan]已連接伺服器:[/cyan] {len(self.guilds)} 個")
+        status = BotConfig.get_status()
+        activity = BotConfig.get_activity()
+        activity_str = f"{activity.name}" if activity else "無"
 
-            status = BotConfig.get_status()
-            activity = BotConfig.get_activity()
-            activity_str = f"{activity.name}" if activity else "無"
+        if RICH_AVAILABLE:
             logger.info(
-                f"[cyan]狀態:[/cyan] {status.name} | [cyan]活動:[/cyan] {activity_str}"
+                f"[bold green]Bot 已就緒:[/bold green] {self.user} [dim](ID: {self.user.id})[/dim]"
+            )
+            logger.info(
+                f"[cyan]連接資訊:[/cyan] {len(self.guilds)} 個伺服器 | discord.py {discord.__version__}"
+            )
+            logger.info(
+                f"[cyan]Bot 狀態:[/cyan] {status.name} | {activity_str}"
             )
         else:
-            logger.info("=" * 50)
-            logger.info(f"Bot 已登入: {self.user} (ID: {self.user.id})")
-            logger.info(f"discord.py 版本: {discord.__version__}")
-            logger.info(f"已連接 {len(self.guilds)} 個伺服器")
-            logger.info("=" * 50)
+            logger.info(f"Bot 已就緒: {self.user} (ID: {self.user.id})")
+            logger.info(
+                f"連接資訊: {len(self.guilds)} 個伺服器 | discord.py {discord.__version__}")
+            logger.info(f"Bot 狀態: {status.name} | {activity_str}")
 
     async def on_command_error(self, ctx: commands.Context, error: commands.CommandError):
         """處理前綴指令錯誤"""

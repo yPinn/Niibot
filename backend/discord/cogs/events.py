@@ -3,12 +3,15 @@
 記錄 Discord 沒有內建通知的重要事件
 """
 
+import logging
 from datetime import datetime
 
 from discord.ext import commands
 
 import discord
 from discord import app_commands
+
+logger = logging.getLogger(__name__)
 
 
 class Events(commands.Cog):
@@ -35,6 +38,12 @@ class Events(commands.Cog):
             f"已設定日誌頻道為 {channel.mention}", ephemeral=True
         )
 
+        # 記錄日誌頻道設定
+        logger.info(
+            f"日誌頻道設定 | 伺服器: {interaction.guild.name} | "
+            f"頻道: #{channel.name} | 操作者: {interaction.user.name}"
+        )
+
     @app_commands.command(name="unsetlog", description="取消日誌頻道設定")
     @app_commands.checks.has_permissions(administrator=True)
     async def unset_log_channel(self, interaction: discord.Interaction):
@@ -46,6 +55,12 @@ class Events(commands.Cog):
         if interaction.guild.id in self.log_channels:
             del self.log_channels[interaction.guild.id]
             await interaction.response.send_message("已取消日誌頻道設定", ephemeral=True)
+
+            # 記錄日誌頻道取消
+            logger.info(
+                f"日誌頻道取消 | 伺服器: {interaction.guild.name} | "
+                f"操作者: {interaction.user.name}"
+            )
         else:
             await interaction.response.send_message("尚未設定日誌頻道", ephemeral=True)
 

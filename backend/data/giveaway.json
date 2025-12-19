@@ -1,0 +1,26 @@
+{
+  "embed": {
+    "thumbnail": "",
+    "image": "https://cdn.discordapp.com/attachments/1331063972996186192/1451476927113199697/IMG_6828.jpg?ex=694650ba&is=6944ff3a&hm=7aaaa2265b6e34c02251bda1bd7874bbde7005ef1799d61f8ac437158332a9d4&",
+    "author": {
+      "name": "",
+      "icon_url": "",
+      "url": ""
+    },
+    "footer": {
+      "text": "",
+      "icon_url": ""
+    }
+  },
+  "colors": {
+    "active": "#3498db",
+    "ended": "#2ecc71"
+  },
+  "messages": {
+    "no_participants": "沒有人參加此抽獎",
+    "already_joined": "你已經參加過此抽獎了！",
+    "joined_success": "成功參加抽獎！",
+    "not_host": "只有抽獎主持人可以執行此操作",
+    "giveaway_ended": "此抽獎已結束"
+  }
+}
