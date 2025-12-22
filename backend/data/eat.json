@@ -1,17 +1,6 @@
 {
-  "_comment": "Eat Cog Data - v2.0",
-  "_version": "2.0",
   "embed": {
-    "thumbnail": "https://cdn.discordapp.com/attachments/1331063972996186192/1451125728857952382/Avatar.png?ex=694509a6&is=6943b826&hm=297998fa9f8c40135ca650eb113c9879f982931ea41bc6a6cecd88875f93668e&",
-    "author": {
-      "name": "美食推薦系統",
-      "icon_url": "https://cdn.discordapp.com/attachments/1331063972996186192/1451125728857952382/Avatar.png?ex=694509a6&is=6943b826&hm=297998fa9f8c40135ca650eb113c9879f982931ea41bc6a6cecd88875f93668e&",
-      "url": "https://www.twitch.tv/llazypilot"
-    },
-    "footer": {
-      "text": "Niibot 美食顧問",
-      "icon_url": "https://cdn.discordapp.com/attachments/1331063972996186192/1451125728857952382/Avatar.png?ex=694509a6&is=6943b826&hm=297998fa9f8c40135ca650eb113c9879f982931ea41bc6a6cecd88875f93668e&"
-    }
+    "thumbnail": "https://cdn.discordapp.com/attachments/1331063972996186192/1451125728857952382/Avatar.png?ex=694509a6&is=6943b826&hm=297998fa9f8c40135ca650eb113c9879f982931ea41bc6a6cecd88875f93668e&"
   },
   "settings": {
     "anti_repeat": {
@@ -25,9 +14,7 @@
     }
   },
   "categories": {
-    "隨機套餐": [
-      "功能性分類：隨機選擇一個食物加一個飲料"
-    ],
+    "隨機套餐": ["功能性分類：隨機選擇一個食物加一個飲料"],
     "正餐": [
       "便當",
       "炒飯",

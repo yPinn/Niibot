@@ -138,8 +138,10 @@ class Eat(commands.Cog):
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.data_file = Path(__file__).parent.parent.parent / "data" / "eat.json"
-        self.global_embed_file = Path(__file__).parent.parent.parent / "data" / "embed.json"
+        # 路徑：/app/cogs/eat.py -> /app/data/eat.json
+        base_dir = Path(__file__).parent.parent  # /app
+        self.data_file = base_dir / "data" / "eat.json"
+        self.global_embed_file = base_dir / "data" / "embed.json"
         self.data: dict[str, Any] = {}
         self.global_embed_config: dict[str, Any] = {}
         self._lock = asyncio.Lock()

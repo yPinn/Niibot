@@ -50,6 +50,8 @@ services:
       - ./backend/discord/.env
     environment:
       - PYTHONUNBUFFERED=1
+    volumes:
+      - ./backend/data:/app/data
     networks:
       - niibot-network
 
