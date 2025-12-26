@@ -73,6 +73,7 @@ async def get_user_info(user_id: str) -> dict | None:
             user = users[0]
 
             return {
+                "id": user.get("id"),  # Twitch user ID
                 "name": user.get("login"),  # Twitch login name (username)
                 "display_name": user.get("display_name"),  # Twitch display name
                 "avatar": user.get("profile_image_url")  # Twitch avatar

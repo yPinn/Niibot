@@ -42,7 +42,7 @@ export const navigationData = {
       items: [
         {
           title: 'Get Started',
-          url: '/docs/introduction',
+          url: '/docs',
         },
         {
           title: 'Discord Bot',

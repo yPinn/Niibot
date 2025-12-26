@@ -24,6 +24,7 @@ load_dotenv(dotenv_path=env_path, encoding="utf-8")
 # 導入配置和 Discord 模組
 from config import BotConfig  # noqa: E402
 from discord.ext import commands  # noqa: E402
+from rate_limiter import RateLimitMonitor  # noqa: E402
 
 import discord  # noqa: E402
 
@@ -138,10 +139,17 @@ class NiibotClient(commands.Bot):
             "cogs.giveaway",
             "cogs.games",
             "cogs.eat",
+            "cogs.rate_limit_monitor",
         ]
+
+        # 初始化速率限制監控器
+        self.rate_limiter = RateLimitMonitor(self)
 
     async def setup_hook(self):
         """Bot 啟動時的初始化設置"""
+        # 啟動速率限制監控
+        await self.rate_limiter.start_monitoring()
+
         # 載入 Cogs
         loaded = []
         failed = []

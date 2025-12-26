@@ -7,10 +7,45 @@
 - 多平台擴展支持（Twitch, Discord 等）
 """
 
+import logging
+import os
+
 from config import CORS_ORIGINS
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from rich.console import Console
+from rich.logging import RichHandler
 from routers import auth, channels
+
+
+def setup_logging():
+    """設置日誌系統"""
+    level = getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO)
+
+    console = Console(force_terminal=True, width=120)
+    rich_handler = RichHandler(
+        console=console,
+        show_time=True,
+        show_level=True,
+        show_path=False,
+        markup=True,
+    )
+    rich_handler.setFormatter(
+        logging.Formatter(fmt="%(message)s", datefmt="[%Y-%m-%d %H:%M:%S]")
+    )
+
+    logging.basicConfig(
+        level=level,
+        format="%(message)s",
+        datefmt="[%Y-%m-%d %H:%M:%S]",
+        handlers=[rich_handler],
+    )
+
+    # 降低 uvicorn 存取日誌級別
+    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+
+
+setup_logging()
 
 app = FastAPI(
     title="Niibot API",
@@ -50,4 +85,9 @@ async def root():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=8000,
+        log_config=None  # 使用我們自己的日誌配置,不使用 uvicorn 預設的
+    )

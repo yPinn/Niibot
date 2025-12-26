@@ -39,3 +39,32 @@ CREATE TRIGGER update_tokens_updated_at BEFORE UPDATE ON tokens
 
 CREATE TRIGGER update_channels_updated_at BEFORE UPDATE ON channels
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Create NOTIFY function for channel enable/disable changes
+-- This sends a PostgreSQL NOTIFY event when a channel's enabled status changes
+CREATE OR REPLACE FUNCTION notify_channel_toggle()
+RETURNS TRIGGER AS $$
+DECLARE
+    payload TEXT;
+BEGIN
+    -- Only send notification if enabled column actually changed
+    IF NEW.enabled IS DISTINCT FROM OLD.enabled THEN
+        payload := json_build_object(
+            'channel_id', NEW.channel_id,
+            'channel_name', NEW.channel_name,
+            'enabled', NEW.enabled
+        )::text;
+
+        PERFORM pg_notify('channel_toggle', payload);
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Create trigger to notify on channel enable/disable
+DROP TRIGGER IF EXISTS channel_toggle_trigger ON channels;
+CREATE TRIGGER channel_toggle_trigger
+AFTER UPDATE ON channels
+FOR EACH ROW
+EXECUTE FUNCTION notify_channel_toggle();

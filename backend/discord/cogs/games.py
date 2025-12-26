@@ -5,9 +5,9 @@
 
 import json
 import random
-from pathlib import Path
 from typing import Any
 
+from config import DATA_DIR
 from discord.ext import commands
 
 import discord
@@ -121,14 +121,12 @@ class Games(commands.Cog):
 
     def _load_data(self):
         """載入遊戲和全域 Embed 數據"""
-        data_dir = Path(__file__).parent.parent.parent / "data"
-
         # 載入遊戲數據（包含專屬 embed 配置）
-        with open(data_dir / "games.json", "r", encoding="utf-8") as f:
+        with open(DATA_DIR / "games.json", "r", encoding="utf-8") as f:
             self.games_data = json.load(f)
 
         # 載入全域 Embed 配置
-        with open(data_dir / "embed.json", "r", encoding="utf-8") as f:
+        with open(DATA_DIR / "embed.json", "r", encoding="utf-8") as f:
             self.global_embed_config = json.load(f)
 
     @app_commands.command(name="roll", description="擲骰子")

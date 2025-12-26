@@ -7,9 +7,9 @@ import json
 import logging
 import random
 from datetime import datetime
-from pathlib import Path
 from typing import Any
 
+from config import DATA_DIR
 from discord.ext import commands
 
 import discord
@@ -215,12 +215,10 @@ class Giveaway(commands.Cog):
 
     def _load_data(self):
         """載入抽獎和全域 Embed 數據"""
-        data_dir = Path(__file__).parent.parent.parent / "data"
-
-        with open(data_dir / "giveaway.json", "r", encoding="utf-8") as f:
+        with open(DATA_DIR / "giveaway.json", "r", encoding="utf-8") as f:
             self.config = json.load(f)
 
-        with open(data_dir / "embed.json", "r", encoding="utf-8") as f:
+        with open(DATA_DIR / "embed.json", "r", encoding="utf-8") as f:
             self.global_embed_config = json.load(f)
 
     async def create_giveaway_embed(

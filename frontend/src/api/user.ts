@@ -4,6 +4,7 @@ import { apiCache, CACHE_KEYS } from '@/lib/apiCache'
 import { API_ENDPOINTS } from './config'
 
 export interface User {
+  id: string
   name: string
   display_name: string
   avatar: string

@@ -44,7 +44,8 @@ async def get_database_pool() -> asyncpg.Pool:
             min_size=1,
             max_size=5,  # API server 不需要太多連線
             timeout=30.0,  # 增加 timeout 以應對遠端資料庫
-            command_timeout=20.0  # 增加命令超時時間
+            command_timeout=20.0,  # 增加命令超時時間
+            statement_cache_size=0  # 禁用 prepared statements 以兼容 pgbouncer
         )
         logger.info("Database connection pool created successfully")
         return _pool

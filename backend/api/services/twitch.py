@@ -14,7 +14,17 @@ import importlib.util
 
 from config import API_URL, CLIENT_ID
 
-twitch_config_path = Path(__file__).parent.parent.parent / "twitch" / "config.py"
+# 路徑計算: Docker 和本地環境兼容
+# Docker: /app/services -> /app/twitch/config.py
+# 本地: backend/api/services -> backend/twitch/config.py
+api_dir = Path(__file__).parent.parent  # api/ 或 /app
+backend_dir = api_dir.parent  # backend/ 或 /
+twitch_config_path = backend_dir / "twitch" / "config.py"
+
+# Docker 環境下使用容器內的路徑
+if not twitch_config_path.exists():
+    twitch_config_path = api_dir / "twitch" / "config.py"
+
 spec = importlib.util.spec_from_file_location("twitch_config", twitch_config_path)
 if spec and spec.loader:
     twitch_config = importlib.util.module_from_spec(spec)
@@ -217,27 +227,26 @@ async def get_monitored_channels(user_id: str) -> list[dict]:
 
             access_token = token_row["token"]
 
-            # 2. 從資料庫獲取監聽的頻道列表（從 channels 表）
+            # 2. 從資料庫獲取監聽的頻道列表（從 channels 表，直接查 channel_id）
             channel_rows = await connection.fetch(
-                "SELECT DISTINCT channel_name FROM channels WHERE enabled = true"
+                "SELECT DISTINCT channel_id, channel_name FROM channels WHERE enabled = true"
             )
 
-            logger.info(f"Found {len(channel_rows)} channel rows in database")
+            logger.info(f"Found {len(channel_rows)} enabled channels in database")
 
             if not channel_rows:
                 logger.info("No monitored channels found")
                 return []
 
-            # 取得頻道名稱列表
-            channel_names = [row["channel_name"] for row in channel_rows]
-            logger.info(f"Channel names: {channel_names}")
+            # 取得頻道 ID 列表
+            channel_ids = [row["channel_id"] for row in channel_rows]
 
-        # 3. 使用 Twitch API 批次查詢頻道資訊
+        # 3. 使用 Twitch API 批次查詢頻道資訊（使用 ID 而非 login，避免重複查詢）
         async with httpx.AsyncClient(timeout=10.0) as client:
-            # 查詢用戶資訊
+            # 查詢用戶資訊（使用 ID，最多一次 API 呼叫）
             users_response = await client.get(
                 "https://api.twitch.tv/helix/users",
-                params={"login": channel_names},
+                params={"id": channel_ids},
                 headers={
                     "Authorization": f"Bearer {access_token}",
                     "Client-Id": CLIENT_ID
@@ -252,13 +261,9 @@ async def get_monitored_channels(user_id: str) -> list[dict]:
             users_data = users_response.json().get("data", [])
             logger.info(f"Twitch API returned {len(users_data)} users")
 
-            # 建立頻道資訊字典（排除當前用戶自己）
+            # 建立頻道資訊字典（包含所有頻道，包括當前用戶自己）
             channels_info = {}
             for user in users_data:
-                # 跳過當前登入的用戶
-                if user["id"] == user_id:
-                    continue
-
                 channels_info[user["login"]] = {
                     "id": user["id"],
                     "name": user["login"],
@@ -293,11 +298,14 @@ async def get_monitored_channels(user_id: str) -> list[dict]:
                                 channel["game_name"] = stream["game_name"]
                                 break
 
-        # 轉換為列表並排序（在線的排前面）
-        result = list(channels_info.values())
+        # 轉換為列表並排序（在線的排前面），排除當前用戶自己
+        result = [
+            channel for channel in channels_info.values()
+            if channel["id"] != user_id  # 過濾掉當前登入用戶
+        ]
         result.sort(key=lambda x: (not x["is_live"], x["display_name"]))
 
-        logger.info(f"Found {len(result)} monitored channels for user {user_id}")
+        logger.info(f"Found {len(result)} monitored channels for user {user_id} (excluding self)")
         return result
 
     except Exception as e:

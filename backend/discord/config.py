@@ -1,8 +1,19 @@
 """Discord Bot 配置"""
 
 import os
+from pathlib import Path
 
 import discord
+
+# 專案路徑定義
+DISCORD_DIR = Path(__file__).parent  # backend/discord/ (本地) 或 /app (Docker)
+BACKEND_DIR = DISCORD_DIR.parent  # backend/ (本地) 或 / (Docker)
+
+# Docker 環境檢測: 如果在 /app 目錄,使用 /app/data
+if str(DISCORD_DIR) == "/app":
+    DATA_DIR = DISCORD_DIR / "data"  # /app/data (Docker)
+else:
+    DATA_DIR = BACKEND_DIR / "data"  # backend/data/ (本地)
 
 
 class BotConfig:
@@ -19,6 +30,11 @@ class BotConfig:
 
     # Streaming URL (僅當 ACTIVITY_TYPE 為 streaming 時需要)
     ACTIVITY_URL: str = os.getenv("DISCORD_ACTIVITY_URL", "")
+
+    # 速率限制配置
+    RATE_LIMIT_ENABLED: bool = os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true"
+    RATE_LIMIT_WARNING_THRESHOLD: float = float(os.getenv("RATE_LIMIT_WARNING_THRESHOLD", "0.7"))
+    RATE_LIMIT_CRITICAL_THRESHOLD: float = float(os.getenv("RATE_LIMIT_CRITICAL_THRESHOLD", "0.9"))
 
     @classmethod
     def get_status(cls) -> discord.Status:

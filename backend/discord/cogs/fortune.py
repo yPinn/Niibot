@@ -6,8 +6,8 @@
 import json
 import random
 from datetime import datetime
-from pathlib import Path
 
+from config import DATA_DIR
 from discord.ext import commands
 
 import discord
@@ -23,14 +23,12 @@ class Fortune(commands.Cog):
 
     def _load_data(self):
         """載入運勢和全域 Embed 數據"""
-        data_dir = Path(__file__).parent.parent.parent / "data"
-
         # 載入運勢數據（包含專屬 embed 配置）
-        with open(data_dir / "fortune.json", "r", encoding="utf-8") as f:
+        with open(DATA_DIR / "fortune.json", "r", encoding="utf-8") as f:
             self.fortune_data = json.load(f)
 
         # 載入全域 Embed 配置
-        with open(data_dir / "embed.json", "r", encoding="utf-8") as f:
+        with open(DATA_DIR / "embed.json", "r", encoding="utf-8") as f:
             self.global_embed_config = json.load(f)
 
     def _get_fortune_level(self, date_modifier: float = 1.0) -> str:

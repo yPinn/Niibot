@@ -89,6 +89,7 @@ async def get_current_user(auth_token: str | None = Cookie(None)):
 
     返回格式：
     {
+        "id": "使用者 ID（Twitch user_id）",
         "name": "使用者帳號",
         "display_name": "顯示名稱",
         "avatar": "頭像 URL"

@@ -29,6 +29,7 @@ export function NavMain({
   }[]
 }) {
   const location = useLocation()
+  const [manuallyOpenedItems, setManuallyOpenedItems] = useState<Set<string>>(new Set())
   const [manuallyClosedItems, setManuallyClosedItems] = useState<Set<string>>(new Set())
 
   // 檢查該選單項目是否包含當前路由
@@ -39,29 +40,52 @@ export function NavMain({
     [location.pathname]
   )
 
-  // 計算哪些項目應該被打開（自動展開活躍項目，除非用戶手動關閉）
+  // 計算哪些項目應該被打開
   const openItems = useMemo(() => {
     const open = new Set<string>()
     items.forEach(item => {
-      if (isItemActive(item) && !manuallyClosedItems.has(item.title)) {
+      const active = isItemActive(item)
+      const manuallyOpened = manuallyOpenedItems.has(item.title)
+      const manuallyClosed = manuallyClosedItems.has(item.title)
+
+      // 如果用戶手動打開，則打開
+      if (manuallyOpened) {
+        open.add(item.title)
+      }
+      // 如果用戶手動關閉，則不打開
+      else if (manuallyClosed) {
+        // 不打開
+      }
+      // 如果是活躍項目且沒有被手動關閉，則自動打開
+      else if (active) {
         open.add(item.title)
       }
     })
     return open
-  }, [items, isItemActive, manuallyClosedItems])
+  }, [items, isItemActive, manuallyOpenedItems, manuallyClosedItems])
 
   // 切換選單展開/收起
   const toggleItem = (title: string, isOpen: boolean) => {
-    if (!isOpen) {
-      // 用戶手動關閉選單，記錄下來
+    if (isOpen) {
+      // 用戶手動打開選單
+      setManuallyOpenedItems(prev => {
+        const next = new Set(prev)
+        next.add(title)
+        return next
+      })
+      setManuallyClosedItems(prev => {
+        const next = new Set(prev)
+        next.delete(title)
+        return next
+      })
+    } else {
+      // 用戶手動關閉選單
       setManuallyClosedItems(prev => {
         const next = new Set(prev)
         next.add(title)
         return next
       })
-    } else {
-      // 用戶手動打開選單，從關閉記錄中移除
-      setManuallyClosedItems(prev => {
+      setManuallyOpenedItems(prev => {
         const next = new Set(prev)
         next.delete(title)
         return next
