@@ -9,11 +9,13 @@ import discord
 DISCORD_DIR = Path(__file__).parent  # backend/discord/ (本地) 或 /app (Docker)
 BACKEND_DIR = DISCORD_DIR.parent  # backend/ (本地) 或 / (Docker)
 
-# Docker 環境檢測: 如果在 /app 目錄,使用 /app/data
+# Docker 環境檢測: 統一使用 /app/data (Docker) 或 backend/data/ (本地)
+# Docker 中: DISCORD_DIR=/app, 掛載 ./backend/data:/app/data
+# 本地: DISCORD_DIR=backend/discord/, DATA_DIR=backend/data/
 if str(DISCORD_DIR) == "/app":
-    DATA_DIR = DISCORD_DIR / "data"  # /app/data (Docker)
+    DATA_DIR = Path("/app/data")  # Docker: /app/data (掛載自 ./backend/data)
 else:
-    DATA_DIR = BACKEND_DIR / "data"  # backend/data/ (本地)
+    DATA_DIR = BACKEND_DIR / "data"  # 本地: backend/data/
 
 
 class BotConfig:
