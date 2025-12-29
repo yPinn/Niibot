@@ -12,6 +12,8 @@ services:
       - ./backend/twitch/.env
     environment:
       - PYTHONUNBUFFERED=1
+    volumes:
+      - niibot-data:/app/data
     networks:
       - niibot-network
 
@@ -27,7 +29,7 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
     volumes:
-      - ./backend/data:/app/data
+      - niibot-data:/app/data
     networks:
       - niibot-network
 
@@ -44,6 +46,8 @@ services:
       - ./backend/api/.env
     environment:
       - PYTHONUNBUFFERED=1
+    volumes:
+      - niibot-data:/app/data
     networks:
       - niibot-network
 
@@ -62,6 +66,10 @@ services:
       - api
     networks:
       - niibot-network
+
+volumes:
+  niibot-data:
+    driver: local
 
 networks:
   niibot-network:

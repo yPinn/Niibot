@@ -12,4 +12,7 @@ RUN mkdir -p /app/data
 
 ENV PYTHONUNBUFFERED=1
 
+# 暴露 HTTP 服務器埠口（用於 Render Web Service）
+EXPOSE 8080
+
 CMD ["python", "bot.py"]

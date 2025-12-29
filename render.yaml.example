@@ -1,0 +1,81 @@
+# Render Blueprint 配置範例
+#
+# ⚠️ 注意：Blueprint 功能需要付費方案（至少 Starter Plan）
+# 免費方案請參考 RENDER_FREE_DEPLOYMENT.md 手動創建服務
+#
+# 如果您使用付費方案，可以將此文件重命名為 render.yaml 使用
+
+services:
+  # Discord Bot
+  - type: web
+    name: niibot-discord
+    runtime: docker
+    dockerfilePath: ./backend/discord/Dockerfile
+    dockerContext: ./backend
+    envVars:
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: ENABLE_HTTP_SERVER
+        value: "true"
+      - key: HTTP_PORT
+        value: "8080"
+      - key: DISCORD_BOT_TOKEN
+        sync: false # 需要在 Render Dashboard 手動設置
+      - key: DISCORD_STATUS
+        sync: false
+      - key: DISCORD_ACTIVITY_TYPE
+        sync: false
+      - key: DISCORD_ACTIVITY_NAME
+        sync: false
+    # 數據持久化
+    disk:
+      name: discord-data
+      mountPath: /app/data
+      sizeGB: 1
+    # 健康檢查（防止休眠）
+    healthCheckPath: /health
+
+  # Twitch Bot（如需部署）
+  # - type: web
+  #   name: niibot-twitch
+  #   runtime: docker
+  #   dockerfilePath: ./backend/twitch/Dockerfile
+  #   dockerContext: ./backend
+  #   envVars:
+  #     - key: PYTHONUNBUFFERED
+  #       value: "1"
+  #     - key: TWITCH_CLIENT_ID
+  #       sync: false
+  #     - key: TWITCH_CLIENT_SECRET
+  #       sync: false
+  #   disk:
+  #     name: twitch-data
+  #     mountPath: /app/data
+  #     sizeGB: 1
+
+  # API Server（如需部署）
+  # - type: web
+  #   name: niibot-api
+  #   runtime: docker
+  #   dockerfilePath: ./backend/api/Dockerfile
+  #   dockerContext: ./backend
+  #   envVars:
+  #     - key: PYTHONUNBUFFERED
+  #       value: "1"
+  #   disk:
+  #     name: api-data
+  #     mountPath: /app/data
+  #     sizeGB: 1
+  #   healthCheckPath: /health
+
+  # Frontend（如需部署）
+  # - type: web
+  #   name: niibot-frontend
+  #   runtime: docker
+  #   dockerfilePath: ./frontend/Dockerfile
+  #   dockerContext: ./frontend
+  #   envVars:
+  #     - key: REACT_APP_API_URL
+  #       value: https://niibot-api.onrender.com
+  #     - key: NODE_ENV
+  #       value: production
