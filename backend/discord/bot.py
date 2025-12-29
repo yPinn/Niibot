@@ -118,11 +118,10 @@ class NiibotClient(commands.Bot):
     """Niibot Discord Bot 客戶端"""
 
     def __init__(self):
-        # 設定 Intents
+        # 設定 Intents (僅開啟必要的特權 Intents)
         intents = discord.Intents.default()
-        intents.message_content = True  # 需要讀取訊息內容
-        intents.members = True  # 需要讀取成員資訊
-        intents.presences = True  # 需要讀取成員狀態
+        intents.message_content = True  # Required for events.py message logging
+        intents.members = True  # Required for moderation, utility, events, giveaway
 
         super().__init__(
             command_prefix=commands.when_mentioned_or("$"),
@@ -235,9 +234,12 @@ class NiibotClient(commands.Bot):
                 logger.info(f"Bot Owner: {owner_name} (ID: {self.owner_id})")
 
         # 應用配置的狀態和活動
-        await self.change_presence(
-            status=BotConfig.get_status(), activity=BotConfig.get_activity()
-        )
+        try:
+            await self.change_presence(
+                status=BotConfig.get_status(), activity=BotConfig.get_activity()
+            )
+        except Exception as e:
+            logger.warning(f"Failed to set bot presence: {e}")
 
         # 記錄 Bot 資訊
         status = BotConfig.get_status()

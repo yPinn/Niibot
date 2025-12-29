@@ -1,4 +1,4 @@
-"""頻道管理相關的業務邏輯"""
+"""Channel management service"""
 
 import logging
 
@@ -6,24 +6,11 @@ logger = logging.getLogger(__name__)
 
 
 async def get_my_channel_status(user_id: str) -> dict:
-    """獲取當前使用者的頻道訂閱狀態
-
-    Args:
-        user_id: Twitch user ID
-
-    Returns:
-        dict: {
-            "subscribed": bool,
-            "channel_id": str,
-            "channel_name": str
-        }
-    """
     try:
         from services.database import get_database_pool
 
         pool = await get_database_pool()
         async with pool.acquire() as connection:
-            # 檢查 channels 表中是否有該用戶的頻道且 enabled = true
             channel_row = await connection.fetchrow(
                 """
                 SELECT channel_id, channel_name, enabled
@@ -56,22 +43,11 @@ async def get_my_channel_status(user_id: str) -> dict:
 
 
 async def toggle_channel(channel_id: str, enabled: bool) -> bool:
-    """啟用或停用頻道監聽
-
-    Args:
-        channel_id: 頻道 ID (Twitch user_id)
-        enabled: True 為啟用，False 為停用
-
-    Returns:
-        bool: 是否成功
-    """
     try:
-
         from services.database import get_database_pool
 
         pool = await get_database_pool()
         async with pool.acquire() as connection:
-            # 更新資料庫
             await connection.execute(
                 """
                 UPDATE channels

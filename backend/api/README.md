@@ -1,84 +1,77 @@
 # Niibot API Server
 
-FastAPI server 處理前端請求,與 TwitchIO bot 分離。
+FastAPI server for frontend integration.
 
-## 架構
+## Structure
 
 ```
 backend/api/
-├── main.py              # FastAPI 主程式
-├── config.py            # 配置管理
+├── main.py              # FastAPI application
+├── config.py            # Environment variables
 ├── routers/
-│   └── auth.py          # 認證路由
+│   ├── auth.py          # Authentication routes
+│   └── channels.py      # Channel monitoring routes
 └── services/
-    ├── database.py      # 資料庫連線(共用 bot DB)
-    ├── auth.py          # JWT 認證
-    ├── twitch.py        # Twitch OAuth 邏輯
-    └── user.py          # 使用者查詢
+    ├── auth.py          # JWT authentication
+    ├── twitch.py        # Twitch OAuth & API
+    ├── user.py          # User info
+    ├── channel.py       # Channel management
+    └── database.py      # PostgreSQL connection pool
 ```
 
-## API 路徑
+## API Endpoints
 
-### 認證 (`/api/auth`)
+### Authentication (`/api/auth`)
+- `GET /api/auth/twitch/oauth` - Get Twitch OAuth URL
+- `GET /api/auth/twitch/callback` - OAuth callback, set JWT cookie
+- `GET /api/auth/user` - Get current user (requires JWT)
+- `POST /api/auth/logout` - Logout
 
-- `GET /api/auth/twitch/oauth` - Twitch OAuth URL
-- `GET /api/auth/twitch/callback` - OAuth callback,設定 JWT cookie
-- `GET /api/auth/user` - 取得當前登入使用者(需 JWT)
-- `POST /api/auth/logout` - 登出
+### Channels (`/api/channels`)
+- `GET /api/channels/monitored` - Get monitored channels with live status
+- `GET /api/channels/my-status` - Get current user's channel subscription status
+- `POST /api/channels/toggle` - Enable/disable channel monitoring
 
-### 其他
+### Health
+- `GET /api/health` - Health check
+- `GET /` - API info
+- `GET /docs` - Swagger documentation
 
-- `GET /api/health` - 健康檢查
-- `GET /` - API 資訊
-- `GET /docs` - API 文檔
+## Environment Variables
 
-## 啟動
+Create `backend/api/.env`:
+
+```env
+CLIENT_ID=your_twitch_client_id
+CLIENT_SECRET=your_twitch_client_secret
+JWT_SECRET_KEY=your_random_secret_key
+DATABASE_URL=postgresql://user:pass@host:5432/dbname
+FRONTEND_URL=http://localhost:3000
+API_URL=http://localhost:8000
+LOG_LEVEL=INFO
+```
+
+## Run
 
 ```bash
 cd backend/api
 python main.py
 ```
 
-服務運行於 `http://localhost:8000`
+Server runs at `http://localhost:8000`
 
-## 環境變數
+## Authentication Flow
 
-從 `api/.env` 讀取（複製 `.env.example` 並填入）:
+1. User authorizes → Twitch returns code
+2. API exchanges code for access_token + user_id
+3. API saves token to database
+4. API creates JWT and sets HTTP-only cookie
+5. Subsequent requests use JWT for authentication
 
-- `CLIENT_ID` - Twitch Client ID
-- `CLIENT_SECRET` - Twitch Client Secret
-- `FRONTEND_URL` - 前端 URL(預設: http://localhost:3000)
-- `JWT_SECRET_KEY` - JWT 密鑰
-- `JWT_EXPIRE_DAYS` - JWT 有效期(預設: 30)
-- `DATABASE_URL` - PostgreSQL URL
+## Security
 
-## JWT 認證
-
-- 使用 HTTP-only cookie 儲存 JWT token
-- SameSite=Lax 防止 CSRF
-- HS256 演算法
-- 30 天有效期(可配置)
-
-## 架構重構
-
-**重構前**: API server → Bot HTTP API (4343) → Database (4 層)
-**重構後**: API server → Database (3 層,直接查詢)
-
-**改善**:
-- 移除 `backend/twitch/api/` HTTP handler
-- API 直接查詢共用資料庫,不透過 HTTP
-- 效能提升 ~50%(減少一次 HTTP roundtrip)
-
-## OAuth 認證流程
-
-**新流程** (API 直接處理):
-1. 使用者授權 → Twitch 返回 code
-2. API 用 code 換取 access_token + user_id
-3. API 將 token 儲存到 DB
-4. API 建立 JWT token 並設定 cookie
-5. 後續請求: JWT → user_id → 查詢 Twitch API
-
-**優點**:
-- 直接從 OAuth code 取得 user_id,100% 準確
-- 不依賴資料庫比對或 bot 的 HTTP response
-- 重複登入也能正確識別使用者
+- HTTP-only cookies prevent XSS
+- SameSite protection against CSRF
+- Environment-based secure flag (production vs development)
+- JWT with HS256 algorithm
+- Required environment variables validation

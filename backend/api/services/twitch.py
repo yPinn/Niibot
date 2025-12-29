@@ -1,47 +1,26 @@
-"""Twitch 相關服務邏輯"""
+"""Twitch service layer"""
 
 import logging
-import sys
-from pathlib import Path
 from urllib.parse import quote
 
 import httpx
-
-# 從 api config 載入配置
-sys.path.insert(0, str(Path(__file__).parent.parent))
-# 從 twitch config 載入 BROADCASTER_SCOPES
-import importlib.util
-
-from config import API_URL, CLIENT_ID
-
-# 路徑計算: Docker 和本地環境兼容
-# Docker: /app/services -> /app/twitch/config.py
-# 本地: backend/api/services -> backend/twitch/config.py
-api_dir = Path(__file__).parent.parent  # api/ 或 /app
-backend_dir = api_dir.parent  # backend/ 或 /
-twitch_config_path = backend_dir / "twitch" / "config.py"
-
-# Docker 環境下使用容器內的路徑
-if not twitch_config_path.exists():
-    twitch_config_path = api_dir / "twitch" / "config.py"
-
-spec = importlib.util.spec_from_file_location("twitch_config", twitch_config_path)
-if spec and spec.loader:
-    twitch_config = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(twitch_config)
-    BROADCASTER_SCOPES = twitch_config.BROADCASTER_SCOPES
-else:
-    raise ImportError("Failed to load twitch config")
+from config import API_URL, CLIENT_ID, CLIENT_SECRET
 
 logger = logging.getLogger(__name__)
 
+if not CLIENT_SECRET:
+    raise ValueError("CLIENT_SECRET environment variable must be set")
+
+BROADCASTER_SCOPES = [
+    "user:read:email",
+    "channel:read:subscriptions",
+    "bits:read",
+    "channel:read:redemptions",
+    "moderator:read:followers",
+]
+
 
 def generate_oauth_url() -> str:
-    """生成 Twitch OAuth 授權 URL
-
-    Returns:
-        str: 完整的 OAuth 授權 URL
-    """
     redirect_uri = f"{API_URL}/api/auth/twitch/callback"
     scope_string = "+".join(s.replace(":", "%3A") for s in BROADCASTER_SCOPES)
     encoded_redirect_uri = quote(redirect_uri, safe="")
@@ -52,43 +31,20 @@ def generate_oauth_url() -> str:
         f"&redirect_uri={encoded_redirect_uri}"
         f"&response_type=code"
         f"&scope={scope_string}"
-        f"&force_verify=true"  # 強制顯示授權確認頁面
+        f"&force_verify=true"
     )
 
 
 async def exchange_code_for_token(code: str) -> tuple[bool, str | None, dict | None]:
-    """用 OAuth code 換取 access token 和 user_id
-
-    Args:
-        code: OAuth authorization code
-
-    Returns:
-        tuple[bool, str | None, dict | None]: (是否成功, 錯誤訊息, token_data)
-        token_data = {
-            "access_token": str,
-            "refresh_token": str,
-            "user_id": str
-        }
-    """
     try:
-        import os
-
-        from dotenv import load_dotenv
-
-        # Load CLIENT_SECRET from backend directory
-        env_path = Path(__file__).parent.parent.parent / ".env"
-        load_dotenv(dotenv_path=env_path)
-        client_secret = os.getenv("CLIENT_SECRET")
-
         redirect_uri = f"{API_URL}/api/auth/twitch/callback"
 
         async with httpx.AsyncClient(timeout=10.0) as client:
-            # 1. 用 code 換取 access_token
             token_response = await client.post(
                 "https://id.twitch.tv/oauth2/token",
                 data={
                     "client_id": CLIENT_ID,
-                    "client_secret": client_secret,
+                    "client_secret": CLIENT_SECRET,
                     "code": code,
                     "grant_type": "authorization_code",
                     "redirect_uri": redirect_uri
@@ -108,7 +64,6 @@ async def exchange_code_for_token(code: str) -> tuple[bool, str | None, dict | N
                 logger.error("No access_token in response")
                 return False, "no_access_token", None
 
-            # 2. 用 access_token 取得 user_id
             user_response = await client.get(
                 "https://api.twitch.tv/helix/users",
                 headers={
@@ -151,22 +106,11 @@ async def exchange_code_for_token(code: str) -> tuple[bool, str | None, dict | N
 
 
 async def save_token_to_database(user_id: str, access_token: str, refresh_token: str | None) -> bool:
-    """將 token 儲存到資料庫
-
-    Args:
-        user_id: Twitch user ID
-        access_token: Twitch access token
-        refresh_token: Twitch refresh token (可能為 None)
-
-    Returns:
-        bool: 是否成功
-    """
     try:
         from services.database import get_database_pool
 
         pool = await get_database_pool()
         async with pool.acquire() as connection:
-            # tokens 表結構: (user_id, token, refresh)
             await connection.execute(
                 """
                 INSERT INTO tokens (user_id, token, refresh)
@@ -178,7 +122,7 @@ async def save_token_to_database(user_id: str, access_token: str, refresh_token:
                 """,
                 user_id,
                 access_token,
-                refresh_token or ""  # 如果沒有 refresh_token 使用空字串
+                refresh_token or ""
             )
 
         logger.info(f"Saved token to database for user_id: {user_id}")
@@ -190,31 +134,11 @@ async def save_token_to_database(user_id: str, access_token: str, refresh_token:
 
 
 async def get_monitored_channels(user_id: str) -> list[dict]:
-    """獲取監聽的頻道列表及其在線狀態
-
-    Args:
-        user_id: 當前登入的用戶 ID
-
-    Returns:
-        list[dict]: 頻道列表
-        [
-            {
-                "id": "頻道 ID",
-                "name": "頻道帳號",
-                "display_name": "顯示名稱",
-                "avatar": "頭像 URL",
-                "is_live": true/false,
-                "viewer_count": 觀看人數（如果在線）,
-                "game_name": "遊戲名稱"（如果在線）
-            }
-        ]
-    """
     try:
         from services.database import get_database_pool
 
         pool = await get_database_pool()
 
-        # 1. 從資料庫獲取用戶的 access token
         async with pool.acquire() as connection:
             token_row = await connection.fetchrow(
                 "SELECT token FROM tokens WHERE user_id = $1",
@@ -227,7 +151,6 @@ async def get_monitored_channels(user_id: str) -> list[dict]:
 
             access_token = token_row["token"]
 
-            # 2. 從資料庫獲取監聽的頻道列表（從 channels 表，直接查 channel_id）
             channel_rows = await connection.fetch(
                 "SELECT DISTINCT channel_id, channel_name FROM channels WHERE enabled = true"
             )
@@ -238,12 +161,9 @@ async def get_monitored_channels(user_id: str) -> list[dict]:
                 logger.info("No monitored channels found")
                 return []
 
-            # 取得頻道 ID 列表
             channel_ids = [row["channel_id"] for row in channel_rows]
 
-        # 3. 使用 Twitch API 批次查詢頻道資訊（使用 ID 而非 login，避免重複查詢）
         async with httpx.AsyncClient(timeout=10.0) as client:
-            # 查詢用戶資訊（使用 ID，最多一次 API 呼叫）
             users_response = await client.get(
                 "https://api.twitch.tv/helix/users",
                 params={"id": channel_ids},
@@ -261,7 +181,6 @@ async def get_monitored_channels(user_id: str) -> list[dict]:
             users_data = users_response.json().get("data", [])
             logger.info(f"Twitch API returned {len(users_data)} users")
 
-            # 建立頻道資訊字典（包含所有頻道，包括當前用戶自己）
             channels_info = {}
             for user in users_data:
                 channels_info[user["login"]] = {
@@ -272,7 +191,6 @@ async def get_monitored_channels(user_id: str) -> list[dict]:
                     "is_live": False
                 }
 
-            # 查詢在線狀態
             user_ids = [user["id"] for user in users_data]
             if user_ids:
                 streams_response = await client.get(
@@ -287,10 +205,8 @@ async def get_monitored_channels(user_id: str) -> list[dict]:
                 if streams_response.status_code == 200:
                     streams_data = streams_response.json().get("data", [])
 
-                    # 更新在線狀態
                     for stream in streams_data:
                         user_id_str = stream["user_id"]
-                        # 找到對應的頻道
                         for channel in channels_info.values():
                             if channel["id"] == user_id_str:
                                 channel["is_live"] = True
@@ -298,11 +214,7 @@ async def get_monitored_channels(user_id: str) -> list[dict]:
                                 channel["game_name"] = stream["game_name"]
                                 break
 
-        # 轉換為列表並排序（在線的排前面），排除當前用戶自己
-        result = [
-            channel for channel in channels_info.values()
-            if channel["id"] != user_id  # 過濾掉當前登入用戶
-        ]
+        result = [channel for channel in channels_info.values() if channel["id"] != user_id]
         result.sort(key=lambda x: (not x["is_live"], x["display_name"]))
 
         logger.info(f"Found {len(result)} monitored channels for user {user_id} (excluding self)")

@@ -1,46 +1,34 @@
-"""Discord Bot 配置"""
+"""Discord Bot configuration"""
 
+import logging
 import os
 from pathlib import Path
 
 import discord
 
-# 專案路徑定義
-DISCORD_DIR = Path(__file__).parent  # backend/discord/ (本地) 或 /app (Docker)
-BACKEND_DIR = DISCORD_DIR.parent  # backend/ (本地) 或 / (Docker)
+logger = logging.getLogger(__name__)
 
-# Docker 環境檢測: 統一使用 /app/data (Docker) 或 backend/data/ (本地)
-# Docker 中: DISCORD_DIR=/app, 掛載 ./backend/data:/app/data
-# 本地: DISCORD_DIR=backend/discord/, DATA_DIR=backend/data/
+DISCORD_DIR = Path(__file__).parent
+BACKEND_DIR = DISCORD_DIR.parent
+
 if str(DISCORD_DIR) == "/app":
-    DATA_DIR = Path("/app/data")  # Docker: /app/data (掛載自 ./backend/data)
+    DATA_DIR = Path("/app/data")
 else:
-    DATA_DIR = BACKEND_DIR / "data"  # 本地: backend/data/
+    DATA_DIR = BACKEND_DIR / "data"
 
 
 class BotConfig:
-    """Bot 配置"""
-
-    # 狀態: online, idle, dnd, invisible
     STATUS: str = os.getenv("DISCORD_STATUS", "")
-
-    # 活動類型: playing, streaming, listening, watching, competing
     ACTIVITY_TYPE: str = os.getenv("DISCORD_ACTIVITY_TYPE", "")
-
-    # 活動名稱
     ACTIVITY_NAME: str = os.getenv("DISCORD_ACTIVITY_NAME", "")
-
-    # Streaming URL (僅當 ACTIVITY_TYPE 為 streaming 時需要)
     ACTIVITY_URL: str = os.getenv("DISCORD_ACTIVITY_URL", "")
 
-    # 速率限制配置
     RATE_LIMIT_ENABLED: bool = os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true"
     RATE_LIMIT_WARNING_THRESHOLD: float = float(os.getenv("RATE_LIMIT_WARNING_THRESHOLD", "0.7"))
     RATE_LIMIT_CRITICAL_THRESHOLD: float = float(os.getenv("RATE_LIMIT_CRITICAL_THRESHOLD", "0.9"))
 
     @classmethod
     def get_status(cls) -> discord.Status:
-        """取得狀態"""
         status_map = {
             "online": discord.Status.online,
             "idle": discord.Status.idle,
@@ -51,14 +39,37 @@ class BotConfig:
 
     @classmethod
     def get_activity(cls) -> discord.Activity | discord.Streaming | None:
-        """取得活動"""
+        """Get bot activity from environment variables
+
+        Supports: playing, listening, watching, competing, streaming
+        For streaming: DISCORD_ACTIVITY_URL must be a valid Twitch URL
+        """
         if not cls.ACTIVITY_NAME:
             return None
 
         activity_type_lower = cls.ACTIVITY_TYPE.lower()
 
-        # streaming 需要特殊處理，使用 discord.Streaming
         if activity_type_lower == "streaming":
+            if not cls.ACTIVITY_URL:
+                logger.warning(
+                    "Streaming activity requires DISCORD_ACTIVITY_URL to be set. "
+                    "Falling back to 'playing' activity."
+                )
+                return discord.Activity(
+                    type=discord.ActivityType.playing,
+                    name=cls.ACTIVITY_NAME
+                )
+
+            if not cls.ACTIVITY_URL.startswith("https://twitch.tv/"):
+                logger.warning(
+                    f"Streaming activity URL must be a valid Twitch URL (https://twitch.tv/*). "
+                    f"Got: {cls.ACTIVITY_URL}. Falling back to 'playing' activity."
+                )
+                return discord.Activity(
+                    type=discord.ActivityType.playing,
+                    name=cls.ACTIVITY_NAME
+                )
+
             return discord.Streaming(name=cls.ACTIVITY_NAME, url=cls.ACTIVITY_URL)
 
         activity_map = {
