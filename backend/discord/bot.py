@@ -138,6 +138,7 @@ class NiibotClient(commands.Bot):
             "cogs.giveaway",
             "cogs.games",
             "cogs.eat",
+            "cogs.ai",
             "cogs.rate_limit_monitor",
         ]
 

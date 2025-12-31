@@ -130,6 +130,13 @@ class Utility(commands.Cog):
             inline=False
         )
 
+        # AI 助手
+        embed.add_field(
+            name="【AI 助手】",
+            value="`/ai` - 向 AI 提問",
+            inline=False
+        )
+
         # 餐點推薦
         embed.add_field(
             name="【餐點推薦】",

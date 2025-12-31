@@ -1,5 +1,9 @@
 """統一配置"""
 
+from pathlib import Path
+
+DATA_DIR = Path(__file__).parent.parent / "data"
+
 BOT_SCOPES = [
     "user:read:chat",
     "user:write:chat",
