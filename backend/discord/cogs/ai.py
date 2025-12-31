@@ -3,8 +3,8 @@
 import json
 import logging
 import os
-from pathlib import Path
 
+from config import DATA_DIR
 from discord.ext import commands
 from openai import OpenAI
 
@@ -12,7 +12,6 @@ import discord
 from discord import app_commands
 
 LOGGER = logging.getLogger("AI")
-DATA_DIR = Path(__file__).parent.parent.parent / "data"
 
 
 class AI(commands.Cog):
