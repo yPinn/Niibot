@@ -115,7 +115,8 @@ class Utility(commands.Cog):
                 "`/choose` - 隨機選擇\n"
                 "`/8ball` - 神奇8號球\n"
                 "`/coinflip` - 擲硬幣\n"
-                "`/rps` - 猜拳遊戲"
+                "`/rps` - 猜拳遊戲\n"
+                "`/roulette` - 俄羅斯輪盤"
             ),
             inline=False
         )

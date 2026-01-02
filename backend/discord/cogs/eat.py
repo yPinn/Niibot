@@ -179,9 +179,7 @@ class Eat(commands.Cog):
             title=title, description=description, color=color)
         eat_embed = self.data.get("embed", {})
         eat_author = eat_embed.get("author", {})
-        eat_footer = eat_embed.get("footer", {})
         global_author = self.global_embed_config.get("author", {})
-        global_footer = self.global_embed_config.get("footer", {})
 
         author_name = eat_author.get("name") or global_author.get("name")
         if author_name:
@@ -195,13 +193,6 @@ class Eat(commands.Cog):
         if eat_embed.get("thumbnail"):
             embed.set_thumbnail(url=eat_embed["thumbnail"])
 
-        footer_text = eat_footer.get("text") or global_footer.get("text")
-        if footer_text:
-            embed.set_footer(
-                text=footer_text,
-                icon_url=eat_footer.get(
-                    "icon_url") or global_footer.get("icon_url")
-            )
         return embed
 
     def _normalize(self, text: str) -> str:

@@ -85,6 +85,82 @@ class CoinFlipView(ui.View):
         await interaction.response.edit_message(embed=embed, view=CoinFlipView())
 
 
+class RouletteView(ui.View):
+    def __init__(self, user_id: int, global_embed_config: dict):
+        super().__init__(timeout=300)
+        self.user_id = user_id
+        self.global_embed_config = global_embed_config
+        self.chamber_position = 0
+        self.bullet_position = random.randint(0, 5)
+        self.attempts = 0
+
+    def _create_embed(self, title: str, color: discord.Color) -> discord.Embed:
+        embed = discord.Embed(title=title, color=color)
+
+        global_author = self.global_embed_config.get("author", {})
+        if global_author.get("name"):
+            embed.set_author(
+                name=global_author.get("name"),
+                icon_url=global_author.get("icon_url"),
+                url=global_author.get("url"),
+            )
+
+        return embed
+
+    @ui.button(label="扣下扳機", style=discord.ButtonStyle.danger)
+    async def pull_trigger(self, interaction: discord.Interaction, button: ui.Button):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("這不是你的遊戲", ephemeral=True)
+            return
+
+        self.chamber_position += 1
+
+        if self.chamber_position - 1 == self.bullet_position:
+            embed = self._create_embed("俄羅斯輪盤", discord.Color.red())
+            embed.set_thumbnail(url=interaction.user.display_avatar.url)
+
+            embed.add_field(
+                name="**結果**",
+                value=f"> {interaction.user.display_name} 中彈身亡",
+                inline=False
+            )
+            embed.add_field(name="**回合數**", value=f"> {self.chamber_position}/6", inline=True)
+
+            button.disabled = True
+            await interaction.response.edit_message(embed=embed, view=self)
+            self.stop()
+        else:
+            if self.chamber_position >= 6:
+                embed = self._create_embed("俄羅斯輪盤", discord.Color.gold())
+                embed.set_thumbnail(url=interaction.user.display_avatar.url)
+
+                embed.add_field(
+                    name="**結果**",
+                    value=f"> {interaction.user.display_name} 存活到最後",
+                    inline=False
+                )
+                embed.add_field(name="**回合數**", value=f"> {self.chamber_position}/6", inline=True)
+
+                button.disabled = True
+                self.stop()
+            else:
+                embed = self._create_embed("俄羅斯輪盤", discord.Color.green())
+                embed.set_thumbnail(url=interaction.user.display_avatar.url)
+
+                embed.add_field(
+                    name="**結果**",
+                    value=f"> {interaction.user.display_name} 倖存",
+                    inline=False
+                )
+                embed.add_field(name="**回合數**", value=f"> {self.chamber_position}/6", inline=True)
+
+            await interaction.response.edit_message(embed=embed, view=self)
+
+    async def on_timeout(self):
+        for item in self.children:
+            item.disabled = True
+
+
 class Games(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -140,6 +216,34 @@ class Games(commands.Cog):
         )
 
         await interaction.response.send_message(embed=embed, view=RPSView())
+
+    @app_commands.command(name="roulette", description="俄羅斯輪盤")
+    async def roulette(self, interaction: discord.Interaction):
+        embed = discord.Embed(
+            title="俄羅斯輪盤",
+            color=discord.Color.orange(),
+        )
+
+        global_author = self.global_embed_config.get("author", {})
+        if global_author.get("name"):
+            embed.set_author(
+                name=global_author.get("name"),
+                icon_url=global_author.get("icon_url"),
+                url=global_author.get("url"),
+            )
+
+        embed.set_thumbnail(url=interaction.user.display_avatar.url)
+
+        embed.add_field(
+            name="**遊戲規則**",
+            value="> 彈匣中有 6 個位置，其中 1 發子彈",
+            inline=False
+        )
+        embed.add_field(name="**回合數**", value="> 1/6", inline=True)
+
+        await interaction.response.send_message(
+            embed=embed, view=RouletteView(interaction.user.id, self.global_embed_config)
+        )
 
 
 async def setup(bot: commands.Bot):
