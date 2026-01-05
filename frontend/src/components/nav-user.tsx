@@ -50,7 +50,7 @@ export function NavUser({ user }: { user: User }) {
           <DropdownMenuTrigger asChild>
             <SidebarMenuButton
               size="lg"
-              className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+              className="bg-sidebar-accent hover:bg-sidebar-accent data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
             >
               <Avatar className="h-8 w-8 rounded-full">
                 <AvatarImage src={user.avatar} alt={user.display_name || user.name} />
@@ -60,11 +60,7 @@ export function NavUser({ user }: { user: User }) {
                 <span className="truncate font-medium">{user.display_name || user.name}</span>
                 <span className="truncate text-xs">@{user.name}</span>
               </div>
-              <Icon
-                icon="fa-solid fa-angles-up-down"
-                className="ml-auto"
-                wrapperClassName="size-4"
-              />
+              <Icon icon="fa-solid fa-angles-up-down" className="mr-2" wrapperClassName="size-4" />
             </SidebarMenuButton>
           </DropdownMenuTrigger>
           <DropdownMenuContent

@@ -106,7 +106,6 @@ class TFT(commands.Cog):
                 logger.warning(f"HTTP {response.status_code}, using cache")
                 return self._cache
 
-            # 提取 JSON 數據
             match = re.search(
                 r'<script id="__NEXT_DATA__" type="application/json">(.+?)</script>',
                 response.text,
@@ -131,8 +130,8 @@ class TFT(commands.Cog):
             logger.error(f"Leaderboard fetch failed: {e}")
             return self._cache
 
-    async def get_player_data(self, username: str, tag: str) -> dict[str, Any] | None:
-        """獲取玩家個人資料"""
+    async def _fetch_player_data(self, username: str, tag: str) -> dict[str, Any] | None:
+        """實際執行玩家資料爬取"""
         now = time.time()
         if now - self._last_request < 3:
             await asyncio.sleep(3 - (now - self._last_request))
@@ -173,30 +172,25 @@ class TFT(commands.Cog):
             if not player_info:
                 return None
 
-            # 提取段位和 LP
             ranked_league = player_info.get("rankedLeague", [])
             tier, rank_division, lp = "", "", 0
             if ranked_league and len(ranked_league) >= 2:
                 parts = ranked_league[0].split()
                 tier = parts[0] if parts else ""
-                # 高段位（大師、宗師、菁英）沒有分級
+                # 高段位沒有分級（MASTER/GRANDMASTER/CHALLENGER）
                 if tier not in ["MASTER", "GRANDMASTER", "CHALLENGER"]:
                     rank_division = parts[1] if len(parts) > 1 else ""
                 lp = ranked_league[1]
 
-            # 提取排名和百分位
             local_rank_data = player_info.get("localRank")
             rank_position, percentile = None, None
             if local_rank_data and isinstance(local_rank_data, list) and len(local_rank_data) >= 2:
-                # rank_num 是從 0 開始的索引，需要 +1 才是實際排名
-                rank_num = local_rank_data[0] + 1
+                rank_num = local_rank_data[0] + 1  # API 回傳 0-indexed，需 +1
                 percentile_value = local_rank_data[1] * 100
                 if rank_num <= 1000:
                     rank_position = rank_num
-                # 無論排名多少，都保留百分位數據
                 percentile = percentile_value
 
-            # 提取最近比賽
             matches = initial_data.get("matches", [])
             last_match_lp = None
             last_match_time = None
@@ -206,7 +200,6 @@ class TFT(commands.Cog):
                 if lp_diff is not None:
                     last_match_lp = lp_diff
 
-                # 提取時間戳記（dateTime 是毫秒格式的 Unix timestamp）
                 timestamp = match_data.get("dateTime")
                 if timestamp:
                     last_match_time = timestamp
@@ -228,6 +221,28 @@ class TFT(commands.Cog):
             logger.error(f"Player fetch failed: {e}")
             return None
 
+    async def get_player_data(self, username: str, tag: str) -> dict[str, Any] | None:
+        """獲取玩家個人資料（智能雙重查詢：資料>24小時自動重新爬取）"""
+        data = await self._fetch_player_data(username, tag)
+
+        if not data:
+            return None
+
+        if data.get("last_match_time"):
+            now = time.time()
+            timestamp_sec = data["last_match_time"] / 1000
+            age_hours = (now - timestamp_sec) / 3600
+
+            if age_hours > 24:
+                logger.info(
+                    f"Data is {age_hours:.1f} hours old, re-fetching after 3s...")
+                await asyncio.sleep(3)
+                fresh_data = await self._fetch_player_data(username, tag)
+                if fresh_data:
+                    return fresh_data
+
+        return data
+
     @app_commands.command(name="tft", description="查詢 TFT 戰棋排行榜（不輸入玩家則顯示門檻）")
     @app_commands.describe(
         player="玩家名稱（格式：玩家名稱#TAG，留空則顯示門檻）"
@@ -241,10 +256,8 @@ class TFT(commands.Cog):
         await interaction.response.defer()
 
         if player:
-            # 有輸入玩家名稱，查詢玩家
             await self._show_player(interaction, player)
         else:
-            # 沒有輸入，顯示門檻
             await self._show_threshold(interaction)
 
     async def _show_threshold(self, interaction: discord.Interaction):
@@ -263,13 +276,9 @@ class TFT(commands.Cog):
             color=discord.Color.gold()
         )
 
-        # Field 1: 菁英門檻
         embed.add_field(name="菁英", value=f"> **{c_lp:,} LP**", inline=False)
-
-        # Field 2: 宗師門檻
         embed.add_field(name="宗師", value=f"> **{gm_lp:,} LP**", inline=False)
 
-        # 設定 author（如果有全域配置）
         global_author = self.global_embed_config.get("author", {})
         if global_author.get("name"):
             embed.set_author(
@@ -295,7 +304,6 @@ class TFT(commands.Cog):
             await interaction.followup.send("請使用正確格式：玩家名稱#TAG", ephemeral=True)
             return
 
-        # 直接查詢個人頁面
         player_data = await self.get_player_data(username, tag)
         if player_data:
             await self._send_player_embed(interaction, player_data, player_input, username, tag)
@@ -315,7 +323,6 @@ class TFT(commands.Cog):
         last_match_lp = player_data.get("last_match_lp")
         last_match_time = player_data.get("last_match_time")
 
-        # 段位顯示
         tier_cn = TIER_TRANSLATION.get(tier, tier) if tier else ""
         if tier_cn and rank_division:
             tier_display = f"{tier_cn} {rank_division}"
@@ -324,7 +331,6 @@ class TFT(commands.Cog):
         else:
             tier_display = "未定級"
 
-        # 格式化玩家名稱（在 # 前後加空格）
         formatted_name = player_input.replace("#", " #")
 
         embed = discord.Embed(
@@ -332,39 +338,31 @@ class TFT(commands.Cog):
             color=discord.Color.blue()
         )
 
-        # Field 1: 段位 + 積分
         embed.add_field(
             name="段位", value=f"> {tier_display} **{lp:,} LP**", inline=False)
 
-        # Field 2: 排名（固定名稱，根據數值決定顯示格式）
-        # 邏輯：rank_position 存在且 <= 1000 才顯示排名數字，否則顯示百分位
+        # 排名顯示：≤1000 顯示數字，否則顯示百分位
         if rank_position is not None and rank_position <= 1000:
-            # 前 1000 名顯示排名數字
             rank_value = f"> **#{rank_position}**"
         elif percentile is not None:
-            # 其他玩家顯示百分位
             rank_value = f"> 前 **{percentile:.2f}%**"
         else:
-            # 未排名
             rank_value = "> 未排名"
 
         embed.add_field(name="排名", value=rank_value, inline=False)
-
-        # Field 3: 最近比賽（含時間）
         if last_match_lp is not None:
             lp_sign = "+" if last_match_lp > 0 else ""
             match_value = f"**{lp_sign}{last_match_lp} LP**"
 
-            # 計算時間差
             if last_match_time:
                 try:
-                    # 將 timestamp 轉換為秒（如果是毫秒則除以 1000）
-                    timestamp_sec = last_match_time / 1000 if last_match_time > 1e10 else last_match_time
-                    match_datetime = datetime.fromtimestamp(timestamp_sec, tz=timezone.utc)
+                    timestamp_sec = last_match_time / \
+                        1000 if last_match_time > 1e10 else last_match_time
+                    match_datetime = datetime.fromtimestamp(
+                        timestamp_sec, tz=timezone.utc)
                     now = datetime.now(timezone.utc)
                     time_diff = now - match_datetime
 
-                    # 格式化時間差
                     if time_diff.days > 0:
                         time_ago = f"{time_diff.days}天前"
                     elif time_diff.seconds >= 3600:
@@ -376,7 +374,6 @@ class TFT(commands.Cog):
                     else:
                         time_ago = "剛剛"
 
-                    # 在 LP 和時間之間加上空格
                     match_value = f"**{lp_sign}{last_match_lp} LP** ({time_ago})"
                 except Exception as e:
                     logger.debug(f"Failed to parse match time: {e}")
@@ -385,7 +382,6 @@ class TFT(commands.Cog):
 
         embed.add_field(name="最近比賽", value=f"> {match_value}", inline=False)
 
-        # 設定 author
         global_author = self.global_embed_config.get("author", {})
         if global_author.get("name"):
             embed.set_author(
@@ -393,15 +389,12 @@ class TFT(commands.Cog):
                 icon_url=global_author.get("icon_url")
             )
 
-        # 設定 footer（移除 separator）
         embed.set_footer(text="數據來源: tactics.tools")
 
-        # 設定段位圖片
         tier_image = TIER_IMAGES.get(tier)
         if tier_image:
             embed.set_thumbnail(url=tier_image)
 
-        # 創建一個包含 URL 的 view（按鈕）
         player_url = f"https://tactics.tools/player/tw/{quote(username, safe='')}/{quote(tag, safe='')}"
         view = discord.ui.View()
         view.add_item(discord.ui.Button(

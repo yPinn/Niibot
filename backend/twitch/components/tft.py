@@ -97,8 +97,8 @@ class LeaderboardComponent(commands.Component):
             LOGGER.error(f"Scraping failed: {e}, using cache")
             return self._cache
 
-    async def get_player_data(self, username: str, tag: str) -> dict[str, Any] | None:
-        """獲取玩家個人資料（段位、LP、排名、最近比賽）"""
+    async def _fetch_player_data(self, username: str, tag: str) -> dict[str, Any] | None:
+        """實際執行玩家資料爬取"""
         now = time.time()
         if now - self._last_request < 3:
             await asyncio.sleep(3 - (now - self._last_request))
@@ -107,7 +107,7 @@ class LeaderboardComponent(commands.Component):
             await asyncio.sleep(random.uniform(0.5, 1.5))
 
             url = f"https://tactics.tools/player/tw/{quote(username, safe='')}/{quote(tag, safe='')}"
-            LOGGER.info(f"Fetching player data from URL: {url}")
+            LOGGER.info(f"Fetching player: {username}#{tag}")
 
             response = await self._client.get(
                 url,
@@ -128,7 +128,7 @@ class LeaderboardComponent(commands.Component):
                 re.DOTALL
             )
             if not match:
-                LOGGER.error("Player data element not found")
+                LOGGER.error("Player data not found")
                 return None
 
             page_props = json.loads(match.group(1)).get(
@@ -137,40 +137,41 @@ class LeaderboardComponent(commands.Component):
             player_info = initial_data.get("playerInfo", {})
 
             if not player_info:
-                LOGGER.error(f"No playerInfo for {username}#{tag}")
                 return None
 
-            # 提取段位和 LP（格式: ["DIAMOND IV", 10]）
             ranked_league = player_info.get("rankedLeague", [])
             tier, rank_division, lp = "", "", 0
             if ranked_league and len(ranked_league) >= 2:
                 parts = ranked_league[0].split()
                 tier = parts[0] if parts else ""
-                rank_division = parts[1] if len(parts) > 1 else ""
+                # 高段位沒有分級（MASTER/GRANDMASTER/CHALLENGER）
+                if tier not in ["MASTER", "GRANDMASTER", "CHALLENGER"]:
+                    rank_division = parts[1] if len(parts) > 1 else ""
                 lp = ranked_league[1]
 
-            # 提取排名（格式: [排名數字, 百分比]）
-            # ≤1000 顯示排名，>1000 顯示百分比
             local_rank_data = player_info.get("localRank")
             rank_position, percentile = None, None
             if local_rank_data and isinstance(local_rank_data, list) and len(local_rank_data) >= 2:
-                rank_num = local_rank_data[0]
+                rank_num = local_rank_data[0] + 1  # API 回傳 0-indexed，需 +1
+                percentile_value = local_rank_data[1] * 100
                 if rank_num <= 1000:
                     rank_position = rank_num
-                else:
-                    percentile = local_rank_data[1] * 100
+                percentile = percentile_value
 
-            # 提取最近比賽 LP 變化
             matches = initial_data.get("matches", [])
             last_match_lp = None
+            last_match_time = None
             if matches:
-                lp_diff = matches[0].get("lpDiff")
+                match_data = matches[0]
+                lp_diff = match_data.get("lpDiff")
                 if lp_diff is not None:
-                    last_match_lp = f"{'+' if lp_diff > 0 else ''}{lp_diff} LP"
+                    last_match_lp = lp_diff
+
+                timestamp = match_data.get("dateTime")
+                if timestamp:
+                    last_match_time = timestamp
 
             self._last_request = time.time()
-            LOGGER.info(
-                f"Fetched player data - {username}#{tag}: {tier} {rank_division} {lp} LP")
 
             return {
                 "summonerName": page_props.get("playerName", username),
@@ -180,11 +181,33 @@ class LeaderboardComponent(commands.Component):
                 "rank_position": rank_position,
                 "percentile": percentile,
                 "last_match_lp": last_match_lp,
+                "last_match_time": last_match_time,
             }
 
         except Exception as e:
-            LOGGER.error(f"Player data fetch failed: {e}")
+            LOGGER.error(f"Player fetch failed: {e}")
             return None
+
+    async def get_player_data(self, username: str, tag: str) -> dict[str, Any] | None:
+        """獲取玩家個人資料（智能雙重查詢：資料>24小時自動重新爬取）"""
+        data = await self._fetch_player_data(username, tag)
+
+        if not data:
+            return None
+
+        if data.get("last_match_time"):
+            now = time.time()
+            timestamp_sec = data["last_match_time"] / 1000
+            age_hours = (now - timestamp_sec) / 3600
+
+            if age_hours > 24:
+                LOGGER.info(f"Data is {age_hours:.1f} hours old, re-fetching after 3s...")
+                await asyncio.sleep(3)
+                fresh_data = await self._fetch_player_data(username, tag)
+                if fresh_data:
+                    return fresh_data
+
+        return data
 
     @commands.cooldown(rate=1, per=3)
     @commands.command(name="rk")
@@ -251,13 +274,18 @@ class LeaderboardComponent(commands.Component):
             else:
                 tier_display = "未定級"
 
+            # 排名顯示：≤1000 顯示數字，否則顯示百分位
             rank_info = ""
-            if rank_position:
+            if rank_position is not None and rank_position <= 1000:
                 rank_info = f" | [TW] #{rank_position}"
             elif percentile is not None:
                 rank_info = f" | [TW] 前 {percentile:.2f}%"
 
-            lp_change_info = f" | 最近：{last_match_lp}" if last_match_lp else ""
+            # last_match_lp 現在是數字，需要格式化
+            lp_change_info = ""
+            if last_match_lp is not None:
+                lp_sign = "+" if last_match_lp > 0 else ""
+                lp_change_info = f" | 最近：{lp_sign}{last_match_lp} LP"
 
             await ctx.reply(f"{tier_display} {lp} LP{rank_info}{lp_change_info}")
             LOGGER.debug(f"Query success (player page) - {user_id}")

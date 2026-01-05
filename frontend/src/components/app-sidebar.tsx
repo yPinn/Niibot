@@ -26,7 +26,11 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" asChild>
+            <SidebarMenuButton
+              size="lg"
+              asChild
+              className="bg-sidebar-accent hover:bg-sidebar-accent"
+            >
               <a href="/">
                 <div className="flex aspect-square size-8 items-center justify-center rounded-full overflow-hidden">
                   <img

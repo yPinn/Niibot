@@ -13,7 +13,13 @@ export function ProtectedRoute() {
 
   // 等待初始化完成，避免誤判未登入而重定向
   if (!isInitialized) {
-    return <LoadingSpinner fullScreen text="載入中..." />
+    // 使用 overlay 方式，保留底層內容避免閃爍
+    return (
+      <>
+        <Outlet />
+        <LoadingSpinner fullScreen text="載入中..." />
+      </>
+    )
   }
 
   if (!isAuthenticated) {
@@ -35,7 +41,13 @@ export function PublicOnlyRoute() {
 
   // 等待初始化完成
   if (!isInitialized) {
-    return <LoadingSpinner fullScreen text="載入中..." />
+    // 使用 overlay 方式，保留底層內容避免閃爍
+    return (
+      <>
+        <Outlet />
+        <LoadingSpinner fullScreen text="載入中..." />
+      </>
+    )
   }
 
   if (isAuthenticated) {
