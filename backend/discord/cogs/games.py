@@ -35,15 +35,15 @@ class RPSView(ui.View):
     def __init__(self):
         super().__init__(timeout=60)
 
-    @ui.button(label="石頭", style=discord.ButtonStyle.secondary, emoji="🪨")
+    @ui.button(label="石頭", style=discord.ButtonStyle.secondary)
     async def rock(self, interaction: discord.Interaction, button: ui.Button):
         await self.play_rps(interaction, "石頭")
 
-    @ui.button(label="剪刀", style=discord.ButtonStyle.secondary, emoji="✂️")
+    @ui.button(label="剪刀", style=discord.ButtonStyle.secondary)
     async def scissors(self, interaction: discord.Interaction, button: ui.Button):
         await self.play_rps(interaction, "剪刀")
 
-    @ui.button(label="布", style=discord.ButtonStyle.secondary, emoji="📄")
+    @ui.button(label="布", style=discord.ButtonStyle.secondary)
     async def paper(self, interaction: discord.Interaction, button: ui.Button):
         await self.play_rps(interaction, "布")
 
@@ -158,7 +158,8 @@ class RouletteView(ui.View):
 
     async def on_timeout(self):
         for item in self.children:
-            item.disabled = True
+            if isinstance(item, ui.Button):
+                item.disabled = True
 
 
 class Games(commands.Cog):

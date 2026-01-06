@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from rich.console import Console
 from rich.logging import RichHandler
-from routers import auth, channels, commands
+from routers import auth, channels, commands, stats
 
 
 def setup_logging():
@@ -55,6 +55,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(channels.router)
 app.include_router(commands.router)
+app.include_router(stats.router)
 
 
 @app.get("/api/health")

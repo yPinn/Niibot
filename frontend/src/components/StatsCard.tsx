@@ -1,0 +1,47 @@
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Empty, EmptyDescription } from '@/components/ui/empty'
+import { Icon } from '@/components/ui/icon'
+
+interface StatItem {
+  label: string
+  value: number
+}
+
+interface StatsCardProps {
+  title: string
+  icon?: string
+  items: StatItem[]
+  className?: string
+}
+
+export default function StatsCard({ title, icon, items, className = '' }: StatsCardProps) {
+  return (
+    <Card className={`flex flex-col ${className}`}>
+      <CardHeader className="flex-shrink-0">
+        <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+          {icon && <Icon icon={icon} wrapperClassName="size-5 text-primary" />}
+          {title}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="flex-1 overflow-hidden pb-6">
+        {items.length > 0 ? (
+          <div className="space-y-2">
+            {items.map((item, index) => (
+              <div
+                key={index}
+                className="flex items-center justify-between rounded-md border bg-card p-2.5 hover:bg-accent transition-colors"
+              >
+                <span className="text-sm font-medium truncate flex-1 mr-2">{item.label}</span>
+                <span className="text-sm font-bold text-primary tabular-nums">{item.value}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <Empty className="border-none p-4">
+            <EmptyDescription>No data available</EmptyDescription>
+          </Empty>
+        )}
+      </CardContent>
+    </Card>
+  )
+}

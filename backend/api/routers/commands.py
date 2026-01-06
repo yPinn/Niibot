@@ -29,8 +29,8 @@ class ComponentInfo(BaseModel):
     commands: list[CommandInfo]
 
 
-def extract_docstring(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str | None:
-    """Extract docstring from function node"""
+def extract_docstring(node: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef) -> str | None:
+    """Extract docstring from function or class node"""
     if (
         node.body
         and isinstance(node.body[0], ast.Expr)

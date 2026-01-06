@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 
+import { type ChannelStats, getChannelStats } from '@/api/stats'
+import StatsCard from '@/components/StatsCard'
+import TwitchPlayer from '@/components/TwitchPlayer'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,6 +16,7 @@ export default function Dashboard() {
   const { user } = useAuth()
   const [myChannelSubscribed, setMyChannelSubscribed] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [stats, setStats] = useState<ChannelStats | null>(null)
 
   // 從 API 獲取當前使用者的頻道訂閱狀態
   const fetchMyStatus = useCallback(async () => {
@@ -34,10 +38,23 @@ export default function Dashboard() {
     }
   }, [user])
 
-  // 初始化當前使用者的頻道訂閱狀態
+  // 獲取頻道統計數據
+  const fetchStats = useCallback(async () => {
+    if (!user) return
+
+    try {
+      const data = await getChannelStats()
+      setStats(data)
+    } catch (error) {
+      console.error('Failed to fetch stats:', error)
+    }
+  }, [user])
+
+  // 初始化當前使用者的頻道訂閱狀態和統計數據
   useEffect(() => {
     fetchMyStatus()
-  }, [fetchMyStatus])
+    fetchStats()
+  }, [fetchMyStatus, fetchStats])
 
   // 切換當前使用者的頻道訂閱狀態
   const toggleMyChannelSubscription = async () => {
@@ -83,9 +100,9 @@ export default function Dashboard() {
               disabled={loading}
             >
               <div
-                className={`h-2 w-2 rounded-full mr-1 ${myChannelSubscribed ? 'bg-green-500' : 'bg-gray-400'}`}
+                className={`h-2 w-2 rounded-full mr-1 ${myChannelSubscribed ? 'bg-green-500' : 'bg-muted-foreground'}`}
               />
-              <span className="text-sm font-medium">
+              <span className="text-sm font-semibold">
                 Niibot {myChannelSubscribed ? 'Online' : 'Offline'}
               </span>
               <Icon icon="fa-solid fa-chevron-down" wrapperClassName="size-4" />
@@ -107,9 +124,42 @@ export default function Dashboard() {
       )}
       <div className="bg-muted/50 min-h-[100vh] flex-1 rounded-xl md:min-h-min" />
       <div className="grid auto-rows-min gap-4 md:grid-cols-3">
-        <div className="bg-muted/50 aspect-video rounded-xl" />
-        <div className="bg-muted/50 aspect-video rounded-xl" />
-        <div className="bg-muted/50 aspect-video rounded-xl" />
+        {/* Twitch 直播預覽 */}
+        <div className="bg-muted/50 rounded-xl overflow-hidden aspect-video">
+          {user?.name && (
+            <TwitchPlayer
+              channel="meitoo85"
+              height="100%"
+              muted={true}
+              autoplay={true}
+              className="w-full h-full"
+            />
+          )}
+        </div>
+
+        <StatsCard
+          title="Top Chatters"
+          icon="fa-solid fa-comments"
+          items={
+            stats?.top_chatters.map(chatter => ({
+              label: chatter.username,
+              value: chatter.message_count,
+            })) || []
+          }
+          className="aspect-video"
+        />
+
+        <StatsCard
+          title="Top Commands"
+          icon="fa-solid fa-terminal"
+          items={
+            stats?.top_commands.map(cmd => ({
+              label: cmd.name,
+              value: cmd.count,
+            })) || []
+          }
+          className="aspect-video"
+        />
       </div>
     </main>
   )

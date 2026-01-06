@@ -33,13 +33,16 @@ logger = logging.getLogger("clear_commands")
 env_path = Path(__file__).parent / ".env"
 load_dotenv(dotenv_path=env_path, encoding="utf-8")
 
-token = os.getenv("DISCORD_BOT_TOKEN")
+_token = os.getenv("DISCORD_BOT_TOKEN")
 guild_id = os.getenv("DISCORD_GUILD_ID")
 
-if not token:
+if not _token:
     logger.error("[ERROR] 找不到 DISCORD_BOT_TOKEN 環境變數")
     logger.error("        請檢查 .env 檔案")
     sys.exit(1)
+
+# Type narrowing for mypy
+token: str = _token
 
 
 class ClearBot(commands.Bot):
@@ -57,15 +60,18 @@ class ClearBot(commands.Bot):
             logger.info("\n[Step 1/2] 清除全域指令...")
             self.tree.clear_commands(guild=None)
             global_synced = await self.tree.sync()
-            logger.info(f"           SUCCESS - 全域指令已清除 (剩餘 {len(global_synced)} 個)")
+            logger.info(
+                f"           SUCCESS - 全域指令已清除 (剩餘 {len(global_synced)} 個)")
 
             # 2. 清除測試伺服器指令
             if guild_id:
-                logger.info(f"\n[Step 2/2] 清除測試伺服器指令 (Guild ID: {guild_id})...")
+                logger.info(
+                    f"\n[Step 2/2] 清除測試伺服器指令 (Guild ID: {guild_id})...")
                 guild = discord.Object(id=int(guild_id))
                 self.tree.clear_commands(guild=guild)
                 guild_synced = await self.tree.sync(guild=guild)
-                logger.info(f"           SUCCESS - 測試伺服器指令已清除 (剩餘 {len(guild_synced)} 個)")
+                logger.info(
+                    f"           SUCCESS - 測試伺服器指令已清除 (剩餘 {len(guild_synced)} 個)")
             else:
                 logger.info("\n[Step 2/2] 跳過測試伺服器 (未設定 DISCORD_GUILD_ID)")
 

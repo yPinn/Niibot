@@ -66,7 +66,7 @@ class Admin(commands.Cog):
                 await self.bot.tree.sync()
                 sync_msg = "已全域同步"
 
-            await interaction.response.send_message(f"✅ 已重載：{cog}\n📡 {sync_msg}", ephemeral=True)
+            await interaction.response.send_message(f"已重載：{cog}\n{sync_msg}", ephemeral=True)
             logger.info(f"Reloaded cog: {cog_path} (by {interaction.user})")
 
         except commands.ExtensionNotLoaded:

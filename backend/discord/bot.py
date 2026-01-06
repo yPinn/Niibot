@@ -48,12 +48,8 @@ def setup_logging():
             if sys.platform == "win32":
                 import codecs
 
-                sys.stdout = codecs.getwriter("utf-8")(
-                    sys.stdout.buffer, errors="replace"
-                )
-                sys.stderr = codecs.getwriter("utf-8")(
-                    sys.stderr.buffer, errors="replace"
-                )
+                sys.stdout = codecs.getwriter("utf-8")(sys.stdout.buffer)
+                sys.stderr = codecs.getwriter("utf-8")(sys.stderr.buffer)
 
             # 配置 Rich Console
             console = Console(
@@ -141,6 +137,7 @@ class NiibotClient(commands.Bot):
             "cogs.ai",
             "cogs.tft",
             "cogs.rate_limit_monitor",
+            "cogs.tarot"
         ]
 
         # 初始化速率限制監控器
@@ -195,7 +192,8 @@ class NiibotClient(commands.Bot):
                 self._sync_guild_id = guild_id
 
                 if RICH_AVAILABLE:
-                    logger.info(f"[magenta]已同步 {len(synced)} 個指令到測試伺服器[/magenta]")
+                    logger.info(
+                        f"[magenta]已同步 {len(synced)} 個指令到測試伺服器[/magenta]")
                 else:
                     logger.info(f"已同步 {len(synced)} 個指令到測試伺服器")
             else:
@@ -259,6 +257,10 @@ class NiibotClient(commands.Bot):
         status = BotConfig.get_status()
         activity = BotConfig.get_activity()
         activity_str = f"{activity.name}" if activity else "無"
+
+        if self.user is None:
+            logger.error("Bot user is None")
+            return
 
         if RICH_AVAILABLE:
             logger.info(

@@ -84,7 +84,7 @@ export default function Commands() {
   }
 
   if (loading) {
-    return <LoadingSpinner fullScreen text="載入組件中..." />
+    return <LoadingSpinner fullScreen text="載入中..." />
   }
 
   if (error) {
@@ -114,7 +114,7 @@ export default function Commands() {
 
       {/* Platform Selector */}
       <Card>
-        <CardContent className="p-4">
+        <CardContent className="p-4 py-0">
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium">選擇平台：</span>
             <div className="flex gap-2">

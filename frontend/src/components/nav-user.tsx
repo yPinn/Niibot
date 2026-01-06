@@ -60,7 +60,7 @@ export function NavUser({ user }: { user: User }) {
                 <span className="truncate font-medium">{user.display_name || user.name}</span>
                 <span className="truncate text-xs">@{user.name}</span>
               </div>
-              <Icon icon="fa-solid fa-angles-up-down" className="mr-2" wrapperClassName="size-4" />
+              <Icon icon="fa-solid fa-angles-up-down" className="mr-1" wrapperClassName="size-4" />
             </SidebarMenuButton>
           </DropdownMenuTrigger>
           <DropdownMenuContent
@@ -88,7 +88,7 @@ export function NavUser({ user }: { user: User }) {
                   </div>
 
                   <div className="mr-1">
-                    <Icon icon="fa-solid fa-arrow-up-right-from-square" wrapperClassName="" />
+                    <Icon icon="fa-solid fa-up-right-from-square" wrapperClassName="" />
                   </div>
                 </div>
               </DropdownMenuLabel>
@@ -108,7 +108,7 @@ export function NavUser({ user }: { user: User }) {
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleLogout}>
-              <Icon icon="fa-solid fa-right-from-bracket" wrapperClassName="" />
+              <Icon icon="fa-solid fa-arrow-right-from-bracket" wrapperClassName="" />
               Log out
             </DropdownMenuItem>
           </DropdownMenuContent>

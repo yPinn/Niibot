@@ -32,13 +32,16 @@ logger = logging.getLogger("list_commands")
 env_path = Path(__file__).parent / ".env"
 load_dotenv(dotenv_path=env_path, encoding="utf-8")
 
-token = os.getenv("DISCORD_BOT_TOKEN")
+_token = os.getenv("DISCORD_BOT_TOKEN")
 guild_id = os.getenv("DISCORD_GUILD_ID")
 
-if not token:
+if not _token:
     logger.error("[ERROR] 找不到 DISCORD_BOT_TOKEN 環境變數")
     logger.error("        請檢查 .env 檔案")
     sys.exit(1)
+
+# Type narrowing for mypy
+token: str = _token
 
 
 class ListBot(commands.Bot):
