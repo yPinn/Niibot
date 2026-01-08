@@ -4,17 +4,24 @@ import { Icon } from '@/components/ui/icon'
 
 interface StatItem {
   label: string
-  value: number
+  value: number | string
 }
 
 interface StatsCardProps {
   title: string
   icon?: string
   items: StatItem[]
+  loading?: boolean
   className?: string
 }
 
-export default function StatsCard({ title, icon, items, className = '' }: StatsCardProps) {
+export default function StatsCard({
+  title,
+  icon,
+  items,
+  loading = false,
+  className = '',
+}: StatsCardProps) {
   return (
     <Card className={`flex flex-col ${className}`}>
       <CardHeader className="flex-shrink-0">
@@ -23,13 +30,17 @@ export default function StatsCard({ title, icon, items, className = '' }: StatsC
           {title}
         </CardTitle>
       </CardHeader>
-      <CardContent className="flex-1 overflow-hidden pb-6">
+      <CardContent
+        className={`flex-1 overflow-hidden pb-6 transition-opacity duration-300 ${loading ? 'opacity-50' : 'opacity-100'}`}
+      >
         {items.length > 0 ? (
           <div className="space-y-2">
             {items.map((item, index) => (
               <div
                 key={index}
-                className="flex items-center justify-between rounded-md border bg-card p-2.5 hover:bg-accent transition-colors"
+                className={`flex items-center justify-between rounded-md border bg-card p-2.5 hover:bg-accent transition-colors ${
+                  loading ? 'animate-pulse' : ''
+                }`}
               >
                 <span className="text-sm font-medium truncate flex-1 mr-2">{item.label}</span>
                 <span className="text-sm font-bold text-primary tabular-nums">{item.value}</span>
@@ -38,7 +49,7 @@ export default function StatsCard({ title, icon, items, className = '' }: StatsC
           </div>
         ) : (
           <Empty className="border-none p-4">
-            <EmptyDescription>No data available</EmptyDescription>
+            <EmptyDescription>{loading ? 'Loading...' : 'No data available'}</EmptyDescription>
           </Empty>
         )}
       </CardContent>

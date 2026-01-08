@@ -1,23 +1,20 @@
 import asyncio
 import logging
-import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import asyncpg
 import twitchio
+from core import (
+    get_channel_subscriptions,
+    load_env_config,
+    setup_database_schema,
+    setup_logging,
+    validate_env_vars,
+)
 from dotenv import load_dotenv
 from twitchio import eventsub
 from twitchio.ext import commands
-
-try:
-    from rich.console import Console  # noqa: F401
-    from rich.logging import RichHandler  # noqa: F401
-
-    RICH_AVAILABLE: bool = True
-except ImportError:
-    RICH_AVAILABLE = False
-
 
 if TYPE_CHECKING:
     import asyncpg
@@ -28,46 +25,15 @@ LOGGER: logging.Logger = logging.getLogger("Bot")
 env_path = Path(__file__).parent / ".env"
 load_dotenv(dotenv_path=env_path)
 
-
-def validate_env_vars() -> None:
-    required_vars = {
-        "CLIENT_ID": "Twitch Client ID",
-        "CLIENT_SECRET": "Twitch Client Secret",
-        "BOT_ID": "Bot User ID",
-        "OWNER_ID": "Owner User ID",
-        "DATABASE_URL": "Database connection URL",
-    }
-
-    missing_vars = []
-    for var, description in required_vars.items():
-        value = os.getenv(var, "")
-        if not value or value.strip() == "":
-            missing_vars.append(f"{var} ({description})")
-
-    if missing_vars:
-        error_msg = "Missing or empty required environment variables:\n" + "\n".join(
-            f"  - {var}" for var in missing_vars
-        )
-        LOGGER.error(error_msg)
-        raise ValueError(error_msg)
-
-    db_url = os.getenv("DATABASE_URL", "")
-    if not db_url.startswith("postgresql://"):
-        error_msg = "DATABASE_URL must start with 'postgresql://'"
-        LOGGER.error(error_msg)
-        raise ValueError(error_msg)
-
-    LOGGER.info("All required environment variables validated successfully")
-
-
 validate_env_vars()
+env_config = load_env_config()
 
-CLIENT_ID: str = os.getenv("CLIENT_ID", "")
-CLIENT_SECRET: str = os.getenv("CLIENT_SECRET", "")
-BOT_ID: str = os.getenv("BOT_ID", "")
-OWNER_ID: str = os.getenv("OWNER_ID", "")
-DATABASE_URL: str = os.getenv("DATABASE_URL", "")
-CONDUIT_ID: str | None = os.getenv("CONDUIT_ID") or None
+CLIENT_ID: str = env_config["CLIENT_ID"]
+CLIENT_SECRET: str = env_config["CLIENT_SECRET"]
+BOT_ID: str = env_config["BOT_ID"]
+OWNER_ID: str = env_config["OWNER_ID"]
+DATABASE_URL: str = env_config["DATABASE_URL"]
+CONDUIT_ID: str | None = env_config["CONDUIT_ID"] or None
 
 
 class Bot(commands.AutoBot):
@@ -79,6 +45,10 @@ class Bot(commands.AutoBot):
         self._subscription_ids: dict[str, list[str]] = {}
         self.channel_states: dict[str, bool] = {}
         self._channel_states_lock = asyncio.Lock()
+
+        from database.analytics import AnalyticsDB
+        self.analytics = AnalyticsDB(token_database)
+        self._active_sessions: dict[str, int] = {}
 
         if CONDUIT_ID:
             super().__init__(
@@ -409,25 +379,7 @@ class Bot(commands.AutoBot):
             return
 
         try:
-            subs = [
-                eventsub.ChatMessageSubscription(
-                    broadcaster_user_id=broadcaster_user_id, user_id=BOT_ID
-                ),
-                eventsub.StreamOnlineSubscription(
-                    broadcaster_user_id=broadcaster_user_id
-                ),
-                eventsub.ChannelPointsRedeemAddSubscription(
-                    broadcaster_user_id=broadcaster_user_id
-                ),
-                eventsub.ChannelFollowSubscription(
-                    broadcaster_user_id=broadcaster_user_id,
-                    moderator_user_id=BOT_ID
-                ),
-                eventsub.ChannelSubscribeSubscription(
-                    broadcaster_user_id=broadcaster_user_id
-                ),
-            ]
-
+            subs = get_channel_subscriptions(broadcaster_user_id, BOT_ID)
             resp = await self.multi_subscribe(subs)
             if resp.errors:
                 non_conflict = [e for e in resp.errors if "409" not in str(
@@ -529,83 +481,6 @@ class Bot(commands.AutoBot):
         LOGGER.error(f"EventSub error: {error}")
 
 
-def setup_logging() -> None:
-    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
-    level = getattr(logging, log_level, logging.INFO)
-
-    if RICH_AVAILABLE:
-        try:
-            from rich.console import Console
-            from rich.logging import RichHandler
-
-            console = Console(
-                force_terminal=True,
-                color_system="auto",
-                width=120,
-            )
-
-            rich_handler = RichHandler(
-                console=console,
-                show_time=True,
-                show_level=True,
-                show_path=True,
-                markup=True,
-                rich_tracebacks=True,
-                tracebacks_show_locals=False,
-                tracebacks_width=120,
-            )
-
-            rich_handler.setFormatter(
-                logging.Formatter(fmt="%(message)s",
-                                  datefmt="[%Y-%m-%d %H:%M:%S]")
-            )
-
-            logging.basicConfig(
-                level=level,
-                format="%(message)s",
-                datefmt="[%Y-%m-%d %H:%M:%S]",
-                handlers=[rich_handler],
-            )
-            LOGGER.info(
-                "[bold green]✓[/bold green] Rich logging enabled",
-                extra={"markup": True},
-            )
-        except Exception as e:
-            logging.basicConfig(
-                level=level,
-                format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-                datefmt="%Y-%m-%d %H:%M:%S",
-            )
-            LOGGER.warning(
-                f"Failed to setup Rich logging: {e}, using standard logging")
-    else:
-        logging.basicConfig(
-            level=level,
-            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-        )
-        LOGGER.info(
-            "Standard logging enabled (install 'rich' for better output)")
-
-    if level == logging.DEBUG:
-        logging.getLogger("twitchio").setLevel(logging.DEBUG)
-        logging.getLogger("twitchio.eventsub").setLevel(logging.DEBUG)
-        logging.getLogger("twitchio.http").setLevel(logging.DEBUG)
-        logging.getLogger("twitchio.websockets").setLevel(logging.DEBUG)
-        logging.getLogger("httpx").setLevel(logging.INFO)
-    else:
-        logging.getLogger("twitchio").setLevel(logging.INFO)
-        logging.getLogger("twitchio.eventsub").setLevel(logging.INFO)
-        logging.getLogger("twitchio.http").setLevel(logging.WARNING)
-        logging.getLogger("twitchio.websockets").setLevel(logging.WARNING)
-        logging.getLogger("httpx").setLevel(logging.WARNING)
-
-    logging.getLogger("asyncio").setLevel(logging.ERROR)
-    logging.getLogger("asyncpg").setLevel(logging.WARNING)
-    logging.getLogger("openai").setLevel(logging.WARNING)
-    logging.getLogger("aiohttp").setLevel(logging.WARNING)
-
-
 def main() -> None:
     setup_logging()
 
@@ -621,55 +496,7 @@ def main() -> None:
             subs: list[eventsub.SubscriptionPayload] = []
 
             async with pool.acquire() as connection:
-                await connection.execute(
-                    """CREATE TABLE IF NOT EXISTS tokens(
-                        user_id TEXT PRIMARY KEY,
-                        token TEXT NOT NULL,
-                        refresh TEXT NOT NULL
-                    )"""
-                )
-                await connection.execute(
-                    """CREATE TABLE IF NOT EXISTS channels(
-                        channel_id TEXT PRIMARY KEY,
-                        channel_name TEXT NOT NULL UNIQUE,
-                        enabled BOOLEAN DEFAULT true,
-                        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-                    )"""
-                )
-
-                await connection.execute(
-                    """
-                    CREATE OR REPLACE FUNCTION notify_channel_toggle()
-                    RETURNS TRIGGER AS $$
-                    DECLARE
-                        payload TEXT;
-                    BEGIN
-                        IF NEW.enabled IS DISTINCT FROM OLD.enabled THEN
-                            payload := json_build_object(
-                                'channel_id', NEW.channel_id,
-                                'channel_name', NEW.channel_name,
-                                'enabled', NEW.enabled
-                            )::text;
-
-                            PERFORM pg_notify('channel_toggle', payload);
-                        END IF;
-
-                        RETURN NEW;
-                    END;
-                    $$ LANGUAGE plpgsql;
-                    """
-                )
-
-                await connection.execute(
-                    """
-                    DROP TRIGGER IF EXISTS channel_toggle_trigger ON channels;
-                    CREATE TRIGGER channel_toggle_trigger
-                    AFTER UPDATE ON channels
-                    FOR EACH ROW
-                    EXECUTE FUNCTION notify_channel_toggle();
-                    """
-                )
+                await setup_database_schema(connection)
 
                 rows = await connection.fetch(
                     """SELECT channel_id FROM channels WHERE enabled = true"""
@@ -680,26 +507,8 @@ def main() -> None:
                     if broadcaster_user_id == BOT_ID:
                         continue
 
-                    subs.extend(
-                        [
-                            eventsub.ChatMessageSubscription(
-                                broadcaster_user_id=broadcaster_user_id, user_id=BOT_ID
-                            ),
-                            eventsub.StreamOnlineSubscription(
-                                broadcaster_user_id=broadcaster_user_id
-                            ),
-                            eventsub.ChannelPointsRedeemAddSubscription(
-                                broadcaster_user_id=broadcaster_user_id
-                            ),
-                            eventsub.ChannelFollowSubscription(
-                                broadcaster_user_id=broadcaster_user_id,
-                                moderator_user_id=BOT_ID
-                            ),
-                            eventsub.ChannelSubscribeSubscription(
-                                broadcaster_user_id=broadcaster_user_id
-                            ),
-                        ]
-                    )
+                    subs.extend(get_channel_subscriptions(
+                        broadcaster_user_id, BOT_ID))
 
             LOGGER.info(f"Starting bot with {len(subs)} initial subscriptions")
 

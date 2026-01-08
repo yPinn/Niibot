@@ -19,13 +19,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isInitialized, setIsInitialized] = useState(false)
   const [channels, setChannels] = useState<Channel[]>([])
 
-  // 使用 ref 來追蹤是否已經初始化
   const initRef = React.useRef({
     hasLoaded: false,
     isLoading: false,
   })
 
-  // 載入用戶資料的函數（用於手動刷新）
   const refreshUser = React.useCallback(async () => {
     try {
       const userData = await getCurrentUser({ forceRefresh: true })
@@ -36,7 +34,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
-  // 載入頻道資料的函數（用於手動刷新）
   const refreshChannels = React.useCallback(async () => {
     try {
       const channelData = await getMonitoredChannels({ forceRefresh: true })
@@ -48,7 +45,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   useEffect(() => {
-    // 防止重複載入
     if (initRef.current.hasLoaded || initRef.current.isLoading) {
       return
     }
@@ -56,7 +52,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     initRef.current.isLoading = true
     initRef.current.hasLoaded = true
 
-    // 初始載入用戶和頻道資料
     const loadInitialData = async () => {
       try {
         const [userData, channelData] = await Promise.all([

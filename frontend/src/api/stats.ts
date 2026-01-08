@@ -1,4 +1,4 @@
-// Stats API
+import { API_ENDPOINTS } from './config'
 
 export interface CommandStat {
   name: string
@@ -19,20 +19,16 @@ export interface ChannelStats {
 
 export async function getChannelStats(): Promise<ChannelStats | null> {
   try {
-    const response = await fetch('/api/stats/channel', {
+    const response = await fetch(API_ENDPOINTS.stats.channel, {
       credentials: 'include',
     })
 
     if (!response.ok) {
       console.error(`Failed to fetch stats: ${response.status} ${response.statusText}`)
-      const errorText = await response.text().catch(() => 'No error details')
-      console.error('Error details:', errorText)
       return null
     }
 
-    const data = await response.json()
-    console.log('Stats data received:', data)
-    return data
+    return await response.json()
   } catch (error) {
     console.error('Failed to get channel stats:', error)
     return null

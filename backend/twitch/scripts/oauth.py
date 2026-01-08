@@ -15,7 +15,7 @@ try:
 except ImportError:
     pass
 
-from config import BOT_SCOPES, BROADCASTER_SCOPES
+from core.config import BOT_SCOPES, BROADCASTER_SCOPES
 
 
 def gen_url(cid: str, uri: str, scopes: list[str]) -> str:

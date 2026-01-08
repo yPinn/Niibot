@@ -1,4 +1,4 @@
-import { API_BASE_URL } from './config'
+import { API_ENDPOINTS } from './config'
 
 export interface CommandInfo {
   name: string
@@ -21,11 +21,8 @@ export interface ComponentsResponse {
   total: number
 }
 
-/**
- * Get all bot components (Discord cogs and Twitch components)
- */
 export async function getComponents(): Promise<ComponentsResponse> {
-  const response = await fetch(`${API_BASE_URL}/api/commands/components`, {
+  const response = await fetch(API_ENDPOINTS.commands.components, {
     credentials: 'include',
   })
 

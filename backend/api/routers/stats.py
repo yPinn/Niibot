@@ -4,9 +4,9 @@ import logging
 import random
 from datetime import datetime
 
-from fastapi import APIRouter, Cookie, HTTPException
+from core.dependencies import get_current_user_id
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from services import auth as auth_service
 
 logger = logging.getLogger(__name__)
 
@@ -59,15 +59,8 @@ MOCK_CHATTERS = [
 
 
 @router.get("/channel")
-async def get_channel_stats(auth_token: str | None = Cookie(None)) -> ChannelStats:
+async def get_channel_stats(user_id: str = Depends(get_current_user_id)) -> ChannelStats:
     """Get channel statistics including top commands and chatters"""
-    if not auth_token:
-        raise HTTPException(status_code=401, detail="Not logged in")
-
-    user_id = auth_service.verify_token(auth_token)
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
-
     try:
         # TODO: Replace with actual database queries
         # For now, return mock data with slight randomization to simulate real-time changes
@@ -94,6 +87,7 @@ async def get_channel_stats(auth_token: str | None = Cookie(None)) -> ChannelSta
         total_commands = sum(cmd.count for cmd in top_commands)
         total_messages = sum(chatter.message_count for chatter in top_chatters) + random.randint(500, 800)
 
+        logger.info(f"User {user_id} requested channel stats")
         return ChannelStats(
             top_commands=top_commands[:5],  # 只返回前5個給 Dashboard
             top_chatters=top_chatters[:5],  # 只返回前5個給 Dashboard

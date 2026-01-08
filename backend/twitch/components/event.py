@@ -86,6 +86,21 @@ class EventComponent(commands.Component):
                 token_for=self.bot.bot_id,
             )
             LOGGER.info(f"[{broadcaster_name}] Follow: {user_name}")
+
+            # Record to analytics database
+            channel_id = payload.broadcaster.id
+            if hasattr(self.bot, '_active_sessions') and hasattr(self.bot, 'analytics'):
+                session_id = getattr(self.bot, '_active_sessions').get(channel_id)
+                if session_id:
+                    analytics = getattr(self.bot, 'analytics')
+                    await analytics.record_follow_event(
+                        session_id=session_id,
+                        channel_id=channel_id,
+                        user_id=user_id,
+                        username=payload.user.name or user_name,
+                        display_name=payload.user.display_name,
+                        occurred_at=datetime.now()
+                    )
         except Exception as e:
             LOGGER.error(f"[{broadcaster_name}] Follow: {user_name} (error: {e})")
 
@@ -114,6 +129,23 @@ class EventComponent(commands.Component):
                 token_for=self.bot.bot_id,
             )
             LOGGER.info(f"[{broadcaster_name}] {sub_type}: {user_name} ({tier_name})")
+
+            # Record to analytics database
+            channel_id = payload.broadcaster.id
+            if hasattr(self.bot, '_active_sessions') and hasattr(self.bot, 'analytics'):
+                session_id = getattr(self.bot, '_active_sessions').get(channel_id)
+                if session_id:
+                    analytics = getattr(self.bot, 'analytics')
+                    await analytics.record_subscribe_event(
+                        session_id=session_id,
+                        channel_id=channel_id,
+                        user_id=payload.user.id,
+                        username=payload.user.name or user_name,
+                        display_name=payload.user.display_name,
+                        tier=payload.tier,
+                        is_gift=payload.gift,
+                        occurred_at=datetime.now()
+                    )
         except Exception as e:
             LOGGER.error(f"[{broadcaster_name}] {sub_type}: {user_name} ({tier_name}) (error: {e})")
 

@@ -4,7 +4,7 @@ import random
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from config import DATA_DIR
+from core.config import DATA_DIR
 from twitchio.ext import commands
 
 if TYPE_CHECKING:

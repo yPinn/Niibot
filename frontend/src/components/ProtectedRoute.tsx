@@ -13,13 +13,9 @@ export function ProtectedRoute() {
 
   // 等待初始化完成，避免誤判未登入而重定向
   if (!isInitialized) {
-    // 使用 overlay 方式，保留底層內容避免閃爍
-    return (
-      <>
-        <Outlet />
-        <LoadingSpinner fullScreen text="載入中..." />
-      </>
-    )
+    // 只顯示載入畫面，不渲染子路由
+    // 避免子組件在認證未完成時執行副作用
+    return <LoadingSpinner fullScreen text="Loading..." />
   }
 
   if (!isAuthenticated) {
@@ -41,13 +37,7 @@ export function PublicOnlyRoute() {
 
   // 等待初始化完成
   if (!isInitialized) {
-    // 使用 overlay 方式，保留底層內容避免閃爍
-    return (
-      <>
-        <Outlet />
-        <LoadingSpinner fullScreen text="載入中..." />
-      </>
-    )
+    return <LoadingSpinner fullScreen text="Loading..." />
   }
 
   if (isAuthenticated) {

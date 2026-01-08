@@ -18,10 +18,10 @@ try:
 except ImportError:
     pass
 
-from config import BOT_SCOPES, BROADCASTER_SCOPES
+from core.config import BOT_SCOPES, BROADCASTER_SCOPES
 
-BOT_SCOPES = set(BOT_SCOPES)
-BROADCASTER_SCOPES = set(BROADCASTER_SCOPES)
+BOT_SCOPES_SET = set(BOT_SCOPES)
+BROADCASTER_SCOPES_SET = set(BROADCASTER_SCOPES)
 
 
 def identify_role(scopes: set[str]) -> str:
@@ -107,11 +107,11 @@ async def main():
                 print(f"    - {s}")
 
             if role == "Bot":
-                missing = BOT_SCOPES - scopes
+                missing = BOT_SCOPES_SET - scopes
                 if missing:
                     print(f"  WARNING - MISSING: {', '.join(sorted(missing))}")
             elif role == "Broadcaster":
-                missing = BROADCASTER_SCOPES - scopes
+                missing = BROADCASTER_SCOPES_SET - scopes
                 if missing:
                     print(f"  WARNING - MISSING: {', '.join(sorted(missing))}")
 

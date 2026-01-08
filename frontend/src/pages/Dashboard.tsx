@@ -1,6 +1,13 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
+import {
+  type AnalyticsCommandStat,
+  type AnalyticsSummary,
+  getAnalyticsSummary,
+  getTopCommands,
+} from '@/api/analytics'
 import { type ChannelStats, getChannelStats } from '@/api/stats'
+import AnalyticsChart from '@/components/AnalyticsChart'
 import StatsCard from '@/components/StatsCard'
 import TwitchPlayer from '@/components/TwitchPlayer'
 import {
@@ -13,50 +20,76 @@ import { Icon } from '@/components/ui/icon'
 import { useAuth } from '@/contexts/AuthContext'
 
 export default function Dashboard() {
-  const { user } = useAuth()
+  const { user, isInitialized } = useAuth()
   const [myChannelSubscribed, setMyChannelSubscribed] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [analyticsLoading, setAnalyticsLoading] = useState(true)
+  const [statsLoading, setStatsLoading] = useState(true)
   const [stats, setStats] = useState<ChannelStats | null>(null)
+  const [analytics, setAnalytics] = useState<AnalyticsSummary | null>(null)
+  const [topCommands, setTopCommands] = useState<AnalyticsCommandStat[]>([])
 
-  // 從 API 獲取當前使用者的頻道訂閱狀態
+  // 防止重複載入
+  const hasLoadedRef = useRef(false)
+
   const fetchMyStatus = useCallback(async () => {
     if (!user) return
 
     try {
-      const response = await fetch('/api/channels/my-status', {
-        credentials: 'include',
-      })
-
+      const response = await fetch('/api/channels/my-status', { credentials: 'include' })
       if (response.ok) {
         const data = await response.json()
         setMyChannelSubscribed(data.subscribed)
-      } else {
-        console.error('Failed to fetch my channel status:', response.status)
       }
     } catch (error) {
       console.error('Failed to fetch my channel status:', error)
     }
   }, [user])
 
-  // 獲取頻道統計數據
   const fetchStats = useCallback(async () => {
     if (!user) return
-
+    setStatsLoading(true)
     try {
-      const data = await getChannelStats()
-      setStats(data)
+      setStats(await getChannelStats())
     } catch (error) {
       console.error('Failed to fetch stats:', error)
+      setStats(null)
+    } finally {
+      setStatsLoading(false)
     }
   }, [user])
 
-  // 初始化當前使用者的頻道訂閱狀態和統計數據
+  const fetchAnalytics = useCallback(async () => {
+    if (!user) return
+    setAnalyticsLoading(true)
+    try {
+      const [analyticsData, commandsData] = await Promise.all([
+        getAnalyticsSummary(30),
+        getTopCommands(30, 10),
+      ])
+      setAnalytics(analyticsData)
+      setTopCommands(commandsData)
+    } catch (error) {
+      console.error('Failed to fetch analytics:', error)
+      setAnalytics(null)
+      setTopCommands([])
+    } finally {
+      setAnalyticsLoading(false)
+    }
+  }, [user])
+
+  // 當 AuthContext 初始化完成且有用戶時，立即載入資料
   useEffect(() => {
+    if (!isInitialized || !user || hasLoadedRef.current) return
+
+    hasLoadedRef.current = true
+
+    // 並行載入所有資料
     fetchMyStatus()
     fetchStats()
-  }, [fetchMyStatus, fetchStats])
+    fetchAnalytics()
+  }, [isInitialized, user, fetchMyStatus, fetchStats, fetchAnalytics])
 
-  // 切換當前使用者的頻道訂閱狀態
   const toggleMyChannelSubscription = async () => {
     if (!user) return
 
@@ -64,14 +97,9 @@ export default function Dashboard() {
     try {
       const response = await fetch('/api/channels/toggle', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({
-          channel_id: user.id,
-          enabled: !myChannelSubscribed,
-        }),
+        body: JSON.stringify({ channel_id: user.id, enabled: !myChannelSubscribed }),
       })
 
       if (!response.ok) {
@@ -122,18 +150,38 @@ export default function Dashboard() {
           </DropdownMenu>
         </div>
       )}
-      <div className="bg-muted/50 min-h-[100vh] flex-1 rounded-xl md:min-h-min" />
+
+      <AnalyticsChart
+        data={
+          analytics
+            ? {
+                totalStreamHours: analytics.total_stream_hours,
+                totalSessions: analytics.total_sessions,
+                totalCommands: analytics.total_commands,
+                totalFollows: analytics.total_follows,
+                totalSubs: analytics.total_subs,
+                avgSessionDuration: analytics.avg_session_duration,
+              }
+            : null
+        }
+        loading={analyticsLoading}
+        className="md:col-span-3"
+      />
+
       <div className="grid auto-rows-min gap-4 md:grid-cols-3">
-        {/* Twitch 直播預覽 */}
-        <div className="bg-muted/50 rounded-xl overflow-hidden aspect-video">
-          {user?.name && (
+        <div className="bg-muted/50 rounded-xl overflow-hidden aspect-video relative">
+          {user?.name ? (
             <TwitchPlayer
-              channel="meitoo85"
+              channel="llazypilot"
               height="100%"
               muted={true}
               autoplay={true}
               className="w-full h-full"
             />
+          ) : (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="text-muted-foreground text-sm">Loading player...</div>
+            </div>
           )}
         </div>
 
@@ -146,18 +194,15 @@ export default function Dashboard() {
               value: chatter.message_count,
             })) || []
           }
+          loading={statsLoading}
           className="aspect-video"
         />
 
         <StatsCard
           title="Top Commands"
           icon="fa-solid fa-terminal"
-          items={
-            stats?.top_commands.map(cmd => ({
-              label: cmd.name,
-              value: cmd.count,
-            })) || []
-          }
+          items={topCommands.map(cmd => ({ label: cmd.command_name, value: cmd.usage_count }))}
+          loading={analyticsLoading}
           className="aspect-video"
         />
       </div>

@@ -5,9 +5,9 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Cookie, HTTPException
+from core.dependencies import get_current_user_id
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from services import auth as auth_service
 
 logger = logging.getLogger(__name__)
 
@@ -177,15 +177,8 @@ def get_twitch_components() -> list[ComponentInfo]:
 
 
 @router.get("/components")
-async def get_all_components(auth_token: str | None = Cookie(None)):
+async def get_all_components(user_id: str = Depends(get_current_user_id)):
     """Get all bot components (Discord cogs and Twitch components)"""
-    if not auth_token:
-        raise HTTPException(status_code=401, detail="Not logged in")
-
-    user_id = auth_service.verify_token(auth_token)
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
-
     try:
         discord_components = get_discord_components()
         twitch_components = get_twitch_components()

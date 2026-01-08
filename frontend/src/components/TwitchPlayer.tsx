@@ -9,6 +9,18 @@ interface TwitchPlayerProps {
   className?: string
 }
 
+interface TwitchPlayer {
+  destroy: () => void
+}
+
+interface TwitchWindow extends Window {
+  Twitch?: {
+    Player: new (element: HTMLElement, options: Record<string, unknown>) => TwitchPlayer
+  }
+}
+
+declare const window: TwitchWindow
+
 export default function TwitchPlayer({
   channel,
   width = '100%',
@@ -18,24 +30,21 @@ export default function TwitchPlayer({
   className = '',
 }: TwitchPlayerProps) {
   const playerRef = useRef<HTMLDivElement>(null)
-  const twitchPlayerRef = useRef<any>(null)
+  const twitchPlayerRef = useRef<TwitchPlayer | null>(null)
   const scriptLoadedRef = useRef<boolean>(false)
 
   useEffect(() => {
-    // 檢查是否已載入 Twitch SDK
-    if ((window as any).Twitch && !scriptLoadedRef.current) {
+    if (window.Twitch && !scriptLoadedRef.current) {
       scriptLoadedRef.current = true
       initPlayer()
       return
     }
 
-    // 檢查是否已存在 script 標籤
     const existingScript = document.querySelector('script[src*="embed.twitch.tv"]')
     if (existingScript) {
       scriptLoadedRef.current = true
-      // 等待 SDK 載入完成
       const checkTwitch = setInterval(() => {
-        if ((window as any).Twitch) {
+        if (window.Twitch) {
           clearInterval(checkTwitch)
           initPlayer()
         }
@@ -43,7 +52,6 @@ export default function TwitchPlayer({
       return () => clearInterval(checkTwitch)
     }
 
-    // 載入 Twitch Embed Script
     const script = document.createElement('script')
     script.src = 'https://player.twitch.tv/js/embed/v1.js'
     script.async = true
@@ -54,16 +62,14 @@ export default function TwitchPlayer({
     document.body.appendChild(script)
 
     function initPlayer() {
-      if (playerRef.current && (window as any).Twitch) {
-        // 創建 Twitch Player
+      if (playerRef.current && window.Twitch) {
         try {
-          twitchPlayerRef.current = new (window as any).Twitch.Player(playerRef.current, {
+          twitchPlayerRef.current = new window.Twitch.Player(playerRef.current, {
             channel,
             width,
             height,
             muted,
             autoplay,
-            // 根據官方文檔，只包含 video 播放器
             parent: [window.location.hostname],
             allowfullscreen: true,
           })
@@ -74,13 +80,12 @@ export default function TwitchPlayer({
     }
 
     return () => {
-      // 清理播放器實例
       if (twitchPlayerRef.current) {
         try {
           twitchPlayerRef.current.destroy()
           twitchPlayerRef.current = null
-        } catch (error) {
-          // 靜默處理清理錯誤
+        } catch {
+          // Ignore cleanup errors
         }
       }
     }

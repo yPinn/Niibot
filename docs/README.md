@@ -1,17 +1,25 @@
-# Niibot 文檔
+# Niibot Documentation
 
-## Backend 文檔
+## API Documentation
+
+- [API Endpoints Reference](API_ENDPOINTS.md) - Complete API endpoints list
+- [API Server Guide](../backend/api/README.md) - API server setup and configuration
+
+## Backend Documentation
 
 ### Twitch Bot
-- [OAuth 設定與權限指南](backend/twitch/SETUP_GUIDE.md)
-- [部署指南](backend/twitch/DEPLOYMENT.md)
-- [TwitchIO 3 API 指南](backend/twitch/TWITCHIO3_API.md)
+- [OAuth Setup Guide](backend/twitch/SETUP_GUIDE.md)
+- [Deployment Guide](backend/twitch/DEPLOYMENT.md)
+- [TwitchIO 3 API Guide](backend/twitch/TWITCHIO3_API.md)
 
 ### Discord Bot
-請參考 [backend/discord/README.md](../backend/discord/README.md)
+See [backend/discord/README.md](../backend/discord/README.md)
 
-### API Server
-請參考 [backend/api/README.md](../backend/api/README.md)
+## Frontend Documentation
 
-## Frontend 文檔
-請參考 [frontend/README.md](../frontend/README.md)
+See [frontend/README.md](../frontend/README.md)
+
+## Setup Guides
+
+- [Environment Setup](environment-setup.md)
+- [Docker Setup](docker-setup.md)
