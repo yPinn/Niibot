@@ -1,9 +1,9 @@
 import { useState } from 'react'
-import { Plus, Search, Trash2 } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Icon } from '@/components/ui/icon'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import {
@@ -97,7 +97,7 @@ export default function Events() {
           <p className="text-muted-foreground">管理頻道事件和自動回應</p>
         </div>
         <Button>
-          <Plus className="mr-2 h-4 w-4" />
+          <Icon icon="fa-solid fa-plus" wrapperClassName="mr-2 size-4" />
           新增事件
         </Button>
       </div>
@@ -111,7 +111,10 @@ export default function Events() {
           {/* 搜尋框 */}
           <div className="mb-4 flex items-center gap-2">
             <div className="relative flex-1">
-              <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Icon
+                icon="fa-solid fa-magnifying-glass"
+                wrapperClassName="absolute left-2 top-2.5 size-4 text-muted-foreground"
+              />
               <Input
                 placeholder="搜尋事件..."
                 className="pl-8"
@@ -162,7 +165,10 @@ export default function Events() {
                             編輯
                           </Button>
                           <Button variant="ghost" size="sm">
-                            <Trash2 className="h-4 w-4 text-destructive" />
+                            <Icon
+                              icon="fa-solid fa-trash"
+                              wrapperClassName="size-4 text-destructive"
+                            />
                           </Button>
                         </div>
                       </TableCell>

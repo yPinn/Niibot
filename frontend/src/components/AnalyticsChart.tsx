@@ -169,12 +169,12 @@ export default function AnalyticsChart({
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" opacity={0.5} />
                 <XAxis
                   dataKey="date"
-                  tick={<CustomTick />}
+                  tick={CustomTick as never}
                   tickLine={{ className: 'stroke-border' }}
                   axisLine={{ className: 'stroke-border' }}
                 />
                 <YAxis
-                  tick={<CustomYAxisTick />}
+                  tick={CustomYAxisTick as never}
                   tickLine={{ className: 'stroke-border' }}
                   axisLine={{ className: 'stroke-border' }}
                 />

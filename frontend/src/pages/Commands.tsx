@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Search } from 'lucide-react'
 
 import { type ComponentInfo, getComponents } from '@/api'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
@@ -301,7 +300,10 @@ export default function Commands() {
         <CardContent>
           <div className="mb-4">
             <div className="relative">
-              <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Icon
+                icon="fa-solid fa-magnifying-glass"
+                wrapperClassName="absolute left-2 top-2.5 size-4 text-muted-foreground"
+              />
               <Input
                 placeholder="搜尋指令名稱、組件或描述..."
                 className="pl-8"

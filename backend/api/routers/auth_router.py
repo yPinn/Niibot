@@ -103,6 +103,10 @@ async def twitch_oauth_callback(
     # Create JWT token
     jwt_token = auth_service.create_access_token(user_id)
 
+    # Fetch user info for logging
+    user_info = await twitch_api.get_user_info(user_id)
+    username = user_info.get("name", user_id) if user_info else user_id
+
     # Set cookie and redirect
     response = RedirectResponse(url=f"{settings.frontend_url}/dashboard")
     response.set_cookie(
@@ -114,7 +118,7 @@ async def twitch_oauth_callback(
         max_age=30 * 24 * 60 * 60,  # 30 days
     )
 
-    logger.info(f"User logged in: {user_id}")
+    logger.info(f"User logged in: {username} ({user_id})")
     return response
 
 
@@ -136,9 +140,14 @@ async def get_current_user(
 async def logout(
     response: Response,
     user_id: str = Depends(get_current_user_id),
+    twitch_api: TwitchAPIClient = Depends(get_twitch_api),
     settings: Settings = Depends(get_settings),
 ) -> LogoutResponse:
     """Logout current user by clearing auth cookie"""
+    # Fetch user info for logging
+    user_info = await twitch_api.get_user_info(user_id)
+    username = user_info.get("name", user_id) if user_info else user_id
+
     response.delete_cookie(
         key="auth_token",
         path="/",
@@ -146,5 +155,5 @@ async def logout(
         secure=settings.is_production,
         samesite="strict" if settings.is_production else "lax",
     )
-    logger.info(f"User logged out: {user_id}")
+    logger.info(f"User logged out: {username} ({user_id})")
     return LogoutResponse(message="Logged out successfully")

@@ -1,13 +1,13 @@
-import { Loader2Icon } from 'lucide-react'
-
+import { Icon } from '@/components/ui/icon'
 import { cn } from '@/lib/utils'
 
-function Spinner({ className, ...props }: React.ComponentProps<'svg'>) {
+function Spinner({ className, ...props }: React.ComponentProps<'div'>) {
   return (
-    <Loader2Icon
+    <Icon
+      icon="fa-solid fa-spinner"
+      wrapperClassName={cn('size-4 animate-spin', className)}
       role="status"
       aria-label="Loading"
-      className={cn('size-4 animate-spin', className)}
       {...props}
     />
   )
