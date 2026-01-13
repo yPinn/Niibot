@@ -253,3 +253,83 @@ class TwitchAPIClient:
         except Exception as e:
             logger.exception(f"Error getting streams: {e}")
             return []
+
+    async def get_games_by_ids(self, game_ids: List[str]) -> List[Dict]:
+        """
+        Get game information by game IDs
+
+        Returns list of game objects with:
+        - id: Game ID
+        - name: Game name
+        - box_art_url: Template URL (replace {width} and {height})
+        """
+        try:
+            if not game_ids:
+                return []
+
+            # Get app access token
+            app_token = await self._get_app_access_token()
+            if not app_token:
+                return []
+
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.get(
+                    "https://api.twitch.tv/helix/games",
+                    params={"id": game_ids},
+                    headers={
+                        "Authorization": f"Bearer {app_token}",
+                        "Client-Id": self.client_id,
+                    },
+                )
+
+                if response.status_code != 200:
+                    logger.error(f"Failed to fetch games: {response.status_code}")
+                    logger.error(f"Response: {response.text}")
+                    return []
+
+                data = response.json()
+                return cast(List[Dict], data.get("data", []))
+
+        except Exception as e:
+            logger.exception(f"Error getting games: {e}")
+            return []
+
+    async def get_games_by_names(self, game_names: List[str]) -> List[Dict]:
+        """
+        Get game information by game names
+
+        Returns list of game objects with:
+        - id: Game ID
+        - name: Game name
+        - box_art_url: Template URL (replace {width} and {height})
+        """
+        try:
+            if not game_names:
+                return []
+
+            # Get app access token
+            app_token = await self._get_app_access_token()
+            if not app_token:
+                return []
+
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.get(
+                    "https://api.twitch.tv/helix/games",
+                    params={"name": game_names},
+                    headers={
+                        "Authorization": f"Bearer {app_token}",
+                        "Client-Id": self.client_id,
+                    },
+                )
+
+                if response.status_code != 200:
+                    logger.error(f"Failed to fetch games by names: {response.status_code}")
+                    logger.error(f"Response: {response.text}")
+                    return []
+
+                data = response.json()
+                return cast(List[Dict], data.get("data", []))
+
+        except Exception as e:
+            logger.exception(f"Error getting games by names: {e}")
+            return []

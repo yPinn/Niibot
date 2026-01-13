@@ -24,11 +24,24 @@ class AnalyticsService:
                 rows = await conn.fetch(
                     """
                     SELECT
-                        session_id, channel_id, started_at, ended_at, title, game_name,
-                        duration_hours, total_commands, new_follows, new_subs, raids_received
-                    FROM v_session_summary
-                    WHERE channel_id = $1 AND started_at >= $2
-                    ORDER BY started_at DESC
+                        s.id as session_id,
+                        s.channel_id,
+                        s.started_at,
+                        s.ended_at,
+                        s.title,
+                        s.game_name,
+                        s.game_id,
+                        EXTRACT(EPOCH FROM (COALESCE(s.ended_at, NOW()) - s.started_at))/3600 as duration_hours,
+                        COALESCE(SUM(c.usage_count), 0) as total_commands,
+                        COALESCE(SUM(CASE WHEN e.event_type = 'follow' THEN 1 END), 0) as new_follows,
+                        COALESCE(SUM(CASE WHEN e.event_type = 'subscribe' THEN 1 END), 0) as new_subs,
+                        COALESCE(SUM(CASE WHEN e.event_type = 'raid' THEN 1 END), 0) as raids_received
+                    FROM stream_sessions s
+                    LEFT JOIN command_stats c ON c.session_id = s.id
+                    LEFT JOIN stream_events e ON e.session_id = s.id
+                    WHERE s.channel_id = $1 AND s.started_at >= $2
+                    GROUP BY s.id
+                    ORDER BY s.started_at DESC
                     """,
                     channel_id,
                     since_date,
@@ -42,6 +55,7 @@ class AnalyticsService:
                         "ended_at": row["ended_at"],
                         "title": row["title"],
                         "game_name": row["game_name"],
+                        "game_id": row["game_id"],
                         "duration_hours": float(row["duration_hours"] or 0),
                         "total_commands": row["total_commands"] or 0,
                         "new_follows": row["new_follows"] or 0,
@@ -66,7 +80,7 @@ class AnalyticsService:
                     "total_follows": total_follows,
                     "total_subs": total_subs,
                     "avg_session_duration": round(avg_duration, 2),
-                    "recent_sessions": sessions[:10],
+                    "recent_sessions": sessions[:25],  # Return up to 25 sessions for chart
                 }
 
         except Exception as e:

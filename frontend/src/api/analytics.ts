@@ -7,6 +7,7 @@ export interface SessionSummary {
   ended_at: string | null
   title: string | null
   game_name: string | null
+  game_id: string | null
   duration_hours: number
   total_commands: number
   new_follows: number
@@ -69,8 +70,8 @@ export async function getTopCommands(
   return response.json()
 }
 
-export async function getSessionCommands(sessionId: number): Promise<AnalyticsCommandStat[]> {
-  const response = await fetch(API_ENDPOINTS.analytics.sessionCommands(sessionId), {
+export async function getSessionCommands(session_id: number): Promise<AnalyticsCommandStat[]> {
+  const response = await fetch(API_ENDPOINTS.analytics.sessionCommands(session_id), {
     credentials: 'include',
   })
 
@@ -81,8 +82,8 @@ export async function getSessionCommands(sessionId: number): Promise<AnalyticsCo
   return response.json()
 }
 
-export async function getSessionEvents(sessionId: number): Promise<StreamEvent[]> {
-  const response = await fetch(API_ENDPOINTS.analytics.sessionEvents(sessionId), {
+export async function getSessionEvents(session_id: number): Promise<StreamEvent[]> {
+  const response = await fetch(API_ENDPOINTS.analytics.sessionEvents(session_id), {
     credentials: 'include',
   })
 

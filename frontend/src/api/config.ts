@@ -15,8 +15,8 @@ export const API_ENDPOINTS = {
   analytics: {
     summary: '/api/analytics/summary',
     topCommands: '/api/analytics/top-commands',
-    sessionCommands: (sessionId: number) => `/api/analytics/sessions/${sessionId}/commands`,
-    sessionEvents: (sessionId: number) => `/api/analytics/sessions/${sessionId}/events`,
+    sessionCommands: (session_id: number) => `/api/analytics/sessions/${session_id}/commands`,
+    sessionEvents: (session_id: number) => `/api/analytics/sessions/${session_id}/events`,
   },
   stats: {
     channel: '/api/stats/channel',

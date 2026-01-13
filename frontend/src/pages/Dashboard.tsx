@@ -119,7 +119,7 @@ export default function Dashboard() {
   }
 
   return (
-    <main className="flex flex-1 flex-col gap-4 p-4">
+    <main className="flex flex-1 flex-col gap-5 p-5">
       {user && (
         <div className="flex items-center justify-end">
           <DropdownMenu>
@@ -151,24 +151,9 @@ export default function Dashboard() {
         </div>
       )}
 
-      <AnalyticsChart
-        data={
-          analytics
-            ? {
-                totalStreamHours: analytics.total_stream_hours,
-                totalSessions: analytics.total_sessions,
-                totalCommands: analytics.total_commands,
-                totalFollows: analytics.total_follows,
-                totalSubs: analytics.total_subs,
-                avgSessionDuration: analytics.avg_session_duration,
-              }
-            : null
-        }
-        loading={analyticsLoading}
-        className="md:col-span-3"
-      />
+      <AnalyticsChart data={analytics} loading={analyticsLoading} />
 
-      <div className="grid auto-rows-min gap-4 md:grid-cols-3">
+      <div className="grid auto-rows-min gap-5 md:grid-cols-3">
         <div className="bg-muted/50 rounded-xl overflow-hidden aspect-video relative">
           {user?.name ? (
             <TwitchPlayer

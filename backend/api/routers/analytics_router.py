@@ -25,6 +25,7 @@ class SessionSummary(BaseModel):
     ended_at: Optional[datetime]
     title: Optional[str]
     game_name: Optional[str]
+    game_id: Optional[str]
     duration_hours: float
     total_commands: int
     new_follows: int
