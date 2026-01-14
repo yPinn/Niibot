@@ -43,6 +43,10 @@ class Settings(BaseSettings):
                          description="API server URL")
     bot_url: str = Field(default="http://localhost:4343",
                          description="Bot WebSocket URL")
+    twitch_bot_url: str = Field(default="http://localhost:4344",
+                                description="Twitch Bot Health Server URL")
+    discord_bot_url: str = Field(default="http://localhost:8080",
+                                 description="Discord Bot Health Server URL")
 
     # Environment
     environment: str = Field(default="development",

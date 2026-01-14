@@ -1,4 +1,4 @@
-// API 端點配置集中管理
+// API endpoint configuration
 export const API_BASE_URL = import.meta.env.VITE_API_URL || ''
 export const API_ENDPOINTS = {
   auth: {
@@ -23,6 +23,16 @@ export const API_ENDPOINTS = {
   },
   commands: {
     components: '/api/commands/components',
+  },
+  bots: {
+    twitch: {
+      status: '/api/bots/twitch/status',
+      health: '/api/bots/twitch/health',
+    },
+    discord: {
+      status: '/api/bots/discord/status',
+      health: '/api/bots/discord/health',
+    },
   },
   health: '/api/health',
 } as const

@@ -10,41 +10,16 @@ import { type ChannelStats, getChannelStats } from '@/api/stats'
 import AnalyticsChart from '@/components/AnalyticsChart'
 import StatsCard from '@/components/StatsCard'
 import TwitchPlayer from '@/components/TwitchPlayer'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import { Icon } from '@/components/ui/icon'
 import { useAuth } from '@/contexts/AuthContext'
 
 export default function Dashboard() {
   const { user, isInitialized } = useAuth()
-  const [myChannelSubscribed, setMyChannelSubscribed] = useState(false)
-  const [loading, setLoading] = useState(false)
   const [analyticsLoading, setAnalyticsLoading] = useState(true)
   const [statsLoading, setStatsLoading] = useState(true)
   const [stats, setStats] = useState<ChannelStats | null>(null)
   const [analytics, setAnalytics] = useState<AnalyticsSummary | null>(null)
   const [topCommands, setTopCommands] = useState<AnalyticsCommandStat[]>([])
-
-  // 防止重複載入
   const hasLoadedRef = useRef(false)
-
-  const fetchMyStatus = useCallback(async () => {
-    if (!user) return
-
-    try {
-      const response = await fetch('/api/channels/my-status', { credentials: 'include' })
-      if (response.ok) {
-        const data = await response.json()
-        setMyChannelSubscribed(data.subscribed)
-      }
-    } catch (error) {
-      console.error('Failed to fetch my channel status:', error)
-    }
-  }, [user])
 
   const fetchStats = useCallback(async () => {
     if (!user) return
@@ -78,86 +53,24 @@ export default function Dashboard() {
     }
   }, [user])
 
-  // 當 AuthContext 初始化完成且有用戶時，立即載入資料
   useEffect(() => {
     if (!isInitialized || !user || hasLoadedRef.current) return
-
     hasLoadedRef.current = true
-
-    // 並行載入所有資料
-    fetchMyStatus()
     fetchStats()
     fetchAnalytics()
-  }, [isInitialized, user, fetchMyStatus, fetchStats, fetchAnalytics])
-
-  const toggleMyChannelSubscription = async () => {
-    if (!user) return
-
-    setLoading(true)
-    try {
-      const response = await fetch('/api/channels/toggle', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ channel_id: user.id, enabled: !myChannelSubscribed }),
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.detail || 'Failed to toggle subscription')
-      }
-
-      await fetchMyStatus()
-    } catch (error) {
-      console.error('Error toggling subscription:', error)
-      alert(
-        `Failed to toggle subscription: ${error instanceof Error ? error.message : 'Unknown error'}`
-      )
-    } finally {
-      setLoading(false)
-    }
-  }
+  }, [isInitialized, user, fetchStats, fetchAnalytics])
 
   return (
-    <main className="flex flex-1 flex-col gap-5 p-5">
-      {user && (
-        <div className="flex items-center justify-end">
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              className="flex items-center gap-2 px-4 py-2 rounded-md border bg-card hover:bg-accent transition-colors disabled:opacity-50"
-              disabled={loading}
-            >
-              <div
-                className={`h-2 w-2 rounded-full mr-1 ${myChannelSubscribed ? 'bg-green-500' : 'bg-muted-foreground'}`}
-              />
-              <span className="text-sm font-semibold">
-                Niibot {myChannelSubscribed ? 'Online' : 'Offline'}
-              </span>
-              <Icon icon="fa-solid fa-chevron-down" wrapperClassName="size-4" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="end"
-              className="w-[var(--radix-dropdown-menu-trigger-width)]"
-            >
-              <DropdownMenuItem onClick={toggleMyChannelSubscription} disabled={loading}>
-                <Icon
-                  icon={myChannelSubscribed ? 'fa-solid fa-pause' : 'fa-solid fa-play'}
-                  wrapperClassName="mr-2 size-4"
-                />
-                <span>{myChannelSubscribed ? '停用訂閱' : '啟用訂閱'}</span>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      )}
+    <main
+      className={`h-full grid grid-rows-[1fr_auto] min-h-0 overflow-hidden transition-all duration-200 p-4 gap-4`}
+    >
+      <AnalyticsChart data={analytics} loading={analyticsLoading} className="min-h-0" />
 
-      <AnalyticsChart data={analytics} loading={analyticsLoading} />
-
-      <div className="grid auto-rows-min gap-5 md:grid-cols-3">
-        <div className="bg-muted/50 rounded-xl overflow-hidden aspect-video relative">
+      <div className={`grid grid-cols-1 md:grid-cols-3 gap-4`}>
+        <div className="aspect-video bg-muted/50 rounded-xl overflow-hidden relative">
           {user?.name ? (
             <TwitchPlayer
-              channel="llazypilot"
+              channel="niibot_"
               height="100%"
               muted={true}
               autoplay={true}
@@ -180,7 +93,7 @@ export default function Dashboard() {
             })) || []
           }
           loading={statsLoading}
-          className="aspect-video"
+          className="aspect-video overflow-hidden"
         />
 
         <StatsCard
@@ -188,7 +101,7 @@ export default function Dashboard() {
           icon="fa-solid fa-terminal"
           items={topCommands.map(cmd => ({ label: cmd.command_name, value: cmd.usage_count }))}
           loading={analyticsLoading}
-          className="aspect-video"
+          className="aspect-video overflow-hidden"
         />
       </div>
     </main>

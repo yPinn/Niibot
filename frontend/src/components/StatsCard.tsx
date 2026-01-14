@@ -31,10 +31,10 @@ export default function StatsCard({
         </CardTitle>
       </CardHeader>
       <CardContent
-        className={`flex-1 overflow-hidden pb-6 transition-opacity duration-300 ${loading ? 'opacity-50' : 'opacity-100'}`}
+        className={`flex-1 min-h-0 overflow-hidden pb-6 transition-opacity duration-300 ${loading ? 'opacity-50' : 'opacity-100'}`}
       >
         {items.length > 0 ? (
-          <div className="space-y-2">
+          <div className="space-y-1 h-full overflow-y-auto">
             {items.map((item, index) => (
               <div
                 key={index}

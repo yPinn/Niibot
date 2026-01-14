@@ -9,20 +9,21 @@ from core.database import init_database_manager
 from core.logging import setup_logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import analytics_router, auth_router, channels_router, commands, stats
+from routers import (
+    analytics_router,
+    auth_router,
+    bots_router,
+    channels_router,
+    commands_router,
+    stats_router,
+)
 
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    """
-    FastAPI lifespan context manager for startup and shutdown events
-
-    This handles:
-    - Database connection pool initialization on startup
-    - Database connection pool cleanup on shutdown
-    """
+    """Handle startup and shutdown"""
     settings = get_settings()
 
     # Startup
@@ -51,12 +52,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 def create_app() -> FastAPI:
-    """
-    Application factory - creates and configures the FastAPI application
-
-    Returns:
-        Configured FastAPI application instance
-    """
+    """Create and configure FastAPI application"""
     settings = get_settings()
 
     # Setup logging first
@@ -85,8 +81,9 @@ def create_app() -> FastAPI:
     app.include_router(auth_router.router)
     app.include_router(channels_router.router)
     app.include_router(analytics_router.router)
-    app.include_router(stats.router)
-    app.include_router(commands.router)
+    app.include_router(stats_router.router)
+    app.include_router(commands_router.router)
+    app.include_router(bots_router.router)
 
     # Health check endpoint
     @app.get("/api/health")

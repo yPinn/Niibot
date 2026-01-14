@@ -9,7 +9,6 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { type NameType, type ValueType } from 'recharts/types/component/DefaultTooltipContent'
 
 import { Card, CardContent } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
@@ -99,7 +98,8 @@ const ChartTooltip = ({
   active,
   payload,
   chartConfig,
-}: TooltipProps<ValueType, NameType> & { chartConfig: ChartConfig }) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+}: TooltipProps<any, any> & { chartConfig: ChartConfig }) => {
   if (!active || !payload || !payload.length) return null
 
   const data = payload[0].payload as {
@@ -293,24 +293,24 @@ export default function AnalyticsChart({
   ]
 
   return (
-    <Card className={className}>
-      <CardContent className="p-5">
-        <div className="space-y-5">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+    <Card className={`flex flex-col ${className}`}>
+      <CardContent className="px-4 py-1 flex-1 min-h-0 flex flex-col">
+        <div className="flex flex-col flex-1 min-h-0 gap-3">
+          <div className="grid grid-cols-4 gap-5 flex-shrink-0 mb-2">
             {stats.map(stat => (
               <button
                 key={stat.mode}
                 onClick={() => setChartMode(stat.mode)}
                 disabled={loading}
-                className={`rounded-lg border p-3 space-y-1.5 transition-all text-left ${
+                className={`rounded-lg border px-3 py-2 transition-all text-left ${
                   loading
                     ? 'opacity-60 animate-pulse cursor-not-allowed'
                     : chartMode === stat.mode
-                      ? 'bg-primary/10 border-primary shadow-sm scale-[1.02]'
+                      ? 'bg-primary/10 border-primary shadow-sm'
                       : 'bg-muted/30 hover:bg-muted/50'
                 }`}
               >
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between mb-1">
                   <span
                     className={`text-xs font-medium ${chartMode === stat.mode ? 'text-primary' : 'text-foreground/80'}`}
                   >
@@ -323,7 +323,7 @@ export default function AnalyticsChart({
                 </div>
                 <div className="flex items-baseline gap-1">
                   <span
-                    className={`text-xl font-bold tabular-nums ${chartMode === stat.mode ? 'text-primary' : 'text-foreground'}`}
+                    className={`text-lg font-bold tabular-nums ${chartMode === stat.mode ? 'text-primary' : 'text-foreground'}`}
                   >
                     {loading ? '-' : stat.value}
                   </span>
@@ -336,7 +336,7 @@ export default function AnalyticsChart({
             ))}
           </div>
 
-          <div className="h-56">
+          <div className="flex-1 min-h-0 h-[290px]">
             {chartData.length === 0 ? (
               <div className="flex items-center justify-center h-full text-center text-muted-foreground">
                 <p className="text-sm">暫無直播數據</p>

@@ -1,4 +1,5 @@
 export * from './analytics'
+export * from './bots'
 export * from './channels'
 export * from './commands'
 export * from './config'

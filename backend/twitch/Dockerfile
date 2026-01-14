@@ -12,6 +12,6 @@ RUN mkdir -p /app/data
 COPY data/ /app/data/
 
 ENV PYTHONUNBUFFERED=1
-EXPOSE 4343
+EXPOSE 4343 4344
 
 CMD ["python", "main.py"]

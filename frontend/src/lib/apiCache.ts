@@ -1,4 +1,4 @@
-// API 快取機制：避免重複請求、支援 TTL、防止並發
+// API cache with TTL and request deduplication
 interface CacheEntry<T> {
   data: T
   timestamp: number

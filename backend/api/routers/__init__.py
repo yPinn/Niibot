@@ -1,15 +1,19 @@
-"""API Routers package
+"""API Routers"""
 
-This package contains all API route handlers.
-Routers are organized by feature domain.
-"""
-
-from . import analytics_router, auth_router, channels_router, commands, stats
+from . import (
+    analytics_router,
+    auth_router,
+    bots_router,
+    channels_router,
+    commands_router,
+    stats_router,
+)
 
 __all__ = [
     "auth_router",
     "channels_router",
     "analytics_router",
-    "commands",
-    "stats",
+    "commands_router",
+    "stats_router",
+    "bots_router",
 ]

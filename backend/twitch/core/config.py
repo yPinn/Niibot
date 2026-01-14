@@ -1,4 +1,4 @@
-"""Twitch bot configuration with Pydantic Settings"""
+"""Twitch bot configuration"""
 
 import logging
 from functools import lru_cache
@@ -37,7 +37,7 @@ BROADCASTER_SCOPES = [
 
 
 class TwitchBotSettings(BaseSettings):
-    """Twitch bot settings with environment variable support and validation"""
+    """Twitch bot settings"""
 
     model_config = SettingsConfigDict(
         env_file=Path(__file__).parent.parent / ".env",

@@ -18,6 +18,10 @@ export const navigationData = {
           title: 'Events',
           url: '/events',
         },
+        {
+          title: 'System Status',
+          url: '/system',
+        },
       ],
     },
     {

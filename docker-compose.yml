@@ -7,7 +7,7 @@ services:
     container_name: niibot-twitch
     restart: unless-stopped
     ports:
-      - "4343:4343"
+      - "4344:4344"
     env_file:
       - ./backend/twitch/.env
     environment:
@@ -16,6 +16,12 @@ services:
       - ./backend/data:/app/data
     networks:
       - niibot-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4344/health').read()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
   # Discord Bot
   discord-bot:
@@ -35,6 +41,12 @@ services:
       - ./backend/data:/app/data
     networks:
       - niibot-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health').read()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
   # API Server
   api:
@@ -53,6 +65,12 @@ services:
       - ./backend/data:/app/data
     networks:
       - niibot-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health').read()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
   # Frontend
   frontend:

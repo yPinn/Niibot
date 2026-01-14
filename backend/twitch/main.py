@@ -47,8 +47,11 @@ class Bot(commands.AutoBot):
         self._channel_states_lock = asyncio.Lock()
 
         from database.analytics import AnalyticsDB
+        from health_server import HealthCheckServer
+
         self.analytics = AnalyticsDB(token_database)
         self._active_sessions: dict[str, int] = {}
+        self.health_server = HealthCheckServer(self, port=4344)
 
         if CONDUIT_ID:
             super().__init__(
@@ -81,7 +84,12 @@ class Bot(commands.AutoBot):
         await self.load_module("components.tft")
         await self.load_module("components.sukaoMao")
 
+        # Start background tasks
         asyncio.create_task(self.check_new_tokens_and_channels_task())
+        asyncio.create_task(self.listen_channel_toggle_notifications())
+
+        # Start HTTP health check server (non-blocking)
+        asyncio.create_task(self.health_server.start())
 
     async def event_oauth_authorized(
         self, payload: twitchio.authentication.UserTokenPayload

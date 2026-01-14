@@ -1,42 +1,39 @@
 """Generate test session data for development"""
 
+from api.core.config import get_settings
 import asyncio
 import random
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Optional, Any  # 移除 dict, list 的匯入
 
 import asyncpg
 
-# Add parent directory to path to import config
+# 將父目錄加入路徑以匯入設定
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from api.core.config import get_settings
 
+async def seed_test_sessions(channel_id: Optional[str] = None):
+    """為過去 30 天建立測試直播會話數據"""
 
-async def seed_test_sessions(channel_id: str = None):
-    """Create test session data for the past 30 days"""
-
-    # Get database URL from settings
     settings = get_settings()
 
-    # Connect to database using DATABASE_URL
-    # Set statement_cache_size=0 for pgbouncer compatibility
+    # 連接資料庫，禁用語句快取以相容 pgbouncer
     conn = await asyncpg.connect(settings.database_url, statement_cache_size=0)
 
     try:
-        # Get channel_id if not provided
+        # 若未提供 channel_id，從資料庫中獲取第一個頻道
         if not channel_id:
-            # Try to get the first channel from database
             row = await conn.fetchrow("SELECT channel_id FROM channels LIMIT 1")
             if row:
                 channel_id = row["channel_id"]
                 print(f"Using channel_id from database: {channel_id}")
             else:
-                print("Error: No channels found in database. Please create a channel first.")
+                print("Error: No channels found in database.")
                 return
 
-        # Game data with IDs (box art URL is generated dynamically in frontend)
+        # 遊戲基礎數據
         games = [
             {"id": "509658", "name": "Just Chatting"},
             {"id": "21779", "name": "League of Legends"},
@@ -50,52 +47,37 @@ async def seed_test_sessions(channel_id: str = None):
             {"id": "488552", "name": "Overwatch 2"},
         ]
 
-        # Stream titles
         titles = [
-            "Chill stream with chat",
-            "Learning new strategies",
-            "Ranked grind!",
-            "Viewer games!",
-            "Road to Masters",
-            "Community event",
-            "Practice session",
-            "Late night vibes",
-            "Morning coffee stream",
+            "Chill stream with chat", "Learning new strategies", "Ranked grind!",
+            "Viewer games!", "Road to Masters", "Community event",
+            "Practice session", "Late night vibes", "Morning coffee stream",
             "Weekend marathon",
         ]
 
-        # Generate 15-20 sessions over the past 30 days
+        # 隨機生成 15-20 筆會話
         num_sessions = random.randint(15, 20)
         now = datetime.now()
 
-        sessions = []
+        # 修正：直接使用內建 list 和 dict 標註類型
+        sessions: list[dict[str, Any]] = []
+
         for _ in range(num_sessions):
-            # Random day in the past 30 days
             days_ago = random.randint(0, 29)
-            # Random hour (more streams in evening)
             hour = random.choices(
                 range(24),
-                weights=[1, 1, 1, 1, 1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 10, 8, 6, 5, 4, 3, 2],
+                weights=[1, 1, 1, 1, 1, 1, 2, 3, 4, 5, 6, 7,
+                         8, 9, 10, 11, 12, 10, 8, 6, 5, 4, 3, 2],
                 k=1
             )[0]
-            minute = random.randint(0, 59)
 
-            started_at = now - timedelta(days=days_ago, hours=hour, minutes=minute)
-
-            # Duration between 1-6 hours
+            started_at = now - \
+                timedelta(days=days_ago, hours=hour,
+                          minutes=random.randint(0, 59))
             duration_hours = round(random.uniform(1.0, 6.0), 2)
             ended_at = started_at + timedelta(hours=duration_hours)
-
-            # Random stats
-            total_commands = random.randint(50, 500)
-            new_follows = random.randint(0, 25)
-            new_subs = random.randint(0, 10)
-            raids_received = random.randint(0, 3)
-
-            # Pick random game
             game = random.choice(games)
 
-            session_data = {
+            sessions.append({
                 "channel_id": channel_id,
                 "started_at": started_at,
                 "ended_at": ended_at,
@@ -103,42 +85,29 @@ async def seed_test_sessions(channel_id: str = None):
                 "game_id": game["id"],
                 "game_name": game["name"],
                 "duration_hours": duration_hours,
-                "total_commands": total_commands,
-                "new_follows": new_follows,
-                "new_subs": new_subs,
-                "raids_received": raids_received,
-            }
+                "total_commands": random.randint(50, 500),
+                "new_follows": random.randint(0, 25),
+                "new_subs": random.randint(0, 10),
+                "raids_received": random.randint(0, 3),
+            })
 
-            sessions.append(session_data)
-
-        # Sort by started_at
+        # 排序
         sessions.sort(key=lambda x: x["started_at"])
 
-        # Insert sessions
-        for session in sessions:
+        # 寫入資料庫
+        for s in sessions:
             result = await conn.fetchrow(
                 """
-                INSERT INTO stream_sessions
+                INSERT INTO stream_sessions 
                     (channel_id, started_at, ended_at, title, game_id, game_name)
                 VALUES ($1, $2, $3, $4, $5, $6)
                 RETURNING id
                 """,
-                session["channel_id"],
-                session["started_at"],
-                session["ended_at"],
-                session["title"],
-                session["game_id"],
-                session["game_name"],
+                s["channel_id"], s["started_at"], s["ended_at"],
+                s["title"], s["game_id"], s["game_name"]
             )
-
-            session_id = result["id"]
-
-            print(f"Created session {session_id}: {session['title']} - {session['game_name']}")
-            print(f"  Started: {session['started_at']}")
-            print(f"  Duration: {session['duration_hours']}h")
-            print(f"  Game ID: {session['game_id']}")
-            print(f"  Commands: {session['total_commands']}, Follows: {session['new_follows']}, Subs: {session['new_subs']}")
-            print()
+            print(
+                f"Created session {result['id']}: {s['title']} ({s['game_name']})")
 
         print(f"\nSuccessfully created {len(sessions)} test sessions!")
 
@@ -147,7 +116,6 @@ async def seed_test_sessions(channel_id: str = None):
 
 
 if __name__ == "__main__":
-    # Allow passing channel_id as command line argument
-    import sys
-    channel_id = sys.argv[1] if len(sys.argv) > 1 else None
-    asyncio.run(seed_test_sessions(channel_id))
+    # 支援命令行參數
+    cli_channel_id: Optional[str] = sys.argv[1] if len(sys.argv) > 1 else None
+    asyncio.run(seed_test_sessions(cli_channel_id))
