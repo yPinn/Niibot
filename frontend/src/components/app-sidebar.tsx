@@ -2,56 +2,32 @@
 
 import * as React from 'react'
 
+import { BotSwitcher } from '@/components/bot-switcher'
 import { NavChannels } from '@/components/nav-channels'
 import { NavMain } from '@/components/nav-main'
 import { NavSecondary } from '@/components/nav-secondary'
 import { NavUser } from '@/components/nav-user'
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarHeader,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-} from '@/components/ui/sidebar'
-import { navigationData } from '@/config/navigation'
+import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader } from '@/components/ui/sidebar'
+import { discordNavigationData, navigationData } from '@/config/navigation'
 import { useAuth } from '@/contexts/AuthContext'
+import { useBot } from '@/contexts/BotContext'
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { user, channels } = useAuth()
+  const { activeBot } = useBot()
+
+  // 根據當前選擇的 Bot 顯示不同的導航
+  const currentNavData = activeBot === 'discord' ? discordNavigationData : navigationData
 
   return (
     <Sidebar variant="inset" {...props}>
       <SidebarHeader>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              size="lg"
-              asChild
-              className="bg-sidebar-accent hover:bg-sidebar-accent"
-            >
-              <a href="/">
-                <div className="flex aspect-square size-8 items-center justify-center rounded-full overflow-hidden">
-                  <img
-                    src="/images/Avatar.png"
-                    alt="Niibot"
-                    className="h-full w-full object-cover"
-                  />
-                </div>
-                <div className="grid flex-1 text-left text-sm leading-tight">
-                  <span className="truncate font-medium">Niibot</span>
-                  <span className="truncate text-xs">Twitch Bot</span>
-                </div>
-              </a>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+        <BotSwitcher />
       </SidebarHeader>
       <SidebarContent>
-        <NavMain items={navigationData.navMain} />
-        <NavChannels channels={channels} />
-        <NavSecondary items={navigationData.navSecondary} className="mt-auto" />
+        <NavMain items={currentNavData.navMain} />
+        {activeBot === 'twitch' && <NavChannels channels={channels} />}
+        <NavSecondary items={currentNavData.navSecondary} className="mt-auto" />
       </SidebarContent>
       <SidebarFooter>
         {user ? (

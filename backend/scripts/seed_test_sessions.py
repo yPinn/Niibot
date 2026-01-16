@@ -1,14 +1,15 @@
 """Generate test session data for development"""
 
-from api.core.config import get_settings
 import asyncio
 import random
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional, Any  # 移除 dict, list 的匯入
+from typing import Any, Optional  # 移除 dict, list 的匯入
 
 import asyncpg
+
+from api.core.config import get_settings
 
 # 將父目錄加入路徑以匯入設定
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -98,7 +99,7 @@ async def seed_test_sessions(channel_id: Optional[str] = None):
         for s in sessions:
             result = await conn.fetchrow(
                 """
-                INSERT INTO stream_sessions 
+                INSERT INTO stream_sessions
                     (channel_id, started_at, ended_at, title, game_id, game_name)
                 VALUES ($1, $2, $3, $4, $5, $6)
                 RETURNING id

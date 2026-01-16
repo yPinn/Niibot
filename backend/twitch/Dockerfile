@@ -12,6 +12,8 @@ RUN mkdir -p /app/data
 COPY data/ /app/data/
 
 ENV PYTHONUNBUFFERED=1
-EXPOSE 4343 4344
+
+# 暴露 Health Check 伺服器埠口（用於 Render Web Service）
+EXPOSE 4344
 
 CMD ["python", "main.py"]

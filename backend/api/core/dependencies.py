@@ -5,7 +5,13 @@ from typing import Optional
 
 import asyncpg
 from fastapi import Cookie, HTTPException
-from services import AnalyticsService, AuthService, ChannelService, TwitchAPIClient
+from services import (
+    AnalyticsService,
+    AuthService,
+    ChannelService,
+    DiscordAPIClient,
+    TwitchAPIClient,
+)
 
 from core.config import get_settings
 from core.database import get_database_manager
@@ -34,6 +40,16 @@ def get_twitch_api() -> TwitchAPIClient:
     return TwitchAPIClient(
         client_id=settings.client_id,
         client_secret=settings.client_secret,
+        api_url=settings.api_url,
+    )
+
+
+def get_discord_api() -> DiscordAPIClient:
+    """Get DiscordAPIClient instance (dependency injection)"""
+    settings = get_settings()
+    return DiscordAPIClient(
+        client_id=settings.discord_client_id,
+        client_secret=settings.discord_client_secret,
         api_url=settings.api_url,
     )
 

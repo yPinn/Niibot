@@ -1,10 +1,28 @@
-import { openTwitchOAuth } from '@/api'
+import { useEffect, useState } from 'react'
+
+import { getDiscordOAuthStatus, openDiscordOAuth, openTwitchOAuth } from '@/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
 import { cn } from '@/lib/utils'
 
 export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) {
+  const [discordEnabled, setDiscordEnabled] = useState(false)
+  const [discordLoading, setDiscordLoading] = useState(true)
+
+  useEffect(() => {
+    getDiscordOAuthStatus()
+      .then(status => {
+        setDiscordEnabled(status.enabled)
+      })
+      .catch(() => {
+        setDiscordEnabled(false)
+      })
+      .finally(() => {
+        setDiscordLoading(false)
+      })
+  }, [])
+
   return (
     <div className={cn('flex flex-col gap-6', className)} {...props}>
       <Card className="overflow-hidden p-0">
@@ -49,7 +67,7 @@ export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) 
                   </li>
                 </ul>
               </div>
-              <div>
+              <div className="space-y-3">
                 <Button
                   type="button"
                   onClick={openTwitchOAuth}
@@ -58,6 +76,20 @@ export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) 
                   <Icon icon="fa-brands fa-twitch" className="text-lg mr-2" wrapperClassName="" />
                   使用 Twitch 登入
                 </Button>
+                {!discordLoading && discordEnabled && (
+                  <Button
+                    type="button"
+                    onClick={openDiscordOAuth}
+                    className="bg-[#5865F2] hover:bg-[#4752C4] text-white w-full"
+                  >
+                    <Icon
+                      icon="fa-brands fa-discord"
+                      className="text-lg mr-2"
+                      wrapperClassName=""
+                    />
+                    使用 Discord 登入
+                  </Button>
+                )}
               </div>
             </div>
           </form>

@@ -15,10 +15,13 @@ logger = logging.getLogger("Bot.Health")
 class HealthCheckServer:
     """HTTP health check server"""
 
-    def __init__(self, bot: "Bot", host: str = "0.0.0.0", port: int = 4344):
+    def __init__(self, bot: "Bot", host: str = "0.0.0.0", port: int | None = None):
+        from core.config import get_settings
+
+        settings = get_settings()
         self.bot = bot
         self.host = host
-        self.port = port
+        self.port = port if port is not None else settings.health_port
         self.app = web.Application()
         self.runner: web.AppRunner | None = None
         self.start_time = datetime.utcnow()

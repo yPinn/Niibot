@@ -12,6 +12,7 @@ services:
       - ./backend/twitch/.env
     environment:
       - PYTHONUNBUFFERED=1
+      - ENABLE_HEALTH_SERVER=true
     volumes:
       - ./backend/data:/app/data
     networks:

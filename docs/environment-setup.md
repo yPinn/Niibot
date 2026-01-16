@@ -18,6 +18,7 @@ Niibot/
 ## 快速開始
 
 1. 複製所有 `.env.example` 為 `.env`:
+
 ```bash
 cp backend/api/.env.example backend/api/.env
 cp backend/twitch/.env.example backend/twitch/.env
@@ -60,6 +61,7 @@ DATABASE_URL=postgresql://postgres:[YOUR-PASSWORD]@[YOUR-PROJECT-REF].supabase.c
 ```
 
 **如何獲取**:
+
 1. 登入 [Supabase Dashboard](https://supabase.com/dashboard)
 2. 選擇你的專案
 3. 前往 Settings → Database
@@ -111,7 +113,6 @@ OWNER_ID=your_owner_user_id
 
 # EventSub (選填)
 # CONDUIT_ID=your_conduit_id
-# OAUTH_REDIRECT_URI=https://your-domain.com/oauth/callback
 
 # OpenRouter AI
 OPENROUTER_API_KEY=your_openrouter_api_key
@@ -150,6 +151,7 @@ VITE_API_URL=http://localhost:8000
 使用 Docker Compose 時,請確保:
 
 1. **數據庫連接**: 使用 Supabase 連接字串 (與本地開發相同)
+
    ```env
    DATABASE_URL=postgresql://postgres:[PASSWORD]@[PROJECT-REF].supabase.co:5432/postgres
    ```
@@ -165,6 +167,7 @@ VITE_API_URL=http://localhost:8000
 本地開發時,請使用:
 
 1. **數據庫連接**: 使用 Supabase 連接字串 (與 Docker 相同)
+
    ```env
    DATABASE_URL=postgresql://postgres:[PASSWORD]@[PROJECT-REF].supabase.co:5432/postgres
    ```
@@ -181,10 +184,12 @@ VITE_API_URL=http://localhost:8000
 ### ⚠️ 敏感資訊保護
 
 1. **永遠不要提交 `.env` 到 Git**
+
    - 已在 `.gitignore` 中排除
    - 只提交 `.env.example` 模板
 
 2. **生產環境必須更改的值**:
+
    - `JWT_SECRET_KEY`: 使用強隨機密鑰
    - `POSTGRES_PASSWORD`: 使用強密碼
    - 所有 API Keys 和 Tokens
@@ -200,6 +205,7 @@ VITE_API_URL=http://localhost:8000
 ### Q: 為什麼 CLIENT_ID 需要在兩個地方配置?
 
 A: API Server 和 Twitch Bot 都需要訪問 Twitch API,因此都需要 OAuth 憑證。保持分離可以:
+
 - 每個服務獨立運行
 - 更好的安全隔離
 - 支持不同環境的部署
@@ -207,12 +213,14 @@ A: API Server 和 Twitch Bot 都需要訪問 Twitch API,因此都需要 OAuth �
 ### Q: 可以合併所有 .env 嗎?
 
 A: 不建議。每個服務應該只知道自己需要的配置,這是最小權限原則。例如:
+
 - Discord Bot 不需要知道 Twitch 憑證
 - API Server 不需要知道 Discord Token
 
 ### Q: Docker 和本地開發可以用同一個 .env 嗎?
 
 A: 可以! 因為使用 Supabase 雲端資料庫:
+
 - `DATABASE_URL` 在兩種環境都相同 (Supabase 連接字串)
 - 只有服務間 URL 需要調整 (容器名稱 vs localhost)
 

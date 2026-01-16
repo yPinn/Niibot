@@ -4,6 +4,9 @@ export const API_ENDPOINTS = {
   auth: {
     twitchOAuth: '/api/auth/twitch/oauth',
     twitchCallback: '/api/auth/twitch/callback',
+    discordStatus: '/api/auth/discord/status',
+    discordOAuth: '/api/auth/discord/oauth',
+    discordCallback: '/api/auth/discord/callback',
     user: '/api/auth/user',
     logout: '/api/auth/logout',
   },

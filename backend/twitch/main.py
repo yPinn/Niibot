@@ -46,12 +46,16 @@ class Bot(commands.AutoBot):
         self.channel_states: dict[str, bool] = {}
         self._channel_states_lock = asyncio.Lock()
 
+        from core.config import get_settings
         from database.analytics import AnalyticsDB
         from health_server import HealthCheckServer
 
+        self.settings = get_settings()
         self.analytics = AnalyticsDB(token_database)
         self._active_sessions: dict[str, int] = {}
-        self.health_server = HealthCheckServer(self, port=4344)
+        self.health_server: HealthCheckServer | None = (
+            HealthCheckServer(self) if self.settings.enable_health_server else None
+        )
 
         if CONDUIT_ID:
             super().__init__(
@@ -89,7 +93,8 @@ class Bot(commands.AutoBot):
         asyncio.create_task(self.listen_channel_toggle_notifications())
 
         # Start HTTP health check server (non-blocking)
-        asyncio.create_task(self.health_server.start())
+        if self.health_server:
+            asyncio.create_task(self.health_server.start())
 
     async def event_oauth_authorized(
         self, payload: twitchio.authentication.UserTokenPayload

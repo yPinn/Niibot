@@ -9,12 +9,13 @@ from core.dependencies import (
     get_channel_service,
     get_current_user_id,
     get_db_pool,
+    get_discord_api,
     get_twitch_api,
 )
 from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
-from services import AuthService, ChannelService, TwitchAPIClient
+from services import AuthService, ChannelService, DiscordAPIClient, TwitchAPIClient
 
 logger = logging.getLogger(__name__)
 
@@ -157,3 +158,100 @@ async def logout(
     )
     logger.info(f"User logged out: {username} ({user_id})")
     return LogoutResponse(message="Logged out successfully")
+
+
+# ============================================
+# Discord OAuth Endpoints
+# ============================================
+
+
+class DiscordOAuthStatusResponse(BaseModel):
+    enabled: bool
+    message: str
+
+
+@router.get("/discord/status", response_model=DiscordOAuthStatusResponse)
+async def get_discord_oauth_status(
+    discord_api: DiscordAPIClient = Depends(get_discord_api),
+) -> DiscordOAuthStatusResponse:
+    """Check if Discord OAuth is configured and available"""
+    if discord_api.is_configured:
+        return DiscordOAuthStatusResponse(
+            enabled=True,
+            message="Discord OAuth is available",
+        )
+    return DiscordOAuthStatusResponse(
+        enabled=False,
+        message="Discord OAuth is not configured",
+    )
+
+
+@router.get("/discord/oauth", response_model=OAuthURLResponse)
+async def get_discord_oauth_url(
+    discord_api: DiscordAPIClient = Depends(get_discord_api),
+    settings: Settings = Depends(get_settings),
+) -> OAuthURLResponse:
+    """Get Discord OAuth authorization URL"""
+    if not discord_api.is_configured:
+        raise HTTPException(
+            status_code=503,
+            detail="Discord OAuth is not configured",
+        )
+
+    oauth_url = discord_api.generate_oauth_url()
+    return OAuthURLResponse(
+        oauth_url=oauth_url,
+        redirect_uri=f"{settings.api_url}/api/auth/discord/callback",
+    )
+
+
+@router.get("/discord/callback")
+async def discord_oauth_callback(
+    code: Optional[str] = None,
+    error: Optional[str] = None,
+    discord_api: DiscordAPIClient = Depends(get_discord_api),
+    auth_service: AuthService = Depends(get_auth_service),
+    settings: Settings = Depends(get_settings),
+) -> RedirectResponse:
+    """Handle Discord OAuth callback"""
+    # Handle OAuth errors
+    if error:
+        logger.error(f"OAuth error from Discord: {error}")
+        return RedirectResponse(url=f"{settings.frontend_url}/login?error={error}")
+
+    if not code:
+        logger.error("No OAuth code received from Discord")
+        return RedirectResponse(url=f"{settings.frontend_url}/login?error=no_code")
+
+    if not discord_api.is_configured:
+        logger.error("Discord OAuth not configured")
+        return RedirectResponse(
+            url=f"{settings.frontend_url}/login?error=discord_not_configured"
+        )
+
+    # Exchange code for token
+    success, error_msg, token_data = await discord_api.exchange_code_for_token(code)
+
+    if not success or not token_data:
+        logger.error(f"Failed to exchange code: {error_msg}")
+        return RedirectResponse(url=f"{settings.frontend_url}/login?error={error_msg}")
+
+    user_id = token_data["user_id"]
+    username = token_data.get("username", user_id)
+
+    # Create JWT token with discord: prefix to distinguish from Twitch users
+    jwt_token = auth_service.create_access_token(f"discord:{user_id}")
+
+    # Set cookie and redirect
+    response = RedirectResponse(url=f"{settings.frontend_url}/dashboard")
+    response.set_cookie(
+        key="auth_token",
+        value=jwt_token,
+        httponly=True,
+        secure=settings.is_production,
+        samesite="strict" if settings.is_production else "lax",
+        max_age=30 * 24 * 60 * 60,  # 30 days
+    )
+
+    logger.info(f"Discord user logged in: {username} ({user_id})")
+    return response

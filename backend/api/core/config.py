@@ -25,6 +25,12 @@ class Settings(BaseSettings):
     client_id: str = Field(..., description="Twitch OAuth Client ID")
     client_secret: str = Field(..., description="Twitch OAuth Client Secret")
 
+    # Discord OAuth (選填，用於 Discord 登入)
+    discord_client_id: str = Field(
+        default="", description="Discord OAuth Client ID")
+    discord_client_secret: str = Field(
+        default="", description="Discord OAuth Client Secret")
+
     # JWT Configuration
     jwt_secret_key: str = Field(...,
                                 description="Secret key for JWT token signing")

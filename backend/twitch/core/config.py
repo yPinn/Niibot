@@ -61,6 +61,12 @@ class TwitchBotSettings(BaseSettings):
     conduit_id: str = Field(
         default="", description="Twitch EventSub Conduit ID")
 
+    # Health Check Server
+    enable_health_server: bool = Field(
+        default=True, description="Enable HTTP health check server")
+    health_port: int = Field(
+        default=4344, description="Health check server port")
+
     # Environment
     log_level: str = Field(default="INFO", description="Logging level")
 
