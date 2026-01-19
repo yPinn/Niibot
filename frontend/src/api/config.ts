@@ -11,9 +11,11 @@ export const API_ENDPOINTS = {
     logout: '/api/auth/logout',
   },
   channels: {
-    monitored: '/api/channels/monitored',
-    myStatus: '/api/channels/my-status',
-    toggle: '/api/channels/toggle',
+    twitch: {
+      monitored: '/api/channels/twitch/monitored',
+      myStatus: '/api/channels/twitch/my-status',
+      toggle: '/api/channels/twitch/toggle',
+    },
   },
   analytics: {
     summary: '/api/analytics/summary',

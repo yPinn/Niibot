@@ -101,6 +101,7 @@ class DiscordAPIClient:
                     "refresh_token": refresh_token or "",
                     "user_id": user_id,
                     "username": user_info.get("username", ""),
+                    "global_name": user_info.get("global_name"),  # Display name
                     "discriminator": user_info.get("discriminator", "0"),
                     "avatar": user_info.get("avatar"),
                     "email": user_info.get("email"),
@@ -113,7 +114,7 @@ class DiscordAPIClient:
             logger.exception(f"Unexpected error exchanging code: {e}")
             return False, "exchange_failed", None
 
-    async def _get_user_info(self, access_token: str) -> Optional[Dict]:
+    async def _get_user_info(self, access_token: str) -> Optional[Dict[str, str]]:
         """Get user info from access token"""
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
@@ -129,7 +130,8 @@ class DiscordAPIClient:
                         f"Failed to get user info: {response.status_code}")
                     return None
 
-                return response.json()
+                data: Dict[str, str] = response.json()
+                return data
 
         except Exception as e:
             logger.exception(f"Error getting user info: {e}")

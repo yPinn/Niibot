@@ -127,3 +127,76 @@ class ChannelService:
         except Exception as e:
             logger.exception(f"Error saving token to database: {e}")
             return False
+
+    async def save_discord_user(
+        self,
+        user_id: str,
+        username: str,
+        display_name: Optional[str] = None,
+        avatar: Optional[str] = None,
+    ) -> bool:
+        """Save or update Discord user info"""
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    INSERT INTO discord_users (user_id, username, display_name, avatar)
+                    VALUES ($1, $2, $3, $4)
+                    ON CONFLICT (user_id)
+                    DO UPDATE SET
+                        username = EXCLUDED.username,
+                        display_name = EXCLUDED.display_name,
+                        avatar = EXCLUDED.avatar,
+                        updated_at = CURRENT_TIMESTAMP
+                    """,
+                    user_id,
+                    username,
+                    display_name,
+                    avatar,
+                )
+
+            logger.debug(f"Discord user saved: {username} ({user_id})")
+            return True
+
+        except Exception as e:
+            logger.exception(f"Error saving Discord user to database: {e}")
+            return False
+
+    async def get_discord_user(self, user_id: str) -> Optional[Dict[str, str]]:
+        """Get Discord user info from database"""
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    """
+                    SELECT user_id, username, display_name, avatar
+                    FROM discord_users
+                    WHERE user_id = $1
+                    """,
+                    user_id,
+                )
+
+                if not row:
+                    return None
+
+                # Build avatar URL
+                avatar_url = self._get_discord_avatar_url(row["user_id"], row["avatar"])
+
+                return {
+                    "id": row["user_id"],
+                    "name": row["username"],
+                    "display_name": row["display_name"] or row["username"],
+                    "avatar": avatar_url,
+                }
+
+        except Exception as e:
+            logger.exception(f"Error getting Discord user {user_id}: {e}")
+            return None
+
+    def _get_discord_avatar_url(self, user_id: str, avatar_hash: Optional[str]) -> str:
+        """Generate Discord avatar URL"""
+        if avatar_hash:
+            ext = "gif" if avatar_hash.startswith("a_") else "png"
+            return f"https://cdn.discordapp.com/avatars/{user_id}/{avatar_hash}.{ext}"
+        # Default avatar
+        default_avatar_index = int(user_id) % 5
+        return f"https://cdn.discordapp.com/embed/avatars/{default_avatar_index}.png"

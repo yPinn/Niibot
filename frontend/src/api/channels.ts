@@ -13,8 +13,9 @@ export interface Channel {
 }
 
 export interface ChannelStatus {
+  subscribed: boolean
   channel_id: string
-  bot_enabled: boolean
+  channel_name: string
 }
 
 export interface ToggleChannelRequest {
@@ -26,9 +27,9 @@ export interface ToggleChannelResponse {
   message: string
 }
 
-async function fetchMonitoredChannels(): Promise<Channel[]> {
+async function fetchTwitchMonitoredChannels(): Promise<Channel[]> {
   try {
-    const response = await fetch(API_ENDPOINTS.channels.monitored, {
+    const response = await fetch(API_ENDPOINTS.channels.twitch.monitored, {
       credentials: 'include',
     })
     if (!response.ok) {
@@ -41,18 +42,18 @@ async function fetchMonitoredChannels(): Promise<Channel[]> {
   }
 }
 
-export async function getMonitoredChannels(options?: {
+export async function getTwitchMonitoredChannels(options?: {
   forceRefresh?: boolean
 }): Promise<Channel[]> {
-  return apiCache.fetch(CACHE_KEYS.CHANNELS, fetchMonitoredChannels, {
+  return apiCache.fetch(CACHE_KEYS.CHANNELS, fetchTwitchMonitoredChannels, {
     ttl: 2 * 60 * 1000,
     forceRefresh: options?.forceRefresh,
   })
 }
 
-export async function getMyChannelStatus(): Promise<ChannelStatus | null> {
+export async function getTwitchChannelStatus(): Promise<ChannelStatus | null> {
   try {
-    const response = await fetch(API_ENDPOINTS.channels.myStatus, {
+    const response = await fetch(API_ENDPOINTS.channels.twitch.myStatus, {
       credentials: 'include',
     })
     if (!response.ok) {
@@ -65,11 +66,11 @@ export async function getMyChannelStatus(): Promise<ChannelStatus | null> {
   }
 }
 
-export async function toggleChannel(
+export async function toggleTwitchChannel(
   channelId: string,
   enabled: boolean
 ): Promise<ToggleChannelResponse> {
-  const response = await fetch(API_ENDPOINTS.channels.toggle, {
+  const response = await fetch(API_ENDPOINTS.channels.twitch.toggle, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

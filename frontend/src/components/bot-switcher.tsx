@@ -6,12 +6,35 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Icon } from '@/components/ui/icon'
-import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar'
+import {
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  useSidebar,
+} from '@/components/ui/sidebar'
 import { useBot } from '@/contexts/BotContext'
 
 export function BotSwitcher() {
-  const { activeBot, activeBotInfo, setActiveBot, bots } = useBot()
+  const { activeBot, activeBotInfo, setActiveBot, bots, canSwitchBot } = useBot()
+  const { isMobile } = useSidebar()
+
+  if (!canSwitchBot) {
+    return (
+      <SidebarMenu>
+        <SidebarMenuItem>
+          <SidebarMenuButton size="lg" className="cursor-default">
+            <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
+              <i className={`${activeBotInfo.icon} text-base`} />
+            </div>
+            <div className="grid flex-1 text-left text-sm leading-tight">
+              <span className="truncate font-semibold">{activeBotInfo.name}</span>
+              <span className="truncate text-xs">{activeBotInfo.description}</span>
+            </div>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      </SidebarMenu>
+    )
+  }
 
   return (
     <SidebarMenu>
@@ -23,19 +46,19 @@ export function BotSwitcher() {
               className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
             >
               <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-                <Icon icon={activeBotInfo.icon} className="size-4" wrapperClassName="" />
+                <i className={`${activeBotInfo.icon} text-base`} />
               </div>
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-semibold">{activeBotInfo.name}</span>
                 <span className="truncate text-xs">{activeBotInfo.description}</span>
               </div>
-              <Icon icon="fa-solid fa-chevron-up-down" />
+              <i className="fa-solid fa-chevrons-up-down ml-auto" />
             </SidebarMenuButton>
           </DropdownMenuTrigger>
           <DropdownMenuContent
             className="w-[--radix-dropdown-menu-trigger-width] min-w-56 rounded-lg"
             align="start"
-            side="bottom"
+            side={isMobile ? 'bottom' : 'right'}
             sideOffset={4}
           >
             {bots.map(bot => (
@@ -45,19 +68,10 @@ export function BotSwitcher() {
                 className="gap-2 p-2"
               >
                 <div className="flex size-6 items-center justify-center rounded-sm border">
-                  <Icon icon={bot.icon} className="size-4 shrink-0" wrapperClassName="" />
+                  <i className={`${bot.icon} text-sm`} />
                 </div>
-                <div className="flex flex-col">
-                  <span className="font-medium">{bot.name}</span>
-                  <span className="text-xs text-muted-foreground">{bot.description}</span>
-                </div>
-                {activeBot === bot.id && (
-                  <Icon
-                    icon="fa-solid fa-check"
-                    className="ml-auto size-4 text-primary"
-                    wrapperClassName=""
-                  />
-                )}
+                {bot.description}
+                {activeBot === bot.id && <i className="fa-solid fa-check ml-auto" />}
               </DropdownMenuItem>
             ))}
           </DropdownMenuContent>

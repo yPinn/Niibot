@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react'
 
-import { type Channel, getCurrentUser, getMonitoredChannels, type User } from '@/api'
+import { type Channel, getCurrentUser, getTwitchMonitoredChannels, type User } from '@/api'
 
 interface AuthContextType {
   user: User | null
@@ -36,7 +36,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const refreshChannels = React.useCallback(async () => {
     try {
-      const channelData = await getMonitoredChannels({ forceRefresh: true })
+      const channelData = await getTwitchMonitoredChannels({ forceRefresh: true })
       setChannels(channelData)
     } catch (error) {
       console.error('Failed to load channels:', error)
@@ -56,7 +56,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const [userData, channelData] = await Promise.all([
           getCurrentUser({ forceRefresh: false }),
-          getMonitoredChannels({ forceRefresh: false }),
+          getTwitchMonitoredChannels({ forceRefresh: false }),
         ])
         setUser(userData)
         setChannels(channelData)

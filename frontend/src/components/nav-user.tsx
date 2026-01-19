@@ -20,28 +20,30 @@ import { useAuth } from '@/contexts/AuthContext'
 
 export function NavUser({ user }: { user: User }) {
   const { isMobile } = useSidebar()
-  const { theme, setTheme } = useTheme()
+  const { resolvedTheme, setTheme } = useTheme()
   const { logout } = useAuth()
 
   const handleLogout = async () => {
     try {
       await apiLogout()
-      logout() // 清除 context 和緩存
-      // 登出後重定向到登入頁面
+      logout()
       window.location.href = '/login'
     } catch (error) {
       console.error('Logout failed:', error)
-      // 即使 API 失敗也清除本地狀態
       logout()
       window.location.href = '/login'
     }
   }
 
-  // Get initials from display_name or name, fallback to '??'
   const getInitials = () => {
     const name = user.display_name || user.name || '??'
     return name.substring(0, 2).toUpperCase()
   }
+
+  const profileUrl =
+    user.platform === 'discord'
+      ? `https://discord.com/users/${user.id}`
+      : `https://twitch.tv/${user.name}`
 
   return (
     <SidebarMenu>
@@ -70,7 +72,7 @@ export function NavUser({ user }: { user: User }) {
             sideOffset={4}
           >
             <a
-              href={`https://twitch.tv/${user.name}`}
+              href={profileUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="no-underline block"
@@ -99,12 +101,12 @@ export function NavUser({ user }: { user: User }) {
               <Icon icon="fa-solid fa-gear" wrapperClassName="" />
               Settings
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
+            <DropdownMenuItem onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}>
               <Icon
-                icon={theme === 'dark' ? 'fa-solid fa-sun' : 'fa-solid fa-moon'}
+                icon={resolvedTheme === 'dark' ? 'fa-solid fa-sun' : 'fa-solid fa-moon'}
                 wrapperClassName=""
               />
-              {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
+              {resolvedTheme === 'dark' ? 'Light Mode' : 'Dark Mode'}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleLogout}>

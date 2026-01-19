@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { type BotStatus, getTwitchBotStatus } from '@/api/bots'
+import { getTwitchChannelStatus, toggleTwitchChannel } from '@/api/channels'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,9 +22,8 @@ export function OnlineDropdown() {
   const fetchMyStatus = useCallback(async () => {
     if (!user) return
     try {
-      const response = await fetch('/api/channels/my-status', { credentials: 'include' })
-      if (response.ok) {
-        const data = await response.json()
+      const data = await getTwitchChannelStatus()
+      if (data) {
         setMyChannelSubscribed(data.subscribed)
       }
     } catch (error) {
@@ -58,16 +58,7 @@ export function OnlineDropdown() {
     if (!user) return
     setLoading(true)
     try {
-      const response = await fetch('/api/channels/toggle', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ channel_id: user.id, enabled: !myChannelSubscribed }),
-      })
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.detail || 'Failed to toggle subscription')
-      }
+      await toggleTwitchChannel(user.id, !myChannelSubscribed)
       await fetchMyStatus()
     } catch (error) {
       console.error('Error toggling subscription:', error)

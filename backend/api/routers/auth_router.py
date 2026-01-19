@@ -37,6 +37,7 @@ class UserInfoResponse(BaseModel):
     name: str
     display_name: str
     avatar: str
+    platform: str  # "twitch" or "discord"
 
 
 class LogoutResponse(BaseModel):
@@ -127,14 +128,28 @@ async def twitch_oauth_callback(
 async def get_current_user(
     user_id: str = Depends(get_current_user_id),
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
+    channel_service: ChannelService = Depends(lambda: get_channel_service(get_db_pool())),
 ) -> UserInfoResponse:
     """Get current authenticated user information"""
+    # Check if this is a Discord user (has discord: prefix)
+    if user_id.startswith("discord:"):
+        discord_user_id = user_id.replace("discord:", "")
+        pool = await get_db_pool()
+        channel_svc = get_channel_service(pool)
+        user_info = await channel_svc.get_discord_user(discord_user_id)
+
+        if not user_info:
+            raise HTTPException(status_code=404, detail="Discord user not found")
+
+        return UserInfoResponse(**user_info, platform="discord")
+
+    # Twitch user
     user_info = await twitch_api.get_user_info(user_id)
 
     if not user_info:
         raise HTTPException(status_code=404, detail="User not found")
 
-    return UserInfoResponse(**user_info)
+    return UserInfoResponse(**user_info, platform="twitch")
 
 
 @router.post("/logout", response_model=LogoutResponse)
@@ -146,8 +161,15 @@ async def logout(
 ) -> LogoutResponse:
     """Logout current user by clearing auth cookie"""
     # Fetch user info for logging
-    user_info = await twitch_api.get_user_info(user_id)
-    username = user_info.get("name", user_id) if user_info else user_id
+    if user_id.startswith("discord:"):
+        discord_user_id = user_id.replace("discord:", "")
+        pool = await get_db_pool()
+        channel_svc = get_channel_service(pool)
+        user_info = await channel_svc.get_discord_user(discord_user_id)
+        username = user_info.get("name", discord_user_id) if user_info else discord_user_id
+    else:
+        user_info = await twitch_api.get_user_info(user_id)
+        username = user_info.get("name", user_id) if user_info else user_id
 
     response.delete_cookie(
         key="auth_token",
@@ -211,6 +233,7 @@ async def discord_oauth_callback(
     error: Optional[str] = None,
     discord_api: DiscordAPIClient = Depends(get_discord_api),
     auth_service: AuthService = Depends(get_auth_service),
+    channel_service: ChannelService = Depends(lambda: get_channel_service(get_db_pool())),
     settings: Settings = Depends(get_settings),
 ) -> RedirectResponse:
     """Handle Discord OAuth callback"""
@@ -238,12 +261,19 @@ async def discord_oauth_callback(
 
     user_id = token_data["user_id"]
     username = token_data.get("username", user_id)
+    display_name = token_data.get("global_name") or token_data.get("username", username)
+    avatar = token_data.get("avatar")
+
+    # Save Discord user info to database (required since Discord OAuth can't fetch by ID)
+    pool = await get_db_pool()
+    channel_svc = get_channel_service(pool)
+    await channel_svc.save_discord_user(user_id, username, display_name, avatar)
 
     # Create JWT token with discord: prefix to distinguish from Twitch users
     jwt_token = auth_service.create_access_token(f"discord:{user_id}")
 
-    # Set cookie and redirect
-    response = RedirectResponse(url=f"{settings.frontend_url}/dashboard")
+    # Set cookie and redirect to Discord dashboard
+    response = RedirectResponse(url=f"{settings.frontend_url}/discord/dashboard")
     response.set_cookie(
         key="auth_token",
         value=jwt_token,
@@ -255,3 +285,4 @@ async def discord_oauth_callback(
 
     logger.info(f"Discord user logged in: {username} ({user_id})")
     return response
+

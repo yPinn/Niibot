@@ -25,7 +25,7 @@ export function ProtectedRoute() {
  * Public only route - redirects authenticated users
  */
 export function PublicOnlyRoute() {
-  const { isAuthenticated, isInitialized } = useAuth()
+  const { isAuthenticated, isInitialized, user } = useAuth()
   const location = useLocation()
 
   if (!isInitialized) {
@@ -33,7 +33,9 @@ export function PublicOnlyRoute() {
   }
 
   if (isAuthenticated) {
-    const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/dashboard'
+    const defaultDashboard = user?.platform === 'discord' ? '/discord/dashboard' : '/dashboard'
+    const from =
+      (location.state as { from?: { pathname: string } })?.from?.pathname || defaultDashboard
     return <Navigate to={from} replace />
   }
 

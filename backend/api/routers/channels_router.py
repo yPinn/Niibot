@@ -53,7 +53,7 @@ class ToggleResponse(BaseModel):
 # ============================================
 
 
-@router.get("/monitored", response_model=List[ChannelInfo])
+@router.get("/twitch/monitored", response_model=List[ChannelInfo])
 async def get_monitored_channels(
     user_id: str = Depends(get_current_user_id),
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
@@ -120,7 +120,7 @@ async def get_monitored_channels(
         raise HTTPException(status_code=500, detail="Failed to fetch channels")
 
 
-@router.get("/my-status", response_model=ChannelStatusResponse)
+@router.get("/twitch/my-status", response_model=ChannelStatusResponse)
 async def get_my_channel_status(
     user_id: str = Depends(get_current_user_id),
 ) -> ChannelStatusResponse:
@@ -136,7 +136,7 @@ async def get_my_channel_status(
         raise HTTPException(status_code=500, detail="Failed to fetch status")
 
 
-@router.post("/toggle", response_model=ToggleResponse)
+@router.post("/twitch/toggle", response_model=ToggleResponse)
 async def toggle_channel(
     request: ChannelToggleRequest,
     user_id: str = Depends(get_current_user_id),

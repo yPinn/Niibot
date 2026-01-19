@@ -68,3 +68,17 @@ CREATE TRIGGER channel_toggle_trigger
 AFTER UPDATE ON channels
 FOR EACH ROW
 EXECUTE FUNCTION notify_channel_toggle();
+
+-- Create discord_users table for storing Discord OAuth user info
+-- Discord OAuth doesn't allow fetching user info by ID, so we cache it at login
+CREATE TABLE IF NOT EXISTS discord_users (
+    user_id TEXT PRIMARY KEY,           -- Discord user_id (snowflake string)
+    username TEXT NOT NULL,              -- Discord username
+    display_name TEXT,                   -- Discord display name (global_name)
+    avatar TEXT,                         -- Avatar hash for CDN URL
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TRIGGER update_discord_users_updated_at BEFORE UPDATE ON discord_users
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();

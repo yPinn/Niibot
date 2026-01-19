@@ -7,6 +7,7 @@ export interface User {
   name: string
   display_name: string
   avatar: string
+  platform: 'twitch' | 'discord'
 }
 
 async function fetchCurrentUser(): Promise<User | null> {
