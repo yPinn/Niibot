@@ -8,6 +8,10 @@ import discord
 
 logger = logging.getLogger(__name__)
 
+# Bot version
+BOT_VERSION = "1.0.0"
+BOT_NAME = "Niibot"
+
 DISCORD_DIR = Path(__file__).parent
 BACKEND_DIR = DISCORD_DIR.parent
 

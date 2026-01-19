@@ -42,7 +42,7 @@ class Admin(commands.Cog):
             if current.lower() in cog.lower()
         ][:25]
 
-    @app_commands.command(name="reload", description="重載指定的 Cog")
+    @app_commands.command(name="reload", description="重載 Cog")
     @app_commands.describe(cog="Cog 名稱（例如：fortune, games）")
     @app_commands.autocomplete(cog=cog_autocomplete)
     async def reload_cog(self, interaction: discord.Interaction, cog: str):
@@ -77,7 +77,7 @@ class Admin(commands.Cog):
             await interaction.response.send_message(f"重載失敗：{type(e).__name__}", ephemeral=True)
             logger.exception(f"Error reloading {cog_path}: {e}")
 
-    @app_commands.command(name="load", description="載入指定的 Cog")
+    @app_commands.command(name="load", description="載入 Cog")
     @app_commands.describe(cog="Cog 名稱")
     @app_commands.autocomplete(cog=all_cog_autocomplete)
     async def load_cog(self, interaction: discord.Interaction, cog: str):
@@ -100,7 +100,7 @@ class Admin(commands.Cog):
             await interaction.response.send_message(f"載入失敗：{type(e).__name__}", ephemeral=True)
             logger.exception(f"Error loading {cog_path}: {e}")
 
-    @app_commands.command(name="unload", description="卸載指定的 Cog")
+    @app_commands.command(name="unload", description="卸載 Cog")
     @app_commands.describe(cog="Cog 名稱")
     @app_commands.autocomplete(cog=cog_autocomplete)
     async def unload_cog(self, interaction: discord.Interaction, cog: str):
@@ -125,7 +125,7 @@ class Admin(commands.Cog):
             await interaction.response.send_message(f"卸載失敗：{type(e).__name__}", ephemeral=True)
             logger.exception(f"Error unloading {cog_path}: {e}")
 
-    @app_commands.command(name="cogs", description="列出所有已載入的 Cog")
+    @app_commands.command(name="cogs", description="Cog 列表")
     async def list_cogs(self, interaction: discord.Interaction):
         if interaction.user.id != self.bot.owner_id:
             await interaction.response.send_message("權限不足", ephemeral=True)
@@ -139,7 +139,7 @@ class Admin(commands.Cog):
         else:
             await interaction.response.send_message("沒有已載入的 Cog", ephemeral=True)
 
-    @app_commands.command(name="sync", description="同步指令樹到 Discord")
+    @app_commands.command(name="sync", description="同步指令")
     async def sync_commands(self, interaction: discord.Interaction):
         if interaction.user.id != self.bot.owner_id:
             await interaction.response.send_message("權限不足", ephemeral=True)

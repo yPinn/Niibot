@@ -718,7 +718,7 @@ class Giveaway(commands.Cog):
 
         return embed
 
-    @app_commands.command(name="giveaway", description="建立抽獎活動")
+    @app_commands.command(name="giveaway", description="抽獎活動")
     async def giveaway(self, interaction: discord.Interaction):
         time_view = TimeSelectView(self)
         await interaction.response.send_message(

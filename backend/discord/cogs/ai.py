@@ -47,7 +47,7 @@ class AI(commands.Cog):
             f"reasoning={self.is_reasoning}, max_tokens={self.max_tokens}"
         )
 
-    @app_commands.command(name="ai", description="向 AI 提問")
+    @app_commands.command(name="ai", description="AI 問答")
     @app_commands.describe(question="你的問題")
     async def ai_command(self, interaction: discord.Interaction, question: str):
         """Ask AI a question.

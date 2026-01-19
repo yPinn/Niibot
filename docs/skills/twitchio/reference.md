@@ -1,22 +1,25 @@
 # TwitchIO 3 API 參考
 
+**版本**: 3.1.0 (2025-08-10)
+**Python 要求**: 3.11+（支援 3.11、3.12、3.13）
+
 ## Client 建構參數
 
-| 參數 | 類型 | 必填 | 說明 |
-|------|------|:----:|------|
-| `client_id` | `str` | ✓ | Twitch App ID |
-| `client_secret` | `str` | ✓ | Twitch App Secret |
-| `bot_id` | `str` | - | Bot User ID（強烈建議） |
-| `redirect_uri` | `str` | - | OAuth 回調 URL |
-| `scopes` | `Scopes` | - | OAuth 權限 |
+| 參數            | 類型     | 必填 | 說明                    |
+| --------------- | -------- | :--: | ----------------------- |
+| `client_id`     | `str`    |  ✓   | Twitch App ID           |
+| `client_secret` | `str`    |  ✓   | Twitch App Secret       |
+| `bot_id`        | `str`    |  -   | Bot User ID（強烈建議） |
+| `redirect_uri`  | `str`    |  -   | OAuth 回調 URL          |
+| `scopes`        | `Scopes` |  -   | OAuth 權限              |
 
 ## Bot 額外參數
 
-| 參數 | 類型 | 說明 |
-|------|------|------|
-| `bot_id` | `str` | **必填** |
-| `owner_id` | `str` | 擁有者 ID |
-| `prefix` | `str \| list` | 指令前綴 |
+| 參數       | 類型          | 說明      |
+| ---------- | ------------- | --------- |
+| `bot_id`   | `str`         | **必填**  |
+| `owner_id` | `str`         | 擁有者 ID |
+| `prefix`   | `str \| list` | 指令前綴  |
 
 ---
 
@@ -92,57 +95,57 @@ await bot.delete_all_eventsub_subscriptions()
 
 ### 聊天
 
-| 類型 | 參數 |
-|------|------|
-| `ChatMessageSubscription` | broadcaster_user_id, user_id |
-| `ChatNotificationSubscription` | broadcaster_user_id, user_id |
+| 類型                            | 參數                         |
+| ------------------------------- | ---------------------------- |
+| `ChatMessageSubscription`       | broadcaster_user_id, user_id |
+| `ChatNotificationSubscription`  | broadcaster_user_id, user_id |
 | `ChatMessageDeleteSubscription` | broadcaster_user_id, user_id |
-| `ChatClearSubscription` | broadcaster_user_id, user_id |
+| `ChatClearSubscription`         | broadcaster_user_id, user_id |
 
 ### 頻道
 
-| 類型 | 參數 |
-|------|------|
-| `ChannelUpdateSubscription` | broadcaster_user_id |
-| `ChannelFollowSubscription` | broadcaster_user_id, moderator_user_id |
-| `ChannelSubscribeSubscription` | broadcaster_user_id |
-| `ChannelSubscriptionGiftSubscription` | broadcaster_user_id |
-| `ChannelCheerSubscription` | broadcaster_user_id |
-| `ChannelRaidSubscription` | to_broadcaster_user_id |
-| `ChannelBanSubscription` | broadcaster_user_id |
-| `ChannelUnbanSubscription` | broadcaster_user_id |
+| 類型                                  | 參數                                   |
+| ------------------------------------- | -------------------------------------- |
+| `ChannelUpdateSubscription`           | broadcaster_user_id                    |
+| `ChannelFollowSubscription`           | broadcaster_user_id, moderator_user_id |
+| `ChannelSubscribeSubscription`        | broadcaster_user_id                    |
+| `ChannelSubscriptionGiftSubscription` | broadcaster_user_id                    |
+| `ChannelCheerSubscription`            | broadcaster_user_id                    |
+| `ChannelRaidSubscription`             | to_broadcaster_user_id                 |
+| `ChannelBanSubscription`              | broadcaster_user_id                    |
+| `ChannelUnbanSubscription`            | broadcaster_user_id                    |
 
 ### 頻道點數
 
-| 類型 | 參數 |
-|------|------|
-| `ChannelPointsRewardAddSubscription` | broadcaster_user_id |
+| 類型                                     | 參數                |
+| ---------------------------------------- | ------------------- |
+| `ChannelPointsRewardAddSubscription`     | broadcaster_user_id |
 | `ChannelPointsRedemptionAddSubscription` | broadcaster_user_id |
 
 ### 直播狀態
 
-| 類型 | 參數 |
-|------|------|
-| `StreamOnlineSubscription` | broadcaster_user_id |
+| 類型                        | 參數                |
+| --------------------------- | ------------------- |
+| `StreamOnlineSubscription`  | broadcaster_user_id |
 | `StreamOfflineSubscription` | broadcaster_user_id |
 
 ---
 
 ## 事件名稱對照
 
-| 事件 | Payload 類型 |
-|------|--------------|
-| `event_ready` | - |
-| `event_message` | `ChatMessage` |
-| `event_follow` | `ChannelFollow` |
-| `event_subscription` | `ChannelSubscribe` |
-| `event_subscription_gift` | `ChannelSubscriptionGift` |
-| `event_cheer` | `ChannelCheer` |
-| `event_raid` | `ChannelRaid` |
-| `event_ban` | `ChannelBan` |
-| `event_unban` | `ChannelUnban` |
-| `event_stream_online` | `StreamOnline` |
-| `event_stream_offline` | `StreamOffline` |
+| 事件                          | Payload 類型                 |
+| ----------------------------- | ---------------------------- |
+| `event_ready`                 | -                            |
+| `event_message`               | `ChatMessage`                |
+| `event_follow`                | `ChannelFollow`              |
+| `event_subscription`          | `ChannelSubscribe`           |
+| `event_subscription_gift`     | `ChannelSubscriptionGift`    |
+| `event_cheer`                 | `ChannelCheer`               |
+| `event_raid`                  | `ChannelRaid`                |
+| `event_ban`                   | `ChannelBan`                 |
+| `event_unban`                 | `ChannelUnban`               |
+| `event_stream_online`         | `StreamOnline`               |
+| `event_stream_offline`        | `StreamOffline`              |
 | `event_custom_redemption_add` | `ChannelPointsRedemptionAdd` |
 
 ---
@@ -205,15 +208,15 @@ badges = await bot.fetch_badges()
 
 ## Routines 參數
 
-| 參數 | 類型 | 說明 |
-|------|------|------|
-| `delta` | `timedelta` | 執行間隔 |
-| `time` | `datetime.time` | 每日時間（與 delta 互斥） |
-| `iterations` | `int` | 次數限制 |
-| `wait_first` | `bool` | 首次前等待（預設 False） |
-| `wait_remainder` | `bool` | 只等剩餘時間 |
-| `max_attempts` | `int` | 錯誤次數上限（預設 5） |
-| `stop_on_error` | `bool` | 遇錯停止 |
+| 參數             | 類型            | 說明                      |
+| ---------------- | --------------- | ------------------------- |
+| `delta`          | `timedelta`     | 執行間隔                  |
+| `time`           | `datetime.time` | 每日時間（與 delta 互斥） |
+| `iterations`     | `int`           | 次數限制                  |
+| `wait_first`     | `bool`          | 首次前等待（預設 False）  |
+| `wait_remainder` | `bool`          | 只等剩餘時間              |
+| `max_attempts`   | `int`           | 錯誤次數上限（預設 5）    |
+| `stop_on_error`  | `bool`          | 遇錯停止                  |
 
 ### 控制方法
 
@@ -242,11 +245,11 @@ async def on_error(error): ...
 
 ## 常見錯誤
 
-| 錯誤 | 說明 |
-|------|------|
-| `CommandNotFound` | 指令不存在 |
-| `MissingRequiredArgument` | 缺少參數 |
-| `BadArgument` | 參數類型錯誤 |
-| `GuardFailure` | 守衛檢查失敗 |
-| `AuthenticationError` | 認證失敗 |
-| `HTTPException` | HTTP 錯誤 |
+| 錯誤                      | 說明         |
+| ------------------------- | ------------ |
+| `CommandNotFound`         | 指令不存在   |
+| `MissingRequiredArgument` | 缺少參數     |
+| `BadArgument`             | 參數類型錯誤 |
+| `GuardFailure`            | 守衛檢查失敗 |
+| `AuthenticationError`     | 認證失敗     |
+| `HTTPException`           | HTTP 錯誤    |

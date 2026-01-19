@@ -41,7 +41,7 @@ class Fortune(commands.Cog):
             return event["name"], event["modifier"]
         return None, 1.0
 
-    @app_commands.command(name="fortune", description="今日運勢")
+    @app_commands.command(name="fortune", description="查看今日運勢")
     async def fortune(self, interaction: discord.Interaction):
         try:
             special_event, date_modifier = self._get_date_bonus()

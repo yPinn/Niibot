@@ -11,7 +11,7 @@ class RateLimitMonitorCog(commands.Cog):
         self.bot = bot
         self.rate_limiter = bot.rate_limiter
 
-    @app_commands.command(name="rate_stats", description="查看 Discord API 速率限制統計")
+    @app_commands.command(name="rate_stats", description="速率統計")
     @app_commands.default_permissions(administrator=True)
     async def rate_stats(self, interaction: discord.Interaction):
         stats = self.rate_limiter.get_stats_summary()
@@ -75,7 +75,7 @@ class RateLimitMonitorCog(commands.Cog):
         embed.set_footer(text=f"Bot: {self.bot.user.name}")
         await interaction.response.send_message(embed=embed)
 
-    @app_commands.command(name="rate_check", description="檢查當前速率限制風險")
+    @app_commands.command(name="rate_check", description="速率檢查")
     @app_commands.default_permissions(administrator=True)
     async def rate_check(self, interaction: discord.Interaction):
         is_safe, message = self.rate_limiter.check_rate_limit_risk()

@@ -243,7 +243,7 @@ class TFT(commands.Cog):
 
         return data
 
-    @app_commands.command(name="tft", description="查詢 TFT 戰棋排行榜（不輸入玩家則顯示門檻）")
+    @app_commands.command(name="tft", description="TFT 排名")
     @app_commands.describe(
         player="玩家名稱（格式：玩家名稱#TAG，留空則顯示門檻）"
     )

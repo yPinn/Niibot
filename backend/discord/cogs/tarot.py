@@ -43,7 +43,7 @@ class Tarot(commands.Cog):
 
         return card_id, is_reversed
 
-    @app_commands.command(name="tarot", description="每日塔羅牌抽取")
+    @app_commands.command(name="tarot", description="每日塔羅")
     async def tarot(self, interaction: discord.Interaction):
         try:
             user_id = interaction.user.id

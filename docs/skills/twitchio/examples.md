@@ -1,5 +1,7 @@
 # TwitchIO 3 範例
 
+**版本**: 3.1.0 | **Python**: 3.11+
+
 ## 最小 Bot
 
 ```python

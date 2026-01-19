@@ -14,6 +14,9 @@ allowed-tools: Read, Grep, Glob
 pip install twitchio
 ```
 
+**最新版本**: 3.1.0 (2025)
+**Python 版本要求**: 3.11+（支援 3.11、3.12、3.13）
+
 ---
 
 ## 核心架構
@@ -88,13 +91,13 @@ async def prefix(ctx: commands.Context, new: str):
 
 ### Context 常用屬性
 
-| 屬性 | 說明 |
-|------|------|
-| `ctx.author` | 發送者 (Chatter) |
-| `ctx.channel` | 頻道 |
-| `ctx.message` | 原始訊息 |
-| `ctx.send(msg)` | 發送訊息 |
-| `ctx.reply(msg)` | 回覆訊息 |
+| 屬性             | 說明             |
+| ---------------- | ---------------- |
+| `ctx.author`     | 發送者 (Chatter) |
+| `ctx.channel`    | 頻道             |
+| `ctx.message`    | 原始訊息         |
+| `ctx.send(msg)`  | 發送訊息         |
+| `ctx.reply(msg)` | 回覆訊息         |
 
 ---
 
@@ -121,13 +124,13 @@ class MyComponent(commands.Component):
 
 ### 生命週期
 
-| 方法 | 時機 |
-|------|------|
-| `component_load()` | 載入 |
-| `component_teardown()` | 卸載 |
-| `component_before_invoke(ctx)` | 指令前 |
-| `component_after_invoke(ctx)` | 指令後 |
-| `component_command_error(ctx, error)` | 錯誤 |
+| 方法                                  | 時機   |
+| ------------------------------------- | ------ |
+| `component_load()`                    | 載入   |
+| `component_teardown()`                | 卸載   |
+| `component_before_invoke(ctx)`        | 指令前 |
+| `component_after_invoke(ctx)`         | 指令後 |
+| `component_command_error(ctx, error)` | 錯誤   |
 
 ### 元件守衛
 
@@ -153,15 +156,15 @@ await bot.subscribe_webhook(subscription, callback_url="...")
 
 ### 常用訂閱類型
 
-| 類型 | 參數 |
-|------|------|
-| `ChatMessageSubscription` | broadcaster_user_id, user_id |
-| `ChannelFollowSubscription` | broadcaster_user_id, moderator_user_id |
-| `ChannelSubscribeSubscription` | broadcaster_user_id |
-| `ChannelCheerSubscription` | broadcaster_user_id |
-| `ChannelRaidSubscription` | to_broadcaster_user_id |
-| `StreamOnlineSubscription` | broadcaster_user_id |
-| `StreamOfflineSubscription` | broadcaster_user_id |
+| 類型                           | 參數                                   |
+| ------------------------------ | -------------------------------------- |
+| `ChatMessageSubscription`      | broadcaster_user_id, user_id           |
+| `ChannelFollowSubscription`    | broadcaster_user_id, moderator_user_id |
+| `ChannelSubscribeSubscription` | broadcaster_user_id                    |
+| `ChannelCheerSubscription`     | broadcaster_user_id                    |
+| `ChannelRaidSubscription`      | to_broadcaster_user_id                 |
+| `StreamOnlineSubscription`     | broadcaster_user_id                    |
+| `StreamOfflineSubscription`    | broadcaster_user_id                    |
 
 ### 事件監聽
 
@@ -194,12 +197,12 @@ task.cancel()  # 取消
 
 ### 參數
 
-| 參數 | 說明 |
-|------|------|
-| `delta` | 間隔 (timedelta) |
-| `time` | 每日時間 (datetime.time) |
-| `iterations` | 次數限制 |
-| `wait_first` | 首次前等待 |
+| 參數         | 說明                     |
+| ------------ | ------------------------ |
+| `delta`      | 間隔 (timedelta)         |
+| `time`       | 每日時間 (datetime.time) |
+| `iterations` | 次數限制                 |
+| `wait_first` | 首次前等待               |
 
 ---
 

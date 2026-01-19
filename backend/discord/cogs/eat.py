@@ -262,7 +262,7 @@ class Eat(commands.Cog):
         return None
 
     # --- 斜線指令 ---
-    @app_commands.command(name="eat", description="獲得餐點推薦")
+    @app_commands.command(name="eat", description="餐點推薦")
     async def slash_eat(self, interaction: discord.Interaction, category: Optional[str] = None) -> None:
         await self.load_data()
         if not category:
@@ -279,7 +279,7 @@ class Eat(commands.Cog):
         else:
             await interaction.response.send_message("找不到該分類", ephemeral=True)
 
-    @app_commands.command(name="categories", description="查看所有分類")
+    @app_commands.command(name="categories", description="餐點分類")
     async def slash_categories(self, interaction: discord.Interaction) -> None:
         await self.load_data()
         if not self.data["categories"]:
@@ -290,7 +290,7 @@ class Eat(commands.Cog):
             embed.add_field(name=cat, value=f"{len(items)} 項", inline=True)
         await interaction.response.send_message(embed=embed)
 
-    @app_commands.command(name="menu", description="查看分類菜單")
+    @app_commands.command(name="menu", description="分類菜單")
     async def slash_menu(self, interaction: discord.Interaction, category: str) -> None:
         await self.load_data()
         key = self._find_category_key(category)
@@ -333,7 +333,7 @@ class Eat(commands.Cog):
                         return
             await interaction.response.send_message("找不到項目", ephemeral=True)
 
-    @app_commands.command(name="delete_category", description="刪除分類")
+    @app_commands.command(name="delete_category", description="刪除餐點分類")
     @app_commands.default_permissions(administrator=True)
     async def slash_delete_category(self, interaction: discord.Interaction, category: str) -> None:
         async with self._lock:

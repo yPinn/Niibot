@@ -1,5 +1,8 @@
 """Utility commands"""
 
+import sys
+
+from config import BOT_NAME, BOT_VERSION
 from discord.ext import commands
 
 import discord
@@ -10,13 +13,48 @@ class Utility(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @app_commands.command(name="ping", description="檢查 Bot 延遲")
-    async def ping(self, interaction: discord.Interaction):
+    @app_commands.command(name="ping", description="Bot 延遲")
+    async def ping(self, interaction: discord.Interaction) -> None:
+        """檢查 Bot 與 Discord 的連線延遲"""
         latency = round(self.bot.latency * 1000)
         await interaction.response.send_message(f"延遲: {latency}ms")
 
-    @app_commands.command(name="info", description="顯示伺服器資訊")
-    async def server_info(self, interaction: discord.Interaction):
+    @app_commands.command(name="version", description="Bot 版本")
+    async def version(self, interaction: discord.Interaction) -> None:
+        """顯示 Bot 版本和系統資訊"""
+        embed = discord.Embed(
+            title=f"{BOT_NAME} 版本資訊",
+            color=discord.Color.blue()
+        )
+
+        # Python 版本（格式：3.11.5）
+        python_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+
+        embed.add_field(name="Bot 版本", value=f"`{BOT_VERSION}`", inline=True)
+        embed.add_field(name="discord.py", value=f"`{discord.__version__}`", inline=True)
+        embed.add_field(name="Python", value=f"`{python_version}`", inline=True)
+
+        if self.bot.user:
+            embed.set_thumbnail(url=self.bot.user.display_avatar.url)
+
+        # Bot 統計資訊
+        cog_count = len([ext for ext in self.bot.extensions.keys() if 'cogs' in ext])
+        embed.add_field(
+            name="Bot 統計",
+            value=(
+                f"> 伺服器數: `{len(self.bot.guilds)}`\n"
+                f"> 延遲: `{round(self.bot.latency * 1000)}ms`\n"
+                f"> 已載入 Cogs: `{cog_count}`"
+            ),
+            inline=False
+        )
+
+        embed.set_footer(text=f"Bot ID: {self.bot.user.id if self.bot.user else 'Unknown'}")
+        await interaction.response.send_message(embed=embed)
+
+    @app_commands.command(name="info", description="伺服器資訊")
+    async def server_info(self, interaction: discord.Interaction) -> None:
+        """顯示當前伺服器的詳細資訊"""
         guild = interaction.guild
         if not guild:
             await interaction.response.send_message("此指令只能在伺服器中使用")
@@ -36,11 +74,12 @@ class Utility(commands.Cog):
 
         await interaction.response.send_message(embed=embed)
 
-    @app_commands.command(name="userinfo", description="顯示用戶資訊")
+    @app_commands.command(name="userinfo", description="用戶資訊")
     @app_commands.describe(member="要查詢的用戶")
     async def user_info(
         self, interaction: discord.Interaction, member: discord.Member | None = None
-    ):
+    ) -> None:
+        """顯示指定用戶或自己的詳細資訊"""
         target = member or interaction.user
 
         embed = discord.Embed(
@@ -69,11 +108,12 @@ class Utility(commands.Cog):
 
         await interaction.response.send_message(embed=embed)
 
-    @app_commands.command(name="avatar", description="顯示用戶頭像")
+    @app_commands.command(name="avatar", description="用戶頭像")
     @app_commands.describe(member="要查詢的用戶")
     async def avatar(
         self, interaction: discord.Interaction, member: discord.Member | None = None
-    ):
+    ) -> None:
+        """顯示指定用戶或自己的頭像"""
         target = member or interaction.user
 
         embed = discord.Embed(
@@ -86,8 +126,9 @@ class Utility(commands.Cog):
         else:
             await interaction.response.send_message("此用戶沒有設定頭像")
 
-    @app_commands.command(name="help", description="顯示所有可用指令")
-    async def help(self, interaction: discord.Interaction):
+    @app_commands.command(name="help", description="顯示所有指令")
+    async def help(self, interaction: discord.Interaction) -> None:
+        """顯示完整的指令列表，依權限顯示不同指令"""
         embed = discord.Embed(
             title="Niibot 指令列表",
             description="以下是所有可用的斜線指令",
@@ -99,6 +140,7 @@ class Utility(commands.Cog):
             name="【工具指令】",
             value=(
                 "`/ping` - 檢查 Bot 延遲\n"
+                "`/version` - 顯示 Bot 版本資訊\n"
                 "`/info` - 顯示伺服器資訊\n"
                 "`/userinfo` - 顯示用戶資訊\n"
                 "`/avatar` - 顯示用戶頭像\n"
@@ -126,6 +168,7 @@ class Utility(commands.Cog):
             name="【占卜與抽獎】",
             value=(
                 "`/fortune` - 今日運勢\n"
+                "`/tarot` - 每日塔羅牌抽取\n"
                 "`/giveaway` - 建立抽獎活動"
             ),
             inline=False
@@ -146,6 +189,13 @@ class Utility(commands.Cog):
                 "`/categories` - 查看所有分類\n"
                 "`/menu` - 查看分類菜單"
             ),
+            inline=False
+        )
+
+        # TFT 戰棋
+        embed.add_field(
+            name="【TFT 戰棋】",
+            value="`/tft` - 查詢 TFT 排行榜",
             inline=False
         )
 
@@ -198,7 +248,8 @@ class Utility(commands.Cog):
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @commands.command(name="hello")
-    async def hello_prefix(self, ctx: commands.Context):
+    async def hello_prefix(self, ctx: commands.Context) -> None:
+        """前綴指令：打招呼（示範用途）"""
         await ctx.send(f"你好，{ctx.author.mention}")
 
 
