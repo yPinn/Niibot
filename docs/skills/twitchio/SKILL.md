@@ -156,15 +156,16 @@ await bot.subscribe_webhook(subscription, callback_url="...")
 
 ### 常用訂閱類型
 
-| 類型                           | 參數                                   |
-| ------------------------------ | -------------------------------------- |
-| `ChatMessageSubscription`      | broadcaster_user_id, user_id           |
-| `ChannelFollowSubscription`    | broadcaster_user_id, moderator_user_id |
-| `ChannelSubscribeSubscription` | broadcaster_user_id                    |
-| `ChannelCheerSubscription`     | broadcaster_user_id                    |
-| `ChannelRaidSubscription`      | to_broadcaster_user_id                 |
-| `StreamOnlineSubscription`     | broadcaster_user_id                    |
-| `StreamOfflineSubscription`    | broadcaster_user_id                    |
+| 類型                                | 參數                                   |
+| ----------------------------------- | -------------------------------------- |
+| `ChatMessageSubscription`           | broadcaster_user_id, user_id           |
+| `ChannelFollowSubscription`         | broadcaster_user_id, moderator_user_id |
+| `ChannelSubscribeSubscription`      | broadcaster_user_id                    |
+| `ChannelCheerSubscription`          | broadcaster_user_id                    |
+| `ChannelRaidSubscription`           | to_broadcaster_user_id                 |
+| `ChannelPointsRedeemAddSubscription`| broadcaster_user_id                    |
+| `StreamOnlineSubscription`          | broadcaster_user_id                    |
+| `StreamOfflineSubscription`         | broadcaster_user_id                    |
 
 ### 事件監聽
 

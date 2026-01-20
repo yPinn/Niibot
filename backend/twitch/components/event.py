@@ -105,7 +105,7 @@ class EventComponent(commands.Component):
             LOGGER.error(f"[{broadcaster_name}] Follow: {user_name} (error: {e})")
 
     @commands.Component.listener()
-    async def event_subscribe(
+    async def event_subscription(
         self,
         payload: twitchio.ChannelSubscribe,
     ) -> None:

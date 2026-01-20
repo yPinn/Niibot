@@ -25,7 +25,8 @@ class Fortune(commands.Cog):
     def _get_fortune_level(self, date_modifier: float = 1.0) -> str:
         levels = list(self.fortune_data["fortune_levels"].keys())
         weights = [
-            self.fortune_data["fortune_levels"][level]["weight"] * date_modifier
+            self.fortune_data["fortune_levels"][level]["weight"] *
+            date_modifier
             for level in levels
         ]
         result = random.choices(levels, weights=weights, k=1)[0]
@@ -41,7 +42,7 @@ class Fortune(commands.Cog):
             return event["name"], event["modifier"]
         return None, 1.0
 
-    @app_commands.command(name="fortune", description="查看今日運勢")
+    @app_commands.command(name="fortune", description="今日運勢")
     async def fortune(self, interaction: discord.Interaction):
         try:
             special_event, date_modifier = self._get_date_bonus()
@@ -77,10 +78,13 @@ class Fortune(commands.Cog):
             fortune_author = self.fortune_data["embed"].get("author", {})
             global_author = self.global_embed_config.get("author", {})
 
-            author_name = fortune_author.get("name") or global_author.get("name")
+            author_name = fortune_author.get(
+                "name") or global_author.get("name")
             if author_name:
-                author_icon = fortune_author.get("icon_url") or global_author.get("icon_url") or None
-                author_url = fortune_author.get("url") or global_author.get("url") or None
+                author_icon = fortune_author.get(
+                    "icon_url") or global_author.get("icon_url") or None
+                author_url = fortune_author.get(
+                    "url") or global_author.get("url") or None
                 embed.set_author(
                     name=author_name,
                     icon_url=author_icon,
@@ -114,9 +118,11 @@ class Fortune(commands.Cog):
             fortune_footer = self.fortune_data["embed"].get("footer", {})
             global_footer = self.global_embed_config.get("footer", {})
 
-            footer_text = fortune_footer.get("text") or global_footer.get("text")
+            footer_text = fortune_footer.get(
+                "text") or global_footer.get("text")
             if footer_text:
-                footer_icon = fortune_footer.get("icon_url") or global_footer.get("icon_url") or None
+                footer_icon = fortune_footer.get(
+                    "icon_url") or global_footer.get("icon_url") or None
                 embed.set_footer(text=footer_text, icon_url=footer_icon)
 
             await interaction.response.send_message(embed=embed)

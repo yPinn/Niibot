@@ -117,10 +117,12 @@ await bot.delete_all_eventsub_subscriptions()
 
 ### 頻道點數
 
-| 類型                                     | 參數                |
-| ---------------------------------------- | ------------------- |
-| `ChannelPointsRewardAddSubscription`     | broadcaster_user_id |
-| `ChannelPointsRedemptionAddSubscription` | broadcaster_user_id |
+| 類型                                   | 參數                |
+| -------------------------------------- | ------------------- |
+| `ChannelPointsRewardAddSubscription`   | broadcaster_user_id |
+| `ChannelPointsRedeemAddSubscription`   | broadcaster_user_id |
+| `ChannelPointsRedeemUpdateSubscription`| broadcaster_user_id |
+| `ChannelPointsAutoRedeemSubscription`  | broadcaster_user_id |
 
 ### 直播狀態
 
