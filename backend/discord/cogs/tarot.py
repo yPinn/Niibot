@@ -21,6 +21,16 @@ class Tarot(commands.Cog):
         with open(DATA_DIR / "embed.json", "r", encoding="utf-8") as f:
             self.global_embed_config = json.load(f)
 
+    def _format_quote(self, text: str) -> str:
+        """
+        將文字按換行符拆分，並為每一行加上 Discord 的引用符號 '>'
+        """
+        if not text:
+            return "> -"
+        lines = text.split('\n')
+        # 移除空行並在每行前加上引用符號
+        return "\n".join([f"> {line.strip()}" for line in lines if line.strip()])
+
     def _get_daily_card(self, user_id: int) -> tuple[str, bool]:
         today = datetime.now().strftime("%Y-%m-%d")
         seed_string = f"{user_id}-{today}"
@@ -34,7 +44,7 @@ class Tarot(commands.Cog):
 
         return card_id, is_reversed
 
-    @app_commands.command(name="tarot", description="每日塔羅")
+    @app_commands.command(name="tarot", description="每日塔羅占卜")
     @app_commands.describe(category="想詢問的主題（可選）")
     @app_commands.choices(category=[
         app_commands.Choice(name="綜合運勢", value="general"),
@@ -61,10 +71,14 @@ class Tarot(commands.Cog):
                 color_hex = self.tarot_data["colors"]["upright"]
 
             # 抓取對應主題的牌義 (如果主題不存在則回退到綜合解析)
-            meaning = card_info["meanings"].get(
+            meaning_raw = card_info["meanings"].get(
                 category, card_info["meanings"]["general"])
             keywords = "、".join(card_info["keywords"])
-            advice = card_info.get("advice", "靜心思考這張牌對你今天的意義。")
+            advice_raw = card_info.get("advice", "靜心思考這張牌對你今天的意義。")
+
+            # 格式化為 Markdown 引用
+            formatted_meaning = self._format_quote(meaning_raw)
+            formatted_advice = self._format_quote(advice_raw)
 
             color = discord.Colour(int(color_hex.lstrip("#"), 16))
 
@@ -95,11 +109,13 @@ class Tarot(commands.Cog):
             cat_label = {"general": "綜合", "love": "感情",
                          "career": "事業"}.get(category, "綜合")
 
+            # Field 設置
             embed.add_field(
                 name="**關鍵字**", value=f"> {keywords}", inline=False)
             embed.add_field(name=f"**{cat_label}解析**",
-                            value=f"> {meaning}", inline=False)
-            embed.add_field(name="**今日建議**", value=f"> {advice}", inline=False)
+                            value=formatted_meaning, inline=False)
+            embed.add_field(name="**今日建議**",
+                            value=formatted_advice, inline=False)
 
             # 頁尾資訊處理
             tarot_footer = self.tarot_data["embed"].get("footer", {})
