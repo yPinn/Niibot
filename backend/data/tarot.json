@@ -6,11 +6,21 @@
       "image_url": "https://sacred-texts.com/tarot/pkt/img/ar00.jpg",
       "upright": {
         "keywords": ["新開始", "冒險", "潛力", "自由"],
-        "meaning": "代表新的開始和無限的可能性。現在是展開新冒險的時刻，保持開放的心態去探索未知。"
+        "meanings": {
+          "general": "代表進入一個全新的階段，擁有無限的可能性。\n這是一個鼓勵放下恐懼、憑藉直覺踏出第一步的時刻。",
+          "love": "可能開啟一段全新的關係，不預設任何結果。\n在既有關係中，則代表注入了純真、無拘無束的新能量。",
+          "career": "適合創業或轉換全新跑道。\n雖然目前缺乏經驗，但熱情與勇氣將是你此時最強大的資產。"
+        },
+        "advice": "保持開放的心態，不要讓過去限制想像力。\n相信宇宙，在你跳下時自會有人接住你。"
       },
       "reversed": {
-        "keywords": ["魯莽", "風險", "缺乏計劃"],
-        "meaning": "提醒你在行動前要謹慎思考。避免衝動的決定，需要更多的計劃和準備。"
+        "keywords": ["魯莽", "風險", "缺乏計劃", "遲疑"],
+        "meanings": {
+          "general": "目前的行動可能過於衝動，缺乏對現實風險的評估。\n亦或是因為害怕未知而原地踏步，導致機會流失。",
+          "love": "感情上可能面臨不負責任的承諾。\n或因過於追求個人自由，而忽視了對方的安全感。",
+          "career": "在工作中面臨不穩定的風險。\n建議先審視計劃漏洞，而非盲目衝刺，避免無謂損失。"
+        },
+        "advice": "冒險之前請先看清腳下的懸崖。\n現在需要的是審慎的規劃，而非盲目的熱血。"
       }
     },
     "1": {
@@ -18,12 +28,22 @@
       "name_en": "The Magician",
       "image_url": "https://sacred-texts.com/tarot/pkt/img/ar01.jpg",
       "upright": {
-        "keywords": ["創造力", "技能", "意志力", "資源"],
-        "meaning": "你擁有實現目標所需的所有工具和能力。現在是發揮你的才能，將想法化為現實的時刻。"
+        "keywords": ["創造力", "技能", "意志力", "行動力"],
+        "meanings": {
+          "general": "象徵萬事具備，你已擁有實現目標所需的所有工具。\n這是將想法轉化為現實的黃金時機，請主動出擊。",
+          "love": "代表一段充滿吸引力與良好溝通的關係。\n你展現出自信的魅力，能夠主導情感的正向走向。",
+          "career": "工作表現優異，具備多工處理的能力。\n新的計劃或提案極易獲得成功，能充分展現專業威信。"
+        },
+        "advice": "集中你的意念並付諸行動。\n你具備改變現狀的力量，不要浪費了你的天賦。"
       },
       "reversed": {
-        "keywords": ["操縱", "浪費才能", "幻覺"],
-        "meaning": "可能在濫用你的才能或欺騙自己。重新審視你的動機和方法。"
+        "keywords": ["操縱", "浪費天賦", "溝通不暢", "優柔寡斷"],
+        "meanings": {
+          "general": "可能感到空有想法卻難以落實，能量被分散在雜事上。\n同時需注意周遭環境是否存在欺瞞或不誠實的現象。",
+          "love": "感情中可能存在甜言蜜語但缺乏真誠的傾向。\n或是雙方在玩心理遊戲，導致缺乏真正的信任。",
+          "career": "專業技能未得到發揮，或因缺乏自信而錯失良機。\n小心職場上的資訊不對稱，避免被他人誤導。"
+        },
+        "advice": "重新審視你的真實動機。\n確認你是否在逃避責任，或利用小聰明掩蓋準備不足。"
       }
     },
     "2": {
@@ -31,25 +51,22 @@
       "name_en": "The High Priestess",
       "image_url": "https://sacred-texts.com/tarot/pkt/img/ar02.jpg",
       "upright": {
-        "keywords": ["直覺", "潛意識", "神秘", "智慧"],
-        "meaning": "傾聽你內在的聲音和直覺。答案就在你心中，靜下來聆聽內在的智慧。"
+        "keywords": ["直覺", "潛意識", "內在智慧", "神秘"],
+        "meanings": {
+          "general": "現在是向內探索的時刻，外在世界看似平靜。\n但內在直覺正給予強烈指引，適合靜心觀察而非行動。",
+          "love": "代表精神連結，關係可能處於觀望或柏拉圖階段。\n目前的重點在於心靈的共鳴，而非物質層面的進展。",
+          "career": "工作中不宜急於表現，適合進行深度研究或規劃。\n依賴洞察力處理複雜問題，保持低調將對你更有利。"
+        },
+        "advice": "傾聽內心的聲音。\n當外在混亂時，答案藏在寂靜中，信任你的第一直覺。"
       },
       "reversed": {
-        "keywords": ["秘密", "隱藏", "忽視直覺"],
-        "meaning": "你可能忽視了自己的直覺。有些事情尚未揭露，需要更深入的洞察。"
-      }
-    },
-    "3": {
-      "name": "皇后",
-      "name_en": "The Empress",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/ar03.jpg",
-      "upright": {
-        "keywords": ["豐饒", "滋養", "自然", "美麗"],
-        "meaning": "代表豐盛和創造力的時期。照顧自己和他人，讓事物自然成長。"
-      },
-      "reversed": {
-        "keywords": ["依賴", "空虛", "缺乏成長"],
-        "meaning": "可能過度依賴他人或忽視了自我照顧。需要重新連結你的創造力。"
+        "keywords": ["忽視直覺", "表面化", "秘密揭露", "浮躁"],
+        "meanings": {
+          "general": "過於依賴邏輯而忽視了潛在的警訊。\n外在的紛擾讓你失去了內心的平靜，變得容易焦慮。",
+          "love": "感情中可能隱藏著不安或未說出口的秘密。\n或是過於壓抑情感，導致雙方的關係變得疏離且冷漠。",
+          "career": "缺乏對局勢的洞察，可能因急躁判斷而忽略隱患。\n注意資訊的真實性，不要被表面的數據或承諾所迷惑。"
+        },
+        "advice": "停止尋找外在的認同。\n回到內心，釐清哪些是情緒干擾，哪些才是真實指引。"
       }
     },
     "4": {
@@ -57,240 +74,31 @@
       "name_en": "The Emperor",
       "image_url": "https://sacred-texts.com/tarot/pkt/img/ar04.jpg",
       "upright": {
-        "keywords": ["權威", "結構", "控制", "穩定"],
-        "meaning": "建立秩序和結構的時刻。運用你的領導力和組織能力來達成目標。"
+        "keywords": ["權威", "結構", "穩定", "領導力"],
+        "meanings": {
+          "general": "這是建立秩序與規則的時刻。\n代表穩定的環境與強大的領導力，能將計劃導向成功。",
+          "love": "關係傾向於穩定與承諾，但也帶有強烈保護欲。\n伴侶可能扮演帶領者的角色，提供穩固的安全感。",
+          "career": "事業運強，有機會晉升或獲得權威人士支持。\n適合執行嚴謹的長遠計劃，建立可長可久的體制。"
+        },
+        "advice": "運用邏輯、策略與紀律。\n現在需要的是果斷執行力，而非情緒化的猶豫不決。"
       },
       "reversed": {
-        "keywords": ["專制", "僵化", "缺乏紀律"],
-        "meaning": "可能過於控制或缺乏彈性。找到權威與同理心之間的平衡。"
-      }
-    },
-    "5": {
-      "name": "教皇",
-      "name_en": "The Hierophant",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/ar05.jpg",
-      "upright": {
-        "keywords": ["傳統", "智慧", "指導", "信仰"],
-        "meaning": "尊重傳統和既定的規則。尋求導師的指引或分享你的智慧。"
-      },
-      "reversed": {
-        "keywords": ["叛逆", "打破常規", "新觀點"],
-        "meaning": "質疑傳統和規範。找到屬於自己的道路和信念系統。"
-      }
-    },
-    "6": {
-      "name": "戀人",
-      "name_en": "The Lovers",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/ar06.jpg",
-      "upright": {
-        "keywords": ["愛", "和諧", "選擇", "關係"],
-        "meaning": "代表重要的關係和選擇。保持真誠，做出與你價值觀一致的決定。"
-      },
-      "reversed": {
-        "keywords": ["失衡", "錯誤選擇", "不和諧"],
-        "meaning": "關係中可能存在不和諧。重新評估你的選擇和承諾。"
-      }
-    },
-    "7": {
-      "name": "戰車",
-      "name_en": "The Chariot",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/ar07.jpg",
-      "upright": {
-        "keywords": ["意志力", "決心", "勝利", "控制"],
-        "meaning": "運用你的意志力和決心向前邁進。現在是克服障礙、取得勝利的時刻。"
-      },
-      "reversed": {
-        "keywords": ["缺乏方向", "失控", "侵略"],
-        "meaning": "可能失去方向或過於強勢。需要重新掌控並找到平衡。"
-      }
-    },
-    "8": {
-      "name": "力量",
-      "name_en": "Strength",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/ar08.jpg",
-      "upright": {
-        "keywords": ["勇氣", "耐心", "同情", "內在力量"],
-        "meaning": "真正的力量來自內在。以溫柔和耐心面對挑戰，而非蠻力。"
-      },
-      "reversed": {
-        "keywords": ["自我懷疑", "軟弱", "缺乏信心"],
-        "meaning": "可能缺乏自信或過於軟弱。重新連結你的內在力量和勇氣。"
-      }
-    },
-    "9": {
-      "name": "隱者",
-      "name_en": "The Hermit",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/ar09.jpg",
-      "upright": {
-        "keywords": ["內省", "尋求", "智慧", "孤獨"],
-        "meaning": "現在是內省和尋找內在真理的時刻。獨處能帶來智慧和啟發。"
-      },
-      "reversed": {
-        "keywords": ["孤立", "寂寞", "迷失"],
-        "meaning": "可能過度孤立或失去方向。需要尋求他人的支持和指引。"
-      }
-    },
-    "10": {
-      "name": "命運之輪",
-      "name_en": "Wheel of Fortune",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/ar10.jpg",
-      "upright": {
-        "keywords": ["命運", "變化", "循環", "機會"],
-        "meaning": "生命的循環帶來新的機會。接受變化，相信命運的安排。"
-      },
-      "reversed": {
-        "keywords": ["厄運", "失控", "抗拒改變"],
-        "meaning": "可能正在經歷困難的時期。接受變化而非抗拒它。"
-      }
-    },
-    "11": {
-      "name": "正義",
-      "name_en": "Justice",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/ar11.jpg",
-      "upright": {
-        "keywords": ["公平", "真理", "因果", "責任"],
-        "meaning": "現在是尋求真理和公正的時刻。你的行為會有相應的結果。"
-      },
-      "reversed": {
-        "keywords": ["不公", "偏見", "逃避責任"],
-        "meaning": "可能面臨不公平的情況或逃避責任。需要誠實面對自己。"
-      }
-    },
-    "12": {
-      "name": "吊人",
-      "name_en": "The Hanged Man",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/ar12.jpg",
-      "upright": {
-        "keywords": ["暫停", "放手", "新視角", "犧牲"],
-        "meaning": "暫停並從新的角度看待事物。有時放手能帶來新的理解。"
-      },
-      "reversed": {
-        "keywords": ["拖延", "抗拒", "無意義的犧牲"],
-        "meaning": "可能在無意義地拖延或抗拒必要的改變。重新評估你的處境。"
-      }
-    },
-    "13": {
-      "name": "死神",
-      "name_en": "Death",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/ar13.jpg",
-      "upright": {
-        "keywords": ["結束", "轉變", "重生", "放下"],
-        "meaning": "一個階段的結束和新開始的來臨。擁抱轉變，放下過去。"
-      },
-      "reversed": {
-        "keywords": ["抗拒改變", "停滯", "無法放手"],
-        "meaning": "可能抗拒必要的改變或無法放下過去。接受轉變才能成長。"
-      }
-    },
-    "14": {
-      "name": "節制",
-      "name_en": "Temperance",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/ar14.jpg",
-      "upright": {
-        "keywords": ["平衡", "和諧", "耐心", "適度"],
-        "meaning": "尋求平衡和和諧。以耐心和適度的方式處理事情。"
-      },
-      "reversed": {
-        "keywords": ["失衡", "極端", "缺乏和諧"],
-        "meaning": "生活可能失去平衡或過於極端。需要重新找到中庸之道。"
-      }
-    },
-    "15": {
-      "name": "惡魔",
-      "name_en": "The Devil",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/ar15.jpg",
-      "upright": {
-        "keywords": ["束縛", "物質主義", "上癮", "陰影"],
-        "meaning": "注意自我限制和不健康的依附。你有力量打破這些束縛。"
-      },
-      "reversed": {
-        "keywords": ["解放", "覺醒", "打破束縛"],
-        "meaning": "正在擺脫限制和不健康的模式。重獲自由和掌控。"
-      }
-    },
-    "16": {
-      "name": "塔",
-      "name_en": "The Tower",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/ar16.jpg",
-      "upright": {
-        "keywords": ["突變", "混亂", "啟示", "崩塌"],
-        "meaning": "突如其來的改變帶來震撼。雖然混亂，但能清除舊有的限制。"
-      },
-      "reversed": {
-        "keywords": ["避免災難", "恐懼改變", "延遲"],
-        "meaning": "可能避免必要的改變或延遲不可避免的事。擁抱轉變。"
-      }
-    },
-    "17": {
-      "name": "星星",
-      "name_en": "The Star",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/ar17.jpg",
-      "upright": {
-        "keywords": ["希望", "靈感", "平靜", "療癒"],
-        "meaning": "充滿希望和靈感的時期。保持信念，療癒正在發生。"
-      },
-      "reversed": {
-        "keywords": ["失去信心", "絕望", "缺乏靈感"],
-        "meaning": "可能感到失望或失去希望。重新連結你的內在之光。"
-      }
-    },
-    "18": {
-      "name": "月亮",
-      "name_en": "The Moon",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/ar18.jpg",
-      "upright": {
-        "keywords": ["幻覺", "直覺", "恐懼", "潛意識"],
-        "meaning": "事情可能不如表面所見。信任你的直覺，探索你的潛意識。"
-      },
-      "reversed": {
-        "keywords": ["揭露真相", "釋放恐懼", "清晰"],
-        "meaning": "幻覺正在消散，真相逐漸清晰。釋放內在的恐懼。"
-      }
-    },
-    "19": {
-      "name": "太陽",
-      "name_en": "The Sun",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/ar19.jpg",
-      "upright": {
-        "keywords": ["喜悅", "成功", "活力", "正向"],
-        "meaning": "充滿喜悅和成功的時刻。享受生命的溫暖和光明。"
-      },
-      "reversed": {
-        "keywords": ["暫時憂傷", "延遲快樂", "悲觀"],
-        "meaning": "快樂可能被暫時遮蔽。記住陽光總會再次照耀。"
-      }
-    },
-    "20": {
-      "name": "審判",
-      "name_en": "Judgement",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/ar20.jpg",
-      "upright": {
-        "keywords": ["覺醒", "更新", "救贖", "呼召"],
-        "meaning": "重生和覺醒的時刻。回應你內在的呼召，擁抱新的開始。"
-      },
-      "reversed": {
-        "keywords": ["自我懷疑", "拒絕改變", "內疚"],
-        "meaning": "可能過於自我批判或拒絕改變。寬恕自己，向前邁進。"
-      }
-    },
-    "21": {
-      "name": "世界",
-      "name_en": "The World",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/ar21.jpg",
-      "upright": {
-        "keywords": ["完成", "成就", "圓滿", "整合"],
-        "meaning": "一個循環的完成和成就的慶祝。你已達到重要的里程碑。"
-      },
-      "reversed": {
-        "keywords": ["未完成", "缺乏閉合", "延遲"],
-        "meaning": "可能還有未完成的事。在開始新旅程前，先完成手邊的事。"
+        "keywords": ["專制", "僵化", "缺乏紀律", "無力感"],
+        "meanings": {
+          "general": "面臨過度控制的環境，或因缺乏自律而導致失控。\n也可能代表你的權威正受到挑戰，感到力不從心。",
+          "love": "關係中出現權力不對等、固執己見的溝通障礙。\n過度的掌控慾會讓對方窒息，需要學習適度放手。",
+          "career": "職場上可能遭遇官僚主義打壓，計劃過於死板。\n自律能力下降，導致工作進度不如預期，需重新整頓。"
+        },
+        "advice": "學習彈性，真正的強大來自於包容而非強迫。\n反思你的固執是否已成為進步道路上最大的阻礙。"
       }
     }
   },
   "embed": {
     "author": {},
     "thumbnail": "",
-    "footer": {}
+    "footer": {
+      "text": ""
+    }
   },
   "colors": {
     "upright": "#9b59b6",

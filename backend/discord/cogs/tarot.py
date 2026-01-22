@@ -1,5 +1,3 @@
-"""Tarot card reading commands"""
-
 import json
 import random
 from datetime import datetime
@@ -24,27 +22,26 @@ class Tarot(commands.Cog):
             self.global_embed_config = json.load(f)
 
     def _get_daily_card(self, user_id: int) -> tuple[str, bool]:
-        """Get a consistent daily card for a user based on date and user ID
-
-        Returns:
-            tuple[str, bool]: (card_id, is_reversed)
-        """
         today = datetime.now().strftime("%Y-%m-%d")
         seed_string = f"{user_id}-{today}"
         seed = int(md5(seed_string.encode()).hexdigest(), 16)
 
         random.seed(seed)
-
         card_ids = list(self.tarot_data["cards"].keys())
         card_id = random.choice(card_ids)
         is_reversed = random.choice([True, False])
-
         random.seed()
 
         return card_id, is_reversed
 
     @app_commands.command(name="tarot", description="每日塔羅")
-    async def tarot(self, interaction: discord.Interaction):
+    @app_commands.describe(category="想詢問的主題（可選）")
+    @app_commands.choices(category=[
+        app_commands.Choice(name="綜合運勢", value="general"),
+        app_commands.Choice(name="感情發展", value="love"),
+        app_commands.Choice(name="事業學業", value="career"),
+    ])
+    async def tarot(self, interaction: discord.Interaction, category: str = "general"):
         try:
             user_id = interaction.user.id
             card_id, is_reversed = self._get_daily_card(user_id)
@@ -53,71 +50,67 @@ class Tarot(commands.Cog):
             card_name = card_data["name"]
             card_name_en = card_data["name_en"]
 
+            # 判斷正逆位與對應色彩
             if is_reversed:
-                orientation = "逆位"
-                orientation_en = "Reversed"
+                orientation, orientation_en = "逆位", "Reversed"
                 card_info = card_data["reversed"]
                 color_hex = self.tarot_data["colors"]["reversed"]
             else:
-                orientation = "正位"
-                orientation_en = "Upright"
+                orientation, orientation_en = "正位", "Upright"
                 card_info = card_data["upright"]
                 color_hex = self.tarot_data["colors"]["upright"]
 
+            # 抓取對應主題的牌義 (如果主題不存在則回退到綜合解析)
+            meaning = card_info["meanings"].get(
+                category, card_info["meanings"]["general"])
             keywords = "、".join(card_info["keywords"])
-            meaning = card_info["meaning"]
+            advice = card_info.get("advice", "靜心思考這張牌對你今天的意義。")
 
             color = discord.Colour(int(color_hex.lstrip("#"), 16))
 
+            # 建立 Embed
             embed = discord.Embed(
                 title=f"{card_name} ({orientation})",
                 description=f"*{card_name_en} - {orientation_en}*",
                 color=color,
             )
 
+            # 作者資訊處理
             tarot_author = self.tarot_data["embed"].get("author", {})
             global_author = self.global_embed_config.get("author", {})
-
             author_name = tarot_author.get("name") or global_author.get("name")
             if author_name:
-                author_icon = tarot_author.get("icon_url") or global_author.get("icon_url") or None
-                author_url = tarot_author.get("url") or global_author.get("url") or None
                 embed.set_author(
                     name=author_name,
-                    icon_url=author_icon,
-                    url=author_url,
+                    icon_url=tarot_author.get(
+                        "icon_url") or global_author.get("icon_url"),
+                    url=tarot_author.get("url") or global_author.get("url")
                 )
 
-            # Use card-specific image as the main image
-            card_image_url = card_data.get("image_url")
-            if card_image_url:
-                embed.set_image(url=card_image_url)
+            # 設置牌面圖片
+            if card_data.get("image_url"):
+                embed.set_image(url=card_data["image_url"])
+
+            # 主題標籤轉換
+            cat_label = {"general": "綜合", "love": "感情",
+                         "career": "事業"}.get(category, "綜合")
 
             embed.add_field(
-                name="**關鍵字**",
-                value=f"> {keywords}",
-                inline=False
-            )
+                name="**關鍵字**", value=f"> {keywords}", inline=False)
+            embed.add_field(name=f"**{cat_label}解析**",
+                            value=f"> {meaning}", inline=False)
+            embed.add_field(name="**今日建議**", value=f"> {advice}", inline=False)
 
-            embed.add_field(
-                name="**牌義解析**",
-                value=f"> {meaning}",
-                inline=False
-            )
-
-            embed.add_field(
-                name="**今日建議**",
-                value="> 靜心思考這張牌對你今天的意義，讓它的智慧引導你的決定。",
-                inline=False
-            )
-
+            # 頁尾資訊處理
             tarot_footer = self.tarot_data["embed"].get("footer", {})
             global_footer = self.global_embed_config.get("footer", {})
-
             footer_text = tarot_footer.get("text") or global_footer.get("text")
             if footer_text:
-                footer_icon = tarot_footer.get("icon_url") or global_footer.get("icon_url") or None
-                embed.set_footer(text=footer_text, icon_url=footer_icon)
+                embed.set_footer(
+                    text=footer_text,
+                    icon_url=tarot_footer.get(
+                        "icon_url") or global_footer.get("icon_url")
+                )
 
             await interaction.response.send_message(embed=embed)
 
