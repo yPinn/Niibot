@@ -243,7 +243,7 @@ class MessageTemplateModal(discord.ui.Modal, title="設定通知訊息"):
 
     template = discord.ui.TextInput(
         label="通知訊息模板 (使用 {users} 代表壽星)",
-        placeholder="今天是 {users} 的生日!",
+        placeholder="今天是 {users} 的生日，請各位送上祝福！",
         required=True,
         style=discord.TextStyle.paragraph,
         max_length=500,

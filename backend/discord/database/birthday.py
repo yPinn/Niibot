@@ -26,7 +26,7 @@ class BirthdaySettings:
     guild_id: int
     channel_id: int
     role_id: int
-    message_template: str = "今天是 {users} 的生日，請各位送上祝福!"
+    message_template: str = "今天是 {users} 的生日，請各位送上祝福！"
     last_notified_date: Optional[date] = None
     enabled: bool = True
     created_at: Optional[datetime] = None

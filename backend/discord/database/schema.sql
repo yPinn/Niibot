@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS birthday_settings (
     guild_id BIGINT PRIMARY KEY,
     channel_id BIGINT NOT NULL,
     role_id BIGINT NOT NULL,
-    message_template TEXT DEFAULT '今天是 {users} 的生日，請各位送上祝福!',
+    message_template TEXT DEFAULT '今天是 {users} 的生日，請各位送上祝福！',
     last_notified_date DATE,
     enabled BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMPTZ DEFAULT NOW(),
