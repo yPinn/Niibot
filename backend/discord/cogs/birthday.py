@@ -10,7 +10,7 @@ from database import BirthdayRepository, DatabasePool
 from discord.ext import commands, tasks
 
 import discord
-from discord import Interaction, app_commands
+from discord import app_commands
 
 logger = logging.getLogger(__name__)
 
@@ -490,11 +490,15 @@ class BirthdayCog(commands.Cog):
                 ephemeral=True,
             )
 
-    @app_commands.command(name="set", description="設定你的生日")
-    @app_commands.describe(month="月份 (1-12)", day="日期 (1-31)", year="年份 (選填)")
+    @bday_group.command(name="set", description="設定你的生日")
+    @app_commands.describe(
+        month="月份 (1-12)",
+        day="日期 (1-31)",
+        year="年份 (選填)"
+    )
     async def bday_set(
         self,
-        interaction: Interaction,
+        interaction: discord.Interaction,
         month: Optional[int] = None,
         day: Optional[int] = None,
         year: Optional[int] = None
@@ -513,7 +517,7 @@ class BirthdayCog(commands.Cog):
 
     async def _process_birthday_save(
         self,
-        interaction: Interaction,
+        interaction: discord.Interaction,
         month: int,
         day: int,
         year: Optional[int] = None
