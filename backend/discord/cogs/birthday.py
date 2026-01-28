@@ -10,7 +10,7 @@ from database import BirthdayRepository, DatabasePool
 from discord.ext import commands, tasks
 
 import discord
-from discord import app_commands
+from discord import Interaction, app_commands
 
 logger = logging.getLogger(__name__)
 
@@ -490,77 +490,70 @@ class BirthdayCog(commands.Cog):
                 ephemeral=True,
             )
 
+    @app_commands.command(name="set", description="設定你的生日")
+    @app_commands.describe(month="月份 (1-12)", day="日期 (1-31)", year="年份 (選填)")
+    async def bday_set(
+        self,
+        interaction: Interaction,
+        month: Optional[int] = None,
+        day: Optional[int] = None,
+        year: Optional[int] = None
+    ) -> None:
+        if not self._ready:
+            await interaction.response.send_message("功能尚未就緒", ephemeral=True)
+            return
+
+        # 模式 A: 單行指令
+        if month is not None and day is not None:
+            await self._process_birthday_save(interaction, month, day, year)
+            return
+
+        # 模式 B: 彈出 Modal (保證秒開，避免 10062 錯誤)
+        await interaction.response.send_modal(BirthdayModal(self))
+
     async def _process_birthday_save(
         self,
-        interaction: discord.Interaction,
+        interaction: Interaction,
         month: int,
         day: int,
         year: Optional[int] = None
     ) -> None:
-        """統一處理驗證與儲存邏輯"""
-        # 判斷是否已經回應過（Modal 提交通常還沒回應，單行指令可能需要 defer）
+        """處理所有生日儲存與驗證邏輯"""
         if not interaction.response.is_done():
             await interaction.response.defer(ephemeral=True)
 
-        # 1. 驗證日期合法性
-        if not (1 <= month <= 12):
-            await interaction.followup.send("月份必須在 1-12 之間", ephemeral=True)
+        # 驗證日期
+        try:
+            # 動態取得當年，處理 2 月天數
+            current_year = datetime.now(TZ_UTC8).year
+            max_day = calendar.monthrange(current_year, month)[1]
+
+            if not (1 <= month <= 12) or not (1 <= day <= max_day):
+                await interaction.followup.send(f"日期無效！{month}月最多只有 {max_day} 天。", ephemeral=True)
+                return
+
+            if year and not (1900 <= year <= current_year):
+                await interaction.followup.send(f"年份無效，請輸入 1900-{current_year} 之間的數字。", ephemeral=True)
+                return
+        except Exception:
+            await interaction.followup.send("驗證日期時發生錯誤，請檢查輸入格式。", ephemeral=True)
             return
 
-        # 動態判斷天數 (避免寫死 2024，雖然 2024 是閏年，但建議用當前年份)
-        max_day = calendar.monthrange(datetime.now(TZ_UTC8).year, month)[1]
-        if not (1 <= day <= max_day):
-            await interaction.followup.send(f"{month} 月的日期必須在 1-{max_day} 之間", ephemeral=True)
-            return
-
-        if year and not (1900 <= year <= 2100):
-            await interaction.followup.send("年份必須在 1900-2100 之間", ephemeral=True)
-            return
-
-        # 2. 檢查使用者狀態並儲存
+        # 儲存與自動加入邏輯
         existing = await self.repo.get_birthday(interaction.user.id)
         is_new_user = existing is None
 
         await self.repo.set_birthday(interaction.user.id, month, day, year)
 
-        response_text = f"已設定生日為 {month:02d}/{day:02d}" + \
+        msg = f"生日已設定為 {month:02d}/{day:02d}" + \
             (f" ({year} 年)" if year else "")
 
-        # 3. 自動訂閱邏輯
         if is_new_user and interaction.guild:
-            settings = await self.repo.get_settings(interaction.guild.id)
-            if settings:
-                await self.repo.subscribe(interaction.guild.id, interaction.user.id)
-                response_text += f"\n已自動為你開啟 **{interaction.guild.name}** 的生日通知！"
+            # 這裡實作你之前的自動訂閱邏輯
+            await self.repo.subscribe(interaction.guild.id, interaction.user.id)
+            msg += f"\n已自動為你開啟 **{interaction.guild.name}** 的通知！"
 
-        await interaction.followup.send(response_text, ephemeral=True)
-
-    @bday_group.command(name="set", description="設定你的生日")
-    @app_commands.describe(
-        month="月份 (1-12)",
-        day="日期 (1-31)",
-        year="出生年份 (選填)"
-    )
-    async def bday_set(
-        self,
-        interaction: discord.Interaction,
-        month: Optional[int] = None,
-        day: Optional[int] = None,
-        year: Optional[int] = None
-    ) -> None:
-        """設定生日：帶參數則直接設定，不帶參數則彈出視窗。"""
-        if not self._ready:
-            await interaction.response.send_message("功能尚未就緒", ephemeral=True)
-            return
-
-        # 1. 檢測是否為單行指令 (帶參數)
-        if month is not None and day is not None:
-            await self._process_birthday_save(interaction, month, day, year)
-            return
-
-        # 2. 模式：彈出 Modal (不帶參數)
-        # 關鍵優化：不再先查詢資料庫，確保 3 秒內一定能彈出視窗
-        await interaction.response.send_modal(BirthdayModal(self))
+        await interaction.followup.send(msg, ephemeral=True)
 
     @bday_group.command(name="join", description="加入此伺服器的生日通知")
     async def bday_join(self, interaction: discord.Interaction) -> None:
