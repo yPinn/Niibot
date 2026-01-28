@@ -137,7 +137,8 @@ class NiibotClient(commands.Bot):
             "cogs.ai",
             "cogs.tft",
             "cogs.rate_limit_monitor",
-            "cogs.tarot"
+            "cogs.tarot",
+            "cogs.birthday",
         ]
 
         # 初始化速率限制監控器
