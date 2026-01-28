@@ -1,15 +1,16 @@
 """Birthday feature cog for Discord bot."""
 
+import asyncio
 import calendar
 import logging
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Optional
 
-import discord
-from discord import app_commands
+from database import BirthdayRepository, DatabasePool
 from discord.ext import commands, tasks
 
-from database import BirthdayRepository, DatabasePool
+import discord
+from discord import app_commands
 
 logger = logging.getLogger(__name__)
 
@@ -36,9 +37,13 @@ class BirthdayModal(discord.ui.Modal, title="設定生日"):
         max_length=4,
     )
 
-    def __init__(self, cog: "BirthdayCog", current_month: Optional[int] = None, current_day: Optional[int] = None, current_year: Optional[int] = None):
+    def __init__(
+        self,
+        cog: "BirthdayCog", current_month: Optional[int] = None, current_day: Optional[int] = None, current_year: Optional[int] = None, is_new_user: bool = True
+    ):
         super().__init__()
         self.cog = cog
+        self.is_new_user = is_new_user
         # Pre-fill if user has existing data
         if current_month and current_day:
             self.birthday_date.default = f"{current_month:02d}/{current_day:02d}"
@@ -70,11 +75,7 @@ class BirthdayModal(discord.ui.Modal, title="設定生日"):
             )
             return
 
-        max_day = 31
-        if month in [4, 6, 9, 11]:
-            max_day = 30
-        elif month == 2:
-            max_day = 29  # Allow Feb 29
+        max_day = calendar.monthrange(2024, month)
 
         if not (1 <= day <= max_day):
             await interaction.response.send_message(
@@ -103,13 +104,20 @@ class BirthdayModal(discord.ui.Modal, title="設定生日"):
                 return
         # year is None if field is empty (will clear existing year in DB)
 
-        # Save to database
+        # 1. 儲存生日
         await self.cog.repo.set_birthday(interaction.user.id, month, day, year)
 
-        await interaction.response.send_message(
-            f"已設定生日為 {month}/{day}" + (f" ({year} 年)" if year else ""),
-            ephemeral=True,
-        )
+        response_text = f"已設定生日為 {month:02d}/{day:02d}" + \
+            (f" ({year} 年)" if year else "")
+
+        # 2. 【新增邏輯】如果是初次建立且在伺服器中，自動幫他 Join
+        if self.is_new_user and interaction.guild:
+            settings = await self.cog.repo.get_settings(interaction.guild.id)
+            if settings:
+                await self.cog.repo.subscribe(interaction.guild.id, interaction.user.id)
+                response_text += f"\n已自動為你開啟 **{interaction.guild.name}** 的生日通知！"
+
+        await interaction.response.send_message(response_text, ephemeral=True)
 
 
 class InitSetupView(discord.ui.View):
@@ -272,7 +280,7 @@ class MessageTemplateModal(discord.ui.Modal, title="設定通知訊息"):
 class UpdateSettingsView(discord.ui.View):
     """View for updating existing settings."""
 
-    def __init__(self, cog: "BirthdayCog", settings):
+    def __init__(self, cog: "BirthdayCog", settings: any):
         super().__init__(timeout=300)
         self.cog = cog
         self.settings = settings
@@ -280,9 +288,6 @@ class UpdateSettingsView(discord.ui.View):
     @discord.ui.button(label="修改頻道/身分組", style=discord.ButtonStyle.primary, row=0)
     async def modify_resources(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         view = SelectExistingView(self.cog)
-        # Pre-delete old settings to allow recreation
-        if interaction.guild:
-            await self.cog.repo.delete_settings(interaction.guild.id)
         await interaction.response.edit_message(
             content="請選擇新的頻道和身分組:",
             view=view,
@@ -411,9 +416,10 @@ class BirthdayCog(commands.Cog):
                                              Optional[int]]] = []
 
                 for user_id, birth_year in birthdays:
-                    member = guild.get_member(user_id)
-                    if not member:
-                        continue
+                    try:
+                        member = guild.get_member(user_id) or await guild.fetch_member(user_id)
+                    except (discord.NotFound, discord.HTTPException):
+                        continue  # 找不到人就跳過，繼續處理下一個壽星
 
                     age = self._get_age(birth_year) if birth_year else None
                     members_with_age.append((member, age))
@@ -428,7 +434,7 @@ class BirthdayCog(commands.Cog):
                 if members_with_age:
                     # Format and send message
                     users_str = self._format_birthday_users(members_with_age)
-                    message = f"今天是 {users_str} 的生日!"
+                    message = settings.message_template.format(users=users_str)
 
                     try:
                         await channel.send(message)
@@ -442,7 +448,7 @@ class BirthdayCog(commands.Cog):
 
     @tasks.loop(time=time(hour=15, minute=59))  # 23:59 UTC+8 = 15:59 UTC
     async def birthday_role_cleanup_task(self) -> None:
-        """Remove birthday roles at 23:59 UTC+8."""
+        """Remove birthday roles at 23:59 UTC+8 with rate-limit prevention."""
         if not self._ready:
             return
 
@@ -455,18 +461,23 @@ class BirthdayCog(commands.Cog):
                     continue
 
                 role = guild.get_role(settings.role_id)
-                if not role:
+                if not role or not role.members:  # 如果沒人有這身分組就跳過
                     continue
 
-                # Remove role from all members who have it
+                # 預防性優化：逐一移除並加入微小延遲
                 for member in role.members:
                     try:
                         await member.remove_roles(role, reason="Birthday ended")
+                        # 每次 API 請求後暫停 0.2 秒，避免觸發 Rate Limit
+                        await asyncio.sleep(0.2)
                     except discord.Forbidden:
-                        logger.warning(f"Cannot remove role from {member.id}")
+                        logger.warning(
+                            f"權限不足：無法移除 {guild.id} 中 {member.id} 的身分組")
+                    except discord.HTTPException as e:
+                        logger.error(f"HTTP 錯誤：移除身分組失敗 {e}")
 
         except Exception as e:
-            logger.error(f"Error in birthday role cleanup task: {e}")
+            logger.error(f"生日身分組清理任務發生錯誤: {e}")
 
     @birthday_notify_task.before_loop
     async def before_notify_task(self) -> None:
@@ -532,77 +543,51 @@ class BirthdayCog(commands.Cog):
 
     @bday_group.command(name="set", description="設定你的生日")
     async def bday_set(self, interaction: discord.Interaction) -> None:
-        """Set user's birthday."""
         if not self._ready:
-            await interaction.response.send_message(
-                "功能尚未就緒，請稍後再試",
-                ephemeral=True,
-            )
+            await interaction.response.send_message("功能尚未就緒", ephemeral=True)
             return
 
-        # Get existing data for pre-fill
         existing = await self.repo.get_birthday(interaction.user.id)
 
-        if existing:
-            modal = BirthdayModal(
-                self,
-                current_month=existing.month,
-                current_day=existing.day,
-                current_year=existing.year,
-            )
-        else:
-            modal = BirthdayModal(self)
-
+        # 必要修正：這裡直接決定 Modal 提交後的自動訂閱行為
+        modal = BirthdayModal(
+            self,
+            current_month=existing.month if existing else None,
+            current_day=existing.day if existing else None,
+            current_year=existing.year if existing else None,
+            is_new_user=(existing is None)
+        )
         await interaction.response.send_modal(modal)
 
     @bday_group.command(name="join", description="加入此伺服器的生日通知")
     async def bday_join(self, interaction: discord.Interaction) -> None:
         """Join guild's birthday notifications."""
+        await interaction.response.defer(ephemeral=True)
+
         if not self._ready:
-            await interaction.response.send_message(
-                "功能尚未就緒，請稍後再試",
-                ephemeral=True,
-            )
+            await interaction.followup.send("功能尚未就緒，請稍後再試")
             return
 
         if not interaction.guild:
-            await interaction.response.send_message(
-                "此指令只能在伺服器中使用",
-                ephemeral=True,
-            )
+            await interaction.followup.send("此指令只能在伺服器中使用")
             return
 
-        # Check if guild is initialized
         settings = await self.repo.get_settings(interaction.guild.id)
         if not settings:
-            await interaction.response.send_message(
-                "此伺服器尚未啟用生日功能",
-                ephemeral=True,
-            )
+            await interaction.followup.send("此伺服器尚未啟用生日功能")
             return
 
-        # Check if user has set birthday
         birthday = await self.repo.get_birthday(interaction.user.id)
         if not birthday:
-            await interaction.response.send_message(
-                "請先使用 /bday set 設定你的生日",
-                ephemeral=True,
-            )
+            await interaction.followup.send("請先使用 /bday set 設定你的生日")
             return
 
-        # Check if already subscribed
         if await self.repo.is_subscribed(interaction.guild.id, interaction.user.id):
-            await interaction.response.send_message(
-                "你已經加入此伺服器的生日通知",
-                ephemeral=True,
-            )
+            await interaction.followup.send("你已經加入此伺服器的生日通知")
             return
 
         await self.repo.subscribe(interaction.guild.id, interaction.user.id)
-        await interaction.response.send_message(
-            "已加入此伺服器的生日通知",
-            ephemeral=True,
-        )
+        await interaction.followup.send("已加入此伺服器的生日通知")
 
     @bday_group.command(name="leave", description="退出此伺服器的生日通知")
     async def bday_leave(self, interaction: discord.Interaction) -> None:
@@ -793,79 +778,61 @@ class BirthdayCog(commands.Cog):
 
     @bday_group.command(name="list", description="查看此伺服器的生日列表")
     async def bday_list(self, interaction: discord.Interaction) -> None:
-        """List birthdays in the guild."""
-        if not self._ready:
-            await interaction.response.send_message(
-                "功能尚未就緒，請稍後再試",
-                ephemeral=True,
-            )
+        """List birthdays in the guild with member fetching."""
+        if not self._ready or not interaction.guild:
+            await interaction.response.send_message("功能尚未就緒或無法在私訊使用", ephemeral=True)
             return
 
-        if not interaction.guild:
-            await interaction.response.send_message(
-                "此指令只能在伺服器中使用",
-                ephemeral=True,
-            )
-            return
+        await interaction.response.defer(ephemeral=True)
 
         settings = await self.repo.get_settings(interaction.guild.id)
         if not settings:
-            await interaction.response.send_message(
-                "此伺服器尚未啟用生日功能",
-                ephemeral=True,
-            )
+            await interaction.followup.send("此伺服器尚未啟用生日功能")
             return
 
         now = datetime.now(TZ_UTC8)
-        current_month = now.month
-        current_day = now.day
-
-        # Get this month's birthdays
-        month_birthdays = await self.repo.get_birthdays_in_month(
-            interaction.guild.id, current_month
-        )
-
-        # Get upcoming birthdays
-        upcoming = await self.repo.get_upcoming_birthdays(
-            interaction.guild.id, current_month, current_day, limit=5
-        )
+        month_birthdays = await self.repo.get_birthdays_in_month(interaction.guild.id, now.month)
+        upcoming = await self.repo.get_upcoming_birthdays(interaction.guild.id, now.month, now.day, limit=5)
 
         lines = []
 
-        # This month section
+        # 內部輔助函式：確保能取得成員物件
+        async def fetch_member_safe(uid):
+            m = interaction.guild.get_member(uid)
+            if not m:
+                try:
+                    m = await interaction.guild.fetch_member(uid)
+                except (discord.NotFound, discord.HTTPException):
+                    return None
+            return m
+
+        # 本月區段
         if month_birthdays:
-            lines.append(f"**{current_month} 月壽星**")
+            lines.append(f"**{now.month} 月壽星**")
             lines.append("─" * 15)
-            for user_id, month, day, year in month_birthdays:
-                member = interaction.guild.get_member(user_id)
+            for uid, m, d, y in month_birthdays:
+                member = await fetch_member_safe(uid)
                 if member:
-                    is_me = " (你)" if user_id == interaction.user.id else ""
+                    is_me = " (你)" if uid == interaction.user.id else ""
                     lines.append(
-                        f"{month:02d}/{day:02d}  {member.display_name}{is_me}")
+                        f"{m:02d}/{d:02d} {member.display_name}{is_me}")
             lines.append("")
 
-        # Upcoming section
+        # 即將到來區段
         if upcoming:
             lines.append("**即將到來**")
             lines.append("─" * 15)
-            for user_id, month, day, year in upcoming:
-                member = interaction.guild.get_member(user_id)
+            for uid, m, d, y in upcoming:
+                member = await fetch_member_safe(uid)
                 if member:
-                    is_me = " (你)" if user_id == interaction.user.id else ""
+                    is_me = " (你)" if uid == interaction.user.id else ""
                     lines.append(
-                        f"{month:02d}/{day:02d}  {member.display_name}{is_me}")
+                        f"{m:02d}/{d:02d} {member.display_name}{is_me}")
 
         if not lines:
-            await interaction.response.send_message(
-                "目前沒有生日資料",
-                ephemeral=True,
-            )
-            return
-
-        await interaction.response.send_message(
-            "\n".join(lines),
-            ephemeral=True,
-        )
+            await interaction.followup.send("目前沒有生日資料")
+        else:
+            await interaction.followup.send("\n".join(lines))
 
     # ==================== Event Listeners ====================
 
