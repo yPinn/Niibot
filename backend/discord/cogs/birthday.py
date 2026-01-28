@@ -166,8 +166,9 @@ class InitSetupView(discord.ui.View):
             # Save settings
             await self.cog.repo.create_settings(
                 guild_id=interaction.guild.id,
-                channel_id=channel.id,
-                role_id=role.id,
+                channel_id=self.channel_id,
+                role_id=self.role_id,
+                message_template="今天是 {users} 的生日，請各位送上祝福!"
             )
 
             await interaction.followup.send(
@@ -224,6 +225,7 @@ class SelectExistingView(discord.ui.View):
                 guild_id=interaction.guild.id,
                 channel_id=self.channel_id,
                 role_id=self.role_id,
+                message_template="今天是 {users} 的生日，請各位送上祝福!"
             )
 
             channel = interaction.guild.get_channel(self.channel_id)
