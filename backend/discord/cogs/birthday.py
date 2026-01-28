@@ -75,7 +75,7 @@ class BirthdayModal(discord.ui.Modal, title="設定生日"):
             )
             return
 
-        max_day = calendar.monthrange(2024, month)
+        max_day = calendar.monthrange(2024, month)[1]
 
         if not (1 <= day <= max_day):
             await interaction.response.send_message(
