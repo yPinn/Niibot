@@ -5,11 +5,11 @@ import logging
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Optional
 
-from database import BirthdayRepository, DatabasePool
-from discord.ext import commands, tasks
-
 import discord
 from discord import app_commands
+from discord.ext import commands, tasks
+
+from database import BirthdayRepository, DatabasePool
 
 logger = logging.getLogger(__name__)
 
@@ -235,7 +235,7 @@ class MessageTemplateModal(discord.ui.Modal, title="設定通知訊息"):
 
     template = discord.ui.TextInput(
         label="通知訊息模板 (使用 {users} 代表壽星)",
-        placeholder="今天是 {users} 的生日，請各位送上祝福!",
+        placeholder="今天是 {users} 的生日!",
         required=True,
         style=discord.TextStyle.paragraph,
         max_length=500,
@@ -296,7 +296,8 @@ class UpdateSettingsView(discord.ui.View):
                 ephemeral=True,
             )
 
-        modal = MessageTemplateModal(self.cog, self.settings.message_template, on_template_saved)
+        modal = MessageTemplateModal(
+            self.cog, self.settings.message_template, on_template_saved)
         await interaction.response.send_modal(modal)
 
 
@@ -406,7 +407,8 @@ class BirthdayCog(commands.Cog):
                     continue
 
                 # Get members and assign roles
-                members_with_age: list[tuple[discord.Member, Optional[int]]] = []
+                members_with_age: list[tuple[discord.Member,
+                                             Optional[int]]] = []
 
                 for user_id, birth_year in birthdays:
                     member = guild.get_member(user_id)
@@ -420,12 +422,13 @@ class BirthdayCog(commands.Cog):
                     try:
                         await member.add_roles(role, reason="Birthday")
                     except discord.Forbidden:
-                        logger.warning(f"Cannot add role to {member.id} in {guild.id}")
+                        logger.warning(
+                            f"Cannot add role to {member.id} in {guild.id}")
 
                 if members_with_age:
-                    # Format and send message using template
+                    # Format and send message
                     users_str = self._format_birthday_users(members_with_age)
-                    message = settings.message_template.replace("{users}", users_str)
+                    message = f"今天是 {users_str} 的生日!"
 
                     try:
                         await channel.send(message)
@@ -654,139 +657,139 @@ class BirthdayCog(commands.Cog):
                 ephemeral=True,
             )
 
-    @bday_group.command(name="test", description="測試生日通知 (管理員)")
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def bday_test(self, interaction: discord.Interaction) -> None:
-        """Test birthday notification (admin only)."""
-        if not self._ready:
-            await interaction.response.send_message(
-                "功能尚未就緒，請稍後再試",
-                ephemeral=True,
-            )
-            return
+    # @bday_group.command(name="test", description="測試生日通知 (管理員)")
+    # @app_commands.checks.has_permissions(manage_guild=True)
+    # async def bday_test(self, interaction: discord.Interaction) -> None:
+    #     """Test birthday notification (admin only)."""
+    #     if not self._ready:
+    #         await interaction.response.send_message(
+    #             "功能尚未就緒，請稍後再試",
+    #             ephemeral=True,
+    #         )
+    #         return
 
-        if not interaction.guild:
-            await interaction.response.send_message(
-                "此指令只能在伺服器中使用",
-                ephemeral=True,
-            )
-            return
+    #     if not interaction.guild:
+    #         await interaction.response.send_message(
+    #             "此指令只能在伺服器中使用",
+    #             ephemeral=True,
+    #         )
+    #         return
 
-        settings = await self.repo.get_settings(interaction.guild.id)
-        if not settings:
-            await interaction.response.send_message(
-                "此伺服器尚未啟用生日功能",
-                ephemeral=True,
-            )
-            return
+    #     settings = await self.repo.get_settings(interaction.guild.id)
+    #     if not settings:
+    #         await interaction.response.send_message(
+    #             "此伺服器尚未啟用生日功能",
+    #             ephemeral=True,
+    #         )
+    #         return
 
-        channel = interaction.guild.get_channel(settings.channel_id)
-        role = interaction.guild.get_role(settings.role_id)
+    #     channel = interaction.guild.get_channel(settings.channel_id)
+    #     role = interaction.guild.get_role(settings.role_id)
 
-        if not channel or not isinstance(channel, discord.TextChannel):
-            await interaction.response.send_message(
-                "通知頻道不存在或無效",
-                ephemeral=True,
-            )
-            return
+    #     if not channel or not isinstance(channel, discord.TextChannel):
+    #         await interaction.response.send_message(
+    #             "通知頻道不存在或無效",
+    #             ephemeral=True,
+    #         )
+    #         return
 
-        if not role:
-            await interaction.response.send_message(
-                "生日身分組不存在",
-                ephemeral=True,
-            )
-            return
+    #     if not role:
+    #         await interaction.response.send_message(
+    #             "生日身分組不存在",
+    #             ephemeral=True,
+    #         )
+    #         return
 
-        # Use the command invoker as test subject
-        member = interaction.user
-        if not isinstance(member, discord.Member):
-            return
+    #     # Use the command invoker as test subject
+    #     member = interaction.user
+    #     if not isinstance(member, discord.Member):
+    #         return
 
-        # Get user's actual birthday data for realistic test
-        birthday = await self.repo.get_birthday(member.id)
-        age: Optional[int] = None
-        if birthday and birthday.year:
-            age = self._get_age(birthday.year)
+    #     # Get user's actual birthday data for realistic test
+    #     birthday = await self.repo.get_birthday(member.id)
+    #     age: Optional[int] = None
+    #     if birthday and birthday.year:
+    #         age = self._get_age(birthday.year)
 
-        # Format test message
-        users_str = self._format_birthday_users([(member, age)])
-        message = settings.message_template.replace("{users}", users_str)
+    #     # Format test message
+    #     users_str = self._format_birthday_users([(member, age)])
+    #     message = settings.message_template.replace("{users}", users_str)
 
-        try:
-            # Send test notification
-            await channel.send(f"[測試] {message}")
+    #     try:
+    #         # Send test notification
+    #         await channel.send(f"[測試] {message}")
 
-            # Temporarily assign role
-            await member.add_roles(role, reason="Birthday test")
+    #         # Temporarily assign role
+    #         await member.add_roles(role, reason="Birthday test")
 
-            await interaction.response.send_message(
-                f"已發送測試通知至 {channel.mention}\n"
-                f"已暫時給予 {role.mention} 身分組\n"
-                f"請使用 /bday test_cleanup 移除測試身分組",
-                ephemeral=True,
-            )
-        except discord.Forbidden:
-            await interaction.response.send_message(
-                "Bot 沒有足夠的權限發送訊息或指派身分組",
-                ephemeral=True,
-            )
+    #         await interaction.response.send_message(
+    #             f"已發送測試通知至 {channel.mention}\n"
+    #             f"已暫時給予 {role.mention} 身分組\n"
+    #             f"請使用 /bday test_cleanup 移除測試身分組",
+    #             ephemeral=True,
+    #         )
+    #     except discord.Forbidden:
+    #         await interaction.response.send_message(
+    #             "Bot 沒有足夠的權限發送訊息或指派身分組",
+    #             ephemeral=True,
+    #         )
 
-    @bday_group.command(name="test_cleanup", description="移除測試身分組 (管理員)")
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def bday_test_cleanup(self, interaction: discord.Interaction) -> None:
-        """Remove test birthday role (admin only)."""
-        if not self._ready:
-            await interaction.response.send_message(
-                "功能尚未就緒，請稍後再試",
-                ephemeral=True,
-            )
-            return
+    # @bday_group.command(name="test_cleanup", description="移除測試身分組 (管理員)")
+    # @app_commands.checks.has_permissions(manage_guild=True)
+    # async def bday_test_cleanup(self, interaction: discord.Interaction) -> None:
+    #     """Remove test birthday role (admin only)."""
+    #     if not self._ready:
+    #         await interaction.response.send_message(
+    #             "功能尚未就緒，請稍後再試",
+    #             ephemeral=True,
+    #         )
+    #         return
 
-        if not interaction.guild:
-            await interaction.response.send_message(
-                "此指令只能在伺服器中使用",
-                ephemeral=True,
-            )
-            return
+    #     if not interaction.guild:
+    #         await interaction.response.send_message(
+    #             "此指令只能在伺服器中使用",
+    #             ephemeral=True,
+    #         )
+    #         return
 
-        settings = await self.repo.get_settings(interaction.guild.id)
-        if not settings:
-            await interaction.response.send_message(
-                "此伺服器尚未啟用生日功能",
-                ephemeral=True,
-            )
-            return
+    #     settings = await self.repo.get_settings(interaction.guild.id)
+    #     if not settings:
+    #         await interaction.response.send_message(
+    #             "此伺服器尚未啟用生日功能",
+    #             ephemeral=True,
+    #         )
+    #         return
 
-        role = interaction.guild.get_role(settings.role_id)
-        if not role:
-            await interaction.response.send_message(
-                "生日身分組不存在",
-                ephemeral=True,
-            )
-            return
+    #     role = interaction.guild.get_role(settings.role_id)
+    #     if not role:
+    #         await interaction.response.send_message(
+    #             "生日身分組不存在",
+    #             ephemeral=True,
+    #         )
+    #         return
 
-        member = interaction.user
-        if not isinstance(member, discord.Member):
-            return
+    #     member = interaction.user
+    #     if not isinstance(member, discord.Member):
+    #         return
 
-        if role not in member.roles:
-            await interaction.response.send_message(
-                "你目前沒有生日身分組",
-                ephemeral=True,
-            )
-            return
+    #     if role not in member.roles:
+    #         await interaction.response.send_message(
+    #             "你目前沒有生日身分組",
+    #             ephemeral=True,
+    #         )
+    #         return
 
-        try:
-            await member.remove_roles(role, reason="Birthday test cleanup")
-            await interaction.response.send_message(
-                "已移除測試身分組",
-                ephemeral=True,
-            )
-        except discord.Forbidden:
-            await interaction.response.send_message(
-                "Bot 沒有足夠的權限移除身分組",
-                ephemeral=True,
-            )
+    #     try:
+    #         await member.remove_roles(role, reason="Birthday test cleanup")
+    #         await interaction.response.send_message(
+    #             "已移除測試身分組",
+    #             ephemeral=True,
+    #         )
+    #     except discord.Forbidden:
+    #         await interaction.response.send_message(
+    #             "Bot 沒有足夠的權限移除身分組",
+    #             ephemeral=True,
+    #         )
 
     @bday_group.command(name="list", description="查看此伺服器的生日列表")
     async def bday_list(self, interaction: discord.Interaction) -> None:
@@ -837,7 +840,8 @@ class BirthdayCog(commands.Cog):
                 member = interaction.guild.get_member(user_id)
                 if member:
                     is_me = " (你)" if user_id == interaction.user.id else ""
-                    lines.append(f"{month:02d}/{day:02d}  {member.display_name}{is_me}")
+                    lines.append(
+                        f"{month:02d}/{day:02d}  {member.display_name}{is_me}")
             lines.append("")
 
         # Upcoming section
@@ -848,7 +852,8 @@ class BirthdayCog(commands.Cog):
                 member = interaction.guild.get_member(user_id)
                 if member:
                     is_me = " (你)" if user_id == interaction.user.id else ""
-                    lines.append(f"{month:02d}/{day:02d}  {member.display_name}{is_me}")
+                    lines.append(
+                        f"{month:02d}/{day:02d}  {member.display_name}{is_me}")
 
         if not lines:
             await interaction.response.send_message(
