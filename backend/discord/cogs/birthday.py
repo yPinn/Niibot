@@ -168,7 +168,7 @@ class InitSetupView(discord.ui.View):
                 guild_id=interaction.guild.id,
                 channel_id=self.channel_id,
                 role_id=self.role_id,
-                message_template="今天是 {users} 的生日，請各位送上祝福!"
+                message_template="今天是 {users} 的生日，請各位送上祝福！"
             )
 
             await interaction.followup.send(
@@ -225,7 +225,7 @@ class SelectExistingView(discord.ui.View):
                 guild_id=interaction.guild.id,
                 channel_id=self.channel_id,
                 role_id=self.role_id,
-                message_template="今天是 {users} 的生日，請各位送上祝福!"
+                message_template="今天是 {users} 的生日，請各位送上祝福！"
             )
 
             channel = interaction.guild.get_channel(self.channel_id)
@@ -245,7 +245,7 @@ class MessageTemplateModal(discord.ui.Modal, title="設定通知訊息"):
 
     template = discord.ui.TextInput(
         label="通知訊息模板 (使用 {users} 代表壽星)",
-        placeholder="今天是 {users} 的生日，請各位送上祝福！",
+        placeholder="請輸入訊息內容...(今天是 {users} 的生日！)",
         required=True,
         style=discord.TextStyle.paragraph,
         max_length=500,
