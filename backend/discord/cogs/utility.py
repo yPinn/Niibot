@@ -185,9 +185,9 @@ class Utility(commands.Cog):
         embed.add_field(
             name="【餐點推薦】",
             value=(
-                "`/eat` - 獲得餐點推薦\n"
-                "`/categories` - 查看所有分類\n"
-                "`/menu` - 查看分類菜單"
+                "`/eat` - 餐點推薦選單\n"
+                "`/food cat` - 列出所有分類\n"
+                "`/food show` - 顯示分類內項目"
             ),
             inline=False
         )
@@ -202,13 +202,7 @@ class Utility(commands.Cog):
         # 生日系統
         embed.add_field(
             name="【生日系統】",
-            value=(
-                "`/bday set` - 設定生日\n"
-                "`/bday delete` - 刪除生日\n"
-                "`/bday subscribe` - 訂閱通知\n"
-                "`/bday unsubscribe` - 取消訂閱\n"
-                "`/bday list` - 當月壽星名單"
-            ),
+            value="`/bday menu` - 生日功能選單（設定/訂閱/查看）",
             inline=False
         )
 
@@ -223,8 +217,8 @@ class Utility(commands.Cog):
                     "`/unban` - 解除封鎖\n"
                     "`/mute` - 禁言成員\n"
                     "`/unmute` - 解除禁言\n"
-                    "`/add_food` - 新增餐點\n"
-                    "`/remove_food` - 移除餐點"
+                    "`/food add` - 新增餐點\n"
+                    "`/food remove` - 移除餐點"
                 ),
                 inline=False
             )
@@ -238,10 +232,8 @@ class Utility(commands.Cog):
                     "`/unsetlog` - 取消日誌頻道設定\n"
                     "`/rate_stats` - 查看 API 速率限制統計\n"
                     "`/rate_check` - 檢查速率限制風險\n"
-                    "`/delete_category` - 刪除餐點分類\n"
-                    "`/bday init` - 初始化生日系統\n"
-                    "`/bday config` - 生日系統設定\n"
-                    "`/bday test` - 測試生日通知"
+                    "`/food delete` - 刪除餐點分類\n"
+                    "`/bday init` - 初始化生日系統"
                 ),
                 inline=False
             )
