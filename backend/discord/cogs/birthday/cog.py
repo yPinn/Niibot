@@ -50,17 +50,31 @@ class BirthdayCog(commands.Cog):
         return embed
 
     async def cog_load(self) -> None:
-        try:
-            pool = await DatabasePool.get_pool()
-            self.repo = BirthdayRepository(pool)
-            self._ready = True
-            self.monthly_birthday_list_task.start()
-            self.birthday_notify_task.start()
-            self.birthday_role_cleanup_task.start()
-            logger.info("Birthday cog loaded")
-        except Exception as e:
-            logger.error(f"Failed to load birthday cog: {type(e).__name__}: {e}", exc_info=True)
-            self._ready = False
+        # 非阻塞載入，讓 Bot 先啟動，後台連接資料庫
+        asyncio.create_task(self._connect_db_with_retry())
+
+    async def _connect_db_with_retry(self, max_retries: int = 3, delay: int = 5) -> None:
+        """嘗試連接資料庫，失敗時重試"""
+        for attempt in range(1, max_retries + 1):
+            try:
+                pool = await DatabasePool.get_pool()
+                self.repo = BirthdayRepository(pool)
+                self._ready = True
+                self.monthly_birthday_list_task.start()
+                self.birthday_notify_task.start()
+                self.birthday_role_cleanup_task.start()
+                logger.info("Birthday cog loaded")
+                return
+            except Exception as e:
+                logger.warning(
+                    f"Birthday DB connection failed ({attempt}/{max_retries}): "
+                    f"{type(e).__name__}: {e}"
+                )
+                if attempt < max_retries:
+                    await asyncio.sleep(delay)
+
+        logger.error("Birthday cog failed to connect after all retries")
+        self._ready = False
 
     async def cog_unload(self) -> None:
         self.monthly_birthday_list_task.cancel()

@@ -27,6 +27,8 @@ class DatabasePool:
                 min_size=1,
                 max_size=5,
                 command_timeout=30,
+                timeout=30,  # 連線建立超時
+                ssl="require",  # Supabase 需要 SSL
             )
             logger.info("Database connection pool created")
 
