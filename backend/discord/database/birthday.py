@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Optional
+from typing import Any, Optional
 
 import asyncpg
 
@@ -80,7 +80,7 @@ class BirthdayRepository:
     async def delete_birthday(self, user_id: int) -> bool:
         """Delete a user's birthday. Returns True if deleted."""
         async with self.pool.acquire() as conn:
-            result = await conn.execute(
+            result: str = await conn.execute(
                 "DELETE FROM birthdays WHERE user_id = $1",
                 user_id,
             )
@@ -117,7 +117,7 @@ class BirthdayRepository:
     async def unsubscribe(self, guild_id: int, user_id: int) -> bool:
         """Unsubscribe a user from a guild's birthday notifications."""
         async with self.pool.acquire() as conn:
-            result = await conn.execute(
+            result: str = await conn.execute(
                 """
                 DELETE FROM birthday_subscriptions
                 WHERE guild_id = $1 AND user_id = $2
@@ -193,8 +193,8 @@ class BirthdayRepository:
         enabled: Optional[bool] = None,
     ) -> None:
         """Update guild birthday settings."""
-        updates = []
-        values = []
+        updates: list[str] = []
+        values: list[Any] = []
         param_count = 1
 
         if channel_id is not None:

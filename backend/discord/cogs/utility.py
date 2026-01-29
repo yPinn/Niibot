@@ -199,6 +199,19 @@ class Utility(commands.Cog):
             inline=False
         )
 
+        # 生日系統
+        embed.add_field(
+            name="【生日系統】",
+            value=(
+                "`/bday set` - 設定生日\n"
+                "`/bday delete` - 刪除生日\n"
+                "`/bday subscribe` - 訂閱通知\n"
+                "`/bday unsubscribe` - 取消訂閱\n"
+                "`/bday list` - 當月壽星名單"
+            ),
+            inline=False
+        )
+
         # 管理指令（需要權限）
         if isinstance(interaction.user, discord.Member) and interaction.user.guild_permissions.manage_messages:
             embed.add_field(
@@ -225,7 +238,10 @@ class Utility(commands.Cog):
                     "`/unsetlog` - 取消日誌頻道設定\n"
                     "`/rate_stats` - 查看 API 速率限制統計\n"
                     "`/rate_check` - 檢查速率限制風險\n"
-                    "`/delete_category` - 刪除餐點分類"
+                    "`/delete_category` - 刪除餐點分類\n"
+                    "`/bday init` - 初始化生日系統\n"
+                    "`/bday config` - 生日系統設定\n"
+                    "`/bday test` - 測試生日通知"
                 ),
                 inline=False
             )

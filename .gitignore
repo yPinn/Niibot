@@ -6,9 +6,8 @@
 .claude/
 
 # Environment Variables (all levels)
-.env
-.env.local
-.env.*.local
+.env*
+**/.env*
 # Keep .env.example files for reference
 !.env.example
 !**/.env.example
