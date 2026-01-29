@@ -1,9 +1,10 @@
 import logging
-import os
 from typing import TYPE_CHECKING, Optional
 
 from openai import OpenAI
 from twitchio.ext import commands
+
+from core.config import get_settings
 
 if TYPE_CHECKING:
     from main import Bot
@@ -21,8 +22,9 @@ class AIComponent(commands.Component):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
 
-        api_key = os.getenv("OPENROUTER_API_KEY", "")
-        model = os.getenv("OPENROUTER_MODEL", "")
+        settings = get_settings()
+        api_key = settings.openrouter_api_key
+        model = settings.openrouter_model
 
         if not api_key or api_key.strip() == "":
             raise ValueError(

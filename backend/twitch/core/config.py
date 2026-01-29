@@ -61,6 +61,16 @@ class TwitchBotSettings(BaseSettings):
     conduit_id: str = Field(
         default="", description="Twitch EventSub Conduit ID")
 
+    # Frontend
+    frontend_url: str = Field(
+        default="http://localhost:3000", description="Frontend URL for OAuth")
+
+    # OpenRouter AI
+    openrouter_api_key: str = Field(
+        default="", description="OpenRouter API key")
+    openrouter_model: str = Field(
+        default="tngtech/deepseek-r1t2-chimera:free", description="OpenRouter model")
+
     # Health Check Server
     enable_health_server: bool = Field(
         default=True, description="Enable HTTP health check server")

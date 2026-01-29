@@ -1,9 +1,10 @@
 import logging
-import os
 from typing import TYPE_CHECKING, Optional
 
 import twitchio
 from twitchio.ext import commands
+
+from core.config import get_settings
 
 if TYPE_CHECKING:
     from main import Bot
@@ -19,11 +20,11 @@ class ChannelPointsComponent(commands.Component):
 
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
+        self.settings = get_settings()
 
     def _generate_oauth_url(self) -> str:
         """返回前端登入頁面 URL"""
-        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
-        return f"{frontend_url}/login"
+        return f"{self.settings.frontend_url}/login"
 
     @commands.Component.listener()
     async def event_custom_redemption_add(
@@ -56,7 +57,7 @@ class ChannelPointsComponent(commands.Component):
         """處理兌換事件"""
         reward_title = payload.reward.title.lower()
         user_name = payload.user.display_name or payload.user.name
-        owner_id = os.getenv("OWNER_ID", "")
+        owner_id = self.settings.owner_id
 
         if "niibot" in reward_title and user_name:
             # Niibot 授權只在 owner 頻道有效

@@ -12,47 +12,25 @@ asyncpg>=0.30.0,<1.0.0
 python-dotenv>=1.0.0,<2.0.0
 
 # Configuration Management
-pydantic>=2.0.0,<3.0.0
-pydantic-settings>=2.0.0,<3.0.0
+pydantic>=2.10.0,<3.0.0
+pydantic-settings>=2.7.0,<3.0.0
 
-# === API Server Dependencies ===
+# === API Server ===
+fastapi>=0.115.0,<1.0.0
+uvicorn[standard]>=0.34.0,<1.0.0
+httpx>=0.28.0,<1.0.0
+pyjwt[crypto]>=2.10.0,<3.0.0
 
-# Web Framework
-fastapi>=0.100.0,<1.0.0
-uvicorn[standard]>=0.23.0,<1.0.0
-
-# HTTP Client
-httpx>=0.24.0,<1.0.0
-
-# JWT Authentication
-pyjwt[crypto]>=2.8.0,<3.0.0
-
-# === Twitch Bot Dependencies ===
-
-# TwitchIO - Twitch Bot Framework
+# === Twitch Bot ===
 twitchio>=3.1.0,<4.0.0
+openai>=1.60.0,<3.0.0
+rich>=13.9.0,<14.0.0
 
-# OpenAI API (for OpenRouter)
-openai>=1.0.0,<2.0.0
+# === Discord Bot ===
+discord.py[voice]>=2.5.0,<3.0.0
+aiohttp>=3.11.0,<4.0.0
 
-# Rich Logging - Beautiful terminal output
-rich>=13.0.0,<14.0.0
-
-# === Discord Bot Dependencies ===
-
-# Discord.py - Discord Bot Framework (with voice support)
-discord.py[voice]>=2.3.2,<3.0.0
-
-# Async HTTP Client (for Discord bot features)
-aiohttp>=3.9.0,<4.0.0
-
-# === Development Tools ===
-
-# Static type checker
-mypy>=1.8.0,<2.0.0
-
-# Type stubs
-types-aiofiles>=23.0.0
-
-# Linter and formatter
-ruff>=0.1.0,<1.0.0
+# === Development ===
+mypy>=1.14.0,<2.0.0
+types-aiofiles>=24.0.0
+ruff>=0.9.0,<1.0.0
