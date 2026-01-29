@@ -30,17 +30,22 @@ class HealthCheckServer:
         })
 
     async def handle_health(self, request):
-        if self.bot.is_ready():
-            return web.json_response({
-                "status": "healthy",
-                "bot_ready": True,
-                "latency_ms": round(self.bot.latency * 1000, 2)
-            })
-        else:
-            return web.json_response({
-                "status": "starting",
-                "bot_ready": False
-            }, status=503)
+        # 永遠回傳 200，確保 Render 不會在啟動期間判定失敗
+        # 使用 ?deep=true 進行完整健康檢查
+        deep = request.query.get("deep", "").lower() == "true"
+
+        bot_ready = self.bot.is_ready()
+        response = {
+            "status": "healthy" if bot_ready else "starting",
+            "bot_ready": bot_ready,
+        }
+
+        if bot_ready:
+            response["latency_ms"] = round(self.bot.latency * 1000, 2)
+
+        # 深度檢查時，未就緒才回傳 503
+        status = 503 if deep and not bot_ready else 200
+        return web.json_response(response, status=status)
 
     async def handle_ping(self, request):
         return web.Response(text="pong")

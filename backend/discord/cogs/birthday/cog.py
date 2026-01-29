@@ -59,7 +59,7 @@ class BirthdayCog(commands.Cog):
             self.birthday_role_cleanup_task.start()
             logger.info("Birthday cog loaded")
         except Exception as e:
-            logger.error(f"Failed to load birthday cog: {e}")
+            logger.error(f"Failed to load birthday cog: {type(e).__name__}: {e}", exc_info=True)
             self._ready = False
 
     async def cog_unload(self) -> None:

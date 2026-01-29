@@ -175,46 +175,54 @@ class NiibotClient(commands.Bot):
             else:
                 logger.error(f"載入失敗: {failures}")
 
-        # 同步斜線指令到 Discord
-        try:
+        # 同步斜線指令到 Discord（可透過環境變數控制）
+        sync_commands = os.getenv("DISCORD_SYNC_COMMANDS", "true").lower() == "true"
+        guild_id = os.getenv("DISCORD_GUILD_ID")
+
+        if guild_id:
+            self._sync_guild_id = guild_id
+
+        if not sync_commands:
             if RICH_AVAILABLE:
-                logger.info("[yellow]正在同步斜線指令...[/yellow]")
+                logger.info("[dim]跳過指令同步 (DISCORD_SYNC_COMMANDS=false)[/dim]")
             else:
-                logger.info("正在同步斜線指令...")
-
-            guild_id = os.getenv("DISCORD_GUILD_ID")
-            if guild_id:
-                # 同步到測試伺服器 (更快)
-                guild = discord.Object(id=int(guild_id))
-                self.tree.copy_global_to(guild=guild)
-                synced = await self.tree.sync(guild=guild)
-
-                # 保存 guild_id 供 on_ready 使用
-                self._sync_guild_id = guild_id
-
+                logger.info("跳過指令同步 (DISCORD_SYNC_COMMANDS=false)")
+        else:
+            try:
                 if RICH_AVAILABLE:
-                    logger.info(
-                        f"[magenta]已同步 {len(synced)} 個指令到測試伺服器[/magenta]")
+                    logger.info("[yellow]正在同步斜線指令...[/yellow]")
                 else:
-                    logger.info(f"已同步 {len(synced)} 個指令到測試伺服器")
-            else:
-                # 全域同步 (較慢,可能需要 1 小時生效)
-                synced = await self.tree.sync()
-                if RICH_AVAILABLE:
-                    logger.info(f"[magenta]已全域同步 {len(synced)} 個指令[/magenta]")
-                else:
-                    logger.info(f"已全域同步 {len(synced)} 個指令")
+                    logger.info("正在同步斜線指令...")
 
-        except discord.HTTPException as e:
-            if RICH_AVAILABLE:
-                logger.error(f"[red]指令同步失敗 (HTTP {e.status}):[/red] {e.text}")
-            else:
-                logger.error(f"指令同步失敗 (HTTP {e.status}): {e.text}")
-        except Exception as e:
-            if RICH_AVAILABLE:
-                logger.error(f"[red]指令同步發生錯誤:[/red] {e}")
-            else:
-                logger.error(f"指令同步發生錯誤: {e}")
+                if guild_id:
+                    # 同步到測試伺服器 (更快)
+                    guild = discord.Object(id=int(guild_id))
+                    self.tree.copy_global_to(guild=guild)
+                    synced = await self.tree.sync(guild=guild)
+
+                    if RICH_AVAILABLE:
+                        logger.info(
+                            f"[magenta]已同步 {len(synced)} 個指令到測試伺服器[/magenta]")
+                    else:
+                        logger.info(f"已同步 {len(synced)} 個指令到測試伺服器")
+                else:
+                    # 全域同步 (較慢,可能需要 1 小時生效)
+                    synced = await self.tree.sync()
+                    if RICH_AVAILABLE:
+                        logger.info(f"[magenta]已全域同步 {len(synced)} 個指令[/magenta]")
+                    else:
+                        logger.info(f"已全域同步 {len(synced)} 個指令")
+
+            except discord.HTTPException as e:
+                if RICH_AVAILABLE:
+                    logger.error(f"[red]指令同步失敗 (HTTP {e.status}):[/red] {e.text}")
+                else:
+                    logger.error(f"指令同步失敗 (HTTP {e.status}): {e.text}")
+            except Exception as e:
+                if RICH_AVAILABLE:
+                    logger.error(f"[red]指令同步發生錯誤:[/red] {e}")
+                else:
+                    logger.error(f"指令同步發生錯誤: {e}")
 
         if RICH_AVAILABLE:
             logger.info("[yellow]正在連接 Discord...[/yellow]")
