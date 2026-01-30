@@ -1,15 +1,21 @@
-FROM astral-sh/uv:python3.11-alpine AS builder
-
+# Stage 1: Build
+FROM ghcr.io/astral-sh/uv:0.5.21 AS builder
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-cache --no-install-project
 
-FROM python:3.11-slim
-
+# Stage 2: Run
+FROM python:3.11.10-slim
 WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
 
-COPY . .
+# 依照你的結構：Discord 相關檔案在根目錄與資料夾
+COPY discord/ ./discord/
+COPY data/ ./data/
+COPY bot.py .
+
+RUN mkdir -p /app/data
+
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1
 
