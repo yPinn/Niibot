@@ -4,8 +4,8 @@
     "npx --prefix frontend prettier --write --ignore-unknown"
   ],
   "backend/**/*.py": [
-    "uv run --project backend ruff check --fix",
-    "uv run --project backend ruff format"
+    "uv run --project backend ruff check --fix --config backend/pyproject.toml --cache-dir backend/.cache/ruff",
+    "uv run --project backend ruff format --config backend/pyproject.toml"
   ],
   "docs/**/*.md": [
     "npx --prefix frontend markdownlint --fix",
