@@ -5,17 +5,16 @@ import random
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Optional  # 移除 dict, list 的匯入
+from typing import Any  # 移除 dict, list 的匯入
 
 import asyncpg
-
 from api.core.config import get_settings
 
 # 將父目錄加入路徑以匯入設定
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
-async def seed_test_sessions(channel_id: Optional[str] = None):
+async def seed_test_sessions(channel_id: str | None = None):
     """為過去 30 天建立測試直播會話數據"""
 
     settings = get_settings()
@@ -49,9 +48,15 @@ async def seed_test_sessions(channel_id: Optional[str] = None):
         ]
 
         titles = [
-            "Chill stream with chat", "Learning new strategies", "Ranked grind!",
-            "Viewer games!", "Road to Masters", "Community event",
-            "Practice session", "Late night vibes", "Morning coffee stream",
+            "Chill stream with chat",
+            "Learning new strategies",
+            "Ranked grind!",
+            "Viewer games!",
+            "Road to Masters",
+            "Community event",
+            "Practice session",
+            "Late night vibes",
+            "Morning coffee stream",
             "Weekend marathon",
         ]
 
@@ -66,31 +71,55 @@ async def seed_test_sessions(channel_id: Optional[str] = None):
             days_ago = random.randint(0, 29)
             hour = random.choices(
                 range(24),
-                weights=[1, 1, 1, 1, 1, 1, 2, 3, 4, 5, 6, 7,
-                         8, 9, 10, 11, 12, 10, 8, 6, 5, 4, 3, 2],
-                k=1
+                weights=[
+                    1,
+                    1,
+                    1,
+                    1,
+                    1,
+                    1,
+                    2,
+                    3,
+                    4,
+                    5,
+                    6,
+                    7,
+                    8,
+                    9,
+                    10,
+                    11,
+                    12,
+                    10,
+                    8,
+                    6,
+                    5,
+                    4,
+                    3,
+                    2,
+                ],
+                k=1,
             )[0]
 
-            started_at = now - \
-                timedelta(days=days_ago, hours=hour,
-                          minutes=random.randint(0, 59))
+            started_at = now - timedelta(days=days_ago, hours=hour, minutes=random.randint(0, 59))
             duration_hours = round(random.uniform(1.0, 6.0), 2)
             ended_at = started_at + timedelta(hours=duration_hours)
             game = random.choice(games)
 
-            sessions.append({
-                "channel_id": channel_id,
-                "started_at": started_at,
-                "ended_at": ended_at,
-                "title": random.choice(titles),
-                "game_id": game["id"],
-                "game_name": game["name"],
-                "duration_hours": duration_hours,
-                "total_commands": random.randint(50, 500),
-                "new_follows": random.randint(0, 25),
-                "new_subs": random.randint(0, 10),
-                "raids_received": random.randint(0, 3),
-            })
+            sessions.append(
+                {
+                    "channel_id": channel_id,
+                    "started_at": started_at,
+                    "ended_at": ended_at,
+                    "title": random.choice(titles),
+                    "game_id": game["id"],
+                    "game_name": game["name"],
+                    "duration_hours": duration_hours,
+                    "total_commands": random.randint(50, 500),
+                    "new_follows": random.randint(0, 25),
+                    "new_subs": random.randint(0, 10),
+                    "raids_received": random.randint(0, 3),
+                }
+            )
 
         # 排序
         sessions.sort(key=lambda x: x["started_at"])
@@ -104,11 +133,14 @@ async def seed_test_sessions(channel_id: Optional[str] = None):
                 VALUES ($1, $2, $3, $4, $5, $6)
                 RETURNING id
                 """,
-                s["channel_id"], s["started_at"], s["ended_at"],
-                s["title"], s["game_id"], s["game_name"]
+                s["channel_id"],
+                s["started_at"],
+                s["ended_at"],
+                s["title"],
+                s["game_id"],
+                s["game_name"],
             )
-            print(
-                f"Created session {result['id']}: {s['title']} ({s['game_name']})")
+            print(f"Created session {result['id']}: {s['title']} ({s['game_name']})")
 
         print(f"\nSuccessfully created {len(sessions)} test sessions!")
 
@@ -118,5 +150,5 @@ async def seed_test_sessions(channel_id: Optional[str] = None):
 
 if __name__ == "__main__":
     # 支援命令行參數
-    cli_channel_id: Optional[str] = sys.argv[1] if len(sys.argv) > 1 else None
+    cli_channel_id: str | None = sys.argv[1] if len(sys.argv) > 1 else None
     asyncio.run(seed_test_sessions(cli_channel_id))

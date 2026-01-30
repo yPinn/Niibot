@@ -2,7 +2,6 @@
 
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
 
 import asyncpg
 
@@ -15,7 +14,7 @@ class AnalyticsService:
     def __init__(self, pool: asyncpg.Pool):
         self.pool = pool
 
-    async def get_summary(self, channel_id: str, days: int = 30) -> Dict:
+    async def get_summary(self, channel_id: str, days: int = 30) -> dict:
         """Get analytics summary for a channel"""
         try:
             async with self.pool.acquire() as conn:
@@ -87,9 +86,7 @@ class AnalyticsService:
             logger.exception(f"Failed to get analytics summary: {e}")
             raise
 
-    async def get_session_commands(
-        self, session_id: int, channel_id: str
-    ) -> Optional[List[Dict]]:
+    async def get_session_commands(self, session_id: int, channel_id: str) -> list[dict] | None:
         """Get command stats for a session"""
         try:
             async with self.pool.acquire() as conn:
@@ -127,9 +124,7 @@ class AnalyticsService:
             logger.exception(f"Failed to get session commands: {e}")
             raise
 
-    async def get_session_events(
-        self, session_id: int, channel_id: str
-    ) -> Optional[List[Dict]]:
+    async def get_session_events(self, session_id: int, channel_id: str) -> list[dict] | None:
         """Get events for a session"""
         try:
             async with self.pool.acquire() as conn:
@@ -171,7 +166,7 @@ class AnalyticsService:
 
     async def get_top_commands(
         self, channel_id: str, days: int = 30, limit: int = 10
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """Get top commands across all sessions"""
         try:
             async with self.pool.acquire() as conn:

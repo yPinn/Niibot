@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { type BotStatus, getDiscordBotStatus, getTwitchBotStatus } from '@/api/bots'
+import { API_ENDPOINTS } from '@/api/config'
 import { Icon } from '@/components/ui/icon'
 
 interface ServiceStatus {
@@ -35,7 +36,7 @@ export default function SystemStatus() {
 
       let apiStatus: BotStatus = { online: false }
       try {
-        const response = await fetch('/api/health', { credentials: 'include' })
+        const response = await fetch(API_ENDPOINTS.health, { credentials: 'include' })
         apiStatus = { online: response.ok }
       } catch {
         apiStatus = { online: false }

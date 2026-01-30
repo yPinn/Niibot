@@ -1,8 +1,7 @@
 """JWT authentication service"""
 
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import UTC, datetime, timedelta
 
 import jwt
 
@@ -22,12 +21,12 @@ class AuthService:
 
     def create_access_token(self, user_id: str) -> str:
         """Create a JWT access token for a user"""
-        expire = datetime.now(timezone.utc) + timedelta(days=self.expire_days)
+        expire = datetime.now(UTC) + timedelta(days=self.expire_days)
 
         payload = {
             "user_id": user_id,
             "exp": expire,
-            "iat": datetime.now(timezone.utc),
+            "iat": datetime.now(UTC),
         }
 
         token = jwt.encode(payload, self.secret_key, algorithm=self.algorithm)
@@ -35,7 +34,7 @@ class AuthService:
 
         return token
 
-    def verify_token(self, token: str) -> Optional[str]:
+    def verify_token(self, token: str) -> str | None:
         """Verify a JWT token and return the user_id if valid"""
         try:
             payload = jwt.decode(token, self.secret_key, algorithms=[self.algorithm])

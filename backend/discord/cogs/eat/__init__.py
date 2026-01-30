@@ -1,11 +1,13 @@
 """Eat feature module."""
 
+from discord.ext import commands
+
 from .cog import EatCog
 
 __all__ = ["EatCog", "setup"]
 
 
-async def setup(bot):
+async def setup(bot: commands.Bot) -> None:
     """Extension entry point."""
     cog = EatCog(bot)
 

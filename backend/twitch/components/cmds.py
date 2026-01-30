@@ -1,3 +1,4 @@
+from datetime import UTC
 from typing import TYPE_CHECKING
 
 import twitchio
@@ -19,17 +20,18 @@ class GeneralCommands(commands.Component):
         """Helper to record command usage to analytics"""
         try:
             channel_id = ctx.channel.id
-            if hasattr(self.bot, '_active_sessions') and hasattr(self.bot, 'analytics'):
-                session_id = getattr(self.bot, '_active_sessions').get(channel_id)
+            if hasattr(self.bot, "_active_sessions") and hasattr(self.bot, "analytics"):
+                session_id = self.bot._active_sessions.get(channel_id)
                 if session_id:
-                    analytics = getattr(self.bot, 'analytics')
+                    analytics = self.bot.analytics
                     await analytics.record_command_usage(
                         session_id=session_id,
                         channel_id=channel_id,
-                        command_name=f"!{command_name}"
+                        command_name=f"!{command_name}",
                     )
         except Exception as e:
             from main import LOGGER
+
             LOGGER.error(f"Failed to record command usage: {e}")
 
     @commands.command(aliases=["hello", "hey"])
@@ -61,9 +63,9 @@ class GeneralCommands(commands.Component):
         if streams:
             stream = streams[0]
             if stream.started_at:
-                from datetime import datetime, timezone
+                from datetime import datetime
 
-                now = datetime.now(timezone.utc)
+                now = datetime.now(UTC)
                 uptime = now - stream.started_at
                 hours, remainder = divmod(int(uptime.total_seconds()), 3600)
                 minutes, seconds = divmod(remainder, 60)
@@ -84,30 +86,31 @@ class GeneralCommands(commands.Component):
         LOGGER.info(f"頻道 {payload.broadcaster.name} 開始直播！")
 
         try:
-            if not (hasattr(self.bot, '_active_sessions') and hasattr(self.bot, 'analytics')):
+            if not (hasattr(self.bot, "_active_sessions") and hasattr(self.bot, "analytics")):
                 return
 
             channel_id = payload.broadcaster.id
-            active_sessions = getattr(self.bot, '_active_sessions')
+            active_sessions = self.bot._active_sessions
 
             existing_session = active_sessions.get(channel_id)
             if existing_session:
-                LOGGER.warning(f"Channel {payload.broadcaster.name} already has active session {existing_session}, skipping")
+                LOGGER.warning(
+                    f"Channel {payload.broadcaster.name} already has active session {existing_session}, skipping"
+                )
                 return
 
             streams = await self.bot.fetch_streams(user_ids=[channel_id])
             title = streams[0].title if streams else None
             game_name = streams[0].game_name if streams else None
 
-            analytics = getattr(self.bot, 'analytics')
+            analytics = self.bot.analytics
             session_id = await analytics.create_session(
-                channel_id=channel_id,
-                started_at=datetime.now(),
-                title=title,
-                game_name=game_name
+                channel_id=channel_id, started_at=datetime.now(), title=title, game_name=game_name
             )
             active_sessions[channel_id] = session_id
-            LOGGER.info(f"Created analytics session {session_id} for channel {payload.broadcaster.name}")
+            LOGGER.info(
+                f"Created analytics session {session_id} for channel {payload.broadcaster.name}"
+            )
         except Exception as e:
             LOGGER.error(f"Failed to create analytics session: {e}")
 
@@ -120,18 +123,20 @@ class GeneralCommands(commands.Component):
         LOGGER.info(f"頻道 {payload.broadcaster.name} 結束直播")
 
         try:
-            if not (hasattr(self.bot, '_active_sessions') and hasattr(self.bot, 'analytics')):
+            if not (hasattr(self.bot, "_active_sessions") and hasattr(self.bot, "analytics")):
                 return
 
             channel_id = payload.broadcaster.id
-            active_sessions = getattr(self.bot, '_active_sessions')
+            active_sessions = self.bot._active_sessions
             session_id = active_sessions.get(channel_id)
 
             if session_id:
-                analytics = getattr(self.bot, 'analytics')
+                analytics = self.bot.analytics
                 await analytics.end_session(session_id, datetime.now())
                 del active_sessions[channel_id]
-                LOGGER.info(f"Ended analytics session {session_id} for channel {payload.broadcaster.name}")
+                LOGGER.info(
+                    f"Ended analytics session {session_id} for channel {payload.broadcaster.name}"
+                )
             else:
                 LOGGER.warning(f"No active session found for channel {payload.broadcaster.name}")
         except Exception as e:

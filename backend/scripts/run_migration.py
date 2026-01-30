@@ -19,7 +19,9 @@ async def run_migration(migration_file: str):
     conn = await asyncpg.connect(settings.database_url, statement_cache_size=0)
 
     try:
-        migration_path = Path(__file__).parent.parent / "twitch" / "database" / "migrations" / migration_file
+        migration_path = (
+            Path(__file__).parent.parent / "twitch" / "database" / "migrations" / migration_file
+        )
 
         if not migration_path.exists():
             print(f"Error: Migration file not found: {migration_path}")
@@ -27,7 +29,7 @@ async def run_migration(migration_file: str):
 
         print(f"Running migration: {migration_file}")
 
-        with open(migration_path, 'r', encoding='utf-8') as f:
+        with open(migration_path, encoding="utf-8") as f:
             migration_sql = f.read()
 
         await conn.execute(migration_sql)

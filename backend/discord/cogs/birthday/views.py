@@ -1,6 +1,7 @@
 """Birthday feature UI components."""
 
-from typing import TYPE_CHECKING, Callable, Optional, Union
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 import discord
 
@@ -11,8 +12,8 @@ if TYPE_CHECKING:
 
 
 def create_setup_complete_embed(
-    channel: Optional[Union[discord.abc.GuildChannel, discord.Thread]],
-    role: Optional[discord.Role],
+    channel: discord.abc.GuildChannel | discord.Thread | None,
+    role: discord.Role | None,
 ) -> discord.Embed:
     """建立設定完成 Embed"""
     embed = discord.Embed(title="【設定完成】", color=discord.Color.green())
@@ -57,9 +58,7 @@ class BirthdayModal(discord.ui.Modal, title="設定生日"):
             parts = date_str.split("/")
             month, day = int(parts[0]), int(parts[1])
         except (ValueError, IndexError):
-            await interaction.response.send_message(
-                "日期格式錯誤，請使用 MM/DD", ephemeral=True
-            )
+            await interaction.response.send_message("日期格式錯誤，請使用 MM/DD", ephemeral=True)
             return
 
         year = None
@@ -103,14 +102,10 @@ class MessageTemplateModal(discord.ui.Modal, title="設定通知訊息"):
 
         template = self.template.value.strip()
         if "{users}" not in template:
-            await interaction.response.send_message(
-                "訊息模板必須包含 {users}", ephemeral=True
-            )
+            await interaction.response.send_message("訊息模板必須包含 {users}", ephemeral=True)
             return
 
-        await self.cog.repo.update_settings(
-            interaction.guild.id, message_template=template
-        )
+        await self.cog.repo.update_settings(interaction.guild.id, message_template=template)
         await self._callback(interaction, template)
 
 
@@ -120,8 +115,8 @@ class SelectExistingView(discord.ui.View):
     def __init__(self, cog: "BirthdayCog"):
         super().__init__(timeout=300)
         self.cog = cog
-        self.channel_id: Optional[int] = None
-        self.role_id: Optional[int] = None
+        self.channel_id: int | None = None
+        self.role_id: int | None = None
 
     @discord.ui.select(
         cls=discord.ui.ChannelSelect,
@@ -183,9 +178,7 @@ class InitSetupView(discord.ui.View):
         )
 
     @discord.ui.button(label="自動建立", style=discord.ButtonStyle.secondary)
-    async def create_new(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
+    async def create_new(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         if not interaction.guild:
             return
 
@@ -216,9 +209,7 @@ class InitSetupView(discord.ui.View):
             await interaction.followup.send(embed=embed, ephemeral=True)
 
         except discord.Forbidden:
-            await interaction.followup.send(
-                "Bot 權限不足，無法建立頻道或身分組", ephemeral=True
-            )
+            await interaction.followup.send("Bot 權限不足，無法建立頻道或身分組", ephemeral=True)
         except Exception:
             await interaction.followup.send("建立時發生錯誤", ephemeral=True)
 
@@ -226,7 +217,7 @@ class InitSetupView(discord.ui.View):
 class UpdateSettingsView(discord.ui.View):
     """更新現有設定"""
 
-    def __init__(self, cog: "BirthdayCog", settings):
+    def __init__(self, cog: "BirthdayCog", settings: Any) -> None:
         super().__init__(timeout=300)
         self.cog = cog
         self.settings = settings
@@ -240,22 +231,16 @@ class UpdateSettingsView(discord.ui.View):
             description="請選擇新的頻道和身分組",
             color=BIRTHDAY_COLOR,
         )
-        await interaction.response.edit_message(
-            embed=embed, view=SelectExistingView(self.cog)
-        )
+        await interaction.response.edit_message(embed=embed, view=SelectExistingView(self.cog))
 
     @discord.ui.button(label="修改通知訊息", style=discord.ButtonStyle.secondary)
     async def modify_message(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         async def on_saved(inter: discord.Interaction, template: str) -> None:
-            await inter.response.send_message(
-                f"已更新通知訊息:\n`{template}`", ephemeral=True
-            )
+            await inter.response.send_message(f"已更新通知訊息:\n`{template}`", ephemeral=True)
 
-        modal = MessageTemplateModal(
-            self.cog, self.settings.message_template, on_saved
-        )
+        modal = MessageTemplateModal(self.cog, self.settings.message_template, on_saved)
         await interaction.response.send_modal(modal)
 
 
@@ -281,21 +266,15 @@ class DashboardView(discord.ui.View):
             self.remove_item(self.remove_btn)
 
     @discord.ui.button(label="設定生日", style=discord.ButtonStyle.primary, row=0)
-    async def set_btn(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
+    async def set_btn(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         await interaction.response.send_modal(BirthdayModal(self.cog))
 
     @discord.ui.button(label="查看列表", style=discord.ButtonStyle.secondary, row=0)
-    async def list_btn(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
+    async def list_btn(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         await self.cog.show_birthday_list(interaction)
 
     @discord.ui.button(label="加入通知", style=discord.ButtonStyle.success, row=0)
-    async def toggle_btn(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
+    async def toggle_btn(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         if not interaction.guild:
             return
 
@@ -311,8 +290,6 @@ class DashboardView(discord.ui.View):
             await interaction.response.send_message("已加入通知", ephemeral=True)
 
     @discord.ui.button(label="刪除資料", style=discord.ButtonStyle.danger, row=1)
-    async def remove_btn(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
+    async def remove_btn(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         await self.cog.repo.delete_birthday(interaction.user.id)
         await interaction.response.send_message("已刪除生日資料", ephemeral=True)

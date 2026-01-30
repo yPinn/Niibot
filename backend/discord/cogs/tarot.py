@@ -3,11 +3,10 @@ import random
 from datetime import datetime
 from hashlib import md5
 
-from config import DATA_DIR
-from discord.ext import commands
-
 import discord
+from config import DATA_DIR
 from discord import app_commands
+from discord.ext import commands
 
 
 class Tarot(commands.Cog):
@@ -15,10 +14,10 @@ class Tarot(commands.Cog):
         self.bot = bot
         self._load_data()
 
-    def _load_data(self):
-        with open(DATA_DIR / "tarot.json", "r", encoding="utf-8") as f:
+    def _load_data(self) -> None:
+        with open(DATA_DIR / "tarot.json", encoding="utf-8") as f:
             self.tarot_data = json.load(f)
-        with open(DATA_DIR / "embed.json", "r", encoding="utf-8") as f:
+        with open(DATA_DIR / "embed.json", encoding="utf-8") as f:
             self.global_embed_config = json.load(f)
 
     def _format_quote(self, text: str) -> str:
@@ -27,7 +26,7 @@ class Tarot(commands.Cog):
         """
         if not text:
             return "> -"
-        lines = text.split('\n')
+        lines = text.split("\n")
         # 移除空行並在每行前加上引用符號
         return "\n".join([f"> {line.strip()}" for line in lines if line.strip()])
 
@@ -46,12 +45,14 @@ class Tarot(commands.Cog):
 
     @app_commands.command(name="tarot", description="每日塔羅占卜")
     @app_commands.describe(category="想詢問的主題（可選）")
-    @app_commands.choices(category=[
-        app_commands.Choice(name="綜合運勢", value="general"),
-        app_commands.Choice(name="感情發展", value="love"),
-        app_commands.Choice(name="事業學業", value="career"),
-    ])
-    async def tarot(self, interaction: discord.Interaction, category: str = "general"):
+    @app_commands.choices(
+        category=[
+            app_commands.Choice(name="綜合運勢", value="general"),
+            app_commands.Choice(name="感情發展", value="love"),
+            app_commands.Choice(name="事業學業", value="career"),
+        ]
+    )
+    async def tarot(self, interaction: discord.Interaction, category: str = "general") -> None:
         try:
             user_id = interaction.user.id
             card_id, is_reversed = self._get_daily_card(user_id)
@@ -71,8 +72,7 @@ class Tarot(commands.Cog):
                 color_hex = self.tarot_data["colors"]["upright"]
 
             # 抓取對應主題的牌義 (如果主題不存在則回退到綜合解析)
-            meaning_raw = card_info["meanings"].get(
-                category, card_info["meanings"]["general"])
+            meaning_raw = card_info["meanings"].get(category, card_info["meanings"]["general"])
             keywords = "、".join(card_info["keywords"])
             advice_raw = card_info.get("advice", "靜心思考這張牌對你今天的意義。")
 
@@ -96,9 +96,8 @@ class Tarot(commands.Cog):
             if author_name:
                 embed.set_author(
                     name=author_name,
-                    icon_url=tarot_author.get(
-                        "icon_url") or global_author.get("icon_url"),
-                    url=tarot_author.get("url") or global_author.get("url")
+                    icon_url=tarot_author.get("icon_url") or global_author.get("icon_url"),
+                    url=tarot_author.get("url") or global_author.get("url"),
                 )
 
             # 設置牌面圖片
@@ -106,16 +105,12 @@ class Tarot(commands.Cog):
                 embed.set_image(url=card_data["image_url"])
 
             # 主題標籤轉換
-            cat_label = {"general": "綜合", "love": "感情",
-                         "career": "事業"}.get(category, "綜合")
+            cat_label = {"general": "綜合", "love": "感情", "career": "事業"}.get(category, "綜合")
 
             # Field 設置
-            embed.add_field(
-                name="**關鍵字**", value=f"> {keywords}", inline=False)
-            embed.add_field(name=f"**{cat_label}解析**",
-                            value=formatted_meaning, inline=False)
-            embed.add_field(name="**今日建議**",
-                            value=formatted_advice, inline=False)
+            embed.add_field(name="**關鍵字**", value=f"> {keywords}", inline=False)
+            embed.add_field(name=f"**{cat_label}解析**", value=formatted_meaning, inline=False)
+            embed.add_field(name="**今日建議**", value=formatted_advice, inline=False)
 
             # 頁尾資訊處理
             tarot_footer = self.tarot_data["embed"].get("footer", {})
@@ -124,8 +119,7 @@ class Tarot(commands.Cog):
             if footer_text:
                 embed.set_footer(
                     text=footer_text,
-                    icon_url=tarot_footer.get(
-                        "icon_url") or global_footer.get("icon_url")
+                    icon_url=tarot_footer.get("icon_url") or global_footer.get("icon_url"),
                 )
 
             await interaction.response.send_message(embed=embed)
@@ -136,5 +130,5 @@ class Tarot(commands.Cog):
             )
 
 
-async def setup(bot: commands.Bot):
+async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(Tarot(bot))

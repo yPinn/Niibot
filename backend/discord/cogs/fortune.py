@@ -4,11 +4,10 @@ import json
 import random
 from datetime import datetime
 
-from config import DATA_DIR
-from discord.ext import commands
-
 import discord
+from config import DATA_DIR
 from discord import app_commands
+from discord.ext import commands
 
 
 class Fortune(commands.Cog):
@@ -16,18 +15,16 @@ class Fortune(commands.Cog):
         self.bot = bot
         self._load_data()
 
-    def _load_data(self):
-        with open(DATA_DIR / "fortune.json", "r", encoding="utf-8") as f:
+    def _load_data(self) -> None:
+        with open(DATA_DIR / "fortune.json", encoding="utf-8") as f:
             self.fortune_data = json.load(f)
-        with open(DATA_DIR / "embed.json", "r", encoding="utf-8") as f:
+        with open(DATA_DIR / "embed.json", encoding="utf-8") as f:
             self.global_embed_config = json.load(f)
 
     def _get_fortune_level(self, date_modifier: float = 1.0) -> str:
         levels = list(self.fortune_data["fortune_levels"].keys())
         weights = [
-            self.fortune_data["fortune_levels"][level]["weight"] *
-            date_modifier
-            for level in levels
+            self.fortune_data["fortune_levels"][level]["weight"] * date_modifier for level in levels
         ]
         result = random.choices(levels, weights=weights, k=1)[0]
         return str(result)
@@ -43,7 +40,7 @@ class Fortune(commands.Cog):
         return None, 1.0
 
     @app_commands.command(name="fortune", description="今日運勢")
-    async def fortune(self, interaction: discord.Interaction):
+    async def fortune(self, interaction: discord.Interaction) -> None:
         try:
             special_event, date_modifier = self._get_date_bonus()
 
@@ -78,13 +75,12 @@ class Fortune(commands.Cog):
             fortune_author = self.fortune_data["embed"].get("author", {})
             global_author = self.global_embed_config.get("author", {})
 
-            author_name = fortune_author.get(
-                "name") or global_author.get("name")
+            author_name = fortune_author.get("name") or global_author.get("name")
             if author_name:
-                author_icon = fortune_author.get(
-                    "icon_url") or global_author.get("icon_url") or None
-                author_url = fortune_author.get(
-                    "url") or global_author.get("url") or None
+                author_icon = (
+                    fortune_author.get("icon_url") or global_author.get("icon_url") or None
+                )
+                author_url = fortune_author.get("url") or global_author.get("url") or None
                 embed.set_author(
                     name=author_name,
                     icon_url=author_icon,
@@ -118,20 +114,18 @@ class Fortune(commands.Cog):
             fortune_footer = self.fortune_data["embed"].get("footer", {})
             global_footer = self.global_embed_config.get("footer", {})
 
-            footer_text = fortune_footer.get(
-                "text") or global_footer.get("text")
+            footer_text = fortune_footer.get("text") or global_footer.get("text")
             if footer_text:
-                footer_icon = fortune_footer.get(
-                    "icon_url") or global_footer.get("icon_url") or None
+                footer_icon = (
+                    fortune_footer.get("icon_url") or global_footer.get("icon_url") or None
+                )
                 embed.set_footer(text=footer_text, icon_url=footer_icon)
 
             await interaction.response.send_message(embed=embed)
 
         except Exception as e:
-            await interaction.response.send_message(
-                f"占卜過程中發生神秘干擾: {e}", ephemeral=True
-            )
+            await interaction.response.send_message(f"占卜過程中發生神秘干擾: {e}", ephemeral=True)
 
 
-async def setup(bot: commands.Bot):
+async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(Fortune(bot))

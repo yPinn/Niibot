@@ -8,17 +8,18 @@ from pathlib import Path
 
 import asyncpg
 import httpx
+from core.config import BOT_SCOPES, BROADCASTER_SCOPES
 
 # Add parent directory to path to import config
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 try:
     from dotenv import load_dotenv
+
     load_dotenv()
 except ImportError:
     pass
 
-from core.config import BOT_SCOPES, BROADCASTER_SCOPES
 
 BOT_SCOPES_SET = set(BOT_SCOPES)
 BROADCASTER_SCOPES_SET = set(BROADCASTER_SCOPES)
@@ -58,41 +59,33 @@ async def main():
             try:
                 r = await client.get(
                     "https://id.twitch.tv/oauth2/validate",
-                    headers={"Authorization": f"OAuth {token}"}
+                    headers={"Authorization": f"OAuth {token}"},
                 )
 
                 if r.status_code == 200:
                     d = r.json()
                     scopes = set(d.get("scopes", []))
                     role = identify_role(scopes)
-                    tokens_data.append({
-                        "uid": uid,
-                        "login": d.get("login", "?"),
-                        "scopes": scopes,
-                        "role": role,
-                        "status": "ok"
-                    })
+                    tokens_data.append(
+                        {
+                            "uid": uid,
+                            "login": d.get("login", "?"),
+                            "scopes": scopes,
+                            "role": role,
+                            "status": "ok",
+                        }
+                    )
                 elif r.status_code == 401:
-                    tokens_data.append({
-                        "uid": uid,
-                        "status": "expired"
-                    })
+                    tokens_data.append({"uid": uid, "status": "expired"})
                 else:
-                    tokens_data.append({
-                        "uid": uid,
-                        "status": f"error_{r.status_code}"
-                    })
+                    tokens_data.append({"uid": uid, "status": f"error_{r.status_code}"})
             except Exception as e:
-                tokens_data.append({
-                    "uid": uid,
-                    "status": f"exception: {e}"
-                })
+                tokens_data.append({"uid": uid, "status": f"exception: {e}"})
 
     await conn.close()
 
     # Bot 優先顯示
-    tokens_data.sort(key=lambda x: (
-        0 if x.get("role") == "Bot" else 1, x["uid"]))
+    tokens_data.sort(key=lambda x: (0 if x.get("role") == "Bot" else 1, x["uid"]))
 
     for data in tokens_data:
         if data["status"] == "ok":

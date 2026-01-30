@@ -2,52 +2,32 @@
 
 import json
 import random
-from typing import Any
-
-from config import DATA_DIR
-from discord.ext import commands
 
 import discord
+from config import DATA_DIR
 from discord import app_commands, ui
-
-
-class EightBallModal(ui.Modal, title="神奇8號球"):
-    question: Any = ui.TextInput(
-        label="你的問題",
-        placeholder="輸入你想問的問題...",
-        max_length=200,
-    )
-
-    def __init__(self, responses: list[str]):
-        super().__init__()
-        self.responses = responses
-
-    async def on_submit(self, interaction: discord.Interaction):
-        answer = random.choice(self.responses)
-        embed = discord.Embed(title="神奇8號球", color=discord.Color.blue())
-        embed.add_field(name="問題", value=self.question.value, inline=False)
-        embed.add_field(name="答案", value=answer, inline=False)
-
-        await interaction.response.send_message(embed=embed)
+from discord.ext import commands
 
 
 class RPSView(ui.View):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__(timeout=60)
 
     @ui.button(label="石頭", style=discord.ButtonStyle.secondary)
-    async def rock(self, interaction: discord.Interaction, button: ui.Button):
+    async def rock(self, interaction: discord.Interaction, button: ui.Button["RPSView"]) -> None:
         await self.play_rps(interaction, "石頭")
 
     @ui.button(label="剪刀", style=discord.ButtonStyle.secondary)
-    async def scissors(self, interaction: discord.Interaction, button: ui.Button):
+    async def scissors(
+        self, interaction: discord.Interaction, button: ui.Button["RPSView"]
+    ) -> None:
         await self.play_rps(interaction, "剪刀")
 
     @ui.button(label="布", style=discord.ButtonStyle.secondary)
-    async def paper(self, interaction: discord.Interaction, button: ui.Button):
+    async def paper(self, interaction: discord.Interaction, button: ui.Button["RPSView"]) -> None:
         await self.play_rps(interaction, "布")
 
-    async def play_rps(self, interaction: discord.Interaction, choice: str):
+    async def play_rps(self, interaction: discord.Interaction, choice: str) -> None:
         bot_choice = random.choice(["石頭", "剪刀", "布"])
 
         if choice == bot_choice:
@@ -73,11 +53,13 @@ class RPSView(ui.View):
 
 
 class CoinFlipView(ui.View):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__(timeout=60)
 
     @ui.button(label="再擲一次", style=discord.ButtonStyle.primary)
-    async def flip_again(self, interaction: discord.Interaction, button: ui.Button):
+    async def flip_again(
+        self, interaction: discord.Interaction, button: ui.Button["CoinFlipView"]
+    ) -> None:
         result = random.choice(["正面", "反面"])
         embed = discord.Embed(title="擲硬幣", color=discord.Color.blue())
         embed.add_field(name="結果", value=result, inline=False)
@@ -108,7 +90,7 @@ class RouletteView(ui.View):
         return embed
 
     @ui.button(label="扣下扳機", style=discord.ButtonStyle.danger)
-    async def pull_trigger(self, interaction: discord.Interaction, button: ui.Button):
+    async def pull_trigger(self, interaction: discord.Interaction, button: ui.Button) -> None:
         if interaction.user.id != self.user_id:
             await interaction.response.send_message("這不是你的遊戲", ephemeral=True)
             return
@@ -120,9 +102,7 @@ class RouletteView(ui.View):
             embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
             embed.add_field(
-                name="**結果**",
-                value=f"> {interaction.user.display_name} 中彈身亡",
-                inline=False
+                name="**結果**", value=f"> {interaction.user.display_name} 中彈身亡", inline=False
             )
             embed.add_field(name="**回合數**", value=f"> {self.chamber_position}/6", inline=True)
 
@@ -137,9 +117,11 @@ class RouletteView(ui.View):
                 embed.add_field(
                     name="**結果**",
                     value=f"> {interaction.user.display_name} 存活到最後",
-                    inline=False
+                    inline=False,
                 )
-                embed.add_field(name="**回合數**", value=f"> {self.chamber_position}/6", inline=True)
+                embed.add_field(
+                    name="**回合數**", value=f"> {self.chamber_position}/6", inline=True
+                )
 
                 button.disabled = True
                 self.stop()
@@ -148,15 +130,15 @@ class RouletteView(ui.View):
                 embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
                 embed.add_field(
-                    name="**結果**",
-                    value=f"> {interaction.user.display_name} 倖存",
-                    inline=False
+                    name="**結果**", value=f"> {interaction.user.display_name} 倖存", inline=False
                 )
-                embed.add_field(name="**回合數**", value=f"> {self.chamber_position}/6", inline=True)
+                embed.add_field(
+                    name="**回合數**", value=f"> {self.chamber_position}/6", inline=True
+                )
 
             await interaction.response.edit_message(embed=embed, view=self)
 
-    async def on_timeout(self):
+    async def on_timeout(self) -> None:
         for item in self.children:
             if isinstance(item, ui.Button):
                 item.disabled = True
@@ -167,17 +149,15 @@ class Games(commands.Cog):
         self.bot = bot
         self._load_data()
 
-    def _load_data(self):
-        with open(DATA_DIR / "games.json", "r", encoding="utf-8") as f:
+    def _load_data(self) -> None:
+        with open(DATA_DIR / "games.json", encoding="utf-8") as f:
             self.games_data = json.load(f)
-        with open(DATA_DIR / "embed.json", "r", encoding="utf-8") as f:
+        with open(DATA_DIR / "embed.json", encoding="utf-8") as f:
             self.global_embed_config = json.load(f)
-        with open(DATA_DIR / "8ball_responses.json", "r", encoding="utf-8") as f:
-            self.eightball_data = json.load(f)
 
     @app_commands.command(name="roll", description="擲骰子")
     @app_commands.describe(sides="骰子面數")
-    async def roll(self, interaction: discord.Interaction, sides: int = 6):
+    async def roll(self, interaction: discord.Interaction, sides: int = 6) -> None:
         if sides < 2:
             await interaction.response.send_message("骰子至少要有 2 面", ephemeral=True)
             return
@@ -187,7 +167,7 @@ class Games(commands.Cog):
 
     @app_commands.command(name="choose", description="隨機選擇")
     @app_commands.describe(options="選項（用空格分隔）")
-    async def choose(self, interaction: discord.Interaction, options: str):
+    async def choose(self, interaction: discord.Interaction, options: str) -> None:
         choices = options.split()
         if len(choices) < 2:
             await interaction.response.send_message("請提供至少 2 個選項", ephemeral=True)
@@ -196,12 +176,8 @@ class Games(commands.Cog):
         result = random.choice(choices)
         await interaction.response.send_message(f"我選擇: {result}")
 
-    @app_commands.command(name="8ball", description="神奇8號球")
-    async def eight_ball(self, interaction: discord.Interaction):
-        await interaction.response.send_modal(EightBallModal(self.eightball_data["responses"]))
-
     @app_commands.command(name="coinflip", description="擲硬幣")
-    async def coinflip(self, interaction: discord.Interaction):
+    async def coinflip(self, interaction: discord.Interaction) -> None:
         result = random.choice(["正面", "反面"])
         embed = discord.Embed(title="擲硬幣", color=discord.Color.blue())
         embed.add_field(name="結果", value=result, inline=False)
@@ -209,7 +185,7 @@ class Games(commands.Cog):
         await interaction.response.send_message(embed=embed, view=CoinFlipView())
 
     @app_commands.command(name="rps", description="猜拳遊戲")
-    async def rock_paper_scissors(self, interaction: discord.Interaction):
+    async def rock_paper_scissors(self, interaction: discord.Interaction) -> None:
         embed = discord.Embed(
             title="猜拳遊戲",
             description="點擊下方按鈕選擇你的出拳",
@@ -219,7 +195,7 @@ class Games(commands.Cog):
         await interaction.response.send_message(embed=embed, view=RPSView())
 
     @app_commands.command(name="roulette", description="俄羅斯輪盤")
-    async def roulette(self, interaction: discord.Interaction):
+    async def roulette(self, interaction: discord.Interaction) -> None:
         embed = discord.Embed(
             title="俄羅斯輪盤",
             color=discord.Color.orange(),
@@ -236,9 +212,7 @@ class Games(commands.Cog):
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
         embed.add_field(
-            name="**遊戲規則**",
-            value="> 彈匣中有 6 個位置，其中 1 發子彈",
-            inline=False
+            name="**遊戲規則**", value="> 彈匣中有 6 個位置，其中 1 發子彈", inline=False
         )
         embed.add_field(name="**回合數**", value="> 1/6", inline=True)
 
@@ -247,5 +221,5 @@ class Games(commands.Cog):
         )
 
 
-async def setup(bot: commands.Bot):
+async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(Games(bot))

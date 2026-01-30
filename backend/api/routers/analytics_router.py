@@ -2,7 +2,6 @@
 
 import logging
 from datetime import datetime
-from typing import List, Optional
 
 from core.dependencies import get_analytics_service, get_current_user_id, get_db_pool
 from fastapi import APIRouter, Depends, HTTPException
@@ -22,10 +21,10 @@ class SessionSummary(BaseModel):
     session_id: int
     channel_id: str
     started_at: datetime
-    ended_at: Optional[datetime]
-    title: Optional[str]
-    game_name: Optional[str]
-    game_id: Optional[str]
+    ended_at: datetime | None
+    title: str | None
+    game_name: str | None
+    game_id: str | None
     duration_hours: float
     total_commands: int
     new_follows: int
@@ -41,10 +40,10 @@ class CommandStat(BaseModel):
 
 class StreamEvent(BaseModel):
     event_type: str
-    user_id: Optional[str]
-    username: Optional[str]
-    display_name: Optional[str]
-    metadata: Optional[dict]
+    user_id: str | None
+    username: str | None
+    display_name: str | None
+    metadata: dict | None
     occurred_at: datetime
 
 
@@ -55,7 +54,7 @@ class AnalyticsSummary(BaseModel):
     total_follows: int
     total_subs: int
     avg_session_duration: float
-    recent_sessions: List[SessionSummary]
+    recent_sessions: list[SessionSummary]
 
 
 # ============================================
@@ -84,14 +83,14 @@ async def get_analytics_summary(
 
     except Exception as e:
         logger.exception(f"Failed to get analytics summary: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch analytics")
+        raise HTTPException(status_code=500, detail="Failed to fetch analytics") from None
 
 
-@router.get("/sessions/{session_id}/commands", response_model=List[CommandStat])
+@router.get("/sessions/{session_id}/commands", response_model=list[CommandStat])
 async def get_session_commands(
     session_id: int,
     user_id: str = Depends(get_current_user_id),
-) -> List[CommandStat]:
+) -> list[CommandStat]:
     """
     Get command statistics for a specific session
 
@@ -112,14 +111,14 @@ async def get_session_commands(
         raise
     except Exception as e:
         logger.exception(f"Failed to get session commands: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch commands")
+        raise HTTPException(status_code=500, detail="Failed to fetch commands") from None
 
 
-@router.get("/sessions/{session_id}/events", response_model=List[StreamEvent])
+@router.get("/sessions/{session_id}/events", response_model=list[StreamEvent])
 async def get_session_events(
     session_id: int,
     user_id: str = Depends(get_current_user_id),
-) -> List[StreamEvent]:
+) -> list[StreamEvent]:
     """
     Get events for a specific session
 
@@ -140,15 +139,15 @@ async def get_session_events(
         raise
     except Exception as e:
         logger.exception(f"Failed to get session events: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch events")
+        raise HTTPException(status_code=500, detail="Failed to fetch events") from None
 
 
-@router.get("/top-commands", response_model=List[CommandStat])
+@router.get("/top-commands", response_model=list[CommandStat])
 async def get_top_commands(
     days: int = 30,
     limit: int = 10,
     user_id: str = Depends(get_current_user_id),
-) -> List[CommandStat]:
+) -> list[CommandStat]:
     """
     Get top commands across all sessions
 
@@ -166,4 +165,4 @@ async def get_top_commands(
 
     except Exception as e:
         logger.exception(f"Failed to get top commands: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch top commands")
+        raise HTTPException(status_code=500, detail="Failed to fetch top commands") from None

@@ -1,7 +1,6 @@
 """Channel management API routes"""
 
 import logging
-from typing import List
 
 from core.dependencies import (
     get_channel_service,
@@ -53,11 +52,11 @@ class ToggleResponse(BaseModel):
 # ============================================
 
 
-@router.get("/twitch/monitored", response_model=List[ChannelInfo])
+@router.get("/twitch/monitored", response_model=list[ChannelInfo])
 async def get_monitored_channels(
     user_id: str = Depends(get_current_user_id),
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
-) -> List[ChannelInfo]:
+) -> list[ChannelInfo]:
     """Get list of monitored channels with their live status"""
     try:
         # Get database pool and channel service
@@ -117,7 +116,7 @@ async def get_monitored_channels(
 
     except Exception as e:
         logger.exception(f"Failed to get monitored channels: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch channels")
+        raise HTTPException(status_code=500, detail="Failed to fetch channels") from None
 
 
 @router.get("/twitch/my-status", response_model=ChannelStatusResponse)
@@ -133,7 +132,7 @@ async def get_my_channel_status(
 
     except Exception as e:
         logger.exception(f"Failed to get channel status: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch status")
+        raise HTTPException(status_code=500, detail="Failed to fetch status") from None
 
 
 @router.post("/twitch/toggle", response_model=ToggleResponse)
@@ -158,4 +157,4 @@ async def toggle_channel(
         raise
     except Exception as e:
         logger.exception(f"Failed to toggle channel: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from None

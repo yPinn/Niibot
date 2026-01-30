@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 import asyncpg
 import twitchio
 from core import (
+    COMPONENTS_DIR,
     get_channel_subscriptions,
     load_env_config,
     setup_database_schema,
@@ -80,19 +81,25 @@ class Bot(commands.AutoBot):
             )
 
     async def setup_hook(self) -> None:
-        await self.load_module("components.owner_cmds")
-        await self.load_module("components.cmds")
-        await self.load_module("components.chat_gpt")
-        await self.load_module("components.channel_points")
-        await self.load_module("components.event")
-        await self.load_module("components.tft")
-        await self.load_module("components.sukaoMao")
+        # 1. 自動載入 components 資料夾下的所有模組
+        if COMPONENTS_DIR.exists():
+            for file in COMPONENTS_DIR.glob("*.py"):
+                if file.stem == "__init__":
+                    continue
 
-        # Start background tasks
+                # 組合成 components.ai 這種格式
+                module_name = f"components.{file.stem}"
+                try:
+                    await self.load_module(module_name)
+                    # print(f"Successfully loaded component: {module_name}")
+                except Exception as e:
+                    print(f"Failed to load component {module_name}: {e}")
+
+        # 2. 啟動背景任務
         asyncio.create_task(self.check_new_tokens_and_channels_task())
         asyncio.create_task(self.listen_channel_toggle_notifications())
 
-        # Start HTTP health check server (non-blocking)
+        # 3. 啟動 HTTP 健康檢查伺服器
         if self.health_server:
             asyncio.create_task(self.health_server.start())
 
@@ -115,25 +122,18 @@ class Bot(commands.AutoBot):
                 await self.add_channel_to_db(user.id, user.name)
 
             if payload.user_id == self.owner_id:
-                LOGGER.info(
-                    f"Owner channel authorized and added: {user.name} (ID: {user.id})"
-                )
+                LOGGER.info(f"Owner channel authorized and added: {user.name} (ID: {user.id})")
             else:
-                LOGGER.info(
-                    f"Channel authorized and added: {user.name} (ID: {user.id})"
-                )
+                LOGGER.info(f"Channel authorized and added: {user.name} (ID: {user.id})")
 
         if payload.user_id not in self._subscribed_channels:
             await self.subscribe_channel_events(payload.user_id)
         else:
-            LOGGER.debug(
-                f"Channel {payload.user_id} already subscribed, skipping")
+            LOGGER.debug(f"Channel {payload.user_id} already subscribed, skipping")
 
     async def event_message(self, payload: twitchio.ChatMessage) -> None:
         if payload.broadcaster:
-            LOGGER.debug(
-                f"[{payload.chatter.name}#{payload.broadcaster.name}]: {payload.text}"
-            )
+            LOGGER.debug(f"[{payload.chatter.name}#{payload.broadcaster.name}]: {payload.text}")
 
             broadcaster_id = payload.broadcaster.id
             async with self._channel_states_lock:
@@ -152,9 +152,7 @@ class Bot(commands.AutoBot):
     async def add_token(
         self, token: str, refresh: str
     ) -> twitchio.authentication.ValidateTokenPayload:
-        resp: twitchio.authentication.ValidateTokenPayload = await super().add_token(
-            token, refresh
-        )
+        resp: twitchio.authentication.ValidateTokenPayload = await super().add_token(token, refresh)
 
         query = """
         INSERT INTO tokens (user_id, token, refresh)
@@ -174,31 +172,33 @@ class Bot(commands.AutoBot):
 
     async def load_tokens(self, path: str | None = None) -> None:
         async with self.token_database.acquire() as connection:
-            rows: list[asyncpg.Record] = await connection.fetch(
-                """SELECT * from tokens"""
-            )
+            rows: list[asyncpg.Record] = await connection.fetch("""SELECT * from tokens""")
 
         for row in rows:
-            user_info = await self.add_token(row["token"], row["refresh"])
+            try:
+                user_info = await self.add_token(row["token"], row["refresh"])
+            except twitchio.exceptions.InvalidTokenException as e:
+                LOGGER.warning(
+                    f"Invalid token for user_id {row['user_id']}, skipping. "
+                    f"User needs to re-authenticate: {e}"
+                )
+                continue
 
             try:
                 await self.add_channel_to_db(row["user_id"], user_info.login or "unknown")
             except Exception as e:
-                LOGGER.error(
-                    f"Failed to add channel for user_id {row['user_id']}: {e}")
+                LOGGER.error(f"Failed to add channel for user_id {row['user_id']}: {e}")
 
     async def listen_channel_toggle_notifications(self) -> None:
-        LOGGER.info(
-            "Starting PostgreSQL LISTEN for channel toggle notifications...")
+        LOGGER.info("Starting PostgreSQL LISTEN for channel toggle notifications...")
 
         while True:
             connection = None
             try:
                 connection = await self.token_database.acquire()
                 try:
-                    await connection.add_listener('channel_toggle', self._handle_channel_toggle)
-                    LOGGER.info(
-                        "PostgreSQL LISTEN active on 'channel_toggle' channel")
+                    await connection.add_listener("channel_toggle", self._handle_channel_toggle)
+                    LOGGER.info("PostgreSQL LISTEN active on 'channel_toggle' channel")
 
                     while True:
                         await asyncio.sleep(60)
@@ -207,7 +207,9 @@ class Bot(commands.AutoBot):
                 except asyncio.CancelledError:
                     LOGGER.info("PostgreSQL LISTEN shutting down...")
                     try:
-                        await connection.remove_listener('channel_toggle', self._handle_channel_toggle)
+                        await connection.remove_listener(
+                            "channel_toggle", self._handle_channel_toggle
+                        )
                     except Exception:
                         pass
                     raise
@@ -217,10 +219,8 @@ class Bot(commands.AutoBot):
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                LOGGER.error(
-                    f"Error in listen_channel_toggle_notifications: {e}")
-                LOGGER.warning(
-                    "Reconnecting to PostgreSQL LISTEN in 10 seconds...")
+                LOGGER.error(f"Error in listen_channel_toggle_notifications: {e}")
+                LOGGER.warning("Reconnecting to PostgreSQL LISTEN in 10 seconds...")
                 try:
                     await asyncio.sleep(10)
                 except asyncio.CancelledError:
@@ -230,41 +230,35 @@ class Bot(commands.AutoBot):
         import json
 
         try:
-            LOGGER.info(
-                f"[NOTIFY] Received raw notification on channel '{channel}': {payload}")
+            LOGGER.info(f"[NOTIFY] Received raw notification on channel '{channel}': {payload}")
 
             data = json.loads(payload)
-            channel_id = data['channel_id']
-            enabled = data['enabled']
+            channel_id = data["channel_id"]
+            enabled = data["enabled"]
 
             if channel_id == BOT_ID:
-                LOGGER.debug(
-                    f"[NOTIFY] Ignoring toggle for bot's own channel: {channel_id}")
+                LOGGER.debug(f"[NOTIFY] Ignoring toggle for bot's own channel: {channel_id}")
                 return
 
             LOGGER.info(
-                f"[NOTIFY] Processing channel toggle: {channel_id} -> {'ENABLE' if enabled else 'DISABLE'}")
+                f"[NOTIFY] Processing channel toggle: {channel_id} -> {'ENABLE' if enabled else 'DISABLE'}"
+            )
 
             if enabled:
                 if channel_id not in self._subscribed_channels:
                     await self.subscribe_channel_events(channel_id)
-                    LOGGER.info(
-                        f"[NOTIFY] ✓ Instantly subscribed to channel: {channel_id}")
+                    LOGGER.info(f"[NOTIFY] ✓ Instantly subscribed to channel: {channel_id}")
                 else:
-                    LOGGER.info(
-                        f"[NOTIFY] Channel {channel_id} already subscribed, skipping")
+                    LOGGER.info(f"[NOTIFY] Channel {channel_id} already subscribed, skipping")
             else:
                 if channel_id in self._subscribed_channels:
                     await self.unsubscribe_channel_events(channel_id)
-                    LOGGER.info(
-                        f"[NOTIFY] ✓ Instantly unsubscribed from channel: {channel_id}")
+                    LOGGER.info(f"[NOTIFY] ✓ Instantly unsubscribed from channel: {channel_id}")
                 else:
-                    LOGGER.info(
-                        f"[NOTIFY] Channel {channel_id} not subscribed, skipping")
+                    LOGGER.info(f"[NOTIFY] Channel {channel_id} not subscribed, skipping")
 
         except Exception as e:
-            LOGGER.exception(
-                f"[NOTIFY] Error handling channel toggle notification: {e}")
+            LOGGER.exception(f"[NOTIFY] Error handling channel toggle notification: {e}")
 
     async def check_new_tokens_and_channels_task(self) -> None:
         loaded_user_ids: set[str] = set()
@@ -274,8 +268,7 @@ class Bot(commands.AutoBot):
                 rows = await connection.fetch("SELECT user_id FROM tokens")
                 loaded_user_ids = {row["user_id"] for row in rows}
 
-            LOGGER.info(
-                f"Token watcher started, tracking {len(loaded_user_ids)} existing users")
+            LOGGER.info(f"Token watcher started, tracking {len(loaded_user_ids)} existing users")
         except Exception as e:
             LOGGER.error(f"Failed to initialize token watcher: {e}")
             return
@@ -309,27 +302,25 @@ class Bot(commands.AutoBot):
                 new_user_ids = current_user_ids - loaded_user_ids
 
                 if new_user_ids:
-                    LOGGER.info(
-                        f"Found {len(new_user_ids)} new users, loading tokens...")
+                    LOGGER.info(f"Found {len(new_user_ids)} new users, loading tokens...")
 
                     for row in rows:
                         if row["user_id"] in new_user_ids:
                             try:
                                 user_info = await self.add_token(row["token"], row["refresh"])
                                 loaded_user_ids.add(row["user_id"])
-                                LOGGER.info(
-                                    f"Loaded new token for user_id: {row['user_id']}")
+                                LOGGER.info(f"Loaded new token for user_id: {row['user_id']}")
 
                                 await self.add_channel_to_db(
-                                    row["user_id"],
-                                    user_info.login or "unknown"
+                                    row["user_id"], user_info.login or "unknown"
                                 )
 
                                 await self.subscribe_channel_events(row["user_id"])
 
                             except Exception as e:
                                 LOGGER.error(
-                                    f"Failed to load token for user_id {row['user_id']}: {e}")
+                                    f"Failed to load token for user_id {row['user_id']}: {e}"
+                                )
 
                 for row in channel_rows:
                     channel_id = row["channel_id"]
@@ -349,18 +340,17 @@ class Bot(commands.AutoBot):
 
                     if state_changed:
                         LOGGER.info(
-                            f"[POLL] Channel {channel_id} state changed: {previous_state} -> {enabled}")
+                            f"[POLL] Channel {channel_id} state changed: {previous_state} -> {enabled}"
+                        )
 
                         if enabled:
                             if channel_id not in self._subscribed_channels:
                                 await self.subscribe_channel_events(channel_id)
-                                LOGGER.info(
-                                    f"[POLL] ✓ Subscribed to channel: {channel_id}")
+                                LOGGER.info(f"[POLL] ✓ Subscribed to channel: {channel_id}")
                         else:
                             if channel_id in self._subscribed_channels:
                                 await self.unsubscribe_channel_events(channel_id)
-                                LOGGER.info(
-                                    f"[POLL] ✓ Unsubscribed from channel: {channel_id}")
+                                LOGGER.info(f"[POLL] ✓ Unsubscribed from channel: {channel_id}")
 
             except (asyncio.CancelledError, KeyboardInterrupt):
                 LOGGER.info("Token watcher shutting down...")
@@ -395,14 +385,15 @@ class Bot(commands.AutoBot):
             subs = get_channel_subscriptions(broadcaster_user_id, BOT_ID)
             resp = await self.multi_subscribe(subs)
             if resp.errors:
-                non_conflict = [e for e in resp.errors if "409" not in str(
-                    e) and "already exists" not in str(e)]
+                non_conflict = [
+                    e for e in resp.errors if "409" not in str(e) and "already exists" not in str(e)
+                ]
                 if non_conflict:
                     LOGGER.warning(f"Subscription errors: {non_conflict}")
 
             subscription_ids: list[str] = []
             for success_item in resp.success:
-                sub_id = success_item.response.get('id')
+                sub_id = success_item.response.get("id")
                 if sub_id and isinstance(sub_id, str):
                     subscription_ids.append(sub_id)
 
@@ -410,12 +401,10 @@ class Bot(commands.AutoBot):
                 self._subscription_ids[broadcaster_user_id] = subscription_ids
 
             self._subscribed_channels.add(broadcaster_user_id)
-            LOGGER.info(
-                f"Subscribed to events for channel: {broadcaster_user_id}")
+            LOGGER.info(f"Subscribed to events for channel: {broadcaster_user_id}")
 
         except Exception as e:
-            LOGGER.exception(
-                f"Failed to subscribe channel {broadcaster_user_id}: {e}")
+            LOGGER.exception(f"Failed to subscribe channel {broadcaster_user_id}: {e}")
 
     async def unsubscribe_channel_events(self, broadcaster_user_id: str) -> None:
         if broadcaster_user_id not in self._subscribed_channels:
@@ -423,31 +412,27 @@ class Bot(commands.AutoBot):
             return
 
         try:
-            subscription_ids = self._subscription_ids.get(
-                broadcaster_user_id, [])
+            subscription_ids = self._subscription_ids.get(broadcaster_user_id, [])
 
             if subscription_ids:
                 for sub_id in subscription_ids:
                     try:
                         await self.delete_eventsub_subscription(sub_id)
                         LOGGER.debug(
-                            f"Deleted subscription {sub_id} for channel {broadcaster_user_id}")
+                            f"Deleted subscription {sub_id} for channel {broadcaster_user_id}"
+                        )
                     except Exception as e:
-                        LOGGER.warning(
-                            f"Failed to delete subscription {sub_id}: {e}")
+                        LOGGER.warning(f"Failed to delete subscription {sub_id}: {e}")
 
                 del self._subscription_ids[broadcaster_user_id]
             else:
-                LOGGER.warning(
-                    f"No subscription IDs found for channel {broadcaster_user_id}")
+                LOGGER.warning(f"No subscription IDs found for channel {broadcaster_user_id}")
 
             self._subscribed_channels.discard(broadcaster_user_id)
-            LOGGER.info(
-                f"Unsubscribed from events for channel: {broadcaster_user_id}")
+            LOGGER.info(f"Unsubscribed from events for channel: {broadcaster_user_id}")
 
         except Exception as e:
-            LOGGER.exception(
-                f"Failed to unsubscribe channel {broadcaster_user_id}: {e}")
+            LOGGER.exception(f"Failed to unsubscribe channel {broadcaster_user_id}: {e}")
 
     async def add_channel_to_db(self, channel_id: str, channel_name: str) -> None:
         if channel_id == BOT_ID:
@@ -466,8 +451,7 @@ class Bot(commands.AutoBot):
         async with self.token_database.acquire() as connection:
             await connection.execute(query, channel_id, channel_name.lower())
 
-        LOGGER.info(
-            f"Added channel {channel_name} (ID: {channel_id}) to database")
+        LOGGER.info(f"Added channel {channel_name} (ID: {channel_id}) to database")
 
     async def remove_channel_from_db(self, channel_name: str) -> None:
         query = """UPDATE channels SET enabled = false WHERE channel_name = $1"""
@@ -484,8 +468,7 @@ class Bot(commands.AutoBot):
         self,
         payload,
     ) -> None:
-        LOGGER.debug(
-            f"EventSub notification received: {type(payload).__name__}")
+        LOGGER.debug(f"EventSub notification received: {type(payload).__name__}")
 
     async def event_eventsub_ready(self) -> None:
         LOGGER.info("EventSub is ready to receive notifications")
@@ -520,8 +503,7 @@ def main() -> None:
                     if broadcaster_user_id == BOT_ID:
                         continue
 
-                    subs.extend(get_channel_subscriptions(
-                        broadcaster_user_id, BOT_ID))
+                    subs.extend(get_channel_subscriptions(broadcaster_user_id, BOT_ID))
 
             LOGGER.info(f"Starting bot with {len(subs)} initial subscriptions")
 

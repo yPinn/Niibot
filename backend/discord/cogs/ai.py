@@ -4,12 +4,11 @@ import json
 import logging
 import os
 
+import discord
 from config import DATA_DIR
+from discord import app_commands
 from discord.ext import commands
 from openai import OpenAI
-
-import discord
-from discord import app_commands
 
 LOGGER = logging.getLogger("AI")
 
@@ -24,12 +23,10 @@ class AI(commands.Cog):
         model = os.getenv("OPENROUTER_MODEL", "")
 
         if not api_key or api_key.strip() == "":
-            raise ValueError(
-                "OPENROUTER_API_KEY is required but not set in .env file")
+            raise ValueError("OPENROUTER_API_KEY is required but not set in .env file")
 
         if not model or model.strip() == "":
-            raise ValueError(
-                "OPENROUTER_MODEL is required but not set in .env file")
+            raise ValueError("OPENROUTER_MODEL is required but not set in .env file")
 
         self.client = OpenAI(
             base_url="https://openrouter.ai/api/v1",
@@ -39,7 +36,7 @@ class AI(commands.Cog):
         self.is_reasoning = any(rm in model for rm in self.REASONING_MODELS)
         self.max_tokens = 500 if self.is_reasoning else 300
 
-        with open(DATA_DIR / "embed.json", "r", encoding="utf-8") as f:
+        with open(DATA_DIR / "embed.json", encoding="utf-8") as f:
             self.global_embed_config = json.load(f)
 
         LOGGER.info(
@@ -49,7 +46,7 @@ class AI(commands.Cog):
 
     @app_commands.command(name="ai", description="AI 問答")
     @app_commands.describe(question="你的問題")
-    async def ai_command(self, interaction: discord.Interaction, question: str):
+    async def ai_command(self, interaction: discord.Interaction, question: str) -> None:
         """Ask AI a question.
 
         Args:
@@ -63,8 +60,7 @@ class AI(commands.Cog):
         await interaction.response.defer()
 
         try:
-            LOGGER.debug(
-                f"AI request: user={interaction.user.name}, question={question[:100]}")
+            LOGGER.debug(f"AI request: user={interaction.user.name}, question={question[:100]}")
 
             completion = self.client.chat.completions.create(
                 model=self.model,
@@ -127,9 +123,7 @@ class AI(commands.Cog):
                 question_display = question
                 if len(question) > 1020:
                     question_display = question[:1017] + "..."
-                embed.add_field(
-                    name="**提問**", value=f"> {question_display}", inline=False
-                )
+                embed.add_field(name="**提問**", value=f"> {question_display}", inline=False)
 
                 if len(response) > 1020:
                     response = response[:1017] + "..."
@@ -154,5 +148,5 @@ class AI(commands.Cog):
             LOGGER.error(f"AI command error: {error_msg}")
 
 
-async def setup(bot: commands.Bot):
+async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(AI(bot))

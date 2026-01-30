@@ -21,15 +21,13 @@ class FortuneComponent(commands.Component):
 
     def _load_data(self) -> None:
         fortune_path = DATA_DIR / "fortune.json"
-        with open(fortune_path, "r", encoding="utf-8") as f:
+        with open(fortune_path, encoding="utf-8") as f:
             self.fortune_data = json.load(f)
 
     def _get_fortune_level(self, date_modifier: float = 1.0) -> str:
         levels = list(self.fortune_data["fortune_levels"].keys())
         weights = [
-            self.fortune_data["fortune_levels"][level]["weight"] *
-            date_modifier
-            for level in levels
+            self.fortune_data["fortune_levels"][level]["weight"] * date_modifier for level in levels
         ]
         result = random.choices(levels, weights=weights, k=1)[0]
         return str(result)
@@ -77,9 +75,7 @@ class FortuneComponent(commands.Component):
             description = level_data["description"]
 
             fortune_details = self.fortune_data["fortune_details"][category]
-            career = self._add_twitch_emotes(
-                random.choice(fortune_details["事業"]), category
-            )
+            career = self._add_twitch_emotes(random.choice(fortune_details["事業"]), category)
             wealth = random.choice(fortune_details["財運"])
             love = random.choice(fortune_details["愛情"])
             health = random.choice(fortune_details["健康"])

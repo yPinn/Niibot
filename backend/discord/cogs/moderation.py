@@ -2,10 +2,9 @@
 
 from datetime import timedelta
 
-from discord.ext import commands
-
 import discord
 from discord import app_commands
+from discord.ext import commands
 
 
 class Moderation(commands.Cog):
@@ -15,7 +14,7 @@ class Moderation(commands.Cog):
     @app_commands.command(name="clear", description="清除訊息")
     @app_commands.describe(amount="要清除的訊息數量")
     @app_commands.checks.has_permissions(manage_messages=True)
-    async def clear(self, interaction: discord.Interaction, amount: int):
+    async def clear(self, interaction: discord.Interaction, amount: int) -> None:
         if amount < 1 or amount > 100:
             await interaction.response.send_message("數量必須在 1-100 之間", ephemeral=True)
             return
@@ -36,7 +35,7 @@ class Moderation(commands.Cog):
     @app_commands.checks.has_permissions(kick_members=True)
     async def kick(
         self, interaction: discord.Interaction, member: discord.Member, reason: str | None = None
-    ):
+    ) -> None:
         if isinstance(interaction.user, discord.Member):
             if member.top_role >= interaction.user.top_role:
                 await interaction.response.send_message("你無法踢出此成員", ephemeral=True)
@@ -53,7 +52,7 @@ class Moderation(commands.Cog):
     @app_commands.checks.has_permissions(ban_members=True)
     async def ban(
         self, interaction: discord.Interaction, member: discord.Member, reason: str | None = None
-    ):
+    ) -> None:
         if isinstance(interaction.user, discord.Member):
             if member.top_role >= interaction.user.top_role:
                 await interaction.response.send_message("你無法封鎖此成員", ephemeral=True)
@@ -68,7 +67,7 @@ class Moderation(commands.Cog):
     @app_commands.command(name="unban", description="解除封鎖")
     @app_commands.describe(user_id="要解除封鎖的用戶 ID")
     @app_commands.checks.has_permissions(ban_members=True)
-    async def unban(self, interaction: discord.Interaction, user_id: str):
+    async def unban(self, interaction: discord.Interaction, user_id: str) -> None:
         if not interaction.guild:
             await interaction.response.send_message("此指令只能在伺服器中使用", ephemeral=True)
             return
@@ -93,7 +92,7 @@ class Moderation(commands.Cog):
         member: discord.Member,
         duration: int,
         reason: str | None = None,
-    ):
+    ) -> None:
         if isinstance(interaction.user, discord.Member):
             if member.top_role >= interaction.user.top_role:
                 await interaction.response.send_message("你無法禁言此成員", ephemeral=True)
@@ -112,7 +111,7 @@ class Moderation(commands.Cog):
     @app_commands.command(name="unmute", description="解除禁言")
     @app_commands.describe(member="要解除禁言的成員")
     @app_commands.checks.has_permissions(moderate_members=True)
-    async def unmute(self, interaction: discord.Interaction, member: discord.Member):
+    async def unmute(self, interaction: discord.Interaction, member: discord.Member) -> None:
         try:
             await member.timeout(None)
             await interaction.response.send_message(f"已解除禁言: {member.mention}")
@@ -120,5 +119,5 @@ class Moderation(commands.Cog):
             await interaction.response.send_message("我沒有權限解除禁言", ephemeral=True)
 
 
-async def setup(bot: commands.Bot):
+async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(Moderation(bot))

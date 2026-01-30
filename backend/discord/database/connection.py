@@ -2,7 +2,6 @@
 
 import logging
 import os
-from typing import Optional
 
 import asyncpg
 
@@ -12,7 +11,7 @@ logger = logging.getLogger(__name__)
 class DatabasePool:
     """Manages asyncpg connection pool for Supabase PostgreSQL."""
 
-    _pool: Optional[asyncpg.Pool] = None
+    _pool: asyncpg.Pool | None = None
 
     @classmethod
     async def get_pool(cls) -> asyncpg.Pool:

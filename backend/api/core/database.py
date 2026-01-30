@@ -1,7 +1,7 @@
 """Database connection management with dependency injection support"""
 
 import logging
-from typing import AsyncGenerator, Optional
+from collections.abc import AsyncGenerator
 
 import asyncpg
 
@@ -13,7 +13,7 @@ class DatabaseManager:
 
     def __init__(self, database_url: str):
         self.database_url = database_url
-        self._pool: Optional[asyncpg.Pool] = None
+        self._pool: asyncpg.Pool | None = None
 
     async def connect(self) -> None:
         """Initialize database connection pool"""
@@ -61,7 +61,7 @@ class DatabaseManager:
 
 
 # Global database manager instance
-_db_manager: Optional[DatabaseManager] = None
+_db_manager: DatabaseManager | None = None
 
 
 def get_database_manager() -> DatabaseManager:

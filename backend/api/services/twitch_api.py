@@ -1,7 +1,7 @@
 """Twitch API client service"""
 
 import logging
-from typing import Dict, List, Optional, Tuple, cast
+from typing import cast
 from urllib.parse import quote
 
 import httpx
@@ -12,13 +12,13 @@ logger = logging.getLogger(__name__)
 class TwitchAPIClient:
     """Client for interacting with Twitch API"""
 
-    # Broadcaster OAuth scopes
+    # Broadcaster OAuth scopes - minimal scopes for channel authorization
+    # Bot account handles all operations, broadcaster just grants access
     BROADCASTER_SCOPES = [
-        "user:read:email",
-        "channel:read:subscriptions",
-        "bits:read",
-        "channel:read:redemptions",
-        "moderator:read:followers",
+        "channel:bot",  # Allow bot to join channel
+        "channel:read:redemptions",  # Channel points EventSub
+        "channel:read:subscriptions",  # Subscription EventSub
+        "bits:read",  # Bits EventSub
     ]
 
     def __init__(self, client_id: str, client_secret: str, api_url: str):
@@ -33,8 +33,7 @@ class TwitchAPIClient:
     def generate_oauth_url(self) -> str:
         """Generate Twitch OAuth authorization URL"""
         redirect_uri = f"{self.api_url}/api/auth/twitch/callback"
-        scope_string = "+".join(s.replace(":", "%3A")
-                                for s in self.BROADCASTER_SCOPES)
+        scope_string = "+".join(s.replace(":", "%3A") for s in self.BROADCASTER_SCOPES)
         encoded_redirect_uri = quote(redirect_uri, safe="")
 
         return (
@@ -48,7 +47,7 @@ class TwitchAPIClient:
 
     async def exchange_code_for_token(
         self, code: str
-    ) -> Tuple[bool, Optional[str], Optional[Dict[str, str]]]:
+    ) -> tuple[bool, str | None, dict[str, str] | None]:
         """
         Exchange OAuth code for access token
 
@@ -73,8 +72,7 @@ class TwitchAPIClient:
                 )
 
                 if token_response.status_code != 200:
-                    logger.error(
-                        f"Failed to exchange code: {token_response.status_code}")
+                    logger.error(f"Failed to exchange code: {token_response.status_code}")
                     logger.error(f"Response: {token_response.text}")
                     return False, "token_exchange_failed", None
 
@@ -93,11 +91,15 @@ class TwitchAPIClient:
 
                 logger.debug(f"Token exchanged for user: {user_id}")
 
-                return True, None, {
-                    "access_token": access_token,
-                    "refresh_token": refresh_token or "",
-                    "user_id": user_id,
-                }
+                return (
+                    True,
+                    None,
+                    {
+                        "access_token": access_token,
+                        "refresh_token": refresh_token or "",
+                        "user_id": user_id,
+                    },
+                )
 
         except httpx.TimeoutException:
             logger.error("Timeout while exchanging code for token")
@@ -106,7 +108,7 @@ class TwitchAPIClient:
             logger.exception(f"Unexpected error exchanging code: {e}")
             return False, "exchange_failed", None
 
-    async def _get_user_id(self, access_token: str) -> Optional[str]:
+    async def _get_user_id(self, access_token: str) -> str | None:
         """Get user ID from access token"""
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
@@ -119,8 +121,7 @@ class TwitchAPIClient:
                 )
 
                 if response.status_code != 200:
-                    logger.error(
-                        f"Failed to get user info: {response.status_code}")
+                    logger.error(f"Failed to get user info: {response.status_code}")
                     return None
 
                 data = response.json()
@@ -130,13 +131,13 @@ class TwitchAPIClient:
                     logger.error("No user data in response")
                     return None
 
-                return cast(Optional[str], users[0].get("id"))
+                return cast(str | None, users[0].get("id"))
 
         except Exception as e:
             logger.exception(f"Error getting user ID: {e}")
             return None
 
-    async def get_user_info(self, user_id: str) -> Optional[Dict[str, str]]:
+    async def get_user_info(self, user_id: str) -> dict[str, str] | None:
         """Get user information from Twitch API using app access token"""
         try:
             # Get app access token
@@ -154,8 +155,7 @@ class TwitchAPIClient:
                 )
 
                 if response.status_code != 200:
-                    logger.error(
-                        f"Failed to fetch user: {response.status_code}")
+                    logger.error(f"Failed to fetch user: {response.status_code}")
                     logger.error(f"Response: {response.text}")
                     return None
 
@@ -178,7 +178,7 @@ class TwitchAPIClient:
             logger.exception(f"Error fetching user info: {e}")
             return None
 
-    async def _get_app_access_token(self) -> Optional[str]:
+    async def _get_app_access_token(self) -> str | None:
         """Get app access token for API calls"""
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
@@ -192,18 +192,17 @@ class TwitchAPIClient:
                 )
 
                 if response.status_code != 200:
-                    logger.error(
-                        f"Failed to get app token: {response.status_code}")
+                    logger.error(f"Failed to get app token: {response.status_code}")
                     return None
 
                 data = response.json()
-                return cast(Optional[str], data.get("access_token"))
+                return cast(str | None, data.get("access_token"))
 
         except Exception as e:
             logger.exception(f"Error getting app access token: {e}")
             return None
 
-    async def get_users_by_ids(self, user_ids: List[str], access_token: str) -> List[Dict]:
+    async def get_users_by_ids(self, user_ids: list[str], access_token: str) -> list[dict]:
         """Get multiple users by their IDs"""
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
@@ -217,19 +216,18 @@ class TwitchAPIClient:
                 )
 
                 if response.status_code != 200:
-                    logger.error(
-                        f"Failed to fetch users: {response.status_code}")
+                    logger.error(f"Failed to fetch users: {response.status_code}")
                     logger.error(f"Response: {response.text}")
                     return []
 
                 data = response.json()
-                return cast(List[Dict], data.get("data", []))
+                return cast(list[dict], data.get("data", []))
 
         except Exception as e:
             logger.exception(f"Error getting users: {e}")
             return []
 
-    async def get_streams(self, user_ids: List[str], access_token: str) -> List[Dict]:
+    async def get_streams(self, user_ids: list[str], access_token: str) -> list[dict]:
         """Get stream information for multiple users"""
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
@@ -243,18 +241,17 @@ class TwitchAPIClient:
                 )
 
                 if response.status_code != 200:
-                    logger.error(
-                        f"Failed to fetch streams: {response.status_code}")
+                    logger.error(f"Failed to fetch streams: {response.status_code}")
                     return []
 
                 data = response.json()
-                return cast(List[Dict], data.get("data", []))
+                return cast(list[dict], data.get("data", []))
 
         except Exception as e:
             logger.exception(f"Error getting streams: {e}")
             return []
 
-    async def get_games_by_ids(self, game_ids: List[str]) -> List[Dict]:
+    async def get_games_by_ids(self, game_ids: list[str]) -> list[dict]:
         """
         Get game information by game IDs
 
@@ -288,13 +285,13 @@ class TwitchAPIClient:
                     return []
 
                 data = response.json()
-                return cast(List[Dict], data.get("data", []))
+                return cast(list[dict], data.get("data", []))
 
         except Exception as e:
             logger.exception(f"Error getting games: {e}")
             return []
 
-    async def get_games_by_names(self, game_names: List[str]) -> List[Dict]:
+    async def get_games_by_names(self, game_names: list[str]) -> list[dict]:
         """
         Get game information by game names
 
@@ -328,7 +325,7 @@ class TwitchAPIClient:
                     return []
 
                 data = response.json()
-                return cast(List[Dict], data.get("data", []))
+                return cast(list[dict], data.get("data", []))
 
         except Exception as e:
             logger.exception(f"Error getting games by names: {e}")

@@ -9,12 +9,13 @@ import time
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Deque, Dict, Optional, Tuple, cast
+from typing import Any, cast
 
 import discord
 
 try:
     from config import BotConfig
+
     CONFIG_AVAILABLE = True
 except ImportError:
     CONFIG_AVAILABLE = False
@@ -30,12 +31,10 @@ class RateLimitStats:
     rate_limited_count: int = 0
 
     # 時間窗口內的請求記錄 (儲存時間戳)
-    recent_requests: Deque[float] = field(
-        default_factory=lambda: deque(maxlen=1000))
+    recent_requests: deque[float] = field(default_factory=lambda: deque(maxlen=1000))
 
     # 429 錯誤記錄
-    rate_limit_errors: Deque[Dict[str, Any]] = field(
-        default_factory=lambda: deque(maxlen=50))
+    rate_limit_errors: deque[dict[str, Any]] = field(default_factory=lambda: deque(maxlen=50))
 
     # 最後一次重置時間
     last_reset: float = field(default_factory=time.time)
@@ -55,13 +54,13 @@ class RateLimitMonitor:
         self._monitoring = False
 
         # 修正 Mypy 報錯：明確標註字典型別
-        self._warning_cooldown: Dict[str, float] = {}
+        self._warning_cooldown: dict[str, float] = {}
 
         if CONFIG_AVAILABLE:
-            self.WARNING_THRESHOLD: float = getattr(
-                BotConfig, "RATE_LIMIT_WARNING_THRESHOLD", 0.7)
+            self.WARNING_THRESHOLD: float = getattr(BotConfig, "RATE_LIMIT_WARNING_THRESHOLD", 0.7)
             self.CRITICAL_THRESHOLD: float = getattr(
-                BotConfig, "RATE_LIMIT_CRITICAL_THRESHOLD", 0.9)
+                BotConfig, "RATE_LIMIT_CRITICAL_THRESHOLD", 0.9
+            )
             self.enabled: bool = getattr(BotConfig, "RATE_LIMIT_ENABLED", True)
         else:
             self.WARNING_THRESHOLD = 0.7
@@ -107,9 +106,9 @@ class RateLimitMonitor:
 
         error_info = {
             "timestamp": datetime.now().isoformat(),
-            "bucket": getattr(payload, 'bucket', 'global'),
-            "retry_after": getattr(payload, 'retry_after', 0.0),
-            "scope": getattr(payload, 'scope', 'unknown')
+            "bucket": getattr(payload, "bucket", "global"),
+            "retry_after": getattr(payload, "retry_after", 0.0),
+            "scope": getattr(payload, "scope", "unknown"),
         }
         self.stats.rate_limit_errors.append(error_info)
 
@@ -133,7 +132,7 @@ class RateLimitMonitor:
                 break
         return count
 
-    def check_rate_limit_risk(self, action_type: str = "general") -> Tuple[bool, str]:
+    def check_rate_limit_risk(self, action_type: str = "general") -> tuple[bool, str]:
         """檢查當前速率風險"""
         recent_1s = self._get_recent_count(1.0)
         global_usage = recent_1s / self.GLOBAL_RATE_LIMIT
@@ -164,7 +163,9 @@ class RateLimitMonitor:
         self._warning_cooldown[key] = current_time
         logger.warning(message)
 
-    async def safe_send_message(self, channel: Any, *args: Any, **kwargs: Any) -> Optional[discord.Message]:
+    async def safe_send_message(
+        self, channel: Any, *args: Any, **kwargs: Any
+    ) -> discord.Message | None:
         """安全發送訊息"""
         is_safe, msg = self.check_rate_limit_risk("message")
 
@@ -175,7 +176,7 @@ class RateLimitMonitor:
         try:
             # 使用 cast 解決 "Returning Any from function" 錯誤
             result = await channel.send(*args, **kwargs)
-            return cast(Optional[discord.Message], result)
+            return cast(discord.Message | None, result)
         except discord.HTTPException as e:
             if e.status == 429:
                 logger.error(f"HTTP 429 received: {e}")
@@ -198,14 +199,14 @@ class RateLimitMonitor:
         recent_rps = self._get_recent_count(60.0) / 60
 
         logger.info(
-            f"Rate Stats (Last {time_elapsed/60:.1f} min): "
+            f"Rate Stats (Last {time_elapsed / 60:.1f} min): "
             f"Total: {self.stats.total_requests}, "
             f"Avg: {rps:.2f} req/s, "
             f"Recent 1min: {recent_rps:.2f} req/s, "
             f"Limit hits: {self.stats.rate_limited_count}"
         )
 
-    def get_stats_summary(self) -> Dict[str, Any]:
+    def get_stats_summary(self) -> dict[str, Any]:
         """獲取統計摘要"""
         recent_1min = self._get_recent_count(60.0)
         return {
@@ -213,5 +214,7 @@ class RateLimitMonitor:
             "rate_limited_count": self.stats.rate_limited_count,
             "recent_1min_requests": recent_1min,
             "recent_1min_rps": recent_1min / 60,
-            "recent_errors": list(self.stats.rate_limit_errors)[-5:] if self.stats.rate_limit_errors else []
+            "recent_errors": list(self.stats.rate_limit_errors)[-5:]
+            if self.stats.rate_limit_errors
+            else [],
         }

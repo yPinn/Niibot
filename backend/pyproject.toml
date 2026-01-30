@@ -3,25 +3,34 @@ line-length = 100
 target-version = "py311"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "N"]
-ignore = ["E501"]  # line too long (handled by formatter)
+# E, W (PEP8), F (Pyflakes), I (isort 排序), N (命名規範), B (Bug 預警), UP (語法升級)
+select = ["E", "F", "W", "I", "N", "B", "UP"]
+ignore = [
+    "E501",  # 行長限制交給 formatter 處理
+    "B008",  # FastAPI Depends() 在參數預設值中是標準用法
+]
+
+[tool.ruff.format]
+quote-style = "double"
+# 自動在多行列表末尾加逗號，減少 Git 衝突（這對你的 cogs/components 列表極度有用）
+skip-magic-trailing-comma = false
 
 [tool.mypy]
 python_version = "3.11"
-warn_return_any = true
-warn_unused_configs = true
-disallow_untyped_defs = false
-ignore_missing_imports = true
-show_error_codes = true
-warn_redundant_casts = true
-warn_unused_ignores = true
 namespace_packages = true
 explicit_package_bases = true
-exclude = [
-    "discord/cogs/main\\.py$",
-]
-
-# Third-party library stubs
-[[tool.mypy.overrides]]
-module = ["twitchio.*", "asyncpg.*", "openai.*", "aiohttp.*"]
+# 全域預設：忽略第三方庫缺少型別的問題，並開啟基礎檢查
 ignore_missing_imports = true
+check_untyped_defs = true
+disallow_untyped_defs = false # 預設不強制，由下方 Overrides 決定
+
+# --- 針對 Discord (cogs) 實施嚴格檢查 ---
+[[tool.mypy.overrides]]
+module = ["discord.*", "cogs.*"]
+disallow_untyped_defs = true
+warn_return_any = true
+
+# --- 針對 Twitch (components) 與外部 API 保持彈性 ---
+[[tool.mypy.overrides]]
+module = ["twitchio.*", "components.*", "asyncpg.*", "openai.*", "aiohttp.*"]
+disallow_untyped_defs = false

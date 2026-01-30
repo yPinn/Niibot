@@ -73,14 +73,16 @@ async def get_channel_stats(user_id: str = Depends(get_current_user_id)) -> Chan
         ]
 
         top_chatters = [
-            ChatterStat(username=chatter.username,
-                        message_count=randomize_count(chatter.message_count))
+            ChatterStat(
+                username=chatter.username, message_count=randomize_count(chatter.message_count)
+            )
             for chatter in MOCK_CHATTERS[:10]
         ]
 
         total_commands = sum(cmd.count for cmd in top_commands)
-        total_messages = sum(
-            chatter.message_count for chatter in top_chatters) + random.randint(500, 800)
+        total_messages = sum(chatter.message_count for chatter in top_chatters) + random.randint(
+            500, 800
+        )
 
         logger.info(f"User {user_id} requested channel stats")
         return ChannelStats(
@@ -92,5 +94,4 @@ async def get_channel_stats(user_id: str = Depends(get_current_user_id)) -> Chan
 
     except Exception as e:
         logger.exception(f"Failed to get channel stats: {e}")
-        raise HTTPException(
-            status_code=500, detail="Failed to fetch statistics")
+        raise HTTPException(status_code=500, detail="Failed to fetch statistics") from None

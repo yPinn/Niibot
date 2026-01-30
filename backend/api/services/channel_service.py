@@ -1,7 +1,6 @@
 """Channel management service"""
 
 import logging
-from typing import Dict, List, Optional
 
 import asyncpg
 
@@ -14,7 +13,7 @@ class ChannelService:
     def __init__(self, pool: asyncpg.Pool):
         self.pool = pool
 
-    async def get_channel_status(self, user_id: str) -> Dict:
+    async def get_channel_status(self, user_id: str) -> dict:
         """Get channel status for a user"""
         try:
             async with self.pool.acquire() as conn:
@@ -70,7 +69,7 @@ class ChannelService:
             logger.exception(f"Error toggling channel {channel_id}: {e}")
             return False
 
-    async def get_enabled_channels(self) -> List[Dict]:
+    async def get_enabled_channels(self) -> list[dict]:
         """Get all enabled channels"""
         try:
             async with self.pool.acquire() as conn:
@@ -87,7 +86,7 @@ class ChannelService:
             logger.exception(f"Error getting enabled channels: {e}")
             return []
 
-    async def get_user_token(self, user_id: str) -> Optional[str]:
+    async def get_user_token(self, user_id: str) -> str | None:
         """Get user's access token from database"""
         try:
             async with self.pool.acquire() as conn:
@@ -132,8 +131,8 @@ class ChannelService:
         self,
         user_id: str,
         username: str,
-        display_name: Optional[str] = None,
-        avatar: Optional[str] = None,
+        display_name: str | None = None,
+        avatar: str | None = None,
     ) -> bool:
         """Save or update Discord user info"""
         try:
@@ -162,7 +161,7 @@ class ChannelService:
             logger.exception(f"Error saving Discord user to database: {e}")
             return False
 
-    async def get_discord_user(self, user_id: str) -> Optional[Dict[str, str]]:
+    async def get_discord_user(self, user_id: str) -> dict[str, str] | None:
         """Get Discord user info from database"""
         try:
             async with self.pool.acquire() as conn:
@@ -192,7 +191,7 @@ class ChannelService:
             logger.exception(f"Error getting Discord user {user_id}: {e}")
             return None
 
-    def _get_discord_avatar_url(self, user_id: str, avatar_hash: Optional[str]) -> str:
+    def _get_discord_avatar_url(self, user_id: str, avatar_hash: str | None) -> str:
         """Generate Discord avatar URL"""
         if avatar_hash:
             ext = "gif" if avatar_hash.startswith("a_") else "png"

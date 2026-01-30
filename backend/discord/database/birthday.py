@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Any, Optional
+from typing import Any
 
 import asyncpg
 
@@ -14,9 +14,9 @@ class Birthday:
     user_id: int
     month: int
     day: int
-    year: Optional[int] = None
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    year: int | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
 @dataclass
@@ -27,10 +27,10 @@ class BirthdaySettings:
     channel_id: int
     role_id: int
     message_template: str = "今天是 {users} 的生日，請各位送上祝福！"
-    last_notified_date: Optional[date] = None
+    last_notified_date: date | None = None
     enabled: bool = True
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
 class BirthdayRepository:
@@ -41,7 +41,7 @@ class BirthdayRepository:
 
     # ==================== Birthday Operations ====================
 
-    async def get_birthday(self, user_id: int) -> Optional[Birthday]:
+    async def get_birthday(self, user_id: int) -> Birthday | None:
         """Get a user's birthday."""
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
@@ -57,7 +57,7 @@ class BirthdayRepository:
         user_id: int,
         month: int,
         day: int,
-        year: Optional[int] = None,
+        year: int | None = None,
     ) -> None:
         """Set or update a user's birthday."""
         async with self.pool.acquire() as conn:
@@ -141,7 +141,7 @@ class BirthdayRepository:
 
     # ==================== Settings Operations ====================
 
-    async def get_settings(self, guild_id: int) -> Optional[BirthdaySettings]:
+    async def get_settings(self, guild_id: int) -> BirthdaySettings | None:
         """Get guild birthday settings."""
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
@@ -157,7 +157,7 @@ class BirthdayRepository:
         guild_id: int,
         channel_id: int,
         role_id: int,
-        message_template: Optional[str] = None,
+        message_template: str | None = None,
     ) -> None:
         """Create guild birthday settings."""
         async with self.pool.acquire() as conn:
@@ -187,10 +187,10 @@ class BirthdayRepository:
     async def update_settings(
         self,
         guild_id: int,
-        channel_id: Optional[int] = None,
-        role_id: Optional[int] = None,
-        message_template: Optional[str] = None,
-        enabled: Optional[bool] = None,
+        channel_id: int | None = None,
+        role_id: int | None = None,
+        message_template: str | None = None,
+        enabled: bool | None = None,
     ) -> None:
         """Update guild birthday settings."""
         updates: list[str] = []
@@ -255,7 +255,7 @@ class BirthdayRepository:
 
     async def get_todays_birthdays(
         self, guild_id: int, month: int, day: int
-    ) -> list[tuple[int, Optional[int]]]:
+    ) -> list[tuple[int, int | None]]:
         """Get users with birthdays today in a guild.
 
         Returns list of (user_id, year) tuples.
@@ -277,7 +277,7 @@ class BirthdayRepository:
 
     async def get_birthdays_in_month(
         self, guild_id: int, month: int
-    ) -> list[tuple[int, int, int, Optional[int]]]:
+    ) -> list[tuple[int, int, int, int | None]]:
         """Get all birthdays in a month for a guild.
 
         Returns list of (user_id, month, day, year) tuples, ordered by day.
@@ -294,13 +294,11 @@ class BirthdayRepository:
                 guild_id,
                 month,
             )
-            return [
-                (row["user_id"], row["month"], row["day"], row["year"]) for row in rows
-            ]
+            return [(row["user_id"], row["month"], row["day"], row["year"]) for row in rows]
 
     async def get_upcoming_birthdays(
         self, guild_id: int, current_month: int, current_day: int, limit: int = 5
-    ) -> list[tuple[int, int, int, Optional[int]]]:
+    ) -> list[tuple[int, int, int, int | None]]:
         """Get upcoming birthdays for a guild.
 
         Returns list of (user_id, month, day, year) tuples.
@@ -329,14 +327,10 @@ class BirthdayRepository:
                 current_day,
                 limit,
             )
-            return [
-                (row["user_id"], row["month"], row["day"], row["year"]) for row in rows
-            ]
+            return [(row["user_id"], row["month"], row["day"], row["year"]) for row in rows]
 
     async def get_all_enabled_settings(self) -> list[BirthdaySettings]:
         """Get all enabled guild settings for background task."""
         async with self.pool.acquire() as conn:
-            rows = await conn.fetch(
-                "SELECT * FROM birthday_settings WHERE enabled = true"
-            )
+            rows = await conn.fetch("SELECT * FROM birthday_settings WHERE enabled = true")
             return [BirthdaySettings(**dict(row)) for row in rows]

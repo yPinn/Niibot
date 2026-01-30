@@ -3,7 +3,6 @@
 import logging
 from functools import lru_cache
 from pathlib import Path
-from typing import List
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -26,37 +25,30 @@ class Settings(BaseSettings):
     client_secret: str = Field(..., description="Twitch OAuth Client Secret")
 
     # Discord OAuth (選填，用於 Discord 登入)
-    discord_client_id: str = Field(
-        default="", description="Discord OAuth Client ID")
-    discord_client_secret: str = Field(
-        default="", description="Discord OAuth Client Secret")
+    discord_client_id: str = Field(default="", description="Discord OAuth Client ID")
+    discord_client_secret: str = Field(default="", description="Discord OAuth Client Secret")
 
     # JWT Configuration
-    jwt_secret_key: str = Field(...,
-                                description="Secret key for JWT token signing")
-    jwt_algorithm: str = Field(
-        default="HS256", description="JWT signing algorithm")
-    jwt_expire_days: int = Field(
-        default=30, description="JWT token expiration in days")
+    jwt_secret_key: str = Field(..., description="Secret key for JWT token signing")
+    jwt_algorithm: str = Field(default="HS256", description="JWT signing algorithm")
+    jwt_expire_days: int = Field(default=30, description="JWT token expiration in days")
 
     # Database
     database_url: str = Field(..., description="PostgreSQL database URL")
 
     # Server URLs
-    frontend_url: str = Field(
-        default="http://localhost:3000", description="Frontend URL for CORS")
-    api_url: str = Field(default="http://localhost:8000",
-                         description="API server URL")
-    bot_url: str = Field(default="http://localhost:4343",
-                         description="Bot WebSocket URL")
-    twitch_bot_url: str = Field(default="http://localhost:4344",
-                                description="Twitch Bot Health Server URL")
-    discord_bot_url: str = Field(default="http://localhost:8080",
-                                 description="Discord Bot Health Server URL")
+    frontend_url: str = Field(default="http://localhost:3000", description="Frontend URL for CORS")
+    api_url: str = Field(default="http://localhost:8000", description="API server URL")
+    bot_url: str = Field(default="http://localhost:4343", description="Bot WebSocket URL")
+    twitch_bot_url: str = Field(
+        default="http://localhost:4344", description="Twitch Bot Health Server URL"
+    )
+    discord_bot_url: str = Field(
+        default="http://localhost:8080", description="Discord Bot Health Server URL"
+    )
 
     # Environment
-    environment: str = Field(default="development",
-                             description="Environment name")
+    environment: str = Field(default="development", description="Environment name")
     log_level: str = Field(default="INFO", description="Logging level")
 
     # Server Configuration
@@ -75,7 +67,7 @@ class Settings(BaseSettings):
         return v_upper
 
     @property
-    def cors_origins(self) -> List[str]:
+    def cors_origins(self) -> list[str]:
         """Get CORS allowed origins"""
         return [self.frontend_url]
 

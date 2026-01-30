@@ -1,0 +1,16 @@
+{
+  "frontend/**/*.{js,jsx,ts,tsx}": [
+    "npm --prefix frontend run lint:fix",
+    "npm --prefix frontend run format:fix"
+  ],
+  "backend/**/*.py": [
+    "ruff check --fix --config backend/pyproject.toml",
+    "ruff format --config backend/pyproject.toml"
+  ],
+  "**/*.{json,md,yml,yaml}": [
+    "npx --prefix frontend prettier --write"
+  ],
+  "*.js": [
+    "npx --prefix frontend prettier --write"
+  ]
+}

@@ -1,7 +1,6 @@
 """Discord API client service"""
 
 import logging
-from typing import Dict, Optional, Tuple
 from urllib.parse import quote
 
 import httpx
@@ -48,7 +47,7 @@ class DiscordAPIClient:
 
     async def exchange_code_for_token(
         self, code: str
-    ) -> Tuple[bool, Optional[str], Optional[Dict[str, str]]]:
+    ) -> tuple[bool, str | None, dict[str, str] | None]:
         """
         Exchange OAuth code for access token
 
@@ -75,8 +74,7 @@ class DiscordAPIClient:
                 )
 
                 if token_response.status_code != 200:
-                    logger.error(
-                        f"Failed to exchange code: {token_response.status_code}")
+                    logger.error(f"Failed to exchange code: {token_response.status_code}")
                     logger.error(f"Response: {token_response.text}")
                     return False, "token_exchange_failed", None
 
@@ -96,16 +94,20 @@ class DiscordAPIClient:
                 user_id = user_info.get("id")
                 logger.debug(f"Token exchanged for Discord user: {user_id}")
 
-                return True, None, {
-                    "access_token": access_token,
-                    "refresh_token": refresh_token or "",
-                    "user_id": user_id,
-                    "username": user_info.get("username", ""),
-                    "global_name": user_info.get("global_name"),  # Display name
-                    "discriminator": user_info.get("discriminator", "0"),
-                    "avatar": user_info.get("avatar"),
-                    "email": user_info.get("email"),
-                }
+                return (
+                    True,
+                    None,
+                    {
+                        "access_token": access_token,
+                        "refresh_token": refresh_token or "",
+                        "user_id": user_id,
+                        "username": user_info.get("username", ""),
+                        "global_name": user_info.get("global_name"),  # Display name
+                        "discriminator": user_info.get("discriminator", "0"),
+                        "avatar": user_info.get("avatar"),
+                        "email": user_info.get("email"),
+                    },
+                )
 
         except httpx.TimeoutException:
             logger.error("Timeout while exchanging code for token")
@@ -114,7 +116,7 @@ class DiscordAPIClient:
             logger.exception(f"Unexpected error exchanging code: {e}")
             return False, "exchange_failed", None
 
-    async def _get_user_info(self, access_token: str) -> Optional[Dict[str, str]]:
+    async def _get_user_info(self, access_token: str) -> dict[str, str] | None:
         """Get user info from access token"""
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
@@ -126,26 +128,24 @@ class DiscordAPIClient:
                 )
 
                 if response.status_code != 200:
-                    logger.error(
-                        f"Failed to get user info: {response.status_code}")
+                    logger.error(f"Failed to get user info: {response.status_code}")
                     return None
 
-                data: Dict[str, str] = response.json()
+                data: dict[str, str] = response.json()
                 return data
 
         except Exception as e:
             logger.exception(f"Error getting user info: {e}")
             return None
 
-    async def get_user_info(self, user_id: str) -> Optional[Dict[str, str]]:
+    async def get_user_info(self, user_id: str) -> dict[str, str] | None:
         """Get user information (requires bot token, not implemented for OAuth)"""
         # Discord OAuth doesn't provide a way to fetch user info by ID
         # This would require a bot token
-        logger.warning(
-            "get_user_info by ID is not supported for Discord OAuth")
+        logger.warning("get_user_info by ID is not supported for Discord OAuth")
         return None
 
-    def get_avatar_url(self, user_id: str, avatar_hash: Optional[str]) -> str:
+    def get_avatar_url(self, user_id: str, avatar_hash: str | None) -> str:
         """Generate Discord avatar URL"""
         if avatar_hash:
             ext = "gif" if avatar_hash.startswith("a_") else "png"

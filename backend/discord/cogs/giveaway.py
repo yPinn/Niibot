@@ -6,11 +6,10 @@ import random
 from datetime import datetime, timedelta
 from typing import Any
 
-from config import DATA_DIR
-from discord.ext import commands, tasks
-
 import discord
+from config import DATA_DIR
 from discord import app_commands, ui
+from discord.ext import commands, tasks
 
 logger = logging.getLogger(__name__)
 
@@ -31,9 +30,9 @@ class TimeSelectView(ui.View):
             discord.SelectOption(label="3 天", value="3d"),
             discord.SelectOption(label="7 天", value="7d"),
             discord.SelectOption(label="手動結束", value="manual"),
-        ]
+        ],
     )
-    async def time_select(self, interaction: discord.Interaction, select: ui.Select):
+    async def time_select(self, interaction: discord.Interaction, select: ui.Select[Any]) -> None:
         value = select.values[0]
 
         end_time = None
@@ -75,18 +74,14 @@ class GiveawayModal(ui.Modal, title="建立抽獎"):
         self.giveaway_cog = giveaway_cog
         self.end_time = end_time
 
-    async def on_submit(self, interaction: discord.Interaction):
+    async def on_submit(self, interaction: discord.Interaction) -> None:
         try:
             count = int(self.prize_count.value)
             if count < 1:
-                await interaction.response.send_message(
-                    "獎品數量必須至少為 1", ephemeral=True
-                )
+                await interaction.response.send_message("獎品數量必須至少為 1", ephemeral=True)
                 return
         except ValueError:
-            await interaction.response.send_message(
-                "獎品數量必須是有效的數字", ephemeral=True
-            )
+            await interaction.response.send_message("獎品數量必須是有效的數字", ephemeral=True)
             return
 
         embed = await self.giveaway_cog.create_giveaway_embed(
@@ -122,8 +117,7 @@ class GiveawayModal(ui.Modal, title="建立抽獎"):
             )
 
         guild_name = interaction.guild.name if interaction.guild else "DM"
-        duration_str = self.end_time.strftime(
-            "%Y-%m-%d %H:%M") if self.end_time else "手動結束"
+        duration_str = self.end_time.strftime("%Y-%m-%d %H:%M") if self.end_time else "手動結束"
         logger.info(
             f"Giveaway created | Guild: {guild_name} | "
             f"Host: {interaction.user.name} | "
@@ -135,18 +129,18 @@ class GiveawayModal(ui.Modal, title="建立抽獎"):
 class ConfirmCancelView(ui.View):
     """取消抽獎確認視圖"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__(timeout=30)
         self.value: bool | None = None
 
     @ui.button(label="確認取消", style=discord.ButtonStyle.danger)
-    async def confirm(self, interaction: discord.Interaction, button: ui.Button):
+    async def confirm(self, interaction: discord.Interaction, button: ui.Button[Any]) -> None:
         self.value = True
         self.stop()
         await interaction.response.edit_message(content="已取消抽獎", view=None)
 
     @ui.button(label="返回", style=discord.ButtonStyle.secondary)
-    async def cancel(self, interaction: discord.Interaction, button: ui.Button):
+    async def cancel(self, interaction: discord.Interaction, button: ui.Button[Any]) -> None:
         self.value = False
         self.stop()
         await interaction.response.edit_message(content="已取消操作", view=None)
@@ -179,19 +173,17 @@ class GiveawayView(ui.View):
         self.host_avatar_url = host_avatar_url
         self.end_time = end_time
 
-    async def on_timeout(self):
+    async def on_timeout(self) -> None:
         """View timeout 時觸發（僅在有截止時間時）"""
         # 這個只會在 15 分鐘內的抽獎觸發
         # 長時間的抽獎由背景任務處理
         pass
 
     @ui.button(label="參加抽獎", style=discord.ButtonStyle.primary, custom_id="giveaway:join")
-    async def join_button(self, interaction: discord.Interaction, button: ui.Button):
+    async def join_button(self, interaction: discord.Interaction, button: ui.Button[Any]) -> None:
         # 檢查是否已截止
         if self.end_time and datetime.now() >= self.end_time:
-            await interaction.response.send_message(
-                "此抽獎已截止，無法再參加", ephemeral=True
-            )
+            await interaction.response.send_message("此抽獎已截止，無法再參加", ephemeral=True)
             return
 
         if self.is_ended:
@@ -212,8 +204,7 @@ class GiveawayView(ui.View):
         # 同步參加者到持久化存儲
         if interaction.message:
             await self.giveaway_cog.update_participants(
-                interaction.message.id,
-                list(self.participants)
+                interaction.message.id, list(self.participants)
             )
 
         await interaction.response.send_message(message, ephemeral=True)
@@ -232,7 +223,7 @@ class GiveawayView(ui.View):
             await interaction.message.edit(embed=embed, view=self)
 
     @ui.button(label="結束抽獎", style=discord.ButtonStyle.danger, custom_id="giveaway:end")
-    async def end_button(self, interaction: discord.Interaction, button: ui.Button):
+    async def end_button(self, interaction: discord.Interaction, button: ui.Button[Any]) -> None:
         if interaction.user.id != self.host_id:
             await interaction.response.send_message(
                 self.giveaway_cog.config["messages"]["not_host"], ephemeral=True
@@ -248,7 +239,7 @@ class GiveawayView(ui.View):
         await self._end_giveaway(interaction)
 
     @ui.button(label="取消抽獎", style=discord.ButtonStyle.secondary, custom_id="giveaway:cancel")
-    async def cancel_button(self, interaction: discord.Interaction, button: ui.Button):
+    async def cancel_button(self, interaction: discord.Interaction, button: ui.Button[Any]) -> None:
         if interaction.user.id != self.host_id:
             await interaction.response.send_message(
                 self.giveaway_cog.config["messages"]["not_host"], ephemeral=True
@@ -266,7 +257,7 @@ class GiveawayView(ui.View):
         await interaction.response.send_message(
             f"確定要取消此抽獎嗎？\n獎品：{self.prize_name}\n目前參加人數：{len(self.participants)} 人\n\n此操作無法復原。",
             view=confirm_view,
-            ephemeral=True
+            ephemeral=True,
         )
 
         # 等待用戶確認
@@ -276,7 +267,7 @@ class GiveawayView(ui.View):
             # 用戶確認取消
             await self._cancel_giveaway(interaction)
 
-    async def _cancel_giveaway(self, interaction: discord.Interaction):
+    async def _cancel_giveaway(self, interaction: discord.Interaction) -> None:
         """取消抽獎的邏輯"""
         self.is_ended = True
 
@@ -289,10 +280,10 @@ class GiveawayView(ui.View):
         )
 
         cancel_embed.add_field(name="獎品", value=self.prize_name, inline=True)
+        cancel_embed.add_field(name="數量", value=f"**{self.prize_count}** 個", inline=True)
         cancel_embed.add_field(
-            name="數量", value=f"**{self.prize_count}** 個", inline=True)
-        cancel_embed.add_field(
-            name="參加人數", value=f"**{len(self.participants)}** 人", inline=False)
+            name="參加人數", value=f"**{len(self.participants)}** 人", inline=False
+        )
 
         # 禁用所有按鈕
         for item in self.children:
@@ -315,7 +306,7 @@ class GiveawayView(ui.View):
             f"Participants: {len(self.participants)}"
         )
 
-    async def _end_giveaway(self, interaction: discord.Interaction):
+    async def _end_giveaway(self, interaction: discord.Interaction) -> None:
         self.is_ended = True
 
         if len(self.participants) == 0:
@@ -333,8 +324,7 @@ class GiveawayView(ui.View):
         winner_ids = random.sample(list(self.participants), winner_count)
 
         result_embed = await self.giveaway_cog.create_result_embed(
-            host=interaction.guild.get_member(
-                self.host_id) if interaction.guild else None,
+            host=interaction.guild.get_member(self.host_id) if interaction.guild else None,
             prize_name=self.prize_name,
             prize_count=self.prize_count,
             winner_ids=winner_ids,
@@ -373,46 +363,42 @@ class Giveaway(commands.Cog):
         self.active_giveaways: dict[int, dict] = {}
         self._load_active_giveaways()
 
-    def cog_load(self):
+    async def cog_load(self) -> None:
         """Cog 載入時啟動背景任務"""
         self.check_giveaway_expiry.start()
         logger.info("Giveaway expiry checker started")
 
-    def cog_unload(self):
+    async def cog_unload(self) -> None:
         """Cog 卸載時停止背景任務"""
         self.check_giveaway_expiry.cancel()
         logger.info("Giveaway expiry checker stopped")
 
-    def _load_data(self):
-        with open(DATA_DIR / "giveaway.json", "r", encoding="utf-8") as f:
+    def _load_data(self) -> None:
+        with open(DATA_DIR / "giveaway.json", encoding="utf-8") as f:
             self.config = json.load(f)
-        with open(DATA_DIR / "embed.json", "r", encoding="utf-8") as f:
+        with open(DATA_DIR / "embed.json", encoding="utf-8") as f:
             self.global_embed_config = json.load(f)
 
-    def _load_active_giveaways(self):
+    def _load_active_giveaways(self) -> None:
         """載入活動中的抽獎"""
         if self.active_giveaways_file.exists():
             try:
-                with open(self.active_giveaways_file, "r", encoding="utf-8") as f:
+                with open(self.active_giveaways_file, encoding="utf-8") as f:
                     self.active_giveaways = json.load(f)
                     # 轉換 key 為 int
-                    self.active_giveaways = {
-                        int(k): v for k, v in self.active_giveaways.items()
-                    }
-                logger.info(
-                    f"Loaded {len(self.active_giveaways)} active giveaways")
+                    self.active_giveaways = {int(k): v for k, v in self.active_giveaways.items()}
+                logger.info(f"Loaded {len(self.active_giveaways)} active giveaways")
             except Exception as e:
                 logger.error(f"Failed to load active giveaways: {e}")
                 self.active_giveaways = {}
         else:
             self.active_giveaways = {}
 
-    def _save_active_giveaways(self):
+    def _save_active_giveaways(self) -> None:
         """儲存活動中的抽獎"""
         try:
             with open(self.active_giveaways_file, "w", encoding="utf-8") as f:
-                json.dump(self.active_giveaways, f,
-                          ensure_ascii=False, indent=2)
+                json.dump(self.active_giveaways, f, ensure_ascii=False, indent=2)
         except Exception as e:
             logger.error(f"Failed to save active giveaways: {e}")
 
@@ -426,7 +412,7 @@ class Giveaway(commands.Cog):
         prize_count: int,
         end_time: str,
         host_avatar_url: str,
-    ):
+    ) -> None:
         """儲存一個活動中的抽獎"""
         self.active_giveaways[message_id] = {
             "channel_id": channel_id,
@@ -440,20 +426,20 @@ class Giveaway(commands.Cog):
         }
         self._save_active_giveaways()
 
-    async def remove_active_giveaway(self, message_id: int):
+    async def remove_active_giveaway(self, message_id: int) -> None:
         """移除一個活動中的抽獎"""
         if message_id in self.active_giveaways:
             del self.active_giveaways[message_id]
             self._save_active_giveaways()
 
-    async def update_participants(self, message_id: int, participants: list[int]):
+    async def update_participants(self, message_id: int, participants: list[int]) -> None:
         """更新抽獎的參加者列表"""
         if message_id in self.active_giveaways:
             self.active_giveaways[message_id]["participants"] = participants
             self._save_active_giveaways()
 
     @tasks.loop(minutes=1)
-    async def check_giveaway_expiry(self):
+    async def check_giveaway_expiry(self) -> None:
         """每分鐘檢查是否有抽獎到期"""
         now = datetime.now()
         expired = []
@@ -470,17 +456,16 @@ class Giveaway(commands.Cog):
                 logger.error(f"Failed to auto-end giveaway {message_id}: {e}")
 
     @check_giveaway_expiry.before_loop
-    async def before_check_giveaway_expiry(self):
+    async def before_check_giveaway_expiry(self) -> None:
         """等待 bot 準備就緒"""
         await self.bot.wait_until_ready()
 
-    async def _auto_end_giveaway(self, message_id: int, data: dict):
+    async def _auto_end_giveaway(self, message_id: int, data: dict[str, Any]) -> None:
         """自動結束到期的抽獎"""
         try:
             channel = self.bot.get_channel(data["channel_id"])
             if not channel:
-                logger.warning(
-                    f"Channel {data['channel_id']} not found for giveaway {message_id}")
+                logger.warning(f"Channel {data['channel_id']} not found for giveaway {message_id}")
                 await self.remove_active_giveaway(message_id)
                 return
 
@@ -500,8 +485,7 @@ class Giveaway(commands.Cog):
             participants = data.get("participants", [])
             participant_count = len(participants)
 
-            guild = self.bot.get_guild(
-                data["guild_id"]) if data["guild_id"] else None
+            guild = self.bot.get_guild(data["guild_id"]) if data["guild_id"] else None
             host = guild.get_member(data["host_id"]) if guild else None
 
             view = ui.View()
@@ -525,15 +509,13 @@ class Giveaway(commands.Cog):
                     timestamp=datetime.now(),
                 )
 
+                no_participant_embed.add_field(name="獎品", value=data["prize_name"], inline=True)
                 no_participant_embed.add_field(
-                    name="獎品", value=data["prize_name"], inline=True)
-                no_participant_embed.add_field(
-                    name="數量", value=f"**{data['prize_count']}** 個", inline=True)
+                    name="數量", value=f"**{data['prize_count']}** 個", inline=True
+                )
                 if host:
-                    no_participant_embed.add_field(
-                        name="主持人", value=host.mention, inline=False)
-                no_participant_embed.add_field(
-                    name="參加人數", value="**0** 人", inline=False)
+                    no_participant_embed.add_field(name="主持人", value=host.mention, inline=False)
+                no_participant_embed.add_field(name="參加人數", value="**0** 人", inline=False)
 
                 await message.edit(embed=no_participant_embed, view=view)
                 await self.remove_active_giveaway(message_id)
@@ -572,12 +554,10 @@ class Giveaway(commands.Cog):
             )
 
         except discord.NotFound:
-            logger.warning(
-                f"Message {message_id} not found, removing from active giveaways")
+            logger.warning(f"Message {message_id} not found, removing from active giveaways")
             await self.remove_active_giveaway(message_id)
         except Exception as e:
-            logger.error(
-                f"Error auto-ending giveaway {message_id}: {e}", exc_info=e)
+            logger.error(f"Error auto-ending giveaway {message_id}: {e}", exc_info=e)
 
     async def create_giveaway_embed(
         self,
@@ -601,13 +581,8 @@ class Giveaway(commands.Cog):
 
         author_name = giveaway_author.get("name") or global_author.get("name")
         if author_name:
-            author_icon = (
-                giveaway_author.get("icon_url")
-                or global_author.get("icon_url")
-                or None
-            )
-            author_url = giveaway_author.get(
-                "url") or global_author.get("url") or None
+            author_icon = giveaway_author.get("icon_url") or global_author.get("icon_url") or None
+            author_url = giveaway_author.get("url") or global_author.get("url") or None
             embed.set_author(
                 name=author_name,
                 icon_url=author_icon,
@@ -637,11 +612,7 @@ class Giveaway(commands.Cog):
 
         footer_text = giveaway_footer.get("text") or global_footer.get("text")
         if footer_text:
-            footer_icon = (
-                giveaway_footer.get("icon_url")
-                or global_footer.get("icon_url")
-                or None
-            )
+            footer_icon = giveaway_footer.get("icon_url") or global_footer.get("icon_url") or None
             embed.set_footer(text=footer_text, icon_url=footer_icon)
 
         return embed
@@ -655,8 +626,7 @@ class Giveaway(commands.Cog):
         total_participants: int,
         host_avatar_url: str,
     ) -> discord.Embed:
-        win_rate = (len(winner_ids) / total_participants *
-                    100) if total_participants > 0 else 0
+        win_rate = (len(winner_ids) / total_participants * 100) if total_participants > 0 else 0
 
         embed = discord.Embed(
             title="【抽獎結果】",
@@ -670,13 +640,8 @@ class Giveaway(commands.Cog):
 
         author_name = giveaway_author.get("name") or global_author.get("name")
         if author_name:
-            author_icon = (
-                giveaway_author.get("icon_url")
-                or global_author.get("icon_url")
-                or None
-            )
-            author_url = giveaway_author.get(
-                "url") or global_author.get("url") or None
+            author_icon = giveaway_author.get("icon_url") or global_author.get("icon_url") or None
+            author_url = giveaway_author.get("url") or global_author.get("url") or None
             embed.set_author(
                 name=author_name,
                 icon_url=author_icon,
@@ -700,8 +665,7 @@ class Giveaway(commands.Cog):
         winners_mention = "\n".join(winners_list)
         embed.add_field(name="得獎名單", value=winners_mention, inline=False)
 
-        embed.add_field(
-            name="總參加人數", value=f"**{total_participants}** 人", inline=True)
+        embed.add_field(name="總參加人數", value=f"**{total_participants}** 人", inline=True)
         embed.add_field(name="中獎率", value=f"**{win_rate:.1f}%**", inline=True)
 
         giveaway_footer = self.config["embed"].get("footer", {})
@@ -709,24 +673,18 @@ class Giveaway(commands.Cog):
 
         footer_text = giveaway_footer.get("text") or global_footer.get("text")
         if footer_text:
-            footer_icon = (
-                giveaway_footer.get("icon_url")
-                or global_footer.get("icon_url")
-                or None
-            )
+            footer_icon = giveaway_footer.get("icon_url") or global_footer.get("icon_url") or None
             embed.set_footer(text=footer_text, icon_url=footer_icon)
 
         return embed
 
     @app_commands.command(name="giveaway", description="抽獎活動")
-    async def giveaway(self, interaction: discord.Interaction):
+    async def giveaway(self, interaction: discord.Interaction) -> None:
         time_view = TimeSelectView(self)
         await interaction.response.send_message(
-            "請選擇抽獎持續時間：",
-            view=time_view,
-            ephemeral=True
+            "請選擇抽獎持續時間：", view=time_view, ephemeral=True
         )
 
 
-async def setup(bot: commands.Bot):
+async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(Giveaway(bot))

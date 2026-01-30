@@ -1,14 +1,16 @@
 """FastAPI application factory"""
 
 import logging
+import time
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 from core.config import get_settings
-from core.database import init_database_manager
+from core.database import get_database_manager, init_database_manager
 from core.logging import setup_logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import PlainTextResponse
 from routers import (
     analytics_router,
     auth_router,
@@ -20,10 +22,16 @@ from routers import (
 
 logger = logging.getLogger(__name__)
 
+# Track server start time
+_start_time: float = 0.0
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Handle startup and shutdown"""
+    global _start_time
+    _start_time = time.time()
+
     settings = get_settings()
 
     # Startup
@@ -85,27 +93,42 @@ def create_app() -> FastAPI:
     app.include_router(commands_router.router)
     app.include_router(bots_router.router)
 
-    # Health check endpoint
-    @app.get("/api/health")
-    async def health_check():
-        """Health check endpoint"""
-        return {
-            "status": "ok",
-            "service": "niibot-api",
-            "version": "2.0.0",
-            "environment": settings.environment,
-        }
-
     # Root endpoint
     @app.get("/")
     async def root():
-        """Root endpoint with API information"""
+        """Root endpoint - minimal service info"""
+        return {"service": "niibot-api", "status": "running"}
+
+    # Health check endpoint for Docker/K8s
+    @app.get("/health")
+    async def health():
+        """Health check endpoint for Docker/K8s"""
+        db_manager = get_database_manager()
+        ready = db_manager is not None and db_manager._pool is not None
         return {
-            "service": "Niibot API",
-            "version": "2.0.0",
-            "docs": "/docs" if settings.is_development else "disabled in production",
-            "health": "/api/health",
+            "status": "healthy" if ready else "starting",
+            "ready": ready,
         }
+
+    # Detailed status endpoint
+    @app.get("/status")
+    async def status():
+        """Status endpoint for detailed service info"""
+        db_manager = get_database_manager()
+        db_connected = db_manager is not None and db_manager._pool is not None
+        return {
+            "service": "niibot-api",
+            "version": "2.0.0",
+            "uptime_seconds": int(time.time() - _start_time),
+            "db_connected": db_connected,
+            "environment": settings.environment,
+        }
+
+    # Ping endpoint
+    @app.get("/ping", response_class=PlainTextResponse)
+    async def ping():
+        """Ping endpoint"""
+        return "pong"
 
     logger.info("FastAPI application configured")
 

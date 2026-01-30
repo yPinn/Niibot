@@ -1,7 +1,6 @@
 """Authentication API routes"""
 
 import logging
-from typing import Optional
 
 from core.config import Settings, get_settings
 from core.dependencies import (
@@ -64,9 +63,9 @@ async def get_twitch_oauth_url(
 
 @router.get("/twitch/callback")
 async def twitch_oauth_callback(
-    code: Optional[str] = None,
-    error: Optional[str] = None,
-    scope: Optional[str] = None,
+    code: str | None = None,
+    error: str | None = None,
+    scope: str | None = None,
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
     auth_service: AuthService = Depends(get_auth_service),
     channel_service: ChannelService = Depends(lambda: get_channel_service(get_db_pool())),
@@ -229,8 +228,8 @@ async def get_discord_oauth_url(
 
 @router.get("/discord/callback")
 async def discord_oauth_callback(
-    code: Optional[str] = None,
-    error: Optional[str] = None,
+    code: str | None = None,
+    error: str | None = None,
     discord_api: DiscordAPIClient = Depends(get_discord_api),
     auth_service: AuthService = Depends(get_auth_service),
     channel_service: ChannelService = Depends(lambda: get_channel_service(get_db_pool())),
@@ -248,9 +247,7 @@ async def discord_oauth_callback(
 
     if not discord_api.is_configured:
         logger.error("Discord OAuth not configured")
-        return RedirectResponse(
-            url=f"{settings.frontend_url}/login?error=discord_not_configured"
-        )
+        return RedirectResponse(url=f"{settings.frontend_url}/login?error=discord_not_configured")
 
     # Exchange code for token
     success, error_msg, token_data = await discord_api.exchange_code_for_token(code)
@@ -285,4 +282,3 @@ async def discord_oauth_callback(
 
     logger.info(f"Discord user logged in: {username} ({user_id})")
     return response
-

@@ -16,4 +16,6 @@ DEFAULT_CHANNEL_NAME = "生日麻吉"
 DEFAULT_ROLE_NAME = "今天我生日"
 
 # Assets
-BIRTHDAY_THUMBNAIL = "https://cdn.discordapp.com/attachments/1331063972996186192/1466317496813359125/birthday.jpg"
+BIRTHDAY_THUMBNAIL = (
+    "https://cdn.discordapp.com/attachments/1331063972996186192/1466317496813359125/birthday.jpg"
+)

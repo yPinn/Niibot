@@ -1,0 +1,13 @@
+# 忽略前端產物
+frontend/dist/
+frontend/node_modules/
+
+# 忽略後端快取 (對應你截圖中的資料夾)
+backend/.mypy_cache/
+backend/.ruff_cache/
+backend/__pycache__/
+backend/venv/
+
+# 忽略全域產物
+.git/
+.husky/

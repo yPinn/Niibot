@@ -191,4 +191,4 @@ async def get_all_components(user_id: str = Depends(get_current_user_id)):
 
     except Exception as e:
         logger.exception(f"Failed to get components: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch components")
+        raise HTTPException(status_code=500, detail="Failed to fetch components") from None

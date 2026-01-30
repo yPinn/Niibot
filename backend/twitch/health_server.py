@@ -35,65 +35,27 @@ class HealthCheckServer:
         self.app.router.add_get("/ping", self.handle_ping)
 
     async def handle_root(self, request: web.Request) -> web.Response:
-        """Root endpoint with service info"""
-        uptime = (datetime.utcnow() - self.start_time).total_seconds()
-        return web.json_response(
-            {
-                "service": "Niibot Twitch Bot",
-                "status": "running",
-                "bot_id": self.bot.bot_id,
-                "uptime_seconds": int(uptime),
-                "connected_channels": len(self.bot._subscribed_channels),
-            }
-        )
+        """Root endpoint - minimal service info"""
+        return web.json_response({"service": "niibot-twitch", "status": "running"})
 
     async def handle_health(self, request: web.Request) -> web.Response:
         """Health check endpoint for Docker/K8s"""
-        try:
-            is_ready = self.bot.bot_id is not None
-            if is_ready:
-                return web.json_response(
-                    {
-                        "status": "healthy",
-                        "bot_ready": True,
-                        "bot_id": self.bot.bot_id,
-                    }
-                )
-            else:
-                return web.json_response(
-                    {"status": "starting", "bot_ready": False}, status=503
-                )
-
-        except Exception as e:
-            logger.exception(f"Health check error: {e}")
-            return web.json_response(
-                {"status": "unhealthy", "error": str(e)}, status=503
-            )
+        ready = self.bot.bot_id is not None
+        return web.json_response(
+            {"status": "healthy" if ready else "starting", "ready": ready},
+            status=200 if ready else 503,
+        )
 
     async def handle_status(self, request: web.Request) -> web.Response:
-        """Detailed status endpoint"""
-        try:
-            uptime = (datetime.utcnow() - self.start_time).total_seconds()
-
-            return web.json_response(
-                {
-                    "status": "online",
-                    "service": "niibot-twitch-bot",
-                    "bot_id": self.bot.bot_id,
-                    "uptime_seconds": int(uptime),
-                    "connected_channels": len(self.bot._subscribed_channels),
-                    "subscription_count": sum(
-                        len(subs) for subs in self.bot._subscription_ids.values()
-                    ),
-                    "timestamp": datetime.utcnow().isoformat(),
-                }
-            )
-
-        except Exception as e:
-            logger.exception(f"Status check error: {e}")
-            return web.json_response(
-                {"status": "error", "error": str(e)}, status=500
-            )
+        """Status endpoint for API server integration"""
+        return web.json_response(
+            {
+                "service": "niibot-twitch",
+                "bot_id": self.bot.bot_id,
+                "uptime_seconds": int((datetime.utcnow() - self.start_time).total_seconds()),
+                "connected_channels": len(self.bot._subscribed_channels),
+            }
+        )
 
     async def handle_ping(self, request: web.Request) -> web.Response:
         """Ping endpoint"""
@@ -110,9 +72,7 @@ class HealthCheckServer:
 
             logger.info(f"HTTP health server started on {self.host}:{self.port}")
             logger.info(f"  GET http://{self.host}:{self.port}/health - Health check")
-            logger.info(
-                f"  GET http://{self.host}:{self.port}/status - Detailed status"
-            )
+            logger.info(f"  GET http://{self.host}:{self.port}/status - Detailed status")
 
         except Exception as e:
             logger.exception(f"Failed to start health server: {e}")

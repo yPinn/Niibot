@@ -2,11 +2,10 @@
 
 import sys
 
-from config import BOT_NAME, BOT_VERSION
-from discord.ext import commands
-
 import discord
+from config import BOT_NAME, BOT_VERSION
 from discord import app_commands
+from discord.ext import commands
 
 
 class Utility(commands.Cog):
@@ -22,13 +21,12 @@ class Utility(commands.Cog):
     @app_commands.command(name="version", description="Bot 版本")
     async def version(self, interaction: discord.Interaction) -> None:
         """顯示 Bot 版本和系統資訊"""
-        embed = discord.Embed(
-            title=f"{BOT_NAME} 版本資訊",
-            color=discord.Color.blue()
-        )
+        embed = discord.Embed(title=f"{BOT_NAME} 版本資訊", color=discord.Color.blue())
 
         # Python 版本（格式：3.11.5）
-        python_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+        python_version = (
+            f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+        )
 
         embed.add_field(name="Bot 版本", value=f"`{BOT_VERSION}`", inline=True)
         embed.add_field(name="discord.py", value=f"`{discord.__version__}`", inline=True)
@@ -38,7 +36,7 @@ class Utility(commands.Cog):
             embed.set_thumbnail(url=self.bot.user.display_avatar.url)
 
         # Bot 統計資訊
-        cog_count = len([ext for ext in self.bot.extensions.keys() if 'cogs' in ext])
+        cog_count = len([ext for ext in self.bot.extensions.keys() if "cogs" in ext])
         embed.add_field(
             name="Bot 統計",
             value=(
@@ -46,7 +44,7 @@ class Utility(commands.Cog):
                 f"> 延遲: `{round(self.bot.latency * 1000)}ms`\n"
                 f"> 已載入 Cogs: `{cog_count}`"
             ),
-            inline=False
+            inline=False,
         )
 
         embed.set_footer(text=f"Bot ID: {self.bot.user.id if self.bot.user else 'Unknown'}")
@@ -64,7 +62,9 @@ class Utility(commands.Cog):
             title=guild.name, description=f"伺服器 ID: {guild.id}", color=discord.Color.blue()
         )
 
-        embed.add_field(name="擁有者", value=guild.owner.mention if guild.owner else "未知", inline=True)
+        embed.add_field(
+            name="擁有者", value=guild.owner.mention if guild.owner else "未知", inline=True
+        )
         embed.add_field(name="成員數", value=str(guild.member_count), inline=True)
         embed.add_field(name="頻道數", value=str(len(guild.channels)), inline=True)
         embed.add_field(name="創建時間", value=guild.created_at.strftime("%Y-%m-%d"), inline=True)
@@ -132,7 +132,7 @@ class Utility(commands.Cog):
         embed = discord.Embed(
             title="Niibot 指令列表",
             description="以下是所有可用的斜線指令",
-            color=discord.Color.blue()
+            color=discord.Color.blue(),
         )
 
         # 工具指令
@@ -146,7 +146,7 @@ class Utility(commands.Cog):
                 "`/avatar` - 顯示用戶頭像\n"
                 "`/help` - 顯示此說明"
             ),
-            inline=False
+            inline=False,
         )
 
         # 遊戲指令
@@ -155,59 +155,45 @@ class Utility(commands.Cog):
             value=(
                 "`/roll` - 擲骰子\n"
                 "`/choose` - 隨機選擇\n"
-                "`/8ball` - 神奇8號球\n"
                 "`/coinflip` - 擲硬幣\n"
                 "`/rps` - 猜拳遊戲\n"
                 "`/roulette` - 俄羅斯輪盤"
             ),
-            inline=False
+            inline=False,
         )
 
         # 占卜與抽獎
         embed.add_field(
             name="【占卜與抽獎】",
-            value=(
-                "`/fortune` - 今日運勢\n"
-                "`/tarot` - 每日塔羅牌抽取\n"
-                "`/giveaway` - 建立抽獎活動"
-            ),
-            inline=False
+            value=("`/fortune` - 今日運勢\n`/tarot` - 每日塔羅牌抽取\n`/giveaway` - 建立抽獎活動"),
+            inline=False,
         )
 
         # AI 助手
-        embed.add_field(
-            name="【AI 助手】",
-            value="`/ai` - 向 AI 提問",
-            inline=False
-        )
+        embed.add_field(name="【AI 助手】", value="`/ai` - 向 AI 提問", inline=False)
 
         # 餐點推薦
         embed.add_field(
             name="【餐點推薦】",
             value=(
-                "`/eat` - 餐點推薦選單\n"
-                "`/food cat` - 列出所有分類\n"
-                "`/food show` - 顯示分類內項目"
+                "`/eat` - 餐點推薦選單\n`/food cat` - 列出所有分類\n`/food show` - 顯示分類內項目"
             ),
-            inline=False
+            inline=False,
         )
 
         # TFT 戰棋
-        embed.add_field(
-            name="【TFT 戰棋】",
-            value="`/tft` - 查詢 TFT 排行榜",
-            inline=False
-        )
+        embed.add_field(name="【TFT 戰棋】", value="`/tft` - 查詢 TFT 排行榜", inline=False)
 
         # 生日系統
         embed.add_field(
-            name="【生日系統】",
-            value="`/bday menu` - 生日功能選單（設定/訂閱/查看）",
-            inline=False
+            name="【生日系統】", value="`/bday menu` - 生日功能選單（設定/訂閱/查看）", inline=False
         )
 
         # 管理指令（需要權限）
-        if isinstance(interaction.user, discord.Member) and interaction.user.guild_permissions.manage_messages:
+        if (
+            isinstance(interaction.user, discord.Member)
+            and interaction.user.guild_permissions.manage_messages
+        ):
             embed.add_field(
                 name="【管理指令】（需要相應權限）",
                 value=(
@@ -220,11 +206,14 @@ class Utility(commands.Cog):
                     "`/food add` - 新增餐點\n"
                     "`/food remove` - 移除餐點"
                 ),
-                inline=False
+                inline=False,
             )
 
         # 管理員專用
-        if isinstance(interaction.user, discord.Member) and interaction.user.guild_permissions.administrator:
+        if (
+            isinstance(interaction.user, discord.Member)
+            and interaction.user.guild_permissions.administrator
+        ):
             embed.add_field(
                 name="【管理員專用】",
                 value=(
@@ -235,7 +224,7 @@ class Utility(commands.Cog):
                     "`/food delete` - 刪除餐點分類\n"
                     "`/bday init` - 初始化生日系統"
                 ),
-                inline=False
+                inline=False,
             )
 
         # Bot Owner 專用指令
@@ -249,7 +238,7 @@ class Utility(commands.Cog):
                     "`/cogs` - 列出已載入的 Cog\n"
                     "`/sync` - 同步指令樹"
                 ),
-                inline=False
+                inline=False,
             )
 
         embed.set_footer(text="使用 / 開頭來使用斜線指令")
@@ -261,5 +250,5 @@ class Utility(commands.Cog):
         await ctx.send(f"你好，{ctx.author.mention}")
 
 
-async def setup(bot: commands.Bot):
+async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(Utility(bot))

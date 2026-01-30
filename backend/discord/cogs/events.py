@@ -3,10 +3,9 @@
 import logging
 from datetime import datetime
 
-from discord.ext import commands
-
 import discord
 from discord import app_commands
+from discord.ext import commands
 
 logger = logging.getLogger(__name__)
 
@@ -21,18 +20,22 @@ class Events(commands.Cog):
     @app_commands.checks.has_permissions(administrator=True)
     async def set_log_channel(
         self, interaction: discord.Interaction, channel: discord.TextChannel
-    ):
+    ) -> None:
         if not interaction.guild:
             await interaction.response.send_message("此指令只能在伺服器中使用", ephemeral=True)
             return
 
         self.log_channels[interaction.guild.id] = channel.id
-        await interaction.response.send_message(f"已設定日誌頻道為 {channel.mention}", ephemeral=True)
-        logger.info(f"Log channel set | Guild: {interaction.guild.name} | Channel: #{channel.name} | By: {interaction.user.name}")
+        await interaction.response.send_message(
+            f"已設定日誌頻道為 {channel.mention}", ephemeral=True
+        )
+        logger.info(
+            f"Log channel set | Guild: {interaction.guild.name} | Channel: #{channel.name} | By: {interaction.user.name}"
+        )
 
     @app_commands.command(name="unsetlog", description="取消日誌")
     @app_commands.checks.has_permissions(administrator=True)
-    async def unset_log_channel(self, interaction: discord.Interaction):
+    async def unset_log_channel(self, interaction: discord.Interaction) -> None:
         if not interaction.guild:
             await interaction.response.send_message("此指令只能在伺服器中使用", ephemeral=True)
             return
@@ -40,7 +43,9 @@ class Events(commands.Cog):
         if interaction.guild.id in self.log_channels:
             del self.log_channels[interaction.guild.id]
             await interaction.response.send_message("已取消日誌頻道設定", ephemeral=True)
-            logger.info(f"Log channel unset | Guild: {interaction.guild.name} | By: {interaction.user.name}")
+            logger.info(
+                f"Log channel unset | Guild: {interaction.guild.name} | By: {interaction.user.name}"
+            )
         else:
             await interaction.response.send_message("尚未設定日誌頻道", ephemeral=True)
 
@@ -53,7 +58,7 @@ class Events(commands.Cog):
         return None
 
     @commands.Cog.listener()
-    async def on_message_delete(self, message: discord.Message):
+    async def on_message_delete(self, message: discord.Message) -> None:
         if message.author.bot or not message.guild:
             return
 
@@ -61,10 +66,14 @@ class Events(commands.Cog):
         if not log_channel or log_channel == message.channel:
             return
 
-        embed = discord.Embed(title="訊息刪除", color=discord.Color.orange(), timestamp=datetime.now())
+        embed = discord.Embed(
+            title="訊息刪除", color=discord.Color.orange(), timestamp=datetime.now()
+        )
         embed.add_field(name="作者", value=message.author.mention, inline=True)
 
-        channel_name = message.channel.mention if hasattr(message.channel, "mention") else str(message.channel)
+        channel_name = (
+            message.channel.mention if hasattr(message.channel, "mention") else str(message.channel)
+        )
         embed.add_field(name="頻道", value=channel_name, inline=True)
 
         content = message.content[:1024] if message.content else "無文字內容"
@@ -77,7 +86,7 @@ class Events(commands.Cog):
         await log_channel.send(embed=embed)
 
     @commands.Cog.listener()
-    async def on_message_edit(self, before: discord.Message, after: discord.Message):
+    async def on_message_edit(self, before: discord.Message, after: discord.Message) -> None:
         if before.author.bot or not before.guild or before.content == after.content:
             return
 
@@ -85,10 +94,14 @@ class Events(commands.Cog):
         if not log_channel or log_channel == before.channel:
             return
 
-        embed = discord.Embed(title="訊息編輯", color=discord.Color.blue(), timestamp=datetime.now())
+        embed = discord.Embed(
+            title="訊息編輯", color=discord.Color.blue(), timestamp=datetime.now()
+        )
         embed.add_field(name="作者", value=before.author.mention, inline=True)
 
-        channel_name = before.channel.mention if hasattr(before.channel, "mention") else str(before.channel)
+        channel_name = (
+            before.channel.mention if hasattr(before.channel, "mention") else str(before.channel)
+        )
         embed.add_field(name="頻道", value=channel_name, inline=True)
 
         before_content = before.content[:512] if before.content else "無內容"
@@ -101,7 +114,7 @@ class Events(commands.Cog):
         await log_channel.send(embed=embed)
 
     @commands.Cog.listener()
-    async def on_member_update(self, before: discord.Member, after: discord.Member):
+    async def on_member_update(self, before: discord.Member, after: discord.Member) -> None:
         log_channel = self.get_log_channel(before.guild)
         if not log_channel:
             return
@@ -133,7 +146,7 @@ class Events(commands.Cog):
             await log_channel.send(embed=embed)
 
     @commands.Cog.listener()
-    async def on_bulk_message_delete(self, messages: list[discord.Message]):
+    async def on_bulk_message_delete(self, messages: list[discord.Message]) -> None:
         if not messages or not messages[0].guild:
             return
 
@@ -142,7 +155,11 @@ class Events(commands.Cog):
         if not log_channel:
             return
 
-        channel_name = messages[0].channel.mention if hasattr(messages[0].channel, "mention") else str(messages[0].channel)
+        channel_name = (
+            messages[0].channel.mention
+            if hasattr(messages[0].channel, "mention")
+            else str(messages[0].channel)
+        )
 
         embed = discord.Embed(
             title="批量訊息刪除",
@@ -154,5 +171,5 @@ class Events(commands.Cog):
         await log_channel.send(embed=embed)
 
 
-async def setup(bot: commands.Bot):
+async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(Events(bot))

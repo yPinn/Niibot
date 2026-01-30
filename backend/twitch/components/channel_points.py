@@ -1,10 +1,9 @@
 import logging
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 import twitchio
-from twitchio.ext import commands
-
 from core.config import get_settings
+from twitchio.ext import commands
 
 if TYPE_CHECKING:
     from main import Bot
@@ -32,9 +31,7 @@ class ChannelPointsComponent(commands.Component):
         payload: twitchio.ChannelPointsRedemptionAdd,
     ) -> None:
         """Channel Points 兌換事件"""
-        LOGGER.debug(
-            f"[DEBUG] event_custom_redemption_add 觸發！Payload 類型: {type(payload)}"
-        )
+        LOGGER.debug(f"[DEBUG] event_custom_redemption_add 觸發！Payload 類型: {type(payload)}")
 
         user_name = payload.user.display_name or payload.user.name
         reward_title = payload.reward.title
@@ -76,7 +73,7 @@ class ChannelPointsComponent(commands.Component):
     async def _handle_vip_redemption(
         self,
         payload: twitchio.ChannelPointsRedemptionAdd,
-        user_name: Optional[str],
+        user_name: str | None,
     ) -> None:
         """處理 VIP 獎勵兌換"""
         try:

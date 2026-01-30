@@ -5,14 +5,12 @@ import calendar
 import json
 import logging
 from datetime import date, datetime, time
-from typing import Optional
-
-from config import DATA_DIR
-from database import BirthdayRepository, DatabasePool
-from discord.ext import commands, tasks
 
 import discord
+from config import DATA_DIR
+from database import BirthdayRepository, DatabasePool
 from discord import app_commands
+from discord.ext import commands, tasks
 
 from .constants import BIRTHDAY_COLOR, BIRTHDAY_THUMBNAIL, TZ_UTC8
 from .views import DashboardView, InitSetupView, UpdateSettingsView
@@ -32,7 +30,7 @@ class BirthdayCog(commands.Cog):
     @staticmethod
     def _load_embed_config() -> dict:
         try:
-            with open(DATA_DIR / "embed.json", "r", encoding="utf-8") as f:
+            with open(DATA_DIR / "embed.json", encoding="utf-8") as f:
                 return dict(json.load(f))
         except Exception:
             return {}
@@ -83,9 +81,7 @@ class BirthdayCog(commands.Cog):
 
     # ==================== Helpers ====================
 
-    async def _fetch_member(
-        self, guild: discord.Guild, user_id: int
-    ) -> Optional[discord.Member]:
+    async def _fetch_member(self, guild: discord.Guild, user_id: int) -> discord.Member | None:
         """安全取得成員"""
         if member := guild.get_member(user_id):
             return member
@@ -102,9 +98,7 @@ class BirthdayCog(commands.Cog):
         """格式化日期為 X 月 Y 日"""
         return f"{month} 月 {day} 日"
 
-    def _format_birthday_users(
-        self, members: list[tuple[discord.Member, Optional[int]]]
-    ) -> str:
+    def _format_birthday_users(self, members: list[tuple[discord.Member, int | None]]) -> str:
         """格式化壽星列表"""
         parts = []
         for member, age in sorted(members, key=lambda x: x[0].id):
@@ -151,16 +145,13 @@ class BirthdayCog(commands.Cog):
                     await self.repo.update_settings(settings.guild_id, enabled=False)
                     continue
 
-                birthdays = await self.repo.get_todays_birthdays(
-                    settings.guild_id, month, day
-                )
+                birthdays = await self.repo.get_todays_birthdays(settings.guild_id, month, day)
                 if not birthdays:
                     await self.repo.update_last_notified(settings.guild_id, today)
                     continue
 
                 # 收集壽星並加身分組
-                members_with_age: list[tuple[discord.Member,
-                                             Optional[int]]] = []
+                members_with_age: list[tuple[discord.Member, int | None]] = []
                 for user_id, birth_year in birthdays:
                     member = await self._fetch_member(guild, user_id)
                     if not member:
@@ -178,9 +169,7 @@ class BirthdayCog(commands.Cog):
                 if members_with_age:
                     users_str = self._format_birthday_users(members_with_age)
                     try:
-                        await channel.send(
-                            settings.message_template.format(users=users_str)
-                        )
+                        await channel.send(settings.message_template.format(users=users_str))
                     except discord.Forbidden:
                         logger.warning(f"Cannot send to channel {channel.id}")
 
@@ -234,9 +223,7 @@ class BirthdayCog(commands.Cog):
                 if not channel or not isinstance(channel, discord.TextChannel):
                     continue
 
-                month_bdays = await self.repo.get_birthdays_in_month(
-                    settings.guild_id, now.month
-                )
+                month_bdays = await self.repo.get_birthdays_in_month(settings.guild_id, now.month)
                 if not month_bdays:
                     continue
 
@@ -281,17 +268,13 @@ class BirthdayCog(commands.Cog):
             await interaction.response.send_message("功能尚未就緒", ephemeral=True)
             return
         if not interaction.guild:
-            await interaction.response.send_message(
-                "此指令只能在伺服器中使用", ephemeral=True
-            )
+            await interaction.response.send_message("此指令只能在伺服器中使用", ephemeral=True)
             return
 
         await interaction.response.defer(ephemeral=True)
 
         birthday = await self.repo.get_birthday(interaction.user.id)
-        is_subscribed = await self.repo.is_subscribed(
-            interaction.guild.id, interaction.user.id
-        )
+        is_subscribed = await self.repo.is_subscribed(interaction.guild.id, interaction.user.id)
         settings = await self.repo.get_settings(interaction.guild.id)
 
         # 建立 Embed
@@ -319,13 +302,12 @@ class BirthdayCog(commands.Cog):
 
         embed = self._apply_embed_style(embed)
 
-        view: Optional[DashboardView] = (
-            DashboardView(self, birthday is not None, is_subscribed)
-            if settings
-            else None
+        view: DashboardView | None = (
+            DashboardView(self, birthday is not None, is_subscribed) if settings else None
         )
         await interaction.followup.send(
-            embed=embed, view=view  # type: ignore[arg-type]
+            embed=embed,
+            view=view,  # type: ignore[arg-type]
         )
 
     @bday_group.command(name="init", description="初始化伺服器生日功能")
@@ -335,9 +317,7 @@ class BirthdayCog(commands.Cog):
             await interaction.response.send_message("功能尚未就緒", ephemeral=True)
             return
         if not interaction.guild:
-            await interaction.response.send_message(
-                "此指令只能在伺服器中使用", ephemeral=True
-            )
+            await interaction.response.send_message("此指令只能在伺服器中使用", ephemeral=True)
             return
 
         await interaction.response.defer(ephemeral=True)
@@ -393,7 +373,7 @@ class BirthdayCog(commands.Cog):
         interaction: discord.Interaction,
         month: int,
         day: int,
-        year: Optional[int] = None,
+        year: int | None = None,
     ) -> None:
         """處理生日儲存"""
         if not interaction.response.is_done():
@@ -450,9 +430,7 @@ class BirthdayCog(commands.Cog):
             return
 
         now = datetime.now(TZ_UTC8)
-        month_bdays = await self.repo.get_birthdays_in_month(
-            interaction.guild.id, now.month
-        )
+        month_bdays = await self.repo.get_birthdays_in_month(interaction.guild.id, now.month)
         upcoming = await self.repo.get_upcoming_birthdays(
             interaction.guild.id, now.month, now.day, limit=3
         )
@@ -467,9 +445,7 @@ class BirthdayCog(commands.Cog):
                 if member:
                     lines.append(f"`{m:>2}/{d:<2}` {member.mention}")
             if lines:
-                embed.add_field(
-                    name=f"{now.month} 月壽星", value="\n".join(lines), inline=False
-                )
+                embed.add_field(name=f"{now.month} 月壽星", value="\n".join(lines), inline=False)
 
         # 即將到來
         if upcoming:
@@ -479,8 +455,7 @@ class BirthdayCog(commands.Cog):
                 if member:
                     lines.append(f"`{m:>2}/{d:<2}` {member.mention}")
             if lines:
-                embed.add_field(
-                    name="即將到來", value="\n".join(lines), inline=False)
+                embed.add_field(name="即將到來", value="\n".join(lines), inline=False)
 
         embed = self._apply_embed_style(embed)
 

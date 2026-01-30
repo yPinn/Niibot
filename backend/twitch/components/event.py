@@ -33,9 +33,7 @@ class EventComponent(commands.Component):
         now = datetime.now()
         cooldown = timedelta(hours=self.COOLDOWN_HOURS)
         expired_keys = [
-            user_id
-            for user_id, last_time in cache.items()
-            if now - last_time > cooldown
+            user_id for user_id, last_time in cache.items() if now - last_time > cooldown
         ]
         for key in expired_keys:
             del cache[key]
@@ -89,17 +87,17 @@ class EventComponent(commands.Component):
 
             # Record to analytics database
             channel_id = payload.broadcaster.id
-            if hasattr(self.bot, '_active_sessions') and hasattr(self.bot, 'analytics'):
-                session_id = getattr(self.bot, '_active_sessions').get(channel_id)
+            if hasattr(self.bot, "_active_sessions") and hasattr(self.bot, "analytics"):
+                session_id = self.bot._active_sessions.get(channel_id)
                 if session_id:
-                    analytics = getattr(self.bot, 'analytics')
+                    analytics = self.bot.analytics
                     await analytics.record_follow_event(
                         session_id=session_id,
                         channel_id=channel_id,
                         user_id=user_id,
                         username=payload.user.name or user_name,
                         display_name=payload.user.display_name,
-                        occurred_at=datetime.now()
+                        occurred_at=datetime.now(),
                     )
         except Exception as e:
             LOGGER.error(f"[{broadcaster_name}] Follow: {user_name} (error: {e})")
@@ -132,10 +130,10 @@ class EventComponent(commands.Component):
 
             # Record to analytics database
             channel_id = payload.broadcaster.id
-            if hasattr(self.bot, '_active_sessions') and hasattr(self.bot, 'analytics'):
-                session_id = getattr(self.bot, '_active_sessions').get(channel_id)
+            if hasattr(self.bot, "_active_sessions") and hasattr(self.bot, "analytics"):
+                session_id = self.bot._active_sessions.get(channel_id)
                 if session_id:
-                    analytics = getattr(self.bot, 'analytics')
+                    analytics = self.bot.analytics
                     await analytics.record_subscribe_event(
                         session_id=session_id,
                         channel_id=channel_id,
@@ -144,7 +142,7 @@ class EventComponent(commands.Component):
                         display_name=payload.user.display_name,
                         tier=payload.tier,
                         is_gift=payload.gift,
-                        occurred_at=datetime.now()
+                        occurred_at=datetime.now(),
                     )
         except Exception as e:
             LOGGER.error(f"[{broadcaster_name}] {sub_type}: {user_name} ({tier_name}) (error: {e})")
@@ -156,5 +154,4 @@ async def setup(bot: commands.Bot) -> None:
     LOGGER.info("EventComponent loaded with listeners: event_follow, event_subscribe")
 
 
-async def teardown(bot: commands.Bot) -> None:
-    ...
+async def teardown(bot: commands.Bot) -> None: ...

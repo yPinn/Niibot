@@ -3,7 +3,9 @@
 from .config import (
     BOT_SCOPES,
     BROADCASTER_SCOPES,
+    COMPONENTS_DIR,
     DATA_DIR,
+    TWITCH_DIR,
     get_settings,
     load_env_config,
     validate_env_vars,
@@ -17,10 +19,13 @@ __all__ = [
     "get_settings",
     "validate_env_vars",
     "load_env_config",
-    # Constants
+    # Path Constants
+    "TWITCH_DIR",
+    "COMPONENTS_DIR",
+    "DATA_DIR",
+    # Scope Constants
     "BOT_SCOPES",
     "BROADCASTER_SCOPES",
-    "DATA_DIR",
     # Setup functions
     "setup_logging",
     "setup_database_schema",

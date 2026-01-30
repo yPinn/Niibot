@@ -39,5 +39,5 @@ export const API_ENDPOINTS = {
       health: '/api/bots/discord/health',
     },
   },
-  health: '/api/health',
+  health: '/health',
 } as const

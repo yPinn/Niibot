@@ -1,10 +1,9 @@
 import logging
-from typing import TYPE_CHECKING, Optional
-
-from openai import OpenAI
-from twitchio.ext import commands
+from typing import TYPE_CHECKING
 
 from core.config import get_settings
+from openai import OpenAI
+from twitchio.ext import commands
 
 if TYPE_CHECKING:
     from main import Bot
@@ -27,12 +26,10 @@ class AIComponent(commands.Component):
         model = settings.openrouter_model
 
         if not api_key or api_key.strip() == "":
-            raise ValueError(
-                "OPENROUTER_API_KEY is required but not set in .env file")
+            raise ValueError("OPENROUTER_API_KEY is required but not set in .env file")
 
         if not model or model.strip() == "":
-            raise ValueError(
-                "OPENROUTER_MODEL is required but not set in .env file")
+            raise ValueError("OPENROUTER_MODEL is required but not set in .env file")
 
         self.client = OpenAI(
             base_url="https://openrouter.ai/api/v1",
@@ -51,9 +48,7 @@ class AIComponent(commands.Component):
 
     @commands.cooldown(rate=1, per=10)
     @commands.command()
-    async def ai(
-        self, ctx: commands.Context[Bot], *, message: Optional[str] = None
-    ) -> None:
+    async def ai(self, ctx: commands.Context[Bot], *, message: str | None = None) -> None:
         """Ask AI a question (text only).
 
         Usage:
@@ -76,8 +71,7 @@ class AIComponent(commands.Component):
                 messages=[
                     {
                         "role": "system",
-                        "content":
-                            """你是 Twitch 聊天機器人。
+                        "content": """你是 Twitch 聊天機器人。
 
                             規則：
                             - 語言：繁體中文
@@ -106,7 +100,7 @@ class AIComponent(commands.Component):
             response = msg.content or ""
 
             # Reasoning models put content in reasoning field
-            if not response and hasattr(msg, 'reasoning') and msg.reasoning:
+            if not response and hasattr(msg, "reasoning") and msg.reasoning:
                 response = msg.reasoning
                 LOGGER.debug("Using reasoning field")
 

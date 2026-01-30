@@ -22,11 +22,10 @@ env_path = Path(__file__).parent / ".env"
 load_dotenv(dotenv_path=env_path, encoding="utf-8")
 
 # 導入配置和 Discord 模組
-from config import BotConfig  # noqa: E402
+import discord  # noqa: E402
+from config import COGS_DIR, BotConfig  # noqa: E402
 from discord.ext import commands  # noqa: E402
 from rate_limiter import RateLimitMonitor  # noqa: E402
-
-import discord  # noqa: E402
 
 try:
     from rich.console import Console
@@ -37,10 +36,9 @@ except ImportError:
     RICH_AVAILABLE = False
 
 
-def setup_logging():
+def setup_logging() -> None:
     """設定日誌系統"""
-    level = getattr(logging, os.getenv(
-        "LOG_LEVEL", "INFO").upper(), logging.INFO)
+    level = getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO)
 
     if RICH_AVAILABLE:
         try:
@@ -71,8 +69,7 @@ def setup_logging():
             )
 
             rich_handler.setFormatter(
-                logging.Formatter(fmt="%(message)s",
-                                  datefmt="[%Y-%m-%d %H:%M:%S]")
+                logging.Formatter(fmt="%(message)s", datefmt="[%Y-%m-%d %H:%M:%S]")
             )
 
             logging.basicConfig(
@@ -113,7 +110,7 @@ logger = logging.getLogger("discord_bot")
 class NiibotClient(commands.Bot):
     """Niibot Discord Bot 客戶端"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         # 設定 Intents (僅開啟必要的特權 Intents)
         intents = discord.Intents.default()
         intents.message_content = True  # Required for events.py message logging
@@ -125,26 +122,25 @@ class NiibotClient(commands.Bot):
             help_command=None,  # 自訂 help 指令
         )
 
-        self.initial_extensions = [
-            "cogs.admin",
-            "cogs.moderation",
-            "cogs.utility",
-            "cogs.events",
-            "cogs.fortune",
-            "cogs.giveaway",
-            "cogs.games",
-            "cogs.eat",
-            "cogs.ai",
-            "cogs.tft",
-            "cogs.rate_limit_monitor",
-            "cogs.tarot",
-            "cogs.birthday",
-        ]
-
-        # 初始化速率限制監控器
+        self.initial_extensions: list[str] = self._get_extensions()
         self.rate_limiter = RateLimitMonitor(self)
 
-    async def setup_hook(self):
+    def _get_extensions(self) -> list[str]:
+        """動態掃描 cogs 目錄"""
+        if not COGS_DIR.exists():
+            return []
+
+        return [
+            f"cogs.{item.stem if item.is_file() else item.name}"
+            for item in COGS_DIR.iterdir()
+            if not item.name.startswith(("_", "."))
+            and (
+                (item.is_file() and item.suffix == ".py")
+                or (item.is_dir() and (item / "__init__.py").exists())
+            )
+        ]
+
+    async def setup_hook(self) -> None:
         """Bot 啟動時的初始化設置"""
         # 啟動速率限制監控
         await self.rate_limiter.start_monitoring()
@@ -156,7 +152,7 @@ class NiibotClient(commands.Bot):
         for extension in self.initial_extensions:
             try:
                 await self.load_extension(extension)
-                loaded.append(extension.split('.')[-1])
+                loaded.append(extension.split(".")[-1])
             except Exception as e:
                 failed.append(f"{extension.split('.')[-1]} ({e})")
 
@@ -201,8 +197,7 @@ class NiibotClient(commands.Bot):
                     synced = await self.tree.sync(guild=guild)
 
                     if RICH_AVAILABLE:
-                        logger.info(
-                            f"[magenta]已同步 {len(synced)} 個指令到測試伺服器[/magenta]")
+                        logger.info(f"[magenta]已同步 {len(synced)} 個指令到測試伺服器[/magenta]")
                     else:
                         logger.info(f"已同步 {len(synced)} 個指令到測試伺服器")
                 else:
@@ -229,18 +224,18 @@ class NiibotClient(commands.Bot):
         else:
             logger.info("正在連接 Discord...")
 
-    async def on_ready(self):
+    async def on_ready(self) -> None:
         """Bot 連接成功並就緒時觸發"""
         # 記錄同步的測試伺服器資訊
-        if hasattr(self, '_sync_guild_id'):
+        if hasattr(self, "_sync_guild_id"):
             guild_obj = self.get_guild(int(self._sync_guild_id))
             if guild_obj:
                 if RICH_AVAILABLE:
                     logger.info(
-                        f"[cyan]測試伺服器:[/cyan] {guild_obj.name} (ID: {self._sync_guild_id})")
+                        f"[cyan]測試伺服器:[/cyan] {guild_obj.name} (ID: {self._sync_guild_id})"
+                    )
                 else:
-                    logger.info(
-                        f"測試伺服器: {guild_obj.name} (ID: {self._sync_guild_id})")
+                    logger.info(f"測試伺服器: {guild_obj.name} (ID: {self._sync_guild_id})")
 
         # 取得並設定 Bot 擁有者 ID
         if not self.owner_id:
@@ -249,8 +244,7 @@ class NiibotClient(commands.Bot):
             # 優先使用 global_name（全局顯示名稱），否則使用 name（用戶名）
             owner_name = app_info.owner.global_name or app_info.owner.name
             if RICH_AVAILABLE:
-                logger.info(
-                    f"[cyan]Bot Owner:[/cyan] {owner_name} (ID: {self.owner_id})")
+                logger.info(f"[cyan]Bot Owner:[/cyan] {owner_name} (ID: {self.owner_id})")
             else:
                 logger.info(f"Bot Owner: {owner_name} (ID: {self.owner_id})")
 
@@ -278,16 +272,13 @@ class NiibotClient(commands.Bot):
             logger.info(
                 f"[cyan]連接資訊:[/cyan] {len(self.guilds)} 個伺服器 | discord.py {discord.__version__}"
             )
-            logger.info(
-                f"[cyan]Bot 狀態:[/cyan] {status.name} | {activity_str}"
-            )
+            logger.info(f"[cyan]Bot 狀態:[/cyan] {status.name} | {activity_str}")
         else:
             logger.info(f"Bot 已就緒: {self.user} (ID: {self.user.id})")
-            logger.info(
-                f"連接資訊: {len(self.guilds)} 個伺服器 | discord.py {discord.__version__}")
+            logger.info(f"連接資訊: {len(self.guilds)} 個伺服器 | discord.py {discord.__version__}")
             logger.info(f"Bot 狀態: {status.name} | {activity_str}")
 
-    async def on_command_error(self, ctx: commands.Context, error: commands.CommandError):
+    async def on_command_error(self, ctx: commands.Context, error: commands.CommandError) -> None:
         """處理前綴指令錯誤"""
         if isinstance(error, commands.CommandNotFound):
             return
@@ -304,7 +295,7 @@ class NiibotClient(commands.Bot):
         await ctx.send("執行指令時發生錯誤")
 
 
-async def main():
+async def main() -> None:
     """Bot 啟動主函數"""
     token = os.getenv("DISCORD_BOT_TOKEN")
     if not token:
@@ -326,6 +317,7 @@ async def main():
             # 啟動 HTTP 服務器（如果啟用）
             if enable_http:
                 from http_server import HealthCheckServer
+
                 http_server = HealthCheckServer(bot, port=http_port)
                 await http_server.start()
                 if RICH_AVAILABLE:

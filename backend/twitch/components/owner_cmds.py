@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from twitchio.ext import commands
 
@@ -20,9 +20,7 @@ class OwnerCmds(commands.Component):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
 
-    async def component_command_error(
-        self, payload: commands.CommandErrorPayload
-    ) -> Optional[bool]:
+    async def component_command_error(self, payload: commands.CommandErrorPayload) -> bool | None:
         """Handle component-specific errors."""
         error = payload.exception
         if isinstance(error, NotOwnerError):

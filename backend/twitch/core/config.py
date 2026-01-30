@@ -9,30 +9,30 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = logging.getLogger(__name__)
 
-# Constants
-DATA_DIR = Path(__file__).parent.parent.parent / "data"
+# === Path Configuration ===
+TWITCH_DIR = Path(__file__).parent.parent
+BACKEND_DIR = TWITCH_DIR.parent
+COMPONENTS_DIR = TWITCH_DIR / "components"
+DATA_DIR = BACKEND_DIR / "data"
 
 BOT_SCOPES = [
-    "user:read:chat",
-    "user:write:chat",
-    "user:bot",
-    "moderator:manage:announcements",
-    "moderator:read:followers",
-    "user:manage:whispers",
+    # Core bot functionality
+    "user:bot",  # Bot identifier
+    "user:read:chat",  # Read chat messages
+    "user:write:chat",  # Send chat messages
+    # Moderation (requires bot to be mod in channel)
+    "moderator:read:followers",  # Follow EventSub
+    "moderator:manage:announcements",  # Send announcements
+    # Optional features
+    "user:manage:whispers",  # Whisper messages
 ]
 
 BROADCASTER_SCOPES = [
-    "channel:bot",
-    "user:write:chat",
-    "user:manage:whispers",
-    "channel:read:redemptions",
-    "channel:manage:vips",
-    "moderator:manage:announcements",
-    "channel:read:subscriptions",
-    "channel:read:hype_train",
-    "channel:read:polls",
-    "channel:read:predictions",
-    "bits:read",
+    # Minimal scopes - broadcaster just grants bot access
+    "channel:bot",  # Allow bot to join channel
+    "channel:read:redemptions",  # Channel points EventSub
+    "channel:read:subscriptions",  # Subscription EventSub
+    "bits:read",  # Bits EventSub
 ]
 
 
@@ -58,24 +58,20 @@ class TwitchBotSettings(BaseSettings):
     database_url: str = Field(..., description="PostgreSQL database URL")
 
     # EventSub
-    conduit_id: str = Field(
-        default="", description="Twitch EventSub Conduit ID")
+    conduit_id: str = Field(default="", description="Twitch EventSub Conduit ID")
 
     # Frontend
-    frontend_url: str = Field(
-        default="http://localhost:3000", description="Frontend URL for OAuth")
+    frontend_url: str = Field(default="http://localhost:3000", description="Frontend URL for OAuth")
 
     # OpenRouter AI
-    openrouter_api_key: str = Field(
-        default="", description="OpenRouter API key")
+    openrouter_api_key: str = Field(default="", description="OpenRouter API key")
     openrouter_model: str = Field(
-        default="tngtech/deepseek-r1t2-chimera:free", description="OpenRouter model")
+        default="tngtech/deepseek-r1t2-chimera:free", description="OpenRouter model"
+    )
 
     # Health Check Server
-    enable_health_server: bool = Field(
-        default=True, description="Enable HTTP health check server")
-    health_port: int = Field(
-        default=4344, description="Health check server port")
+    enable_health_server: bool = Field(default=True, description="Enable HTTP health check server")
+    health_port: int = Field(default=4344, description="Health check server port")
 
     # Environment
     log_level: str = Field(default="INFO", description="Logging level")

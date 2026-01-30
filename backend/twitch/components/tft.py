@@ -76,21 +76,19 @@ class LeaderboardComponent(commands.Component):
             match = re.search(
                 r'<script id="__NEXT_DATA__" type="application/json">(.+?)</script>',
                 response.text,
-                re.DOTALL
+                re.DOTALL,
             )
             if not match:
                 LOGGER.error("Data element not found, using cache")
                 return self._cache
 
-            data: dict[str, Any] = json.loads(match.group(1))[
-                "props"]["pageProps"]["data"]
+            data: dict[str, Any] = json.loads(match.group(1))["props"]["pageProps"]["data"]
 
             self._cache = data
             self._cache_time = now
             self._last_request = now
 
-            LOGGER.info(
-                f"Fetched leaderboard - {len(data.get('entries', []))} players")
+            LOGGER.info(f"Fetched leaderboard - {len(data.get('entries', []))} players")
             return data
 
         except Exception as e:
@@ -106,7 +104,9 @@ class LeaderboardComponent(commands.Component):
         try:
             await asyncio.sleep(random.uniform(0.5, 1.5))
 
-            url = f"https://tactics.tools/player/tw/{quote(username, safe='')}/{quote(tag, safe='')}"
+            url = (
+                f"https://tactics.tools/player/tw/{quote(username, safe='')}/{quote(tag, safe='')}"
+            )
             LOGGER.info(f"Fetching player: {username}#{tag}")
 
             response = await self._client.get(
@@ -125,14 +125,13 @@ class LeaderboardComponent(commands.Component):
             match = re.search(
                 r'<script id="__NEXT_DATA__" type="application/json">(.+?)</script>',
                 response.text,
-                re.DOTALL
+                re.DOTALL,
             )
             if not match:
                 LOGGER.error("Player data not found")
                 return None
 
-            page_props = json.loads(match.group(1)).get(
-                "props", {}).get("pageProps", {})
+            page_props = json.loads(match.group(1)).get("props", {}).get("pageProps", {})
             initial_data = page_props.get("initialData", {})
             player_info = initial_data.get("playerInfo", {})
 
@@ -215,8 +214,7 @@ class LeaderboardComponent(commands.Component):
         self, ctx: commands.Context["Bot"], user_id: str | None = None
     ) -> None:
         """查詢 TFT 排行榜（!rk 顯示門檻，!rk 玩家名#tag 查玩家）"""
-        LOGGER.debug(
-            f"!rk command - {ctx.author.name} query: {user_id or 'threshold'}")
+        LOGGER.debug(f"!rk command - {ctx.author.name} query: {user_id or 'threshold'}")
 
         data = await self.get_leaderboard_data()
         if not data:
@@ -250,8 +248,7 @@ class LeaderboardComponent(commands.Component):
                 tier = rank_data[0] if len(rank_data) > 0 else None
                 lp = rank_data[1] if len(rank_data) > 1 else 0
 
-                tier_display = TIER_TRANSLATION.get(
-                    tier, tier) if tier else "未知段位"
+                tier_display = TIER_TRANSLATION.get(tier, tier) if tier else "未知段位"
                 await ctx.reply(f"{tier_display} {lp} LP | [TW] #{rank_num}")
                 LOGGER.debug(f"Query success (leaderboard) - {user_id}")
                 return

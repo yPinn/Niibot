@@ -12,8 +12,10 @@ logger = logging.getLogger(__name__)
 BOT_VERSION = "1.0.0"
 BOT_NAME = "Niibot"
 
+# === Path Configuration ===
 DISCORD_DIR = Path(__file__).parent
 BACKEND_DIR = DISCORD_DIR.parent
+COGS_DIR = DISCORD_DIR / "cogs"
 
 if str(DISCORD_DIR) == "/app":
     DATA_DIR = Path("/app/data")
@@ -59,20 +61,14 @@ class BotConfig:
                     "Streaming activity requires DISCORD_ACTIVITY_URL to be set. "
                     "Falling back to 'playing' activity."
                 )
-                return discord.Activity(
-                    type=discord.ActivityType.playing,
-                    name=cls.ACTIVITY_NAME
-                )
+                return discord.Activity(type=discord.ActivityType.playing, name=cls.ACTIVITY_NAME)
 
             if not cls.ACTIVITY_URL.startswith("https://twitch.tv/"):
                 logger.warning(
                     f"Streaming activity URL must be a valid Twitch URL (https://twitch.tv/*). "
                     f"Got: {cls.ACTIVITY_URL}. Falling back to 'playing' activity."
                 )
-                return discord.Activity(
-                    type=discord.ActivityType.playing,
-                    name=cls.ACTIVITY_NAME
-                )
+                return discord.Activity(type=discord.ActivityType.playing, name=cls.ACTIVITY_NAME)
 
             return discord.Streaming(name=cls.ACTIVITY_NAME, url=cls.ACTIVITY_URL)
 
@@ -83,6 +79,5 @@ class BotConfig:
             "competing": discord.ActivityType.competing,
         }
 
-        activity_type = activity_map.get(
-            activity_type_lower, discord.ActivityType.playing)
+        activity_type = activity_map.get(activity_type_lower, discord.ActivityType.playing)
         return discord.Activity(type=activity_type, name=cls.ACTIVITY_NAME)

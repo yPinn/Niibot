@@ -1,7 +1,6 @@
 """Dependency injection utilities for FastAPI"""
 
 import logging
-from typing import Optional
 
 import asyncpg
 from fastapi import Cookie, HTTPException
@@ -76,7 +75,7 @@ def get_analytics_service(pool: asyncpg.Pool) -> AnalyticsService:
 
 
 async def get_current_user_id(
-    auth_token: Optional[str] = Cookie(None),
+    auth_token: str | None = Cookie(None),
 ) -> str:
     """
     Verify authentication and return current user_id
@@ -105,7 +104,7 @@ async def get_current_user_id(
 
 
 async def require_auth_with_channel_service(
-    auth_token: Optional[str] = Cookie(None),
+    auth_token: str | None = Cookie(None),
 ) -> tuple[str, ChannelService]:
     """
     Require authentication and return (user_id, channel_service)
@@ -119,7 +118,7 @@ async def require_auth_with_channel_service(
 
 
 async def require_auth_with_analytics_service(
-    auth_token: Optional[str] = Cookie(None),
+    auth_token: str | None = Cookie(None),
 ) -> tuple[str, AnalyticsService]:
     """
     Require authentication and return (user_id, analytics_service)

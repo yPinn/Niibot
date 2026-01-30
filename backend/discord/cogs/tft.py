@@ -6,15 +6,15 @@ import logging
 import random
 import re
 import time
+from datetime import UTC
 from typing import Any
 from urllib.parse import quote
 
+import discord
 import httpx
 from config import DATA_DIR
-from discord.ext import commands
-
-import discord
 from discord import app_commands
+from discord.ext import commands
 
 logger = logging.getLogger("discord_bot.tft")
 
@@ -65,16 +65,16 @@ class TFT(commands.Cog):
 
         self._load_embed_config()
 
-    def _load_embed_config(self):
+    def _load_embed_config(self) -> None:
         """載入全域 embed 配置"""
         try:
-            with open(DATA_DIR / "embed.json", "r", encoding="utf-8") as f:
+            with open(DATA_DIR / "embed.json", encoding="utf-8") as f:
                 self.global_embed_config = json.load(f)
         except Exception as e:
             logger.warning(f"Failed to load embed config: {e}")
             self.global_embed_config = {}
 
-    async def cog_unload(self):
+    async def cog_unload(self) -> None:
         """Cog 卸載時關閉 HTTP 客戶端"""
         await self._client.aclose()
 
@@ -109,21 +109,19 @@ class TFT(commands.Cog):
             match = re.search(
                 r'<script id="__NEXT_DATA__" type="application/json">(.+?)</script>',
                 response.text,
-                re.DOTALL
+                re.DOTALL,
             )
             if not match:
                 logger.error("Data element not found")
                 return self._cache
 
-            data: dict[str, Any] = json.loads(match.group(1))[
-                "props"]["pageProps"]["data"]
+            data: dict[str, Any] = json.loads(match.group(1))["props"]["pageProps"]["data"]
 
             self._cache = data
             self._cache_time = now
             self._last_request = now
 
-            logger.info(
-                f"Fetched leaderboard - {len(data.get('entries', []))} players")
+            logger.info(f"Fetched leaderboard - {len(data.get('entries', []))} players")
             return data
 
         except Exception as e:
@@ -139,7 +137,9 @@ class TFT(commands.Cog):
         try:
             await asyncio.sleep(random.uniform(0.5, 1.5))
 
-            url = f"https://tactics.tools/player/tw/{quote(username, safe='')}/{quote(tag, safe='')}"
+            url = (
+                f"https://tactics.tools/player/tw/{quote(username, safe='')}/{quote(tag, safe='')}"
+            )
             logger.info(f"Fetching player: {username}#{tag}")
 
             response = await self._client.get(
@@ -158,14 +158,13 @@ class TFT(commands.Cog):
             match = re.search(
                 r'<script id="__NEXT_DATA__" type="application/json">(.+?)</script>',
                 response.text,
-                re.DOTALL
+                re.DOTALL,
             )
             if not match:
                 logger.error("Player data not found")
                 return None
 
-            page_props = json.loads(match.group(1)).get(
-                "props", {}).get("pageProps", {})
+            page_props = json.loads(match.group(1)).get("props", {}).get("pageProps", {})
             initial_data = page_props.get("initialData", {})
             player_info = initial_data.get("playerInfo", {})
 
@@ -234,8 +233,7 @@ class TFT(commands.Cog):
             age_hours = (now - timestamp_sec) / 3600
 
             if age_hours > 24:
-                logger.info(
-                    f"Data is {age_hours:.1f} hours old, re-fetching after 3s...")
+                logger.info(f"Data is {age_hours:.1f} hours old, re-fetching after 3s...")
                 await asyncio.sleep(3)
                 fresh_data = await self._fetch_player_data(username, tag)
                 if fresh_data:
@@ -244,14 +242,10 @@ class TFT(commands.Cog):
         return data
 
     @app_commands.command(name="tft", description="TFT 排名")
-    @app_commands.describe(
-        player="玩家名稱（格式：玩家名稱#TAG，留空則顯示門檻）"
-    )
+    @app_commands.describe(player="玩家名稱（格式：玩家名稱#TAG，留空則顯示門檻）")
     async def tft_command(
-        self,
-        interaction: discord.Interaction,
-        player: str | None = None
-    ):
+        self, interaction: discord.Interaction, player: str | None = None
+    ) -> None:
         """TFT 排行榜查詢指令"""
         await interaction.response.defer()
 
@@ -260,7 +254,7 @@ class TFT(commands.Cog):
         else:
             await self._show_threshold(interaction)
 
-    async def _show_threshold(self, interaction: discord.Interaction):
+    async def _show_threshold(self, interaction: discord.Interaction) -> None:
         """顯示排行榜門檻"""
         data = await self.get_leaderboard_data()
         if not data:
@@ -271,27 +265,21 @@ class TFT(commands.Cog):
         c_lp = thresholds[0] if thresholds else 0
         gm_lp = thresholds[1] if len(thresholds) > 1 else 0
 
-        embed = discord.Embed(
-            title="伺服器排行榜 [TW]",
-            color=discord.Color.gold()
-        )
+        embed = discord.Embed(title="伺服器排行榜 [TW]", color=discord.Color.gold())
 
         embed.add_field(name="菁英", value=f"> **{c_lp:,} LP**", inline=False)
         embed.add_field(name="宗師", value=f"> **{gm_lp:,} LP**", inline=False)
 
         global_author = self.global_embed_config.get("author", {})
         if global_author.get("name"):
-            embed.set_author(
-                name=global_author.get("name"),
-                icon_url=global_author.get("icon_url")
-            )
+            embed.set_author(name=global_author.get("name"), icon_url=global_author.get("icon_url"))
 
         embed.set_footer(text="數據來源: tactics.tools")
         embed.set_thumbnail(url=TIER_IMAGES.get("CHALLENGER"))
 
         await interaction.followup.send(embed=embed)
 
-    async def _show_player(self, interaction: discord.Interaction, player_input: str):
+    async def _show_player(self, interaction: discord.Interaction, player_input: str) -> None:
         """顯示玩家資料"""
         if "#" not in player_input:
             await interaction.followup.send("請使用正確格式：玩家名稱#TAG", ephemeral=True)
@@ -310,9 +298,16 @@ class TFT(commands.Cog):
         else:
             await interaction.followup.send(f"找不到玩家：{player_input}", ephemeral=True)
 
-    async def _send_player_embed(self, interaction: discord.Interaction, player_data: dict, player_input: str, username: str, tag: str):
+    async def _send_player_embed(
+        self,
+        interaction: discord.Interaction,
+        player_data: dict[str, Any],
+        player_input: str,
+        username: str,
+        tag: str,
+    ) -> None:
         """發送玩家資料 Embed"""
-        from datetime import datetime, timezone
+        from datetime import datetime
         from urllib.parse import quote
 
         tier = player_data.get("tier", "")
@@ -333,13 +328,9 @@ class TFT(commands.Cog):
 
         formatted_name = player_input.replace("#", " #")
 
-        embed = discord.Embed(
-            title=formatted_name,
-            color=discord.Color.blue()
-        )
+        embed = discord.Embed(title=formatted_name, color=discord.Color.blue())
 
-        embed.add_field(
-            name="段位", value=f"> {tier_display} **{lp:,} LP**", inline=False)
+        embed.add_field(name="段位", value=f"> {tier_display} **{lp:,} LP**", inline=False)
 
         # 排名顯示：≤1000 顯示數字，否則顯示百分位
         if rank_position is not None and rank_position <= 1000:
@@ -356,11 +347,11 @@ class TFT(commands.Cog):
 
             if last_match_time:
                 try:
-                    timestamp_sec = last_match_time / \
-                        1000 if last_match_time > 1e10 else last_match_time
-                    match_datetime = datetime.fromtimestamp(
-                        timestamp_sec, tz=timezone.utc)
-                    now = datetime.now(timezone.utc)
+                    timestamp_sec = (
+                        last_match_time / 1000 if last_match_time > 1e10 else last_match_time
+                    )
+                    match_datetime = datetime.fromtimestamp(timestamp_sec, tz=UTC)
+                    now = datetime.now(UTC)
                     time_diff = now - match_datetime
 
                     if time_diff.days > 0:
@@ -384,10 +375,7 @@ class TFT(commands.Cog):
 
         global_author = self.global_embed_config.get("author", {})
         if global_author.get("name"):
-            embed.set_author(
-                name=global_author.get("name"),
-                icon_url=global_author.get("icon_url")
-            )
+            embed.set_author(name=global_author.get("name"), icon_url=global_author.get("icon_url"))
 
         embed.set_footer(text="數據來源: tactics.tools")
 
@@ -395,17 +383,17 @@ class TFT(commands.Cog):
         if tier_image:
             embed.set_thumbnail(url=tier_image)
 
-        player_url = f"https://tactics.tools/player/tw/{quote(username, safe='')}/{quote(tag, safe='')}"
+        player_url = (
+            f"https://tactics.tools/player/tw/{quote(username, safe='')}/{quote(tag, safe='')}"
+        )
         view = discord.ui.View()
-        view.add_item(discord.ui.Button(
-            label="詳細資料",
-            url=player_url,
-            style=discord.ButtonStyle.link
-        ))
+        view.add_item(
+            discord.ui.Button(label="詳細資料", url=player_url, style=discord.ButtonStyle.link)
+        )
 
         await interaction.followup.send(embed=embed, view=view)
 
 
-async def setup(bot: commands.Bot):
+async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(TFT(bot))
     logger.info("TFT cog loaded")

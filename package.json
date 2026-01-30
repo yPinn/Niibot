@@ -1,0 +1,33 @@
+{
+  "name": "niibot",
+  "version": "1.0.0",
+  "description": "多平台直播整合 Bot - 支援 Twitch 和 Discord。",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "prepare": "husky install",
+    "lint-all": "npm run lint --prefix frontend && ruff check backend",
+    "format-all": "npm run format --prefix frontend && ruff format backend",
+    "test": "npm run lint-all"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yPinn/Niibot.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/yPinn/Niibot/issues"
+  },
+  "homepage": "https://github.com/yPinn/Niibot#readme",
+  "devDependencies": {
+    "@commitlint/cli": "^19.0.0",
+    "@commitlint/config-conventional": "^19.0.0",
+    "husky": "^8.0.3",
+    "lint-staged": "^15.2.0"
+  }
+}
