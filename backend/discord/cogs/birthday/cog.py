@@ -6,11 +6,12 @@ import json
 import logging
 from datetime import date, datetime, time
 
-import discord
 from config import DATA_DIR
 from database import BirthdayRepository, DatabasePool
-from discord import app_commands
 from discord.ext import commands, tasks
+
+import discord
+from discord import app_commands
 
 from .constants import BIRTHDAY_COLOR, BIRTHDAY_THUMBNAIL, TZ_UTC8
 from .views import DashboardView, InitSetupView, UpdateSettingsView

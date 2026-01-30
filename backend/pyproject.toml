@@ -1,28 +1,45 @@
+[project]
+name = "niibot-backend"
+version = "0.1.0"
+description = "FastAPI backend for Discord and Twitch bots"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "asyncpg>=0.31.0",
+    "discord-py>=2.6.4",
+    "fastapi>=0.128.0",
+    "httpx>=0.28.1",
+    "openai>=2.16.0",
+    "pydantic-settings>=2.12.0",
+    "python-dotenv>=1.2.1",
+    "twitchio>=3.2.1",
+    "uvicorn>=0.40.0",
+]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+cache-dir = ".cache/ruff"
 
 [tool.ruff.lint]
-# E, W (PEP8), F (Pyflakes), I (isort 排序), N (命名規範), B (Bug 預警), UP (語法升級)
 select = ["E", "F", "W", "I", "N", "B", "UP"]
 ignore = [
-    "E501",  # 行長限制交給 formatter 處理
-    "B008",  # FastAPI Depends() 在參數預設值中是標準用法
+    "E501",  # 行長由 formatter 處理
+    "B008",  # 允許 FastAPI 的 Depends()
 ]
 
 [tool.ruff.format]
 quote-style = "double"
-# 自動在多行列表末尾加逗號，減少 Git 衝突（這對你的 cogs/components 列表極度有用）
 skip-magic-trailing-comma = false
 
 [tool.mypy]
 python_version = "3.11"
+cache_dir = ".cache/mypy" # 集中管理快取
 namespace_packages = true
 explicit_package_bases = true
-# 全域預設：忽略第三方庫缺少型別的問題，並開啟基礎檢查
 ignore_missing_imports = true
 check_untyped_defs = true
-disallow_untyped_defs = false # 預設不強制，由下方 Overrides 決定
+disallow_untyped_defs = false
 
 # --- 針對 Discord (cogs) 實施嚴格檢查 ---
 [[tool.mypy.overrides]]
@@ -30,7 +47,7 @@ module = ["discord.*", "cogs.*"]
 disallow_untyped_defs = true
 warn_return_any = true
 
-# --- 針對 Twitch (components) 與外部 API 保持彈性 ---
+# --- 針對其他庫保持彈性 ---
 [[tool.mypy.overrides]]
 module = ["twitchio.*", "components.*", "asyncpg.*", "openai.*", "aiohttp.*"]
 disallow_untyped_defs = false

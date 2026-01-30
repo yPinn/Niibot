@@ -2,10 +2,11 @@
 
 import sys
 
-import discord
 from config import BOT_NAME, BOT_VERSION
-from discord import app_commands
 from discord.ext import commands
+
+import discord
+from discord import app_commands
 
 
 class Utility(commands.Cog):

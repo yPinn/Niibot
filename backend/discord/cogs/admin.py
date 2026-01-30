@@ -4,9 +4,10 @@ import logging
 import os
 from pathlib import Path
 
+from discord.ext import commands
+
 import discord
 from discord import app_commands
-from discord.ext import commands
 
 logger = logging.getLogger(__name__)
 

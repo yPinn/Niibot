@@ -22,10 +22,11 @@ env_path = Path(__file__).parent / ".env"
 load_dotenv(dotenv_path=env_path, encoding="utf-8")
 
 # 導入配置和 Discord 模組
-import discord  # noqa: E402
 from config import COGS_DIR, BotConfig  # noqa: E402
 from discord.ext import commands  # noqa: E402
 from rate_limiter import RateLimitMonitor  # noqa: E402
+
+import discord  # noqa: E402
 
 try:
     from rich.console import Console

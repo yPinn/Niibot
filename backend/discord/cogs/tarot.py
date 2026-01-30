@@ -3,10 +3,11 @@ import random
 from datetime import datetime
 from hashlib import md5
 
-import discord
 from config import DATA_DIR
-from discord import app_commands
 from discord.ext import commands
+
+import discord
+from discord import app_commands
 
 
 class Tarot(commands.Cog):

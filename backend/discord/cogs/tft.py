@@ -10,11 +10,12 @@ from datetime import UTC
 from typing import Any
 from urllib.parse import quote
 
-import discord
 import httpx
 from config import DATA_DIR
-from discord import app_commands
 from discord.ext import commands
+
+import discord
+from discord import app_commands
 
 logger = logging.getLogger("discord_bot.tft")
 

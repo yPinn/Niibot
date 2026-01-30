@@ -7,10 +7,11 @@ import random
 from datetime import datetime
 from typing import Any, cast
 
-import discord
 from config import DATA_DIR
-from discord import app_commands
 from discord.ext import commands
+
+import discord
+from discord import app_commands
 
 from .constants import EAT_COLOR, EAT_THUMBNAIL
 from .views import CategoryButtonsView, ItemListView, RecommendationView

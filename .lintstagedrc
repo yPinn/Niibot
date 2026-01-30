@@ -1,16 +1,17 @@
 {
   "frontend/**/*.{js,jsx,ts,tsx}": [
-    "npm --prefix frontend run lint:fix",
-    "npm --prefix frontend run format:fix"
+    "npx --prefix frontend eslint --fix",
+    "npx --prefix frontend prettier --write --ignore-unknown"
   ],
   "backend/**/*.py": [
-    "ruff check --fix --config backend/pyproject.toml",
-    "ruff format --config backend/pyproject.toml"
+    "uv run --project backend ruff check --fix",
+    "uv run --project backend ruff format"
   ],
-  "**/*.{json,md,yml,yaml}": [
-    "npx --prefix frontend prettier --write"
+  "docs/**/*.md": [
+    "npx --prefix frontend markdownlint --fix",
+    "npx --prefix frontend prettier --write --ignore-unknown"
   ],
-  "*.js": [
-    "npx --prefix frontend prettier --write"
+  "**/*.{json,yml,yaml}": [
+    "npx --prefix frontend prettier --write --ignore-unknown"
   ]
 }

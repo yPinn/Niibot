@@ -1,4 +1,7 @@
 #!/usr/bin/env sh
 . "$(dirname -- "$0")/_/husky.sh"
 
+# 確保 Husky 能找到 uv 指令 (針對 Windows 使用者路徑)
+export PATH="$HOME/.local/bin:$PATH"
+
 npx lint-staged

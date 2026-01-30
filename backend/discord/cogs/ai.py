@@ -4,11 +4,12 @@ import json
 import logging
 import os
 
-import discord
 from config import DATA_DIR
-from discord import app_commands
 from discord.ext import commands
 from openai import OpenAI
+
+import discord
+from discord import app_commands
 
 LOGGER = logging.getLogger("AI")
 
