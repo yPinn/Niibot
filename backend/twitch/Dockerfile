@@ -1,19 +1,24 @@
+FROM astral-sh/uv:python3.11-alpine AS builder
+
+WORKDIR /app
+
+COPY pyproject.toml uv.lock ./
+
+RUN uv sync --frozen --no-cache --no-install-project
+
 FROM python:3.11-slim
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY --from=builder /app/.venv /app/.venv
 
-COPY twitch/ .
+COPY . .
 
-# 創建 data 目錄並複製數據文件
 RUN mkdir -p /app/data
-COPY data/ /app/data/
 
-ENV PYTHONUNBUFFERED=1
+ENV PATH="/app/.venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1
 
-# 暴露 Health Check 伺服器埠口（用於 Render Web Service）
 EXPOSE 4344
 
 CMD ["python", "main.py"]

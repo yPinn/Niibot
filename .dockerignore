@@ -1,65 +1,33 @@
-# Git
-.git
+# --- Git ---
+.git/
 .gitignore
-.gitattributes
 
-# Environment files
-**/.env
-**/.env.*
+# --- 環境變數 ---
+**/.env*
 !**/.env.example
 
-# Python
+# --- Python / uv (排除所有快取) ---
 **/__pycache__/
 **/*.py[cod]
-**/*$py.class
-**/*.so
-.Python
+**/.venv/          # 排除本地虛擬環境
+**/.cache/         # 排除 uv, ruff, mypy 快取
 **/.mypy_cache/
 **/.ruff_cache/
-**/.pytest_cache/
-**/.coverage
-**/htmlcov/
 
-# Virtual environments
-**/venv/
-**/env/
-**/ENV/
-**/.venv/
-
-# Node
-**/node_modules/
+# --- Node.js / Frontend ---
+**/node_modules/   # 排除本地套件
 **/dist/
-**/dist-ssr/
-**/.next/
-**/out/
-**/build/
+**/.npm/
+**/.eslintcache
 
-# IDE
-.vscode/
-.idea/
-**/*.swp
-**/*.swo
-**/*~
-
-# Logs
-**/*.log
-**/logs/
-
-# Database
+# --- 數據與暫存 ---
 **/*.db
-**/*.sqlite
 **/*.sqlite3
+**/.vscode/
+**/*.log
 
-# OS
-.DS_Store
-**/Thumbs.db
-
-# Documentation (build時不需要)
+# --- 文件與開發工具 ---
 README.md
-**/README.md
 docs/
 **/docs/
-
-# Development tools
-**/scripts/
 LICENSE

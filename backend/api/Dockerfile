@@ -1,19 +1,20 @@
+FROM astral-sh/uv:python3.11-alpine AS builder
+
+WORKDIR /app
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-cache --no-install-project
+
 FROM python:3.11-slim
 
 WORKDIR /app
+COPY --from=builder /app/.venv /app/.venv
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY . .
+RUN mkdir -p /app/data /app/twitch
 
-COPY api/ .
-RUN mkdir -p /app/twitch
-COPY twitch/config.py /app/twitch/config.py
+ENV PATH="/app/.venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1
 
-# 創建 data 目錄並複製數據文件
-RUN mkdir -p /app/data
-COPY data/ /app/data/
+EXPOSE 4344
 
-ENV PYTHONUNBUFFERED=1
-EXPOSE 8000
-
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "main.py"]
