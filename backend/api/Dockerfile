@@ -11,7 +11,7 @@ COPY --from=builder /app/.venv /app/.venv
 
 # 只複製 API 相關與通用程式碼
 COPY api/ ./api/
-COPY main.py .
+COPY api/main.py .
 
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1

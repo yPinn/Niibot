@@ -12,7 +12,7 @@ COPY --from=builder /app/.venv /app/.venv
 # 依照你的結構：Discord 相關檔案在根目錄與資料夾
 COPY discord/ ./discord/
 COPY data/ ./data/
-COPY bot.py .
+COPY discord/bot.py .
 
 RUN mkdir -p /app/data
 
