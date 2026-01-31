@@ -9,12 +9,12 @@ FROM python:3.11.10-slim
 WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
 
-# 只複製 API 相關與通用程式碼
+# 複製 API 相關程式碼
 COPY api/ ./api/
-COPY api/main.py .
 
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1
 
+WORKDIR /app/api
 EXPOSE 4344
 CMD ["python", "main.py"]

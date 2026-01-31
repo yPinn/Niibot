@@ -9,16 +9,16 @@ FROM python:3.11.10-slim
 WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
 
-# 依照你的結構：Discord 相關檔案在根目錄與資料夾
+# 複製 Discord 相關檔案
 COPY discord/ ./discord/
 COPY data/ ./data/
-COPY discord/bot.py .
 
 RUN mkdir -p /app/data
 
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1
 
+WORKDIR /app/discord
 EXPOSE 8080
 
 CMD ["python", "bot.py"]
