@@ -26,6 +26,9 @@ class DatabasePool:
             logger.info(f"Connecting to database: {safe_url}")
 
             try:
+                # Supabase Transaction Pooler (6543) 需要禁用 prepared statements
+                is_pooler = ":6543" in database_url or "pooler.supabase" in database_url
+
                 cls._pool = await asyncpg.create_pool(
                     database_url,
                     min_size=1,
@@ -33,8 +36,12 @@ class DatabasePool:
                     command_timeout=30,
                     timeout=30,  # 連線建立超時
                     ssl="require",  # Supabase 需要 SSL
+                    # Transaction Pooler 不支援 prepared statements
+                    statement_cache_size=0 if is_pooler else 100,
                 )
-                logger.info("Database connection pool created")
+                logger.info(
+                    f"Database connection pool created (pooler_mode={is_pooler})"
+                )
             except Exception as e:
                 logger.error(f"Database connection failed: {type(e).__name__}: {e}")
                 raise
