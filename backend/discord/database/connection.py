@@ -21,15 +21,23 @@ class DatabasePool:
             if not database_url:
                 raise ValueError("SUPABASE_URL environment variable is not set")
 
-            cls._pool = await asyncpg.create_pool(
-                database_url,
-                min_size=1,
-                max_size=5,
-                command_timeout=30,
-                timeout=30,  # 連線建立超時
-                ssl="require",  # Supabase 需要 SSL
-            )
-            logger.info("Database connection pool created")
+            # 隱藏密碼的日誌
+            safe_url = database_url.split("@")[-1] if "@" in database_url else "invalid"
+            logger.info(f"Connecting to database: {safe_url}")
+
+            try:
+                cls._pool = await asyncpg.create_pool(
+                    database_url,
+                    min_size=1,
+                    max_size=5,
+                    command_timeout=30,
+                    timeout=30,  # 連線建立超時
+                    ssl="require",  # Supabase 需要 SSL
+                )
+                logger.info("Database connection pool created")
+            except Exception as e:
+                logger.error(f"Database connection failed: {type(e).__name__}: {e}")
+                raise
 
         return cls._pool
 
