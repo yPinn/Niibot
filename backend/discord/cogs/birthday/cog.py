@@ -52,7 +52,7 @@ class BirthdayCog(commands.Cog):
         # 非阻塞載入，讓 Bot 先啟動，後台連接資料庫
         asyncio.create_task(self._connect_db_with_retry())
 
-    async def _connect_db_with_retry(self, max_retries: int = 3, delay: int = 5) -> None:
+    async def _connect_db_with_retry(self, max_retries: int = 5, delay: int = 10) -> None:
         """嘗試連接資料庫，失敗時重試"""
         for attempt in range(1, max_retries + 1):
             try:

@@ -10,13 +10,5 @@
   "bracketSameLine": false,
   "jsxSingleQuote": false,
   "quoteProps": "as-needed",
-  "proseWrap": "preserve",
-  "overrides": [
-    {
-      "files": ["Dockerfile", "dockerfile", "*.dockerfile"],
-      "options": {
-        "parser": "sh"
-      }
-    }
-  ]
+  "proseWrap": "preserve"
 }

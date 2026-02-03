@@ -310,7 +310,8 @@ async def main() -> None:
 
     # 檢查是否啟用 HTTP 服務器（用於 Render Web Service）
     enable_http = os.getenv("ENABLE_HTTP_SERVER", "false").lower() == "true"
-    http_port = int(os.getenv("HTTP_PORT", "8080"))
+    # Render 會設定 PORT 環境變數，優先使用
+    http_port = int(os.getenv("PORT", "8080"))
 
     async with NiibotClient() as bot:
         http_server = None

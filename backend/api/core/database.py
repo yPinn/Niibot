@@ -1,4 +1,9 @@
-"""Database connection management with dependency injection support"""
+"""Database connection management with dependency injection support.
+
+Supabase 連線模式:
+  - Session Pooler  (port 5432) : 持久性伺服器推薦，支援 prepared statements
+  - Transaction Pooler (port 6543) : serverless/edge 短暫連線用，不支援 prepared statements
+"""
 
 import logging
 from collections.abc import AsyncGenerator
@@ -22,15 +27,28 @@ class DatabaseManager:
             return
 
         try:
+            # Transaction Pooler (6543) 不支援 prepared statements
+            # Session Pooler (5432) 或 Direct 可使用 prepared statements
+            is_transaction_pooler = ":6543" in self.database_url
+            cache_size = 0 if is_transaction_pooler else 100
+
+            if is_transaction_pooler:
+                logger.warning(
+                    "Using Transaction Pooler (6543) — "
+                    "consider switching to Session Pooler (5432) for persistent servers"
+                )
+
             self._pool = await asyncpg.create_pool(
                 self.database_url,
-                min_size=2,
-                max_size=10,
+                min_size=1,
+                max_size=5,
                 timeout=30.0,
-                command_timeout=20.0,
-                statement_cache_size=0,
+                command_timeout=60.0,
+                ssl="require",
+                statement_cache_size=cache_size,
+                max_inactive_connection_lifetime=300.0,
             )
-            logger.info("Database pool created")
+            logger.info(f"Database pool created (cache={cache_size})")
         except Exception as e:
             logger.exception(f"Failed to create database pool: {e}")
             raise

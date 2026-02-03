@@ -1,0 +1,25 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+.venv/
+
+# Tool cache
+.cache/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Environment
+.env*
+!.env.example
+
+# Logs & Data
+*.log
+*.db
+*.sqlite3
+
+# IDE
+.vscode/

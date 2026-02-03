@@ -39,7 +39,6 @@ class Settings(BaseSettings):
     # Server URLs
     frontend_url: str = Field(default="http://localhost:3000", description="Frontend URL for CORS")
     api_url: str = Field(default="http://localhost:8000", description="API server URL")
-    bot_url: str = Field(default="http://localhost:4343", description="Bot WebSocket URL")
     twitch_bot_url: str = Field(
         default="http://localhost:4344", description="Twitch Bot Health Server URL"
     )

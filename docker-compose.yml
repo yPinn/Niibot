@@ -1,5 +1,10 @@
+x-healthcheck: &default-healthcheck
+  interval: 30s
+  timeout: 10s
+  retries: 3
+  start_period: 60s
+
 services:
-  # Twitch Bot
   twitch-bot:
     build:
       context: ./backend
@@ -11,20 +16,21 @@ services:
     env_file:
       - ./backend/twitch/.env
     environment:
-      - PYTHONUNBUFFERED=1
       - ENABLE_HEALTH_SERVER=true
     volumes:
       - ./backend/data:/app/data
     networks:
       - niibot-network
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4344/health').read()"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
+      <<: *default-healthcheck
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:4344/health').read()",
+        ]
 
-  # Discord Bot
   discord-bot:
     build:
       context: ./backend
@@ -36,20 +42,21 @@ services:
     env_file:
       - ./backend/discord/.env
     environment:
-      - PYTHONUNBUFFERED=1
       - ENABLE_HTTP_SERVER=true
     volumes:
       - ./backend/data:/app/data
     networks:
       - niibot-network
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health').read()"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
+      <<: *default-healthcheck
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8080/health').read()",
+        ]
 
-  # API Server
   api:
     build:
       context: ./backend
@@ -60,20 +67,20 @@ services:
       - "8000:8000"
     env_file:
       - ./backend/api/.env
-    environment:
-      - PYTHONUNBUFFERED=1
     volumes:
       - ./backend/data:/app/data
     networks:
       - niibot-network
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health').read()"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
+      <<: *default-healthcheck
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()",
+        ]
 
-  # Frontend
   frontend:
     build:
       context: ./frontend
@@ -88,6 +95,10 @@ services:
       - api
     networks:
       - niibot-network
+    healthcheck:
+      <<: *default-healthcheck
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:80/health"]
+      start_period: 10s
 
 networks:
   niibot-network:

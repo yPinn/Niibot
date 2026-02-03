@@ -47,16 +47,10 @@ class Bot(commands.AutoBot):
         self.channel_states: dict[str, bool] = {}
         self._channel_states_lock = asyncio.Lock()
 
-        from core.config import get_settings
         from database.analytics import AnalyticsDB
-        from health_server import HealthCheckServer
 
-        self.settings = get_settings()
         self.analytics = AnalyticsDB(token_database)
         self._active_sessions: dict[str, int] = {}
-        self.health_server: HealthCheckServer | None = (
-            HealthCheckServer(self) if self.settings.enable_health_server else None
-        )
 
         if CONDUIT_ID:
             super().__init__(
@@ -98,10 +92,6 @@ class Bot(commands.AutoBot):
         # 2. 啟動背景任務
         asyncio.create_task(self.check_new_tokens_and_channels_task())
         asyncio.create_task(self.listen_channel_toggle_notifications())
-
-        # 3. 啟動 HTTP 健康檢查伺服器
-        if self.health_server:
-            asyncio.create_task(self.health_server.start())
 
     async def event_oauth_authorized(
         self, payload: twitchio.authentication.UserTokenPayload
@@ -481,9 +471,42 @@ def main() -> None:
     setup_logging()
 
     async def runner() -> None:
+        from core.config import get_settings
+        from health_server import HealthCheckServer
+
+        settings = get_settings()
+
+        # 1. 啟動 health server（Render 需要儘快偵測到 port）
+        health_server = None
+        if settings.enable_health_server:
+            health_server = HealthCheckServer()
+            await health_server.start()
+            LOGGER.info(f"Health server 已啟動於埠口 {health_server.port}")
+
+        # 2. 建立資料庫連線池
+        # Transaction Pooler (6543) 不支援 prepared statements
+        # Session Pooler (5432) 或 Direct 可使用 prepared statements
+        is_transaction_pooler = ":6543" in DATABASE_URL
+        cache_size = 0 if is_transaction_pooler else 100
+
+        if is_transaction_pooler:
+            LOGGER.warning(
+                "Using Transaction Pooler (6543) — "
+                "consider switching to Session Pooler (5432) for persistent servers"
+            )
+
         pool = await asyncpg.create_pool(
-            DATABASE_URL, min_size=1, max_size=10, statement_cache_size=0
+            DATABASE_URL,
+            min_size=2,
+            max_size=10,
+            timeout=30,
+            command_timeout=30,
+            ssl="require",
+            statement_cache_size=cache_size,
+            max_inactive_connection_lifetime=300.0,
         )
+        LOGGER.info(f"Database pool created (cache={cache_size})")
+
         if pool is None:
             LOGGER.error("Failed to create database connection pool")
             return
@@ -491,26 +514,42 @@ def main() -> None:
         try:
             subs: list[eventsub.SubscriptionPayload] = []
 
-            async with pool.acquire() as connection:
-                await setup_database_schema(connection)
+            # 3. 重試 DB 連線（Render ↔ Supabase 跨區可能逾時）
+            for attempt in range(1, 6):
+                try:
+                    async with pool.acquire() as connection:
+                        await setup_database_schema(connection)
+                        rows = await connection.fetch(
+                            """SELECT channel_id FROM channels WHERE enabled = true"""
+                        )
+                        for row in rows:
+                            broadcaster_user_id = row["channel_id"]
+                            if broadcaster_user_id == BOT_ID:
+                                continue
+                            subs.extend(get_channel_subscriptions(broadcaster_user_id, BOT_ID))
+                    break
+                except (TimeoutError, OSError) as e:
+                    LOGGER.warning(f"Database connect attempt ({attempt}/5): {type(e).__name__}")
+                    if attempt < 5:
+                        await asyncio.sleep(5)
 
-                rows = await connection.fetch(
-                    """SELECT channel_id FROM channels WHERE enabled = true"""
+            if subs:
+                LOGGER.info(f"Starting bot with {len(subs)} initial subscriptions")
+            else:
+                LOGGER.warning(
+                    "Starting bot without initial subscriptions (DB unavailable or empty)"
                 )
+                LOGGER.warning("Background task will load channels once DB is reachable")
 
-                for row in rows:
-                    broadcaster_user_id = row["channel_id"]
-                    if broadcaster_user_id == BOT_ID:
-                        continue
-
-                    subs.extend(get_channel_subscriptions(broadcaster_user_id, BOT_ID))
-
-            LOGGER.info(f"Starting bot with {len(subs)} initial subscriptions")
-
+            # 4. 啟動 Bot，並將 bot 參考設定到 health server
             async with Bot(token_database=pool, subs=subs) as bot:
+                if health_server:
+                    health_server.bot = bot
                 await bot.setup_database()
                 await bot.start()
         finally:
+            if health_server:
+                await health_server.stop()
             await pool.close()
 
     try:
