@@ -2,6 +2,10 @@
 
 import logging
 
+from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi.responses import RedirectResponse
+from pydantic import BaseModel
+
 from core.config import Settings, get_settings
 from core.dependencies import (
     get_auth_service,
@@ -11,9 +15,6 @@ from core.dependencies import (
     get_discord_api,
     get_twitch_api,
 )
-from fastapi import APIRouter, Depends, HTTPException, Response
-from fastapi.responses import RedirectResponse
-from pydantic import BaseModel
 from services import AuthService, ChannelService, DiscordAPIClient, TwitchAPIClient
 
 logger = logging.getLogger(__name__)

@@ -18,7 +18,6 @@ def setup_logging() -> None:
         try:
             console = Console(
                 force_terminal=True,
-                color_system="auto",
                 width=120,
             )
 
@@ -26,7 +25,7 @@ def setup_logging() -> None:
                 console=console,
                 show_time=True,
                 show_level=True,
-                show_path=True,
+                show_path=False,
                 markup=True,
                 rich_tracebacks=True,
                 tracebacks_show_locals=False,

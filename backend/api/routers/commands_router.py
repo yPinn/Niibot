@@ -5,9 +5,10 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from core.dependencies import get_current_user_id
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+
+from core.dependencies import get_current_user_id
 
 logger = logging.getLogger(__name__)
 

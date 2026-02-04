@@ -5,6 +5,7 @@ Supabase 連線模式:
   - Transaction Pooler (port 6543) : serverless/edge 短暫連線用，不支援 prepared statements
 """
 
+import asyncio
 import logging
 from collections.abc import AsyncGenerator
 
@@ -20,38 +21,49 @@ class DatabaseManager:
         self.database_url = database_url
         self._pool: asyncpg.Pool | None = None
 
-    async def connect(self) -> None:
-        """Initialize database connection pool"""
+    async def connect(self, max_retries: int = 3, retry_delay: float = 5.0) -> None:
+        """Initialize database connection pool with retry"""
         if self._pool is not None:
             logger.warning("Database pool already initialized")
             return
 
-        try:
-            # Transaction Pooler (6543) 不支援 prepared statements
-            # Session Pooler (5432) 或 Direct 可使用 prepared statements
-            is_transaction_pooler = ":6543" in self.database_url
-            cache_size = 0 if is_transaction_pooler else 100
+        # Transaction Pooler (6543) 不支援 prepared statements
+        # Session Pooler (5432) 或 Direct 可使用 prepared statements
+        is_transaction_pooler = ":6543" in self.database_url
+        cache_size = 0 if is_transaction_pooler else 100
 
-            if is_transaction_pooler:
-                logger.warning(
-                    "Using Transaction Pooler (6543) — "
-                    "consider switching to Session Pooler (5432) for persistent servers"
-                )
-
-            self._pool = await asyncpg.create_pool(
-                self.database_url,
-                min_size=1,
-                max_size=5,
-                timeout=30.0,
-                command_timeout=60.0,
-                ssl="require",
-                statement_cache_size=cache_size,
-                max_inactive_connection_lifetime=300.0,
+        if is_transaction_pooler:
+            logger.warning(
+                "Using Transaction Pooler (6543) — "
+                "consider switching to Session Pooler (5432) for persistent servers"
             )
-            logger.info(f"Database pool created (cache={cache_size})")
-        except Exception as e:
-            logger.exception(f"Failed to create database pool: {e}")
-            raise
+
+        for attempt in range(1, max_retries + 1):
+            try:
+                self._pool = await asyncpg.create_pool(
+                    self.database_url,
+                    min_size=1,
+                    max_size=5,
+                    timeout=30.0,
+                    command_timeout=30.0,
+                    ssl="require",
+                    statement_cache_size=cache_size,
+                    max_inactive_connection_lifetime=300.0,
+                )
+                logger.info(f"Database pool created (cache={cache_size})")
+                return
+            except Exception as e:
+                if attempt < max_retries:
+                    logger.warning(
+                        f"Database connection attempt {attempt}/{max_retries} failed: {e}, "
+                        f"retrying in {retry_delay}s..."
+                    )
+                    await asyncio.sleep(retry_delay)
+                else:
+                    logger.exception(
+                        f"Database connection failed after {max_retries} attempts: {e}"
+                    )
+                    raise
 
     async def disconnect(self) -> None:
         """Close database connection pool"""

@@ -2,14 +2,15 @@
 
 import logging
 
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+
 from core.dependencies import (
     get_channel_service,
     get_current_user_id,
     get_db_pool,
     get_twitch_api,
 )
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 from services import TwitchAPIClient
 
 logger = logging.getLogger(__name__)

@@ -4,6 +4,9 @@ import logging
 
 import asyncpg
 from fastapi import Cookie, HTTPException
+
+from core.config import get_settings
+from core.database import get_database_manager
 from services import (
     AnalyticsService,
     AuthService,
@@ -11,9 +14,6 @@ from services import (
     DiscordAPIClient,
     TwitchAPIClient,
 )
-
-from core.config import get_settings
-from core.database import get_database_manager
 
 logger = logging.getLogger(__name__)
 

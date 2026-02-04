@@ -3,9 +3,10 @@
 import logging
 from datetime import datetime
 
-from core.dependencies import get_analytics_service, get_current_user_id, get_db_pool
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+
+from core.dependencies import get_analytics_service, get_current_user_id, get_db_pool
 
 logger = logging.getLogger(__name__)
 

@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any  # 移除 dict, list 的匯入
 
 import asyncpg
-
 from api.core.config import get_settings
 
 # 將父目錄加入路徑以匯入設定

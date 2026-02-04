@@ -6,10 +6,9 @@ import os
 import sys
 from pathlib import Path
 
+import discord
 from discord.ext import commands
 from dotenv import load_dotenv
-
-import discord
 
 BASE_DIR = Path(__file__).parent.parent
 

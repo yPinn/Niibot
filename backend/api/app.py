@@ -5,12 +5,13 @@ import time
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-from core.config import get_settings
-from core.database import get_database_manager, init_database_manager
-from core.logging import setup_logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
+
+from core.config import get_settings
+from core.database import get_database_manager, init_database_manager
+from core.logging import setup_logging
 from routers import (
     analytics_router,
     auth_router,

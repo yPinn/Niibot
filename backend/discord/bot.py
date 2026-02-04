@@ -22,11 +22,11 @@ env_path = Path(__file__).parent / ".env"
 load_dotenv(dotenv_path=env_path, encoding="utf-8")
 
 # 導入配置和 Discord 模組
-from config import COGS_DIR, BotConfig  # noqa: E402
-from discord.ext import commands  # noqa: E402
-from rate_limiter import RateLimitMonitor  # noqa: E402
-
 import discord  # noqa: E402
+from discord.ext import commands  # noqa: E402
+
+from config import COGS_DIR, BotConfig  # noqa: E402
+from rate_limiter import RateLimitMonitor  # noqa: E402
 
 try:
     from rich.console import Console
@@ -50,12 +50,9 @@ def setup_logging() -> None:
                 sys.stdout = codecs.getwriter("utf-8")(sys.stdout.buffer)
                 sys.stderr = codecs.getwriter("utf-8")(sys.stderr.buffer)
 
-            # 配置 Rich Console
             console = Console(
                 force_terminal=True,
-                force_interactive=False,
                 width=120,
-                legacy_windows=False,
             )
 
             rich_handler = RichHandler(

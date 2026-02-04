@@ -8,6 +8,7 @@ from pathlib import Path
 
 import asyncpg
 import httpx
+
 from core.config import BOT_SCOPES, BROADCASTER_SCOPES
 
 # Add parent directory to path to import config

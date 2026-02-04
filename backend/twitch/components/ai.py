@@ -1,9 +1,10 @@
 import logging
 from typing import TYPE_CHECKING
 
-from core.config import get_settings
 from openai import OpenAI
 from twitchio.ext import commands
+
+from core.config import get_settings
 
 if TYPE_CHECKING:
     from main import Bot

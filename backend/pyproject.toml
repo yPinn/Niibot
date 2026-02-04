@@ -22,12 +22,28 @@ dependencies = [
 line-length = 100
 target-version = "py311"
 cache-dir = ".cache/ruff"
+src = ["api", "discord", "twitch"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "B", "UP"]
 ignore = [
     "E501",  # 行長由 formatter 處理
     "B008",  # 允許 FastAPI 的 Depends()
+]
+
+[tool.ruff.lint.isort]
+known-first-party = [
+    "app",
+    "cogs",
+    "components",
+    "config",
+    "core",
+    "database",
+    "health_server",
+    "http_server",
+    "rate_limiter",
+    "routers",
+    "services",
 ]
 
 [tool.ruff.format]

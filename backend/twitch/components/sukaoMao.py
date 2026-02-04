@@ -4,8 +4,9 @@ import random
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from core.config import DATA_DIR
 from twitchio.ext import commands
+
+from core.config import DATA_DIR
 
 if TYPE_CHECKING:
     from main import Bot

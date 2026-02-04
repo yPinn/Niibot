@@ -17,10 +17,17 @@
 # SQL files
 *.sql text eol=lf
 
+# YAML / JSON / TOML
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+*.toml text eol=lf
+
 # Config files
 .env.example text eol=lf
 .gitignore text eol=lf
 .gitattributes text eol=lf
+Dockerfile* text eol=lf
 
 # Images (binary)
 *.png binary

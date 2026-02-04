@@ -3,11 +3,11 @@
 import json
 import random
 
-from config import DATA_DIR
-from discord.ext import commands
-
 import discord
 from discord import app_commands, ui
+from discord.ext import commands
+
+from config import DATA_DIR
 
 
 class RPSView(ui.View):

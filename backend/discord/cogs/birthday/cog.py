@@ -6,12 +6,12 @@ import json
 import logging
 from datetime import date, datetime, time
 
-from config import DATA_DIR
-from database import BirthdayRepository, DatabasePool
-from discord.ext import commands, tasks
-
 import discord
 from discord import app_commands
+from discord.ext import commands, tasks
+
+from config import DATA_DIR
+from database import BirthdayRepository, DatabasePool
 
 from .constants import BIRTHDAY_COLOR, BIRTHDAY_THUMBNAIL, TZ_UTC8
 from .views import DashboardView, InitSetupView, UpdateSettingsView
@@ -272,6 +272,8 @@ class BirthdayCog(commands.Cog):
             await interaction.response.send_message("此指令只能在伺服器中使用", ephemeral=True)
             return
 
+        if interaction.response.is_done():
+            return
         await interaction.response.defer(ephemeral=True)
 
         birthday = await self.repo.get_birthday(interaction.user.id)
@@ -321,6 +323,8 @@ class BirthdayCog(commands.Cog):
             await interaction.response.send_message("此指令只能在伺服器中使用", ephemeral=True)
             return
 
+        if interaction.response.is_done():
+            return
         await interaction.response.defer(ephemeral=True)
 
         settings = await self.repo.get_settings(interaction.guild.id)

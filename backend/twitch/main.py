@@ -5,6 +5,10 @@ from typing import TYPE_CHECKING
 
 import asyncpg
 import twitchio
+from dotenv import load_dotenv
+from twitchio import eventsub
+from twitchio.ext import commands
+
 from core import (
     COMPONENTS_DIR,
     get_channel_subscriptions,
@@ -13,9 +17,6 @@ from core import (
     setup_logging,
     validate_env_vars,
 )
-from dotenv import load_dotenv
-from twitchio import eventsub
-from twitchio.ext import commands
 
 if TYPE_CHECKING:
     import asyncpg
@@ -186,31 +187,42 @@ class Bot(commands.AutoBot):
             connection = None
             try:
                 connection = await self.token_database.acquire()
-                try:
-                    await connection.add_listener("channel_toggle", self._handle_channel_toggle)
-                    LOGGER.info("PostgreSQL LISTEN active on 'channel_toggle' channel")
+                await connection.add_listener("channel_toggle", self._handle_channel_toggle)
+                LOGGER.info("PostgreSQL LISTEN active on 'channel_toggle' channel")
 
+                try:
                     while True:
                         await asyncio.sleep(60)
                         await connection.execute("SELECT 1")
-
                 except asyncio.CancelledError:
                     LOGGER.info("PostgreSQL LISTEN shutting down...")
+                    raise
+                finally:
                     try:
                         await connection.remove_listener(
                             "channel_toggle", self._handle_channel_toggle
                         )
                     except Exception:
                         pass
-                    raise
-                finally:
                     await self.token_database.release(connection)
+                    connection = None
 
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                LOGGER.error(f"Error in listen_channel_toggle_notifications: {e}")
+                LOGGER.exception(f"Error in listen_channel_toggle_notifications: {e}")
                 LOGGER.warning("Reconnecting to PostgreSQL LISTEN in 10 seconds...")
+                if connection is not None:
+                    try:
+                        await connection.remove_listener(
+                            "channel_toggle", self._handle_channel_toggle
+                        )
+                    except Exception:
+                        pass
+                    try:
+                        await self.token_database.release(connection)
+                    except Exception:
+                        pass
                 try:
                     await asyncio.sleep(10)
                 except asyncio.CancelledError:
@@ -346,7 +358,7 @@ class Bot(commands.AutoBot):
                 LOGGER.info("Token watcher shutting down...")
                 break
             except Exception as e:
-                LOGGER.error(f"Error in check_new_tokens_task: {e}")
+                LOGGER.exception(f"Error in check_new_tokens_task: {e}")
                 try:
                     await asyncio.sleep(60)
                 except (asyncio.CancelledError, KeyboardInterrupt):
@@ -495,17 +507,30 @@ def main() -> None:
                 "consider switching to Session Pooler (5432) for persistent servers"
             )
 
-        pool = await asyncpg.create_pool(
-            DATABASE_URL,
-            min_size=2,
-            max_size=10,
-            timeout=30,
-            command_timeout=30,
-            ssl="require",
-            statement_cache_size=cache_size,
-            max_inactive_connection_lifetime=300.0,
-        )
-        LOGGER.info(f"Database pool created (cache={cache_size})")
+        pool: asyncpg.Pool | None = None
+        for attempt in range(1, 4):
+            try:
+                pool = await asyncpg.create_pool(
+                    DATABASE_URL,
+                    min_size=2,
+                    max_size=10,
+                    timeout=30,
+                    command_timeout=30,
+                    ssl="require",
+                    statement_cache_size=cache_size,
+                    max_inactive_connection_lifetime=300.0,
+                )
+                LOGGER.info(f"Database pool created (cache={cache_size})")
+                break
+            except Exception as e:
+                if attempt < 3:
+                    LOGGER.warning(
+                        f"Database connection attempt {attempt}/3 failed: {e}, retrying in 5s..."
+                    )
+                    await asyncio.sleep(5)
+                else:
+                    LOGGER.exception(f"Database connection failed after 3 attempts: {e}")
+                    return
 
         if pool is None:
             LOGGER.error("Failed to create database connection pool")
