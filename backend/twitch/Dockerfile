@@ -6,6 +6,7 @@ RUN uv sync --frozen --no-cache --no-install-project
 FROM python:3.11.10-slim
 WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
+COPY shared/ ./shared/
 COPY twitch/ ./twitch/
 COPY data/ ./data/
 

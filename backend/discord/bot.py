@@ -22,11 +22,13 @@ env_path = Path(__file__).parent / ".env"
 load_dotenv(dotenv_path=env_path, encoding="utf-8")
 
 # 導入配置和 Discord 模組
+import asyncpg  # noqa: E402
 import discord  # noqa: E402
 from discord.ext import commands  # noqa: E402
 
 from config import COGS_DIR, BotConfig  # noqa: E402
 from rate_limiter import RateLimitMonitor  # noqa: E402
+from shared.database import DatabaseManager, PoolConfig  # noqa: E402
 
 try:
     from rich.console import Console
@@ -122,6 +124,36 @@ class NiibotClient(commands.Bot):
 
         self.initial_extensions: list[str] = self._get_extensions()
         self.rate_limiter = RateLimitMonitor(self)
+        self._db_manager: DatabaseManager | None = None
+        self.db_pool: asyncpg.Pool | None = None
+
+    async def setup_database(self, max_retries: int = 3, retry_delay: float = 5.0) -> None:
+        """Initialize the shared database connection pool."""
+        database_url = os.getenv("DATABASE_URL")
+        if not database_url:
+            raise ValueError("DATABASE_URL environment variable is not set")
+
+        safe_url = database_url.split("@")[-1] if "@" in database_url else "invalid"
+        logger.info(f"Connecting to database: {safe_url}")
+
+        self._db_manager = DatabaseManager(
+            database_url,
+            PoolConfig(
+                min_size=1,
+                max_size=5,
+                max_retries=max_retries,
+                retry_delay=retry_delay,
+            ),
+        )
+        await self._db_manager.connect()
+        self.db_pool = self._db_manager.pool
+
+    async def close_database(self) -> None:
+        """Close the database connection pool."""
+        if self._db_manager is not None:
+            await self._db_manager.disconnect()
+            self._db_manager = None
+            self.db_pool = None
 
     def _get_extensions(self) -> list[str]:
         """動態掃描 cogs 目錄"""
@@ -294,35 +326,73 @@ class NiibotClient(commands.Bot):
 
 
 async def main() -> None:
-    """Bot 啟動主函數"""
+    """Bot 啟動主函數 (具備自動重試與速率限制保護)"""
     token = os.getenv("DISCORD_BOT_TOKEN")
     if not token:
-        if RICH_AVAILABLE:
-            logger.error("[bold red]找不到 DISCORD_BOT_TOKEN 環境變數[/bold red]")
-            logger.error("請在 .env 文件中設定: DISCORD_BOT_TOKEN=your_token_here")
-        else:
-            logger.error("找不到 DISCORD_BOT_TOKEN 環境變數")
-            logger.error("請在 .env 文件中設定: DISCORD_BOT_TOKEN=your_token_here")
+        msg = "找不到 DISCORD_BOT_TOKEN 環境變數，請在 .env 中設定"
+        logger.error(f"[bold red]{msg}[/bold red]" if RICH_AVAILABLE else msg)
         return
 
-    # Render 會設定 PORT 環境變數，優先使用
     http_port = int(os.getenv("PORT", "8080"))
+
+    # 重試參數
+    retry_count = 0
+    max_retries = 5
+    base_delay = 60  # 起始等待 60 秒
 
     async with NiibotClient() as bot:
         health_server = None
         try:
-            # 啟動 health server（核心功能）
+            # 啟動健康檢查伺服器
             from health_server import HealthCheckServer
 
             health_server = HealthCheckServer(bot, port=http_port)
             await health_server.start()
 
-            await bot.start(token)
+            # 初始化資料庫連線池
+            await bot.setup_database()
+
+            while retry_count < max_retries:
+                try:
+                    await bot.start(token)
+                    break  # 成功登入則跳出重試迴圈
+
+                except discord.HTTPException as e:
+                    # 429 Too Many Requests 或 Cloudflare 1015 錯誤
+                    if e.status == 429:
+                        retry_count += 1
+                        # 計算等待時間: 60, 120, 240, 480... 秒
+                        wait_time = base_delay * (2 ** (retry_count - 1))
+
+                        warn_msg = f"偵測到 Discord/Cloudflare 速率限制 (429)。嘗試第 {retry_count}/{max_retries} 次重試，等待 {wait_time} 秒..."
+                        logger.warning(
+                            f"[bold yellow]{warn_msg}[/bold yellow]" if RICH_AVAILABLE else warn_msg
+                        )
+
+                        await asyncio.sleep(wait_time)
+                    else:
+                        # 其他 HTTP 錯誤（如 401 Token 錯誤）不重試，直接拋出
+                        raise
+            else:
+                # while 正常結束 = 重試次數已用完
+                err_msg = f"已達最大重試次數 ({max_retries})，Bot 無法連線至 Discord。請稍後再試或檢查是否被 Cloudflare 暫時封鎖。"
+                logger.error(f"[bold red]{err_msg}[/bold red]" if RICH_AVAILABLE else err_msg)
+
         except (KeyboardInterrupt, asyncio.CancelledError):
+            logger.info("接收到停止訊號...")
+        except Exception as e:
+            logger.error(f"Bot 運行期間發生嚴重錯誤: {e}", exc_info=True)
+        finally:
+            # 資源清理
+            await bot.close_database()
+
             if health_server:
                 await health_server.stop()
+
             if not bot.is_closed():
                 await bot.close()
+
+            logger.info("Bot 已安全關閉。")
 
 
 if __name__ == "__main__":

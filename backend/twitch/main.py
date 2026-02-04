@@ -1,7 +1,7 @@
 import asyncio
 import logging
+import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import asyncpg
 import twitchio
@@ -9,18 +9,21 @@ from dotenv import load_dotenv
 from twitchio import eventsub
 from twitchio.ext import commands
 
-from core import (
+# Ensure shared module is importable (backend/ directory)
+_backend_dir = str(Path(__file__).resolve().parent.parent)
+if _backend_dir not in sys.path:
+    sys.path.insert(0, _backend_dir)
+
+from core import (  # noqa: E402
     COMPONENTS_DIR,
     get_channel_subscriptions,
     load_env_config,
-    setup_database_schema,
     setup_logging,
     validate_env_vars,
 )
-
-if TYPE_CHECKING:
-    import asyncpg
-
+from shared.database import DatabaseManager, PoolConfig  # noqa: E402
+from shared.repositories.analytics import AnalyticsRepository  # noqa: E402
+from shared.repositories.channel import ChannelRepository  # noqa: E402
 
 LOGGER: logging.Logger = logging.getLogger("Bot")
 
@@ -48,9 +51,8 @@ class Bot(commands.AutoBot):
         self.channel_states: dict[str, bool] = {}
         self._channel_states_lock = asyncio.Lock()
 
-        from database.analytics import AnalyticsDB
-
-        self.analytics = AnalyticsDB(token_database)
+        self.channels = ChannelRepository(token_database)
+        self.analytics = AnalyticsRepository(token_database)
         self._active_sessions: dict[str, int] = {}
 
         if CONDUIT_ID:
@@ -145,40 +147,30 @@ class Bot(commands.AutoBot):
     ) -> twitchio.authentication.ValidateTokenPayload:
         resp: twitchio.authentication.ValidateTokenPayload = await super().add_token(token, refresh)
 
-        query = """
-        INSERT INTO tokens (user_id, token, refresh)
-        VALUES ($1, $2, $3)
-        ON CONFLICT(user_id)
-        DO UPDATE SET
-            token = excluded.token,
-            refresh = excluded.refresh;
-        """
-
-        async with self.token_database.acquire() as connection:
-            await connection.execute(query, resp.user_id, token, refresh)
+        if resp.user_id:
+            await self.channels.upsert_token_only(resp.user_id, token, refresh)
 
         login = resp.login or "unknown"
         LOGGER.info(f"Added token to database: {login} ({resp.user_id})")
         return resp
 
     async def load_tokens(self, path: str | None = None) -> None:
-        async with self.token_database.acquire() as connection:
-            rows: list[asyncpg.Record] = await connection.fetch("""SELECT * from tokens""")
+        tokens = await self.channels.list_tokens()
 
-        for row in rows:
+        for tok in tokens:
             try:
-                user_info = await self.add_token(row["token"], row["refresh"])
+                user_info = await self.add_token(tok.token, tok.refresh)
             except twitchio.exceptions.InvalidTokenException as e:
                 LOGGER.warning(
-                    f"Invalid token for user_id {row['user_id']}, skipping. "
+                    f"Invalid token for user_id {tok.user_id}, skipping. "
                     f"User needs to re-authenticate: {e}"
                 )
                 continue
 
             try:
-                await self.add_channel_to_db(row["user_id"], user_info.login or "unknown")
+                await self.add_channel_to_db(tok.user_id, user_info.login or "unknown")
             except Exception as e:
-                LOGGER.error(f"Failed to add channel for user_id {row['user_id']}: {e}")
+                LOGGER.error(f"Failed to add channel for user_id {tok.user_id}: {e}")
 
     async def listen_channel_toggle_notifications(self) -> None:
         LOGGER.info("Starting PostgreSQL LISTEN for channel toggle notifications...")
@@ -266,9 +258,8 @@ class Bot(commands.AutoBot):
         loaded_user_ids: set[str] = set()
 
         try:
-            async with self.token_database.acquire() as connection:
-                rows = await connection.fetch("SELECT user_id FROM tokens")
-                loaded_user_ids = {row["user_id"] for row in rows}
+            tokens = await self.channels.list_tokens()
+            loaded_user_ids = {t.user_id for t in tokens}
 
             LOGGER.info(f"Token watcher started, tracking {len(loaded_user_ids)} existing users")
         except Exception as e:
@@ -277,16 +268,12 @@ class Bot(commands.AutoBot):
 
         await asyncio.sleep(5)
         try:
-            async with self.token_database.acquire() as connection:
-                channel_rows = await connection.fetch(
-                    "SELECT channel_id FROM channels WHERE enabled = true"
-                )
+            enabled_channels = await self.channels.list_enabled_channels()
 
-            for row in channel_rows:
-                channel_id = row["channel_id"]
-                await self.subscribe_channel_events(channel_id)
+            for ch in enabled_channels:
+                await self.subscribe_channel_events(ch.channel_id)
                 async with self._channel_states_lock:
-                    self.channel_states[channel_id] = True
+                    self.channel_states[ch.channel_id] = True
         except Exception as e:
             LOGGER.exception(f"Error subscribing to existing channels: {e}")
 
@@ -294,65 +281,57 @@ class Bot(commands.AutoBot):
             try:
                 await asyncio.sleep(10)
 
-                async with self.token_database.acquire() as connection:
-                    rows = await connection.fetch("SELECT user_id, token, refresh FROM tokens")
-                    channel_rows = await connection.fetch(
-                        "SELECT channel_id, enabled FROM channels"
-                    )
+                tokens = await self.channels.list_tokens()
+                all_channels = await self.channels.list_all_channels()
 
-                current_user_ids = {row["user_id"] for row in rows}
+                current_user_ids = {t.user_id for t in tokens}
                 new_user_ids = current_user_ids - loaded_user_ids
 
                 if new_user_ids:
                     LOGGER.info(f"Found {len(new_user_ids)} new users, loading tokens...")
 
-                    for row in rows:
-                        if row["user_id"] in new_user_ids:
+                    for tok in tokens:
+                        if tok.user_id in new_user_ids:
                             try:
-                                user_info = await self.add_token(row["token"], row["refresh"])
-                                loaded_user_ids.add(row["user_id"])
-                                LOGGER.info(f"Loaded new token for user_id: {row['user_id']}")
+                                user_info = await self.add_token(tok.token, tok.refresh)
+                                loaded_user_ids.add(tok.user_id)
+                                LOGGER.info(f"Loaded new token for user_id: {tok.user_id}")
 
                                 await self.add_channel_to_db(
-                                    row["user_id"], user_info.login or "unknown"
+                                    tok.user_id, user_info.login or "unknown"
                                 )
 
-                                await self.subscribe_channel_events(row["user_id"])
+                                await self.subscribe_channel_events(tok.user_id)
 
                             except Exception as e:
-                                LOGGER.error(
-                                    f"Failed to load token for user_id {row['user_id']}: {e}"
-                                )
+                                LOGGER.error(f"Failed to load token for user_id {tok.user_id}: {e}")
 
-                for row in channel_rows:
-                    channel_id = row["channel_id"]
-                    enabled = row["enabled"]
-
-                    if channel_id == BOT_ID:
+                for ch in all_channels:
+                    if ch.channel_id == BOT_ID:
                         continue
 
                     async with self._channel_states_lock:
-                        previous_state = self.channel_states.get(channel_id)
-                        state_changed = previous_state is not None and previous_state != enabled
+                        previous_state = self.channel_states.get(ch.channel_id)
+                        state_changed = previous_state is not None and previous_state != ch.enabled
 
                         if previous_state is None:
-                            self.channel_states[channel_id] = enabled
+                            self.channel_states[ch.channel_id] = ch.enabled
                         elif state_changed:
-                            self.channel_states[channel_id] = enabled
+                            self.channel_states[ch.channel_id] = ch.enabled
 
                     if state_changed:
                         LOGGER.info(
-                            f"[POLL] Channel {channel_id} state changed: {previous_state} -> {enabled}"
+                            f"[POLL] Channel {ch.channel_id} state changed: {previous_state} -> {ch.enabled}"
                         )
 
-                        if enabled:
-                            if channel_id not in self._subscribed_channels:
-                                await self.subscribe_channel_events(channel_id)
-                                LOGGER.info(f"[POLL] ✓ Subscribed to channel: {channel_id}")
+                        if ch.enabled:
+                            if ch.channel_id not in self._subscribed_channels:
+                                await self.subscribe_channel_events(ch.channel_id)
+                                LOGGER.info(f"[POLL] ✓ Subscribed to channel: {ch.channel_id}")
                         else:
-                            if channel_id in self._subscribed_channels:
-                                await self.unsubscribe_channel_events(channel_id)
-                                LOGGER.info(f"[POLL] ✓ Unsubscribed from channel: {channel_id}")
+                            if ch.channel_id in self._subscribed_channels:
+                                await self.unsubscribe_channel_events(ch.channel_id)
+                                LOGGER.info(f"[POLL] ✓ Unsubscribed from channel: {ch.channel_id}")
 
             except (asyncio.CancelledError, KeyboardInterrupt):
                 LOGGER.info("Token watcher shutting down...")
@@ -369,14 +348,10 @@ class Bot(commands.AutoBot):
         pass
 
     async def load_channels(self) -> list[str]:
-        async with self.token_database.acquire() as connection:
-            rows: list[asyncpg.Record] = await connection.fetch(
-                """SELECT channel_name FROM channels WHERE enabled = true"""
-            )
-
-        channels = [row["channel_name"] for row in rows]
-        LOGGER.info(f"Loaded {len(channels)} channels from database")
-        return channels
+        enabled = await self.channels.list_enabled_channels()
+        names = [ch.channel_name for ch in enabled]
+        LOGGER.info(f"Loaded {len(names)} channels from database")
+        return names
 
     async def subscribe_channel_events(self, broadcaster_user_id: str) -> None:
         if broadcaster_user_id in self._subscribed_channels:
@@ -441,26 +416,11 @@ class Bot(commands.AutoBot):
             LOGGER.debug(f"Skipping bot's own channel: {channel_name}")
             return
 
-        query = """
-        INSERT INTO channels (channel_id, channel_name, enabled)
-        VALUES ($1, $2, true)
-        ON CONFLICT(channel_id)
-        DO UPDATE SET
-            channel_name = excluded.channel_name,
-            enabled = true;
-        """
-
-        async with self.token_database.acquire() as connection:
-            await connection.execute(query, channel_id, channel_name.lower())
-
+        await self.channels.upsert_channel(channel_id, channel_name.lower(), enabled=True)
         LOGGER.info(f"Added channel {channel_name} (ID: {channel_id}) to database")
 
     async def remove_channel_from_db(self, channel_name: str) -> None:
-        query = """UPDATE channels SET enabled = false WHERE channel_name = $1"""
-
-        async with self.token_database.acquire() as connection:
-            await connection.execute(query, channel_name.lower())
-
+        await self.channels.disable_channel_by_name(channel_name.lower())
         LOGGER.info(f"Disabled channel {channel_name} in database")
 
     async def event_ready(self) -> None:
@@ -489,63 +449,23 @@ def main() -> None:
         health_server = HealthCheckServer()
         await health_server.start()
 
-        # 2. 建立資料庫連線池
-        # Transaction Pooler (6543) 不支援 prepared statements
-        # Session Pooler (5432) 或 Direct 可使用 prepared statements
-        is_transaction_pooler = ":6543" in DATABASE_URL
-        cache_size = 0 if is_transaction_pooler else 100
-
-        if is_transaction_pooler:
-            LOGGER.warning(
-                "Using Transaction Pooler (6543) — "
-                "consider switching to Session Pooler (5432) for persistent servers"
-            )
-
-        pool: asyncpg.Pool | None = None
-        for attempt in range(1, 4):
-            try:
-                pool = await asyncpg.create_pool(
-                    DATABASE_URL,
-                    min_size=2,
-                    max_size=10,
-                    timeout=30,
-                    command_timeout=30,
-                    ssl="require",
-                    statement_cache_size=cache_size,
-                    max_inactive_connection_lifetime=300.0,
-                )
-                LOGGER.info(f"Database pool created (cache={cache_size})")
-                break
-            except Exception as e:
-                if attempt < 3:
-                    LOGGER.warning(
-                        f"Database connection attempt {attempt}/3 failed: {e}, retrying in 5s..."
-                    )
-                    await asyncio.sleep(5)
-                else:
-                    LOGGER.exception(f"Database connection failed after 3 attempts: {e}")
-                    return
-
-        if pool is None:
-            LOGGER.error("Failed to create database connection pool")
-            return
+        # 2. 建立資料庫連線池（使用 shared.database 統一邏輯）
+        db_manager = DatabaseManager(DATABASE_URL, PoolConfig(min_size=2, max_size=8))
+        await db_manager.connect()
+        pool = db_manager.pool
 
         try:
             subs: list[eventsub.SubscriptionPayload] = []
+            channel_repo = ChannelRepository(pool)
 
             # 3. 重試 DB 連線（Render ↔ Supabase 跨區可能逾時）
             for attempt in range(1, 6):
                 try:
-                    async with pool.acquire() as connection:
-                        await setup_database_schema(connection)
-                        rows = await connection.fetch(
-                            """SELECT channel_id FROM channels WHERE enabled = true"""
-                        )
-                        for row in rows:
-                            broadcaster_user_id = row["channel_id"]
-                            if broadcaster_user_id == BOT_ID:
-                                continue
-                            subs.extend(get_channel_subscriptions(broadcaster_user_id, BOT_ID))
+                    enabled_channels = await channel_repo.list_enabled_channels()
+                    for ch in enabled_channels:
+                        if ch.channel_id == BOT_ID:
+                            continue
+                        subs.extend(get_channel_subscriptions(ch.channel_id, BOT_ID))
                     break
                 except (TimeoutError, OSError) as e:
                     LOGGER.warning(f"Database connect attempt ({attempt}/5): {type(e).__name__}")
@@ -560,16 +480,39 @@ def main() -> None:
                 )
                 LOGGER.warning("Background task will load channels once DB is reachable")
 
-            # 4. 啟動 Bot，並將 bot 參考設定到 health server
+            # 4. 啟動 Bot，並將 bot 參考設定到 health server（具備自動重試與速率限制保護）
+            retry_count = 0
+            max_retries = 5
+            base_delay = 60  # 起始等待 60 秒
+
             async with Bot(token_database=pool, subs=subs) as bot:
                 if health_server:
                     health_server.bot = bot
                 await bot.setup_database()
-                await bot.start()
+
+                while retry_count < max_retries:
+                    try:
+                        await bot.start()
+                        break  # 成功連線則跳出重試迴圈
+                    except Exception as e:
+                        status = getattr(e, "status", None) or getattr(e, "code", None)
+                        if status == 429 or "429" in str(e) or "rate" in str(e).lower():
+                            retry_count += 1
+                            wait_time = base_delay * (2 ** (retry_count - 1))
+                            LOGGER.warning(
+                                f"偵測到 Twitch 速率限制 (429)。嘗試第 {retry_count}/{max_retries} 次重試，等待 {wait_time} 秒..."
+                            )
+                            await asyncio.sleep(wait_time)
+                        else:
+                            raise
+                else:
+                    LOGGER.error(
+                        f"已達最大重試次數 ({max_retries})，Bot 無法連線至 Twitch。請稍後再試。"
+                    )
         finally:
             if health_server:
                 await health_server.stop()
-            await pool.close()
+            await db_manager.disconnect()
 
     try:
         asyncio.run(runner())

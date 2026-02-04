@@ -279,14 +279,14 @@ class DashboardView(discord.ui.View):
             return
 
         if self._is_subscribed:
-            await self.cog.repo.unsubscribe(interaction.guild.id, interaction.user.id)
+            await self.cog.repo.delete_subscription(interaction.guild.id, interaction.user.id)
             await interaction.response.send_message("已關閉通知", ephemeral=True)
         else:
             birthday = await self.cog.repo.get_birthday(interaction.user.id)
             if not birthday:
                 await interaction.response.send_message("請先設定生日", ephemeral=True)
                 return
-            await self.cog.repo.subscribe(interaction.guild.id, interaction.user.id)
+            await self.cog.repo.create_subscription(interaction.guild.id, interaction.user.id)
             await interaction.response.send_message("已加入通知", ephemeral=True)
 
     @discord.ui.button(label="刪除資料", style=discord.ButtonStyle.danger, row=1)

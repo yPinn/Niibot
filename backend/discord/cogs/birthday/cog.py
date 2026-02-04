@@ -11,7 +11,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from config import DATA_DIR
-from database import BirthdayRepository, DatabasePool
+from shared.repositories.birthday import BirthdayRepository
 
 from .constants import BIRTHDAY_COLOR, BIRTHDAY_THUMBNAIL, TZ_UTC8
 from .views import DashboardView, InitSetupView, UpdateSettingsView
@@ -56,7 +56,9 @@ class BirthdayCog(commands.Cog):
         """嘗試連接資料庫，失敗時重試"""
         for attempt in range(1, max_retries + 1):
             try:
-                pool = await DatabasePool.get_pool()
+                pool = self.bot.db_pool  # type: ignore[attr-defined]
+                if pool is None:
+                    raise RuntimeError("Database pool not initialized on bot")
                 self.repo = BirthdayRepository(pool)
                 self._ready = True
                 self.monthly_birthday_list_task.start()
@@ -127,7 +129,7 @@ class BirthdayCog(commands.Cog):
 
     async def _send_notifications(self, today: date, month: int, day: int) -> None:
         try:
-            for settings in await self.repo.get_all_enabled_settings():
+            for settings in await self.repo.list_enabled_settings():
                 if settings.last_notified_date == today:
                     continue
 
@@ -146,7 +148,7 @@ class BirthdayCog(commands.Cog):
                     await self.repo.update_settings(settings.guild_id, enabled=False)
                     continue
 
-                birthdays = await self.repo.get_todays_birthdays(settings.guild_id, month, day)
+                birthdays = await self.repo.list_todays_birthdays(settings.guild_id, month, day)
                 if not birthdays:
                     await self.repo.update_last_notified(settings.guild_id, today)
                     continue
@@ -185,7 +187,7 @@ class BirthdayCog(commands.Cog):
             return
 
         try:
-            for settings in await self.repo.get_all_enabled_settings():
+            for settings in await self.repo.list_enabled_settings():
                 guild = self.bot.get_guild(settings.guild_id)
                 if not guild:
                     continue
@@ -215,7 +217,7 @@ class BirthdayCog(commands.Cog):
             return
 
         try:
-            for settings in await self.repo.get_all_enabled_settings():
+            for settings in await self.repo.list_enabled_settings():
                 guild = self.bot.get_guild(settings.guild_id)
                 if not guild:
                     continue
@@ -224,7 +226,7 @@ class BirthdayCog(commands.Cog):
                 if not channel or not isinstance(channel, discord.TextChannel):
                     continue
 
-                month_bdays = await self.repo.get_birthdays_in_month(settings.guild_id, now.month)
+                month_bdays = await self.repo.list_birthdays_in_month(settings.guild_id, now.month)
                 if not month_bdays:
                     continue
 
@@ -277,7 +279,9 @@ class BirthdayCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
 
         birthday = await self.repo.get_birthday(interaction.user.id)
-        is_subscribed = await self.repo.is_subscribed(interaction.guild.id, interaction.user.id)
+        is_subscribed = await self.repo.exists_subscription(
+            interaction.guild.id, interaction.user.id
+        )
         settings = await self.repo.get_settings(interaction.guild.id)
 
         # 建立 Embed
@@ -405,7 +409,7 @@ class BirthdayCog(commands.Cog):
 
         # 儲存
         is_new = await self.repo.get_birthday(interaction.user.id) is None
-        await self.repo.set_birthday(interaction.user.id, month, day, year)
+        await self.repo.upsert_birthday(interaction.user.id, month, day, year)
 
         msg = f"生日已設定為 {month:02d}/{day:02d}"
         if year:
@@ -415,7 +419,7 @@ class BirthdayCog(commands.Cog):
         if is_new and interaction.guild:
             settings = await self.repo.get_settings(interaction.guild.id)
             if settings:
-                await self.repo.subscribe(interaction.guild.id, interaction.user.id)
+                await self.repo.create_subscription(interaction.guild.id, interaction.user.id)
                 msg += f"\n已自動加入 **{interaction.guild.name}** 的生日通知"
 
         await interaction.followup.send(msg, ephemeral=True)
@@ -435,8 +439,8 @@ class BirthdayCog(commands.Cog):
             return
 
         now = datetime.now(TZ_UTC8)
-        month_bdays = await self.repo.get_birthdays_in_month(interaction.guild.id, now.month)
-        upcoming = await self.repo.get_upcoming_birthdays(
+        month_bdays = await self.repo.list_birthdays_in_month(interaction.guild.id, now.month)
+        upcoming = await self.repo.list_upcoming_birthdays(
             interaction.guild.id, now.month, now.day, limit=3
         )
 
@@ -474,7 +478,7 @@ class BirthdayCog(commands.Cog):
     @commands.Cog.listener()
     async def on_member_remove(self, member: discord.Member) -> None:
         if self._ready:
-            await self.repo.unsubscribe_user_from_guild(member.guild.id, member.id)
+            await self.repo.delete_subscription(member.guild.id, member.id)
 
     @commands.Cog.listener()
     async def on_guild_remove(self, guild: discord.Guild) -> None:
