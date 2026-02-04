@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import {
   type AnalyticsCommandStat,
@@ -13,7 +13,14 @@ import TwitchPlayer from '@/components/TwitchPlayer'
 import { useAuth } from '@/contexts/AuthContext'
 
 export default function Dashboard() {
-  const { user, isInitialized } = useAuth()
+  const { user, isInitialized, channels } = useAuth()
+
+  const defaultChannel = useMemo(() => {
+    if (channels.length === 0) return 'niibot_'
+    const live = channels.filter(ch => ch.is_live)
+    if (live.length === 0) return channels[0].name
+    return live.reduce((a, b) => ((a.viewer_count ?? 0) >= (b.viewer_count ?? 0) ? a : b)).name
+  }, [channels])
   const [analyticsLoading, setAnalyticsLoading] = useState(true)
   const [statsLoading, setStatsLoading] = useState(true)
   const [stats, setStats] = useState<ChannelStats | null>(null)
@@ -70,7 +77,7 @@ export default function Dashboard() {
         <div className="aspect-video bg-muted/50 rounded-xl overflow-hidden relative">
           {user?.name ? (
             <TwitchPlayer
-              channel="niibot_"
+              channel={defaultChannel}
               height="100%"
               muted={true}
               autoplay={true}

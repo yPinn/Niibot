@@ -23,8 +23,8 @@ class ChannelPointsComponent(commands.Component):
         self.settings = get_settings()
 
     def _generate_oauth_url(self) -> str:
-        """返回前端登入頁面 URL"""
-        return f"{self.settings.frontend_url}/login"
+        """返回前端頁面 URL"""
+        return self.settings.frontend_url
 
     @commands.Component.listener()
     async def event_custom_redemption_add(

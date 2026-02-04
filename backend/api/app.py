@@ -1,5 +1,6 @@
 """FastAPI application factory"""
 
+import asyncio
 import logging
 import time
 from collections.abc import AsyncGenerator
@@ -25,12 +26,23 @@ logger = logging.getLogger(__name__)
 
 # Track server start time
 _start_time: float = 0.0
+_heartbeat_task: asyncio.Task | None = None
+
+
+async def _heartbeat(interval: int = 300) -> None:
+    """Periodic heartbeat — log uptime and DB status"""
+    while True:
+        await asyncio.sleep(interval)
+        uptime = int(time.time() - _start_time)
+        db_manager = get_database_manager()
+        db_ok = db_manager is not None and db_manager._pool is not None
+        logger.info(f"Heartbeat: uptime={uptime}s, db={db_ok}")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Handle startup and shutdown"""
-    global _start_time
+    global _start_time, _heartbeat_task
     _start_time = time.time()
 
     settings = get_settings()
@@ -49,10 +61,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.exception(f"Failed to connect to database: {e}")
         raise
 
+    # Start heartbeat keep-alive task
+    if settings.enable_keep_alive:
+        _heartbeat_task = asyncio.create_task(_heartbeat(settings.keep_alive_interval))
+        logger.info(f"Heartbeat started (interval={settings.keep_alive_interval}s)")
+
     yield
 
     # Shutdown
     logger.info("Shutting down Niibot API server")
+    if _heartbeat_task:
+        _heartbeat_task.cancel()
     try:
         await db_manager.disconnect()
         logger.info("Database disconnected")

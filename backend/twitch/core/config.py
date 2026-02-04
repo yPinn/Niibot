@@ -32,6 +32,7 @@ BROADCASTER_SCOPES = [
     "channel:bot",  # Allow bot to join channel
     "channel:read:redemptions",  # Channel points EventSub
     "channel:read:subscriptions",  # Subscription EventSub
+    "channel:manage:vips",  # VIP redemption
     "bits:read",  # Bits EventSub
 ]
 
@@ -68,9 +69,6 @@ class TwitchBotSettings(BaseSettings):
     openrouter_model: str = Field(
         default="tngtech/deepseek-r1t2-chimera:free", description="OpenRouter model"
     )
-
-    # Health Check Server
-    enable_health_server: bool = Field(default=True, description="Enable HTTP health check server")
 
     # Environment
     log_level: str = Field(default="INFO", description="Logging level")

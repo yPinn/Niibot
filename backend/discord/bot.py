@@ -305,29 +305,22 @@ async def main() -> None:
             logger.error("請在 .env 文件中設定: DISCORD_BOT_TOKEN=your_token_here")
         return
 
-    # 檢查是否啟用 HTTP 服務器（用於 Render Web Service）
-    enable_http = os.getenv("ENABLE_HTTP_SERVER", "false").lower() == "true"
     # Render 會設定 PORT 環境變數，優先使用
     http_port = int(os.getenv("PORT", "8080"))
 
     async with NiibotClient() as bot:
-        http_server = None
+        health_server = None
         try:
-            # 啟動 HTTP 服務器（如果啟用）
-            if enable_http:
-                from http_server import HealthCheckServer
+            # 啟動 health server（核心功能）
+            from health_server import HealthCheckServer
 
-                http_server = HealthCheckServer(bot, port=http_port)
-                await http_server.start()
-                if RICH_AVAILABLE:
-                    logger.info(f"[green]HTTP 服務器已啟動於埠口 {http_port}[/green]")
-                else:
-                    logger.info(f"HTTP 服務器已啟動於埠口 {http_port}")
+            health_server = HealthCheckServer(bot, port=http_port)
+            await health_server.start()
 
             await bot.start(token)
         except (KeyboardInterrupt, asyncio.CancelledError):
-            if http_server:
-                await http_server.stop()
+            if health_server:
+                await health_server.stop()
             if not bot.is_closed():
                 await bot.close()
 

@@ -3,26 +3,20 @@
 import asyncio
 import logging
 import time
-from typing import TYPE_CHECKING
+from typing import Any
 
 from aiohttp import web
 
-if TYPE_CHECKING:
-    from main import Bot
-
-logger = logging.getLogger("Bot.Health")
+logger = logging.getLogger("discord_bot.health_server")
 
 
 class HealthCheckServer:
     """HTTP health check server"""
 
-    def __init__(self, bot: "Bot | None" = None, host: str = "0.0.0.0", port: int | None = None):
-        import os
-
+    def __init__(self, bot: Any, host: str = "0.0.0.0", port: int = 8080) -> None:
         self.bot = bot
         self.host = host
-        # Render 會設定 PORT 環境變數，優先使用
-        self.port = port or int(os.getenv("PORT", "4344"))
+        self.port = port
         self.app = web.Application()
         self.runner: web.AppRunner | None = None
         self._start_time: float = time.time()
@@ -38,11 +32,11 @@ class HealthCheckServer:
 
     async def handle_root(self, request: web.Request) -> web.Response:
         """Root endpoint - minimal service info"""
-        return web.json_response({"service": "niibot-twitch", "status": "running"})
+        return web.json_response({"service": "niibot-discord", "status": "running"})
 
     async def handle_health(self, request: web.Request) -> web.Response:
         """Health check endpoint for Render/Docker — always 200 (liveness)"""
-        ready = self.bot is not None and self.bot.bot_id is not None
+        ready = self.bot.is_ready()
         return web.json_response(
             {"status": "healthy" if ready else "starting", "ready": ready},
         )
@@ -51,10 +45,10 @@ class HealthCheckServer:
         """Status endpoint for API server integration"""
         return web.json_response(
             {
-                "service": "niibot-twitch",
-                "bot_id": self.bot.bot_id if self.bot else None,
+                "service": "niibot-discord",
+                "bot_id": str(self.bot.user.id) if self.bot.user else None,
                 "uptime_seconds": int(time.time() - self._start_time),
-                "connected_channels": len(self.bot._subscribed_channels) if self.bot else 0,
+                "connected_channels": len(self.bot.guilds) if self.bot.is_ready() else 0,
             }
         )
 
@@ -67,16 +61,15 @@ class HealthCheckServer:
         while True:
             await asyncio.sleep(300)
             uptime = int(time.time() - self._start_time)
-            ready = self.bot is not None and self.bot.bot_id is not None
-            channels = len(self.bot._subscribed_channels) if self.bot else 0
-            logger.info(f"Heartbeat: uptime={uptime}s, ready={ready}, channels={channels}")
+            ready = self.bot.is_ready() if self.bot else False
+            guilds = len(self.bot.guilds) if ready else 0
+            logger.info(f"Heartbeat: uptime={uptime}s, ready={ready}, guilds={guilds}")
 
     async def start(self) -> None:
         """Start health check server"""
         try:
             self.runner = web.AppRunner(self.app)
             await self.runner.setup()
-
             site = web.TCPSite(self.runner, self.host, self.port)
             await site.start()
 
@@ -85,7 +78,6 @@ class HealthCheckServer:
             logger.info(f"Health server started on {self.host}:{self.port}")
             logger.info(f"  GET http://{self.host}:{self.port}/health - Health check")
             logger.info(f"  GET http://{self.host}:{self.port}/status - Detailed status")
-
         except Exception as e:
             logger.exception(f"Failed to start health server: {e}")
             raise

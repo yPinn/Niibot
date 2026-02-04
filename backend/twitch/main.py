@@ -483,17 +483,11 @@ def main() -> None:
     setup_logging()
 
     async def runner() -> None:
-        from core.config import get_settings
         from health_server import HealthCheckServer
 
-        settings = get_settings()
-
         # 1. 啟動 health server（Render 需要儘快偵測到 port）
-        health_server = None
-        if settings.enable_health_server:
-            health_server = HealthCheckServer()
-            await health_server.start()
-            LOGGER.info(f"Health server 已啟動於埠口 {health_server.port}")
+        health_server = HealthCheckServer()
+        await health_server.start()
 
         # 2. 建立資料庫連線池
         # Transaction Pooler (6543) 不支援 prepared statements
