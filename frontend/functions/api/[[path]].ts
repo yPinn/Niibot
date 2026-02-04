@@ -11,7 +11,7 @@ export const onRequest: PagesFunction<Env> = async context => {
     const init: RequestInit = {
       method: context.request.method,
       headers: context.request.headers,
-      redirect: 'follow',
+      redirect: 'manual',
     }
 
     if (!['GET', 'HEAD'].includes(context.request.method)) {
