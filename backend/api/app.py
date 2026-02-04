@@ -145,7 +145,7 @@ def create_app() -> FastAPI:
         }
 
     # Ping endpoint
-    @app.get("/ping", response_class=PlainTextResponse)
+    @app.api_route("/ping", methods=["GET", "HEAD"], response_class=PlainTextResponse)
     async def ping():
         """Ping endpoint"""
         return "pong"
