@@ -8,6 +8,9 @@
 # Database - PostgreSQL async driver
 asyncpg>=0.30.0,<1.0.0
 
+# In-process TTL Cache
+cachetools>=5.5.0,<6.0.0
+
 # Environment Variables
 python-dotenv>=1.0.0,<2.0.0
 
