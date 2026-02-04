@@ -6,8 +6,8 @@ from pathlib import Path
 
 import asyncpg
 
-# Add parent directory to path to import config
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Ensure backend/ is on sys.path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from api.core.config import get_settings
 

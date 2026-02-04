@@ -7,11 +7,11 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any  # 移除 dict, list 的匯入
 
+# Ensure backend/ is on sys.path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import asyncpg
 from api.core.config import get_settings
-
-# 將父目錄加入路徑以匯入設定
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
 async def seed_test_sessions(channel_id: str | None = None):

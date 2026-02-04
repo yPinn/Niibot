@@ -6,20 +6,16 @@ import os
 import sys
 from pathlib import Path
 
+# Ensure backend/ is on sys.path so shared.* and twitch.* are importable
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import asyncpg
 import httpx
+from dotenv import load_dotenv
+from twitch.core.config import BOT_SCOPES, BROADCASTER_SCOPES
 
-from core.config import BOT_SCOPES, BROADCASTER_SCOPES
-
-# Add parent directory to path to import config
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-try:
-    from dotenv import load_dotenv
-
-    load_dotenv()
-except ImportError:
-    pass
+# Load twitch .env for DATABASE_URL
+load_dotenv(Path(__file__).resolve().parent.parent / "twitch" / ".env")
 
 
 BOT_SCOPES_SET = set(BOT_SCOPES)

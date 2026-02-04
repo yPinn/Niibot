@@ -6,17 +6,14 @@ import sys
 from pathlib import Path
 from urllib.parse import quote
 
-# Add parent directory to path to import config
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Ensure backend/ is on sys.path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-try:
-    from dotenv import load_dotenv
+from dotenv import load_dotenv
+from twitch.core.config import BOT_SCOPES, BROADCASTER_SCOPES
 
-    load_dotenv()
-except ImportError:
-    pass
-
-from core.config import BOT_SCOPES, BROADCASTER_SCOPES
+# Load twitch .env for CLIENT_ID
+load_dotenv(Path(__file__).resolve().parent.parent / "twitch" / ".env")
 
 
 def gen_url(cid: str, uri: str, scopes: list[str]) -> str:
