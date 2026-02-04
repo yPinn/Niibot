@@ -2,6 +2,7 @@
 
 import logging
 
+from asyncpg import Pool
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
@@ -57,11 +58,12 @@ class ToggleResponse(BaseModel):
 async def get_monitored_channels(
     user_id: str = Depends(get_current_user_id),
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
+    pool: Pool = Depends(get_db_pool),
 ) -> list[ChannelInfo]:
     """Get list of monitored channels with their live status"""
     try:
         # Get database pool and channel service
-        pool = await get_db_pool()
+        pool = get_db_pool()
         channel_service = get_channel_service(pool)
 
         # Get user's access token
@@ -123,10 +125,11 @@ async def get_monitored_channels(
 @router.get("/twitch/my-status", response_model=ChannelStatusResponse)
 async def get_my_channel_status(
     user_id: str = Depends(get_current_user_id),
+    pool: Pool = Depends(get_db_pool),
 ) -> ChannelStatusResponse:
     """Get current user's channel status"""
     try:
-        pool = await get_db_pool()
+        pool = get_db_pool()
         channel_service = get_channel_service(pool)
         status = await channel_service.get_channel_status(user_id)
         return ChannelStatusResponse(**status)
@@ -140,10 +143,11 @@ async def get_my_channel_status(
 async def toggle_channel(
     request: ChannelToggleRequest,
     user_id: str = Depends(get_current_user_id),
+    pool: Pool = Depends(get_db_pool),
 ) -> ToggleResponse:
     """Enable or disable bot for a channel"""
     try:
-        pool = await get_db_pool()
+        pool = get_db_pool()
         channel_service = get_channel_service(pool)
         success = await channel_service.toggle_channel(request.channel_id, request.enabled)
 

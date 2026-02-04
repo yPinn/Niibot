@@ -2,6 +2,7 @@
 
 import logging
 
+from asyncpg import Pool
 from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
@@ -15,7 +16,7 @@ from core.dependencies import (
     get_discord_api,
     get_twitch_api,
 )
-from services import AuthService, ChannelService, DiscordAPIClient, TwitchAPIClient
+from services import AuthService, DiscordAPIClient, TwitchAPIClient
 
 logger = logging.getLogger(__name__)
 
@@ -66,10 +67,9 @@ async def get_twitch_oauth_url(
 async def twitch_oauth_callback(
     code: str | None = None,
     error: str | None = None,
-    scope: str | None = None,
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
     auth_service: AuthService = Depends(get_auth_service),
-    channel_service: ChannelService = Depends(lambda: get_channel_service(get_db_pool())),
+    pool: Pool = Depends(get_db_pool),
     settings: Settings = Depends(get_settings),
 ) -> RedirectResponse:
     """Handle Twitch OAuth callback"""
@@ -94,7 +94,7 @@ async def twitch_oauth_callback(
     refresh_token = token_data.get("refresh_token", "")
 
     # Save token to database
-    pool = await get_db_pool()
+    pool = get_db_pool()
     channel_svc = get_channel_service(pool)
     save_success = await channel_svc.save_token(user_id, access_token, refresh_token)
 
@@ -128,13 +128,13 @@ async def twitch_oauth_callback(
 async def get_current_user(
     user_id: str = Depends(get_current_user_id),
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
-    channel_service: ChannelService = Depends(lambda: get_channel_service(get_db_pool())),
+    pool: Pool = Depends(get_db_pool),
 ) -> UserInfoResponse:
     """Get current authenticated user information"""
     # Check if this is a Discord user (has discord: prefix)
     if user_id.startswith("discord:"):
         discord_user_id = user_id.replace("discord:", "")
-        pool = await get_db_pool()
+        pool = get_db_pool()
         channel_svc = get_channel_service(pool)
         user_info = await channel_svc.get_discord_user(discord_user_id)
 
@@ -158,12 +158,13 @@ async def logout(
     user_id: str = Depends(get_current_user_id),
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
     settings: Settings = Depends(get_settings),
+    pool: Pool = Depends(get_db_pool),
 ) -> LogoutResponse:
     """Logout current user by clearing auth cookie"""
     # Fetch user info for logging
     if user_id.startswith("discord:"):
         discord_user_id = user_id.replace("discord:", "")
-        pool = await get_db_pool()
+        pool = get_db_pool()
         channel_svc = get_channel_service(pool)
         user_info = await channel_svc.get_discord_user(discord_user_id)
         username = user_info.get("name", discord_user_id) if user_info else discord_user_id
@@ -233,7 +234,7 @@ async def discord_oauth_callback(
     error: str | None = None,
     discord_api: DiscordAPIClient = Depends(get_discord_api),
     auth_service: AuthService = Depends(get_auth_service),
-    channel_service: ChannelService = Depends(lambda: get_channel_service(get_db_pool())),
+    pool: Pool = Depends(get_db_pool),
     settings: Settings = Depends(get_settings),
 ) -> RedirectResponse:
     """Handle Discord OAuth callback"""
@@ -263,7 +264,7 @@ async def discord_oauth_callback(
     avatar = token_data.get("avatar")
 
     # Save Discord user info to database (required since Discord OAuth can't fetch by ID)
-    pool = await get_db_pool()
+    pool = get_db_pool()
     channel_svc = get_channel_service(pool)
     await channel_svc.save_discord_user(user_id, username, display_name, avatar)
 

@@ -3,6 +3,7 @@
 import logging
 from datetime import datetime
 
+from asyncpg import Pool
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
@@ -67,6 +68,7 @@ class AnalyticsSummary(BaseModel):
 async def get_analytics_summary(
     days: int = 30,
     user_id: str = Depends(get_current_user_id),
+    pool: Pool = Depends(get_db_pool),
 ) -> AnalyticsSummary:
     """
     Get analytics summary for the authenticated user
@@ -75,7 +77,6 @@ async def get_analytics_summary(
         days: Number of days to look back (default: 30)
     """
     try:
-        pool = await get_db_pool()
         analytics_service = get_analytics_service(pool)
         summary_data = await analytics_service.get_summary(user_id, days)
 
@@ -91,6 +92,7 @@ async def get_analytics_summary(
 async def get_session_commands(
     session_id: int,
     user_id: str = Depends(get_current_user_id),
+    pool: Pool = Depends(get_db_pool),
 ) -> list[CommandStat]:
     """
     Get command statistics for a specific session
@@ -99,7 +101,6 @@ async def get_session_commands(
         session_id: Session ID to query
     """
     try:
-        pool = await get_db_pool()
         analytics_service = get_analytics_service(pool)
         commands = await analytics_service.get_session_commands(session_id, user_id)
 
@@ -119,6 +120,7 @@ async def get_session_commands(
 async def get_session_events(
     session_id: int,
     user_id: str = Depends(get_current_user_id),
+    pool: Pool = Depends(get_db_pool),
 ) -> list[StreamEvent]:
     """
     Get events for a specific session
@@ -127,7 +129,6 @@ async def get_session_events(
         session_id: Session ID to query
     """
     try:
-        pool = await get_db_pool()
         analytics_service = get_analytics_service(pool)
         events = await analytics_service.get_session_events(session_id, user_id)
 
@@ -148,6 +149,7 @@ async def get_top_commands(
     days: int = 30,
     limit: int = 10,
     user_id: str = Depends(get_current_user_id),
+    pool: Pool = Depends(get_db_pool),
 ) -> list[CommandStat]:
     """
     Get top commands across all sessions
@@ -157,7 +159,6 @@ async def get_top_commands(
         limit: Maximum number of commands to return (default: 10)
     """
     try:
-        pool = await get_db_pool()
         analytics_service = get_analytics_service(pool)
         commands = await analytics_service.get_top_commands(user_id, days, limit)
 

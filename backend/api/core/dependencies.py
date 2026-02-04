@@ -53,9 +53,10 @@ def get_discord_api() -> DiscordAPIClient:
     )
 
 
-async def get_db_pool() -> asyncpg.Pool:
-    """Get database pool (dependency injection)"""
+def get_db_pool() -> asyncpg.Pool:
     db_manager = get_database_manager()
+    if db_manager.pool is None:
+        raise RuntimeError("Database pool not initialized")
     return db_manager.pool
 
 
@@ -112,7 +113,7 @@ async def require_auth_with_channel_service(
     Convenient dependency for endpoints that need both auth and channel operations
     """
     user_id = await get_current_user_id(auth_token)
-    pool = await get_db_pool()
+    pool = get_db_pool()
     channel_service = get_channel_service(pool)
     return user_id, channel_service
 
@@ -126,6 +127,6 @@ async def require_auth_with_analytics_service(
     Convenient dependency for endpoints that need both auth and analytics operations
     """
     user_id = await get_current_user_id(auth_token)
-    pool = await get_db_pool()
+    pool = get_db_pool()
     analytics_service = get_analytics_service(pool)
     return user_id, analytics_service
