@@ -73,7 +73,7 @@ async def twitch_oauth_callback(
     settings: Settings = Depends(get_settings),
 ) -> RedirectResponse:
     """Handle Twitch OAuth callback"""
-    # Handle OAuth errors
+    # 1. 處理 OAuth 錯誤
     if error:
         logger.error(f"OAuth error from Twitch: {error}")
         return RedirectResponse(url=f"{settings.frontend_url}/login?error={error}")
@@ -82,7 +82,7 @@ async def twitch_oauth_callback(
         logger.error("No OAuth code received from Twitch")
         return RedirectResponse(url=f"{settings.frontend_url}/login?error=no_code")
 
-    # Exchange code for token
+    # 2. 用 Code 交換 Token
     success, error_msg, token_data = await twitch_api.exchange_code_for_token(code)
 
     if not success or not token_data:
@@ -93,23 +93,27 @@ async def twitch_oauth_callback(
     access_token = token_data["access_token"]
     refresh_token = token_data.get("refresh_token", "")
 
-    # Save token to database
-    pool = get_db_pool()
+    # 3. 關鍵改動：先拿使用者資訊，確保能存入正確的頻道名稱
+    user_info = await twitch_api.get_user_info(user_id)
+    # 這裡優先取用 'display_name' (顯示名稱) 或 'name' (帳號名)
+    username = user_info.get("display_name") or user_info.get("name") or user_id
+
+    # 4. 呼叫更新後的 save_token (務必配合剛才幫你寫的 ChannelService 版本)
     channel_svc = get_channel_service(pool)
-    save_success = await channel_svc.save_token(user_id, access_token, refresh_token)
+    save_success = await channel_svc.save_token(
+        user_id=user_id,
+        access_token=access_token,
+        refresh_token=refresh_token,
+        username=username,  # 將名字傳進去存入 channels 表
+    )
 
     if not save_success:
-        logger.error("Failed to save token to database")
+        logger.error(f"Failed to save token and channel for {username}")
         return RedirectResponse(url=f"{settings.frontend_url}/login?error=save_token_failed")
 
-    # Create JWT token
+    # 5. 建立 JWT 並回傳
     jwt_token = auth_service.create_access_token(user_id)
 
-    # Fetch user info for logging
-    user_info = await twitch_api.get_user_info(user_id)
-    username = user_info.get("name", user_id) if user_info else user_id
-
-    # Set cookie and redirect
     response = RedirectResponse(url=f"{settings.frontend_url}/dashboard")
     response.set_cookie(
         key="auth_token",
@@ -117,10 +121,10 @@ async def twitch_oauth_callback(
         httponly=True,
         secure=settings.is_production,
         samesite="strict" if settings.is_production else "lax",
-        max_age=30 * 24 * 60 * 60,  # 30 days
+        max_age=30 * 24 * 60 * 60,
     )
 
-    logger.info(f"User logged in: {username} ({user_id})")
+    logger.info(f"User logged in and synced: {username} ({user_id})")
     return response
 
 

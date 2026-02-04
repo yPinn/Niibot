@@ -3,6 +3,7 @@
 import logging
 
 import asyncpg
+from backend.api.services.twitch_api import TwitchAPIClient
 
 logger = logging.getLogger(__name__)
 
@@ -101,30 +102,49 @@ class ChannelService:
             logger.exception(f"Error getting token for user {user_id}: {e}")
             return None
 
-    async def save_token(self, user_id: str, access_token: str, refresh_token: str) -> bool:
+    async def save_token(
+        self, user_id: str, access_token: str, refresh_token: str, username: str = ""
+    ) -> bool:
         """Save or update user's OAuth token"""
         try:
             async with self.pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    INSERT INTO tokens (user_id, token, refresh)
-                    VALUES ($1, $2, $3)
-                    ON CONFLICT (user_id)
-                    DO UPDATE SET
-                        token = EXCLUDED.token,
-                        refresh = EXCLUDED.refresh,
-                        updated_at = CURRENT_TIMESTAMP
-                    """,
-                    user_id,
-                    access_token,
-                    refresh_token,
-                )
+                # 使用 Transaction 確保兩張表同步更新，若其中一個失敗則全部回滾
+                async with conn.transaction():
+                    # 1. 更新 tokens 表
+                    await conn.execute(
+                        """
+                        INSERT INTO tokens (user_id, token, refresh)
+                        VALUES ($1, $2, $3)
+                        ON CONFLICT (user_id)
+                        DO UPDATE SET
+                            token = EXCLUDED.token,
+                            refresh = EXCLUDED.refresh,
+                            updated_at = CURRENT_TIMESTAMP
+                        """,
+                        user_id,
+                        access_token,
+                        refresh_token,
+                    )
 
-            logger.debug(f"Token saved for user: {user_id}")
+                    # 2. 更新 channels 表 (確保頻道已註冊並更新名字)
+                    await conn.execute(
+                        """
+                    INSERT INTO channels (channel_id, channel_name, enabled, created_at)
+                    VALUES ($1, $2, true, NOW())
+                    ON CONFLICT (channel_id)
+                    DO UPDATE SET
+                        channel_name = EXCLUDED.channel_name,
+                        updated_at = CURRENT_TIMESTAMP
+                """,
+                        user_id,
+                        username,
+                    )
+
+            logger.info(f"Successfully synced token and channel for: {username} ({user_id})")
             return True
 
         except Exception as e:
-            logger.exception(f"Error saving token to database: {e}")
+            logger.exception(f"Error in save_token transaction: {e}")
             return False
 
     async def save_discord_user(
@@ -199,3 +219,46 @@ class ChannelService:
         # Default avatar
         default_avatar_index = int(user_id) % 5
         return f"https://cdn.discordapp.com/embed/avatars/{default_avatar_index}.png"
+
+    async def sync_empty_names(self, twitch_api: TwitchAPIClient):
+        """找出名字為空的頻道並從 Twitch 更新"""
+        try:
+            async with self.pool.acquire() as conn:
+                # 1. 找出所有名稱為空或 NULL 的 ID
+                rows = await conn.fetch(
+                    "SELECT channel_id FROM channels WHERE channel_name IS NULL OR channel_name = ''"
+                )
+
+                if not rows:
+                    logger.debug("No empty channel names to sync.")
+                    return
+
+                logger.info(f"Found {len(rows)} channels with empty names. Starting sync...")
+
+                for row in rows:
+                    cid = row["channel_id"]
+                    try:
+                        # 2. 向 Twitch API 查詢資訊
+                        user_info = await twitch_api.get_user_info(cid)
+                        if user_info:
+                            # 優先取顯示名稱，沒有則取登入名稱
+                            new_name = (
+                                user_info.get("display_name")
+                                or user_info.get("login")
+                                or user_info.get("name")
+                            )
+
+                            if new_name:
+                                # 3. 更新回資料庫
+                                await conn.execute(
+                                    "UPDATE channels SET channel_name = $1, updated_at = NOW() WHERE channel_id = $2",
+                                    new_name,
+                                    cid,
+                                )
+                                logger.info(f"Successfully updated name for {cid} to {new_name}")
+                    except Exception as api_err:
+                        logger.error(f"Failed to fetch info for channel {cid}: {api_err}")
+                        continue  # 繼續處理下一個，不要因為一個失敗就中斷整個迴圈
+
+        except Exception as e:
+            logger.exception(f"Error during sync_empty_names: {e}")
