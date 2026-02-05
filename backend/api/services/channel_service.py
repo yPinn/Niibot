@@ -81,6 +81,55 @@ class ChannelService:
             logger.exception(f"Error getting token for user {user_id}: {e}")
             return None
 
+    async def get_token_with_refresh(self, user_id: str, twitch_api: TwitchAPIClient) -> str | None:
+        """
+        Get user's access token, refreshing if expired.
+
+        This method:
+        1. Fetches the stored token
+        2. Validates it with Twitch
+        3. If invalid, attempts refresh using stored refresh_token
+        4. Updates database with new tokens on successful refresh
+
+        Returns:
+            Valid access token or None if unavailable/refresh failed.
+        """
+        try:
+            token_obj = await self.repo.get_token(user_id)
+            if not token_obj:
+                logger.warning(f"No token found for user: {user_id}")
+                return None
+
+            # Validate current token
+            is_valid = await twitch_api.validate_token(token_obj.token)
+            if is_valid:
+                return token_obj.token
+
+            # Token expired, try refresh
+            if not token_obj.refresh:
+                logger.warning(f"Token expired and no refresh token for user: {user_id}")
+                return None
+
+            logger.info(f"Token expired for user {user_id}, attempting refresh...")
+            result = await twitch_api.refresh_access_token(token_obj.refresh)
+
+            if not result.success:
+                logger.error(f"Token refresh failed for user {user_id}: {result.error}")
+                return None
+
+            # Update database with new tokens
+            await self.repo.upsert_token_only(
+                user_id=user_id,
+                token=result.access_token,
+                refresh=result.refresh_token or token_obj.refresh,
+            )
+            logger.info(f"Token refreshed successfully for user: {user_id}")
+            return result.access_token
+
+        except Exception as e:
+            logger.exception(f"Error getting token with refresh for user {user_id}: {e}")
+            return None
+
     async def save_token(
         self, user_id: str, access_token: str, refresh_token: str, username: str = ""
     ) -> bool:

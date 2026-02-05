@@ -1,12 +1,29 @@
-"""Twitch API client service"""
+"""Twitch API client service.
+
+Token types:
+- App Access Token: For public endpoints (users, streams, games). Auto-fetched.
+- User Access Token: For user-specific endpoints (channel:bot, redemptions).
+  Requires OAuth flow, stored in DB, can be refreshed.
+"""
 
 import logging
+from dataclasses import dataclass
 from typing import cast
 from urllib.parse import quote
 
 import httpx
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class TokenRefreshResult:
+    """Result of a token refresh operation."""
+
+    success: bool
+    access_token: str | None = None
+    refresh_token: str | None = None
+    error: str | None = None
 
 
 class TwitchAPIClient:
@@ -202,15 +219,23 @@ class TwitchAPIClient:
             logger.exception(f"Error getting app access token: {e}")
             return None
 
-    async def get_users_by_ids(self, user_ids: list[str], access_token: str) -> list[dict]:
-        """Get multiple users by their IDs"""
+    async def get_users_by_ids(
+        self, user_ids: list[str], access_token: str | None = None
+    ) -> list[dict]:
+        """Get multiple users by their IDs (uses app token)"""
         try:
+            # Use app token instead of user token (more reliable)
+            app_token = await self._get_app_access_token()
+            if not app_token:
+                logger.error("Failed to get app token for get_users_by_ids")
+                return []
+
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await client.get(
                     "https://api.twitch.tv/helix/users",
                     params={"id": user_ids},
                     headers={
-                        "Authorization": f"Bearer {access_token}",
+                        "Authorization": f"Bearer {app_token}",
                         "Client-Id": self.client_id,
                     },
                 )
@@ -227,15 +252,21 @@ class TwitchAPIClient:
             logger.exception(f"Error getting users: {e}")
             return []
 
-    async def get_streams(self, user_ids: list[str], access_token: str) -> list[dict]:
-        """Get stream information for multiple users"""
+    async def get_streams(self, user_ids: list[str], access_token: str | None = None) -> list[dict]:
+        """Get stream information for multiple users (uses app token)"""
         try:
+            # Use app token instead of user token (more reliable)
+            app_token = await self._get_app_access_token()
+            if not app_token:
+                logger.error("Failed to get app token for get_streams")
+                return []
+
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await client.get(
                     "https://api.twitch.tv/helix/streams",
                     params={"user_id": user_ids},
                     headers={
-                        "Authorization": f"Bearer {access_token}",
+                        "Authorization": f"Bearer {app_token}",
                         "Client-Id": self.client_id,
                     },
                 )
@@ -330,3 +361,73 @@ class TwitchAPIClient:
         except Exception as e:
             logger.exception(f"Error getting games by names: {e}")
             return []
+
+    # ==================== User Token Management ====================
+
+    async def refresh_access_token(self, refresh_token: str) -> TokenRefreshResult:
+        """
+        Refresh a user's access token using their refresh token.
+
+        The refresh token itself may also be rotated (Twitch returns a new one).
+        Caller should update both tokens in the database.
+
+        Returns:
+            TokenRefreshResult with new tokens on success, error on failure.
+        """
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.post(
+                    "https://id.twitch.tv/oauth2/token",
+                    data={
+                        "client_id": self.client_id,
+                        "client_secret": self.client_secret,
+                        "grant_type": "refresh_token",
+                        "refresh_token": refresh_token,
+                    },
+                )
+
+                if response.status_code != 200:
+                    error_data = response.json() if response.text else {}
+                    error_msg = error_data.get("message", f"HTTP {response.status_code}")
+                    logger.error(f"Token refresh failed: {error_msg}")
+                    return TokenRefreshResult(success=False, error=error_msg)
+
+                data = response.json()
+                new_access_token = data.get("access_token")
+                new_refresh_token = data.get("refresh_token")
+
+                if not new_access_token:
+                    return TokenRefreshResult(
+                        success=False, error="No access_token in refresh response"
+                    )
+
+                logger.debug("Successfully refreshed user access token")
+                return TokenRefreshResult(
+                    success=True,
+                    access_token=new_access_token,
+                    refresh_token=new_refresh_token or refresh_token,
+                )
+
+        except httpx.TimeoutException:
+            logger.error("Timeout while refreshing token")
+            return TokenRefreshResult(success=False, error="timeout")
+        except Exception as e:
+            logger.exception(f"Unexpected error refreshing token: {e}")
+            return TokenRefreshResult(success=False, error=str(e))
+
+    async def validate_token(self, access_token: str) -> bool:
+        """
+        Validate if an access token is still valid.
+
+        Returns True if valid, False if expired or invalid.
+        """
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.get(
+                    "https://id.twitch.tv/oauth2/validate",
+                    headers={"Authorization": f"OAuth {access_token}"},
+                )
+                return response.status_code == 200
+        except Exception as e:
+            logger.warning(f"Token validation failed: {e}")
+            return False

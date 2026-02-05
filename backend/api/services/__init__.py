@@ -8,12 +8,13 @@ from .analytics_service import AnalyticsService
 from .auth_service import AuthService
 from .channel_service import ChannelService
 from .discord_api import DiscordAPIClient
-from .twitch_api import TwitchAPIClient
+from .twitch_api import TokenRefreshResult, TwitchAPIClient
 
 __all__ = [
-    "AuthService",
-    "DiscordAPIClient",
-    "TwitchAPIClient",
-    "ChannelService",
     "AnalyticsService",
+    "AuthService",
+    "ChannelService",
+    "DiscordAPIClient",
+    "TokenRefreshResult",
+    "TwitchAPIClient",
 ]

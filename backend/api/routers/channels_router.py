@@ -60,26 +60,29 @@ async def get_monitored_channels(
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
     pool: Pool = Depends(get_db_pool),
 ) -> list[ChannelInfo]:
-    """Get list of monitored channels with their live status"""
+    """Get list of monitored channels with their live status.
+
+    Uses app access token for Twitch API calls (public endpoints).
+    User token is not required for fetching user info and stream status.
+    """
     try:
         channel_service = get_channel_service(pool)
 
-        # Get user's access token
-        access_token = await channel_service.get_user_token(user_id)
-        if not access_token:
-            logger.warning(f"No token for user: {user_id}")
-            return []
-
         # Get enabled channels from database
         enabled_channels = await channel_service.get_enabled_channels()
+        logger.debug(f"Found {len(enabled_channels)} enabled channels")
 
         if not enabled_channels:
             return []
 
         channel_ids = [ch["channel_id"] for ch in enabled_channels]
 
-        # Fetch user info from Twitch
-        users_data = await twitch_api.get_users_by_ids(channel_ids, access_token)
+        # Fetch user info from Twitch (uses app token internally)
+        users_data = await twitch_api.get_users_by_ids(channel_ids)
+
+        if not users_data:
+            logger.warning("No user data returned from Twitch API")
+            return []
 
         # Build channel info map
         channels_info = {}
@@ -94,10 +97,10 @@ async def get_monitored_channels(
                 game_name="",
             )
 
-        # Fetch stream status
+        # Fetch stream status (uses app token internally)
         user_ids_list = [user["id"] for user in users_data]
         if user_ids_list:
-            streams_data = await twitch_api.get_streams(user_ids_list, access_token)
+            streams_data = await twitch_api.get_streams(user_ids_list)
 
             for stream in streams_data:
                 stream_user_id = stream["user_id"]
@@ -112,7 +115,7 @@ async def get_monitored_channels(
         result = [ch for ch in channels_info.values() if ch.id != user_id]
         result.sort(key=lambda x: (not x.is_live, x.display_name))
 
-        logger.info(f"User {user_id} fetched {len(result)} monitored channels")
+        logger.debug(f"Returning {len(result)} monitored channels for user {user_id}")
         return result
 
     except Exception as e:
