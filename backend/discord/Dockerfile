@@ -11,6 +11,7 @@ COPY discord/ ./discord/
 COPY data/ ./data/
 
 ENV PATH="/app/.venv/bin:$PATH" \
+    PYTHONPATH="/app" \
     PYTHONUNBUFFERED=1
 
 WORKDIR /app/discord
