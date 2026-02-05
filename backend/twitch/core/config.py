@@ -10,7 +10,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 logger = logging.getLogger(__name__)
 
 # === Path Configuration ===
-TWITCH_DIR = Path(__file__).parent.parent
+TWITCH_DIR = Path(__file__).resolve().parent.parent
 BACKEND_DIR = TWITCH_DIR.parent
 COMPONENTS_DIR = TWITCH_DIR / "components"
 DATA_DIR = BACKEND_DIR / "data"
@@ -23,6 +23,7 @@ BOT_SCOPES = [
     # Moderation (requires bot to be mod in channel)
     "moderator:read:followers",  # Follow EventSub
     "moderator:manage:announcements",  # Send announcements
+    "moderator:manage:shoutouts",  # Shoutout on raid
     # Optional features
     "user:manage:whispers",  # Whisper messages
 ]

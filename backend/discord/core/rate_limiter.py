@@ -13,12 +13,7 @@ from typing import Any, cast
 
 import discord
 
-try:
-    from config import BotConfig
-
-    CONFIG_AVAILABLE = True
-except ImportError:
-    CONFIG_AVAILABLE = False
+from .config import BotConfig
 
 logger = logging.getLogger("discord_bot.rate_limiter")
 
@@ -56,16 +51,9 @@ class RateLimitMonitor:
         # 修正 Mypy 報錯：明確標註字典型別
         self._warning_cooldown: dict[str, float] = {}
 
-        if CONFIG_AVAILABLE:
-            self.WARNING_THRESHOLD: float = getattr(BotConfig, "RATE_LIMIT_WARNING_THRESHOLD", 0.7)
-            self.CRITICAL_THRESHOLD: float = getattr(
-                BotConfig, "RATE_LIMIT_CRITICAL_THRESHOLD", 0.9
-            )
-            self.enabled: bool = getattr(BotConfig, "RATE_LIMIT_ENABLED", True)
-        else:
-            self.WARNING_THRESHOLD = 0.7
-            self.CRITICAL_THRESHOLD = 0.9
-            self.enabled = True
+        self.WARNING_THRESHOLD: float = getattr(BotConfig, "RATE_LIMIT_WARNING_THRESHOLD", 0.7)
+        self.CRITICAL_THRESHOLD: float = getattr(BotConfig, "RATE_LIMIT_CRITICAL_THRESHOLD", 0.9)
+        self.enabled: bool = getattr(BotConfig, "RATE_LIMIT_ENABLED", True)
 
     async def start_monitoring(self) -> None:
         """啟動監控"""

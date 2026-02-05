@@ -19,4 +19,5 @@ def get_channel_subscriptions(
             broadcaster_user_id=broadcaster_user_id, moderator_user_id=bot_id
         ),
         eventsub.ChannelSubscribeSubscription(broadcaster_user_id=broadcaster_user_id),
+        eventsub.ChannelRaidSubscription(to_broadcaster_user_id=broadcaster_user_id),
     ]

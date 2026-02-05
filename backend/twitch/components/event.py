@@ -147,11 +147,45 @@ class EventComponent(commands.Component):
         except Exception as e:
             LOGGER.error(f"[{broadcaster_name}] {sub_type}: {user_name} ({tier_name}) (error: {e})")
 
+    @commands.Component.listener()
+    async def event_raid(
+        self,
+        payload: twitchio.ChannelRaid,
+    ) -> None:
+        """Raid 事件 - 自動 shoutout raider 頻道"""
+        raider_name = payload.raider.display_name or payload.raider.name
+        raider_id = payload.raider.id
+        broadcaster_name = payload.broadcaster.name
+        broadcaster_id = payload.broadcaster.id
+        viewer_count = payload.viewer_count
+
+        try:
+            # 發送感謝訊息
+            await payload.broadcaster.send_message(
+                message=f"{raider_name} 帶了 {viewer_count} 個新朋友降落！",
+                sender=self.bot.bot_id,
+                token_for=self.bot.bot_id,
+            )
+
+            # 執行 Shoutout (使用 TwitchIO 內部 HTTP client)
+            await self.bot._http.post_chat_shoutout(
+                broadcaster_id=broadcaster_id,
+                to_broadcaster_id=raider_id,
+                moderator_id=self.bot.bot_id,
+                token_for=broadcaster_id,
+            )
+            LOGGER.info(
+                f"[{broadcaster_name}] Raid: {raider_name} ({viewer_count}) - Shoutout sent"
+            )
+
+        except Exception as e:
+            LOGGER.error(f"[{broadcaster_name}] Raid: {raider_name} (error: {e})")
+
 
 async def setup(bot: commands.Bot) -> None:
     component = EventComponent(bot)
     await bot.add_component(component)
-    LOGGER.info("EventComponent loaded with listeners: event_follow, event_subscribe")
+    LOGGER.info("EventComponent loaded with listeners: event_follow, event_subscribe, event_raid")
 
 
 async def teardown(bot: commands.Bot) -> None: ...

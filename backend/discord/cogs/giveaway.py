@@ -10,7 +10,7 @@ import discord
 from discord import app_commands, ui
 from discord.ext import commands, tasks
 
-from config import DATA_DIR
+from core import DATA_DIR
 
 logger = logging.getLogger(__name__)
 

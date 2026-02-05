@@ -6,7 +6,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from config import BOT_NAME, BOT_VERSION
+from core import BOT_NAME, BOT_VERSION
 
 
 class Utility(commands.Cog):

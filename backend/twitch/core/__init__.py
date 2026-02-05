@@ -10,6 +10,7 @@ from .config import (
     load_env_config,
     validate_env_vars,
 )
+from .health_server import HealthCheckServer
 from .logging import setup_logging
 from .subscriptions import get_channel_subscriptions
 
@@ -27,6 +28,8 @@ __all__ = [
     "BROADCASTER_SCOPES",
     # Setup functions
     "setup_logging",
+    # Services
+    "HealthCheckServer",
     # Twitch specific
     "get_channel_subscriptions",
 ]

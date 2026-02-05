@@ -26,19 +26,19 @@
   "homepage": "https://github.com/yPinn/Niibot#readme",
   "lint-staged": {
     "frontend/**/*.{js,jsx,ts,tsx}": [
-      "npx --prefix frontend eslint --config frontend/eslint.config.js --fix",
-      "npx --prefix frontend prettier --write --ignore-unknown"
+      "npx --prefix frontend eslint --config frontend/eslint.config.js --cache --cache-location frontend/.cache/eslint/ --fix",
+      "npx --prefix frontend prettier --cache --cache-location frontend/.cache/prettier/ --write --ignore-unknown"
     ],
     "backend/**/*.py": [
       "uv run --project backend ruff check --fix --config backend/pyproject.toml --cache-dir backend/.cache/ruff",
-      "uv run --project backend ruff format --config backend/pyproject.toml"
+      "uv run --project backend ruff format --config backend/pyproject.toml --cache-dir backend/.cache/ruff"
     ],
     "docs/**/*.md": [
       "npx --prefix frontend markdownlint --fix",
-      "npx --prefix frontend prettier --write --ignore-unknown"
+      "npx --prefix frontend prettier --cache --cache-location frontend/.cache/prettier/ --write --ignore-unknown"
     ],
     "**/*.{json,yml,yaml}": [
-      "npx --prefix frontend prettier --write --ignore-unknown"
+      "npx --prefix frontend prettier --cache --cache-location frontend/.cache/prettier/ --write --ignore-unknown"
     ]
   },
   "devDependencies": {

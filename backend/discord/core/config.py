@@ -13,10 +13,12 @@ BOT_VERSION = "1.0.0"
 BOT_NAME = "Niibot"
 
 # === Path Configuration ===
-DISCORD_DIR = Path(__file__).parent
+CORE_DIR = Path(__file__).resolve().parent
+DISCORD_DIR = CORE_DIR.parent
 BACKEND_DIR = DISCORD_DIR.parent
 COGS_DIR = DISCORD_DIR / "cogs"
 
+# Docker 環境下 DISCORD_DIR 會是 /app
 if str(DISCORD_DIR) == "/app":
     DATA_DIR = Path("/app/data")
 else:

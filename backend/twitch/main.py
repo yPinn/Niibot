@@ -16,6 +16,7 @@ if _backend_dir not in sys.path:
 
 from core import (  # noqa: E402
     COMPONENTS_DIR,
+    HealthCheckServer,
     get_channel_subscriptions,
     load_env_config,
     setup_logging,
@@ -443,8 +444,6 @@ def main() -> None:
     setup_logging()
 
     async def runner() -> None:
-        from health_server import HealthCheckServer
-
         # 1. 啟動 health server（Render 需要儘快偵測到 port）
         health_server = HealthCheckServer()
         await health_server.start()

@@ -11,9 +11,9 @@ from pathlib import Path
 
 # 設置 Python 路徑 (直接執行時需要)
 if __name__ == "__main__":
-    backend_dir = Path(__file__).parent.parent
-    if str(backend_dir) not in sys.path:
-        sys.path.insert(0, str(backend_dir))
+    backend_dir = str(Path(__file__).resolve().parent.parent)
+    if backend_dir not in sys.path:
+        sys.path.insert(0, backend_dir)
 
 # 載入 .env 環境變數 (必須在 import config 之前)
 from dotenv import load_dotenv
@@ -26,8 +26,7 @@ import asyncpg  # noqa: E402
 import discord  # noqa: E402
 from discord.ext import commands  # noqa: E402
 
-from config import COGS_DIR, BotConfig  # noqa: E402
-from rate_limiter import RateLimitMonitor  # noqa: E402
+from core import COGS_DIR, BotConfig, HealthCheckServer, RateLimitMonitor  # noqa: E402
 from shared.database import DatabaseManager, PoolConfig  # noqa: E402
 
 try:
@@ -344,8 +343,6 @@ async def main() -> None:
         health_server = None
         try:
             # 啟動健康檢查伺服器
-            from health_server import HealthCheckServer
-
             health_server = HealthCheckServer(bot, port=http_port)
             await health_server.start()
 

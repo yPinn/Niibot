@@ -9,7 +9,7 @@ from discord import app_commands
 from discord.ext import commands
 from openai import OpenAI
 
-from config import DATA_DIR
+from core import DATA_DIR
 
 LOGGER = logging.getLogger("AI")
 

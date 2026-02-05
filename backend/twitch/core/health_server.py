@@ -2,8 +2,9 @@
 
 import asyncio
 import logging
+import os
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from aiohttp import web
 
@@ -17,9 +18,7 @@ class HealthCheckServer:
     """HTTP health check server"""
 
     def __init__(self, bot: "Bot | None" = None, host: str = "0.0.0.0", port: int | None = None):
-        import os
-
-        self.bot = bot
+        self.bot: Any = bot
         self.host = host
         # Render 會設定 PORT 環境變數，優先使用
         self.port = port or int(os.getenv("PORT", "4344"))

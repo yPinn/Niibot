@@ -10,7 +10,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
-from config import DATA_DIR
+from core import DATA_DIR
 from shared.repositories.birthday import BirthdayRepository
 
 from .constants import BIRTHDAY_COLOR, BIRTHDAY_THUMBNAIL, TZ_UTC8
