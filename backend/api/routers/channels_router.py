@@ -62,8 +62,6 @@ async def get_monitored_channels(
 ) -> list[ChannelInfo]:
     """Get list of monitored channels with their live status"""
     try:
-        # Get database pool and channel service
-        pool = get_db_pool()
         channel_service = get_channel_service(pool)
 
         # Get user's access token
@@ -129,7 +127,6 @@ async def get_my_channel_status(
 ) -> ChannelStatusResponse:
     """Get current user's channel status"""
     try:
-        pool = get_db_pool()
         channel_service = get_channel_service(pool)
         status = await channel_service.get_channel_status(user_id)
         return ChannelStatusResponse(**status)
@@ -147,7 +144,6 @@ async def toggle_channel(
 ) -> ToggleResponse:
     """Enable or disable bot for a channel"""
     try:
-        pool = get_db_pool()
         channel_service = get_channel_service(pool)
         success = await channel_service.toggle_channel(request.channel_id, request.enabled)
 

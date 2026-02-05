@@ -138,7 +138,6 @@ async def get_current_user(
     # Check if this is a Discord user (has discord: prefix)
     if user_id.startswith("discord:"):
         discord_user_id = user_id.replace("discord:", "")
-        pool = get_db_pool()
         channel_svc = get_channel_service(pool)
         user_info = await channel_svc.get_discord_user(discord_user_id)
 
@@ -168,7 +167,6 @@ async def logout(
     # Fetch user info for logging
     if user_id.startswith("discord:"):
         discord_user_id = user_id.replace("discord:", "")
-        pool = get_db_pool()
         channel_svc = get_channel_service(pool)
         user_info = await channel_svc.get_discord_user(discord_user_id)
         username = user_info.get("name", discord_user_id) if user_info else discord_user_id
@@ -268,7 +266,6 @@ async def discord_oauth_callback(
     avatar = token_data.get("avatar")
 
     # Save Discord user info to database (required since Discord OAuth can't fetch by ID)
-    pool = get_db_pool()
     channel_svc = get_channel_service(pool)
     await channel_svc.save_discord_user(user_id, username, display_name, avatar)
 
