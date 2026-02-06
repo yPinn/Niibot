@@ -368,3 +368,64 @@ class AnalyticsRepository:
 
             _top_commands_cache.set(cache_key, result)
             return result
+
+    # ==================== VOD Sync ====================
+
+    async def sync_session_from_vod(
+        self,
+        channel_id: str,
+        started_at: datetime,
+        ended_at: datetime,
+        title: str | None = None,
+        game_name: str | None = None,
+        game_id: str | None = None,
+    ) -> int | None:
+        """
+        Create a session from VOD data if it doesn't already exist.
+
+        Returns:
+            Session ID if created, None if already exists.
+        """
+        async with self.pool.acquire() as conn:
+            # Check for existing session with same start time
+            existing = await conn.fetchrow(
+                """
+                SELECT id FROM stream_sessions
+                WHERE channel_id = $1 AND started_at = $2
+                """,
+                channel_id,
+                started_at,
+            )
+            if existing:
+                return None
+
+            # Create new session
+            session_id = await conn.fetchval(
+                """
+                INSERT INTO stream_sessions
+                    (channel_id, started_at, ended_at, title, game_name, game_id)
+                VALUES ($1, $2, $3, $4, $5, $6)
+                RETURNING id
+                """,
+                channel_id,
+                started_at,
+                ended_at,
+                title,
+                game_name,
+                game_id,
+            )
+            return int(session_id) if session_id else None
+
+    async def get_latest_session_time(self, channel_id: str) -> datetime | None:
+        """Get the start time of the most recent session for a channel."""
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT started_at FROM stream_sessions
+                WHERE channel_id = $1
+                ORDER BY started_at DESC
+                LIMIT 1
+                """,
+                channel_id,
+            )
+            return row["started_at"] if row else None

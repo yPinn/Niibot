@@ -95,6 +95,7 @@ class Bot(commands.AutoBot):
         asyncio.create_task(self._subscribe_initial_channels())
         asyncio.create_task(self.listen_new_token_notifications())
         asyncio.create_task(self.listen_channel_toggle_notifications())
+        asyncio.create_task(self._recover_active_sessions())
 
     async def event_oauth_authorized(
         self, payload: twitchio.authentication.UserTokenPayload
@@ -269,6 +270,146 @@ class Bot(commands.AutoBot):
             LOGGER.info("Initial channel subscription complete")
         except Exception as e:
             LOGGER.exception(f"Error subscribing to initial channels: {e}")
+
+    async def _recover_active_sessions(self) -> None:
+        """Recover sessions for channels that are currently live on bot startup.
+
+        This handles the case where the bot restarts during a live stream,
+        ensuring we don't miss session tracking.
+        """
+        from datetime import datetime
+
+        try:
+            # Wait for subscriptions to complete
+            await asyncio.sleep(5)
+
+            enabled_channels = await self.channels.list_enabled_channels()
+            if not enabled_channels:
+                return
+
+            channel_ids = [ch.channel_id for ch in enabled_channels if ch.channel_id != BOT_ID]
+            if not channel_ids:
+                return
+
+            LOGGER.info(f"Checking for active streams on {len(channel_ids)} channels...")
+
+            # Fetch current streams from Twitch API
+            streams = await self.fetch_streams(user_ids=channel_ids)
+            if not streams:
+                LOGGER.info("No active streams found during startup recovery")
+                return
+
+            LOGGER.info(f"Found {len(streams)} active streams, recovering sessions...")
+
+            for stream in streams:
+                channel_id = stream.user.id if stream.user else None
+                if not channel_id:
+                    continue
+
+                # Skip if session already exists
+                if channel_id in self._active_sessions:
+                    LOGGER.debug(f"Session already active for channel {channel_id}, skipping")
+                    continue
+
+                # Check if there's an un-ended session in database
+                existing_session = await self.analytics.get_active_session(channel_id)
+                if existing_session:
+                    # Resume existing session
+                    self._active_sessions[channel_id] = existing_session["id"]
+                    LOGGER.info(
+                        f"Resumed existing session {existing_session['id']} for channel {channel_id}"
+                    )
+                    continue
+
+                # Create new session for live stream
+                title = stream.title
+                game_name = stream.game_name
+                started_at = stream.started_at or datetime.now()
+
+                session_id = await self.analytics.create_session(
+                    channel_id=channel_id,
+                    started_at=started_at,
+                    title=title,
+                    game_name=game_name,
+                )
+                self._active_sessions[channel_id] = session_id
+                LOGGER.info(
+                    f"Created recovery session {session_id} for live channel {channel_id} "
+                    f"(started: {started_at})"
+                )
+
+            LOGGER.info("Session recovery complete")
+
+            # After recovering active sessions, sync historical VODs
+            await self._sync_vods_for_channels(channel_ids)
+
+        except Exception as e:
+            LOGGER.exception(f"Error recovering active sessions: {e}")
+
+    async def _sync_vods_for_channels(
+        self, channel_ids: list[str], limit_per_channel: int = 20
+    ) -> None:
+        """Sync historical VODs from Twitch API for enabled channels.
+
+        This automatically imports past broadcast records that don't exist
+        in the database yet, ensuring analytics data is complete.
+
+        Uses TwitchIO's built-in fetch_videos() method.
+        """
+        try:
+            LOGGER.info(f"Starting VOD sync for {len(channel_ids)} channels...")
+            total_synced = 0
+
+            for channel_id in channel_ids:
+                try:
+                    # Use TwitchIO's built-in fetch_videos() method
+                    videos = await self.fetch_videos(
+                        user_id=channel_id,
+                        video_type="archive",
+                        first=limit_per_channel,
+                    )
+
+                    if not videos:
+                        continue
+
+                    synced_count = 0
+                    for video in videos:
+                        # TwitchIO Video object has created_at as datetime
+                        started_at = video.created_at
+                        if not started_at:
+                            continue
+
+                        # Calculate ended_at from duration
+                        duration = video.duration  # timedelta object
+                        ended_at = started_at + duration if duration else started_at
+                        title = video.title
+
+                        # Try to sync (will skip if already exists)
+                        session_id = await self.analytics.sync_session_from_vod(
+                            channel_id=channel_id,
+                            started_at=started_at,
+                            ended_at=ended_at,
+                            title=title,
+                        )
+
+                        if session_id:
+                            synced_count += 1
+                            total_synced += 1
+
+                    if synced_count > 0:
+                        LOGGER.info(f"Synced {synced_count} VODs for channel {channel_id}")
+
+                except Exception as e:
+                    LOGGER.warning(f"Failed to sync VODs for channel {channel_id}: {e}")
+                    continue
+
+            if total_synced > 0:
+                LOGGER.info(f"VOD sync complete: {total_synced} new sessions imported")
+            else:
+                LOGGER.info("VOD sync complete: all sessions already up to date")
+
+        except Exception as e:
+            LOGGER.exception(f"Error during VOD sync: {e}")
 
     async def listen_new_token_notifications(self) -> None:
         """Listen for PostgreSQL NOTIFY when new tokens are inserted."""

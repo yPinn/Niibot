@@ -431,3 +431,93 @@ class TwitchAPIClient:
         except Exception as e:
             logger.warning(f"Token validation failed: {e}")
             return False
+
+    # ==================== Video / VOD API ====================
+
+    async def get_videos(
+        self,
+        user_id: str,
+        video_type: str = "archive",
+        first: int = 20,
+    ) -> list[dict]:
+        """
+        Get videos (VODs) for a user from Twitch API.
+
+        Args:
+            user_id: The Twitch user ID to fetch videos for
+            video_type: Type of video - "archive" (past broadcasts), "highlight", "upload"
+            first: Number of videos to return (max 100)
+
+        Returns:
+            List of video objects with:
+            - id: Video ID
+            - stream_id: Original stream ID (if archive)
+            - user_id: Broadcaster user ID
+            - user_name: Broadcaster display name
+            - title: Video title
+            - created_at: When the video was created (ISO 8601)
+            - published_at: When the video was published
+            - duration: Duration string (e.g., "3h2m1s")
+            - view_count: Number of views
+            - type: Video type (archive, highlight, upload)
+        """
+        try:
+            app_token = await self._get_app_access_token()
+            if not app_token:
+                logger.error("Failed to get app token for get_videos")
+                return []
+
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.get(
+                    "https://api.twitch.tv/helix/videos",
+                    params={
+                        "user_id": user_id,
+                        "type": video_type,
+                        "first": min(first, 100),
+                    },
+                    headers={
+                        "Authorization": f"Bearer {app_token}",
+                        "Client-Id": self.client_id,
+                    },
+                )
+
+                if response.status_code != 200:
+                    logger.error(f"Failed to fetch videos: {response.status_code}")
+                    logger.error(f"Response: {response.text}")
+                    return []
+
+                data = response.json()
+                return cast(list[dict], data.get("data", []))
+
+        except Exception as e:
+            logger.exception(f"Error getting videos: {e}")
+            return []
+
+    def parse_duration(self, duration_str: str) -> float:
+        """
+        Parse Twitch duration string to hours.
+
+        Args:
+            duration_str: Duration like "3h2m1s", "45m30s", "1h30s"
+
+        Returns:
+            Duration in hours as float
+        """
+        import re
+
+        hours = 0
+        minutes = 0
+        seconds = 0
+
+        h_match = re.search(r"(\d+)h", duration_str)
+        m_match = re.search(r"(\d+)m", duration_str)
+        s_match = re.search(r"(\d+)s", duration_str)
+
+        if h_match:
+            hours = int(h_match.group(1))
+        if m_match:
+            minutes = int(m_match.group(1))
+        if s_match:
+            seconds = int(s_match.group(1))
+
+        return hours + minutes / 60 + seconds / 3600
