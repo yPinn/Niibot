@@ -20,5 +20,14 @@ def get_database_manager() -> DatabaseManager:
 def init_database_manager(database_url: str) -> DatabaseManager:
     """Initialize the global database manager"""
     global _db_manager
-    _db_manager = DatabaseManager(database_url, PoolConfig(min_size=1, max_size=5))
+    _db_manager = DatabaseManager(
+        database_url,
+        PoolConfig(
+            min_size=1,
+            max_size=5,
+            timeout=60.0,  # Increased for Render ↔ Supabase cross-region
+            command_timeout=60.0,
+            max_retries=5,
+        ),
+    )
     return _db_manager

@@ -49,8 +49,6 @@ class Bot(commands.AutoBot):
         self.token_database = token_database
         self._subscribed_channels: set[str] = set()
         self._subscription_ids: dict[str, list[str]] = {}
-        self.channel_states: dict[str, bool] = {}
-        self._channel_states_lock = asyncio.Lock()
 
         self.channels = ChannelRepository(token_database)
         self.analytics = AnalyticsRepository(token_database)
@@ -93,8 +91,9 @@ class Bot(commands.AutoBot):
                 except Exception as e:
                     print(f"Failed to load component {module_name}: {e}")
 
-        # 2. 啟動背景任務
-        asyncio.create_task(self.check_new_tokens_and_channels_task())
+        # 2. 啟動背景任務 (使用 PostgreSQL NOTIFY 即時偵測)
+        asyncio.create_task(self._subscribe_initial_channels())
+        asyncio.create_task(self.listen_new_token_notifications())
         asyncio.create_task(self.listen_channel_toggle_notifications())
 
     async def event_oauth_authorized(
@@ -129,15 +128,13 @@ class Bot(commands.AutoBot):
         if payload.broadcaster:
             LOGGER.debug(f"[{payload.chatter.name}#{payload.broadcaster.name}]: {payload.text}")
 
-            broadcaster_id = payload.broadcaster.id
-            async with self._channel_states_lock:
-                if broadcaster_id in self.channel_states:
-                    is_enabled = self.channel_states[broadcaster_id]
-                    if not is_enabled:
-                        LOGGER.debug(
-                            f"[BLOCK] Ignoring message from disabled channel: {payload.broadcaster.name} ({broadcaster_id})"
-                        )
-                        return
+            # If channel is not subscribed, ignore the message
+            # (This handles race conditions during unsubscribe)
+            if payload.broadcaster.id not in self._subscribed_channels:
+                LOGGER.debug(
+                    f"[BLOCK] Ignoring message from unsubscribed channel: {payload.broadcaster.name}"
+                )
+                return
         else:
             LOGGER.debug(f"[{payload.chatter.name}]: {payload.text}")
 
@@ -255,95 +252,107 @@ class Bot(commands.AutoBot):
         except Exception as e:
             LOGGER.exception(f"[NOTIFY] Error handling channel toggle notification: {e}")
 
-    async def check_new_tokens_and_channels_task(self) -> None:
-        loaded_user_ids: set[str] = set()
-
+    async def _subscribe_initial_channels(self) -> None:
+        """Subscribe to EventSub for all enabled channels on startup."""
         try:
-            tokens = await self.channels.list_tokens()
-            loaded_user_ids = {t.user_id for t in tokens}
+            # Small delay to ensure bot is fully initialized
+            await asyncio.sleep(2)
 
-            LOGGER.info(f"Token watcher started, tracking {len(loaded_user_ids)} existing users")
-        except Exception as e:
-            LOGGER.error(f"Failed to initialize token watcher: {e}")
-            return
-
-        await asyncio.sleep(5)
-        try:
             enabled_channels = await self.channels.list_enabled_channels()
+            LOGGER.info(f"Subscribing to {len(enabled_channels)} enabled channels...")
 
             for ch in enabled_channels:
+                if ch.channel_id == BOT_ID:
+                    continue
                 await self.subscribe_channel_events(ch.channel_id)
-                async with self._channel_states_lock:
-                    self.channel_states[ch.channel_id] = True
+
+            LOGGER.info("Initial channel subscription complete")
         except Exception as e:
-            LOGGER.exception(f"Error subscribing to existing channels: {e}")
+            LOGGER.exception(f"Error subscribing to initial channels: {e}")
+
+    async def listen_new_token_notifications(self) -> None:
+        """Listen for PostgreSQL NOTIFY when new tokens are inserted."""
+        LOGGER.info("Starting PostgreSQL LISTEN for new token notifications...")
 
         while True:
+            connection = None
             try:
-                await asyncio.sleep(10)
+                connection = await self.token_database.acquire()
+                await connection.add_listener("new_token", self._handle_new_token)
+                LOGGER.info("PostgreSQL LISTEN active on 'new_token' channel")
 
-                tokens = await self.channels.list_tokens()
-                all_channels = await self.channels.list_all_channels()
+                try:
+                    while True:
+                        await asyncio.sleep(60)
+                        await connection.execute("SELECT 1")
+                except asyncio.CancelledError:
+                    LOGGER.info("New token LISTEN shutting down...")
+                    raise
+                finally:
+                    try:
+                        await connection.remove_listener("new_token", self._handle_new_token)
+                    except Exception:
+                        pass
+                    await self.token_database.release(connection)
+                    connection = None
 
-                current_user_ids = {t.user_id for t in tokens}
-                new_user_ids = current_user_ids - loaded_user_ids
-
-                if new_user_ids:
-                    LOGGER.info(f"Found {len(new_user_ids)} new users, loading tokens...")
-
-                    for tok in tokens:
-                        if tok.user_id in new_user_ids:
-                            try:
-                                user_info = await self.add_token(tok.token, tok.refresh)
-                                loaded_user_ids.add(tok.user_id)
-                                LOGGER.info(f"Loaded new token for user_id: {tok.user_id}")
-
-                                await self.add_channel_to_db(
-                                    tok.user_id, user_info.login or "unknown"
-                                )
-
-                                await self.subscribe_channel_events(tok.user_id)
-
-                            except Exception as e:
-                                LOGGER.error(f"Failed to load token for user_id {tok.user_id}: {e}")
-
-                for ch in all_channels:
-                    if ch.channel_id == BOT_ID:
-                        continue
-
-                    async with self._channel_states_lock:
-                        previous_state = self.channel_states.get(ch.channel_id)
-                        state_changed = previous_state is not None and previous_state != ch.enabled
-
-                        if previous_state is None:
-                            self.channel_states[ch.channel_id] = ch.enabled
-                        elif state_changed:
-                            self.channel_states[ch.channel_id] = ch.enabled
-
-                    if state_changed:
-                        LOGGER.info(
-                            f"[POLL] Channel {ch.channel_id} state changed: {previous_state} -> {ch.enabled}"
-                        )
-
-                        if ch.enabled:
-                            if ch.channel_id not in self._subscribed_channels:
-                                await self.subscribe_channel_events(ch.channel_id)
-                                LOGGER.info(f"[POLL] ✓ Subscribed to channel: {ch.channel_id}")
-                        else:
-                            if ch.channel_id in self._subscribed_channels:
-                                await self.unsubscribe_channel_events(ch.channel_id)
-                                LOGGER.info(f"[POLL] ✓ Unsubscribed from channel: {ch.channel_id}")
-
-            except (asyncio.CancelledError, KeyboardInterrupt):
-                LOGGER.info("Token watcher shutting down...")
+            except asyncio.CancelledError:
                 break
             except Exception as e:
-                LOGGER.exception(f"Error in check_new_tokens_task: {e}")
+                LOGGER.exception(f"Error in listen_new_token_notifications: {e}")
+                LOGGER.warning("Reconnecting to PostgreSQL LISTEN (new_token) in 10 seconds...")
+                if connection is not None:
+                    try:
+                        await connection.remove_listener("new_token", self._handle_new_token)
+                    except Exception:
+                        pass
+                    try:
+                        await self.token_database.release(connection)
+                    except Exception:
+                        pass
                 try:
-                    await asyncio.sleep(60)
-                except (asyncio.CancelledError, KeyboardInterrupt):
-                    LOGGER.info("Token watcher shutting down...")
+                    await asyncio.sleep(10)
+                except asyncio.CancelledError:
                     break
+
+    async def _handle_new_token(self, connection, pid, channel, payload) -> None:
+        """Handle new token notification - load token and subscribe to EventSub."""
+        import json
+
+        try:
+            LOGGER.info(f"[NOTIFY] Received new token notification: {payload}")
+
+            data = json.loads(payload)
+            user_id = data["user_id"]
+
+            if user_id == BOT_ID:
+                LOGGER.debug(f"[NOTIFY] Ignoring new token for bot's own account: {user_id}")
+                return
+
+            # Fetch the token from database
+            token_obj = await self.channels.get_token(user_id)
+            if not token_obj:
+                LOGGER.warning(f"[NOTIFY] Token not found for user_id: {user_id}")
+                return
+
+            # Load token into TwitchIO
+            try:
+                user_info = await self.add_token(token_obj.token, token_obj.refresh)
+                LOGGER.info(f"[NOTIFY] Loaded token for new user: {user_info.login} ({user_id})")
+
+                # Ensure channel exists in database
+                await self.add_channel_to_db(user_id, user_info.login or "unknown")
+
+                # Subscribe to EventSub for the new channel
+                if user_id not in self._subscribed_channels:
+                    await self.subscribe_channel_events(user_id)
+                    LOGGER.info(f"[NOTIFY] ✓ Instantly subscribed to new channel: {user_id}")
+
+            except twitchio.exceptions.InvalidTokenException as e:
+                LOGGER.warning(f"[NOTIFY] Invalid token for new user {user_id}: {e}")
+
+        except Exception as e:
+            LOGGER.exception(f"[NOTIFY] Error handling new token notification: {e}")
 
     async def setup_database(self) -> None:
         pass
@@ -449,7 +458,16 @@ def main() -> None:
         await health_server.start()
 
         # 2. 建立資料庫連線池（使用 shared.database 統一邏輯）
-        db_manager = DatabaseManager(DATABASE_URL, PoolConfig(min_size=2, max_size=8))
+        db_manager = DatabaseManager(
+            DATABASE_URL,
+            PoolConfig(
+                min_size=2,
+                max_size=8,
+                timeout=60.0,  # Increased for Render ↔ Supabase cross-region
+                command_timeout=60.0,
+                max_retries=5,
+            ),
+        )
         await db_manager.connect()
         pool = db_manager.pool
 

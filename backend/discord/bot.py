@@ -126,7 +126,7 @@ class NiibotClient(commands.Bot):
         self._db_manager: DatabaseManager | None = None
         self.db_pool: asyncpg.Pool | None = None
 
-    async def setup_database(self, max_retries: int = 3, retry_delay: float = 5.0) -> None:
+    async def setup_database(self, max_retries: int = 5, retry_delay: float = 5.0) -> None:
         """Initialize the shared database connection pool."""
         database_url = os.getenv("DATABASE_URL")
         if not database_url:
@@ -140,6 +140,8 @@ class NiibotClient(commands.Bot):
             PoolConfig(
                 min_size=1,
                 max_size=5,
+                timeout=60.0,  # Increased for Render ↔ Supabase cross-region
+                command_timeout=60.0,
                 max_retries=max_retries,
                 retry_delay=retry_delay,
             ),
