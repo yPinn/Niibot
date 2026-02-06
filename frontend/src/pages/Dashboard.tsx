@@ -67,6 +67,22 @@ export default function Dashboard() {
     fetchAnalytics()
   }, [isInitialized, user, fetchStats, fetchAnalytics])
 
+  // Refetch stats when a channel goes offline (new session data available)
+  const prevChannelsRef = useRef(channels)
+  useEffect(() => {
+    const prev = prevChannelsRef.current
+    prevChannelsRef.current = channels
+
+    // Skip on initial load
+    if (!hasLoadedRef.current) return
+
+    const wentOffline = prev.some(p => p.is_live && !channels.find(c => c.id === p.id)?.is_live)
+    if (wentOffline) {
+      fetchStats()
+      fetchAnalytics()
+    }
+  }, [channels, fetchStats, fetchAnalytics])
+
   return (
     <main
       className={`h-full grid grid-rows-[1fr_auto] min-h-0 overflow-hidden transition-all duration-200 p-4 gap-4`}

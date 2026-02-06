@@ -235,7 +235,7 @@ export default function AnalyticsChart({
     sessionsByDate.get(dateKey)!.push(session)
   })
 
-  const chartData = Array.from(sessionsByDate.entries()).map(([dateKey, daySessions]) => {
+  const realChartData = Array.from(sessionsByDate.entries()).map(([dateKey, daySessions]) => {
     const date = new Date(dateKey)
     return {
       date: `${date.getMonth() + 1}-${String(date.getDate()).padStart(2, '0')}`,
@@ -247,6 +247,26 @@ export default function AnalyticsChart({
       session_count: daySessions.length,
     }
   })
+
+  // When no data, generate last 7 days with 0 values so the chart renders a flat line
+  const chartData =
+    realChartData.length > 0
+      ? realChartData
+      : Array.from({ length: 7 }, (_, i) => {
+          const d = new Date()
+          d.setDate(d.getDate() - (6 - i))
+          return {
+            date: `${d.getMonth() + 1}-${String(d.getDate()).padStart(2, '0')}`,
+            sessions: [] as SessionSummary[],
+            stream_hours: 0,
+            avg_viewers: 0,
+            follows: 0,
+            subs: 0,
+            session_count: 0,
+          }
+        })
+
+  const isEmpty = realChartData.length === 0
 
   const chartConfigs: Record<ChartMode, ChartConfig> = {
     stream_hours: { dataKey: 'stream_hours', unit: '小時', label: '直播時長' },
@@ -336,33 +356,34 @@ export default function AnalyticsChart({
             ))}
           </div>
 
-          <div className="flex-1 min-h-0 h-[290px]">
-            {chartData.length === 0 ? (
-              <div className="flex items-center justify-center h-full text-center text-muted-foreground">
-                <p className="text-sm">暫無直播數據</p>
+          <div className="flex-1 min-h-0 h-[290px] relative">
+            {isEmpty && (
+              <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
+                <span className="text-sm text-muted-foreground/60">尚無直播數據</span>
               </div>
-            ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
-                  <defs>
-                    <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.5} />
-                      <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0.05} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-border" opacity={0.5} />
-                  <XAxis
-                    dataKey="date"
-                    tick={(props: CustomTickProps) => <CustomTick {...props} />}
-                    tickLine={false}
-                    axisLine={{ className: 'stroke-border' }}
-                  />
-                  <YAxis
-                    width={35} // 增加寬度確保顯示 10 以上的數字
-                    tick={(props: CustomTickProps) => <CustomYAxisTick {...props} />}
-                    tickLine={false}
-                    axisLine={{ className: 'stroke-border' }}
-                  />
+            )}
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                <defs>
+                  <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.5} />
+                    <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0.05} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-border" opacity={0.5} />
+                <XAxis
+                  dataKey="date"
+                  tick={(props: CustomTickProps) => <CustomTick {...props} />}
+                  tickLine={false}
+                  axisLine={{ className: 'stroke-border' }}
+                />
+                <YAxis
+                  width={35}
+                  tick={(props: CustomTickProps) => <CustomYAxisTick {...props} />}
+                  tickLine={false}
+                  axisLine={{ className: 'stroke-border' }}
+                />
+                {!isEmpty && (
                   <Tooltip
                     content={props => <ChartTooltip {...props} chartConfig={chartConfig} />}
                     cursor={{
@@ -371,18 +392,18 @@ export default function AnalyticsChart({
                       strokeDasharray: '5 5',
                     }}
                   />
-                  <Area
-                    type="monotone"
-                    dataKey={chartConfig.dataKey}
-                    stroke="hsl(var(--primary))"
-                    strokeWidth={2.5}
-                    fillOpacity={1}
-                    fill="url(#colorValue)"
-                    activeDot={{ r: 6, fill: 'hsl(var(--primary))', strokeWidth: 2 }}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            )}
+                )}
+                <Area
+                  type="monotone"
+                  dataKey={chartConfig.dataKey}
+                  stroke="hsl(var(--primary))"
+                  strokeWidth={2.5}
+                  fillOpacity={1}
+                  fill="url(#colorValue)"
+                  activeDot={{ r: 6, fill: 'hsl(var(--primary))', strokeWidth: 2 }}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
           </div>
         </div>
       </CardContent>

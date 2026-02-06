@@ -9,12 +9,11 @@ Run with:
 import sys
 from pathlib import Path
 
-from app import create_app
-from core.config import get_settings
-
-# Add parent directory to path for imports
+# Add parent directory to path for shared imports — must be before any local imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from app import create_app  # noqa: E402
+from core.config import get_settings  # noqa: E402
 
 # Create the FastAPI application instance
 app = create_app()

@@ -132,6 +132,23 @@ class GeneralCommands(commands.Component):
 
             if session_id:
                 analytics = self.bot.analytics
+
+                # Flush chatter stats buffer to database
+                if hasattr(self.bot, "_chatter_buffers"):
+                    chatter_data = self.bot._chatter_buffers.pop(channel_id, {})
+                    if chatter_data:
+                        try:
+                            await analytics.flush_chatter_stats(
+                                session_id=session_id,
+                                channel_id=channel_id,
+                                chatters=chatter_data,
+                            )
+                            LOGGER.info(
+                                f"Flushed {len(chatter_data)} chatters for session {session_id}"
+                            )
+                        except Exception as e:
+                            LOGGER.error(f"Failed to flush chatter stats: {e}")
+
                 await analytics.end_session(session_id, datetime.now())
                 del active_sessions[channel_id]
                 LOGGER.info(

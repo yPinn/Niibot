@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 _session_cache = AsyncTTLCache(maxsize=32, ttl=10)
 _summary_cache = AsyncTTLCache(maxsize=32, ttl=120)
 _top_commands_cache = AsyncTTLCache(maxsize=32, ttl=120)
+_top_chatters_cache = AsyncTTLCache(maxsize=32, ttl=120)
 
 
 class AnalyticsRepository:
@@ -368,6 +369,100 @@ class AnalyticsRepository:
 
             _top_commands_cache.set(cache_key, result)
             return result
+
+    # ==================== Chatter Stats ====================
+
+    async def flush_chatter_stats(
+        self,
+        session_id: int,
+        channel_id: str,
+        chatters: dict[str, dict],
+    ) -> None:
+        """Batch-insert chatter stats for a completed session.
+
+        Args:
+            chatters: {user_id: {"username": str, "count": int, "last_at": datetime}}
+        """
+        if not chatters:
+            return
+
+        rows = [
+            (session_id, channel_id, user_id, data["username"], data["count"], data["last_at"])
+            for user_id, data in chatters.items()
+        ]
+
+        async with self.pool.acquire() as conn:
+            await conn.executemany(
+                """
+                INSERT INTO chatter_stats
+                    (session_id, channel_id, user_id, username, message_count, last_message_at)
+                VALUES ($1, $2, $3, $4, $5, $6)
+                ON CONFLICT (session_id, user_id) DO UPDATE SET
+                    username       = EXCLUDED.username,
+                    message_count  = EXCLUDED.message_count,
+                    last_message_at = EXCLUDED.last_message_at
+                """,
+                rows,
+            )
+
+        logger.info(f"Flushed chatter stats for session {session_id}: {len(rows)} chatters")
+
+    async def list_top_chatters(
+        self, channel_id: str, days: int = 30, limit: int = 10
+    ) -> list[dict]:
+        """Get top chatters across all sessions in the given time window."""
+        cache_key = f"top_chatters:{channel_id}:{days}:{limit}"
+        cached = _top_chatters_cache.get(cache_key)
+        if cached is not _MISSING:
+            return cached
+
+        async with self.pool.acquire() as conn:
+            since_date = datetime.now() - timedelta(days=days)
+
+            rows = await conn.fetch(
+                """
+                SELECT
+                    c.user_id,
+                    (ARRAY_AGG(c.username ORDER BY c.last_message_at DESC))[1] AS username,
+                    SUM(c.message_count) AS total_messages
+                FROM chatter_stats c
+                JOIN stream_sessions s ON s.id = c.session_id
+                WHERE c.channel_id = $1 AND s.started_at >= $2
+                GROUP BY c.user_id
+                ORDER BY total_messages DESC
+                LIMIT $3
+                """,
+                channel_id,
+                since_date,
+                limit,
+            )
+            result = [
+                {
+                    "username": row["username"],
+                    "message_count": row["total_messages"],
+                }
+                for row in rows
+            ]
+
+            _top_chatters_cache.set(cache_key, result)
+            return result
+
+    async def get_total_messages(self, channel_id: str, days: int = 30) -> int:
+        """Get total message count across all sessions in the given time window."""
+        async with self.pool.acquire() as conn:
+            since_date = datetime.now() - timedelta(days=days)
+
+            total = await conn.fetchval(
+                """
+                SELECT COALESCE(SUM(c.message_count), 0)
+                FROM chatter_stats c
+                JOIN stream_sessions s ON s.id = c.session_id
+                WHERE c.channel_id = $1 AND s.started_at >= $2
+                """,
+                channel_id,
+                since_date,
+            )
+            return int(total)
 
     # ==================== VOD Sync ====================
 

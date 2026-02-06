@@ -112,16 +112,18 @@ export function NavChannels({ channels }: { channels: Channel[] }) {
         )}
         {sortedChannels.map(channel => (
           <SidebarMenuItem key={channel.id}>
-            <SidebarMenuButton asChild>
+            <SidebarMenuButton asChild className={channel.is_live ? 'h-auto py-1.5' : ''}>
               <a
                 href={`https://twitch.tv/${channel.name}`}
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                <div className="relative">
-                  <Avatar className="h-6 w-6 rounded-full">
+                <div className="relative flex-shrink-0">
+                  <Avatar
+                    className={channel.is_live ? 'size-6 rounded-full' : 'size-5 rounded-full'}
+                  >
                     <AvatarImage src={channel.avatar} alt={channel.display_name} />
-                    <AvatarFallback className="rounded-full text-xs">
+                    <AvatarFallback className="rounded-full text-[8px]">
                       {channel.display_name.substring(0, 2).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
@@ -129,20 +131,28 @@ export function NavChannels({ channels }: { channels: Channel[] }) {
                     <div className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-sidebar" />
                   )}
                 </div>
-                <div className="flex flex-1 flex-col gap-0.5">
-                  <span className="text-sm font-medium">{channel.display_name}</span>
-                  {channel.is_live && channel.game_name && (
-                    <span className="text-xs text-muted-foreground truncate">
-                      {channel.game_name}
+                {channel.is_live ? (
+                  <div className="flex flex-1 min-w-0 flex-col gap-0.5">
+                    <span className="text-sm font-medium truncate leading-none">
+                      {channel.display_name}
+                    </span>
+                    {channel.game_name && (
+                      <span className="text-[11px] text-muted-foreground truncate leading-none">
+                        {channel.game_name}
+                      </span>
+                    )}
+                  </div>
+                ) : (
+                  <span className="flex-1 truncate">{channel.display_name}</span>
+                )}
+                <div className="flex items-center gap-1.5 flex-shrink-0 ml-auto">
+                  {channel.is_live && channel.viewer_count !== undefined && (
+                    <span className="text-xs tabular-nums text-muted-foreground">
+                      {channel.viewer_count}
                     </span>
                   )}
-                </div>
-                <div className="flex items-center gap-1.5">
-                  {channel.is_live && channel.viewer_count !== undefined && (
-                    <span className="text-xs text-muted-foreground">{channel.viewer_count}</span>
-                  )}
                   <div
-                    className={`h-2 w-2 rounded-full mr-1 ${channel.is_live ? 'bg-red-500 animate-pulse' : 'bg-gray-400'}`}
+                    className={`h-2 w-2 rounded-full ${channel.is_live ? 'bg-red-500 animate-pulse' : 'bg-gray-400'}`}
                   />
                 </div>
               </a>

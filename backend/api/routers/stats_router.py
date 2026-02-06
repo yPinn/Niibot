@@ -1,13 +1,13 @@
 """Channel statistics API routes"""
 
 import logging
-import random
-from datetime import datetime
 
+from asyncpg import Pool
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from core.dependencies import get_current_user_id
+from core.dependencies import get_current_user_id, get_db_pool
+from shared.repositories.analytics import AnalyticsRepository
 
 logger = logging.getLogger(__name__)
 
@@ -31,59 +31,27 @@ class ChannelStats(BaseModel):
     total_commands: int
 
 
-# Mock data
-MOCK_COMMANDS = [
-    CommandStat(name="!commands", count=156),
-    CommandStat(name="!ai", count=89),
-    CommandStat(name="!運勢", count=67),
-    CommandStat(name="!help", count=45),
-    CommandStat(name="!測試", count=34),
-    CommandStat(name="!cmonbruh", count=28),
-    CommandStat(name="!socials", count=23),
-    CommandStat(name="!discord", count=19),
-    CommandStat(name="!info", count=12),
-    CommandStat(name="!uptime", count=8),
-]
-
-MOCK_CHATTERS = [
-    ChatterStat(username="user1", message_count=487),
-    ChatterStat(username="user2", message_count=356),
-    ChatterStat(username="user3", message_count=298),
-    ChatterStat(username="user4", message_count=245),
-    ChatterStat(username="user5", message_count=189),
-    ChatterStat(username="user6", message_count=167),
-    ChatterStat(username="user7", message_count=134),
-]
-
-
 @router.get("/channel")
-async def get_channel_stats(user_id: str = Depends(get_current_user_id)) -> ChannelStats:
+async def get_channel_stats(
+    user_id: str = Depends(get_current_user_id),
+    pool: Pool = Depends(get_db_pool),
+) -> ChannelStats:
     """Get channel statistics"""
     try:
-        # TODO: Replace with actual database queries
-        seed = datetime.now().minute
-        random.seed(seed)
+        repo = AnalyticsRepository(pool)
 
-        def randomize_count(count: int) -> int:
-            variation = random.randint(-5, 5) / 100
-            return max(1, int(count * (1 + variation)))
-
-        top_commands = [
-            CommandStat(name=cmd.name, count=randomize_count(cmd.count))
-            for cmd in MOCK_COMMANDS[:10]
-        ]
+        top_chatters_data = await repo.list_top_chatters(user_id, days=30, limit=10)
+        top_commands_data = await repo.list_top_commands(user_id, days=30, limit=10)
+        total_messages = await repo.get_total_messages(user_id, days=30)
 
         top_chatters = [
-            ChatterStat(
-                username=chatter.username, message_count=randomize_count(chatter.message_count)
-            )
-            for chatter in MOCK_CHATTERS[:10]
+            ChatterStat(username=c["username"], message_count=c["message_count"])
+            for c in top_chatters_data
         ]
-
+        top_commands = [
+            CommandStat(name=c["command_name"], count=c["usage_count"]) for c in top_commands_data
+        ]
         total_commands = sum(cmd.count for cmd in top_commands)
-        total_messages = sum(chatter.message_count for chatter in top_chatters) + random.randint(
-            500, 800
-        )
 
         logger.info(f"User {user_id} requested channel stats")
         return ChannelStats(

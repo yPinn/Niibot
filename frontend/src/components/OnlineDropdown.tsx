@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { type BotStatus, getTwitchBotStatus } from '@/api/bots'
 import { getTwitchChannelStatus, toggleTwitchChannel } from '@/api/channels'
 import {
   DropdownMenu,
@@ -13,10 +12,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useAuth } from '@/contexts/AuthContext'
 
 export function OnlineDropdown() {
-  const { user, isInitialized } = useAuth()
+  const { user, isInitialized, botStatus } = useAuth()
   const [myChannelSubscribed, setMyChannelSubscribed] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [botStatus, setBotStatus] = useState<BotStatus>({ online: false })
   const hasLoadedRef = useRef(false)
 
   const fetchMyStatus = useCallback(async () => {
@@ -31,28 +29,11 @@ export function OnlineDropdown() {
     }
   }, [user])
 
-  const fetchBotStatus = useCallback(async () => {
-    try {
-      const status = await getTwitchBotStatus()
-      setBotStatus(status)
-    } catch (error) {
-      console.error('Failed to fetch bot status:', error)
-      setBotStatus({ online: false })
-    }
-  }, [])
-
   useEffect(() => {
     if (!isInitialized || !user || hasLoadedRef.current) return
     hasLoadedRef.current = true
     fetchMyStatus()
-    fetchBotStatus()
-  }, [isInitialized, user, fetchMyStatus, fetchBotStatus])
-
-  useEffect(() => {
-    if (!user) return
-    const interval = setInterval(fetchBotStatus, 30000)
-    return () => clearInterval(interval)
-  }, [user, fetchBotStatus])
+  }, [isInitialized, user, fetchMyStatus])
 
   const toggleMyChannelSubscription = async () => {
     if (!user) return

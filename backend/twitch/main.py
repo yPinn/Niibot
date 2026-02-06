@@ -53,6 +53,8 @@ class Bot(commands.AutoBot):
         self.channels = ChannelRepository(token_database)
         self.analytics = AnalyticsRepository(token_database)
         self._active_sessions: dict[str, int] = {}
+        # In-memory chatter buffers: {channel_id: {user_id: {"username": str, "count": int, "last_at": datetime}}}
+        self._chatter_buffers: dict[str, dict[str, dict]] = {}
 
         if CONDUIT_ID:
             super().__init__(
@@ -136,6 +138,24 @@ class Bot(commands.AutoBot):
                     f"[BLOCK] Ignoring message from unsubscribed channel: {payload.broadcaster.name}"
                 )
                 return
+
+            # Track chatter message count in-memory (only during active sessions)
+            channel_id = payload.broadcaster.id
+            chatter_id = payload.chatter.id
+            if chatter_id != self.bot_id and channel_id in self._active_sessions:
+                from datetime import datetime
+
+                buf = self._chatter_buffers.setdefault(channel_id, {})
+                if chatter_id in buf:
+                    buf[chatter_id]["count"] += 1
+                    buf[chatter_id]["last_at"] = datetime.now()
+                    buf[chatter_id]["username"] = payload.chatter.name
+                else:
+                    buf[chatter_id] = {
+                        "username": payload.chatter.name,
+                        "count": 1,
+                        "last_at": datetime.now(),
+                    }
         else:
             LOGGER.debug(f"[{payload.chatter.name}]: {payload.text}")
 
