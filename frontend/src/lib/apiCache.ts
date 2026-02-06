@@ -88,7 +88,11 @@ class ApiCache {
 
     const promise = fetcher()
       .then(data => {
-        this.set(key, data)
+        // Don't cache empty arrays - they might be temporary failures
+        const isEmpty = Array.isArray(data) && data.length === 0
+        if (!isEmpty) {
+          this.set(key, data)
+        }
         return data
       })
       .finally(() => {

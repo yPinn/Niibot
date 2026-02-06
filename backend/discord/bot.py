@@ -360,12 +360,40 @@ async def main() -> None:
                     # 429 Too Many Requests 或 Cloudflare 1015 錯誤
                     if e.status == 429:
                         retry_count += 1
-                        # 計算等待時間: 60, 120, 240, 480... 秒
-                        wait_time = base_delay * (2 ** (retry_count - 1))
 
-                        warn_msg = f"偵測到 Discord/Cloudflare 速率限制 (429)。嘗試第 {retry_count}/{max_retries} 次重試，等待 {wait_time} 秒..."
+                        # 解析詳細的速率限制資訊
+                        scope = "unknown"
+                        retry_after = base_delay * (2 ** (retry_count - 1))
+                        is_cloudflare = False
+
+                        # 檢查是否為 Cloudflare ban (1015)
+                        if hasattr(e, "text") and e.text:
+                            if "1015" in str(e.text) or "cloudflare" in str(e.text).lower():
+                                is_cloudflare = True
+                                logger.error(
+                                    "[CLOUDFLARE BAN] 被 Cloudflare 暫時封鎖 (1015)，"
+                                    "可能需要等待 24 小時或更換 IP"
+                                )
+
+                        # 嘗試從 response 取得 headers
+                        if hasattr(e, "response") and e.response:
+                            headers = getattr(e.response, "headers", {})
+                            scope = headers.get("X-RateLimit-Scope", "unknown")
+                            if "retry_after" in headers:
+                                retry_after = float(headers.get("retry_after", retry_after))
+                            elif "Retry-After" in headers:
+                                retry_after = float(headers.get("Retry-After", retry_after))
+
+                        # 計算等待時間 (使用 retry_after 或指數退避)
+                        wait_time = max(retry_after, base_delay * (2 ** (retry_count - 1)))
+
+                        # 詳細日誌
                         logger.warning(
-                            f"[bold yellow]{warn_msg}[/bold yellow]" if RICH_AVAILABLE else warn_msg
+                            f"[429 Rate Limit] scope={scope}, "
+                            f"cloudflare={is_cloudflare}, "
+                            f"retry_after={retry_after}s, "
+                            f"wait={wait_time}s, "
+                            f"attempt={retry_count}/{max_retries}"
                         )
 
                         await asyncio.sleep(wait_time)
