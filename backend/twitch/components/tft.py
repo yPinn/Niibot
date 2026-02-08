@@ -10,8 +10,11 @@ from urllib.parse import quote
 import httpx
 from twitchio.ext import commands
 
+from core.guards import check_command
+from shared.repositories.command_config import CommandConfigRepository
+
 if TYPE_CHECKING:
-    from main import Bot
+    from core.bot import Bot
 
 LOGGER = logging.getLogger("TFTComponent")
 
@@ -32,7 +35,8 @@ TIER_TRANSLATION = {
 
 class LeaderboardComponent(commands.Component):
     def __init__(self, bot: commands.Bot) -> None:
-        self.bot = bot
+        self.bot: Bot = bot  # type: ignore[assignment]
+        self.cmd_repo = CommandConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self._last_request = 0.0
         self._cache: dict[str, Any] | None = None
         self._cache_time = 0.0
@@ -208,12 +212,15 @@ class LeaderboardComponent(commands.Component):
 
         return data
 
-    @commands.cooldown(rate=1, per=3)
     @commands.command(name="rk")
     async def leaderboard_command(
         self, ctx: commands.Context["Bot"], user_id: str | None = None
     ) -> None:
         """查詢 TFT 排行榜（!rk 顯示門檻，!rk 玩家名#tag 查玩家）"""
+        config = await check_command(self.cmd_repo, ctx, "rk")
+        if not config:
+            return
+
         LOGGER.debug(f"!rk command - {ctx.author.name} query: {user_id or 'threshold'}")
 
         data = await self.get_leaderboard_data()

@@ -7,16 +7,19 @@ from typing import TYPE_CHECKING
 from twitchio.ext import commands
 
 from core.config import DATA_DIR
+from core.guards import check_command
+from shared.repositories.command_config import CommandConfigRepository
 
 if TYPE_CHECKING:
-    from main import Bot
+    from core.bot import Bot
 
 LOGGER = logging.getLogger("FortuneComponent")
 
 
 class FortuneComponent(commands.Component):
     def __init__(self, bot: commands.Bot) -> None:
-        self.bot = bot
+        self.bot: Bot = bot  # type: ignore[assignment]
+        self.cmd_repo = CommandConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self._load_data()
         LOGGER.info("Fortune component initialized")
 
@@ -55,7 +58,6 @@ class FortuneComponent(commands.Component):
             return f"{text} {emote}"
         return text
 
-    @commands.cooldown(rate=1, per=30)
     @commands.command(name="運勢", aliases=["fortune", "占卜"])
     async def fortune_command(self, ctx: commands.Context["Bot"]) -> None:
         """運勢占卜指令
@@ -65,6 +67,10 @@ class FortuneComponent(commands.Component):
             !fortune - 同上（英文別名）
             !占卜 - 同上（中文別名）
         """
+        config = await check_command(self.cmd_repo, ctx, "運勢")
+        if not config:
+            return
+
         user = ctx.author.display_name or ctx.author.name
         assert user is not None
 

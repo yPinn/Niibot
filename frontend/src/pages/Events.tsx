@@ -1,10 +1,25 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
+import {
+  type EventConfig,
+  getEventConfigs,
+  toggleEventConfig,
+  updateEventConfig,
+} from '@/api/events'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Icon } from '@/components/ui/icon'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Sheet,
+  SheetClose,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet'
 import { Switch } from '@/components/ui/switch'
 import {
   Table,
@@ -15,171 +30,257 @@ import {
   TableRow,
 } from '@/components/ui/table'
 
-interface Event {
-  id: string
-  name: string
-  type: 'follow' | 'subscription' | 'bits' | 'raid' | 'custom'
-  message: string
-  enabled: boolean
-  triggerCount: number
+// 每種事件類型可用的模板變數
+const TEMPLATE_VARIABLES: Record<string, { var: string; desc: string }[]> = {
+  follow: [{ var: '$(user)', desc: '追隨者名稱' }],
+  subscribe: [
+    { var: '$(user)', desc: '訂閱者名稱' },
+    { var: '$(tier)', desc: '訂閱等級 (T1/T2/T3)' },
+  ],
+  raid: [
+    { var: '$(user)', desc: 'Raider 名稱' },
+    { var: '$(count)', desc: '觀眾數量' },
+  ],
+}
+
+const EVENT_TYPE_COLORS: Record<string, string> = {
+  follow: 'bg-blue-500/10 text-blue-500',
+  subscribe: 'bg-purple-500/10 text-purple-500',
+  raid: 'bg-red-500/10 text-red-500',
+}
+
+const EVENT_TYPE_LABELS: Record<string, string> = {
+  follow: '追隨',
+  subscribe: '訂閱',
+  raid: 'Raid',
+}
+
+const EVENT_TYPE_NAMES: Record<string, string> = {
+  follow: '新追隨者',
+  subscribe: '訂閱感謝',
+  raid: 'Raid 歡迎',
 }
 
 export default function Events() {
-  const [searchQuery, setSearchQuery] = useState('')
-  const [events, setEvents] = useState<Event[]>([
-    {
-      id: '1',
-      name: '新追隨者',
-      type: 'follow',
-      message: '感謝 $(user) 的追隨！',
-      enabled: true,
-      triggerCount: 45,
-    },
-    {
-      id: '2',
-      name: '訂閱感謝',
-      type: 'subscription',
-      message: '感謝 $(user) 訂閱頻道！',
-      enabled: true,
-      triggerCount: 23,
-    },
-    {
-      id: '3',
-      name: 'Bits 感謝',
-      type: 'bits',
-      message: '感謝 $(user) 贈送 $(amount) bits！',
-      enabled: false,
-      triggerCount: 12,
-    },
-    {
-      id: '4',
-      name: 'Raid 歡迎',
-      type: 'raid',
-      message: '歡迎來自 $(user) 的 $(count) 位觀眾！',
-      enabled: true,
-      triggerCount: 8,
-    },
-  ])
+  const [events, setEvents] = useState<EventConfig[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  const filteredEvents = events.filter(event =>
-    event.name.toLowerCase().includes(searchQuery.toLowerCase())
-  )
+  // Sheet editing state
+  const [editingEvent, setEditingEvent] = useState<EventConfig | null>(null)
+  const [editTemplate, setEditTemplate] = useState('')
+  const [editEnabled, setEditEnabled] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const templateInputRef = useRef<HTMLInputElement>(null)
 
-  const toggleEvent = (id: string) => {
-    setEvents(
-      events.map(event => (event.id === id ? { ...event, enabled: !event.enabled } : event))
+  const fetchEvents = useCallback(async () => {
+    try {
+      setError(null)
+      const data = await getEventConfigs()
+      setEvents(data)
+    } catch {
+      setError('無法載入事件設定')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchEvents()
+  }, [fetchEvents])
+
+  const handleToggle = async (event: EventConfig) => {
+    const newEnabled = !event.enabled
+    // Optimistic update
+    setEvents(prev =>
+      prev.map(e => (e.event_type === event.event_type ? { ...e, enabled: newEnabled } : e))
     )
+    try {
+      await toggleEventConfig(event.event_type, newEnabled)
+    } catch {
+      // Revert on failure
+      setEvents(prev =>
+        prev.map(e => (e.event_type === event.event_type ? { ...e, enabled: event.enabled } : e))
+      )
+    }
   }
 
-  const getEventTypeBadge = (type: string) => {
-    const colors: Record<string, string> = {
-      follow: 'bg-blue-500/10 text-blue-500',
-      subscription: 'bg-purple-500/10 text-purple-500',
-      bits: 'bg-yellow-500/10 text-yellow-500',
-      raid: 'bg-red-500/10 text-red-500',
-      custom: 'bg-green-500/10 text-green-500',
+  const openEditor = (event: EventConfig) => {
+    setEditingEvent(event)
+    setEditTemplate(event.message_template)
+    setEditEnabled(event.enabled)
+  }
+
+  const handleSave = async () => {
+    if (!editingEvent) return
+    setSaving(true)
+    try {
+      const updated = await updateEventConfig(editingEvent.event_type, {
+        message_template: editTemplate,
+        enabled: editEnabled,
+      })
+      setEvents(prev => prev.map(e => (e.event_type === updated.event_type ? updated : e)))
+      setEditingEvent(null)
+    } catch {
+      // Keep sheet open on error
+    } finally {
+      setSaving(false)
     }
-    const labels: Record<string, string> = {
-      follow: '追隨',
-      subscription: '訂閱',
-      bits: 'Bits',
-      raid: 'Raid',
-      custom: '自訂',
+  }
+
+  const insertVariable = (varStr: string) => {
+    const input = templateInputRef.current
+    if (!input) {
+      setEditTemplate(prev => prev + varStr)
+      return
     }
-    return <Badge className={colors[type] || ''}>{labels[type] || type}</Badge>
+    const start = input.selectionStart ?? editTemplate.length
+    const end = input.selectionEnd ?? editTemplate.length
+    const newValue = editTemplate.slice(0, start) + varStr + editTemplate.slice(end)
+    setEditTemplate(newValue)
+    // Restore cursor position after React re-render
+    requestAnimationFrame(() => {
+      input.focus()
+      const newPos = start + varStr.length
+      input.setSelectionRange(newPos, newPos)
+    })
   }
 
   return (
     <main className="flex flex-1 flex-col gap-4 p-4 md:p-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Events</h1>
-          <p className="text-muted-foreground">管理頻道事件和自動回應</p>
-        </div>
-        <Button>
-          <Icon icon="fa-solid fa-plus" wrapperClassName="mr-2 size-4" />
-          新增事件
-        </Button>
+      <div>
+        <h1 className="text-2xl font-bold">Events</h1>
+        <p className="text-muted-foreground">管理頻道事件和自動回應</p>
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle>事件列表</CardTitle>
-          <CardDescription>設定頻道事件觸發時的自動回應</CardDescription>
+          <CardDescription>設定頻道事件觸發時的自動回應訊息</CardDescription>
         </CardHeader>
         <CardContent>
-          {/* 搜尋框 */}
-          <div className="mb-4 flex items-center gap-2">
-            <div className="relative flex-1">
-              <Icon
-                icon="fa-solid fa-magnifying-glass"
-                wrapperClassName="absolute left-2 top-2.5 size-4 text-muted-foreground"
-              />
-              <Input
-                placeholder="搜尋事件..."
-                className="pl-8"
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-              />
+          {loading ? (
+            <div className="flex items-center justify-center py-8 text-muted-foreground">
+              載入中...
             </div>
-          </div>
-
-          {/* 事件表格 */}
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>事件名稱</TableHead>
-                  <TableHead>類型</TableHead>
-                  <TableHead>訊息</TableHead>
-                  <TableHead className="text-right">觸發次數</TableHead>
-                  <TableHead className="text-center">狀態</TableHead>
-                  <TableHead className="text-right">操作</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredEvents.length === 0 ? (
+          ) : error ? (
+            <div className="flex items-center justify-center py-8 text-destructive">{error}</div>
+          ) : (
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground">
-                      沒有找到事件
-                    </TableCell>
+                    <TableHead>事件名稱</TableHead>
+                    <TableHead>類型</TableHead>
+                    <TableHead>訊息模板</TableHead>
+                    <TableHead className="text-right">觸發次數</TableHead>
+                    <TableHead className="text-center">狀態</TableHead>
+                    <TableHead className="text-right">操作</TableHead>
                   </TableRow>
-                ) : (
-                  filteredEvents.map(event => (
-                    <TableRow key={event.id}>
-                      <TableCell className="font-medium">{event.name}</TableCell>
-                      <TableCell>{getEventTypeBadge(event.type)}</TableCell>
-                      <TableCell className="max-w-md truncate">{event.message}</TableCell>
-                      <TableCell className="text-right">{event.triggerCount}</TableCell>
+                </TableHeader>
+                <TableBody>
+                  {events.map(event => (
+                    <TableRow key={event.event_type}>
+                      <TableCell className="font-medium">
+                        {EVENT_TYPE_NAMES[event.event_type] || event.event_type}
+                      </TableCell>
+                      <TableCell>
+                        <Badge className={EVENT_TYPE_COLORS[event.event_type] || ''}>
+                          {EVENT_TYPE_LABELS[event.event_type] || event.event_type}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="max-w-md truncate font-mono text-xs">
+                        {event.message_template}
+                      </TableCell>
+                      <TableCell className="text-right">{event.trigger_count}</TableCell>
                       <TableCell className="text-center">
                         <div className="flex justify-center">
                           <Switch
                             checked={event.enabled}
-                            onCheckedChange={() => toggleEvent(event.id)}
+                            onCheckedChange={() => handleToggle(event)}
                           />
                         </div>
                       </TableCell>
                       <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button variant="ghost" size="sm">
-                            編輯
-                          </Button>
-                          <Button variant="ghost" size="sm">
-                            <Icon
-                              icon="fa-solid fa-trash"
-                              wrapperClassName="size-4 text-destructive"
-                            />
-                          </Button>
-                        </div>
+                        <Button variant="ghost" size="sm" onClick={() => openEditor(event)}>
+                          編輯
+                        </Button>
                       </TableCell>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </CardContent>
       </Card>
+
+      {/* Edit Sheet */}
+      <Sheet open={!!editingEvent} onOpenChange={open => !open && setEditingEvent(null)}>
+        <SheetContent>
+          <SheetHeader>
+            <SheetTitle>
+              編輯{' '}
+              {editingEvent
+                ? EVENT_TYPE_NAMES[editingEvent.event_type] || editingEvent.event_type
+                : ''}
+            </SheetTitle>
+            <SheetDescription>修改事件觸發時的自動回應訊息</SheetDescription>
+          </SheetHeader>
+
+          <div className="flex flex-col gap-6 px-4">
+            {/* Message Template */}
+            <div className="flex flex-col gap-2">
+              <Label>訊息模板</Label>
+              <Input
+                ref={templateInputRef}
+                value={editTemplate}
+                onChange={e => setEditTemplate(e.target.value)}
+                placeholder="輸入回應訊息..."
+                className="font-mono text-sm"
+              />
+
+              {/* Available Variables */}
+              {editingEvent && TEMPLATE_VARIABLES[editingEvent.event_type] && (
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-xs text-muted-foreground">可用變數（點擊插入）</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {TEMPLATE_VARIABLES[editingEvent.event_type].map(v => (
+                      <button
+                        key={v.var}
+                        type="button"
+                        onClick={() => insertVariable(v.var)}
+                        className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-mono hover:bg-accent transition-colors cursor-pointer"
+                      >
+                        <span className="text-primary">{v.var}</span>
+                        <span className="text-muted-foreground">— {v.desc}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Enabled Toggle */}
+            <div className="flex items-center justify-between">
+              <div className="flex flex-col gap-0.5">
+                <Label>啟用</Label>
+                <span className="text-xs text-muted-foreground">關閉後事件觸發時不會發送訊息</span>
+              </div>
+              <Switch checked={editEnabled} onCheckedChange={setEditEnabled} />
+            </div>
+          </div>
+
+          <SheetFooter className="flex-row justify-end gap-2">
+            <SheetClose asChild>
+              <Button variant="outline">取消</Button>
+            </SheetClose>
+            <Button onClick={handleSave} disabled={saving}>
+              {saving ? '儲存中...' : '儲存'}
+            </Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
     </main>
   )
 }

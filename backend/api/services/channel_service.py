@@ -113,7 +113,7 @@ class ChannelService:
             logger.info(f"Token expired for user {user_id}, attempting refresh...")
             result = await twitch_api.refresh_access_token(token_obj.refresh)
 
-            if not result.success:
+            if not result.success or not result.access_token:
                 logger.error(f"Token refresh failed for user {user_id}: {result.error}")
                 return None
 

@@ -19,6 +19,7 @@ from routers import (
     bots_router,
     channels_router,
     commands_router,
+    events_router,
     stats_router,
 )
 
@@ -111,6 +112,7 @@ def create_app() -> FastAPI:
     app.include_router(analytics_router.router)
     app.include_router(stats_router.router)
     app.include_router(commands_router.router)
+    app.include_router(events_router.router)
     app.include_router(bots_router.router)
 
     # Root endpoint

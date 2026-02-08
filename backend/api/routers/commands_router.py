@@ -1,195 +1,243 @@
-"""Bot commands and components API routes"""
+"""Command and redemption configuration API routes"""
 
-import ast
 import logging
-from pathlib import Path
-from typing import Any
+from datetime import datetime
 
+from asyncpg import Pool
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from core.dependencies import get_current_user_id
+from core.dependencies import get_current_user_id, get_db_pool
+from services import CommandConfigService
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/commands", tags=["commands"])
 
 
-class CommandInfo(BaseModel):
-    name: str
-    aliases: list[str]
-    description: str | None
-    platform: str  # "discord" or "twitch"
+# ============================================
+# Response / Request Models
+# ============================================
+
+VALID_ROLES = {"everyone", "subscriber", "vip", "moderator", "broadcaster"}
 
 
-class ComponentInfo(BaseModel):
-    name: str
-    description: str | None
-    file_path: str
-    platform: str
-    commands: list[CommandInfo]
+class CommandConfigResponse(BaseModel):
+    id: int
+    channel_id: str
+    command_name: str
+    command_type: str
+    enabled: bool
+    custom_response: str | None = None
+    redirect_to: str | None = None
+    cooldown_global: int
+    cooldown_per_user: int
+    min_role: str
+    aliases: str | None = None
+    usage_count: int
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
-def extract_docstring(node: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef) -> str | None:
-    """Extract docstring from function or class node"""
-    if (
-        node.body
-        and isinstance(node.body[0], ast.Expr)
-        and isinstance(node.body[0].value, ast.Constant)
-        and isinstance(node.body[0].value.value, str)
-    ):
-        # 只取第一行作為簡短描述
-        return node.body[0].value.value.split("\n")[0].strip()
-    return None
+class CommandConfigUpdate(BaseModel):
+    enabled: bool | None = None
+    custom_response: str | None = None
+    redirect_to: str | None = None
+    cooldown_global: int | None = None
+    cooldown_per_user: int | None = None
+    min_role: str | None = None
+    aliases: str | None = None
 
 
-def extract_decorator_arg(decorator: ast.Call, arg_name: str) -> Any:
-    """Extract argument value from decorator call"""
-    for keyword in decorator.keywords:
-        if keyword.arg == arg_name:
-            if isinstance(keyword.value, ast.Constant):
-                return keyword.value.value
-            elif isinstance(keyword.value, ast.List):
-                return [elt.value for elt in keyword.value.elts if isinstance(elt, ast.Constant)]
-    return None
+class CommandConfigToggle(BaseModel):
+    enabled: bool
 
 
-def parse_python_file(file_path: Path, platform: str) -> ComponentInfo | None:
-    """Parse Python file to extract component and command information"""
+class CustomCommandCreate(BaseModel):
+    command_name: str
+    custom_response: str | None = None
+    redirect_to: str | None = None
+    cooldown_global: int = 0
+    cooldown_per_user: int = 0
+    min_role: str = "everyone"
+    aliases: str | None = None
+
+
+class RedemptionConfigResponse(BaseModel):
+    id: int
+    channel_id: str
+    action_type: str
+    reward_name: str
+    enabled: bool
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class RedemptionConfigUpdate(BaseModel):
+    reward_name: str
+    enabled: bool
+
+
+# ============================================
+# Command Config Endpoints
+# ============================================
+
+
+@router.get("/configs", response_model=list[CommandConfigResponse])
+async def get_command_configs(
+    user_id: str = Depends(get_current_user_id),
+    pool: Pool = Depends(get_db_pool),
+) -> list[CommandConfigResponse]:
+    """Get all command configs for the authenticated user's channel."""
     try:
-        with open(file_path, encoding="utf-8") as f:
-            tree = ast.parse(f.read(), filename=str(file_path))
+        service = CommandConfigService(pool)
+        configs = await service.list_commands(user_id)
+        return [CommandConfigResponse(**cfg) for cfg in configs]
+    except Exception as e:
+        logger.exception(f"Failed to get command configs: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch command configs") from None
 
-        # Find the component/cog class
-        component_class = None
-        component_name = None
-        component_desc = None
 
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ClassDef):
-                # Check if it inherits from commands.Cog or commands.Component
-                for base in node.bases:
-                    base_name = ""
-                    if isinstance(base, ast.Attribute):
-                        base_name = base.attr
-                    elif isinstance(base, ast.Name):
-                        base_name = base.id
-
-                    if base_name in ("Cog", "Component"):
-                        component_class = node
-                        component_name = node.name
-                        component_desc = extract_docstring(node)
-                        break
-
-        if not component_class:
-            return None
-
-        # Extract commands from the class
-        commands_list: list[CommandInfo] = []
-
-        for node in component_class.body:
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                # Check for @commands.command or @commands.slash_command decorator
-                for decorator in node.decorator_list:
-                    cmd_name = None
-                    aliases: list[str] = []
-
-                    if isinstance(decorator, ast.Call):
-                        # Get decorator function name
-                        decorator_name = ""
-                        if isinstance(decorator.func, ast.Attribute):
-                            decorator_name = decorator.func.attr
-                        elif isinstance(decorator.func, ast.Name):
-                            decorator_name = decorator.func.id
-
-                        if decorator_name in ("command", "slash_command"):
-                            # Extract command name
-                            cmd_name = extract_decorator_arg(decorator, "name")
-                            if not cmd_name:
-                                cmd_name = node.name
-
-                            # Extract aliases
-                            aliases = extract_decorator_arg(decorator, "aliases") or []
-
-                            # Extract description from docstring
-                            description = extract_docstring(node)
-
-                            commands_list.append(
-                                CommandInfo(
-                                    name=cmd_name,
-                                    aliases=aliases,
-                                    description=description,
-                                    platform=platform,
-                                )
-                            )
-                            break
-
-        return ComponentInfo(
-            name=component_name or file_path.stem,
-            description=component_desc,
-            file_path=str(file_path.relative_to(file_path.parent.parent.parent)),
-            platform=platform,
-            commands=commands_list,
+@router.post("/configs", response_model=CommandConfigResponse, status_code=201)
+async def create_custom_command(
+    body: CustomCommandCreate,
+    user_id: str = Depends(get_current_user_id),
+    pool: Pool = Depends(get_db_pool),
+) -> CommandConfigResponse:
+    """Create a new custom command (text response or redirect)."""
+    if body.min_role not in VALID_ROLES:
+        raise HTTPException(status_code=400, detail=f"Invalid min_role: {body.min_role}")
+    if not body.custom_response and not body.redirect_to:
+        raise HTTPException(
+            status_code=400, detail="Either custom_response or redirect_to is required"
         )
-
-    except Exception as e:
-        logger.error(f"Error parsing {file_path}: {e}")
-        return None
-
-
-def get_discord_components() -> list[ComponentInfo]:
-    """Get all Discord cogs"""
-    cogs_dir = Path(__file__).parent.parent.parent / "discord" / "cogs"
-    components = []
-
-    if not cogs_dir.exists():
-        logger.warning(f"Discord cogs directory not found: {cogs_dir}")
-        return []
-
-    for py_file in cogs_dir.glob("*.py"):
-        if py_file.name.startswith("_"):
-            continue
-
-        component = parse_python_file(py_file, "discord")
-        if component:
-            components.append(component)
-
-    return components
-
-
-def get_twitch_components() -> list[ComponentInfo]:
-    """Get all Twitch components"""
-    components_dir = Path(__file__).parent.parent.parent / "twitch" / "components"
-    components = []
-
-    if not components_dir.exists():
-        logger.warning(f"Twitch components directory not found: {components_dir}")
-        return []
-
-    for py_file in components_dir.glob("*.py"):
-        if py_file.name.startswith("_"):
-            continue
-
-        component = parse_python_file(py_file, "twitch")
-        if component:
-            components.append(component)
-
-    return components
-
-
-@router.get("/components")
-async def get_all_components(user_id: str = Depends(get_current_user_id)):
-    """Get all bot components (Discord cogs and Twitch components)"""
     try:
-        discord_components = get_discord_components()
-        twitch_components = get_twitch_components()
-
-        return {
-            "discord": discord_components,
-            "twitch": twitch_components,
-            "total": len(discord_components) + len(twitch_components),
-        }
-
+        service = CommandConfigService(pool)
+        cfg = await service.create_custom_command(
+            user_id,
+            body.command_name,
+            custom_response=body.custom_response,
+            redirect_to=body.redirect_to,
+            cooldown_global=body.cooldown_global,
+            cooldown_per_user=body.cooldown_per_user,
+            min_role=body.min_role,
+            aliases=body.aliases,
+        )
+        logger.info(f"User {user_id} created custom command: {body.command_name}")
+        return CommandConfigResponse(**cfg)
     except Exception as e:
-        logger.exception(f"Failed to get components: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch components") from None
+        logger.exception(f"Failed to create custom command: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create custom command") from None
+
+
+@router.put("/configs/{command_name}", response_model=CommandConfigResponse)
+async def update_command_config(
+    command_name: str,
+    body: CommandConfigUpdate,
+    user_id: str = Depends(get_current_user_id),
+    pool: Pool = Depends(get_db_pool),
+) -> CommandConfigResponse:
+    """Update a command config."""
+    if body.min_role is not None and body.min_role not in VALID_ROLES:
+        raise HTTPException(status_code=400, detail=f"Invalid min_role: {body.min_role}")
+    try:
+        service = CommandConfigService(pool)
+        cfg = await service.update_command(
+            user_id,
+            command_name,
+            enabled=body.enabled,
+            custom_response=body.custom_response,
+            redirect_to=body.redirect_to,
+            cooldown_global=body.cooldown_global,
+            cooldown_per_user=body.cooldown_per_user,
+            min_role=body.min_role,
+            aliases=body.aliases,
+        )
+        logger.info(f"User {user_id} updated command config: {command_name}")
+        return CommandConfigResponse(**cfg)
+    except Exception as e:
+        logger.exception(f"Failed to update command config: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update command config") from None
+
+
+@router.patch("/configs/{command_name}/toggle", response_model=CommandConfigResponse)
+async def toggle_command_config(
+    command_name: str,
+    body: CommandConfigToggle,
+    user_id: str = Depends(get_current_user_id),
+    pool: Pool = Depends(get_db_pool),
+) -> CommandConfigResponse:
+    """Toggle a command's enabled state."""
+    try:
+        service = CommandConfigService(pool)
+        cfg = await service.toggle_command(user_id, command_name, body.enabled)
+        logger.info(f"User {user_id} toggled command: {command_name} -> {body.enabled}")
+        return CommandConfigResponse(**cfg)
+    except Exception as e:
+        logger.exception(f"Failed to toggle command config: {e}")
+        raise HTTPException(status_code=500, detail="Failed to toggle command config") from None
+
+
+@router.delete("/configs/{command_name}", status_code=204)
+async def delete_custom_command(
+    command_name: str,
+    user_id: str = Depends(get_current_user_id),
+    pool: Pool = Depends(get_db_pool),
+) -> None:
+    """Delete a custom command (only custom type)."""
+    try:
+        service = CommandConfigService(pool)
+        deleted = await service.delete_custom_command(user_id, command_name)
+        if not deleted:
+            raise HTTPException(
+                status_code=404,
+                detail="Custom command not found or cannot delete builtin commands",
+            )
+        logger.info(f"User {user_id} deleted custom command: {command_name}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to delete custom command: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete custom command") from None
+
+
+# ============================================
+# Redemption Config Endpoints
+# ============================================
+
+VALID_ACTION_TYPES = {"vip", "first", "niibot_auth"}
+
+
+@router.get("/redemptions", response_model=list[RedemptionConfigResponse])
+async def get_redemption_configs(
+    user_id: str = Depends(get_current_user_id),
+    pool: Pool = Depends(get_db_pool),
+) -> list[RedemptionConfigResponse]:
+    """Get all redemption configs for the authenticated user's channel."""
+    try:
+        service = CommandConfigService(pool)
+        configs = await service.list_redemptions(user_id)
+        return [RedemptionConfigResponse(**cfg) for cfg in configs]
+    except Exception as e:
+        logger.exception(f"Failed to get redemption configs: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch redemption configs") from None
+
+
+@router.put("/redemptions/{action_type}", response_model=RedemptionConfigResponse)
+async def update_redemption_config(
+    action_type: str,
+    body: RedemptionConfigUpdate,
+    user_id: str = Depends(get_current_user_id),
+    pool: Pool = Depends(get_db_pool),
+) -> RedemptionConfigResponse:
+    """Update a redemption config's reward name and enabled state."""
+    if action_type not in VALID_ACTION_TYPES:
+        raise HTTPException(status_code=400, detail=f"Invalid action_type: {action_type}")
+    try:
+        service = CommandConfigService(pool)
+        cfg = await service.update_redemption(user_id, action_type, body.reward_name, body.enabled)
+        logger.info(f"User {user_id} updated redemption: {action_type}")
+        return RedemptionConfigResponse(**cfg)
+    except Exception as e:
+        logger.exception(f"Failed to update redemption config: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update redemption config") from None

@@ -5,9 +5,11 @@ from openai import OpenAI
 from twitchio.ext import commands
 
 from core.config import get_settings
+from core.guards import check_command
+from shared.repositories.command_config import CommandConfigRepository
 
 if TYPE_CHECKING:
-    from main import Bot
+    from core.bot import Bot
 else:
     from twitchio.ext.commands import Bot
 
@@ -20,7 +22,8 @@ class AIComponent(commands.Component):
     REASONING_MODELS = ["glm-4.5-air", "deepseek-r1t2-chimera"]
 
     def __init__(self, bot: commands.Bot) -> None:
-        self.bot = bot
+        self.bot: Bot = bot  # type: ignore[assignment]
+        self.cmd_repo = CommandConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
 
         settings = get_settings()
         api_key = settings.openrouter_api_key
@@ -47,7 +50,6 @@ class AIComponent(commands.Component):
             f"reasoning={self.is_reasoning}, max_tokens={self.max_tokens}"
         )
 
-    @commands.cooldown(rate=1, per=10)
     @commands.command()
     async def ai(self, ctx: commands.Context[Bot], *, message: str | None = None) -> None:
         """Ask AI a question (text only).
@@ -59,6 +61,10 @@ class AIComponent(commands.Component):
             !ai 今天天氣如何？
             !ai 你好嗎？
         """
+        config = await check_command(self.cmd_repo, ctx, "ai")
+        if not config:
+            return
+
         if not message or not message.strip():
             await ctx.reply("用法: !ai <問題>")
             return

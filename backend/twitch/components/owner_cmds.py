@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING
 from twitchio.ext import commands
 
 if TYPE_CHECKING:
-    from main import Bot
+    from core.bot import Bot
 else:
     from twitchio.ext.commands import Bot
 

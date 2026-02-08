@@ -4,17 +4,19 @@ from typing import TYPE_CHECKING
 import twitchio
 from twitchio.ext import commands
 
+from core.guards import check_command
+from shared.repositories.command_config import CommandConfigRepository
+
 if TYPE_CHECKING:
-    pass
-else:
-    pass
+    from core.bot import Bot
 
 
 class GeneralCommands(commands.Component):
     """General user commands for the bot."""
 
     def __init__(self, bot: commands.Bot) -> None:
-        self.bot = bot
+        self.bot: Bot = bot  # type: ignore[assignment]
+        self.cmd_repo = CommandConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
 
     async def _record_command(self, ctx: commands.Context, command_name: str) -> None:
         """Helper to record command usage to analytics"""
@@ -30,7 +32,7 @@ class GeneralCommands(commands.Component):
                         command_name=f"!{command_name}",
                     )
         except Exception as e:
-            from main import LOGGER
+            from core.bot import LOGGER
 
             LOGGER.error(f"Failed to record command usage: {e}")
 
@@ -40,7 +42,16 @@ class GeneralCommands(commands.Component):
 
         Usage: !hi, !hello, !hey
         """
-        await ctx.reply(f"你好，{ctx.chatter.display_name}！")
+        config = await check_command(self.cmd_repo, ctx, "hi")
+        if not config:
+            return
+
+        # Use custom response if set, otherwise default
+        if config.custom_response:
+            response = config.custom_response.replace("$(user)", ctx.chatter.display_name or "")
+            await ctx.reply(response)
+        else:
+            await ctx.reply(f"你好，{ctx.chatter.display_name}！")
         await self._record_command(ctx, "hi")
 
     @commands.command(aliases=["commands"])
@@ -49,6 +60,10 @@ class GeneralCommands(commands.Component):
 
         Usage: !help, !commands
         """
+        config = await check_command(self.cmd_repo, ctx, "help")
+        if not config:
+            return
+
         await ctx.reply("可用指令：!hi, !uptime, !ai <問題>, !運勢, !rk [玩家ID], !redemptions")
         await self._record_command(ctx, "help")
 
@@ -58,6 +73,10 @@ class GeneralCommands(commands.Component):
 
         Usage: !uptime
         """
+        config = await check_command(self.cmd_repo, ctx, "uptime")
+        if not config:
+            return
+
         streams = await ctx.bot.fetch_streams(user_ids=[ctx.channel.id])
 
         if streams:
@@ -81,7 +100,7 @@ class GeneralCommands(commands.Component):
     async def event_stream_online(self, payload: twitchio.StreamOnline) -> None:
         from datetime import datetime
 
-        from main import LOGGER
+        from core.bot import LOGGER
 
         LOGGER.info(f"頻道 {payload.broadcaster.name} 開始直播！")
 
@@ -118,7 +137,7 @@ class GeneralCommands(commands.Component):
     async def event_stream_offline(self, payload: twitchio.StreamOffline) -> None:
         from datetime import datetime
 
-        from main import LOGGER
+        from core.bot import LOGGER
 
         LOGGER.info(f"頻道 {payload.broadcaster.name} 結束直播")
 

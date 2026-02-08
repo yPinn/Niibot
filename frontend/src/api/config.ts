@@ -42,7 +42,18 @@ export const API_ENDPOINTS = {
     channel: join('/api/stats/channel'),
   },
   commands: {
-    components: join('/api/commands/components'),
+    configs: join('/api/commands/configs'),
+    createConfig: join('/api/commands/configs'),
+    updateConfig: (commandName: string) => join(`/api/commands/configs/${commandName}`),
+    toggleConfig: (commandName: string) => join(`/api/commands/configs/${commandName}/toggle`),
+    deleteConfig: (commandName: string) => join(`/api/commands/configs/${commandName}`),
+    redemptions: join('/api/commands/redemptions'),
+    updateRedemption: (actionType: string) => join(`/api/commands/redemptions/${actionType}`),
+  },
+  events: {
+    configs: join('/api/events/configs'),
+    updateConfig: (eventType: string) => join(`/api/events/configs/${eventType}`),
+    toggleConfig: (eventType: string) => join(`/api/events/configs/${eventType}/toggle`),
   },
   bots: {
     twitch: {

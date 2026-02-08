@@ -112,13 +112,16 @@ export function NavChannels({ channels }: { channels: Channel[] }) {
         )}
         {sortedChannels.map(channel => (
           <SidebarMenuItem key={channel.id}>
-            <SidebarMenuButton asChild className={channel.is_live ? 'h-auto py-1.5' : ''}>
+            <SidebarMenuButton
+              asChild
+              className={channel.is_live ? 'h-auto py-1.5 items-start' : ''}
+            >
               <a
                 href={`https://twitch.tv/${channel.name}`}
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                <div className="relative flex-shrink-0">
+                <div className="relative flex-shrink-0 mt-0.5">
                   <Avatar
                     className={channel.is_live ? 'size-6 rounded-full' : 'size-5 rounded-full'}
                   >
@@ -145,7 +148,9 @@ export function NavChannels({ channels }: { channels: Channel[] }) {
                 ) : (
                   <span className="flex-1 truncate">{channel.display_name}</span>
                 )}
-                <div className="flex items-center gap-1.5 flex-shrink-0 ml-auto">
+                <div
+                  className={`flex items-center gap-1.5 flex-shrink-0 ml-auto${channel.is_live ? ' mt-0.5' : ''}`}
+                >
                   {channel.is_live && channel.viewer_count !== undefined && (
                     <span className="text-xs tabular-nums text-muted-foreground">
                       {channel.viewer_count}

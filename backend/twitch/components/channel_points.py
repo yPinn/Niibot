@@ -5,9 +5,11 @@ import twitchio
 from twitchio.ext import commands
 
 from core.config import get_settings
+from core.guards import check_command
+from shared.repositories.command_config import CommandConfigRepository, RedemptionConfigRepository
 
 if TYPE_CHECKING:
-    from main import Bot
+    from core.bot import Bot
 else:
     from twitchio.ext.commands import Bot
 
@@ -19,8 +21,10 @@ class ChannelPointsComponent(commands.Component):
     """Channel Points 兌換監聽組件"""
 
     def __init__(self, bot: commands.Bot) -> None:
-        self.bot = bot
+        self.bot: Bot = bot  # type: ignore[assignment]
         self.settings = get_settings()
+        self.cmd_repo = CommandConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
+        self.redemption_repo = RedemptionConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
 
     def _generate_oauth_url(self) -> str:
         """返回前端頁面 URL"""
@@ -52,22 +56,28 @@ class ChannelPointsComponent(commands.Component):
         self,
         payload: twitchio.ChannelPointsRedemptionAdd,
     ) -> None:
-        """處理兌換事件"""
-        reward_title = payload.reward.title.lower()
+        """處理兌換事件（DB 驅動比對）"""
+        reward_title = payload.reward.title
         user_name = payload.user.display_name or payload.user.name
-        owner_id = self.settings.owner_id
+        channel_id = payload.broadcaster.id
 
-        if "niibot" in reward_title and user_name:
-            # Niibot 授權只在 owner 頻道有效
-            if payload.broadcaster.id == owner_id:
+        # Look up matching redemption config from DB
+        config = await self.redemption_repo.find_by_reward_name(channel_id, reward_title)
+        if not config:
+            LOGGER.debug(f"[Channel Points] No matching redemption config for: {reward_title}")
+            return
+
+        if config.action_type == "niibot_auth" and user_name:
+            owner_id = self.settings.owner_id
+            if channel_id == owner_id:
                 await self._handle_niibot_redemption(payload, user_name)
             else:
                 LOGGER.warning(
                     f"[Niibot] {user_name} 嘗試在非 owner 頻道 ({payload.broadcaster.name}) 兌換 Niibot"
                 )
-        elif reward_title == "1" and user_name:
+        elif config.action_type == "first" and user_name:
             await self._handle_first_redemption(payload, user_name)
-        elif "vip" in reward_title:
+        elif config.action_type == "vip":
             LOGGER.info(f"[Action] {user_name} 兌換了 VIP 獎勵")
             await self._handle_vip_redemption(payload, user_name)
 
@@ -207,6 +217,9 @@ class ChannelPointsComponent(commands.Component):
     @commands.command()
     async def redemptions(self, ctx: commands.Context["Bot"]) -> None:
         """顯示 Channel Points 兌換功能說明"""
+        config = await check_command(self.cmd_repo, ctx, "redemptions")
+        if not config:
+            return
         await ctx.reply(
             "Channel Points 兌換系統已啟用！Bot 會自動監聽並記錄所有兌換事件，請使用 Twitch 後台管理獎勵。"
         )

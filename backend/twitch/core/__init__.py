@@ -10,8 +10,10 @@ from .config import (
     load_env_config,
     validate_env_vars,
 )
+from .guards import check_command, has_role, is_on_cooldown, record_cooldown
 from .health_server import HealthCheckServer
 from .logging import setup_logging
+from .pg_listener import pg_listen
 from .subscriptions import get_channel_subscriptions
 
 __all__ = [
@@ -32,4 +34,11 @@ __all__ = [
     "HealthCheckServer",
     # Twitch specific
     "get_channel_subscriptions",
+    # Guards
+    "check_command",
+    "has_role",
+    "is_on_cooldown",
+    "record_cooldown",
+    # PG Listener
+    "pg_listen",
 ]

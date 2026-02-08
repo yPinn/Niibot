@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 from aiohttp import web
 
 if TYPE_CHECKING:
-    from main import Bot
+    from core.bot import Bot
 
 logger = logging.getLogger("Bot.Health")
 
