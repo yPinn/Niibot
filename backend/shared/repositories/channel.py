@@ -129,7 +129,7 @@ class ChannelRepository:
 
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT channel_id, channel_name, enabled, created_at, updated_at "
+                "SELECT channel_id, channel_name, enabled, default_cooldown,created_at, updated_at "
                 "FROM channels WHERE channel_id = $1",
                 channel_id,
             )
@@ -148,7 +148,7 @@ class ChannelRepository:
 
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
-                "SELECT channel_id, channel_name, enabled, created_at, updated_at "
+                "SELECT channel_id, channel_name, enabled, default_cooldown,created_at, updated_at "
                 "FROM channels WHERE enabled = TRUE"
             )
             result = [Channel(**dict(r)) for r in rows]
@@ -159,7 +159,7 @@ class ChannelRepository:
         """Return all channels (including disabled)."""
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
-                "SELECT channel_id, channel_name, enabled, created_at, updated_at FROM channels"
+                "SELECT channel_id, channel_name, enabled, default_cooldown,created_at, updated_at FROM channels"
             )
             return [Channel(**dict(r)) for r in rows]
 
@@ -208,7 +208,7 @@ class ChannelRepository:
         """Return channels whose channel_name is empty or NULL."""
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
-                "SELECT channel_id, channel_name, enabled, created_at, updated_at "
+                "SELECT channel_id, channel_name, enabled, default_cooldown,created_at, updated_at "
                 "FROM channels WHERE channel_name IS NULL OR channel_name = ''"
             )
             return [Channel(**dict(r)) for r in rows]
@@ -223,6 +223,34 @@ class ChannelRepository:
             )
         _channel_cache.invalidate(f"channel:{channel_id}")
         _enabled_channels_cache.clear()
+
+    async def update_channel_defaults(
+        self,
+        channel_id: str,
+        *,
+        default_cooldown: int | None = None,
+    ) -> Channel | None:
+        """Update a channel's default cooldown setting."""
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                UPDATE channels SET
+                    default_cooldown = COALESCE($2, default_cooldown),
+                    updated_at = NOW()
+                WHERE channel_id = $1
+                RETURNING channel_id, channel_name, enabled,
+                          default_cooldown,
+                          created_at, updated_at
+                """,
+                channel_id,
+                default_cooldown,
+            )
+            if not row:
+                return None
+            result = Channel(**dict(row))
+            _channel_cache.invalidate(f"channel:{channel_id}")
+            _enabled_channels_cache.clear()
+            return result
 
     # ==================== Discord User Operations ====================
 

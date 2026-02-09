@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import TypeAlias
 
 import asyncpg
 
@@ -17,24 +18,19 @@ _redemption_cache = AsyncTTLCache(maxsize=64, ttl=60)
 
 _CMD_COLUMNS = (
     "id, channel_id, command_name, command_type, enabled, "
-    "custom_response, redirect_to, cooldown_global, cooldown_per_user, "
+    "custom_response, cooldown, "
     "min_role, aliases, created_at, updated_at"
 )
 
-# Default builtin commands: (command_name, cooldown_global, cooldown_per_user, custom_response)
+# Default builtin commands: cooldown values are overrides (None = use channel default)
 BUILTIN_COMMANDS: list[dict] = [
-    {
-        "command_name": "hi",
-        "cooldown_global": 0,
-        "cooldown_per_user": 0,
-        "custom_response": "你好，$(user)！",
-    },
-    {"command_name": "help", "cooldown_global": 0, "cooldown_per_user": 0},
-    {"command_name": "uptime", "cooldown_global": 0, "cooldown_per_user": 0},
-    {"command_name": "ai", "cooldown_global": 0, "cooldown_per_user": 10},
-    {"command_name": "運勢", "cooldown_global": 0, "cooldown_per_user": 30},
-    {"command_name": "rk", "cooldown_global": 0, "cooldown_per_user": 3},
-    {"command_name": "redemptions", "cooldown_global": 0, "cooldown_per_user": 0},
+    {"command_name": "hi", "custom_response": "你好，$(user)！"},
+    {"command_name": "help"},
+    {"command_name": "uptime"},
+    {"command_name": "ai", "cooldown": 10},
+    {"command_name": "運勢", "cooldown": 30},
+    {"command_name": "rk", "cooldown": 3},
+    {"command_name": "redemptions"},
 ]
 
 # Default redemption actions: (action_type, reward_name)
@@ -43,6 +39,9 @@ DEFAULT_REDEMPTIONS: list[dict] = [
     {"action_type": "first", "reward_name": "1"},
     {"action_type": "niibot_auth", "reward_name": "niibot"},
 ]
+
+UnsetType: TypeAlias = object
+_UNSET: UnsetType = object()
 
 
 class CommandConfigRepository:
@@ -122,32 +121,35 @@ class CommandConfigRepository:
         command_type: str = "builtin",
         enabled: bool | None = None,
         custom_response: str | None = None,
-        redirect_to: str | None = None,
-        cooldown_global: int | None = None,
-        cooldown_per_user: int | None = None,
+        cooldown: int | None | UnsetType = _UNSET,
         min_role: str | None = None,
         aliases: str | None = None,
     ) -> CommandConfig:
-        """Insert or update a command config. Invalidates cache."""
+        """Insert or update a command config. Invalidates cache.
+
+        Cooldown uses a sentinel to distinguish "not provided" (keep existing)
+        from explicit None (use channel default) or int (override).
+        """
+        cd_value = None if cooldown is _UNSET else cooldown
+        cd_provided = cooldown is not _UNSET
+
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 f"""
                 INSERT INTO command_configs
                     (channel_id, command_name, command_type, enabled,
-                     custom_response, redirect_to, cooldown_global, cooldown_per_user,
+                     custom_response, cooldown,
                      min_role, aliases)
                 VALUES ($1, $2, $3,
-                        COALESCE($4, TRUE), $5, $6,
-                        COALESCE($7, 0), COALESCE($8, 0),
-                        COALESCE($9, 'everyone'), $10)
+                        COALESCE($4, TRUE), $5,
+                        $6,
+                        COALESCE($7, 'everyone'), $8)
                 ON CONFLICT (channel_id, command_name) DO UPDATE SET
                     enabled = COALESCE($4, command_configs.enabled),
                     custom_response = COALESCE($5, command_configs.custom_response),
-                    redirect_to = COALESCE($6, command_configs.redirect_to),
-                    cooldown_global = COALESCE($7, command_configs.cooldown_global),
-                    cooldown_per_user = COALESCE($8, command_configs.cooldown_per_user),
-                    min_role = COALESCE($9, command_configs.min_role),
-                    aliases = COALESCE($10, command_configs.aliases)
+                    cooldown = CASE WHEN $9 THEN $6 ELSE command_configs.cooldown END,
+                    min_role = COALESCE($7, command_configs.min_role),
+                    aliases = COALESCE($8, command_configs.aliases)
                 RETURNING {_CMD_COLUMNS}
                 """,
                 channel_id,
@@ -155,11 +157,10 @@ class CommandConfigRepository:
                 command_type,
                 enabled,
                 custom_response,
-                redirect_to,
-                cooldown_global,
-                cooldown_per_user,
+                cd_value,
                 min_role,
                 aliases,
+                cd_provided,
             )
             result = CommandConfig(**dict(row))
             # Invalidate both name and alias caches
@@ -194,15 +195,14 @@ class CommandConfigRepository:
                     """
                     INSERT INTO command_configs
                         (channel_id, command_name, command_type, enabled,
-                         custom_response, cooldown_global, cooldown_per_user)
-                    VALUES ($1, $2, 'builtin', TRUE, $3, $4, $5)
+                         custom_response, cooldown)
+                    VALUES ($1, $2, 'builtin', TRUE, $3, $4)
                     ON CONFLICT (channel_id, command_name) DO NOTHING
                     """,
                     channel_id,
                     cmd["command_name"],
                     cmd.get("custom_response"),
-                    cmd.get("cooldown_global", 0),
-                    cmd.get("cooldown_per_user", 0),
+                    cmd.get("cooldown"),  # None = use channel default
                 )
         return await self.list_configs(channel_id)
 

@@ -16,9 +16,7 @@ class CommandConfig:
     command_type: str = "builtin"  # 'builtin' | 'custom'
     enabled: bool = True
     custom_response: str | None = None
-    redirect_to: str | None = None
-    cooldown_global: int = 0
-    cooldown_per_user: int = 0
+    cooldown: int | None = None  # NULL = use channel default
     min_role: str = "everyone"  # 'everyone' | 'subscriber' | 'vip' | 'moderator' | 'broadcaster'
     aliases: str | None = None  # Comma-separated alias names, e.g. "hello,嗨"
     created_at: datetime | None = None
