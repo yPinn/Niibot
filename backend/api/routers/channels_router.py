@@ -49,6 +49,14 @@ class ToggleResponse(BaseModel):
     message: str
 
 
+class ChannelDefaultsResponse(BaseModel):
+    default_cooldown: int
+
+
+class ChannelDefaultsUpdate(BaseModel):
+    default_cooldown: int | None = None
+
+
 # ============================================
 # Endpoints
 # ============================================
@@ -162,3 +170,57 @@ async def toggle_channel(
     except Exception as e:
         logger.exception(f"Failed to toggle channel: {e}")
         raise HTTPException(status_code=500, detail=str(e)) from None
+
+
+# ============================================
+# Channel Defaults (cooldown settings)
+# ============================================
+
+
+@router.get("/defaults", response_model=ChannelDefaultsResponse)
+async def get_channel_defaults(
+    user_id: str = Depends(get_current_user_id),
+    pool: Pool = Depends(get_db_pool),
+) -> ChannelDefaultsResponse:
+    """Get channel default cooldown settings."""
+    from shared.repositories.channel import ChannelRepository
+
+    try:
+        repo = ChannelRepository(pool)
+        channel = await repo.get_channel(user_id)
+        if not channel:
+            return ChannelDefaultsResponse(default_cooldown=0)
+        return ChannelDefaultsResponse(
+            default_cooldown=channel.default_cooldown,
+        )
+    except Exception as e:
+        logger.exception(f"Failed to get channel defaults: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch channel defaults") from None
+
+
+@router.put("/defaults", response_model=ChannelDefaultsResponse)
+async def update_channel_defaults(
+    body: ChannelDefaultsUpdate,
+    user_id: str = Depends(get_current_user_id),
+    pool: Pool = Depends(get_db_pool),
+) -> ChannelDefaultsResponse:
+    """Update channel default cooldown settings."""
+    from shared.repositories.channel import ChannelRepository
+
+    try:
+        repo = ChannelRepository(pool)
+        channel = await repo.update_channel_defaults(
+            user_id,
+            default_cooldown=body.default_cooldown,
+        )
+        if not channel:
+            raise HTTPException(status_code=404, detail="Channel not found")
+        logger.info(f"User {user_id} updated channel defaults")
+        return ChannelDefaultsResponse(
+            default_cooldown=channel.default_cooldown,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to update channel defaults: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update channel defaults") from None

@@ -29,9 +29,7 @@ class CommandConfigResponse(BaseModel):
     command_type: str
     enabled: bool
     custom_response: str | None = None
-    redirect_to: str | None = None
-    cooldown_global: int
-    cooldown_per_user: int
+    cooldown: int | None = None
     min_role: str
     aliases: str | None = None
     usage_count: int
@@ -42,9 +40,7 @@ class CommandConfigResponse(BaseModel):
 class CommandConfigUpdate(BaseModel):
     enabled: bool | None = None
     custom_response: str | None = None
-    redirect_to: str | None = None
-    cooldown_global: int | None = None
-    cooldown_per_user: int | None = None
+    cooldown: int | None = None
     min_role: str | None = None
     aliases: str | None = None
 
@@ -56,9 +52,7 @@ class CommandConfigToggle(BaseModel):
 class CustomCommandCreate(BaseModel):
     command_name: str
     custom_response: str | None = None
-    redirect_to: str | None = None
-    cooldown_global: int = 0
-    cooldown_per_user: int = 0
+    cooldown: int | None = None
     min_role: str = "everyone"
     aliases: str | None = None
 
@@ -104,22 +98,18 @@ async def create_custom_command(
     user_id: str = Depends(get_current_user_id),
     pool: Pool = Depends(get_db_pool),
 ) -> CommandConfigResponse:
-    """Create a new custom command (text response or redirect)."""
+    """Create a new custom command."""
     if body.min_role not in VALID_ROLES:
         raise HTTPException(status_code=400, detail=f"Invalid min_role: {body.min_role}")
-    if not body.custom_response and not body.redirect_to:
-        raise HTTPException(
-            status_code=400, detail="Either custom_response or redirect_to is required"
-        )
+    if not body.custom_response:
+        raise HTTPException(status_code=400, detail="custom_response is required")
     try:
         service = CommandConfigService(pool)
         cfg = await service.create_custom_command(
             user_id,
             body.command_name,
             custom_response=body.custom_response,
-            redirect_to=body.redirect_to,
-            cooldown_global=body.cooldown_global,
-            cooldown_per_user=body.cooldown_per_user,
+            cooldown=body.cooldown,
             min_role=body.min_role,
             aliases=body.aliases,
         )
@@ -147,9 +137,7 @@ async def update_command_config(
             command_name,
             enabled=body.enabled,
             custom_response=body.custom_response,
-            redirect_to=body.redirect_to,
-            cooldown_global=body.cooldown_global,
-            cooldown_per_user=body.cooldown_per_user,
+            cooldown=body.cooldown,
             min_role=body.min_role,
             aliases=body.aliases,
         )

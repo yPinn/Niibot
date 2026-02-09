@@ -35,9 +35,7 @@ class CommandConfigService:
         *,
         enabled: bool | None = None,
         custom_response: str | None = None,
-        redirect_to: str | None = None,
-        cooldown_global: int | None = None,
-        cooldown_per_user: int | None = None,
+        cooldown: int | None = None,
         min_role: str | None = None,
         aliases: str | None = None,
     ) -> dict:
@@ -47,9 +45,7 @@ class CommandConfigService:
             command_name,
             enabled=enabled,
             custom_response=custom_response,
-            redirect_to=redirect_to,
-            cooldown_global=cooldown_global,
-            cooldown_per_user=cooldown_per_user,
+            cooldown=cooldown,
             min_role=min_role,
             aliases=aliases,
         )
@@ -68,22 +64,18 @@ class CommandConfigService:
         command_name: str,
         *,
         custom_response: str | None = None,
-        redirect_to: str | None = None,
-        cooldown_global: int = 0,
-        cooldown_per_user: int = 0,
+        cooldown: int | None = None,
         min_role: str = "everyone",
         aliases: str | None = None,
     ) -> dict:
-        """Create a new custom command (text response or redirect)."""
+        """Create a new custom command."""
         cfg = await self.cmd_repo.upsert_config(
             channel_id,
             command_name,
             command_type="custom",
             enabled=True,
             custom_response=custom_response,
-            redirect_to=redirect_to,
-            cooldown_global=cooldown_global,
-            cooldown_per_user=cooldown_per_user,
+            cooldown=cooldown,
             min_role=min_role,
             aliases=aliases,
         )
