@@ -24,7 +24,7 @@ class Channel:
     channel_id: str
     channel_name: str
     enabled: bool = True
-    default_cooldown: int = 0
+    default_cooldown: int = 5
     created_at: datetime | None = None
     updated_at: datetime | None = None
 

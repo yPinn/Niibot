@@ -53,6 +53,15 @@ const ROLE_LABELS: Record<string, string> = {
   broadcaster: '頻道主',
 }
 
+const BUILTIN_DESCRIPTIONS: Record<string, string> = {
+  hi: '打招呼',
+  help: '列出可用指令',
+  uptime: '顯示開播時間',
+  ai: 'AI 回答問題',
+  運勢: '今日運勢占卜',
+  rk: 'TFT 排行榜查詢',
+}
+
 const EDITABLE_COMMANDS = ['hi']
 
 const ACTION_TYPE_LABELS: Record<string, string> = {
@@ -299,16 +308,16 @@ export default function Commands() {
             <div className="flex items-center justify-center py-8 text-destructive">{error}</div>
           ) : (
             <div className="rounded-md border">
-              <Table>
+              <Table className="table-fixed">
                 <TableHeader>
                   <TableRow>
-                    <TableHead>指令</TableHead>
-                    <TableHead>類型</TableHead>
-                    <TableHead>冷卻</TableHead>
-                    <TableHead>權限</TableHead>
-                    <TableHead className="text-right">使用次數</TableHead>
-                    <TableHead className="text-center">狀態</TableHead>
-                    <TableHead className="text-right">操作</TableHead>
+                    <TableHead className="w-[30%]">指令</TableHead>
+                    <TableHead className="w-[10%]">類型</TableHead>
+                    <TableHead className="w-[12%]">冷卻</TableHead>
+                    <TableHead className="w-[10%]">權限</TableHead>
+                    <TableHead className="w-[12%] text-right">使用次數</TableHead>
+                    <TableHead className="w-[10%] text-center">狀態</TableHead>
+                    <TableHead className="w-[16%] text-right">操作</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -322,12 +331,21 @@ export default function Commands() {
                     commands.map(cmd => (
                       <TableRow key={cmd.command_name}>
                         <TableCell>
-                          <span className="font-mono font-medium">!{cmd.command_name}</span>
-                          {cmd.aliases && (
-                            <span className="ml-2 text-xs text-muted-foreground">
-                              ({cmd.aliases})
+                          <div className="flex flex-col">
+                            <div>
+                              <span className="font-mono font-medium">!{cmd.command_name}</span>
+                              {cmd.aliases && (
+                                <span className="ml-2 text-xs text-muted-foreground">
+                                  ({cmd.aliases})
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-xs text-muted-foreground truncate max-w-64">
+                              {cmd.command_type === 'builtin'
+                                ? BUILTIN_DESCRIPTIONS[cmd.command_name] || ''
+                                : cmd.custom_response || ''}
                             </span>
-                          )}
+                          </div>
                         </TableCell>
                         <TableCell>
                           <Badge
@@ -357,21 +375,14 @@ export default function Commands() {
                           </div>
                         </TableCell>
                         <TableCell className="text-right">
-                          <div className="flex justify-end gap-1">
-                            <Button variant="ghost" size="sm" onClick={() => openEditor(cmd)}>
-                              編輯
-                            </Button>
-                            {cmd.command_type === 'custom' && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="text-destructive hover:text-destructive"
-                                onClick={() => handleDelete(cmd)}
-                              >
-                                刪除
-                              </Button>
-                            )}
-                          </div>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-8"
+                            onClick={() => openEditor(cmd)}
+                          >
+                            <Icon icon="fa-solid fa-pen" wrapperClassName="size-3.5" />
+                          </Button>
                         </TableCell>
                       </TableRow>
                     ))
@@ -591,6 +602,7 @@ export default function Commands() {
                   <Input
                     type="number"
                     min={0}
+                    step={5}
                     value={formCooldown}
                     onChange={e => setFormCooldown(e.target.value)}
                     placeholder={`預設: ${defaults.default_cooldown}`}
@@ -619,7 +631,22 @@ export default function Commands() {
             )}
           </div>
 
-          <SheetFooter className="flex-row justify-end gap-2">
+          <SheetFooter className="flex-row gap-2">
+            {editing?.mode === 'edit' && editing.command?.command_type === 'custom' && (
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  if (editing.command) {
+                    handleDelete(editing.command)
+                    setEditing(null)
+                  }
+                }}
+              >
+                <Icon icon="fa-solid fa-trash" wrapperClassName="mr-1.5 size-3" />
+                刪除
+              </Button>
+            )}
+            <div className="flex-1" />
             <SheetClose asChild>
               <Button variant="outline">取消</Button>
             </SheetClose>

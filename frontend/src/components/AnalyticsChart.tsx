@@ -366,8 +366,8 @@ export default function AnalyticsChart({
               <AreaChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
                 <defs>
                   <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.5} />
-                    <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0.05} />
+                    <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.5} />
+                    <stop offset="95%" stopColor="var(--primary)" stopOpacity={0.05} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" opacity={0.5} />
@@ -387,7 +387,7 @@ export default function AnalyticsChart({
                   <Tooltip
                     content={props => <ChartTooltip {...props} chartConfig={chartConfig} />}
                     cursor={{
-                      stroke: 'hsl(var(--primary))',
+                      stroke: 'var(--primary)',
                       strokeWidth: 1,
                       strokeDasharray: '5 5',
                     }}
@@ -396,11 +396,11 @@ export default function AnalyticsChart({
                 <Area
                   type="monotone"
                   dataKey={chartConfig.dataKey}
-                  stroke="hsl(var(--primary))"
+                  stroke="var(--primary)"
                   strokeWidth={2.5}
                   fillOpacity={1}
                   fill="url(#colorValue)"
-                  activeDot={{ r: 6, fill: 'hsl(var(--primary))', strokeWidth: 2 }}
+                  activeDot={{ r: 6, fill: 'var(--primary)', strokeWidth: 2 }}
                 />
               </AreaChart>
             </ResponsiveContainer>

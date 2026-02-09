@@ -24,13 +24,12 @@ _CMD_COLUMNS = (
 
 # Default builtin commands: cooldown values are overrides (None = use channel default)
 BUILTIN_COMMANDS: list[dict] = [
-    {"command_name": "hi", "custom_response": "你好，$(user)！"},
-    {"command_name": "help"},
-    {"command_name": "uptime"},
-    {"command_name": "ai", "cooldown": 10},
-    {"command_name": "運勢", "cooldown": 30},
-    {"command_name": "rk", "cooldown": 3},
-    {"command_name": "redemptions"},
+    {"command_name": "hi", "custom_response": "你好，$(user)！", "cooldown": 5},
+    {"command_name": "help", "cooldown": 5},
+    {"command_name": "uptime", "cooldown": 5},
+    {"command_name": "ai", "cooldown": 15},
+    {"command_name": "運勢", "cooldown": 5},
+    {"command_name": "rk", "cooldown": 5},
 ]
 
 # Default redemption actions: (action_type, reward_name)

@@ -69,7 +69,7 @@ class GeneralCommands(commands.Component):
         if not config:
             return
 
-        await ctx.reply("可用指令：!hi, !uptime, !ai <問題>, !運勢, !rk [玩家ID], !redemptions")
+        await ctx.reply("可用指令：!hi, !uptime, !ai <問題>, !運勢, !rk [玩家ID]")
         await self._record_command(ctx, "help")
 
     @commands.command()

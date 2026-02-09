@@ -129,19 +129,41 @@
 }
 
 @layer base {
+  /* ── CSS Reset / Global Defaults ── */
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
   * {
     @apply border-border outline-ring/50;
     scrollbar-width: none;
     -ms-overflow-style: none;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
+
   *::-webkit-scrollbar {
     display: none;
   }
+
+  /* ── Root & Layout ── */
+  html {
+    font-size: 100%; /* 1rem = 16px (Tailwind default) */
+    text-size-adjust: 100%;
+    tab-size: 4;
+    line-height: 1.5;
+  }
+
   html,
   body,
   #root {
     @apply h-full;
   }
+
   body {
     @apply bg-background text-foreground;
     font-family:
@@ -150,5 +172,52 @@
       system-ui,
       -apple-system,
       sans-serif;
+    font-size: 0.875rem; /* 14px base for dashboard UI */
+    line-height: 1.5;
+  }
+
+  /* ── Typography ── */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    overflow-wrap: break-word;
+    text-wrap: balance;
+  }
+
+  p {
+    overflow-wrap: break-word;
+    text-wrap: pretty;
+  }
+
+  /* ── Media ── */
+  img,
+  picture,
+  video,
+  canvas,
+  svg {
+    display: block;
+    max-width: 100%;
+  }
+
+  /* ── Form Elements ── */
+  input,
+  button,
+  textarea,
+  select {
+    font: inherit;
+  }
+
+  /* ── Interactive ── */
+  a {
+    color: inherit;
+    text-decoration: inherit;
+  }
+
+  /* ── Table ── */
+  table {
+    border-collapse: collapse;
   }
 }

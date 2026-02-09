@@ -1,9 +1,9 @@
-"""Chat-based command management: !addcom, !editcom, !delcom.
+"""Chat-based command management: !na, !ne, !nd.
 
 Syntax:
-    !addcom !指令名 [options] 回覆文字
-    !editcom !指令名 [options] [新回覆文字]
-    !delcom !指令名
+    !na !指令名 [options] 回覆文字
+    !ne !指令名 [options] [新回覆文字]
+    !nd !指令名
 
 Options:
     -cd=N          Cooldown in seconds
@@ -15,12 +15,12 @@ Variables in response:
     $(query)   Remaining text after the command
 
 Examples:
-    !addcom !你好 $(user) 你好呀！
-    !addcom !問候 -cd=30 -alias=greeting,hey $(user) 嗨！
-    !addcom !ask !ai $(query)
-    !editcom !問候 -cd=60
-    !editcom !問候 新的回覆文字
-    !delcom !問候
+    !na !你好 $(user) 你好呀！
+    !na !問候 -cd=30 -alias=greeting,hey $(user) 嗨！
+    !na !ask !ai $(query)
+    !ne !問候 -cd=60
+    !ne !問候 新的回覆文字
+    !nd !問候
 """
 
 import logging
@@ -77,14 +77,14 @@ class CommandManagerComponent(commands.Component):
         self.cmd_repo = CommandConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
         LOGGER.info("CommandManager component initialized")
 
-    @commands.command(name="addcom")
-    async def addcom(self, ctx: commands.Context["Bot"], *, args: str | None = None) -> None:
+    @commands.command(name="na")
+    async def na(self, ctx: commands.Context["Bot"], *, args: str | None = None) -> None:
         """Add a custom command. Moderator+ only."""
         if not ctx.chatter.moderator and not ctx.chatter.broadcaster:  # type: ignore[attr-defined]
             return
 
         if not args or not args.strip():
-            await ctx.reply("用法: !addcom !指令名 [-cd=N] [-alias=a,b] 回覆文字")
+            await ctx.reply("用法: !na !指令名 [-cd=N] [-alias=a,b] 回覆文字")
             return
 
         parts = args.strip().split(maxsplit=1)
@@ -92,21 +92,21 @@ class CommandManagerComponent(commands.Component):
         remaining = parts[1] if len(parts) > 1 else ""
 
         if not cmd_name:
-            await ctx.reply("用法: !addcom !指令名 回覆文字")
+            await ctx.reply("用法: !na !指令名 回覆文字")
             return
 
         # Check if command already exists
         channel_id = str(ctx.channel.id)
         existing = await self.cmd_repo.get_config(channel_id, cmd_name)
         if existing:
-            await ctx.reply(f"指令 !{cmd_name} 已存在，請使用 !editcom 修改")
+            await ctx.reply(f"指令 !{cmd_name} 已存在，請使用 !ne 修改")
             return
 
         # Parse options and response text
         options, response_text = _parse_args(remaining)
 
         if not response_text:
-            await ctx.reply("請提供回覆文字: !addcom !指令名 回覆文字")
+            await ctx.reply("請提供回覆文字: !na !指令名 回覆文字")
             return
 
         # Build config from options
@@ -130,14 +130,14 @@ class CommandManagerComponent(commands.Component):
         await ctx.reply(f"已新增指令 !{cmd_name}{alias_info}")
         LOGGER.info(f"Command added: !{cmd_name} by {ctx.chatter.name}")
 
-    @commands.command(name="editcom")
-    async def editcom(self, ctx: commands.Context["Bot"], *, args: str | None = None) -> None:
+    @commands.command(name="ne")
+    async def ne(self, ctx: commands.Context["Bot"], *, args: str | None = None) -> None:
         """Edit a custom command. Moderator+ only."""
         if not ctx.chatter.moderator and not ctx.chatter.broadcaster:  # type: ignore[attr-defined]
             return
 
         if not args or not args.strip():
-            await ctx.reply("用法: !editcom !指令名 [-cd=N] [-alias=a,b] [新回覆文字]")
+            await ctx.reply("用法: !ne !指令名 [-cd=N] [-alias=a,b] [新回覆文字]")
             return
 
         parts = args.strip().split(maxsplit=1)
@@ -145,7 +145,7 @@ class CommandManagerComponent(commands.Component):
         remaining = parts[1] if len(parts) > 1 else ""
 
         if not cmd_name:
-            await ctx.reply("用法: !editcom !指令名 [選項] [新回覆文字]")
+            await ctx.reply("用法: !ne !指令名 [選項] [新回覆文字]")
             return
 
         channel_id = str(ctx.channel.id)
@@ -168,7 +168,7 @@ class CommandManagerComponent(commands.Component):
             kwargs["custom_response"] = response_text
 
         if not kwargs:
-            await ctx.reply("請提供要修改的內容: !editcom !指令名 [-cd=N] [新回覆文字]")
+            await ctx.reply("請提供要修改的內容: !ne !指令名 [-cd=N] [新回覆文字]")
             return
 
         config = await self.cmd_repo.upsert_config(
@@ -191,19 +191,19 @@ class CommandManagerComponent(commands.Component):
         await ctx.reply(f"已更新 !{cmd_name}：{', '.join(changes)}")
         LOGGER.info(f"Command edited: !{cmd_name} by {ctx.chatter.name}")
 
-    @commands.command(name="delcom")
-    async def delcom(self, ctx: commands.Context["Bot"], *, args: str | None = None) -> None:
+    @commands.command(name="nd")
+    async def nd(self, ctx: commands.Context["Bot"], *, args: str | None = None) -> None:
         """Delete a custom command. Moderator+ only."""
         if not ctx.chatter.moderator and not ctx.chatter.broadcaster:  # type: ignore[attr-defined]
             return
 
         if not args or not args.strip():
-            await ctx.reply("用法: !delcom !指令名")
+            await ctx.reply("用法: !nd !指令名")
             return
 
         cmd_name = args.strip().lstrip("!").lower()
         if not cmd_name:
-            await ctx.reply("用法: !delcom !指令名")
+            await ctx.reply("用法: !nd !指令名")
             return
 
         channel_id = str(ctx.channel.id)

@@ -221,6 +221,7 @@ class Bot(commands.AutoBot):
                 message=response,
                 sender=self.bot_id,
                 token_for=self.bot_id,
+                reply_to_message_id=str(payload.id),
             )
             LOGGER.info(f"Custom command: !{cmd_name} -> text response")
 

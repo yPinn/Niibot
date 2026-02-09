@@ -5,8 +5,7 @@ import twitchio
 from twitchio.ext import commands
 
 from core.config import get_settings
-from core.guards import check_command
-from shared.repositories.command_config import CommandConfigRepository, RedemptionConfigRepository
+from shared.repositories.command_config import RedemptionConfigRepository
 
 if TYPE_CHECKING:
     from core.bot import Bot
@@ -23,8 +22,6 @@ class ChannelPointsComponent(commands.Component):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot: Bot = bot  # type: ignore[assignment]
         self.settings = get_settings()
-        self.cmd_repo = CommandConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
-        self.channel_repo = self.bot.channels  # type: ignore[attr-defined]
         self.redemption_repo = RedemptionConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
 
     def _generate_oauth_url(self) -> str:
@@ -214,16 +211,6 @@ class ChannelPointsComponent(commands.Component):
 
         except Exception as e:
             LOGGER.error(f"[Niibot] 處理兌換時發生錯誤: {e}")
-
-    @commands.command()
-    async def redemptions(self, ctx: commands.Context["Bot"]) -> None:
-        """顯示 Channel Points 兌換功能說明"""
-        config = await check_command(self.cmd_repo, ctx, "redemptions", self.channel_repo)
-        if not config:
-            return
-        await ctx.reply(
-            "Channel Points 兌換系統已啟用！Bot 會自動監聽並記錄所有兌換事件，請使用 Twitch 後台管理獎勵。"
-        )
 
 
 async def setup(bot: commands.Bot) -> None:
