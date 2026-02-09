@@ -1,14 +1,28 @@
 import { useNavigate } from 'react-router-dom'
 
+import { useTheme } from '@/components/theme-provider'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { Icon } from '@/components/ui/icon'
 
 export default function Home() {
   const navigate = useNavigate()
+  const { resolvedTheme, setTheme } = useTheme()
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4 py-12">
+    <div className="relative flex min-h-screen flex-col items-center justify-center bg-background px-4 py-12">
+      <Button
+        variant="ghost"
+        size="icon"
+        className="absolute right-4 top-4"
+        onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
+      >
+        <Icon
+          icon={resolvedTheme === 'dark' ? 'fa-solid fa-sun' : 'fa-solid fa-moon'}
+          wrapperClassName=""
+        />
+      </Button>
       <div className="w-full max-w-2xl">
         <Card className="rounded-2xl border shadow-xl">
           <CardContent className="p-8">

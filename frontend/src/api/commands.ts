@@ -7,9 +7,7 @@ export interface CommandConfig {
   command_type: 'builtin' | 'custom'
   enabled: boolean
   custom_response: string | null
-  redirect_to: string | null
-  cooldown_global: number
-  cooldown_per_user: number
+  cooldown: number | null
   min_role: string
   aliases: string | null
   usage_count: number
@@ -18,9 +16,7 @@ export interface CommandConfig {
 export interface CommandConfigUpdate {
   enabled?: boolean
   custom_response?: string | null
-  redirect_to?: string | null
-  cooldown_global?: number
-  cooldown_per_user?: number
+  cooldown?: number | null
   min_role?: string
   aliases?: string | null
 }
@@ -28,9 +24,7 @@ export interface CommandConfigUpdate {
 export interface CustomCommandCreate {
   command_name: string
   custom_response?: string | null
-  redirect_to?: string | null
-  cooldown_global?: number
-  cooldown_per_user?: number
+  cooldown?: number | null
   min_role?: string
   aliases?: string | null
 }

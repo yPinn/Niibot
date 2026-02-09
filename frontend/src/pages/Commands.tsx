@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { type ChannelDefaults, getChannelDefaults } from '@/api/channels'
 import {
   type CommandConfig,
   type CommandConfigUpdate,
@@ -68,20 +69,22 @@ interface EditingState {
 export default function Commands() {
   const [commands, setCommands] = useState<CommandConfig[]>([])
   const [redemptions, setRedemptions] = useState<RedemptionConfig[]>([])
+  const [defaults, setDefaults] = useState<ChannelDefaults>({
+    default_cooldown: 0,
+  })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   // Sheet state
   const [editing, setEditing] = useState<EditingState | null>(null)
   const [formName, setFormName] = useState('')
-  const [formRedirect, setFormRedirect] = useState('')
   const [formResponse, setFormResponse] = useState('')
-  const [formCooldownGlobal, setFormCooldownGlobal] = useState(0)
-  const [formCooldownUser, setFormCooldownUser] = useState(0)
+  const [formCooldown, setFormCooldown] = useState('')
   const [formRole, setFormRole] = useState('everyone')
   const [formAliases, setFormAliases] = useState('')
   const [formEnabled, setFormEnabled] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [showAdvanced, setShowAdvanced] = useState(false)
   const responseInputRef = useRef<HTMLInputElement>(null)
 
   // Redemption inline editing
@@ -91,9 +94,14 @@ export default function Commands() {
   const fetchData = useCallback(async () => {
     try {
       setError(null)
-      const [cmds, reds] = await Promise.all([getCommandConfigs(), getRedemptionConfigs()])
+      const [cmds, reds, defs] = await Promise.all([
+        getCommandConfigs(),
+        getRedemptionConfigs(),
+        getChannelDefaults(),
+      ])
       setCommands(cmds)
       setRedemptions(reds)
+      setDefaults(defs)
     } catch {
       setError('無法載入設定')
     } finally {
@@ -121,28 +129,35 @@ export default function Commands() {
     }
   }
 
+  const hasAdvancedValues = (cmd: CommandConfig) =>
+    cmd.cooldown != null || cmd.min_role !== 'everyone' || !!cmd.aliases
+
   const openEditor = (cmd: CommandConfig) => {
     setEditing({ mode: 'edit', command: cmd })
     setFormName(cmd.command_name)
-    setFormRedirect(cmd.redirect_to || '')
     setFormResponse(cmd.custom_response || '')
-    setFormCooldownGlobal(cmd.cooldown_global)
-    setFormCooldownUser(cmd.cooldown_per_user)
+    setFormCooldown(cmd.cooldown != null ? String(cmd.cooldown) : '')
     setFormRole(cmd.min_role)
     setFormAliases(cmd.aliases || '')
     setFormEnabled(cmd.enabled)
+    setShowAdvanced(hasAdvancedValues(cmd))
   }
 
   const openCreate = () => {
     setEditing({ mode: 'create', command: null })
     setFormName('')
-    setFormRedirect('')
     setFormResponse('')
-    setFormCooldownGlobal(0)
-    setFormCooldownUser(0)
+    setFormCooldown('')
     setFormRole('everyone')
     setFormAliases('')
     setFormEnabled(true)
+    setShowAdvanced(false)
+  }
+
+  /** Convert form string to API value: '' -> null (use default), '0' -> 0, '5' -> 5 */
+  const parseCooldown = (value: string): number | null => {
+    if (value === '') return null
+    return Number(value) || 0
   }
 
   const handleSave = async () => {
@@ -150,13 +165,11 @@ export default function Commands() {
     setSaving(true)
     try {
       if (editing.mode === 'create') {
-        if (!formName.trim() || (!formResponse.trim() && !formRedirect.trim())) return
+        if (!formName.trim() || !formResponse.trim()) return
         const created = await createCustomCommand({
           command_name: formName.trim(),
-          custom_response: formResponse.trim() || null,
-          redirect_to: formRedirect.trim() || null,
-          cooldown_global: formCooldownGlobal,
-          cooldown_per_user: formCooldownUser,
+          custom_response: formResponse.trim(),
+          cooldown: parseCooldown(formCooldown),
           min_role: formRole,
           aliases: formAliases.trim() || null,
         })
@@ -164,13 +177,11 @@ export default function Commands() {
       } else if (editing.command) {
         const updates: CommandConfigUpdate = {
           enabled: formEnabled,
-          cooldown_global: formCooldownGlobal,
-          cooldown_per_user: formCooldownUser,
+          cooldown: parseCooldown(formCooldown),
           min_role: formRole,
           aliases: formAliases.trim() || null,
         }
         if (editing.command.command_type === 'custom') {
-          updates.redirect_to = formRedirect.trim() || null
           updates.custom_response = formResponse.trim() || null
         }
         if (EDITABLE_COMMANDS.includes(editing.command.command_name)) {
@@ -252,11 +263,10 @@ export default function Commands() {
     setEditingRedemption(null)
   }
 
-  const formatCooldown = (global: number, perUser: number) => {
-    const parts: string[] = []
-    if (global > 0) parts.push(`全域 ${global}s`)
-    if (perUser > 0) parts.push(`每人 ${perUser}s`)
-    return parts.length > 0 ? parts.join(' / ') : '無'
+  const formatCooldown = (cooldown: number | null) => {
+    const effective = cooldown ?? defaults.default_cooldown
+    if (effective <= 0) return '無'
+    return cooldown != null ? `${effective}s` : `${effective}s (預設)`
   }
 
   return (
@@ -332,7 +342,7 @@ export default function Commands() {
                           </Badge>
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
-                          {formatCooldown(cmd.cooldown_global, cmd.cooldown_per_user)}
+                          {formatCooldown(cmd.cooldown)}
                         </TableCell>
                         <TableCell className="text-sm">
                           {ROLE_LABELS[cmd.min_role] || cmd.min_role}
@@ -474,7 +484,7 @@ export default function Commands() {
             </SheetTitle>
             <SheetDescription>
               {editing?.mode === 'create'
-                ? '建立自訂指令，可設定回應內容或重導向到其他指令'
+                ? '建立自訂指令，以 ! 開頭的回應會重導向到該指令'
                 : '修改指令設定'}
             </SheetDescription>
           </SheetHeader>
@@ -501,12 +511,12 @@ export default function Commands() {
               editing?.command?.command_type === 'custom' ||
               (editing?.command && EDITABLE_COMMANDS.includes(editing.command.command_name))) && (
               <div className="flex flex-col gap-2">
-                <Label>自訂回應</Label>
+                <Label>回應</Label>
                 <Input
                   ref={responseInputRef}
                   value={formResponse}
                   onChange={e => setFormResponse(e.target.value)}
-                  placeholder="留空使用預設回應"
+                  placeholder="回應文字 或 !指令名 $(query) 重導向"
                   className="font-mono text-sm"
                 />
                 <div className="flex flex-col gap-1.5">
@@ -533,77 +543,6 @@ export default function Commands() {
               </div>
             )}
 
-            {/* Redirect (custom commands) */}
-            {(editing?.mode === 'create' || editing?.command?.command_type === 'custom') && (
-              <div className="flex flex-col gap-2">
-                <Label>重導向目標</Label>
-                <Input
-                  value={formRedirect}
-                  onChange={e => setFormRedirect(e.target.value)}
-                  placeholder="ai $(query)"
-                  className="font-mono text-sm"
-                />
-                <span className="text-xs text-muted-foreground">
-                  重導向到其他指令。與自訂回應擇一使用，優先使用自訂回應
-                </span>
-              </div>
-            )}
-
-            {/* Aliases */}
-            {(editing?.mode === 'create' || editing?.command?.command_type === 'custom') && (
-              <div className="flex flex-col gap-2">
-                <Label>別名</Label>
-                <Input
-                  value={formAliases}
-                  onChange={e => setFormAliases(e.target.value)}
-                  placeholder="hello,hey,hi"
-                  className="font-mono text-sm"
-                />
-                <span className="text-xs text-muted-foreground">
-                  多個別名用逗號分隔，不含 ! 前綴
-                </span>
-              </div>
-            )}
-
-            {/* Cooldown */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="flex flex-col gap-2">
-                <Label>全域冷卻 (秒)</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  value={formCooldownGlobal}
-                  onChange={e => setFormCooldownGlobal(Number(e.target.value) || 0)}
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label>每人冷卻 (秒)</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  value={formCooldownUser}
-                  onChange={e => setFormCooldownUser(Number(e.target.value) || 0)}
-                />
-              </div>
-            </div>
-
-            {/* Min Role */}
-            <div className="flex flex-col gap-2">
-              <Label>最低權限</Label>
-              <Select value={formRole} onValueChange={setFormRole}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.entries(ROLE_LABELS).map(([value, label]) => (
-                    <SelectItem key={value} value={value}>
-                      {label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
             {/* Enabled */}
             {editing?.mode === 'edit' && (
               <div className="flex items-center justify-between">
@@ -612,6 +551,70 @@ export default function Commands() {
                   <span className="text-xs text-muted-foreground">關閉後指令將不會回應</span>
                 </div>
                 <Switch checked={formEnabled} onCheckedChange={setFormEnabled} />
+              </div>
+            )}
+
+            {/* Advanced Settings Toggle */}
+            <button
+              type="button"
+              className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+              onClick={() => setShowAdvanced(prev => !prev)}
+            >
+              <Icon
+                icon={showAdvanced ? 'fa-solid fa-chevron-down' : 'fa-solid fa-chevron-right'}
+                wrapperClassName="size-3"
+              />
+              {showAdvanced ? '隱藏進階設定' : '顯示進階設定'}
+            </button>
+
+            {showAdvanced && (
+              <div className="flex flex-col gap-6 border-l-2 border-muted pl-4">
+                {/* Aliases */}
+                {(editing?.mode === 'create' || editing?.command?.command_type === 'custom') && (
+                  <div className="flex flex-col gap-2">
+                    <Label>別名</Label>
+                    <Input
+                      value={formAliases}
+                      onChange={e => setFormAliases(e.target.value)}
+                      placeholder="hello,hey,hi"
+                      className="font-mono text-sm"
+                    />
+                    <span className="text-xs text-muted-foreground">
+                      多個別名用逗號分隔，不含 ! 前綴
+                    </span>
+                  </div>
+                )}
+
+                {/* Cooldown */}
+                <div className="flex flex-col gap-2">
+                  <Label>冷卻 (秒)</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={formCooldown}
+                    onChange={e => setFormCooldown(e.target.value)}
+                    placeholder={`預設: ${defaults.default_cooldown}`}
+                    className="w-40"
+                  />
+                  <span className="text-xs text-muted-foreground">留空則使用頻道預設冷卻設定</span>
+                </div>
+
+                {/* Min Role */}
+                <div className="flex flex-col gap-2">
+                  <Label>最低權限</Label>
+                  <Select value={formRole} onValueChange={setFormRole}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.entries(ROLE_LABELS).map(([value, label]) => (
+                        <SelectItem key={value} value={value}>
+                          {label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             )}
           </div>

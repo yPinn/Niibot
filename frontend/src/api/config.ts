@@ -31,6 +31,7 @@ export const API_ENDPOINTS = {
       myStatus: join('/api/channels/twitch/my-status'),
       toggle: join('/api/channels/twitch/toggle'),
     },
+    defaults: join('/api/channels/defaults'),
   },
   analytics: {
     summary: join('/api/analytics/summary'),

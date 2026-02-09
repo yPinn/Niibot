@@ -66,6 +66,33 @@ export async function getTwitchChannelStatus(): Promise<ChannelStatus | null> {
   }
 }
 
+// ---- Channel Defaults (cooldown settings) ----
+
+export interface ChannelDefaults {
+  default_cooldown: number
+}
+
+export async function getChannelDefaults(): Promise<ChannelDefaults> {
+  const response = await fetch(API_ENDPOINTS.channels.defaults, {
+    credentials: 'include',
+  })
+  if (!response.ok) throw new Error('Failed to fetch channel defaults')
+  return response.json()
+}
+
+export async function updateChannelDefaults(
+  data: Partial<ChannelDefaults>
+): Promise<ChannelDefaults> {
+  const response = await fetch(API_ENDPOINTS.channels.defaults, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(data),
+  })
+  if (!response.ok) throw new Error('Failed to update channel defaults')
+  return response.json()
+}
+
 export async function toggleTwitchChannel(
   channelId: string,
   enabled: boolean
