@@ -6,8 +6,7 @@ Syntax:
     !delcom !指令名
 
 Options:
-    -cd=N          Per-user cooldown in seconds
-    -gcd=N         Global cooldown in seconds
+    -cd=N          Cooldown in seconds
     -role=X        Min role: everyone/sub/vip/mod/broadcaster
     -alias=a,b,c   Comma-separated aliases
 
@@ -18,6 +17,7 @@ Variables in response:
 Examples:
     !addcom !你好 $(user) 你好呀！
     !addcom !問候 -cd=30 -alias=greeting,hey $(user) 嗨！
+    !addcom !ask !ai $(query)
     !editcom !問候 -cd=60
     !editcom !問候 新的回覆文字
     !delcom !問候
@@ -110,8 +110,7 @@ class CommandManagerComponent(commands.Component):
             return
 
         # Build config from options
-        cooldown_per_user = int(options.get("cd", "0")) if "cd" in options else 0
-        cooldown_global = int(options.get("gcd", "0")) if "gcd" in options else 0
+        cooldown = int(options["cd"]) if "cd" in options else None
         role_input = options.get("role", "everyone")
         min_role = ROLE_ALIASES.get(role_input.lower(), "everyone")
         aliases = options.get("alias")
@@ -122,8 +121,7 @@ class CommandManagerComponent(commands.Component):
             command_type="custom",
             enabled=True,
             custom_response=response_text,
-            cooldown_global=cooldown_global,
-            cooldown_per_user=cooldown_per_user,
+            cooldown=cooldown,
             min_role=min_role,
             aliases=aliases,
         )
@@ -161,9 +159,7 @@ class CommandManagerComponent(commands.Component):
         # Build update kwargs (only include provided values)
         kwargs: dict = {}
         if "cd" in options:
-            kwargs["cooldown_per_user"] = int(options["cd"])
-        if "gcd" in options:
-            kwargs["cooldown_global"] = int(options["gcd"])
+            kwargs["cooldown"] = int(options["cd"])
         if "role" in options:
             kwargs["min_role"] = ROLE_ALIASES.get(options["role"].lower(), "everyone")
         if "alias" in options:
@@ -186,9 +182,7 @@ class CommandManagerComponent(commands.Component):
         if response_text:
             changes.append("回覆")
         if "cd" in options:
-            changes.append(f"冷卻={config.cooldown_per_user}s")
-        if "gcd" in options:
-            changes.append(f"全域冷卻={config.cooldown_global}s")
+            changes.append(f"冷卻={config.cooldown}s")
         if "role" in options:
             changes.append(f"權限={config.min_role}")
         if "alias" in options:

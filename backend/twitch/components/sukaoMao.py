@@ -20,6 +20,7 @@ class FortuneComponent(commands.Component):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot: Bot = bot  # type: ignore[assignment]
         self.cmd_repo = CommandConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
+        self.channel_repo = self.bot.channels  # type: ignore[attr-defined]
         self._load_data()
         LOGGER.info("Fortune component initialized")
 
@@ -67,7 +68,7 @@ class FortuneComponent(commands.Component):
             !fortune - 同上（英文別名）
             !占卜 - 同上（中文別名）
         """
-        config = await check_command(self.cmd_repo, ctx, "運勢")
+        config = await check_command(self.cmd_repo, ctx, "運勢", self.channel_repo)
         if not config:
             return
 

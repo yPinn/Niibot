@@ -37,6 +37,7 @@ class LeaderboardComponent(commands.Component):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot: Bot = bot  # type: ignore[assignment]
         self.cmd_repo = CommandConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
+        self.channel_repo = self.bot.channels  # type: ignore[attr-defined]
         self._last_request = 0.0
         self._cache: dict[str, Any] | None = None
         self._cache_time = 0.0
@@ -217,7 +218,7 @@ class LeaderboardComponent(commands.Component):
         self, ctx: commands.Context["Bot"], user_id: str | None = None
     ) -> None:
         """查詢 TFT 排行榜（!rk 顯示門檻，!rk 玩家名#tag 查玩家）"""
-        config = await check_command(self.cmd_repo, ctx, "rk")
+        config = await check_command(self.cmd_repo, ctx, "rk", self.channel_repo)
         if not config:
             return
 

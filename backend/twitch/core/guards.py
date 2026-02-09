@@ -7,13 +7,15 @@ from datetime import datetime
 
 from twitchio.ext import commands
 
+from shared.models.channel import Channel
 from shared.models.command_config import CommandConfig
+from shared.repositories.channel import ChannelRepository
 from shared.repositories.command_config import CommandConfigRepository
 
 LOGGER = logging.getLogger("CommandGuard")
 
 # In-memory cooldown tracker (reset on bot restart)
-# key: "{channel_id}:{command_name}:global" or "{channel_id}:{command_name}:user:{user_id}"
+# key: "{channel_id}:{command_name}"
 _cooldown_tracker: dict[str, datetime] = {}
 
 # Role hierarchy (higher index = higher privilege)
@@ -41,38 +43,42 @@ def has_role(chatter, min_role: str) -> bool:
     return min_level == 0
 
 
-def is_on_cooldown(channel_id: str, command_name: str, user_id: str, config: CommandConfig) -> bool:
-    """Check if command is on cooldown (global or per-user)."""
-    now = datetime.now()
+def is_on_cooldown(
+    channel_id: str,
+    command_name: str,
+    config: CommandConfig,
+    channel: Channel | None = None,
+) -> bool:
+    """Check if command is on cooldown.
 
-    # Check global cooldown
-    if config.cooldown_global > 0:
-        global_key = f"{channel_id}:{command_name}:global"
-        last = _cooldown_tracker.get(global_key)
-        if last and (now - last).total_seconds() < config.cooldown_global:
-            return True
+    Uses command-level override if set, otherwise falls back to channel default.
+    """
+    effective_cd = (
+        config.cooldown
+        if config.cooldown is not None
+        else (channel.default_cooldown if channel else 0)
+    )
+    if effective_cd <= 0:
+        return False
 
-    # Check per-user cooldown
-    if config.cooldown_per_user > 0:
-        user_key = f"{channel_id}:{command_name}:user:{user_id}"
-        last = _cooldown_tracker.get(user_key)
-        if last and (now - last).total_seconds() < config.cooldown_per_user:
-            return True
+    key = f"{channel_id}:{command_name}"
+    last = _cooldown_tracker.get(key)
+    if last and (datetime.now() - last).total_seconds() < effective_cd:
+        return True
 
     return False
 
 
-def record_cooldown(channel_id: str, command_name: str, user_id: str) -> None:
-    """Record cooldown timestamps after successful command execution."""
-    now = datetime.now()
-    _cooldown_tracker[f"{channel_id}:{command_name}:global"] = now
-    _cooldown_tracker[f"{channel_id}:{command_name}:user:{user_id}"] = now
+def record_cooldown(channel_id: str, command_name: str) -> None:
+    """Record cooldown timestamp after successful command execution."""
+    _cooldown_tracker[f"{channel_id}:{command_name}"] = datetime.now()
 
 
 async def check_command(
     repo: CommandConfigRepository,
     ctx: commands.Context,
     command_name: str,
+    channel_repo: ChannelRepository | None = None,
 ) -> CommandConfig | None:
     """Check if command is enabled, role-permitted, and not on cooldown.
 
@@ -87,8 +93,11 @@ async def check_command(
     if not has_role(ctx.chatter, config.min_role):
         return None
 
-    if is_on_cooldown(channel_id, command_name, ctx.chatter.id, config):
+    # Fetch channel defaults for cooldown fallback
+    channel = await channel_repo.get_channel(channel_id) if channel_repo else None
+
+    if is_on_cooldown(channel_id, command_name, config, channel):
         return None
 
-    record_cooldown(channel_id, command_name, ctx.chatter.id)
+    record_cooldown(channel_id, command_name)
     return config

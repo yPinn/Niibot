@@ -24,6 +24,7 @@ class ChannelPointsComponent(commands.Component):
         self.bot: Bot = bot  # type: ignore[assignment]
         self.settings = get_settings()
         self.cmd_repo = CommandConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
+        self.channel_repo = self.bot.channels  # type: ignore[attr-defined]
         self.redemption_repo = RedemptionConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
 
     def _generate_oauth_url(self) -> str:
@@ -217,7 +218,7 @@ class ChannelPointsComponent(commands.Component):
     @commands.command()
     async def redemptions(self, ctx: commands.Context["Bot"]) -> None:
         """顯示 Channel Points 兌換功能說明"""
-        config = await check_command(self.cmd_repo, ctx, "redemptions")
+        config = await check_command(self.cmd_repo, ctx, "redemptions", self.channel_repo)
         if not config:
             return
         await ctx.reply(

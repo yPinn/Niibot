@@ -24,6 +24,7 @@ class AIComponent(commands.Component):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot: Bot = bot  # type: ignore[assignment]
         self.cmd_repo = CommandConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
+        self.channel_repo = self.bot.channels  # type: ignore[attr-defined]
 
         settings = get_settings()
         api_key = settings.openrouter_api_key
@@ -61,7 +62,7 @@ class AIComponent(commands.Component):
             !ai 今天天氣如何？
             !ai 你好嗎？
         """
-        config = await check_command(self.cmd_repo, ctx, "ai")
+        config = await check_command(self.cmd_repo, ctx, "ai", self.channel_repo)
         if not config:
             return
 

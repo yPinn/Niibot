@@ -192,21 +192,27 @@ class Bot(commands.AutoBot):
         if not config or not config.enabled or config.command_type != "custom":
             return
 
-        if not config.custom_response and not config.redirect_to:
+        if not config.custom_response:
             return
 
         # Guard checks (role + cooldown)
         if not has_role(payload.chatter, config.min_role):
             return
 
-        user_id = str(payload.chatter.id)
-        if is_on_cooldown(channel_id, config.command_name, user_id, config):
+        channel = await self.channels.get_channel(channel_id)
+        if is_on_cooldown(channel_id, config.command_name, config, channel):
             return
 
-        record_cooldown(channel_id, config.command_name, user_id)
+        record_cooldown(channel_id, config.command_name)
 
-        if config.custom_response:
-            response = config.custom_response
+        response = config.custom_response
+        if response.startswith("!"):
+            # Redirect: inject as a new command into the pipeline
+            redirect = response[1:].replace("$(query)", query).strip()
+            payload.text = f"!{redirect}"
+            LOGGER.info(f"Custom command: !{cmd_name} -> !{redirect}")
+        else:
+            # Text response with variable substitution
             response = response.replace(
                 "$(user)", payload.chatter.display_name or payload.chatter.name or ""
             )
@@ -217,10 +223,6 @@ class Bot(commands.AutoBot):
                 token_for=self.bot_id,
             )
             LOGGER.info(f"Custom command: !{cmd_name} -> text response")
-        elif config.redirect_to:
-            redirect = config.redirect_to.replace("$(query)", query).strip()
-            payload.text = f"!{redirect}"
-            LOGGER.info(f"Custom command: !{cmd_name} -> !{redirect}")
 
     # ------------------------------------------------------------------
     # Token management
