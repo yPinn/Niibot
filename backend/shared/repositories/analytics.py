@@ -526,8 +526,7 @@ class AnalyticsRepository:
                 current_end = row["ended_at"]
                 # Update if: no ended_at, or current differs by >10 min from VOD
                 needs_update = (
-                    current_end is None
-                    or abs((current_end - vod_end).total_seconds()) > 600
+                    current_end is None or abs((current_end - vod_end).total_seconds()) > 600
                 )
                 if needs_update:
                     await conn.execute(

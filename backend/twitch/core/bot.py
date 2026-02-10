@@ -615,18 +615,16 @@ class Bot(commands.AutoBot):
                     vods = []
                     for v in videos:
                         if v.created_at and v.duration:
-                            vods.append({
-                                "started_at": v.created_at,
-                                "ended_at": v.created_at + v.duration,  # type: ignore[operator]
-                            })
+                            vods.append(
+                                {
+                                    "started_at": v.created_at,
+                                    "ended_at": v.created_at + v.duration,  # type: ignore[operator]
+                                }
+                            )
 
-                    updated = await self.analytics.reconcile_sessions_with_vods(
-                        ch.channel_id, vods
-                    )
+                    updated = await self.analytics.reconcile_sessions_with_vods(ch.channel_id, vods)
                     if updated:
-                        LOGGER.info(
-                            f"Reconciled {updated} session(s) for channel {ch.channel_id}"
-                        )
+                        LOGGER.info(f"Reconciled {updated} session(s) for channel {ch.channel_id}")
                 except Exception as e:
                     LOGGER.debug(f"VOD reconcile failed for {ch.channel_id}: {e}")
         except Exception as e:
