@@ -1,7 +1,9 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
+import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
 export default function DiscordDashboard() {
+  useDocumentTitle('Discord 機器人')
   return (
     <main className="h-full p-4 overflow-auto">
       <div className="grid gap-4">

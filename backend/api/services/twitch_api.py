@@ -154,8 +154,16 @@ class TwitchAPIClient:
             logger.exception(f"Error getting user ID: {e}")
             return None
 
+    async def get_user_by_login(self, login: str) -> dict[str, str] | None:
+        """Look up a Twitch user by login name (e.g. 'llazypilot')."""
+        return await self._fetch_user(params={"login": login})
+
     async def get_user_info(self, user_id: str) -> dict[str, str] | None:
-        """Get user information from Twitch API using app access token"""
+        """Get user information by Twitch user ID."""
+        return await self._fetch_user(params={"id": user_id})
+
+    async def _fetch_user(self, *, params: dict[str, str]) -> dict[str, str] | None:
+        """Internal: fetch a single user from Twitch Helix API."""
         try:
             # Get app access token
             app_token = await self._get_app_access_token()
@@ -164,7 +172,8 @@ class TwitchAPIClient:
 
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await client.get(
-                    f"https://api.twitch.tv/helix/users?id={user_id}",
+                    "https://api.twitch.tv/helix/users",
+                    params=params,
                     headers={
                         "Client-ID": self.client_id,
                         "Authorization": f"Bearer {app_token}",
@@ -180,7 +189,7 @@ class TwitchAPIClient:
                 users = data.get("data", [])
 
                 if not users:
-                    logger.warning(f"No user found for user_id: {user_id}")
+                    logger.warning(f"No user found for params: {params}")
                     return None
 
                 user = users[0]

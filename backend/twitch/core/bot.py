@@ -133,6 +133,7 @@ class Bot(commands.AutoBot):
             pg_listen(self.token_database, "channel_toggle", self._handle_channel_toggle)
         )
         asyncio.create_task(self._recover_active_sessions())
+        asyncio.create_task(self._stale_session_cleanup_loop())
 
     async def setup_database(self) -> None:
         pass
@@ -520,6 +521,7 @@ class Bot(commands.AutoBot):
 
                 title = stream.title
                 game_name = stream.game_name
+                game_id = str(stream.game_id) if stream.game_id else None
                 started_at = stream.started_at or datetime.now()
 
                 session_id = await self.analytics.create_session(
@@ -527,6 +529,7 @@ class Bot(commands.AutoBot):
                     started_at=started_at,
                     title=title,
                     game_name=game_name,
+                    game_id=game_id,
                 )
                 self._active_sessions[channel_id] = session_id
                 LOGGER.info(
@@ -540,6 +543,20 @@ class Bot(commands.AutoBot):
 
         except Exception as e:
             LOGGER.exception(f"Error recovering active sessions: {e}")
+
+    async def _stale_session_cleanup_loop(self) -> None:
+        """Periodically close stale sessions that were never ended (e.g. due to DB timeout)."""
+        await asyncio.sleep(60)  # Wait for bot to fully start
+        while True:
+            try:
+                closed = await self.analytics.close_stale_sessions(max_hours=12)
+                if closed:
+                    LOGGER.info(f"Closed {closed} stale session(s)")
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                LOGGER.warning(f"Stale session cleanup error: {e}")
+            await asyncio.sleep(3600)  # Run every hour
 
     async def _sync_vods_for_channels(
         self, channel_ids: list[str], limit_per_channel: int = 20

@@ -11,8 +11,10 @@ import AnalyticsChart from '@/components/AnalyticsChart'
 import StatsCard from '@/components/StatsCard'
 import TwitchPlayer from '@/components/TwitchPlayer'
 import { useAuth } from '@/contexts/AuthContext'
+import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
 export default function Dashboard() {
+  useDocumentTitle('儀表板')
   const { user, isInitialized, channels } = useAuth()
 
   const defaultChannel = useMemo(() => {

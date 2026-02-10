@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 
 import { Icon } from '@/components/ui/icon'
 import { useServiceStatus } from '@/contexts/ServiceStatusContext'
+import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
 interface ServiceStatus {
   name: string
@@ -16,6 +17,7 @@ interface ServiceStatus {
 }
 
 export default function SystemStatus() {
+  useDocumentTitle('系統狀態')
   const { twitch, discord, api, lastUpdate, refresh } = useServiceStatus()
 
   const services = useMemo<ServiceStatus[]>(

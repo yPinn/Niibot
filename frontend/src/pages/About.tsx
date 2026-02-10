@@ -5,8 +5,10 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
+import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
 export default function Home() {
+  useDocumentTitle('Niibot | 泥爸')
   const navigate = useNavigate()
   const { resolvedTheme, setTheme } = useTheme()
 

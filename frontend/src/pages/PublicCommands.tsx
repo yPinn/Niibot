@@ -16,6 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
 const ROLE_LABELS: Record<string, { label: string; variant: 'default' | 'secondary' | 'outline' }> =
   {
@@ -46,6 +47,7 @@ export default function PublicCommands() {
   }, [username])
 
   const displayName = channel?.display_name || username
+  useDocumentTitle(`${displayName} 的指令列表`)
 
   return (
     <div className="relative flex min-h-screen flex-col items-center justify-center bg-background px-4 py-12">

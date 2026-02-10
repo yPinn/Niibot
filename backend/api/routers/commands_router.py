@@ -216,26 +216,27 @@ async def get_public_commands(
     pool: Pool = Depends(get_db_pool),
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
 ) -> PublicCommandsResponse:
-    """Get enabled commands for a channel (public, no auth)."""
+    """Get enabled commands for a channel (public, no auth).
+
+    Uses Twitch API to resolve login name → user_id + profile,
+    then queries command_configs by channel_id directly.
+    No dependency on channels.channel_name.
+    """
     try:
-        service = CommandConfigService(pool)
-        result = await service.list_public_commands(username)
-        if result is None:
+        # 1. Resolve login name via Twitch API (also gives profile)
+        user_info = await twitch_api.get_user_by_login(username)
+        if not user_info:
             raise HTTPException(status_code=404, detail="Channel not found")
 
-        channel_id, commands = result
+        channel_id = user_info["id"]
+        profile = PublicChannelProfile(
+            display_name=user_info.get("display_name"),
+            profile_image_url=user_info.get("avatar"),
+        )
 
-        # Fetch Twitch profile (display_name + avatar)
-        profile = PublicChannelProfile()
-        try:
-            user_info = await twitch_api.get_user_info(channel_id)
-            if user_info:
-                profile = PublicChannelProfile(
-                    display_name=user_info.get("display_name"),
-                    profile_image_url=user_info.get("avatar"),
-                )
-        except Exception:
-            logger.warning(f"Failed to fetch Twitch profile for {channel_id}")
+        # 2. Fetch enabled commands by channel_id
+        service = CommandConfigService(pool)
+        commands = await service.list_public_commands(channel_id)
 
         return PublicCommandsResponse(
             channel=profile,

@@ -29,6 +29,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
 // 每種事件類型可用的模板變數
 const TEMPLATE_VARIABLES: Record<string, { var: string; desc: string }[]> = {
@@ -62,6 +63,7 @@ const EVENT_TYPE_NAMES: Record<string, string> = {
 }
 
 export default function Events() {
+  useDocumentTitle('事件管理')
   const [events, setEvents] = useState<EventConfig[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)

@@ -12,6 +12,19 @@ import asyncpg
 LOGGER = logging.getLogger("PgListener")
 
 
+def _safe_release(pool: asyncpg.Pool, connection: asyncpg.Connection) -> None:
+    """Release or terminate a connection without raising."""
+    try:
+        if connection.is_closed():
+            return
+        pool.release(connection)
+    except Exception:
+        try:
+            connection.terminate()
+        except Exception:
+            pass
+
+
 async def pg_listen(
     pool: asyncpg.Pool,
     channel: str,
@@ -48,13 +61,19 @@ async def pg_listen(
                     await connection.remove_listener(channel, handler)
                 except Exception:
                     pass
-                await pool.release(connection)
+                try:
+                    await pool.release(connection)
+                except Exception:
+                    try:
+                        connection.terminate()
+                    except Exception:
+                        pass
                 connection = None
 
         except asyncio.CancelledError:
             break
         except Exception as e:
-            LOGGER.exception(f"Error in pg_listen('{channel}'): {e}")
+            LOGGER.error(f"Error in pg_listen('{channel}'): {e}")
             LOGGER.warning(
                 f"Reconnecting to PostgreSQL LISTEN '{channel}' in {reconnect_delay}s..."
             )
@@ -64,9 +83,10 @@ async def pg_listen(
                 except Exception:
                     pass
                 try:
-                    await pool.release(connection)
+                    connection.terminate()
                 except Exception:
                     pass
+                connection = None
             try:
                 await asyncio.sleep(reconnect_delay)
             except asyncio.CancelledError:

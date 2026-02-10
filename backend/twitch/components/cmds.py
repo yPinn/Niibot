@@ -135,10 +135,15 @@ class GeneralCommands(commands.Component):
             streams = await self.bot.fetch_streams(user_ids=[channel_id])
             title = streams[0].title if streams else None
             game_name = streams[0].game_name if streams else None
+            game_id = str(streams[0].game_id) if streams and streams[0].game_id else None
 
             analytics = self.bot.analytics
             session_id = await analytics.create_session(
-                channel_id=channel_id, started_at=datetime.now(), title=title, game_name=game_name
+                channel_id=channel_id,
+                started_at=datetime.now(),
+                title=title,
+                game_name=game_name,
+                game_id=game_id,
             )
             active_sessions[channel_id] = session_id
             LOGGER.info(
@@ -149,6 +154,7 @@ class GeneralCommands(commands.Component):
 
     @commands.Component.listener()
     async def event_stream_offline(self, payload: twitchio.StreamOffline) -> None:
+        import asyncio
         from datetime import datetime
 
         from core.bot import LOGGER
@@ -182,7 +188,20 @@ class GeneralCommands(commands.Component):
                         except Exception as e:
                             LOGGER.error(f"Failed to flush chatter stats: {e}")
 
-                await analytics.end_session(session_id, datetime.now())
+                ended_at = datetime.now()
+                for attempt in range(3):
+                    try:
+                        await analytics.end_session(session_id, ended_at)
+                        break
+                    except Exception as e:
+                        LOGGER.warning(f"end_session attempt {attempt + 1}/3 failed: {e}")
+                        if attempt < 2:
+                            await asyncio.sleep(2)
+                else:
+                    LOGGER.error(
+                        f"Failed to end session {session_id} after 3 attempts, "
+                        "stale session cleanup will handle it"
+                    )
                 del active_sessions[channel_id]
                 LOGGER.info(
                     f"Ended analytics session {session_id} for channel {payload.broadcaster.name}"

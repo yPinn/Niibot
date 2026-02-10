@@ -93,10 +93,9 @@ async def twitch_oauth_callback(
     access_token = token_data["access_token"]
     refresh_token = token_data.get("refresh_token", "")
 
-    # 3. 關鍵改動：先拿使用者資訊，確保能存入正確的頻道名稱
+    # 3. 取得使用者資訊，存入 login name 作為 channel_name（URL 需要用 login name 查詢）
     user_info = await twitch_api.get_user_info(user_id)
-    # 這裡優先取用 'display_name' (顯示名稱) 或 'name' (帳號名)
-    username = user_info.get("display_name") or user_info.get("name") or user_id
+    username = user_info.get("name") or user_info.get("display_name") or user_id
 
     # 4. 呼叫更新後的 save_token (務必配合剛才幫你寫的 ChannelService 版本)
     channel_svc = get_channel_service(pool)

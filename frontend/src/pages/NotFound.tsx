@@ -10,8 +10,10 @@ import {
   EmptyTitle,
 } from '@/components/ui/empty'
 import { Icon } from '@/components/ui/icon'
+import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
 export default function NotFound() {
+  useDocumentTitle('404 - 頁面不存在')
   return (
     <div className="flex h-full items-center justify-center p-4">
       <Empty className="border-none">

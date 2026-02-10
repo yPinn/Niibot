@@ -106,22 +106,10 @@ class CommandConfigService:
 
     # ---- Public commands ----
 
-    async def list_public_commands(self, channel_name: str) -> tuple[str, list[dict]] | None:
-        """Get enabled commands for a channel by username.
-
-        Returns ``(channel_id, commands)`` or ``None`` if channel not found.
-        """
-        async with self.pool.acquire() as conn:
-            row = await conn.fetchrow(
-                "SELECT channel_id FROM channels WHERE LOWER(channel_name) = LOWER($1)",
-                channel_name,
-            )
-        if not row:
-            return None
-
-        channel_id = row["channel_id"]
+    async def list_public_commands(self, channel_id: str) -> list[dict]:
+        """Get enabled commands for a channel by channel_id."""
         configs = await self.cmd_repo.ensure_defaults(channel_id)
-        commands = [
+        return [
             {
                 "name": f"!{cfg.command_name}",
                 "description": (
@@ -134,7 +122,6 @@ class CommandConfigService:
             for cfg in configs
             if cfg.enabled
         ]
-        return channel_id, commands
 
     # ---- Redemption configs ----
 

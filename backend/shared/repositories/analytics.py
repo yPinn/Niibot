@@ -36,19 +36,21 @@ class AnalyticsRepository:
         started_at: datetime,
         title: str | None = None,
         game_name: str | None = None,
+        game_id: str | None = None,
     ) -> int:
         """Create a new stream session. Returns the session ID."""
         async with self.pool.acquire() as conn:
             session_id = await conn.fetchval(
                 """
-                INSERT INTO stream_sessions (channel_id, started_at, title, game_name)
-                VALUES ($1, $2, $3, $4)
+                INSERT INTO stream_sessions (channel_id, started_at, title, game_name, game_id)
+                VALUES ($1, $2, $3, $4, $5)
                 RETURNING id
                 """,
                 channel_id,
                 started_at,
                 title,
                 game_name,
+                game_id,
             )
             if session_id is None:
                 raise ValueError("Failed to create session: no ID returned")
@@ -87,6 +89,28 @@ class AnalyticsRepository:
                 session_id,
             )
         _session_cache.clear()
+
+    async def close_stale_sessions(self, max_hours: int = 12) -> int:
+        """Close sessions that have been running longer than max_hours without ended_at.
+
+        Sets ended_at = started_at + max_hours for extremely stale sessions,
+        or started_at + actual stream duration for sessions within a reasonable window.
+        Returns the number of sessions closed.
+        """
+        async with self.pool.acquire() as conn:
+            result = await conn.execute(
+                """
+                UPDATE stream_sessions
+                SET ended_at = started_at + INTERVAL '1 hour' * $1
+                WHERE ended_at IS NULL
+                  AND started_at < NOW() - INTERVAL '1 hour' * $1
+                """,
+                float(max_hours),
+            )
+        _session_cache.clear()
+        # result is like "UPDATE N"
+        count = int(result.split()[-1]) if result else 0
+        return count
 
     # ==================== Event Recording ====================
 

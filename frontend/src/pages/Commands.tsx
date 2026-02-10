@@ -44,6 +44,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
 const ROLE_LABELS: Record<string, string> = {
   everyone: '所有人',
@@ -76,6 +77,7 @@ interface EditingState {
 }
 
 export default function Commands() {
+  useDocumentTitle('指令管理')
   const [commands, setCommands] = useState<CommandConfig[]>([])
   const [redemptions, setRedemptions] = useState<RedemptionConfig[]>([])
   const [defaults, setDefaults] = useState<ChannelDefaults>({
