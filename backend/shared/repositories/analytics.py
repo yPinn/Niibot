@@ -488,6 +488,60 @@ class AnalyticsRepository:
             )
             return int(total)
 
+    async def reconcile_sessions_with_vods(
+        self,
+        channel_id: str,
+        vods: list[dict],
+    ) -> int:
+        """Fix session ended_at using VOD data from Twitch API.
+
+        Matches sessions by started_at (within 5 min tolerance).
+        Updates ended_at if the VOD-derived value differs significantly.
+        Returns the number of sessions updated.
+        """
+        if not vods:
+            return 0
+
+        updated = 0
+        async with self.pool.acquire() as conn:
+            for vod in vods:
+                vod_start = vod["started_at"]
+                vod_end = vod["ended_at"]
+
+                # Find session matching this VOD (within 5 min of start time)
+                row = await conn.fetchrow(
+                    """
+                    SELECT id, ended_at FROM stream_sessions
+                    WHERE channel_id = $1
+                      AND ABS(EXTRACT(EPOCH FROM (started_at - $2))) < 300
+                    ORDER BY ABS(EXTRACT(EPOCH FROM (started_at - $2)))
+                    LIMIT 1
+                    """,
+                    channel_id,
+                    vod_start,
+                )
+                if not row:
+                    continue
+
+                current_end = row["ended_at"]
+                # Update if: no ended_at, or current differs by >10 min from VOD
+                needs_update = (
+                    current_end is None
+                    or abs((current_end - vod_end).total_seconds()) > 600
+                )
+                if needs_update:
+                    await conn.execute(
+                        "UPDATE stream_sessions SET ended_at = $1 WHERE id = $2",
+                        vod_end,
+                        row["id"],
+                    )
+                    updated += 1
+
+        if updated:
+            _session_cache.clear()
+            _summary_cache.clear()
+        return updated
+
     # ==================== VOD Sync ====================
 
     async def sync_session_from_vod(

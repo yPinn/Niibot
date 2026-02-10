@@ -584,11 +584,53 @@ class Bot(commands.AutoBot):
                 if closed:
                     LOGGER.info(f"Closed {closed} stale session(s) via safety net")
 
+                # 3. Reconcile recent sessions with VOD data (correct durations)
+                await self._reconcile_recent_sessions()
+
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 LOGGER.warning(f"Session verify error: {e}")
             await asyncio.sleep(300)  # Run every 5 minutes
+
+    async def _reconcile_recent_sessions(self) -> None:
+        """Use Twitch VOD data to fix session durations."""
+        try:
+            enabled_channels = await self.channels.list_enabled_channels()
+            if not enabled_channels:
+                return
+
+            for ch in enabled_channels:
+                if ch.channel_id == self._bot_id:
+                    continue
+                try:
+                    videos = await self.fetch_videos(  # type: ignore[call-arg]
+                        user_id=ch.channel_id,
+                        video_type="archive",
+                        first=5,
+                    )
+                    if not videos:
+                        continue
+
+                    vods = []
+                    for v in videos:
+                        if v.created_at and v.duration:
+                            vods.append({
+                                "started_at": v.created_at,
+                                "ended_at": v.created_at + v.duration,  # type: ignore[operator]
+                            })
+
+                    updated = await self.analytics.reconcile_sessions_with_vods(
+                        ch.channel_id, vods
+                    )
+                    if updated:
+                        LOGGER.info(
+                            f"Reconciled {updated} session(s) for channel {ch.channel_id}"
+                        )
+                except Exception as e:
+                    LOGGER.debug(f"VOD reconcile failed for {ch.channel_id}: {e}")
+        except Exception as e:
+            LOGGER.warning(f"Session reconciliation error: {e}")
 
     async def _sync_vods_for_channels(
         self, channel_ids: list[str], limit_per_channel: int = 20
