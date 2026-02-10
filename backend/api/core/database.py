@@ -20,20 +20,5 @@ def get_database_manager() -> DatabaseManager:
 def init_database_manager(database_url: str) -> DatabaseManager:
     """Initialize database manager for API service (high concurrency)"""
     global _db_manager
-    _db_manager = DatabaseManager(
-        database_url,
-        PoolConfig(
-            min_size=3,
-            max_size=15,
-            timeout=60.0,
-            command_timeout=60.0,
-            max_inactive_connection_lifetime=180.0,
-            max_retries=5,
-            retry_delay=5.0,
-            tcp_keepalives_idle=60,
-            tcp_keepalives_interval=10,
-            tcp_keepalives_count=5,
-            health_check_interval=30,
-        ),
-    )
+    _db_manager = DatabaseManager(database_url, PoolConfig.for_service("api"))
     return _db_manager

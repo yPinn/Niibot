@@ -104,9 +104,20 @@ export async function deleteCustomCommand(commandName: string): Promise<void> {
 export interface PublicCommand {
   name: string
   description: string
+  min_role: string
 }
 
-export async function getPublicCommands(username: string): Promise<PublicCommand[]> {
+export interface PublicChannelProfile {
+  display_name: string | null
+  profile_image_url: string | null
+}
+
+export interface PublicCommandsData {
+  channel: PublicChannelProfile
+  commands: PublicCommand[]
+}
+
+export async function getPublicCommands(username: string): Promise<PublicCommandsData> {
   const response = await fetch(API_ENDPOINTS.commands.public(username))
   if (!response.ok) throw new Error(`Failed to fetch public commands: ${response.statusText}`)
   return response.json()

@@ -51,19 +51,7 @@ def main() -> None:
         # 2. Database connection pool
         db_manager = DatabaseManager(
             DATABASE_URL,
-            PoolConfig(
-                min_size=2,
-                max_size=8,
-                timeout=60.0,
-                command_timeout=60.0,
-                max_inactive_connection_lifetime=180.0,
-                max_retries=5,
-                retry_delay=5.0,
-                tcp_keepalives_idle=60,
-                tcp_keepalives_interval=10,
-                tcp_keepalives_count=5,
-                health_check_interval=30,
-            ),
+            PoolConfig.for_service("twitch"),
         )
         await db_manager.connect()
         pool = db_manager.pool

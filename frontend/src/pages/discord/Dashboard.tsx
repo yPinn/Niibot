@@ -12,7 +12,7 @@ export default function DiscordDashboard() {
           </div>
           <div>
             <h1 className="text-page-title font-bold">Discord Bot Dashboard</h1>
-            <p className="text-secondary text-muted-foreground">管理您的 Discord 機器人</p>
+            <p className="text-sub text-muted-foreground">管理您的 Discord 機器人</p>
           </div>
         </div>
 
@@ -59,7 +59,7 @@ export default function DiscordDashboard() {
             <CardDescription>以下功能即將推出</CardDescription>
           </CardHeader>
           <CardContent>
-            <ul className="grid gap-2 text-secondary text-muted-foreground md:grid-cols-2">
+            <ul className="grid gap-2 text-sub text-muted-foreground md:grid-cols-2">
               <li className="flex items-center gap-2">
                 <Icon
                   icon="fa-solid fa-spinner"

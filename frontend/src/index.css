@@ -71,7 +71,7 @@
   --text-section-title: var(--text-section-title);
   --text-card-title: var(--text-card-title);
   --text-content: var(--text-content);
-  --text-secondary: var(--text-secondary);
+  --text-sub: var(--text-sub);
   --text-label: var(--text-label);
 }
 
@@ -90,7 +90,7 @@
   --text-section-title: var(--text-xl); /* 區塊標題 h2 */
   --text-card-title: var(--text-lg); /* Card 內標題 h3 */
   --text-content: var(--text-base); /* 正文內容 */
-  --text-secondary: var(--text-sm); /* 次要說明 */
+  --text-sub: var(--text-sm); /* 次要說明 */
   --text-label: var(--text-xs); /* 標籤、badge、timestamp */
 
   /* ── Status Colors ── */

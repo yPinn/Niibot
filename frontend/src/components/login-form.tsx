@@ -31,7 +31,7 @@ export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) 
             <div className="flex flex-col gap-6">
               <div className="flex flex-col items-center gap-2 text-center">
                 <h1 className="text-page-title font-bold">歡迎使用 Niibot</h1>
-                <p className="text-muted-foreground text-balance text-secondary">
+                <p className="text-muted-foreground text-balance text-sub">
                   一個功能強大的 Twitch 聊天機器人
                 </p>
               </div>
@@ -40,7 +40,7 @@ export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) 
                   Niibot
                   提供豐富的互動功能，讓您的直播更加生動有趣。透過簡單的設定，即可為您的頻道增添更多樂趣。
                 </p>
-                <ul className="text-muted-foreground space-y-2 text-secondary">
+                <ul className="text-muted-foreground space-y-2 text-sub">
                   <li className="flex items-start gap-2">
                     <Icon
                       icon="fa-solid fa-check"

@@ -68,4 +68,5 @@ export const API_ENDPOINTS = {
     },
   },
   health: join('/health'),
+  status: join('/status'),
 } as const

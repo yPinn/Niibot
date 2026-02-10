@@ -5,10 +5,13 @@ Supabase connection modes:
   - Transaction Pooler (port 6543) : serverless/edge, no prepared statement support
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
 from collections.abc import AsyncGenerator
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
+from typing import ClassVar
 
 import asyncpg
 
@@ -32,6 +35,26 @@ class PoolConfig:
     tcp_keepalives_interval: int = 10
     tcp_keepalives_count: int = 5
     health_check_interval: int = 30
+
+    # 各服務預設差異值
+    _SERVICE_PRESETS: ClassVar[dict[str, dict]] = {
+        "api": {"min_size": 2, "max_size": 10, "max_retries": 5},
+        "discord": {"min_size": 1, "max_size": 4, "max_retries": 5},
+        "twitch": {"min_size": 1, "max_size": 5, "max_retries": 5},
+    }
+
+    @classmethod
+    def for_service(cls, service: str, **overrides) -> PoolConfig:
+        """Create a PoolConfig with service-specific presets.
+
+        Shared defaults (timeout, keepalive, etc.) come from the dataclass
+        defaults. Only pool sizing / retry differ per service.
+        """
+        valid_keys = {f.name for f in fields(cls) if not f.name.startswith("_")}
+        preset = dict(cls._SERVICE_PRESETS.get(service, {}))
+        preset.update(overrides)
+        filtered = {k: v for k, v in preset.items() if k in valid_keys}
+        return cls(**filtered)
 
 
 class DatabaseManager:
@@ -85,7 +108,6 @@ class DatabaseManager:
                     max_size=cfg.max_size,
                     timeout=cfg.timeout,
                     command_timeout=cfg.command_timeout,
-                    connect_timeout=cfg.timeout,
                     ssl="require",
                     statement_cache_size=self.statement_cache_size,
                     max_inactive_connection_lifetime=cfg.max_inactive_connection_lifetime,

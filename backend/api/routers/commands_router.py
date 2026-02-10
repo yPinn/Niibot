@@ -7,8 +7,8 @@ from asyncpg import Pool
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from core.dependencies import get_current_user_id, get_db_pool
-from services import CommandConfigService
+from core.dependencies import get_current_user_id, get_db_pool, get_twitch_api
+from services import CommandConfigService, TwitchAPIClient
 
 logger = logging.getLogger(__name__)
 
@@ -194,23 +194,53 @@ async def delete_custom_command(
 # ============================================
 
 
-class PublicCommandResponse(BaseModel):
+class PublicCommandItem(BaseModel):
     name: str
     description: str
+    min_role: str = "everyone"
 
 
-@router.get("/public/{username}", response_model=list[PublicCommandResponse])
+class PublicChannelProfile(BaseModel):
+    display_name: str | None = None
+    profile_image_url: str | None = None
+
+
+class PublicCommandsResponse(BaseModel):
+    channel: PublicChannelProfile
+    commands: list[PublicCommandItem]
+
+
+@router.get("/public/{username}", response_model=PublicCommandsResponse)
 async def get_public_commands(
     username: str,
     pool: Pool = Depends(get_db_pool),
-) -> list[PublicCommandResponse]:
+    twitch_api: TwitchAPIClient = Depends(get_twitch_api),
+) -> PublicCommandsResponse:
     """Get enabled commands for a channel (public, no auth)."""
     try:
         service = CommandConfigService(pool)
-        commands = await service.list_public_commands(username)
-        if commands is None:
+        result = await service.list_public_commands(username)
+        if result is None:
             raise HTTPException(status_code=404, detail="Channel not found")
-        return [PublicCommandResponse(**cmd) for cmd in commands]
+
+        channel_id, commands = result
+
+        # Fetch Twitch profile (display_name + avatar)
+        profile = PublicChannelProfile()
+        try:
+            user_info = await twitch_api.get_user_info(channel_id)
+            if user_info:
+                profile = PublicChannelProfile(
+                    display_name=user_info.get("display_name"),
+                    profile_image_url=user_info.get("avatar"),
+                )
+        except Exception:
+            logger.warning(f"Failed to fetch Twitch profile for {channel_id}")
+
+        return PublicCommandsResponse(
+            channel=profile,
+            commands=[PublicCommandItem(**cmd) for cmd in commands],
+        )
     except HTTPException:
         raise
     except Exception as e:

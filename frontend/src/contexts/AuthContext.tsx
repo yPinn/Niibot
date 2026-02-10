@@ -1,20 +1,12 @@
 import React, { createContext, useContext, useEffect, useState } from 'react'
 
-import {
-  type BotStatus,
-  type Channel,
-  getCurrentUser,
-  getTwitchBotStatus,
-  getTwitchMonitoredChannels,
-  type User,
-} from '@/api'
+import { type Channel, getCurrentUser, getTwitchMonitoredChannels, type User } from '@/api'
 
 interface AuthContextType {
   user: User | null
   isAuthenticated: boolean
   isInitialized: boolean
   channels: Channel[]
-  botStatus: BotStatus
   logout: () => void
   refreshUser: () => Promise<void>
   refreshChannels: () => Promise<void>
@@ -26,7 +18,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [isInitialized, setIsInitialized] = useState(false)
   const [channels, setChannels] = useState<Channel[]>([])
-  const [botStatus, setBotStatus] = useState<BotStatus>({ online: false })
 
   const initRef = React.useRef({
     hasLoaded: false,
@@ -50,16 +41,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       console.error('Failed to load channels:', error)
       setChannels([])
-    }
-  }, [])
-
-  const refreshBotStatus = React.useCallback(async () => {
-    try {
-      const status = await getTwitchBotStatus()
-      setBotStatus(status)
-    } catch (error) {
-      console.error('Failed to fetch bot status:', error)
-      setBotStatus({ online: false })
     }
   }, [])
 
@@ -93,20 +74,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     loadInitialData()
   }, [])
 
-  // Centralized polling: channels + bot status every 60s
+  // Channels polling: 60s (bot status 已移至 ServiceStatusContext)
   useEffect(() => {
     if (!user) return
-
-    // Initial bot status fetch
-    refreshBotStatus()
-
-    const poll = async () => {
-      await Promise.all([refreshChannels(), refreshBotStatus()])
-    }
-
-    const interval = setInterval(poll, 60_000)
+    const interval = setInterval(refreshChannels, 60_000)
     return () => clearInterval(interval)
-  }, [user, refreshChannels, refreshBotStatus])
+  }, [user, refreshChannels])
 
   return (
     <AuthContext.Provider
@@ -115,11 +88,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isAuthenticated: !!user,
         isInitialized,
         channels,
-        botStatus,
         logout: () => {
           setUser(null)
           setChannels([])
-          setBotStatus({ online: false })
         },
         refreshUser,
         refreshChannels,

@@ -1,100 +1,57 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useMemo } from 'react'
 
-import { type BotStatus, getDiscordBotStatus, getTwitchBotStatus } from '@/api/bots'
-import { API_ENDPOINTS } from '@/api/config'
 import { Icon } from '@/components/ui/icon'
+import { useServiceStatus } from '@/contexts/ServiceStatusContext'
 
 interface ServiceStatus {
   name: string
-  status: 'online' | 'offline' | 'loading'
+  status: 'online' | 'offline'
   uptime?: number
   details?: {
     bot_id?: string
     connected_channels?: number
     service?: string
+    db_connected?: boolean
   }
 }
 
 export default function SystemStatus() {
-  const [services, setServices] = useState<ServiceStatus[]>([
-    { name: 'Twitch Bot', status: 'loading' },
-    { name: 'Discord Bot', status: 'loading' },
-    { name: 'API Server', status: 'loading' },
-  ])
-  const [lastUpdate, setLastUpdate] = useState<Date>(new Date())
+  const { twitch, discord, api, lastUpdate, refresh } = useServiceStatus()
 
-  // 使用 useRef 追蹤組件是否仍處於掛載狀態，避免在卸載後執行 setState
-  const isMounted = useRef(true)
-
-  const fetchAllStatus = useCallback(async () => {
-    try {
-      // 使用 Promise.all 並對單個請求進行 catch，確保一個服務失敗不會導致全部卡住
-      const [twitchStatus, discordStatus] = await Promise.all([
-        getTwitchBotStatus().catch(() => ({ online: false }) as BotStatus),
-        getDiscordBotStatus().catch(() => ({ online: false }) as BotStatus),
-      ])
-
-      let apiStatus: BotStatus = { online: false }
-      try {
-        const response = await fetch(API_ENDPOINTS.health, { credentials: 'include' })
-        apiStatus = { online: response.ok }
-      } catch {
-        apiStatus = { online: false }
-      }
-
-      // 如果組件已經卸載，則不更新狀態
-      if (!isMounted.current) return
-
-      setServices([
-        {
-          name: 'Twitch Bot',
-          status: twitchStatus.online ? 'online' : 'offline',
-          uptime: twitchStatus.uptime_seconds,
-          details: {
-            bot_id: twitchStatus.bot_id,
-            connected_channels: twitchStatus.connected_channels,
-            service: twitchStatus.service,
-          },
+  const services = useMemo<ServiceStatus[]>(
+    () => [
+      {
+        name: 'Twitch Bot',
+        status: twitch.online ? 'online' : 'offline',
+        uptime: twitch.uptime_seconds,
+        details: {
+          bot_id: twitch.bot_id,
+          connected_channels: twitch.connected_channels,
+          service: twitch.service,
         },
-        {
-          name: 'Discord Bot',
-          status: discordStatus.online ? 'online' : 'offline',
-          uptime: discordStatus.uptime_seconds,
-          details: {
-            bot_id: discordStatus.bot_id,
-            connected_channels: discordStatus.connected_channels,
-            service: discordStatus.service,
-          },
+      },
+      {
+        name: 'Discord Bot',
+        status: discord.online ? 'online' : 'offline',
+        uptime: discord.uptime_seconds,
+        details: {
+          bot_id: discord.bot_id,
+          connected_channels: discord.connected_channels,
+          service: discord.service,
         },
-        {
-          name: 'API Server',
-          status: apiStatus.online ? 'online' : 'offline',
+      },
+      {
+        name: 'API Server',
+        status: api.online ? 'online' : 'offline',
+        uptime: api.uptime_seconds,
+        details: {
+          service: api.service,
+          db_connected: api.db_connected,
         },
-      ])
-
-      setLastUpdate(new Date())
-    } catch (error) {
-      console.error('無法獲取系統狀態:', error)
-    }
-  }, [])
-
-  useEffect(() => {
-    isMounted.current = true
-
-    // 解決關鍵：將初始化邏輯封裝在非同步函式中呼叫，明確區分同步渲染與非同步副作用
-    const initialize = async () => {
-      await fetchAllStatus()
-    }
-
-    initialize()
-
-    const interval = setInterval(fetchAllStatus, 30000)
-
-    return () => {
-      isMounted.current = false
-      clearInterval(interval)
-    }
-  }, [fetchAllStatus])
+      },
+    ],
+    [twitch, discord, api]
+  )
 
   const formatUptime = (seconds?: number) => {
     if (!seconds) return 'N/A'
@@ -110,8 +67,6 @@ export default function SystemStatus() {
         return 'text-status-online'
       case 'offline':
         return 'text-status-offline'
-      case 'loading':
-        return 'text-status-loading'
     }
   }
 
@@ -121,8 +76,6 @@ export default function SystemStatus() {
         return 'fa-solid fa-circle-check'
       case 'offline':
         return 'fa-solid fa-circle-xmark'
-      case 'loading':
-        return 'fa-solid fa-spinner fa-spin'
     }
   }
 
@@ -130,11 +83,11 @@ export default function SystemStatus() {
     <main className="flex flex-1 flex-col gap-4 p-4 lg:gap-6 lg:p-6">
       <div className="flex items-center justify-between">
         <h1 className="text-page-title font-bold">系統狀態 (System Status)</h1>
-        <div className="flex items-center gap-2 text-secondary text-muted-foreground">
+        <div className="flex items-center gap-2 text-sub text-muted-foreground">
           <Icon icon="fa-solid fa-clock" className="w-4 h-4" />
           <span>最後更新：{lastUpdate.toLocaleTimeString()}</span>
           <button
-            onClick={fetchAllStatus}
+            onClick={refresh}
             className="ml-2 p-1 hover:bg-muted rounded transition-all active:scale-95"
             title="重新整理"
           >
@@ -150,9 +103,7 @@ export default function SystemStatus() {
               <h3 className="font-semibold text-card-title">{service.name}</h3>
               <div className={`flex items-center gap-2 ${getStatusColor(service.status)}`}>
                 <Icon icon={getStatusIcon(service.status)} className="w-5 h-5" />
-                <span className="text-sm font-medium capitalize">
-                  {service.status === 'loading' ? '載入中' : service.status}
-                </span>
+                <span className="text-sm font-medium capitalize">{service.status}</span>
               </div>
             </div>
 
@@ -176,11 +127,21 @@ export default function SystemStatus() {
                     <span className="font-medium">{service.details.connected_channels}</span>
                   </div>
                 )}
+                {service.details?.db_connected !== undefined && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">資料庫連線：</span>
+                    <span
+                      className={`font-medium ${service.details.db_connected ? 'text-status-online' : 'text-status-offline'}`}
+                    >
+                      {service.details.db_connected ? '已連線' : '未連線'}
+                    </span>
+                  </div>
+                )}
               </div>
             )}
 
             {service.status === 'offline' && (
-              <div className="text-secondary text-muted-foreground">服務目前無法使用</div>
+              <div className="text-sub text-muted-foreground">服務目前無法使用</div>
             )}
           </div>
         ))}
@@ -191,7 +152,7 @@ export default function SystemStatus() {
           <Icon icon="fa-solid fa-circle-info" className="w-4 h-4" />
           系統資訊
         </h3>
-        <div className="text-secondary text-muted-foreground space-y-1">
+        <div className="text-sub text-muted-foreground space-y-1">
           <p>狀態檢查每 30 秒執行一次</p>
           <p>所有服務皆應保持在線以確保功能完整</p>
         </div>

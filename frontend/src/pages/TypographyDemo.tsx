@@ -39,7 +39,7 @@ const layer2Scale = [
     usage: 'Card 內標題 h3',
   },
   { token: '--text-content', cls: 'text-content', ref: 'var(--text-base)', usage: '正文內容' },
-  { token: '--text-secondary', cls: 'text-secondary', ref: 'var(--text-sm)', usage: '次要說明' },
+  { token: '--text-sub', cls: 'text-sub', ref: 'var(--text-sm)', usage: '次要說明' },
   { token: '--text-label', cls: 'text-label', ref: 'var(--text-xs)', usage: '標籤、badge' },
 ]
 
@@ -58,7 +58,7 @@ export default function TypographyDemo() {
       {/* ── 頁面標題 ── */}
       <div>
         <h1 className="text-page-title font-bold">Typography & Spacing Demo</h1>
-        <p className="text-secondary text-muted-foreground">
+        <p className="text-sub text-muted-foreground">
           兩層 Token 架構：Layer 1 尺寸原值 → Layer 2 語義別名
         </p>
       </div>
@@ -91,7 +91,7 @@ export default function TypographyDemo() {
           <h2 className="text-section-title font-semibold">h2 — text-section-title → 20px</h2>
           <h3 className="text-card-title font-medium">h3 — text-card-title → 18px</h3>
           <p className="text-content">正文 — text-content → 16px</p>
-          <p className="text-secondary text-muted-foreground">次要 — text-secondary → 14px</p>
+          <p className="text-sub text-muted-foreground">次要 — text-sub → 14px</p>
           <p className="text-label text-muted-foreground">標籤 — text-label → 12px</p>
         </CardContent>
       </Card>
@@ -133,7 +133,7 @@ export default function TypographyDemo() {
                   className="bg-primary/20 border border-primary/40"
                   style={{ width: s.rem, height: '1.5rem' }}
                 />
-                <span className="text-secondary">{s.cls}</span>
+                <span className="text-sub">{s.cls}</span>
                 <span className="text-label text-muted-foreground">— {s.usage}</span>
               </div>
             </div>
@@ -161,13 +161,11 @@ export default function TypographyDemo() {
               <TableBody>
                 {layer2Scale.map((s, i) => (
                   <TableRow key={s.token}>
-                    <TableCell className="font-mono text-secondary">{s.cls}</TableCell>
-                    <TableCell className="font-mono text-secondary">{layer1Scale[i].cls}</TableCell>
-                    <TableCell className="text-secondary">{layer1Scale[i].rem}</TableCell>
-                    <TableCell className="text-secondary">{layer1Scale[i].px}</TableCell>
-                    <TableCell className="text-secondary text-muted-foreground">
-                      {s.usage}
-                    </TableCell>
+                    <TableCell className="font-mono text-sub">{s.cls}</TableCell>
+                    <TableCell className="font-mono text-sub">{layer1Scale[i].cls}</TableCell>
+                    <TableCell className="text-sub">{layer1Scale[i].rem}</TableCell>
+                    <TableCell className="text-sub">{layer1Scale[i].px}</TableCell>
+                    <TableCell className="text-sub text-muted-foreground">{s.usage}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

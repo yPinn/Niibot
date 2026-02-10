@@ -10,9 +10,11 @@ import {
 import { Icon } from '@/components/ui/icon'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useAuth } from '@/contexts/AuthContext'
+import { useServiceStatus } from '@/contexts/ServiceStatusContext'
 
 export function OnlineDropdown() {
-  const { user, isInitialized, botStatus } = useAuth()
+  const { user, isInitialized } = useAuth()
+  const { twitch: botStatus } = useServiceStatus()
   const [myChannelSubscribed, setMyChannelSubscribed] = useState(false)
   const [loading, setLoading] = useState(false)
   const hasLoadedRef = useRef(false)

@@ -5,6 +5,7 @@ import { ProtectedRoute, PublicOnlyRoute } from '@/components/ProtectedRoute'
 import { ThemeProvider } from '@/components/theme-provider'
 import { AuthProvider } from '@/contexts/AuthContext'
 import { BotProvider } from '@/contexts/BotContext'
+import { ServiceStatusProvider } from '@/contexts/ServiceStatusContext'
 import About from '@/pages/About'
 import Commands from '@/pages/Commands'
 import Dashboard from '@/pages/Dashboard'
@@ -20,28 +21,30 @@ function App() {
   return (
     <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
       <AuthProvider>
-        <BotProvider>
-          <Routes>
-            <Route path="/" element={<About />} />
-            <Route path="/:username/commands" element={<PublicCommands />} />
-            <Route path="/dev/typography" element={<TypographyDemo />} />
-            <Route element={<PublicOnlyRoute />}>
-              <Route path="/login" element={<LoginPage />} />
-            </Route>
-            <Route element={<ProtectedRoute />}>
-              <Route element={<SidebarLayout />}>
-                {/* Twitch Bot Routes */}
-                <Route path="/dashboard" element={<Dashboard />} />
-                <Route path="/commands" element={<Commands />} />
-                <Route path="/events" element={<Events />} />
-                <Route path="/system" element={<SystemStatus />} />
-                {/* Discord Bot Routes */}
-                <Route path="/discord/dashboard" element={<DiscordDashboard />} />
-                <Route path="*" element={<NotFound />} />
+        <ServiceStatusProvider>
+          <BotProvider>
+            <Routes>
+              <Route path="/" element={<About />} />
+              <Route path="/:username/commands" element={<PublicCommands />} />
+              <Route path="/dev/typography" element={<TypographyDemo />} />
+              <Route element={<PublicOnlyRoute />}>
+                <Route path="/login" element={<LoginPage />} />
               </Route>
-            </Route>
-          </Routes>
-        </BotProvider>
+              <Route element={<ProtectedRoute />}>
+                <Route element={<SidebarLayout />}>
+                  {/* Twitch Bot Routes */}
+                  <Route path="/dashboard" element={<Dashboard />} />
+                  <Route path="/commands" element={<Commands />} />
+                  <Route path="/events" element={<Events />} />
+                  <Route path="/system" element={<SystemStatus />} />
+                  {/* Discord Bot Routes */}
+                  <Route path="/discord/dashboard" element={<DiscordDashboard />} />
+                  <Route path="*" element={<NotFound />} />
+                </Route>
+              </Route>
+            </Routes>
+          </BotProvider>
+        </ServiceStatusProvider>
       </AuthProvider>
     </ThemeProvider>
   )

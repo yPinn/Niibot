@@ -282,7 +282,7 @@ export default function Commands() {
     <main className="flex flex-1 flex-col gap-4 p-4 md:p-6">
       <div>
         <h1 className="text-page-title font-bold">Commands</h1>
-        <p className="text-secondary text-muted-foreground">管理 Twitch 機器人指令與忠誠點數兌換</p>
+        <p className="text-sub text-muted-foreground">管理 Twitch 機器人指令與忠誠點數兌換</p>
       </div>
 
       {/* Command Configs */}
@@ -359,7 +359,7 @@ export default function Commands() {
                             {cmd.command_type === 'builtin' ? '內建' : '自訂'}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-secondary text-muted-foreground">
+                        <TableCell className="text-sub text-muted-foreground">
                           {formatCooldown(cmd.cooldown)}
                         </TableCell>
                         <TableCell className="text-sm">
