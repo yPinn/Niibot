@@ -23,15 +23,15 @@ class PoolConfig:
     max_size: int = 5
     timeout: float = 30.0
     command_timeout: float = 30.0
-    max_inactive_connection_lifetime: float = 180.0  # 改短,強制定期回收連線
+    max_inactive_connection_lifetime: float = 180.0
     max_retries: int = 3
     retry_delay: float = 5.0
 
     # Keep-alive 設定
-    tcp_keepalives_idle: int = 60  # 60秒開始發送
-    tcp_keepalives_interval: int = 10  # 每10秒一次
-    tcp_keepalives_count: int = 5  # 5次失敗後斷線
-    health_check_interval: int = 30  # Pool 層級健康檢查間隔
+    tcp_keepalives_idle: int = 60
+    tcp_keepalives_interval: int = 10
+    tcp_keepalives_count: int = 5
+    health_check_interval: int = 30
 
 
 class DatabaseManager:
@@ -57,6 +57,12 @@ class DatabaseManager:
     def statement_cache_size(self) -> int:
         """Transaction Pooler (6543) does not support prepared statements."""
         return 0 if self.is_transaction_pooler else 100
+
+    async def _init_connection(self, conn: asyncpg.Connection) -> None:
+        """Initialize new connections (called automatically by pool)."""
+        # 設定連線層級的 statement timeout
+        timeout_ms = int(self.config.command_timeout * 1000)
+        await conn.execute(f"SET statement_timeout = {timeout_ms}")
 
     async def connect(self) -> None:
         """Initialize database connection pool with retry."""
@@ -87,9 +93,15 @@ class DatabaseManager:
                         "tcp_keepalives_interval": str(cfg.tcp_keepalives_interval),
                         "tcp_keepalives_count": str(cfg.tcp_keepalives_count),
                     },
+                    init=self._init_connection,
                 )
+
+                # 驗證 pool 可用性
+                async with self._pool.acquire() as conn:
+                    await conn.fetchval("SELECT 1")
+
                 logger.info(
-                    f"Database pool created "
+                    f"Database pool created and verified "
                     f"(size={cfg.min_size}-{cfg.max_size}, cache={self.statement_cache_size}, "
                     f"keepalive={cfg.tcp_keepalives_idle}s)"
                 )
@@ -103,6 +115,13 @@ class DatabaseManager:
                         f"Database connection attempt {attempt}/{cfg.max_retries} failed: {e}, "
                         f"retrying in {cfg.retry_delay}s..."
                     )
+                    # 清理失敗的 pool
+                    if self._pool:
+                        try:
+                            await self._pool.close()
+                        except Exception:
+                            pass
+                        self._pool = None
                     await asyncio.sleep(cfg.retry_delay)
                 else:
                     logger.exception(
