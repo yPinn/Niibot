@@ -558,18 +558,16 @@ class Bot(commands.AutoBot):
                 if self._active_sessions:
                     channel_ids = list(self._active_sessions.keys())
                     live_streams = await self.fetch_streams(user_ids=channel_ids)  # type: ignore[arg-type]
-                    live_ids = {
-                        s.user.id for s in live_streams if s.user
-                    } if live_streams else set()
+                    live_ids = (
+                        {s.user.id for s in live_streams if s.user} if live_streams else set()
+                    )
 
                     for channel_id in channel_ids:
                         if channel_id not in live_ids:
                             session_id = self._active_sessions.get(channel_id)
                             if session_id:
                                 try:
-                                    await self.analytics.end_session(
-                                        session_id, datetime.now()
-                                    )
+                                    await self.analytics.end_session(session_id, datetime.now())
                                     LOGGER.info(
                                         f"Session {session_id} ended via API verify "
                                         f"(channel {channel_id} no longer live)"
