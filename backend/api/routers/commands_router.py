@@ -190,6 +190,35 @@ async def delete_custom_command(
 
 
 # ============================================
+# Public Endpoints (no auth required)
+# ============================================
+
+
+class PublicCommandResponse(BaseModel):
+    name: str
+    description: str
+
+
+@router.get("/public/{username}", response_model=list[PublicCommandResponse])
+async def get_public_commands(
+    username: str,
+    pool: Pool = Depends(get_db_pool),
+) -> list[PublicCommandResponse]:
+    """Get enabled commands for a channel (public, no auth)."""
+    try:
+        service = CommandConfigService(pool)
+        commands = await service.list_public_commands(username)
+        if commands is None:
+            raise HTTPException(status_code=404, detail="Channel not found")
+        return [PublicCommandResponse(**cmd) for cmd in commands]
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to get public commands: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch commands") from None
+
+
+# ============================================
 # Redemption Config Endpoints
 # ============================================
 

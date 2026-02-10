@@ -15,7 +15,15 @@ class NotOwnerError(commands.GuardFailure):
 
 
 class OwnerCmds(commands.Component):
-    """Owner-only commands for bot management."""
+    """Owner-only commands for bot management.
+
+    Usage:
+        !comp          List loaded modules
+        !comp l <mod>  Load a module
+        !comp u <mod>  Unload a module
+        !comp r <mod>  Reload a module
+        !comp off      Shutdown the bot
+    """
 
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
@@ -31,22 +39,28 @@ class OwnerCmds(commands.Component):
 
     @commands.Component.guard()
     def is_owner(self, ctx: commands.Context[Bot]) -> bool:
-        """Restrict all commands in this component to the owner.
-
-        Owner is defined by OWNER_ID in .env file.
-        Owner does NOT need to authorize via OAuth to use these commands.
-        Owner CAN also be a broadcaster (by authorizing via OAuth separately).
-        """
+        """Restrict all commands in this component to the owner."""
         if ctx.chatter.id != self.bot.owner_id:
             raise NotOwnerError
         return True
 
-    @commands.command()
-    async def load(self, ctx: commands.Context[Bot], module: str) -> None:
+    @commands.group(name="comp")
+    async def comp(self, ctx: commands.Context[Bot]) -> None:
+        """Component management group. Lists loaded modules by default."""
+        if ctx.invoked_subcommand is None:
+            modules = list(self.bot.modules.keys())
+            if modules:
+                modules_str = ", ".join(modules)
+                await ctx.reply(f"Loaded ({len(modules)}): {modules_str}")
+            else:
+                await ctx.reply("No modules loaded.")
+
+    @comp.command(name="l")
+    async def comp_load(self, ctx: commands.Context[Bot], module: str) -> None:
         """Load a module dynamically.
 
-        Usage: !load <module_name>
-        Example: !load components.cmds
+        Usage: !comp l <module_name>
+        Example: !comp l components.cmds
         """
         try:
             await self.bot.load_module(module)
@@ -54,12 +68,12 @@ class OwnerCmds(commands.Component):
         except Exception as e:
             await ctx.reply(f"Failed to load {module}: {str(e)}")
 
-    @commands.command()
-    async def unload(self, ctx: commands.Context[Bot], module: str) -> None:
+    @comp.command(name="u")
+    async def comp_unload(self, ctx: commands.Context[Bot], module: str) -> None:
         """Unload a module dynamically.
 
-        Usage: !unload <module_name>
-        Example: !unload components.cmds
+        Usage: !comp u <module_name>
+        Example: !comp u components.cmds
         """
         if module == "components.owner_cmds":
             await ctx.reply("Cannot unload owner_cmds (would lose bot control)")
@@ -71,12 +85,12 @@ class OwnerCmds(commands.Component):
         except Exception as e:
             await ctx.reply(f"Failed to unload {module}: {str(e)}")
 
-    @commands.command()
-    async def reload(self, ctx: commands.Context[Bot], module: str) -> None:
+    @comp.command(name="r")
+    async def comp_reload(self, ctx: commands.Context[Bot], module: str) -> None:
         """Hot reload a module atomically.
 
-        Usage: !reload <module_name>
-        Example: !reload components.cmds
+        Usage: !comp r <module_name>
+        Example: !comp r components.cmds
         """
         try:
             await self.bot.reload_module(module)
@@ -84,24 +98,11 @@ class OwnerCmds(commands.Component):
         except Exception as e:
             await ctx.reply(f"Failed to reload {module}: {str(e)}")
 
-    @commands.command(aliases=["modules", "mods"])
-    async def loaded(self, ctx: commands.Context[Bot]) -> None:
-        """List all currently loaded modules.
-
-        Usage: !loaded, !modules, !mods
-        """
-        modules = list(self.bot.modules.keys())
-        if modules:
-            modules_str = ", ".join(modules)
-            await ctx.reply(f"Loaded ({len(modules)}): {modules_str}")
-        else:
-            await ctx.reply("No modules loaded.")
-
-    @commands.command()
-    async def shutdown(self, ctx: commands.Context[Bot]) -> None:
+    @comp.command(name="off")
+    async def comp_off(self, ctx: commands.Context[Bot]) -> None:
         """Gracefully shutdown the bot.
 
-        Usage: !shutdown
+        Usage: !comp off
         """
         await ctx.reply("Shutting down bot...")
         await self.bot.close()

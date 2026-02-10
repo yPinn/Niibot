@@ -12,6 +12,7 @@ import DiscordDashboard from '@/pages/discord/Dashboard'
 import Events from '@/pages/Events'
 import LoginPage from '@/pages/Login'
 import NotFound from '@/pages/NotFound'
+import PublicCommands from '@/pages/PublicCommands'
 import SystemStatus from '@/pages/SystemStatus'
 
 function App() {
@@ -21,6 +22,7 @@ function App() {
         <BotProvider>
           <Routes>
             <Route path="/" element={<About />} />
+            <Route path="/:username/commands" element={<PublicCommands />} />
             <Route element={<PublicOnlyRoute />}>
               <Route path="/login" element={<LoginPage />} />
             </Route>

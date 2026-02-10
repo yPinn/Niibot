@@ -9,6 +9,15 @@ from shared.repositories.command_config import CommandConfigRepository, Redempti
 
 logger = logging.getLogger(__name__)
 
+BUILTIN_DESCRIPTIONS: dict[str, str] = {
+    "hi": "打招呼",
+    "help": "列出可用指令",
+    "uptime": "顯示開播時間",
+    "ai": "AI 回答問題",
+    "運勢": "今日運勢占卜",
+    "rk": "TFT 排行榜查詢",
+}
+
 
 class CommandConfigService:
     """API-facing command & redemption config operations."""
@@ -94,6 +103,33 @@ class CommandConfigService:
                 channel_id,
             )
             return {row["command_name"]: row["total"] for row in rows}
+
+    # ---- Public commands ----
+
+    async def list_public_commands(self, channel_name: str) -> list[dict] | None:
+        """Get enabled commands for a channel by username. Returns None if channel not found."""
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT channel_id FROM channels WHERE LOWER(channel_name) = LOWER($1)",
+                channel_name,
+            )
+        if not row:
+            return None
+
+        channel_id = row["channel_id"]
+        configs = await self.cmd_repo.ensure_defaults(channel_id)
+        return [
+            {
+                "name": f"!{cfg.command_name}",
+                "description": (
+                    BUILTIN_DESCRIPTIONS.get(cfg.command_name, cfg.custom_response or "")
+                    if cfg.command_type == "builtin"
+                    else cfg.custom_response or ""
+                ),
+            }
+            for cfg in configs
+            if cfg.enabled
+        ]
 
     # ---- Redemption configs ----
 

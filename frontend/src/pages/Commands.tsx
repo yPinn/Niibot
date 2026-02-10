@@ -549,6 +549,30 @@ export default function Commands() {
                       <span className="text-primary">$(query)</span>
                       <span className="text-muted-foreground">— 使用者輸入</span>
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => insertVariable('$(channel)')}
+                      className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-mono hover:bg-accent transition-colors cursor-pointer"
+                    >
+                      <span className="text-primary">$(channel)</span>
+                      <span className="text-muted-foreground">— 頻道名稱</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => insertVariable('$(random 1,100)')}
+                      className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-mono hover:bg-accent transition-colors cursor-pointer"
+                    >
+                      <span className="text-primary">$(random)</span>
+                      <span className="text-muted-foreground">— 隨機數字</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => insertVariable('$(pick a,b,c)')}
+                      className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-mono hover:bg-accent transition-colors cursor-pointer"
+                    >
+                      <span className="text-primary">$(pick)</span>
+                      <span className="text-muted-foreground">— 隨機選擇</span>
+                    </button>
                   </div>
                 </div>
               </div>

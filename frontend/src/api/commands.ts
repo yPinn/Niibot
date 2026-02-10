@@ -99,6 +99,19 @@ export async function deleteCustomCommand(commandName: string): Promise<void> {
   if (!response.ok) throw new Error(`Failed to delete custom command: ${response.statusText}`)
 }
 
+// ---- Public Commands ----
+
+export interface PublicCommand {
+  name: string
+  description: string
+}
+
+export async function getPublicCommands(username: string): Promise<PublicCommand[]> {
+  const response = await fetch(API_ENDPOINTS.commands.public(username))
+  if (!response.ok) throw new Error(`Failed to fetch public commands: ${response.statusText}`)
+  return response.json()
+}
+
 // ---- Redemption Configs ----
 
 export async function getRedemptionConfigs(): Promise<RedemptionConfig[]> {

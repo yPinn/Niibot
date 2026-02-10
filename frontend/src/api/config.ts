@@ -50,6 +50,7 @@ export const API_ENDPOINTS = {
     deleteConfig: (commandName: string) => join(`/api/commands/configs/${commandName}`),
     redemptions: join('/api/commands/redemptions'),
     updateRedemption: (actionType: string) => join(`/api/commands/redemptions/${actionType}`),
+    public: (username: string) => join(`/api/commands/public/${username}`),
   },
   events: {
     configs: join('/api/events/configs'),

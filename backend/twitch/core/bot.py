@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import random
+import re
 from datetime import datetime
 
 import asyncpg
@@ -24,6 +26,49 @@ from shared.repositories.command_config import (
 )
 
 LOGGER: logging.Logger = logging.getLogger("Bot")
+
+_RANDOM_PATTERN = re.compile(r"\$\(random\s+(\d+)\s*,\s*(\d+)\)")
+_PICK_PATTERN = re.compile(r"\$\(pick\s+(.+?)\)")
+_COUNT_PATTERN = re.compile(r"\$\(count\)")
+
+
+def _substitute_variables(
+    text: str,
+    chatter: twitchio.Chatter,
+    channel_name: str,
+    query: str,
+) -> str:
+    """Replace response variables in custom command text.
+
+    Supported variables:
+        $(user)             Chatter display name
+        $(query)            User input after the command
+        $(channel)          Channel name
+        $(random min,max)   Random integer in range [min, max]
+        $(pick a,b,c)       Random pick from comma-separated items
+        $(count)            Command usage count (placeholder)
+    """
+    text = text.replace("$(user)", chatter.display_name or chatter.name or "")
+    text = text.replace("$(query)", query)
+    text = text.replace("$(channel)", channel_name or "")
+
+    # $(random min,max) -> random integer in [min, max]
+    def _random_replace(m: re.Match) -> str:
+        lo, hi = int(m.group(1)), int(m.group(2))
+        if lo > hi:
+            lo, hi = hi, lo
+        return str(random.randint(lo, hi))
+
+    text = _RANDOM_PATTERN.sub(_random_replace, text)
+
+    # $(pick a,b,c) -> random choice from list
+    def _pick_replace(m: re.Match) -> str:
+        items = [i.strip() for i in m.group(1).split(",") if i.strip()]
+        return random.choice(items) if items else ""
+
+    text = _PICK_PATTERN.sub(_pick_replace, text)
+
+    return text
 
 
 class Bot(commands.AutoBot):
@@ -213,10 +258,9 @@ class Bot(commands.AutoBot):
             LOGGER.info(f"Custom command: !{cmd_name} -> !{redirect}")
         else:
             # Text response with variable substitution
-            response = response.replace(
-                "$(user)", payload.chatter.display_name or payload.chatter.name or ""
+            response = _substitute_variables(
+                response, payload.chatter, payload.broadcaster.name, query
             )
-            response = response.replace("$(query)", query)
             await payload.broadcaster.send_message(
                 message=response,
                 sender=self.bot_id,

@@ -1,11 +1,15 @@
+import os
 from datetime import UTC
 from typing import TYPE_CHECKING
 
 import twitchio
 from twitchio.ext import commands
 
+from core.bot import _substitute_variables
 from core.guards import check_command
 from shared.repositories.command_config import CommandConfigRepository
+
+FRONTEND_URL = os.getenv("FRONTEND_URL", "https://niibot.pages.dev").rstrip("/")
 
 if TYPE_CHECKING:
     from core.bot import Bot
@@ -51,7 +55,9 @@ class GeneralCommands(commands.Component):
 
         # Use custom response if set, otherwise default
         if config.custom_response:
-            response = config.custom_response.replace("$(user)", ctx.chatter.display_name or "")
+            response = _substitute_variables(
+                config.custom_response, ctx.chatter, ctx.channel.name, ""
+            )
             await ctx.reply(response)
         else:
             await ctx.reply(f"你好，{ctx.chatter.display_name}！")
@@ -69,7 +75,8 @@ class GeneralCommands(commands.Component):
         if not config:
             return
 
-        await ctx.reply("可用指令：!hi, !uptime, !ai <問題>, !運勢, !rk [玩家ID]")
+        channel_name = ctx.channel.name
+        await ctx.reply(f"此頻道的指令列表：{FRONTEND_URL}/{channel_name}/commands")
         await self._record_command(ctx, "help")
 
     @commands.command()
