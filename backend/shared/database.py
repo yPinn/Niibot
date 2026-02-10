@@ -26,14 +26,14 @@ class PoolConfig:
     max_size: int = 5
     timeout: float = 30.0
     command_timeout: float = 30.0
-    max_inactive_connection_lifetime: float = 180.0
+    max_inactive_connection_lifetime: float = 60.0
     max_retries: int = 3
     retry_delay: float = 5.0
 
     # Keep-alive 設定
-    tcp_keepalives_idle: int = 60
+    tcp_keepalives_idle: int = 30
     tcp_keepalives_interval: int = 10
-    tcp_keepalives_count: int = 5
+    tcp_keepalives_count: int = 3
     health_check_interval: int = 30
 
     # 各服務預設差異值
