@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 
 import { getPublicCommands, type PublicCommand } from '@/api/commands'
 import { useTheme } from '@/components/theme-provider'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
@@ -47,7 +48,19 @@ export default function PublicCommands() {
       <div className="w-full max-w-2xl">
         <Card className="rounded-2xl border shadow-xl">
           <CardHeader>
-            <CardTitle className="text-center text-page-title">{username} 的指令列表</CardTitle>
+            {/* Avatar + Title */}
+            <div className="flex flex-col items-center">
+              <Avatar className="mb-4 h-24 w-24 border-4 border-primary shadow-lg">
+                <AvatarImage
+                  src={`https://logo.clearbit.com/twitch.tv/${username}`}
+                  alt={`${username} avatar`}
+                />
+                <AvatarFallback>
+                  <img src="/images/Avatar.png" alt="fallback" className="h-full w-full" />
+                </AvatarFallback>
+              </Avatar>
+              <CardTitle className="text-center text-page-title">{username} 的指令列表</CardTitle>
+            </div>
           </CardHeader>
           <CardContent>
             {loading ? (
