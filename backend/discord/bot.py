@@ -127,7 +127,7 @@ class NiibotClient(commands.Bot):
         self.db_pool: asyncpg.Pool | None = None
 
     async def setup_database(self, max_retries: int = 5, retry_delay: float = 5.0) -> None:
-        """Initialize the shared database connection pool."""
+        """Initialize database for Discord bot (low concurrency, persistent connection)"""
         database_url = os.getenv("DATABASE_URL")
         if not database_url:
             raise ValueError("DATABASE_URL environment variable is not set")
@@ -139,7 +139,7 @@ class NiibotClient(commands.Bot):
             database_url,
             PoolConfig(
                 min_size=1,
-                max_size=5,
+                max_size=4,
                 timeout=60.0,
                 command_timeout=60.0,
                 max_inactive_connection_lifetime=180.0,
