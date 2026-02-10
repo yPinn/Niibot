@@ -85,6 +85,7 @@ class DatabaseManager:
                     max_size=cfg.max_size,
                     timeout=cfg.timeout,
                     command_timeout=cfg.command_timeout,
+                    connect_timeout=cfg.timeout,
                     ssl="require",
                     statement_cache_size=self.statement_cache_size,
                     max_inactive_connection_lifetime=cfg.max_inactive_connection_lifetime,
