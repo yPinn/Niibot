@@ -167,6 +167,12 @@ class DatabaseManager:
                 break
             except Exception as e:
                 logger.error(f"Pool health check failed: {e}")
+                if self._pool:
+                    try:
+                        self._pool.expire_connections()
+                        logger.info("Expired all pool connections for refresh")
+                    except Exception:
+                        pass
 
     async def disconnect(self) -> None:
         """Close database connection pool."""
