@@ -47,7 +47,7 @@ export default function PublicCommands() {
       <div className="w-full max-w-2xl">
         <Card className="rounded-2xl border shadow-xl">
           <CardHeader>
-            <CardTitle className="text-center text-2xl">{username} 的指令列表</CardTitle>
+            <CardTitle className="text-center text-page-title">{username} 的指令列表</CardTitle>
           </CardHeader>
           <CardContent>
             {loading ? (

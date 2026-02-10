@@ -101,7 +101,7 @@ export default function Dashboard() {
             />
           ) : (
             <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-muted-foreground text-sm">Loading player...</div>
+              <div className="text-muted-foreground text-secondary">Loading player...</div>
             </div>
           )}
         </div>

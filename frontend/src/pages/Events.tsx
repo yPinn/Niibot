@@ -44,9 +44,9 @@ const TEMPLATE_VARIABLES: Record<string, { var: string; desc: string }[]> = {
 }
 
 const EVENT_TYPE_COLORS: Record<string, string> = {
-  follow: 'bg-blue-500/10 text-blue-500',
-  subscribe: 'bg-purple-500/10 text-purple-500',
-  raid: 'bg-red-500/10 text-red-500',
+  follow: 'bg-status-info/10 text-status-info',
+  subscribe: 'bg-status-special/10 text-status-special',
+  raid: 'bg-status-offline/10 text-status-offline',
 }
 
 const EVENT_TYPE_LABELS: Record<string, string> = {
@@ -149,8 +149,8 @@ export default function Events() {
   return (
     <main className="flex flex-1 flex-col gap-4 p-4 md:p-6">
       <div>
-        <h1 className="text-2xl font-bold">Events</h1>
-        <p className="text-muted-foreground">管理頻道事件和自動回應</p>
+        <h1 className="text-page-title font-bold">Events</h1>
+        <p className="text-secondary text-muted-foreground">管理頻道事件和自動回應</p>
       </div>
 
       <Card>
@@ -243,7 +243,7 @@ export default function Events() {
               {/* Available Variables */}
               {editingEvent && TEMPLATE_VARIABLES[editingEvent.event_type] && (
                 <div className="flex flex-col gap-1.5">
-                  <span className="text-xs text-muted-foreground">可用變數（點擊插入）</span>
+                  <span className="text-label text-muted-foreground">可用變數（點擊插入）</span>
                   <div className="flex flex-wrap gap-1.5">
                     {TEMPLATE_VARIABLES[editingEvent.event_type].map(v => (
                       <button
@@ -265,7 +265,9 @@ export default function Events() {
             <div className="flex items-center justify-between">
               <div className="flex flex-col gap-0.5">
                 <Label>啟用</Label>
-                <span className="text-xs text-muted-foreground">關閉後事件觸發時不會發送訊息</span>
+                <span className="text-label text-muted-foreground">
+                  關閉後事件觸發時不會發送訊息
+                </span>
               </div>
               <Switch checked={editEnabled} onCheckedChange={setEditEnabled} />
             </div>

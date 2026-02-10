@@ -14,6 +14,7 @@ import LoginPage from '@/pages/Login'
 import NotFound from '@/pages/NotFound'
 import PublicCommands from '@/pages/PublicCommands'
 import SystemStatus from '@/pages/SystemStatus'
+import TypographyDemo from '@/pages/TypographyDemo'
 
 function App() {
   return (
@@ -23,6 +24,7 @@ function App() {
           <Routes>
             <Route path="/" element={<About />} />
             <Route path="/:username/commands" element={<PublicCommands />} />
+            <Route path="/dev/typography" element={<TypographyDemo />} />
             <Route element={<PublicOnlyRoute />}>
               <Route path="/login" element={<LoginPage />} />
             </Route>

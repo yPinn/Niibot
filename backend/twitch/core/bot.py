@@ -259,7 +259,7 @@ class Bot(commands.AutoBot):
         else:
             # Text response with variable substitution
             response = _substitute_variables(
-                response, payload.chatter, payload.broadcaster.name, query
+                response, payload.chatter, payload.broadcaster.name or "", query
             )
             await payload.broadcaster.send_message(
                 message=response,

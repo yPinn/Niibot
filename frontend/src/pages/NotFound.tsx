@@ -22,8 +22,8 @@ export default function NotFound() {
               wrapperClassName="size-6 text-destructive"
             />
           </EmptyMedia>
-          <EmptyTitle className="text-4xl font-bold">404</EmptyTitle>
-          <EmptyDescription className="text-base">
+          <EmptyTitle className="text-page-title font-bold">404</EmptyTitle>
+          <EmptyDescription className="text-content">
             The page you're looking for doesn't exist.
           </EmptyDescription>
         </EmptyHeader>

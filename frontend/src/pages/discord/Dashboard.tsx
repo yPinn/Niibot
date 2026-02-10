@@ -11,8 +11,8 @@ export default function DiscordDashboard() {
             <Icon icon="fa-brands fa-discord" wrapperClassName="size-5" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold">Discord Bot Dashboard</h1>
-            <p className="text-muted-foreground text-sm">管理您的 Discord 機器人</p>
+            <h1 className="text-page-title font-bold">Discord Bot Dashboard</h1>
+            <p className="text-secondary text-muted-foreground">管理您的 Discord 機器人</p>
           </div>
         </div>
 
@@ -25,7 +25,7 @@ export default function DiscordDashboard() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">--</div>
-              <p className="text-xs text-muted-foreground">即將推出</p>
+              <p className="text-label text-muted-foreground">即將推出</p>
             </CardContent>
           </Card>
 
@@ -36,7 +36,7 @@ export default function DiscordDashboard() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">--</div>
-              <p className="text-xs text-muted-foreground">即將推出</p>
+              <p className="text-label text-muted-foreground">即將推出</p>
             </CardContent>
           </Card>
 
@@ -47,7 +47,7 @@ export default function DiscordDashboard() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">--</div>
-              <p className="text-xs text-muted-foreground">即將推出</p>
+              <p className="text-label text-muted-foreground">即將推出</p>
             </CardContent>
           </Card>
         </div>
@@ -59,7 +59,7 @@ export default function DiscordDashboard() {
             <CardDescription>以下功能即將推出</CardDescription>
           </CardHeader>
           <CardContent>
-            <ul className="grid gap-2 text-sm text-muted-foreground md:grid-cols-2">
+            <ul className="grid gap-2 text-secondary text-muted-foreground md:grid-cols-2">
               <li className="flex items-center gap-2">
                 <Icon
                   icon="fa-solid fa-spinner"

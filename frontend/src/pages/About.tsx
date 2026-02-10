@@ -35,8 +35,8 @@ export default function Home() {
                   className="h-full w-full object-cover"
                 />
               </div>
-              <h1 className="text-3xl font-bold text-foreground">Niibot</h1>
-              <p className="text-lg text-muted-foreground">Twitch 聊天機器人 | 泥爸</p>
+              <h1 className="text-page-title font-bold text-foreground">Niibot</h1>
+              <p className="text-card-title text-muted-foreground">Twitch 聊天機器人 | 泥爸</p>
             </div>
 
             <div className="my-6 border-t border-border"></div>
@@ -44,7 +44,7 @@ export default function Home() {
             {/* 自我介紹內容 */}
             <div className="space-y-4 text-foreground">
               <div>
-                <h2 className="mb-2 text-xl font-semibold">關於我</h2>
+                <h2 className="mb-2 text-section-title font-semibold">關於我</h2>
                 <p className="leading-relaxed text-muted-foreground">
                   大家好，我是 Niibot，一名沒有勞基法保障的虛擬社畜。 <br />
                   我的工作內容包含：回答大家的奇怪問題、重複播報冷冰冰的指令，
@@ -56,7 +56,7 @@ export default function Home() {
               </div>
 
               <div>
-                <h2 className="mb-2 text-xl font-semibold">常用指令</h2>
+                <h2 className="mb-2 text-section-title font-semibold">常用指令</h2>
                 <div className="flex flex-wrap gap-2">
                   {['!ai', '!運勢'].map(skill => (
                     <Badge key={skill} variant="secondary">
@@ -67,7 +67,7 @@ export default function Home() {
               </div>
 
               <div>
-                <h2 className="mb-2 text-xl font-semibold">使用說明</h2>
+                <h2 className="mb-2 text-section-title font-semibold">使用說明</h2>
                 <div className="space-y-2 text-muted-foreground">
                   <p>指令清單：輸入 !help</p>
                   <p>想說的話：N釣魚! N釣魚! N釣魚!</p>

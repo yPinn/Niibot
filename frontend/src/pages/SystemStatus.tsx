@@ -107,11 +107,11 @@ export default function SystemStatus() {
   const getStatusColor = (status: ServiceStatus['status']) => {
     switch (status) {
       case 'online':
-        return 'text-green-500'
+        return 'text-status-online'
       case 'offline':
-        return 'text-red-500'
+        return 'text-status-offline'
       case 'loading':
-        return 'text-yellow-500'
+        return 'text-status-loading'
     }
   }
 
@@ -129,8 +129,8 @@ export default function SystemStatus() {
   return (
     <main className="flex flex-1 flex-col gap-4 p-4 lg:gap-6 lg:p-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold md:text-2xl">系統狀態 (System Status)</h1>
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <h1 className="text-page-title font-bold">系統狀態 (System Status)</h1>
+        <div className="flex items-center gap-2 text-secondary text-muted-foreground">
           <Icon icon="fa-solid fa-clock" className="w-4 h-4" />
           <span>最後更新：{lastUpdate.toLocaleTimeString()}</span>
           <button
@@ -147,7 +147,7 @@ export default function SystemStatus() {
         {services.map(service => (
           <div key={service.name} className="bg-card border rounded-lg p-6 space-y-4 shadow-sm">
             <div className="flex items-center justify-between">
-              <h3 className="font-semibold text-lg">{service.name}</h3>
+              <h3 className="font-semibold text-card-title">{service.name}</h3>
               <div className={`flex items-center gap-2 ${getStatusColor(service.status)}`}>
                 <Icon icon={getStatusIcon(service.status)} className="w-5 h-5" />
                 <span className="text-sm font-medium capitalize">
@@ -180,18 +180,18 @@ export default function SystemStatus() {
             )}
 
             {service.status === 'offline' && (
-              <div className="text-sm text-muted-foreground">服務目前無法使用</div>
+              <div className="text-secondary text-muted-foreground">服務目前無法使用</div>
             )}
           </div>
         ))}
       </div>
 
       <div className="bg-muted/50 border rounded-lg p-4">
-        <h3 className="font-semibold mb-2 flex items-center gap-2">
+        <h3 className="text-card-title font-semibold mb-2 flex items-center gap-2">
           <Icon icon="fa-solid fa-circle-info" className="w-4 h-4" />
           系統資訊
         </h3>
-        <div className="text-sm text-muted-foreground space-y-1">
+        <div className="text-secondary text-muted-foreground space-y-1">
           <p>狀態檢查每 30 秒執行一次</p>
           <p>所有服務皆應保持在線以確保功能完整</p>
         </div>

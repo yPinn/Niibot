@@ -57,9 +57,50 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+
+  /* ── Status Colors ── */
+  --color-status-online: var(--color-status-online);
+  --color-status-offline: var(--color-status-offline);
+  --color-status-loading: var(--color-status-loading);
+  --color-status-info: var(--color-status-info);
+  --color-status-success: var(--color-status-success);
+  --color-status-special: var(--color-status-special);
+
+  /* ── Semantic Font Size Utilities ── */
+  --text-page-title: var(--text-page-title);
+  --text-section-title: var(--text-section-title);
+  --text-card-title: var(--text-card-title);
+  --text-content: var(--text-content);
+  --text-secondary: var(--text-secondary);
+  --text-label: var(--text-label);
 }
 
 :root {
+  /* ── Layer 1: Typography Scale (Tailwind v4 defaults) ── */
+  --text-xs: 0.75rem; /* 12px */
+  --text-sm: 0.875rem; /* 14px */
+  --text-base: 1rem; /* 16px */
+  --text-lg: 1.125rem; /* 18px */
+  --text-xl: 1.25rem; /* 20px */
+  --text-2xl: 1.5rem; /* 24px */
+  --text-3xl: 1.875rem; /* 30px */
+
+  /* ── Layer 2: Semantic Typography (change here → all pages follow) ── */
+  --text-page-title: var(--text-2xl); /* 頁面主標題 h1 */
+  --text-section-title: var(--text-xl); /* 區塊標題 h2 */
+  --text-card-title: var(--text-lg); /* Card 內標題 h3 */
+  --text-content: var(--text-base); /* 正文內容 */
+  --text-secondary: var(--text-sm); /* 次要說明 */
+  --text-label: var(--text-xs); /* 標籤、badge、timestamp */
+
+  /* ── Status Colors ── */
+  --color-status-online: oklch(0.72 0.19 155); /* green */
+  --color-status-offline: oklch(0.63 0.24 25); /* red */
+  --color-status-loading: oklch(0.8 0.18 84); /* yellow */
+  --color-status-info: oklch(0.62 0.2 260); /* blue */
+  --color-status-success: oklch(0.72 0.19 155); /* green (alias) */
+  --color-status-special: oklch(0.62 0.24 295); /* purple — 訂閱等特殊事件 */
+
   --radius: 0.625rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);

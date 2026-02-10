@@ -281,8 +281,8 @@ export default function Commands() {
   return (
     <main className="flex flex-1 flex-col gap-4 p-4 md:p-6">
       <div>
-        <h1 className="text-2xl font-bold">Commands</h1>
-        <p className="text-muted-foreground">管理 Twitch 機器人指令與忠誠點數兌換</p>
+        <h1 className="text-page-title font-bold">Commands</h1>
+        <p className="text-secondary text-muted-foreground">管理 Twitch 機器人指令與忠誠點數兌換</p>
       </div>
 
       {/* Command Configs */}
@@ -335,12 +335,12 @@ export default function Commands() {
                             <div>
                               <span className="font-mono font-medium">!{cmd.command_name}</span>
                               {cmd.aliases && (
-                                <span className="ml-2 text-xs text-muted-foreground">
+                                <span className="ml-2 text-label text-muted-foreground">
                                   ({cmd.aliases})
                                 </span>
                               )}
                             </div>
-                            <span className="text-xs text-muted-foreground truncate max-w-64">
+                            <span className="text-label text-muted-foreground truncate max-w-64">
                               {cmd.command_type === 'builtin'
                                 ? BUILTIN_DESCRIPTIONS[cmd.command_name] || ''
                                 : cmd.custom_response || ''}
@@ -352,14 +352,14 @@ export default function Commands() {
                             variant="outline"
                             className={
                               cmd.command_type === 'builtin'
-                                ? 'bg-blue-500/10 text-blue-500'
-                                : 'bg-green-500/10 text-green-500'
+                                ? 'bg-status-info/10 text-status-info'
+                                : 'bg-status-success/10 text-status-success'
                             }
                           >
                             {cmd.command_type === 'builtin' ? '內建' : '自訂'}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
+                        <TableCell className="text-secondary text-muted-foreground">
                           {formatCooldown(cmd.cooldown)}
                         </TableCell>
                         <TableCell className="text-sm">
@@ -531,7 +531,7 @@ export default function Commands() {
                   className="font-mono text-sm"
                 />
                 <div className="flex flex-col gap-1.5">
-                  <span className="text-xs text-muted-foreground">可用變數（點擊插入）</span>
+                  <span className="text-label text-muted-foreground">可用變數（點擊插入）</span>
                   <div className="flex flex-wrap gap-1.5">
                     <button
                       type="button"
