@@ -56,7 +56,12 @@ def main() -> None:
                 max_size=8,
                 timeout=60.0,
                 command_timeout=60.0,
+                max_inactive_connection_lifetime=180.0,
                 max_retries=5,
+                tcp_keepalives_idle=60,
+                tcp_keepalives_interval=10,
+                tcp_keepalives_count=5,
+                health_check_interval=30,
             ),
         )
         await db_manager.connect()

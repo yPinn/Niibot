@@ -140,10 +140,15 @@ class NiibotClient(commands.Bot):
             PoolConfig(
                 min_size=1,
                 max_size=5,
-                timeout=60.0,  # Increased for Render ↔ Supabase cross-region
+                timeout=60.0,
                 command_timeout=60.0,
+                max_inactive_connection_lifetime=180.0,
                 max_retries=max_retries,
                 retry_delay=retry_delay,
+                tcp_keepalives_idle=60,
+                tcp_keepalives_interval=10,
+                tcp_keepalives_count=5,
+                health_check_interval=30,
             ),
         )
         await self._db_manager.connect()
