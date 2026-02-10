@@ -133,7 +133,7 @@ class Bot(commands.AutoBot):
             pg_listen(self.token_database, "channel_toggle", self._handle_channel_toggle)
         )
         asyncio.create_task(self._recover_active_sessions())
-        asyncio.create_task(self._stale_session_cleanup_loop())
+        asyncio.create_task(self._session_verify_loop())
 
     async def setup_database(self) -> None:
         pass
@@ -544,19 +544,53 @@ class Bot(commands.AutoBot):
         except Exception as e:
             LOGGER.exception(f"Error recovering active sessions: {e}")
 
-    async def _stale_session_cleanup_loop(self) -> None:
-        """Periodically close stale sessions that were never ended (e.g. due to DB timeout)."""
-        await asyncio.sleep(60)  # Wait for bot to fully start
+    async def _session_verify_loop(self) -> None:
+        """Periodically verify active sessions against Twitch API.
+
+        If a channel is no longer live, end the session immediately.
+        This catches cases where stream.offline EventSub failed to write to DB.
+        Also closes extremely stale sessions (>12h) as a safety net.
+        """
+        await asyncio.sleep(120)  # Wait for bot to fully start
         while True:
             try:
+                # 1. Check active sessions against Twitch API
+                if self._active_sessions:
+                    channel_ids = list(self._active_sessions.keys())
+                    live_streams = await self.fetch_streams(user_ids=channel_ids)  # type: ignore[arg-type]
+                    live_ids = {
+                        s.user.id for s in live_streams if s.user
+                    } if live_streams else set()
+
+                    for channel_id in channel_ids:
+                        if channel_id not in live_ids:
+                            session_id = self._active_sessions.get(channel_id)
+                            if session_id:
+                                try:
+                                    await self.analytics.end_session(
+                                        session_id, datetime.now()
+                                    )
+                                    LOGGER.info(
+                                        f"Session {session_id} ended via API verify "
+                                        f"(channel {channel_id} no longer live)"
+                                    )
+                                except Exception as e:
+                                    LOGGER.warning(
+                                        f"Failed to end session {session_id} via verify: {e}"
+                                    )
+                                self._active_sessions.pop(channel_id, None)
+                                self._chatter_buffers.pop(channel_id, None)
+
+                # 2. Safety net: close DB sessions >12h without ended_at
                 closed = await self.analytics.close_stale_sessions(max_hours=12)
                 if closed:
-                    LOGGER.info(f"Closed {closed} stale session(s)")
+                    LOGGER.info(f"Closed {closed} stale session(s) via safety net")
+
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                LOGGER.warning(f"Stale session cleanup error: {e}")
-            await asyncio.sleep(3600)  # Run every hour
+                LOGGER.warning(f"Session verify error: {e}")
+            await asyncio.sleep(300)  # Run every 5 minutes
 
     async def _sync_vods_for_channels(
         self, channel_ids: list[str], limit_per_channel: int = 20
