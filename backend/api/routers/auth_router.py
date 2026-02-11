@@ -8,6 +8,7 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
 from core.config import Settings, get_settings
+from core.database import get_database_manager
 from core.dependencies import (
     get_auth_service,
     get_channel_service,
@@ -69,11 +70,9 @@ async def twitch_oauth_callback(
     error: str | None = None,
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
     auth_service: AuthService = Depends(get_auth_service),
-    pool: Pool = Depends(get_db_pool),
     settings: Settings = Depends(get_settings),
 ) -> RedirectResponse:
     """Handle Twitch OAuth callback"""
-    # 1. 處理 OAuth 錯誤
     if error:
         logger.error(f"OAuth error from Twitch: {error}")
         return RedirectResponse(url=f"{settings.frontend_url}/login?error={error}")
@@ -82,9 +81,13 @@ async def twitch_oauth_callback(
         logger.error("No OAuth code received from Twitch")
         return RedirectResponse(url=f"{settings.frontend_url}/login?error=no_code")
 
-    # 2. 用 Code 交換 Token
-    success, error_msg, token_data = await twitch_api.exchange_code_for_token(code)
+    # Check DB readiness (don't use Depends — must redirect, not 503)
+    db_manager = get_database_manager()
+    if db_manager._pool is None:
+        logger.error("Database not ready during OAuth callback")
+        return RedirectResponse(url=f"{settings.frontend_url}/login?error=db_not_ready")
 
+    success, error_msg, token_data = await twitch_api.exchange_code_for_token(code)
     if not success or not token_data:
         logger.error(f"Failed to exchange code: {error_msg}")
         return RedirectResponse(url=f"{settings.frontend_url}/login?error={error_msg}")
@@ -93,24 +96,21 @@ async def twitch_oauth_callback(
     access_token = token_data["access_token"]
     refresh_token = token_data.get("refresh_token", "")
 
-    # 3. 取得使用者資訊，存入 login name 作為 channel_name（URL 需要用 login name 查詢）
     user_info = await twitch_api.get_user_info(user_id)
     username = user_info.get("name") or user_info.get("display_name") or user_id
 
-    # 4. 呼叫更新後的 save_token (務必配合剛才幫你寫的 ChannelService 版本)
-    channel_svc = get_channel_service(pool)
+    channel_svc = get_channel_service(db_manager._pool)
     save_success = await channel_svc.save_token(
         user_id=user_id,
         access_token=access_token,
         refresh_token=refresh_token,
-        username=username,  # 將名字傳進去存入 channels 表
+        username=username,
     )
 
     if not save_success:
         logger.error(f"Failed to save token and channel for {username}")
         return RedirectResponse(url=f"{settings.frontend_url}/login?error=save_token_failed")
 
-    # 5. 建立 JWT 並回傳
     jwt_token = auth_service.create_access_token(user_id)
 
     response = RedirectResponse(url=f"{settings.frontend_url}/dashboard")
@@ -235,11 +235,9 @@ async def discord_oauth_callback(
     error: str | None = None,
     discord_api: DiscordAPIClient = Depends(get_discord_api),
     auth_service: AuthService = Depends(get_auth_service),
-    pool: Pool = Depends(get_db_pool),
     settings: Settings = Depends(get_settings),
 ) -> RedirectResponse:
     """Handle Discord OAuth callback"""
-    # Handle OAuth errors
     if error:
         logger.error(f"OAuth error from Discord: {error}")
         return RedirectResponse(url=f"{settings.frontend_url}/login?error={error}")
@@ -252,9 +250,12 @@ async def discord_oauth_callback(
         logger.error("Discord OAuth not configured")
         return RedirectResponse(url=f"{settings.frontend_url}/login?error=discord_not_configured")
 
-    # Exchange code for token
-    success, error_msg, token_data = await discord_api.exchange_code_for_token(code)
+    db_manager = get_database_manager()
+    if db_manager._pool is None:
+        logger.error("Database not ready during Discord OAuth callback")
+        return RedirectResponse(url=f"{settings.frontend_url}/login?error=db_not_ready")
 
+    success, error_msg, token_data = await discord_api.exchange_code_for_token(code)
     if not success or not token_data:
         logger.error(f"Failed to exchange code: {error_msg}")
         return RedirectResponse(url=f"{settings.frontend_url}/login?error={error_msg}")
@@ -264,14 +265,11 @@ async def discord_oauth_callback(
     display_name = token_data.get("global_name") or token_data.get("username", username)
     avatar = token_data.get("avatar")
 
-    # Save Discord user info to database (required since Discord OAuth can't fetch by ID)
-    channel_svc = get_channel_service(pool)
+    channel_svc = get_channel_service(db_manager._pool)
     await channel_svc.save_discord_user(user_id, username, display_name, avatar)
 
-    # Create JWT token with discord: prefix to distinguish from Twitch users
     jwt_token = auth_service.create_access_token(f"discord:{user_id}")
 
-    # Set cookie and redirect to Discord dashboard
     response = RedirectResponse(url=f"{settings.frontend_url}/discord/dashboard")
     response.set_cookie(
         key="auth_token",
@@ -279,7 +277,7 @@ async def discord_oauth_callback(
         httponly=True,
         secure=settings.is_production,
         samesite="strict" if settings.is_production else "lax",
-        max_age=30 * 24 * 60 * 60,  # 30 days
+        max_age=30 * 24 * 60 * 60,
     )
 
     logger.info(f"Discord user logged in: {username} ({user_id})")
