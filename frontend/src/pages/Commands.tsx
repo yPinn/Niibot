@@ -15,7 +15,14 @@ import {
 } from '@/api/commands'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
 import { Icon } from '@/components/ui/icon'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -78,7 +85,7 @@ interface EditingState {
 }
 
 export default function Commands() {
-  useDocumentTitle('指令管理')
+  useDocumentTitle('Commands')
   const [commands, setCommands] = useState<CommandConfig[]>([])
   const [redemptions, setRedemptions] = useState<RedemptionConfig[]>([])
   const [defaults, setDefaults] = useState<ChannelDefaults>({
@@ -291,16 +298,14 @@ export default function Commands() {
       {/* Command Configs */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>指令設定</CardTitle>
-              <CardDescription>管理內建指令與自訂指令的開關、冷卻、權限</CardDescription>
-            </div>
+          <CardTitle>指令設定</CardTitle>
+          <CardDescription>管理內建指令與自訂指令的開關、冷卻、權限</CardDescription>
+          <CardAction>
             <Button size="sm" onClick={openCreate}>
               <Icon icon="fa-solid fa-plus" wrapperClassName="mr-1.5 size-3" />
               新增指令
             </Button>
-          </div>
+          </CardAction>
         </CardHeader>
         <CardContent>
           {loading ? (

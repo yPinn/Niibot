@@ -3,7 +3,7 @@ import { Icon } from '@/components/ui/icon'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
 export default function DiscordDashboard() {
-  useDocumentTitle('Discord 機器人')
+  useDocumentTitle('Discord Bot')
   return (
     <main className="h-full p-page overflow-auto">
       <div className="grid gap-section">
@@ -26,7 +26,7 @@ export default function DiscordDashboard() {
               <Icon icon="fa-solid fa-server" className="text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">--</div>
+              <div className="text-page-title font-bold">--</div>
               <p className="text-label text-muted-foreground">即將推出</p>
             </CardContent>
           </Card>
@@ -37,7 +37,7 @@ export default function DiscordDashboard() {
               <Icon icon="fa-solid fa-users" className="text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">--</div>
+              <div className="text-page-title font-bold">--</div>
               <p className="text-label text-muted-foreground">即將推出</p>
             </CardContent>
           </Card>
@@ -48,7 +48,7 @@ export default function DiscordDashboard() {
               <Icon icon="fa-solid fa-terminal" className="text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">--</div>
+              <div className="text-page-title font-bold">--</div>
               <p className="text-label text-muted-foreground">即將推出</p>
             </CardContent>
           </Card>
@@ -61,7 +61,7 @@ export default function DiscordDashboard() {
             <CardDescription>以下功能即將推出</CardDescription>
           </CardHeader>
           <CardContent>
-            <ul className="grid gap-2 text-sub text-muted-foreground md:grid-cols-2">
+            <ul className="grid gap-element text-sub text-muted-foreground md:grid-cols-2">
               <li className="flex items-center gap-2">
                 <Icon
                   icon="fa-solid fa-spinner"

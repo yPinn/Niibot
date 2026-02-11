@@ -8,7 +8,7 @@ import { Icon } from '@/components/ui/icon'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
 export default function Home() {
-  useDocumentTitle('Niibot | 泥爸')
+  useDocumentTitle('About')
   const navigate = useNavigate()
   const { resolvedTheme, setTheme } = useTheme()
 

@@ -6,7 +6,7 @@ export function useDocumentTitle(title: string) {
   useEffect(() => {
     document.title = title.endsWith(SUFFIX) ? title : title + SUFFIX
     return () => {
-      document.title = 'Niibot | 泥爸'
+      document.title = 'Niibot'
     }
   }, [title])
 }

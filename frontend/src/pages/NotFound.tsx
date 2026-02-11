@@ -13,7 +13,7 @@ import { Icon } from '@/components/ui/icon'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
 export default function NotFound() {
-  useDocumentTitle('404 - 頁面不存在')
+  useDocumentTitle('Not Found')
   return (
     <div className="flex h-full items-center justify-center p-page">
       <Empty className="border-none">

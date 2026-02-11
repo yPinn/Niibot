@@ -63,7 +63,7 @@ const EVENT_TYPE_NAMES: Record<string, string> = {
 }
 
 export default function Events() {
-  useDocumentTitle('事件管理')
+  useDocumentTitle('Events')
   const [events, setEvents] = useState<EventConfig[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)

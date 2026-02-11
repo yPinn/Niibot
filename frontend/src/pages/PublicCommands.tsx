@@ -48,7 +48,7 @@ export default function PublicCommands() {
   }, [username])
 
   const displayName = channel?.display_name || username
-  useDocumentTitle(`${displayName} 的指令列表`)
+  useDocumentTitle(channel ? `${displayName} Commands` : 'Commands')
 
   return (
     <div className="relative flex min-h-screen flex-col items-center justify-center bg-background px-page py-12">
@@ -65,99 +65,100 @@ export default function PublicCommands() {
       </Button>
 
       <div className="w-full max-w-2xl">
-        <Card className="rounded-2xl border shadow-xl">
-          <CardHeader>
-            {/* Avatar + Title */}
-            <div className="flex flex-col items-center">
-              <Avatar className="mb-4 h-24 w-24 border-4 border-primary shadow-lg">
-                <AvatarImage
-                  src={channel?.profile_image_url ?? undefined}
-                  alt={`${displayName} avatar`}
-                />
-                <AvatarFallback>
-                  <img src="/images/Avatar.png" alt="fallback" className="h-full w-full" />
-                </AvatarFallback>
-              </Avatar>
-              <CardTitle className="text-center text-page-title">
-                {displayName} 的指令列表
-              </CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="flex items-center justify-center py-8 text-muted-foreground">
-                載入中...
+        {loading ? (
+          <div className="flex items-center justify-center py-8 text-muted-foreground">
+            載入中...
+          </div>
+        ) : error ? (
+          <div className="flex items-center justify-center py-8 text-destructive">{error}</div>
+        ) : (
+          <Card className="rounded-2xl border shadow-xl">
+            <CardHeader>
+              <div className="flex flex-col items-center">
+                <Avatar className="mb-4 h-24 w-24 border-4 border-primary shadow-lg">
+                  <AvatarImage
+                    src={channel?.profile_image_url ?? undefined}
+                    alt={`${displayName} avatar`}
+                  />
+                  <AvatarFallback>
+                    <img src="/images/Avatar.png" alt="fallback" className="h-full w-full" />
+                  </AvatarFallback>
+                </Avatar>
+                <CardTitle className="text-center text-page-title">
+                  {displayName} Commands
+                </CardTitle>
               </div>
-            ) : error ? (
-              <div className="flex items-center justify-center py-8 text-destructive">{error}</div>
-            ) : commands.length === 0 ? (
-              <div className="flex items-center justify-center py-8 text-muted-foreground">
-                尚無指令
-              </div>
-            ) : (
-              <Tabs defaultValue="builtin">
-                <TabsList>
-                  <TabsTrigger value="builtin">
-                    內建指令
-                    <Badge variant="secondary" className="ml-1.5 px-1.5 text-label">
-                      {commands.filter(c => c.command_type === 'builtin').length}
-                    </Badge>
-                  </TabsTrigger>
-                  <TabsTrigger value="custom">
-                    自訂指令
-                    <Badge variant="secondary" className="ml-1.5 px-1.5 text-label">
-                      {commands.filter(c => c.command_type === 'custom').length}
-                    </Badge>
-                  </TabsTrigger>
-                </TabsList>
-                {(['builtin', 'custom'] as const).map(type => {
-                  const filtered = commands.filter(c => c.command_type === type)
-                  return (
-                    <TabsContent key={type} value={type}>
-                      {filtered.length === 0 ? (
-                        <div className="flex items-center justify-center py-8 text-muted-foreground">
-                          尚無{type === 'custom' ? '自訂' : '內建'}指令
-                        </div>
-                      ) : (
-                        <div className="rounded-md border">
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead className="w-[25%]">指令</TableHead>
-                                <TableHead>說明</TableHead>
-                                <TableHead className="w-[15%] text-center">權限</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {filtered.map(cmd => {
-                                const role = ROLE_LABELS[cmd.min_role] ?? ROLE_LABELS.everyone
-                                return (
-                                  <TableRow key={cmd.name}>
-                                    <TableCell className="font-mono font-medium">
-                                      {cmd.name}
-                                    </TableCell>
-                                    <TableCell className="text-muted-foreground">
-                                      {cmd.description}
-                                    </TableCell>
-                                    <TableCell className="text-center">
-                                      <Badge variant={role.variant} className="text-label">
-                                        {role.label}
-                                      </Badge>
-                                    </TableCell>
-                                  </TableRow>
-                                )
-                              })}
-                            </TableBody>
-                          </Table>
-                        </div>
-                      )}
-                    </TabsContent>
-                  )
-                })}
-              </Tabs>
-            )}
-          </CardContent>
-        </Card>
+            </CardHeader>
+            <CardContent>
+              {commands.length === 0 ? (
+                <div className="flex items-center justify-center py-8 text-muted-foreground">
+                  尚無指令
+                </div>
+              ) : (
+                <Tabs defaultValue="builtin">
+                  <TabsList>
+                    <TabsTrigger value="builtin">
+                      內建指令
+                      <Badge variant="secondary" className="ml-1.5 px-1.5 text-label">
+                        {commands.filter(c => c.command_type === 'builtin').length}
+                      </Badge>
+                    </TabsTrigger>
+                    <TabsTrigger value="custom">
+                      自訂指令
+                      <Badge variant="secondary" className="ml-1.5 px-1.5 text-label">
+                        {commands.filter(c => c.command_type === 'custom').length}
+                      </Badge>
+                    </TabsTrigger>
+                  </TabsList>
+                  {(['builtin', 'custom'] as const).map(type => {
+                    const filtered = commands.filter(c => c.command_type === type)
+                    return (
+                      <TabsContent key={type} value={type}>
+                        {filtered.length === 0 ? (
+                          <div className="flex items-center justify-center py-8 text-muted-foreground">
+                            尚無{type === 'custom' ? '自訂' : '內建'}指令
+                          </div>
+                        ) : (
+                          <div className="rounded-md border">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead className="w-[25%]">指令</TableHead>
+                                  <TableHead>說明</TableHead>
+                                  <TableHead className="w-[15%] text-center">權限</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {filtered.map(cmd => {
+                                  const role = ROLE_LABELS[cmd.min_role] ?? ROLE_LABELS.everyone
+                                  return (
+                                    <TableRow key={cmd.name}>
+                                      <TableCell className="font-mono font-medium">
+                                        {cmd.name}
+                                      </TableCell>
+                                      <TableCell className="text-muted-foreground">
+                                        {cmd.description}
+                                      </TableCell>
+                                      <TableCell className="text-center">
+                                        <Badge variant={role.variant} className="text-label">
+                                          {role.label}
+                                        </Badge>
+                                      </TableCell>
+                                    </TableRow>
+                                  )
+                                })}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        )}
+                      </TabsContent>
+                    )
+                  })}
+                </Tabs>
+              )}
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   )

@@ -14,7 +14,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
 export default function Dashboard() {
-  useDocumentTitle('儀表板')
+  useDocumentTitle('Dashboard')
   const { user, isInitialized, channels } = useAuth()
 
   const defaultChannel = useMemo(() => {

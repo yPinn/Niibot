@@ -17,7 +17,7 @@ interface ServiceStatus {
 }
 
 export default function SystemStatus() {
-  useDocumentTitle('系統狀態')
+  useDocumentTitle('System Status')
   const { twitch, discord, api, lastUpdate, refresh } = useServiceStatus()
 
   const services = useMemo<ServiceStatus[]>(
