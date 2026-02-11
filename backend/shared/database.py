@@ -127,7 +127,9 @@ class DatabaseManager:
                     logger.error(f"[DB Diag] SSL FAILED: {type(e).__name__}: {e}")
                     sock.close()
             except Exception as e:
-                logger.error(f"[DB Diag] TCP FAILED to {sockaddr[0]}:{sockaddr[1]}: {type(e).__name__}: {e}")
+                logger.error(
+                    f"[DB Diag] TCP FAILED to {sockaddr[0]}:{sockaddr[1]}: {type(e).__name__}: {e}"
+                )
 
     async def connect(self) -> None:
         """Initialize database connection pool with retry."""
