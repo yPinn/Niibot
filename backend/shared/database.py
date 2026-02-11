@@ -131,8 +131,8 @@ class DatabaseManager:
                 if attempt < cfg.max_retries:
                     delay = cfg.retry_delay * (2 ** (attempt - 1))
                     logger.warning(
-                        f"Database connection attempt {attempt}/{cfg.max_retries} failed: {e}, "
-                        f"retrying in {delay}s..."
+                        f"Database connection attempt {attempt}/{cfg.max_retries} failed: "
+                        f"{type(e).__name__}: {e or repr(e)}, retrying in {delay}s..."
                     )
                     if self._pool:
                         try:
@@ -143,7 +143,8 @@ class DatabaseManager:
                     await asyncio.sleep(delay)
                 else:
                     logger.exception(
-                        f"Database connection failed after {cfg.max_retries} attempts: {e}"
+                        f"Database connection failed after {cfg.max_retries} attempts: "
+                        f"{type(e).__name__}: {e or repr(e)}"
                     )
                     raise
 
