@@ -13,7 +13,7 @@ import socket
 import ssl as _ssl
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, fields
-from typing import ClassVar
+from typing import Any, ClassVar
 from urllib.parse import urlparse
 
 import asyncpg
@@ -33,7 +33,7 @@ class PoolConfig:
     max_retries: int = 3
     retry_delay: float = 3.0
 
-    # Keep-alive 設定
+    # Keep-alive 設定 (Session Pooler only)
     tcp_keepalives_idle: int = 30
     tcp_keepalives_interval: int = 10
     tcp_keepalives_count: int = 3
@@ -71,22 +71,68 @@ class DatabaseManager:
         self.database_url = database_url
         self.config = config or PoolConfig()
         self._pool: asyncpg.Pool | None = None
+        self._pooler_mode: str = "transaction" if ":6543" in database_url else "session"
 
-    @property
-    def is_transaction_pooler(self) -> bool:
-        """Detect Supabase Transaction Pooler by port 6543."""
-        return ":6543" in self.database_url
+    # ── Pool builders (separate code paths, no if/else) ──────────────
 
-    @property
-    def statement_cache_size(self) -> int:
-        """Transaction Pooler (6543) does not support prepared statements."""
-        return 0 if self.is_transaction_pooler else 100
+    async def _init_session_connection(self, conn: asyncpg.Connection) -> None:
+        """Initialize new connections for Session Pooler.
 
-    async def _init_connection(self, conn: asyncpg.Connection) -> None:
-        """Initialize new connections (called automatically by pool)."""
-        # 設定連線層級的 statement timeout
+        Sets session-level statement timeout. Only used with Session Pooler
+        where session state is preserved across queries.
+        """
         timeout_ms = int(self.config.command_timeout * 1000)
         await conn.execute(f"SET statement_timeout = {timeout_ms}")
+
+    def _session_pool_kwargs(self) -> dict[str, Any]:
+        """Build asyncpg.create_pool kwargs for Session Pooler (port 5432).
+
+        - Prepared statements enabled (cache=100)
+        - TCP keepalive via server_settings
+        - Session-level init (SET statement_timeout)
+        - Maintains min_size idle connections
+        """
+        cfg = self.config
+        return {
+            "dsn": self.database_url,
+            "min_size": cfg.min_size,
+            "max_size": cfg.max_size,
+            "timeout": cfg.timeout,
+            "command_timeout": cfg.command_timeout,
+            "ssl": "require",
+            "statement_cache_size": 100,
+            "max_inactive_connection_lifetime": cfg.max_inactive_connection_lifetime,
+            "server_settings": {
+                "tcp_keepalives_idle": str(cfg.tcp_keepalives_idle),
+                "tcp_keepalives_interval": str(cfg.tcp_keepalives_interval),
+                "tcp_keepalives_count": str(cfg.tcp_keepalives_count),
+            },
+            "init": self._init_session_connection,
+        }
+
+    def _transaction_pool_kwargs(self) -> dict[str, Any]:
+        """Build asyncpg.create_pool kwargs for Transaction Pooler (port 6543).
+
+        PgBouncer in transaction mode:
+        - No prepared statements (cache=0)
+        - No server_settings (PgBouncer doesn't forward them)
+        - No init callback (SET commands don't persist across queries)
+        - min_size=0: don't hold idle connections (PgBouncer kills them)
+        - max_inactive=0: release connections immediately after use
+        """
+        cfg = self.config
+        return {
+            "dsn": self.database_url,
+            "min_size": 0,
+            "max_size": cfg.max_size,
+            "timeout": cfg.timeout,
+            "command_timeout": cfg.command_timeout,
+            "ssl": "require",
+            "statement_cache_size": 0,
+            "max_inactive_connection_lifetime": 0,
+        }
+
+    # ── Diagnostics ──────────────────────────────────────────────────
 
     def _diagnose_connection(self) -> None:
         """Log network-level diagnostics when DB connection fails."""
@@ -131,46 +177,38 @@ class DatabaseManager:
                     f"[DB Diag] TCP FAILED to {sockaddr[0]}:{sockaddr[1]}: {type(e).__name__}: {e}"
                 )
 
+    # ── Lifecycle ────────────────────────────────────────────────────
+
     async def connect(self) -> None:
         """Initialize database connection pool with retry."""
         if self._pool is not None:
             logger.warning("Database pool already initialized")
             return
 
-        if self.is_transaction_pooler:
-            logger.warning(
-                "Using Transaction Pooler (6543) — "
-                "consider switching to Session Pooler (5432) for persistent servers"
-            )
+        # 選擇對應的 pool 建立參數
+        _builders = {
+            "session": self._session_pool_kwargs,
+            "transaction": self._transaction_pool_kwargs,
+        }
+        pool_kwargs = _builders[self._pooler_mode]()
+        logger.info(f"Connecting with {self._pooler_mode} pooler mode")
 
         cfg = self.config
         for attempt in range(1, cfg.max_retries + 1):
             try:
-                self._pool = await asyncpg.create_pool(
-                    self.database_url,
-                    min_size=cfg.min_size,
-                    max_size=cfg.max_size,
-                    timeout=cfg.timeout,
-                    command_timeout=cfg.command_timeout,
-                    ssl="require",
-                    statement_cache_size=self.statement_cache_size,
-                    max_inactive_connection_lifetime=cfg.max_inactive_connection_lifetime,
-                    server_settings={
-                        "tcp_keepalives_idle": str(cfg.tcp_keepalives_idle),
-                        "tcp_keepalives_interval": str(cfg.tcp_keepalives_interval),
-                        "tcp_keepalives_count": str(cfg.tcp_keepalives_count),
-                    },
-                    init=self._init_connection,
-                )
+                self._pool = await asyncpg.create_pool(**pool_kwargs)
 
                 # 驗證 pool 可用性
                 async with self._pool.acquire() as conn:
                     await conn.fetchval("SELECT 1")
 
+                effective_min = pool_kwargs.get("min_size", 0)
+                effective_cache = pool_kwargs.get("statement_cache_size", 0)
                 logger.info(
                     f"Database pool created and verified "
-                    f"(size={cfg.min_size}-{cfg.max_size}, cache={self.statement_cache_size}, "
-                    f"keepalive={cfg.tcp_keepalives_idle}s)"
+                    f"(mode={self._pooler_mode}, "
+                    f"size={effective_min}-{cfg.max_size}, "
+                    f"cache={effective_cache})"
                 )
                 return
             except Exception as e:
