@@ -165,6 +165,7 @@ class BirthdayCog(commands.Cog):
 
                     try:
                         await member.add_roles(role, reason="Birthday")
+                        await asyncio.sleep(0.3)  # Rate limit 保護
                     except discord.Forbidden:
                         logger.warning(f"Cannot add role to {member.id}")
 
@@ -232,10 +233,12 @@ class BirthdayCog(commands.Cog):
 
                 # 建立當月壽星 Embed
                 lines = []
-                for uid, m, d, _ in month_bdays:
+                for i, (uid, m, d, _) in enumerate(month_bdays):
                     member = await self._fetch_member(guild, uid)
                     if member:
                         lines.append(f"`{m:>2}/{d:<2}` {member.mention}")
+                    if i % 5 == 4:
+                        await asyncio.sleep(0.5)  # Rate limit 保護：每 5 筆暫停
 
                 if not lines:
                     continue

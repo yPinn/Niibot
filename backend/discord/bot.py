@@ -125,6 +125,7 @@ class NiibotClient(commands.Bot):
         self.rate_limiter = RateLimitMonitor(self)
         self._db_manager: DatabaseManager | None = None
         self.db_pool: asyncpg.Pool | None = None
+        self._commands_synced: bool = False
 
     async def setup_database(self, max_retries: int = 5, retry_delay: float = 5.0) -> None:
         """Initialize database for Discord bot (low concurrency, persistent connection)"""
@@ -199,61 +200,56 @@ class NiibotClient(commands.Bot):
             else:
                 logger.error(f"載入失敗: {failures}")
 
-        # 同步斜線指令到 Discord（可透過環境變數控制）
-        sync_commands = os.getenv("DISCORD_SYNC_COMMANDS", "true").lower() == "true"
+        # 記錄 guild_id 供 on_ready 同步使用
         guild_id = os.getenv("DISCORD_GUILD_ID")
-
         if guild_id:
             self._sync_guild_id = guild_id
 
-        if not sync_commands:
-            if RICH_AVAILABLE:
-                logger.info("[dim]跳過指令同步 (DISCORD_SYNC_COMMANDS=false)[/dim]")
-            else:
-                logger.info("跳過指令同步 (DISCORD_SYNC_COMMANDS=false)")
-        else:
-            try:
-                if RICH_AVAILABLE:
-                    logger.info("[yellow]正在同步斜線指令...[/yellow]")
-                else:
-                    logger.info("正在同步斜線指令...")
-
-                if guild_id:
-                    # 同步到測試伺服器 (更快)
-                    guild = discord.Object(id=int(guild_id))
-                    self.tree.copy_global_to(guild=guild)
-                    synced = await self.tree.sync(guild=guild)
-
-                    if RICH_AVAILABLE:
-                        logger.info(f"[magenta]已同步 {len(synced)} 個指令到測試伺服器[/magenta]")
-                    else:
-                        logger.info(f"已同步 {len(synced)} 個指令到測試伺服器")
-                else:
-                    # 全域同步 (較慢,可能需要 1 小時生效)
-                    synced = await self.tree.sync()
-                    if RICH_AVAILABLE:
-                        logger.info(f"[magenta]已全域同步 {len(synced)} 個指令[/magenta]")
-                    else:
-                        logger.info(f"已全域同步 {len(synced)} 個指令")
-
-            except discord.HTTPException as e:
-                if RICH_AVAILABLE:
-                    logger.error(f"[red]指令同步失敗 (HTTP {e.status}):[/red] {e.text}")
-                else:
-                    logger.error(f"指令同步失敗 (HTTP {e.status}): {e.text}")
-            except Exception as e:
-                if RICH_AVAILABLE:
-                    logger.error(f"[red]指令同步發生錯誤:[/red] {e}")
-                else:
-                    logger.error(f"指令同步發生錯誤: {e}")
-
+        # 指令同步延遲到 on_ready 執行（避免 setup_hook 中觸發 429 導致重啟循環）
         if RICH_AVAILABLE:
             logger.info("[yellow]正在連接 Discord...[/yellow]")
         else:
             logger.info("正在連接 Discord...")
 
+    async def _sync_commands(self) -> None:
+        """同步斜線指令（僅在 on_ready 後執行一次）"""
+        sync_commands = os.getenv("DISCORD_SYNC_COMMANDS", "true").lower() == "true"
+        if not sync_commands:
+            logger.info("跳過指令同步 (DISCORD_SYNC_COMMANDS=false)")
+            self._commands_synced = True
+            return
+
+        try:
+            logger.info("正在同步斜線指令...")
+            guild_id = getattr(self, "_sync_guild_id", None)
+
+            if guild_id:
+                guild = discord.Object(id=int(guild_id))
+                self.tree.copy_global_to(guild=guild)
+                synced = await self.tree.sync(guild=guild)
+                logger.info(f"已同步 {len(synced)} 個指令到測試伺服器")
+            else:
+                synced = await self.tree.sync()
+                logger.info(f"已全域同步 {len(synced)} 個指令")
+
+            self._commands_synced = True
+
+        except discord.HTTPException as e:
+            logger.error(f"指令同步失敗 (HTTP {e.status}): {e.text}")
+            if e.status == 429:
+                logger.warning("指令同步觸發 429，將在下次重連時重試")
+            else:
+                self._commands_synced = True
+        except Exception as e:
+            logger.error(f"指令同步發生錯誤: {e}")
+            self._commands_synced = True
+
     async def on_ready(self) -> None:
         """Bot 連接成功並就緒時觸發"""
+        # 同步指令（僅首次 on_ready 執行，避免重連時重複同步）
+        if not self._commands_synced:
+            await self._sync_commands()
+
         # 記錄同步的測試伺服器資訊
         if hasattr(self, "_sync_guild_id"):
             guild_obj = self.get_guild(int(self._sync_guild_id))
@@ -323,6 +319,58 @@ class NiibotClient(commands.Bot):
         await ctx.send("執行指令時發生錯誤")
 
 
+def _format_duration(seconds: float) -> str:
+    """Format seconds into human-readable duration."""
+    s = int(seconds)
+    if s >= 3600:
+        h, m = divmod(s, 3600)
+        m //= 60
+        return f"{h}h{m}m" if m else f"{h}h"
+    if s >= 60:
+        m, sec = divmod(s, 60)
+        return f"{m}m{sec}s" if sec else f"{m}m"
+    return f"{s}s"
+
+
+def _parse_retry_after(e: discord.HTTPException, base_delay: float, attempt: int) -> float:
+    """Extract retry_after from a 429 response (headers, JSON body, or fallback)."""
+    fallback = base_delay * (2 ** (attempt - 1))
+    retry_after = fallback
+
+    # 1. Try response headers
+    resp = getattr(e, "response", None)
+    if resp:
+        headers = getattr(resp, "headers", {})
+        for key in ("Retry-After", "retry-after", "retry_after"):
+            if key in headers:
+                try:
+                    retry_after = float(headers[key])
+                except (ValueError, TypeError):
+                    pass
+                break
+
+    # 2. discord.py may parse retry_after from JSON body into the exception
+    if hasattr(e, "retry_after"):
+        try:
+            retry_after = float(e.retry_after)
+        except (ValueError, TypeError):
+            pass
+
+    # 3. Detect Cloudflare ban (1015)
+    text = getattr(e, "text", "") or ""
+    if "1015" in text or "cloudflare" in text.lower():
+        logger.error(
+            f"[CLOUDFLARE BAN] Blocked by Cloudflare (1015). "
+            f"Retry after {_format_duration(retry_after)}."
+        )
+
+    # 4. Log raw response body for debugging
+    if text:
+        logger.info(f"[429 Response] {text[:500]}")
+
+    return retry_after
+
+
 async def main() -> None:
     """Bot 啟動主函數 (具備自動重試與速率限制保護)"""
     token = os.getenv("DISCORD_BOT_TOKEN")
@@ -351,51 +399,22 @@ async def main() -> None:
             while retry_count < max_retries:
                 try:
                     await bot.start(token)
-                    break  # 成功登入則跳出重試迴圈
+                    break
 
                 except discord.HTTPException as e:
-                    # 429 Too Many Requests 或 Cloudflare 1015 錯誤
                     if e.status == 429:
                         retry_count += 1
-
-                        # 解析詳細的速率限制資訊
-                        scope = "unknown"
-                        retry_after = base_delay * (2 ** (retry_count - 1))
-                        is_cloudflare = False
-
-                        # 檢查是否為 Cloudflare ban (1015)
-                        if hasattr(e, "text") and e.text:
-                            if "1015" in str(e.text) or "cloudflare" in str(e.text).lower():
-                                is_cloudflare = True
-                                logger.error(
-                                    "[CLOUDFLARE BAN] 被 Cloudflare 暫時封鎖 (1015)，"
-                                    "可能需要等待 24 小時或更換 IP"
-                                )
-
-                        # 嘗試從 response 取得 headers
-                        if hasattr(e, "response") and e.response:
-                            headers = getattr(e.response, "headers", {})
-                            scope = headers.get("X-RateLimit-Scope", "unknown")
-                            if "retry_after" in headers:
-                                retry_after = float(headers.get("retry_after", retry_after))
-                            elif "Retry-After" in headers:
-                                retry_after = float(headers.get("Retry-After", retry_after))
-
-                        # 計算等待時間 (使用 retry_after 或指數退避)
+                        retry_after = _parse_retry_after(e, base_delay, retry_count)
                         wait_time = max(retry_after, base_delay * (2 ** (retry_count - 1)))
 
-                        # 詳細日誌
                         logger.warning(
-                            f"[429 Rate Limit] scope={scope}, "
-                            f"cloudflare={is_cloudflare}, "
-                            f"retry_after={retry_after}s, "
-                            f"wait={wait_time}s, "
+                            f"[429 Rate Limit] "
+                            f"retry_after={retry_after:.0f}s, "
+                            f"waiting {_format_duration(wait_time)}, "
                             f"attempt={retry_count}/{max_retries}"
                         )
-
                         await asyncio.sleep(wait_time)
                     else:
-                        # 其他 HTTP 錯誤（如 401 Token 錯誤）不重試，直接拋出
                         raise
             else:
                 # while 正常結束 = 重試次數已用完

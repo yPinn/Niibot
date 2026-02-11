@@ -108,11 +108,48 @@ def main() -> None:
                         status = getattr(e, "status", None) or getattr(e, "code", None)
                         if status == 429 or "429" in str(e) or "rate" in str(e).lower():
                             retry_count += 1
-                            wait_time = base_delay * (2 ** (retry_count - 1))
+
+                            # Extract retry_after from response if available
+                            retry_after = base_delay * (2 ** (retry_count - 1))
+                            resp = getattr(e, "response", None)
+                            if resp:
+                                headers = getattr(resp, "headers", {})
+                                for key in ("Retry-After", "retry-after", "retry_after"):
+                                    if key in headers:
+                                        try:
+                                            retry_after = float(headers[key])
+                                        except (ValueError, TypeError):
+                                            pass
+                                        break
+                            if hasattr(e, "retry_after"):
+                                try:
+                                    retry_after = float(e.retry_after)
+                                except (ValueError, TypeError):
+                                    pass
+
+                            wait_time = max(retry_after, base_delay * (2 ** (retry_count - 1)))
+
+                            # Human-readable duration
+                            secs = int(wait_time)
+                            if secs >= 3600:
+                                readable = f"{secs // 3600}h{(secs % 3600) // 60}m"
+                            elif secs >= 60:
+                                readable = f"{secs // 60}m{secs % 60}s"
+                            else:
+                                readable = f"{secs}s"
+
                             LOGGER.warning(
                                 f"Twitch rate limit (429). "
-                                f"Retry {retry_count}/{max_retries}, waiting {wait_time}s..."
+                                f"retry_after={retry_after:.0f}s, "
+                                f"waiting {readable}, "
+                                f"attempt={retry_count}/{max_retries}"
                             )
+
+                            # Log raw error for debugging
+                            err_text = str(e)[:500]
+                            if err_text:
+                                LOGGER.info(f"[429 Response] {err_text}")
+
                             await asyncio.sleep(wait_time)
                         else:
                             raise
