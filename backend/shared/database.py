@@ -9,9 +9,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import socket
+import ssl as _ssl
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, fields
 from typing import ClassVar
+from urllib.parse import urlparse
 
 import asyncpg
 
@@ -85,6 +88,47 @@ class DatabaseManager:
         timeout_ms = int(self.config.command_timeout * 1000)
         await conn.execute(f"SET statement_timeout = {timeout_ms}")
 
+    def _diagnose_connection(self) -> None:
+        """Log network-level diagnostics when DB connection fails."""
+        parsed = urlparse(self.database_url)
+        host = parsed.hostname or "unknown"
+        port = parsed.port or 5432
+        user = parsed.username or "unknown"
+
+        logger.info(f"[DB Diag] host={host}, port={port}, user={user}")
+
+        # 1. DNS resolution
+        try:
+            addrs = socket.getaddrinfo(host, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
+            families = {a[0].name for a in addrs}
+            ips = {a[4][0] for a in addrs}
+            logger.info(f"[DB Diag] DNS OK: {ips} (families: {families})")
+        except socket.gaierror as e:
+            logger.error(f"[DB Diag] DNS FAILED: {e}")
+            return
+
+        # 2. Raw TCP connection
+        for addr in addrs[:2]:
+            family, _, _, _, sockaddr = addr
+            try:
+                sock = socket.socket(family, socket.SOCK_STREAM)
+                sock.settimeout(5)
+                sock.connect(sockaddr)
+                logger.info(f"[DB Diag] TCP OK: {sockaddr[0]}:{sockaddr[1]} ({family.name})")
+                # 3. SSL handshake
+                try:
+                    ctx = _ssl.create_default_context()
+                    ctx.check_hostname = False
+                    ctx.verify_mode = _ssl.CERT_NONE
+                    ssock = ctx.wrap_socket(sock, server_hostname=host)
+                    logger.info(f"[DB Diag] SSL OK: {ssock.version()}")
+                    ssock.close()
+                except Exception as e:
+                    logger.error(f"[DB Diag] SSL FAILED: {type(e).__name__}: {e}")
+                    sock.close()
+            except Exception as e:
+                logger.error(f"[DB Diag] TCP FAILED to {sockaddr[0]}:{sockaddr[1]}: {type(e).__name__}: {e}")
+
     async def connect(self) -> None:
         """Initialize database connection pool with retry."""
         if self._pool is not None:
@@ -134,6 +178,12 @@ class DatabaseManager:
                         f"Database connection attempt {attempt}/{cfg.max_retries} failed: "
                         f"{type(e).__name__}: {e or repr(e)}, retrying in {delay}s..."
                     )
+                    # Run diagnostics on first failure
+                    if attempt == 1:
+                        try:
+                            self._diagnose_connection()
+                        except Exception:
+                            pass
                     if self._pool:
                         try:
                             await self._pool.close()
