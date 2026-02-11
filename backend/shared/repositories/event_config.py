@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 # In-process cache for bot-side lookups
 _config_cache = AsyncTTLCache(maxsize=64, ttl=60)
+_seeded_events: set[str] = set()
 
 # Default templates per event type
 DEFAULT_TEMPLATES: dict[str, str] = {
@@ -92,16 +93,18 @@ class EventConfigRepository:
 
     async def ensure_defaults(self, channel_id: str) -> list[EventConfig]:
         """Ensure default configs exist for a channel, then return all configs."""
-        async with self.pool.acquire() as conn:
-            for event_type, template in DEFAULT_TEMPLATES.items():
-                await conn.execute(
-                    """
-                    INSERT INTO event_configs (channel_id, event_type, message_template, enabled)
-                    VALUES ($1, $2, $3, TRUE)
-                    ON CONFLICT (channel_id, event_type) DO NOTHING
-                    """,
-                    channel_id,
-                    event_type,
-                    template,
-                )
+        if channel_id not in _seeded_events:
+            async with self.pool.acquire() as conn:
+                for event_type, template in DEFAULT_TEMPLATES.items():
+                    await conn.execute(
+                        """
+                        INSERT INTO event_configs (channel_id, event_type, message_template, enabled)
+                        VALUES ($1, $2, $3, TRUE)
+                        ON CONFLICT (channel_id, event_type) DO NOTHING
+                        """,
+                        channel_id,
+                        event_type,
+                        template,
+                    )
+            _seeded_events.add(channel_id)
         return await self.list_configs(channel_id)

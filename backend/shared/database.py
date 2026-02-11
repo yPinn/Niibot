@@ -24,11 +24,11 @@ class PoolConfig:
 
     min_size: int = 1
     max_size: int = 5
-    timeout: float = 60.0
-    command_timeout: float = 30.0
-    max_inactive_connection_lifetime: float = 60.0
+    timeout: float = 5.0
+    command_timeout: float = 15.0
+    max_inactive_connection_lifetime: float = 30.0
     max_retries: int = 3
-    retry_delay: float = 5.0
+    retry_delay: float = 3.0
 
     # Keep-alive 設定
     tcp_keepalives_idle: int = 30
@@ -37,9 +37,9 @@ class PoolConfig:
 
     # 各服務預設差異值
     _SERVICE_PRESETS: ClassVar[dict[str, dict]] = {
-        "api": {"min_size": 2, "max_size": 10, "max_retries": 5},
-        "discord": {"min_size": 1, "max_size": 4, "max_retries": 5},
-        "twitch": {"min_size": 1, "max_size": 5, "max_retries": 5},
+        "api": {"min_size": 2, "max_size": 10},
+        "discord": {"min_size": 1, "max_size": 4},
+        "twitch": {"min_size": 1, "max_size": 5},
     }
 
     @classmethod
@@ -158,6 +158,17 @@ class DatabaseManager:
             logger.info("Database pool closed")
         except Exception as e:
             logger.exception(f"Error closing database pool: {e}")
+
+    async def check_health(self) -> bool:
+        """Test if pool can actually execute a query."""
+        if self._pool is None:
+            return False
+        try:
+            async with self._pool.acquire(timeout=2.0) as conn:
+                await conn.fetchval("SELECT 1")
+            return True
+        except Exception:
+            return False
 
     @property
     def pool(self) -> asyncpg.Pool:

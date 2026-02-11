@@ -43,21 +43,26 @@ DEFAULT_REDEMPTIONS: list[dict] = [
 UnsetType: TypeAlias = object
 _UNSET: UnsetType = object()
 
+# Track channels that already have defaults seeded (avoids redundant INSERTs)
+_seeded_channels: set[str] = set()
+_seeded_redemptions: set[str] = set()
 
-async def _retry_on_db_error(func, max_retries: int = 3):
+
+async def _retry_on_db_error(func, max_retries: int = 2):
     """Retry helper for database operations."""
     for attempt in range(1, max_retries + 1):
         try:
             return await func()
         except asyncio.CancelledError:
-            raise  # 不要重試取消操作
+            raise
         except Exception as e:
             if attempt < max_retries:
+                delay = 0.5 * attempt
                 logger.warning(
                     f"DB operation attempt {attempt}/{max_retries} failed: {type(e).__name__}, "
-                    f"retrying in {0.5 * attempt}s..."
+                    f"retrying in {delay}s..."
                 )
-                await asyncio.sleep(0.5 * attempt)
+                await asyncio.sleep(delay)
             else:
                 logger.exception(f"DB operation failed after {max_retries} attempts")
                 raise
@@ -221,25 +226,28 @@ class CommandConfigRepository:
 
     async def ensure_defaults(self, channel_id: str) -> list[CommandConfig]:
         """Ensure default builtin commands exist for a channel, then return all configs."""
+        if channel_id not in _seeded_channels:
 
-        async def _query():
-            async with self.pool.acquire() as conn:
-                for cmd in BUILTIN_COMMANDS:
-                    await conn.execute(
-                        """
-                        INSERT INTO command_configs
-                            (channel_id, command_name, command_type, enabled,
-                             custom_response, cooldown)
-                        VALUES ($1, $2, 'builtin', TRUE, $3, $4)
-                        ON CONFLICT (channel_id, command_name) DO NOTHING
-                        """,
-                        channel_id,
-                        cmd["command_name"],
-                        cmd.get("custom_response"),
-                        cmd.get("cooldown"),
-                    )
+            async def _query():
+                async with self.pool.acquire() as conn:
+                    for cmd in BUILTIN_COMMANDS:
+                        await conn.execute(
+                            """
+                            INSERT INTO command_configs
+                                (channel_id, command_name, command_type, enabled,
+                                 custom_response, cooldown)
+                            VALUES ($1, $2, 'builtin', TRUE, $3, $4)
+                            ON CONFLICT (channel_id, command_name) DO NOTHING
+                            """,
+                            channel_id,
+                            cmd["command_name"],
+                            cmd.get("custom_response"),
+                            cmd.get("cooldown"),
+                        )
 
-        await _retry_on_db_error(_query)
+            await _retry_on_db_error(_query)
+            _seeded_channels.add(channel_id)
+
         return await self.list_configs(channel_id)
 
 
@@ -328,20 +336,23 @@ class RedemptionConfigRepository:
 
     async def ensure_defaults(self, channel_id: str) -> list[RedemptionConfig]:
         """Ensure default redemption configs exist for a channel."""
+        if channel_id not in _seeded_redemptions:
 
-        async def _query():
-            async with self.pool.acquire() as conn:
-                for r in DEFAULT_REDEMPTIONS:
-                    await conn.execute(
-                        """
-                        INSERT INTO redemption_configs (channel_id, action_type, reward_name, enabled)
-                        VALUES ($1, $2, $3, TRUE)
-                        ON CONFLICT (channel_id, action_type) DO NOTHING
-                        """,
-                        channel_id,
-                        r["action_type"],
-                        r["reward_name"],
-                    )
+            async def _query():
+                async with self.pool.acquire() as conn:
+                    for r in DEFAULT_REDEMPTIONS:
+                        await conn.execute(
+                            """
+                            INSERT INTO redemption_configs (channel_id, action_type, reward_name, enabled)
+                            VALUES ($1, $2, $3, TRUE)
+                            ON CONFLICT (channel_id, action_type) DO NOTHING
+                            """,
+                            channel_id,
+                            r["action_type"],
+                            r["reward_name"],
+                        )
 
-        await _retry_on_db_error(_query)
+            await _retry_on_db_error(_query)
+            _seeded_redemptions.add(channel_id)
+
         return await self.list_configs(channel_id)

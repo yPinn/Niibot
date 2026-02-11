@@ -132,10 +132,11 @@ def create_app() -> FastAPI:
     async def health():
         """Health check endpoint for Docker/K8s"""
         db_manager = get_database_manager()
-        ready = db_manager is not None and db_manager._pool is not None
+        pool_exists = db_manager is not None and db_manager._pool is not None
+        db_ok = await db_manager.check_health() if pool_exists else False
         return {
-            "status": "healthy" if ready else "starting",
-            "ready": ready,
+            "status": "healthy" if db_ok else "degraded" if pool_exists else "starting",
+            "ready": db_ok,
         }
 
     # Detailed status endpoint
