@@ -24,7 +24,7 @@ class PoolConfig:
 
     min_size: int = 1
     max_size: int = 5
-    timeout: float = 30.0
+    timeout: float = 60.0
     command_timeout: float = 30.0
     max_inactive_connection_lifetime: float = 60.0
     max_retries: int = 3
@@ -129,18 +129,18 @@ class DatabaseManager:
                 return
             except Exception as e:
                 if attempt < cfg.max_retries:
+                    delay = cfg.retry_delay * (2 ** (attempt - 1))
                     logger.warning(
                         f"Database connection attempt {attempt}/{cfg.max_retries} failed: {e}, "
-                        f"retrying in {cfg.retry_delay}s..."
+                        f"retrying in {delay}s..."
                     )
-                    # 清理失敗的 pool
                     if self._pool:
                         try:
                             await self._pool.close()
                         except Exception:
                             pass
                         self._pool = None
-                    await asyncio.sleep(cfg.retry_delay)
+                    await asyncio.sleep(delay)
                 else:
                     logger.exception(
                         f"Database connection failed after {cfg.max_retries} attempts: {e}"
