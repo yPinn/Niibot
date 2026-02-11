@@ -16,6 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
 const ROLE_LABELS: Record<string, { label: string; variant: 'default' | 'secondary' | 'outline' }> =
@@ -50,7 +51,7 @@ export default function PublicCommands() {
   useDocumentTitle(`${displayName} 的指令列表`)
 
   return (
-    <div className="relative flex min-h-screen flex-col items-center justify-center bg-background px-4 py-12">
+    <div className="relative flex min-h-screen flex-col items-center justify-center bg-background px-page py-12">
       <Button
         variant="ghost"
         size="icon"
@@ -94,33 +95,66 @@ export default function PublicCommands() {
                 尚無指令
               </div>
             ) : (
-              <div className="rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-[25%]">指令</TableHead>
-                      <TableHead>說明</TableHead>
-                      <TableHead className="w-[15%] text-center">權限</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {commands.map(cmd => {
-                      const role = ROLE_LABELS[cmd.min_role] ?? ROLE_LABELS.everyone
-                      return (
-                        <TableRow key={cmd.name}>
-                          <TableCell className="font-mono font-medium">{cmd.name}</TableCell>
-                          <TableCell className="text-muted-foreground">{cmd.description}</TableCell>
-                          <TableCell className="text-center">
-                            <Badge variant={role.variant} className="text-label">
-                              {role.label}
-                            </Badge>
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
+              <Tabs defaultValue="builtin">
+                <TabsList>
+                  <TabsTrigger value="builtin">
+                    內建指令
+                    <Badge variant="secondary" className="ml-1.5 px-1.5 text-label">
+                      {commands.filter(c => c.command_type === 'builtin').length}
+                    </Badge>
+                  </TabsTrigger>
+                  <TabsTrigger value="custom">
+                    自訂指令
+                    <Badge variant="secondary" className="ml-1.5 px-1.5 text-label">
+                      {commands.filter(c => c.command_type === 'custom').length}
+                    </Badge>
+                  </TabsTrigger>
+                </TabsList>
+                {(['builtin', 'custom'] as const).map(type => {
+                  const filtered = commands.filter(c => c.command_type === type)
+                  return (
+                    <TabsContent key={type} value={type}>
+                      {filtered.length === 0 ? (
+                        <div className="flex items-center justify-center py-8 text-muted-foreground">
+                          尚無{type === 'custom' ? '自訂' : '內建'}指令
+                        </div>
+                      ) : (
+                        <div className="rounded-md border">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead className="w-[25%]">指令</TableHead>
+                                <TableHead>說明</TableHead>
+                                <TableHead className="w-[15%] text-center">權限</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {filtered.map(cmd => {
+                                const role = ROLE_LABELS[cmd.min_role] ?? ROLE_LABELS.everyone
+                                return (
+                                  <TableRow key={cmd.name}>
+                                    <TableCell className="font-mono font-medium">
+                                      {cmd.name}
+                                    </TableCell>
+                                    <TableCell className="text-muted-foreground">
+                                      {cmd.description}
+                                    </TableCell>
+                                    <TableCell className="text-center">
+                                      <Badge variant={role.variant} className="text-label">
+                                        {role.label}
+                                      </Badge>
+                                    </TableCell>
+                                  </TableRow>
+                                )
+                              })}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      )}
+                    </TabsContent>
+                  )
+                })}
+              </Tabs>
             )}
           </CardContent>
         </Card>

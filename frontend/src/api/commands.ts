@@ -105,6 +105,7 @@ export interface PublicCommand {
   name: string
   description: string
   min_role: string
+  command_type: 'builtin' | 'custom'
 }
 
 export interface PublicChannelProfile {

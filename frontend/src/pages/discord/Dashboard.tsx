@@ -5,8 +5,8 @@ import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 export default function DiscordDashboard() {
   useDocumentTitle('Discord 機器人')
   return (
-    <main className="h-full p-4 overflow-auto">
-      <div className="grid gap-4">
+    <main className="h-full p-page overflow-auto">
+      <div className="grid gap-section">
         {/* Header */}
         <div className="flex items-center gap-3">
           <div className="flex size-10 items-center justify-center rounded-lg bg-[#5865F2] text-white">
@@ -19,7 +19,7 @@ export default function DiscordDashboard() {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-section md:grid-cols-3">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">伺服器數量</CardTitle>

@@ -82,7 +82,7 @@ export default function SystemStatus() {
   }
 
   return (
-    <main className="flex flex-1 flex-col gap-4 p-4 lg:gap-6 lg:p-6">
+    <main className="flex flex-1 flex-col gap-section p-page lg:gap-card lg:p-page-lg">
       <div className="flex items-center justify-between">
         <h1 className="text-page-title font-bold">系統狀態 (System Status)</h1>
         <div className="flex items-center gap-2 text-sub text-muted-foreground">
@@ -98,7 +98,7 @@ export default function SystemStatus() {
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-section md:grid-cols-2 lg:grid-cols-3">
         {services.map(service => (
           <div key={service.name} className="bg-card border rounded-lg p-6 space-y-4 shadow-sm">
             <div className="flex items-center justify-between">

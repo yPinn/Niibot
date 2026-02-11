@@ -118,6 +118,7 @@ class CommandConfigService:
                     else cfg.custom_response or ""
                 ),
                 "min_role": cfg.min_role,
+                "command_type": cfg.command_type,
             }
             for cfg in configs
             if cfg.enabled

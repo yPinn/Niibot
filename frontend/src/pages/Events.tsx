@@ -149,7 +149,7 @@ export default function Events() {
   }
 
   return (
-    <main className="flex flex-1 flex-col gap-4 p-4 md:p-6">
+    <main className="flex flex-1 flex-col gap-section p-page md:p-page-lg">
       <div>
         <h1 className="text-page-title font-bold">Events</h1>
         <p className="text-sub text-muted-foreground">管理頻道事件和自動回應</p>

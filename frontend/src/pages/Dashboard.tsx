@@ -87,7 +87,7 @@ export default function Dashboard() {
 
   return (
     <main
-      className={`h-full grid grid-rows-[1fr_auto] min-h-0 overflow-hidden transition-all duration-200 p-4 gap-4`}
+      className={`h-full grid grid-rows-[1fr_auto] min-h-0 overflow-hidden transition-all duration-200 p-page gap-section`}
     >
       <AnalyticsChart data={analytics} loading={analyticsLoading} className="min-h-0" />
 

@@ -13,7 +13,7 @@ export default function Home() {
   const { resolvedTheme, setTheme } = useTheme()
 
   return (
-    <div className="relative flex min-h-screen flex-col items-center justify-center bg-background px-4 py-12">
+    <div className="relative flex min-h-screen flex-col items-center justify-center bg-background px-page py-12">
       <Button
         variant="ghost"
         size="icon"

@@ -73,6 +73,14 @@
   --text-content: var(--text-content);
   --text-sub: var(--text-sub);
   --text-label: var(--text-label);
+
+  /* ── Semantic Spacing Utilities ── */
+  --spacing-page: var(--space-page);
+  --spacing-page-lg: var(--space-page-lg);
+  --spacing-section: var(--space-section);
+  --spacing-card: var(--space-card);
+  --spacing-element: var(--space-element);
+  --spacing-empty: var(--space-empty);
 }
 
 :root {
@@ -92,6 +100,23 @@
   --text-content: var(--text-base); /* 正文內容 */
   --text-sub: var(--text-sm); /* 次要說明 */
   --text-label: var(--text-xs); /* 標籤、badge、timestamp */
+
+  /* ── Layer 1: Spacing Scale ── */
+  --space-1: 0.25rem; /* 4px */
+  --space-2: 0.5rem; /* 8px */
+  --space-3: 0.75rem; /* 12px */
+  --space-4: 1rem; /* 16px */
+  --space-6: 1.5rem; /* 24px */
+  --space-8: 2rem; /* 32px */
+  --space-12: 3rem; /* 48px */
+
+  /* ── Layer 2: Semantic Spacing (change here → all pages follow) ── */
+  --space-page: var(--space-4); /* 頁面內距 (mobile) */
+  --space-page-lg: var(--space-6); /* 頁面內距 (desktop) */
+  --space-section: var(--space-4); /* 區塊間距 (Cards 之間) */
+  --space-card: var(--space-6); /* Card/表單內部間距 */
+  --space-element: var(--space-2); /* 元素間距 (label-input) */
+  --space-empty: var(--space-8); /* 空狀態內距 */
 
   /* ── Status Colors ── */
   --color-status-online: oklch(0.72 0.19 155); /* green */

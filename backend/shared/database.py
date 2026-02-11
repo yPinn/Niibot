@@ -34,7 +34,6 @@ class PoolConfig:
     tcp_keepalives_idle: int = 30
     tcp_keepalives_interval: int = 10
     tcp_keepalives_count: int = 3
-    health_check_interval: int = 30
 
     # 各服務預設差異值
     _SERVICE_PRESETS: ClassVar[dict[str, dict]] = {
@@ -69,7 +68,6 @@ class DatabaseManager:
         self.database_url = database_url
         self.config = config or PoolConfig()
         self._pool: asyncpg.Pool | None = None
-        self._health_check_task: asyncio.Task | None = None
 
     @property
     def is_transaction_pooler(self) -> bool:
@@ -128,9 +126,6 @@ class DatabaseManager:
                     f"(size={cfg.min_size}-{cfg.max_size}, cache={self.statement_cache_size}, "
                     f"keepalive={cfg.tcp_keepalives_idle}s)"
                 )
-
-                self._health_check_task = asyncio.create_task(self._pool_health_check())
-
                 return
             except Exception as e:
                 if attempt < cfg.max_retries:
@@ -152,38 +147,8 @@ class DatabaseManager:
                     )
                     raise
 
-    async def _pool_health_check(self) -> None:
-        """定期檢查 pool 健康狀態,保持連線活躍"""
-        interval = self.config.health_check_interval
-        while True:
-            try:
-                await asyncio.sleep(interval)
-                if self._pool:
-                    async with self._pool.acquire() as conn:
-                        await conn.fetchval("SELECT 1")
-                    logger.debug(f"Database pool health check OK (interval={interval}s)")
-            except asyncio.CancelledError:
-                logger.info("Pool health check task cancelled")
-                break
-            except Exception as e:
-                logger.error(f"Pool health check failed: {e}")
-                if self._pool:
-                    try:
-                        self._pool.expire_connections()
-                        logger.info("Expired all pool connections for refresh")
-                    except Exception:
-                        pass
-
     async def disconnect(self) -> None:
         """Close database connection pool."""
-        if self._health_check_task:
-            self._health_check_task.cancel()
-            try:
-                await self._health_check_task
-            except asyncio.CancelledError:
-                pass
-            self._health_check_task = None
-
         if self._pool is None:
             return
 

@@ -15,7 +15,7 @@ import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 export default function NotFound() {
   useDocumentTitle('404 - 頁面不存在')
   return (
-    <div className="flex h-full items-center justify-center p-4">
+    <div className="flex h-full items-center justify-center p-page">
       <Empty className="border-none">
         <EmptyHeader>
           <EmptyMedia variant="icon">

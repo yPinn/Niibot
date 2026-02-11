@@ -198,6 +198,7 @@ class PublicCommandItem(BaseModel):
     name: str
     description: str
     min_role: str = "everyone"
+    command_type: str = "builtin"
 
 
 class PublicChannelProfile(BaseModel):

@@ -44,6 +44,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
 const ROLE_LABELS: Record<string, string> = {
@@ -281,7 +282,7 @@ export default function Commands() {
   }
 
   return (
-    <main className="flex flex-1 flex-col gap-4 p-4 md:p-6">
+    <main className="flex flex-1 flex-col gap-section p-page md:p-page-lg">
       <div>
         <h1 className="text-page-title font-bold">Commands</h1>
         <p className="text-sub text-muted-foreground">管理 Twitch 機器人指令與忠誠點數兌換</p>
@@ -309,89 +310,101 @@ export default function Commands() {
           ) : error ? (
             <div className="flex items-center justify-center py-8 text-destructive">{error}</div>
           ) : (
-            <div className="rounded-md border">
-              <Table className="table-fixed">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[30%]">指令</TableHead>
-                    <TableHead className="w-[10%]">類型</TableHead>
-                    <TableHead className="w-[12%]">冷卻</TableHead>
-                    <TableHead className="w-[10%]">權限</TableHead>
-                    <TableHead className="w-[12%] text-right">使用次數</TableHead>
-                    <TableHead className="w-[10%] text-center">狀態</TableHead>
-                    <TableHead className="w-[16%] text-right">操作</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {commands.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={7} className="text-center text-muted-foreground">
-                        尚無指令設定
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    commands.map(cmd => (
-                      <TableRow key={cmd.command_name}>
-                        <TableCell>
-                          <div className="flex flex-col">
-                            <div>
-                              <span className="font-mono font-medium">!{cmd.command_name}</span>
-                              {cmd.aliases && (
-                                <span className="ml-2 text-label text-muted-foreground">
-                                  ({cmd.aliases})
-                                </span>
-                              )}
-                            </div>
-                            <span className="text-label text-muted-foreground truncate max-w-64">
-                              {cmd.command_type === 'builtin'
-                                ? BUILTIN_DESCRIPTIONS[cmd.command_name] || ''
-                                : cmd.custom_response || ''}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            variant="outline"
-                            className={
-                              cmd.command_type === 'builtin'
-                                ? 'bg-status-info/10 text-status-info'
-                                : 'bg-status-success/10 text-status-success'
-                            }
-                          >
-                            {cmd.command_type === 'builtin' ? '內建' : '自訂'}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-sub text-muted-foreground">
-                          {formatCooldown(cmd.cooldown)}
-                        </TableCell>
-                        <TableCell className="text-sm">
-                          {ROLE_LABELS[cmd.min_role] || cmd.min_role}
-                        </TableCell>
-                        <TableCell className="text-right">{cmd.usage_count}</TableCell>
-                        <TableCell className="text-center">
-                          <div className="flex justify-center">
-                            <Switch
-                              checked={cmd.enabled}
-                              onCheckedChange={() => handleToggle(cmd)}
-                            />
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="size-8"
-                            onClick={() => openEditor(cmd)}
-                          >
-                            <Icon icon="fa-solid fa-pen" wrapperClassName="size-3.5" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
+            <Tabs defaultValue="builtin">
+              <TabsList>
+                <TabsTrigger value="builtin">
+                  內建指令
+                  <Badge variant="secondary" className="ml-1.5 px-1.5 text-label">
+                    {commands.filter(c => c.command_type === 'builtin').length}
+                  </Badge>
+                </TabsTrigger>
+                <TabsTrigger value="custom">
+                  自訂指令
+                  <Badge variant="secondary" className="ml-1.5 px-1.5 text-label">
+                    {commands.filter(c => c.command_type === 'custom').length}
+                  </Badge>
+                </TabsTrigger>
+              </TabsList>
+              {(['builtin', 'custom'] as const).map(type => {
+                const filtered = commands.filter(c => c.command_type === type)
+                return (
+                  <TabsContent key={type} value={type}>
+                    <div className="rounded-md border">
+                      <Table className="table-fixed">
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-[35%]">指令</TableHead>
+                            <TableHead className="w-[12%]">冷卻</TableHead>
+                            <TableHead className="w-[12%]">權限</TableHead>
+                            <TableHead className="w-[15%] text-right">使用次數</TableHead>
+                            <TableHead className="w-[10%] text-center">狀態</TableHead>
+                            <TableHead className="w-[16%] text-right">操作</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {filtered.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={6} className="text-center text-muted-foreground">
+                                {type === 'custom' ? '尚無自訂指令' : '尚無指令'}
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            filtered.map(cmd => (
+                              <TableRow key={cmd.command_name}>
+                                <TableCell>
+                                  <div className="flex flex-col">
+                                    <div>
+                                      <span className="font-mono font-medium">
+                                        !{cmd.command_name}
+                                      </span>
+                                      {cmd.aliases && (
+                                        <span className="ml-2 text-label text-muted-foreground">
+                                          ({cmd.aliases})
+                                        </span>
+                                      )}
+                                    </div>
+                                    <span className="text-label text-muted-foreground truncate max-w-64">
+                                      {cmd.command_type === 'builtin'
+                                        ? BUILTIN_DESCRIPTIONS[cmd.command_name] || ''
+                                        : cmd.custom_response || ''}
+                                    </span>
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-sub text-muted-foreground">
+                                  {formatCooldown(cmd.cooldown)}
+                                </TableCell>
+                                <TableCell className="text-sm">
+                                  {ROLE_LABELS[cmd.min_role] || cmd.min_role}
+                                </TableCell>
+                                <TableCell className="text-right">{cmd.usage_count}</TableCell>
+                                <TableCell className="text-center">
+                                  <div className="flex justify-center">
+                                    <Switch
+                                      checked={cmd.enabled}
+                                      onCheckedChange={() => handleToggle(cmd)}
+                                    />
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="size-8"
+                                    onClick={() => openEditor(cmd)}
+                                  >
+                                    <Icon icon="fa-solid fa-pen" wrapperClassName="size-3.5" />
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            ))
+                          )}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </TabsContent>
+                )
+              })}
+            </Tabs>
           )}
         </CardContent>
       </Card>

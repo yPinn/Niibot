@@ -280,7 +280,16 @@ class Bot(commands.AutoBot):
         resp: twitchio.authentication.ValidateTokenPayload = await super().add_token(token, refresh)
 
         if resp.user_id:
-            await self.channels.upsert_token_only(resp.user_id, token, refresh)
+            for attempt in range(1, 4):
+                try:
+                    await self.channels.upsert_token_only(resp.user_id, token, refresh)
+                    break
+                except Exception as e:
+                    if attempt < 3:
+                        LOGGER.warning(f"save_token attempt {attempt}/3 failed: {e}")
+                        await asyncio.sleep(2)
+                    else:
+                        LOGGER.error(f"save_token failed after 3 attempts: {e}")
 
         login = resp.login or "unknown"
         LOGGER.info(f"Added token to database: {login} ({resp.user_id})")
@@ -545,53 +554,71 @@ class Bot(commands.AutoBot):
             LOGGER.exception(f"Error recovering active sessions: {e}")
 
     async def _session_verify_loop(self) -> None:
-        """Periodically verify active sessions against Twitch API.
-
-        If a channel is no longer live, end the session immediately.
-        This catches cases where stream.offline EventSub failed to write to DB.
-        Also closes extremely stale sessions (>12h) as a safety net.
-        """
-        await asyncio.sleep(120)  # Wait for bot to fully start
+        """Poll all enabled channels against Twitch API every 3 min."""
+        await asyncio.sleep(120)
         while True:
             try:
-                # 1. Check active sessions against Twitch API
-                if self._active_sessions:
-                    channel_ids = list(self._active_sessions.keys())
-                    live_streams = await self.fetch_streams(user_ids=channel_ids)  # type: ignore[arg-type]
-                    live_ids = (
-                        {s.user.id for s in live_streams if s.user} if live_streams else set()
+                enabled = await self.channels.list_enabled_channels()
+                all_ids = [ch.channel_id for ch in enabled if ch.channel_id != self._bot_id]
+
+                if not all_ids:
+                    await asyncio.sleep(180)
+                    continue
+
+                # Query Twitch for live status
+                streams = await self.fetch_streams(user_ids=all_ids)  # type: ignore[arg-type]
+                live_map: dict[str, twitchio.Stream] = {}
+                if streams:
+                    for s in streams:
+                        if s.user:
+                            live_map[s.user.id] = s
+
+                # Start sessions for live channels without one
+                for cid, stream in live_map.items():
+                    if cid in self._active_sessions:
+                        continue
+                    existing = await self.analytics.get_active_session(cid)
+                    if existing:
+                        self._active_sessions[cid] = existing["id"]
+                        continue
+                    started_at = stream.started_at or datetime.now()
+                    game_id = str(stream.game_id) if stream.game_id else None
+                    sid = await self.analytics.create_session(
+                        channel_id=cid,
+                        started_at=started_at,
+                        title=stream.title,
+                        game_name=stream.game_name,
+                        game_id=game_id,
                     )
+                    self._active_sessions[cid] = sid
+                    LOGGER.info(f"Session {sid} created for channel {cid} (poll)")
 
-                    for channel_id in channel_ids:
-                        if channel_id not in live_ids:
-                            session_id = self._active_sessions.get(channel_id)
-                            if session_id:
-                                try:
-                                    await self.analytics.end_session(session_id, datetime.now())
-                                    LOGGER.info(
-                                        f"Session {session_id} ended via API verify "
-                                        f"(channel {channel_id} no longer live)"
-                                    )
-                                except Exception as e:
-                                    LOGGER.warning(
-                                        f"Failed to end session {session_id} via verify: {e}"
-                                    )
-                                self._active_sessions.pop(channel_id, None)
-                                self._chatter_buffers.pop(channel_id, None)
+                # End sessions for channels no longer live
+                for cid in list(self._active_sessions):
+                    if cid in live_map:
+                        continue
+                    sid = self._active_sessions.pop(cid, None)
+                    self._chatter_buffers.pop(cid, None)
+                    if sid:
+                        try:
+                            await self.analytics.end_session(sid, datetime.now())
+                            LOGGER.info(f"Session {sid} ended for channel {cid} (poll)")
+                        except Exception as e:
+                            LOGGER.warning(f"Failed to end session {sid}: {e}")
 
-                # 2. Safety net: close DB sessions >12h without ended_at
+                # Safety net: close stale DB sessions >12h
                 closed = await self.analytics.close_stale_sessions(max_hours=12)
                 if closed:
-                    LOGGER.info(f"Closed {closed} stale session(s) via safety net")
+                    LOGGER.info(f"Closed {closed} stale session(s)")
 
-                # 3. Reconcile recent sessions with VOD data (correct durations)
+                # VOD reconciliation
                 await self._reconcile_recent_sessions()
 
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 LOGGER.warning(f"Session verify error: {e}")
-            await asyncio.sleep(300)  # Run every 5 minutes
+            await asyncio.sleep(180)
 
     async def _reconcile_recent_sessions(self) -> None:
         """Use Twitch VOD data to fix session durations."""
