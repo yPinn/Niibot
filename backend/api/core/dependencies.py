@@ -55,9 +55,9 @@ def get_discord_api() -> DiscordAPIClient:
 
 def get_db_pool() -> asyncpg.Pool:
     db_manager = get_database_manager()
-    if db_manager.pool is None:
-        raise RuntimeError("Database pool not initialized")
-    return db_manager.pool
+    if db_manager._pool is None:
+        raise HTTPException(status_code=503, detail="Database not ready")
+    return db_manager._pool
 
 
 def get_channel_service(pool: asyncpg.Pool) -> ChannelService:
