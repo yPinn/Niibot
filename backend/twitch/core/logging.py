@@ -41,6 +41,7 @@ def setup_logging() -> None:
                 format="%(message)s",
                 datefmt="[%Y-%m-%d %H:%M:%S]",
                 handlers=[rich_handler],
+                force=True,
             )
             logger = logging.getLogger("Bot")
             logger.info("[bold green]✓[/bold green] Rich logging enabled", extra={"markup": True})

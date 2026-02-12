@@ -165,7 +165,7 @@ def main() -> None:
     try:
         asyncio.run(runner())
     except KeyboardInterrupt:
-        logging.warning("Shutting down due to KeyboardInterrupt...")
+        logging.getLogger("Bot").warning("Shutting down due to KeyboardInterrupt...")
 
 
 if __name__ == "__main__":

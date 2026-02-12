@@ -76,6 +76,7 @@ def setup_logging() -> None:
                 format="%(message)s",
                 datefmt="[%Y-%m-%d %H:%M:%S]",
                 handlers=[rich_handler],
+                force=True,
             )
 
             # 降低 discord.py 的日誌等級
