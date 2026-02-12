@@ -160,7 +160,8 @@ class DatabaseManager:
                 sock = socket.socket(family, socket.SOCK_STREAM)
                 sock.settimeout(5)
                 sock.connect(sockaddr)
-                logger.info(f"[DB Diag] TCP OK: {sockaddr[0]}:{sockaddr[1]} ({family.name})")
+                ip, port_ = str(sockaddr[0]), str(sockaddr[1])
+                logger.info(f"[DB Diag] TCP OK: {ip}:{port_} ({family.name})")
                 # 3. SSL handshake
                 try:
                     ctx = _ssl.create_default_context()
@@ -174,7 +175,7 @@ class DatabaseManager:
                     sock.close()
             except Exception as e:
                 logger.error(
-                    f"[DB Diag] TCP FAILED to {sockaddr[0]}:{sockaddr[1]}: {type(e).__name__}: {e}"
+                    f"[DB Diag] TCP FAILED to {str(sockaddr[0])}:{str(sockaddr[1])}: {type(e).__name__}: {e}"
                 )
 
     # ── Lifecycle ────────────────────────────────────────────────────

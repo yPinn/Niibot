@@ -10,7 +10,7 @@ import logging
 from collections.abc import Callable
 from typing import Any, Protocol, TypeVar, cast
 
-from cachetools import TTLCache
+from cachetools import TTLCache  # type: ignore[import-untyped]
 
 logger = logging.getLogger(__name__)
 

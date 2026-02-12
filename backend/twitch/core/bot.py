@@ -597,7 +597,7 @@ class Bot(commands.AutoBot):
                 for cid in list(self._active_sessions):
                     if cid in live_map:
                         continue
-                    sid = self._active_sessions.pop(cid, None)
+                    sid = self._active_sessions.pop(cid)
                     self._chatter_buffers.pop(cid, None)
                     if sid:
                         try:

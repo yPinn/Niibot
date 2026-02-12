@@ -127,29 +127,28 @@ def create_app() -> FastAPI:
         """Root endpoint - minimal service info"""
         return {"service": "niibot-api", "status": "running"}
 
-    # Health check endpoint for Docker/K8s
+    # Liveness probe — always 200, no external dependency
     @app.get("/health")
     async def health():
-        """Health check endpoint for Docker/K8s"""
-        db_manager = get_database_manager()
-        pool_exists = db_manager is not None and db_manager._pool is not None
-        db_ok = await db_manager.check_health() if pool_exists else False
+        """Liveness check for Render / Docker / K8s (no DB dependency)"""
         return {
-            "status": "healthy" if db_ok else "degraded" if pool_exists else "starting",
-            "ready": db_ok,
+            "status": "healthy",
+            "uptime_seconds": int(time.time() - _start_time),
         }
 
-    # Detailed status endpoint
+    # Detailed status endpoint (includes DB health)
     @app.get("/status")
     async def status():
-        """Status endpoint for detailed service info"""
+        """Readiness / status endpoint — includes actual DB health check"""
         db_manager = get_database_manager()
-        db_connected = db_manager is not None and db_manager._pool is not None
+        db_ok = False
+        if db_manager is not None and db_manager._pool is not None:
+            db_ok = await db_manager.check_health()
         return {
             "service": "niibot-api",
             "version": "2.0.0",
             "uptime_seconds": int(time.time() - _start_time),
-            "db_connected": db_connected,
+            "db_connected": db_ok,
             "environment": settings.environment,
         }
 

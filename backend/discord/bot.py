@@ -368,7 +368,7 @@ def _parse_retry_after(e: discord.HTTPException, base_delay: float, attempt: int
     if text:
         logger.info(f"[429 Response] {text[:500]}")
 
-    return retry_after
+    return float(retry_after)
 
 
 async def main() -> None:

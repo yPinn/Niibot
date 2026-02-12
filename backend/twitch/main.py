@@ -5,52 +5,52 @@ import logging
 import sys
 from pathlib import Path
 
-from dotenv import load_dotenv
-from twitchio import eventsub
-
 # Ensure shared module is importable (backend/ directory)
 _backend_dir = str(Path(__file__).resolve().parent.parent)
 if _backend_dir not in sys.path:
     sys.path.insert(0, _backend_dir)
 
-from core import (  # noqa: E402
-    HealthCheckServer,
-    get_channel_subscriptions,
-    load_env_config,
-    setup_logging,
-    validate_env_vars,
-)
-from core.bot import Bot  # noqa: E402
-from shared.database import DatabaseManager, PoolConfig  # noqa: E402
-from shared.repositories.channel import ChannelRepository  # noqa: E402
-
-LOGGER: logging.Logger = logging.getLogger("Bot")
-
-env_path = Path(__file__).parent / ".env"
-load_dotenv(dotenv_path=env_path)
-
-validate_env_vars()
-env_config = load_env_config()
-
-CLIENT_ID: str = env_config["CLIENT_ID"]
-CLIENT_SECRET: str = env_config["CLIENT_SECRET"]
-BOT_ID: str = env_config["BOT_ID"]
-OWNER_ID: str = env_config["OWNER_ID"]
-DATABASE_URL: str = env_config["DATABASE_URL"]
-CONDUIT_ID: str | None = env_config["CONDUIT_ID"] or None
-
 
 def main() -> None:
+    # Minimal imports for health server — bind port ASAP for Render
+    from core.health_server import HealthCheckServer
+    from core.logging import setup_logging
+
     setup_logging()
 
     async def runner() -> None:
-        # 1. Health server (Render needs a port quickly)
+        # 1. Health server FIRST (Render needs a port quickly)
         health_server = HealthCheckServer()
         await health_server.start()
 
-        # 2. Database connection pool
+        # 2. Heavy imports — after port is open
+        import logging
+
+        from dotenv import load_dotenv
+        from twitchio import eventsub
+
+        from core import get_channel_subscriptions, load_env_config, validate_env_vars
+        from core.bot import Bot
+        from shared.database import DatabaseManager, PoolConfig
+        from shared.repositories.channel import ChannelRepository
+
+        logger = logging.getLogger("Bot")
+
+        env_path = Path(__file__).parent / ".env"
+        load_dotenv(dotenv_path=env_path)
+        validate_env_vars()
+        env_config = load_env_config()
+
+        client_id: str = env_config["CLIENT_ID"]
+        client_secret: str = env_config["CLIENT_SECRET"]
+        bot_id: str = env_config["BOT_ID"]
+        owner_id: str = env_config["OWNER_ID"]
+        database_url: str = env_config["DATABASE_URL"]
+        conduit_id: str | None = env_config["CONDUIT_ID"] or None
+
+        # 3. Database connection pool
         db_manager = DatabaseManager(
-            DATABASE_URL,
+            database_url,
             PoolConfig.for_service("twitch"),
         )
         await db_manager.connect()
@@ -60,39 +60,39 @@ def main() -> None:
             subs: list[eventsub.SubscriptionPayload] = []
             channel_repo = ChannelRepository(pool)
 
-            # 3. Retry DB connection (cross-region timeout)
+            # 4. Retry DB query (cross-region timeout)
             for attempt in range(1, 6):
                 try:
                     enabled_channels = await channel_repo.list_enabled_channels()
                     for ch in enabled_channels:
-                        if ch.channel_id == BOT_ID:
+                        if ch.channel_id == bot_id:
                             continue
-                        subs.extend(get_channel_subscriptions(ch.channel_id, BOT_ID))
+                        subs.extend(get_channel_subscriptions(ch.channel_id, bot_id))
                     break
                 except (TimeoutError, OSError) as e:
-                    LOGGER.warning(f"Database connect attempt ({attempt}/5): {type(e).__name__}")
+                    logger.warning(f"Database connect attempt ({attempt}/5): {type(e).__name__}")
                     if attempt < 5:
                         await asyncio.sleep(5)
 
             if subs:
-                LOGGER.info(f"Starting bot with {len(subs)} initial subscriptions")
+                logger.info(f"Starting bot with {len(subs)} initial subscriptions")
             else:
-                LOGGER.warning(
+                logger.warning(
                     "Starting bot without initial subscriptions (DB unavailable or empty)"
                 )
-                LOGGER.warning("Background task will load channels once DB is reachable")
+                logger.warning("Background task will load channels once DB is reachable")
 
-            # 4. Start bot with auto-retry on rate limit
+            # 5. Start bot with auto-retry on rate limit
             retry_count = 0
             max_retries = 5
             base_delay = 60
 
             async with Bot(
-                client_id=CLIENT_ID,
-                client_secret=CLIENT_SECRET,
-                bot_id=BOT_ID,
-                owner_id=OWNER_ID,
-                conduit_id=CONDUIT_ID,
+                client_id=client_id,
+                client_secret=client_secret,
+                bot_id=bot_id,
+                owner_id=owner_id,
+                conduit_id=conduit_id,
                 token_database=pool,
                 subs=subs,
             ) as bot:
@@ -138,7 +138,7 @@ def main() -> None:
                             else:
                                 readable = f"{secs}s"
 
-                            LOGGER.warning(
+                            logger.warning(
                                 f"Twitch rate limit (429). "
                                 f"retry_after={retry_after:.0f}s, "
                                 f"waiting {readable}, "
@@ -148,13 +148,13 @@ def main() -> None:
                             # Log raw error for debugging
                             err_text = str(e)[:500]
                             if err_text:
-                                LOGGER.info(f"[429 Response] {err_text}")
+                                logger.info(f"[429 Response] {err_text}")
 
                             await asyncio.sleep(wait_time)
                         else:
                             raise
                 else:
-                    LOGGER.error(
+                    logger.error(
                         f"Max retries reached ({max_retries}). Bot cannot connect to Twitch."
                     )
         finally:
@@ -165,7 +165,7 @@ def main() -> None:
     try:
         asyncio.run(runner())
     except KeyboardInterrupt:
-        LOGGER.warning("Shutting down due to KeyboardInterrupt...")
+        logging.warning("Shutting down due to KeyboardInterrupt...")
 
 
 if __name__ == "__main__":
