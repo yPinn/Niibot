@@ -18,7 +18,7 @@ DISCORD_DIR = CORE_DIR.parent
 BACKEND_DIR = DISCORD_DIR.parent
 COGS_DIR = DISCORD_DIR / "cogs"
 
-# Docker 環境下 DISCORD_DIR 會是 /app
+# In Docker, DISCORD_DIR resolves to /app
 if str(DISCORD_DIR) == "/app":
     DATA_DIR = Path("/app/data")
 else:

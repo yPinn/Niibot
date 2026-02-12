@@ -40,7 +40,7 @@ def setup_logging(settings: Settings) -> None:
                 logging.Formatter(fmt="%(message)s", datefmt="[%Y-%m-%d %H:%M:%S]")
             )
 
-            # force=True: uvicorn 會先行設定 root logger，需強制覆蓋
+            # force=True: override root logger pre-configured by uvicorn
             logging.basicConfig(
                 level=level,
                 format="%(message)s",
@@ -66,7 +66,7 @@ def setup_logging(settings: Settings) -> None:
             force=True,
         )
 
-    # 降低 uvicorn access log 噪音
+    # Reduce uvicorn access log noise
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 
     logger = logging.getLogger(__name__)

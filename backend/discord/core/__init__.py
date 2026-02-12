@@ -2,6 +2,7 @@
 
 from .config import BACKEND_DIR, BOT_NAME, BOT_VERSION, COGS_DIR, DATA_DIR, DISCORD_DIR, BotConfig
 from .health_server import HealthCheckServer
+from .logging import setup_logging
 from .rate_limiter import RateLimitMonitor, RateLimitStats
 
 __all__ = [
@@ -18,4 +19,6 @@ __all__ = [
     "HealthCheckServer",
     "RateLimitMonitor",
     "RateLimitStats",
+    # Logging
+    "setup_logging",
 ]

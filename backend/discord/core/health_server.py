@@ -2,10 +2,14 @@
 
 import asyncio
 import logging
+import os
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from aiohttp import web
+
+if TYPE_CHECKING:
+    from discord.ext.commands import Bot
 
 logger = logging.getLogger("discord_bot.health_server")
 
@@ -13,10 +17,12 @@ logger = logging.getLogger("discord_bot.health_server")
 class HealthCheckServer:
     """HTTP health check server"""
 
-    def __init__(self, bot: Any, host: str = "0.0.0.0", port: int = 8080) -> None:
-        self.bot = bot
+    def __init__(
+        self, bot: "Bot | None" = None, host: str = "0.0.0.0", port: int | None = None
+    ) -> None:
+        self.bot: Any = bot
         self.host = host
-        self.port = port
+        self.port = port or int(os.getenv("PORT", "8080"))
         self.app = web.Application()
         self.runner: web.AppRunner | None = None
         self._start_time: float = time.time()
@@ -36,19 +42,20 @@ class HealthCheckServer:
 
     async def handle_health(self, request: web.Request) -> web.Response:
         """Health check endpoint for Render/Docker — always 200 (liveness)"""
-        ready = self.bot.is_ready()
+        ready = self.bot is not None and self.bot.is_ready()
         return web.json_response(
             {"status": "healthy" if ready else "starting", "ready": ready},
         )
 
     async def handle_status(self, request: web.Request) -> web.Response:
         """Status endpoint for API server integration"""
+        bot_ready = self.bot is not None and self.bot.is_ready()
         return web.json_response(
             {
                 "service": "niibot-discord",
-                "bot_id": str(self.bot.user.id) if self.bot.user else None,
+                "bot_id": str(self.bot.user.id) if bot_ready and self.bot.user else None,
                 "uptime_seconds": int(time.time() - self._start_time),
-                "connected_channels": len(self.bot.guilds) if self.bot.is_ready() else 0,
+                "connected_channels": len(self.bot.guilds) if bot_ready else 0,
             }
         )
 

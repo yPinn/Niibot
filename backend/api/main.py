@@ -9,8 +9,10 @@ Run with:
 import sys
 from pathlib import Path
 
-# Add parent directory to path for shared imports — must be before any local imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Ensure shared module is importable (backend/ directory)
+_backend_dir = str(Path(__file__).resolve().parent.parent)
+if _backend_dir not in sys.path:
+    sys.path.insert(0, _backend_dir)
 
 from app import create_app  # noqa: E402
 from core.config import get_settings  # noqa: E402

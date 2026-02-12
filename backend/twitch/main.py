@@ -96,8 +96,7 @@ def main() -> None:
                 token_database=pool,
                 subs=subs,
             ) as bot:
-                if health_server:
-                    health_server.bot = bot
+                health_server.bot = bot
                 await bot.setup_database()
 
                 while retry_count < max_retries:
@@ -158,14 +157,17 @@ def main() -> None:
                         f"Max retries reached ({max_retries}). Bot cannot connect to Twitch."
                     )
         finally:
-            if health_server:
-                await health_server.stop()
+            await health_server.stop()
             await db_manager.disconnect()
 
+    bot_logger = logging.getLogger("Bot")
     try:
         asyncio.run(runner())
     except KeyboardInterrupt:
-        logging.getLogger("Bot").warning("Shutting down due to KeyboardInterrupt...")
+        bot_logger.warning("Shutting down due to KeyboardInterrupt...")
+    except Exception as e:
+        bot_logger.critical(f"Fatal error: {type(e).__name__}: {e}")
+        raise SystemExit(1) from None
 
 
 if __name__ == "__main__":

@@ -33,12 +33,12 @@ class PoolConfig:
     max_retries: int = 3
     retry_delay: float = 3.0
 
-    # Keep-alive 設定 (Session Pooler only)
+    # Keep-alive settings (Session Pooler only)
     tcp_keepalives_idle: int = 30
     tcp_keepalives_interval: int = 10
     tcp_keepalives_count: int = 3
 
-    # 各服務預設差異值
+    # Per-service preset overrides
     _SERVICE_PRESETS: ClassVar[dict[str, dict]] = {
         "api": {"min_size": 2, "max_size": 10},
         "discord": {"min_size": 1, "max_size": 4},
@@ -186,7 +186,7 @@ class DatabaseManager:
             logger.warning("Database pool already initialized")
             return
 
-        # 選擇對應的 pool 建立參數
+        # Select pool builder for detected pooler mode
         _builders = {
             "session": self._session_pool_kwargs,
             "transaction": self._transaction_pool_kwargs,
@@ -199,7 +199,7 @@ class DatabaseManager:
             try:
                 self._pool = await asyncpg.create_pool(**pool_kwargs)
 
-                # 驗證 pool 可用性
+                # Verify pool is usable
                 async with self._pool.acquire() as conn:
                     await conn.fetchval("SELECT 1")
 

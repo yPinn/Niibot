@@ -2,6 +2,7 @@
 
 import logging
 import os
+import sys
 
 try:
     from rich.console import Console
@@ -13,11 +14,18 @@ except ImportError:
 
 
 def setup_logging() -> None:
-    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
-    level = getattr(logging, log_level, logging.INFO)
+    """Configure application logging with Rich handler"""
+    level = getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO)
 
     if RICH_AVAILABLE:
         try:
+            # Enable UTF-8 output on Windows
+            if sys.platform == "win32":
+                import codecs
+
+                sys.stdout = codecs.getwriter("utf-8")(sys.stdout.buffer)
+                sys.stderr = codecs.getwriter("utf-8")(sys.stderr.buffer)
+
             console = Console(
                 force_terminal=True,
                 width=120,
@@ -45,8 +53,6 @@ def setup_logging() -> None:
                 handlers=[rich_handler],
                 force=True,
             )
-            logger = logging.getLogger("Bot")
-            logger.info("[bold green]✓[/bold green] Rich logging enabled", extra={"markup": True})
         except Exception as e:
             logging.basicConfig(
                 level=level,
@@ -54,8 +60,9 @@ def setup_logging() -> None:
                 datefmt="%Y-%m-%d %H:%M:%S",
                 force=True,
             )
-            logger = logging.getLogger("Bot")
-            logger.warning(f"Failed to setup Rich logging: {e}, using standard logging")
+            logging.getLogger(__name__).warning(
+                f"Rich logging setup failed: {e}, using standard logging"
+            )
     else:
         logging.basicConfig(
             level=level,
@@ -63,23 +70,8 @@ def setup_logging() -> None:
             datefmt="%Y-%m-%d %H:%M:%S",
             force=True,
         )
-        logger = logging.getLogger("Bot")
-        logger.info("Standard logging enabled (install 'rich' for better output)")
 
-    if level == logging.DEBUG:
-        logging.getLogger("twitchio").setLevel(logging.DEBUG)
-        logging.getLogger("twitchio.eventsub").setLevel(logging.DEBUG)
-        logging.getLogger("twitchio.http").setLevel(logging.DEBUG)
-        logging.getLogger("twitchio.websockets").setLevel(logging.DEBUG)
-        logging.getLogger("httpx").setLevel(logging.INFO)
-    else:
-        logging.getLogger("twitchio").setLevel(logging.INFO)
-        logging.getLogger("twitchio.eventsub").setLevel(logging.INFO)
-        logging.getLogger("twitchio.http").setLevel(logging.WARNING)
-        logging.getLogger("twitchio.websockets").setLevel(logging.WARNING)
-        logging.getLogger("httpx").setLevel(logging.WARNING)
-
-    logging.getLogger("asyncio").setLevel(logging.ERROR)
-    logging.getLogger("asyncpg").setLevel(logging.WARNING)
-    logging.getLogger("openai").setLevel(logging.WARNING)
+    # Reduce discord.py log noise
+    logging.getLogger("discord").setLevel(logging.WARNING)
+    logging.getLogger("discord.http").setLevel(logging.WARNING)
     logging.getLogger("aiohttp").setLevel(logging.WARNING)

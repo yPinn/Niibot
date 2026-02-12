@@ -1,7 +1,4 @@
-"""
-Niibot Discord Bot
-使用 discord.py 2.x 和 Slash Commands
-"""
+"""Niibot Discord Bot — discord.py 2.x with Slash Commands"""
 
 import asyncio
 import logging
@@ -9,109 +6,38 @@ import os
 import sys
 from pathlib import Path
 
-# 設置 Python 路徑 (直接執行時需要)
-if __name__ == "__main__":
-    backend_dir = str(Path(__file__).resolve().parent.parent)
-    if backend_dir not in sys.path:
-        sys.path.insert(0, backend_dir)
+# Ensure shared module is importable (backend/ directory)
+_backend_dir = str(Path(__file__).resolve().parent.parent)
+if _backend_dir not in sys.path:
+    sys.path.insert(0, _backend_dir)
 
-# 載入 .env 環境變數 (必須在 import config 之前)
-from dotenv import load_dotenv
+# Load .env before any config imports
+from dotenv import load_dotenv  # noqa: E402
 
 env_path = Path(__file__).parent / ".env"
 load_dotenv(dotenv_path=env_path, encoding="utf-8")
 
-# 導入配置和 Discord 模組
 import asyncpg  # noqa: E402
 import discord  # noqa: E402
 from discord.ext import commands  # noqa: E402
 
-from core import COGS_DIR, BotConfig, HealthCheckServer, RateLimitMonitor  # noqa: E402
+from core import (  # noqa: E402
+    COGS_DIR,
+    BotConfig,
+    HealthCheckServer,
+    RateLimitMonitor,
+    setup_logging,
+)
 from shared.database import DatabaseManager, PoolConfig  # noqa: E402
 
-try:
-    from rich.console import Console
-    from rich.logging import RichHandler
-
-    RICH_AVAILABLE = True
-except ImportError:
-    RICH_AVAILABLE = False
-
-
-def setup_logging() -> None:
-    """設定日誌系統"""
-    level = getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO)
-
-    if RICH_AVAILABLE:
-        try:
-            # 設置 Windows UTF-8 輸出支援
-            if sys.platform == "win32":
-                import codecs
-
-                sys.stdout = codecs.getwriter("utf-8")(sys.stdout.buffer)
-                sys.stderr = codecs.getwriter("utf-8")(sys.stderr.buffer)
-
-            console = Console(
-                force_terminal=True,
-                width=120,
-            )
-
-            rich_handler = RichHandler(
-                console=console,
-                show_time=True,
-                show_level=True,
-                show_path=False,
-                markup=True,
-                rich_tracebacks=True,
-                tracebacks_show_locals=False,
-                tracebacks_width=120,
-            )
-
-            rich_handler.setFormatter(
-                logging.Formatter(fmt="%(message)s", datefmt="[%Y-%m-%d %H:%M:%S]")
-            )
-
-            logging.basicConfig(
-                level=level,
-                format="%(message)s",
-                datefmt="[%Y-%m-%d %H:%M:%S]",
-                handlers=[rich_handler],
-                force=True,
-            )
-
-            # 降低 discord.py 的日誌等級
-            logging.getLogger("discord").setLevel(logging.WARNING)
-            logging.getLogger("discord.http").setLevel(logging.WARNING)
-
-        except Exception as e:
-            # Rich 設定失敗時使用標準日誌
-            logging.basicConfig(
-                level=level,
-                format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-                datefmt="%Y-%m-%d %H:%M:%S",
-            )
-            logging.getLogger("discord_bot").warning(
-                f"Rich logging setup failed: {e}, using standard logging"
-            )
-    else:
-        # Rich 不可用時使用標準日誌
-        logging.basicConfig(
-            level=level,
-            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-        )
-
-
-# 設定日誌
 setup_logging()
 logger = logging.getLogger("discord_bot")
 
 
 class NiibotClient(commands.Bot):
-    """Niibot Discord Bot 客戶端"""
+    """Niibot Discord Bot client"""
 
     def __init__(self) -> None:
-        # 設定 Intents (僅開啟必要的特權 Intents)
         intents = discord.Intents.default()
         intents.message_content = True  # Required for events.py message logging
         intents.members = True  # Required for moderation, utility, events, giveaway
@@ -119,7 +45,7 @@ class NiibotClient(commands.Bot):
         super().__init__(
             command_prefix=commands.when_mentioned_or("$"),
             intents=intents,
-            help_command=None,  # 自訂 help 指令
+            help_command=None,
         )
 
         self.initial_extensions: list[str] = self._get_extensions()
@@ -129,7 +55,7 @@ class NiibotClient(commands.Bot):
         self._commands_synced: bool = False
 
     async def setup_database(self, max_retries: int = 5, retry_delay: float = 5.0) -> None:
-        """Initialize database for Discord bot (low concurrency, persistent connection)"""
+        """Initialize database connection pool"""
         database_url = os.getenv("DATABASE_URL")
         if not database_url:
             raise ValueError("DATABASE_URL environment variable is not set")
@@ -156,7 +82,7 @@ class NiibotClient(commands.Bot):
             self.db_pool = None
 
     def _get_extensions(self) -> list[str]:
-        """動態掃描 cogs 目錄"""
+        """Scan cogs directory for loadable extensions"""
         if not COGS_DIR.exists():
             return []
 
@@ -171,11 +97,9 @@ class NiibotClient(commands.Bot):
         ]
 
     async def setup_hook(self) -> None:
-        """Bot 啟動時的初始化設置"""
-        # 啟動速率限制監控
+        """Called when the bot is starting up"""
         await self.rate_limiter.start_monitoring()
 
-        # 載入 Cogs
         loaded = []
         failed = []
 
@@ -186,94 +110,70 @@ class NiibotClient(commands.Bot):
             except Exception as e:
                 failed.append(f"{extension.split('.')[-1]} ({e})")
 
-        # 顯示載入結果
         if loaded:
-            cogs_list = ", ".join(loaded)
-            if RICH_AVAILABLE:
-                logger.info(f"[green]已載入 Cogs:[/green] {cogs_list}")
-            else:
-                logger.info(f"已載入 Cogs: {cogs_list}")
-
+            logger.info(f"[green]Loaded cogs:[/green] {', '.join(loaded)}")
         if failed:
-            failures = ", ".join(failed)
-            if RICH_AVAILABLE:
-                logger.error(f"[red]載入失敗:[/red] {failures}")
-            else:
-                logger.error(f"載入失敗: {failures}")
+            logger.error(f"[red]Failed to load:[/red] {', '.join(failed)}")
 
-        # 記錄 guild_id 供 on_ready 同步使用
         guild_id = os.getenv("DISCORD_GUILD_ID")
         if guild_id:
             self._sync_guild_id = guild_id
 
-        # 指令同步延遲到 on_ready 執行（避免 setup_hook 中觸發 429 導致重啟循環）
-        if RICH_AVAILABLE:
-            logger.info("[yellow]正在連接 Discord...[/yellow]")
-        else:
-            logger.info("正在連接 Discord...")
+        # Command sync deferred to on_ready (avoid 429 during setup_hook)
+        logger.info("[yellow]Connecting to Discord...[/yellow]")
 
     async def _sync_commands(self) -> None:
-        """同步斜線指令（僅在 on_ready 後執行一次）"""
+        """Sync slash commands (runs once after first on_ready)"""
         sync_commands = os.getenv("DISCORD_SYNC_COMMANDS", "true").lower() == "true"
         if not sync_commands:
-            logger.info("跳過指令同步 (DISCORD_SYNC_COMMANDS=false)")
+            logger.info("Skipping command sync (DISCORD_SYNC_COMMANDS=false)")
             self._commands_synced = True
             return
 
         try:
-            logger.info("正在同步斜線指令...")
+            logger.info("Syncing slash commands...")
             guild_id = getattr(self, "_sync_guild_id", None)
 
             if guild_id:
                 guild = discord.Object(id=int(guild_id))
                 self.tree.copy_global_to(guild=guild)
                 synced = await self.tree.sync(guild=guild)
-                logger.info(f"已同步 {len(synced)} 個指令到測試伺服器")
+                logger.info(f"Synced {len(synced)} commands to test guild")
             else:
                 synced = await self.tree.sync()
-                logger.info(f"已全域同步 {len(synced)} 個指令")
+                logger.info(f"Synced {len(synced)} commands globally")
 
             self._commands_synced = True
 
         except discord.HTTPException as e:
-            logger.error(f"指令同步失敗 (HTTP {e.status}): {e.text}")
+            logger.error(f"Command sync failed (HTTP {e.status}): {e.text}")
             if e.status == 429:
-                logger.warning("指令同步觸發 429，將在下次重連時重試")
+                logger.warning("Command sync hit 429, will retry on next reconnect")
             else:
                 self._commands_synced = True
         except Exception as e:
-            logger.error(f"指令同步發生錯誤: {e}")
+            logger.error(f"Command sync error: {e}")
             self._commands_synced = True
 
     async def on_ready(self) -> None:
-        """Bot 連接成功並就緒時觸發"""
-        # 同步指令（僅首次 on_ready 執行，避免重連時重複同步）
+        """Fired when the bot is connected and ready"""
+        # Sync commands (first on_ready only, skip on reconnect)
         if not self._commands_synced:
             await self._sync_commands()
 
-        # 記錄同步的測試伺服器資訊
         if hasattr(self, "_sync_guild_id"):
             guild_obj = self.get_guild(int(self._sync_guild_id))
             if guild_obj:
-                if RICH_AVAILABLE:
-                    logger.info(
-                        f"[cyan]測試伺服器:[/cyan] {guild_obj.name} (ID: {self._sync_guild_id})"
-                    )
-                else:
-                    logger.info(f"測試伺服器: {guild_obj.name} (ID: {self._sync_guild_id})")
+                logger.info(
+                    f"[cyan]Test guild:[/cyan] {guild_obj.name} (ID: {self._sync_guild_id})"
+                )
 
-        # 取得並設定 Bot 擁有者 ID
         if not self.owner_id:
             app_info = await self.application_info()
             self.owner_id = app_info.owner.id
-            # 優先使用 global_name（全局顯示名稱），否則使用 name（用戶名）
             owner_name = app_info.owner.global_name or app_info.owner.name
-            if RICH_AVAILABLE:
-                logger.info(f"[cyan]Bot Owner:[/cyan] {owner_name} (ID: {self.owner_id})")
-            else:
-                logger.info(f"Bot Owner: {owner_name} (ID: {self.owner_id})")
+            logger.info(f"[cyan]Bot Owner:[/cyan] {owner_name} (ID: {self.owner_id})")
 
-        # 應用配置的狀態和活動
         try:
             await self.change_presence(
                 status=BotConfig.get_status(), activity=BotConfig.get_activity()
@@ -281,43 +181,37 @@ class NiibotClient(commands.Bot):
         except Exception as e:
             logger.warning(f"Failed to set bot presence: {e}")
 
-        # 記錄 Bot 資訊
         status = BotConfig.get_status()
         activity = BotConfig.get_activity()
-        activity_str = f"{activity.name}" if activity else "無"
+        activity_str = f"{activity.name}" if activity else "None"
 
         if self.user is None:
             logger.error("Bot user is None")
             return
 
-        if RICH_AVAILABLE:
-            logger.info(
-                f"[bold green]Bot 已就緒:[/bold green] {self.user} [dim](ID: {self.user.id})[/dim]"
-            )
-            logger.info(
-                f"[cyan]連接資訊:[/cyan] {len(self.guilds)} 個伺服器 | discord.py {discord.__version__}"
-            )
-            logger.info(f"[cyan]Bot 狀態:[/cyan] {status.name} | {activity_str}")
-        else:
-            logger.info(f"Bot 已就緒: {self.user} (ID: {self.user.id})")
-            logger.info(f"連接資訊: {len(self.guilds)} 個伺服器 | discord.py {discord.__version__}")
-            logger.info(f"Bot 狀態: {status.name} | {activity_str}")
+        logger.info(
+            f"[bold green]Bot ready:[/bold green] {self.user} [dim](ID: {self.user.id})[/dim]"
+        )
+        logger.info(
+            f"[cyan]Connection:[/cyan] {len(self.guilds)} guilds | discord.py {discord.__version__}"
+        )
+        logger.info(f"[cyan]Status:[/cyan] {status.name} | {activity_str}")
 
     async def on_command_error(self, ctx: commands.Context, error: commands.CommandError) -> None:
-        """處理前綴指令錯誤"""
+        """Handle prefix command errors"""
         if isinstance(error, commands.CommandNotFound):
             return
 
         if isinstance(error, commands.MissingPermissions):
-            await ctx.send("你沒有權限使用這個指令")
+            await ctx.send("You don't have permission to use this command")
             return
 
         if isinstance(error, commands.MissingRequiredArgument):
-            await ctx.send(f"缺少必要參數: `{error.param.name}`")
+            await ctx.send(f"Missing required argument: `{error.param.name}`")
             return
 
-        logger.error(f"指令錯誤: {error}", exc_info=error)
-        await ctx.send("執行指令時發生錯誤")
+        logger.error(f"Command error: {error}", exc_info=error)
+        await ctx.send("An error occurred while executing the command")
 
 
 def _format_duration(seconds: float) -> str:
@@ -373,28 +267,24 @@ def _parse_retry_after(e: discord.HTTPException, base_delay: float, attempt: int
 
 
 async def main() -> None:
-    """Bot 啟動主函數 (具備自動重試與速率限制保護)"""
+    """Bot startup with auto-retry and rate limit protection"""
+    # 1. Health server FIRST (Render needs a port quickly)
+    health_server = HealthCheckServer()
+    await health_server.start()
+
     token = os.getenv("DISCORD_BOT_TOKEN")
     if not token:
-        msg = "找不到 DISCORD_BOT_TOKEN 環境變數，請在 .env 中設定"
-        logger.error(f"[bold red]{msg}[/bold red]" if RICH_AVAILABLE else msg)
+        logger.error("DISCORD_BOT_TOKEN not set")
+        await health_server.stop()
         return
 
-    http_port = int(os.getenv("PORT", "8080"))
-
-    # 重試參數
     retry_count = 0
     max_retries = 5
-    base_delay = 60  # 起始等待 60 秒
+    base_delay = 60
 
     async with NiibotClient() as bot:
-        health_server = None
+        health_server.bot = bot
         try:
-            # 啟動健康檢查伺服器
-            health_server = HealthCheckServer(bot, port=http_port)
-            await health_server.start()
-
-            # 初始化資料庫連線池
             await bot.setup_database()
 
             while retry_count < max_retries:
@@ -418,37 +308,25 @@ async def main() -> None:
                     else:
                         raise
             else:
-                # while 正常結束 = 重試次數已用完
-                err_msg = f"已達最大重試次數 ({max_retries})，Bot 無法連線至 Discord。請稍後再試或檢查是否被 Cloudflare 暫時封鎖。"
-                logger.error(f"[bold red]{err_msg}[/bold red]" if RICH_AVAILABLE else err_msg)
+                logger.error(f"Max retries reached ({max_retries}). Bot cannot connect to Discord.")
 
         except (KeyboardInterrupt, asyncio.CancelledError):
-            logger.info("接收到停止訊號...")
+            logger.info("Received stop signal...")
         except Exception as e:
-            logger.error(f"Bot 運行期間發生嚴重錯誤: {e}", exc_info=True)
+            logger.error(f"Fatal error during bot runtime: {e}", exc_info=True)
         finally:
-            # 資源清理
             await bot.close_database()
-
-            if health_server:
-                await health_server.stop()
-
+            await health_server.stop()
             if not bot.is_closed():
                 await bot.close()
-
-            logger.info("Bot 已安全關閉。")
+            logger.info("Bot shut down.")
 
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
-    except (KeyboardInterrupt, asyncio.CancelledError):
-        if RICH_AVAILABLE:
-            logger.info("[yellow]Bot 已手動停止[/yellow]")
-        else:
-            logger.info("Bot 已手動停止")
+    except KeyboardInterrupt:
+        logger.warning("Shutting down due to KeyboardInterrupt...")
     except Exception as e:
-        if RICH_AVAILABLE:
-            logger.error(f"[bold red]Bot 發生錯誤:[/bold red] {e}", exc_info=e)
-        else:
-            logger.error(f"Bot 發生錯誤: {e}", exc_info=e)
+        logger.critical(f"Fatal error: {type(e).__name__}: {e}")
+        raise SystemExit(1) from None

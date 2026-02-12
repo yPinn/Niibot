@@ -18,13 +18,13 @@ logger = logging.getLogger(__name__)
 _MISSING = object()
 
 
-# 1. 定義 Protocol (放在最前面)
+# Protocol for typed cached function
 class CachedFunction(Protocol):
     __call__: Any
     cache: "AsyncTTLCache"
 
 
-# 2. 定義泛型
+# Generic type var for decorator
 F = TypeVar("F", bound=Callable[..., Any])
 
 
@@ -82,7 +82,7 @@ def cached(cache: AsyncTTLCache, key_func: Callable[..., str]):
                     cache.set(cache_key, result)
                 return result
 
-        # 強制轉型並賦予屬性
+        # Cast and attach cache attribute
         narrowed_wrapper = cast(CachedFunction, wrapper)
         narrowed_wrapper.cache = cache
         return narrowed_wrapper

@@ -20,7 +20,7 @@ class HealthCheckServer:
     def __init__(self, bot: "Bot | None" = None, host: str = "0.0.0.0", port: int | None = None):
         self.bot: Any = bot
         self.host = host
-        # Render 會設定 PORT 環境變數，優先使用
+        # Prefer PORT env var (set by Render)
         self.port = port or int(os.getenv("PORT", "4344"))
         self.app = web.Application()
         self.runner: web.AppRunner | None = None
