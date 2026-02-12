@@ -7,7 +7,7 @@ from typing import Any, cast
 
 import asyncpg
 
-from shared.cache import _MISSING, AsyncTTLCache
+from shared.cache import AsyncTTLCache, cached
 from shared.models.birthday import Birthday, BirthdaySettings
 
 # --- In-process caches ---
@@ -24,13 +24,9 @@ class BirthdayRepository:
 
     # ==================== Birthday Operations ====================
 
+    @cached(cache=_birthday_cache, key_func=lambda self, user_id: f"bday:{user_id}")
     async def get_birthday(self, user_id: int) -> Birthday | None:
         """Get a user's birthday."""
-        cache_key = f"bday:{user_id}"
-        cached = _birthday_cache.get(cache_key)
-        if cached is not _MISSING:
-            return cached
-
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT * FROM birthdays WHERE user_id = $1",
@@ -38,9 +34,7 @@ class BirthdayRepository:
             )
             if not row:
                 return None
-            result = cast(Birthday, Birthday(**dict(row)))
-            _birthday_cache.set(cache_key, result)
-            return result
+            return cast(Birthday, Birthday(**dict(row)))
 
     async def upsert_birthday(
         self,
@@ -123,22 +117,17 @@ class BirthdayRepository:
 
     # ==================== Settings Operations ====================
 
+    @cached(cache=_settings_cache, key_func=lambda self, guild_id: f"settings:{guild_id}")
     async def get_settings(self, guild_id: int) -> BirthdaySettings | None:
         """Get guild birthday settings."""
-        cache_key = f"settings:{guild_id}"
-        cached = _settings_cache.get(cache_key)
-        if cached is not _MISSING:
-            return cached
-
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT * FROM birthday_settings WHERE guild_id = $1",
                 guild_id,
             )
-            result = BirthdaySettings(**dict(row)) if row else None
-            if result is not None:
-                _settings_cache.set(cache_key, result)
-            return result
+            if not row:
+                return None
+            return BirthdaySettings(**dict(row))
 
     async def create_settings(
         self,
@@ -317,15 +306,9 @@ class BirthdayRepository:
             )
             return [(row["user_id"], row["month"], row["day"], row["year"]) for row in rows]
 
+    @cached(cache=_all_enabled_cache, key_func=lambda self: "all_enabled")
     async def list_enabled_settings(self) -> list[BirthdaySettings]:
         """Get all enabled guild settings (for background notification task)."""
-        cache_key = "all_enabled"
-        cached = _all_enabled_cache.get(cache_key)
-        if cached is not _MISSING:
-            return cached
-
         async with self.pool.acquire() as conn:
             rows = await conn.fetch("SELECT * FROM birthday_settings WHERE enabled = TRUE")
-            result = [cast(BirthdaySettings, BirthdaySettings(**dict(row))) for row in rows]
-            _all_enabled_cache.set(cache_key, result)
-            return result
+            return [cast(BirthdaySettings, BirthdaySettings(**dict(row))) for row in rows]

@@ -8,7 +8,7 @@ from typing import TypeAlias
 
 import asyncpg
 
-from shared.cache import _MISSING, AsyncTTLCache
+from shared.cache import AsyncTTLCache, cached
 from shared.models.command_config import CommandConfig, RedemptionConfig
 
 logger = logging.getLogger(__name__)
@@ -49,7 +49,7 @@ _seeded_redemptions: set[str] = set()
 
 
 async def _retry_on_db_error(func, max_retries: int = 2):
-    """Retry helper for database operations."""
+    """Retry helper for write operations."""
     for attempt in range(1, max_retries + 1):
         try:
             return await func()
@@ -74,29 +74,22 @@ class CommandConfigRepository:
     def __init__(self, pool: asyncpg.Pool) -> None:
         self.pool = pool
 
+    @cached(
+        cache=_cmd_cache,
+        key_func=lambda self, channel_id, command_name: f"cmd_config:{channel_id}:{command_name}",
+    )
     async def get_config(self, channel_id: str, command_name: str) -> CommandConfig | None:
         """Get a single command config by exact name (with cache). Used by the bot at command time."""
-        cache_key = f"cmd_config:{channel_id}:{command_name}"
-        cached = _cmd_cache.get(cache_key)
-        if cached is not _MISSING:
-            return cached
-
-        async def _query():
-            async with self.pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    f"SELECT {_CMD_COLUMNS} "
-                    "FROM command_configs WHERE channel_id = $1 AND command_name = $2",
-                    channel_id,
-                    command_name,
-                )
-                if not row:
-                    _cmd_cache.set(cache_key, None)
-                    return None
-                result = CommandConfig(**dict(row))
-                _cmd_cache.set(cache_key, result)
-                return result
-
-        return await _retry_on_db_error(_query)
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"SELECT {_CMD_COLUMNS} "
+                "FROM command_configs WHERE channel_id = $1 AND command_name = $2",
+                channel_id,
+                command_name,
+            )
+            if not row:
+                return None
+            return CommandConfig(**dict(row))
 
     async def find_by_name_or_alias(self, channel_id: str, name: str) -> CommandConfig | None:
         """Find a command config by command_name OR by alias match.
@@ -109,30 +102,27 @@ class CommandConfigRepository:
         if config:
             return config
 
-        # Search by alias
-        cache_key = f"cmd_alias:{channel_id}:{name}"
-        cached = _cmd_cache.get(cache_key)
-        if cached is not _MISSING:
-            return cached
+        # Search by alias (also cached with resilience)
+        return await self._find_by_alias(channel_id, name)
 
-        async def _query():
-            async with self.pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    f"SELECT {_CMD_COLUMNS} "
-                    "FROM command_configs "
-                    "WHERE channel_id = $1 AND aliases IS NOT NULL "
-                    "AND $2 = ANY(string_to_array(aliases, ','))",
-                    channel_id,
-                    name,
-                )
-                if not row:
-                    _cmd_cache.set(cache_key, None)
-                    return None
-                result = CommandConfig(**dict(row))
-                _cmd_cache.set(cache_key, result)
-                return result
-
-        return await _retry_on_db_error(_query)
+    @cached(
+        cache=_cmd_cache,
+        key_func=lambda self, channel_id, name: f"cmd_alias:{channel_id}:{name}",
+    )
+    async def _find_by_alias(self, channel_id: str, name: str) -> CommandConfig | None:
+        """Search for a command config by alias."""
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"SELECT {_CMD_COLUMNS} "
+                "FROM command_configs "
+                "WHERE channel_id = $1 AND aliases IS NOT NULL "
+                "AND $2 = ANY(string_to_array(aliases, ','))",
+                channel_id,
+                name,
+            )
+            if not row:
+                return None
+            return CommandConfig(**dict(row))
 
     async def list_configs(self, channel_id: str) -> list[CommandConfig]:
         """Get all command configs for a channel."""
@@ -272,35 +262,31 @@ class RedemptionConfigRepository:
 
         return await _retry_on_db_error(_query)
 
+    @cached(
+        cache=_redemption_cache,
+        key_func=lambda self, channel_id, reward_name: (
+            f"redemption:{channel_id}:{reward_name.lower()}"
+        ),
+    )
     async def find_by_reward_name(
         self, channel_id: str, reward_name: str
     ) -> RedemptionConfig | None:
         """Find a redemption config by reward name (case-insensitive contains). Bot use."""
-        cache_key = f"redemption:{channel_id}:{reward_name.lower()}"
-        cached = _redemption_cache.get(cache_key)
-        if cached is not _MISSING:
-            return cached
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT id, channel_id, action_type, reward_name, enabled, "
+                "created_at, updated_at "
+                "FROM redemption_configs WHERE channel_id = $1 AND enabled = TRUE",
+                channel_id,
+            )
+            # Match: reward_name is contained in the reward title (case-insensitive)
+            reward_lower = reward_name.lower()
+            for row in rows:
+                config = RedemptionConfig(**dict(row))
+                if config.reward_name.lower() in reward_lower:
+                    return config
 
-        async def _query():
-            async with self.pool.acquire() as conn:
-                rows = await conn.fetch(
-                    "SELECT id, channel_id, action_type, reward_name, enabled, "
-                    "created_at, updated_at "
-                    "FROM redemption_configs WHERE channel_id = $1 AND enabled = TRUE",
-                    channel_id,
-                )
-                # Match: reward_name is contained in the reward title (case-insensitive)
-                reward_lower = reward_name.lower()
-                for row in rows:
-                    config = RedemptionConfig(**dict(row))
-                    if config.reward_name.lower() in reward_lower:
-                        _redemption_cache.set(cache_key, config)
-                        return config
-
-                _redemption_cache.set(cache_key, None)
-                return None
-
-        return await _retry_on_db_error(_query)
+            return None
 
     async def upsert_config(
         self,

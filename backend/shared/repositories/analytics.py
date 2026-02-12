@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 
 import asyncpg
 
-from shared.cache import _MISSING, AsyncTTLCache
+from shared.cache import AsyncTTLCache, cached
 
 logger = logging.getLogger(__name__)
 
@@ -58,13 +58,9 @@ class AnalyticsRepository:
             _session_cache.invalidate(f"active:{channel_id}")
             return int(session_id)
 
+    @cached(cache=_session_cache, key_func=lambda self, channel_id: f"active:{channel_id}")
     async def get_active_session(self, channel_id: str) -> dict | None:
         """Get the currently active (un-ended) session for a channel."""
-        cache_key = f"active:{channel_id}"
-        cached = _session_cache.get(cache_key)
-        if cached is not _MISSING:
-            return cached
-
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
@@ -76,9 +72,7 @@ class AnalyticsRepository:
                 """,
                 channel_id,
             )
-            result = dict(row) if row else None
-            _session_cache.set(cache_key, result)
-            return result
+            return dict(row) if row else None
 
     async def end_session(self, session_id: int, ended_at: datetime) -> None:
         """Mark a session as ended."""
@@ -219,13 +213,12 @@ class AnalyticsRepository:
 
     # ==================== Read / Aggregation Queries ====================
 
+    @cached(
+        cache=_summary_cache,
+        key_func=lambda self, channel_id, days=30: f"summary:{channel_id}:{days}",
+    )
     async def get_summary(self, channel_id: str, days: int = 30) -> dict:
         """Get analytics summary for a channel over the given time window."""
-        cache_key = f"summary:{channel_id}:{days}"
-        cached = _summary_cache.get(cache_key)
-        if cached is not _MISSING:
-            return cached
-
         async with self.pool.acquire() as conn:
             since_date = datetime.now() - timedelta(days=days)
 
@@ -280,7 +273,7 @@ class AnalyticsRepository:
             total_subs = sum(s["new_subs"] for s in sessions)
             avg_duration = total_stream_hours / total_sessions if total_sessions > 0 else 0
 
-            result = {
+            return {
                 "total_sessions": total_sessions,
                 "total_stream_hours": round(total_stream_hours, 2),
                 "total_commands": total_commands,
@@ -289,9 +282,6 @@ class AnalyticsRepository:
                 "avg_session_duration": round(avg_duration, 2),
                 "recent_sessions": sessions[:25],
             }
-
-            _summary_cache.set(cache_key, result)
-            return result
 
     async def get_session_commands(self, session_id: int, channel_id: str) -> list[dict] | None:
         """Get command stats for a specific session (with ownership check)."""
@@ -353,15 +343,16 @@ class AnalyticsRepository:
                 for row in rows
             ]
 
+    @cached(
+        cache=_top_commands_cache,
+        key_func=lambda self, channel_id, days=30, limit=10: (
+            f"top_cmds:{channel_id}:{days}:{limit}"
+        ),
+    )
     async def list_top_commands(
         self, channel_id: str, days: int = 30, limit: int = 10
     ) -> list[dict]:
         """Get top commands across all sessions in the given time window."""
-        cache_key = f"top_cmds:{channel_id}:{days}:{limit}"
-        cached = _top_commands_cache.get(cache_key)
-        if cached is not _MISSING:
-            return cached
-
         async with self.pool.acquire() as conn:
             since_date = datetime.now() - timedelta(days=days)
 
@@ -382,7 +373,7 @@ class AnalyticsRepository:
                 since_date,
                 limit,
             )
-            result = [
+            return [
                 {
                     "command_name": row["command_name"],
                     "usage_count": row["total_usage"],
@@ -390,9 +381,6 @@ class AnalyticsRepository:
                 }
                 for row in rows
             ]
-
-            _top_commands_cache.set(cache_key, result)
-            return result
 
     # ==================== Chatter Stats ====================
 
@@ -431,15 +419,16 @@ class AnalyticsRepository:
 
         logger.info(f"Flushed chatter stats for session {session_id}: {len(rows)} chatters")
 
+    @cached(
+        cache=_top_chatters_cache,
+        key_func=lambda self, channel_id, days=30, limit=10: (
+            f"top_chatters:{channel_id}:{days}:{limit}"
+        ),
+    )
     async def list_top_chatters(
         self, channel_id: str, days: int = 30, limit: int = 10
     ) -> list[dict]:
         """Get top chatters across all sessions in the given time window."""
-        cache_key = f"top_chatters:{channel_id}:{days}:{limit}"
-        cached = _top_chatters_cache.get(cache_key)
-        if cached is not _MISSING:
-            return cached
-
         async with self.pool.acquire() as conn:
             since_date = datetime.now() - timedelta(days=days)
 
@@ -460,16 +449,13 @@ class AnalyticsRepository:
                 since_date,
                 limit,
             )
-            result = [
+            return [
                 {
                     "username": row["username"],
                     "message_count": row["total_messages"],
                 }
                 for row in rows
             ]
-
-            _top_chatters_cache.set(cache_key, result)
-            return result
 
     async def get_total_messages(self, channel_id: str, days: int = 30) -> int:
         """Get total message count across all sessions in the given time window."""

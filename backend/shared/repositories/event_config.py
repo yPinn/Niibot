@@ -6,7 +6,7 @@ import logging
 
 import asyncpg
 
-from shared.cache import _MISSING, AsyncTTLCache
+from shared.cache import AsyncTTLCache, cached
 from shared.models.event_config import EventConfig
 
 logger = logging.getLogger(__name__)
@@ -31,13 +31,12 @@ class EventConfigRepository:
     def __init__(self, pool: asyncpg.Pool) -> None:
         self.pool = pool
 
+    @cached(
+        cache=_config_cache,
+        key_func=lambda self, channel_id, event_type: f"event_config:{channel_id}:{event_type}",
+    )
     async def get_config(self, channel_id: str, event_type: str) -> EventConfig | None:
         """Get a single event config (with cache). Used by the bot at event time."""
-        cache_key = f"event_config:{channel_id}:{event_type}"
-        cached = _config_cache.get(cache_key)
-        if cached is not _MISSING:
-            return cached
-
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT id, channel_id, event_type, message_template, enabled, "
@@ -48,9 +47,7 @@ class EventConfigRepository:
             )
             if not row:
                 return None
-            result = EventConfig(**dict(row))
-            _config_cache.set(cache_key, result)
-            return result
+            return EventConfig(**dict(row))
 
     async def list_configs(self, channel_id: str) -> list[EventConfig]:
         """Get all event configs for a channel."""
@@ -61,7 +58,7 @@ class EventConfigRepository:
                 "FROM event_configs WHERE channel_id = $1 ORDER BY id",
                 channel_id,
             )
-            return [EventConfig(**dict(row)) for row in rows]
+            return [EventConfig(**dict(r)) for r in rows]
 
     async def upsert_config(
         self,

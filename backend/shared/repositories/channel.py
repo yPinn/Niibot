@@ -6,7 +6,7 @@ import logging
 
 import asyncpg
 
-from shared.cache import _MISSING, AsyncTTLCache
+from shared.cache import AsyncTTLCache, cached
 from shared.models.channel import Channel, DiscordUser, Token
 
 logger = logging.getLogger(__name__)
@@ -26,13 +26,9 @@ class ChannelRepository:
 
     # ==================== Token Operations ====================
 
+    @cached(cache=_token_cache, key_func=lambda self, user_id: f"token:{user_id}")
     async def get_token(self, user_id: str) -> Token | None:
         """Get a user's OAuth token."""
-        cache_key = f"token:{user_id}"
-        cached = _token_cache.get(cache_key)
-        if cached is not _MISSING:
-            return cached
-
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT user_id, token, refresh, created_at, updated_at "
@@ -41,9 +37,7 @@ class ChannelRepository:
             )
             if not row:
                 return None
-            result = Token(**dict(row))
-            _token_cache.set(cache_key, result)
-            return result
+            return Token(**dict(row))
 
     async def upsert_token_only(
         self,
@@ -120,13 +114,9 @@ class ChannelRepository:
 
     # ==================== Channel Operations ====================
 
+    @cached(cache=_channel_cache, key_func=lambda self, channel_id: f"channel:{channel_id}")
     async def get_channel(self, channel_id: str) -> Channel | None:
         """Get a single channel by ID."""
-        cache_key = f"channel:{channel_id}"
-        cached = _channel_cache.get(cache_key)
-        if cached is not _MISSING:
-            return cached
-
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT channel_id, channel_name, enabled, default_cooldown,created_at, updated_at "
@@ -135,25 +125,20 @@ class ChannelRepository:
             )
             if not row:
                 return None
-            result = Channel(**dict(row))
-            _channel_cache.set(cache_key, result)
-            return result
+            return Channel(**dict(row))
 
+    @cached(
+        cache=_enabled_channels_cache,
+        key_func=lambda self: "enabled_channels",
+    )
     async def list_enabled_channels(self) -> list[Channel]:
         """Return all enabled channels."""
-        cache_key = "enabled_channels"
-        cached = _enabled_channels_cache.get(cache_key)
-        if cached is not _MISSING:
-            return cached
-
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
                 "SELECT channel_id, channel_name, enabled, default_cooldown,created_at, updated_at "
                 "FROM channels WHERE enabled = TRUE"
             )
-            result = [Channel(**dict(r)) for r in rows]
-            _enabled_channels_cache.set(cache_key, result)
-            return result
+            return [Channel(**dict(r)) for r in rows]
 
     async def list_all_channels(self) -> list[Channel]:
         """Return all channels (including disabled)."""
@@ -254,13 +239,12 @@ class ChannelRepository:
 
     # ==================== Discord User Operations ====================
 
+    @cached(
+        cache=_discord_user_cache,
+        key_func=lambda self, user_id: f"discord_user:{user_id}",
+    )
     async def get_discord_user(self, user_id: str) -> DiscordUser | None:
         """Get cached Discord user info."""
-        cache_key = f"discord_user:{user_id}"
-        cached = _discord_user_cache.get(cache_key)
-        if cached is not _MISSING:
-            return cached
-
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT user_id, username, display_name, avatar, created_at, updated_at "
@@ -269,9 +253,7 @@ class ChannelRepository:
             )
             if not row:
                 return None
-            result = DiscordUser(**dict(row))
-            _discord_user_cache.set(cache_key, result)
-            return result
+            return DiscordUser(**dict(row))
 
     async def upsert_discord_user(
         self,
