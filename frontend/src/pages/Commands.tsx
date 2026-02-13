@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { type ChannelDefaults, getChannelDefaults } from '@/api/channels'
 import {
@@ -67,9 +67,60 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
 
 const EDITABLE_COMMANDS = ['hi']
 
+type SortKey = 'command_name' | 'cooldown' | 'min_role' | 'usage_count' | 'enabled'
+type SortDir = 'asc' | 'desc'
+
+const ROLE_ORDER: Record<string, number> = {
+  everyone: 0,
+  subscriber: 1,
+  vip: 2,
+  moderator: 3,
+  broadcaster: 4,
+}
+
 interface EditingState {
   mode: 'edit' | 'create'
   command: CommandConfig | null
+}
+
+function SortableHead({
+  children,
+  className,
+  sortKey: key,
+  currentKey,
+  dir,
+  onSort,
+}: {
+  children: React.ReactNode
+  className?: string
+  sortKey: SortKey
+  currentKey: SortKey
+  dir: SortDir
+  onSort: (key: SortKey) => void
+}) {
+  const active = key === currentKey
+  return (
+    <TableHead className={className}>
+      <button
+        type="button"
+        className="inline-flex items-center gap-1 hover:text-foreground transition-colors cursor-pointer"
+        onClick={() => onSort(key)}
+      >
+        {children}
+        <Icon
+          icon={
+            active
+              ? dir === 'asc'
+                ? 'fa-solid fa-sort-up'
+                : 'fa-solid fa-sort-down'
+              : 'fa-solid fa-sort'
+          }
+          className={active ? 'text-foreground' : 'text-muted-foreground/50'}
+          wrapperClassName="size-3"
+        />
+      </button>
+    </TableHead>
+  )
 }
 
 export default function Commands() {
@@ -91,7 +142,44 @@ export default function Commands() {
   const [formEnabled, setFormEnabled] = useState(true)
   const [saving, setSaving] = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(false)
+  const [sortKey, setSortKey] = useState<SortKey>('command_name')
+  const [sortDir, setSortDir] = useState<SortDir>('asc')
   const responseInputRef = useRef<HTMLInputElement>(null)
+
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir(prev => (prev === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortKey(key)
+      setSortDir('asc')
+    }
+  }
+
+  const sortCommands = useMemo(() => {
+    return (list: CommandConfig[]) => {
+      return [...list].sort((a, b) => {
+        let cmp = 0
+        switch (sortKey) {
+          case 'command_name':
+            cmp = a.command_name.localeCompare(b.command_name)
+            break
+          case 'cooldown':
+            cmp = (a.cooldown ?? -1) - (b.cooldown ?? -1)
+            break
+          case 'min_role':
+            cmp = (ROLE_ORDER[a.min_role] ?? 0) - (ROLE_ORDER[b.min_role] ?? 0)
+            break
+          case 'usage_count':
+            cmp = a.usage_count - b.usage_count
+            break
+          case 'enabled':
+            cmp = Number(a.enabled) - Number(b.enabled)
+            break
+        }
+        return sortDir === 'desc' ? -cmp : cmp
+      })
+    }
+  }, [sortKey, sortDir])
 
   const fetchData = useCallback(async () => {
     try {
@@ -271,18 +359,58 @@ export default function Commands() {
                 </TabsTrigger>
               </TabsList>
               {(['builtin', 'custom'] as const).map(type => {
-                const filtered = commands.filter(c => c.command_type === type)
+                const filtered = sortCommands(commands.filter(c => c.command_type === type))
                 return (
                   <TabsContent key={type} value={type}>
                     <div className="rounded-md border">
                       <Table className="table-fixed">
                         <TableHeader>
                           <TableRow>
-                            <TableHead className="w-[35%]">指令</TableHead>
-                            <TableHead className="w-[12%]">冷卻</TableHead>
-                            <TableHead className="w-[12%]">權限</TableHead>
-                            <TableHead className="w-[15%] text-right">使用次數</TableHead>
-                            <TableHead className="w-[10%] text-center">狀態</TableHead>
+                            <SortableHead
+                              className="w-[35%]"
+                              sortKey="command_name"
+                              currentKey={sortKey}
+                              dir={sortDir}
+                              onSort={toggleSort}
+                            >
+                              指令
+                            </SortableHead>
+                            <SortableHead
+                              className="w-[12%]"
+                              sortKey="cooldown"
+                              currentKey={sortKey}
+                              dir={sortDir}
+                              onSort={toggleSort}
+                            >
+                              冷卻
+                            </SortableHead>
+                            <SortableHead
+                              className="w-[12%]"
+                              sortKey="min_role"
+                              currentKey={sortKey}
+                              dir={sortDir}
+                              onSort={toggleSort}
+                            >
+                              權限
+                            </SortableHead>
+                            <SortableHead
+                              className="w-[15%] text-right"
+                              sortKey="usage_count"
+                              currentKey={sortKey}
+                              dir={sortDir}
+                              onSort={toggleSort}
+                            >
+                              使用次數
+                            </SortableHead>
+                            <SortableHead
+                              className="w-[10%] text-center"
+                              sortKey="enabled"
+                              currentKey={sortKey}
+                              dir={sortDir}
+                              onSort={toggleSort}
+                            >
+                              狀態
+                            </SortableHead>
                             <TableHead className="w-[16%] text-right">操作</TableHead>
                           </TableRow>
                         </TableHeader>

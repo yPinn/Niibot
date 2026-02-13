@@ -78,10 +78,7 @@ export function OnlineDropdown() {
               <span className="text-sm font-semibold mx-1 mr-2">Niibot</span>
               <Icon icon="fa-solid fa-chevron-down" wrapperClassName="size-2" />
             </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="end"
-              className="w-[var(--radix-dropdown-menu-trigger-width)]"
-            >
+            <DropdownMenuContent align="end" className="w-(--radix-dropdown-menu-trigger-width)">
               <DropdownMenuItem
                 onClick={toggleMyChannelSubscription}
                 disabled={loading || !botStatus.online}

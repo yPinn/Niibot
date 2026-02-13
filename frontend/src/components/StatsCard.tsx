@@ -30,7 +30,7 @@ export default function StatsCard({
 }: StatsCardProps) {
   return (
     <Card className={`flex flex-col ${className}`}>
-      <CardHeader className="flex-shrink-0">
+      <CardHeader className="shrink-0">
         <CardTitle className="flex items-center gap-2 text-sm font-semibold">
           {icon && <Icon icon={icon} wrapperClassName="size-5 text-primary" />}
           {title}

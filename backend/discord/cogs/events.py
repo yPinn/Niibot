@@ -15,7 +15,7 @@ class Events(commands.Cog):
         self.bot = bot
         self.log_channels: dict[int, int] = {}
 
-    @app_commands.command(name="setlog", description="設定日誌")
+    @app_commands.command(name="setlog", description="設定日誌頻道")
     @app_commands.describe(channel="要設定為日誌頻道的文字頻道")
     @app_commands.checks.has_permissions(administrator=True)
     async def set_log_channel(
@@ -27,13 +27,13 @@ class Events(commands.Cog):
 
         self.log_channels[interaction.guild.id] = channel.id
         await interaction.response.send_message(
-            f"已設定日誌頻道為 {channel.mention}", ephemeral=True
+            f"已設定日誌頻道：{channel.mention}", ephemeral=True
         )
         logger.info(
             f"Log channel set | Guild: {interaction.guild.name} | Channel: #{channel.name} | By: {interaction.user.name}"
         )
 
-    @app_commands.command(name="unsetlog", description="取消日誌")
+    @app_commands.command(name="unsetlog", description="取消日誌頻道")
     @app_commands.checks.has_permissions(administrator=True)
     async def unset_log_channel(self, interaction: discord.Interaction) -> None:
         if not interaction.guild:

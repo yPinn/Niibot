@@ -133,7 +133,7 @@ class CommandConfigRepository:
         """Get all command configs for a channel."""
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
-                f"SELECT {_CMD_COLUMNS} FROM command_configs WHERE channel_id = $1 ORDER BY id",
+                f"SELECT {_CMD_COLUMNS} FROM command_configs WHERE channel_id = $1 ORDER BY command_type, command_name",
                 channel_id,
             )
             return [CommandConfig(**dict(row)) for row in rows]
@@ -343,17 +343,25 @@ class RedemptionConfigRepository:
 
         return await _retry_on_db_error(_query)
 
-    async def ensure_defaults(self, channel_id: str) -> list[RedemptionConfig]:
-        """Ensure default redemption configs exist for a channel."""
+    async def ensure_defaults(
+        self, channel_id: str, *, owner_id: str | None = None
+    ) -> list[RedemptionConfig]:
+        """Ensure default redemption configs exist for a channel.
+
+        ``niibot_auth`` is only seeded when *channel_id* matches *owner_id*.
+        All defaults are created with ``enabled=FALSE`` so users opt-in explicitly.
+        """
         if channel_id not in _seeded_redemptions:
 
             async def _query():
                 async with self.pool.acquire() as conn:
                     for r in DEFAULT_REDEMPTIONS:
+                        if r["action_type"] == "niibot_auth" and channel_id != owner_id:
+                            continue
                         await conn.execute(
                             """
                             INSERT INTO redemption_configs (channel_id, action_type, reward_name, enabled)
-                            VALUES ($1, $2, $3, TRUE)
+                            VALUES ($1, $2, $3, FALSE)
                             ON CONFLICT (channel_id, action_type) DO NOTHING
                             """,
                             channel_id,

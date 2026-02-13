@@ -114,7 +114,7 @@ export default function Events() {
     try {
       const [configs, rewards] = await Promise.all([getRedemptionConfigs(), getTwitchRewards()])
       setRedemptions(configs)
-      setTwitchRewards(rewards)
+      setTwitchRewards([...rewards].sort((a, b) => a.cost - b.cost))
     } catch {
       // Silently fail — rewards may not be available
     } finally {

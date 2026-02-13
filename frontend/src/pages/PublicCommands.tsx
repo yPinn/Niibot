@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 
 import { getPublicCommands, type PublicChannelProfile, type PublicCommand } from '@/api/commands'
@@ -36,6 +36,57 @@ const ROLE_LABELS: Record<string, { label: string; variant: 'default' | 'seconda
     broadcaster: { label: '實況主', variant: 'default' },
   }
 
+type PublicSortKey = 'name' | 'min_role'
+type SortDir = 'asc' | 'desc'
+
+const ROLE_ORDER: Record<string, number> = {
+  everyone: 0,
+  subscriber: 1,
+  vip: 2,
+  moderator: 3,
+  broadcaster: 4,
+}
+
+function SortableHead({
+  children,
+  className,
+  sortKey: key,
+  currentKey,
+  dir,
+  onSort,
+}: {
+  children: React.ReactNode
+  className?: string
+  sortKey: PublicSortKey
+  currentKey: PublicSortKey
+  dir: SortDir
+  onSort: (key: PublicSortKey) => void
+}) {
+  const active = key === currentKey
+  return (
+    <TableHead className={className}>
+      <button
+        type="button"
+        className="inline-flex items-center gap-1 hover:text-foreground transition-colors cursor-pointer"
+        onClick={() => onSort(key)}
+      >
+        {children}
+        <Icon
+          icon={
+            active
+              ? dir === 'asc'
+                ? 'fa-solid fa-sort-up'
+                : 'fa-solid fa-sort-down'
+              : 'fa-solid fa-sort'
+          }
+          className={active ? 'text-foreground' : 'text-muted-foreground/50'}
+          wrapperClassName="size-3"
+        />
+      </button>
+    </TableHead>
+  )
+}
+
 export default function PublicCommands() {
   const { username } = useParams<{ username: string }>()
   const { resolvedTheme, setTheme } = useTheme()
@@ -43,6 +94,34 @@ export default function PublicCommands() {
   const [channel, setChannel] = useState<PublicChannelProfile | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [sortKey, setSortKey] = useState<PublicSortKey>('name')
+  const [sortDir, setSortDir] = useState<SortDir>('asc')
+
+  const toggleSort = (key: PublicSortKey) => {
+    if (sortKey === key) {
+      setSortDir(prev => (prev === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortKey(key)
+      setSortDir('asc')
+    }
+  }
+
+  const sortedCommands = useMemo(() => {
+    return (list: PublicCommand[]) => {
+      return [...list].sort((a, b) => {
+        let cmp = 0
+        switch (sortKey) {
+          case 'name':
+            cmp = a.name.localeCompare(b.name)
+            break
+          case 'min_role':
+            cmp = (ROLE_ORDER[a.min_role] ?? 0) - (ROLE_ORDER[b.min_role] ?? 0)
+            break
+        }
+        return sortDir === 'desc' ? -cmp : cmp
+      })
+    }
+  }, [sortKey, sortDir])
 
   useEffect(() => {
     if (!username) return
@@ -119,7 +198,7 @@ export default function PublicCommands() {
                     </TabsTrigger>
                   </TabsList>
                   {(['builtin', 'custom'] as const).map(type => {
-                    const filtered = commands.filter(c => c.command_type === type)
+                    const filtered = sortedCommands(commands.filter(c => c.command_type === type))
                     return (
                       <TabsContent key={type} value={type}>
                         {filtered.length === 0 ? (
@@ -131,9 +210,25 @@ export default function PublicCommands() {
                             <Table>
                               <TableHeader>
                                 <TableRow>
-                                  <TableHead className="w-[25%]">指令</TableHead>
+                                  <SortableHead
+                                    className="w-[25%]"
+                                    sortKey="name"
+                                    currentKey={sortKey}
+                                    dir={sortDir}
+                                    onSort={toggleSort}
+                                  >
+                                    指令
+                                  </SortableHead>
                                   <TableHead>說明</TableHead>
-                                  <TableHead className="w-[15%] text-center">權限</TableHead>
+                                  <SortableHead
+                                    className="w-[15%] text-center"
+                                    sortKey="min_role"
+                                    currentKey={sortKey}
+                                    dir={sortDir}
+                                    onSort={toggleSort}
+                                  >
+                                    權限
+                                  </SortableHead>
                                 </TableRow>
                               </TableHeader>
                               <TableBody>

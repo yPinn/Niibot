@@ -209,6 +209,14 @@ class Bot(commands.AutoBot):
                         "last_at": datetime.now(),
                     }
 
+            # Normalize command name to lowercase for case-insensitive matching
+            # e.g. "!AI question" → "!ai question", "!Help" → "!help"
+            if payload.text and payload.text.startswith("!"):
+                parts = payload.text.split(maxsplit=1)
+                if parts:
+                    parts[0] = parts[0].lower()
+                    payload.text = " ".join(parts)
+
             # Custom command handling: text response or redirect
             await self._handle_custom_command(payload)
         else:
@@ -438,6 +446,9 @@ class Bot(commands.AutoBot):
                     await self.subscribe_channel_events(channel_id)
                     try:
                         await self.command_configs.ensure_defaults(channel_id)
+                        await self.redemption_configs.ensure_defaults(
+                            channel_id, owner_id=self.owner_id
+                        )
                         count = await self.command_configs.warm_cache(channel_id)
                         LOGGER.info(f"[NOTIFY] Warmed cache: {count} configs for {channel_id}")
                     except Exception as e:
@@ -510,7 +521,9 @@ class Bot(commands.AutoBot):
                 await self.subscribe_channel_events(ch.channel_id)
                 try:
                     await self.command_configs.ensure_defaults(ch.channel_id)
-                    await self.redemption_configs.ensure_defaults(ch.channel_id)
+                    await self.redemption_configs.ensure_defaults(
+                        ch.channel_id, owner_id=self.owner_id
+                    )
                     count = await self.command_configs.warm_cache(ch.channel_id)
                     total_warmed += count
                 except Exception as e:

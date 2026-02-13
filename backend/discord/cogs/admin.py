@@ -153,7 +153,7 @@ class Admin(commands.Cog):
         if cogs:
             cog_list = "\n".join([f"• {cog}" for cog in sorted(cogs)])
             await interaction.response.send_message(
-                f"已載入的 Cog ({len(cogs)}):\n{cog_list}", ephemeral=True
+                f"已載入的 Cog ({len(cogs)})：\n{cog_list}", ephemeral=True
             )
         else:
             await interaction.response.send_message("沒有已載入的 Cog", ephemeral=True)

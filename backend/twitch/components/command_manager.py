@@ -9,6 +9,7 @@ Options:
     -cd=N          Cooldown in seconds
     -role=X        Min role: everyone/sub/vip/mod/broadcaster
     -alias=a,b,c   Comma-separated aliases
+    -enable=on/off Toggle command enabled state
 
 Variables in response:
     $(user)             Chatter display name
@@ -74,6 +75,19 @@ def _parse_args(raw: str) -> tuple[dict[str, str], str]:
     return options, " ".join(remaining_parts)
 
 
+_TRUTHY = {"on", "true", "yes", "1"}
+_FALSY = {"off", "false", "no", "0"}
+
+
+def _parse_bool(value: str) -> bool | None:
+    """Parse a boolean-ish string. Returns None if unrecognised."""
+    if value.lower() in _TRUTHY:
+        return True
+    if value.lower() in _FALSY:
+        return False
+    return None
+
+
 class CommandManagerComponent(commands.Component):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot: Bot = bot  # type: ignore[assignment]
@@ -86,7 +100,9 @@ class CommandManagerComponent(commands.Component):
         if not ctx.chatter.moderator and not ctx.chatter.broadcaster:  # type: ignore[attr-defined]
             return
         if ctx.invoked_subcommand is None:
-            await ctx.reply("用法: !cmd a|e|d — 新增/編輯/刪除自訂指令")
+            await ctx.reply(
+                "用法: !cmd a/e/d !指令名 — 新增｜編輯｜刪除 (選項: -cd -role -alias -enable)"
+            )
 
     @cmd.command(name="a")
     async def cmd_add(self, ctx: commands.Context["Bot"], *, args: str | None = None) -> None:
@@ -95,7 +111,7 @@ class CommandManagerComponent(commands.Component):
             return
 
         if not args or not args.strip():
-            await ctx.reply("用法: !cmd a !指令名 [-cd=N] [-alias=a,b] 回覆文字")
+            await ctx.reply("用法: !cmd a !指令名 [選項] 回覆文字")
             return
 
         parts = args.strip().split(maxsplit=1)
@@ -103,21 +119,21 @@ class CommandManagerComponent(commands.Component):
         remaining = parts[1] if len(parts) > 1 else ""
 
         if not cmd_name:
-            await ctx.reply("用法: !cmd a !指令名 回覆文字")
+            await ctx.reply("用法: !cmd a !指令名 [選項] 回覆文字")
             return
 
         # Check if command already exists
         channel_id = str(ctx.channel.id)
         existing = await self.cmd_repo.get_config(channel_id, cmd_name)
         if existing:
-            await ctx.reply(f"指令 !{cmd_name} 已存在，請使用 !cmd e 修改")
+            await ctx.reply(f"!{cmd_name} 已存在，請用 !cmd e 編輯")
             return
 
         # Parse options and response text
         options, response_text = _parse_args(remaining)
 
         if not response_text:
-            await ctx.reply("請提供回覆文字: !cmd a !指令名 回覆文字")
+            await ctx.reply("缺少回覆文字: !cmd a !指令名 回覆文字")
             return
 
         # Build config from options
@@ -125,20 +141,29 @@ class CommandManagerComponent(commands.Component):
         role_input = options.get("role", "everyone")
         min_role = ROLE_ALIASES.get(role_input.lower(), "everyone")
         aliases = options.get("alias")
+        enabled = _parse_bool(options["enable"]) if "enable" in options else True
+
+        if enabled is None:
+            await ctx.reply("無效的 -enable 值，請使用 on/off")
+            return
 
         config = await self.cmd_repo.upsert_config(
             channel_id,
             cmd_name,
             command_type="custom",
-            enabled=True,
+            enabled=enabled,
             custom_response=response_text,
             cooldown=cooldown,
             min_role=min_role,
             aliases=aliases,
         )
 
-        alias_info = f" (別名: {config.aliases})" if config.aliases else ""
-        await ctx.reply(f"已新增指令 !{cmd_name}{alias_info}")
+        parts_info = [f"!{cmd_name}"]
+        if config.aliases:
+            parts_info.append(f"別名={config.aliases}")
+        if not enabled:
+            parts_info.append("已停用")
+        await ctx.reply(f"已新增：{' | '.join(parts_info)}")
         LOGGER.info(f"Command added: !{cmd_name} by {ctx.chatter.name}")
 
     @cmd.command(name="e")
@@ -148,7 +173,7 @@ class CommandManagerComponent(commands.Component):
             return
 
         if not args or not args.strip():
-            await ctx.reply("用法: !cmd e !指令名 [-cd=N] [-alias=a,b] [新回覆文字]")
+            await ctx.reply("用法: !cmd e !指令名 [選項] [新回覆文字]")
             return
 
         parts = args.strip().split(maxsplit=1)
@@ -162,7 +187,7 @@ class CommandManagerComponent(commands.Component):
         channel_id = str(ctx.channel.id)
         existing = await self.cmd_repo.get_config(channel_id, cmd_name)
         if not existing or existing.command_type != "custom":
-            await ctx.reply(f"找不到自訂指令 !{cmd_name}")
+            await ctx.reply(f"找不到自訂指令 !{cmd_name}，僅能編輯自訂指令")
             return
 
         options, response_text = _parse_args(remaining)
@@ -175,11 +200,17 @@ class CommandManagerComponent(commands.Component):
             kwargs["min_role"] = ROLE_ALIASES.get(options["role"].lower(), "everyone")
         if "alias" in options:
             kwargs["aliases"] = options["alias"]
+        if "enable" in options:
+            enabled = _parse_bool(options["enable"])
+            if enabled is None:
+                await ctx.reply("無效的 -enable 值，請使用 on/off")
+                return
+            kwargs["enabled"] = enabled
         if response_text:
             kwargs["custom_response"] = response_text
 
         if not kwargs:
-            await ctx.reply("請提供要修改的內容: !cmd e !指令名 [-cd=N] [新回覆文字]")
+            await ctx.reply("請提供要修改的內容，如 -cd=N / -enable=on / 新回覆文字")
             return
 
         config = await self.cmd_repo.upsert_config(
@@ -198,8 +229,10 @@ class CommandManagerComponent(commands.Component):
             changes.append(f"權限={config.min_role}")
         if "alias" in options:
             changes.append(f"別名={config.aliases}")
+        if "enable" in options:
+            changes.append(f"狀態={'啟用' if config.enabled else '停用'}")
 
-        await ctx.reply(f"已更新 !{cmd_name}：{', '.join(changes)}")
+        await ctx.reply(f"已更新 !{cmd_name}：{' | '.join(changes)}")
         LOGGER.info(f"Command edited: !{cmd_name} by {ctx.chatter.name}")
 
     @cmd.command(name="d")
@@ -221,10 +254,10 @@ class CommandManagerComponent(commands.Component):
         deleted = await self.cmd_repo.delete_config(channel_id, cmd_name)
 
         if deleted:
-            await ctx.reply(f"已刪除指令 !{cmd_name}")
+            await ctx.reply(f"已刪除 !{cmd_name}")
             LOGGER.info(f"Command deleted: !{cmd_name} by {ctx.chatter.name}")
         else:
-            await ctx.reply(f"找不到自訂指令 !{cmd_name}")
+            await ctx.reply(f"找不到自訂指令 !{cmd_name}，僅能刪除自訂指令")
 
 
 async def setup(bot: commands.Bot) -> None:

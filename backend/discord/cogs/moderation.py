@@ -75,7 +75,7 @@ class Moderation(commands.Cog):
         try:
             user = await self.bot.fetch_user(int(user_id))
             await interaction.guild.unban(user)
-            await interaction.response.send_message(f"已解除封鎖: {user}")
+            await interaction.response.send_message(f"已解除封鎖：{user}")
         except ValueError:
             await interaction.response.send_message("無效的用戶 ID", ephemeral=True)
         except discord.NotFound:
@@ -114,7 +114,7 @@ class Moderation(commands.Cog):
     async def unmute(self, interaction: discord.Interaction, member: discord.Member) -> None:
         try:
             await member.timeout(None)
-            await interaction.response.send_message(f"已解除禁言: {member.mention}")
+            await interaction.response.send_message(f"已解除禁言：{member.mention}")
         except discord.Forbidden:
             await interaction.response.send_message("我沒有權限解除禁言", ephemeral=True)
 
