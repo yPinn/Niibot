@@ -1,4 +1,3 @@
-import os
 from datetime import UTC
 from typing import TYPE_CHECKING
 
@@ -6,10 +5,11 @@ import twitchio
 from twitchio.ext import commands
 
 from core.bot import _substitute_variables
+from core.config import get_settings
 from core.guards import check_command
 from shared.repositories.command_config import CommandConfigRepository
 
-FRONTEND_URL = os.getenv("FRONTEND_URL", "https://niibot.pages.dev").rstrip("/")
+FRONTEND_URL = get_settings().frontend_url.rstrip("/")
 
 if TYPE_CHECKING:
     from core.bot import Bot

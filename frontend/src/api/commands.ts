@@ -29,19 +29,6 @@ export interface CustomCommandCreate {
   aliases?: string | null
 }
 
-export interface RedemptionConfig {
-  id: number
-  channel_id: string
-  action_type: string
-  reward_name: string
-  enabled: boolean
-}
-
-export interface RedemptionConfigUpdate {
-  reward_name: string
-  enabled: boolean
-}
-
 // ---- Command Configs ----
 
 export async function getCommandConfigs(): Promise<CommandConfig[]> {
@@ -121,29 +108,5 @@ export interface PublicCommandsData {
 export async function getPublicCommands(username: string): Promise<PublicCommandsData> {
   const response = await fetch(API_ENDPOINTS.commands.public(username))
   if (!response.ok) throw new Error(`Failed to fetch public commands: ${response.statusText}`)
-  return response.json()
-}
-
-// ---- Redemption Configs ----
-
-export async function getRedemptionConfigs(): Promise<RedemptionConfig[]> {
-  const response = await fetch(API_ENDPOINTS.commands.redemptions, {
-    credentials: 'include',
-  })
-  if (!response.ok) throw new Error(`Failed to fetch redemption configs: ${response.statusText}`)
-  return response.json()
-}
-
-export async function updateRedemptionConfig(
-  actionType: string,
-  data: RedemptionConfigUpdate
-): Promise<RedemptionConfig> {
-  const response = await fetch(API_ENDPOINTS.commands.updateRedemption(actionType), {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify(data),
-  })
-  if (!response.ok) throw new Error(`Failed to update redemption config: ${response.statusText}`)
   return response.json()
 }

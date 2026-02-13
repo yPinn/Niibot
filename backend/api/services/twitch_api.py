@@ -371,6 +371,39 @@ class TwitchAPIClient:
             logger.exception(f"Error getting games by names: {e}")
             return []
 
+    # ==================== Channel Points ====================
+
+    async def get_custom_rewards(self, broadcaster_id: str, access_token: str) -> list[dict]:
+        """Get custom channel point rewards for a broadcaster (requires user token)."""
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.get(
+                    "https://api.twitch.tv/helix/channel_points/custom_rewards",
+                    params={"broadcaster_id": broadcaster_id},
+                    headers={
+                        "Authorization": f"Bearer {access_token}",
+                        "Client-Id": self.client_id,
+                    },
+                )
+
+                if response.status_code != 200:
+                    logger.error(f"Failed to fetch custom rewards: {response.status_code}")
+                    return []
+
+                data = response.json()
+                return [
+                    {
+                        "id": r["id"],
+                        "title": r["title"],
+                        "cost": r["cost"],
+                    }
+                    for r in data.get("data", [])
+                ]
+
+        except Exception as e:
+            logger.exception(f"Error getting custom rewards: {e}")
+            return []
+
     # ==================== User Token Management ====================
 
     async def refresh_access_token(self, refresh_token: str) -> TokenRefreshResult:

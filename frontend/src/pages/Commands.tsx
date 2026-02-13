@@ -7,11 +7,8 @@ import {
   createCustomCommand,
   deleteCustomCommand,
   getCommandConfigs,
-  getRedemptionConfigs,
-  type RedemptionConfig,
   toggleCommandConfig,
   updateCommandConfig,
-  updateRedemptionConfig,
 } from '@/api/commands'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -73,12 +70,6 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
 
 const EDITABLE_COMMANDS = ['hi']
 
-const ACTION_TYPE_LABELS: Record<string, string> = {
-  vip: 'VIP 授予',
-  first: '搶第一公告',
-  niibot_auth: 'Niibot 授權',
-}
-
 interface EditingState {
   mode: 'edit' | 'create'
   command: CommandConfig | null
@@ -87,7 +78,6 @@ interface EditingState {
 export default function Commands() {
   useDocumentTitle('Commands')
   const [commands, setCommands] = useState<CommandConfig[]>([])
-  const [redemptions, setRedemptions] = useState<RedemptionConfig[]>([])
   const [defaults, setDefaults] = useState<ChannelDefaults>({
     default_cooldown: 0,
   })
@@ -106,20 +96,11 @@ export default function Commands() {
   const [showAdvanced, setShowAdvanced] = useState(false)
   const responseInputRef = useRef<HTMLInputElement>(null)
 
-  // Redemption inline editing
-  const [editingRedemption, setEditingRedemption] = useState<string | null>(null)
-  const [redemptionName, setRedemptionName] = useState('')
-
   const fetchData = useCallback(async () => {
     try {
       setError(null)
-      const [cmds, reds, defs] = await Promise.all([
-        getCommandConfigs(),
-        getRedemptionConfigs(),
-        getChannelDefaults(),
-      ])
+      const [cmds, defs] = await Promise.all([getCommandConfigs(), getChannelDefaults()])
       setCommands(cmds)
-      setRedemptions(reds)
       setDefaults(defs)
     } catch {
       setError('無法載入設定')
@@ -244,44 +225,6 @@ export default function Commands() {
     })
   }
 
-  // --- Redemption handlers ---
-
-  const handleRedemptionToggle = async (red: RedemptionConfig) => {
-    const newEnabled = !red.enabled
-    setRedemptions(prev =>
-      prev.map(r => (r.action_type === red.action_type ? { ...r, enabled: newEnabled } : r))
-    )
-    try {
-      await updateRedemptionConfig(red.action_type, {
-        reward_name: red.reward_name,
-        enabled: newEnabled,
-      })
-    } catch {
-      setRedemptions(prev =>
-        prev.map(r => (r.action_type === red.action_type ? { ...r, enabled: red.enabled } : r))
-      )
-    }
-  }
-
-  const startEditRedemption = (red: RedemptionConfig) => {
-    setEditingRedemption(red.action_type)
-    setRedemptionName(red.reward_name)
-  }
-
-  const saveRedemption = async (red: RedemptionConfig) => {
-    if (!redemptionName.trim()) return
-    try {
-      const updated = await updateRedemptionConfig(red.action_type, {
-        reward_name: redemptionName.trim(),
-        enabled: red.enabled,
-      })
-      setRedemptions(prev => prev.map(r => (r.action_type === updated.action_type ? updated : r)))
-    } catch {
-      // Silently fail
-    }
-    setEditingRedemption(null)
-  }
-
   const formatCooldown = (cooldown: number | null) => {
     const effective = cooldown ?? defaults.default_cooldown
     if (effective <= 0) return '無'
@@ -292,7 +235,7 @@ export default function Commands() {
     <main className="flex flex-1 flex-col gap-section p-page md:p-page-lg">
       <div>
         <h1 className="text-page-title font-bold">Commands</h1>
-        <p className="text-sub text-muted-foreground">管理 Twitch 機器人指令與忠誠點數兌換</p>
+        <p className="text-sub text-muted-foreground">管理 Twitch 機器人指令</p>
       </div>
 
       {/* Command Configs */}
@@ -410,96 +353,6 @@ export default function Commands() {
                 )
               })}
             </Tabs>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Redemption Configs */}
-      <Card>
-        <CardHeader>
-          <CardTitle>忠誠點數兌換</CardTitle>
-          <CardDescription>設定 Twitch 忠誠點數獎勵名稱與對應動作</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="flex items-center justify-center py-8 text-muted-foreground">
-              載入中...
-            </div>
-          ) : (
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>動作</TableHead>
-                    <TableHead>獎勵名稱</TableHead>
-                    <TableHead className="text-center">狀態</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {redemptions.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={3} className="text-center text-muted-foreground">
-                        尚無兌換設定
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    redemptions.map(red => (
-                      <TableRow key={red.action_type}>
-                        <TableCell className="font-medium">
-                          {ACTION_TYPE_LABELS[red.action_type] || red.action_type}
-                        </TableCell>
-                        <TableCell>
-                          {editingRedemption === red.action_type ? (
-                            <div className="flex items-center gap-2">
-                              <Input
-                                value={redemptionName}
-                                onChange={e => setRedemptionName(e.target.value)}
-                                className="h-8 w-48"
-                                onKeyDown={e => {
-                                  if (e.key === 'Enter') saveRedemption(red)
-                                  if (e.key === 'Escape') setEditingRedemption(null)
-                                }}
-                                autoFocus
-                              />
-                              <Button size="sm" variant="ghost" onClick={() => saveRedemption(red)}>
-                                儲存
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => setEditingRedemption(null)}
-                              >
-                                取消
-                              </Button>
-                            </div>
-                          ) : (
-                            <button
-                              type="button"
-                              className="inline-flex items-center gap-1.5 rounded px-2 py-1 text-sm font-mono hover:bg-accent transition-colors cursor-pointer"
-                              onClick={() => startEditRedemption(red)}
-                            >
-                              {red.reward_name}
-                              <Icon
-                                icon="fa-solid fa-pen"
-                                wrapperClassName="size-3 text-muted-foreground"
-                              />
-                            </button>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <div className="flex justify-center">
-                            <Switch
-                              checked={red.enabled}
-                              onCheckedChange={() => handleRedemptionToggle(red)}
-                            />
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
           )}
         </CardContent>
       </Card>
