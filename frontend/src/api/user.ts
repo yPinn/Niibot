@@ -2,12 +2,15 @@ import { apiCache, CACHE_KEYS } from '@/lib/apiCache'
 
 import { API_ENDPOINTS } from './config'
 
+export type Theme = 'dark' | 'light' | 'system'
+
 export interface User {
   id: string
   name: string
   display_name: string
   avatar: string
   platform: 'twitch' | 'discord'
+  theme: Theme
 }
 
 async function fetchCurrentUser(): Promise<User | null> {
@@ -32,6 +35,18 @@ export async function getCurrentUser(options?: { forceRefresh?: boolean }): Prom
     ttl: 5 * 60 * 1000,
     forceRefresh: options?.forceRefresh,
   })
+}
+
+export async function updateUserPreferences(prefs: { theme: Theme }): Promise<void> {
+  const response = await fetch(API_ENDPOINTS.user.preferences, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(prefs),
+  })
+  if (!response.ok) {
+    throw new Error('Failed to update preferences')
+  }
 }
 
 export async function logout(): Promise<void> {

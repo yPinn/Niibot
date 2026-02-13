@@ -25,6 +25,9 @@ export const API_ENDPOINTS = {
     user: join('/api/auth/user'),
     logout: join('/api/auth/logout'),
   },
+  user: {
+    preferences: join('/api/user/preferences'),
+  },
   channels: {
     twitch: {
       monitored: join('/api/channels/twitch/monitored'),
@@ -48,14 +51,15 @@ export const API_ENDPOINTS = {
     updateConfig: (commandName: string) => join(`/api/commands/configs/${commandName}`),
     toggleConfig: (commandName: string) => join(`/api/commands/configs/${commandName}/toggle`),
     deleteConfig: (commandName: string) => join(`/api/commands/configs/${commandName}`),
-    redemptions: join('/api/commands/redemptions'),
-    updateRedemption: (actionType: string) => join(`/api/commands/redemptions/${actionType}`),
     public: (username: string) => join(`/api/commands/public/${username}`),
   },
   events: {
     configs: join('/api/events/configs'),
     updateConfig: (eventType: string) => join(`/api/events/configs/${eventType}`),
     toggleConfig: (eventType: string) => join(`/api/events/configs/${eventType}/toggle`),
+    twitchRewards: join('/api/events/twitch-rewards'),
+    redemptions: join('/api/events/redemptions'),
+    updateRedemption: (actionType: string) => join(`/api/events/redemptions/${actionType}`),
   },
   bots: {
     twitch: {

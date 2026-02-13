@@ -19,8 +19,8 @@ import TypographyDemo from '@/pages/TypographyDemo'
 
 function App() {
   return (
-    <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
-      <AuthProvider>
+    <AuthProvider>
+      <ThemeProvider storageKey="vite-ui-theme">
         <ServiceStatusProvider>
           <BotProvider>
             <Routes>
@@ -45,8 +45,8 @@ function App() {
             </Routes>
           </BotProvider>
         </ServiceStatusProvider>
-      </AuthProvider>
-    </ThemeProvider>
+      </ThemeProvider>
+    </AuthProvider>
   )
 }
 

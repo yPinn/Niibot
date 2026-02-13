@@ -1,10 +1,10 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 
-type Theme = 'dark' | 'light' | 'system'
+import { type Theme, updateUserPreferences } from '@/api'
+import { useAuth } from '@/contexts/AuthContext'
 
 type ThemeProviderProps = {
   children: React.ReactNode
-  defaultTheme?: Theme
   storageKey?: string
 }
 
@@ -28,14 +28,28 @@ function getSystemTheme(): 'dark' | 'light' {
 
 export function ThemeProvider({
   children,
-  defaultTheme = 'dark',
   storageKey = 'vite-ui-theme',
   ...props
 }: ThemeProviderProps) {
-  const [theme, setTheme] = useState<Theme>(
-    () => (localStorage.getItem(storageKey) as Theme) || defaultTheme
+  const { user } = useAuth()
+
+  const [theme, setThemeState] = useState<Theme>(
+    () => (localStorage.getItem(storageKey) as Theme) || 'dark'
   )
   const [systemTheme, setSystemTheme] = useState<'dark' | 'light'>(getSystemTheme)
+  const [syncedUserId, setSyncedUserId] = useState<string | null>(null)
+
+  // Sync theme from user on login (adjust-state-from-props pattern)
+  if (user?.id && syncedUserId !== user.id) {
+    setSyncedUserId(user.id)
+    if (user.theme && theme !== user.theme) {
+      setThemeState(user.theme)
+      localStorage.setItem(storageKey, user.theme)
+    }
+  }
+  if (!user && syncedUserId !== null) {
+    setSyncedUserId(null)
+  }
 
   const resolvedTheme = useMemo(() => {
     return theme === 'system' ? systemTheme : theme
@@ -59,9 +73,16 @@ export function ThemeProvider({
   const value = {
     theme,
     resolvedTheme,
-    setTheme: (theme: Theme) => {
-      localStorage.setItem(storageKey, theme)
-      setTheme(theme)
+    setTheme: (newTheme: Theme) => {
+      localStorage.setItem(storageKey, newTheme)
+      setThemeState(newTheme)
+
+      // Persist to server if logged in
+      if (user) {
+        updateUserPreferences({ theme: newTheme }).catch(err => {
+          console.error('Failed to save theme preference:', err)
+        })
+      }
     },
   }
 
