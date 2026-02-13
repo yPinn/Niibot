@@ -1,15 +1,15 @@
 import { Link } from 'react-router-dom'
 
-import { Button } from '@/components/ui/button'
 import {
+  Button,
   Empty,
   EmptyContent,
   EmptyDescription,
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
-} from '@/components/ui/empty'
-import { Icon } from '@/components/ui/icon'
+  Icon,
+} from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
 export default function NotFound() {

@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 
-import { Icon } from '@/components/ui/icon'
+import { Icon } from '@/components/ui'
 import { useServiceStatus } from '@/contexts/ServiceStatusContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 

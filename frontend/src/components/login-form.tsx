@@ -1,14 +1,34 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 
 import { getDiscordOAuthStatus, openDiscordOAuth, openTwitchOAuth } from '@/api'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
-import { Icon } from '@/components/ui/icon'
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+  Button,
+  Card,
+  CardContent,
+  Icon,
+} from '@/components/ui'
 import { cn } from '@/lib/utils'
 
+const ERROR_MESSAGES: Record<string, string> = {
+  db_not_ready: '伺服器資料庫尚未就緒，請稍後再試',
+  db_timeout: '伺服器連線逾時，請稍後再試',
+  save_token_failed: '登入資料儲存失敗，請稍後再試',
+  no_code: '未收到授權碼，請重新登入',
+  discord_not_configured: 'Discord 登入尚未設定',
+  access_denied: '授權被拒絕',
+}
+
 export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) {
+  const [searchParams] = useSearchParams()
   const [discordEnabled, setDiscordEnabled] = useState(false)
   const [discordLoading, setDiscordLoading] = useState(true)
+
+  const errorCode = searchParams.get('error')
+  const errorMessage = errorCode ? ERROR_MESSAGES[errorCode] || `登入失敗 (${errorCode})` : null
 
   useEffect(() => {
     getDiscordOAuthStatus()
@@ -67,6 +87,17 @@ export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) 
                   </li>
                 </ul>
               </div>
+              {errorMessage && (
+                <Alert variant="destructive">
+                  <Icon
+                    icon="fa-solid fa-circle-exclamation"
+                    className="size-4"
+                    wrapperClassName=""
+                  />
+                  <AlertTitle>登入失敗</AlertTitle>
+                  <AlertDescription>{errorMessage}</AlertDescription>
+                </Alert>
+              )}
               <div className="space-y-3">
                 <Button
                   type="button"

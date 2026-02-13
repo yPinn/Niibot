@@ -1,9 +1,11 @@
 import { useCallback, useMemo, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { Icon } from '@/components/ui/icon'
 import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+  Icon,
   SidebarGroup,
   SidebarGroupLabel,
   SidebarMenu,
@@ -12,7 +14,7 @@ import {
   SidebarMenuSub,
   SidebarMenuSubButton,
   SidebarMenuSubItem,
-} from '@/components/ui/sidebar'
+} from '@/components/ui'
 
 export function NavMain({
   items,

@@ -1,6 +1,12 @@
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Empty, EmptyDescription } from '@/components/ui/empty'
-import { Icon } from '@/components/ui/icon'
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  Empty,
+  EmptyDescription,
+  Icon,
+} from '@/components/ui'
 
 interface StatItem {
   label: string

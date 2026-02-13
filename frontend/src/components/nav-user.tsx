@@ -1,21 +1,21 @@
 import { logout as apiLogout, type User } from '@/api'
 import { useTheme } from '@/components/theme-provider'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import { Icon } from '@/components/ui/icon'
-import {
+  Icon,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
   useSidebar,
-} from '@/components/ui/sidebar'
+} from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 
 export function NavUser({ user }: { user: User }) {

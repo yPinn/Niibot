@@ -10,8 +10,7 @@ import {
   YAxis,
 } from 'recharts'
 
-import { Card, CardContent } from '@/components/ui/card'
-import { Icon } from '@/components/ui/icon'
+import { Card, CardContent, Icon } from '@/components/ui'
 
 // --- 介面定義 (Interfaces) ---
 

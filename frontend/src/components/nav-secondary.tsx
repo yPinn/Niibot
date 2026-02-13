@@ -1,13 +1,13 @@
 import * as React from 'react'
 
-import { Icon } from '@/components/ui/icon'
 import {
+  Icon,
   SidebarGroup,
   SidebarGroupContent,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-} from '@/components/ui/sidebar'
+} from '@/components/ui'
 
 export function NavSecondary({
   items,

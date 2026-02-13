@@ -1,10 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 
 import { useTheme } from '@/components/theme-provider'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
-import { Icon } from '@/components/ui/icon'
+import { Badge, Button, Card, CardContent, Icon } from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
 export default function Home() {
