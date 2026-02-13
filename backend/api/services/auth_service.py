@@ -19,32 +19,34 @@ class AuthService:
         self.algorithm = algorithm
         self.expire_days = expire_days
 
-    def create_access_token(self, user_id: str) -> str:
+    def create_access_token(self, user_id: str, platform: str, platform_user_id: str) -> str:
         """Create a JWT access token for a user"""
         expire = datetime.now(UTC) + timedelta(days=self.expire_days)
 
         payload = {
-            "user_id": user_id,
+            "sub": user_id,
+            "platform": platform,
+            "platform_user_id": platform_user_id,
             "exp": expire,
             "iat": datetime.now(UTC),
         }
 
         token = jwt.encode(payload, self.secret_key, algorithm=self.algorithm)
-        logger.debug(f"JWT created for user: {user_id}")
+        logger.debug(f"JWT created for user: {user_id} ({platform}:{platform_user_id})")
 
         return token
 
-    def verify_token(self, token: str) -> str | None:
-        """Verify a JWT token and return the user_id if valid"""
+    def verify_token(self, token: str) -> dict | None:
+        """Verify a JWT token and return the payload if valid"""
         try:
             payload = jwt.decode(token, self.secret_key, algorithms=[self.algorithm])
-            user_id = payload.get("user_id")
+            user_id = payload.get("sub")
 
             if user_id is None:
-                logger.warning("Token missing user_id")
+                logger.warning("Token missing sub")
                 return None
 
-            return str(user_id) if user_id else None
+            return payload
 
         except jwt.ExpiredSignatureError:
             logger.warning("Token expired")

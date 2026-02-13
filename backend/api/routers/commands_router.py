@@ -1,4 +1,4 @@
-"""Command and redemption configuration API routes"""
+"""Command configuration API routes"""
 
 import logging
 from datetime import datetime
@@ -7,7 +7,7 @@ from asyncpg import Pool
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from core.dependencies import get_current_user_id, get_db_pool, get_twitch_api
+from core.dependencies import get_current_channel_id, get_db_pool, get_twitch_api
 from services import CommandConfigService, TwitchAPIClient
 
 logger = logging.getLogger(__name__)
@@ -57,21 +57,6 @@ class CustomCommandCreate(BaseModel):
     aliases: str | None = None
 
 
-class RedemptionConfigResponse(BaseModel):
-    id: int
-    channel_id: str
-    action_type: str
-    reward_name: str
-    enabled: bool
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
-
-
-class RedemptionConfigUpdate(BaseModel):
-    reward_name: str
-    enabled: bool
-
-
 # ============================================
 # Command Config Endpoints
 # ============================================
@@ -79,13 +64,13 @@ class RedemptionConfigUpdate(BaseModel):
 
 @router.get("/configs", response_model=list[CommandConfigResponse])
 async def get_command_configs(
-    user_id: str = Depends(get_current_user_id),
+    channel_id: str = Depends(get_current_channel_id),
     pool: Pool = Depends(get_db_pool),
 ) -> list[CommandConfigResponse]:
     """Get all command configs for the authenticated user's channel."""
     try:
         service = CommandConfigService(pool)
-        configs = await service.list_commands(user_id)
+        configs = await service.list_commands(channel_id)
         return [CommandConfigResponse(**cfg) for cfg in configs]
     except Exception as e:
         logger.exception(f"Failed to get command configs: {e}")
@@ -95,7 +80,7 @@ async def get_command_configs(
 @router.post("/configs", response_model=CommandConfigResponse, status_code=201)
 async def create_custom_command(
     body: CustomCommandCreate,
-    user_id: str = Depends(get_current_user_id),
+    channel_id: str = Depends(get_current_channel_id),
     pool: Pool = Depends(get_db_pool),
 ) -> CommandConfigResponse:
     """Create a new custom command."""
@@ -106,14 +91,14 @@ async def create_custom_command(
     try:
         service = CommandConfigService(pool)
         cfg = await service.create_custom_command(
-            user_id,
+            channel_id,
             body.command_name,
             custom_response=body.custom_response,
             cooldown=body.cooldown,
             min_role=body.min_role,
             aliases=body.aliases,
         )
-        logger.info(f"User {user_id} created custom command: {body.command_name}")
+        logger.info(f"Channel {channel_id} created custom command: {body.command_name}")
         return CommandConfigResponse(**cfg)
     except Exception as e:
         logger.exception(f"Failed to create custom command: {e}")
@@ -124,7 +109,7 @@ async def create_custom_command(
 async def update_command_config(
     command_name: str,
     body: CommandConfigUpdate,
-    user_id: str = Depends(get_current_user_id),
+    channel_id: str = Depends(get_current_channel_id),
     pool: Pool = Depends(get_db_pool),
 ) -> CommandConfigResponse:
     """Update a command config."""
@@ -133,7 +118,7 @@ async def update_command_config(
     try:
         service = CommandConfigService(pool)
         cfg = await service.update_command(
-            user_id,
+            channel_id,
             command_name,
             enabled=body.enabled,
             custom_response=body.custom_response,
@@ -141,7 +126,7 @@ async def update_command_config(
             min_role=body.min_role,
             aliases=body.aliases,
         )
-        logger.info(f"User {user_id} updated command config: {command_name}")
+        logger.info(f"Channel {channel_id} updated command config: {command_name}")
         return CommandConfigResponse(**cfg)
     except Exception as e:
         logger.exception(f"Failed to update command config: {e}")
@@ -152,14 +137,14 @@ async def update_command_config(
 async def toggle_command_config(
     command_name: str,
     body: CommandConfigToggle,
-    user_id: str = Depends(get_current_user_id),
+    channel_id: str = Depends(get_current_channel_id),
     pool: Pool = Depends(get_db_pool),
 ) -> CommandConfigResponse:
     """Toggle a command's enabled state."""
     try:
         service = CommandConfigService(pool)
-        cfg = await service.toggle_command(user_id, command_name, body.enabled)
-        logger.info(f"User {user_id} toggled command: {command_name} -> {body.enabled}")
+        cfg = await service.toggle_command(channel_id, command_name, body.enabled)
+        logger.info(f"Channel {channel_id} toggled command: {command_name} -> {body.enabled}")
         return CommandConfigResponse(**cfg)
     except Exception as e:
         logger.exception(f"Failed to toggle command config: {e}")
@@ -169,19 +154,19 @@ async def toggle_command_config(
 @router.delete("/configs/{command_name}", status_code=204)
 async def delete_custom_command(
     command_name: str,
-    user_id: str = Depends(get_current_user_id),
+    channel_id: str = Depends(get_current_channel_id),
     pool: Pool = Depends(get_db_pool),
 ) -> None:
     """Delete a custom command (only custom type)."""
     try:
         service = CommandConfigService(pool)
-        deleted = await service.delete_custom_command(user_id, command_name)
+        deleted = await service.delete_custom_command(channel_id, command_name)
         if not deleted:
             raise HTTPException(
                 status_code=404,
                 detail="Custom command not found or cannot delete builtin commands",
             )
-        logger.info(f"User {user_id} deleted custom command: {command_name}")
+        logger.info(f"Channel {channel_id} deleted custom command: {command_name}")
     except HTTPException:
         raise
     except Exception as e:
@@ -248,45 +233,3 @@ async def get_public_commands(
     except Exception as e:
         logger.exception(f"Failed to get public commands: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch commands") from None
-
-
-# ============================================
-# Redemption Config Endpoints
-# ============================================
-
-VALID_ACTION_TYPES = {"vip", "first", "niibot_auth"}
-
-
-@router.get("/redemptions", response_model=list[RedemptionConfigResponse])
-async def get_redemption_configs(
-    user_id: str = Depends(get_current_user_id),
-    pool: Pool = Depends(get_db_pool),
-) -> list[RedemptionConfigResponse]:
-    """Get all redemption configs for the authenticated user's channel."""
-    try:
-        service = CommandConfigService(pool)
-        configs = await service.list_redemptions(user_id)
-        return [RedemptionConfigResponse(**cfg) for cfg in configs]
-    except Exception as e:
-        logger.exception(f"Failed to get redemption configs: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch redemption configs") from None
-
-
-@router.put("/redemptions/{action_type}", response_model=RedemptionConfigResponse)
-async def update_redemption_config(
-    action_type: str,
-    body: RedemptionConfigUpdate,
-    user_id: str = Depends(get_current_user_id),
-    pool: Pool = Depends(get_db_pool),
-) -> RedemptionConfigResponse:
-    """Update a redemption config's reward name and enabled state."""
-    if action_type not in VALID_ACTION_TYPES:
-        raise HTTPException(status_code=400, detail=f"Invalid action_type: {action_type}")
-    try:
-        service = CommandConfigService(pool)
-        cfg = await service.update_redemption(user_id, action_type, body.reward_name, body.enabled)
-        logger.info(f"User {user_id} updated redemption: {action_type}")
-        return RedemptionConfigResponse(**cfg)
-    except Exception as e:
-        logger.exception(f"Failed to update redemption config: {e}")
-        raise HTTPException(status_code=500, detail="Failed to update redemption config") from None

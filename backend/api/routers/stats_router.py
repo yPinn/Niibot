@@ -6,7 +6,7 @@ from asyncpg import Pool
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from core.dependencies import get_current_user_id, get_db_pool
+from core.dependencies import get_current_channel_id, get_db_pool
 from shared.repositories.analytics import AnalyticsRepository
 
 logger = logging.getLogger(__name__)
@@ -33,16 +33,16 @@ class ChannelStats(BaseModel):
 
 @router.get("/channel")
 async def get_channel_stats(
-    user_id: str = Depends(get_current_user_id),
+    channel_id: str = Depends(get_current_channel_id),
     pool: Pool = Depends(get_db_pool),
 ) -> ChannelStats:
     """Get channel statistics"""
     try:
         repo = AnalyticsRepository(pool)
 
-        top_chatters_data = await repo.list_top_chatters(user_id, days=30, limit=10)
-        top_commands_data = await repo.list_top_commands(user_id, days=30, limit=10)
-        total_messages = await repo.get_total_messages(user_id, days=30)
+        top_chatters_data = await repo.list_top_chatters(channel_id, days=30, limit=10)
+        top_commands_data = await repo.list_top_commands(channel_id, days=30, limit=10)
+        total_messages = await repo.get_total_messages(channel_id, days=30)
 
         top_chatters = [
             ChatterStat(username=c["username"], message_count=c["message_count"])
@@ -53,7 +53,7 @@ async def get_channel_stats(
         ]
         total_commands = sum(cmd.count for cmd in top_commands)
 
-        logger.info(f"User {user_id} requested channel stats")
+        logger.info(f"Channel {channel_id} requested channel stats")
         return ChannelStats(
             top_commands=top_commands[:5],
             top_chatters=top_chatters[:5],

@@ -7,7 +7,7 @@ from asyncpg import Pool
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from core.dependencies import get_analytics_service, get_current_user_id, get_db_pool
+from core.dependencies import get_analytics_service, get_current_channel_id, get_db_pool
 
 logger = logging.getLogger(__name__)
 
@@ -67,20 +67,20 @@ class AnalyticsSummary(BaseModel):
 @router.get("/summary", response_model=AnalyticsSummary)
 async def get_analytics_summary(
     days: int = 30,
-    user_id: str = Depends(get_current_user_id),
+    channel_id: str = Depends(get_current_channel_id),
     pool: Pool = Depends(get_db_pool),
 ) -> AnalyticsSummary:
     """
-    Get analytics summary for the authenticated user
+    Get analytics summary for the authenticated user's channel
 
     Args:
         days: Number of days to look back (default: 30)
     """
     try:
         analytics_service = get_analytics_service(pool)
-        summary_data = await analytics_service.get_summary(user_id, days)
+        summary_data = await analytics_service.get_summary(channel_id, days)
 
-        logger.info(f"User {user_id} requested analytics summary (days={days})")
+        logger.info(f"Channel {channel_id} requested analytics summary (days={days})")
         return AnalyticsSummary(**summary_data)
 
     except Exception as e:
@@ -91,7 +91,7 @@ async def get_analytics_summary(
 @router.get("/sessions/{session_id}/commands", response_model=list[CommandStat])
 async def get_session_commands(
     session_id: int,
-    user_id: str = Depends(get_current_user_id),
+    channel_id: str = Depends(get_current_channel_id),
     pool: Pool = Depends(get_db_pool),
 ) -> list[CommandStat]:
     """
@@ -102,7 +102,7 @@ async def get_session_commands(
     """
     try:
         analytics_service = get_analytics_service(pool)
-        commands = await analytics_service.get_session_commands(session_id, user_id)
+        commands = await analytics_service.get_session_commands(session_id, channel_id)
 
         if commands is None:
             raise HTTPException(status_code=404, detail="Session not found")
@@ -119,7 +119,7 @@ async def get_session_commands(
 @router.get("/sessions/{session_id}/events", response_model=list[StreamEvent])
 async def get_session_events(
     session_id: int,
-    user_id: str = Depends(get_current_user_id),
+    channel_id: str = Depends(get_current_channel_id),
     pool: Pool = Depends(get_db_pool),
 ) -> list[StreamEvent]:
     """
@@ -130,7 +130,7 @@ async def get_session_events(
     """
     try:
         analytics_service = get_analytics_service(pool)
-        events = await analytics_service.get_session_events(session_id, user_id)
+        events = await analytics_service.get_session_events(session_id, channel_id)
 
         if events is None:
             raise HTTPException(status_code=404, detail="Session not found")
@@ -148,7 +148,7 @@ async def get_session_events(
 async def get_top_commands(
     days: int = 30,
     limit: int = 10,
-    user_id: str = Depends(get_current_user_id),
+    channel_id: str = Depends(get_current_channel_id),
     pool: Pool = Depends(get_db_pool),
 ) -> list[CommandStat]:
     """
@@ -160,9 +160,9 @@ async def get_top_commands(
     """
     try:
         analytics_service = get_analytics_service(pool)
-        commands = await analytics_service.get_top_commands(user_id, days, limit)
+        commands = await analytics_service.get_top_commands(channel_id, days, limit)
 
-        logger.info(f"User {user_id} requested top commands (days={days}, limit={limit})")
+        logger.info(f"Channel {channel_id} requested top commands (days={days}, limit={limit})")
         return [CommandStat(**cmd) for cmd in commands]
 
     except Exception as e:

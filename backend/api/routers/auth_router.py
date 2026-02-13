@@ -3,13 +3,14 @@
 import logging
 
 from asyncpg import Pool
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Response
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
 from core.config import Settings, get_settings
 from core.database import get_database_manager
 from core.dependencies import (
+    _get_token_payload,
     get_auth_service,
     get_channel_service,
     get_current_user_id,
@@ -21,7 +22,7 @@ from services import AuthService, DiscordAPIClient, TwitchAPIClient
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/auth", tags=["authentication"])
+router = APIRouter(prefix="/api", tags=["authentication"])
 
 
 # ============================================
@@ -40,10 +41,61 @@ class UserInfoResponse(BaseModel):
     display_name: str
     avatar: str
     platform: str  # "twitch" or "discord"
+    theme: str  # "dark", "light", or "system"
 
 
 class LogoutResponse(BaseModel):
     message: str
+
+
+class PreferencesUpdate(BaseModel):
+    theme: str
+
+
+# ============================================
+# Helpers
+# ============================================
+
+
+async def _find_or_create_user(
+    pool: Pool,
+    platform: str,
+    platform_user_id: str,
+    username: str,
+    display_name: str | None = None,
+    avatar: str | None = None,
+) -> str:
+    """Find existing user by linked account or create a new one. Returns users.id as string."""
+    row = await pool.fetchrow(
+        "SELECT user_id FROM user_linked_accounts WHERE platform = $1 AND platform_user_id = $2",
+        platform,
+        platform_user_id,
+    )
+
+    if row:
+        return str(row["user_id"])
+
+    # Create new user + linked account in a transaction
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            user_row = await conn.fetchrow(
+                "INSERT INTO users (display_name, avatar) VALUES ($1, $2) RETURNING id",
+                display_name or username,
+                avatar,
+            )
+            user_id = str(user_row["id"])
+
+            await conn.execute(
+                "INSERT INTO user_linked_accounts (user_id, platform, platform_user_id, username) "
+                "VALUES ($1, $2, $3, $4)",
+                user_row["id"],
+                platform,
+                platform_user_id,
+                username,
+            )
+
+    logger.info(f"Created user {user_id} for {platform}:{platform_user_id} ({username})")
+    return user_id
 
 
 # ============================================
@@ -51,7 +103,7 @@ class LogoutResponse(BaseModel):
 # ============================================
 
 
-@router.get("/twitch/oauth", response_model=OAuthURLResponse)
+@router.get("/auth/twitch/oauth", response_model=OAuthURLResponse)
 async def get_twitch_oauth_url(
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
     settings: Settings = Depends(get_settings),
@@ -64,7 +116,7 @@ async def get_twitch_oauth_url(
     )
 
 
-@router.get("/twitch/callback")
+@router.get("/auth/twitch/callback")
 async def twitch_oauth_callback(
     code: str | None = None,
     error: str | None = None,
@@ -92,16 +144,16 @@ async def twitch_oauth_callback(
         logger.error(f"Failed to exchange code: {error_msg}")
         return RedirectResponse(url=f"{settings.frontend_url}/login?error={error_msg}")
 
-    user_id = token_data["user_id"]
+    platform_user_id = token_data["user_id"]
     access_token = token_data["access_token"]
     refresh_token = token_data.get("refresh_token", "")
 
-    user_info = await twitch_api.get_user_info(user_id)
-    username = user_info.get("name") or user_info.get("display_name") or user_id
+    user_info = await twitch_api.get_user_info(platform_user_id)
+    username = user_info.get("name") or user_info.get("display_name") or platform_user_id
 
     channel_svc = get_channel_service(db_manager._pool)
     save_success = await channel_svc.save_token(
-        user_id=user_id,
+        user_id=platform_user_id,
         access_token=access_token,
         refresh_token=refresh_token,
         username=username,
@@ -111,7 +163,21 @@ async def twitch_oauth_callback(
         logger.error(f"Failed to save token and channel for {username}")
         return RedirectResponse(url=f"{settings.frontend_url}/login?error=save_token_failed")
 
-    jwt_token = auth_service.create_access_token(user_id)
+    # Find or create unified user
+    user_id = await _find_or_create_user(
+        db_manager._pool,
+        "twitch",
+        platform_user_id,
+        username,
+        display_name=user_info.get("display_name"),
+        avatar=user_info.get("avatar"),
+    )
+
+    jwt_token = auth_service.create_access_token(
+        user_id=user_id,
+        platform="twitch",
+        platform_user_id=platform_user_id,
+    )
 
     response = RedirectResponse(url=f"{settings.frontend_url}/dashboard")
     response.set_cookie(
@@ -123,55 +189,64 @@ async def twitch_oauth_callback(
         max_age=30 * 24 * 60 * 60,
     )
 
-    logger.info(f"User logged in and synced: {username} ({user_id})")
+    logger.info(f"User logged in and synced: {username} ({platform_user_id})")
     return response
 
 
-@router.get("/user", response_model=UserInfoResponse)
+@router.get("/auth/user", response_model=UserInfoResponse)
 async def get_current_user(
-    user_id: str = Depends(get_current_user_id),
+    auth_token: str | None = Cookie(None),
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
     pool: Pool = Depends(get_db_pool),
 ) -> UserInfoResponse:
     """Get current authenticated user information"""
-    # Check if this is a Discord user (has discord: prefix)
-    if user_id.startswith("discord:"):
-        discord_user_id = user_id.replace("discord:", "")
+    payload = _get_token_payload(auth_token)
+    user_id = str(payload["sub"])
+    platform = payload["platform"]
+    platform_user_id = str(payload["platform_user_id"])
+
+    # Get theme from users table
+    user_row = await pool.fetchrow("SELECT theme FROM users WHERE id = $1::uuid", user_id)
+    theme = user_row["theme"] if user_row else "system"
+
+    if platform == "discord":
         channel_svc = get_channel_service(pool)
-        user_info = await channel_svc.get_discord_user(discord_user_id)
+        user_info = await channel_svc.get_discord_user(platform_user_id)
 
         if not user_info:
             raise HTTPException(status_code=404, detail="Discord user not found")
 
-        return UserInfoResponse(**user_info, platform="discord")
+        return UserInfoResponse(**user_info, platform="discord", theme=theme)
 
     # Twitch user
-    user_info = await twitch_api.get_user_info(user_id)
+    user_info = await twitch_api.get_user_info(platform_user_id)
 
     if not user_info:
         raise HTTPException(status_code=404, detail="User not found")
 
-    return UserInfoResponse(**user_info, platform="twitch")
+    return UserInfoResponse(**user_info, platform="twitch", theme=theme)
 
 
-@router.post("/logout", response_model=LogoutResponse)
+@router.post("/auth/logout", response_model=LogoutResponse)
 async def logout(
     response: Response,
-    user_id: str = Depends(get_current_user_id),
+    auth_token: str | None = Cookie(None),
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
     settings: Settings = Depends(get_settings),
     pool: Pool = Depends(get_db_pool),
 ) -> LogoutResponse:
     """Logout current user by clearing auth cookie"""
-    # Fetch user info for logging
-    if user_id.startswith("discord:"):
-        discord_user_id = user_id.replace("discord:", "")
+    payload = _get_token_payload(auth_token)
+    platform = payload["platform"]
+    platform_user_id = str(payload["platform_user_id"])
+
+    if platform == "discord":
         channel_svc = get_channel_service(pool)
-        user_info = await channel_svc.get_discord_user(discord_user_id)
-        username = user_info.get("name", discord_user_id) if user_info else discord_user_id
+        user_info = await channel_svc.get_discord_user(platform_user_id)
+        username = user_info.get("name", platform_user_id) if user_info else platform_user_id
     else:
-        user_info = await twitch_api.get_user_info(user_id)
-        username = user_info.get("name", user_id) if user_info else user_id
+        user_info = await twitch_api.get_user_info(platform_user_id)
+        username = user_info.get("name", platform_user_id) if user_info else platform_user_id
 
     response.delete_cookie(
         key="auth_token",
@@ -180,8 +255,31 @@ async def logout(
         secure=settings.is_production,
         samesite="strict" if settings.is_production else "lax",
     )
-    logger.info(f"User logged out: {username} ({user_id})")
+    logger.info(f"User logged out: {username} ({platform}:{platform_user_id})")
     return LogoutResponse(message="Logged out successfully")
+
+
+# ============================================
+# User Preferences
+# ============================================
+
+
+@router.patch("/user/preferences")
+async def update_preferences(
+    body: PreferencesUpdate,
+    user_id: str = Depends(get_current_user_id),
+    pool: Pool = Depends(get_db_pool),
+) -> dict:
+    """Update user preferences (theme, etc.)"""
+    if body.theme not in ("dark", "light", "system"):
+        raise HTTPException(status_code=400, detail="Invalid theme value")
+
+    await pool.execute(
+        "UPDATE users SET theme = $1 WHERE id = $2::uuid",
+        body.theme,
+        user_id,
+    )
+    return {"theme": body.theme}
 
 
 # ============================================
@@ -194,7 +292,7 @@ class DiscordOAuthStatusResponse(BaseModel):
     message: str
 
 
-@router.get("/discord/status", response_model=DiscordOAuthStatusResponse)
+@router.get("/auth/discord/status", response_model=DiscordOAuthStatusResponse)
 async def get_discord_oauth_status(
     discord_api: DiscordAPIClient = Depends(get_discord_api),
 ) -> DiscordOAuthStatusResponse:
@@ -210,7 +308,7 @@ async def get_discord_oauth_status(
     )
 
 
-@router.get("/discord/oauth", response_model=OAuthURLResponse)
+@router.get("/auth/discord/oauth", response_model=OAuthURLResponse)
 async def get_discord_oauth_url(
     discord_api: DiscordAPIClient = Depends(get_discord_api),
     settings: Settings = Depends(get_settings),
@@ -229,7 +327,7 @@ async def get_discord_oauth_url(
     )
 
 
-@router.get("/discord/callback")
+@router.get("/auth/discord/callback")
 async def discord_oauth_callback(
     code: str | None = None,
     error: str | None = None,
@@ -260,15 +358,29 @@ async def discord_oauth_callback(
         logger.error(f"Failed to exchange code: {error_msg}")
         return RedirectResponse(url=f"{settings.frontend_url}/login?error={error_msg}")
 
-    user_id = token_data["user_id"]
-    username = token_data.get("username", user_id)
+    platform_user_id = token_data["user_id"]
+    username = token_data.get("username", platform_user_id)
     display_name = token_data.get("global_name") or token_data.get("username", username)
     avatar = token_data.get("avatar")
 
     channel_svc = get_channel_service(db_manager._pool)
-    await channel_svc.save_discord_user(user_id, username, display_name, avatar)
+    await channel_svc.save_discord_user(platform_user_id, username, display_name, avatar)
 
-    jwt_token = auth_service.create_access_token(f"discord:{user_id}")
+    # Find or create unified user
+    user_id = await _find_or_create_user(
+        db_manager._pool,
+        "discord",
+        platform_user_id,
+        username,
+        display_name=display_name,
+        avatar=avatar,
+    )
+
+    jwt_token = auth_service.create_access_token(
+        user_id=user_id,
+        platform="discord",
+        platform_user_id=platform_user_id,
+    )
 
     response = RedirectResponse(url=f"{settings.frontend_url}/discord/dashboard")
     response.set_cookie(
@@ -280,5 +392,5 @@ async def discord_oauth_callback(
         max_age=30 * 24 * 60 * 60,
     )
 
-    logger.info(f"Discord user logged in: {username} ({user_id})")
+    logger.info(f"Discord user logged in: {username} ({platform_user_id})")
     return response

@@ -75,28 +75,40 @@ def get_analytics_service(pool: asyncpg.Pool) -> AnalyticsService:
 # ============================================
 
 
-async def get_current_user_id(
-    auth_token: str | None = Cookie(None),
-) -> str:
-    """
-    Verify authentication and return current user_id
-
-    Raises:
-        HTTPException: If not authenticated or token invalid
-    """
+def _get_token_payload(auth_token: str | None = Cookie(None)) -> dict:
+    """Verify JWT and return full payload"""
     auth_service = get_auth_service()
 
     if not auth_token:
         logger.warning("No auth token provided")
         raise HTTPException(status_code=401, detail="Not logged in")
 
-    user_id = auth_service.verify_token(auth_token)
+    payload = auth_service.verify_token(auth_token)
 
-    if not user_id:
+    if not payload:
         logger.warning("Invalid or expired token")
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
-    return str(user_id)
+    return payload
+
+
+async def get_current_user_id(
+    auth_token: str | None = Cookie(None),
+) -> str:
+    """Return users.id (UUID) for user-level operations (preferences, etc.)"""
+    payload = _get_token_payload(auth_token)
+    return str(payload["sub"])
+
+
+async def get_current_channel_id(
+    auth_token: str | None = Cookie(None),
+) -> str:
+    """Return platform_user_id for channel-level operations
+
+    Maps to TwitchIO broadcaster.id / Helix broadcaster_id
+    """
+    payload = _get_token_payload(auth_token)
+    return str(payload["platform_user_id"])
 
 
 # ============================================
@@ -108,25 +120,25 @@ async def require_auth_with_channel_service(
     auth_token: str | None = Cookie(None),
 ) -> tuple[str, ChannelService]:
     """
-    Require authentication and return (user_id, channel_service)
+    Require authentication and return (channel_id, channel_service)
 
     Convenient dependency for endpoints that need both auth and channel operations
     """
-    user_id = await get_current_user_id(auth_token)
+    channel_id = await get_current_channel_id(auth_token)
     pool = get_db_pool()
     channel_service = get_channel_service(pool)
-    return user_id, channel_service
+    return channel_id, channel_service
 
 
 async def require_auth_with_analytics_service(
     auth_token: str | None = Cookie(None),
 ) -> tuple[str, AnalyticsService]:
     """
-    Require authentication and return (user_id, analytics_service)
+    Require authentication and return (channel_id, analytics_service)
 
     Convenient dependency for endpoints that need both auth and analytics operations
     """
-    user_id = await get_current_user_id(auth_token)
+    channel_id = await get_current_channel_id(auth_token)
     pool = get_db_pool()
     analytics_service = get_analytics_service(pool)
-    return user_id, analytics_service
+    return channel_id, analytics_service

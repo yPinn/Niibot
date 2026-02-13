@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from core.dependencies import (
     get_channel_service,
-    get_current_user_id,
+    get_current_channel_id,
     get_db_pool,
     get_twitch_api,
 )
@@ -64,7 +64,7 @@ class ChannelDefaultsUpdate(BaseModel):
 
 @router.get("/twitch/monitored", response_model=list[ChannelInfo])
 async def get_monitored_channels(
-    user_id: str = Depends(get_current_user_id),
+    channel_id: str = Depends(get_current_channel_id),
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
     pool: Pool = Depends(get_db_pool),
 ) -> list[ChannelInfo]:
@@ -119,11 +119,11 @@ async def get_monitored_channels(
                         channel.game_name = stream["game_name"]
                         break
 
-        # Filter out the current user and sort
-        result = [ch for ch in channels_info.values() if ch.id != user_id]
+        # Filter out the current user's channel and sort
+        result = [ch for ch in channels_info.values() if ch.id != channel_id]
         result.sort(key=lambda x: (not x.is_live, x.display_name))
 
-        logger.debug(f"Returning {len(result)} monitored channels for user {user_id}")
+        logger.debug(f"Returning {len(result)} monitored channels for channel {channel_id}")
         return result
 
     except Exception as e:
@@ -133,13 +133,13 @@ async def get_monitored_channels(
 
 @router.get("/twitch/my-status", response_model=ChannelStatusResponse)
 async def get_my_channel_status(
-    user_id: str = Depends(get_current_user_id),
+    channel_id: str = Depends(get_current_channel_id),
     pool: Pool = Depends(get_db_pool),
 ) -> ChannelStatusResponse:
     """Get current user's channel status"""
     try:
         channel_service = get_channel_service(pool)
-        status = await channel_service.get_channel_status(user_id)
+        status = await channel_service.get_channel_status(channel_id)
         return ChannelStatusResponse(**status)
 
     except Exception as e:
@@ -150,7 +150,7 @@ async def get_my_channel_status(
 @router.post("/twitch/toggle", response_model=ToggleResponse)
 async def toggle_channel(
     request: ChannelToggleRequest,
-    user_id: str = Depends(get_current_user_id),
+    channel_id: str = Depends(get_current_channel_id),
     pool: Pool = Depends(get_db_pool),
 ) -> ToggleResponse:
     """Enable or disable bot for a channel"""
@@ -160,7 +160,7 @@ async def toggle_channel(
 
         if success:
             action = "enabled" if request.enabled else "disabled"
-            logger.info(f"Channel {action}: {request.channel_id} by user: {user_id}")
+            logger.info(f"Channel {action}: {request.channel_id} by channel: {channel_id}")
             return ToggleResponse(message=f"Channel {action} successfully")
         else:
             raise HTTPException(status_code=500, detail="Failed to update channel status")
@@ -179,7 +179,7 @@ async def toggle_channel(
 
 @router.get("/defaults", response_model=ChannelDefaultsResponse)
 async def get_channel_defaults(
-    user_id: str = Depends(get_current_user_id),
+    channel_id: str = Depends(get_current_channel_id),
     pool: Pool = Depends(get_db_pool),
 ) -> ChannelDefaultsResponse:
     """Get channel default cooldown settings."""
@@ -187,7 +187,7 @@ async def get_channel_defaults(
 
     try:
         repo = ChannelRepository(pool)
-        channel = await repo.get_channel(user_id)
+        channel = await repo.get_channel(channel_id)
         if not channel:
             return ChannelDefaultsResponse(default_cooldown=0)
         return ChannelDefaultsResponse(
@@ -201,7 +201,7 @@ async def get_channel_defaults(
 @router.put("/defaults", response_model=ChannelDefaultsResponse)
 async def update_channel_defaults(
     body: ChannelDefaultsUpdate,
-    user_id: str = Depends(get_current_user_id),
+    channel_id: str = Depends(get_current_channel_id),
     pool: Pool = Depends(get_db_pool),
 ) -> ChannelDefaultsResponse:
     """Update channel default cooldown settings."""
@@ -210,12 +210,12 @@ async def update_channel_defaults(
     try:
         repo = ChannelRepository(pool)
         channel = await repo.update_channel_defaults(
-            user_id,
+            channel_id,
             default_cooldown=body.default_cooldown,
         )
         if not channel:
             raise HTTPException(status_code=404, detail="Channel not found")
-        logger.info(f"User {user_id} updated channel defaults")
+        logger.info(f"Channel {channel_id} updated channel defaults")
         return ChannelDefaultsResponse(
             default_cooldown=channel.default_cooldown,
         )
