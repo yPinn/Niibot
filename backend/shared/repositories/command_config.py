@@ -240,6 +240,26 @@ class CommandConfigRepository:
 
         return await self.list_configs(channel_id)
 
+    async def warm_cache(self, channel_id: str) -> int:
+        """Proactively load all command configs for a channel into the in-memory cache.
+
+        Populates both exact-name keys and alias keys so that runtime lookups
+        are O(1) memory access with zero DB dependency.
+
+        Returns the number of configs warmed.
+        """
+        configs = await self.list_configs(channel_id)
+        for cfg in configs:
+            # Populate exact name cache
+            _cmd_cache.set(f"cmd_config:{channel_id}:{cfg.command_name}", cfg)
+            # Populate alias cache entries
+            if cfg.aliases:
+                for alias in cfg.aliases.split(","):
+                    alias = alias.strip()
+                    if alias:
+                        _cmd_cache.set(f"cmd_alias:{channel_id}:{alias}", cfg)
+        return len(configs)
+
 
 class RedemptionConfigRepository:
     """Pure SQL operations for redemption_configs."""

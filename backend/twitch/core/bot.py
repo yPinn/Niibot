@@ -134,6 +134,7 @@ class Bot(commands.AutoBot):
         )
         asyncio.create_task(self._recover_active_sessions())
         asyncio.create_task(self._session_verify_loop())
+        asyncio.create_task(self._pool_heartbeat_loop())
 
     async def setup_database(self) -> None:
         pass
@@ -220,7 +221,11 @@ class Bot(commands.AutoBot):
     # ------------------------------------------------------------------
 
     async def _handle_custom_command(self, payload: twitchio.ChatMessage) -> None:
-        """Handle custom commands: direct text response or redirect to builtin command."""
+        """Handle custom commands: direct text response or redirect to builtin command.
+
+        All DB operations are wrapped in exception isolation — database errors
+        are logged as warnings and never propagate to TwitchIO's event loop.
+        """
         text = payload.text
         if not text or not text.startswith("!"):
             return
@@ -233,7 +238,15 @@ class Bot(commands.AutoBot):
         query = parts[1] if len(parts) > 1 else ""
 
         channel_id = payload.broadcaster.id
-        config = await self.command_configs.find_by_name_or_alias(channel_id, cmd_name)
+
+        # --- Exception Isolation: DB lookups ---
+        try:
+            config = await self.command_configs.find_by_name_or_alias(channel_id, cmd_name)
+        except Exception as e:
+            LOGGER.warning(
+                f"[GUARD] DB error looking up command '{cmd_name}': {type(e).__name__}: {e}"
+            )
+            return
 
         if not config or not config.enabled or config.command_type != "custom":
             return
@@ -245,7 +258,14 @@ class Bot(commands.AutoBot):
         if not has_role(payload.chatter, config.min_role):
             return
 
-        channel = await self.channels.get_channel(channel_id)
+        try:
+            channel = await self.channels.get_channel(channel_id)
+        except Exception as e:
+            LOGGER.warning(
+                f"[GUARD] DB error fetching channel {channel_id}: {type(e).__name__}: {e}"
+            )
+            channel = None
+
         if is_on_cooldown(channel_id, config.command_name, config, channel):
             return
 
@@ -416,6 +436,12 @@ class Bot(commands.AutoBot):
             if enabled:
                 if channel_id not in self._subscribed_channels:
                     await self.subscribe_channel_events(channel_id)
+                    try:
+                        await self.command_configs.ensure_defaults(channel_id)
+                        count = await self.command_configs.warm_cache(channel_id)
+                        LOGGER.info(f"[NOTIFY] Warmed cache: {count} configs for {channel_id}")
+                    except Exception as e:
+                        LOGGER.warning(f"[NOTIFY] Failed to warm cache for {channel_id}: {e}")
                     LOGGER.info(f"[NOTIFY] Instantly subscribed to channel: {channel_id}")
                 else:
                     LOGGER.info(f"[NOTIFY] Channel {channel_id} already subscribed, skipping")
@@ -473,6 +499,7 @@ class Bot(commands.AutoBot):
             enabled_channels = await self.channels.list_enabled_channels()
             LOGGER.info(f"Subscribing to {len(enabled_channels)} enabled channels...")
 
+            total_warmed = 0
             for ch in enabled_channels:
                 if ch.channel_id == self._bot_id:
                     continue
@@ -480,10 +507,14 @@ class Bot(commands.AutoBot):
                 try:
                     await self.command_configs.ensure_defaults(ch.channel_id)
                     await self.redemption_configs.ensure_defaults(ch.channel_id)
+                    count = await self.command_configs.warm_cache(ch.channel_id)
+                    total_warmed += count
                 except Exception as e:
                     LOGGER.warning(f"Failed to ensure defaults for {ch.channel_id}: {e}")
 
-            LOGGER.info("Initial channel subscription complete")
+            LOGGER.info(
+                f"Initial channel subscription complete — warmed cache: {total_warmed} configs"
+            )
         except Exception as e:
             LOGGER.exception(f"Error subscribing to initial channels: {e}")
 
@@ -711,3 +742,20 @@ class Bot(commands.AutoBot):
 
         except Exception as e:
             LOGGER.exception(f"Error during VOD sync: {e}")
+
+    async def _pool_heartbeat_loop(self) -> None:
+        """Periodically ping the DB pool to keep idle connections alive.
+
+        Prevents cross-region firewalls from silently dropping idle TCP
+        connections between Taiwan and Supabase Singapore.
+        """
+        while True:
+            await asyncio.sleep(300)  # Every 5 minutes
+            try:
+                async with self.token_database.acquire(timeout=5.0) as conn:
+                    await conn.fetchval("SELECT 1")
+                LOGGER.debug("Pool heartbeat OK")
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                LOGGER.warning(f"Pool heartbeat failed: {type(e).__name__}: {e}")

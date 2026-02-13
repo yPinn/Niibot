@@ -156,9 +156,15 @@ class NiibotClient(commands.Bot):
             self._commands_synced = True
 
     async def on_ready(self) -> None:
-        """Fired when the bot is connected and ready"""
+        """Fired when the bot is connected and ready.
+
+        All Discord API calls are wrapped in try/except to prevent 429
+        responses from crashing the entire on_ready handler.
+        """
         # Sync commands (first on_ready only, skip on reconnect)
         if not self._commands_synced:
+            # Delay briefly after gateway connect to avoid immediate 429
+            await asyncio.sleep(5)
             await self._sync_commands()
 
         if hasattr(self, "_sync_guild_id"):
@@ -169,10 +175,15 @@ class NiibotClient(commands.Bot):
                 )
 
         if not self.owner_id:
-            app_info = await self.application_info()
-            self.owner_id = app_info.owner.id
-            owner_name = app_info.owner.global_name or app_info.owner.name
-            logger.info(f"[cyan]Bot Owner:[/cyan] {owner_name} (ID: {self.owner_id})")
+            try:
+                app_info = await self.application_info()
+                self.owner_id = app_info.owner.id
+                owner_name = app_info.owner.global_name or app_info.owner.name
+                logger.info(f"[cyan]Bot Owner:[/cyan] {owner_name} (ID: {self.owner_id})")
+            except discord.HTTPException as e:
+                logger.warning(f"Failed to fetch application_info (HTTP {e.status}): {e.text}")
+            except Exception as e:
+                logger.warning(f"Failed to fetch application_info: {e}")
 
         try:
             await self.change_presence(
@@ -304,6 +315,11 @@ async def main() -> None:
                             f"waiting {_format_duration(wait_time)}, "
                             f"attempt={retry_count}/{max_retries}"
                         )
+
+                        # Close the internal HTTP session to prevent
+                        # "Unclosed client session" warnings on retry
+                        await bot.http.close()
+
                         await asyncio.sleep(wait_time)
                     else:
                         raise

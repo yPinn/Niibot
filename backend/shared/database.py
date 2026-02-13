@@ -39,8 +39,13 @@ class PoolConfig:
     tcp_keepalives_count: int = 3
 
     # Per-service preset overrides
+    # - api: Transaction Pooler (6543) — stateless burst; min_size=0 (borrow/return),
+    #   _transaction_pool_kwargs() enforces min_size=0 regardless, but preset
+    #   reflects intent for clarity.
+    # - discord/twitch: Session Pooler (5432) — long-lived stateful; min_size≥1
+    #   to keep warm connections and enable prepared statements.
     _SERVICE_PRESETS: ClassVar[dict[str, dict]] = {
-        "api": {"min_size": 2, "max_size": 10},
+        "api": {"min_size": 0, "max_size": 10},
         "discord": {"min_size": 1, "max_size": 4},
         "twitch": {"min_size": 1, "max_size": 5},
     }
