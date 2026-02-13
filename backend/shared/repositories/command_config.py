@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 # In-process caches
 _cmd_cache = AsyncTTLCache(maxsize=128, ttl=60)
+_cmd_list_cache = AsyncTTLCache(maxsize=32, ttl=30)
 _redemption_cache = AsyncTTLCache(maxsize=64, ttl=60)
 
 _CMD_COLUMNS = (
@@ -124,18 +125,18 @@ class CommandConfigRepository:
                 return None
             return CommandConfig(**dict(row))
 
+    @cached(
+        cache=_cmd_list_cache,
+        key_func=lambda self, channel_id: f"cmd_list:{channel_id}",
+    )
     async def list_configs(self, channel_id: str) -> list[CommandConfig]:
         """Get all command configs for a channel."""
-
-        async def _query():
-            async with self.pool.acquire() as conn:
-                rows = await conn.fetch(
-                    f"SELECT {_CMD_COLUMNS} FROM command_configs WHERE channel_id = $1 ORDER BY id",
-                    channel_id,
-                )
-                return [CommandConfig(**dict(row)) for row in rows]
-
-        return await _retry_on_db_error(_query)
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                f"SELECT {_CMD_COLUMNS} FROM command_configs WHERE channel_id = $1 ORDER BY id",
+                channel_id,
+            )
+            return [CommandConfig(**dict(row)) for row in rows]
 
     async def upsert_config(
         self,
@@ -184,8 +185,9 @@ class CommandConfigRepository:
                     cd_provided,
                 )
                 result = CommandConfig(**dict(row))
-                # Invalidate both name and alias caches
+                # Invalidate name, alias, and list caches
                 _cmd_cache.invalidate(f"cmd_config:{channel_id}:{command_name}")
+                _cmd_list_cache.invalidate(f"cmd_list:{channel_id}")
                 if aliases:
                     for alias in aliases.split(","):
                         _cmd_cache.invalidate(f"cmd_alias:{channel_id}:{alias.strip()}")
@@ -207,6 +209,7 @@ class CommandConfigRepository:
                     command_name,
                 )
                 _cmd_cache.invalidate(f"cmd_config:{channel_id}:{command_name}")
+                _cmd_list_cache.invalidate(f"cmd_list:{channel_id}")
                 if config and config.aliases:
                     for alias in config.aliases.split(","):
                         _cmd_cache.invalidate(f"cmd_alias:{channel_id}:{alias.strip()}")

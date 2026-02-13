@@ -140,6 +140,16 @@ class ChannelRepository:
             )
             return [Channel(**dict(r)) for r in rows]
 
+    def warm_channel_cache(self, channels: list[Channel]) -> int:
+        """Populate the channel cache from an already-fetched list.
+
+        Called at startup after list_enabled_channels() to ensure
+        get_channel() has stale data for fallback during DB outages.
+        """
+        for ch in channels:
+            _channel_cache.set(f"channel:{ch.channel_id}", ch)
+        return len(channels)
+
     async def list_all_channels(self) -> list[Channel]:
         """Return all channels (including disabled)."""
         async with self.pool.acquire() as conn:

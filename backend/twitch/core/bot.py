@@ -499,6 +499,10 @@ class Bot(commands.AutoBot):
             enabled_channels = await self.channels.list_enabled_channels()
             LOGGER.info(f"Subscribing to {len(enabled_channels)} enabled channels...")
 
+            # Pre-warm channel cache so get_channel() has stale fallback
+            warmed_channels = self.channels.warm_channel_cache(enabled_channels)
+            LOGGER.info(f"Warmed channel cache: {warmed_channels} channels")
+
             total_warmed = 0
             for ch in enabled_channels:
                 if ch.channel_id == self._bot_id:

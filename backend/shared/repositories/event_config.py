@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 # In-process cache for bot-side lookups
 _config_cache = AsyncTTLCache(maxsize=64, ttl=60)
+_config_list_cache = AsyncTTLCache(maxsize=16, ttl=30)
 _seeded_events: set[str] = set()
 
 # Default templates per event type
@@ -49,6 +50,10 @@ class EventConfigRepository:
                 return None
             return EventConfig(**dict(row))
 
+    @cached(
+        cache=_config_list_cache,
+        key_func=lambda self, channel_id: f"event_list:{channel_id}",
+    )
     async def list_configs(self, channel_id: str) -> list[EventConfig]:
         """Get all event configs for a channel."""
         async with self.pool.acquire() as conn:
@@ -86,6 +91,7 @@ class EventConfigRepository:
             )
             result = EventConfig(**dict(row))
             _config_cache.invalidate(f"event_config:{channel_id}:{event_type}")
+            _config_list_cache.invalidate(f"event_list:{channel_id}")
             return result
 
     async def ensure_defaults(self, channel_id: str) -> list[EventConfig]:

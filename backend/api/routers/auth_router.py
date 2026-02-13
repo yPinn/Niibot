@@ -151,27 +151,31 @@ async def twitch_oauth_callback(
     user_info = await twitch_api.get_user_info(platform_user_id)
     username = user_info.get("name") or user_info.get("display_name") or platform_user_id
 
-    channel_svc = get_channel_service(db_manager._pool)
-    save_success = await channel_svc.save_token(
-        user_id=platform_user_id,
-        access_token=access_token,
-        refresh_token=refresh_token,
-        username=username,
-    )
+    try:
+        channel_svc = get_channel_service(db_manager._pool)
+        save_success = await channel_svc.save_token(
+            user_id=platform_user_id,
+            access_token=access_token,
+            refresh_token=refresh_token,
+            username=username,
+        )
 
-    if not save_success:
-        logger.error(f"Failed to save token and channel for {username}")
-        return RedirectResponse(url=f"{settings.frontend_url}/login?error=save_token_failed")
+        if not save_success:
+            logger.error(f"Failed to save token and channel for {username}")
+            return RedirectResponse(url=f"{settings.frontend_url}/login?error=save_token_failed")
 
-    # Find or create unified user
-    user_id = await _find_or_create_user(
-        db_manager._pool,
-        "twitch",
-        platform_user_id,
-        username,
-        display_name=user_info.get("display_name"),
-        avatar=user_info.get("avatar"),
-    )
+        # Find or create unified user
+        user_id = await _find_or_create_user(
+            db_manager._pool,
+            "twitch",
+            platform_user_id,
+            username,
+            display_name=user_info.get("display_name"),
+            avatar=user_info.get("avatar"),
+        )
+    except Exception as e:
+        logger.error(f"DB error during Twitch OAuth for {username}: {type(e).__name__}: {e}")
+        return RedirectResponse(url=f"{settings.frontend_url}/login?error=db_timeout")
 
     jwt_token = auth_service.create_access_token(
         user_id=user_id,
@@ -205,13 +209,24 @@ async def get_current_user(
     platform = payload["platform"]
     platform_user_id = str(payload["platform_user_id"])
 
-    # Get theme from users table
-    user_row = await pool.fetchrow("SELECT theme FROM users WHERE id = $1::uuid", user_id)
-    theme = user_row["theme"] if user_row else "system"
+    # Get theme from users table (non-critical — default to "system" on DB error)
+    theme = "system"
+    try:
+        user_row = await pool.fetchrow("SELECT theme FROM users WHERE id = $1::uuid", user_id)
+        if user_row:
+            theme = user_row["theme"]
+    except Exception as e:
+        logger.warning(f"DB error fetching theme for user {user_id}: {type(e).__name__}: {e}")
 
     if platform == "discord":
-        channel_svc = get_channel_service(pool)
-        user_info = await channel_svc.get_discord_user(platform_user_id)
+        try:
+            channel_svc = get_channel_service(pool)
+            user_info = await channel_svc.get_discord_user(platform_user_id)
+        except Exception as e:
+            logger.warning(
+                f"DB error fetching Discord user {platform_user_id}: {type(e).__name__}: {e}"
+            )
+            user_info = None
 
         if not user_info:
             raise HTTPException(status_code=404, detail="Discord user not found")
@@ -363,18 +378,22 @@ async def discord_oauth_callback(
     display_name = token_data.get("global_name") or token_data.get("username", username)
     avatar = token_data.get("avatar")
 
-    channel_svc = get_channel_service(db_manager._pool)
-    await channel_svc.save_discord_user(platform_user_id, username, display_name, avatar)
+    try:
+        channel_svc = get_channel_service(db_manager._pool)
+        await channel_svc.save_discord_user(platform_user_id, username, display_name, avatar)
 
-    # Find or create unified user
-    user_id = await _find_or_create_user(
-        db_manager._pool,
-        "discord",
-        platform_user_id,
-        username,
-        display_name=display_name,
-        avatar=avatar,
-    )
+        # Find or create unified user
+        user_id = await _find_or_create_user(
+            db_manager._pool,
+            "discord",
+            platform_user_id,
+            username,
+            display_name=display_name,
+            avatar=avatar,
+        )
+    except Exception as e:
+        logger.error(f"DB error during Discord OAuth for {username}: {type(e).__name__}: {e}")
+        return RedirectResponse(url=f"{settings.frontend_url}/login?error=db_timeout")
 
     jwt_token = auth_service.create_access_token(
         user_id=user_id,

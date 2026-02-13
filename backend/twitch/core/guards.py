@@ -85,7 +85,12 @@ async def check_command(
     Returns the CommandConfig if all checks pass, or None to skip execution.
     """
     channel_id = ctx.channel.id
-    config = await repo.get_config(channel_id, command_name)
+
+    try:
+        config = await repo.get_config(channel_id, command_name)
+    except Exception as e:
+        LOGGER.warning(f"DB error fetching config '{command_name}': {type(e).__name__}: {e}")
+        return None
 
     if not config or not config.enabled:
         return None
@@ -94,7 +99,11 @@ async def check_command(
         return None
 
     # Fetch channel defaults for cooldown fallback
-    channel = await channel_repo.get_channel(channel_id) if channel_repo else None
+    try:
+        channel = await channel_repo.get_channel(channel_id) if channel_repo else None
+    except Exception as e:
+        LOGGER.warning(f"DB error fetching channel {channel_id}: {type(e).__name__}: {e}")
+        channel = None
 
     if is_on_cooldown(channel_id, command_name, config, channel):
         return None
