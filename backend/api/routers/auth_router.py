@@ -188,8 +188,8 @@ async def twitch_oauth_callback(
         key="auth_token",
         value=jwt_token,
         httponly=True,
-        secure=settings.is_production,
-        samesite="strict" if settings.is_production else "lax",
+        secure=True,
+        samesite="none",
         max_age=30 * 24 * 60 * 60,
     )
 
@@ -267,8 +267,8 @@ async def logout(
         key="auth_token",
         path="/",
         httponly=True,
-        secure=settings.is_production,
-        samesite="strict" if settings.is_production else "lax",
+        secure=True,
+        samesite="none",
     )
     logger.info(f"User logged out: {username} ({platform}:{platform_user_id})")
     return LogoutResponse(message="Logged out successfully")
@@ -406,8 +406,8 @@ async def discord_oauth_callback(
         key="auth_token",
         value=jwt_token,
         httponly=True,
-        secure=settings.is_production,
-        samesite="strict" if settings.is_production else "lax",
+        secure=True,
+        samesite="none",
         max_age=30 * 24 * 60 * 60,
     )
 

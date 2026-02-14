@@ -130,7 +130,7 @@ const ChartTooltip = ({
 
   return (
     <div className="bg-popover border border-border rounded-lg shadow-xl overflow-hidden w-[300px] flex flex-col pointer-events-auto">
-      <div className="px-3 py-2 bg-primary/10 border-b border-border flex-shrink-0">
+      <div className="px-3 py-2 bg-primary/10 border-b border-border shrink-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Icon icon="fa-solid fa-calendar" wrapperClassName="size-3.5 text-primary" />
@@ -140,7 +140,7 @@ const ChartTooltip = ({
         </div>
       </div>
 
-      <div className="overflow-y-auto max-h-[192px]">
+      <div className="overflow-y-auto max-h-48">
         {data.sessions.map((session, index) => {
           const sessionTime = new Date(session.started_at)
           const formattedTime = `${String(sessionTime.getHours()).padStart(2, '0')}:${String(sessionTime.getMinutes()).padStart(2, '0')}`
@@ -151,9 +151,9 @@ const ChartTooltip = ({
           return (
             <div
               key={session.session_id}
-              className={`flex h-[96px] ${index > 0 ? 'border-t border-border' : ''}`}
+              className={`flex h-24 ${index > 0 ? 'border-t border-border' : ''}`}
             >
-              <div className="flex-shrink-0 w-[72px] overflow-hidden">
+              <div className="shrink-0 w-18 overflow-hidden">
                 {game_box_art_url ? (
                   <img
                     src={game_box_art_url}
@@ -171,11 +171,11 @@ const ChartTooltip = ({
                   {session.title || '未設定標題'}
                 </div>
                 <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <Icon icon="fa-solid fa-tag" wrapperClassName="size-2.5 flex-shrink-0" />
+                  <Icon icon="fa-solid fa-tag" wrapperClassName="size-2.5 shrink-0" />
                   <span className="truncate">{session.game_name || '未分類'}</span>
                 </div>
                 <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <Icon icon="fa-solid fa-clock" wrapperClassName="size-2.5 flex-shrink-0" />
+                  <Icon icon="fa-solid fa-clock" wrapperClassName="size-2.5 shrink-0" />
                   <span>
                     {formattedTime} · {session.duration_hours.toFixed(1)}h
                   </span>
@@ -186,7 +186,7 @@ const ChartTooltip = ({
         })}
       </div>
 
-      <div className="px-3 py-2 bg-muted/30 border-t border-border flex-shrink-0">
+      <div className="px-3 py-2 bg-muted/30 border-t border-border shrink-0">
         <div className="flex items-baseline gap-1.5">
           <span className="text-xs text-muted-foreground">當日{chartConfig.label}</span>
           <div className="flex items-baseline gap-1">
@@ -315,7 +315,7 @@ export default function AnalyticsChart({
     <Card className={`flex flex-col ${className}`}>
       <CardContent className="px-4 py-1 flex-1 min-h-0 flex flex-col">
         <div className="flex flex-col flex-1 min-h-0 gap-3">
-          <div className="grid grid-cols-4 gap-5 flex-shrink-0 mb-2">
+          <div className="grid grid-cols-4 gap-5 shrink-0 mb-2">
             {stats.map(stat => (
               <button
                 key={stat.mode}

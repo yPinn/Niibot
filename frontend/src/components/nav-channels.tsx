@@ -121,7 +121,7 @@ export function NavChannels({ channels }: { channels: Channel[] }) {
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                <div className="relative flex-shrink-0 mt-0.5">
+                <div className="relative shrink-0 mt-0.5">
                   <Avatar
                     className={channel.is_live ? 'size-6 rounded-full' : 'size-5 rounded-full'}
                   >
@@ -149,7 +149,7 @@ export function NavChannels({ channels }: { channels: Channel[] }) {
                   <span className="flex-1 truncate">{channel.display_name}</span>
                 )}
                 <div
-                  className={`flex items-center gap-1.5 flex-shrink-0 ml-auto${channel.is_live ? ' mt-0.5' : ''}`}
+                  className={`flex items-center gap-1.5 shrink-0 ml-auto${channel.is_live ? ' mt-0.5' : ''}`}
                 >
                   {channel.is_live && channel.viewer_count !== undefined && (
                     <span className="text-xs tabular-nums text-muted-foreground">
