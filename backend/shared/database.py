@@ -29,7 +29,7 @@ class PoolConfig:
     max_size: int = 5
     timeout: float = 10.0
     command_timeout: float = 15.0
-    max_inactive_connection_lifetime: float = 120.0
+    max_inactive_connection_lifetime: float = 30.0
     max_retries: int = 3
     retry_delay: float = 3.0
 
@@ -42,7 +42,7 @@ class PoolConfig:
     _SERVICE_PRESETS: ClassVar[dict[str, dict]] = {
         "api": {"min_size": 0, "max_size": 10},
         "discord": {"min_size": 1, "max_size": 4},
-        "twitch": {"min_size": 1, "max_size": 5},
+        "twitch": {"min_size": 2, "max_size": 5},
     }
 
     @classmethod

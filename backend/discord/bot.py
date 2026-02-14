@@ -93,7 +93,7 @@ class NiibotClient(commands.Bot):
         connections between Taiwan and Supabase Singapore.
         """
         while True:
-            await asyncio.sleep(120)
+            await asyncio.sleep(45)
             try:
                 if self.db_pool is not None:
                     async with self.db_pool.acquire(timeout=10.0) as conn:
