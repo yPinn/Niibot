@@ -27,16 +27,11 @@ class PoolConfig:
 
     min_size: int = 1
     max_size: int = 5
-    timeout: float = 5.0
+    timeout: float = 10.0
     command_timeout: float = 15.0
-    max_inactive_connection_lifetime: float = 30.0
+    max_inactive_connection_lifetime: float = 120.0
     max_retries: int = 3
     retry_delay: float = 3.0
-
-    # Keep-alive settings (Session Pooler only)
-    tcp_keepalives_idle: int = 30
-    tcp_keepalives_interval: int = 10
-    tcp_keepalives_count: int = 3
 
     # Per-service preset overrides
     # - api: Transaction Pooler (6543) — stateless burst; min_size=0 (borrow/return),
@@ -93,9 +88,11 @@ class DatabaseManager:
         """Build asyncpg.create_pool kwargs for Session Pooler (port 5432).
 
         - Prepared statements enabled (cache=100)
-        - TCP keepalive via server_settings
         - Session-level init (SET statement_timeout)
         - Maintains min_size idle connections
+        - No server_settings: Supavisor proxy does not forward them to
+          the real PostgreSQL backend, so tcp_keepalives_* have no effect.
+          Use application-level heartbeat loops instead.
         """
         cfg = self.config
         return {
@@ -107,11 +104,6 @@ class DatabaseManager:
             "ssl": "require",
             "statement_cache_size": 100,
             "max_inactive_connection_lifetime": cfg.max_inactive_connection_lifetime,
-            "server_settings": {
-                "tcp_keepalives_idle": str(cfg.tcp_keepalives_idle),
-                "tcp_keepalives_interval": str(cfg.tcp_keepalives_interval),
-                "tcp_keepalives_count": str(cfg.tcp_keepalives_count),
-            },
             "init": self._init_session_connection,
         }
 

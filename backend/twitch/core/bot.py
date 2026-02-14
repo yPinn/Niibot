@@ -765,11 +765,13 @@ class Bot(commands.AutoBot):
 
         Prevents cross-region firewalls from silently dropping idle TCP
         connections between Taiwan and Supabase Singapore.
+        Runs every 120s — shorter than Supavisor's client_heartbeat_interval
+        (60s) to ensure the proxy does not mark our connections as dead.
         """
         while True:
-            await asyncio.sleep(300)  # Every 5 minutes
+            await asyncio.sleep(120)
             try:
-                async with self.token_database.acquire(timeout=5.0) as conn:
+                async with self.token_database.acquire(timeout=10.0) as conn:
                     await conn.fetchval("SELECT 1")
                 LOGGER.debug("Pool heartbeat OK")
             except asyncio.CancelledError:

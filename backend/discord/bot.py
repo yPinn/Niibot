@@ -53,6 +53,7 @@ class NiibotClient(commands.Bot):
         self._db_manager: DatabaseManager | None = None
         self.db_pool: asyncpg.Pool | None = None
         self._commands_synced: bool = False
+        self._heartbeat_task: asyncio.Task | None = None
 
     async def setup_database(self, max_retries: int = 5, retry_delay: float = 5.0) -> None:
         """Initialize database connection pool"""
@@ -73,13 +74,35 @@ class NiibotClient(commands.Bot):
         )
         await self._db_manager.connect()
         self.db_pool = self._db_manager.pool
+        self._heartbeat_task = asyncio.create_task(self._pool_heartbeat_loop())
 
     async def close_database(self) -> None:
         """Close the database connection pool."""
+        if self._heartbeat_task is not None:
+            self._heartbeat_task.cancel()
+            self._heartbeat_task = None
         if self._db_manager is not None:
             await self._db_manager.disconnect()
             self._db_manager = None
             self.db_pool = None
+
+    async def _pool_heartbeat_loop(self) -> None:
+        """Periodically ping the DB pool to keep idle connections alive.
+
+        Prevents cross-region firewalls from silently dropping idle TCP
+        connections between Taiwan and Supabase Singapore.
+        """
+        while True:
+            await asyncio.sleep(120)
+            try:
+                if self.db_pool is not None:
+                    async with self.db_pool.acquire(timeout=10.0) as conn:
+                        await conn.fetchval("SELECT 1")
+                    logger.debug("Pool heartbeat OK")
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.warning(f"Pool heartbeat failed: {type(e).__name__}: {e}")
 
     def _get_extensions(self) -> list[str]:
         """Scan cogs directory for loadable extensions"""
