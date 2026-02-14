@@ -66,7 +66,7 @@ class AIComponent(commands.Component):
 
             completion = self.client.chat.completions.create(
                 model=self.model,
-                max_tokens=200,
+                max_tokens=800,
                 messages=[
                     {
                         "role": "system",
@@ -76,6 +76,7 @@ class AIComponent(commands.Component):
                             - 語言：繁體中文
                             - 長度：50-100字，最多150字
                             - 語氣：友善、簡潔
+                            - 直接回答問題，不要輸出思考過程
 
                             禁止內容：
                             - 仇恨言論、歧視（種族/性別/宗教/性取向）

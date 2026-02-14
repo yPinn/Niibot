@@ -56,7 +56,7 @@ class AI(commands.Cog):
 
             completion = self.client.chat.completions.create(
                 model=self.model,
-                max_tokens=300,
+                max_tokens=1200,
                 messages=[
                     {
                         "role": "system",
@@ -68,6 +68,7 @@ class AI(commands.Cog):
                         - 格式：使用純文字，不要使用 Markdown 語法（如 #、**、- 等）
                         - 列表：使用數字編號或簡單換行，不使用符號
                         - 語氣：友善、有幫助
+                        - 直接回答問題，不要輸出思考過程
 
                         禁止內容：
                         - 仇恨言論、歧視（種族/性別/宗教/性取向）
