@@ -13,10 +13,11 @@ from shared.models.command_config import CommandConfig, RedemptionConfig
 
 logger = logging.getLogger(__name__)
 
-# In-process caches
-_cmd_cache = AsyncTTLCache(maxsize=128, ttl=60)
-_cmd_list_cache = AsyncTTLCache(maxsize=32, ttl=30)
-_redemption_cache = AsyncTTLCache(maxsize=64, ttl=60)
+# In-process caches — long TTL for memory-first reads.
+# Freshness is maintained by pg_notify (instant) + periodic refresh (5 min safety net).
+_cmd_cache = AsyncTTLCache(maxsize=128, ttl=3600)
+_cmd_list_cache = AsyncTTLCache(maxsize=32, ttl=3600)
+_redemption_cache = AsyncTTLCache(maxsize=64, ttl=3600)
 
 _CMD_COLUMNS = (
     "id, channel_id, command_name, command_type, enabled, "

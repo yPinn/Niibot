@@ -98,7 +98,7 @@ def cached(
     cache: AsyncTTLCache,
     key_func: Callable[..., str],
     *,
-    retry: int = 3,
+    retry: int = 2,
 ):
     """Decorator for caching async function results with DB resilience.
 
@@ -110,7 +110,7 @@ def cached(
         Receives the same ``(*args, **kwargs)`` as the decorated function
         and returns the cache key string.
     retry : int
-        Max number of attempts on DB failure (default 3).
+        Max number of attempts on DB failure (default 2).
 
     Behaviour on DB failure
     -----------------------

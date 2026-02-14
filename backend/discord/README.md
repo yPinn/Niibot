@@ -22,6 +22,8 @@ uv sync && uv run python bot.py
 **一般**
 - `/ping`, `/version`, `/info`, `/userinfo`, `/avatar`, `/help`
 - `/rps`, `/roll`, `/choose`, `/coinflip`, `/roulette`
-- `/fortune`, `/tarot`, `/eat`, `/giveaway`, `/tft`
+- `/fortune`, `/tarot`, `/giveaway`, `/tft`
 - `/ai` — AI 對話
-- `/bday` — 生日系統
+- `/eat` — 隨機推薦餐點
+- `/food cat|show|add|remove|delete` — 餐點管理
+- `/bday menu|init` — 生日系統

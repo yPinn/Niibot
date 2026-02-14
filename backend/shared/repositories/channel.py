@@ -12,9 +12,10 @@ from shared.models.channel import Channel, DiscordUser, Token
 logger = logging.getLogger(__name__)
 
 # --- In-process caches ---
-_token_cache = AsyncTTLCache(maxsize=64, ttl=60)
-_channel_cache = AsyncTTLCache(maxsize=64, ttl=30)
-_enabled_channels_cache = AsyncTTLCache(maxsize=1, ttl=30)
+# Long TTL for memory-first reads; freshness via pg_notify + periodic refresh.
+_token_cache = AsyncTTLCache(maxsize=64, ttl=3600)
+_channel_cache = AsyncTTLCache(maxsize=64, ttl=3600)
+_enabled_channels_cache = AsyncTTLCache(maxsize=1, ttl=3600)
 _discord_user_cache = AsyncTTLCache(maxsize=64, ttl=300)
 
 

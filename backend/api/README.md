@@ -1,6 +1,6 @@
 # Niibot API
 
-FastAPI 後端，提供認證、頻道管理、分析等 API。部署於 Render (Docker)。
+FastAPI 後端，提供認證、頻道管理、指令/事件設定等 API。部署於 Render (Docker)。
 
 ## 啟動
 
@@ -19,11 +19,30 @@ uv sync && uv run python main.py
 - `GET /discord/callback` — Discord OAuth 回調
 - `GET /user` — 當前用戶（需認證）
 - `POST /logout` — 登出
+- `PATCH /api/user/preferences` — 更新用戶偏好
 
 ### 頻道 `/api/channels`
 - `GET /twitch/monitored` — 監控頻道列表
 - `GET /twitch/my-status` — 我的頻道狀態
 - `POST /twitch/toggle` — 切換 Bot 狀態
+- `GET /defaults` — 頻道預設冷卻設定
+- `PUT /defaults` — 更新頻道預設冷卻設定
+
+### 指令設定 `/api/commands`
+- `GET /configs` — 取得所有指令設定
+- `POST /configs` — 新增自訂指令
+- `PUT /configs/{command_name}` — 更新指令設定
+- `PATCH /configs/{command_name}/toggle` — 切換指令啟用狀態
+- `DELETE /configs/{command_name}` — 刪除自訂指令
+- `GET /public/{username}` — 取得頻道公開指令列表
+
+### 事件設定 `/api/events`
+- `GET /configs` — 取得事件設定
+- `PUT /configs/{event_type}` — 更新事件設定
+- `PATCH /configs/{event_type}/toggle` — 切換事件啟用狀態
+- `GET /twitch-rewards` — 取得 Twitch 自訂獎勵
+- `GET /redemptions` — 取得兌換設定
+- `PUT /redemptions/{action_type}` — 更新兌換設定
 
 ### 分析 `/api/analytics`
 - `GET /summary` — 總覽（`?days=`）
@@ -39,5 +58,5 @@ uv sync && uv run python main.py
 
 ### 其他
 - `GET /api/stats/channel` — 頻道統計
-- `GET /api/commands/components` — Bot 組件列表
 - `GET /health` — 健康檢查
+- `GET /status` — 詳細狀態（含 DB）

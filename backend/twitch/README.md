@@ -9,24 +9,32 @@ cp .env.example .env
 uv sync && uv run python main.py
 ```
 
-初次設定需執行 `database/schema.sql` 建立資料表。
+初次設定需執行 `scripts/db_migrate.py` 建立資料表。
 
 ## 指令
 
 **一般**
-- `!hi` — 打招呼
-- `!help` — 指令列表
+- `!hi` — 打招呼（別名 `!hello`、`!hey`）
+- `!help` — 指令列表（別名 `!commands`）
 - `!uptime` — 直播時長
 - `!ai <問題>` — AI 對話
-- `!運勢` — 今日運勢
-- `!rk` — TFT 排名查詢
-- `!redemptions` — Channel Points 兌換資訊
+- `!運勢` — 今日運勢（別名 `!fortune`、`!占卜`）
+- `!rk [player#tag]` — TFT 排名查詢
+
+**自訂指令管理**（Mod+）
+- `!cmd a !name [options] text` — 新增指令
+- `!cmd e !name [options] [text]` — 編輯指令
+- `!cmd d !name` — 刪除指令
 
 **Owner**
-- `!load / !unload / !reload <module>`
-- `!loaded` — 列出已載入模組
-- `!shutdown` — 關閉 Bot
+- `!comp` — 列出已載入模組
+- `!comp l / u / r <module>` — 載入 / 卸載 / 重載模組
+- `!comp off` — 關閉 Bot
 
-## Channel Points (EventSub)
+## EventSub 事件
 
-自動監聽點數兌換事件：Niibot 獎勵、VIP 獎勵、搶第一獎勵。
+- **Channel Points** — Niibot 授權、VIP 獎勵、搶第一獎勵
+- **Follow** — 追隨通知（24 小時防刷）
+- **Subscribe** — 訂閱通知（含禮物訂閱、等級顯示）
+- **Raid** — 突襲通知（可設定自動 Shoutout）
+- **Stream Online / Offline** — 分析場次追蹤

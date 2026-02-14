@@ -13,9 +13,12 @@
 
 ```
 backend/
-├── api/          # FastAPI — 認證、頻道管理、分析
+├── api/          # FastAPI — 認證、頻道管理、指令/事件設定
 ├── twitch/       # Twitch Bot — 聊天指令、Channel Points、EventSub
 ├── discord/      # Discord Bot — Slash Commands、管理功能
+├── shared/       # 共用模組 — DB、Cache、Models、Repositories、Migrations
+├── scripts/      # 工具腳本 — DB 管理、OAuth、Discord 資源
+├── data/         # 靜態資料 — 運勢、塔羅、遊戲等 JSON
 ├── pyproject.toml
 └── uv.lock
 frontend/

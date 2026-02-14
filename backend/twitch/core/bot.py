@@ -132,9 +132,13 @@ class Bot(commands.AutoBot):
         asyncio.create_task(
             pg_listen(self.token_database, "channel_toggle", self._handle_channel_toggle)
         )
+        asyncio.create_task(
+            pg_listen(self.token_database, "config_change", self._handle_config_change)
+        )
         asyncio.create_task(self._recover_active_sessions())
         asyncio.create_task(self._session_verify_loop())
         asyncio.create_task(self._pool_heartbeat_loop())
+        asyncio.create_task(self._periodic_cache_refresh())
 
     async def setup_database(self) -> None:
         pass
@@ -498,6 +502,68 @@ class Bot(commands.AutoBot):
         except Exception as e:
             LOGGER.exception(f"[NOTIFY] Error handling new token notification: {e}")
 
+    async def _handle_config_change(self, connection, pid, channel, payload) -> None:
+        """Reload in-memory cache for the affected channel on config writes."""
+        try:
+            data = json.loads(payload)
+            channel_id = data.get("channel_id")
+            table = data.get("table", "")
+            if not channel_id or channel_id not in self._subscribed_channels:
+                return
+
+            LOGGER.info(f"[NOTIFY] Config change on {table} for {channel_id}, refreshing cache")
+            await self._refresh_channel_cache(channel_id)
+        except Exception as e:
+            LOGGER.warning(f"[NOTIFY] Error handling config_change: {e}")
+
+    async def _refresh_channel_cache(self, channel_id: str) -> None:
+        """Reload all config caches for a single channel from DB."""
+        try:
+            await self.command_configs.warm_cache(channel_id)
+        except Exception as e:
+            LOGGER.warning(f"Cache refresh (commands) failed for {channel_id}: {e}")
+        try:
+            # Invalidate channel record so next read re-fetches
+            from shared.repositories.channel import _channel_cache, _enabled_channels_cache
+
+            _channel_cache.invalidate(f"channel:{channel_id}")
+            _enabled_channels_cache.clear()
+        except Exception as e:
+            LOGGER.warning(f"Cache refresh (channel) failed for {channel_id}: {e}")
+        try:
+            from shared.repositories.event_config import _config_cache as _evt_cache
+            from shared.repositories.event_config import _config_list_cache as _evt_list_cache
+
+            _evt_cache.clear()
+            _evt_list_cache.clear()
+        except Exception as e:
+            LOGGER.warning(f"Cache refresh (events) failed for {channel_id}: {e}")
+        try:
+            from shared.repositories.command_config import _redemption_cache
+
+            _redemption_cache.clear()
+        except Exception as e:
+            LOGGER.warning(f"Cache refresh (redemptions) failed for {channel_id}: {e}")
+
+    async def _periodic_cache_refresh(self) -> None:
+        """Safety net: reload all config caches every 5 minutes.
+
+        Catches any pg_notify misses (e.g. LISTEN connection dropped).
+        """
+        await asyncio.sleep(300)
+        while True:
+            try:
+                for channel_id in list(self._subscribed_channels):
+                    await self._refresh_channel_cache(channel_id)
+                LOGGER.debug(
+                    f"Periodic cache refresh complete for {len(self._subscribed_channels)} channels"
+                )
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                LOGGER.warning(f"Periodic cache refresh error: {e}")
+            await asyncio.sleep(300)
+
     # ------------------------------------------------------------------
     # Startup tasks
     # ------------------------------------------------------------------
@@ -761,15 +827,13 @@ class Bot(commands.AutoBot):
             LOGGER.exception(f"Error during VOD sync: {e}")
 
     async def _pool_heartbeat_loop(self) -> None:
-        """Periodically ping the DB pool to keep idle connections alive.
+        """Periodically ping the DB pool to keep the idle connection alive.
 
-        Prevents cross-region firewalls from silently dropping idle TCP
-        connections between Taiwan and Supabase Singapore.
-        Runs every 45s — shorter than Supavisor's client_idle_timeout (~60s)
-        to prevent the proxy from closing idle connections.
+        Constraint chain: heartbeat(25s) < max_inactive(45s) < Supavisor(~60s).
+        With min_size=1 the heartbeat covers the single idle connection.
         """
         while True:
-            await asyncio.sleep(45)
+            await asyncio.sleep(25)
             try:
                 async with self.token_database.acquire(timeout=10.0) as conn:
                     await conn.fetchval("SELECT 1")

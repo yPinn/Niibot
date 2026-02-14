@@ -29,7 +29,7 @@ class PoolConfig:
     max_size: int = 5
     timeout: float = 10.0
     command_timeout: float = 15.0
-    max_inactive_connection_lifetime: float = 30.0
+    max_inactive_connection_lifetime: float = 45.0
     max_retries: int = 3
     retry_delay: float = 3.0
 
@@ -37,12 +37,12 @@ class PoolConfig:
     # - api: Transaction Pooler (6543) — stateless burst; min_size=0 (borrow/return),
     #   _transaction_pool_kwargs() enforces min_size=0 regardless, but preset
     #   reflects intent for clarity.
-    # - discord/twitch: Session Pooler (5432) — long-lived stateful; min_size≥1
-    #   to keep warm connections and enable prepared statements.
+    # - discord/twitch: Session Pooler (5432) — long-lived stateful; min_size=1
+    #   so the heartbeat loop can keep the single idle connection alive.
     _SERVICE_PRESETS: ClassVar[dict[str, dict]] = {
         "api": {"min_size": 0, "max_size": 10},
         "discord": {"min_size": 1, "max_size": 4},
-        "twitch": {"min_size": 2, "max_size": 5},
+        "twitch": {"min_size": 1, "max_size": 5},
     }
 
     @classmethod

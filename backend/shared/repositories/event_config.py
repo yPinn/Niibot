@@ -12,9 +12,9 @@ from shared.models.event_config import EventConfig
 
 logger = logging.getLogger(__name__)
 
-# In-process cache for bot-side lookups
-_config_cache = AsyncTTLCache(maxsize=64, ttl=60)
-_config_list_cache = AsyncTTLCache(maxsize=16, ttl=30)
+# In-process cache for bot-side lookups — long TTL for memory-first reads.
+_config_cache = AsyncTTLCache(maxsize=64, ttl=3600)
+_config_list_cache = AsyncTTLCache(maxsize=16, ttl=3600)
 _seeded_events: set[str] = set()
 
 # Default templates per event type

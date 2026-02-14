@@ -76,7 +76,7 @@ class GeneralCommands(commands.Component):
             return
 
         channel_name = ctx.channel.name
-        await ctx.reply(f"此頻道的指令列表：{FRONTEND_URL}/{channel_name}/commands")
+        await ctx.reply(f"此頻道的指令列表： {FRONTEND_URL}/{channel_name}/commands")
         await self._record_command(ctx, "help")
 
     @commands.command()
