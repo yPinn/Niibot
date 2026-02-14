@@ -18,9 +18,6 @@ LOGGER: logging.Logger = logging.getLogger("AIComponent")
 
 
 class AIComponent(commands.Component):
-    # Reasoning models need more tokens for reasoning process + answer
-    REASONING_MODELS = ["glm-4.5-air", "deepseek-r1t2-chimera"]
-
     def __init__(self, bot: commands.Bot) -> None:
         self.bot: Bot = bot  # type: ignore[assignment]
         self.cmd_repo = CommandConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
@@ -41,15 +38,8 @@ class AIComponent(commands.Component):
             api_key=api_key,
         )
         self.model = model
-        self.is_reasoning = any(rm in model for rm in self.REASONING_MODELS)
-        # Reasoning models: ~200 for reasoning + ~150 for answer = 350
-        # Non-reasoning models: ~150 for answer
-        self.max_tokens = 350 if self.is_reasoning else 150
 
-        LOGGER.info(
-            f"AIComponent initialized: model={model}, "
-            f"reasoning={self.is_reasoning}, max_tokens={self.max_tokens}"
-        )
+        LOGGER.info(f"AIComponent initialized: model={model}")
 
     @commands.command()
     async def ai(self, ctx: commands.Context[Bot], *, message: str | None = None) -> None:
@@ -75,7 +65,7 @@ class AIComponent(commands.Component):
 
             completion = self.client.chat.completions.create(
                 model=self.model,
-                max_tokens=self.max_tokens,
+                max_tokens=200,
                 messages=[
                     {
                         "role": "system",

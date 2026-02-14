@@ -15,35 +15,25 @@ LOGGER = logging.getLogger("AI")
 
 
 class AI(commands.Cog):
-    REASONING_MODELS = ["glm-4.5-air", "deepseek-r1t2-chimera"]
-
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
         api_key = os.getenv("OPENROUTER_API_KEY", "")
-        model = os.getenv("OPENROUTER_MODEL", "")
+        model = os.getenv("OPENROUTER_MODEL", "openrouter/free")
 
         if not api_key or api_key.strip() == "":
             raise ValueError("OPENROUTER_API_KEY is required but not set in .env file")
-
-        if not model or model.strip() == "":
-            raise ValueError("OPENROUTER_MODEL is required but not set in .env file")
 
         self.client = OpenAI(
             base_url="https://openrouter.ai/api/v1",
             api_key=api_key,
         )
         self.model = model
-        self.is_reasoning = any(rm in model for rm in self.REASONING_MODELS)
-        self.max_tokens = 500 if self.is_reasoning else 300
 
         with open(DATA_DIR / "embed.json", encoding="utf-8") as f:
             self.global_embed_config = json.load(f)
 
-        LOGGER.info(
-            f"AI Cog initialized: model={model}, "
-            f"reasoning={self.is_reasoning}, max_tokens={self.max_tokens}"
-        )
+        LOGGER.info(f"AI Cog initialized: model={model}")
 
     @app_commands.command(name="ai", description="AI 問答")
     @app_commands.describe(question="你的問題")
@@ -65,7 +55,7 @@ class AI(commands.Cog):
 
             completion = self.client.chat.completions.create(
                 model=self.model,
-                max_tokens=self.max_tokens,
+                max_tokens=300,
                 messages=[
                     {
                         "role": "system",
@@ -98,10 +88,6 @@ class AI(commands.Cog):
 
             msg = completion.choices[0].message
             response = msg.content or ""
-
-            if not response and hasattr(msg, "reasoning") and msg.reasoning:
-                response = msg.reasoning
-                LOGGER.debug("Using reasoning field")
 
             LOGGER.debug(f"Response length: {len(response)}")
 
