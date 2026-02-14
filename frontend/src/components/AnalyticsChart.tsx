@@ -129,7 +129,7 @@ const ChartTooltip = ({
   const formattedDate = `${monthNames[sessionDate.getMonth()]} ${sessionDate.getDate()}, ${sessionDate.getFullYear()}`
 
   return (
-    <div className="bg-popover border border-border rounded-lg shadow-xl overflow-hidden w-[300px] flex flex-col pointer-events-auto">
+    <div className="bg-popover border border-border rounded-lg shadow-xl overflow-hidden w-75 flex flex-col pointer-events-auto">
       <div className="px-3 py-2 bg-primary/10 border-b border-border shrink-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -161,7 +161,7 @@ const ChartTooltip = ({
                     className="w-full h-full object-cover"
                   />
                 ) : (
-                  <div className="w-full h-full bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center">
+                  <div className="w-full h-full bg-linear-to-br from-primary/20 to-primary/5 flex items-center justify-center">
                     <Icon icon="fa-solid fa-gamepad" wrapperClassName="size-8 text-primary/50" />
                   </div>
                 )}
@@ -355,7 +355,7 @@ export default function AnalyticsChart({
             ))}
           </div>
 
-          <div className="flex-1 min-h-0 h-[290px] relative">
+          <div className="flex-1 min-h-0 h-72.5 relative">
             {isEmpty && (
               <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
                 <span className="text-sm text-muted-foreground/60">尚無直播數據</span>
