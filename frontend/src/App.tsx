@@ -2,6 +2,7 @@ import { Route, Routes } from 'react-router-dom'
 
 import SidebarLayout from '@/components/layouts/SidebarLayout'
 import { ProtectedRoute, PublicOnlyRoute } from '@/components/ProtectedRoute'
+import { Toaster } from '@/components/ui'
 import { ThemeProvider } from '@/components/theme-provider'
 import { AuthProvider } from '@/contexts/AuthContext'
 import { BotProvider } from '@/contexts/BotContext'
@@ -43,6 +44,7 @@ function App() {
                 </Route>
               </Route>
             </Routes>
+            <Toaster position="top-center" richColors closeButton />
           </BotProvider>
         </ServiceStatusProvider>
       </ThemeProvider>

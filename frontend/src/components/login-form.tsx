@@ -1,16 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import { toast } from 'sonner'
 
 import { getDiscordOAuthStatus, openDiscordOAuth, openTwitchOAuth } from '@/api'
-import {
-  Alert,
-  AlertDescription,
-  AlertTitle,
-  Button,
-  Card,
-  CardContent,
-  Icon,
-} from '@/components/ui'
+import { Button, Card, CardContent, Icon } from '@/components/ui'
 import { cn } from '@/lib/utils'
 
 const ERROR_MESSAGES: Record<string, string> = {
@@ -29,6 +22,12 @@ export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) 
 
   const errorCode = searchParams.get('error')
   const errorMessage = errorCode ? ERROR_MESSAGES[errorCode] || `登入失敗 (${errorCode})` : null
+
+  useEffect(() => {
+    if (errorMessage) {
+      toast.error('登入失敗', { description: errorMessage })
+    }
+  }, [errorMessage])
 
   useEffect(() => {
     getDiscordOAuthStatus()
@@ -87,17 +86,6 @@ export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) 
                   </li>
                 </ul>
               </div>
-              {errorMessage && (
-                <Alert variant="destructive">
-                  <Icon
-                    icon="fa-solid fa-circle-exclamation"
-                    className="size-4"
-                    wrapperClassName=""
-                  />
-                  <AlertTitle>登入失敗</AlertTitle>
-                  <AlertDescription>{errorMessage}</AlertDescription>
-                </Alert>
-              )}
               <div className="space-y-3">
                 <Button
                   type="button"
