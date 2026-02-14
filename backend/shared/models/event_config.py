@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 
@@ -15,5 +15,6 @@ class EventConfig:
     event_type: str  # 'follow' | 'subscribe' | 'raid'
     message_template: str
     enabled: bool = True
+    options: dict = field(default_factory=dict)
     created_at: datetime | None = None
     updated_at: datetime | None = None

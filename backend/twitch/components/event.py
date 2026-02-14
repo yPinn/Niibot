@@ -193,6 +193,12 @@ class EventComponent(commands.Component):
         viewer_count = payload.viewer_count
 
         try:
+            # 取得 config 以判斷 auto_shoutout 選項
+            config = await self.event_configs.get_config(broadcaster_id, "raid")
+            auto_shoutout = True
+            if config is not None:
+                auto_shoutout = config.options.get("auto_shoutout", True)
+
             # 發送感謝訊息（可被 disabled）
             message = await self._get_message(
                 broadcaster_id, "raid", {"user": raider_name, "count": str(viewer_count)}
@@ -204,15 +210,17 @@ class EventComponent(commands.Component):
                     token_for=self.bot.bot_id,
                 )
 
-            # 執行 Shoutout (使用 TwitchIO 內部 HTTP client) — 不受 enabled 控制
-            await self.bot._http.post_chat_shoutout(
-                broadcaster_id=broadcaster_id,
-                to_broadcaster_id=raider_id,
-                moderator_id=self.bot.bot_id,
-                token_for=broadcaster_id,
-            )
+            # 執行 Shoutout（依據 config options 控制）
+            if auto_shoutout:
+                await self.bot._http.post_chat_shoutout(
+                    broadcaster_id=broadcaster_id,
+                    to_broadcaster_id=raider_id,
+                    moderator_id=self.bot.bot_id,
+                    token_for=broadcaster_id,
+                )
             LOGGER.info(
-                f"[{broadcaster_name}] Raid: {raider_name} ({viewer_count}) - Shoutout sent"
+                f"[{broadcaster_name}] Raid: {raider_name} ({viewer_count})"
+                f" - Shoutout {'sent' if auto_shoutout else 'skipped'}"
             )
 
         except Exception as e:

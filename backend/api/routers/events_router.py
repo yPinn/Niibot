@@ -27,6 +27,7 @@ class EventConfigResponse(BaseModel):
     event_type: str
     message_template: str
     enabled: bool
+    options: dict = {}
     trigger_count: int
     created_at: datetime | None = None
     updated_at: datetime | None = None
@@ -35,6 +36,7 @@ class EventConfigResponse(BaseModel):
 class EventConfigUpdate(BaseModel):
     message_template: str
     enabled: bool
+    options: dict | None = None
 
 
 class EventConfigToggle(BaseModel):
@@ -97,7 +99,7 @@ async def update_event_config(
     try:
         service = EventConfigService(pool)
         cfg = await service.update_config(
-            channel_id, event_type, body.message_template, body.enabled
+            channel_id, event_type, body.message_template, body.enabled, body.options
         )
         logger.info(f"Channel {channel_id} updated event config: {event_type}")
         return EventConfigResponse(**cfg)

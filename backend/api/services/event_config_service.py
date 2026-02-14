@@ -29,11 +29,14 @@ class EventConfigService:
         event_type: str,
         message_template: str,
         enabled: bool,
+        options: dict | None = None,
     ) -> dict:
         """Update an event config and return it with trigger count."""
         if event_type not in EVENT_TYPES:
             raise ValueError(f"Invalid event_type: {event_type}")
-        cfg = await self.repo.upsert_config(channel_id, event_type, message_template, enabled)
+        cfg = await self.repo.upsert_config(
+            channel_id, event_type, message_template, enabled, options
+        )
         counts = await self._get_trigger_counts(channel_id)
         return {**asdict(cfg), "trigger_count": counts.get(cfg.event_type, 0)}
 
@@ -48,7 +51,8 @@ class EventConfigService:
             await self.repo.ensure_defaults(channel_id)
             existing = await self.repo.get_config(channel_id, event_type)
         template = existing.message_template if existing else DEFAULT_TEMPLATES.get(event_type, "")
-        cfg = await self.repo.upsert_config(channel_id, event_type, template, enabled)
+        options = existing.options if existing else None
+        cfg = await self.repo.upsert_config(channel_id, event_type, template, enabled, options)
         counts = await self._get_trigger_counts(channel_id)
         return {**asdict(cfg), "trigger_count": counts.get(cfg.event_type, 0)}
 

@@ -6,12 +6,14 @@ export interface EventConfig {
   event_type: 'follow' | 'subscribe' | 'raid'
   message_template: string
   enabled: boolean
+  options: Record<string, unknown>
   trigger_count: number
 }
 
 export interface EventConfigUpdate {
   message_template: string
   enabled: boolean
+  options?: Record<string, unknown>
 }
 
 export interface TwitchReward {

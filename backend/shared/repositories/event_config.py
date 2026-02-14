@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 
 import asyncpg
@@ -23,7 +24,28 @@ DEFAULT_TEMPLATES: dict[str, str] = {
     "raid": "$(user) 帶了 $(count) 個新朋友降落！",
 }
 
+# Default options per event type (only event types with options need entries)
+DEFAULT_OPTIONS: dict[str, dict] = {
+    "raid": {"auto_shoutout": True},
+}
+
 EVENT_TYPES = list(DEFAULT_TEMPLATES.keys())
+
+_SELECT_COLS = (
+    "id, channel_id, event_type, message_template, enabled, "
+    "COALESCE(options, '{}') AS options, created_at, updated_at"
+)
+
+
+def _row_to_config(row: asyncpg.Record) -> EventConfig:
+    """Convert a DB row to EventConfig, parsing options JSON string if needed."""
+    d = dict(row)
+    opts = d.get("options")
+    if isinstance(opts, str):
+        d["options"] = json.loads(opts)
+    elif opts is None:
+        d["options"] = {}
+    return EventConfig(**d)
 
 
 class EventConfigRepository:
@@ -40,15 +62,14 @@ class EventConfigRepository:
         """Get a single event config (with cache). Used by the bot at event time."""
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT id, channel_id, event_type, message_template, enabled, "
-                "created_at, updated_at "
+                f"SELECT {_SELECT_COLS} "
                 "FROM event_configs WHERE channel_id = $1 AND event_type = $2",
                 channel_id,
                 event_type,
             )
             if not row:
                 return None
-            return EventConfig(**dict(row))
+            return _row_to_config(row)
 
     @cached(
         cache=_config_list_cache,
@@ -58,12 +79,10 @@ class EventConfigRepository:
         """Get all event configs for a channel."""
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
-                "SELECT id, channel_id, event_type, message_template, enabled, "
-                "created_at, updated_at "
-                "FROM event_configs WHERE channel_id = $1 ORDER BY id",
+                f"SELECT {_SELECT_COLS} FROM event_configs WHERE channel_id = $1 ORDER BY id",
                 channel_id,
             )
-            return [EventConfig(**dict(r)) for r in rows]
+            return [_row_to_config(r) for r in rows]
 
     async def upsert_config(
         self,
@@ -71,25 +90,28 @@ class EventConfigRepository:
         event_type: str,
         message_template: str,
         enabled: bool,
+        options: dict | None = None,
     ) -> EventConfig:
         """Insert or update an event config. Invalidates cache."""
+        opts_json = json.dumps(options or {})
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
-                """
-                INSERT INTO event_configs (channel_id, event_type, message_template, enabled)
-                VALUES ($1, $2, $3, $4)
+                f"""
+                INSERT INTO event_configs (channel_id, event_type, message_template, enabled, options)
+                VALUES ($1, $2, $3, $4, $5::jsonb)
                 ON CONFLICT (channel_id, event_type) DO UPDATE SET
                     message_template = EXCLUDED.message_template,
-                    enabled = EXCLUDED.enabled
-                RETURNING id, channel_id, event_type, message_template, enabled,
-                          created_at, updated_at
+                    enabled = EXCLUDED.enabled,
+                    options = EXCLUDED.options
+                RETURNING {_SELECT_COLS}
                 """,
                 channel_id,
                 event_type,
                 message_template,
                 enabled,
+                opts_json,
             )
-            result = EventConfig(**dict(row))
+            result = _row_to_config(row)
             _config_cache.invalidate(f"event_config:{channel_id}:{event_type}")
             _config_list_cache.invalidate(f"event_list:{channel_id}")
             return result
@@ -99,15 +121,17 @@ class EventConfigRepository:
         if channel_id not in _seeded_events:
             async with self.pool.acquire() as conn:
                 for event_type, template in DEFAULT_TEMPLATES.items():
+                    opts_json = json.dumps(DEFAULT_OPTIONS.get(event_type, {}))
                     await conn.execute(
                         """
-                        INSERT INTO event_configs (channel_id, event_type, message_template, enabled)
-                        VALUES ($1, $2, $3, TRUE)
+                        INSERT INTO event_configs (channel_id, event_type, message_template, enabled, options)
+                        VALUES ($1, $2, $3, TRUE, $4::jsonb)
                         ON CONFLICT (channel_id, event_type) DO NOTHING
                         """,
                         channel_id,
                         event_type,
                         template,
+                        opts_json,
                     )
             _seeded_events.add(channel_id)
         return await self.list_configs(channel_id)

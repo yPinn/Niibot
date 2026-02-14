@@ -19,6 +19,7 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  Icon,
   Input,
   Label,
   Select,
@@ -90,6 +91,7 @@ export default function Events() {
   const [editingEvent, setEditingEvent] = useState<EventConfig | null>(null)
   const [editTemplate, setEditTemplate] = useState('')
   const [editEnabled, setEditEnabled] = useState(true)
+  const [editOptions, setEditOptions] = useState<Record<string, unknown>>({})
   const [saving, setSaving] = useState(false)
   const templateInputRef = useRef<HTMLInputElement>(null)
 
@@ -143,10 +145,14 @@ export default function Events() {
     }
   }
 
+  // Non-partner detection (no channel points = non-affiliate/partner)
+  const isNonPartner = !redemptionLoading && twitchRewards.length === 0
+
   const openEditor = (event: EventConfig) => {
     setEditingEvent(event)
     setEditTemplate(event.message_template)
     setEditEnabled(event.enabled)
+    setEditOptions(event.options ?? {})
   }
 
   const handleSave = async () => {
@@ -156,6 +162,7 @@ export default function Events() {
       const updated = await updateEventConfig(editingEvent.event_type, {
         message_template: editTemplate,
         enabled: editEnabled,
+        options: editOptions,
       })
       setEvents(prev => prev.map(e => (e.event_type === updated.event_type ? updated : e)))
       setEditingEvent(null)
@@ -248,35 +255,53 @@ export default function Events() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {events.map(event => (
-                    <TableRow key={event.event_type}>
-                      <TableCell className="font-medium">
-                        {EVENT_TYPE_NAMES[event.event_type] || event.event_type}
-                      </TableCell>
-                      <TableCell>
-                        <Badge className={EVENT_TYPE_COLORS[event.event_type] || ''}>
-                          {EVENT_TYPE_LABELS[event.event_type] || event.event_type}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="max-w-md truncate font-mono text-xs">
-                        {event.message_template}
-                      </TableCell>
-                      <TableCell className="text-right">{event.trigger_count}</TableCell>
-                      <TableCell className="text-center">
-                        <div className="flex justify-center">
-                          <Switch
-                            checked={event.enabled}
-                            onCheckedChange={() => handleToggle(event)}
-                          />
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button variant="ghost" size="sm" onClick={() => openEditor(event)}>
-                          編輯
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {events.map(event => {
+                    const locked = isNonPartner && event.event_type === 'subscribe'
+                    return (
+                      <TableRow key={event.event_type} className={locked ? 'opacity-50' : ''}>
+                        <TableCell className="font-medium">
+                          <span className="flex items-center gap-1.5">
+                            {EVENT_TYPE_NAMES[event.event_type] || event.event_type}
+                            {locked && <Icon icon="fa-solid fa-lock" wrapperClassName="size-3.5" />}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <Badge className={EVENT_TYPE_COLORS[event.event_type] || ''}>
+                            {EVENT_TYPE_LABELS[event.event_type] || event.event_type}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="max-w-md truncate font-mono text-xs">
+                          {locked ? (
+                            <span className="text-muted-foreground">
+                              需要聯盟夥伴或合作夥伴資格
+                            </span>
+                          ) : (
+                            event.message_template
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">{event.trigger_count}</TableCell>
+                        <TableCell className="text-center">
+                          <div className="flex justify-center">
+                            <Switch
+                              checked={event.enabled}
+                              onCheckedChange={() => handleToggle(event)}
+                              disabled={locked}
+                            />
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openEditor(event)}
+                            disabled={locked}
+                          >
+                            編輯
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
                 </TableBody>
               </Table>
             </div>
@@ -285,15 +310,24 @@ export default function Events() {
       </Card>
 
       {/* Redemption Configs */}
-      <Card>
+      <Card className={twitchRewards.length === 0 && !redemptionLoading ? 'opacity-60' : ''}>
         <CardHeader>
           <CardTitle>忠誠點數兌換</CardTitle>
-          <CardDescription>選擇 Twitch 忠誠點數獎勵對應的動作</CardDescription>
+          <CardDescription>
+            {twitchRewards.length === 0 && !redemptionLoading
+              ? '此功能需要 Twitch 聯盟夥伴或合作夥伴資格才能使用'
+              : '選擇 Twitch 忠誠點數獎勵對應的動作'}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {redemptionLoading ? (
             <div className="flex items-center justify-center py-8 text-muted-foreground">
               載入中...
+            </div>
+          ) : twitchRewards.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-2 py-8 text-muted-foreground">
+              <Icon icon="fa-solid fa-lock" wrapperClassName="size-6" />
+              <span className="text-sm">成為 Twitch 聯盟夥伴或合作夥伴後即可設定忠誠點數獎勵</span>
             </div>
           ) : (
             <div className="rounded-md border">
@@ -319,27 +353,21 @@ export default function Events() {
                           {ACTION_TYPE_LABELS[red.action_type] || red.action_type}
                         </TableCell>
                         <TableCell>
-                          {twitchRewards.length > 0 ? (
-                            <Select
-                              value={red.reward_name}
-                              onValueChange={v => handleRewardSelect(red, v)}
-                            >
-                              <SelectTrigger size="sm" className="w-56">
-                                <SelectValue placeholder="選擇獎勵..." />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {twitchRewards.map(reward => (
-                                  <SelectItem key={reward.id} value={reward.title}>
-                                    {reward.title} ({reward.cost.toLocaleString()} 點)
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          ) : (
-                            <span className="text-sm text-muted-foreground font-mono">
-                              {red.reward_name}
-                            </span>
-                          )}
+                          <Select
+                            value={red.reward_name}
+                            onValueChange={v => handleRewardSelect(red, v)}
+                          >
+                            <SelectTrigger size="sm" className="w-56">
+                              <SelectValue placeholder="選擇獎勵..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {twitchRewards.map(reward => (
+                                <SelectItem key={reward.id} value={reward.title}>
+                                  {reward.title} ({reward.cost.toLocaleString()} 點)
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                         </TableCell>
                         <TableCell className="text-center">
                           <div className="flex justify-center">
@@ -404,6 +432,22 @@ export default function Events() {
                 </div>
               )}
             </div>
+
+            {/* Raid: Auto-Shoutout Toggle */}
+            {editingEvent?.event_type === 'raid' && (
+              <div className="flex items-center justify-between">
+                <div className="flex flex-col gap-0.5">
+                  <Label>自動 Shoutout</Label>
+                  <span className="text-label text-muted-foreground">
+                    Raid 時自動執行 /shoutout 展示對方頻道
+                  </span>
+                </div>
+                <Switch
+                  checked={(editOptions.auto_shoutout as boolean) ?? true}
+                  onCheckedChange={v => setEditOptions(prev => ({ ...prev, auto_shoutout: v }))}
+                />
+              </div>
+            )}
 
             {/* Enabled Toggle */}
             <div className="flex items-center justify-between">
