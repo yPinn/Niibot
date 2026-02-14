@@ -54,49 +54,51 @@ class AI(commands.Cog):
         try:
             LOGGER.debug(f"AI request: user={interaction.user.name}, question={question[:100]}")
 
-            completion = self.client.chat.completions.create(
-                model=self.model,
-                max_tokens=1200,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": """你是 Discord 聊天機器人。
+            messages = [
+                {
+                    "role": "system",
+                    "content": """你是 Discord 聊天機器人。
 
-                        規則：
-                        - 語言：繁體中文
-                        - 長度：簡潔回答，100-300字為主，最多500字
-                        - 格式：使用純文字，不要使用 Markdown 語法（如 #、**、- 等）
-                        - 列表：使用數字編號或簡單換行，不使用符號
-                        - 語氣：友善、有幫助
-                        - 直接回答問題，不要輸出思考過程
+                    規則：
+                    - 語言：繁體中文
+                    - 長度：簡潔回答，100-300字為主，最多500字
+                    - 格式：使用純文字，不要使用 Markdown 語法（如 #、**、- 等）
+                    - 列表：使用數字編號或簡單換行，不使用符號
+                    - 語氣：友善、有幫助
+                    - 直接回答問題，不要輸出思考過程
 
-                        禁止內容：
-                        - 仇恨言論、歧視（種族/性別/宗教/性取向）
-                        - 暴力、威脅、騷擾
-                        - 成人/性相關內容
-                        - 非法活動
+                    禁止內容：
+                    - 仇恨言論、歧視（種族/性別/宗教/性取向）
+                    - 暴力、威脅、騷擾
+                    - 成人/性相關內容
+                    - 非法活動
 
-                        遇到不當問題請禮貌拒絕。提供正面、安全的回應。
-                        """,
-                    },
-                    {"role": "user", "content": question},
-                ],
-            )
+                    遇到不當問題請禮貌拒絕。提供正面、安全的回應。
+                    """,
+                },
+                {"role": "user", "content": question},
+            ]
 
-            if not completion.choices:
-                LOGGER.error("No choices in API response")
-                await interaction.followup.send("AI 回應格式錯誤，請稍後再試")
-                return
+            response = ""
+            for attempt in range(2):
+                completion = self.client.chat.completions.create(
+                    model=self.model,
+                    max_tokens=1200,
+                    messages=messages,
+                )
 
-            msg = completion.choices[0].message
-            raw = msg.content or ""
+                if not completion.choices:
+                    LOGGER.warning(f"AI attempt {attempt + 1}: no choices")
+                    continue
 
-            # Strip <think>...</think> reasoning blocks (closed + truncated)
-            response = re.sub(r"<think>[\s\S]*?</think>", "", raw)
-            response = re.sub(r"<think>[\s\S]*$", "", response)
-            response = response.strip()
+                raw = completion.choices[0].message.content or ""
+                response = re.sub(r"<think>[\s\S]*?</think>", "", raw)
+                response = re.sub(r"<think>[\s\S]*$", "", response)
+                response = response.strip()
 
-            LOGGER.info(f"AI response: raw={len(raw)}, clean={len(response)}")
+                LOGGER.info(f"AI attempt {attempt + 1}: raw={len(raw)}, clean={len(response)}")
+                if response:
+                    break
 
             if response:
                 embed = discord.Embed(

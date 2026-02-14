@@ -64,47 +64,49 @@ class AIComponent(commands.Component):
         try:
             LOGGER.debug(f"AI request: user={ctx.author.name}, message={message[:100]}")
 
-            completion = self.client.chat.completions.create(
-                model=self.model,
-                max_tokens=800,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": """你是 Twitch 聊天機器人。
+            messages = [
+                {
+                    "role": "system",
+                    "content": """你是 Twitch 聊天機器人。
 
-                            規則：
-                            - 語言：繁體中文
-                            - 長度：50-100字，最多150字
-                            - 語氣：友善、簡潔
-                            - 直接回答問題，不要輸出思考過程
+                        規則：
+                        - 語言：繁體中文
+                        - 長度：50-100字，最多150字
+                        - 語氣：友善、簡潔
+                        - 直接回答問題，不要輸出思考過程
 
-                            禁止內容：
-                            - 仇恨言論、歧視（種族/性別/宗教/性取向）
-                            - 暴力、威脅、騷擾
-                            - 成人/性相關內容
-                            - 非法活動
+                        禁止內容：
+                        - 仇恨言論、歧視（種族/性別/宗教/性取向）
+                        - 暴力、威脅、騷擾
+                        - 成人/性相關內容
+                        - 非法活動
 
-                            遇到不當問題請禮貌拒絕。提供正面、安全的回應。
-                            """,
-                    },
-                    {"role": "user", "content": message},
-                ],
-            )
+                        遇到不當問題請禮貌拒絕。提供正面、安全的回應。
+                        """,
+                },
+                {"role": "user", "content": message},
+            ]
 
-            if not completion.choices:
-                LOGGER.error("No choices in API response")
-                await ctx.reply("AI 回應格式錯誤")
-                return
+            response = ""
+            for attempt in range(2):
+                completion = self.client.chat.completions.create(
+                    model=self.model,
+                    max_tokens=800,
+                    messages=messages,
+                )
 
-            msg = completion.choices[0].message
-            raw = msg.content or ""
+                if not completion.choices:
+                    LOGGER.warning(f"AI attempt {attempt + 1}: no choices")
+                    continue
 
-            # Strip <think>...</think> reasoning blocks (closed + truncated)
-            response = re.sub(r"<think>[\s\S]*?</think>", "", raw)
-            response = re.sub(r"<think>[\s\S]*$", "", response)
-            response = response.strip()
+                raw = completion.choices[0].message.content or ""
+                response = re.sub(r"<think>[\s\S]*?</think>", "", raw)
+                response = re.sub(r"<think>[\s\S]*$", "", response)
+                response = response.strip()
 
-            LOGGER.info(f"AI response: raw={len(raw)}, clean={len(response)}")
+                LOGGER.info(f"AI attempt {attempt + 1}: raw={len(raw)}, clean={len(response)}")
+                if response:
+                    break
 
             # Twitch message limit is 500 characters
             if len(response) > 500:
@@ -113,7 +115,7 @@ class AIComponent(commands.Component):
             if response:
                 await ctx.reply(response)
             else:
-                LOGGER.warning("Empty content from API")
+                LOGGER.warning("Empty content after 2 attempts")
                 await ctx.reply("AI 回應為空，請重試")
         except Exception as e:
             error_msg = str(e)
