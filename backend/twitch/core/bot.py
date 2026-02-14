@@ -222,7 +222,9 @@ class Bot(commands.AutoBot):
                     payload.text = " ".join(parts)
 
             # Custom command handling: text response or redirect
-            await self._handle_custom_command(payload)
+            handled = await self._handle_custom_command(payload)
+            if handled:
+                return
         else:
             LOGGER.debug(f"[{payload.chatter.name}]: {payload.text}")
 
@@ -232,19 +234,19 @@ class Bot(commands.AutoBot):
     # Custom command handling
     # ------------------------------------------------------------------
 
-    async def _handle_custom_command(self, payload: twitchio.ChatMessage) -> None:
+    async def _handle_custom_command(self, payload: twitchio.ChatMessage) -> bool:
         """Handle custom commands: direct text response or redirect to builtin command.
 
-        All DB operations are wrapped in exception isolation — database errors
-        are logged as warnings and never propagate to TwitchIO's event loop.
+        Returns True if fully handled (text response sent, skip builtin pipeline),
+        False if message should continue to builtin command pipeline.
         """
         text = payload.text
         if not text or not text.startswith("!"):
-            return
+            return False
 
         parts = text[1:].split(maxsplit=1)
         if not parts or not parts[0]:
-            return
+            return False
 
         cmd_name = parts[0].lower()
         query = parts[1] if len(parts) > 1 else ""
@@ -258,17 +260,17 @@ class Bot(commands.AutoBot):
             LOGGER.warning(
                 f"[GUARD] DB error looking up command '{cmd_name}': {type(e).__name__}: {e}"
             )
-            return
+            return False
 
         if not config or not config.enabled or config.command_type != "custom":
-            return
+            return False
 
         if not config.custom_response:
-            return
+            return False
 
         # Guard checks (role + cooldown)
         if not has_role(payload.chatter, config.min_role):
-            return
+            return False
 
         try:
             channel = await self.channels.get_channel(channel_id)
@@ -279,18 +281,19 @@ class Bot(commands.AutoBot):
             channel = None
 
         if is_on_cooldown(channel_id, config.command_name, config, channel):
-            return
+            return False
 
         record_cooldown(channel_id, config.command_name)
 
         response = config.custom_response
         if response.startswith("!"):
-            # Redirect: inject as a new command into the pipeline
+            # Redirect: rewrite payload and let builtin pipeline handle it
             redirect = response[1:].replace("$(query)", query).strip()
             payload.text = f"!{redirect}"
             LOGGER.info(f"Custom command: !{cmd_name} -> !{redirect}")
+            return False
         else:
-            # Text response with variable substitution
+            # Text response with variable substitution — fully handled
             response = _substitute_variables(
                 response, payload.chatter, payload.broadcaster.name or "", query
             )
@@ -301,6 +304,7 @@ class Bot(commands.AutoBot):
                 reply_to_message_id=str(payload.id),
             )
             LOGGER.info(f"Custom command: !{cmd_name} -> text response")
+            return True
 
     # ------------------------------------------------------------------
     # Token management
