@@ -97,12 +97,14 @@ class AIComponent(commands.Component):
                 return
 
             msg = completion.choices[0].message
-            response = msg.content or ""
+            raw = msg.content or ""
 
-            # Strip <think>...</think> reasoning blocks from models like DeepSeek R1
-            response = re.sub(r"<think>[\s\S]*?</think>", "", response).strip()
+            # Strip <think>...</think> reasoning blocks (closed + truncated)
+            response = re.sub(r"<think>[\s\S]*?</think>", "", raw)
+            response = re.sub(r"<think>[\s\S]*$", "", response)
+            response = response.strip()
 
-            LOGGER.debug(f"Response length: {len(response)}")
+            LOGGER.info(f"AI response: raw={len(raw)}, clean={len(response)}")
 
             # Twitch message limit is 500 characters
             if len(response) > 500:
