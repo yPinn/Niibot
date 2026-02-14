@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import re
 
 import discord
 from discord import app_commands
@@ -88,6 +89,9 @@ class AI(commands.Cog):
 
             msg = completion.choices[0].message
             response = msg.content or ""
+
+            # Strip <think>...</think> reasoning blocks from models like DeepSeek R1
+            response = re.sub(r"<think>[\s\S]*?</think>", "", response).strip()
 
             LOGGER.debug(f"Response length: {len(response)}")
 

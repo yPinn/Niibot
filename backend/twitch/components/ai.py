@@ -1,4 +1,5 @@
 import logging
+import re
 from typing import TYPE_CHECKING
 
 from openai import OpenAI
@@ -97,10 +98,8 @@ class AIComponent(commands.Component):
             msg = completion.choices[0].message
             response = msg.content or ""
 
-            # Reasoning models put content in reasoning field
-            if not response and hasattr(msg, "reasoning") and msg.reasoning:
-                response = msg.reasoning
-                LOGGER.debug("Using reasoning field")
+            # Strip <think>...</think> reasoning blocks from models like DeepSeek R1
+            response = re.sub(r"<think>[\s\S]*?</think>", "", response).strip()
 
             LOGGER.debug(f"Response length: {len(response)}")
 
