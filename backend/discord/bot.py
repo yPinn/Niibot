@@ -89,10 +89,10 @@ class NiibotClient(commands.Bot):
     async def _pool_heartbeat_loop(self) -> None:
         """Periodically ping the DB pool to keep the idle connection alive.
 
-        Constraint chain: heartbeat(25s) < max_inactive(45s) < Supavisor(~60s).
+        Constraint chain: heartbeat(15s) < max_inactive(45s) < Supavisor(~30-60s).
         """
         while True:
-            await asyncio.sleep(25)
+            await asyncio.sleep(15)
             try:
                 if self.db_pool is not None:
                     async with self.db_pool.acquire(timeout=10.0) as conn:

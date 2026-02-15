@@ -835,11 +835,11 @@ class Bot(commands.AutoBot):
     async def _pool_heartbeat_loop(self) -> None:
         """Periodically ping the DB pool to keep the idle connection alive.
 
-        Constraint chain: heartbeat(25s) < max_inactive(45s) < Supavisor(~60s).
+        Constraint chain: heartbeat(15s) < max_inactive(45s) < Supavisor(~30-60s).
         With min_size=1 the heartbeat covers the single idle connection.
         """
         while True:
-            await asyncio.sleep(25)
+            await asyncio.sleep(15)
             try:
                 async with self.token_database.acquire(timeout=10.0) as conn:
                     await conn.fetchval("SELECT 1")

@@ -59,7 +59,7 @@ export const navigationData = {
   navSecondary: [
     {
       title: 'Github',
-      url: '#',
+      url: 'https://github.com/yPinn/Niibot',
       icon: 'fa-brands fa-github',
     },
     {
