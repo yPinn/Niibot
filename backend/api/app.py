@@ -28,7 +28,8 @@ logger = logging.getLogger(__name__)
 # Track server start time
 _start_time: float = 0.0
 _heartbeat_task: asyncio.Task | None = None
-_db_connect_task: asyncio.Task | None = None
+_pool_heartbeat_task: asyncio.Task | None = None
+_db_retry_task: asyncio.Task | None = None
 
 
 async def _heartbeat(interval: int = 300) -> None:
@@ -41,10 +42,51 @@ async def _heartbeat(interval: int = 300) -> None:
         logger.info(f"Heartbeat: uptime={uptime}s, db={db_ok}")
 
 
+async def _pool_heartbeat_loop() -> None:
+    """Periodically ping the DB pool to keep idle connections alive.
+
+    Constraint chain: heartbeat(15s) < max_inactive(45s) < Supavisor(~30-60s).
+    """
+    while True:
+        await asyncio.sleep(15)
+        try:
+            db_manager = get_database_manager()
+            if db_manager._pool is not None:
+                async with db_manager._pool.acquire(timeout=5.0) as conn:
+                    await conn.fetchval("SELECT 1")
+                logger.debug("Pool heartbeat OK")
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.warning(f"Pool heartbeat failed: {type(e).__name__}: {e}")
+
+
+async def _db_retry_loop(db_manager) -> None:
+    """Background loop to retry DB connection after startup timeout."""
+    delay = 5
+    max_delay = 60
+    while True:
+        await asyncio.sleep(delay)
+        if db_manager._pool is not None:
+            logger.info("DB retry loop: pool already connected, stopping")
+            return
+        try:
+            await db_manager.connect()
+            logger.info("Database connected (background retry)")
+            return
+        except asyncio.CancelledError:
+            return
+        except Exception as e:
+            logger.warning(
+                f"DB background retry failed: {type(e).__name__}: {e}, next retry in {min(delay * 2, max_delay)}s"
+            )
+            delay = min(delay * 2, max_delay)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Handle startup and shutdown"""
-    global _start_time, _heartbeat_task, _db_connect_task
+    global _start_time, _heartbeat_task, _pool_heartbeat_task, _db_retry_task
     _start_time = time.time()
 
     settings = get_settings()
@@ -54,29 +96,39 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info(f"Environment: {settings.environment}")
     logger.info(f"Frontend URL: {settings.frontend_url}")
 
-    # Initialize database (background — don't block port binding)
+    # Initialize and connect database — wait up to 30s before accepting requests.
+    # This prevents the "pool is closed" race where requests arrive before
+    # the pool is ready. If connection times out, spawn a background retry loop.
     db_manager = init_database_manager(settings.database_url)
 
-    async def _connect_db() -> None:
-        try:
-            await db_manager.connect()
-            logger.info("Database connected")
-        except Exception as e:
-            logger.exception(f"Failed to connect to database: {e}")
-
-    _db_connect_task = asyncio.create_task(_connect_db())
+    try:
+        await asyncio.wait_for(db_manager.connect(), timeout=30)
+        logger.info("Database connected")
+    except TimeoutError:
+        logger.warning("DB connection timed out during startup, retrying in background")
+        _db_retry_task = asyncio.create_task(_db_retry_loop(db_manager))
+    except Exception as e:
+        logger.error(
+            f"DB connection failed during startup: {type(e).__name__}: {e}, retrying in background"
+        )
+        _db_retry_task = asyncio.create_task(_db_retry_loop(db_manager))
 
     # Start heartbeat keep-alive task
     if settings.enable_keep_alive:
         _heartbeat_task = asyncio.create_task(_heartbeat(settings.keep_alive_interval))
         logger.info(f"Heartbeat started (interval={settings.keep_alive_interval}s)")
 
+    # Start pool heartbeat to prevent Supavisor idle kills
+    _pool_heartbeat_task = asyncio.create_task(_pool_heartbeat_loop())
+
     yield
 
     # Shutdown
     logger.info("Shutting down Niibot API server")
-    if _db_connect_task and not _db_connect_task.done():
-        _db_connect_task.cancel()
+    if _db_retry_task:
+        _db_retry_task.cancel()
+    if _pool_heartbeat_task:
+        _pool_heartbeat_task.cancel()
     if _heartbeat_task:
         _heartbeat_task.cancel()
     try:

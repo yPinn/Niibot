@@ -34,13 +34,11 @@ class PoolConfig:
     retry_delay: float = 3.0
 
     # Per-service preset overrides
-    # - api: Transaction Pooler (6543) — stateless burst; min_size=0 (borrow/return),
-    #   _transaction_pool_kwargs() enforces min_size=0 regardless, but preset
-    #   reflects intent for clarity.
-    # - discord/twitch: Session Pooler (5432) — long-lived stateful; min_size=1
-    #   so the heartbeat loop can keep the single idle connection alive.
+    # All services use Session Pooler (5432) with min_size=1 and heartbeat
+    # loops to keep idle connections alive against Supavisor idle timeout.
+    # Transaction Pooler (6543) is only for serverless/edge, not long-running.
     _SERVICE_PRESETS: ClassVar[dict[str, dict]] = {
-        "api": {"min_size": 0, "max_size": 10},
+        "api": {"min_size": 1, "max_size": 10},
         "discord": {"min_size": 1, "max_size": 4},
         "twitch": {"min_size": 1, "max_size": 5},
     }
@@ -193,12 +191,17 @@ class DatabaseManager:
 
         cfg = self.config
         for attempt in range(1, cfg.max_retries + 1):
+            pool: asyncpg.Pool | None = None
             try:
-                self._pool = await asyncpg.create_pool(**pool_kwargs)
+                pool = await asyncpg.create_pool(**pool_kwargs)
 
-                # Verify pool is usable
-                async with self._pool.acquire() as conn:
+                # Verify pool is usable before exposing it
+                async with pool.acquire() as conn:
                     await conn.fetchval("SELECT 1")
+
+                # Only assign after verification passes — prevents race
+                # where requests see a pool that gets closed during retry.
+                self._pool = pool
 
                 effective_min = pool_kwargs.get("min_size", 0)
                 effective_cache = pool_kwargs.get("statement_cache_size", 0)
@@ -210,6 +213,11 @@ class DatabaseManager:
                 )
                 return
             except Exception as e:
+                if pool:
+                    try:
+                        await pool.close()
+                    except Exception:
+                        pass
                 if attempt < cfg.max_retries:
                     delay = cfg.retry_delay * (2 ** (attempt - 1))
                     logger.warning(
@@ -222,12 +230,6 @@ class DatabaseManager:
                             self._diagnose_connection()
                         except Exception:
                             pass
-                    if self._pool:
-                        try:
-                            await self._pool.close()
-                        except Exception:
-                            pass
-                        self._pool = None
                     await asyncio.sleep(delay)
                 else:
                     logger.exception(
