@@ -261,42 +261,57 @@ def _format_duration(seconds: float) -> str:
 
 
 def _parse_retry_after(e: discord.HTTPException, base_delay: float, attempt: int) -> float:
-    """Extract retry_after from a 429 response (headers, JSON body, or fallback)."""
-    fallback = base_delay * (2 ** (attempt - 1))
-    retry_after = fallback
+    """Extract retry_after from a 429 response (headers, JSON body, or fallback).
 
-    # 1. Try response headers
-    resp = getattr(e, "response", None)
-    if resp:
-        headers = getattr(resp, "headers", {})
-        for key in ("Retry-After", "retry-after", "retry_after"):
-            if key in headers:
-                try:
-                    retry_after = float(headers[key])
-                except (ValueError, TypeError):
-                    pass
-                break
+    Priority: discord.py parsed value > response headers > exponential backoff.
+    For Cloudflare 1015 bans, enforces a minimum 20-minute wait.
+    """
+    retry_after: float | None = None
 
-    # 2. discord.py may parse retry_after from JSON body into the exception
+    # 1. discord.py may parse retry_after from JSON body into the exception
     if hasattr(e, "retry_after"):
         try:
-            retry_after = float(e.retry_after)
+            val = float(e.retry_after)
+            if val > 0:
+                retry_after = val
         except (ValueError, TypeError):
             pass
 
-    # 3. Detect Cloudflare ban (1015)
+    # 2. Try response headers
+    if retry_after is None:
+        resp = getattr(e, "response", None)
+        if resp:
+            headers = getattr(resp, "headers", {})
+            for key in ("Retry-After", "retry-after", "retry_after"):
+                if key in headers:
+                    try:
+                        val = float(headers[key])
+                        if val > 0:
+                            retry_after = val
+                    except (ValueError, TypeError):
+                        pass
+                    break
+
+    # 3. Detect Cloudflare ban (1015) — enforce minimum 20 min wait
     text = getattr(e, "text", "") or ""
-    if "1015" in text or "cloudflare" in text.lower():
+    is_cloudflare = "1015" in text or "cloudflare" in text.lower()
+
+    if is_cloudflare:
+        cf_min = 1200.0  # 20 minutes
+        retry_after = max(retry_after or cf_min, cf_min)
         logger.error(
             f"[CLOUDFLARE BAN] Blocked by Cloudflare (1015). "
             f"Retry after {_format_duration(retry_after)}."
         )
+    elif retry_after is None:
+        # 4. Fallback: exponential backoff only when no retry_after provided
+        retry_after = base_delay * (2 ** (attempt - 1))
 
-    # 4. Log raw response body for debugging
-    if text:
+    # 5. Log raw response body for debugging (non-Cloudflare only)
+    if text and not is_cloudflare:
         logger.info(f"[429 Response] {text[:500]}")
 
-    return float(retry_after)
+    return retry_after
 
 
 async def main() -> None:
@@ -328,12 +343,10 @@ async def main() -> None:
                 except discord.HTTPException as e:
                     if e.status == 429:
                         retry_count += 1
-                        retry_after = _parse_retry_after(e, base_delay, retry_count)
-                        wait_time = max(retry_after, base_delay * (2 ** (retry_count - 1)))
+                        wait_time = _parse_retry_after(e, base_delay, retry_count)
 
                         logger.warning(
                             f"[429 Rate Limit] "
-                            f"retry_after={retry_after:.0f}s, "
                             f"waiting {_format_duration(wait_time)}, "
                             f"attempt={retry_count}/{max_retries}"
                         )
