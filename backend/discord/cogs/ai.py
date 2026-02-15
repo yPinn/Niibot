@@ -9,6 +9,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from openai import OpenAI
+from openai.types.chat import ChatCompletionMessageParam
 
 from core import DATA_DIR
 
@@ -54,7 +55,7 @@ class AI(commands.Cog):
         try:
             LOGGER.debug(f"AI request: user={interaction.user.name}, question={question[:100]}")
 
-            messages = [
+            messages: list[ChatCompletionMessageParam] = [
                 {
                     "role": "system",
                     "content": """你是 Discord 聊天機器人。

@@ -47,13 +47,13 @@ class TwitchAPIClient:
         self.api_url = api_url
         self.timeout = 10.0
 
-    def generate_oauth_url(self) -> str:
+    def generate_oauth_url(self, state: str | None = None) -> str:
         """Generate Twitch OAuth authorization URL"""
         redirect_uri = f"{self.api_url}/api/auth/twitch/callback"
         scope_string = "+".join(s.replace(":", "%3A") for s in self.BROADCASTER_SCOPES)
         encoded_redirect_uri = quote(redirect_uri, safe="")
 
-        return (
+        url = (
             f"https://id.twitch.tv/oauth2/authorize"
             f"?client_id={self.client_id}"
             f"&redirect_uri={encoded_redirect_uri}"
@@ -61,6 +61,9 @@ class TwitchAPIClient:
             f"&scope={scope_string}"
             f"&force_verify=true"
         )
+        if state:
+            url += f"&state={quote(state, safe='')}"
+        return url
 
     async def exchange_code_for_token(
         self, code: str

@@ -1,3 +1,4 @@
+export * from './account'
 export * from './analytics'
 export * from './bots'
 export * from './channels'

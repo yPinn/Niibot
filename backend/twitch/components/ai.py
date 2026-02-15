@@ -3,6 +3,7 @@ import re
 from typing import TYPE_CHECKING
 
 from openai import OpenAI
+from openai.types.chat import ChatCompletionMessageParam
 from twitchio.ext import commands
 
 from core.config import get_settings
@@ -64,7 +65,7 @@ class AIComponent(commands.Component):
         try:
             LOGGER.debug(f"AI request: user={ctx.author.name}, message={message[:100]}")
 
-            messages = [
+            messages: list[ChatCompletionMessageParam] = [
                 {
                     "role": "system",
                     "content": """你是 Twitch 聊天機器人。

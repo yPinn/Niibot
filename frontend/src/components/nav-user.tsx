@@ -1,3 +1,5 @@
+import { useNavigate } from 'react-router-dom'
+
 import { logout as apiLogout, type User } from '@/api'
 import { useTheme } from '@/components/theme-provider'
 import {
@@ -22,6 +24,7 @@ export function NavUser({ user }: { user: User }) {
   const { isMobile } = useSidebar()
   const { resolvedTheme, setTheme } = useTheme()
   const { logout } = useAuth()
+  const navigate = useNavigate()
 
   const handleLogout = async () => {
     try {
@@ -97,7 +100,7 @@ export function NavUser({ user }: { user: User }) {
             </a>
 
             <DropdownMenuSeparator />
-            <DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate('/settings')}>
               <Icon icon="fa-solid fa-gear" wrapperClassName="" />
               Settings
             </DropdownMenuItem>

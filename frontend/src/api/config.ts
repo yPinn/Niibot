@@ -27,6 +27,8 @@ export const API_ENDPOINTS = {
   },
   user: {
     preferences: join('/api/user/preferences'),
+    linkedAccounts: join('/api/user/linked-accounts'),
+    unlinkAccount: (platform: string) => join(`/api/user/linked-accounts/${platform}`),
   },
   channels: {
     twitch: {

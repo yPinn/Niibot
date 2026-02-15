@@ -31,19 +31,22 @@ class DiscordAPIClient:
         """Check if Discord OAuth is configured"""
         return bool(self.client_id and self.client_secret)
 
-    def generate_oauth_url(self) -> str:
+    def generate_oauth_url(self, state: str | None = None) -> str:
         """Generate Discord OAuth authorization URL"""
         redirect_uri = f"{self.api_url}/api/auth/discord/callback"
         scope_string = "%20".join(self.OAUTH_SCOPES)
         encoded_redirect_uri = quote(redirect_uri, safe="")
 
-        return (
+        url = (
             f"https://discord.com/oauth2/authorize"
             f"?client_id={self.client_id}"
             f"&redirect_uri={encoded_redirect_uri}"
             f"&response_type=code"
             f"&scope={scope_string}"
         )
+        if state:
+            url += f"&state={quote(state, safe='')}"
+        return url
 
     async def exchange_code_for_token(
         self, code: str

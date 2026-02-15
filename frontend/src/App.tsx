@@ -15,6 +15,7 @@ import Events from '@/pages/Events'
 import LoginPage from '@/pages/Login'
 import NotFound from '@/pages/NotFound'
 import PublicCommands from '@/pages/PublicCommands'
+import Settings from '@/pages/Settings'
 import SystemStatus from '@/pages/SystemStatus'
 import TypographyDemo from '@/pages/TypographyDemo'
 
@@ -38,6 +39,7 @@ function App() {
                   <Route path="/commands" element={<Commands />} />
                   <Route path="/events" element={<Events />} />
                   <Route path="/system" element={<SystemStatus />} />
+                  <Route path="/settings" element={<Settings />} />
                   {/* Discord Bot Routes */}
                   <Route path="/discord/dashboard" element={<DiscordDashboard />} />
                   <Route path="*" element={<NotFound />} />
