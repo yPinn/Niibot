@@ -41,6 +41,7 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -59,12 +60,12 @@
   --color-sidebar-ring: var(--sidebar-ring);
 
   /* ── Status Colors ── */
-  --color-status-online: var(--color-status-online);
-  --color-status-offline: var(--color-status-offline);
-  --color-status-loading: var(--color-status-loading);
-  --color-status-info: var(--color-status-info);
-  --color-status-success: var(--color-status-success);
-  --color-status-special: var(--color-status-special);
+  --color-status-online: var(--status-online);
+  --color-status-offline: var(--status-offline);
+  --color-status-loading: var(--status-loading);
+  --color-status-info: var(--status-info);
+  --color-status-success: var(--status-success);
+  --color-status-special: var(--status-special);
 
   /* ── Semantic Font Size Utilities ── */
   --text-page-title: var(--text-page-title);
@@ -81,6 +82,11 @@
   --spacing-card: var(--space-card);
   --spacing-element: var(--space-element);
   --spacing-empty: var(--space-empty);
+
+  /* ── Shadow / Elevation ── */
+  --shadow-sm: 0 1px 2px 0 oklch(0 0 0 / 5%);
+  --shadow-md: 0 4px 6px -1px oklch(0 0 0 / 8%), 0 2px 4px -2px oklch(0 0 0 / 5%);
+  --shadow-lg: 0 10px 15px -3px oklch(0 0 0 / 10%), 0 4px 6px -4px oklch(0 0 0 / 5%);
 }
 
 :root {
@@ -118,80 +124,103 @@
   --space-element: var(--space-2); /* 元素間距 (label-input) */
   --space-empty: var(--space-8); /* 空狀態內距 */
 
+  /* ── Layer 2: Semantic Font Weight ── */
+  --font-weight-heading: 600;
+  --font-weight-body: 400;
+  --font-weight-bold: 700;
+
+  /* ── Layer 2: Semantic Line Height ── */
+  --leading-heading: 1.25;
+  --leading-body: 1.5;
+  --leading-tight: 1.15;
+
   /* ── Status Colors ── */
-  --color-status-online: oklch(0.72 0.19 155); /* green */
-  --color-status-offline: oklch(0.63 0.24 25); /* red */
-  --color-status-loading: oklch(0.8 0.18 84); /* yellow */
-  --color-status-info: oklch(0.62 0.2 260); /* blue */
-  --color-status-success: oklch(0.72 0.19 155); /* green (alias) */
-  --color-status-special: oklch(0.62 0.24 295); /* purple — 訂閱等特殊事件 */
+  --status-online: oklch(0.72 0.19 155); /* green */
+  --status-offline: oklch(0.63 0.24 25); /* red */
+  --status-loading: oklch(0.8 0.18 84); /* yellow */
+  --status-info: oklch(0.62 0.2 260); /* blue */
+  --status-success: oklch(0.72 0.19 155); /* green (alias) */
+  --status-special: oklch(0.62 0.24 295); /* purple — 訂閱等特殊事件 */
 
   --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+
+  /* ── Light Theme (Twitch-inspired) ── */
+  --background: oklch(0.98 0.003 290); /* 微紫白背景 */
+  --foreground: oklch(0.13 0.005 290); /* 近黑帶紫調 */
+  --card: oklch(1 0 0); /* 純白卡片 */
+  --card-foreground: oklch(0.13 0.005 290);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.13 0.005 290);
+  --primary: oklch(0.54 0.27 293); /* #9146FF Twitch Purple */
   --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.95 0.01 293); /* 淡紫灰 */
+  --secondary-foreground: oklch(0.25 0.01 293);
+  --muted: oklch(0.95 0.008 290); /* 柔紫灰 */
+  --muted-foreground: oklch(0.5 0.02 290);
+  --accent: oklch(0.93 0.02 293); /* 紫調 hover */
+  --accent-foreground: oklch(0.25 0.01 293);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.9 0 0);
-  --sidebar-primary-foreground: oklch(0.145 0 0);
-  --sidebar-accent: oklch(0.92 0 0);
-  --sidebar-accent-foreground: oklch(0.145 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(0.91 0.008 290);
+  --input: oklch(0.91 0.008 290);
+  --ring: oklch(0.54 0.27 293); /* 紫色 focus ring */
+  --chart-1: oklch(0.54 0.27 293); /* purple */
+  --chart-2: oklch(0.6 0.15 185); /* teal */
+  --chart-3: oklch(0.7 0.18 55); /* orange */
+  --chart-4: oklch(0.65 0.2 340); /* pink */
+  --chart-5: oklch(0.55 0.2 255); /* blue */
+  --sidebar: oklch(0.97 0.008 293); /* 淡紫側邊欄 */
+  --sidebar-foreground: oklch(0.13 0.005 290);
+  --sidebar-primary: oklch(0.54 0.27 293); /* active = Twitch Purple */
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.93 0.02 293);
+  --sidebar-accent-foreground: oklch(0.25 0.01 293);
+  --sidebar-border: oklch(0.91 0.01 293);
+  --sidebar-ring: oklch(0.54 0.27 293);
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  /* ── Dark Theme (Twitch-inspired: #0E0E10 / #18181B / #1F1F23) ── */
+  --background: oklch(0.145 0.005 290); /* Twitch dark bg */
+  --foreground: oklch(0.93 0.005 290); /* #DEDEE3 淡紫白 */
+  --card: oklch(0.2 0.008 290); /* #18181B 紫調表面 */
+  --card-foreground: oklch(0.93 0.005 290);
+  --popover: oklch(0.2 0.008 290);
+  --popover-foreground: oklch(0.93 0.005 290);
+  --primary: oklch(0.62 0.24 293); /* 加亮紫色，深色底需更高明度 */
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.25 0.015 290);
+  --secondary-foreground: oklch(0.93 0.005 290);
+  --muted: oklch(0.25 0.012 290);
+  --muted-foreground: oklch(0.65 0.015 290);
+  --accent: oklch(0.3 0.03 293); /* 紫調 hover */
+  --accent-foreground: oklch(0.93 0.005 290);
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.269 0 0);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(1 0.01 290 / 10%); /* 微紫半透明邊框 */
+  --input: oklch(1 0.01 290 / 15%);
+  --ring: oklch(0.62 0.24 293); /* 紫色 focus ring */
+  --chart-1: oklch(0.65 0.25 293); /* purple */
+  --chart-2: oklch(0.7 0.15 185); /* teal */
+  --chart-3: oklch(0.75 0.17 55); /* orange */
+  --chart-4: oklch(0.7 0.2 340); /* pink */
+  --chart-5: oklch(0.65 0.2 255); /* blue */
+  --sidebar: oklch(0.18 0.01 290); /* #1F1F23 Twitch sidebar */
+  --sidebar-foreground: oklch(0.93 0.005 290);
+  --sidebar-primary: oklch(0.62 0.24 293); /* active = 亮紫色 */
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.35 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --sidebar-accent: oklch(0.3 0.03 293);
+  --sidebar-accent-foreground: oklch(0.93 0.005 290);
+  --sidebar-border: oklch(1 0.01 290 / 10%);
+  --sidebar-ring: oklch(0.62 0.24 293);
+
+  /* ── Status Colors (dark — 降低彩度/提高明度以適應深色背景) ── */
+  --status-online: oklch(0.78 0.16 155);
+  --status-offline: oklch(0.7 0.2 25);
+  --status-loading: oklch(0.85 0.15 84);
+  --status-info: oklch(0.7 0.17 260);
+  --status-success: oklch(0.78 0.16 155);
+  --status-special: oklch(0.7 0.2 295);
 }
 
 @layer base {
@@ -242,6 +271,12 @@
     line-height: 1.5;
   }
 
+  /* ── Focus Visible (a11y) ── */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
   /* ── Typography ── */
   h1,
   h2,
@@ -251,11 +286,14 @@
   h6 {
     overflow-wrap: break-word;
     text-wrap: balance;
+    font-weight: var(--font-weight-heading);
+    line-height: var(--leading-heading);
   }
 
   p {
     overflow-wrap: break-word;
     text-wrap: pretty;
+    line-height: var(--leading-body);
   }
 
   /* ── Media ── */

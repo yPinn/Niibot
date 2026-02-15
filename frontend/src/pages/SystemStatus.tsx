@@ -100,7 +100,10 @@ export default function SystemStatus() {
 
       <div className="grid gap-section md:grid-cols-2 lg:grid-cols-3">
         {services.map(service => (
-          <div key={service.name} className="bg-card border rounded-lg p-6 space-y-4 shadow-sm">
+          <div
+            key={service.name}
+            className="bg-card border rounded-lg p-card space-y-section shadow-sm"
+          >
             <div className="flex items-center justify-between">
               <h3 className="font-semibold text-card-title">{service.name}</h3>
               <div className={`flex items-center gap-2 ${getStatusColor(service.status)}`}>
@@ -149,7 +152,7 @@ export default function SystemStatus() {
         ))}
       </div>
 
-      <div className="bg-muted/50 border rounded-lg p-4">
+      <div className="bg-muted/50 border rounded-lg p-page">
         <h3 className="text-card-title font-semibold mb-2 flex items-center gap-2">
           <Icon icon="fa-solid fa-circle-info" className="w-4 h-4" />
           系統資訊

@@ -91,7 +91,7 @@ export default function Dashboard() {
     >
       <AnalyticsChart data={analytics} loading={analyticsLoading} className="min-h-0" />
 
-      <div className={`grid grid-cols-1 md:grid-cols-3 gap-4`}>
+      <div className={`grid grid-cols-1 md:grid-cols-3 gap-section`}>
         <div className="aspect-video bg-muted/50 rounded-xl overflow-hidden relative">
           {user?.name ? (
             <TwitchPlayer

@@ -47,6 +47,9 @@ export async function updateUserPreferences(prefs: { theme: Theme }): Promise<vo
   if (!response.ok) {
     throw new Error('Failed to update preferences')
   }
+
+  // Sync cache so refreshUser() won't return stale theme
+  apiCache.patch<User>(CACHE_KEYS.CURRENT_USER, user => ({ ...user, ...prefs }))
 }
 
 export async function logout(): Promise<void> {

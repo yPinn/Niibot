@@ -24,9 +24,9 @@ export default function Home() {
       </Button>
       <div className="w-full max-w-2xl">
         <Card className="rounded-2xl border shadow-xl">
-          <CardContent className="p-8">
+          <CardContent className="p-card">
             {/* 大頭貼區域 */}
-            <div className="mb-6 flex flex-col items-center">
+            <div className="mb-card flex flex-col items-center">
               <div className="mb-4 h-32 w-32 overflow-hidden rounded-full border-4 border-primary shadow-lg">
                 <img
                   src="/images/Avatar.png"
@@ -38,10 +38,10 @@ export default function Home() {
               <p className="text-card-title text-muted-foreground">Twitch 聊天機器人 | 泥爸</p>
             </div>
 
-            <div className="my-6 border-t border-border"></div>
+            <div className="my-card border-t border-border"></div>
 
             {/* 自我介紹內容 */}
-            <div className="space-y-4 text-foreground">
+            <div className="space-y-section text-foreground">
               <div>
                 <h2 className="mb-2 text-section-title font-semibold">關於我</h2>
                 <p className="leading-relaxed text-muted-foreground">
@@ -75,7 +75,7 @@ export default function Home() {
             </div>
 
             {/* 返回首頁按鈕 */}
-            <div className="mt-8 flex justify-center">
+            <div className="mt-empty flex justify-center">
               <Button onClick={() => navigate('/login')} variant="default">
                 開始使用
               </Button>

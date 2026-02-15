@@ -236,11 +236,13 @@ export default function Events() {
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="flex items-center justify-center py-8 text-muted-foreground">
+            <div className="flex items-center justify-center py-empty text-muted-foreground">
               載入中...
             </div>
           ) : error ? (
-            <div className="flex items-center justify-center py-8 text-destructive">{error}</div>
+            <div className="flex items-center justify-center py-empty text-destructive">
+              {error}
+            </div>
           ) : (
             <div className="rounded-md border">
               <Table>
@@ -321,11 +323,11 @@ export default function Events() {
         </CardHeader>
         <CardContent>
           {redemptionLoading ? (
-            <div className="flex items-center justify-center py-8 text-muted-foreground">
+            <div className="flex items-center justify-center py-empty text-muted-foreground">
               載入中...
             </div>
           ) : twitchRewards.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-2 py-8 text-muted-foreground">
+            <div className="flex flex-col items-center justify-center gap-2 py-empty text-muted-foreground">
               <Icon icon="fa-solid fa-lock" wrapperClassName="size-6" />
               <span className="text-sm">成為 Twitch 聯盟夥伴或合作夥伴後即可設定忠誠點數獎勵</span>
             </div>
@@ -400,7 +402,7 @@ export default function Events() {
             <SheetDescription>修改事件觸發時的自動回應訊息</SheetDescription>
           </SheetHeader>
 
-          <div className="flex flex-col gap-6 px-4">
+          <div className="flex flex-col gap-card px-page">
             {/* Message Template */}
             <div className="flex flex-col gap-2">
               <Label>訊息模板</Label>

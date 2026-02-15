@@ -337,11 +337,13 @@ export default function Commands() {
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="flex items-center justify-center py-8 text-muted-foreground">
+            <div className="flex items-center justify-center py-empty text-muted-foreground">
               載入中...
             </div>
           ) : error ? (
-            <div className="flex items-center justify-center py-8 text-destructive">{error}</div>
+            <div className="flex items-center justify-center py-empty text-destructive">
+              {error}
+            </div>
           ) : (
             <Tabs defaultValue="builtin">
               <TabsList>
@@ -498,7 +500,7 @@ export default function Commands() {
             </SheetDescription>
           </SheetHeader>
 
-          <div className="flex flex-col gap-6 px-4">
+          <div className="flex flex-col gap-card px-page">
             {/* Command Name (create only) */}
             {editing?.mode === 'create' && (
               <div className="flex flex-col gap-2">
@@ -601,7 +603,7 @@ export default function Commands() {
             </button>
 
             {showAdvanced && (
-              <div className="flex flex-col gap-6 border-l-2 border-muted pl-4">
+              <div className="flex flex-col gap-card border-l-2 border-muted pl-page">
                 {/* Aliases */}
                 {(editing?.mode === 'create' || editing?.command?.command_type === 'custom') && (
                   <div className="flex flex-col gap-2">
