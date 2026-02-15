@@ -1,4 +1,8 @@
-"""Reusable PostgreSQL LISTEN/NOTIFY helper with auto-reconnect."""
+"""Reusable PostgreSQL LISTEN/NOTIFY helper with auto-reconnect.
+
+Uses dedicated connections (asyncpg.connect) instead of borrowing from
+the shared pool, so LISTEN channels don't consume pool slots.
+"""
 
 from __future__ import annotations
 
@@ -12,21 +16,8 @@ import asyncpg
 LOGGER = logging.getLogger("PgListener")
 
 
-def _safe_release(pool: asyncpg.Pool, connection: asyncpg.Connection) -> None:
-    """Release or terminate a connection without raising."""
-    try:
-        if connection.is_closed():
-            return
-        pool.release(connection)
-    except Exception:
-        try:
-            connection.terminate()
-        except Exception:
-            pass
-
-
 async def pg_listen(
-    pool: asyncpg.Pool,
+    dsn: str,
     channel: str,
     handler: Callable[..., Coroutine[Any, Any, None]],
     *,
@@ -35,8 +26,11 @@ async def pg_listen(
 ) -> None:
     """Listen on a PostgreSQL NOTIFY channel with auto-reconnect.
 
+    Creates a dedicated connection (not from the pool) so LISTEN channels
+    don't consume pool capacity.
+
     Args:
-        pool: asyncpg connection pool.
+        dsn: PostgreSQL connection string.
         channel: PostgreSQL NOTIFY channel name.
         handler: Async callback ``(connection, pid, channel, payload) -> None``.
         keepalive_interval: Seconds between keepalive pings (default 30).
@@ -47,7 +41,7 @@ async def pg_listen(
     while True:
         connection: asyncpg.Connection | None = None
         try:
-            connection = await pool.acquire()
+            connection = await asyncpg.connect(dsn, ssl="require")
             await connection.add_listener(channel, handler)
             LOGGER.info(f"PostgreSQL LISTEN active on '{channel}' channel")
 
@@ -64,12 +58,9 @@ async def pg_listen(
                 except Exception:
                     pass
                 try:
-                    await pool.release(connection)
+                    await connection.close()
                 except Exception:
-                    try:
-                        connection.terminate()
-                    except Exception:
-                        pass
+                    pass
                 connection = None
 
         except asyncio.CancelledError:
@@ -85,7 +76,7 @@ async def pg_listen(
                 except Exception:
                     pass
                 try:
-                    connection.terminate()
+                    await connection.close()
                 except Exception:
                     pass
                 connection = None

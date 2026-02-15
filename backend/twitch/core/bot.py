@@ -83,9 +83,11 @@ class Bot(commands.AutoBot):
         owner_id: str,
         conduit_id: str | None,
         token_database: asyncpg.Pool,
+        database_url: str,
         subs: list[eventsub.SubscriptionPayload],
     ) -> None:
         self.token_database = token_database
+        self._database_url = database_url
         self._subscribed_channels: set[str] = set()
         self._subscription_ids: dict[str, list[str]] = {}
         self._bot_id = bot_id
@@ -128,12 +130,12 @@ class Bot(commands.AutoBot):
                     print(f"Failed to load component {module_name}: {e}")
 
         asyncio.create_task(self._subscribe_initial_channels())
-        asyncio.create_task(pg_listen(self.token_database, "new_token", self._handle_new_token))
+        asyncio.create_task(pg_listen(self._database_url, "new_token", self._handle_new_token))
         asyncio.create_task(
-            pg_listen(self.token_database, "channel_toggle", self._handle_channel_toggle)
+            pg_listen(self._database_url, "channel_toggle", self._handle_channel_toggle)
         )
         asyncio.create_task(
-            pg_listen(self.token_database, "config_change", self._handle_config_change)
+            pg_listen(self._database_url, "config_change", self._handle_config_change)
         )
         asyncio.create_task(self._recover_active_sessions())
         asyncio.create_task(self._session_verify_loop())
