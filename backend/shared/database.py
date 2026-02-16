@@ -38,9 +38,9 @@ class PoolConfig:
     # loops to keep idle connections alive against Supavisor idle timeout.
     # Transaction Pooler (6543) is only for serverless/edge, not long-running.
     _SERVICE_PRESETS: ClassVar[dict[str, dict]] = {
-        "api": {"min_size": 1, "max_size": 10},
-        "discord": {"min_size": 1, "max_size": 4},
-        "twitch": {"min_size": 1, "max_size": 5},
+        "api": {"min_size": 1, "max_size": 3},
+        "discord": {"min_size": 1, "max_size": 2},
+        "twitch": {"min_size": 1, "max_size": 3},
     }
 
     @classmethod
