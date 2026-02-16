@@ -5,6 +5,7 @@ import {
   getEventConfigs,
   getRedemptionConfigs,
   getTwitchRewards,
+  NonPartnerError,
   type RedemptionConfig,
   toggleEventConfig,
   type TwitchReward,
@@ -99,6 +100,7 @@ export default function Events() {
   const [redemptions, setRedemptions] = useState<RedemptionConfig[]>([])
   const [twitchRewards, setTwitchRewards] = useState<TwitchReward[]>([])
   const [redemptionLoading, setRedemptionLoading] = useState(true)
+  const [isNonPartner, setIsNonPartner] = useState(false)
 
   const fetchEvents = useCallback(async () => {
     try {
@@ -114,11 +116,16 @@ export default function Events() {
 
   const fetchRedemptions = useCallback(async () => {
     try {
-      const [configs, rewards] = await Promise.all([getRedemptionConfigs(), getTwitchRewards()])
+      const configsPromise = getRedemptionConfigs()
+      const rewardsPromise = getTwitchRewards().catch(e => {
+        if (e instanceof NonPartnerError) setIsNonPartner(true)
+        return [] as TwitchReward[]
+      })
+      const [configs, rewards] = await Promise.all([configsPromise, rewardsPromise])
       setRedemptions(configs)
       setTwitchRewards([...rewards].sort((a, b) => a.cost - b.cost))
     } catch {
-      // Silently fail — rewards may not be available
+      // Silently fail — configs may not be available
     } finally {
       setRedemptionLoading(false)
     }
@@ -145,8 +152,7 @@ export default function Events() {
     }
   }
 
-  // Non-partner detection (no channel points = non-affiliate/partner)
-  const isNonPartner = !redemptionLoading && twitchRewards.length === 0
+  // Non-partner detection — determined by 403 from Twitch API, not by empty rewards
 
   const openEditor = (event: EventConfig) => {
     setEditingEvent(event)
@@ -312,11 +318,11 @@ export default function Events() {
       </Card>
 
       {/* Redemption Configs */}
-      <Card className={twitchRewards.length === 0 && !redemptionLoading ? 'opacity-60' : ''}>
+      <Card className={isNonPartner ? 'opacity-60' : ''}>
         <CardHeader>
           <CardTitle>忠誠點數兌換</CardTitle>
           <CardDescription>
-            {twitchRewards.length === 0 && !redemptionLoading
+            {isNonPartner
               ? '此功能需要 Twitch 聯盟夥伴或合作夥伴資格才能使用'
               : '選擇 Twitch 忠誠點數獎勵對應的動作'}
           </CardDescription>
@@ -326,7 +332,7 @@ export default function Events() {
             <div className="flex items-center justify-center py-empty text-muted-foreground">
               載入中...
             </div>
-          ) : twitchRewards.length === 0 ? (
+          ) : isNonPartner ? (
             <div className="flex flex-col items-center justify-center gap-2 py-empty text-muted-foreground">
               <Icon icon="fa-solid fa-lock" wrapperClassName="size-6" />
               <span className="text-sm">成為 Twitch 聯盟夥伴或合作夥伴後即可設定忠誠點數獎勵</span>
@@ -355,21 +361,27 @@ export default function Events() {
                           {ACTION_TYPE_LABELS[red.action_type] || red.action_type}
                         </TableCell>
                         <TableCell>
-                          <Select
-                            value={red.reward_name}
-                            onValueChange={v => handleRewardSelect(red, v)}
-                          >
-                            <SelectTrigger size="sm" className="w-56">
-                              <SelectValue placeholder="選擇獎勵..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {twitchRewards.map(reward => (
-                                <SelectItem key={reward.id} value={reward.title}>
-                                  {reward.title} ({reward.cost.toLocaleString()} 點)
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                          {twitchRewards.length === 0 ? (
+                            <span className="text-sm text-muted-foreground">
+                              請先在 Twitch 建立自訂獎勵
+                            </span>
+                          ) : (
+                            <Select
+                              value={red.reward_name}
+                              onValueChange={v => handleRewardSelect(red, v)}
+                            >
+                              <SelectTrigger size="sm" className="w-56">
+                                <SelectValue placeholder="選擇獎勵..." />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {twitchRewards.map(reward => (
+                                  <SelectItem key={reward.id} value={reward.title}>
+                                    {reward.title} ({reward.cost.toLocaleString()} 點)
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
                         </TableCell>
                         <TableCell className="text-center">
                           <div className="flex justify-center">

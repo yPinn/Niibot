@@ -201,6 +201,7 @@ class TwitchAPIClient:
                     "name": user.get("login"),
                     "display_name": user.get("display_name"),
                     "avatar": user.get("profile_image_url"),
+                    "broadcaster_type": user.get("broadcaster_type", ""),
                 }
 
         except Exception as e:

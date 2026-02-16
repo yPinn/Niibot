@@ -141,6 +141,11 @@ async def get_twitch_rewards(
 ) -> list[TwitchRewardResponse]:
     """Fetch custom channel point rewards from Twitch API."""
     try:
+        # Check broadcaster type via GET /users
+        user_info = await twitch_api.get_user_info(channel_id)
+        if not user_info or user_info.get("broadcaster_type") not in ("affiliate", "partner"):
+            raise HTTPException(status_code=403, detail="Channel is not an affiliate or partner")
+
         channel_svc = ChannelService(pool)
         token = await channel_svc.get_token_with_refresh(channel_id, twitch_api)
         if not token:

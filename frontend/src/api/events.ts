@@ -70,10 +70,18 @@ export async function toggleEventConfig(eventType: string, enabled: boolean): Pr
 
 // ---- Twitch Rewards ----
 
+export class NonPartnerError extends Error {
+  constructor() {
+    super('Channel is not an affiliate or partner')
+    this.name = 'NonPartnerError'
+  }
+}
+
 export async function getTwitchRewards(): Promise<TwitchReward[]> {
   const response = await fetch(API_ENDPOINTS.events.twitchRewards, {
     credentials: 'include',
   })
+  if (response.status === 403) throw new NonPartnerError()
   if (!response.ok) throw new Error(`Failed to fetch Twitch rewards: ${response.statusText}`)
   return response.json()
 }
