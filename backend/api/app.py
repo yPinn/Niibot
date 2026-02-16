@@ -38,7 +38,7 @@ async def _heartbeat(interval: int = 300) -> None:
         await asyncio.sleep(interval)
         uptime = int(time.time() - _start_time)
         db_manager = get_database_manager()
-        db_ok = db_manager is not None and db_manager._pool is not None
+        db_ok = db_manager is not None and await db_manager.check_health()
         logger.info(f"Heartbeat: uptime={uptime}s, db={db_ok}")
 
 
@@ -46,19 +46,33 @@ async def _pool_heartbeat_loop() -> None:
     """Periodically ping the DB pool to keep idle connections alive.
 
     Constraint chain: heartbeat(15s) < max_inactive(45s) < Supavisor(~30-60s).
+    On failure, backs off to avoid flooding logs and wasting connections.
     """
+    interval = 15
+    fail_count = 0
     while True:
-        await asyncio.sleep(15)
+        await asyncio.sleep(interval)
         try:
             db_manager = get_database_manager()
             if db_manager._pool is not None:
-                async with db_manager._pool.acquire(timeout=5.0) as conn:
+                async with db_manager._pool.acquire(timeout=30.0) as conn:
                     await conn.fetchval("SELECT 1")
-                logger.debug("Pool heartbeat OK")
+                if fail_count > 0:
+                    logger.info(f"Pool heartbeat recovered after {fail_count} failures")
+                fail_count = 0
+                interval = 15
         except asyncio.CancelledError:
             break
         except Exception as e:
-            logger.warning(f"Pool heartbeat failed: {type(e).__name__}: {e}")
+            fail_count += 1
+            if fail_count <= 3:
+                logger.warning(f"Pool heartbeat failed ({fail_count}): {type(e).__name__}: {e}")
+            elif fail_count == 4:
+                logger.warning(
+                    f"Pool heartbeat still failing ({fail_count}x), suppressing until recovery"
+                )
+            # Backoff: 15s → 30s → 60s → 120s max
+            interval = min(15 * (2 ** min(fail_count - 1, 3)), 120)
 
 
 async def _db_retry_loop(db_manager) -> None:
