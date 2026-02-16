@@ -327,7 +327,7 @@ async def main() -> None:
         return
 
     retry_count = 0
-    max_retries = 5
+    max_normal_retries = 5  # cap for normal 429s only
     base_delay = 60
 
     async with NiibotClient() as bot:
@@ -335,20 +335,36 @@ async def main() -> None:
         try:
             await bot.setup_database()
 
-            while retry_count < max_retries:
+            while True:
                 try:
                     await bot.start(token)
                     break
 
                 except discord.HTTPException as e:
                     if e.status == 429:
-                        retry_count += 1
-                        wait_time = _parse_retry_after(e, base_delay, retry_count)
+                        text = getattr(e, "text", "") or ""
+                        is_cloudflare = "1015" in text or "cloudflare" in text.lower()
+
+                        # Cloudflare bans: always wait, never count toward retries
+                        if not is_cloudflare:
+                            retry_count += 1
+                            if retry_count > max_normal_retries:
+                                logger.error(
+                                    f"Max retries reached ({max_normal_retries}). "
+                                    f"Bot cannot connect to Discord."
+                                )
+                                break
+
+                        wait_time = _parse_retry_after(e, base_delay, retry_count or 1)
 
                         logger.warning(
-                            f"[429 Rate Limit] "
-                            f"waiting {_format_duration(wait_time)}, "
-                            f"attempt={retry_count}/{max_retries}"
+                            f"[429 {'CLOUDFLARE' if is_cloudflare else 'Rate Limit'}] "
+                            f"waiting {_format_duration(wait_time)}"
+                            + (
+                                f", attempt={retry_count}/{max_normal_retries}"
+                                if not is_cloudflare
+                                else ""
+                            )
                         )
 
                         # Close the internal HTTP session to prevent
@@ -358,8 +374,6 @@ async def main() -> None:
                         await asyncio.sleep(wait_time)
                     else:
                         raise
-            else:
-                logger.error(f"Max retries reached ({max_retries}). Bot cannot connect to Discord.")
 
         except (KeyboardInterrupt, asyncio.CancelledError):
             logger.info("Received stop signal...")
