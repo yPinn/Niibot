@@ -159,7 +159,7 @@ class NiibotClient(commands.Bot):
 
     async def _sync_commands(self) -> None:
         """Sync slash commands (runs once after first on_ready)"""
-        sync_commands = os.getenv("DISCORD_SYNC_COMMANDS", "true").lower() == "true"
+        sync_commands = os.getenv("DISCORD_SYNC_COMMANDS", "false").lower() == "true"
         if not sync_commands:
             logger.info("Skipping command sync (DISCORD_SYNC_COMMANDS=false)")
             self._commands_synced = True
