@@ -24,7 +24,13 @@ class DiscordAPIClient:
         self.client_id = client_id
         self.client_secret = client_secret
         self.api_url = api_url
-        self.timeout = 10.0
+
+        # Shared HTTP client — reuses TCP connections across requests
+        self._http = httpx.AsyncClient(timeout=10.0)
+
+    async def close(self) -> None:
+        """Close the shared HTTP client. Call on app shutdown."""
+        await self._http.aclose()
 
     @property
     def is_configured(self) -> bool:
@@ -61,56 +67,54 @@ class DiscordAPIClient:
         try:
             redirect_uri = f"{self.api_url}/api/auth/discord/callback"
 
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                token_response = await client.post(
-                    f"{self.DISCORD_OAUTH_URL}/token",
-                    data={
-                        "client_id": self.client_id,
-                        "client_secret": self.client_secret,
-                        "grant_type": "authorization_code",
-                        "code": code,
-                        "redirect_uri": redirect_uri,
-                    },
-                    headers={
-                        "Content-Type": "application/x-www-form-urlencoded",
-                    },
-                )
+            token_response = await self._http.post(
+                f"{self.DISCORD_OAUTH_URL}/token",
+                data={
+                    "grant_type": "authorization_code",
+                    "code": code,
+                    "redirect_uri": redirect_uri,
+                },
+                headers={
+                    "Content-Type": "application/x-www-form-urlencoded",
+                },
+                auth=(self.client_id, self.client_secret),
+            )
 
-                if token_response.status_code != 200:
-                    logger.error(f"Failed to exchange code: {token_response.status_code}")
-                    logger.error(f"Response: {token_response.text}")
-                    return False, "token_exchange_failed", None
+            if token_response.status_code != 200:
+                logger.error(f"Failed to exchange code: {token_response.status_code}")
+                logger.error(f"Response: {token_response.text}")
+                return False, "token_exchange_failed", None
 
-                token_data = token_response.json()
-                access_token = token_data.get("access_token")
-                refresh_token = token_data.get("refresh_token")
+            token_data = token_response.json()
+            access_token = token_data.get("access_token")
+            refresh_token = token_data.get("refresh_token")
 
-                if not access_token:
-                    logger.error("No access_token in response")
-                    return False, "no_access_token", None
+            if not access_token:
+                logger.error("No access_token in response")
+                return False, "no_access_token", None
 
-                # Get user info
-                user_info = await self._get_user_info(access_token)
-                if not user_info:
-                    return False, "user_fetch_failed", None
+            # Get user info
+            user_info = await self._get_user_info(access_token)
+            if not user_info:
+                return False, "user_fetch_failed", None
 
-                user_id = user_info.get("id")
-                logger.debug(f"Token exchanged for Discord user: {user_id}")
+            user_id = user_info.get("id")
+            logger.debug(f"Token exchanged for Discord user: {user_id}")
 
-                return (
-                    True,
-                    None,
-                    {
-                        "access_token": access_token,
-                        "refresh_token": refresh_token or "",
-                        "user_id": user_id,
-                        "username": user_info.get("username", ""),
-                        "global_name": user_info.get("global_name"),  # Display name
-                        "discriminator": user_info.get("discriminator", "0"),
-                        "avatar": user_info.get("avatar"),
-                        "email": user_info.get("email"),
-                    },
-                )
+            return (
+                True,
+                None,
+                {
+                    "access_token": access_token,
+                    "refresh_token": refresh_token or "",
+                    "user_id": user_id,
+                    "username": user_info.get("username", ""),
+                    "global_name": user_info.get("global_name"),  # Display name
+                    "discriminator": user_info.get("discriminator", "0"),
+                    "avatar": user_info.get("avatar"),
+                    "email": user_info.get("email"),
+                },
+            )
 
         except httpx.TimeoutException:
             logger.error("Timeout while exchanging code for token")
@@ -122,20 +126,17 @@ class DiscordAPIClient:
     async def _get_user_info(self, access_token: str) -> dict[str, str] | None:
         """Get user info from access token"""
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.get(
-                    f"{self.DISCORD_API_URL}/users/@me",
-                    headers={
-                        "Authorization": f"Bearer {access_token}",
-                    },
-                )
+            response = await self._http.get(
+                f"{self.DISCORD_API_URL}/users/@me",
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
 
-                if response.status_code != 200:
-                    logger.error(f"Failed to get user info: {response.status_code}")
-                    return None
+            if response.status_code != 200:
+                logger.error(f"Failed to get user info: {response.status_code}")
+                return None
 
-                data: dict[str, str] = response.json()
-                return data
+            data: dict[str, str] = response.json()
+            return data
 
         except Exception as e:
             logger.exception(f"Error getting user info: {e}")

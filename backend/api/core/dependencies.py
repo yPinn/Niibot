@@ -57,14 +57,28 @@ async def close_twitch_api() -> None:
         _twitch_api = None
 
 
+_discord_api: DiscordAPIClient | None = None
+
+
 def get_discord_api() -> DiscordAPIClient:
-    """Get DiscordAPIClient instance (dependency injection)"""
-    settings = get_settings()
-    return DiscordAPIClient(
-        client_id=settings.discord_client_id,
-        client_secret=settings.discord_client_secret,
-        api_url=settings.api_url,
-    )
+    """Get shared DiscordAPIClient singleton (connection reuse)."""
+    global _discord_api
+    if _discord_api is None:
+        settings = get_settings()
+        _discord_api = DiscordAPIClient(
+            client_id=settings.discord_client_id,
+            client_secret=settings.discord_client_secret,
+            api_url=settings.api_url,
+        )
+    return _discord_api
+
+
+async def close_discord_api() -> None:
+    """Close the shared DiscordAPIClient. Call on app shutdown."""
+    global _discord_api
+    if _discord_api is not None:
+        await _discord_api.close()
+        _discord_api = None
 
 
 def get_db_pool() -> asyncpg.Pool:
