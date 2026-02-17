@@ -380,6 +380,14 @@ async def main() -> None:
                             )
                         )
 
+                        # Close leaked HTTP session before retry
+                        try:
+                            s = getattr(bot.http, "_HTTPClient__session", None)
+                            if s and not s.closed:
+                                await s.close()
+                        except Exception:
+                            pass
+
                         await asyncio.sleep(wait_time)
                     else:
                         raise
