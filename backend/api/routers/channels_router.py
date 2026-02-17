@@ -1,5 +1,6 @@
 """Channel management API routes"""
 
+import asyncio
 import logging
 
 from asyncpg import Pool
@@ -85,39 +86,33 @@ async def get_monitored_channels(
 
         channel_ids = [ch["channel_id"] for ch in enabled_channels]
 
-        # Fetch user info from Twitch (uses app token internally)
-        users_data = await twitch_api.get_users_by_ids(channel_ids)
+        # Fetch user info and stream status in parallel (both use app token)
+        users_data, streams_data = await asyncio.gather(
+            twitch_api.get_users_by_ids(channel_ids),
+            twitch_api.get_streams(channel_ids),
+        )
 
         if not users_data:
             logger.warning("No user data returned from Twitch API")
             return []
 
-        # Build channel info map
-        channels_info = {}
+        # Index live streams by user_id for O(1) lookup
+        live_map: dict[str, dict] = {s["user_id"]: s for s in streams_data}
+
+        # Build channel info list
+        channels_info: dict[str, ChannelInfo] = {}
         for user in users_data:
+            uid = user["id"]
+            stream = live_map.get(uid)
             channels_info[user["login"]] = ChannelInfo(
-                id=user["id"],
+                id=uid,
                 name=user["login"],
                 display_name=user["display_name"],
                 avatar=user["profile_image_url"],
-                is_live=False,
-                viewer_count=0,
-                game_name="",
+                is_live=stream is not None,
+                viewer_count=stream["viewer_count"] if stream else 0,
+                game_name=stream["game_name"] if stream else "",
             )
-
-        # Fetch stream status (uses app token internally)
-        user_ids_list = [user["id"] for user in users_data]
-        if user_ids_list:
-            streams_data = await twitch_api.get_streams(user_ids_list)
-
-            for stream in streams_data:
-                stream_user_id = stream["user_id"]
-                for channel in channels_info.values():
-                    if channel.id == stream_user_id:
-                        channel.is_live = True
-                        channel.viewer_count = stream["viewer_count"]
-                        channel.game_name = stream["game_name"]
-                        break
 
         # Filter out the current user's channel and sort
         result = [ch for ch in channels_info.values() if ch.id != channel_id]

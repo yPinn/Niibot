@@ -33,14 +33,28 @@ def get_auth_service() -> AuthService:
     )
 
 
+_twitch_api: TwitchAPIClient | None = None
+
+
 def get_twitch_api() -> TwitchAPIClient:
-    """Get TwitchAPIClient instance (dependency injection)"""
-    settings = get_settings()
-    return TwitchAPIClient(
-        client_id=settings.client_id,
-        client_secret=settings.client_secret,
-        api_url=settings.api_url,
-    )
+    """Get shared TwitchAPIClient singleton (connection reuse + token cache)."""
+    global _twitch_api
+    if _twitch_api is None:
+        settings = get_settings()
+        _twitch_api = TwitchAPIClient(
+            client_id=settings.client_id,
+            client_secret=settings.client_secret,
+            api_url=settings.api_url,
+        )
+    return _twitch_api
+
+
+async def close_twitch_api() -> None:
+    """Close the shared TwitchAPIClient. Call on app shutdown."""
+    global _twitch_api
+    if _twitch_api is not None:
+        await _twitch_api.close()
+        _twitch_api = None
 
 
 def get_discord_api() -> DiscordAPIClient:
