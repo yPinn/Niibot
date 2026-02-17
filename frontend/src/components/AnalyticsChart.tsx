@@ -1,13 +1,15 @@
-import { type ReactElement, type SVGProps, useState } from 'react'
+import { type ReactElement, useState } from 'react'
 import {
   Area,
   AreaChart,
   CartesianGrid,
   ResponsiveContainer,
   Tooltip,
-  type TooltipProps,
+  type TooltipContentProps,
   XAxis,
+  type XAxisTickContentProps,
   YAxis,
+  type YAxisTickContentProps,
 } from 'recharts'
 
 import { Card, CardContent, Icon } from '@/components/ui'
@@ -52,20 +54,10 @@ interface ChartConfig {
   label: string
 }
 
-// 修正後的 Tick 介面，繼承自 SVGProps 以符合 Recharts 要求
-interface CustomTickProps extends SVGProps<SVGTextElement> {
-  x?: number
-  y?: number
-  payload?: {
-    value: string | number
-    index: number
-  }
-}
-
 // --- 子組件 (定義在外部以避免重新渲染與解決類型衝突) ---
 
-const CustomTick = ({ x, y, payload }: CustomTickProps): ReactElement => (
-  <g transform={`translate(${x || 0},${y || 0})`}>
+const CustomTick = ({ x, y, payload }: XAxisTickContentProps): ReactElement => (
+  <g transform={`translate(${Number(x) || 0},${Number(y) || 0})`}>
     {payload && (
       <text x={0} y={0} dy={16} textAnchor="middle" fontSize="12" fill="currentColor" opacity={0.7}>
         {payload.value}
@@ -74,8 +66,8 @@ const CustomTick = ({ x, y, payload }: CustomTickProps): ReactElement => (
   </g>
 )
 
-const CustomYAxisTick = ({ x, y, payload }: CustomTickProps): ReactElement => (
-  <g transform={`translate(${x || 0},${y || 0})`}>
+const CustomYAxisTick = ({ x, y, payload }: YAxisTickContentProps): ReactElement => (
+  <g transform={`translate(${Number(x) || 0},${Number(y) || 0})`}>
     {payload && (
       <text
         x={0}
@@ -98,7 +90,7 @@ const ChartTooltip = ({
   payload,
   chartConfig,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-}: TooltipProps<any, any> & { chartConfig: ChartConfig }) => {
+}: TooltipContentProps<any, any> & { chartConfig: ChartConfig }) => {
   if (!active || !payload || !payload.length) return null
 
   const data = payload[0].payload as {
@@ -372,13 +364,13 @@ export default function AnalyticsChart({
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" opacity={0.5} />
                 <XAxis
                   dataKey="date"
-                  tick={(props: CustomTickProps) => <CustomTick {...props} />}
+                  tick={CustomTick}
                   tickLine={false}
                   axisLine={{ className: 'stroke-border' }}
                 />
                 <YAxis
                   width={35}
-                  tick={(props: CustomTickProps) => <CustomYAxisTick {...props} />}
+                  tick={CustomYAxisTick}
                   tickLine={false}
                   axisLine={{ className: 'stroke-border' }}
                 />

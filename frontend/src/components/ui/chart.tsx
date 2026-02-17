@@ -1,4 +1,5 @@
 import * as React from 'react'
+import type { TooltipContentProps } from 'recharts'
 import * as RechartsPrimitive from 'recharts'
 
 import { cn } from '@/lib/utils'
@@ -108,7 +109,8 @@ function ChartTooltipContent({
   color,
   nameKey,
   labelKey,
-}: React.ComponentProps<typeof RechartsPrimitive.Tooltip> &
+}: // eslint-disable-next-line @typescript-eslint/no-explicit-any
+TooltipContentProps<any, any> &
   React.ComponentProps<'div'> & {
     hideLabel?: boolean
     hideIndicator?: boolean
@@ -238,11 +240,13 @@ function ChartLegendContent({
   payload,
   verticalAlign = 'bottom',
   nameKey,
-}: React.ComponentProps<'div'> &
-  Pick<RechartsPrimitive.LegendProps, 'payload' | 'verticalAlign'> & {
-    hideIcon?: boolean
-    nameKey?: string
-  }) {
+}: React.ComponentProps<'div'> & {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  payload?: any[]
+  verticalAlign?: 'top' | 'bottom' | 'middle'
+  hideIcon?: boolean
+  nameKey?: string
+}) {
   const { config } = useChart()
 
   if (!payload?.length) {
