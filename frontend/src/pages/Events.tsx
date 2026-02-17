@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import {
   type EventConfig,
@@ -82,6 +82,50 @@ const ACTION_TYPE_LABELS: Record<string, string> = {
   niibot_auth: 'Niibot 授權',
 }
 
+type EventSortKey = 'event_type' | 'type_label' | 'trigger_count' | 'enabled'
+type RedemptionSortKey = 'action_type' | 'reward_name' | 'enabled'
+type SortDir = 'asc' | 'desc'
+
+function SortableHead<K extends string>({
+  children,
+  className,
+  sortKey: key,
+  currentKey,
+  dir,
+  onSort,
+}: {
+  children: React.ReactNode
+  className?: string
+  sortKey: K
+  currentKey: K
+  dir: SortDir
+  onSort: (key: K) => void
+}) {
+  const active = key === currentKey
+  return (
+    <TableHead className={className}>
+      <button
+        type="button"
+        className="inline-flex items-center gap-1 hover:text-foreground transition-colors cursor-pointer"
+        onClick={() => onSort(key)}
+      >
+        {children}
+        <Icon
+          icon={
+            active
+              ? dir === 'asc'
+                ? 'fa-solid fa-sort-up'
+                : 'fa-solid fa-sort-down'
+              : 'fa-solid fa-sort'
+          }
+          className={active ? 'text-foreground' : 'text-muted-foreground/50'}
+          wrapperClassName="size-3"
+        />
+      </button>
+    </TableHead>
+  )
+}
+
 export default function Events() {
   useDocumentTitle('Events')
   const [events, setEvents] = useState<EventConfig[]>([])
@@ -96,11 +140,19 @@ export default function Events() {
   const [saving, setSaving] = useState(false)
   const templateInputRef = useRef<HTMLInputElement>(null)
 
+  // Event sort state
+  const [eventSortKey, setEventSortKey] = useState<EventSortKey>('event_type')
+  const [eventSortDir, setEventSortDir] = useState<SortDir>('asc')
+
   // Redemption state
   const [redemptions, setRedemptions] = useState<RedemptionConfig[]>([])
   const [twitchRewards, setTwitchRewards] = useState<TwitchReward[]>([])
   const [redemptionLoading, setRedemptionLoading] = useState(true)
   const [isNonPartner, setIsNonPartner] = useState(false)
+
+  // Redemption sort state
+  const [redSortKey, setRedSortKey] = useState<RedemptionSortKey>('action_type')
+  const [redSortDir, setRedSortDir] = useState<SortDir>('asc')
 
   const fetchEvents = useCallback(async () => {
     try {
@@ -135,6 +187,69 @@ export default function Events() {
     fetchEvents()
     fetchRedemptions()
   }, [fetchEvents, fetchRedemptions])
+
+  const toggleEventSort = (key: EventSortKey) => {
+    if (eventSortKey === key) {
+      setEventSortDir(prev => (prev === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setEventSortKey(key)
+      setEventSortDir('asc')
+    }
+  }
+
+  const toggleRedSort = (key: RedemptionSortKey) => {
+    if (redSortKey === key) {
+      setRedSortDir(prev => (prev === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setRedSortKey(key)
+      setRedSortDir('asc')
+    }
+  }
+
+  const sortedEvents = useMemo(() => {
+    return [...events].sort((a, b) => {
+      let cmp = 0
+      switch (eventSortKey) {
+        case 'event_type':
+          cmp = (EVENT_TYPE_NAMES[a.event_type] || a.event_type).localeCompare(
+            EVENT_TYPE_NAMES[b.event_type] || b.event_type
+          )
+          break
+        case 'type_label':
+          cmp = (EVENT_TYPE_LABELS[a.event_type] || a.event_type).localeCompare(
+            EVENT_TYPE_LABELS[b.event_type] || b.event_type
+          )
+          break
+        case 'trigger_count':
+          cmp = a.trigger_count - b.trigger_count
+          break
+        case 'enabled':
+          cmp = Number(a.enabled) - Number(b.enabled)
+          break
+      }
+      return eventSortDir === 'desc' ? -cmp : cmp
+    })
+  }, [events, eventSortKey, eventSortDir])
+
+  const sortedRedemptions = useMemo(() => {
+    return [...redemptions].sort((a, b) => {
+      let cmp = 0
+      switch (redSortKey) {
+        case 'action_type':
+          cmp = (ACTION_TYPE_LABELS[a.action_type] || a.action_type).localeCompare(
+            ACTION_TYPE_LABELS[b.action_type] || b.action_type
+          )
+          break
+        case 'reward_name':
+          cmp = a.reward_name.localeCompare(b.reward_name)
+          break
+        case 'enabled':
+          cmp = Number(a.enabled) - Number(b.enabled)
+          break
+      }
+      return redSortDir === 'desc' ? -cmp : cmp
+    })
+  }, [redemptions, redSortKey, redSortDir])
 
   const handleToggle = async (event: EventConfig) => {
     const newEnabled = !event.enabled
@@ -254,16 +369,46 @@ export default function Events() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>事件名稱</TableHead>
-                    <TableHead>類型</TableHead>
+                    <SortableHead
+                      sortKey="event_type"
+                      currentKey={eventSortKey}
+                      dir={eventSortDir}
+                      onSort={toggleEventSort}
+                    >
+                      事件名稱
+                    </SortableHead>
+                    <SortableHead
+                      sortKey="type_label"
+                      currentKey={eventSortKey}
+                      dir={eventSortDir}
+                      onSort={toggleEventSort}
+                    >
+                      類型
+                    </SortableHead>
                     <TableHead>訊息模板</TableHead>
-                    <TableHead className="text-right">觸發次數</TableHead>
-                    <TableHead className="text-center">狀態</TableHead>
+                    <SortableHead
+                      className="text-right"
+                      sortKey="trigger_count"
+                      currentKey={eventSortKey}
+                      dir={eventSortDir}
+                      onSort={toggleEventSort}
+                    >
+                      觸發次數
+                    </SortableHead>
+                    <SortableHead
+                      className="text-center"
+                      sortKey="enabled"
+                      currentKey={eventSortKey}
+                      dir={eventSortDir}
+                      onSort={toggleEventSort}
+                    >
+                      狀態
+                    </SortableHead>
                     <TableHead className="text-right">操作</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {events.map(event => {
+                  {sortedEvents.map(event => {
                     const locked = isNonPartner && event.event_type === 'subscribe'
                     return (
                       <TableRow key={event.event_type} className={locked ? 'opacity-50' : ''}>
@@ -342,20 +487,42 @@ export default function Events() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>動作</TableHead>
-                    <TableHead>獎勵名稱</TableHead>
-                    <TableHead className="text-center">狀態</TableHead>
+                    <SortableHead
+                      sortKey="action_type"
+                      currentKey={redSortKey}
+                      dir={redSortDir}
+                      onSort={toggleRedSort}
+                    >
+                      動作
+                    </SortableHead>
+                    <SortableHead
+                      sortKey="reward_name"
+                      currentKey={redSortKey}
+                      dir={redSortDir}
+                      onSort={toggleRedSort}
+                    >
+                      獎勵名稱
+                    </SortableHead>
+                    <SortableHead
+                      className="text-center"
+                      sortKey="enabled"
+                      currentKey={redSortKey}
+                      dir={redSortDir}
+                      onSort={toggleRedSort}
+                    >
+                      狀態
+                    </SortableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {redemptions.length === 0 ? (
+                  {sortedRedemptions.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={3} className="text-center text-muted-foreground">
                         尚無兌換設定
                       </TableCell>
                     </TableRow>
                   ) : (
-                    redemptions.map(red => (
+                    sortedRedemptions.map(red => (
                       <TableRow key={red.action_type}>
                         <TableCell className="font-medium">
                           {ACTION_TYPE_LABELS[red.action_type] || red.action_type}
