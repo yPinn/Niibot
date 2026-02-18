@@ -51,6 +51,7 @@ class Tarot(commands.Cog):
             app_commands.Choice(name="綜合運勢", value="general"),
             app_commands.Choice(name="感情發展", value="love"),
             app_commands.Choice(name="事業學業", value="career"),
+            app_commands.Choice(name="財務運勢", value="finance"),
         ]
     )
     async def tarot(self, interaction: discord.Interaction, category: str = "general") -> None:
@@ -106,7 +107,12 @@ class Tarot(commands.Cog):
                 embed.set_image(url=card_data["image_url"])
 
             # 主題標籤轉換
-            cat_label = {"general": "綜合", "love": "感情", "career": "事業"}.get(category, "綜合")
+            cat_label = {
+                "general": "綜合",
+                "love": "感情",
+                "career": "事業",
+                "finance": "財運",
+            }.get(category, "綜合")
 
             # Field 設置
             embed.add_field(name="**關鍵字**", value=f"> {keywords}", inline=False)
