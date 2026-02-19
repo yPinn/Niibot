@@ -54,7 +54,6 @@ class Fortune(commands.Cog):
             career = random.choice(fortune_details["事業"])
             wealth = random.choice(fortune_details["財運"])
             love = random.choice(fortune_details["愛情"])
-            health = random.choice(fortune_details["健康"])
 
             lucky_data = self.fortune_data["lucky_elements"][category]
             lucky_color = random.choice(lucky_data["colors"])
@@ -107,9 +106,8 @@ class Fortune(commands.Cog):
             embed.add_field(name="**事業運**", value=f"> {career}", inline=False)
             embed.add_field(name="**財運**", value=f"> {wealth}", inline=False)
             embed.add_field(name="**愛情運**", value=f"> {love}", inline=False)
-            embed.add_field(name="**健康運**", value=f"> {health}", inline=False)
 
-            lucky_text = f"> 顏色：{lucky_color}\n> 數字：{lucky_number}\n> 時辰：{lucky_hour}"
+            lucky_text = f"> 幸運色：{lucky_color}\n> 數字：{lucky_number}\n> 吉時：{lucky_hour}"
             embed.add_field(name="**幸運元素**", value=lucky_text, inline=False)
 
             fortune_footer = self.fortune_data["embed"].get("footer", {})

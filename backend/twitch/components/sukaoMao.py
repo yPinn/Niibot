@@ -90,28 +90,24 @@ class FortuneComponent(commands.Component):
             career = self._add_twitch_emotes(random.choice(fortune_details["事業"]), category)
             wealth = random.choice(fortune_details["財運"])
             love = random.choice(fortune_details["愛情"])
-            health = random.choice(fortune_details["健康"])
 
             lucky_data = self.fortune_data["lucky_elements"][category]
             lucky_color = random.choice(lucky_data["colors"])
             lucky_number = random.choice(lucky_data["numbers"])
             lucky_hour = random.choice(lucky_data["hours"])
 
-            parts = [f"{user} 的今日運勢"]
-            parts.append(f"總運勢：{fortune_level} {description}")
+            parts = [f"🔮 {user} 今日運勢"]
+            parts.append(f"運勢：{fortune_level} {description}")
 
             if special_event:
                 parts.append(f"今日是{special_event}，運勢有額外加成！")
 
             parts.extend(
                 [
-                    f"事業：{career}",
-                    f"財運：{wealth}",
-                    f"愛情：{love}",
-                    f"健康：{health}",
-                    f"幸運色：{lucky_color}",
-                    f"幸運數字：{lucky_number}",
-                    f"最佳時機：{lucky_hour}",
+                    f"💼 事業：{career}",
+                    f"💰 財運：{wealth}",
+                    f"💕 愛情：{love}",
+                    f"🍀 幸運色：{lucky_color}・數字：{lucky_number}・吉時：{lucky_hour}",
                 ]
             )
 

@@ -72,9 +72,7 @@ class TarotComponent(commands.Component):
         meaning = info["meanings"].get(category, info["meanings"]["general"])
         full_meaning = meaning.replace("\n", "")
 
-        await ctx.reply(
-            f"🃏 {card['name']}（{orientation}）｜ {keywords} — {full_meaning}"
-        )
+        await ctx.reply(f"🃏 {card['name']}({orientation}) | {keywords} — {full_meaning}")
 
 
 async def setup(bot: commands.Bot) -> None:
