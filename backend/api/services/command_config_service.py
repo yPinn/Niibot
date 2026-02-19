@@ -10,12 +10,14 @@ from shared.repositories.command_config import CommandConfigRepository, Redempti
 logger = logging.getLogger(__name__)
 
 BUILTIN_DESCRIPTIONS: dict[str, str] = {
-    "hi": "打招呼",
-    "help": "列出可用指令",
-    "uptime": "顯示開播時間",
-    "ai": "AI 回答問題",
-    "運勢": "今日運勢占卜",
-    "rk": "TFT 排行榜查詢",
+    "hi": "向聊天室打招呼",
+    "help": "顯示所有可用指令列表",
+    "uptime": "查看目前已開播多久",
+    "ai": "向 AI 提問，用法：!ai <問題>",
+    "運勢": "每日運勢占卜（每人每天固定結果）",
+    "rk": "聯盟戰棋排名查詢，用法：!rk <玩家名>#<tag>",
+    "tarot": "每日塔羅牌占卜，可指定分類：!tarot [l 感情/c 事業/f 財運]",
+    "斥責": "頻道反惡意言論聲明 — 拒絕仇恨、歧視、色情暴力等不當內容",
 }
 
 

@@ -22,6 +22,7 @@ class GeneralCommands(commands.Component):
         {"command_name": "hi", "custom_response": "你好,$(user)!", "cooldown": 5},
         {"command_name": "help", "cooldown": 5},
         {"command_name": "uptime", "cooldown": 5},
+        {"command_name": "斥責", "cooldown": 10, "aliases": "嚴厲斥責"},
     ]
 
     def __init__(self, bot: commands.Bot) -> None:
@@ -115,6 +116,24 @@ class GeneralCommands(commands.Component):
             await ctx.reply("目前未開播")
 
         await self._record_command(ctx, "uptime")
+
+    @commands.command(name="斥責", aliases=["嚴厲斥責"])
+    async def condemn(self, ctx: commands.Context) -> None:
+        """頻道反惡意言論聲明。
+
+        Usage: !斥責
+        """
+        config = await check_command(
+            self.cmd_repo, ctx, channel_repo=self.channel_repo, command_name="斥責"
+        )
+        if not config:
+            return
+
+        await ctx.send(
+            "本頻道實況主不認可並嚴厲斥責聊天室與斗內的任何惡意言論，"
+            "包含且不限於種族歧視、性騷擾、色情暴力、涉及親屬等不當內容。"
+        )
+        await self._record_command(ctx, "斥責")
 
     @commands.Component.listener()
     async def event_stream_online(self, payload: twitchio.StreamOnline) -> None:

@@ -77,12 +77,11 @@ class TarotComponent(commands.Component):
 
         keywords = "・".join(info["keywords"])
         meaning = info["meanings"].get(category, info["meanings"]["general"])
-        first_line = meaning.split("\n")[0]
+        full_meaning = meaning.replace("\n", "")
 
         label = CAT_LABEL.get(category, "綜合")
-        await ctx.reply(
-            f"🃏 {card['name']}（{orientation}）— {keywords} ｜ 【{label}】{first_line}"
-        )
+        await ctx.reply(f"🃏 {card['name']}（{orientation}）｜ {keywords}")
+        await ctx.send(f"【{label}】{full_meaning}")
 
 
 async def setup(bot: commands.Bot) -> None:
