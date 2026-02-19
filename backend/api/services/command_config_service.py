@@ -13,11 +13,23 @@ BUILTIN_DESCRIPTIONS: dict[str, str] = {
     "hi": "向聊天室打招呼",
     "help": "顯示所有可用指令列表",
     "uptime": "查看目前已開播多久",
+    "ai": "向 AI 提問",
+    "運勢": "每日運勢占卜（每人每天固定結果）",
+    "rk": "聯盟戰棋排名查詢",
+    "tarot": "每日塔羅牌占卜（可指定感情、事業、財運）",
+    "斥責": "頻道反惡意言論聲明",
+}
+
+# 公開 /commands 頁面用，包含用法說明供觀眾參考
+PUBLIC_DESCRIPTIONS: dict[str, str] = {
+    "hi": "向聊天室打招呼",
+    "help": "顯示所有可用指令列表",
+    "uptime": "查看目前已開播多久",
     "ai": "向 AI 提問，用法：!ai <問題>",
     "運勢": "每日運勢占卜（每人每天固定結果）",
     "rk": "聯盟戰棋排名查詢，用法：!rk <玩家名>#<tag>",
     "tarot": "每日塔羅牌占卜，可指定分類：!tarot [l 感情/c 事業/f 財運]",
-    "斥責": "頻道反惡意言論聲明 — 拒絕仇恨、歧視、色情暴力等不當內容",
+    "斥責": "頻道反惡意言論聲明",
 }
 
 
@@ -122,7 +134,7 @@ class CommandConfigService:
             {
                 "name": f"!{cfg.command_name}",
                 "description": (
-                    BUILTIN_DESCRIPTIONS.get(cfg.command_name, cfg.custom_response or "")
+                    PUBLIC_DESCRIPTIONS.get(cfg.command_name, cfg.custom_response or "")
                     if cfg.command_type == "builtin"
                     else cfg.custom_response or ""
                 ),

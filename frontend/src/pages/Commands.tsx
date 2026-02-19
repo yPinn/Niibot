@@ -429,7 +429,7 @@ export default function Commands() {
                                         </span>
                                       )}
                                     </div>
-                                    <span className="text-label text-muted-foreground truncate max-w-64">
+                                    <span className="text-label text-muted-foreground">
                                       {cmd.description || cmd.custom_response || ''}
                                     </span>
                                   </div>
