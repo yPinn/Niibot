@@ -66,30 +66,21 @@ export function ServiceStatusProvider({ children }: { children: React.ReactNode 
     }
   }, [user, refresh])
 
-  // --- 系統狀態 toast 通知 ---
-  const prevApi = useRef<ApiServerStatus | null>(null)
+  // --- DB 連線狀態 toast 通知 ---
+  const prevDbConnected = useRef<boolean | undefined>(undefined)
 
   useEffect(() => {
-    // 跳過初次載入（避免頁面刷新時跳通知）
-    if (prevApi.current === null) {
-      prevApi.current = api
-      return
-    }
+    if (!api.online) return
 
-    const prev = prevApi.current
-    prevApi.current = api
+    const prev = prevDbConnected.current
+    prevDbConnected.current = api.db_connected
 
-    // API 離線 / 恢復
-    if (!api.online && prev.online) {
-      toast.warning('API 服務離線', { id: 'api-status', duration: Infinity })
-    } else if (api.online && !prev.online) {
-      toast.success('API 服務已恢復', { id: 'api-status', duration: 4000 })
-    }
+    // 跳過首次取得狀態
+    if (prev === undefined) return
 
-    // DB 斷線 / 恢復（僅在 API 在線時偵測）
-    if (api.online && api.db_connected === false && prev.db_connected !== false) {
+    if (api.db_connected === false && prev !== false) {
       toast.warning('資料庫連線中斷', { id: 'db-status', duration: Infinity })
-    } else if (api.online && api.db_connected === true && prev.db_connected === false) {
+    } else if (api.db_connected === true && prev === false) {
       toast.success('資料庫已恢復連線', { id: 'db-status', duration: 4000 })
     }
   }, [api])
