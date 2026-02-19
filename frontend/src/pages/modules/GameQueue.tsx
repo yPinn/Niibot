@@ -81,7 +81,7 @@ function EntryTable({
                   onClick={() => onRemove(entry.id)}
                   className="h-7 w-7 p-0 text-destructive hover:text-destructive"
                 >
-                  <Icon name="fa-solid fa-xmark" className="text-xs" />
+                  <Icon icon="fa-solid fa-xmark" className="text-xs" />
                 </Button>
               </TableCell>
             )}
@@ -181,7 +181,7 @@ export default function GameQueue() {
   }
 
   // Build overlay URL
-  const channelId = user?.platform_user_id || ''
+  const channelId = user?.id || ''
   const overlayUrl = channelId ? `${window.location.origin}/${channelId}/game-queue/overlay` : ''
 
   if (loading) {
@@ -248,7 +248,7 @@ export default function GameQueue() {
                   toast.success('已複製')
                 }}
               >
-                <Icon name="fa-solid fa-copy" className="text-xs" />
+                <Icon icon="fa-solid fa-copy" className="text-xs" />
               </Button>
             </div>
           )}
@@ -267,7 +267,7 @@ export default function GameQueue() {
             </CardTitle>
           </div>
           <Button size="sm" onClick={handleAdvance} disabled={!state?.current_batch.length}>
-            <Icon name="fa-solid fa-forward-step" className="mr-1.5 text-xs" />
+            <Icon icon="fa-solid fa-forward-step" className="mr-1.5 text-xs" />
             下一批
           </Button>
         </CardHeader>
@@ -302,7 +302,7 @@ export default function GameQueue() {
             onClick={handleClear}
             disabled={!state?.total_active}
           >
-            <Icon name="fa-solid fa-trash" className="mr-1.5 text-xs" />
+            <Icon icon="fa-solid fa-trash" className="mr-1.5 text-xs" />
             清空
           </Button>
         </CardHeader>
