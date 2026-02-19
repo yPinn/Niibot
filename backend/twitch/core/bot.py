@@ -120,6 +120,11 @@ class Bot(commands.AutoBot):
     # ------------------------------------------------------------------
 
     async def setup_hook(self) -> None:
+        import sys
+
+        builtin_commands: list[dict] = []
+        seen: set[str] = set()
+
         if COMPONENTS_DIR.exists():
             for file in COMPONENTS_DIR.glob("*.py"):
                 if file.stem == "__init__":
@@ -129,20 +134,28 @@ class Bot(commands.AutoBot):
                     await self.load_module(module_name)
                 except Exception as e:
                     print(f"Failed to load component {module_name}: {e}")
+                    continue
 
-        # Collect COMMANDS declared by loaded components
-        self._builtin_commands: list[dict] = []
-        seen: set[str] = set()
-        for component in self._components:
-            for cmd in getattr(component, "COMMANDS", []):
-                name = cmd["command_name"]
-                if name not in seen:
-                    self._builtin_commands.append(cmd)
-                    seen.add(name)
-        set_builtin_commands(self._builtin_commands)
+                # Collect COMMANDS from component classes in the just-loaded module
+                mod = sys.modules.get(module_name)
+                if mod:
+                    for obj in vars(mod).values():
+                        if (
+                            isinstance(obj, type)
+                            and issubclass(obj, commands.Component)
+                            and obj is not commands.Component
+                            and hasattr(obj, "COMMANDS")
+                        ):
+                            for cmd in obj.COMMANDS:
+                                name = cmd["command_name"]
+                                if name not in seen:
+                                    builtin_commands.append(cmd)
+                                    seen.add(name)
+
+        set_builtin_commands(builtin_commands)
         LOGGER.info(
-            f"Collected {len(self._builtin_commands)} builtin commands from components: "
-            f"{[c['command_name'] for c in self._builtin_commands]}"
+            f"Collected {len(builtin_commands)} builtin commands from components: "
+            f"{[c['command_name'] for c in builtin_commands]}"
         )
 
         asyncio.create_task(self._subscribe_initial_channels())
