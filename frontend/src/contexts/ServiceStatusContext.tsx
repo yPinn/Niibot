@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
+import { toast } from 'sonner'
 
 import {
   type ApiServerStatus,
@@ -64,6 +65,34 @@ export function ServiceStatusProvider({ children }: { children: React.ReactNode 
       clearInterval(interval)
     }
   }, [user, refresh])
+
+  // --- 系統狀態 toast 通知 ---
+  const prevApi = useRef<ApiServerStatus | null>(null)
+
+  useEffect(() => {
+    // 跳過初次載入（避免頁面刷新時跳通知）
+    if (prevApi.current === null) {
+      prevApi.current = api
+      return
+    }
+
+    const prev = prevApi.current
+    prevApi.current = api
+
+    // API 離線 / 恢復
+    if (!api.online && prev.online) {
+      toast.warning('API 服務離線', { id: 'api-status', duration: Infinity })
+    } else if (api.online && !prev.online) {
+      toast.success('API 服務已恢復', { id: 'api-status', duration: 4000 })
+    }
+
+    // DB 斷線 / 恢復（僅在 API 在線時偵測）
+    if (api.online && api.db_connected === false && prev.db_connected !== false) {
+      toast.warning('資料庫連線中斷', { id: 'db-status', duration: Infinity })
+    } else if (api.online && api.db_connected === true && prev.db_connected === false) {
+      toast.success('資料庫已恢復連線', { id: 'db-status', duration: 4000 })
+    }
+  }, [api])
 
   return (
     <ServiceStatusContext.Provider value={{ twitch, discord, api, lastUpdate, refresh }}>

@@ -535,13 +535,18 @@ export default function Events() {
                             </span>
                           ) : (
                             <Select
-                              value={red.reward_name}
-                              onValueChange={v => handleRewardSelect(red, v)}
+                              value={red.reward_name || '__none__'}
+                              onValueChange={v =>
+                                handleRewardSelect(red, v === '__none__' ? '' : v)
+                              }
                             >
                               <SelectTrigger size="sm" className="w-56">
                                 <SelectValue placeholder="選擇獎勵..." />
                               </SelectTrigger>
                               <SelectContent>
+                                <SelectItem value="__none__" className="text-muted-foreground">
+                                  未選擇
+                                </SelectItem>
                                 {twitchRewards.map(reward => (
                                   <SelectItem key={reward.id} value={reward.title}>
                                     {reward.title} ({reward.cost.toLocaleString()} 點)

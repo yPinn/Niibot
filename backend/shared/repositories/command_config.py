@@ -309,7 +309,7 @@ class RedemptionConfigRepository:
             reward_lower = reward_name.lower()
             for row in rows:
                 config = RedemptionConfig(**dict(row))
-                if config.reward_name.lower() in reward_lower:
+                if config.reward_name and config.reward_name.lower() in reward_lower:
                     return config
 
             return None
