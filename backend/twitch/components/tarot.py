@@ -22,13 +22,6 @@ CATEGORY_MAP = {
     "finance": "finance",
 }
 
-CAT_LABEL = {
-    "general": "綜合",
-    "love": "感情",
-    "career": "事業",
-    "finance": "財運",
-}
-
 
 class TarotComponent(commands.Component):
     COMMANDS: list[dict] = [
@@ -79,9 +72,9 @@ class TarotComponent(commands.Component):
         meaning = info["meanings"].get(category, info["meanings"]["general"])
         full_meaning = meaning.replace("\n", "")
 
-        label = CAT_LABEL.get(category, "綜合")
-        await ctx.reply(f"🃏 {card['name']}（{orientation}）｜ {keywords}")
-        await ctx.send(f"【{label}】{full_meaning}")
+        await ctx.reply(
+            f"🃏 {card['name']}（{orientation}）｜ {keywords} — {full_meaning}"
+        )
 
 
 async def setup(bot: commands.Bot) -> None:
