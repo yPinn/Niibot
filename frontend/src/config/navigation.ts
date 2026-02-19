@@ -41,6 +41,21 @@ export const navigationData = {
       ],
     },
     {
+      title: 'Modules',
+      url: '#',
+      icon: 'fa-solid fa-puzzle-piece',
+      items: [
+        {
+          title: 'Giveaways',
+          url: '/modules/giveaways',
+        },
+        {
+          title: 'Game Queue',
+          url: '/modules/game-queue',
+        },
+      ],
+    },
+    {
       title: 'Documentations',
       url: '#',
       icon: 'fa-solid fa-book',

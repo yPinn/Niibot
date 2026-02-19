@@ -1,11 +1,13 @@
 import logging
 from typing import TYPE_CHECKING
 
+import asyncpg
 import twitchio
 from twitchio.ext import commands
 
 from core.config import get_settings
 from shared.repositories.command_config import RedemptionConfigRepository
+from shared.repositories.game_queue import GameQueueRepository, GameQueueSettingsRepository
 
 if TYPE_CHECKING:
     from core.bot import Bot
@@ -23,6 +25,8 @@ class ChannelPointsComponent(commands.Component):
         self.bot: Bot = bot  # type: ignore[assignment]
         self.settings = get_settings()
         self.redemption_repo = RedemptionConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
+        self.queue_repo = GameQueueRepository(self.bot.token_database)  # type: ignore[attr-defined]
+        self.queue_settings_repo = GameQueueSettingsRepository(self.bot.token_database)  # type: ignore[attr-defined]
 
     def _generate_oauth_url(self) -> str:
         """返回前端頁面 URL"""
@@ -78,6 +82,8 @@ class ChannelPointsComponent(commands.Component):
         elif config.action_type == "vip":
             LOGGER.info(f"[Action] {user_name} 兌換了 VIP 獎勵")
             await self._handle_vip_redemption(payload, user_name)
+        elif config.action_type == "game_queue":
+            await self._handle_game_queue_redemption(payload, user_name)
 
     async def _handle_vip_redemption(
         self,
@@ -211,6 +217,57 @@ class ChannelPointsComponent(commands.Component):
 
         except Exception as e:
             LOGGER.error(f"[Niibot] 處理兌換時發生錯誤: {e}")
+
+    async def _handle_game_queue_redemption(
+        self,
+        payload: twitchio.ChannelPointsRedemptionAdd,
+        user_name: str,
+    ) -> None:
+        """處理遊戲排隊兌換"""
+        broadcaster = payload.broadcaster
+        channel_id = broadcaster.id
+        user_id = payload.user.id
+
+        try:
+            # Check if queue is enabled
+            settings = await self.queue_settings_repo.get_or_create(channel_id)
+            if not settings.enabled:
+                await broadcaster.send_message(
+                    message=f"@{user_name} 隊列未開放",
+                    sender=self.bot.bot_id,
+                    token_for=self.bot.bot_id,
+                )
+                return
+
+            # Check if already in queue
+            existing = await self.queue_repo.find_active_by_user(channel_id, user_id)
+            if existing:
+                entries = await self.queue_repo.get_active_entries(channel_id)
+                position = next((i + 1 for i, e in enumerate(entries) if e.user_id == user_id), 0)
+                await broadcaster.send_message(
+                    message=f"@{user_name} 已在隊列中，第{position}位",
+                    sender=self.bot.bot_id,
+                    token_for=self.bot.bot_id,
+                )
+                return
+
+            # Add to queue
+            try:
+                await self.queue_repo.add_entry(channel_id, user_id, user_name)
+            except asyncpg.UniqueViolationError:
+                LOGGER.debug(f"[GameQueue] Duplicate entry race for {user_name}")
+                return
+
+            position = await self.queue_repo.count_active(channel_id)
+            await broadcaster.send_message(
+                message=f"@{user_name} 已加入隊列，第{position}位",
+                sender=self.bot.bot_id,
+                token_for=self.bot.bot_id,
+            )
+            LOGGER.info(f"[GameQueue] {user_name} 加入隊列 (第 {position} 位)")
+
+        except Exception as e:
+            LOGGER.error(f"[GameQueue] 處理排隊兌換時發生錯誤: {e}")
 
 
 async def setup(bot: commands.Bot) -> None:

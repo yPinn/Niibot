@@ -12,7 +12,9 @@ import Commands from '@/pages/Commands'
 import Dashboard from '@/pages/Dashboard'
 import DiscordDashboard from '@/pages/discord/Dashboard'
 import Events from '@/pages/Events'
+import GameQueueOverlay from '@/pages/GameQueueOverlay'
 import LoginPage from '@/pages/Login'
+import GameQueue from '@/pages/modules/GameQueue'
 import NotFound from '@/pages/NotFound'
 import PublicCommands from '@/pages/PublicCommands'
 import Settings from '@/pages/Settings'
@@ -28,6 +30,7 @@ function App() {
             <Routes>
               <Route path="/" element={<About />} />
               <Route path="/:username/commands" element={<PublicCommands />} />
+              <Route path="/:channelId/game-queue/overlay" element={<GameQueueOverlay />} />
               <Route path="/dev/typography" element={<TypographyDemo />} />
               <Route element={<PublicOnlyRoute />}>
                 <Route path="/login" element={<LoginPage />} />
@@ -40,6 +43,8 @@ function App() {
                   <Route path="/events" element={<Events />} />
                   <Route path="/system" element={<SystemStatus />} />
                   <Route path="/settings" element={<Settings />} />
+                  {/* Module Routes */}
+                  <Route path="/modules/game-queue" element={<GameQueue />} />
                   {/* Discord Bot Routes */}
                   <Route path="/discord/dashboard" element={<DiscordDashboard />} />
                   <Route path="*" element={<NotFound />} />

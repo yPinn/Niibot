@@ -40,6 +40,7 @@ DEFAULT_REDEMPTIONS: list[dict] = [
     {"action_type": "vip", "reward_name": "vip"},
     {"action_type": "first", "reward_name": "1"},
     {"action_type": "niibot_auth", "reward_name": "niibot"},
+    {"action_type": "game_queue", "reward_name": "game queue"},
 ]
 
 UnsetType: TypeAlias = object

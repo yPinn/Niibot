@@ -6,6 +6,7 @@ from . import (
     bots_router,
     channels_router,
     commands_router,
+    game_queue_router,
     stats_router,
 )
 
@@ -14,6 +15,7 @@ __all__ = [
     "channels_router",
     "analytics_router",
     "commands_router",
+    "game_queue_router",
     "stats_router",
     "bots_router",
 ]

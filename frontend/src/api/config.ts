@@ -63,6 +63,14 @@ export const API_ENDPOINTS = {
     redemptions: join('/api/events/redemptions'),
     updateRedemption: (actionType: string) => join(`/api/events/redemptions/${actionType}`),
   },
+  gameQueue: {
+    state: join('/api/game-queue/state'),
+    advance: join('/api/game-queue/advance'),
+    removeEntry: (id: number) => join(`/api/game-queue/entries/${id}`),
+    clear: join('/api/game-queue/clear'),
+    settings: join('/api/game-queue/settings'),
+    public: (channelId: string) => join(`/api/game-queue/public/${channelId}`),
+  },
   bots: {
     twitch: {
       status: join('/api/bots/twitch/status'),
