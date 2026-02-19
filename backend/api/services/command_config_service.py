@@ -36,7 +36,14 @@ class CommandConfigService:
         configs = await self.cmd_repo.ensure_defaults(channel_id)
         counts = await self._get_command_usage_counts(channel_id)
         return [
-            {**asdict(cfg), "usage_count": counts.get(f"!{cfg.command_name}", 0)} for cfg in configs
+            {
+                **asdict(cfg),
+                "usage_count": counts.get(f"!{cfg.command_name}", 0),
+                "description": BUILTIN_DESCRIPTIONS.get(cfg.command_name, "")
+                if cfg.command_type == "builtin"
+                else "",
+            }
+            for cfg in configs
         ]
 
     async def update_command(

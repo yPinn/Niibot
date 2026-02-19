@@ -33,6 +33,7 @@ class CommandConfigResponse(BaseModel):
     min_role: str
     aliases: str | None = None
     usage_count: int
+    description: str = ""
     created_at: datetime | None = None
     updated_at: datetime | None = None
 

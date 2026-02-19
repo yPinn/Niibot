@@ -56,15 +56,6 @@ const ROLE_LABELS: Record<string, string> = {
   broadcaster: '頻道主',
 }
 
-const BUILTIN_DESCRIPTIONS: Record<string, string> = {
-  hi: '打招呼',
-  help: '列出可用指令',
-  uptime: '顯示開播時間',
-  ai: 'AI 回答問題',
-  運勢: '今日運勢占卜',
-  rk: 'TFT 排行榜查詢',
-}
-
 const EDITABLE_COMMANDS = ['hi']
 
 type SortKey = 'command_name' | 'cooldown' | 'min_role' | 'usage_count' | 'enabled'
@@ -439,9 +430,7 @@ export default function Commands() {
                                       )}
                                     </div>
                                     <span className="text-label text-muted-foreground truncate max-w-64">
-                                      {cmd.command_type === 'builtin'
-                                        ? BUILTIN_DESCRIPTIONS[cmd.command_name] || ''
-                                        : cmd.custom_response || ''}
+                                      {cmd.description || cmd.custom_response || ''}
                                     </span>
                                   </div>
                                 </TableCell>

@@ -11,6 +11,7 @@ export interface CommandConfig {
   min_role: string
   aliases: string | null
   usage_count: number
+  description: string
 }
 
 export interface CommandConfigUpdate {
