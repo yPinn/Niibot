@@ -104,9 +104,9 @@ class FortuneComponent(commands.Component):
 
             parts.extend(
                 [
-                    f"💼 事業：{career}",
-                    f"💰 財運：{wealth}",
-                    f"💕 愛情：{love}",
+                    f"事業：{career}",
+                    f"財運：{wealth}",
+                    f"愛情：{love}",
                     f"🍀 幸運色：{lucky_color}・數字：{lucky_number}・吉時：{lucky_hour}",
                 ]
             )
