@@ -13,6 +13,7 @@ import asyncpg
 import twitchio
 from twitchio import eventsub
 from twitchio.ext import commands
+from twitchio.ext.commands import CommandNotFound
 
 from core.config import COMPONENTS_DIR
 from core.guards import has_role, is_on_cooldown, record_cooldown
@@ -260,6 +261,12 @@ class Bot(commands.AutoBot):
             LOGGER.debug(f"[{payload.chatter.name}]: {payload.text}")
 
         await super().event_message(payload)
+
+    async def event_command_error(self, payload: commands.CommandErrorPayload) -> None:
+        """Suppress CommandNotFound to avoid log noise from unknown commands."""
+        if isinstance(payload.exception, CommandNotFound):
+            return
+        LOGGER.error(f"Command error: {payload.exception}")
 
     # ------------------------------------------------------------------
     # Custom command handling
