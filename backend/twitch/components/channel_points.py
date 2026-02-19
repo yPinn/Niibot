@@ -82,7 +82,7 @@ class ChannelPointsComponent(commands.Component):
         elif config.action_type == "vip":
             LOGGER.info(f"[Action] {user_name} 兌換了 VIP 獎勵")
             await self._handle_vip_redemption(payload, user_name)
-        elif config.action_type == "game_queue":
+        elif config.action_type == "game_queue" and user_name:
             await self._handle_game_queue_redemption(payload, user_name)
 
     async def _handle_vip_redemption(

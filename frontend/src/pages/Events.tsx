@@ -71,15 +71,16 @@ const EVENT_TYPE_LABELS: Record<string, string> = {
 }
 
 const EVENT_TYPE_NAMES: Record<string, string> = {
-  follow: '新追隨者',
+  follow: '追隨感謝',
   subscribe: '訂閱感謝',
-  raid: 'Raid 歡迎',
+  raid: '揪團訊息',
 }
 
 const ACTION_TYPE_LABELS: Record<string, string> = {
   vip: 'VIP 授予',
-  first: '搶第一公告',
+  first: '本日頭香',
   niibot_auth: 'Niibot 授權',
+  game_queue: '遊戲排隊券',
 }
 
 type EventSortKey = 'event_type' | 'type_label' | 'trigger_count' | 'enabled'

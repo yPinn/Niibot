@@ -26,21 +26,6 @@ export const navigationData = {
       ],
     },
     {
-      title: 'Analytics',
-      url: '#',
-      icon: 'fa-solid fa-chart-mixed',
-      items: [
-        {
-          title: 'Insights',
-          url: '/analytics',
-        },
-        {
-          title: 'Leaderboard',
-          url: '/analytics/leaderboard',
-        },
-      ],
-    },
-    {
       title: 'Modules',
       url: '#',
       icon: 'fa-solid fa-puzzle-piece',
@@ -52,6 +37,21 @@ export const navigationData = {
         {
           title: 'Game Queue',
           url: '/modules/game-queue',
+        },
+      ],
+    },
+    {
+      title: 'Analytics',
+      url: '#',
+      icon: 'fa-solid fa-chart-mixed',
+      items: [
+        {
+          title: 'Insights',
+          url: '/analytics',
+        },
+        {
+          title: 'Leaderboard',
+          url: '/analytics/leaderboard',
         },
       ],
     },

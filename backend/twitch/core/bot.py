@@ -23,6 +23,7 @@ from shared.repositories.channel import ChannelRepository
 from shared.repositories.command_config import (
     CommandConfigRepository,
     RedemptionConfigRepository,
+    set_builtin_commands,
 )
 
 LOGGER: logging.Logger = logging.getLogger("Bot")
@@ -128,6 +129,21 @@ class Bot(commands.AutoBot):
                     await self.load_module(module_name)
                 except Exception as e:
                     print(f"Failed to load component {module_name}: {e}")
+
+        # Collect COMMANDS declared by loaded components
+        self._builtin_commands: list[dict] = []
+        seen: set[str] = set()
+        for component in self._components:
+            for cmd in getattr(component, "COMMANDS", []):
+                name = cmd["command_name"]
+                if name not in seen:
+                    self._builtin_commands.append(cmd)
+                    seen.add(name)
+        set_builtin_commands(self._builtin_commands)
+        LOGGER.info(
+            f"Collected {len(self._builtin_commands)} builtin commands from components: "
+            f"{[c['command_name'] for c in self._builtin_commands]}"
+        )
 
         asyncio.create_task(self._subscribe_initial_channels())
         asyncio.create_task(pg_listen(self._database_url, "new_token", self._handle_new_token))

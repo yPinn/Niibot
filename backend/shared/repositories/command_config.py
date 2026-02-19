@@ -25,15 +25,16 @@ _CMD_COLUMNS = (
     "min_role, aliases, created_at, updated_at"
 )
 
-# Default builtin commands: cooldown values are overrides (None = use channel default)
-BUILTIN_COMMANDS: list[dict] = [
-    {"command_name": "hi", "custom_response": "你好,$(user)!", "cooldown": 5},
-    {"command_name": "help", "cooldown": 5},
-    {"command_name": "uptime", "cooldown": 5},
-    {"command_name": "ai", "cooldown": 15},
-    {"command_name": "運勢", "cooldown": 5},
-    {"command_name": "rk", "cooldown": 5},
-]
+# Builtin commands — populated at runtime by the bot from component COMMANDS declarations.
+# The bot calls set_builtin_commands() after loading all components.
+BUILTIN_COMMANDS: list[dict] = []
+
+
+def set_builtin_commands(commands: list[dict]) -> None:
+    """Replace the builtin commands list (called by bot after component loading)."""
+    BUILTIN_COMMANDS.clear()
+    BUILTIN_COMMANDS.extend(commands)
+
 
 # Default redemption actions: (action_type, reward_name)
 DEFAULT_REDEMPTIONS: list[dict] = [

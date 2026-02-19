@@ -18,6 +18,12 @@ if TYPE_CHECKING:
 class GeneralCommands(commands.Component):
     """General user commands for the bot."""
 
+    COMMANDS: list[dict] = [
+        {"command_name": "hi", "custom_response": "你好,$(user)!", "cooldown": 5},
+        {"command_name": "help", "cooldown": 5},
+        {"command_name": "uptime", "cooldown": 5},
+    ]
+
     def __init__(self, bot: commands.Bot) -> None:
         self.bot: Bot = bot  # type: ignore[assignment]
         self.cmd_repo = CommandConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]

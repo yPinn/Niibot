@@ -9,19 +9,19 @@ const POLL_INTERVAL = 10_000
 function PlayerList({ entries, label }: { entries: QueueEntry[]; label: string }) {
   if (entries.length === 0) return null
   return (
-    <div className="mb-6">
-      <h2 className="mb-2 text-lg font-bold text-white/60">{label}</h2>
-      <ul className="space-y-1">
-        {entries.map(entry => (
-          <li
-            key={entry.id}
-            className="flex items-center gap-3 rounded-md bg-white/10 px-4 py-2 text-xl font-semibold text-white"
-          >
-            <span className="text-base text-white/50">#{entry.position}</span>
-            <span>{entry.user_name}</span>
-          </li>
-        ))}
-      </ul>
+    <div className="mb-3">
+      <div className="mb-1 text-xs font-bold uppercase tracking-widest text-white/50">{label}</div>
+      {entries.map(entry => (
+        <div
+          key={entry.id}
+          className="flex items-center gap-2 border-b border-white/5 py-1 text-sm leading-tight text-white"
+        >
+          <span className="w-5 text-right text-[10px] tabular-nums text-white/40">
+            {entry.position}
+          </span>
+          <span className="font-medium">{entry.user_name}</span>
+        </div>
+      ))}
     </div>
   )
 }
@@ -56,22 +56,16 @@ export default function GameQueueOverlay() {
 
   const isEmpty = !state || (state.current_batch.length === 0 && state.next_batch.length === 0)
 
+  // Empty = render nothing (fully transparent for OBS)
+  if (isEmpty) return null
+
+  const remaining = state!.total_active - state!.current_batch.length - state!.next_batch.length
+
   return (
-    <div className="min-h-screen bg-transparent p-6 font-sans">
-      {isEmpty ? (
-        <p className="text-center text-lg text-white/40">-- 無排隊 --</p>
-      ) : (
-        <>
-          <PlayerList entries={state!.current_batch} label="現在上場" />
-          <PlayerList entries={state!.next_batch} label="下一批" />
-          {state!.total_active > state!.current_batch.length + state!.next_batch.length && (
-            <p className="text-center text-sm text-white/30">
-              還有 {state!.total_active - state!.current_batch.length - state!.next_batch.length}{' '}
-              人排隊中
-            </p>
-          )}
-        </>
-      )}
+    <div className="inline-block bg-transparent p-2 font-sans">
+      <PlayerList entries={state!.current_batch} label="現在上場" />
+      <PlayerList entries={state!.next_batch} label="下一批" />
+      {remaining > 0 && <div className="text-[10px] text-white/30">+{remaining} 人排隊中</div>}
     </div>
   )
 }

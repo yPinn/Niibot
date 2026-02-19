@@ -17,6 +17,10 @@ LOGGER = logging.getLogger("FortuneComponent")
 
 
 class FortuneComponent(commands.Component):
+    COMMANDS: list[dict] = [
+        {"command_name": "運勢", "cooldown": 5},
+    ]
+
     def __init__(self, bot: commands.Bot) -> None:
         self.bot: Bot = bot  # type: ignore[assignment]
         self.cmd_repo = CommandConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
