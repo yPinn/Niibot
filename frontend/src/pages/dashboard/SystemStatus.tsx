@@ -84,7 +84,10 @@ export default function SystemStatus() {
   return (
     <main className="flex flex-1 flex-col gap-section p-page lg:gap-card lg:p-page-lg">
       <div className="flex items-center justify-between">
-        <h1 className="text-page-title font-bold">系統狀態 (System Status)</h1>
+        <div>
+          <h1 className="text-page-title font-bold">System Status</h1>
+          <p className="text-sub text-muted-foreground">查看各服務目前的運作狀態</p>
+        </div>
         <div className="flex items-center gap-2 text-sub text-muted-foreground">
           <Icon icon="fa-solid fa-clock" className="w-4 h-4" />
           <span>最後更新：{lastUpdate.toLocaleTimeString()}</span>

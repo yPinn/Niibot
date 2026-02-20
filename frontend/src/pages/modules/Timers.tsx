@@ -28,6 +28,7 @@ import {
   SheetFooter,
   SheetHeader,
   SheetTitle,
+  Spinner,
   Switch,
   Table,
   TableBody,
@@ -210,8 +211,8 @@ export default function Timers() {
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="flex items-center justify-center py-empty text-muted-foreground">
-              載入中...
+            <div className="flex items-center justify-center py-empty">
+              <Spinner className="size-8 text-primary" />
             </div>
           ) : error ? (
             <div className="flex items-center justify-center py-empty text-destructive">

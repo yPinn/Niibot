@@ -14,6 +14,7 @@ import {
   CardHeader,
   CardTitle,
   Icon,
+  Spinner,
   Table,
   TableBody,
   TableCell,
@@ -182,11 +183,11 @@ export default function PublicCommands() {
 
       <div className="w-full max-w-2xl">
         {loading ? (
-          <div className="flex items-center justify-center py-8 text-muted-foreground">
-            載入中...
+          <div className="flex items-center justify-center py-empty">
+            <Spinner className="size-8 text-primary" />
           </div>
         ) : error ? (
-          <div className="flex items-center justify-center py-8 text-destructive">{error}</div>
+          <div className="flex items-center justify-center py-empty text-destructive">{error}</div>
         ) : (
           <Card className="rounded-2xl border shadow-xl">
             <CardHeader>

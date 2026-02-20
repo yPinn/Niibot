@@ -22,6 +22,7 @@ import {
   Icon,
   Input,
   Label,
+  Spinner,
   Switch,
   Table,
   TableBody,
@@ -188,7 +189,10 @@ export default function GameQueue() {
       <main className="flex flex-1 flex-col gap-section p-page md:p-page-lg">
         <div>
           <h1 className="text-page-title font-bold">Game Queue</h1>
-          <p className="text-sub text-muted-foreground">Loading...</p>
+          <p className="text-sub text-muted-foreground">管理遊戲排隊系統</p>
+        </div>
+        <div className="flex items-center justify-center py-empty">
+          <Spinner className="size-8 text-primary" />
         </div>
       </main>
     )
