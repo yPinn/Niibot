@@ -96,11 +96,11 @@ class FortuneComponent(commands.Component):
             lucky_number = random.choice(lucky_data["numbers"])
             lucky_hour = random.choice(lucky_data["hours"])
 
-            parts = [f"🔮 {user} 今日運勢"]
+            parts = [f"🔮 {user} 的運勢占卜"]
             parts.append(f"運勢：{fortune_level} {description}")
 
             if special_event:
-                parts.append(f"今日是{special_event}，運勢有額外加成！")
+                parts.append(f"{special_event}，運勢有額外加成！")
 
             parts.extend(
                 [

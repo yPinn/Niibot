@@ -14,21 +14,22 @@ BUILTIN_DESCRIPTIONS: dict[str, str] = {
     "help": "顯示所有可用指令列表",
     "uptime": "查看目前已開播多久",
     "ai": "向 AI 提問",
-    "運勢": "每日運勢占卜（每人每天固定結果）",
-    "rk": "聯盟戰棋排名查詢",
-    "tarot": "每日塔羅牌占卜（可指定感情、事業、財運）",
+    "tft": "查詢聯盟戰棋排名",
+    "運勢": "運勢占卜",
+    "tarot": "塔羅牌占卜（可指定感情、事業、財運）",
     "斥責": "頻道反惡意言論聲明",
 }
 
 # 公開 /commands 頁面用，包含用法說明供觀眾參考
+# 有中文別名的指令，用法示例以中文別名為主
 PUBLIC_DESCRIPTIONS: dict[str, str] = {
     "hi": "向聊天室打招呼",
     "help": "顯示所有可用指令列表",
     "uptime": "查看目前已開播多久",
-    "ai": "向 AI 提問，用法：!ai <問題>",
-    "運勢": "每日運勢占卜（每人每天固定結果）",
-    "rk": "聯盟戰棋排名查詢，用法：!rk <玩家名>#<tag>",
-    "tarot": "每日塔羅牌占卜，可指定分類：!tarot [l 感情/c 事業/f 財運]",
+    "ai": "向 AI 提問，用法：!問 <問題>",
+    "tft": "查詢聯盟戰棋排名，用法：!tft <玩家名>#<tag>",
+    "運勢": "運勢占卜",
+    "tarot": "塔羅牌占卜，可指定分類：!塔羅 [感情/事業/財運]",
     "斥責": "頻道反惡意言論聲明",
 }
 
@@ -128,9 +129,9 @@ class CommandConfigService:
     # ---- Public commands ----
 
     async def list_public_commands(self, channel_id: str) -> list[dict]:
-        """Get enabled commands for a channel by channel_id."""
+        """Get enabled commands and triggers for a channel by channel_id."""
         configs = await self.cmd_repo.ensure_defaults(channel_id)
-        return [
+        commands = [
             {
                 "name": f"!{cfg.command_name}",
                 "description": (
@@ -144,6 +145,22 @@ class CommandConfigService:
             for cfg in configs
             if cfg.enabled
         ]
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT pattern, response, min_role FROM message_triggers "
+                "WHERE channel_id = $1 AND enabled = TRUE ORDER BY pattern",
+                channel_id,
+            )
+        triggers = [
+            {
+                "name": row["pattern"],
+                "description": row["response"],
+                "min_role": row["min_role"],
+                "command_type": "trigger",
+            }
+            for row in rows
+        ]
+        return commands + triggers
 
     # ---- Redemption configs ----
 

@@ -66,6 +66,14 @@ const ROLE_LABELS: Record<string, string> = {
 
 const EDITABLE_COMMANDS = ['hi']
 
+// English command names sort before Chinese (ASCII charCode < CJK range)
+function nameSort(a: string, b: string): number {
+  const aAscii = a.charCodeAt(0) < 128
+  const bAscii = b.charCodeAt(0) < 128
+  if (aAscii !== bAscii) return aAscii ? -1 : 1
+  return a.localeCompare(b, 'zh-TW')
+}
+
 const ROLE_ORDER: Record<string, number> = {
   everyone: 0,
   subscriber: 1,
@@ -181,7 +189,7 @@ export default function Commands() {
         let cmp = 0
         switch (sortKey) {
           case 'command_name':
-            cmp = a.command_name.localeCompare(b.command_name)
+            cmp = nameSort(a.command_name, b.command_name)
             break
           case 'cooldown':
             cmp = (a.cooldown ?? -1) - (b.cooldown ?? -1)
@@ -204,10 +212,10 @@ export default function Commands() {
   const customRows = useMemo((): CustomRow[] => {
     const cmdRows: CustomRow[] = commands
       .filter(c => c.command_type === 'custom')
-      .sort((a, b) => a.command_name.localeCompare(b.command_name))
+      .sort((a, b) => nameSort(a.command_name, b.command_name))
       .map(c => ({ kind: 'command', data: c }))
     const trgRows: CustomRow[] = triggers
-      .sort((a, b) => b.priority - a.priority || a.pattern.localeCompare(b.pattern))
+      .sort((a, b) => nameSort(a.pattern, b.pattern))
       .map(t => ({ kind: 'trigger', data: t }))
     return [...cmdRows, ...trgRows]
   }, [commands, triggers])
@@ -445,7 +453,7 @@ export default function Commands() {
   const formatCooldown = (cooldown: number | null) => {
     const effective = cooldown ?? defaults.default_cooldown
     if (effective <= 0) return '無'
-    return cooldown != null ? `${effective}s` : `${effective}s (預設)`
+    return `${effective}s`
   }
 
   // --- Sheet labels ---

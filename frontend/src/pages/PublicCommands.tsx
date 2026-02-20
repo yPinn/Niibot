@@ -36,6 +36,19 @@ const ROLE_LABELS: Record<string, { label: string; variant: 'default' | 'seconda
     broadcaster: { label: '實況主', variant: 'default' },
   }
 
+function nameSort(a: string, b: string): number {
+  const aAscii = a.charCodeAt(0) < 128
+  const bAscii = b.charCodeAt(0) < 128
+  if (aAscii !== bAscii) return aAscii ? -1 : 1
+  return a.localeCompare(b, 'zh-TW')
+}
+
+const TABS = [
+  { value: 'builtin', label: '內建指令' },
+  { value: 'custom', label: '自訂指令' },
+  { value: 'trigger', label: '自動回應' },
+] as const
+
 type PublicSortKey = 'name' | 'min_role'
 type SortDir = 'asc' | 'desc'
 
@@ -112,7 +125,7 @@ export default function PublicCommands() {
         let cmp = 0
         switch (sortKey) {
           case 'name':
-            cmp = a.name.localeCompare(b.name)
+            cmp = nameSort(a.name, b.name)
             break
           case 'min_role':
             cmp = (ROLE_ORDER[a.min_role] ?? 0) - (ROLE_ORDER[b.min_role] ?? 0)
@@ -174,6 +187,17 @@ export default function PublicCommands() {
                 <CardTitle className="text-center text-page-title">
                   {displayName} Commands
                 </CardTitle>
+                <a
+                  href={`https://twitch.tv/${username}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-3"
+                >
+                  <Button variant="outline" size="sm">
+                    <Icon icon="fa-brands fa-twitch" wrapperClassName="mr-1.5 size-3.5" />
+                    前往頻道
+                  </Button>
+                </a>
               </div>
             </CardHeader>
             <CardContent>
@@ -184,26 +208,25 @@ export default function PublicCommands() {
               ) : (
                 <Tabs defaultValue="builtin">
                   <TabsList>
-                    <TabsTrigger value="builtin">
-                      內建指令
-                      <Badge variant="secondary" className="ml-1.5 px-1.5 text-label">
-                        {commands.filter(c => c.command_type === 'builtin').length}
-                      </Badge>
-                    </TabsTrigger>
-                    <TabsTrigger value="custom">
-                      自訂指令
-                      <Badge variant="secondary" className="ml-1.5 px-1.5 text-label">
-                        {commands.filter(c => c.command_type === 'custom').length}
-                      </Badge>
-                    </TabsTrigger>
+                    {TABS.map(tab => (
+                      <TabsTrigger key={tab.value} value={tab.value}>
+                        {tab.label}
+                        <Badge variant="secondary" className="ml-1.5 px-1.5 text-label">
+                          {commands.filter(c => c.command_type === tab.value).length}
+                        </Badge>
+                      </TabsTrigger>
+                    ))}
                   </TabsList>
-                  {(['builtin', 'custom'] as const).map(type => {
-                    const filtered = sortedCommands(commands.filter(c => c.command_type === type))
+                  {TABS.map(tab => {
+                    const filtered = sortedCommands(
+                      commands.filter(c => c.command_type === tab.value)
+                    )
+                    const isTrigger = tab.value === 'trigger'
                     return (
-                      <TabsContent key={type} value={type}>
+                      <TabsContent key={tab.value} value={tab.value}>
                         {filtered.length === 0 ? (
                           <div className="flex items-center justify-center py-8 text-muted-foreground">
-                            尚無{type === 'custom' ? '自訂' : '內建'}指令
+                            尚無{tab.label}
                           </div>
                         ) : (
                           <div className="rounded-md border">
@@ -217,7 +240,7 @@ export default function PublicCommands() {
                                     dir={sortDir}
                                     onSort={toggleSort}
                                   >
-                                    指令
+                                    {isTrigger ? '觸發詞' : '指令'}
                                   </SortableHead>
                                   <TableHead>說明</TableHead>
                                   <SortableHead
