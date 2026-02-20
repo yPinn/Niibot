@@ -21,7 +21,7 @@ LOGGER: logging.Logger = logging.getLogger("AIComponent")
 
 class AIComponent(commands.Component):
     COMMANDS: list[dict] = [
-        {"command_name": "ai", "cooldown": 15},
+        {"command_name": "ai", "cooldown": 15, "aliases": "問"},
     ]
 
     def __init__(self, bot: commands.Bot) -> None:

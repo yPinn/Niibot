@@ -231,14 +231,16 @@ class CommandConfigRepository:
                             """
                             INSERT INTO command_configs
                                 (channel_id, command_name, command_type, enabled,
-                                 custom_response, cooldown)
-                            VALUES ($1, $2, 'builtin', TRUE, $3, $4)
-                            ON CONFLICT (channel_id, command_name) DO NOTHING
+                                 custom_response, cooldown, aliases)
+                            VALUES ($1, $2, 'builtin', TRUE, $3, $4, $5)
+                            ON CONFLICT (channel_id, command_name) DO UPDATE SET
+                                aliases = EXCLUDED.aliases
                             """,
                             channel_id,
                             cmd["command_name"],
                             cmd.get("custom_response"),
                             cmd.get("cooldown"),
+                            cmd.get("aliases"),
                         )
 
             await _retry_on_db_error(_query)

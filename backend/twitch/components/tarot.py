@@ -23,7 +23,7 @@ CATEGORY_MAP = {alias: cat for cat, aliases in _CATEGORY_ALIASES.items() for ali
 
 class TarotComponent(commands.Component):
     COMMANDS: list[dict] = [
-        {"command_name": "tarot", "cooldown": 5},
+        {"command_name": "tarot", "cooldown": 5, "aliases": "塔羅"},
     ]
 
     def __init__(self, bot: commands.Bot) -> None:

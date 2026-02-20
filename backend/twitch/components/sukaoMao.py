@@ -18,7 +18,7 @@ LOGGER = logging.getLogger("FortuneComponent")
 
 class FortuneComponent(commands.Component):
     COMMANDS: list[dict] = [
-        {"command_name": "運勢", "cooldown": 5},
+        {"command_name": "運勢", "cooldown": 5, "aliases": "fortune,占卜"},
     ]
 
     def __init__(self, bot: commands.Bot) -> None:

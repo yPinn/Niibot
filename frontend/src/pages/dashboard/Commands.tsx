@@ -580,9 +580,19 @@ export default function Commands() {
                           <TableCell>
                             <div className="flex flex-col">
                               <span className="font-mono font-medium">!{cmd.command_name}</span>
-                              <span className="text-label text-muted-foreground">
-                                {cmd.description || ''}
-                              </span>
+                              {cmd.aliases && (
+                                <span className="text-label font-mono text-muted-foreground">
+                                  {cmd.aliases
+                                    .split(',')
+                                    .map(a => `!${a.trim()}`)
+                                    .join(' · ')}
+                                </span>
+                              )}
+                              {cmd.description && (
+                                <span className="text-label text-muted-foreground">
+                                  {cmd.description}
+                                </span>
+                              )}
                             </div>
                           </TableCell>
                           <TableCell className="text-sub text-muted-foreground">
