@@ -45,10 +45,12 @@ const ROLE_ORDER: Record<string, number> = {
 }
 
 function nameSort(a: string, b: string): number {
-  const aAscii = a.charCodeAt(0) < 128
-  const bAscii = b.charCodeAt(0) < 128
+  const cleanA = a.startsWith('!') ? a.slice(1) : a
+  const cleanB = b.startsWith('!') ? b.slice(1) : b
+  const aAscii = cleanA.charCodeAt(0) < 128
+  const bAscii = cleanB.charCodeAt(0) < 128
   if (aAscii !== bAscii) return aAscii ? -1 : 1
-  return a.localeCompare(b, 'zh-TW')
+  return cleanA.localeCompare(cleanB, 'zh-TW')
 }
 
 type BuiltinSortKey = 'name' | 'min_role'
@@ -105,7 +107,7 @@ export default function PublicCommands() {
 
   const [builtinSortKey, setBuiltinSortKey] = useState<BuiltinSortKey>('name')
   const [builtinSortDir, setBuiltinSortDir] = useState<SortDir>('asc')
-  const [customSortKey, setCustomSortKey] = useState<CustomSortKey>('name')
+  const [customSortKey, setCustomSortKey] = useState<CustomSortKey>('kind')
   const [customSortDir, setCustomSortDir] = useState<SortDir>('asc')
 
   const toggleBuiltinSort = (key: BuiltinSortKey) => {
@@ -141,9 +143,11 @@ export default function PublicCommands() {
     return [...list].sort((a, b) => {
       let cmp = 0
       if (customSortKey === 'name') cmp = nameSort(a.name, b.name)
-      else if (customSortKey === 'kind')
-        cmp = (a.command_type === 'custom' ? 0 : 1) - (b.command_type === 'custom' ? 0 : 1)
-      else cmp = (ROLE_ORDER[a.min_role] ?? 0) - (ROLE_ORDER[b.min_role] ?? 0)
+      else if (customSortKey === 'kind') {
+        const kindCmp =
+          (a.command_type === 'custom' ? 0 : 1) - (b.command_type === 'custom' ? 0 : 1)
+        cmp = kindCmp !== 0 ? kindCmp : nameSort(a.name, b.name)
+      } else cmp = (ROLE_ORDER[a.min_role] ?? 0) - (ROLE_ORDER[b.min_role] ?? 0)
       return customSortDir === 'desc' ? -cmp : cmp
     })
   }, [commands, customSortKey, customSortDir])

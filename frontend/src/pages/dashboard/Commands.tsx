@@ -170,7 +170,7 @@ export default function Commands() {
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [sortKey, setSortKey] = useState<SortKey>('command_name')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
-  const [customSortKey, setCustomSortKey] = useState<CustomSortKey>('name')
+  const [customSortKey, setCustomSortKey] = useState<CustomSortKey>('kind')
   const [customSortDir, setCustomSortDir] = useState<SortDir>('asc')
   const responseInputRef = useRef<HTMLInputElement>(null)
 
@@ -236,9 +236,11 @@ export default function Commands() {
         case 'name':
           cmp = nameSort(nameA, nameB)
           break
-        case 'kind':
-          cmp = (a.kind === 'command' ? 0 : 1) - (b.kind === 'command' ? 0 : 1)
+        case 'kind': {
+          const kindCmp = (a.kind === 'command' ? 0 : 1) - (b.kind === 'command' ? 0 : 1)
+          cmp = kindCmp !== 0 ? kindCmp : nameSort(nameA, nameB)
           break
+        }
         case 'cooldown':
           cmp = (a.data.cooldown ?? -1) - (b.data.cooldown ?? -1)
           break
