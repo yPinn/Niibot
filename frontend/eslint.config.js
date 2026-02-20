@@ -82,4 +82,11 @@ export default defineConfig([
       'no-var': 'error',
     },
   },
+  // shadcn/ui components and context files export variants/hooks alongside components — expected pattern
+  {
+    files: ['src/components/**/*.{ts,tsx}', 'src/contexts/**/*.{ts,tsx}'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+    },
+  },
 ])

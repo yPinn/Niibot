@@ -11,8 +11,6 @@ from typing import TYPE_CHECKING
 
 from twitchio.ext import commands
 
-from shared.repositories.timer import TimerConfigRepository
-
 if TYPE_CHECKING:
     from core.bot import Bot
 
@@ -57,7 +55,6 @@ class TimerManagerComponent(commands.Component):
 
     def __init__(self, bot: Bot) -> None:
         self.bot = bot
-        self.timer_repo = TimerConfigRepository(bot.token_database)
         # timer_id → datetime of last fire
         self._timer_last_fire: dict[int, datetime] = {}
         # timer_id → channel line count snapshot at last fire
@@ -78,7 +75,7 @@ class TimerManagerComponent(commands.Component):
                     continue  # Only during live streams
 
                 try:
-                    timers = await self.timer_repo.list_enabled(channel_id)
+                    timers = await self.bot.timer_configs.list_enabled(channel_id)
                 except Exception as e:
                     LOGGER.warning(f"Failed to load timers for {channel_id}: {e}")
                     continue

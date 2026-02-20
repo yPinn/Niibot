@@ -527,7 +527,7 @@ export default function Commands() {
                     <TableHeader>
                       <TableRow>
                         <SortableHead
-                          className="w-[35%]"
+                          className="w-[43%]"
                           sortKey="command_name"
                           currentKey={sortKey}
                           dir={sortDir}
@@ -571,7 +571,7 @@ export default function Commands() {
                         >
                           狀態
                         </SortableHead>
-                        <TableHead className="w-[16%] text-right">操作</TableHead>
+                        <TableHead className="w-[8%] text-right">操作</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -750,38 +750,6 @@ export default function Commands() {
               </div>
             )}
 
-            {/* Trigger-specific: match type & case sensitive */}
-            {showTriggerFields && (
-              <>
-                <div className="flex flex-col gap-2">
-                  <Label>比對方式</Label>
-                  <Select
-                    value={formMatchType}
-                    onValueChange={v => setFormMatchType(v as TriggerConfig['match_type'])}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="contains">contains — 包含關鍵字</SelectItem>
-                      <SelectItem value="startswith">startswith — 以關鍵字開頭</SelectItem>
-                      <SelectItem value="exact">exact — 完全相符</SelectItem>
-                      <SelectItem value="regex">regex — 正規表達式</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex flex-col gap-0.5">
-                    <Label>區分大小寫</Label>
-                    <span className="text-label text-muted-foreground">
-                      開啟後 GG 與 gg 視為不同
-                    </span>
-                  </div>
-                  <Switch checked={formCaseSensitive} onCheckedChange={setFormCaseSensitive} />
-                </div>
-              </>
-            )}
-
             {/* Response — shown for create + custom command edit + trigger edit */}
             {(editing?.mode === 'create' ||
               (isEditingCommand &&
@@ -864,6 +832,38 @@ export default function Commands() {
                       多個別名用逗號分隔，不含 ! 前綴
                     </span>
                   </div>
+                )}
+
+                {/* Match type + case sensitive — trigger only */}
+                {showTriggerFields && (
+                  <>
+                    <div className="flex flex-col gap-2">
+                      <Label>比對方式</Label>
+                      <Select
+                        value={formMatchType}
+                        onValueChange={v => setFormMatchType(v as TriggerConfig['match_type'])}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="contains">包含關鍵字</SelectItem>
+                          <SelectItem value="startswith">以關鍵字開頭</SelectItem>
+                          <SelectItem value="exact">完全相符</SelectItem>
+                          <SelectItem value="regex">正規表達式</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div className="flex flex-col gap-0.5">
+                        <Label>區分大小寫</Label>
+                        <span className="text-label text-muted-foreground">
+                          開啟後 GG 與 gg 視為不同
+                        </span>
+                      </div>
+                      <Switch checked={formCaseSensitive} onCheckedChange={setFormCaseSensitive} />
+                    </div>
+                  </>
                 )}
 
                 {/* Priority — trigger only */}

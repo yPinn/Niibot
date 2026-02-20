@@ -13,14 +13,12 @@ from shared.repositories.command_config import CommandConfigRepository
 if TYPE_CHECKING:
     from core.bot import Bot
 
-CATEGORY_MAP = {
-    "l": "love",
-    "love": "love",
-    "c": "career",
-    "career": "career",
-    "f": "finance",
-    "finance": "finance",
+_CATEGORY_ALIASES: dict[str, list[str]] = {
+    "love": ["l", "love", "感情"],
+    "career": ["c", "career", "事業"],
+    "finance": ["f", "finance", "財運"],
 }
+CATEGORY_MAP = {alias: cat for cat, aliases in _CATEGORY_ALIASES.items() for alias in aliases}
 
 
 class TarotComponent(commands.Component):
@@ -50,9 +48,9 @@ class TarotComponent(commands.Component):
 
         return card_id, is_reversed
 
-    @commands.command()
+    @commands.command(aliases=["塔羅"])
     async def tarot(self, ctx: commands.Context, *, args: str | None = None) -> None:
-        """每日塔羅占卜。用法: !tarot [l/c/f]"""
+        """每日塔羅占卜。用法: !塔羅 [感情/事業/財運]"""
         config = await check_command(
             self.cmd_repo, ctx, channel_repo=self.channel_repo, command_name="tarot"
         )

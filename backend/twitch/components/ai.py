@@ -47,7 +47,7 @@ class AIComponent(commands.Component):
 
         LOGGER.info(f"AIComponent initialized: model={model}")
 
-    @commands.command()
+    @commands.command(aliases=["問"])
     async def ai(self, ctx: commands.Context[Bot], *, message: str | None = None) -> None:
         """Ask AI a question (text only).
 

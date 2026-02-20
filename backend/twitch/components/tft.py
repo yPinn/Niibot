@@ -35,7 +35,7 @@ TIER_TRANSLATION = {
 
 class LeaderboardComponent(commands.Component):
     COMMANDS: list[dict] = [
-        {"command_name": "rk", "cooldown": 5},
+        {"command_name": "tft", "cooldown": 5},
     ]
 
     def __init__(self, bot: commands.Bot) -> None:
@@ -217,16 +217,16 @@ class LeaderboardComponent(commands.Component):
 
         return data
 
-    @commands.command(name="rk")
+    @commands.command(name="tft")
     async def leaderboard_command(
         self, ctx: commands.Context["Bot"], user_id: str | None = None
     ) -> None:
-        """查詢 TFT 排行榜（!rk 顯示門檻，!rk 玩家名#tag 查玩家）"""
-        config = await check_command(self.cmd_repo, ctx, "rk", self.channel_repo)
+        """查詢 TFT 排行榜（!tft 顯示門檻，!tft 玩家名#tag 查玩家）"""
+        config = await check_command(self.cmd_repo, ctx, "tft", self.channel_repo)
         if not config:
             return
 
-        LOGGER.debug(f"!rk command - {ctx.author.name} query: {user_id or 'threshold'}")
+        LOGGER.debug(f"!tft command - {ctx.author.name} query: {user_id or 'threshold'}")
 
         data = await self.get_leaderboard_data()
         if not data:
@@ -243,13 +243,13 @@ class LeaderboardComponent(commands.Component):
             return
 
         if "#" not in user_id:
-            await ctx.reply("請使用正確格式：!rk <玩家名稱>#<tag>")
+            await ctx.reply("請使用正確格式：!tft <玩家名稱>#<tag>")
             return
 
         parts = user_id.split("#", 1)
         username, tag = parts[0], parts[1] if len(parts) > 1 else ""
         if not username or not tag:
-            await ctx.reply("請使用正確格式：!rk <玩家名稱>#<tag>")
+            await ctx.reply("請使用正確格式：!tft <玩家名稱>#<tag>")
             return
 
         # 步驟 1：先從排行榜查找
