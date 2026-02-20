@@ -424,7 +424,7 @@ export default function Events() {
                             {EVENT_TYPE_LABELS[event.event_type] || event.event_type}
                           </Badge>
                         </TableCell>
-                        <TableCell className="max-w-md truncate font-mono text-xs">
+                        <TableCell className="max-w-md truncate font-mono text-label">
                           {locked ? (
                             <span className="text-muted-foreground">
                               需要聯盟夥伴或合作夥伴資格
@@ -481,7 +481,7 @@ export default function Events() {
           ) : isNonPartner ? (
             <div className="flex flex-col items-center justify-center gap-2 py-empty text-muted-foreground">
               <Icon icon="fa-solid fa-lock" wrapperClassName="size-6" />
-              <span className="text-sm">成為 Twitch 聯盟夥伴或合作夥伴後即可設定忠誠點數獎勵</span>
+              <span className="text-sub">成為 Twitch 聯盟夥伴或合作夥伴後即可設定忠誠點數獎勵</span>
             </div>
           ) : (
             <div className="rounded-md border">
@@ -530,7 +530,7 @@ export default function Events() {
                         </TableCell>
                         <TableCell>
                           {twitchRewards.length === 0 ? (
-                            <span className="text-sm text-muted-foreground">
+                            <span className="text-sub text-muted-foreground">
                               請先在 Twitch 建立自訂獎勵
                             </span>
                           ) : (
@@ -596,7 +596,7 @@ export default function Events() {
                 value={editTemplate}
                 onChange={e => setEditTemplate(e.target.value)}
                 placeholder="輸入回應訊息..."
-                className="font-mono text-sm"
+                className="font-mono text-sub"
               />
 
               {/* Available Variables */}
@@ -609,7 +609,7 @@ export default function Events() {
                         key={v.var}
                         type="button"
                         onClick={() => insertVariable(v.var)}
-                        className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-mono hover:bg-accent transition-colors cursor-pointer"
+                        className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-label font-mono hover:bg-accent transition-colors cursor-pointer"
                       >
                         <span className="text-primary">{v.var}</span>
                         <span className="text-muted-foreground">— {v.desc}</span>

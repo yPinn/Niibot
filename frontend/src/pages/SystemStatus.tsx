@@ -108,12 +108,12 @@ export default function SystemStatus() {
               <h3 className="font-semibold text-card-title">{service.name}</h3>
               <div className={`flex items-center gap-2 ${getStatusColor(service.status)}`}>
                 <Icon icon={getStatusIcon(service.status)} className="w-5 h-5" />
-                <span className="text-sm font-medium capitalize">{service.status}</span>
+                <span className="text-sub font-medium capitalize">{service.status}</span>
               </div>
             </div>
 
             {service.status === 'online' && (
-              <div className="space-y-2 text-sm">
+              <div className="space-y-2 text-sub">
                 {service.uptime !== undefined && (
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">運行時間：</span>
@@ -123,7 +123,7 @@ export default function SystemStatus() {
                 {service.details?.bot_id && (
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">機器人 ID：</span>
-                    <span className="font-mono text-xs">{service.details.bot_id}</span>
+                    <span className="font-mono text-label">{service.details.bot_id}</span>
                   </div>
                 )}
                 {service.details?.connected_channels !== undefined && (

@@ -14,6 +14,7 @@ import {
   Badge,
   Button,
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -50,16 +51,14 @@ function EntryTable({
   onRemove?: (id: number) => void
   showRemove?: boolean
 }) {
-  if (entries.length === 0) {
-    return <p className="text-sm text-muted-foreground py-4 text-center">-- 無 --</p>
-  }
+  if (entries.length === 0) return null
   return (
     <Table>
       <TableHeader>
         <TableRow>
           <TableHead className="w-16">#</TableHead>
-          <TableHead>Player</TableHead>
-          <TableHead className="w-24">Time</TableHead>
+          <TableHead>玩家</TableHead>
+          <TableHead className="w-24">加入時間</TableHead>
           {showRemove && <TableHead className="w-16" />}
         </TableRow>
       </TableHeader>
@@ -70,7 +69,7 @@ function EntryTable({
               <Badge variant="outline">{entry.position}</Badge>
             </TableCell>
             <TableCell className="font-medium">{entry.user_name}</TableCell>
-            <TableCell className="text-muted-foreground text-sm">
+            <TableCell className="text-muted-foreground text-sub">
               {formatTime(entry.redeemed_at)}
             </TableCell>
             {showRemove && onRemove && (
@@ -206,17 +205,16 @@ export default function GameQueue() {
       <Card>
         <CardHeader>
           <CardTitle>隊列設定</CardTitle>
-          <CardDescription>調整每場人數與隊列開關</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center justify-between">
-            <Label htmlFor="queue-enabled">隊列開關</Label>
+          <CardDescription>調整每場人數</CardDescription>
+          <CardAction>
             <Switch
               id="queue-enabled"
               checked={state?.enabled ?? false}
               onCheckedChange={handleToggleEnabled}
             />
-          </div>
+          </CardAction>
+        </CardHeader>
+        <CardContent className="space-y-4">
           <div className="flex items-center gap-3">
             <Label htmlFor="group-size" className="shrink-0">
               每場人數
@@ -237,7 +235,7 @@ export default function GameQueue() {
           {overlayUrl && (
             <div className="flex items-center gap-3">
               <Label className="shrink-0">OBS Overlay</Label>
-              <code className="flex-1 truncate rounded bg-muted px-2 py-1 text-xs">
+              <code className="flex-1 truncate rounded bg-muted px-2 py-1 text-label">
                 {overlayUrl}
               </code>
               <Button
@@ -293,7 +291,7 @@ export default function GameQueue() {
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
             <CardTitle>
-              完整佇列 <Badge variant="outline">{state?.total_active ?? 0}</Badge>
+              完整隊列 <Badge variant="outline">{state?.total_active ?? 0}</Badge>
             </CardTitle>
           </div>
           <Button

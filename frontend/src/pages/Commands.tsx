@@ -437,7 +437,7 @@ export default function Commands() {
                                 <TableCell className="text-sub text-muted-foreground">
                                   {formatCooldown(cmd.cooldown)}
                                 </TableCell>
-                                <TableCell className="text-sm">
+                                <TableCell className="text-sub">
                                   {ROLE_LABELS[cmd.min_role] || cmd.min_role}
                                 </TableCell>
                                 <TableCell className="text-right">{cmd.usage_count}</TableCell>
@@ -517,7 +517,7 @@ export default function Commands() {
                   value={formResponse}
                   onChange={e => setFormResponse(e.target.value)}
                   placeholder="回應文字 或 !指令名 $(query) 重導向"
-                  className="font-mono text-sm"
+                  className="font-mono text-sub"
                 />
                 <div className="flex flex-col gap-1.5">
                   <span className="text-label text-muted-foreground">可用變數（點擊插入）</span>
@@ -525,7 +525,7 @@ export default function Commands() {
                     <button
                       type="button"
                       onClick={() => insertVariable('$(user)')}
-                      className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-mono hover:bg-accent transition-colors cursor-pointer"
+                      className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-label font-mono hover:bg-accent transition-colors cursor-pointer"
                     >
                       <span className="text-primary">$(user)</span>
                       <span className="text-muted-foreground">— 使用者名稱</span>
@@ -533,7 +533,7 @@ export default function Commands() {
                     <button
                       type="button"
                       onClick={() => insertVariable('$(query)')}
-                      className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-mono hover:bg-accent transition-colors cursor-pointer"
+                      className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-label font-mono hover:bg-accent transition-colors cursor-pointer"
                     >
                       <span className="text-primary">$(query)</span>
                       <span className="text-muted-foreground">— 使用者輸入</span>
@@ -541,7 +541,7 @@ export default function Commands() {
                     <button
                       type="button"
                       onClick={() => insertVariable('$(channel)')}
-                      className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-mono hover:bg-accent transition-colors cursor-pointer"
+                      className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-label font-mono hover:bg-accent transition-colors cursor-pointer"
                     >
                       <span className="text-primary">$(channel)</span>
                       <span className="text-muted-foreground">— 頻道名稱</span>
@@ -549,7 +549,7 @@ export default function Commands() {
                     <button
                       type="button"
                       onClick={() => insertVariable('$(random 1,100)')}
-                      className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-mono hover:bg-accent transition-colors cursor-pointer"
+                      className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-label font-mono hover:bg-accent transition-colors cursor-pointer"
                     >
                       <span className="text-primary">$(random)</span>
                       <span className="text-muted-foreground">— 隨機數字</span>
@@ -557,7 +557,7 @@ export default function Commands() {
                     <button
                       type="button"
                       onClick={() => insertVariable('$(pick a,b,c)')}
-                      className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-mono hover:bg-accent transition-colors cursor-pointer"
+                      className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-label font-mono hover:bg-accent transition-colors cursor-pointer"
                     >
                       <span className="text-primary">$(pick)</span>
                       <span className="text-muted-foreground">— 隨機選擇</span>
@@ -572,7 +572,7 @@ export default function Commands() {
               <div className="flex items-center justify-between">
                 <div className="flex flex-col gap-0.5">
                   <Label>啟用</Label>
-                  <span className="text-xs text-muted-foreground">關閉後指令將不會回應</span>
+                  <span className="text-label text-muted-foreground">關閉後指令將不會回應</span>
                 </div>
                 <Switch checked={formEnabled} onCheckedChange={setFormEnabled} />
               </div>
@@ -581,7 +581,7 @@ export default function Commands() {
             {/* Advanced Settings Toggle */}
             <button
               type="button"
-              className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+              className="flex items-center gap-2 text-sub text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
               onClick={() => setShowAdvanced(prev => !prev)}
             >
               <Icon
@@ -601,9 +601,9 @@ export default function Commands() {
                       value={formAliases}
                       onChange={e => setFormAliases(e.target.value)}
                       placeholder="hello,hey,hi"
-                      className="font-mono text-sm"
+                      className="font-mono text-sub"
                     />
-                    <span className="text-xs text-muted-foreground">
+                    <span className="text-label text-muted-foreground">
                       多個別名用逗號分隔，不含 ! 前綴
                     </span>
                   </div>
@@ -621,7 +621,9 @@ export default function Commands() {
                     placeholder={`預設: ${defaults.default_cooldown}`}
                     className="w-40"
                   />
-                  <span className="text-xs text-muted-foreground">留空則使用頻道預設冷卻設定</span>
+                  <span className="text-label text-muted-foreground">
+                    留空則使用頻道預設冷卻設定
+                  </span>
                 </div>
 
                 {/* Min Role */}

@@ -71,11 +71,11 @@ export function OnlineDropdown() {
                   !botStatus.online
                     ? 'bg-destructive'
                     : myChannelSubscribed
-                      ? 'bg-green-500'
-                      : 'bg-yellow-500'
+                      ? 'bg-status-online'
+                      : 'bg-status-loading'
                 }`}
               />
-              <span className="text-sm font-semibold mx-1 mr-2">Niibot</span>
+              <span className="text-sub font-semibold mx-1 mr-2">Niibot</span>
               <Icon icon="fa-solid fa-chevron-down" wrapperClassName="size-2" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-(--radix-dropdown-menu-trigger-width)">

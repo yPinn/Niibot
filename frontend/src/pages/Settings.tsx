@@ -136,19 +136,19 @@ export default function Settings() {
                         <div className="flex items-center gap-3">
                           <Icon
                             icon={config.icon}
-                            className={`text-xl ${config.color}`}
+                            className={`text-section-title ${config.color}`}
                             wrapperClassName="size-8"
                           />
                           <div>
                             <div className="flex items-center gap-2">
                               <span className="font-medium">{account.username}</span>
                               {isCurrent && (
-                                <Badge variant="secondary" className="text-xs">
+                                <Badge variant="secondary" className="text-label">
                                   目前工作階段
                                 </Badge>
                               )}
                             </div>
-                            <span className="text-sm text-muted-foreground">{config.label}</span>
+                            <span className="text-sub text-muted-foreground">{config.label}</span>
                           </div>
                         </div>
                         <Button
@@ -177,7 +177,7 @@ export default function Settings() {
               <Separator />
 
               <div className="space-y-3">
-                <h3 className="text-sm font-medium text-muted-foreground">連結其他帳號</h3>
+                <h3 className="text-sub font-medium text-muted-foreground">連結其他帳號</h3>
                 <div className="grid gap-3 sm:grid-cols-2">
                   {(
                     Object.entries(PLATFORM_CONFIG) as [
