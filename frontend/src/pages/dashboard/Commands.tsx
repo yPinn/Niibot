@@ -83,6 +83,7 @@ const ROLE_ORDER: Record<string, number> = {
 }
 
 type SortKey = 'command_name' | 'cooldown' | 'min_role' | 'usage_count' | 'enabled'
+type CustomSortKey = 'name' | 'kind' | 'cooldown' | 'min_role' | 'usage_count'
 type SortDir = 'asc' | 'desc'
 
 // Unified editing state: create (type detected by ! prefix), or editing a known item
@@ -105,7 +106,7 @@ function sanitizeTriggerName(pattern: string): string {
   )
 }
 
-function SortableHead({
+function SortableHead<K extends string>({
   children,
   className,
   sortKey: key,
@@ -115,10 +116,10 @@ function SortableHead({
 }: {
   children: React.ReactNode
   className?: string
-  sortKey: SortKey
-  currentKey: SortKey
+  sortKey: K
+  currentKey: K
   dir: SortDir
-  onSort: (key: SortKey) => void
+  onSort: (key: K) => void
 }) {
   const active = key === currentKey
   return (
@@ -169,6 +170,8 @@ export default function Commands() {
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [sortKey, setSortKey] = useState<SortKey>('command_name')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
+  const [customSortKey, setCustomSortKey] = useState<CustomSortKey>('name')
+  const [customSortDir, setCustomSortDir] = useState<SortDir>('asc')
   const responseInputRef = useRef<HTMLInputElement>(null)
 
   // Derived: is the create form in command mode?
@@ -180,6 +183,15 @@ export default function Commands() {
     } else {
       setSortKey(key)
       setSortDir('asc')
+    }
+  }
+
+  const toggleCustomSort = (key: CustomSortKey) => {
+    if (customSortKey === key) {
+      setCustomSortDir(prev => (prev === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setCustomSortKey(key)
+      setCustomSortDir('asc')
     }
   }
 
@@ -208,17 +220,39 @@ export default function Commands() {
       })
   }, [sortKey, sortDir])
 
-  // Combined custom rows: commands first (alpha), then triggers (alpha by pattern)
+  // Combined custom rows sorted by customSortKey
   const customRows = useMemo((): CustomRow[] => {
-    const cmdRows: CustomRow[] = commands
-      .filter(c => c.command_type === 'custom')
-      .sort((a, b) => nameSort(a.command_name, b.command_name))
-      .map(c => ({ kind: 'command', data: c }))
-    const trgRows: CustomRow[] = triggers
-      .sort((a, b) => nameSort(a.pattern, b.pattern))
-      .map(t => ({ kind: 'trigger', data: t }))
-    return [...cmdRows, ...trgRows]
-  }, [commands, triggers])
+    const all: CustomRow[] = [
+      ...commands
+        .filter(c => c.command_type === 'custom')
+        .map((c): CustomRow => ({ kind: 'command', data: c })),
+      ...triggers.map((t): CustomRow => ({ kind: 'trigger', data: t })),
+    ]
+    all.sort((a, b) => {
+      let cmp = 0
+      const nameA = a.kind === 'command' ? a.data.command_name : a.data.pattern
+      const nameB = b.kind === 'command' ? b.data.command_name : b.data.pattern
+      switch (customSortKey) {
+        case 'name':
+          cmp = nameSort(nameA, nameB)
+          break
+        case 'kind':
+          cmp = (a.kind === 'command' ? 0 : 1) - (b.kind === 'command' ? 0 : 1)
+          break
+        case 'cooldown':
+          cmp = (a.data.cooldown ?? -1) - (b.data.cooldown ?? -1)
+          break
+        case 'min_role':
+          cmp = (ROLE_ORDER[a.data.min_role] ?? 0) - (ROLE_ORDER[b.data.min_role] ?? 0)
+          break
+        case 'usage_count':
+          cmp = a.data.usage_count - b.data.usage_count
+          break
+      }
+      return customSortDir === 'desc' ? -cmp : cmp
+    })
+    return all
+  }, [commands, triggers, customSortKey, customSortDir])
 
   const fetchData = useCallback(async () => {
     try {
@@ -633,12 +667,52 @@ export default function Commands() {
                   <Table className="table-fixed">
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="w-[20%]">名稱</TableHead>
-                        <TableHead className="w-[10%]">類型</TableHead>
+                        <SortableHead
+                          className="w-[20%]"
+                          sortKey="name"
+                          currentKey={customSortKey}
+                          dir={customSortDir}
+                          onSort={toggleCustomSort}
+                        >
+                          名稱
+                        </SortableHead>
+                        <SortableHead
+                          className="w-[10%]"
+                          sortKey="kind"
+                          currentKey={customSortKey}
+                          dir={customSortDir}
+                          onSort={toggleCustomSort}
+                        >
+                          類型
+                        </SortableHead>
                         <TableHead>回應</TableHead>
-                        <TableHead className="w-[8%]">冷卻</TableHead>
-                        <TableHead className="w-[8%]">權限</TableHead>
-                        <TableHead className="w-[10%] text-right">使用次數</TableHead>
+                        <SortableHead
+                          className="w-[8%]"
+                          sortKey="cooldown"
+                          currentKey={customSortKey}
+                          dir={customSortDir}
+                          onSort={toggleCustomSort}
+                        >
+                          冷卻
+                        </SortableHead>
+                        <SortableHead
+                          className="w-[8%]"
+                          sortKey="min_role"
+                          currentKey={customSortKey}
+                          dir={customSortDir}
+                          onSort={toggleCustomSort}
+                        >
+                          權限
+                        </SortableHead>
+                        <SortableHead
+                          className="w-[10%] text-right"
+                          sortKey="usage_count"
+                          currentKey={customSortKey}
+                          dir={customSortDir}
+                          onSort={toggleCustomSort}
+                        >
+                          使用次數
+                        </SortableHead>
                         <TableHead className="w-[7%] text-center">狀態</TableHead>
                         <TableHead className="w-[7%] text-right">操作</TableHead>
                       </TableRow>
@@ -697,7 +771,7 @@ export default function Commands() {
                               {ROLE_LABELS[row.data.min_role] ?? row.data.min_role}
                             </TableCell>
                             <TableCell className="text-right text-sub text-muted-foreground">
-                              {row.kind === 'command' ? row.data.usage_count : '—'}
+                              {row.data.usage_count}
                             </TableCell>
                             <TableCell className="text-center">
                               <div className="flex justify-center">

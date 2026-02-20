@@ -11,7 +11,7 @@ _trigger_list_cache = AsyncTTLCache(maxsize=32, ttl=3600)
 
 _COLUMNS = (
     "id, channel_id, trigger_name, match_type, pattern, case_sensitive, "
-    "response, min_role, cooldown, priority, enabled, created_at, updated_at"
+    "response, min_role, cooldown, priority, enabled, usage_count, created_at, updated_at"
 )
 
 
@@ -106,6 +106,14 @@ class MessageTriggerRepository:
             )
             _trigger_list_cache.invalidate(f"trigger_list:{channel_id}")
             return result == "DELETE 1"
+
+    async def increment_usage_count(self, trigger_id: int) -> None:
+        """Increment usage_count for a trigger by ID. Does not invalidate list cache."""
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE message_triggers SET usage_count = usage_count + 1 WHERE id = $1",
+                trigger_id,
+            )
 
     def invalidate_cache(self, channel_id: str) -> None:
         """Invalidate list cache for a channel (called by pg_notify handler)."""

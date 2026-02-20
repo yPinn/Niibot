@@ -12,6 +12,7 @@ export interface TriggerConfig {
   cooldown: number | null
   priority: number
   enabled: boolean
+  usage_count: number
   created_at: string | null
   updated_at: string | null
 }

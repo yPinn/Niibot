@@ -81,9 +81,13 @@ export function ServiceStatusProvider({ children }: { children: React.ReactNode 
     if (api.db_connected === false) {
       // Re-assert on every poll: if toast was dismissed (user click / route change),
       // it will reappear at the next 30s cycle while the DB remains disconnected.
-      toast.warning('資料庫連線中斷', { id: 'db-status', duration: Infinity })
+      toast.warning('服務暫時中斷', {
+        id: 'db-status',
+        duration: Infinity,
+        description: '無法連線至資料庫，頁面資料暫時無法載入',
+      })
     } else if (api.db_connected === true && prev === false) {
-      toast.success('資料庫已恢復連線', { id: 'db-status', duration: 4000 })
+      toast.success('服務已恢復正常', { id: 'db-status', duration: 4000 })
     }
   }, [api])
 

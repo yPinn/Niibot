@@ -346,6 +346,7 @@ class Bot(commands.AutoBot):
                 LOGGER.info(
                     f"[TRIGGER] '{trigger.trigger_name}' fired for {payload.chatter.name} in {channel_id}"
                 )
+                asyncio.create_task(self.message_trigger_configs.increment_usage_count(trigger.id))
             except Exception as e:
                 LOGGER.warning(f"[TRIGGER] Failed to send response: {e}")
             return True
