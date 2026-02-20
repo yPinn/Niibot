@@ -71,6 +71,20 @@ export const API_ENDPOINTS = {
     settings: join('/api/game-queue/settings'),
     public: (channelId: string) => join(`/api/game-queue/public/${channelId}`),
   },
+  timers: {
+    configs: join('/api/timers/configs'),
+    createConfig: join('/api/timers/configs'),
+    updateConfig: (name: string) => join(`/api/timers/configs/${name}`),
+    toggleConfig: (name: string) => join(`/api/timers/configs/${name}/toggle`),
+    deleteConfig: (name: string) => join(`/api/timers/configs/${name}`),
+  },
+  triggers: {
+    configs: join('/api/triggers/configs'),
+    createConfig: join('/api/triggers/configs'),
+    updateConfig: (name: string) => join(`/api/triggers/configs/${name}`),
+    toggleConfig: (name: string) => join(`/api/triggers/configs/${name}/toggle`),
+    deleteConfig: (name: string) => join(`/api/triggers/configs/${name}`),
+  },
   bots: {
     twitch: {
       status: join('/api/bots/twitch/status'),

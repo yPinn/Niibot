@@ -16,6 +16,7 @@ import GameQueueOverlay from '@/pages/GameQueueOverlay'
 import Landing from '@/pages/Landing'
 import LoginPage from '@/pages/Login'
 import GameQueue from '@/pages/modules/GameQueue'
+import Timers from '@/pages/modules/Timers'
 import NotFound from '@/pages/NotFound'
 import PublicCommands from '@/pages/PublicCommands'
 import Settings from '@/pages/Settings'
@@ -44,6 +45,7 @@ function App() {
                   <Route path="/system" element={<SystemStatus />} />
                   <Route path="/settings" element={<Settings />} />
                   {/* Module Routes */}
+                  <Route path="/timers" element={<Timers />} />
                   <Route path="/modules/game-queue" element={<GameQueue />} />
                   {/* Discord Bot Routes */}
                   <Route path="/discord/dashboard" element={<DiscordDashboard />} />

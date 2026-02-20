@@ -16,12 +16,12 @@ export const navigationData = {
           url: '/commands',
         },
         {
-          title: 'Events',
-          url: '/events',
+          title: 'Timers',
+          url: '/timers',
         },
         {
-          title: 'System Status',
-          url: '/system',
+          title: 'Events',
+          url: '/events',
         },
       ],
     },
@@ -52,6 +52,10 @@ export const navigationData = {
         {
           title: 'Leaderboard',
           url: '/analytics/leaderboard',
+        },
+        {
+          title: 'System Status',
+          url: '/system',
         },
       ],
     },

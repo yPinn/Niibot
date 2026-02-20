@@ -11,6 +11,14 @@ import {
   updateCommandConfig,
 } from '@/api/commands'
 import {
+  createTrigger,
+  deleteTrigger,
+  getTriggerConfigs,
+  toggleTrigger,
+  type TriggerConfig,
+  updateTrigger,
+} from '@/api/triggers'
+import {
   Badge,
   Button,
   Card,
@@ -58,9 +66,6 @@ const ROLE_LABELS: Record<string, string> = {
 
 const EDITABLE_COMMANDS = ['hi']
 
-type SortKey = 'command_name' | 'cooldown' | 'min_role' | 'usage_count' | 'enabled'
-type SortDir = 'asc' | 'desc'
-
 const ROLE_ORDER: Record<string, number> = {
   everyone: 0,
   subscriber: 1,
@@ -69,9 +74,34 @@ const ROLE_ORDER: Record<string, number> = {
   broadcaster: 4,
 }
 
-interface EditingState {
-  mode: 'edit' | 'create'
-  command: CommandConfig | null
+const MATCH_TYPE_LABELS: Record<string, string> = {
+  contains: 'contains',
+  startswith: 'startswith',
+  exact: 'exact',
+  regex: 'regex',
+}
+
+type SortKey = 'command_name' | 'cooldown' | 'min_role' | 'usage_count' | 'enabled'
+type SortDir = 'asc' | 'desc'
+
+// Unified editing state: create (type detected by ! prefix), or editing a known item
+type EditingState =
+  | { mode: 'create' }
+  | { mode: 'edit-command'; command: CommandConfig }
+  | { mode: 'edit-trigger'; trigger: TriggerConfig }
+
+// Row union for the custom tab
+type CustomRow = { kind: 'command'; data: CommandConfig } | { kind: 'trigger'; data: TriggerConfig }
+
+function sanitizeTriggerName(pattern: string): string {
+  return (
+    pattern
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_|_$/g, '')
+      .slice(0, 50) || 'trigger'
+  )
 }
 
 function SortableHead({
@@ -117,25 +147,31 @@ function SortableHead({
 export default function Commands() {
   useDocumentTitle('Commands')
   const [commands, setCommands] = useState<CommandConfig[]>([])
-  const [defaults, setDefaults] = useState<ChannelDefaults>({
-    default_cooldown: 0,
-  })
+  const [triggers, setTriggers] = useState<TriggerConfig[]>([])
+  const [defaults, setDefaults] = useState<ChannelDefaults>({ default_cooldown: 0 })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   // Sheet state
   const [editing, setEditing] = useState<EditingState | null>(null)
-  const [formName, setFormName] = useState('')
+  const [formName, setFormName] = useState('') // !cmd or pattern
   const [formResponse, setFormResponse] = useState('')
   const [formCooldown, setFormCooldown] = useState('')
   const [formRole, setFormRole] = useState('everyone')
-  const [formAliases, setFormAliases] = useState('')
+  const [formAliases, setFormAliases] = useState('') // command-only
+  const [formMatchType, setFormMatchType] = useState<TriggerConfig['match_type']>('contains')
+  const [formCaseSensitive, setFormCaseSensitive] = useState(false)
+  const [formPriority, setFormPriority] = useState('0')
   const [formEnabled, setFormEnabled] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [sortKey, setSortKey] = useState<SortKey>('command_name')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
   const responseInputRef = useRef<HTMLInputElement>(null)
+
+  // Derived: is the create form in command mode?
+  const formIsCommand = formName.startsWith('!')
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -146,9 +182,9 @@ export default function Commands() {
     }
   }
 
-  const sortCommands = useMemo(() => {
-    return (list: CommandConfig[]) => {
-      return [...list].sort((a, b) => {
+  const sortBuiltin = useMemo(() => {
+    return (list: CommandConfig[]) =>
+      [...list].sort((a, b) => {
         let cmp = 0
         switch (sortKey) {
           case 'command_name':
@@ -169,14 +205,30 @@ export default function Commands() {
         }
         return sortDir === 'desc' ? -cmp : cmp
       })
-    }
   }, [sortKey, sortDir])
+
+  // Combined custom rows: commands first (alpha), then triggers (alpha by pattern)
+  const customRows = useMemo((): CustomRow[] => {
+    const cmdRows: CustomRow[] = commands
+      .filter(c => c.command_type === 'custom')
+      .sort((a, b) => a.command_name.localeCompare(b.command_name))
+      .map(c => ({ kind: 'command', data: c }))
+    const trgRows: CustomRow[] = triggers
+      .sort((a, b) => b.priority - a.priority || a.pattern.localeCompare(b.pattern))
+      .map(t => ({ kind: 'trigger', data: t }))
+    return [...cmdRows, ...trgRows]
+  }, [commands, triggers])
 
   const fetchData = useCallback(async () => {
     try {
       setError(null)
-      const [cmds, defs] = await Promise.all([getCommandConfigs(), getChannelDefaults()])
+      const [cmds, trgs, defs] = await Promise.all([
+        getCommandConfigs(),
+        getTriggerConfigs(),
+        getChannelDefaults(),
+      ])
       setCommands(cmds)
+      setTriggers(trgs)
       setDefaults(defs)
     } catch {
       setError('無法載入設定')
@@ -189,9 +241,9 @@ export default function Commands() {
     fetchData()
   }, [fetchData])
 
-  // --- Command handlers ---
+  // --- Builtin command handlers ---
 
-  const handleToggle = async (cmd: CommandConfig) => {
+  const handleToggleCommand = async (cmd: CommandConfig) => {
     const newEnabled = !cmd.enabled
     setCommands(prev =>
       prev.map(c => (c.command_name === cmd.command_name ? { ...c, enabled: newEnabled } : c))
@@ -205,82 +257,178 @@ export default function Commands() {
     }
   }
 
-  const hasAdvancedValues = (cmd: CommandConfig) =>
-    cmd.cooldown != null || cmd.min_role !== 'everyone' || !!cmd.aliases
+  const handleToggleTrigger = async (trigger: TriggerConfig) => {
+    const newEnabled = !trigger.enabled
+    setTriggers(prev =>
+      prev.map(t => (t.trigger_name === trigger.trigger_name ? { ...t, enabled: newEnabled } : t))
+    )
+    try {
+      await toggleTrigger(trigger.trigger_name, newEnabled)
+    } catch {
+      setTriggers(prev =>
+        prev.map(t =>
+          t.trigger_name === trigger.trigger_name ? { ...t, enabled: trigger.enabled } : t
+        )
+      )
+    }
+  }
 
-  const openEditor = (cmd: CommandConfig) => {
-    setEditing({ mode: 'edit', command: cmd })
-    setFormName(cmd.command_name)
+  const handleToggleRow = (row: CustomRow) => {
+    if (row.kind === 'command') handleToggleCommand(row.data)
+    else handleToggleTrigger(row.data)
+  }
+
+  // --- Open sheet helpers ---
+
+  const resetForm = () => {
+    setFormResponse('')
+    setFormCooldown('')
+    setFormRole('everyone')
+    setFormAliases('')
+    setFormMatchType('contains')
+    setFormCaseSensitive(false)
+    setFormPriority('0')
+    setFormEnabled(true)
+    setSaveError(null)
+    setShowAdvanced(false)
+  }
+
+  const openCreate = () => {
+    setFormName('!')
+    resetForm()
+    setEditing({ mode: 'create' })
+  }
+
+  const openEditCommand = (cmd: CommandConfig) => {
+    setFormName(`!${cmd.command_name}`)
     setFormResponse(cmd.custom_response || '')
     setFormCooldown(cmd.cooldown != null ? String(cmd.cooldown) : '')
     setFormRole(cmd.min_role)
     setFormAliases(cmd.aliases || '')
     setFormEnabled(cmd.enabled)
-    setShowAdvanced(hasAdvancedValues(cmd))
+    setSaveError(null)
+    setShowAdvanced(cmd.cooldown != null || cmd.min_role !== 'everyone' || !!cmd.aliases)
+    setEditing({ mode: 'edit-command', command: cmd })
   }
 
-  const openCreate = () => {
-    setEditing({ mode: 'create', command: null })
-    setFormName('')
-    setFormResponse('')
-    setFormCooldown('')
-    setFormRole('everyone')
-    setFormAliases('')
-    setFormEnabled(true)
-    setShowAdvanced(false)
+  const openEditTrigger = (trigger: TriggerConfig) => {
+    setFormName(trigger.pattern)
+    setFormResponse(trigger.response)
+    setFormCooldown(trigger.cooldown != null ? String(trigger.cooldown) : '')
+    setFormRole(trigger.min_role)
+    setFormMatchType(trigger.match_type)
+    setFormCaseSensitive(trigger.case_sensitive)
+    setFormPriority(String(trigger.priority))
+    setFormEnabled(trigger.enabled)
+    setSaveError(null)
+    setShowAdvanced(true)
+    setEditing({ mode: 'edit-trigger', trigger })
   }
 
-  /** Convert form string to API value: '' -> null (use default), '0' -> 0, '5' -> 5 */
+  const openEditRow = (row: CustomRow) => {
+    if (row.kind === 'command') openEditCommand(row.data)
+    else openEditTrigger(row.data)
+  }
+
   const parseCooldown = (value: string): number | null => {
     if (value === '') return null
     return Number(value) || 0
   }
 
+  // --- Save handler ---
+
   const handleSave = async () => {
     if (!editing) return
     setSaving(true)
+    setSaveError(null)
     try {
       if (editing.mode === 'create') {
-        if (!formName.trim() || !formResponse.trim()) return
-        const created = await createCustomCommand({
-          command_name: formName.trim(),
-          custom_response: formResponse.trim(),
-          cooldown: parseCooldown(formCooldown),
-          min_role: formRole,
-          aliases: formAliases.trim() || null,
-        })
-        setCommands(prev => [...prev, created])
-      } else if (editing.command) {
+        if (!formName.trim() || !formResponse.trim()) {
+          setSaveError('名稱與回應不可為空')
+          return
+        }
+        if (formIsCommand) {
+          const cmdName = formName.slice(1).trim()
+          if (!cmdName) {
+            setSaveError('指令名稱不可為空')
+            return
+          }
+          const created = await createCustomCommand({
+            command_name: cmdName,
+            custom_response: formResponse.trim(),
+            cooldown: parseCooldown(formCooldown),
+            min_role: formRole,
+            aliases: formAliases.trim() || null,
+          })
+          setCommands(prev => [...prev, created])
+        } else {
+          const pattern = formName.trim()
+          const triggerName = sanitizeTriggerName(pattern)
+          const created = await createTrigger({
+            trigger_name: triggerName,
+            match_type: formMatchType,
+            pattern,
+            case_sensitive: formCaseSensitive,
+            response: formResponse.trim(),
+            min_role: formRole,
+            cooldown: parseCooldown(formCooldown),
+            priority: Number(formPriority) || 0,
+          })
+          setTriggers(prev => [...prev, created])
+        }
+      } else if (editing.mode === 'edit-command') {
+        const cmd = editing.command
         const updates: CommandConfigUpdate = {
           enabled: formEnabled,
           cooldown: parseCooldown(formCooldown),
           min_role: formRole,
           aliases: formAliases.trim() || null,
         }
-        if (editing.command.command_type === 'custom') {
+        if (cmd.command_type === 'custom' || EDITABLE_COMMANDS.includes(cmd.command_name)) {
           updates.custom_response = formResponse.trim() || null
         }
-        if (EDITABLE_COMMANDS.includes(editing.command.command_name)) {
-          updates.custom_response = formResponse.trim() || null
-        }
-        const updated = await updateCommandConfig(editing.command.command_name, updates)
+        const updated = await updateCommandConfig(cmd.command_name, updates)
         setCommands(prev => prev.map(c => (c.command_name === updated.command_name ? updated : c)))
+      } else if (editing.mode === 'edit-trigger') {
+        const trigger = editing.trigger
+        const updated = await updateTrigger(trigger.trigger_name, {
+          match_type: formMatchType,
+          pattern: formName.trim(),
+          case_sensitive: formCaseSensitive,
+          response: formResponse.trim(),
+          min_role: formRole,
+          cooldown: parseCooldown(formCooldown),
+          priority: Number(formPriority) || 0,
+          enabled: formEnabled,
+        })
+        setTriggers(prev => prev.map(t => (t.trigger_name === updated.trigger_name ? updated : t)))
       }
       setEditing(null)
-    } catch {
-      // Keep sheet open
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : '儲存失敗')
     } finally {
       setSaving(false)
     }
   }
 
-  const handleDelete = async (cmd: CommandConfig) => {
+  const handleDeleteCommand = async (cmd: CommandConfig) => {
     if (cmd.command_type !== 'custom') return
     try {
       await deleteCustomCommand(cmd.command_name)
       setCommands(prev => prev.filter(c => c.command_name !== cmd.command_name))
+      setEditing(null)
     } catch {
-      // Silently fail
+      /* keep sheet open */
+    }
+  }
+
+  const handleDeleteTrigger = async (trigger: TriggerConfig) => {
+    try {
+      await deleteTrigger(trigger.trigger_name)
+      setTriggers(prev => prev.filter(t => t.trigger_name !== trigger.trigger_name))
+      setEditing(null)
+    } catch {
+      /* keep sheet open */
     }
   }
 
@@ -296,8 +444,8 @@ export default function Commands() {
     setFormResponse(newValue)
     requestAnimationFrame(() => {
       input.focus()
-      const newPos = start + varStr.length
-      input.setSelectionRange(newPos, newPos)
+      const pos = start + varStr.length
+      input.setSelectionRange(pos, pos)
     })
   }
 
@@ -307,22 +455,42 @@ export default function Commands() {
     return cooldown != null ? `${effective}s` : `${effective}s (預設)`
   }
 
+  // --- Sheet labels ---
+  const sheetTitle = () => {
+    if (!editing) return ''
+    if (editing.mode === 'create') return formIsCommand ? '新增自訂指令' : '新增自動回應'
+    if (editing.mode === 'edit-command') return `編輯 !${editing.command.command_name}`
+    return `編輯 ${editing.trigger.trigger_name}`
+  }
+
+  const isEditingTrigger = editing?.mode === 'edit-trigger'
+  const isCreatingTrigger = editing?.mode === 'create' && !formIsCommand
+  const showTriggerFields = isEditingTrigger || isCreatingTrigger
+
+  const isEditingCommand = editing?.mode === 'edit-command'
+  const isCreatingCommand = editing?.mode === 'create' && formIsCommand
+
+  const canDelete =
+    (editing?.mode === 'edit-command' && editing.command.command_type === 'custom') ||
+    editing?.mode === 'edit-trigger'
+
   return (
     <main className="flex flex-1 flex-col gap-section p-page md:p-page-lg">
       <div>
         <h1 className="text-page-title font-bold">Commands</h1>
-        <p className="text-sub text-muted-foreground">管理 Twitch 機器人指令</p>
+        <p className="text-sub text-muted-foreground">管理 Twitch 機器人指令與自動回應</p>
       </div>
 
-      {/* Command Configs */}
       <Card>
         <CardHeader>
           <CardTitle>指令設定</CardTitle>
-          <CardDescription>管理內建指令與自訂指令的開關、冷卻、權限</CardDescription>
+          <CardDescription>
+            管理內建指令、自訂指令（!prefix）與自動回應（關鍵字觸發）
+          </CardDescription>
           <CardAction>
             <Button size="sm" onClick={openCreate}>
               <Icon icon="fa-solid fa-plus" wrapperClassName="mr-1.5 size-3" />
-              新增指令
+              新增
             </Button>
           </CardAction>
         </CardHeader>
@@ -345,240 +513,335 @@ export default function Commands() {
                   </Badge>
                 </TabsTrigger>
                 <TabsTrigger value="custom">
-                  自訂指令
+                  Custom
                   <Badge variant="secondary" className="ml-1.5 px-1.5 text-label">
-                    {commands.filter(c => c.command_type === 'custom').length}
+                    {commands.filter(c => c.command_type === 'custom').length + triggers.length}
                   </Badge>
                 </TabsTrigger>
               </TabsList>
-              {(['builtin', 'custom'] as const).map(type => {
-                const filtered = sortCommands(commands.filter(c => c.command_type === type))
-                return (
-                  <TabsContent key={type} value={type}>
-                    <div className="rounded-md border">
-                      <Table className="table-fixed">
-                        <TableHeader>
-                          <TableRow>
-                            <SortableHead
-                              className="w-[35%]"
-                              sortKey="command_name"
-                              currentKey={sortKey}
-                              dir={sortDir}
-                              onSort={toggleSort}
+
+              {/* ── Built-in Tab ── */}
+              <TabsContent value="builtin">
+                <div className="rounded-md border">
+                  <Table className="table-fixed">
+                    <TableHeader>
+                      <TableRow>
+                        <SortableHead
+                          className="w-[35%]"
+                          sortKey="command_name"
+                          currentKey={sortKey}
+                          dir={sortDir}
+                          onSort={toggleSort}
+                        >
+                          指令
+                        </SortableHead>
+                        <SortableHead
+                          className="w-[12%]"
+                          sortKey="cooldown"
+                          currentKey={sortKey}
+                          dir={sortDir}
+                          onSort={toggleSort}
+                        >
+                          冷卻
+                        </SortableHead>
+                        <SortableHead
+                          className="w-[12%]"
+                          sortKey="min_role"
+                          currentKey={sortKey}
+                          dir={sortDir}
+                          onSort={toggleSort}
+                        >
+                          權限
+                        </SortableHead>
+                        <SortableHead
+                          className="w-[15%] text-right"
+                          sortKey="usage_count"
+                          currentKey={sortKey}
+                          dir={sortDir}
+                          onSort={toggleSort}
+                        >
+                          使用次數
+                        </SortableHead>
+                        <SortableHead
+                          className="w-[10%] text-center"
+                          sortKey="enabled"
+                          currentKey={sortKey}
+                          dir={sortDir}
+                          onSort={toggleSort}
+                        >
+                          狀態
+                        </SortableHead>
+                        <TableHead className="w-[16%] text-right">操作</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {sortBuiltin(commands.filter(c => c.command_type === 'builtin')).map(cmd => (
+                        <TableRow key={cmd.command_name}>
+                          <TableCell>
+                            <div className="flex flex-col">
+                              <span className="font-mono font-medium">!{cmd.command_name}</span>
+                              <span className="text-label text-muted-foreground">
+                                {cmd.description || ''}
+                              </span>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-sub text-muted-foreground">
+                            {formatCooldown(cmd.cooldown)}
+                          </TableCell>
+                          <TableCell className="text-sub">
+                            {ROLE_LABELS[cmd.min_role] || cmd.min_role}
+                          </TableCell>
+                          <TableCell className="text-right">{cmd.usage_count}</TableCell>
+                          <TableCell className="text-center">
+                            <div className="flex justify-center">
+                              <Switch
+                                checked={cmd.enabled}
+                                onCheckedChange={() => handleToggleCommand(cmd)}
+                              />
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="size-8"
+                              onClick={() => openEditCommand(cmd)}
                             >
-                              指令
-                            </SortableHead>
-                            <SortableHead
-                              className="w-[12%]"
-                              sortKey="cooldown"
-                              currentKey={sortKey}
-                              dir={sortDir}
-                              onSort={toggleSort}
-                            >
-                              冷卻
-                            </SortableHead>
-                            <SortableHead
-                              className="w-[12%]"
-                              sortKey="min_role"
-                              currentKey={sortKey}
-                              dir={sortDir}
-                              onSort={toggleSort}
-                            >
-                              權限
-                            </SortableHead>
-                            <SortableHead
-                              className="w-[15%] text-right"
-                              sortKey="usage_count"
-                              currentKey={sortKey}
-                              dir={sortDir}
-                              onSort={toggleSort}
-                            >
-                              使用次數
-                            </SortableHead>
-                            <SortableHead
-                              className="w-[10%] text-center"
-                              sortKey="enabled"
-                              currentKey={sortKey}
-                              dir={sortDir}
-                              onSort={toggleSort}
-                            >
-                              狀態
-                            </SortableHead>
-                            <TableHead className="w-[16%] text-right">操作</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {filtered.length === 0 ? (
-                            <TableRow>
-                              <TableCell colSpan={6} className="text-center text-muted-foreground">
-                                {type === 'custom' ? '尚無自訂指令' : '尚無指令'}
-                              </TableCell>
-                            </TableRow>
-                          ) : (
-                            filtered.map(cmd => (
-                              <TableRow key={cmd.command_name}>
-                                <TableCell>
-                                  <div className="flex flex-col">
-                                    <div>
-                                      <span className="font-mono font-medium">
-                                        !{cmd.command_name}
-                                      </span>
-                                      {cmd.aliases && (
-                                        <span className="ml-2 text-label text-muted-foreground">
-                                          ({cmd.aliases})
-                                        </span>
-                                      )}
-                                    </div>
+                              <Icon icon="fa-solid fa-pen" wrapperClassName="size-3.5" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </TabsContent>
+
+              {/* ── Custom Tab (commands + triggers mixed) ── */}
+              <TabsContent value="custom">
+                <div className="rounded-md border">
+                  <Table className="table-fixed">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-[28%]">名稱 / Pattern</TableHead>
+                        <TableHead className="w-[13%]">類型</TableHead>
+                        <TableHead>回應</TableHead>
+                        <TableHead className="w-[10%]">冷卻</TableHead>
+                        <TableHead className="w-[10%]">權限</TableHead>
+                        <TableHead className="w-[8%] text-center">狀態</TableHead>
+                        <TableHead className="w-[8%] text-right">操作</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {customRows.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={7} className="text-center text-muted-foreground">
+                            尚無自訂指令或自動回應
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        customRows.map(row => (
+                          <TableRow
+                            key={
+                              row.kind === 'command'
+                                ? `cmd:${row.data.command_name}`
+                                : `trg:${row.data.trigger_name}`
+                            }
+                          >
+                            <TableCell>
+                              {row.kind === 'command' ? (
+                                <div className="flex flex-col">
+                                  <span className="font-mono font-medium">
+                                    !{row.data.command_name}
+                                  </span>
+                                  {row.data.aliases && (
                                     <span className="text-label text-muted-foreground">
-                                      {cmd.description || cmd.custom_response || ''}
+                                      ({row.data.aliases})
                                     </span>
-                                  </div>
-                                </TableCell>
-                                <TableCell className="text-sub text-muted-foreground">
-                                  {formatCooldown(cmd.cooldown)}
-                                </TableCell>
-                                <TableCell className="text-sub">
-                                  {ROLE_LABELS[cmd.min_role] || cmd.min_role}
-                                </TableCell>
-                                <TableCell className="text-right">{cmd.usage_count}</TableCell>
-                                <TableCell className="text-center">
-                                  <div className="flex justify-center">
-                                    <Switch
-                                      checked={cmd.enabled}
-                                      onCheckedChange={() => handleToggle(cmd)}
-                                    />
-                                  </div>
-                                </TableCell>
-                                <TableCell className="text-right">
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="size-8"
-                                    onClick={() => openEditor(cmd)}
-                                  >
-                                    <Icon icon="fa-solid fa-pen" wrapperClassName="size-3.5" />
-                                  </Button>
-                                </TableCell>
-                              </TableRow>
-                            ))
-                          )}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  </TabsContent>
-                )
-              })}
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="font-mono text-sub">{row.data.pattern}</span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              {row.kind === 'command' ? (
+                                <Badge variant="default">Command</Badge>
+                              ) : (
+                                <Badge variant="secondary">
+                                  {MATCH_TYPE_LABELS[row.data.match_type]}
+                                </Badge>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-sub text-muted-foreground truncate max-w-0">
+                              {row.kind === 'command'
+                                ? (row.data.custom_response ?? '')
+                                : row.data.response}
+                            </TableCell>
+                            <TableCell className="text-sub text-muted-foreground">
+                              {formatCooldown(
+                                row.kind === 'command' ? row.data.cooldown : row.data.cooldown
+                              )}
+                            </TableCell>
+                            <TableCell className="text-sub">
+                              {ROLE_LABELS[
+                                row.kind === 'command' ? row.data.min_role : row.data.min_role
+                              ] ?? row.data.min_role}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <div className="flex justify-center">
+                                <Switch
+                                  checked={
+                                    row.kind === 'command' ? row.data.enabled : row.data.enabled
+                                  }
+                                  onCheckedChange={() => handleToggleRow(row)}
+                                />
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="size-8"
+                                onClick={() => openEditRow(row)}
+                              >
+                                <Icon icon="fa-solid fa-pen" wrapperClassName="size-3.5" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </TabsContent>
             </Tabs>
           )}
         </CardContent>
       </Card>
 
-      {/* Edit/Create Sheet */}
+      {/* ── Unified Create/Edit Sheet ── */}
       <Sheet open={!!editing} onOpenChange={open => !open && setEditing(null)}>
         <SheetContent>
           <SheetHeader>
-            <SheetTitle>
-              {editing?.mode === 'create'
-                ? '新增自訂指令'
-                : `編輯 !${editing?.command?.command_name}`}
-            </SheetTitle>
+            <SheetTitle>{sheetTitle()}</SheetTitle>
             <SheetDescription>
               {editing?.mode === 'create'
-                ? '建立自訂指令，以 ! 開頭的回應會重導向到該指令'
-                : '修改指令設定'}
+                ? '輸入 !name 建立指令，或輸入關鍵字建立自動回應'
+                : showTriggerFields
+                  ? '修改自動回應設定'
+                  : '修改指令設定'}
             </SheetDescription>
           </SheetHeader>
 
           <div className="flex flex-col gap-card px-page">
-            {/* Command Name (create only) */}
-            {editing?.mode === 'create' && (
+            {/* Name / Pattern (create + edit trigger) */}
+            {(editing?.mode === 'create' || editing?.mode === 'edit-trigger') && (
               <div className="flex flex-col gap-2">
-                <Label>指令名稱</Label>
-                <div className="flex items-center gap-1">
-                  <span className="text-muted-foreground">!</span>
-                  <Input
-                    value={formName}
-                    onChange={e => setFormName(e.target.value)}
-                    placeholder="mycommand"
-                    className="font-mono"
-                  />
-                </div>
+                <Label>{editing.mode === 'create' ? '指令名稱 / Pattern' : 'Pattern'}</Label>
+                <Input
+                  value={formName}
+                  onChange={e => setFormName(e.target.value)}
+                  placeholder={editing.mode === 'create' ? '!mycommand 或 GG' : 'GG'}
+                  className="font-mono"
+                  autoFocus
+                />
+                {editing.mode === 'create' && (
+                  <span className="text-label text-muted-foreground">
+                    {formIsCommand
+                      ? '✓ 將建立為自訂指令（需使用者輸入 !前綴 觸發）'
+                      : '✓ 將建立為自動回應（偵測到關鍵字時自動觸發）'}
+                  </span>
+                )}
               </div>
             )}
 
-            {/* Custom Response (custom commands + editable builtins) */}
+            {/* Trigger-specific: match type & case sensitive */}
+            {showTriggerFields && (
+              <>
+                <div className="flex flex-col gap-2">
+                  <Label>比對方式</Label>
+                  <Select
+                    value={formMatchType}
+                    onValueChange={v => setFormMatchType(v as TriggerConfig['match_type'])}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="contains">contains — 包含關鍵字</SelectItem>
+                      <SelectItem value="startswith">startswith — 以關鍵字開頭</SelectItem>
+                      <SelectItem value="exact">exact — 完全相符</SelectItem>
+                      <SelectItem value="regex">regex — 正規表達式</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex flex-col gap-0.5">
+                    <Label>區分大小寫</Label>
+                    <span className="text-label text-muted-foreground">
+                      開啟後 GG 與 gg 視為不同
+                    </span>
+                  </div>
+                  <Switch checked={formCaseSensitive} onCheckedChange={setFormCaseSensitive} />
+                </div>
+              </>
+            )}
+
+            {/* Response — shown for create + custom command edit + trigger edit */}
             {(editing?.mode === 'create' ||
-              editing?.command?.command_type === 'custom' ||
-              (editing?.command && EDITABLE_COMMANDS.includes(editing.command.command_name))) && (
+              (isEditingCommand &&
+                (editing.command.command_type === 'custom' ||
+                  EDITABLE_COMMANDS.includes(editing.command.command_name))) ||
+              isEditingTrigger) && (
               <div className="flex flex-col gap-2">
                 <Label>回應</Label>
                 <Input
                   ref={responseInputRef}
                   value={formResponse}
                   onChange={e => setFormResponse(e.target.value)}
-                  placeholder="回應文字 或 !指令名 $(query) 重導向"
+                  placeholder={
+                    formIsCommand ? '回應文字 或 !指令名 $(query) 重導向' : '$(user) GG！'
+                  }
                   className="font-mono text-sub"
                 />
                 <div className="flex flex-col gap-1.5">
                   <span className="text-label text-muted-foreground">可用變數（點擊插入）</span>
                   <div className="flex flex-wrap gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => insertVariable('$(user)')}
-                      className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-label font-mono hover:bg-accent transition-colors cursor-pointer"
-                    >
-                      <span className="text-primary">$(user)</span>
-                      <span className="text-muted-foreground">— 使用者名稱</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => insertVariable('$(query)')}
-                      className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-label font-mono hover:bg-accent transition-colors cursor-pointer"
-                    >
-                      <span className="text-primary">$(query)</span>
-                      <span className="text-muted-foreground">— 使用者輸入</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => insertVariable('$(channel)')}
-                      className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-label font-mono hover:bg-accent transition-colors cursor-pointer"
-                    >
-                      <span className="text-primary">$(channel)</span>
-                      <span className="text-muted-foreground">— 頻道名稱</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => insertVariable('$(random 1,100)')}
-                      className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-label font-mono hover:bg-accent transition-colors cursor-pointer"
-                    >
-                      <span className="text-primary">$(random)</span>
-                      <span className="text-muted-foreground">— 隨機數字</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => insertVariable('$(pick a,b,c)')}
-                      className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-label font-mono hover:bg-accent transition-colors cursor-pointer"
-                    >
-                      <span className="text-primary">$(pick)</span>
-                      <span className="text-muted-foreground">— 隨機選擇</span>
-                    </button>
+                    {[
+                      { var: '$(user)', desc: '使用者名稱' },
+                      { var: '$(query)', desc: '使用者輸入' },
+                      { var: '$(channel)', desc: '頻道名稱' },
+                      { var: '$(random 1,100)', desc: '隨機數字' },
+                      { var: '$(pick a,b,c)', desc: '隨機選擇' },
+                    ].map(({ var: v, desc }) => (
+                      <button
+                        key={v}
+                        type="button"
+                        onClick={() => insertVariable(v)}
+                        className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-label font-mono hover:bg-accent transition-colors cursor-pointer"
+                      >
+                        <span className="text-primary">{v.split(' ')[0]}</span>
+                        <span className="text-muted-foreground">— {desc}</span>
+                      </button>
+                    ))}
                   </div>
                 </div>
               </div>
             )}
 
-            {/* Enabled */}
-            {editing?.mode === 'edit' && (
+            {/* Enabled (edit only) */}
+            {editing?.mode !== 'create' && (
               <div className="flex items-center justify-between">
                 <div className="flex flex-col gap-0.5">
                   <Label>啟用</Label>
-                  <span className="text-label text-muted-foreground">關閉後指令將不會回應</span>
+                  <span className="text-label text-muted-foreground">關閉後不會回應</span>
                 </div>
                 <Switch checked={formEnabled} onCheckedChange={setFormEnabled} />
               </div>
             )}
 
-            {/* Advanced Settings Toggle */}
+            {/* Advanced toggle */}
             <button
               type="button"
               className="flex items-center gap-2 text-sub text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
@@ -593,8 +856,8 @@ export default function Commands() {
 
             {showAdvanced && (
               <div className="flex flex-col gap-card border-l-2 border-muted pl-page">
-                {/* Aliases */}
-                {(editing?.mode === 'create' || editing?.command?.command_type === 'custom') && (
+                {/* Aliases — command only */}
+                {(isCreatingCommand || isEditingCommand) && (
                   <div className="flex flex-col gap-2">
                     <Label>別名</Label>
                     <Input
@@ -606,6 +869,22 @@ export default function Commands() {
                     <span className="text-label text-muted-foreground">
                       多個別名用逗號分隔，不含 ! 前綴
                     </span>
+                  </div>
+                )}
+
+                {/* Priority — trigger only */}
+                {showTriggerFields && (
+                  <div className="flex flex-col gap-2">
+                    <Label>優先度</Label>
+                    <Input
+                      type="number"
+                      step={1}
+                      value={formPriority}
+                      onChange={e => setFormPriority(e.target.value)}
+                      placeholder="0"
+                      className="w-40"
+                    />
+                    <span className="text-label text-muted-foreground">數字越大優先度越高</span>
                   </div>
                 )}
 
@@ -622,7 +901,7 @@ export default function Commands() {
                     className="w-40"
                   />
                   <span className="text-label text-muted-foreground">
-                    留空則使用頻道預設冷卻設定
+                    {showTriggerFields ? '留空則無冷卻' : '留空則使用頻道預設冷卻設定'}
                   </span>
                 </div>
 
@@ -644,17 +923,17 @@ export default function Commands() {
                 </div>
               </div>
             )}
+
+            {saveError && <p className="text-label text-destructive">{saveError}</p>}
           </div>
 
           <SheetFooter className="flex-row gap-2">
-            {editing?.mode === 'edit' && editing.command?.command_type === 'custom' && (
+            {canDelete && (
               <Button
                 variant="destructive"
                 onClick={() => {
-                  if (editing.command) {
-                    handleDelete(editing.command)
-                    setEditing(null)
-                  }
+                  if (editing?.mode === 'edit-command') handleDeleteCommand(editing.command)
+                  else if (editing?.mode === 'edit-trigger') handleDeleteTrigger(editing.trigger)
                 }}
               >
                 <Icon icon="fa-solid fa-trash" wrapperClassName="mr-1.5 size-3" />
