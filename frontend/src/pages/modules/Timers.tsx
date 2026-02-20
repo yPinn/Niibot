@@ -99,7 +99,7 @@ export default function Timers() {
   const openCreate = () => {
     setEditing({ mode: 'create', timer: null })
     setFormName('')
-    setFormInterval('')
+    setFormInterval('900')
     setFormMinLines('5')
     setFormTemplate('')
     setFormEnabled(true)

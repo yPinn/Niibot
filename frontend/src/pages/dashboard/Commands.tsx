@@ -507,13 +507,13 @@ export default function Commands() {
             <Tabs defaultValue="builtin">
               <TabsList>
                 <TabsTrigger value="builtin">
-                  內建指令
+                  內建
                   <Badge variant="secondary" className="ml-1.5 px-1.5 text-label">
                     {commands.filter(c => c.command_type === 'builtin').length}
                   </Badge>
                 </TabsTrigger>
                 <TabsTrigger value="custom">
-                  Custom
+                  自訂
                   <Badge variant="secondary" className="ml-1.5 px-1.5 text-label">
                     {commands.filter(c => c.command_type === 'custom').length + triggers.length}
                   </Badge>
@@ -623,13 +623,13 @@ export default function Commands() {
                   <Table className="table-fixed">
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="w-[28%]">名稱 / Pattern</TableHead>
-                        <TableHead className="w-[13%]">類型</TableHead>
+                        <TableHead className="w-[18%]">名稱</TableHead>
+                        <TableHead className="w-[10%]">類型</TableHead>
                         <TableHead>回應</TableHead>
-                        <TableHead className="w-[10%]">冷卻</TableHead>
-                        <TableHead className="w-[10%]">權限</TableHead>
-                        <TableHead className="w-[8%] text-center">狀態</TableHead>
-                        <TableHead className="w-[8%] text-right">操作</TableHead>
+                        <TableHead className="w-[8%]">冷卻</TableHead>
+                        <TableHead className="w-[8%]">權限</TableHead>
+                        <TableHead className="w-[7%] text-center">狀態</TableHead>
+                        <TableHead className="w-[7%] text-right">操作</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -666,7 +666,7 @@ export default function Commands() {
                             </TableCell>
                             <TableCell>
                               {row.kind === 'command' ? (
-                                <Badge variant="default">Command</Badge>
+                                <Badge variant="default">指令</Badge>
                               ) : (
                                 <Badge variant="secondary">
                                   {MATCH_TYPE_LABELS[row.data.match_type]}
@@ -679,21 +679,15 @@ export default function Commands() {
                                 : row.data.response}
                             </TableCell>
                             <TableCell className="text-sub text-muted-foreground">
-                              {formatCooldown(
-                                row.kind === 'command' ? row.data.cooldown : row.data.cooldown
-                              )}
+                              {formatCooldown(row.data.cooldown)}
                             </TableCell>
                             <TableCell className="text-sub">
-                              {ROLE_LABELS[
-                                row.kind === 'command' ? row.data.min_role : row.data.min_role
-                              ] ?? row.data.min_role}
+                              {ROLE_LABELS[row.data.min_role] ?? row.data.min_role}
                             </TableCell>
                             <TableCell className="text-center">
                               <div className="flex justify-center">
                                 <Switch
-                                  checked={
-                                    row.kind === 'command' ? row.data.enabled : row.data.enabled
-                                  }
+                                  checked={row.data.enabled}
                                   onCheckedChange={() => handleToggleRow(row)}
                                 />
                               </div>
@@ -738,7 +732,7 @@ export default function Commands() {
             {/* Name / Pattern (create + edit trigger) */}
             {(editing?.mode === 'create' || editing?.mode === 'edit-trigger') && (
               <div className="flex flex-col gap-2">
-                <Label>{editing.mode === 'create' ? '指令名稱 / Pattern' : 'Pattern'}</Label>
+                <Label>{editing.mode === 'create' ? '名稱' : '觸發詞'}</Label>
                 <Input
                   value={formName}
                   onChange={e => setFormName(e.target.value)}
@@ -897,11 +891,15 @@ export default function Commands() {
                     step={5}
                     value={formCooldown}
                     onChange={e => setFormCooldown(e.target.value)}
-                    placeholder={`預設: ${defaults.default_cooldown}`}
+                    placeholder={
+                      showTriggerFields ? '建議 30' : `預設: ${defaults.default_cooldown}`
+                    }
                     className="w-40"
                   />
                   <span className="text-label text-muted-foreground">
-                    {showTriggerFields ? '留空則無冷卻' : '留空則使用頻道預設冷卻設定'}
+                    {showTriggerFields
+                      ? '留空則無冷卻，建議填 30 防洗頻'
+                      : '留空則使用頻道預設冷卻設定'}
                   </span>
                 </div>
 
