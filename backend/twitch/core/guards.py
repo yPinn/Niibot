@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
+from typing import Protocol
 
 from twitchio.ext import commands
 
@@ -11,6 +12,11 @@ from shared.models.channel import Channel
 from shared.models.command_config import CommandConfig
 from shared.repositories.channel import ChannelRepository
 from shared.repositories.command_config import CommandConfigRepository
+
+
+class _HasCooldown(Protocol):
+    cooldown: int | None
+
 
 LOGGER = logging.getLogger("CommandGuard")
 
@@ -46,7 +52,7 @@ def has_role(chatter, min_role: str) -> bool:
 def is_on_cooldown(
     channel_id: str,
     command_name: str,
-    config: CommandConfig,
+    config: _HasCooldown,
     channel: Channel | None = None,
 ) -> bool:
     """Check if command is on cooldown.

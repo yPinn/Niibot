@@ -198,6 +198,8 @@ class GeneralCommands(commands.Component):
                 analytics = self.bot.analytics
 
                 # Flush chatter stats buffer to database
+                if hasattr(self.bot, "_channel_line_counts"):
+                    self.bot._channel_line_counts.pop(channel_id, None)
                 if hasattr(self.bot, "_chatter_buffers"):
                     chatter_data = self.bot._chatter_buffers.pop(channel_id, {})
                     if chatter_data:

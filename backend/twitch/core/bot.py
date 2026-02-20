@@ -26,6 +26,8 @@ from shared.repositories.command_config import (
     RedemptionConfigRepository,
     set_builtin_commands,
 )
+from shared.repositories.message_trigger import MessageTriggerRepository
+from shared.repositories.timer import TimerConfigRepository
 
 LOGGER: logging.Logger = logging.getLogger("Bot")
 
@@ -98,9 +100,13 @@ class Bot(commands.AutoBot):
         self.analytics = AnalyticsRepository(token_database)
         self.command_configs = CommandConfigRepository(token_database)
         self.redemption_configs = RedemptionConfigRepository(token_database)
+        self.timer_configs = TimerConfigRepository(token_database)
+        self.message_trigger_configs = MessageTriggerRepository(token_database)
         self._active_sessions: dict[str, int] = {}
         # In-memory chatter buffers: {channel_id: {user_id: {"username": str, "count": int, "last_at": datetime}}}
         self._chatter_buffers: dict[str, dict[str, dict]] = {}
+        # Per-channel cumulative message count during active sessions (for timer min_lines gate)
+        self._channel_line_counts: dict[str, int] = {}
 
         init_kwargs: dict = dict(
             client_id=client_id,
@@ -244,6 +250,10 @@ class Bot(commands.AutoBot):
                         "count": 1,
                         "last_at": datetime.now(),
                     }
+                # Cumulative line count for timer min_lines gate
+                self._channel_line_counts[channel_id] = (
+                    self._channel_line_counts.get(channel_id, 0) + 1
+                )
 
             # Normalize command name to lowercase for case-insensitive matching
             # e.g. "!AI question" → "!ai question", "!Help" → "!help"
@@ -257,6 +267,12 @@ class Bot(commands.AutoBot):
             handled = await self._handle_custom_command(payload)
             if handled:
                 return
+
+            # Message trigger handling (non-command messages only)
+            if payload.text and not payload.text.startswith("!"):
+                triggered = await self._handle_message_trigger(payload)
+                if triggered:
+                    return
         else:
             LOGGER.debug(f"[{payload.chatter.name}]: {payload.text}")
 
@@ -267,6 +283,74 @@ class Bot(commands.AutoBot):
         if isinstance(payload.exception, CommandNotFound):
             return
         LOGGER.error(f"Command error: {payload.exception}")
+
+    # ------------------------------------------------------------------
+    # Message trigger handling
+    # ------------------------------------------------------------------
+
+    def _match_trigger(self, trigger, text: str) -> bool:
+        """Check if text matches a trigger's pattern."""
+        pattern = trigger.pattern if trigger.case_sensitive else trigger.pattern.lower()
+        compare = text if trigger.case_sensitive else text.lower()
+        if trigger.match_type == "contains":
+            return pattern in compare
+        if trigger.match_type == "startswith":
+            return compare.startswith(pattern)
+        if trigger.match_type == "exact":
+            return compare == pattern
+        if trigger.match_type == "regex":
+            try:
+                return bool(re.search(pattern, compare))
+            except re.error:
+                return False
+        return False
+
+    async def _handle_message_trigger(self, payload: twitchio.ChatMessage) -> bool:
+        """Check enabled triggers for the channel and respond to first match.
+
+        Returns True if a trigger fired (caller should stop further processing).
+        """
+        channel_id = payload.broadcaster.id
+        text = payload.text or ""
+
+        try:
+            triggers = await self.message_trigger_configs.list_enabled(channel_id)
+        except Exception as e:
+            LOGGER.warning(f"[TRIGGER] Failed to load triggers for {channel_id}: {e}")
+            return False
+
+        for trigger in triggers:
+            if not self._match_trigger(trigger, text):
+                continue
+            if not has_role(payload.chatter, trigger.min_role):
+                continue
+
+            trigger_key = f"trigger:{trigger.id}"
+            if is_on_cooldown(channel_id, trigger_key, trigger, None):
+                continue
+            record_cooldown(channel_id, trigger_key)
+
+            response = _substitute_variables(
+                trigger.response,
+                payload.chatter,
+                payload.broadcaster.name or "",
+                text,
+            )
+            try:
+                await payload.broadcaster.send_message(
+                    message=response,
+                    sender=self.bot_id,
+                    token_for=self.bot_id,
+                    reply_to_message_id=str(payload.id),
+                )
+                LOGGER.info(
+                    f"[TRIGGER] '{trigger.trigger_name}' fired for {payload.chatter.name} in {channel_id}"
+                )
+            except Exception as e:
+                LOGGER.warning(f"[TRIGGER] Failed to send response: {e}")
+            return True
+
+        return False
 
     # ------------------------------------------------------------------
     # Custom command handling
@@ -586,6 +670,14 @@ class Bot(commands.AutoBot):
             _redemption_cache.clear()
         except Exception as e:
             LOGGER.warning(f"Cache refresh (redemptions) failed for {channel_id}: {e}")
+        try:
+            self.timer_configs.invalidate_cache(channel_id)
+        except Exception as e:
+            LOGGER.warning(f"Cache refresh (timers) failed for {channel_id}: {e}")
+        try:
+            self.message_trigger_configs.invalidate_cache(channel_id)
+        except Exception as e:
+            LOGGER.warning(f"Cache refresh (triggers) failed for {channel_id}: {e}")
 
     async def _periodic_cache_refresh(self) -> None:
         """Safety net: reload all config caches every 5 minutes.
@@ -755,6 +847,7 @@ class Bot(commands.AutoBot):
                         continue
                     sid = self._active_sessions.pop(cid)
                     self._chatter_buffers.pop(cid, None)
+                    self._channel_line_counts.pop(cid, None)
                     if sid:
                         try:
                             await self.analytics.end_session(sid, datetime.now())

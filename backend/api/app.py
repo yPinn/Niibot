@@ -22,7 +22,9 @@ from routers import (
     commands_router,
     events_router,
     game_queue_router,
+    message_triggers_router,
     stats_router,
+    timers_router,
 )
 
 logger = logging.getLogger(__name__)
@@ -190,6 +192,8 @@ def create_app() -> FastAPI:
     app.include_router(commands_router.router)
     app.include_router(events_router.router)
     app.include_router(game_queue_router.router)
+    app.include_router(timers_router.router)
+    app.include_router(message_triggers_router.router)
     app.include_router(bots_router.router)
 
     # Root endpoint
