@@ -53,7 +53,7 @@ function App() {
                 </Route>
               </Route>
             </Routes>
-            <Toaster position="bottom-right" richColors closeButton />
+            <Toaster position="bottom-right" richColors />
           </BotProvider>
         </ServiceStatusProvider>
       </ThemeProvider>
