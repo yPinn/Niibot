@@ -7,18 +7,18 @@ import { Toaster } from '@/components/ui'
 import { AuthProvider } from '@/contexts/AuthContext'
 import { BotProvider } from '@/contexts/BotContext'
 import { ServiceStatusProvider } from '@/contexts/ServiceStatusContext'
-import About from '@/pages/About'
-import Commands from '@/pages/Commands'
-import Dashboard from '@/pages/Dashboard'
+import Commands from '@/pages/dashboard/Commands'
+import Events from '@/pages/dashboard/Events'
+import Overview from '@/pages/dashboard/Overview'
+import SystemStatus from '@/pages/dashboard/SystemStatus'
 import DiscordDashboard from '@/pages/discord/Dashboard'
-import Events from '@/pages/Events'
 import GameQueueOverlay from '@/pages/GameQueueOverlay'
+import Landing from '@/pages/Landing'
 import LoginPage from '@/pages/Login'
 import GameQueue from '@/pages/modules/GameQueue'
 import NotFound from '@/pages/NotFound'
 import PublicCommands from '@/pages/PublicCommands'
 import Settings from '@/pages/Settings'
-import SystemStatus from '@/pages/SystemStatus'
 import TypographyDemo from '@/pages/TypographyDemo'
 
 function App() {
@@ -28,7 +28,7 @@ function App() {
         <ServiceStatusProvider>
           <BotProvider>
             <Routes>
-              <Route path="/" element={<About />} />
+              <Route path="/" element={<Landing />} />
               <Route path="/:username/commands" element={<PublicCommands />} />
               <Route path="/:channelId/game-queue/overlay" element={<GameQueueOverlay />} />
               <Route path="/dev/typography" element={<TypographyDemo />} />
@@ -38,7 +38,7 @@ function App() {
               <Route element={<ProtectedRoute />}>
                 <Route element={<SidebarLayout />}>
                   {/* Twitch Bot Routes */}
-                  <Route path="/dashboard" element={<Dashboard />} />
+                  <Route path="/dashboard" element={<Overview />} />
                   <Route path="/commands" element={<Commands />} />
                   <Route path="/events" element={<Events />} />
                   <Route path="/system" element={<SystemStatus />} />
