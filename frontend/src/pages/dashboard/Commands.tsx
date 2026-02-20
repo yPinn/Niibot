@@ -74,13 +74,6 @@ const ROLE_ORDER: Record<string, number> = {
   broadcaster: 4,
 }
 
-const MATCH_TYPE_LABELS: Record<string, string> = {
-  contains: 'contains',
-  startswith: 'startswith',
-  exact: 'exact',
-  regex: 'regex',
-}
-
 type SortKey = 'command_name' | 'cooldown' | 'min_role' | 'usage_count' | 'enabled'
 type SortDir = 'asc' | 'desc'
 
@@ -159,7 +152,7 @@ export default function Commands() {
   const [formCooldown, setFormCooldown] = useState('')
   const [formRole, setFormRole] = useState('everyone')
   const [formAliases, setFormAliases] = useState('') // command-only
-  const [formMatchType, setFormMatchType] = useState<TriggerConfig['match_type']>('contains')
+  const [formMatchType, setFormMatchType] = useState<TriggerConfig['match_type']>('startswith')
   const [formCaseSensitive, setFormCaseSensitive] = useState(false)
   const [formPriority, setFormPriority] = useState('0')
   const [formEnabled, setFormEnabled] = useState(true)
@@ -282,10 +275,10 @@ export default function Commands() {
 
   const resetForm = () => {
     setFormResponse('')
-    setFormCooldown('')
+    setFormCooldown('5')
     setFormRole('everyone')
     setFormAliases('')
-    setFormMatchType('contains')
+    setFormMatchType('startswith')
     setFormCaseSensitive(false)
     setFormPriority('0')
     setFormEnabled(true)
@@ -527,7 +520,7 @@ export default function Commands() {
                     <TableHeader>
                       <TableRow>
                         <SortableHead
-                          className="w-[43%]"
+                          className="w-[20%]"
                           sortKey="command_name"
                           currentKey={sortKey}
                           dir={sortDir}
@@ -535,8 +528,9 @@ export default function Commands() {
                         >
                           指令
                         </SortableHead>
+                        <TableHead>描述</TableHead>
                         <SortableHead
-                          className="w-[12%]"
+                          className="w-[8%]"
                           sortKey="cooldown"
                           currentKey={sortKey}
                           dir={sortDir}
@@ -545,7 +539,7 @@ export default function Commands() {
                           冷卻
                         </SortableHead>
                         <SortableHead
-                          className="w-[12%]"
+                          className="w-[8%]"
                           sortKey="min_role"
                           currentKey={sortKey}
                           dir={sortDir}
@@ -554,7 +548,7 @@ export default function Commands() {
                           權限
                         </SortableHead>
                         <SortableHead
-                          className="w-[15%] text-right"
+                          className="w-[10%] text-right"
                           sortKey="usage_count"
                           currentKey={sortKey}
                           dir={sortDir}
@@ -563,7 +557,7 @@ export default function Commands() {
                           使用次數
                         </SortableHead>
                         <SortableHead
-                          className="w-[10%] text-center"
+                          className="w-[8%] text-center"
                           sortKey="enabled"
                           currentKey={sortKey}
                           dir={sortDir}
@@ -571,7 +565,7 @@ export default function Commands() {
                         >
                           狀態
                         </SortableHead>
-                        <TableHead className="w-[8%] text-right">操作</TableHead>
+                        <TableHead className="w-[7%] text-right">操作</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -588,12 +582,10 @@ export default function Commands() {
                                     .join(' · ')}
                                 </span>
                               )}
-                              {cmd.description && (
-                                <span className="text-label text-muted-foreground">
-                                  {cmd.description}
-                                </span>
-                              )}
                             </div>
+                          </TableCell>
+                          <TableCell className="text-sub text-muted-foreground truncate max-w-0">
+                            {cmd.description}
                           </TableCell>
                           <TableCell className="text-sub text-muted-foreground">
                             {formatCooldown(cmd.cooldown)}
@@ -633,11 +625,12 @@ export default function Commands() {
                   <Table className="table-fixed">
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="w-[18%]">名稱</TableHead>
+                        <TableHead className="w-[20%]">名稱</TableHead>
                         <TableHead className="w-[10%]">類型</TableHead>
                         <TableHead>回應</TableHead>
                         <TableHead className="w-[8%]">冷卻</TableHead>
                         <TableHead className="w-[8%]">權限</TableHead>
+                        <TableHead className="w-[10%] text-right">使用次數</TableHead>
                         <TableHead className="w-[7%] text-center">狀態</TableHead>
                         <TableHead className="w-[7%] text-right">操作</TableHead>
                       </TableRow>
@@ -645,7 +638,7 @@ export default function Commands() {
                     <TableBody>
                       {customRows.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={7} className="text-center text-muted-foreground">
+                          <TableCell colSpan={8} className="text-center text-muted-foreground">
                             尚無自訂指令或自動回應
                           </TableCell>
                         </TableRow>
@@ -665,8 +658,11 @@ export default function Commands() {
                                     !{row.data.command_name}
                                   </span>
                                   {row.data.aliases && (
-                                    <span className="text-label text-muted-foreground">
-                                      ({row.data.aliases})
+                                    <span className="text-label font-mono text-muted-foreground">
+                                      {row.data.aliases
+                                        .split(',')
+                                        .map((a: string) => `!${a.trim()}`)
+                                        .join(' · ')}
                                     </span>
                                   )}
                                 </div>
@@ -678,9 +674,7 @@ export default function Commands() {
                               {row.kind === 'command' ? (
                                 <Badge variant="default">指令</Badge>
                               ) : (
-                                <Badge variant="secondary">
-                                  {MATCH_TYPE_LABELS[row.data.match_type]}
-                                </Badge>
+                                <Badge variant="secondary">觸發</Badge>
                               )}
                             </TableCell>
                             <TableCell className="text-sub text-muted-foreground truncate max-w-0">
@@ -693,6 +687,9 @@ export default function Commands() {
                             </TableCell>
                             <TableCell className="text-sub">
                               {ROLE_LABELS[row.data.min_role] ?? row.data.min_role}
+                            </TableCell>
+                            <TableCell className="text-right text-sub text-muted-foreground">
+                              {row.kind === 'command' ? row.data.usage_count : '—'}
                             </TableCell>
                             <TableCell className="text-center">
                               <div className="flex justify-center">
@@ -738,7 +735,7 @@ export default function Commands() {
             </SheetDescription>
           </SheetHeader>
 
-          <div className="flex flex-col gap-card px-page">
+          <div className="flex flex-1 flex-col gap-card overflow-y-auto px-page">
             {/* Name / Pattern (create + edit trigger) */}
             {(editing?.mode === 'create' || editing?.mode === 'edit-trigger') && (
               <div className="flex flex-col gap-2">
@@ -935,7 +932,7 @@ export default function Commands() {
             {saveError && <p className="text-label text-destructive">{saveError}</p>}
           </div>
 
-          <SheetFooter className="flex-row gap-2">
+          <SheetFooter className="shrink-0 flex-row gap-2">
             {canDelete && (
               <Button
                 variant="destructive"

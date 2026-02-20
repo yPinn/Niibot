@@ -24,10 +24,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       <SidebarHeader>
         <BotSwitcher />
       </SidebarHeader>
-      <SidebarContent>
-        <NavMain items={currentNavData.navMain} />
-        {activeBot === 'twitch' && <NavChannels channels={channels} />}
-        <NavSecondary items={currentNavData.navSecondary} className="mt-auto" />
+      <SidebarContent className="overflow-hidden">
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+          <NavMain items={currentNavData.navMain} />
+          {activeBot === 'twitch' && <NavChannels channels={channels} />}
+        </div>
+        <NavSecondary items={currentNavData.navSecondary} />
       </SidebarContent>
       <SidebarFooter>
         {user ? (

@@ -19,8 +19,13 @@ class GeneralCommands(commands.Component):
     """General user commands for the bot."""
 
     COMMANDS: list[dict] = [
-        {"command_name": "hi", "custom_response": "你好,$(user)!", "cooldown": 5},
-        {"command_name": "help", "cooldown": 5},
+        {
+            "command_name": "hi",
+            "custom_response": "你好,$(user)!",
+            "cooldown": 5,
+            "aliases": "hello,hey",
+        },
+        {"command_name": "help", "cooldown": 5, "aliases": "commands"},
         {"command_name": "uptime", "cooldown": 5},
         {"command_name": "斥責", "cooldown": 10, "aliases": "嚴厲斥責"},
     ]
