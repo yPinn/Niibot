@@ -5,7 +5,7 @@ import { Badge, Button, Card, CardContent, Icon } from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
 export default function Home() {
-  useDocumentTitle('About')
+  useDocumentTitle('泥爸')
   const navigate = useNavigate()
   const { resolvedTheme, setTheme } = useTheme()
 

@@ -114,7 +114,7 @@ export function NavChannels({ channels }: { channels: Channel[] }) {
           <SidebarMenuItem key={channel.id}>
             <SidebarMenuButton
               asChild
-              className={channel.is_live ? 'h-auto py-1.5' : ''}
+              className={channel.is_live ? 'h-auto py-1.5 items-start' : ''}
             >
               <a
                 href={`https://twitch.tv/${channel.name}`}
@@ -131,7 +131,7 @@ export function NavChannels({ channels }: { channels: Channel[] }) {
                     </AvatarFallback>
                   </Avatar>
                   {channel.is_live && (
-                    <div className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-sidebar" />
+                    <div className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-status-live ring-2 ring-sidebar" />
                   )}
                 </div>
                 {channel.is_live ? (
@@ -148,14 +148,14 @@ export function NavChannels({ channels }: { channels: Channel[] }) {
                 ) : (
                   <span className="flex-1 truncate">{channel.display_name}</span>
                 )}
-                <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+                <div className="flex items-center gap-1.5 shrink-0 ml-auto self-center">
                   {channel.is_live && channel.viewer_count !== undefined && (
                     <span className="text-xs tabular-nums text-muted-foreground">
                       {channel.viewer_count}
                     </span>
                   )}
                   <div
-                    className={`h-2 w-2 rounded-full ${channel.is_live ? 'bg-red-500 animate-pulse' : 'bg-gray-400'}`}
+                    className={`h-2 w-2 rounded-full ${channel.is_live ? 'bg-status-live animate-pulse' : 'bg-muted-foreground'}`}
                   />
                 </div>
               </a>

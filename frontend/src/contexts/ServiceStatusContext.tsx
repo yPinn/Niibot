@@ -87,7 +87,7 @@ export function ServiceStatusProvider({ children }: { children: React.ReactNode 
         description: '無法連線至資料庫，頁面資料暫時無法載入',
       })
     } else if (api.db_connected === true && prev === false) {
-      toast.success('服務已恢復正常', { id: 'db-status', duration: 4000 })
+      toast.success('服務已恢復正常', { id: 'db-status', duration: 4000, description: '' })
     }
   }, [api])
 
