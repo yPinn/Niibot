@@ -69,7 +69,7 @@ export const API_ENDPOINTS = {
     removeEntry: (id: number) => join(`/api/game-queue/entries/${id}`),
     clear: join('/api/game-queue/clear'),
     settings: join('/api/game-queue/settings'),
-    public: (channelId: string) => join(`/api/game-queue/public/${channelId}`),
+    public: (username: string) => join(`/api/game-queue/public/${username}`),
   },
   timers: {
     configs: join('/api/timers/configs'),

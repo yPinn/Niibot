@@ -7,7 +7,8 @@ from asyncpg import Pool
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from core.dependencies import get_current_channel_id, get_db_pool
+from core.dependencies import get_current_channel_id, get_db_pool, get_twitch_api
+from services import TwitchAPIClient
 from services.game_queue_service import GameQueueService
 
 logger = logging.getLogger(__name__)
@@ -184,16 +185,23 @@ async def update_settings(
 # ============================================
 
 
-@router.get("/public/{channel_id}", response_model=PublicQueueStateResponse)
+@router.get("/public/{username}", response_model=PublicQueueStateResponse)
 async def get_public_queue_state(
-    channel_id: str,
+    username: str,
     pool: Pool = Depends(get_db_pool),
+    twitch_api: TwitchAPIClient = Depends(get_twitch_api),
 ) -> PublicQueueStateResponse:
     """Get queue state for OBS overlay (no auth required)."""
     try:
+        user_info = await twitch_api.get_user_by_login(username)
+        if not user_info:
+            raise HTTPException(status_code=404, detail="Channel not found")
+        channel_id = user_info["id"]
         service = GameQueueService(pool)
         state = await service.get_public_state(channel_id)
         return PublicQueueStateResponse(**state)
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception(f"Failed to get public queue state: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch queue state") from None

@@ -31,7 +31,7 @@ function App() {
             <Routes>
               <Route path="/" element={<Landing />} />
               <Route path="/:username/commands" element={<PublicCommands />} />
-              <Route path="/:channelId/game-queue/overlay" element={<GameQueueOverlay />} />
+              <Route path="/:username/game-queue/overlay" element={<GameQueueOverlay />} />
               <Route path="/dev/typography" element={<TypographyDemo />} />
               <Route element={<PublicOnlyRoute />}>
                 <Route path="/login" element={<LoginPage />} />

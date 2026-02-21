@@ -27,18 +27,18 @@ function PlayerList({ entries, label }: { entries: QueueEntry[]; label: string }
 }
 
 export default function GameQueueOverlay() {
-  const { channelId } = useParams<{ channelId: string }>()
+  const { username } = useParams<{ username: string }>()
   const [state, setState] = useState<PublicQueueState | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useDocumentTitle('Game Queue Overlay')
 
   useEffect(() => {
-    if (!channelId) return
+    if (!username) return
 
     const fetchState = async () => {
       try {
-        const data = await getPublicQueueState(channelId)
+        const data = await getPublicQueueState(username)
         setState(data)
       } catch {
         // silent on poll errors
@@ -50,9 +50,9 @@ export default function GameQueueOverlay() {
     return () => {
       if (pollRef.current) clearInterval(pollRef.current)
     }
-  }, [channelId])
+  }, [username])
 
-  if (!channelId) return null
+  if (!username) return null
 
   const isEmpty = !state || (state.current_batch.length === 0 && state.next_batch.length === 0)
 

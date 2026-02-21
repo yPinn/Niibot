@@ -103,8 +103,8 @@ export async function updateQueueSettings(data: QueueSettingsUpdate): Promise<Qu
 
 // ---- Public (OBS Overlay) ----
 
-export async function getPublicQueueState(channelId: string): Promise<PublicQueueState> {
-  const response = await fetch(API_ENDPOINTS.gameQueue.public(channelId))
+export async function getPublicQueueState(username: string): Promise<PublicQueueState> {
+  const response = await fetch(API_ENDPOINTS.gameQueue.public(username))
   if (!response.ok) throw new Error(`Failed to fetch public queue state: ${response.statusText}`)
   return response.json()
 }
