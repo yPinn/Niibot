@@ -235,6 +235,7 @@ class CommandConfigRepository:
                             VALUES ($1, $2, 'builtin', TRUE, $3, $4, $5)
                             ON CONFLICT (channel_id, command_name) DO UPDATE SET
                                 aliases = EXCLUDED.aliases
+                            WHERE command_configs.aliases IS DISTINCT FROM EXCLUDED.aliases
                             """,
                             channel_id,
                             cmd["command_name"],

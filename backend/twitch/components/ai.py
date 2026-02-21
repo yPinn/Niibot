@@ -4,9 +4,9 @@ from typing import TYPE_CHECKING
 
 from openai import (
     APITimeoutError,
+    AsyncOpenAI,
     AuthenticationError,
     BadRequestError,
-    OpenAI,
     PermissionDeniedError,
     RateLimitError,
 )
@@ -54,7 +54,7 @@ class AIComponent(commands.Component):
         if not model or model.strip() == "":
             raise ValueError("OPENROUTER_MODEL is required but not set in .env file")
 
-        self.client = OpenAI(
+        self.client = AsyncOpenAI(
             base_url="https://openrouter.ai/api/v1",
             api_key=api_key,
         )
@@ -113,7 +113,7 @@ class AIComponent(commands.Component):
             for model in self.models:
                 try:
                     for attempt in range(2):
-                        completion = self.client.chat.completions.create(
+                        completion = await self.client.chat.completions.create(
                             model=model,
                             max_tokens=1200,
                             messages=messages,

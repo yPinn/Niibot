@@ -10,9 +10,9 @@ from discord import app_commands
 from discord.ext import commands
 from openai import (
     APITimeoutError,
+    AsyncOpenAI,
     AuthenticationError,
     BadRequestError,
-    OpenAI,
     PermissionDeniedError,
     RateLimitError,
 )
@@ -41,7 +41,7 @@ class AI(commands.Cog):
         if not api_key or api_key.strip() == "":
             raise ValueError("OPENROUTER_API_KEY is required but not set in .env file")
 
-        self.client = OpenAI(
+        self.client = AsyncOpenAI(
             base_url="https://openrouter.ai/api/v1",
             api_key=api_key,
         )
@@ -101,7 +101,7 @@ class AI(commands.Cog):
             for model in self.models:
                 try:
                     for attempt in range(2):
-                        completion = self.client.chat.completions.create(
+                        completion = await self.client.chat.completions.create(
                             model=model,
                             max_tokens=1200,
                             messages=messages,
