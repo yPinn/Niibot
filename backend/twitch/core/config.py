@@ -67,7 +67,9 @@ class TwitchBotSettings(BaseSettings):
 
     # OpenRouter AI
     openrouter_api_key: str = Field(default="", description="OpenRouter API key")
-    openrouter_model: str = Field(default="openrouter/free", description="OpenRouter model")
+    openrouter_model: str = Field(
+        default="deepseek/deepseek-r1-0528:free", description="OpenRouter model"
+    )
 
     # Environment
     log_level: str = Field(default="INFO", description="Logging level")

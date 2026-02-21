@@ -181,8 +181,7 @@ export default function GameQueue() {
   }
 
   // Build overlay URL
-  const channelId = user?.id || ''
-  const overlayUrl = channelId ? `${window.location.origin}/${channelId}/game-queue/overlay` : ''
+  const overlayUrl = user?.name ? `${window.location.origin}/${user.name}/game-queue/overlay` : ''
 
   if (loading) {
     return (

@@ -2,7 +2,14 @@ import logging
 import re
 from typing import TYPE_CHECKING
 
-from openai import OpenAI
+from openai import (
+    APITimeoutError,
+    AuthenticationError,
+    BadRequestError,
+    OpenAI,
+    PermissionDeniedError,
+    RateLimitError,
+)
 from openai.types.chat import ChatCompletionMessageParam
 from twitchio.ext import commands
 
@@ -17,6 +24,14 @@ else:
 
 
 LOGGER: logging.Logger = logging.getLogger("AIComponent")
+
+FALLBACK_MODELS: list[str] = [
+    "deepseek/deepseek-r1-0528:free",
+    "stepfun/step-3.5-flash:free",
+    "z-ai/glm-4.5-air:free",
+    "openai/gpt-oss-120b:free",
+    "meta-llama/llama-3.3-70b-instruct:free",
+]
 
 
 class AIComponent(commands.Component):
@@ -43,9 +58,9 @@ class AIComponent(commands.Component):
             base_url="https://openrouter.ai/api/v1",
             api_key=api_key,
         )
-        self.model = model
+        self.models = [model] + [m for m in FALLBACK_MODELS if m != model]
 
-        LOGGER.info(f"AIComponent initialized: model={model}")
+        LOGGER.info(f"AIComponent initialized: primary={model}, fallbacks={len(self.models) - 1}")
 
     @commands.command(aliases=["問"])
     async def ai(self, ctx: commands.Context[Bot], *, message: str | None = None) -> None:
@@ -93,25 +108,38 @@ class AIComponent(commands.Component):
             ]
 
             response = ""
-            for attempt in range(2):
-                completion = self.client.chat.completions.create(
-                    model=self.model,
-                    max_tokens=800,
-                    messages=messages,
-                )
+            last_error: Exception | None = None
 
-                if not completion.choices:
-                    LOGGER.warning(f"AI attempt {attempt + 1}: no choices")
+            for model in self.models:
+                try:
+                    for attempt in range(2):
+                        completion = self.client.chat.completions.create(
+                            model=model,
+                            max_tokens=1200,
+                            messages=messages,
+                        )
+
+                        if not completion.choices:
+                            LOGGER.warning(f"AI [{model}] attempt {attempt + 1}: no choices")
+                            continue
+
+                        raw = completion.choices[0].message.content or ""
+                        response = re.sub(r"<think>[\s\S]*?</think>", "", raw)
+                        response = re.sub(r"<think>[\s\S]*$", "", response)
+                        response = response.strip()
+
+                        LOGGER.info(
+                            f"AI [{model}] attempt {attempt + 1}: raw={len(raw)}, clean={len(response)}"
+                        )
+                        if response:
+                            break
+
+                    if response:
+                        break
+                except RateLimitError as e:
+                    LOGGER.warning(f"AI rate limit on {model}, trying next model")
+                    last_error = e
                     continue
-
-                raw = completion.choices[0].message.content or ""
-                response = re.sub(r"<think>[\s\S]*?</think>", "", raw)
-                response = re.sub(r"<think>[\s\S]*$", "", response)
-                response = response.strip()
-
-                LOGGER.info(f"AI attempt {attempt + 1}: raw={len(raw)}, clean={len(response)}")
-                if response:
-                    break
 
             # Twitch message limit is 500 characters
             if len(response) > 500:
@@ -119,23 +147,26 @@ class AIComponent(commands.Component):
 
             if response:
                 await ctx.reply(response)
+            elif last_error:
+                raise last_error
             else:
-                LOGGER.warning("Empty content after 2 attempts")
+                LOGGER.warning("Empty content after all models")
                 await ctx.reply("AI 回應為空，請重試")
-        except Exception as e:
-            error_msg = str(e)
-            # Provide more specific error messages for text-only mode
-            if "rate limit" in error_msg.lower() or "429" in error_msg:
-                await ctx.reply("API 請求過於頻繁，請稍後再試")
-            elif "timeout" in error_msg.lower():
-                await ctx.reply("請求超時，請稍後再試")
-            elif "authentication" in error_msg.lower() or "401" in error_msg:
-                await ctx.reply("API 認證失敗")
-            elif "400" in error_msg:
-                await ctx.reply("請求格式錯誤，請稍後再試")
-            else:
-                await ctx.reply("AI 服務暫時無法使用，請稍後再試")
-            LOGGER.error(f"AI command error: {error_msg}")
+        except RateLimitError as e:
+            await ctx.reply("AI 功能目前使用人數過多，請稍後再試")
+            LOGGER.error(f"AI command error: {e}")
+        except PermissionDeniedError as e:
+            await ctx.reply("AI 服務暫時無法使用，請聯絡管理員")
+            LOGGER.error(f"AI command error: {e}")
+        except AuthenticationError as e:
+            await ctx.reply("AI 服務設定異常，請聯絡管理員")
+            LOGGER.error(f"AI command error: {e}")
+        except APITimeoutError as e:
+            await ctx.reply("AI 回應逾時，請稍後再試")
+            LOGGER.error(f"AI command error: {e}")
+        except (BadRequestError, Exception) as e:
+            await ctx.reply("AI 服務暫時無法使用，請稍後再試")
+            LOGGER.error(f"AI command error: {e}")
 
 
 async def setup(bot: commands.Bot) -> None:

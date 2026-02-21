@@ -8,12 +8,27 @@ import re
 import discord
 from discord import app_commands
 from discord.ext import commands
-from openai import OpenAI
+from openai import (
+    APITimeoutError,
+    AuthenticationError,
+    BadRequestError,
+    OpenAI,
+    PermissionDeniedError,
+    RateLimitError,
+)
 from openai.types.chat import ChatCompletionMessageParam
 
 from core import DATA_DIR
 
 LOGGER = logging.getLogger("AI")
+
+FALLBACK_MODELS: list[str] = [
+    "deepseek/deepseek-r1-0528:free",
+    "stepfun/step-3.5-flash:free",
+    "z-ai/glm-4.5-air:free",
+    "openai/gpt-oss-120b:free",
+    "meta-llama/llama-3.3-70b-instruct:free",
+]
 
 
 class AI(commands.Cog):
@@ -30,12 +45,12 @@ class AI(commands.Cog):
             base_url="https://openrouter.ai/api/v1",
             api_key=api_key,
         )
-        self.model = model
+        self.models = [model] + [m for m in FALLBACK_MODELS if m != model]
 
         with open(DATA_DIR / "embed.json", encoding="utf-8") as f:
             self.global_embed_config = json.load(f)
 
-        LOGGER.info(f"AI Cog initialized: model={model}")
+        LOGGER.info(f"AI Cog initialized: primary={model}, fallbacks={len(self.models) - 1}")
 
     @app_commands.command(name="ai", description="AI 問答")
     @app_commands.describe(question="你的問題")
@@ -81,29 +96,42 @@ class AI(commands.Cog):
             ]
 
             response = ""
-            for attempt in range(2):
-                completion = self.client.chat.completions.create(
-                    model=self.model,
-                    max_tokens=1200,
-                    messages=messages,
-                )
+            last_error: Exception | None = None
 
-                if not completion.choices:
-                    LOGGER.warning(f"AI attempt {attempt + 1}: no choices")
+            for model in self.models:
+                try:
+                    for attempt in range(2):
+                        completion = self.client.chat.completions.create(
+                            model=model,
+                            max_tokens=1200,
+                            messages=messages,
+                        )
+
+                        if not completion.choices:
+                            LOGGER.warning(f"AI [{model}] attempt {attempt + 1}: no choices")
+                            continue
+
+                        raw = completion.choices[0].message.content or ""
+                        response = re.sub(r"<think>[\s\S]*?</think>", "", raw)
+                        response = re.sub(r"<think>[\s\S]*$", "", response)
+                        response = response.strip()
+
+                        LOGGER.info(
+                            f"AI [{model}] attempt {attempt + 1}: raw={len(raw)}, clean={len(response)}"
+                        )
+                        if response:
+                            break
+
+                    if response:
+                        break
+                except RateLimitError as e:
+                    LOGGER.warning(f"AI rate limit on {model}, trying next model")
+                    last_error = e
                     continue
-
-                raw = completion.choices[0].message.content or ""
-                response = re.sub(r"<think>[\s\S]*?</think>", "", raw)
-                response = re.sub(r"<think>[\s\S]*$", "", response)
-                response = response.strip()
-
-                LOGGER.info(f"AI attempt {attempt + 1}: raw={len(raw)}, clean={len(response)}")
-                if response:
-                    break
 
             if response:
                 embed = discord.Embed(
-                    title="ChatGPT",
+                    title="AI 回應",
                     color=discord.Color.blue(),
                 )
 
@@ -126,23 +154,27 @@ class AI(commands.Cog):
                     response = response[:1017] + "..."
                 embed.add_field(name="**回應**", value=response, inline=False)
                 await interaction.followup.send(embed=embed)
+            elif last_error:
+                raise last_error
             else:
-                LOGGER.warning("Empty content from API")
+                LOGGER.warning("Empty content after all models")
                 await interaction.followup.send("AI 回應為空，請重試")
 
-        except Exception as e:
-            error_msg = str(e)
-            if "rate limit" in error_msg.lower() or "429" in error_msg:
-                await interaction.followup.send("API 請求過於頻繁，請稍後再試")
-            elif "timeout" in error_msg.lower():
-                await interaction.followup.send("請求超時，請稍後再試")
-            elif "authentication" in error_msg.lower() or "401" in error_msg:
-                await interaction.followup.send("API 認證失敗")
-            elif "400" in error_msg:
-                await interaction.followup.send("請求格式錯誤，請稍後再試")
-            else:
-                await interaction.followup.send("AI 服務暫時無法使用，請稍後再試")
-            LOGGER.error(f"AI command error: {error_msg}")
+        except RateLimitError as e:
+            await interaction.followup.send("AI 功能目前使用人數過多，請稍後再試")
+            LOGGER.error(f"AI command error: {e}")
+        except PermissionDeniedError as e:
+            await interaction.followup.send("AI 服務暫時無法使用，請聯絡管理員")
+            LOGGER.error(f"AI command error: {e}")
+        except AuthenticationError as e:
+            await interaction.followup.send("AI 服務設定異常，請聯絡管理員")
+            LOGGER.error(f"AI command error: {e}")
+        except APITimeoutError as e:
+            await interaction.followup.send("AI 回應逾時，請稍後再試")
+            LOGGER.error(f"AI command error: {e}")
+        except (BadRequestError, Exception) as e:
+            await interaction.followup.send("AI 服務暫時無法使用，請稍後再試")
+            LOGGER.error(f"AI command error: {e}")
 
 
 async def setup(bot: commands.Bot) -> None:

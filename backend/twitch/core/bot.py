@@ -621,6 +621,35 @@ class Bot(commands.AutoBot):
 
                 if user_id not in self._subscribed_channels:
                     await self.subscribe_channel_events(user_id)
+
+                    try:
+                        await self.command_configs.ensure_defaults(user_id)
+                        await self.redemption_configs.ensure_defaults(
+                            user_id, owner_id=self.owner_id
+                        )
+                        count = await self.command_configs.warm_cache(user_id)
+                        LOGGER.info(f"[NOTIFY] Warmed cache: {count} configs for {user_id}")
+                    except Exception as e:
+                        LOGGER.warning(f"[NOTIFY] Failed to warm cache for {user_id}: {e}")
+
+                    try:
+                        streams = await self.fetch_streams(user_ids=[user_id])
+                        if streams:
+                            stream = streams[0]
+                            session_id = await self.analytics.create_session(
+                                channel_id=user_id,
+                                started_at=stream.started_at or datetime.now(),
+                                title=stream.title,
+                                game_name=stream.game_name,
+                                game_id=str(stream.game_id) if stream.game_id else None,
+                            )
+                            self._active_sessions[user_id] = session_id
+                            LOGGER.info(
+                                f"[NOTIFY] Created recovery session {session_id} for live channel {user_id}"
+                            )
+                    except Exception as e:
+                        LOGGER.warning(f"[NOTIFY] Failed to check live status for {user_id}: {e}")
+
                     LOGGER.info(f"[NOTIFY] Instantly subscribed to new channel: {user_id}")
 
             except twitchio.exceptions.InvalidTokenException as e:
