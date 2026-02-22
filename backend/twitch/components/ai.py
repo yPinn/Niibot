@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import re
 import time
@@ -114,10 +115,13 @@ class AIComponent(commands.Component):
 
             for model in self.models:
                 try:
-                    completion = await self.client.chat.completions.create(
-                        model=model,
-                        max_tokens=300,
-                        messages=messages,
+                    completion = await asyncio.wait_for(
+                        self.client.chat.completions.create(
+                            model=model,
+                            max_tokens=300,
+                            messages=messages,
+                        ),
+                        timeout=20.0,
                     )
 
                     if not completion.choices:
@@ -135,6 +139,9 @@ class AIComponent(commands.Component):
                     )
                     if response:
                         break
+                except TimeoutError:
+                    LOGGER.warning(f"AI [{model}] timed out (20s), trying next model")
+                    continue
                 except RateLimitError as e:
                     LOGGER.warning(f"AI rate limit on {model}, trying next model")
                     last_error = e

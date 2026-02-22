@@ -1,5 +1,6 @@
 """AI chat commands using OpenRouter API"""
 
+import asyncio
 import json
 import logging
 import os
@@ -100,10 +101,13 @@ class AI(commands.Cog):
 
             for model in self.models:
                 try:
-                    completion = await self.client.chat.completions.create(
-                        model=model,
-                        max_tokens=800,
-                        messages=messages,
+                    completion = await asyncio.wait_for(
+                        self.client.chat.completions.create(
+                            model=model,
+                            max_tokens=800,
+                            messages=messages,
+                        ),
+                        timeout=40.0,
                     )
 
                     if not completion.choices:
@@ -121,6 +125,9 @@ class AI(commands.Cog):
                     )
                     if response:
                         break
+                except TimeoutError:
+                    LOGGER.warning(f"AI [{model}] timed out (40s), trying next model")
+                    continue
                 except RateLimitError as e:
                     LOGGER.warning(f"AI rate limit on {model}, trying next model")
                     last_error = e
