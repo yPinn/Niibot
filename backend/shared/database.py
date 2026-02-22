@@ -29,7 +29,7 @@ class PoolConfig:
     max_size: int = 5
     timeout: float = 10.0
     command_timeout: float = 15.0
-    max_inactive_connection_lifetime: float = 45.0
+    max_inactive_connection_lifetime: float = 25.0
     max_retries: int = 3
     retry_delay: float = 3.0
 

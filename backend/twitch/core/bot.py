@@ -994,7 +994,7 @@ class Bot(commands.AutoBot):
     async def _pool_heartbeat_loop(self) -> None:
         """Periodically ping the DB pool to keep the idle connection alive.
 
-        Constraint chain: heartbeat(15s) < max_inactive(45s) < Supavisor(~30-60s).
+        Constraint chain: heartbeat(15s) < max_inactive(25s) < Supavisor(~30-60s).
         On failure, backs off to avoid flooding logs and wasting connections.
         """
         interval = 15
@@ -1002,7 +1002,7 @@ class Bot(commands.AutoBot):
         while True:
             await asyncio.sleep(interval)
             try:
-                async with self.token_database.acquire(timeout=30.0) as conn:
+                async with self.token_database.acquire(timeout=10.0) as conn:
                     await conn.fetchval("SELECT 1")
                 if fail_count > 0:
                     LOGGER.info(f"Pool heartbeat recovered after {fail_count} failures")

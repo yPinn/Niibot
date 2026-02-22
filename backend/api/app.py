@@ -49,7 +49,7 @@ async def _heartbeat(interval: int = 300) -> None:
 async def _pool_heartbeat_loop() -> None:
     """Periodically ping the DB pool to keep idle connections alive.
 
-    Constraint chain: heartbeat(15s) < max_inactive(45s) < Supavisor(~30-60s).
+    Constraint chain: heartbeat(15s) < max_inactive(25s) < Supavisor(~30-60s).
     On failure, backs off to avoid flooding logs and wasting connections.
     """
     interval = 15
@@ -59,7 +59,7 @@ async def _pool_heartbeat_loop() -> None:
         try:
             db_manager = get_database_manager()
             if db_manager._pool is not None:
-                async with db_manager._pool.acquire(timeout=30.0) as conn:
+                async with db_manager._pool.acquire(timeout=10.0) as conn:
                     await conn.fetchval("SELECT 1")
                 if fail_count > 0:
                     logger.info(f"Pool heartbeat recovered after {fail_count} failures")
