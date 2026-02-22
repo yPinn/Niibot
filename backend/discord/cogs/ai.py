@@ -44,6 +44,7 @@ class AI(commands.Cog):
         self.client = AsyncOpenAI(
             base_url="https://openrouter.ai/api/v1",
             api_key=api_key,
+            timeout=45.0,
         )
         self.models = [model] + [m for m in FALLBACK_MODELS if m != model]
 
@@ -100,33 +101,30 @@ class AI(commands.Cog):
 
             for model in self.models:
                 try:
-                    for attempt in range(2):
-                        completion = await self.client.chat.completions.create(
-                            model=model,
-                            max_tokens=1200,
-                            messages=messages,
-                        )
+                    completion = await self.client.chat.completions.create(
+                        model=model,
+                        max_tokens=800,
+                        messages=messages,
+                    )
 
-                        if not completion.choices:
-                            LOGGER.warning(f"AI [{model}] attempt {attempt + 1}: no choices")
-                            continue
+                    if not completion.choices:
+                        LOGGER.warning(f"AI [{model}]: no choices, trying next model")
+                        continue
 
-                        raw = completion.choices[0].message.content or ""
-                        response = re.sub(r"<think>[\s\S]*?</think>", "", raw)
-                        response = re.sub(r"<think>[\s\S]*$", "", response)
-                        response = response.strip()
+                    raw = completion.choices[0].message.content or ""
+                    response = re.sub(r"<think>[\s\S]*?</think>", "", raw)
+                    response = re.sub(r"<think>[\s\S]*$", "", response)
+                    response = response.strip()
 
-                        LOGGER.info(
-                            f"AI [{model}] attempt {attempt + 1}: raw={len(raw)}, clean={len(response)}"
-                        )
-                        if response:
-                            break
-
+                    LOGGER.info(f"AI [{model}]: raw={len(raw)}, clean={len(response)}")
                     if response:
                         break
                 except RateLimitError as e:
                     LOGGER.warning(f"AI rate limit on {model}, trying next model")
                     last_error = e
+                    continue
+                except APITimeoutError:
+                    LOGGER.warning(f"AI [{model}] timed out, trying next model")
                     continue
 
             if response:
