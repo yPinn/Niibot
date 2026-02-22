@@ -1,6 +1,7 @@
 import logging
 from typing import TYPE_CHECKING
 
+import aiohttp
 import asyncpg
 import twitchio
 from twitchio.ext import commands
@@ -8,6 +9,12 @@ from twitchio.ext import commands
 from core.config import get_settings
 from shared.repositories.command_config import RedemptionConfigRepository
 from shared.repositories.game_queue import GameQueueRepository, GameQueueSettingsRepository
+from shared.repositories.video_queue import (
+    VideoQueueRepository,
+    VideoQueueSettingsRepository,
+    extract_youtube_id,
+    fetch_yt_info,
+)
 
 if TYPE_CHECKING:
     from core.bot import Bot
@@ -27,6 +34,17 @@ class ChannelPointsComponent(commands.Component):
         self.redemption_repo = RedemptionConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.queue_repo = GameQueueRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.queue_settings_repo = GameQueueSettingsRepository(self.bot.token_database)  # type: ignore[attr-defined]
+        self.vq_repo = VideoQueueRepository(self.bot.token_database)  # type: ignore[attr-defined]
+        self.vq_settings_repo = VideoQueueSettingsRepository(self.bot.token_database)  # type: ignore[attr-defined]
+        self._session: aiohttp.ClientSession | None = None
+
+    async def component_load(self) -> None:
+        self._session = aiohttp.ClientSession()
+
+    async def component_teardown(self) -> None:
+        if self._session:
+            await self._session.close()
+            self._session = None
 
     def _generate_oauth_url(self) -> str:
         """返回前端頁面 URL"""
@@ -84,6 +102,8 @@ class ChannelPointsComponent(commands.Component):
             await self._handle_vip_redemption(payload, user_name)
         elif config.action_type == "game_queue" and user_name:
             await self._handle_game_queue_redemption(payload, user_name)
+        elif config.action_type == "video_queue" and user_name:
+            await self._handle_video_queue_redemption(payload, user_name)
 
     async def _handle_vip_redemption(
         self,
@@ -268,6 +288,86 @@ class ChannelPointsComponent(commands.Component):
 
         except Exception as e:
             LOGGER.error(f"[GameQueue] 處理排隊兌換時發生錯誤: {e}")
+
+    async def _handle_video_queue_redemption(
+        self,
+        payload: twitchio.ChannelPointsRedemptionAdd,
+        user_name: str,
+    ) -> None:
+        """處理影片佇列點數兌換（無 role 檢查：已兌換點數視為授權）"""
+        broadcaster = payload.broadcaster
+        channel_id = broadcaster.id
+        user_input = payload.user_input or ""
+
+        try:
+            settings = await self.vq_settings_repo.get_or_create(channel_id)
+            if not settings.enabled:
+                await broadcaster.send_message(
+                    message=f"@{user_name} 影片佇列目前已關閉",
+                    sender=self.bot.bot_id,
+                    token_for=self.bot.bot_id,
+                )
+                return
+
+            video_id = extract_youtube_id(user_input)
+            if not video_id:
+                await broadcaster.send_message(
+                    message=f"@{user_name} 請在兌換時輸入有效的 YouTube 連結",
+                    sender=self.bot.bot_id,
+                    token_for=self.bot.bot_id,
+                )
+                return
+
+            if await self.vq_repo.video_is_active(channel_id, video_id):
+                await broadcaster.send_message(
+                    message=f"@{user_name} 該影片已在佇列中",
+                    sender=self.bot.bot_id,
+                    token_for=self.bot.bot_id,
+                )
+                return
+
+            queue_size = await self.vq_repo.get_queue_size(channel_id)
+            if queue_size >= settings.max_queue_size:
+                await broadcaster.send_message(
+                    message=f"@{user_name} 佇列已滿（{queue_size}/{settings.max_queue_size}）",
+                    sender=self.bot.bot_id,
+                    token_for=self.bot.bot_id,
+                )
+                return
+
+            title, duration_seconds = await fetch_yt_info(
+                video_id, self.settings.youtube_api_key, self._session
+            )
+
+            if duration_seconds and duration_seconds > settings.max_duration_seconds:
+                max_m, max_s = divmod(settings.max_duration_seconds, 60)
+                vid_m, vid_s = divmod(duration_seconds, 60)
+                await broadcaster.send_message(
+                    message=(
+                        f"@{user_name} 影片長度 {vid_m}:{vid_s:02d} 超過上限 {max_m}:{max_s:02d}"
+                    ),
+                    sender=self.bot.bot_id,
+                    token_for=self.bot.bot_id,
+                )
+                return
+
+            await self.vq_repo.add(
+                channel_id=channel_id,
+                video_id=video_id,
+                requested_by=user_name,
+                source="redemption",
+                title=title,
+                duration_seconds=duration_seconds,
+            )
+            position = queue_size + 1
+            await broadcaster.send_message(
+                message=f"@{user_name} 已加入影片佇列！({position}/{settings.max_queue_size})",
+                sender=self.bot.bot_id,
+                token_for=self.bot.bot_id,
+            )
+
+        except Exception as e:
+            LOGGER.error(f"[VideoQueue] 處理兌換失敗: {e}")
 
 
 async def setup(bot: commands.Bot) -> None:

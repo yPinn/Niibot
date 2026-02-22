@@ -71,6 +71,9 @@ class TwitchBotSettings(BaseSettings):
         default="deepseek/deepseek-r1-0528:free", description="OpenRouter model"
     )
 
+    # YouTube Data API
+    youtube_api_key: str = Field(default="", description="YouTube Data API v3 key")
+
     # Environment
     log_level: str = Field(default="INFO", description="Logging level")
 

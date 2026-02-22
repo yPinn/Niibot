@@ -71,6 +71,16 @@ export const API_ENDPOINTS = {
     settings: join('/api/game-queue/settings'),
     public: (username: string) => join(`/api/game-queue/public/${username}`),
   },
+  videoQueue: {
+    public: (u: string) => join(`/api/video-queue/public/${u}`),
+    advance: (u: string) => join(`/api/video-queue/public/${u}/advance`),
+    metadata: (u: string, id: number) =>
+      join(`/api/video-queue/public/${u}/entries/${id}/metadata`),
+    state: join('/api/video-queue/state'),
+    skip: join('/api/video-queue/skip'),
+    clear: join('/api/video-queue/clear'),
+    settings: join('/api/video-queue/settings'),
+  },
   timers: {
     configs: join('/api/timers/configs'),
     createConfig: join('/api/timers/configs'),

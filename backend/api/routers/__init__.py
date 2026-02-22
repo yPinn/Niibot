@@ -11,6 +11,7 @@ from . import (
     message_triggers_router,
     stats_router,
     timers_router,
+    video_queue_router,
 )
 
 __all__ = [
@@ -24,4 +25,5 @@ __all__ = [
     "stats_router",
     "timers_router",
     "bots_router",
+    "video_queue_router",
 ]

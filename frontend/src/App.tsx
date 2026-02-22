@@ -21,6 +21,7 @@ import NotFound from '@/pages/NotFound'
 import PublicCommands from '@/pages/PublicCommands'
 import Settings from '@/pages/Settings'
 import TypographyDemo from '@/pages/TypographyDemo'
+import VideoQueueOverlay from '@/pages/VideoQueueOverlay'
 
 function App() {
   return (
@@ -32,6 +33,7 @@ function App() {
               <Route path="/" element={<Landing />} />
               <Route path="/:username/commands" element={<PublicCommands />} />
               <Route path="/:username/game-queue/overlay" element={<GameQueueOverlay />} />
+              <Route path="/:username/video-queue/overlay" element={<VideoQueueOverlay />} />
               <Route path="/dev/typography" element={<TypographyDemo />} />
               <Route element={<PublicOnlyRoute />}>
                 <Route path="/login" element={<LoginPage />} />
