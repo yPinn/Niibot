@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import re
+import time
 
 import discord
 from discord import app_commands
@@ -29,6 +30,23 @@ FALLBACK_MODELS: list[str] = [
     "openai/gpt-oss-120b:free",
     "meta-llama/llama-3.3-70b-instruct:free",
 ]
+
+_SYSTEM_PROMPT = (
+    "你是 Discord 聊天機器人。\n\n"
+    "規則：\n"
+    "- 語言：繁體中文\n"
+    "- 長度：簡潔回答，100-300字為主，最多500字\n"
+    "- 格式：使用純文字，不要使用 Markdown 語法（如 #、**、- 等）\n"
+    "- 列表：使用數字編號或簡單換行，不使用符號\n"
+    "- 語氣：友善、有幫助\n"
+    "- 直接回答問題，不要輸出思考過程\n\n"
+    "禁止內容：\n"
+    "- 仇恨言論、歧視（種族/性別/宗教/性取向）\n"
+    "- 暴力、威脅、騷擾\n"
+    "- 成人/性相關內容\n"
+    "- 非法活動\n\n"
+    "遇到不當問題請禮貌拒絕。提供正面、安全的回應。"
+)
 
 
 class AI(commands.Cog):
@@ -69,35 +87,16 @@ class AI(commands.Cog):
         await interaction.response.defer()
 
         try:
-            LOGGER.debug(f"AI request: user={interaction.user.name}, question={question[:100]}")
+            LOGGER.info(f"AI request: user={interaction.user.name}, question={question[:100]}")
 
             messages: list[ChatCompletionMessageParam] = [
-                {
-                    "role": "system",
-                    "content": """你是 Discord 聊天機器人。
-
-                    規則：
-                    - 語言：繁體中文
-                    - 長度：簡潔回答，100-300字為主，最多500字
-                    - 格式：使用純文字，不要使用 Markdown 語法（如 #、**、- 等）
-                    - 列表：使用數字編號或簡單換行，不使用符號
-                    - 語氣：友善、有幫助
-                    - 直接回答問題，不要輸出思考過程
-
-                    禁止內容：
-                    - 仇恨言論、歧視（種族/性別/宗教/性取向）
-                    - 暴力、威脅、騷擾
-                    - 成人/性相關內容
-                    - 非法活動
-
-                    遇到不當問題請禮貌拒絕。提供正面、安全的回應。
-                    """,
-                },
+                {"role": "system", "content": _SYSTEM_PROMPT},
                 {"role": "user", "content": question},
             ]
 
             response = ""
             last_error: Exception | None = None
+            t_start = time.monotonic()
 
             for model in self.models:
                 try:
@@ -116,7 +115,10 @@ class AI(commands.Cog):
                     response = re.sub(r"<think>[\s\S]*$", "", response)
                     response = response.strip()
 
-                    LOGGER.info(f"AI [{model}]: raw={len(raw)}, clean={len(response)}")
+                    elapsed = time.monotonic() - t_start
+                    LOGGER.info(
+                        f"AI [{model}]: {elapsed:.1f}s, raw={len(raw)}, clean={len(response)}"
+                    )
                     if response:
                         break
                 except RateLimitError as e:
