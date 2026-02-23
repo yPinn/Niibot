@@ -11,6 +11,10 @@ export default defineConfig(() => ({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  build: {
+    // Strip console.* calls and debugger statements from production builds
+    drop: ['console', 'debugger'],
+  },
   server: {
     port: 3000,
     open: true,

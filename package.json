@@ -25,6 +25,9 @@
   },
   "homepage": "https://github.com/yPinn/Niibot#readme",
   "lint-staged": {
+    "*": [
+      "secretlint"
+    ],
     "frontend/**/*.{js,jsx,ts,tsx}": [
       "npx --prefix frontend eslint --config frontend/eslint.config.js --cache --cache-location frontend/.cache/eslint/ --fix",
       "npx --prefix frontend prettier --cache --cache-location frontend/.cache/prettier/ --write --ignore-unknown"
@@ -44,7 +47,9 @@
   "devDependencies": {
     "@commitlint/cli": "^19.0.0",
     "@commitlint/config-conventional": "^19.0.0",
+    "@secretlint/secretlint-rule-preset-recommend": "^11.3.1",
     "husky": "^8.0.3",
-    "lint-staged": "^15.2.0"
+    "lint-staged": "^15.2.0",
+    "secretlint": "^11.3.1"
   }
 }
