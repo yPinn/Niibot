@@ -164,7 +164,7 @@ async def get_twitch_rewards(
 # Redemption Config Endpoints
 # ============================================
 
-VALID_ACTION_TYPES = {"vip", "first", "niibot_auth", "game_queue"}
+VALID_ACTION_TYPES = {"vip", "first", "niibot_auth", "game_queue", "video_queue"}
 
 
 @router.get("/redemptions", response_model=list[RedemptionConfigResponse])

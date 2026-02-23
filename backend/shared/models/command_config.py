@@ -29,7 +29,7 @@ class RedemptionConfig:
 
     id: int
     channel_id: str
-    action_type: str  # 'vip' | 'first' | 'niibot_auth'
+    action_type: str  # 'vip' | 'first' | 'niibot_auth' | 'game_queue' | 'video_queue'
     reward_name: str
     enabled: bool = True
     created_at: datetime | None = None
