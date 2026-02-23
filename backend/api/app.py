@@ -61,13 +61,14 @@ async def _pool_heartbeat_loop() -> None:
         await asyncio.sleep(interval)
         try:
             db_manager = get_database_manager()
-            if db_manager._pool is not None:
-                async with db_manager._pool.acquire(timeout=10.0) as conn:
-                    await conn.fetchval("SELECT 1")
-                if fail_count > 0:
-                    logger.info(f"Pool heartbeat recovered after {fail_count} failures")
-                fail_count = 0
-                interval = 15
+            if db_manager._pool is None:
+                raise RuntimeError("Pool is None")
+            async with db_manager._pool.acquire(timeout=10.0) as conn:
+                await conn.fetchval("SELECT 1")
+            if fail_count > 0:
+                logger.info(f"Pool heartbeat recovered after {fail_count} failures")
+            fail_count = 0
+            interval = 15
         except asyncio.CancelledError:
             break
         except Exception as e:

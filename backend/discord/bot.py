@@ -99,13 +99,14 @@ class NiibotClient(commands.Bot):
         while True:
             await asyncio.sleep(interval)
             try:
-                if self.db_pool is not None:
-                    async with self.db_pool.acquire(timeout=10.0) as conn:
-                        await conn.fetchval("SELECT 1")
-                    if fail_count > 0:
-                        logger.info(f"Pool heartbeat recovered after {fail_count} failures")
-                    fail_count = 0
-                    interval = 15
+                if self.db_pool is None:
+                    raise RuntimeError("Pool is None")
+                async with self.db_pool.acquire(timeout=10.0) as conn:
+                    await conn.fetchval("SELECT 1")
+                if fail_count > 0:
+                    logger.info(f"Pool heartbeat recovered after {fail_count} failures")
+                fail_count = 0
+                interval = 15
             except asyncio.CancelledError:
                 break
             except Exception as e:
