@@ -125,11 +125,12 @@ class NiibotClient(commands.Bot):
                         continue
                     except Exception as re_err:
                         logger.error(f"Pool reconnect failed: {type(re_err).__name__}: {re_err}")
+                        # Reset so the counter climbs back to 3 and triggers
+                        # another reconnect attempt; use slow interval to avoid hammering.
+                        fail_count = 0
+                        interval = 120
+                        continue
 
-                if fail_count == 4:
-                    logger.warning(
-                        f"Pool heartbeat still failing ({fail_count}x), suppressing until recovery"
-                    )
                 interval = min(15 * (2 ** min(fail_count - 1, 3)), 120)
 
     def _get_extensions(self) -> list[str]:

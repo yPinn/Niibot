@@ -1,12 +1,13 @@
 """HTTP health check server"""
 
-import asyncio
 import logging
 import os
 import time
+from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 from aiohttp import web
+from twitchio.ext import routines
 
 if TYPE_CHECKING:
     from core.bot import Bot
@@ -25,7 +26,6 @@ class HealthCheckServer:
         self.app = web.Application()
         self.runner: web.AppRunner | None = None
         self._start_time: float = time.time()
-        self._heartbeat_task: asyncio.Task | None = None
         self._setup_routes()
 
     def _setup_routes(self) -> None:
@@ -61,14 +61,13 @@ class HealthCheckServer:
         """Ping endpoint"""
         return web.Response(text="pong")
 
+    @routines.routine(delta=timedelta(seconds=300), wait_first=True)
     async def _heartbeat(self) -> None:
         """Periodic heartbeat — log uptime and bot status"""
-        while True:
-            await asyncio.sleep(300)
-            uptime = int(time.time() - self._start_time)
-            ready = self.bot is not None and self.bot.bot_id is not None
-            channels = len(self.bot._subscribed_channels) if self.bot else 0
-            logger.info(f"Heartbeat: uptime={uptime}s, ready={ready}, channels={channels}")
+        uptime = int(time.time() - self._start_time)
+        ready = self.bot is not None and self.bot.bot_id is not None
+        channels = len(self.bot._subscribed_channels) if self.bot else 0
+        logger.info(f"Heartbeat: uptime={uptime}s, ready={ready}, channels={channels}")
 
     async def start(self) -> None:
         """Start health check server"""
@@ -79,7 +78,7 @@ class HealthCheckServer:
             site = web.TCPSite(self.runner, self.host, self.port)
             await site.start()
 
-            self._heartbeat_task = asyncio.create_task(self._heartbeat())
+            self._heartbeat.start()
 
             logger.info(f"Health server started on {self.host}:{self.port}")
 
@@ -89,8 +88,7 @@ class HealthCheckServer:
 
     async def stop(self) -> None:
         """Stop health check server"""
-        if self._heartbeat_task:
-            self._heartbeat_task.cancel()
+        self._heartbeat.stop()
         if self.runner:
             try:
                 await self.runner.cleanup()

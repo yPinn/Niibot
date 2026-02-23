@@ -1004,6 +1004,12 @@ class Bot(commands.AutoBot):
         self.redemption_configs.pool = pool
         self.timer_configs.pool = pool
         self.message_trigger_configs.pool = pool
+        # Refresh repos held inside components (created at component init time)
+        from components.event import EventComponent
+
+        event_comp = self.get_component(EventComponent)
+        if isinstance(event_comp, EventComponent):
+            event_comp.event_configs.pool = pool
 
     async def _pool_heartbeat_loop(self) -> None:
         """Periodically ping the DB pool to keep the idle connection alive.
@@ -1043,9 +1049,10 @@ class Bot(commands.AutoBot):
                         continue
                     except Exception as re_err:
                         LOGGER.error(f"Pool reconnect failed: {type(re_err).__name__}: {re_err}")
+                        # Reset so the counter climbs back to 3 and triggers
+                        # another reconnect attempt; use slow interval to avoid hammering.
+                        fail_count = 0
+                        interval = 120
+                        continue
 
-                if fail_count == 4:
-                    LOGGER.warning(
-                        f"Pool heartbeat still failing ({fail_count}x), suppressing until recovery"
-                    )
                 interval = min(15 * (2 ** min(fail_count - 1, 3)), 120)

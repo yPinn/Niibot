@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import random
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
-from twitchio.ext import commands
+from twitchio.ext import commands, routines
 
 if TYPE_CHECKING:
     from core.bot import Bot
@@ -61,40 +60,42 @@ class TimerManagerComponent(commands.Component):
         self._timer_last_fire_lines: dict[int, int] = {}
 
     async def component_load(self) -> None:
-        asyncio.create_task(self._timer_poll_loop())
+        self._timer_poll_loop.start()
         LOGGER.info("TimerManagerComponent loaded, poll loop started")
 
+    async def component_teardown(self) -> None:
+        self._timer_poll_loop.stop()
+
+    @routines.routine(delta=timedelta(seconds=60), wait_first=True)
     async def _timer_poll_loop(self) -> None:
         """Main poll loop: checks all channels every 60 seconds."""
-        while True:
-            await asyncio.sleep(60)
-            now = datetime.now()
+        now = datetime.now()
 
-            for channel_id in list(self.bot._subscribed_channels):
-                if channel_id not in self.bot._active_sessions:
-                    continue  # Only during live streams
+        for channel_id in list(self.bot._subscribed_channels):
+            if channel_id not in self.bot._active_sessions:
+                continue  # Only during live streams
 
-                try:
-                    timers = await self.bot.timer_configs.list_enabled(channel_id)
-                except Exception as e:
-                    LOGGER.warning(f"Failed to load timers for {channel_id}: {e}")
-                    continue
+            try:
+                timers = await self.bot.timer_configs.list_enabled(channel_id)
+            except Exception as e:
+                LOGGER.warning(f"Failed to load timers for {channel_id}: {e}")
+                continue
 
-                for timer in timers:
-                    # --- Time gate ---
-                    last_fire = self._timer_last_fire.get(timer.id)
-                    if last_fire is not None:
-                        elapsed = (now - last_fire).total_seconds()
-                        if elapsed < timer.interval_seconds:
-                            continue
-
-                    # --- Chat-line gate ---
-                    current_lines = self.bot._channel_line_counts.get(channel_id, 0)
-                    lines_at_last = self._timer_last_fire_lines.get(timer.id, 0)
-                    if current_lines - lines_at_last < timer.min_lines:
+            for timer in timers:
+                # --- Time gate ---
+                last_fire = self._timer_last_fire.get(timer.id)
+                if last_fire is not None:
+                    elapsed = (now - last_fire).total_seconds()
+                    if elapsed < timer.interval_seconds:
                         continue
 
-                    await self._fire_timer(channel_id, timer, current_lines, now)
+                # --- Chat-line gate ---
+                current_lines = self.bot._channel_line_counts.get(channel_id, 0)
+                lines_at_last = self._timer_last_fire_lines.get(timer.id, 0)
+                if current_lines - lines_at_last < timer.min_lines:
+                    continue
+
+                await self._fire_timer(channel_id, timer, current_lines, now)
 
     async def _fire_timer(self, channel_id: str, timer, current_lines: int, now: datetime) -> None:
         """Send the timer message and record the fire time/line snapshot."""
@@ -122,3 +123,11 @@ class TimerManagerComponent(commands.Component):
 
         except Exception as e:
             LOGGER.error(f"Timer '{timer.timer_name}' fire failed: {e}")
+
+
+async def setup(bot: commands.Bot) -> None:
+    component = TimerManagerComponent(bot)  # type: ignore[arg-type]
+    await bot.add_component(component)
+
+
+async def teardown(bot: commands.Bot) -> None: ...
