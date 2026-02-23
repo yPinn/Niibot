@@ -28,6 +28,9 @@ class FortuneComponent(commands.Component):
         self._load_data()
         LOGGER.info("Fortune component initialized")
 
+    def refresh_pool(self, pool) -> None:
+        self.cmd_repo.pool = pool
+
     def _load_data(self) -> None:
         fortune_path = DATA_DIR / "fortune.json"
         with open(fortune_path, encoding="utf-8") as f:

@@ -29,9 +29,13 @@ LOGGER = logging.getLogger("GameQueue")
 class GameQueueComponent(commands.Component):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot: Bot = bot  # type: ignore[assignment]
-        self.queue_repo = GameQueueRepository(self.bot.token_database)  # type: ignore[attr-defined]
-        self.settings_repo = GameQueueSettingsRepository(self.bot.token_database)  # type: ignore[attr-defined]
+        self.gq_repo = GameQueueRepository(self.bot.token_database)  # type: ignore[attr-defined]
+        self.gq_settings_repo = GameQueueSettingsRepository(self.bot.token_database)  # type: ignore[attr-defined]
         LOGGER.info("GameQueue component initialized")
+
+    def refresh_pool(self, pool) -> None:
+        self.gq_repo.pool = pool
+        self.gq_settings_repo.pool = pool
 
     def _compute_batches(self, entries: list, group_size: int) -> list[list]:
         """Split entries into batches of group_size."""
@@ -45,8 +49,8 @@ class GameQueueComponent(commands.Component):
 
         # !gq — show queue overview (available to everyone)
         channel_id = ctx.channel.id
-        settings = await self.settings_repo.get_or_create(channel_id)
-        entries = await self.queue_repo.get_active_entries(channel_id)
+        settings = await self.gq_settings_repo.get_or_create(channel_id)
+        entries = await self.gq_repo.get_active_entries(channel_id)
 
         status = "開" if settings.enabled else "關"
         total = len(entries)
@@ -66,8 +70,8 @@ class GameQueueComponent(commands.Component):
         user_id = ctx.chatter.id
         user_name = ctx.chatter.display_name or ctx.chatter.name
 
-        entries = await self.queue_repo.get_active_entries(channel_id)
-        settings = await self.settings_repo.get_or_create(channel_id)
+        entries = await self.gq_repo.get_active_entries(channel_id)
+        settings = await self.gq_settings_repo.get_or_create(channel_id)
 
         # Find user in queue
         user_index = next((i for i, e in enumerate(entries) if e.user_id == user_id), None)
@@ -99,8 +103,8 @@ class GameQueueComponent(commands.Component):
             return
 
         channel_id = ctx.channel.id
-        settings = await self.settings_repo.get_or_create(channel_id)
-        entries = await self.queue_repo.get_active_entries(channel_id)
+        settings = await self.gq_settings_repo.get_or_create(channel_id)
+        entries = await self.gq_repo.get_active_entries(channel_id)
 
         to_complete = entries[: settings.group_size]
         if not to_complete:
@@ -108,7 +112,7 @@ class GameQueueComponent(commands.Component):
             return
 
         entry_ids = [e.id for e in to_complete]
-        await self.queue_repo.complete_batch(channel_id, entry_ids)
+        await self.gq_repo.complete_batch(channel_id, entry_ids)
 
         remaining = entries[settings.group_size :]
         if remaining:
@@ -132,14 +136,14 @@ class GameQueueComponent(commands.Component):
         channel_id = ctx.channel.id
 
         # Find user by name in active entries
-        entries = await self.queue_repo.get_active_entries(channel_id)
+        entries = await self.gq_repo.get_active_entries(channel_id)
         target = next((e for e in entries if e.user_name.lower() == target_name), None)
 
         if not target:
             await ctx.reply(f"找不到 @{target_name}")
             return
 
-        await self.queue_repo.remove_entry(target.id, channel_id, "kicked")
+        await self.gq_repo.remove_entry(target.id, channel_id, "kicked")
         await ctx.reply(f"已移除 @{target.user_name}")
 
     @gq.command(name="clear")
@@ -149,7 +153,7 @@ class GameQueueComponent(commands.Component):
             return
 
         channel_id = ctx.channel.id
-        cleared = await self.queue_repo.clear_queue(channel_id)
+        cleared = await self.gq_repo.clear_queue(channel_id)
         await ctx.reply(f"已清空 ({cleared}人)")
 
     @gq.command(name="open")
@@ -159,7 +163,7 @@ class GameQueueComponent(commands.Component):
             return
 
         channel_id = ctx.channel.id
-        await self.settings_repo.update_settings(channel_id, enabled=True)
+        await self.gq_settings_repo.update_settings(channel_id, enabled=True)
         await ctx.reply("隊列已開啟")
 
     @gq.command(name="close")
@@ -169,7 +173,7 @@ class GameQueueComponent(commands.Component):
             return
 
         channel_id = ctx.channel.id
-        await self.settings_repo.update_settings(channel_id, enabled=False)
+        await self.gq_settings_repo.update_settings(channel_id, enabled=False)
         await ctx.reply("隊列已關閉")
 
     @gq.command(name="size")
@@ -181,7 +185,7 @@ class GameQueueComponent(commands.Component):
         channel_id = ctx.channel.id
 
         if not args or not args.strip().isdigit():
-            settings = await self.settings_repo.get_or_create(channel_id)
+            settings = await self.gq_settings_repo.get_or_create(channel_id)
             await ctx.reply(f"!gq size <人數> | 目前: {settings.group_size}人/場")
             return
 
@@ -190,7 +194,7 @@ class GameQueueComponent(commands.Component):
             await ctx.reply("範圍: 1-20")
             return
 
-        await self.settings_repo.update_settings(channel_id, group_size=size)
+        await self.gq_settings_repo.update_settings(channel_id, group_size=size)
         await ctx.reply(f"已調整為 {size}人/場")
 
 

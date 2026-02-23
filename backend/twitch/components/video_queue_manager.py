@@ -54,6 +54,10 @@ class VideoQueueManagerComponent(commands.Component):
             await self._session.close()
             self._session = None
 
+    def refresh_pool(self, pool) -> None:
+        self.vq_repo.pool = pool
+        self.vq_settings_repo.pool = pool
+
     # ------------------------------------------------------------------
     # !sr <URL>
     # ------------------------------------------------------------------

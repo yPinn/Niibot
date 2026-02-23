@@ -32,11 +32,18 @@ class ChannelPointsComponent(commands.Component):
         self.bot: Bot = bot  # type: ignore[assignment]
         self.settings = get_settings()
         self.redemption_repo = RedemptionConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
-        self.queue_repo = GameQueueRepository(self.bot.token_database)  # type: ignore[attr-defined]
-        self.queue_settings_repo = GameQueueSettingsRepository(self.bot.token_database)  # type: ignore[attr-defined]
+        self.gq_repo = GameQueueRepository(self.bot.token_database)  # type: ignore[attr-defined]
+        self.gq_settings_repo = GameQueueSettingsRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.vq_repo = VideoQueueRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.vq_settings_repo = VideoQueueSettingsRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self._session: aiohttp.ClientSession | None = None
+
+    def refresh_pool(self, pool) -> None:
+        self.redemption_repo.pool = pool
+        self.gq_repo.pool = pool
+        self.gq_settings_repo.pool = pool
+        self.vq_repo.pool = pool
+        self.vq_settings_repo.pool = pool
 
     async def component_load(self) -> None:
         self._session = aiohttp.ClientSession()
@@ -250,7 +257,7 @@ class ChannelPointsComponent(commands.Component):
 
         try:
             # Check if queue is enabled
-            settings = await self.queue_settings_repo.get_or_create(channel_id)
+            settings = await self.gq_settings_repo.get_or_create(channel_id)
             if not settings.enabled:
                 await broadcaster.send_message(
                     message=f"@{user_name} 隊列未開放",
@@ -260,9 +267,9 @@ class ChannelPointsComponent(commands.Component):
                 return
 
             # Check if already in queue
-            existing = await self.queue_repo.find_active_by_user(channel_id, user_id)
+            existing = await self.gq_repo.find_active_by_user(channel_id, user_id)
             if existing:
-                entries = await self.queue_repo.get_active_entries(channel_id)
+                entries = await self.gq_repo.get_active_entries(channel_id)
                 position = next((i + 1 for i, e in enumerate(entries) if e.user_id == user_id), 0)
                 await broadcaster.send_message(
                     message=f"@{user_name} 已在隊列中，第{position}位",
@@ -273,12 +280,12 @@ class ChannelPointsComponent(commands.Component):
 
             # Add to queue
             try:
-                await self.queue_repo.add_entry(channel_id, user_id, user_name)
+                await self.gq_repo.add_entry(channel_id, user_id, user_name)
             except asyncpg.UniqueViolationError:
                 LOGGER.debug(f"[GameQueue] Duplicate entry race for {user_name}")
                 return
 
-            position = await self.queue_repo.count_active(channel_id)
+            position = await self.gq_repo.count_active(channel_id)
             await broadcaster.send_message(
                 message=f"@{user_name} 已加入隊列，第{position}位",
                 sender=self.bot.bot_id,

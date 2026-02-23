@@ -103,6 +103,9 @@ class CommandManagerComponent(commands.Component):
         self.cmd_repo = CommandConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
         LOGGER.info("CommandManager component initialized")
 
+    def refresh_pool(self, pool) -> None:
+        self.cmd_repo.pool = pool
+
     @commands.group(name="cmd")
     async def cmd(self, ctx: commands.Context["Bot"]) -> None:
         """Command management group. Moderator+ only."""

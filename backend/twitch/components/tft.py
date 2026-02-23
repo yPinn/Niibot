@@ -54,6 +54,9 @@ class LeaderboardComponent(commands.Component):
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15",
         ]
 
+    def refresh_pool(self, pool) -> None:
+        self.cmd_repo.pool = pool
+
     async def get_leaderboard_data(self) -> dict[str, Any] | None:
         """獲取 TW 排行榜數據（30 秒快取）"""
         now = time.time()

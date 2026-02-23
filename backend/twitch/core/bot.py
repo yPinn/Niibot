@@ -1005,11 +1005,9 @@ class Bot(commands.AutoBot):
         self.timer_configs.pool = pool
         self.message_trigger_configs.pool = pool
         # Refresh repos held inside components (created at component init time)
-        from components.event import EventComponent
-
-        event_comp = self.get_component(EventComponent)
-        if isinstance(event_comp, EventComponent):
-            event_comp.event_configs.pool = pool
+        for comp in self._components.values():
+            if hasattr(comp, "refresh_pool"):
+                comp.refresh_pool(pool)
 
     async def _pool_heartbeat_loop(self) -> None:
         """Periodically ping the DB pool to keep the idle connection alive.

@@ -30,6 +30,9 @@ class EventComponent(commands.Component):
         # Event config repository (with TTL cache)
         self.event_configs = EventConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
 
+    def refresh_pool(self, pool) -> None:
+        self.event_configs.pool = pool
+
     def _cleanup_cache(self, cache: dict[str, datetime]) -> None:
         """清理過期的 cache 項目"""
         now = datetime.now()

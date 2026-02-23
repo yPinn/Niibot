@@ -81,6 +81,9 @@ class AIComponent(commands.Component):
 
         LOGGER.info(f"AIComponent initialized: primary={model}, fallbacks={len(self.models) - 1}")
 
+    def refresh_pool(self, pool) -> None:
+        self.cmd_repo.pool = pool
+
     @commands.command(aliases=["問"])
     async def ai(self, ctx: commands.Context[Bot], *, message: str | None = None) -> None:
         """Ask AI a question (text only).

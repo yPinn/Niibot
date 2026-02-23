@@ -32,6 +32,9 @@ class TarotComponent(commands.Component):
         self.channel_repo = self.bot.channels  # type: ignore[attr-defined]
         self._load_data()
 
+    def refresh_pool(self, pool) -> None:
+        self.cmd_repo.pool = pool
+
     def _load_data(self) -> None:
         with open(DATA_DIR / "tarot.json", encoding="utf-8") as f:
             self.tarot_data = json.load(f)

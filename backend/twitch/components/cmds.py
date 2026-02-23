@@ -35,6 +35,9 @@ class GeneralCommands(commands.Component):
         self.cmd_repo = CommandConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.channel_repo = self.bot.channels  # type: ignore[attr-defined]
 
+    def refresh_pool(self, pool) -> None:
+        self.cmd_repo.pool = pool
+
     async def _record_command(self, ctx: commands.Context, command_name: str) -> None:
         """Helper to record command usage to analytics"""
         try:
