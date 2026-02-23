@@ -82,8 +82,6 @@ class HealthCheckServer:
             self._heartbeat_task = asyncio.create_task(self._heartbeat())
 
             logger.info(f"Health server started on {self.host}:{self.port}")
-            logger.info(f"  GET http://{self.host}:{self.port}/health - Health check")
-            logger.info(f"  GET http://{self.host}:{self.port}/status - Detailed status")
 
         except Exception as e:
             logger.exception(f"Failed to start health server: {e}")

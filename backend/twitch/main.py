@@ -78,9 +78,8 @@ def main() -> None:
                 logger.info(f"Starting bot with {len(subs)} initial subscriptions")
             else:
                 logger.warning(
-                    "Starting bot without initial subscriptions (DB unavailable or empty)"
+                    "Starting bot without initial subscriptions — background task will retry"
                 )
-                logger.warning("Background task will load channels once DB is reachable")
 
             # 5. Start bot with auto-retry on rate limit
             retry_count = 0
@@ -146,10 +145,7 @@ def main() -> None:
                                 f"attempt={retry_count}/{max_retries}"
                             )
 
-                            # Log raw error for debugging
-                            err_text = str(e)[:500]
-                            if err_text:
-                                logger.info(f"[429 Response] {err_text}")
+                            logger.debug(f"429 response detail: {str(e)[:500]}")
 
                             await asyncio.sleep(wait_time)
                         else:

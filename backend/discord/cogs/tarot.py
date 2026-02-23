@@ -1,4 +1,5 @@
 import json
+import logging
 import random
 from datetime import datetime
 from hashlib import md5
@@ -8,6 +9,8 @@ from discord import app_commands
 from discord.ext import commands
 
 from core import DATA_DIR
+
+logger = logging.getLogger(__name__)
 
 
 class Tarot(commands.Cog):
@@ -132,9 +135,8 @@ class Tarot(commands.Cog):
             await interaction.response.send_message(embed=embed)
 
         except Exception as e:
-            await interaction.response.send_message(
-                f"塔羅牌抽取過程中發生神秘干擾: {e}", ephemeral=True
-            )
+            logger.exception(f"Tarot command error: {e}")
+            await interaction.response.send_message("塔羅牌抽取過程中發生神秘干擾", ephemeral=True)
 
 
 async def setup(bot: commands.Bot) -> None:

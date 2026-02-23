@@ -22,7 +22,7 @@ from shared.migrations.runner import MigrationRunner
 # Try loading .env from api/ (has DATABASE_URL)
 load_dotenv(Path(__file__).resolve().parent.parent / "api" / ".env")
 
-logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s")
 
 
 async def main() -> None:

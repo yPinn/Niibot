@@ -45,8 +45,6 @@ def setup_logging() -> None:
                 handlers=[rich_handler],
                 force=True,
             )
-            logger = logging.getLogger("Bot")
-            logger.info("[bold green]✓[/bold green] Rich logging enabled", extra={"markup": True})
         except Exception as e:
             logging.basicConfig(
                 level=level,
@@ -63,8 +61,6 @@ def setup_logging() -> None:
             datefmt="%Y-%m-%d %H:%M:%S",
             force=True,
         )
-        logger = logging.getLogger("Bot")
-        logger.info("Standard logging enabled (install 'rich' for better output)")
 
     if level == logging.DEBUG:
         logging.getLogger("twitchio").setLevel(logging.DEBUG)
@@ -83,3 +79,4 @@ def setup_logging() -> None:
     logging.getLogger("asyncpg").setLevel(logging.WARNING)
     logging.getLogger("openai").setLevel(logging.WARNING)
     logging.getLogger("aiohttp").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)

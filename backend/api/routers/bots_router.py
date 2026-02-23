@@ -51,12 +51,8 @@ async def check_bot_health(bot_url: str, bot_name: str) -> BotStatusResponse:
                 )
                 return BotStatusResponse(online=False)
 
-    except httpx.TimeoutException:
-        logger.warning(f"{bot_name} bot health check timeout (bot may be offline)")
-        return BotStatusResponse(online=False)
-
-    except httpx.ConnectError:
-        logger.warning(f"Cannot connect to {bot_name} bot at {bot_url} (bot offline)")
+    except (httpx.TimeoutException, httpx.ConnectError):
+        logger.debug(f"{bot_name} bot offline")
         return BotStatusResponse(online=False)
 
     except Exception as e:

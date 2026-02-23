@@ -143,7 +143,7 @@ class Bot(commands.AutoBot):
                 try:
                     await self.load_module(module_name)
                 except Exception as e:
-                    print(f"Failed to load component {module_name}: {e}")
+                    LOGGER.error(f"Failed to load component {module_name}: {e}")
                     continue
 
                 # Collect COMMANDS from component classes in the just-loaded module

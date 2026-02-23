@@ -56,7 +56,7 @@ class ChannelPointsComponent(commands.Component):
         payload: twitchio.ChannelPointsRedemptionAdd,
     ) -> None:
         """Channel Points 兌換事件"""
-        LOGGER.debug(f"[DEBUG] event_custom_redemption_add 觸發！Payload 類型: {type(payload)}")
+        LOGGER.debug(f"event_custom_redemption_add triggered: {type(payload).__name__}")
 
         user_name = payload.user.display_name or payload.user.name
         reward_title = payload.reward.title

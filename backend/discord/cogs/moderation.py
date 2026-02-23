@@ -1,10 +1,13 @@
 """Server moderation commands"""
 
+import logging
 from datetime import timedelta
 
 import discord
 from discord import app_commands
 from discord.ext import commands
+
+logger = logging.getLogger(__name__)
 
 
 class Moderation(commands.Cog):
@@ -29,6 +32,9 @@ class Moderation(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         deleted = await interaction.channel.purge(limit=amount)
         await interaction.followup.send(f"已清除 {len(deleted)} 則訊息", ephemeral=True)
+        logger.info(
+            f"Clear {len(deleted)} messages | #{interaction.channel} | By: {interaction.user.name}"
+        )
 
     @app_commands.command(name="kick", description="踢出成員")
     @app_commands.describe(member="要踢出的成員", reason="踢出原因")
@@ -44,6 +50,7 @@ class Moderation(commands.Cog):
         try:
             await member.kick(reason=reason or "未提供原因")
             await interaction.response.send_message(f"已踢出 {member.mention}")
+            logger.info(f"Kick {member} | By: {interaction.user.name} | Reason: {reason}")
         except discord.Forbidden:
             await interaction.response.send_message("我沒有權限踢出此成員", ephemeral=True)
 
@@ -61,6 +68,7 @@ class Moderation(commands.Cog):
         try:
             await member.ban(reason=reason or "未提供原因")
             await interaction.response.send_message(f"已封鎖 {member.mention}")
+            logger.info(f"Ban {member} | By: {interaction.user.name} | Reason: {reason}")
         except discord.Forbidden:
             await interaction.response.send_message("我沒有權限封鎖此成員", ephemeral=True)
 
@@ -76,6 +84,7 @@ class Moderation(commands.Cog):
             user = await self.bot.fetch_user(int(user_id))
             await interaction.guild.unban(user)
             await interaction.response.send_message(f"已解除封鎖：{user}")
+            logger.info(f"Unban {user} | By: {interaction.user.name}")
         except ValueError:
             await interaction.response.send_message("無效的用戶 ID", ephemeral=True)
         except discord.NotFound:
@@ -105,6 +114,9 @@ class Moderation(commands.Cog):
         try:
             await member.timeout(timedelta(minutes=duration), reason=reason or "未提供原因")
             await interaction.response.send_message(f"已禁言 {member.mention} {duration} 分鐘")
+            logger.info(
+                f"Mute {member} {duration}m | By: {interaction.user.name} | Reason: {reason}"
+            )
         except discord.Forbidden:
             await interaction.response.send_message("我沒有權限禁言此成員", ephemeral=True)
 
@@ -115,6 +127,7 @@ class Moderation(commands.Cog):
         try:
             await member.timeout(None)
             await interaction.response.send_message(f"已解除禁言：{member.mention}")
+            logger.info(f"Unmute {member} | By: {interaction.user.name}")
         except discord.Forbidden:
             await interaction.response.send_message("我沒有權限解除禁言", ephemeral=True)
 

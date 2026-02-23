@@ -66,8 +66,10 @@ def setup_logging(settings: Settings) -> None:
             force=True,
         )
 
-    # Reduce uvicorn access log noise
+    # Reduce third-party log noise
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
 
     logger = logging.getLogger(__name__)
     logger.info(f"Logging: {settings.log_level} | Env: {settings.environment}")

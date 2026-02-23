@@ -76,9 +76,13 @@ async def get_trigger_configs(
     pool: Pool = Depends(get_db_pool),
 ) -> list[MessageTriggerResponse]:
     """Get all message triggers for the authenticated user's channel."""
-    service = MessageTriggerService(pool)
-    triggers = await service.list_triggers(channel_id)
-    return [MessageTriggerResponse(**t) for t in triggers]
+    try:
+        service = MessageTriggerService(pool)
+        triggers = await service.list_triggers(channel_id)
+        return [MessageTriggerResponse(**t) for t in triggers]
+    except Exception as e:
+        logger.exception(f"Failed to get trigger configs: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch trigger configs") from None
 
 
 @router.post("/configs", response_model=MessageTriggerResponse, status_code=201)
@@ -88,8 +92,8 @@ async def create_trigger(
     pool: Pool = Depends(get_db_pool),
 ) -> MessageTriggerResponse:
     """Create a new message trigger."""
-    service = MessageTriggerService(pool)
     try:
+        service = MessageTriggerService(pool)
         trigger = await service.create_trigger(
             channel_id,
             body.trigger_name,
@@ -101,9 +105,13 @@ async def create_trigger(
             cooldown=body.cooldown,
             priority=body.priority,
         )
+        logger.info(f"Channel {channel_id} created trigger: {body.trigger_name}")
+        return MessageTriggerResponse(**trigger)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
-    return MessageTriggerResponse(**trigger)
+    except Exception as e:
+        logger.exception(f"Failed to create trigger: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create trigger") from None
 
 
 @router.put("/configs/{trigger_name}", response_model=MessageTriggerResponse)
@@ -114,8 +122,8 @@ async def update_trigger(
     pool: Pool = Depends(get_db_pool),
 ) -> MessageTriggerResponse:
     """Update a message trigger's settings."""
-    service = MessageTriggerService(pool)
     try:
+        service = MessageTriggerService(pool)
         trigger = await service.update_trigger(
             channel_id,
             trigger_name,
@@ -128,9 +136,13 @@ async def update_trigger(
             priority=body.priority,
             enabled=body.enabled,
         )
+        logger.info(f"Channel {channel_id} updated trigger: {trigger_name}")
+        return MessageTriggerResponse(**trigger)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
-    return MessageTriggerResponse(**trigger)
+    except Exception as e:
+        logger.exception(f"Failed to update trigger: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update trigger") from None
 
 
 @router.patch("/configs/{trigger_name}/toggle", response_model=MessageTriggerResponse)
@@ -141,9 +153,14 @@ async def toggle_trigger(
     pool: Pool = Depends(get_db_pool),
 ) -> MessageTriggerResponse:
     """Toggle a trigger's enabled state."""
-    service = MessageTriggerService(pool)
-    trigger = await service.toggle_trigger(channel_id, trigger_name, body.enabled)
-    return MessageTriggerResponse(**trigger)
+    try:
+        service = MessageTriggerService(pool)
+        trigger = await service.toggle_trigger(channel_id, trigger_name, body.enabled)
+        logger.info(f"Channel {channel_id} toggled trigger: {trigger_name} -> {body.enabled}")
+        return MessageTriggerResponse(**trigger)
+    except Exception as e:
+        logger.exception(f"Failed to toggle trigger: {e}")
+        raise HTTPException(status_code=500, detail="Failed to toggle trigger") from None
 
 
 @router.delete("/configs/{trigger_name}", status_code=204)
@@ -153,7 +170,14 @@ async def delete_trigger(
     pool: Pool = Depends(get_db_pool),
 ) -> None:
     """Delete a message trigger."""
-    service = MessageTriggerService(pool)
-    deleted = await service.delete_trigger(channel_id, trigger_name)
-    if not deleted:
-        raise HTTPException(status_code=404, detail="Trigger not found")
+    try:
+        service = MessageTriggerService(pool)
+        deleted = await service.delete_trigger(channel_id, trigger_name)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Trigger not found")
+        logger.info(f"Channel {channel_id} deleted trigger: {trigger_name}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to delete trigger: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete trigger") from None

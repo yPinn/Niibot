@@ -63,7 +63,7 @@ class LeaderboardComponent(commands.Component):
             return self._cache
 
         if now - self._last_request < 3:
-            LOGGER.info("Rate limited, using cache")
+            LOGGER.debug("Rate limited, using cache")
             return self._cache
 
         try:

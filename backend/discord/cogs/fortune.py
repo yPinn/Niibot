@@ -1,6 +1,7 @@
 """Fortune telling commands"""
 
 import json
+import logging
 import random
 from datetime import datetime
 
@@ -9,6 +10,8 @@ from discord import app_commands
 from discord.ext import commands
 
 from core import DATA_DIR
+
+logger = logging.getLogger(__name__)
 
 
 class Fortune(commands.Cog):
@@ -123,7 +126,8 @@ class Fortune(commands.Cog):
             await interaction.response.send_message(embed=embed)
 
         except Exception as e:
-            await interaction.response.send_message(f"占卜過程中發生神秘干擾: {e}", ephemeral=True)
+            logger.exception(f"Fortune command error: {e}")
+            await interaction.response.send_message("占卜過程中發生神秘干擾", ephemeral=True)
 
 
 async def setup(bot: commands.Bot) -> None:

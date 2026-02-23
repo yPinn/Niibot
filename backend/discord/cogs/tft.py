@@ -88,7 +88,7 @@ class TFT(commands.Cog):
             return self._cache
 
         if now - self._last_request < 3:
-            logger.info("Rate limited, using cache")
+            logger.debug("Rate limited, using cache")
             return self._cache
 
         try:

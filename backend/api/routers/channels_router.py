@@ -164,7 +164,7 @@ async def toggle_channel(
         raise
     except Exception as e:
         logger.exception(f"Failed to toggle channel: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from None
+        raise HTTPException(status_code=500, detail="Failed to toggle channel") from None
 
 
 # ============================================

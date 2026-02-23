@@ -63,9 +63,13 @@ async def get_timer_configs(
     pool: Pool = Depends(get_db_pool),
 ) -> list[TimerConfigResponse]:
     """Get all timers for the authenticated user's channel."""
-    service = TimerService(pool)
-    timers = await service.list_timers(channel_id)
-    return [TimerConfigResponse(**t) for t in timers]
+    try:
+        service = TimerService(pool)
+        timers = await service.list_timers(channel_id)
+        return [TimerConfigResponse(**t) for t in timers]
+    except Exception as e:
+        logger.exception(f"Failed to get timer configs: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch timer configs") from None
 
 
 @router.post("/configs", response_model=TimerConfigResponse, status_code=201)
@@ -75,8 +79,8 @@ async def create_timer(
     pool: Pool = Depends(get_db_pool),
 ) -> TimerConfigResponse:
     """Create a new timer."""
-    service = TimerService(pool)
     try:
+        service = TimerService(pool)
         timer = await service.create_timer(
             channel_id,
             body.timer_name,
@@ -84,9 +88,13 @@ async def create_timer(
             min_lines=body.min_lines,
             message_template=body.message_template,
         )
+        logger.info(f"Channel {channel_id} created timer: {body.timer_name}")
+        return TimerConfigResponse(**timer)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
-    return TimerConfigResponse(**timer)
+    except Exception as e:
+        logger.exception(f"Failed to create timer: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create timer") from None
 
 
 @router.put("/configs/{timer_name}", response_model=TimerConfigResponse)
@@ -97,8 +105,8 @@ async def update_timer(
     pool: Pool = Depends(get_db_pool),
 ) -> TimerConfigResponse:
     """Update a timer's settings."""
-    service = TimerService(pool)
     try:
+        service = TimerService(pool)
         timer = await service.update_timer(
             channel_id,
             timer_name,
@@ -107,9 +115,13 @@ async def update_timer(
             message_template=body.message_template,
             enabled=body.enabled,
         )
+        logger.info(f"Channel {channel_id} updated timer: {timer_name}")
+        return TimerConfigResponse(**timer)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
-    return TimerConfigResponse(**timer)
+    except Exception as e:
+        logger.exception(f"Failed to update timer: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update timer") from None
 
 
 @router.patch("/configs/{timer_name}/toggle", response_model=TimerConfigResponse)
@@ -120,9 +132,14 @@ async def toggle_timer(
     pool: Pool = Depends(get_db_pool),
 ) -> TimerConfigResponse:
     """Toggle a timer's enabled state."""
-    service = TimerService(pool)
-    timer = await service.toggle_timer(channel_id, timer_name, body.enabled)
-    return TimerConfigResponse(**timer)
+    try:
+        service = TimerService(pool)
+        timer = await service.toggle_timer(channel_id, timer_name, body.enabled)
+        logger.info(f"Channel {channel_id} toggled timer: {timer_name} -> {body.enabled}")
+        return TimerConfigResponse(**timer)
+    except Exception as e:
+        logger.exception(f"Failed to toggle timer: {e}")
+        raise HTTPException(status_code=500, detail="Failed to toggle timer") from None
 
 
 @router.delete("/configs/{timer_name}", status_code=204)
@@ -132,7 +149,14 @@ async def delete_timer(
     pool: Pool = Depends(get_db_pool),
 ) -> None:
     """Delete a timer."""
-    service = TimerService(pool)
-    deleted = await service.delete_timer(channel_id, timer_name)
-    if not deleted:
-        raise HTTPException(status_code=404, detail="Timer not found")
+    try:
+        service = TimerService(pool)
+        deleted = await service.delete_timer(channel_id, timer_name)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Timer not found")
+        logger.info(f"Channel {channel_id} deleted timer: {timer_name}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to delete timer: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete timer") from None

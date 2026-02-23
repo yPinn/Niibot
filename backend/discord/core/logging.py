@@ -71,7 +71,9 @@ def setup_logging() -> None:
             force=True,
         )
 
-    # Reduce discord.py log noise
+    # Reduce third-party log noise
     logging.getLogger("discord").setLevel(logging.WARNING)
     logging.getLogger("discord.http").setLevel(logging.WARNING)
     logging.getLogger("aiohttp").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)

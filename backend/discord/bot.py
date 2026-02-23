@@ -162,16 +162,15 @@ class NiibotClient(commands.Bot):
                 failed.append(f"{extension.split('.')[-1]} ({e})")
 
         if loaded:
-            logger.info(f"[green]Loaded cogs:[/green] {', '.join(loaded)}")
+            logger.info(f"Loaded cogs: {', '.join(loaded)}")
         if failed:
-            logger.error(f"[red]Failed to load:[/red] {', '.join(failed)}")
+            logger.error(f"Failed to load cogs: {', '.join(failed)}")
 
         guild_id = os.getenv("DISCORD_GUILD_ID")
         if guild_id:
             self._sync_guild_id = guild_id
 
-        # Command sync deferred to on_ready (avoid 429 during setup_hook)
-        logger.info("[yellow]Connecting to Discord...[/yellow]")
+        logger.info("Connecting to Discord...")
 
     async def _sync_commands(self) -> None:
         """Sync slash commands (runs once after first on_ready)"""
@@ -221,16 +220,14 @@ class NiibotClient(commands.Bot):
         if hasattr(self, "_sync_guild_id"):
             guild_obj = self.get_guild(int(self._sync_guild_id))
             if guild_obj:
-                logger.info(
-                    f"[cyan]Test guild:[/cyan] {guild_obj.name} (ID: {self._sync_guild_id})"
-                )
+                logger.info(f"Test guild: {guild_obj.name} (ID: {self._sync_guild_id})")
 
         if not self.owner_id:
             try:
                 app_info = await self.application_info()
                 self.owner_id = app_info.owner.id
                 owner_name = app_info.owner.global_name or app_info.owner.name
-                logger.info(f"[cyan]Bot Owner:[/cyan] {owner_name} (ID: {self.owner_id})")
+                logger.info(f"Bot owner: {owner_name} (ID: {self.owner_id})")
             except discord.HTTPException as e:
                 logger.warning(f"Failed to fetch application_info (HTTP {e.status}): {e.text}")
             except Exception as e:
@@ -243,21 +240,17 @@ class NiibotClient(commands.Bot):
         except Exception as e:
             logger.warning(f"Failed to set bot presence: {e}")
 
-        status = BotConfig.get_status()
-        activity = BotConfig.get_activity()
-        activity_str = f"{activity.name}" if activity else "None"
-
         if self.user is None:
             logger.error("Bot user is None")
             return
 
+        status = BotConfig.get_status()
+        activity = BotConfig.get_activity()
+        activity_str = f"{activity.name}" if activity else "None"
         logger.info(
-            f"[bold green]Bot ready:[/bold green] {self.user} [dim](ID: {self.user.id})[/dim]"
+            f"Bot ready: {self.user} (ID: {self.user.id}) | "
+            f"{len(self.guilds)} guilds | {status.name} | {activity_str}"
         )
-        logger.info(
-            f"[cyan]Connection:[/cyan] {len(self.guilds)} guilds | discord.py {discord.__version__}"
-        )
-        logger.info(f"[cyan]Status:[/cyan] {status.name} | {activity_str}")
 
     async def on_command_error(self, ctx: commands.Context, error: commands.CommandError) -> None:
         """Handle prefix command errors"""
