@@ -1,4 +1,4 @@
-import { API_ENDPOINTS } from './config'
+import { API_ENDPOINTS, apiFetch } from './config'
 
 export interface SessionSummary {
   session_id: number
@@ -41,7 +41,7 @@ export interface AnalyticsSummary {
 }
 
 export async function getAnalyticsSummary(days: number = 30): Promise<AnalyticsSummary> {
-  const response = await fetch(`${API_ENDPOINTS.analytics.summary}?days=${days}`, {
+  const response = await apiFetch(`${API_ENDPOINTS.analytics.summary}?days=${days}`, {
     credentials: 'include',
   })
 
@@ -56,7 +56,7 @@ export async function getTopCommands(
   days: number = 30,
   limit: number = 10
 ): Promise<AnalyticsCommandStat[]> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${API_ENDPOINTS.analytics.topCommands}?days=${days}&limit=${limit}`,
     {
       credentials: 'include',
@@ -71,7 +71,7 @@ export async function getTopCommands(
 }
 
 export async function getSessionCommands(session_id: number): Promise<AnalyticsCommandStat[]> {
-  const response = await fetch(API_ENDPOINTS.analytics.sessionCommands(session_id), {
+  const response = await apiFetch(API_ENDPOINTS.analytics.sessionCommands(session_id), {
     credentials: 'include',
   })
 
@@ -83,7 +83,7 @@ export async function getSessionCommands(session_id: number): Promise<AnalyticsC
 }
 
 export async function getSessionEvents(session_id: number): Promise<StreamEvent[]> {
-  const response = await fetch(API_ENDPOINTS.analytics.sessionEvents(session_id), {
+  const response = await apiFetch(API_ENDPOINTS.analytics.sessionEvents(session_id), {
     credentials: 'include',
   })
 

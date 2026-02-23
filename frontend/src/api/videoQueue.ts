@@ -1,4 +1,4 @@
-import { API_ENDPOINTS } from './config'
+import { API_ENDPOINTS, apiFetch } from './config'
 
 export interface VideoQueueEntry {
   id: number
@@ -35,7 +35,7 @@ export interface VideoQueueSettingsUpdate {
 // ---- Public (OBS Overlay) ----
 
 export async function getPublicVideoQueueState(username: string): Promise<PublicVideoQueueState> {
-  const response = await fetch(API_ENDPOINTS.videoQueue.public(username))
+  const response = await apiFetch(API_ENDPOINTS.videoQueue.public(username))
   if (!response.ok) throw new Error(`Failed to fetch video queue state: ${response.statusText}`)
   return response.json()
 }
@@ -44,7 +44,7 @@ export async function advanceVideoQueue(
   username: string,
   doneId: number | null
 ): Promise<PublicVideoQueueState> {
-  const response = await fetch(API_ENDPOINTS.videoQueue.advance(username), {
+  const response = await apiFetch(API_ENDPOINTS.videoQueue.advance(username), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ done_id: doneId }),
@@ -58,7 +58,7 @@ export async function reportVideoMetadata(
   entryId: number,
   durationSeconds: number
 ): Promise<void> {
-  await fetch(API_ENDPOINTS.videoQueue.metadata(username, entryId), {
+  await apiFetch(API_ENDPOINTS.videoQueue.metadata(username, entryId), {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ duration_seconds: durationSeconds }),
@@ -68,13 +68,13 @@ export async function reportVideoMetadata(
 // ---- Authenticated (Dashboard) ----
 
 export async function getVideoQueueState(): Promise<PublicVideoQueueState> {
-  const response = await fetch(API_ENDPOINTS.videoQueue.state, { credentials: 'include' })
+  const response = await apiFetch(API_ENDPOINTS.videoQueue.state, { credentials: 'include' })
   if (!response.ok) throw new Error(`Failed to fetch video queue state: ${response.statusText}`)
   return response.json()
 }
 
 export async function skipCurrentVideo(): Promise<PublicVideoQueueState> {
-  const response = await fetch(API_ENDPOINTS.videoQueue.skip, {
+  const response = await apiFetch(API_ENDPOINTS.videoQueue.skip, {
     method: 'DELETE',
     credentials: 'include',
   })
@@ -83,7 +83,7 @@ export async function skipCurrentVideo(): Promise<PublicVideoQueueState> {
 }
 
 export async function clearVideoQueue(): Promise<PublicVideoQueueState> {
-  const response = await fetch(API_ENDPOINTS.videoQueue.clear, {
+  const response = await apiFetch(API_ENDPOINTS.videoQueue.clear, {
     method: 'DELETE',
     credentials: 'include',
   })
@@ -92,7 +92,7 @@ export async function clearVideoQueue(): Promise<PublicVideoQueueState> {
 }
 
 export async function getVideoQueueSettings(): Promise<VideoQueueSettings> {
-  const response = await fetch(API_ENDPOINTS.videoQueue.settings, { credentials: 'include' })
+  const response = await apiFetch(API_ENDPOINTS.videoQueue.settings, { credentials: 'include' })
   if (!response.ok) throw new Error(`Failed to fetch video queue settings: ${response.statusText}`)
   return response.json()
 }
@@ -100,7 +100,7 @@ export async function getVideoQueueSettings(): Promise<VideoQueueSettings> {
 export async function updateVideoQueueSettings(
   data: VideoQueueSettingsUpdate
 ): Promise<VideoQueueSettings> {
-  const response = await fetch(API_ENDPOINTS.videoQueue.settings, {
+  const response = await apiFetch(API_ENDPOINTS.videoQueue.settings, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',

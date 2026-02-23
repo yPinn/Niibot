@@ -1,4 +1,4 @@
-import { API_ENDPOINTS } from './config'
+import { API_ENDPOINTS, apiFetch } from './config'
 
 export interface CommandConfig {
   id: number
@@ -33,7 +33,7 @@ export interface CustomCommandCreate {
 // ---- Command Configs ----
 
 export async function getCommandConfigs(): Promise<CommandConfig[]> {
-  const response = await fetch(API_ENDPOINTS.commands.configs, {
+  const response = await apiFetch(API_ENDPOINTS.commands.configs, {
     credentials: 'include',
   })
   if (!response.ok) throw new Error(`Failed to fetch command configs: ${response.statusText}`)
@@ -41,7 +41,7 @@ export async function getCommandConfigs(): Promise<CommandConfig[]> {
 }
 
 export async function createCustomCommand(data: CustomCommandCreate): Promise<CommandConfig> {
-  const response = await fetch(API_ENDPOINTS.commands.createConfig, {
+  const response = await apiFetch(API_ENDPOINTS.commands.createConfig, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -55,7 +55,7 @@ export async function updateCommandConfig(
   commandName: string,
   data: CommandConfigUpdate
 ): Promise<CommandConfig> {
-  const response = await fetch(API_ENDPOINTS.commands.updateConfig(commandName), {
+  const response = await apiFetch(API_ENDPOINTS.commands.updateConfig(commandName), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -69,7 +69,7 @@ export async function toggleCommandConfig(
   commandName: string,
   enabled: boolean
 ): Promise<CommandConfig> {
-  const response = await fetch(API_ENDPOINTS.commands.toggleConfig(commandName), {
+  const response = await apiFetch(API_ENDPOINTS.commands.toggleConfig(commandName), {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -80,7 +80,7 @@ export async function toggleCommandConfig(
 }
 
 export async function deleteCustomCommand(commandName: string): Promise<void> {
-  const response = await fetch(API_ENDPOINTS.commands.deleteConfig(commandName), {
+  const response = await apiFetch(API_ENDPOINTS.commands.deleteConfig(commandName), {
     method: 'DELETE',
     credentials: 'include',
   })
@@ -107,7 +107,7 @@ export interface PublicCommandsData {
 }
 
 export async function getPublicCommands(username: string): Promise<PublicCommandsData> {
-  const response = await fetch(API_ENDPOINTS.commands.public(username))
+  const response = await apiFetch(API_ENDPOINTS.commands.public(username))
   if (!response.ok) throw new Error(`Failed to fetch public commands: ${response.statusText}`)
   return response.json()
 }

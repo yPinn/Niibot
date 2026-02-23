@@ -238,6 +238,29 @@ class DatabaseManager:
                     )
                     raise
 
+    async def reconnect(self) -> None:
+        """Destroy a dead pool and create a fresh one.
+
+        Called by heartbeat loops when consecutive health checks fail,
+        indicating the pool's connections are stale (e.g. after Supavisor
+        idle-kills or Render cold starts).
+        """
+        old = self._pool
+        self._pool = None  # clear first so connect() won't short-circuit
+
+        if old is not None:
+            try:
+                await asyncio.wait_for(old.close(), timeout=5.0)
+            except Exception:
+                # close() hung or errored — force-kill remaining connections
+                try:
+                    old.terminate()
+                except Exception:
+                    pass
+
+        logger.info("Reconnecting database pool...")
+        await self.connect()  # raises on final failure (after retries)
+
     async def disconnect(self) -> None:
         """Close database connection pool."""
         if self._pool is None:

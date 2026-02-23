@@ -82,6 +82,7 @@ const ACTION_TYPE_LABELS: Record<string, string> = {
   first: '本日頭香',
   niibot_auth: 'Niibot 授權',
   game_queue: '遊戲排隊券',
+  video_queue: '播放清單',
 }
 
 type EventSortKey = 'event_type' | 'type_label' | 'trigger_count' | 'enabled'

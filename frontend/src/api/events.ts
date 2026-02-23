@@ -1,4 +1,4 @@
-import { API_ENDPOINTS } from './config'
+import { API_ENDPOINTS, apiFetch } from './config'
 
 export interface EventConfig {
   id: number
@@ -36,7 +36,7 @@ export interface RedemptionConfigUpdate {
 }
 
 export async function getEventConfigs(): Promise<EventConfig[]> {
-  const response = await fetch(API_ENDPOINTS.events.configs, {
+  const response = await apiFetch(API_ENDPOINTS.events.configs, {
     credentials: 'include',
   })
   if (!response.ok) throw new Error(`Failed to fetch event configs: ${response.statusText}`)
@@ -47,7 +47,7 @@ export async function updateEventConfig(
   eventType: string,
   data: EventConfigUpdate
 ): Promise<EventConfig> {
-  const response = await fetch(API_ENDPOINTS.events.updateConfig(eventType), {
+  const response = await apiFetch(API_ENDPOINTS.events.updateConfig(eventType), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -58,7 +58,7 @@ export async function updateEventConfig(
 }
 
 export async function toggleEventConfig(eventType: string, enabled: boolean): Promise<EventConfig> {
-  const response = await fetch(API_ENDPOINTS.events.toggleConfig(eventType), {
+  const response = await apiFetch(API_ENDPOINTS.events.toggleConfig(eventType), {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -78,7 +78,7 @@ export class NonPartnerError extends Error {
 }
 
 export async function getTwitchRewards(): Promise<TwitchReward[]> {
-  const response = await fetch(API_ENDPOINTS.events.twitchRewards, {
+  const response = await apiFetch(API_ENDPOINTS.events.twitchRewards, {
     credentials: 'include',
   })
   if (response.status === 403) throw new NonPartnerError()
@@ -89,7 +89,7 @@ export async function getTwitchRewards(): Promise<TwitchReward[]> {
 // ---- Redemption Configs ----
 
 export async function getRedemptionConfigs(): Promise<RedemptionConfig[]> {
-  const response = await fetch(API_ENDPOINTS.events.redemptions, {
+  const response = await apiFetch(API_ENDPOINTS.events.redemptions, {
     credentials: 'include',
   })
   if (!response.ok) throw new Error(`Failed to fetch redemption configs: ${response.statusText}`)
@@ -100,7 +100,7 @@ export async function updateRedemptionConfig(
   actionType: string,
   data: RedemptionConfigUpdate
 ): Promise<RedemptionConfig> {
-  const response = await fetch(API_ENDPOINTS.events.updateRedemption(actionType), {
+  const response = await apiFetch(API_ENDPOINTS.events.updateRedemption(actionType), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',

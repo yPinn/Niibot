@@ -1,4 +1,4 @@
-import { API_ENDPOINTS } from './config'
+import { API_ENDPOINTS, apiFetch } from './config'
 
 export interface TimerConfig {
   id: number
@@ -27,7 +27,7 @@ export interface TimerUpdate {
 }
 
 export async function getTimerConfigs(): Promise<TimerConfig[]> {
-  const response = await fetch(API_ENDPOINTS.timers.configs, {
+  const response = await apiFetch(API_ENDPOINTS.timers.configs, {
     credentials: 'include',
   })
   if (!response.ok) throw new Error(`Failed to fetch timers: ${response.statusText}`)
@@ -35,7 +35,7 @@ export async function getTimerConfigs(): Promise<TimerConfig[]> {
 }
 
 export async function createTimer(data: TimerCreate): Promise<TimerConfig> {
-  const response = await fetch(API_ENDPOINTS.timers.createConfig, {
+  const response = await apiFetch(API_ENDPOINTS.timers.createConfig, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -49,7 +49,7 @@ export async function createTimer(data: TimerCreate): Promise<TimerConfig> {
 }
 
 export async function updateTimer(name: string, data: TimerUpdate): Promise<TimerConfig> {
-  const response = await fetch(API_ENDPOINTS.timers.updateConfig(name), {
+  const response = await apiFetch(API_ENDPOINTS.timers.updateConfig(name), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -63,7 +63,7 @@ export async function updateTimer(name: string, data: TimerUpdate): Promise<Time
 }
 
 export async function toggleTimer(name: string, enabled: boolean): Promise<TimerConfig> {
-  const response = await fetch(API_ENDPOINTS.timers.toggleConfig(name), {
+  const response = await apiFetch(API_ENDPOINTS.timers.toggleConfig(name), {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -74,7 +74,7 @@ export async function toggleTimer(name: string, enabled: boolean): Promise<Timer
 }
 
 export async function deleteTimer(name: string): Promise<void> {
-  const response = await fetch(API_ENDPOINTS.timers.deleteConfig(name), {
+  const response = await apiFetch(API_ENDPOINTS.timers.deleteConfig(name), {
     method: 'DELETE',
     credentials: 'include',
   })

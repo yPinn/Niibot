@@ -1,4 +1,4 @@
-import { API_ENDPOINTS } from './config'
+import { API_ENDPOINTS, apiFetch } from './config'
 
 export interface QueueEntry {
   id: number
@@ -46,7 +46,7 @@ export interface ClearResponse extends QueueState {
 // ---- Queue State ----
 
 export async function getQueueState(): Promise<QueueState> {
-  const response = await fetch(API_ENDPOINTS.gameQueue.state, {
+  const response = await apiFetch(API_ENDPOINTS.gameQueue.state, {
     credentials: 'include',
   })
   if (!response.ok) throw new Error(`Failed to fetch queue state: ${response.statusText}`)
@@ -54,7 +54,7 @@ export async function getQueueState(): Promise<QueueState> {
 }
 
 export async function advanceBatch(): Promise<QueueState> {
-  const response = await fetch(API_ENDPOINTS.gameQueue.advance, {
+  const response = await apiFetch(API_ENDPOINTS.gameQueue.advance, {
     method: 'POST',
     credentials: 'include',
   })
@@ -63,7 +63,7 @@ export async function advanceBatch(): Promise<QueueState> {
 }
 
 export async function removePlayer(entryId: number): Promise<QueueState> {
-  const response = await fetch(API_ENDPOINTS.gameQueue.removeEntry(entryId), {
+  const response = await apiFetch(API_ENDPOINTS.gameQueue.removeEntry(entryId), {
     method: 'DELETE',
     credentials: 'include',
   })
@@ -72,7 +72,7 @@ export async function removePlayer(entryId: number): Promise<QueueState> {
 }
 
 export async function clearQueue(): Promise<ClearResponse> {
-  const response = await fetch(API_ENDPOINTS.gameQueue.clear, {
+  const response = await apiFetch(API_ENDPOINTS.gameQueue.clear, {
     method: 'DELETE',
     credentials: 'include',
   })
@@ -83,7 +83,7 @@ export async function clearQueue(): Promise<ClearResponse> {
 // ---- Settings ----
 
 export async function getQueueSettings(): Promise<QueueSettings> {
-  const response = await fetch(API_ENDPOINTS.gameQueue.settings, {
+  const response = await apiFetch(API_ENDPOINTS.gameQueue.settings, {
     credentials: 'include',
   })
   if (!response.ok) throw new Error(`Failed to fetch queue settings: ${response.statusText}`)
@@ -91,7 +91,7 @@ export async function getQueueSettings(): Promise<QueueSettings> {
 }
 
 export async function updateQueueSettings(data: QueueSettingsUpdate): Promise<QueueSettings> {
-  const response = await fetch(API_ENDPOINTS.gameQueue.settings, {
+  const response = await apiFetch(API_ENDPOINTS.gameQueue.settings, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -104,7 +104,7 @@ export async function updateQueueSettings(data: QueueSettingsUpdate): Promise<Qu
 // ---- Public (OBS Overlay) ----
 
 export async function getPublicQueueState(username: string): Promise<PublicQueueState> {
-  const response = await fetch(API_ENDPOINTS.gameQueue.public(username))
+  const response = await apiFetch(API_ENDPOINTS.gameQueue.public(username))
   if (!response.ok) throw new Error(`Failed to fetch public queue state: ${response.statusText}`)
   return response.json()
 }

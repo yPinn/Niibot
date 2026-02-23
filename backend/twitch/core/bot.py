@@ -19,6 +19,7 @@ from core.config import COMPONENTS_DIR
 from core.guards import has_role, is_on_cooldown, record_cooldown
 from core.pg_listener import pg_listen
 from core.subscriptions import get_channel_subscriptions
+from shared.database import DatabaseManager
 from shared.repositories.analytics import AnalyticsRepository
 from shared.repositories.channel import ChannelRepository
 from shared.repositories.command_config import (
@@ -87,10 +88,12 @@ class Bot(commands.AutoBot):
         owner_id: str,
         conduit_id: str | None,
         token_database: asyncpg.Pool,
+        db_manager: DatabaseManager,
         database_url: str,
         subs: list[eventsub.SubscriptionPayload],
     ) -> None:
         self.token_database = token_database
+        self._db_manager = db_manager
         self._database_url = database_url
         self._subscribed_channels: set[str] = set()
         self._subscription_ids: dict[str, list[str]] = {}
@@ -991,11 +994,24 @@ class Bot(commands.AutoBot):
         except Exception as e:
             LOGGER.exception(f"Error during VOD sync: {e}")
 
+    def _refresh_pool_refs(self) -> None:
+        """Update all pool references after a reconnect."""
+        pool = self._db_manager.pool
+        self.token_database = pool
+        self.channels.pool = pool
+        self.analytics.pool = pool
+        self.command_configs.pool = pool
+        self.redemption_configs.pool = pool
+        self.timer_configs.pool = pool
+        self.message_trigger_configs.pool = pool
+
     async def _pool_heartbeat_loop(self) -> None:
         """Periodically ping the DB pool to keep the idle connection alive.
 
         Constraint chain: heartbeat(15s) < max_inactive(25s) < Supavisor(~30-60s).
         On failure, backs off to avoid flooding logs and wasting connections.
+        After 3 consecutive failures, destroys the dead pool and creates a
+        fresh one via ``DatabaseManager.reconnect()``.
         """
         interval = 15
         fail_count = 0
@@ -1014,7 +1030,21 @@ class Bot(commands.AutoBot):
                 fail_count += 1
                 if fail_count <= 3:
                     LOGGER.warning(f"Pool heartbeat failed ({fail_count}): {type(e).__name__}: {e}")
-                elif fail_count == 4:
+
+                # After 3 consecutive failures the pool is likely dead — reconnect
+                if fail_count == 3:
+                    LOGGER.warning("Pool appears dead, attempting reconnect...")
+                    try:
+                        await self._db_manager.reconnect()
+                        self._refresh_pool_refs()
+                        LOGGER.info("Pool reconnected successfully")
+                        fail_count = 0
+                        interval = 15
+                        continue
+                    except Exception as re_err:
+                        LOGGER.error(f"Pool reconnect failed: {type(re_err).__name__}: {re_err}")
+
+                if fail_count == 4:
                     LOGGER.warning(
                         f"Pool heartbeat still failing ({fail_count}x), suppressing until recovery"
                     )

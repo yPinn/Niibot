@@ -38,6 +38,10 @@ export const navigationData = {
           title: 'Game Queue',
           url: '/modules/game-queue',
         },
+        {
+          title: 'Video Queue',
+          url: '/modules/video-queue',
+        },
       ],
     },
     {

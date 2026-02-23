@@ -1,6 +1,6 @@
 import { apiCache, CACHE_KEYS } from '@/lib/apiCache'
 
-import { API_ENDPOINTS } from './config'
+import { API_ENDPOINTS, apiFetch } from './config'
 
 export type Theme = 'dark' | 'light' | 'system'
 
@@ -15,7 +15,7 @@ export interface User {
 
 async function fetchCurrentUser(): Promise<User | null> {
   try {
-    const response = await fetch(API_ENDPOINTS.auth.user, {
+    const response = await apiFetch(API_ENDPOINTS.auth.user, {
       credentials: 'include',
     })
 
@@ -38,7 +38,7 @@ export async function getCurrentUser(options?: { forceRefresh?: boolean }): Prom
 }
 
 export async function updateUserPreferences(prefs: { theme: Theme }): Promise<void> {
-  const response = await fetch(API_ENDPOINTS.user.preferences, {
+  const response = await apiFetch(API_ENDPOINTS.user.preferences, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -54,7 +54,7 @@ export async function updateUserPreferences(prefs: { theme: Theme }): Promise<vo
 
 export async function logout(): Promise<void> {
   try {
-    const response = await fetch(API_ENDPOINTS.auth.logout, {
+    const response = await apiFetch(API_ENDPOINTS.auth.logout, {
       method: 'POST',
       credentials: 'include',
     })

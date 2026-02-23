@@ -1,4 +1,4 @@
-import { API_ENDPOINTS } from './config'
+import { API_ENDPOINTS, apiFetch } from './config'
 
 export interface LinkedAccount {
   platform: 'twitch' | 'discord'
@@ -8,7 +8,7 @@ export interface LinkedAccount {
 }
 
 export async function getLinkedAccounts(): Promise<LinkedAccount[]> {
-  const response = await fetch(API_ENDPOINTS.user.linkedAccounts, {
+  const response = await apiFetch(API_ENDPOINTS.user.linkedAccounts, {
     credentials: 'include',
   })
   if (!response.ok) {
@@ -18,7 +18,7 @@ export async function getLinkedAccounts(): Promise<LinkedAccount[]> {
 }
 
 export async function unlinkAccount(platform: 'twitch' | 'discord'): Promise<void> {
-  const response = await fetch(API_ENDPOINTS.user.unlinkAccount(platform), {
+  const response = await apiFetch(API_ENDPOINTS.user.unlinkAccount(platform), {
     method: 'DELETE',
     credentials: 'include',
   })
@@ -32,7 +32,7 @@ export async function openOAuthLink(platform: 'twitch' | 'discord'): Promise<voi
   const endpoint =
     platform === 'twitch' ? API_ENDPOINTS.auth.twitchOAuth : API_ENDPOINTS.auth.discordOAuth
 
-  const response = await fetch(`${endpoint}?mode=link`, { credentials: 'include' })
+  const response = await apiFetch(`${endpoint}?mode=link`, { credentials: 'include' })
   if (!response.ok) {
     throw new Error(`Failed to fetch ${platform} OAuth URL`)
   }

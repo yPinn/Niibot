@@ -1,4 +1,4 @@
-import { API_ENDPOINTS } from './config'
+import { API_ENDPOINTS, apiFetch } from './config'
 
 export interface CommandStat {
   name: string
@@ -19,7 +19,7 @@ export interface ChannelStats {
 
 export async function getChannelStats(): Promise<ChannelStats | null> {
   try {
-    const response = await fetch(API_ENDPOINTS.stats.channel, {
+    const response = await apiFetch(API_ENDPOINTS.stats.channel, {
       credentials: 'include',
     })
 

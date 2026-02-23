@@ -17,6 +17,7 @@ import Landing from '@/pages/Landing'
 import LoginPage from '@/pages/Login'
 import GameQueue from '@/pages/modules/GameQueue'
 import Timers from '@/pages/modules/Timers'
+import VideoQueue from '@/pages/modules/VideoQueue'
 import NotFound from '@/pages/NotFound'
 import PublicCommands from '@/pages/PublicCommands'
 import Settings from '@/pages/Settings'
@@ -49,6 +50,7 @@ function App() {
                   {/* Module Routes */}
                   <Route path="/timers" element={<Timers />} />
                   <Route path="/modules/game-queue" element={<GameQueue />} />
+                  <Route path="/modules/video-queue" element={<VideoQueue />} />
                   {/* Discord Bot Routes */}
                   <Route path="/discord/dashboard" element={<DiscordDashboard />} />
                   <Route path="*" element={<NotFound />} />

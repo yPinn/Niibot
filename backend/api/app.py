@@ -52,6 +52,8 @@ async def _pool_heartbeat_loop() -> None:
 
     Constraint chain: heartbeat(15s) < max_inactive(25s) < Supavisor(~30-60s).
     On failure, backs off to avoid flooding logs and wasting connections.
+    After 3 consecutive failures, destroys the dead pool and creates a fresh
+    one via ``DatabaseManager.reconnect()``.
     """
     interval = 15
     fail_count = 0
@@ -72,7 +74,20 @@ async def _pool_heartbeat_loop() -> None:
             fail_count += 1
             if fail_count <= 3:
                 logger.warning(f"Pool heartbeat failed ({fail_count}): {type(e).__name__}: {e}")
-            elif fail_count == 4:
+
+            # After 3 consecutive failures the pool is likely dead — reconnect
+            if fail_count == 3:
+                logger.warning("Pool appears dead, attempting reconnect...")
+                try:
+                    await db_manager.reconnect()
+                    logger.info("Pool reconnected successfully")
+                    fail_count = 0
+                    interval = 15
+                    continue
+                except Exception as re_err:
+                    logger.error(f"Pool reconnect failed: {type(re_err).__name__}: {re_err}")
+
+            if fail_count == 4:
                 logger.warning(
                     f"Pool heartbeat still failing ({fail_count}x), suppressing until recovery"
                 )

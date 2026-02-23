@@ -1,4 +1,4 @@
-import { API_ENDPOINTS } from './config'
+import { API_ENDPOINTS, apiFetch } from './config'
 
 export interface TriggerConfig {
   id: number
@@ -40,7 +40,7 @@ export interface TriggerUpdate {
 }
 
 export async function getTriggerConfigs(): Promise<TriggerConfig[]> {
-  const response = await fetch(API_ENDPOINTS.triggers.configs, {
+  const response = await apiFetch(API_ENDPOINTS.triggers.configs, {
     credentials: 'include',
   })
   if (!response.ok) throw new Error(`Failed to fetch triggers: ${response.statusText}`)
@@ -48,7 +48,7 @@ export async function getTriggerConfigs(): Promise<TriggerConfig[]> {
 }
 
 export async function createTrigger(data: TriggerCreate): Promise<TriggerConfig> {
-  const response = await fetch(API_ENDPOINTS.triggers.createConfig, {
+  const response = await apiFetch(API_ENDPOINTS.triggers.createConfig, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -62,7 +62,7 @@ export async function createTrigger(data: TriggerCreate): Promise<TriggerConfig>
 }
 
 export async function updateTrigger(name: string, data: TriggerUpdate): Promise<TriggerConfig> {
-  const response = await fetch(API_ENDPOINTS.triggers.updateConfig(name), {
+  const response = await apiFetch(API_ENDPOINTS.triggers.updateConfig(name), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -76,7 +76,7 @@ export async function updateTrigger(name: string, data: TriggerUpdate): Promise<
 }
 
 export async function toggleTrigger(name: string, enabled: boolean): Promise<TriggerConfig> {
-  const response = await fetch(API_ENDPOINTS.triggers.toggleConfig(name), {
+  const response = await apiFetch(API_ENDPOINTS.triggers.toggleConfig(name), {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -87,7 +87,7 @@ export async function toggleTrigger(name: string, enabled: boolean): Promise<Tri
 }
 
 export async function deleteTrigger(name: string): Promise<void> {
-  const response = await fetch(API_ENDPOINTS.triggers.deleteConfig(name), {
+  const response = await apiFetch(API_ENDPOINTS.triggers.deleteConfig(name), {
     method: 'DELETE',
     credentials: 'include',
   })

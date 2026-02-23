@@ -1,6 +1,6 @@
 import { apiCache, CACHE_KEYS } from '@/lib/apiCache'
 
-import { API_ENDPOINTS } from './config'
+import { API_ENDPOINTS, apiFetch } from './config'
 
 export interface Channel {
   id: string
@@ -29,7 +29,7 @@ export interface ToggleChannelResponse {
 
 async function fetchTwitchMonitoredChannels(): Promise<Channel[]> {
   try {
-    const response = await fetch(API_ENDPOINTS.channels.twitch.monitored, {
+    const response = await apiFetch(API_ENDPOINTS.channels.twitch.monitored, {
       credentials: 'include',
     })
     if (!response.ok) {
@@ -53,7 +53,7 @@ export async function getTwitchMonitoredChannels(options?: {
 
 export async function getTwitchChannelStatus(): Promise<ChannelStatus | null> {
   try {
-    const response = await fetch(API_ENDPOINTS.channels.twitch.myStatus, {
+    const response = await apiFetch(API_ENDPOINTS.channels.twitch.myStatus, {
       credentials: 'include',
     })
     if (!response.ok) {
@@ -73,7 +73,7 @@ export interface ChannelDefaults {
 }
 
 export async function getChannelDefaults(): Promise<ChannelDefaults> {
-  const response = await fetch(API_ENDPOINTS.channels.defaults, {
+  const response = await apiFetch(API_ENDPOINTS.channels.defaults, {
     credentials: 'include',
   })
   if (!response.ok) throw new Error('Failed to fetch channel defaults')
@@ -83,7 +83,7 @@ export async function getChannelDefaults(): Promise<ChannelDefaults> {
 export async function updateChannelDefaults(
   data: Partial<ChannelDefaults>
 ): Promise<ChannelDefaults> {
-  const response = await fetch(API_ENDPOINTS.channels.defaults, {
+  const response = await apiFetch(API_ENDPOINTS.channels.defaults, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -97,7 +97,7 @@ export async function toggleTwitchChannel(
   channelId: string,
   enabled: boolean
 ): Promise<ToggleChannelResponse> {
-  const response = await fetch(API_ENDPOINTS.channels.twitch.toggle, {
+  const response = await apiFetch(API_ENDPOINTS.channels.twitch.toggle, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

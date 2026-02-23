@@ -108,3 +108,25 @@ export const API_ENDPOINTS = {
   health: join('/health'),
   status: join('/status'),
 } as const
+
+// ---------------------------------------------------------------------------
+// Retry-capable fetch — retries once on 503 (DB reconnecting) so transient
+// pool restarts are invisible to the user.
+// ---------------------------------------------------------------------------
+
+export async function apiFetch(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+  retries = 1
+): Promise<Response> {
+  for (let i = 0; i <= retries; i++) {
+    const res = await fetch(input, init)
+    if (res.status === 503 && i < retries) {
+      await new Promise(r => setTimeout(r, 1500))
+      continue
+    }
+    return res
+  }
+  // Unreachable, but satisfies TS
+  return fetch(input, init)
+}

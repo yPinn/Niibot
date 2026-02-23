@@ -94,6 +94,7 @@ def main() -> None:
                 owner_id=owner_id,
                 conduit_id=conduit_id,
                 token_database=pool,
+                db_manager=db_manager,
                 database_url=database_url,
                 subs=subs,
             ) as bot:
