@@ -1,6 +1,6 @@
 # Niibot Twitch Bot
 
-TwitchIO 3.x 多頻道 Bot，支援 EventSub。部署於 Render (Docker)。
+TwitchIO 3.x 多頻道 Bot，支援 EventSub。部署於 Oracle VPS (Docker)。
 
 ## 啟動
 

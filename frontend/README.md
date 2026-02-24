@@ -37,4 +37,4 @@ VITE_API_URL=http://localhost:8000
 
 **生產**（CF Pages Dashboard）：
 
-- `API_BACKEND` — 後端 URL（如 `https://xxx.onrender.com`）
+- `API_BACKEND` — 後端 URL（如 `http://your-vps-ip:8000`）

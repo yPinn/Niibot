@@ -1,6 +1,6 @@
 # Niibot API
 
-FastAPI 後端，提供認證、頻道管理、指令/事件設定等 API。部署於 Render (Docker)。
+FastAPI 後端，提供認證、頻道管理、指令/事件設定等 API。部署於 Oracle VPS (Docker)。
 
 ## 啟動
 
