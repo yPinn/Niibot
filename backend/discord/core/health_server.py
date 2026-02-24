@@ -22,6 +22,7 @@ class HealthCheckServer:
     ) -> None:
         self.bot: Any = bot
         self.host = host
+        # Prefer PORT env var if set
         self.port = port or int(os.getenv("PORT", "8080"))
         self.app = web.Application()
         self.runner: web.AppRunner | None = None
