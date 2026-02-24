@@ -90,6 +90,12 @@ logs/
 *.sqlite
 *.sqlite3
 
+# PostgreSQL data directory (bind mount from docker-compose)
+data/postgres/
+
+# Database backups
+data/backups/
+
 # OS
 .DS_Store
 Thumbs.db

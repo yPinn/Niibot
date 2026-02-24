@@ -14,7 +14,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - ./data/postgres:/var/lib/postgresql/data
     networks:
       - niibot-network
     healthcheck:
@@ -30,12 +30,8 @@ services:
       dockerfile: twitch/Dockerfile
     container_name: niibot-twitch
     restart: unless-stopped
-    ports:
-      - "4344:4344"
     env_file:
       - ./backend/twitch/.env
-    environment:
-      - ENABLE_HEALTH_SERVER=true
     volumes:
       - ./backend/data:/app/data
     networks:
@@ -59,12 +55,8 @@ services:
       dockerfile: discord/Dockerfile
     container_name: niibot-discord
     restart: unless-stopped
-    ports:
-      - "8080:8080"
     env_file:
       - ./backend/discord/.env
-    environment:
-      - ENABLE_HTTP_SERVER=true
     volumes:
       - ./backend/data:/app/data
     networks:
@@ -109,28 +101,6 @@ services:
           "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()",
         ]
 
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    container_name: niibot-frontend
-    restart: unless-stopped
-    ports:
-      - "3000:80"
-    env_file:
-      - ./frontend/.env
-    depends_on:
-      - api
-    networks:
-      - niibot-network
-    healthcheck:
-      <<: *default-healthcheck
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:80/health"]
-      start_period: 10s
-
 networks:
   niibot-network:
     driver: bridge
-
-volumes:
-  pgdata:
