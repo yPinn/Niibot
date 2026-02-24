@@ -2,7 +2,7 @@
 
 Connection modes (auto-detected from DATABASE_URL port):
   - Session mode  (port 5432) : persistent connections, supports prepared statements
-  - Transaction mode (port 6543) : connection pooler (PgBouncer/Supavisor), no prepared statements
+  - Transaction mode (port 6543) : external connection pooler (PgBouncer/Pgpool-II), no prepared statements
 """
 
 from __future__ import annotations

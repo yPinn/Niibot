@@ -32,19 +32,8 @@ logger = logging.getLogger(__name__)
 
 # Track server start time
 _start_time: float = 0.0
-_heartbeat_task: asyncio.Task | None = None
 _pool_heartbeat_task: asyncio.Task | None = None
 _db_retry_task: asyncio.Task | None = None
-
-
-async def _heartbeat(interval: int = 300) -> None:
-    """Periodic heartbeat — log uptime and DB status"""
-    while True:
-        await asyncio.sleep(interval)
-        uptime = int(time.time() - _start_time)
-        db_manager = get_database_manager()
-        db_ok = db_manager is not None and await db_manager.check_health()
-        logger.info(f"Heartbeat: uptime={uptime}s, db={db_ok}")
 
 
 async def _pool_heartbeat_loop() -> None:
@@ -121,7 +110,7 @@ async def _db_retry_loop(db_manager) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Handle startup and shutdown"""
-    global _start_time, _heartbeat_task, _pool_heartbeat_task, _db_retry_task
+    global _start_time, _pool_heartbeat_task, _db_retry_task
     _start_time = time.time()
 
     settings = get_settings()
@@ -148,11 +137,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         )
         _db_retry_task = asyncio.create_task(_db_retry_loop(db_manager))
 
-    # Start heartbeat keep-alive task
-    if settings.enable_keep_alive:
-        _heartbeat_task = asyncio.create_task(_heartbeat(settings.keep_alive_interval))
-        logger.info(f"Heartbeat started (interval={settings.keep_alive_interval}s)")
-
     # Start pool heartbeat to detect and recover dead connections
     _pool_heartbeat_task = asyncio.create_task(_pool_heartbeat_loop())
 
@@ -164,8 +148,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         _db_retry_task.cancel()
     if _pool_heartbeat_task:
         _pool_heartbeat_task.cancel()
-    if _heartbeat_task:
-        _heartbeat_task.cancel()
     try:
         await close_twitch_api()
         await close_discord_api()

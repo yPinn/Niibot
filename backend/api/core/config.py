@@ -54,10 +54,6 @@ class Settings(BaseSettings):
     host: str = Field(default="0.0.0.0", description="Server host")
     port: int = Field(default=8000, description="Server port")
 
-    # Keep-Alive
-    enable_keep_alive: bool = Field(default=False, description="Enable heartbeat keep-alive task")
-    keep_alive_interval: int = Field(default=600, description="Heartbeat interval in seconds")
-
     @field_validator("log_level")
     @classmethod
     def validate_log_level(cls, v: str) -> str:
