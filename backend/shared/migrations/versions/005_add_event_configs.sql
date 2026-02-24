@@ -20,14 +20,3 @@ CREATE TRIGGER trg_event_configs_updated_at
     BEFORE UPDATE ON event_configs
     FOR EACH ROW EXECUTE FUNCTION fn_update_updated_at();
 
--- RLS（與現有表一致）
-ALTER TABLE event_configs ENABLE ROW LEVEL SECURITY;
-
--- 授權（與現有表一致：anon, authenticated, service_role 全權限）
-GRANT ALL ON event_configs TO anon, authenticated, service_role;
-GRANT USAGE, SELECT ON SEQUENCE event_configs_id_seq TO anon, authenticated, service_role;
-
--- RLS Policy: authenticated 可讀取
-DROP POLICY IF EXISTS "Allow authenticated users to read event_configs" ON event_configs;
-CREATE POLICY "Allow authenticated users to read event_configs"
-    ON event_configs FOR SELECT TO authenticated USING (true);

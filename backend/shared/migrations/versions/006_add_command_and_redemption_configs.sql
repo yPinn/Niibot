@@ -44,20 +44,3 @@ CREATE TRIGGER trg_redemption_configs_updated_at
     BEFORE UPDATE ON redemption_configs
     FOR EACH ROW EXECUTE FUNCTION fn_update_updated_at();
 
--- RLS
-ALTER TABLE command_configs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE redemption_configs ENABLE ROW LEVEL SECURITY;
-
--- Grants（同 event_configs 模式）
-GRANT ALL ON command_configs TO anon, authenticated, service_role;
-GRANT USAGE, SELECT ON SEQUENCE command_configs_id_seq TO anon, authenticated, service_role;
-GRANT ALL ON redemption_configs TO anon, authenticated, service_role;
-GRANT USAGE, SELECT ON SEQUENCE redemption_configs_id_seq TO anon, authenticated, service_role;
-
--- RLS Policies
-DROP POLICY IF EXISTS "Allow authenticated read command_configs" ON command_configs;
-CREATE POLICY "Allow authenticated read command_configs"
-    ON command_configs FOR SELECT TO authenticated USING (true);
-DROP POLICY IF EXISTS "Allow authenticated read redemption_configs" ON redemption_configs;
-CREATE POLICY "Allow authenticated read redemption_configs"
-    ON redemption_configs FOR SELECT TO authenticated USING (true);

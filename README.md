@@ -93,6 +93,15 @@ docker compose run --rm \
 | `backend/twitch/.env` | Twitch Bot 金鑰、YouTube API |
 | `backend/discord/.env` | Discord Bot Token |
 
+### 需準備的外部服務
+
+| 服務 | 取得位置 | 用途 |
+| ---- | -------- | ---- |
+| Twitch Developer Console | [dev.twitch.tv/console](https://dev.twitch.tv/console) | CLIENT_ID / CLIENT_SECRET |
+| Discord Developer Portal | [discord.com/developers](https://discord.com/developers/applications) | Bot Token、OAuth CLIENT_ID / CLIENT_SECRET |
+| OpenRouter | [openrouter.ai/keys](https://openrouter.ai/keys) | OPENROUTER_API_KEY |
+| YouTube Data API v3 | [console.cloud.google.com](https://console.cloud.google.com/) | YOUTUBE_API_KEY（選用） |
+
 ## License
 
 MIT

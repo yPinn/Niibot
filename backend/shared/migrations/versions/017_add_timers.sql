@@ -30,6 +30,3 @@ CREATE TRIGGER trg_timers_notify_delete
     AFTER DELETE ON timers
     FOR EACH ROW EXECUTE FUNCTION fn_notify_config_delete();
 
-ALTER TABLE timers ENABLE ROW LEVEL SECURITY;
-GRANT ALL ON timers TO anon, authenticated, service_role;
-GRANT USAGE, SELECT ON SEQUENCE timers_id_seq TO anon, authenticated, service_role;

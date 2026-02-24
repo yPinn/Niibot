@@ -45,19 +45,3 @@ CREATE TRIGGER trg_video_queue_settings_updated_at
     BEFORE UPDATE ON video_queue_settings
     FOR EACH ROW EXECUTE FUNCTION fn_update_updated_at();
 
--- Step 4: RLS
-ALTER TABLE video_queue ENABLE ROW LEVEL SECURITY;
-ALTER TABLE video_queue_settings ENABLE ROW LEVEL SECURITY;
-
--- Step 5: Grants
-GRANT ALL ON video_queue TO anon, authenticated, service_role;
-GRANT USAGE, SELECT ON SEQUENCE video_queue_id_seq TO anon, authenticated, service_role;
-GRANT ALL ON video_queue_settings TO anon, authenticated, service_role;
-
--- Step 6: RLS Policies
-DROP POLICY IF EXISTS "Allow authenticated read video_queue" ON video_queue;
-CREATE POLICY "Allow authenticated read video_queue"
-    ON video_queue FOR SELECT TO authenticated USING (true);
-DROP POLICY IF EXISTS "Allow authenticated read video_queue_settings" ON video_queue_settings;
-CREATE POLICY "Allow authenticated read video_queue_settings"
-    ON video_queue_settings FOR SELECT TO authenticated USING (true);

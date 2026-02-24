@@ -36,6 +36,3 @@ CREATE TRIGGER trg_message_triggers_notify_delete
     AFTER DELETE ON message_triggers
     FOR EACH ROW EXECUTE FUNCTION fn_notify_config_delete();
 
-ALTER TABLE message_triggers ENABLE ROW LEVEL SECURITY;
-GRANT ALL ON message_triggers TO anon, authenticated, service_role;
-GRANT USAGE, SELECT ON SEQUENCE message_triggers_id_seq TO anon, authenticated, service_role;
