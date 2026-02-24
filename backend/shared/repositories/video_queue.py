@@ -197,22 +197,24 @@ class VideoQueueRepository:
                 entry_id,
             )
 
-    async def update_duration(self, entry_id: int, duration_seconds: int) -> None:
-        """Update duration_seconds (overlay fallback report after load)."""
+    async def update_duration(self, entry_id: int, duration_seconds: int, channel_id: str) -> None:
+        """Update duration_seconds (overlay fallback report after load). Scoped to channel."""
         async with self.pool.acquire() as conn:
             await conn.execute(
-                "UPDATE video_queue SET duration_seconds = $2 WHERE id = $1",
+                "UPDATE video_queue SET duration_seconds = $2 WHERE id = $1 AND channel_id = $3",
                 entry_id,
                 duration_seconds,
+                channel_id,
             )
 
-    async def mark_done(self, entry_id: int) -> None:
-        """Transition entry to 'done'. Only applies when status='playing'."""
+    async def mark_done(self, entry_id: int, channel_id: str) -> None:
+        """Transition entry to 'done'. Only applies when status='playing' and entry belongs to channel."""
         async with self.pool.acquire() as conn:
             await conn.execute(
                 "UPDATE video_queue SET status = 'done', ended_at = NOW() "
-                "WHERE id = $1 AND status = 'playing'",
+                "WHERE id = $1 AND channel_id = $2 AND status = 'playing'",
                 entry_id,
+                channel_id,
             )
 
     async def mark_skipped(self, entry_id: int) -> None:
@@ -267,13 +269,12 @@ class VideoQueueSettingsRepository:
     async def get_or_create(self, channel_id: str) -> VideoQueueSettings:
         """Get settings for a channel, creating defaults if not exists."""
         async with self.pool.acquire() as conn:
+            await conn.execute(
+                "INSERT INTO video_queue_settings (channel_id) VALUES ($1) ON CONFLICT DO NOTHING",
+                channel_id,
+            )
             row = await conn.fetchrow(
-                f"""
-                INSERT INTO video_queue_settings (channel_id)
-                VALUES ($1)
-                ON CONFLICT (channel_id) DO UPDATE SET channel_id = EXCLUDED.channel_id
-                RETURNING {_SETTINGS_COLUMNS}
-                """,
+                f"SELECT {_SETTINGS_COLUMNS} FROM video_queue_settings WHERE channel_id = $1",
                 channel_id,
             )
             return VideoQueueSettings(**dict(row))

@@ -1,4 +1,4 @@
-import React, { createContext, useContext } from 'react'
+import React, { createContext, useCallback, useContext, useMemo } from 'react'
 
 import { useAuth } from './AuthContext'
 
@@ -44,25 +44,27 @@ export function BotProvider({ children }: { children: React.ReactNode }) {
   // TODO: 實作帳戶連結後啟用
   const canSwitchBot = false
 
-  const handleSetActiveBot = (_bot: BotType) => {
+  const handleSetActiveBot = useCallback((_bot: BotType) => {
     if (!canSwitchBot) return
-  }
+  }, [canSwitchBot])
 
-  const activeBotInfo = BOTS.find(b => b.id === activeBot) || BOTS[0]
-
-  return (
-    <BotContext.Provider
-      value={{
-        activeBot,
-        activeBotInfo,
-        setActiveBot: handleSetActiveBot,
-        bots: BOTS,
-        canSwitchBot,
-      }}
-    >
-      {children}
-    </BotContext.Provider>
+  const activeBotInfo = useMemo(
+    () => BOTS.find(b => b.id === activeBot) ?? BOTS[0],
+    [activeBot],
   )
+
+  const value = useMemo(
+    () => ({
+      activeBot,
+      activeBotInfo,
+      setActiveBot: handleSetActiveBot,
+      bots: BOTS,
+      canSwitchBot,
+    }),
+    [activeBot, activeBotInfo, handleSetActiveBot, canSwitchBot],
+  )
+
+  return <BotContext.Provider value={value}>{children}</BotContext.Provider>
 }
 
 export function useBot() {

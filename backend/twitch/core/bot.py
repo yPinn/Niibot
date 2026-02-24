@@ -7,7 +7,7 @@ import json
 import logging
 import random
 import re
-from datetime import datetime
+from datetime import UTC, datetime
 
 import asyncpg
 import twitchio
@@ -110,6 +110,8 @@ class Bot(commands.AutoBot):
         self._chatter_buffers: dict[str, dict[str, dict]] = {}
         # Per-channel cumulative message count during active sessions (for timer min_lines gate)
         self._channel_line_counts: dict[str, int] = {}
+        # Strong references to background tasks to prevent GC collection
+        self._background_tasks: set[asyncio.Task] = set()
 
         init_kwargs: dict = dict(
             client_id=client_id,
@@ -168,18 +170,19 @@ class Bot(commands.AutoBot):
             f"{[c['command_name'] for c in builtin_commands]}"
         )
 
-        asyncio.create_task(self._subscribe_initial_channels())
-        asyncio.create_task(pg_listen(self._database_url, "new_token", self._handle_new_token))
-        asyncio.create_task(
-            pg_listen(self._database_url, "channel_toggle", self._handle_channel_toggle)
-        )
-        asyncio.create_task(
-            pg_listen(self._database_url, "config_change", self._handle_config_change)
-        )
-        asyncio.create_task(self._recover_active_sessions())
-        asyncio.create_task(self._session_verify_loop())
-        asyncio.create_task(self._pool_heartbeat_loop())
-        asyncio.create_task(self._periodic_cache_refresh())
+        for coro in (
+            self._subscribe_initial_channels(),
+            pg_listen(self._database_url, "new_token", self._handle_new_token),
+            pg_listen(self._database_url, "channel_toggle", self._handle_channel_toggle),
+            pg_listen(self._database_url, "config_change", self._handle_config_change),
+            self._recover_active_sessions(),
+            self._session_verify_loop(),
+            self._pool_heartbeat_loop(),
+            self._periodic_cache_refresh(),
+        ):
+            task = asyncio.create_task(coro)
+            self._background_tasks.add(task)
+            task.add_done_callback(self._background_tasks.discard)
 
     async def setup_database(self) -> None:
         pass
@@ -641,7 +644,7 @@ class Bot(commands.AutoBot):
                             stream = streams[0]
                             session_id = await self.analytics.create_session(
                                 channel_id=user_id,
-                                started_at=stream.started_at or datetime.now(),
+                                started_at=stream.started_at or datetime.now(UTC),
                                 title=stream.title,
                                 game_name=stream.game_name,
                                 game_id=str(stream.game_id) if stream.game_id else None,
@@ -812,7 +815,7 @@ class Bot(commands.AutoBot):
                 title = stream.title
                 game_name = stream.game_name
                 game_id = str(stream.game_id) if stream.game_id else None
-                started_at = stream.started_at or datetime.now()
+                started_at = stream.started_at or datetime.now(UTC)
 
                 session_id = await self.analytics.create_session(
                     channel_id=channel_id,
@@ -862,7 +865,7 @@ class Bot(commands.AutoBot):
                     if existing:
                         self._active_sessions[cid] = existing["id"]
                         continue
-                    started_at = stream.started_at or datetime.now()
+                    started_at = stream.started_at or datetime.now(UTC)
                     game_id = str(stream.game_id) if stream.game_id else None
                     sid = await self.analytics.create_session(
                         channel_id=cid,
@@ -883,7 +886,7 @@ class Bot(commands.AutoBot):
                     self._channel_line_counts.pop(cid, None)
                     if sid:
                         try:
-                            await self.analytics.end_session(sid, datetime.now())
+                            await self.analytics.end_session(sid, datetime.now(UTC))
                             LOGGER.info(f"Session {sid} ended for channel {cid} (poll)")
                         except Exception as e:
                             LOGGER.warning(f"Failed to end session {sid}: {e}")

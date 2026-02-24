@@ -173,7 +173,7 @@ class GeneralCommands(commands.Component):
             analytics = self.bot.analytics
             session_id = await analytics.create_session(
                 channel_id=channel_id,
-                started_at=datetime.now(),
+                started_at=datetime.now(UTC),
                 title=title,
                 game_name=game_name,
                 game_id=game_id,
@@ -223,7 +223,7 @@ class GeneralCommands(commands.Component):
                         except Exception as e:
                             LOGGER.error(f"Failed to flush chatter stats: {e}")
 
-                ended_at = datetime.now()
+                ended_at = datetime.now(UTC)
                 for attempt in range(3):
                     try:
                         await analytics.end_session(session_id, ended_at)

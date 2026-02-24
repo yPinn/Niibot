@@ -150,12 +150,15 @@ async def toggle_channel(
 ) -> ToggleResponse:
     """Enable or disable bot for a channel"""
     try:
+        if request.channel_id != channel_id:
+            raise HTTPException(status_code=403, detail="Cannot toggle another channel")
+
         channel_service = get_channel_service(pool)
-        success = await channel_service.toggle_channel(request.channel_id, request.enabled)
+        success = await channel_service.toggle_channel(channel_id, request.enabled)
 
         if success:
             action = "enabled" if request.enabled else "disabled"
-            logger.info(f"Channel {action}: {request.channel_id} by channel: {channel_id}")
+            logger.info(f"Channel {action}: {channel_id}")
             return ToggleResponse(message=f"Channel {action} successfully")
         else:
             raise HTTPException(status_code=500, detail="Failed to update channel status")

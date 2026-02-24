@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { toast } from 'sonner'
 
 import { type ChannelDefaults, getChannelDefaults } from '@/api/channels'
 import {
@@ -288,10 +289,12 @@ export default function Commands() {
     )
     try {
       await toggleCommandConfig(cmd.command_name, newEnabled)
+      toast.success(newEnabled ? '指令已啟用' : '指令已停用')
     } catch {
       setCommands(prev =>
         prev.map(c => (c.command_name === cmd.command_name ? { ...c, enabled: cmd.enabled } : c))
       )
+      toast.error('切換指令狀態失敗')
     }
   }
 
@@ -302,12 +305,14 @@ export default function Commands() {
     )
     try {
       await toggleTrigger(trigger.trigger_name, newEnabled)
+      toast.success(newEnabled ? '觸發器已啟用' : '觸發器已停用')
     } catch {
       setTriggers(prev =>
         prev.map(t =>
           t.trigger_name === trigger.trigger_name ? { ...t, enabled: trigger.enabled } : t
         )
       )
+      toast.error('切換觸發器狀態失敗')
     }
   }
 
@@ -441,9 +446,12 @@ export default function Commands() {
         })
         setTriggers(prev => prev.map(t => (t.trigger_name === updated.trigger_name ? updated : t)))
       }
+      toast.success(editing.mode === 'create' ? '建立成功' : '已儲存變更')
       setEditing(null)
     } catch (e) {
-      setSaveError(e instanceof Error ? e.message : '儲存失敗')
+      const msg = e instanceof Error ? e.message : '儲存失敗'
+      setSaveError(msg)
+      toast.error('儲存失敗', { description: msg })
     } finally {
       setSaving(false)
     }
@@ -455,8 +463,9 @@ export default function Commands() {
       await deleteCustomCommand(cmd.command_name)
       setCommands(prev => prev.filter(c => c.command_name !== cmd.command_name))
       setEditing(null)
+      toast.success('指令已刪除')
     } catch {
-      /* keep sheet open */
+      toast.error('刪除指令失敗')
     }
   }
 
@@ -465,8 +474,9 @@ export default function Commands() {
       await deleteTrigger(trigger.trigger_name)
       setTriggers(prev => prev.filter(t => t.trigger_name !== trigger.trigger_name))
       setEditing(null)
+      toast.success('觸發器已刪除')
     } catch {
-      /* keep sheet open */
+      toast.error('刪除觸發器失敗')
     }
   }
 

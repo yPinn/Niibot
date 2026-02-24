@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 import twitchio
@@ -131,7 +131,7 @@ class EventComponent(commands.Component):
                         user_id=user_id,
                         username=payload.user.name or user_name,
                         display_name=payload.user.display_name,
-                        occurred_at=datetime.now(),
+                        occurred_at=datetime.now(UTC),
                     )
         except Exception as e:
             LOGGER.error(f"[{broadcaster_name}] Follow: {user_name} (error: {e})")
@@ -183,7 +183,7 @@ class EventComponent(commands.Component):
                         display_name=payload.user.display_name,
                         tier=payload.tier,
                         is_gift=payload.gift,
-                        occurred_at=datetime.now(),
+                        occurred_at=datetime.now(UTC),
                     )
         except Exception as e:
             LOGGER.error(f"[{broadcaster_name}] {sub_type}: {user_name} ({tier_name}) (error: {e})")

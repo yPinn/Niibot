@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { toast } from 'sonner'
 
 import { getTwitchChannelStatus, toggleTwitchChannel } from '@/api/channels'
 import {
@@ -47,9 +48,9 @@ export function OnlineDropdown() {
       await fetchMyStatus()
     } catch (error) {
       console.error('Error toggling subscription:', error)
-      alert(
-        `Failed to toggle subscription: ${error instanceof Error ? error.message : 'Unknown error'}`
-      )
+      toast.error('無法切換訂閱狀態', {
+        description: error instanceof Error ? error.message : '未知錯誤',
+      })
     } finally {
       setLoading(false)
     }

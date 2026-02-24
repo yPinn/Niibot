@@ -2,9 +2,10 @@
 
 import logging
 from datetime import datetime
+from typing import Annotated
 
 from asyncpg import Pool
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from core.dependencies import get_analytics_service, get_current_channel_id, get_db_pool
@@ -66,7 +67,7 @@ class AnalyticsSummary(BaseModel):
 
 @router.get("/summary", response_model=AnalyticsSummary)
 async def get_analytics_summary(
-    days: int = 30,
+    days: Annotated[int, Query(ge=1, le=365)] = 30,
     channel_id: str = Depends(get_current_channel_id),
     pool: Pool = Depends(get_db_pool),
 ) -> AnalyticsSummary:
@@ -146,8 +147,8 @@ async def get_session_events(
 
 @router.get("/top-commands", response_model=list[CommandStat])
 async def get_top_commands(
-    days: int = 30,
-    limit: int = 10,
+    days: Annotated[int, Query(ge=1, le=365)] = 30,
+    limit: Annotated[int, Query(ge=1, le=100)] = 10,
     channel_id: str = Depends(get_current_channel_id),
     pool: Pool = Depends(get_db_pool),
 ) -> list[CommandStat]:

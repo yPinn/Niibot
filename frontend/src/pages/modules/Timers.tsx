@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { toast } from 'sonner'
 
 import {
   createTimer,
@@ -90,10 +91,12 @@ export default function Timers() {
     )
     try {
       await toggleTimer(timer.timer_name, newEnabled)
+      toast.success(newEnabled ? '計時器已啟用' : '計時器已停用')
     } catch {
       setTimers(prev =>
         prev.map(t => (t.timer_name === timer.timer_name ? { ...t, enabled: timer.enabled } : t))
       )
+      toast.error('切換計時器狀態失敗')
     }
   }
 
@@ -171,9 +174,12 @@ export default function Timers() {
         const updated = await updateTimer(editing.timer.timer_name, data)
         setTimers(prev => prev.map(t => (t.timer_name === updated.timer_name ? updated : t)))
       }
+      toast.success(editing.mode === 'create' ? '計時器已建立' : '計時器已更新')
       setEditing(null)
     } catch (e) {
-      setSaveError(e instanceof Error ? e.message : '儲存失敗')
+      const msg = e instanceof Error ? e.message : '儲存失敗'
+      setSaveError(msg)
+      toast.error('儲存失敗', { description: msg })
     } finally {
       setSaving(false)
     }
@@ -184,8 +190,9 @@ export default function Timers() {
       await deleteTimer(timer.timer_name)
       setTimers(prev => prev.filter(t => t.timer_name !== timer.timer_name))
       setEditing(null)
+      toast.success('計時器已刪除')
     } catch {
-      // Keep sheet open
+      toast.error('刪除計時器失敗')
     }
   }
 

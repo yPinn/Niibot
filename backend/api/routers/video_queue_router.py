@@ -161,7 +161,7 @@ async def advance_queue(
         settings_repo = VideoQueueSettingsRepository(pool)
 
         if body.done_id:
-            await repo.mark_done(body.done_id)
+            await repo.mark_done(body.done_id, channel_id)
 
         # Only promote if there is no entry currently playing (avoid double-play)
         current = await repo.get_current(channel_id)
@@ -188,9 +188,9 @@ async def update_entry_metadata(
 ) -> None:
     """Overlay reports duration after the YouTube player loads (fallback for API misses)."""
     try:
-        await _resolve_channel_id(username, twitch_api)  # validates channel exists
+        channel_id = await _resolve_channel_id(username, twitch_api)
         repo = VideoQueueRepository(pool)
-        await repo.update_duration(entry_id, body.duration_seconds)
+        await repo.update_duration(entry_id, body.duration_seconds, channel_id)
     except HTTPException:
         raise
     except Exception as e:

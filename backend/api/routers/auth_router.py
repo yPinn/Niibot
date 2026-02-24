@@ -3,6 +3,7 @@
 import base64
 import json
 import logging
+from urllib.parse import quote as _url_quote
 
 from asyncpg import Pool
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Response
@@ -68,18 +69,17 @@ async def _find_or_create_user(
     avatar: str | None = None,
 ) -> str:
     """Find existing user by linked account or create a new one. Returns users.id as string."""
-    row = await pool.fetchrow(
-        "SELECT user_id FROM user_linked_accounts WHERE platform = $1 AND platform_user_id = $2",
-        platform,
-        platform_user_id,
-    )
-
-    if row:
-        return str(row["user_id"])
-
-    # Create new user + linked account in a transaction
+    # SELECT inside the transaction to prevent TOCTOU race on concurrent OAuth callbacks
     async with pool.acquire() as conn:
         async with conn.transaction():
+            row = await conn.fetchrow(
+                "SELECT user_id FROM user_linked_accounts WHERE platform = $1 AND platform_user_id = $2",
+                platform,
+                platform_user_id,
+            )
+            if row:
+                return str(row["user_id"])
+
             user_row = await conn.fetchrow(
                 "INSERT INTO users (display_name, avatar) VALUES ($1, $2) RETURNING id",
                 display_name or username,
@@ -207,7 +207,7 @@ async def twitch_oauth_callback(
 
     if error:
         logger.error(f"OAuth error from Twitch: {error}")
-        return RedirectResponse(url=f"{error_redirect}?error={error}")
+        return RedirectResponse(url=f"{error_redirect}?error={_url_quote(error, safe='')}")
 
     if not code:
         logger.error("No OAuth code received from Twitch")
@@ -222,7 +222,7 @@ async def twitch_oauth_callback(
     success, error_msg, token_data = await twitch_api.exchange_code_for_token(code)
     if not success or not token_data:
         logger.error(f"Failed to exchange code: {error_msg}")
-        return RedirectResponse(url=f"{error_redirect}?error={error_msg}")
+        return RedirectResponse(url=f"{error_redirect}?error={_url_quote(error_msg or 'token_exchange_failed', safe='')}")
 
     platform_user_id = token_data["user_id"]
     access_token = token_data["access_token"]
@@ -474,7 +474,7 @@ async def discord_oauth_callback(
 
     if error:
         logger.error(f"OAuth error from Discord: {error}")
-        return RedirectResponse(url=f"{error_redirect}?error={error}")
+        return RedirectResponse(url=f"{error_redirect}?error={_url_quote(error, safe='')}")
 
     if not code:
         logger.error("No OAuth code received from Discord")
@@ -492,7 +492,7 @@ async def discord_oauth_callback(
     success, error_msg, token_data = await discord_api.exchange_code_for_token(code)
     if not success or not token_data:
         logger.error(f"Failed to exchange code: {error_msg}")
-        return RedirectResponse(url=f"{error_redirect}?error={error_msg}")
+        return RedirectResponse(url=f"{error_redirect}?error={_url_quote(error_msg or 'token_exchange_failed', safe='')}")
 
     platform_user_id = token_data["user_id"]
     username = token_data.get("username", platform_user_id)

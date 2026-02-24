@@ -1,5 +1,7 @@
+import { lazy, Suspense } from 'react'
 import { Route, Routes } from 'react-router-dom'
 
+import { ErrorBoundary } from '@/components/ErrorBoundary'
 import SidebarLayout from '@/components/layouts/SidebarLayout'
 import { ProtectedRoute, PublicOnlyRoute } from '@/components/ProtectedRoute'
 import { ThemeProvider } from '@/components/theme-provider'
@@ -7,22 +9,26 @@ import { Toaster } from '@/components/ui'
 import { AuthProvider } from '@/contexts/AuthContext'
 import { BotProvider } from '@/contexts/BotContext'
 import { ServiceStatusProvider } from '@/contexts/ServiceStatusContext'
-import Commands from '@/pages/dashboard/Commands'
-import Events from '@/pages/dashboard/Events'
-import Overview from '@/pages/dashboard/Overview'
-import SystemStatus from '@/pages/dashboard/SystemStatus'
-import DiscordDashboard from '@/pages/discord/Dashboard'
-import GameQueueOverlay from '@/pages/GameQueueOverlay'
+
+// Eagerly loaded: critical path or tiny bundles
 import Landing from '@/pages/Landing'
-import LoginPage from '@/pages/Login'
-import GameQueue from '@/pages/modules/GameQueue'
-import Timers from '@/pages/modules/Timers'
-import VideoQueue from '@/pages/modules/VideoQueue'
 import NotFound from '@/pages/NotFound'
-import PublicCommands from '@/pages/PublicCommands'
-import Settings from '@/pages/Settings'
-import TypographyDemo from '@/pages/TypographyDemo'
-import VideoQueueOverlay from '@/pages/VideoQueueOverlay'
+
+// Lazy-loaded: large dashboard pages and overlays
+const Commands = lazy(() => import('@/pages/dashboard/Commands'))
+const Events = lazy(() => import('@/pages/dashboard/Events'))
+const Overview = lazy(() => import('@/pages/dashboard/Overview'))
+const SystemStatus = lazy(() => import('@/pages/dashboard/SystemStatus'))
+const DiscordDashboard = lazy(() => import('@/pages/discord/Dashboard'))
+const GameQueueOverlay = lazy(() => import('@/pages/GameQueueOverlay'))
+const LoginPage = lazy(() => import('@/pages/Login'))
+const GameQueue = lazy(() => import('@/pages/modules/GameQueue'))
+const Timers = lazy(() => import('@/pages/modules/Timers'))
+const VideoQueue = lazy(() => import('@/pages/modules/VideoQueue'))
+const PublicCommands = lazy(() => import('@/pages/PublicCommands'))
+const Settings = lazy(() => import('@/pages/Settings'))
+const TypographyDemo = lazy(() => import('@/pages/TypographyDemo'))
+const VideoQueueOverlay = lazy(() => import('@/pages/VideoQueueOverlay'))
 
 function App() {
   return (
@@ -30,33 +36,37 @@ function App() {
       <ThemeProvider storageKey="vite-ui-theme">
         <ServiceStatusProvider>
           <BotProvider>
-            <Routes>
-              <Route path="/" element={<Landing />} />
-              <Route path="/:username/commands" element={<PublicCommands />} />
-              <Route path="/:username/game-queue/overlay" element={<GameQueueOverlay />} />
-              <Route path="/:username/video-queue/overlay" element={<VideoQueueOverlay />} />
-              <Route path="/dev/typography" element={<TypographyDemo />} />
-              <Route element={<PublicOnlyRoute />}>
-                <Route path="/login" element={<LoginPage />} />
-              </Route>
-              <Route element={<ProtectedRoute />}>
-                <Route element={<SidebarLayout />}>
-                  {/* Twitch Bot Routes */}
-                  <Route path="/dashboard" element={<Overview />} />
-                  <Route path="/commands" element={<Commands />} />
-                  <Route path="/events" element={<Events />} />
-                  <Route path="/system" element={<SystemStatus />} />
-                  <Route path="/settings" element={<Settings />} />
-                  {/* Module Routes */}
-                  <Route path="/timers" element={<Timers />} />
-                  <Route path="/modules/game-queue" element={<GameQueue />} />
-                  <Route path="/modules/video-queue" element={<VideoQueue />} />
-                  {/* Discord Bot Routes */}
-                  <Route path="/discord/dashboard" element={<DiscordDashboard />} />
-                  <Route path="*" element={<NotFound />} />
-                </Route>
-              </Route>
-            </Routes>
+            <ErrorBoundary>
+              <Suspense fallback={null}>
+                <Routes>
+                  <Route path="/" element={<Landing />} />
+                  <Route path="/:username/commands" element={<PublicCommands />} />
+                  <Route path="/:username/game-queue/overlay" element={<GameQueueOverlay />} />
+                  <Route path="/:username/video-queue/overlay" element={<VideoQueueOverlay />} />
+                  <Route path="/dev/typography" element={<TypographyDemo />} />
+                  <Route element={<PublicOnlyRoute />}>
+                    <Route path="/login" element={<LoginPage />} />
+                  </Route>
+                  <Route element={<ProtectedRoute />}>
+                    <Route element={<SidebarLayout />}>
+                      {/* Twitch Bot Routes */}
+                      <Route path="/dashboard" element={<Overview />} />
+                      <Route path="/commands" element={<Commands />} />
+                      <Route path="/events" element={<Events />} />
+                      <Route path="/system" element={<SystemStatus />} />
+                      <Route path="/settings" element={<Settings />} />
+                      {/* Module Routes */}
+                      <Route path="/timers" element={<Timers />} />
+                      <Route path="/modules/game-queue" element={<GameQueue />} />
+                      <Route path="/modules/video-queue" element={<VideoQueue />} />
+                      {/* Discord Bot Routes */}
+                      <Route path="/discord/dashboard" element={<DiscordDashboard />} />
+                      <Route path="*" element={<NotFound />} />
+                    </Route>
+                  </Route>
+                </Routes>
+              </Suspense>
+            </ErrorBoundary>
             <Toaster position="bottom-right" richColors />
           </BotProvider>
         </ServiceStatusProvider>

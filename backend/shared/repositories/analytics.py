@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import asyncpg
 
@@ -220,7 +220,7 @@ class AnalyticsRepository:
     async def get_summary(self, channel_id: str, days: int = 30) -> dict:
         """Get analytics summary for a channel over the given time window."""
         async with self.pool.acquire() as conn:
-            since_date = datetime.now() - timedelta(days=days)
+            since_date = datetime.now(UTC) - timedelta(days=days)
 
             rows = await conn.fetch(
                 """
@@ -354,7 +354,7 @@ class AnalyticsRepository:
     ) -> list[dict]:
         """Get top commands across all sessions in the given time window."""
         async with self.pool.acquire() as conn:
-            since_date = datetime.now() - timedelta(days=days)
+            since_date = datetime.now(UTC) - timedelta(days=days)
 
             rows = await conn.fetch(
                 """
@@ -430,7 +430,7 @@ class AnalyticsRepository:
     ) -> list[dict]:
         """Get top chatters across all sessions in the given time window."""
         async with self.pool.acquire() as conn:
-            since_date = datetime.now() - timedelta(days=days)
+            since_date = datetime.now(UTC) - timedelta(days=days)
 
             rows = await conn.fetch(
                 """
@@ -460,7 +460,7 @@ class AnalyticsRepository:
     async def get_total_messages(self, channel_id: str, days: int = 30) -> int:
         """Get total message count across all sessions in the given time window."""
         async with self.pool.acquire() as conn:
-            since_date = datetime.now() - timedelta(days=days)
+            since_date = datetime.now(UTC) - timedelta(days=days)
 
             total = await conn.fetchval(
                 """

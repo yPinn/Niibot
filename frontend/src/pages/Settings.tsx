@@ -51,7 +51,7 @@ export default function Settings() {
     }
   }, [])
 
-  // Handle URL query params from OAuth redirect
+  // Process OAuth redirect params once on mount — runs before searchParams changes
   useEffect(() => {
     const linked = searchParams.get('linked')
     const error = searchParams.get('error')
@@ -61,7 +61,6 @@ export default function Settings() {
         description: `已連結 ${PLATFORM_CONFIG[linked as keyof typeof PLATFORM_CONFIG]?.label ?? linked} 帳號`,
       })
       setSearchParams({}, { replace: true })
-      fetchAccounts()
     }
 
     if (error) {
@@ -70,8 +69,10 @@ export default function Settings() {
       })
       setSearchParams({}, { replace: true })
     }
-  }, [searchParams, setSearchParams, fetchAccounts])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
+  // Fetch accounts on mount; fetchAccounts is stable (useCallback with [])
   useEffect(() => {
     fetchAccounts()
   }, [fetchAccounts])

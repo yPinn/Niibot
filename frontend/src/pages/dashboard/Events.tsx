@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { toast } from 'sonner'
 
 import {
   type EventConfig,
@@ -262,11 +263,13 @@ export default function Events() {
     )
     try {
       await toggleEventConfig(event.event_type, newEnabled)
+      toast.success(newEnabled ? '事件已啟用' : '事件已停用')
     } catch {
       // Revert on failure
       setEvents(prev =>
         prev.map(e => (e.event_type === event.event_type ? { ...e, enabled: event.enabled } : e))
       )
+      toast.error('切換事件狀態失敗')
     }
   }
 
@@ -289,9 +292,10 @@ export default function Events() {
         options: editOptions,
       })
       setEvents(prev => prev.map(e => (e.event_type === updated.event_type ? updated : e)))
+      toast.success('事件設定已儲存')
       setEditingEvent(null)
     } catch {
-      // Keep sheet open on error
+      toast.error('儲存事件設定失敗')
     } finally {
       setSaving(false)
     }
@@ -327,10 +331,12 @@ export default function Events() {
         reward_name: red.reward_name,
         enabled: newEnabled,
       })
+      toast.success(newEnabled ? '兌換已啟用' : '兌換已停用')
     } catch {
       setRedemptions(prev =>
         prev.map(r => (r.action_type === red.action_type ? { ...r, enabled: red.enabled } : r))
       )
+      toast.error('切換兌換狀態失敗')
     }
   }
 
@@ -341,8 +347,9 @@ export default function Events() {
         enabled: red.enabled,
       })
       setRedemptions(prev => prev.map(r => (r.action_type === updated.action_type ? updated : r)))
+      toast.success('忠誠點數獎勵已更新')
     } catch {
-      // Silently fail
+      toast.error('更新忠誠點數獎勵失敗')
     }
   }
 
