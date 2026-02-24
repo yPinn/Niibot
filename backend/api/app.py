@@ -48,14 +48,13 @@ async def _heartbeat(interval: int = 300) -> None:
 
 
 async def _pool_heartbeat_loop() -> None:
-    """Periodically ping the DB pool to keep idle connections alive.
+    """Periodically ping the DB pool to detect and recover dead connections.
 
-    Constraint chain: heartbeat(15s) < max_inactive(25s) < Supavisor(~30-60s).
     On failure, backs off to avoid flooding logs and wasting connections.
     After 3 consecutive failures, destroys the dead pool and creates a fresh
     one via ``DatabaseManager.reconnect()``.
     """
-    interval = 15
+    interval = 60
     fail_count = 0
     while True:
         await asyncio.sleep(interval)
@@ -68,7 +67,7 @@ async def _pool_heartbeat_loop() -> None:
             if fail_count > 0:
                 logger.info(f"Pool heartbeat recovered after {fail_count} failures")
             fail_count = 0
-            interval = 15
+            interval = 60
         except asyncio.CancelledError:
             break
         except Exception as e:
@@ -83,7 +82,7 @@ async def _pool_heartbeat_loop() -> None:
                     await db_manager.reconnect()
                     logger.info("Pool reconnected successfully")
                     fail_count = 0
-                    interval = 15
+                    interval = 60
                     continue
                 except Exception as re_err:
                     logger.error(f"Pool reconnect failed: {type(re_err).__name__}: {re_err}")
@@ -93,8 +92,8 @@ async def _pool_heartbeat_loop() -> None:
                     interval = 120
                     continue
 
-            # Backoff: 15s → 30s → 60s → 120s max
-            interval = min(15 * (2 ** min(fail_count - 1, 3)), 120)
+            # Backoff: 60s → 120s max
+            interval = min(60 * (2 ** min(fail_count - 1, 1)), 120)
 
 
 async def _db_retry_loop(db_manager) -> None:
@@ -154,7 +153,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         _heartbeat_task = asyncio.create_task(_heartbeat(settings.keep_alive_interval))
         logger.info(f"Heartbeat started (interval={settings.keep_alive_interval}s)")
 
-    # Start pool heartbeat to prevent Supavisor idle kills
+    # Start pool heartbeat to detect and recover dead connections
     _pool_heartbeat_task = asyncio.create_task(_pool_heartbeat_loop())
 
     yield
@@ -236,7 +235,7 @@ def create_app() -> FastAPI:
     # Liveness probe — always 200, no external dependency
     @app.get("/health")
     async def health():
-        """Liveness check for Render / Docker / K8s (no DB dependency)"""
+        """Liveness check — no DB dependency"""
         return {
             "status": "healthy",
             "uptime_seconds": int(time.time() - _start_time),

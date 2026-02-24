@@ -1,8 +1,8 @@
 """Unified database connection management for all Niibot services.
 
-Supabase connection modes:
-  - Session Pooler  (port 5432) : persistent servers, supports prepared statements
-  - Transaction Pooler (port 6543) : serverless/edge, no prepared statement support
+Connection modes (auto-detected from DATABASE_URL port):
+  - Session mode  (port 5432) : persistent connections, supports prepared statements
+  - Transaction mode (port 6543) : connection pooler (PgBouncer/Supavisor), no prepared statements
 """
 
 from __future__ import annotations
@@ -29,14 +29,14 @@ class PoolConfig:
     max_size: int = 5
     timeout: float = 10.0
     command_timeout: float = 15.0
-    max_inactive_connection_lifetime: float = 25.0
+    max_inactive_connection_lifetime: float = 600.0
     max_retries: int = 3
     retry_delay: float = 3.0
 
     # Per-service preset overrides
-    # All services use Session Pooler (5432) with min_size=1 and heartbeat
-    # loops to keep idle connections alive against Supavisor idle timeout.
-    # Transaction Pooler (6543) is only for serverless/edge, not long-running.
+    # All services use session mode (5432) with min_size=1 and heartbeat
+    # loops to detect dead connections and reconnect automatically.
+    # Transaction mode (6543) is only needed for external poolers (PgBouncer).
     _SERVICE_PRESETS: ClassVar[dict[str, dict]] = {
         "api": {"min_size": 1, "max_size": 3},
         "discord": {"min_size": 1, "max_size": 2},
@@ -61,8 +61,7 @@ class DatabaseManager:
     """Manages PostgreSQL connection pool lifecycle.
 
     Unified manager used by API, Twitch, and Discord services.
-    Handles Supabase Transaction vs Session Pooler detection,
-    retry logic, and proper lifecycle management.
+    Handles connection retry logic and proper lifecycle management.
     """
 
     def __init__(self, database_url: str, config: PoolConfig | None = None):
@@ -83,14 +82,12 @@ class DatabaseManager:
         await conn.execute(f"SET statement_timeout = {timeout_ms}")
 
     def _session_pool_kwargs(self) -> dict[str, Any]:
-        """Build asyncpg.create_pool kwargs for Session Pooler (port 5432).
+        """Build asyncpg.create_pool kwargs for session mode (port 5432).
 
         - Prepared statements enabled (cache=100)
         - Session-level init (SET statement_timeout)
         - Maintains min_size idle connections
-        - No server_settings: Supavisor proxy does not forward them to
-          the real PostgreSQL backend, so tcp_keepalives_* have no effect.
-          Use application-level heartbeat loops instead.
+        - ssl="prefer": uses SSL when available, plain-text for local deployments
         """
         cfg = self.config
         return {
@@ -99,21 +96,21 @@ class DatabaseManager:
             "max_size": cfg.max_size,
             "timeout": cfg.timeout,
             "command_timeout": cfg.command_timeout,
-            "ssl": "require",
+            "ssl": "prefer",
             "statement_cache_size": 100,
             "max_inactive_connection_lifetime": cfg.max_inactive_connection_lifetime,
             "init": self._init_session_connection,
         }
 
     def _transaction_pool_kwargs(self) -> dict[str, Any]:
-        """Build asyncpg.create_pool kwargs for Transaction Pooler (port 6543).
+        """Build asyncpg.create_pool kwargs for transaction mode (port 6543).
 
-        PgBouncer in transaction mode:
+        PgBouncer/external pooler in transaction mode:
         - No prepared statements (cache=0)
-        - No server_settings (PgBouncer doesn't forward them)
         - No init callback (SET commands don't persist across queries)
-        - min_size=0: don't hold idle connections (PgBouncer kills them)
+        - min_size=0: don't hold idle connections (pooler manages them)
         - max_inactive=0: release connections immediately after use
+        - ssl="prefer": uses SSL when available
         """
         cfg = self.config
         return {
@@ -122,7 +119,7 @@ class DatabaseManager:
             "max_size": cfg.max_size,
             "timeout": cfg.timeout,
             "command_timeout": cfg.command_timeout,
-            "ssl": "require",
+            "ssl": "prefer",
             "statement_cache_size": 0,
             "max_inactive_connection_lifetime": 0,
         }
@@ -242,8 +239,8 @@ class DatabaseManager:
         """Destroy a dead pool and create a fresh one.
 
         Called by heartbeat loops when consecutive health checks fail,
-        indicating the pool's connections are stale (e.g. after Supavisor
-        idle-kills or Render cold starts).
+        indicating the pool's connections are stale or the database
+        was temporarily unavailable.
         """
         old = self._pool
         self._pool = None  # clear first so connect() won't short-circuit

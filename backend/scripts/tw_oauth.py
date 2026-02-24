@@ -130,7 +130,7 @@ def gen_url(client_id: str, redirect_uri: str, scopes: list[str]) -> str:
 
 
 async def save_token(database_url: str, user_id: str, token: str, refresh: str) -> None:
-    conn = await asyncpg.connect(database_url, ssl="require")
+    conn = await asyncpg.connect(database_url, ssl="prefer")
     try:
         await conn.execute(
             """

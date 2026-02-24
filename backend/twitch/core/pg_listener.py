@@ -21,7 +21,7 @@ async def pg_listen(
     channel: str,
     handler: Callable[..., Coroutine[Any, Any, None]],
     *,
-    keepalive_interval: int = 15,
+    keepalive_interval: int = 60,
     reconnect_delay: int = 10,
 ) -> None:
     """Listen on a PostgreSQL NOTIFY channel with auto-reconnect.
@@ -33,15 +33,14 @@ async def pg_listen(
         dsn: PostgreSQL connection string.
         channel: PostgreSQL NOTIFY channel name.
         handler: Async callback ``(connection, pid, channel, payload) -> None``.
-        keepalive_interval: Seconds between keepalive pings (default 15).
-            Shorter than Supavisor's client_heartbeat_interval to prevent
-            the proxy from marking LISTEN connections as dead.
+        keepalive_interval: Seconds between keepalive pings (default 60).
+            Prevents the server from closing the idle LISTEN connection.
         reconnect_delay: Seconds to wait before reconnect after error.
     """
     while True:
         connection: asyncpg.Connection | None = None
         try:
-            connection = await asyncpg.connect(dsn, ssl="require")
+            connection = await asyncpg.connect(dsn, ssl="prefer")
             await connection.add_listener(channel, handler)
             LOGGER.info(f"PostgreSQL LISTEN active on '{channel}' channel")
 

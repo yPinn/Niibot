@@ -41,7 +41,7 @@ class HealthCheckServer:
         return web.json_response({"service": "niibot-discord", "status": "running"})
 
     async def handle_health(self, request: web.Request) -> web.Response:
-        """Health check endpoint for Render/Docker — always 200 (liveness)"""
+        """Health check endpoint — always 200 (liveness)"""
         ready = self.bot is not None and self.bot.is_ready()
         return web.json_response(
             {"status": "healthy" if ready else "starting", "ready": ready},

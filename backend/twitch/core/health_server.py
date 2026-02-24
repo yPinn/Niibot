@@ -21,7 +21,7 @@ class HealthCheckServer:
     def __init__(self, bot: "Bot | None" = None, host: str = "0.0.0.0", port: int | None = None):
         self.bot: Any = bot
         self.host = host
-        # Prefer PORT env var (set by Render)
+        # Prefer PORT env var if set
         self.port = port or int(os.getenv("PORT", "4344"))
         self.app = web.Application()
         self.runner: web.AppRunner | None = None
@@ -40,7 +40,7 @@ class HealthCheckServer:
         return web.json_response({"service": "niibot-twitch", "status": "running"})
 
     async def handle_health(self, request: web.Request) -> web.Response:
-        """Health check endpoint for Render/Docker — always 200 (liveness)"""
+        """Health check endpoint — always 200 (liveness)"""
         ready = self.bot is not None and self.bot.bot_id is not None
         return web.json_response(
             {"status": "healthy" if ready else "starting", "ready": ready},

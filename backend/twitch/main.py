@@ -12,14 +12,14 @@ if _backend_dir not in sys.path:
 
 
 def main() -> None:
-    # Minimal imports for health server — bind port ASAP for Render
+    # Minimal imports for health server — bind port before heavy setup
     from core.health_server import HealthCheckServer
     from core.logging import setup_logging
 
     setup_logging()
 
     async def runner() -> None:
-        # 1. Health server FIRST (Render needs a port quickly)
+        # 1. Health server FIRST (bind port before heavy setup)
         health_server = HealthCheckServer()
         await health_server.start()
 

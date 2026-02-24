@@ -87,14 +87,13 @@ class NiibotClient(commands.Bot):
             self.db_pool = None
 
     async def _pool_heartbeat_loop(self) -> None:
-        """Periodically ping the DB pool to keep the idle connection alive.
+        """Periodically ping the DB pool to detect and recover dead connections.
 
-        Constraint chain: heartbeat(15s) < max_inactive(25s) < Supavisor(~30-60s).
         On failure, backs off to avoid flooding logs and wasting connections.
         After 3 consecutive failures, destroys the dead pool and creates a
         fresh one via ``DatabaseManager.reconnect()``.
         """
-        interval = 15
+        interval = 60
         fail_count = 0
         while True:
             await asyncio.sleep(interval)
@@ -106,7 +105,7 @@ class NiibotClient(commands.Bot):
                 if fail_count > 0:
                     logger.info(f"Pool heartbeat recovered after {fail_count} failures")
                 fail_count = 0
-                interval = 15
+                interval = 60
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -122,7 +121,7 @@ class NiibotClient(commands.Bot):
                         self.db_pool = self._db_manager.pool
                         logger.info("Pool reconnected successfully")
                         fail_count = 0
-                        interval = 15
+                        interval = 60
                         continue
                     except Exception as re_err:
                         logger.error(f"Pool reconnect failed: {type(re_err).__name__}: {re_err}")
@@ -132,7 +131,7 @@ class NiibotClient(commands.Bot):
                         interval = 120
                         continue
 
-                interval = min(15 * (2 ** min(fail_count - 1, 3)), 120)
+                interval = min(60 * (2 ** min(fail_count - 1, 1)), 120)
 
     def _get_extensions(self) -> list[str]:
         """Scan cogs directory for loadable extensions"""
@@ -340,7 +339,7 @@ def _parse_retry_after(e: discord.HTTPException, base_delay: float, attempt: int
 
 async def main() -> None:
     """Bot startup with auto-retry and rate limit protection"""
-    # 1. Health server FIRST (Render needs a port quickly)
+    # 1. Health server FIRST (bind port before heavy setup)
     health_server = HealthCheckServer()
     await health_server.start()
 
