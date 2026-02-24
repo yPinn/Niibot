@@ -1,4 +1,9 @@
-"""Clear test session data from database"""
+"""Clear all stream session data from database (dev / reset use only).
+
+WARNING: Deletes stream_sessions, stream_events, and command_stats.
+         Do NOT run against production data unless intentionally resetting.
+         For production backfill, use scripts/tw_backfill_sessions.py instead.
+"""
 
 import asyncio
 import sys
@@ -7,7 +12,7 @@ from pathlib import Path
 import asyncpg
 
 # Ensure backend/ is on sys.path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from api.core.config import get_settings
 

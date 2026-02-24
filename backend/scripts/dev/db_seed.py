@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any  # 移除 dict, list 的匯入
 
 # Ensure backend/ is on sys.path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 import asyncpg
 from api.core.config import get_settings
