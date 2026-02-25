@@ -9,7 +9,6 @@ import { Toaster } from '@/components/ui'
 import { AuthProvider } from '@/contexts/AuthContext'
 import { BotProvider } from '@/contexts/BotContext'
 import { ServiceStatusProvider } from '@/contexts/ServiceStatusContext'
-
 // Eagerly loaded: critical path or tiny bundles
 import Landing from '@/pages/Landing'
 import NotFound from '@/pages/NotFound'

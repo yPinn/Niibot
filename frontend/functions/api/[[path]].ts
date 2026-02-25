@@ -30,7 +30,7 @@ export const onRequest: PagesFunction<Env> = async context => {
     const isTimeout = e instanceof DOMException && e.name === 'TimeoutError'
     return Response.json(
       { error: isTimeout ? 'Gateway timeout' : 'Bad Gateway' },
-      { status: isTimeout ? 504 : 502 },
+      { status: isTimeout ? 504 : 502 }
     )
   }
 }

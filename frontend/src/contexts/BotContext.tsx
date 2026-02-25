@@ -44,14 +44,14 @@ export function BotProvider({ children }: { children: React.ReactNode }) {
   // TODO: 實作帳戶連結後啟用
   const canSwitchBot = false
 
-  const handleSetActiveBot = useCallback((_bot: BotType) => {
-    if (!canSwitchBot) return
-  }, [canSwitchBot])
-
-  const activeBotInfo = useMemo(
-    () => BOTS.find(b => b.id === activeBot) ?? BOTS[0],
-    [activeBot],
+  const handleSetActiveBot = useCallback(
+    (_bot: BotType) => {
+      if (!canSwitchBot) return
+    },
+    [canSwitchBot]
   )
+
+  const activeBotInfo = useMemo(() => BOTS.find(b => b.id === activeBot) ?? BOTS[0], [activeBot])
 
   const value = useMemo(
     () => ({
@@ -61,7 +61,7 @@ export function BotProvider({ children }: { children: React.ReactNode }) {
       bots: BOTS,
       canSwitchBot,
     }),
-    [activeBot, activeBotInfo, handleSetActiveBot, canSwitchBot],
+    [activeBot, activeBotInfo, handleSetActiveBot, canSwitchBot]
   )
 
   return <BotContext.Provider value={value}>{children}</BotContext.Provider>
