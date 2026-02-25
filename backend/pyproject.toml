@@ -81,4 +81,10 @@ disallow_untyped_defs = false
 dev = [
     "cachetools>=7.0.1",
     "types-cachetools>=6.2.0.20251022",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

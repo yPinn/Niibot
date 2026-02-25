@@ -37,7 +37,7 @@ jobs:
         run: npm run build
 
   backend:
-    name: Backend Lint
+    name: Backend Lint & Test
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -58,3 +58,9 @@ jobs:
 
       - name: Ruff format check
         run: uvx ruff format --check .
+
+      - name: Install dev dependencies
+        run: uv sync --group dev
+
+      - name: Run tests
+        run: uv run pytest tests/ -v --tb=short
