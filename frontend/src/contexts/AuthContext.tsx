@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useEffect, useState } from 'react'
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react'
 
 import { type Channel, getCurrentUser, getTwitchMonitoredChannels, type User } from '@/api'
+import { apiCache } from '@/lib/apiCache'
 
 interface AuthContextType {
   user: User | null
@@ -23,6 +24,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     hasLoaded: false,
     isLoading: false,
   })
+
+  // Track initialized state in a ref so the 401 handler closure stays current
+  // without needing to re-register the listener on every isInitialized change.
+  const isInitializedRef = useRef(false)
+  useEffect(() => {
+    isInitializedRef.current = isInitialized
+  }, [isInitialized])
+
+  // Global 401 interceptor — redirect to /login when the session expires.
+  // Skipped during initial auth check (not yet initialized) and on overlay
+  // routes (/:username/*/overlay) so live-stream OBS views are never disrupted.
+  useEffect(() => {
+    const handleUnauthorized = () => {
+      if (!isInitializedRef.current) return
+      if (window.location.pathname.includes('/overlay')) return
+      apiCache.clear()
+      setUser(null)
+      setChannels([])
+      window.location.href = '/login'
+    }
+    window.addEventListener('auth:unauthorized', handleUnauthorized)
+    return () => window.removeEventListener('auth:unauthorized', handleUnauthorized)
+  }, [])
 
   const refreshUser = React.useCallback(async () => {
     try {

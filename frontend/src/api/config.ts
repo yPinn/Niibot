@@ -125,6 +125,9 @@ export async function apiFetch(
       await new Promise(r => setTimeout(r, 1500))
       continue
     }
+    if (res.status === 401) {
+      window.dispatchEvent(new CustomEvent('auth:unauthorized'))
+    }
     return res
   }
   // Unreachable, but satisfies TS
