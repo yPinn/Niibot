@@ -13,7 +13,6 @@ from fastapi.responses import PlainTextResponse, Response
 from core.config import get_settings
 from core.database import get_database_manager, init_database_manager
 from core.dependencies import close_discord_api, close_twitch_api
-from routers.bots_router import close_bots_http_client
 from core.logging import setup_logging
 from routers import (
     analytics_router,
@@ -28,6 +27,7 @@ from routers import (
     timers_router,
     video_queue_router,
 )
+from routers.bots_router import close_bots_http_client
 
 logger = logging.getLogger(__name__)
 

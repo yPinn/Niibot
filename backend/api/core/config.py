@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     jwt_algorithm: str = Field(default="HS256", description="JWT signing algorithm")
     jwt_expire_days: int = Field(default=30, description="JWT token expiration in days")
 
+    _ALLOWED_JWT_ALGORITHMS: frozenset = frozenset({"HS256", "HS384", "HS512"})
+
     # Database
     database_url: str = Field(..., description="PostgreSQL database URL")
 
@@ -53,6 +55,14 @@ class Settings(BaseSettings):
     # Server Configuration
     host: str = Field(default="0.0.0.0", description="Server host")
     port: int = Field(default=8000, description="Server port")
+
+    @field_validator("jwt_algorithm")
+    @classmethod
+    def validate_jwt_algorithm(cls, v: str) -> str:
+        allowed = {"HS256", "HS384", "HS512"}
+        if v not in allowed:
+            raise ValueError(f"jwt_algorithm must be one of {sorted(allowed)}, got '{v}'")
+        return v
 
     @field_validator("log_level")
     @classmethod

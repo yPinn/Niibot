@@ -51,9 +51,7 @@ async def check_bot_health(bot_url: str, bot_name: str) -> BotStatusResponse:
                 connected_channels=data.get("connected_channels"),
             )
         else:
-            logger.warning(
-                f"{bot_name} bot health check returned status {response.status_code}"
-            )
+            logger.warning(f"{bot_name} bot health check returned status {response.status_code}")
             return BotStatusResponse(online=False)
 
     except (httpx.TimeoutException, httpx.ConnectError):

@@ -1,7 +1,5 @@
 """Authentication API routes"""
 
-import base64
-import json
 import logging
 from urllib.parse import quote as _url_quote
 
@@ -22,6 +20,12 @@ from core.dependencies import (
     get_twitch_api,
 )
 from services import AuthService, DiscordAPIClient, TwitchAPIClient
+from services.oauth_service import (
+    decode_oauth_state,
+    encode_oauth_state,
+    find_or_create_user,
+    link_account,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -56,114 +60,6 @@ class PreferencesUpdate(BaseModel):
 
 
 # ============================================
-# Helpers
-# ============================================
-
-
-async def _find_or_create_user(
-    pool: Pool,
-    platform: str,
-    platform_user_id: str,
-    username: str,
-    display_name: str | None = None,
-    avatar: str | None = None,
-) -> str:
-    """Find existing user by linked account or create a new one. Returns users.id as string."""
-    # SELECT inside the transaction to prevent TOCTOU race on concurrent OAuth callbacks
-    async with pool.acquire() as conn:
-        async with conn.transaction():
-            row = await conn.fetchrow(
-                "SELECT user_id FROM user_linked_accounts WHERE platform = $1 AND platform_user_id = $2",
-                platform,
-                platform_user_id,
-            )
-            if row:
-                return str(row["user_id"])
-
-            user_row = await conn.fetchrow(
-                "INSERT INTO users (display_name, avatar) VALUES ($1, $2) RETURNING id",
-                display_name or username,
-                avatar,
-            )
-            user_id = str(user_row["id"])
-
-            await conn.execute(
-                "INSERT INTO user_linked_accounts (user_id, platform, platform_user_id, username) "
-                "VALUES ($1, $2, $3, $4)",
-                user_row["id"],
-                platform,
-                platform_user_id,
-                username,
-            )
-
-    logger.info(f"Created user {user_id} for {platform}:{platform_user_id} ({username})")
-    return user_id
-
-
-def _encode_oauth_state(mode: str, user_id: str | None = None) -> str:
-    """Encode OAuth state as base64 JSON."""
-    data: dict = {"mode": mode}
-    if user_id:
-        data["uid"] = user_id
-    return base64.urlsafe_b64encode(json.dumps(data).encode()).decode()
-
-
-def _decode_oauth_state(state: str | None) -> dict:
-    """Decode OAuth state from base64 JSON. Returns {"mode": "login"} on failure."""
-    if not state:
-        return {"mode": "login"}
-    try:
-        return json.loads(base64.urlsafe_b64decode(state.encode()).decode())
-    except Exception:
-        return {"mode": "login"}
-
-
-async def _link_account(
-    pool: Pool,
-    user_id: str,
-    platform: str,
-    platform_user_id: str,
-    username: str,
-) -> tuple[bool, str | None]:
-    """Link a platform account to an existing user.
-
-    Returns (success, error_code).
-    """
-    # Check if this platform account is already linked
-    row = await pool.fetchrow(
-        "SELECT user_id FROM user_linked_accounts WHERE platform = $1 AND platform_user_id = $2",
-        platform,
-        platform_user_id,
-    )
-    if row:
-        existing_uid = str(row["user_id"])
-        if existing_uid == user_id:
-            return True, None  # Already linked to this user — idempotent
-        return False, "already_linked"
-
-    # Check if user already has an account for this platform
-    row = await pool.fetchrow(
-        "SELECT platform_user_id FROM user_linked_accounts WHERE user_id = $1::uuid AND platform = $2",
-        user_id,
-        platform,
-    )
-    if row:
-        return False, "platform_already_linked"
-
-    # Link the account
-    await pool.execute(
-        "INSERT INTO user_linked_accounts (user_id, platform, platform_user_id, username) "
-        "VALUES ($1::uuid, $2, $3, $4)",
-        user_id,
-        platform,
-        platform_user_id,
-        username,
-    )
-    logger.info(f"Linked {platform}:{platform_user_id} ({username}) to user {user_id}")
-    return True, None
-
-
-# ============================================
 # Endpoints
 # ============================================
 
@@ -179,7 +75,7 @@ async def get_twitch_oauth_url(
     state = None
     if mode == "link":
         payload = _get_token_payload(auth_token)
-        state = _encode_oauth_state("link", user_id=str(payload["sub"]))
+        state = encode_oauth_state("link", user_id=str(payload["sub"]))
 
     oauth_url = twitch_api.generate_oauth_url(state=state)
     return OAuthURLResponse(
@@ -199,7 +95,7 @@ async def twitch_oauth_callback(
     settings: Settings = Depends(get_settings),
 ) -> RedirectResponse:
     """Handle Twitch OAuth callback"""
-    state_data = _decode_oauth_state(state)
+    state_data = decode_oauth_state(state)
     is_link_mode = state_data.get("mode") == "link"
     error_redirect = (
         f"{settings.frontend_url}/settings" if is_link_mode else f"{settings.frontend_url}/login"
@@ -213,16 +109,19 @@ async def twitch_oauth_callback(
         logger.error("No OAuth code received from Twitch")
         return RedirectResponse(url=f"{error_redirect}?error=no_code")
 
-    # Check DB readiness (don't use Depends — must redirect, not 503)
-    db_manager = get_database_manager()
-    if db_manager._pool is None:
-        logger.error("Database not ready during OAuth callback")
+    # Must redirect on DB error — cannot use Depends(get_db_pool)
+    try:
+        pool = get_database_manager().pool
+    except RuntimeError:
+        logger.error("Database not ready during Twitch OAuth callback")
         return RedirectResponse(url=f"{error_redirect}?error=db_not_ready")
 
     success, error_msg, token_data = await twitch_api.exchange_code_for_token(code)
     if not success or not token_data:
         logger.error(f"Failed to exchange code: {error_msg}")
-        return RedirectResponse(url=f"{error_redirect}?error={_url_quote(error_msg or 'token_exchange_failed', safe='')}")
+        return RedirectResponse(
+            url=f"{error_redirect}?error={_url_quote(error_msg or 'token_exchange_failed', safe='')}"
+        )
 
     platform_user_id = token_data["user_id"]
     access_token = token_data["access_token"]
@@ -232,7 +131,7 @@ async def twitch_oauth_callback(
     username = user_info.get("name") or user_info.get("display_name") or platform_user_id
 
     try:
-        channel_svc = get_channel_service(db_manager._pool)
+        channel_svc = get_channel_service(pool)
         save_success = await channel_svc.save_token(
             user_id=platform_user_id,
             access_token=access_token,
@@ -261,8 +160,8 @@ async def twitch_oauth_callback(
             except HTTPException:
                 return RedirectResponse(url=f"{error_redirect}?error=not_authenticated")
 
-            link_ok, link_err = await _link_account(
-                db_manager._pool, link_user_id, "twitch", platform_user_id, username
+            link_ok, link_err = await link_account(
+                pool, link_user_id, "twitch", platform_user_id, username
             )
             if not link_ok:
                 return RedirectResponse(url=f"{settings.frontend_url}/settings?error={link_err}")
@@ -271,8 +170,8 @@ async def twitch_oauth_callback(
             return RedirectResponse(url=f"{settings.frontend_url}/settings?linked=twitch")
 
         # Login mode: find or create unified user
-        user_id = await _find_or_create_user(
-            db_manager._pool,
+        user_id = await find_or_create_user(
+            pool,
             "twitch",
             platform_user_id,
             username,
@@ -446,7 +345,7 @@ async def get_discord_oauth_url(
     state = None
     if mode == "link":
         payload = _get_token_payload(auth_token)
-        state = _encode_oauth_state("link", user_id=str(payload["sub"]))
+        state = encode_oauth_state("link", user_id=str(payload["sub"]))
 
     oauth_url = discord_api.generate_oauth_url(state=state)
     return OAuthURLResponse(
@@ -466,7 +365,7 @@ async def discord_oauth_callback(
     settings: Settings = Depends(get_settings),
 ) -> RedirectResponse:
     """Handle Discord OAuth callback"""
-    state_data = _decode_oauth_state(state)
+    state_data = decode_oauth_state(state)
     is_link_mode = state_data.get("mode") == "link"
     error_redirect = (
         f"{settings.frontend_url}/settings" if is_link_mode else f"{settings.frontend_url}/login"
@@ -484,15 +383,19 @@ async def discord_oauth_callback(
         logger.error("Discord OAuth not configured")
         return RedirectResponse(url=f"{error_redirect}?error=discord_not_configured")
 
-    db_manager = get_database_manager()
-    if db_manager._pool is None:
+    # Must redirect on DB error — cannot use Depends(get_db_pool)
+    try:
+        pool = get_database_manager().pool
+    except RuntimeError:
         logger.error("Database not ready during Discord OAuth callback")
         return RedirectResponse(url=f"{error_redirect}?error=db_not_ready")
 
     success, error_msg, token_data = await discord_api.exchange_code_for_token(code)
     if not success or not token_data:
         logger.error(f"Failed to exchange code: {error_msg}")
-        return RedirectResponse(url=f"{error_redirect}?error={_url_quote(error_msg or 'token_exchange_failed', safe='')}")
+        return RedirectResponse(
+            url=f"{error_redirect}?error={_url_quote(error_msg or 'token_exchange_failed', safe='')}"
+        )
 
     platform_user_id = token_data["user_id"]
     username = token_data.get("username", platform_user_id)
@@ -500,7 +403,7 @@ async def discord_oauth_callback(
     avatar = token_data.get("avatar")
 
     try:
-        channel_svc = get_channel_service(db_manager._pool)
+        channel_svc = get_channel_service(pool)
         await channel_svc.save_discord_user(platform_user_id, username, display_name, avatar)
 
         # Link mode: attach to existing user
@@ -520,8 +423,8 @@ async def discord_oauth_callback(
             except HTTPException:
                 return RedirectResponse(url=f"{error_redirect}?error=not_authenticated")
 
-            link_ok, link_err = await _link_account(
-                db_manager._pool, link_user_id, "discord", platform_user_id, username
+            link_ok, link_err = await link_account(
+                pool, link_user_id, "discord", platform_user_id, username
             )
             if not link_ok:
                 return RedirectResponse(url=f"{settings.frontend_url}/settings?error={link_err}")
@@ -530,8 +433,8 @@ async def discord_oauth_callback(
             return RedirectResponse(url=f"{settings.frontend_url}/settings?linked=discord")
 
         # Login mode: find or create unified user
-        user_id = await _find_or_create_user(
-            db_manager._pool,
+        user_id = await find_or_create_user(
+            pool,
             "discord",
             platform_user_id,
             username,
