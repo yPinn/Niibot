@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 
 import {
@@ -13,6 +13,8 @@ import {
   updateEventConfig,
   updateRedemptionConfig,
 } from '@/api/events'
+import { PageHeader } from '@/components/PageHeader'
+import { SortableHead } from '@/components/SortableHead'
 import {
   Badge,
   Button,
@@ -45,7 +47,11 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui'
+import { VariableInserter } from '@/components/VariableInserter'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
+import { useInputInsert } from '@/hooks/useInputInsert'
+import { useOptimisticToggle } from '@/hooks/useOptimisticToggle'
+import { useSortState } from '@/hooks/useSortState'
 
 // 每種事件類型可用的模板變數
 const TEMPLATE_VARIABLES: Record<string, { var: string; desc: string }[]> = {
@@ -88,47 +94,6 @@ const ACTION_TYPE_LABELS: Record<string, string> = {
 
 type EventSortKey = 'event_type' | 'type_label' | 'trigger_count' | 'enabled'
 type RedemptionSortKey = 'action_type' | 'reward_name' | 'enabled'
-type SortDir = 'asc' | 'desc'
-
-function SortableHead<K extends string>({
-  children,
-  className,
-  sortKey: key,
-  currentKey,
-  dir,
-  onSort,
-}: {
-  children: React.ReactNode
-  className?: string
-  sortKey: K
-  currentKey: K
-  dir: SortDir
-  onSort: (key: K) => void
-}) {
-  const active = key === currentKey
-  return (
-    <TableHead className={className}>
-      <button
-        type="button"
-        className="inline-flex items-center gap-1 hover:text-foreground transition-colors cursor-pointer"
-        onClick={() => onSort(key)}
-      >
-        {children}
-        <Icon
-          icon={
-            active
-              ? dir === 'asc'
-                ? 'fa-solid fa-sort-up'
-                : 'fa-solid fa-sort-down'
-              : 'fa-solid fa-sort'
-          }
-          className={active ? 'text-foreground' : 'text-muted-foreground/50'}
-          wrapperClassName="size-3"
-        />
-      </button>
-    </TableHead>
-  )
-}
 
 export default function Events() {
   useDocumentTitle('Events')
@@ -142,21 +107,16 @@ export default function Events() {
   const [editEnabled, setEditEnabled] = useState(true)
   const [editOptions, setEditOptions] = useState<Record<string, unknown>>({})
   const [saving, setSaving] = useState(false)
-  const templateInputRef = useRef<HTMLInputElement>(null)
 
-  // Event sort state
-  const [eventSortKey, setEventSortKey] = useState<EventSortKey>('event_type')
-  const [eventSortDir, setEventSortDir] = useState<SortDir>('asc')
+  // Sort states
+  const eventSort = useSortState<EventSortKey>('event_type')
+  const redSort = useSortState<RedemptionSortKey>('action_type')
 
   // Redemption state
   const [redemptions, setRedemptions] = useState<RedemptionConfig[]>([])
   const [twitchRewards, setTwitchRewards] = useState<TwitchReward[]>([])
   const [redemptionLoading, setRedemptionLoading] = useState(true)
   const [isNonPartner, setIsNonPartner] = useState(false)
-
-  // Redemption sort state
-  const [redSortKey, setRedSortKey] = useState<RedemptionSortKey>('action_type')
-  const [redSortDir, setRedSortDir] = useState<SortDir>('asc')
 
   const fetchEvents = useCallback(async () => {
     try {
@@ -192,28 +152,11 @@ export default function Events() {
     fetchRedemptions()
   }, [fetchEvents, fetchRedemptions])
 
-  const toggleEventSort = (key: EventSortKey) => {
-    if (eventSortKey === key) {
-      setEventSortDir(prev => (prev === 'asc' ? 'desc' : 'asc'))
-    } else {
-      setEventSortKey(key)
-      setEventSortDir('asc')
-    }
-  }
-
-  const toggleRedSort = (key: RedemptionSortKey) => {
-    if (redSortKey === key) {
-      setRedSortDir(prev => (prev === 'asc' ? 'desc' : 'asc'))
-    } else {
-      setRedSortKey(key)
-      setRedSortDir('asc')
-    }
-  }
-
   const sortedEvents = useMemo(() => {
+    const { sortKey, sortDir } = eventSort
     return [...events].sort((a, b) => {
       let cmp = 0
-      switch (eventSortKey) {
+      switch (sortKey) {
         case 'event_type':
           cmp = (EVENT_TYPE_NAMES[a.event_type] || a.event_type).localeCompare(
             EVENT_TYPE_NAMES[b.event_type] || b.event_type
@@ -231,14 +174,15 @@ export default function Events() {
           cmp = Number(a.enabled) - Number(b.enabled)
           break
       }
-      return eventSortDir === 'desc' ? -cmp : cmp
+      return sortDir === 'desc' ? -cmp : cmp
     })
-  }, [events, eventSortKey, eventSortDir])
+  }, [events, eventSort])
 
   const sortedRedemptions = useMemo(() => {
+    const { sortKey, sortDir } = redSort
     return [...redemptions].sort((a, b) => {
       let cmp = 0
-      switch (redSortKey) {
+      switch (sortKey) {
         case 'action_type':
           cmp = (ACTION_TYPE_LABELS[a.action_type] || a.action_type).localeCompare(
             ACTION_TYPE_LABELS[b.action_type] || b.action_type
@@ -251,27 +195,29 @@ export default function Events() {
           cmp = Number(a.enabled) - Number(b.enabled)
           break
       }
-      return redSortDir === 'desc' ? -cmp : cmp
+      return sortDir === 'desc' ? -cmp : cmp
     })
-  }, [redemptions, redSortKey, redSortDir])
+  }, [redemptions, redSort])
 
-  const handleToggle = async (event: EventConfig) => {
-    const newEnabled = !event.enabled
-    // Optimistic update
-    setEvents(prev =>
-      prev.map(e => (e.event_type === event.event_type ? { ...e, enabled: newEnabled } : e))
-    )
-    try {
-      await toggleEventConfig(event.event_type, newEnabled)
-      toast.success(newEnabled ? '事件已啟用' : '事件已停用')
-    } catch {
-      // Revert on failure
-      setEvents(prev =>
-        prev.map(e => (e.event_type === event.event_type ? { ...e, enabled: event.enabled } : e))
-      )
-      toast.error('切換事件狀態失敗')
-    }
-  }
+  const { toggle: handleToggle } = useOptimisticToggle<EventConfig>({
+    setState: setEvents,
+    getId: e => e.event_type,
+    toggleFn: (e, enabled) => toggleEventConfig(e.event_type, enabled).then(() => {}),
+    messages: { on: '事件已啟用', off: '事件已停用', error: '切換事件狀態失敗' },
+  })
+
+  const { toggle: handleRedemptionToggle } = useOptimisticToggle<RedemptionConfig>({
+    setState: setRedemptions,
+    getId: r => r.action_type,
+    toggleFn: (r, enabled) =>
+      updateRedemptionConfig(r.action_type, { reward_name: r.reward_name, enabled }).then(() => {}),
+    messages: { on: '兌換已啟用', off: '兌換已停用', error: '切換兌換狀態失敗' },
+  })
+
+  const { inputRef: templateInputRef, insertText: insertVariable } = useInputInsert(
+    editTemplate,
+    setEditTemplate
+  )
 
   // Non-partner detection — determined by 403 from Twitch API, not by empty rewards
 
@@ -301,44 +247,7 @@ export default function Events() {
     }
   }
 
-  const insertVariable = (varStr: string) => {
-    const input = templateInputRef.current
-    if (!input) {
-      setEditTemplate(prev => prev + varStr)
-      return
-    }
-    const start = input.selectionStart ?? editTemplate.length
-    const end = input.selectionEnd ?? editTemplate.length
-    const newValue = editTemplate.slice(0, start) + varStr + editTemplate.slice(end)
-    setEditTemplate(newValue)
-    // Restore cursor position after React re-render
-    requestAnimationFrame(() => {
-      input.focus()
-      const newPos = start + varStr.length
-      input.setSelectionRange(newPos, newPos)
-    })
-  }
-
   // --- Redemption handlers ---
-
-  const handleRedemptionToggle = async (red: RedemptionConfig) => {
-    const newEnabled = !red.enabled
-    setRedemptions(prev =>
-      prev.map(r => (r.action_type === red.action_type ? { ...r, enabled: newEnabled } : r))
-    )
-    try {
-      await updateRedemptionConfig(red.action_type, {
-        reward_name: red.reward_name,
-        enabled: newEnabled,
-      })
-      toast.success(newEnabled ? '兌換已啟用' : '兌換已停用')
-    } catch {
-      setRedemptions(prev =>
-        prev.map(r => (r.action_type === red.action_type ? { ...r, enabled: red.enabled } : r))
-      )
-      toast.error('切換兌換狀態失敗')
-    }
-  }
 
   const handleRewardSelect = async (red: RedemptionConfig, rewardTitle: string) => {
     try {
@@ -355,10 +264,7 @@ export default function Events() {
 
   return (
     <main className="flex flex-1 flex-col gap-section p-page md:p-page-lg">
-      <div>
-        <h1 className="text-page-title font-bold">Events</h1>
-        <p className="text-sub text-muted-foreground">管理頻道事件、自動回應與忠誠點數兌換</p>
-      </div>
+      <PageHeader title="Events" description="管理頻道事件、自動回應與忠誠點數兌換" />
 
       <Card>
         <CardHeader>
@@ -381,17 +287,17 @@ export default function Events() {
                   <TableRow>
                     <SortableHead
                       sortKey="event_type"
-                      currentKey={eventSortKey}
-                      dir={eventSortDir}
-                      onSort={toggleEventSort}
+                      currentKey={eventSort.sortKey}
+                      dir={eventSort.sortDir}
+                      onSort={eventSort.toggleSort}
                     >
                       事件名稱
                     </SortableHead>
                     <SortableHead
                       sortKey="type_label"
-                      currentKey={eventSortKey}
-                      dir={eventSortDir}
-                      onSort={toggleEventSort}
+                      currentKey={eventSort.sortKey}
+                      dir={eventSort.sortDir}
+                      onSort={eventSort.toggleSort}
                     >
                       類型
                     </SortableHead>
@@ -399,18 +305,18 @@ export default function Events() {
                     <SortableHead
                       className="text-right"
                       sortKey="trigger_count"
-                      currentKey={eventSortKey}
-                      dir={eventSortDir}
-                      onSort={toggleEventSort}
+                      currentKey={eventSort.sortKey}
+                      dir={eventSort.sortDir}
+                      onSort={eventSort.toggleSort}
                     >
                       觸發次數
                     </SortableHead>
                     <SortableHead
                       className="text-center"
                       sortKey="enabled"
-                      currentKey={eventSortKey}
-                      dir={eventSortDir}
-                      onSort={toggleEventSort}
+                      currentKey={eventSort.sortKey}
+                      dir={eventSort.sortDir}
+                      onSort={eventSort.toggleSort}
                     >
                       狀態
                     </SortableHead>
@@ -499,26 +405,26 @@ export default function Events() {
                   <TableRow>
                     <SortableHead
                       sortKey="action_type"
-                      currentKey={redSortKey}
-                      dir={redSortDir}
-                      onSort={toggleRedSort}
+                      currentKey={redSort.sortKey}
+                      dir={redSort.sortDir}
+                      onSort={redSort.toggleSort}
                     >
                       動作
                     </SortableHead>
                     <SortableHead
                       sortKey="reward_name"
-                      currentKey={redSortKey}
-                      dir={redSortDir}
-                      onSort={toggleRedSort}
+                      currentKey={redSort.sortKey}
+                      dir={redSort.sortDir}
+                      onSort={redSort.toggleSort}
                     >
                       獎勵名稱
                     </SortableHead>
                     <SortableHead
                       className="text-center"
                       sortKey="enabled"
-                      currentKey={redSortKey}
-                      dir={redSortDir}
-                      onSort={toggleRedSort}
+                      currentKey={redSort.sortKey}
+                      dir={redSort.sortDir}
+                      onSort={redSort.toggleSort}
                     >
                       狀態
                     </SortableHead>
@@ -610,22 +516,10 @@ export default function Events() {
 
               {/* Available Variables */}
               {editingEvent && TEMPLATE_VARIABLES[editingEvent.event_type] && (
-                <div className="flex flex-col gap-1.5">
-                  <span className="text-label text-muted-foreground">可用變數（點擊插入）</span>
-                  <div className="flex flex-wrap gap-1.5">
-                    {TEMPLATE_VARIABLES[editingEvent.event_type].map(v => (
-                      <button
-                        key={v.var}
-                        type="button"
-                        onClick={() => insertVariable(v.var)}
-                        className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-label font-mono hover:bg-accent transition-colors cursor-pointer"
-                      >
-                        <span className="text-primary">{v.var}</span>
-                        <span className="text-muted-foreground">— {v.desc}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                <VariableInserter
+                  variables={TEMPLATE_VARIABLES[editingEvent.event_type]}
+                  onInsert={insertVariable}
+                />
               )}
             </div>
 

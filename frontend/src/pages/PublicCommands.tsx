@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 
 import { getPublicCommands, type PublicChannelProfile, type PublicCommand } from '@/api/commands'
+import { SortableHead } from '@/components/SortableHead'
 import { useTheme } from '@/components/theme-provider'
 import {
   Avatar,
@@ -27,6 +28,8 @@ import {
   TabsTrigger,
 } from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
+import { useSortState } from '@/hooks/useSortState'
+import { nameSort, ROLE_ORDER } from '@/lib/sort'
 
 const ROLE_LABELS: Record<string, { label: string; variant: 'default' | 'secondary' | 'outline' }> =
   {
@@ -37,66 +40,8 @@ const ROLE_LABELS: Record<string, { label: string; variant: 'default' | 'seconda
     broadcaster: { label: '實況主', variant: 'default' },
   }
 
-const ROLE_ORDER: Record<string, number> = {
-  everyone: 0,
-  subscriber: 1,
-  vip: 2,
-  moderator: 3,
-  broadcaster: 4,
-}
-
-function nameSort(a: string, b: string): number {
-  const cleanA = a.startsWith('!') ? a.slice(1) : a
-  const cleanB = b.startsWith('!') ? b.slice(1) : b
-  const aAscii = cleanA.charCodeAt(0) < 128
-  const bAscii = cleanB.charCodeAt(0) < 128
-  if (aAscii !== bAscii) return aAscii ? -1 : 1
-  return cleanA.localeCompare(cleanB, 'zh-TW')
-}
-
 type BuiltinSortKey = 'name' | 'min_role'
 type CustomSortKey = 'name' | 'kind' | 'min_role'
-type SortDir = 'asc' | 'desc'
-
-function SortableHead<K extends string>({
-  children,
-  className,
-  sortKey: key,
-  currentKey,
-  dir,
-  onSort,
-}: {
-  children: React.ReactNode
-  className?: string
-  sortKey: K
-  currentKey: K
-  dir: SortDir
-  onSort: (key: K) => void
-}) {
-  const active = key === currentKey
-  return (
-    <TableHead className={className}>
-      <button
-        type="button"
-        className="inline-flex items-center gap-1 hover:text-foreground transition-colors cursor-pointer"
-        onClick={() => onSort(key)}
-      >
-        {children}
-        <Icon
-          icon={
-            active
-              ? dir === 'asc'
-                ? 'fa-solid fa-sort-up'
-                : 'fa-solid fa-sort-down'
-              : 'fa-solid fa-sort'
-          }
-          className={active ? 'text-foreground' : 'text-muted-foreground/50'}
-          wrapperClassName="size-3"
-        />
-      </button>
-    </TableHead>
-  )
-}
 
 export default function PublicCommands() {
   const { username } = useParams<{ username: string }>()
@@ -106,52 +51,34 @@ export default function PublicCommands() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const [builtinSortKey, setBuiltinSortKey] = useState<BuiltinSortKey>('name')
-  const [builtinSortDir, setBuiltinSortDir] = useState<SortDir>('asc')
-  const [customSortKey, setCustomSortKey] = useState<CustomSortKey>('kind')
-  const [customSortDir, setCustomSortDir] = useState<SortDir>('asc')
-
-  const toggleBuiltinSort = (key: BuiltinSortKey) => {
-    if (builtinSortKey === key) {
-      setBuiltinSortDir(prev => (prev === 'asc' ? 'desc' : 'asc'))
-    } else {
-      setBuiltinSortKey(key)
-      setBuiltinSortDir('asc')
-    }
-  }
-
-  const toggleCustomSort = (key: CustomSortKey) => {
-    if (customSortKey === key) {
-      setCustomSortDir(prev => (prev === 'asc' ? 'desc' : 'asc'))
-    } else {
-      setCustomSortKey(key)
-      setCustomSortDir('asc')
-    }
-  }
+  const builtinSort = useSortState<BuiltinSortKey>('name')
+  const customSort = useSortState<CustomSortKey>('kind')
 
   const builtinRows = useMemo(() => {
+    const { sortKey, sortDir } = builtinSort
     const list = commands.filter(c => c.command_type === 'builtin')
     return [...list].sort((a, b) => {
       let cmp = 0
-      if (builtinSortKey === 'name') cmp = nameSort(a.name, b.name)
+      if (sortKey === 'name') cmp = nameSort(a.name, b.name)
       else cmp = (ROLE_ORDER[a.min_role] ?? 0) - (ROLE_ORDER[b.min_role] ?? 0)
-      return builtinSortDir === 'desc' ? -cmp : cmp
+      return sortDir === 'desc' ? -cmp : cmp
     })
-  }, [commands, builtinSortKey, builtinSortDir])
+  }, [commands, builtinSort])
 
   const customRows = useMemo(() => {
+    const { sortKey, sortDir } = customSort
     const list = commands.filter(c => c.command_type === 'custom' || c.command_type === 'trigger')
     return [...list].sort((a, b) => {
       let cmp = 0
-      if (customSortKey === 'name') cmp = nameSort(a.name, b.name)
-      else if (customSortKey === 'kind') {
+      if (sortKey === 'name') cmp = nameSort(a.name, b.name)
+      else if (sortKey === 'kind') {
         const kindCmp =
           (a.command_type === 'custom' ? 0 : 1) - (b.command_type === 'custom' ? 0 : 1)
         cmp = kindCmp !== 0 ? kindCmp : nameSort(a.name, b.name)
       } else cmp = (ROLE_ORDER[a.min_role] ?? 0) - (ROLE_ORDER[b.min_role] ?? 0)
-      return customSortDir === 'desc' ? -cmp : cmp
+      return sortDir === 'desc' ? -cmp : cmp
     })
-  }, [commands, customSortKey, customSortDir])
+  }, [commands, customSort])
 
   useEffect(() => {
     if (!username) return
@@ -260,9 +187,9 @@ export default function PublicCommands() {
                               <SortableHead
                                 className="w-[25%]"
                                 sortKey="name"
-                                currentKey={builtinSortKey}
-                                dir={builtinSortDir}
-                                onSort={toggleBuiltinSort}
+                                currentKey={builtinSort.sortKey}
+                                dir={builtinSort.sortDir}
+                                onSort={builtinSort.toggleSort}
                               >
                                 指令
                               </SortableHead>
@@ -270,9 +197,9 @@ export default function PublicCommands() {
                               <SortableHead
                                 className="w-[15%] text-center"
                                 sortKey="min_role"
-                                currentKey={builtinSortKey}
-                                dir={builtinSortDir}
-                                onSort={toggleBuiltinSort}
+                                currentKey={builtinSort.sortKey}
+                                dir={builtinSort.sortDir}
+                                onSort={builtinSort.toggleSort}
                               >
                                 權限
                               </SortableHead>
@@ -317,18 +244,18 @@ export default function PublicCommands() {
                               <SortableHead
                                 className="w-[25%]"
                                 sortKey="name"
-                                currentKey={customSortKey}
-                                dir={customSortDir}
-                                onSort={toggleCustomSort}
+                                currentKey={customSort.sortKey}
+                                dir={customSort.sortDir}
+                                onSort={customSort.toggleSort}
                               >
                                 名稱
                               </SortableHead>
                               <SortableHead
                                 className="w-[12%]"
                                 sortKey="kind"
-                                currentKey={customSortKey}
-                                dir={customSortDir}
-                                onSort={toggleCustomSort}
+                                currentKey={customSort.sortKey}
+                                dir={customSort.sortDir}
+                                onSort={customSort.toggleSort}
                               >
                                 類型
                               </SortableHead>
@@ -336,9 +263,9 @@ export default function PublicCommands() {
                               <SortableHead
                                 className="w-[15%] text-center"
                                 sortKey="min_role"
-                                currentKey={customSortKey}
-                                dir={customSortDir}
-                                onSort={toggleCustomSort}
+                                currentKey={customSort.sortKey}
+                                dir={customSort.sortDir}
+                                onSort={customSort.toggleSort}
                               >
                                 權限
                               </SortableHead>

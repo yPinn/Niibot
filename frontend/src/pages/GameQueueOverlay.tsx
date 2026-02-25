@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useParams } from 'react-router-dom'
 
 import { getPublicQueueState, type PublicQueueState, type QueueEntry } from '@/api/gameQueue'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
+import { usePolling } from '@/hooks/usePolling'
 
 const POLL_INTERVAL = 10_000
 
@@ -29,28 +30,20 @@ function PlayerList({ entries, label }: { entries: QueueEntry[]; label: string }
 export default function GameQueueOverlay() {
   const { username } = useParams<{ username: string }>()
   const [state, setState] = useState<PublicQueueState | null>(null)
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useDocumentTitle('Game Queue Overlay')
 
-  useEffect(() => {
+  const fetchState = useCallback(async () => {
     if (!username) return
-
-    const fetchState = async () => {
-      try {
-        const data = await getPublicQueueState(username)
-        setState(data)
-      } catch {
-        // silent on poll errors
-      }
-    }
-
-    fetchState()
-    pollRef.current = setInterval(fetchState, POLL_INTERVAL)
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current)
+    try {
+      const data = await getPublicQueueState(username)
+      setState(data)
+    } catch {
+      // silent on poll errors
     }
   }, [username])
+
+  usePolling({ fetchFn: fetchState, intervalMs: POLL_INTERVAL, enabled: !!username })
 
   if (!username) return null
 

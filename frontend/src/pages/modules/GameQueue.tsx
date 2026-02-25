@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { toast } from 'sonner'
 
 import {
@@ -10,6 +10,8 @@ import {
   removePlayer,
   updateQueueSettings,
 } from '@/api/gameQueue'
+import { OverlayUrlBlock } from '@/components/OverlayUrlBlock'
+import { PageHeader } from '@/components/PageHeader'
 import {
   Badge,
   Button,
@@ -33,6 +35,7 @@ import {
 } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
+import { usePolling } from '@/hooks/usePolling'
 
 const POLL_INTERVAL = 15_000
 
@@ -101,8 +104,6 @@ export default function GameQueue() {
   const [groupSizeInput, setGroupSizeInput] = useState('')
   const [saving, setSaving] = useState(false)
 
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
-
   const fetchState = useCallback(async () => {
     try {
       const data = await getQueueState()
@@ -115,13 +116,7 @@ export default function GameQueue() {
     }
   }, [])
 
-  useEffect(() => {
-    fetchState()
-    pollRef.current = setInterval(fetchState, POLL_INTERVAL)
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current)
-    }
-  }, [fetchState])
+  usePolling({ fetchFn: fetchState, intervalMs: POLL_INTERVAL })
 
   const handleToggleEnabled = async (enabled: boolean) => {
     try {
@@ -199,10 +194,7 @@ export default function GameQueue() {
 
   return (
     <main className="flex flex-1 flex-col gap-section p-page md:p-page-lg">
-      <div>
-        <h1 className="text-page-title font-bold">Game Queue</h1>
-        <p className="text-sub text-muted-foreground">管理遊戲排隊系統</p>
-      </div>
+      <PageHeader title="Game Queue" description="管理遊戲排隊系統" />
 
       {/* Settings */}
       <Card>
@@ -235,24 +227,7 @@ export default function GameQueue() {
               {saving ? '...' : '儲存'}
             </Button>
           </div>
-          {overlayUrl && (
-            <div className="flex items-center gap-3">
-              <Label className="shrink-0">OBS Overlay</Label>
-              <code className="flex-1 truncate rounded bg-muted px-2 py-1 text-label">
-                {overlayUrl}
-              </code>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  navigator.clipboard.writeText(overlayUrl)
-                  toast.success('已複製')
-                }}
-              >
-                <Icon icon="fa-solid fa-copy" className="text-xs" />
-              </Button>
-            </div>
-          )}
+          <OverlayUrlBlock url={overlayUrl} />
         </CardContent>
       </Card>
 

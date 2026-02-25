@@ -15,7 +15,7 @@ import Landing from '@/pages/Landing'
 import NotFound from '@/pages/NotFound'
 
 // Lazy-loaded: large dashboard pages and overlays
-const Commands = lazy(() => import('@/pages/dashboard/Commands'))
+const Commands = lazy(() => import('@/pages/dashboard/commands'))
 const Events = lazy(() => import('@/pages/dashboard/Events'))
 const Overview = lazy(() => import('@/pages/dashboard/Overview'))
 const SystemStatus = lazy(() => import('@/pages/dashboard/SystemStatus'))

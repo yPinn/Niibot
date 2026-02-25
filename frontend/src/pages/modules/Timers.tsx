@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 
 import {
@@ -11,6 +11,7 @@ import {
   toggleTimer,
   updateTimer,
 } from '@/api/timers'
+import { PageHeader } from '@/components/PageHeader'
 import {
   Button,
   Card,
@@ -38,7 +39,10 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui'
+import { VariableInserter } from '@/components/VariableInserter'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
+import { useInputInsert } from '@/hooks/useInputInsert'
+import { useOptimisticToggle } from '@/hooks/useOptimisticToggle'
 
 function formatInterval(seconds: number): string {
   if (seconds < 60) return `${seconds}s`
@@ -67,7 +71,6 @@ export default function Timers() {
   const [formEnabled, setFormEnabled] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
-  const templateInputRef = useRef<HTMLInputElement>(null)
 
   const fetchData = useCallback(async () => {
     try {
@@ -84,21 +87,12 @@ export default function Timers() {
     fetchData()
   }, [fetchData])
 
-  const handleToggle = async (timer: TimerConfig) => {
-    const newEnabled = !timer.enabled
-    setTimers(prev =>
-      prev.map(t => (t.timer_name === timer.timer_name ? { ...t, enabled: newEnabled } : t))
-    )
-    try {
-      await toggleTimer(timer.timer_name, newEnabled)
-      toast.success(newEnabled ? '計時器已啟用' : '計時器已停用')
-    } catch {
-      setTimers(prev =>
-        prev.map(t => (t.timer_name === timer.timer_name ? { ...t, enabled: timer.enabled } : t))
-      )
-      toast.error('切換計時器狀態失敗')
-    }
-  }
+  const { toggle: handleToggle } = useOptimisticToggle<TimerConfig>({
+    setState: setTimers,
+    getId: t => t.timer_name,
+    toggleFn: (t, enabled) => toggleTimer(t.timer_name, enabled).then(() => {}),
+    messages: { on: '計時器已啟用', off: '計時器已停用', error: '切換計時器狀態失敗' },
+  })
 
   const openCreate = () => {
     setEditing({ mode: 'create', timer: null })
@@ -120,22 +114,10 @@ export default function Timers() {
     setSaveError(null)
   }
 
-  const insertVariable = (varStr: string) => {
-    const input = templateInputRef.current
-    if (!input) {
-      setFormTemplate(prev => prev + varStr)
-      return
-    }
-    const start = input.selectionStart ?? formTemplate.length
-    const end = input.selectionEnd ?? formTemplate.length
-    const newValue = formTemplate.slice(0, start) + varStr + formTemplate.slice(end)
-    setFormTemplate(newValue)
-    requestAnimationFrame(() => {
-      input.focus()
-      const newPos = start + varStr.length
-      input.setSelectionRange(newPos, newPos)
-    })
-  }
+  const { inputRef: templateInputRef, insertText: insertVariable } = useInputInsert(
+    formTemplate,
+    setFormTemplate
+  )
 
   const handleSave = async () => {
     if (!editing) return
@@ -198,10 +180,7 @@ export default function Timers() {
 
   return (
     <main className="flex flex-1 flex-col gap-section p-page md:p-page-lg">
-      <div>
-        <h1 className="text-page-title font-bold">Timers</h1>
-        <p className="text-sub text-muted-foreground">定時訊息 — 直播中定時自動發送設定好的訊息</p>
-      </div>
+      <PageHeader title="Timers" description="定時訊息 — 直播中定時自動發送設定好的訊息" />
 
       <Card>
         <CardHeader>
@@ -357,26 +336,14 @@ export default function Timers() {
                 placeholder="記得追蹤 $(channel)！"
                 className="font-mono text-sub"
               />
-              <div className="flex flex-col gap-1.5">
-                <span className="text-label text-muted-foreground">可用變數（點擊插入）</span>
-                <div className="flex flex-wrap gap-1.5">
-                  {[
-                    { var: '$(channel)', desc: '頻道名稱' },
-                    { var: '$(random 1,100)', desc: '隨機數字' },
-                    { var: '$(pick a,b,c)', desc: '隨機選擇' },
-                  ].map(({ var: v, desc }) => (
-                    <button
-                      key={v}
-                      type="button"
-                      onClick={() => insertVariable(v)}
-                      className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-label font-mono hover:bg-accent transition-colors cursor-pointer"
-                    >
-                      <span className="text-primary">{v.split(' ')[0]}</span>
-                      <span className="text-muted-foreground">— {desc}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
+              <VariableInserter
+                variables={[
+                  { var: '$(channel)', desc: '頻道名稱' },
+                  { var: '$(random 1,100)', desc: '隨機數字' },
+                  { var: '$(pick a,b,c)', desc: '隨機選擇' },
+                ]}
+                onInsert={insertVariable}
+              />
             </div>
 
             {/* Enabled (edit only) */}

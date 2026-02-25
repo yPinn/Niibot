@@ -1,0 +1,253 @@
+import { useCallback, useEffect, useMemo, useState } from 'react'
+
+import { type ChannelDefaults, getChannelDefaults } from '@/api/channels'
+import { type CommandConfig, getCommandConfigs, toggleCommandConfig } from '@/api/commands'
+import { getTriggerConfigs, toggleTrigger, type TriggerConfig } from '@/api/triggers'
+import { PageHeader } from '@/components/PageHeader'
+import {
+  Badge,
+  Button,
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Icon,
+  Spinner,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from '@/components/ui'
+import { useDocumentTitle } from '@/hooks/useDocumentTitle'
+import { useOptimisticToggle } from '@/hooks/useOptimisticToggle'
+import { useSortState } from '@/hooks/useSortState'
+import { nameSort, ROLE_ORDER } from '@/lib/sort'
+
+import { BuiltinTab } from './BuiltinTab'
+import { CommandSheet } from './CommandSheet'
+import { CustomTab } from './CustomTab'
+import type { CustomRow, CustomSortKey, EditingState, SortKey } from './types'
+
+export default function Commands() {
+  useDocumentTitle('Commands')
+
+  const [commands, setCommands] = useState<CommandConfig[]>([])
+  const [triggers, setTriggers] = useState<TriggerConfig[]>([])
+  const [defaults, setDefaults] = useState<ChannelDefaults>({ default_cooldown: 0 })
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [editing, setEditing] = useState<EditingState | null>(null)
+
+  // Sort states
+  const builtinSort = useSortState<SortKey>('command_name')
+  const customSort = useSortState<CustomSortKey>('kind')
+
+  // Optimistic toggle for commands
+  const { toggle: toggleCommand } = useOptimisticToggle<CommandConfig>({
+    setState: setCommands,
+    getId: c => c.command_name,
+    toggleFn: (c, enabled) => toggleCommandConfig(c.command_name, enabled).then(() => {}),
+    messages: { on: '指令已啟用', off: '指令已停用', error: '切換指令狀態失敗' },
+  })
+
+  // Optimistic toggle for triggers
+  const { toggle: toggleTriggerItem } = useOptimisticToggle<TriggerConfig>({
+    setState: setTriggers,
+    getId: t => t.trigger_name,
+    toggleFn: (t, enabled) => toggleTrigger(t.trigger_name, enabled).then(() => {}),
+    messages: { on: '觸發器已啟用', off: '觸發器已停用', error: '切換觸發器狀態失敗' },
+  })
+
+  const handleToggleRow = (row: CustomRow) => {
+    if (row.kind === 'command') toggleCommand(row.data)
+    else toggleTriggerItem(row.data)
+  }
+
+  // Combined custom rows with sort
+  const customRows = useMemo((): CustomRow[] => {
+    const { sortKey, sortDir } = customSort
+    const all: CustomRow[] = [
+      ...commands
+        .filter(c => c.command_type === 'custom')
+        .map((c): CustomRow => ({ kind: 'command', data: c })),
+      ...triggers.map((t): CustomRow => ({ kind: 'trigger', data: t })),
+    ]
+    all.sort((a, b) => {
+      let cmp = 0
+      const nameA = a.kind === 'command' ? a.data.command_name : a.data.pattern
+      const nameB = b.kind === 'command' ? b.data.command_name : b.data.pattern
+      switch (sortKey) {
+        case 'name':
+          cmp = nameSort(nameA, nameB)
+          break
+        case 'kind': {
+          const kindCmp = (a.kind === 'command' ? 0 : 1) - (b.kind === 'command' ? 0 : 1)
+          cmp = kindCmp !== 0 ? kindCmp : nameSort(nameA, nameB)
+          break
+        }
+        case 'cooldown':
+          cmp = (a.data.cooldown ?? -1) - (b.data.cooldown ?? -1)
+          break
+        case 'min_role':
+          cmp = (ROLE_ORDER[a.data.min_role] ?? 0) - (ROLE_ORDER[b.data.min_role] ?? 0)
+          break
+        case 'usage_count':
+          cmp = a.data.usage_count - b.data.usage_count
+          break
+      }
+      return sortDir === 'desc' ? -cmp : cmp
+    })
+    return all
+  }, [commands, triggers, customSort])
+
+  const fetchData = useCallback(async () => {
+    try {
+      setError(null)
+      const [cmds, trgs, defs] = await Promise.all([
+        getCommandConfigs(),
+        getTriggerConfigs(),
+        getChannelDefaults(),
+      ])
+      setCommands(cmds)
+      setTriggers(trgs)
+      setDefaults(defs)
+    } catch {
+      setError('無法載入設定')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchData()
+  }, [fetchData])
+
+  // --- Sheet open helpers ---
+
+  const openCreate = () => setEditing({ mode: 'create' })
+
+  const openEditCommand = (cmd: CommandConfig) => setEditing({ mode: 'edit-command', command: cmd })
+
+  const openEditTrigger = (trigger: TriggerConfig) => setEditing({ mode: 'edit-trigger', trigger })
+
+  const openEditRow = (row: CustomRow) => {
+    if (row.kind === 'command') openEditCommand(row.data)
+    else openEditTrigger(row.data)
+  }
+
+  // --- Sheet callbacks ---
+
+  const handleSaved = ({
+    commands: updatedCmds,
+    triggers: updatedTrgs,
+  }: {
+    commands?: CommandConfig[]
+    triggers?: TriggerConfig[]
+  }) => {
+    if (updatedCmds) {
+      setCommands(prev => {
+        const map = new Map(prev.map(c => [c.command_name, c]))
+        updatedCmds.forEach(c => map.set(c.command_name, c))
+        // New items (create) won't be in map yet — add them
+        const newOnes = updatedCmds.filter(c => !prev.some(p => p.command_name === c.command_name))
+        return [...prev.map(c => map.get(c.command_name)!), ...newOnes]
+      })
+    }
+    if (updatedTrgs) {
+      setTriggers(prev => {
+        const map = new Map(prev.map(t => [t.trigger_name, t]))
+        updatedTrgs.forEach(t => map.set(t.trigger_name, t))
+        const newOnes = updatedTrgs.filter(t => !prev.some(p => p.trigger_name === t.trigger_name))
+        return [...prev.map(t => map.get(t.trigger_name)!), ...newOnes]
+      })
+    }
+  }
+
+  const handleDeleted = (kind: 'command' | 'trigger', name: string) => {
+    if (kind === 'command') {
+      setCommands(prev => prev.filter(c => c.command_name !== name))
+    } else {
+      setTriggers(prev => prev.filter(t => t.trigger_name !== name))
+    }
+  }
+
+  return (
+    <main className="flex flex-1 flex-col gap-section p-page md:p-page-lg">
+      <PageHeader title="Commands" description="管理 Twitch 機器人指令與自動回應" />
+
+      <Card>
+        <CardHeader>
+          <CardTitle>指令設定</CardTitle>
+          <CardDescription>
+            管理內建指令、自訂指令（!prefix）與自動回應（關鍵字觸發）
+          </CardDescription>
+          <CardAction>
+            <Button size="sm" onClick={openCreate}>
+              <Icon icon="fa-solid fa-plus" wrapperClassName="mr-1.5 size-3" />
+              新增
+            </Button>
+          </CardAction>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="flex items-center justify-center py-empty">
+              <Spinner className="size-8 text-primary" />
+            </div>
+          ) : error ? (
+            <div className="flex items-center justify-center py-empty text-destructive">
+              {error}
+            </div>
+          ) : (
+            <Tabs defaultValue="builtin">
+              <TabsList>
+                <TabsTrigger value="builtin">
+                  內建
+                  <Badge variant="secondary" className="ml-1.5 px-1.5 text-label">
+                    {commands.filter(c => c.command_type === 'builtin').length}
+                  </Badge>
+                </TabsTrigger>
+                <TabsTrigger value="custom">
+                  自訂
+                  <Badge variant="secondary" className="ml-1.5 px-1.5 text-label">
+                    {commands.filter(c => c.command_type === 'custom').length + triggers.length}
+                  </Badge>
+                </TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="builtin">
+                <BuiltinTab
+                  commands={commands.filter(c => c.command_type === 'builtin')}
+                  sortState={builtinSort}
+                  defaults={defaults}
+                  onToggle={toggleCommand}
+                  onEdit={openEditCommand}
+                />
+              </TabsContent>
+
+              <TabsContent value="custom">
+                <CustomTab
+                  customRows={customRows}
+                  sortState={customSort}
+                  defaults={defaults}
+                  onToggle={handleToggleRow}
+                  onEdit={openEditRow}
+                />
+              </TabsContent>
+            </Tabs>
+          )}
+        </CardContent>
+      </Card>
+
+      <CommandSheet
+        open={!!editing}
+        editing={editing}
+        defaults={defaults}
+        onSaved={handleSaved}
+        onDeleted={handleDeleted}
+        onClose={() => setEditing(null)}
+      />
+    </main>
+  )
+}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { toast } from 'sonner'
 
 import {
@@ -11,6 +11,8 @@ import {
   type VideoQueueEntry,
   type VideoQueueSettings,
 } from '@/api/videoQueue'
+import { OverlayUrlBlock } from '@/components/OverlayUrlBlock'
+import { PageHeader } from '@/components/PageHeader'
 import {
   Badge,
   Button,
@@ -39,6 +41,7 @@ import {
 } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
+import { usePolling } from '@/hooks/usePolling'
 
 const POLL_INTERVAL = 10_000
 
@@ -100,8 +103,6 @@ export default function VideoQueue() {
   const [maxQueueSizeInput, setMaxQueueSizeInput] = useState('')
   const [saving, setSaving] = useState(false)
 
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
-
   const fetchData = useCallback(async () => {
     try {
       const [queueState, queueSettings] = await Promise.all([
@@ -119,13 +120,7 @@ export default function VideoQueue() {
     }
   }, [])
 
-  useEffect(() => {
-    fetchData()
-    pollRef.current = setInterval(fetchData, POLL_INTERVAL)
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current)
-    }
-  }, [fetchData])
+  usePolling({ fetchFn: fetchData, intervalMs: POLL_INTERVAL })
 
   const handleToggleEnabled = async (enabled: boolean) => {
     try {
@@ -198,10 +193,7 @@ export default function VideoQueue() {
   if (loading) {
     return (
       <main className="flex flex-1 flex-col gap-section p-page md:p-page-lg">
-        <div>
-          <h1 className="text-page-title font-bold">Video Queue</h1>
-          <p className="text-sub text-muted-foreground">管理 YouTube 點播系統</p>
-        </div>
+        <PageHeader title="Video Queue" description="管理 YouTube 點播系統" />
         <div className="flex items-center justify-center py-empty">
           <Spinner className="size-8 text-primary" />
         </div>
@@ -286,24 +278,7 @@ export default function VideoQueue() {
             </Button>
           </div>
 
-          {overlayUrl && (
-            <div className="flex items-center gap-3">
-              <Label className="shrink-0">OBS Overlay</Label>
-              <code className="flex-1 truncate rounded bg-muted px-2 py-1 text-label">
-                {overlayUrl}
-              </code>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  navigator.clipboard.writeText(overlayUrl)
-                  toast.success('已複製')
-                }}
-              >
-                <Icon icon="fa-solid fa-copy" className="text-xs" />
-              </Button>
-            </div>
-          )}
+          <OverlayUrlBlock url={overlayUrl} />
         </CardContent>
       </Card>
 

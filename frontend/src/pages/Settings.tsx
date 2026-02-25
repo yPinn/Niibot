@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 
 import { getLinkedAccounts, type LinkedAccount, openOAuthLink, unlinkAccount } from '@/api'
+import { PageHeader } from '@/components/PageHeader'
 import {
   Badge,
   Button,
@@ -103,10 +104,7 @@ export default function Settings() {
 
   return (
     <main className="flex flex-1 flex-col gap-section p-page lg:p-page-lg">
-      <div>
-        <h1 className="text-page-title font-bold">Settings</h1>
-        <p className="text-sub text-muted-foreground">管理帳號設定與偏好</p>
-      </div>
+      <PageHeader title="Settings" description="管理帳號設定與偏好" />
 
       <Card>
         <CardHeader>

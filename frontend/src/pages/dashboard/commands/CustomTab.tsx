@@ -1,0 +1,169 @@
+import type { ChannelDefaults } from '@/api/channels'
+import { SortableHead } from '@/components/SortableHead'
+import {
+  Badge,
+  Button,
+  Icon,
+  Switch,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui'
+import type { SortState } from '@/hooks/useSortState'
+
+import { formatCooldown, ROLE_LABELS } from './constants'
+import type { CustomRow, CustomSortKey } from './types'
+
+export interface CustomTabProps {
+  customRows: CustomRow[]
+  sortState: SortState<CustomSortKey>
+  defaults: ChannelDefaults
+  onToggle: (row: CustomRow) => void
+  onEdit: (row: CustomRow) => void
+}
+
+export function CustomTab({ customRows, sortState, defaults, onToggle, onEdit }: CustomTabProps) {
+  const { sortKey, sortDir, toggleSort } = sortState
+
+  return (
+    <div className="rounded-md border">
+      <Table className="table-fixed">
+        <TableHeader>
+          <TableRow>
+            <SortableHead
+              className="w-[20%]"
+              sortKey="name"
+              currentKey={sortKey}
+              dir={sortDir}
+              onSort={toggleSort}
+            >
+              名稱
+            </SortableHead>
+            <SortableHead
+              className="w-[10%]"
+              sortKey="kind"
+              currentKey={sortKey}
+              dir={sortDir}
+              onSort={toggleSort}
+            >
+              類型
+            </SortableHead>
+            <TableHead>回應</TableHead>
+            <SortableHead
+              className="w-[8%]"
+              sortKey="cooldown"
+              currentKey={sortKey}
+              dir={sortDir}
+              onSort={toggleSort}
+            >
+              冷卻
+            </SortableHead>
+            <SortableHead
+              className="w-[8%]"
+              sortKey="min_role"
+              currentKey={sortKey}
+              dir={sortDir}
+              onSort={toggleSort}
+            >
+              權限
+            </SortableHead>
+            <SortableHead
+              className="w-[10%] text-right"
+              sortKey="usage_count"
+              currentKey={sortKey}
+              dir={sortDir}
+              onSort={toggleSort}
+            >
+              使用次數
+            </SortableHead>
+            <TableHead className="w-[7%] text-center">狀態</TableHead>
+            <TableHead className="w-[7%] text-right">操作</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {customRows.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={8} className="text-center text-muted-foreground">
+                尚無自訂指令或自動回應
+              </TableCell>
+            </TableRow>
+          ) : (
+            customRows.map(row => {
+              const key =
+                row.kind === 'command'
+                  ? `cmd:${row.data.command_name}`
+                  : `trg:${row.data.trigger_name}`
+              const label =
+                row.kind === 'command' ? `編輯 !${row.data.command_name}` : `編輯觸發器`
+
+              return (
+                <TableRow key={key}>
+                  <TableCell>
+                    {row.kind === 'command' ? (
+                      <div className="flex flex-col">
+                        <span className="font-mono font-medium">!{row.data.command_name}</span>
+                        {row.data.aliases && (
+                          <span className="font-mono text-label text-muted-foreground">
+                            {row.data.aliases
+                              .split(',')
+                              .map((a: string) => `!${a.trim()}`)
+                              .join(' · ')}
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="font-mono text-sub">{row.data.pattern}</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {row.kind === 'command' ? (
+                      <Badge variant="default">指令</Badge>
+                    ) : (
+                      <Badge variant="secondary">觸發</Badge>
+                    )}
+                  </TableCell>
+                  <TableCell className="max-w-0 truncate text-sub text-muted-foreground">
+                    {row.kind === 'command'
+                      ? (row.data.custom_response ?? '')
+                      : row.data.response}
+                  </TableCell>
+                  <TableCell className="text-sub text-muted-foreground">
+                    {formatCooldown(row.data.cooldown, defaults)}
+                  </TableCell>
+                  <TableCell className="text-sub">
+                    {ROLE_LABELS[row.data.min_role] ?? row.data.min_role}
+                  </TableCell>
+                  <TableCell className="text-right text-sub text-muted-foreground">
+                    {row.data.usage_count}
+                  </TableCell>
+                  <TableCell className="text-center">
+                    <div className="flex justify-center">
+                      <Switch
+                        checked={row.data.enabled}
+                        onCheckedChange={() => onToggle(row)}
+                      />
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-8"
+                      aria-label={label}
+                      onClick={() => onEdit(row)}
+                    >
+                      <Icon icon="fa-solid fa-pen" wrapperClassName="size-3.5" />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              )
+            })
+          )}
+        </TableBody>
+      </Table>
+    </div>
+  )
+}

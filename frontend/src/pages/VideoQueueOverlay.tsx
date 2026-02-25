@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 
 import {
@@ -9,6 +9,7 @@ import {
   type VideoQueueEntry,
 } from '@/api/videoQueue'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
+import { usePolling } from '@/hooks/usePolling'
 
 // ---------------------------------------------------------------------------
 // YouTube IFrame API — minimal inline types
@@ -147,7 +148,6 @@ export default function VideoQueueOverlay() {
   const containerRef = useRef<HTMLDivElement>(null)
   const currentIdRef = useRef<number | null>(null)
   const advancingRef = useRef(false) // prevent concurrent advance calls
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const progressRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useDocumentTitle('Video Queue Overlay')
@@ -157,25 +157,18 @@ export default function VideoQueueOverlay() {
     loadYouTubeAPI().then(() => setYtReady(true))
   }, [])
 
-  // Poll state every 5s
-  useEffect(() => {
+  const fetchState = useCallback(async () => {
     if (!username) return
-
-    const fetchState = async () => {
-      try {
-        const data = await getPublicVideoQueueState(username)
-        setState(data)
-      } catch {
-        // silent on transient network errors
-      }
-    }
-
-    fetchState()
-    pollRef.current = setInterval(fetchState, POLL_INTERVAL)
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current)
+    try {
+      const data = await getPublicVideoQueueState(username)
+      setState(data)
+    } catch {
+      // silent on transient network errors
     }
   }, [username])
+
+  // Poll state every 5s
+  usePolling({ fetchFn: fetchState, intervalMs: POLL_INTERVAL, enabled: !!username })
 
   // Auto-kickstart: if there is no current video but there is a queue, advance
   useEffect(() => {
@@ -287,7 +280,6 @@ export default function VideoQueueOverlay() {
         }
       }
       if (progressRef.current) clearInterval(progressRef.current)
-      if (pollRef.current) clearInterval(pollRef.current)
     }
   }, [])
 
