@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -24,7 +25,7 @@ from shared.repositories.command_config import (
 
 _NOW = datetime(2024, 1, 1, tzinfo=UTC)
 
-_CMD_ROW = {
+_CMD_ROW: dict[str, Any] = {
     "id": 1,
     "channel_id": "ch1",
     "command_name": "hello",

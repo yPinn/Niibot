@@ -3,6 +3,7 @@ import { Route, Routes } from 'react-router-dom'
 
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import SidebarLayout from '@/components/layouts/SidebarLayout'
+import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { ProtectedRoute, PublicOnlyRoute } from '@/components/ProtectedRoute'
 import { ThemeProvider } from '@/components/theme-provider'
 import { Toaster } from '@/components/ui'
@@ -26,8 +27,10 @@ const Timers = lazy(() => import('@/pages/modules/Timers'))
 const VideoQueue = lazy(() => import('@/pages/modules/VideoQueue'))
 const PublicCommands = lazy(() => import('@/pages/PublicCommands'))
 const Settings = lazy(() => import('@/pages/Settings'))
-const TypographyDemo = lazy(() => import('@/pages/TypographyDemo'))
 const VideoQueueOverlay = lazy(() => import('@/pages/VideoQueueOverlay'))
+
+// Dev-only: excluded from production bundle via dead-code elimination
+const TypographyDemo = import.meta.env.DEV ? lazy(() => import('@/pages/TypographyDemo')) : null
 
 function App() {
   return (
@@ -36,13 +39,34 @@ function App() {
         <ServiceStatusProvider>
           <BotProvider>
             <ErrorBoundary>
-              <Suspense fallback={null}>
+              {/*
+               * Outer Suspense: spinner for all lazy routes (login, dashboard, etc.)
+               * Overlay routes override with fallback={null} via their own inner Suspense
+               * so OBS browser sources see a transparent frame while the chunk loads.
+               */}
+              <Suspense fallback={<LoadingSpinner fullScreen />}>
                 <Routes>
                   <Route path="/" element={<Landing />} />
                   <Route path="/:username/commands" element={<PublicCommands />} />
-                  <Route path="/:username/game-queue/overlay" element={<GameQueueOverlay />} />
-                  <Route path="/:username/video-queue/overlay" element={<VideoQueueOverlay />} />
-                  <Route path="/dev/typography" element={<TypographyDemo />} />
+                  <Route
+                    path="/:username/game-queue/overlay"
+                    element={
+                      <Suspense fallback={null}>
+                        <GameQueueOverlay />
+                      </Suspense>
+                    }
+                  />
+                  <Route
+                    path="/:username/video-queue/overlay"
+                    element={
+                      <Suspense fallback={null}>
+                        <VideoQueueOverlay />
+                      </Suspense>
+                    }
+                  />
+                  {import.meta.env.DEV && TypographyDemo && (
+                    <Route path="/dev/typography" element={<TypographyDemo />} />
+                  )}
                   <Route element={<PublicOnlyRoute />}>
                     <Route path="/login" element={<LoginPage />} />
                   </Route>

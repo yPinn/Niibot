@@ -1,4 +1,4 @@
-import { API_ENDPOINTS } from './config'
+import { API_ENDPOINTS, assertTrustedOAuthUrl } from './config'
 
 export async function getTwitchOAuthUrl(): Promise<string> {
   const response = await fetch(API_ENDPOINTS.auth.twitchOAuth)
@@ -6,7 +6,7 @@ export async function getTwitchOAuthUrl(): Promise<string> {
     throw new Error('Failed to fetch OAuth URL')
   }
   const data = await response.json()
-  return data.oauth_url
+  return assertTrustedOAuthUrl(data.oauth_url, 'twitch')
 }
 
 export async function openTwitchOAuth(): Promise<void> {

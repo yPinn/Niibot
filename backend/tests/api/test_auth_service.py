@@ -77,6 +77,7 @@ class TestVerifyTokenValid:
     def test_verify_round_trip(self, service: AuthService):
         token = service.create_access_token("abc", "discord", "xyz")
         payload = service.verify_token(token)
+        assert payload is not None
         assert payload["sub"] == "abc"
         assert payload["platform"] == "discord"
         assert payload["platform_user_id"] == "xyz"

@@ -110,6 +110,30 @@ export const API_ENDPOINTS = {
 } as const
 
 // ---------------------------------------------------------------------------
+// OAuth redirect guard — ensures backend-provided OAuth URLs belong to
+// the expected provider origin before the browser follows them.
+// ---------------------------------------------------------------------------
+
+const TRUSTED_OAUTH_ORIGINS: Record<string, Set<string>> = {
+  twitch: new Set(['https://id.twitch.tv']),
+  discord: new Set(['https://discord.com']),
+}
+
+export function assertTrustedOAuthUrl(raw: unknown, provider: 'twitch' | 'discord'): string {
+  if (typeof raw !== 'string' || !raw) throw new Error('No OAuth URL returned')
+  let url: URL
+  try {
+    url = new URL(raw)
+  } catch {
+    throw new Error('Malformed OAuth URL')
+  }
+  if (url.protocol !== 'https:' || !TRUSTED_OAUTH_ORIGINS[provider].has(url.origin)) {
+    throw new Error(`Untrusted OAuth redirect origin: ${url.origin}`)
+  }
+  return raw
+}
+
+// ---------------------------------------------------------------------------
 // Retry-capable fetch — retries once on 503 (DB reconnecting) so transient
 // pool restarts are invisible to the user.
 // ---------------------------------------------------------------------------

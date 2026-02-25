@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -29,7 +30,7 @@ _TOKEN_ROW = {
     "updated_at": _NOW,
 }
 
-_CHANNEL_ROW = {
+_CHANNEL_ROW: dict[str, Any] = {
     "channel_id": "u1",
     "channel_name": "streamer",
     "enabled": True,

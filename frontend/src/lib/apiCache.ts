@@ -62,8 +62,7 @@ class ApiCache {
   patch<T>(key: string, updater: (data: T) => T): void {
     const entry = this.cache.get(key) as CacheEntry<T> | undefined
     if (!entry) return
-    entry.data = updater(entry.data)
-    entry.timestamp = Date.now()
+    this.cache.set(key, { data: updater(entry.data), timestamp: Date.now() })
     this.saveToStorage()
   }
 

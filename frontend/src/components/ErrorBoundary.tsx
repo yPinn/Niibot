@@ -27,9 +27,11 @@ export class ErrorBoundary extends Component<Props, State> {
           <p className="text-muted-foreground max-w-md text-sm">
             頁面無法載入，請重新整理。如果問題持續發生，請聯絡開發者。
           </p>
-          <pre className="bg-muted max-w-lg overflow-auto rounded p-3 text-left text-xs">
-            {this.state.error.message}
-          </pre>
+          {import.meta.env.DEV && (
+            <pre className="bg-muted max-w-lg overflow-auto rounded p-3 text-left text-xs">
+              {this.state.error.message}
+            </pre>
+          )}
           <button
             className="bg-primary text-primary-foreground rounded px-4 py-2 text-sm"
             onClick={() => window.location.reload()}

@@ -14,7 +14,8 @@ def make_chatter(display_name: str | None = None, name: str | None = None):
     """Return a minimal chatter-like object."""
 
     class _Chatter:
-        pass
+        display_name: str | None
+        name: str | None
 
     c = _Chatter()
     c.display_name = display_name

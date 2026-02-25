@@ -16,7 +16,9 @@ def make_trigger(
     """Return a minimal TriggerLike object."""
 
     class _T:
-        pass
+        pattern: str
+        match_type: str
+        case_sensitive: bool
 
     t = _T()
     t.pattern = pattern

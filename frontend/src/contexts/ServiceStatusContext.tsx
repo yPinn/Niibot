@@ -37,34 +37,45 @@ export function ServiceStatusProvider({ children }: { children: React.ReactNode 
   const [discord, setDiscord] = useState<BotStatus>({ online: false })
   const [api, setApi] = useState<ApiServerStatus>({ online: false })
   const [lastUpdate, setLastUpdate] = useState(new Date())
-  const isMounted = useRef(true)
+  // refresh is exposed in context for on-demand calls; uses a ref so components
+  // always call the latest version without stale closures.
+  const refreshRef = useRef<() => Promise<void>>(async () => {})
 
   const refresh = useCallback(async () => {
-    const [t, d, a] = await Promise.all([
-      getTwitchBotStatus().catch(() => ({ online: false }) as BotStatus),
-      getDiscordBotStatus().catch(() => ({ online: false }) as BotStatus),
-      getApiServerStatus().catch(() => ({ online: false }) as ApiServerStatus),
-    ])
-    if (!isMounted.current) return
-    setTwitch(t)
-    setDiscord(d)
-    setApi(a)
-    setLastUpdate(new Date())
+    return refreshRef.current()
   }, [])
 
   useEffect(() => {
-    isMounted.current = true
     if (!user) return
 
+    // Local flag scoped to this effect invocation — immune to the shared-ref
+    // race where a new effect re-arms isMounted before the old fetch resolves.
+    let mounted = true
+
+    const fetchStatus = async () => {
+      const [t, d, a] = await Promise.all([
+        getTwitchBotStatus().catch(() => ({ online: false }) as BotStatus),
+        getDiscordBotStatus().catch(() => ({ online: false }) as BotStatus),
+        getApiServerStatus().catch(() => ({ online: false }) as ApiServerStatus),
+      ])
+      if (!mounted) return
+      setTwitch(t)
+      setDiscord(d)
+      setApi(a)
+      setLastUpdate(new Date())
+    }
+
+    refreshRef.current = fetchStatus
+
     // 避免在 effect body 內同步呼叫 setState — 透過 setTimeout 延遲首次 fetch
-    const initialTimeout = setTimeout(refresh, 0)
-    const interval = setInterval(refresh, POLL_INTERVAL)
+    const initialTimeout = setTimeout(fetchStatus, 0)
+    const interval = setInterval(fetchStatus, POLL_INTERVAL)
     return () => {
-      isMounted.current = false
+      mounted = false
       clearTimeout(initialTimeout)
       clearInterval(interval)
     }
-  }, [user, refresh])
+  }, [user])
 
   // --- DB 連線狀態 toast 通知 ---
   const prevDbConnected = useRef<boolean | undefined>(undefined)

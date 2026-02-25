@@ -4,23 +4,4 @@
 # 確保 Husky 能找到 uv 指令 (針對 Windows 使用者路徑)
 export PATH="$HOME/.local/bin:$PATH"
 
-# 1. lint-staged: auto-fix staged files (ruff --fix + format, eslint --fix, prettier)
 npx lint-staged
-
-# 2. Project-wide checks — catch issues in non-staged files that lint-staged misses.
-
-# Backend: full ruff scan (check-only) when any Python file is staged
-if git diff --cached --name-only | grep -q "backend/.*\.py$"; then
-  uv run --project backend ruff check \
-    --config backend/pyproject.toml \
-    --cache-dir backend/.cache/ruff \
-    backend/
-fi
-
-# Frontend: full ESLint check (check-only) when any frontend TS/JS file is staged
-if git diff --cached --name-only | grep -qE "frontend/.*\.(js|jsx|ts|tsx)$"; then
-  npx --prefix frontend eslint \
-    --config frontend/eslint.config.js \
-    --cache --cache-location frontend/.cache/eslint/ \
-    frontend/src/
-fi

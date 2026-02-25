@@ -1,4 +1,4 @@
-import { API_ENDPOINTS, apiFetch } from './config'
+import { API_ENDPOINTS, apiFetch, assertTrustedOAuthUrl } from './config'
 
 export interface LinkedAccount {
   platform: 'twitch' | 'discord'
@@ -37,5 +37,5 @@ export async function openOAuthLink(platform: 'twitch' | 'discord'): Promise<voi
     throw new Error(`Failed to fetch ${platform} OAuth URL`)
   }
   const data = await response.json()
-  window.location.href = data.oauth_url
+  window.location.href = assertTrustedOAuthUrl(data.oauth_url, platform)
 }

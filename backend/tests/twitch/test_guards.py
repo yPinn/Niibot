@@ -25,7 +25,10 @@ def make_chatter(
     """Return a minimal chatter-like object."""
 
     class _Chatter:
-        pass
+        broadcaster: bool
+        moderator: bool
+        vip: bool
+        subscriber: bool
 
     c = _Chatter()
     c.broadcaster = broadcaster
@@ -39,7 +42,7 @@ def make_cooldown_config(cooldown: int | None):
     """Return a minimal config-like object with a cooldown field."""
 
     class _Config:
-        pass
+        cooldown: int | None
 
     c = _Config()
     c.cooldown = cooldown

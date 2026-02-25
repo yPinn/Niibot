@@ -1,4 +1,4 @@
-import { API_ENDPOINTS } from './config'
+import { API_ENDPOINTS, assertTrustedOAuthUrl } from './config'
 
 export interface DiscordOAuthStatus {
   enabled: boolean
@@ -22,7 +22,7 @@ export async function getDiscordOAuthUrl(): Promise<string> {
     throw new Error('Failed to fetch Discord OAuth URL')
   }
   const data = await response.json()
-  return data.oauth_url
+  return assertTrustedOAuthUrl(data.oauth_url, 'discord')
 }
 
 export async function openDiscordOAuth(): Promise<void> {
