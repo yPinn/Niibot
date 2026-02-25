@@ -1,4 +1,5 @@
-FROM ghcr.io/astral-sh/uv:0.10.5-python3.11-bookworm-slim AS builder
+FROM python:3.11.11-slim AS builder
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 ENV UV_LINK_MODE=copy
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
