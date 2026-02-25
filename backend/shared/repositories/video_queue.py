@@ -217,13 +217,14 @@ class VideoQueueRepository:
                 channel_id,
             )
 
-    async def mark_skipped(self, entry_id: int) -> None:
-        """Transition entry to 'skipped'. Applies to 'queued' or 'playing'."""
+    async def mark_skipped(self, entry_id: int, channel_id: str) -> None:
+        """Transition entry to 'skipped'. Only applies to entries owned by the channel."""
         async with self.pool.acquire() as conn:
             await conn.execute(
                 "UPDATE video_queue SET status = 'skipped', ended_at = NOW() "
-                "WHERE id = $1 AND status IN ('queued', 'playing')",
+                "WHERE id = $1 AND channel_id = $2 AND status IN ('queued', 'playing')",
                 entry_id,
+                channel_id,
             )
 
     async def clear_queued(self, channel_id: str) -> int:
@@ -269,14 +270,15 @@ class VideoQueueSettingsRepository:
     async def get_or_create(self, channel_id: str) -> VideoQueueSettings:
         """Get settings for a channel, creating defaults if not exists."""
         async with self.pool.acquire() as conn:
-            await conn.execute(
-                "INSERT INTO video_queue_settings (channel_id) VALUES ($1) ON CONFLICT DO NOTHING",
-                channel_id,
-            )
-            row = await conn.fetchrow(
-                f"SELECT {_SETTINGS_COLUMNS} FROM video_queue_settings WHERE channel_id = $1",
-                channel_id,
-            )
+            async with conn.transaction():
+                await conn.execute(
+                    "INSERT INTO video_queue_settings (channel_id) VALUES ($1) ON CONFLICT DO NOTHING",
+                    channel_id,
+                )
+                row = await conn.fetchrow(
+                    f"SELECT {_SETTINGS_COLUMNS} FROM video_queue_settings WHERE channel_id = $1",
+                    channel_id,
+                )
             return VideoQueueSettings(**dict(row))
 
     async def update_settings(

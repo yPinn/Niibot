@@ -185,7 +185,7 @@ class VideoQueueManagerComponent(commands.Component):
             await ctx.reply("目前沒有正在播放的影片")
             return
 
-        await self.vq_repo.mark_skipped(current.id)
+        await self.vq_repo.mark_skipped(current.id, channel_id)
         queued = await self.vq_repo.get_queued(channel_id)
         if queued:
             await self.vq_repo.set_playing(queued[0].id)
@@ -203,7 +203,7 @@ class VideoQueueManagerComponent(commands.Component):
         channel_id = ctx.channel.id
         current = await self.vq_repo.get_current(channel_id)
         if current:
-            await self.vq_repo.mark_skipped(current.id)
+            await self.vq_repo.mark_skipped(current.id, channel_id)
         count = await self.vq_repo.clear_queued(channel_id)
         total = count + (1 if current else 0)
         await ctx.reply(f"已清空佇列（共 {total} 首）")
@@ -237,7 +237,7 @@ class VideoQueueManagerComponent(commands.Component):
         if not entry:
             await ctx.reply(f"@{user_name} 沒有可移除的請求")
             return
-        await self.vq_repo.mark_skipped(entry.id)
+        await self.vq_repo.mark_skipped(entry.id, channel_id)
         await ctx.reply(f"@{user_name} 已移除「{entry.title or entry.video_id}」")
 
 

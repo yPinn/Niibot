@@ -145,14 +145,15 @@ class GameQueueSettingsRepository:
     async def get_or_create(self, channel_id: str) -> GameQueueSettings:
         """Get settings for a channel, creating defaults if not exists."""
         async with self.pool.acquire() as conn:
-            await conn.execute(
-                "INSERT INTO game_queue_settings (channel_id) VALUES ($1) ON CONFLICT DO NOTHING",
-                channel_id,
-            )
-            row = await conn.fetchrow(
-                f"SELECT {_SETTINGS_COLUMNS} FROM game_queue_settings WHERE channel_id = $1",
-                channel_id,
-            )
+            async with conn.transaction():
+                await conn.execute(
+                    "INSERT INTO game_queue_settings (channel_id) VALUES ($1) ON CONFLICT DO NOTHING",
+                    channel_id,
+                )
+                row = await conn.fetchrow(
+                    f"SELECT {_SETTINGS_COLUMNS} FROM game_queue_settings WHERE channel_id = $1",
+                    channel_id,
+                )
             return GameQueueSettings(**dict(row))
 
     async def update_settings(
