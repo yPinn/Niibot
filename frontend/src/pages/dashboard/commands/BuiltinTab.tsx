@@ -13,6 +13,9 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
 } from '@/components/ui'
 import type { SortState } from '@/hooks/useSortState'
 import { nameSort, ROLE_ORDER } from '@/lib/sort'
@@ -113,15 +116,24 @@ export function BuiltinTab({ commands, sortState, defaults, onToggle, onEdit }: 
           {sorted.map(cmd => (
             <TableRow key={cmd.command_name}>
               <TableCell>
-                <div className="flex flex-col">
+                <div className="flex items-center gap-1.5">
                   <span className="font-mono font-medium">!{cmd.command_name}</span>
                   {cmd.aliases && (
-                    <span className="font-mono text-label text-muted-foreground">
-                      {cmd.aliases
-                        .split(',')
-                        .map(a => `!${a.trim()}`)
-                        .join(' · ')}
-                    </span>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="cursor-default text-muted-foreground">
+                          <Icon icon="fa-solid fa-tags" wrapperClassName="size-3" />
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <span className="font-mono">
+                          {cmd.aliases
+                            .split(',')
+                            .map(a => `!${a.trim()}`)
+                            .join(' · ')}
+                        </span>
+                      </TooltipContent>
+                    </Tooltip>
                   )}
                 </div>
               </TableCell>

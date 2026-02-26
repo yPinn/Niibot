@@ -96,6 +96,9 @@ export default function Commands() {
         case 'usage_count':
           cmp = a.data.usage_count - b.data.usage_count
           break
+        case 'enabled':
+          cmp = Number(a.data.enabled) - Number(b.data.enabled)
+          break
       }
       return sortDir === 'desc' ? -cmp : cmp
     })

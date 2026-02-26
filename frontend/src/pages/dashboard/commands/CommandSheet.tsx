@@ -160,7 +160,7 @@ export function CommandSheet({
           role: cmd.min_role,
           aliases: cmd.aliases || '',
           enabled: cmd.enabled,
-          showAdvanced: cmd.cooldown != null || cmd.min_role !== 'everyone' || !!cmd.aliases,
+          showAdvanced: false,
         },
       })
     } else if (editing.mode === 'edit-trigger') {
@@ -176,7 +176,7 @@ export function CommandSheet({
           caseSensitive: t.case_sensitive,
           priority: String(t.priority),
           enabled: t.enabled,
-          showAdvanced: true,
+          showAdvanced: false,
         },
       })
     }
@@ -296,7 +296,6 @@ export function CommandSheet({
     }
   }
 
-  // Variable chips per context
   const commandVars = [
     { var: '$(user)', desc: '使用者名稱' },
     { var: '$(query)', desc: '使用者輸入' },
@@ -319,7 +318,9 @@ export function CommandSheet({
           <SheetTitle>{sheetTitle()}</SheetTitle>
           <SheetDescription>
             {editing?.mode === 'create'
-              ? '輸入 !name 建立指令，或輸入關鍵字建立自動回應'
+              ? formIsCommand
+                ? '以 ! 開頭建立指令，刪除 ! 可改為建立關鍵字自動回應'
+                : '偵測到此關鍵字時 Bot 自動回應，輸入 ! 開頭可改為建立指令'
               : showTriggerFields
                 ? '修改自動回應設定'
                 : '修改指令設定'}
@@ -327,43 +328,70 @@ export function CommandSheet({
         </SheetHeader>
 
         <div className="flex flex-1 flex-col gap-card overflow-y-auto px-page">
-          {/* Name / Pattern */}
+          {/* ── Name / Pattern ── */}
           {(editing?.mode === 'create' || editing?.mode === 'edit-trigger') && (
             <div className="flex flex-col gap-2">
-              <Label>{editing.mode === 'create' ? '名稱' : '觸發詞'}</Label>
+              <Label>{showTriggerFields ? '觸發詞' : '指令名稱'}</Label>
               <Input
                 value={form.name}
                 onChange={e => dispatch({ type: 'SET', field: 'name', value: e.target.value })}
-                placeholder={editing.mode === 'create' ? '!mycommand 或 GG' : 'GG'}
+                placeholder={showTriggerFields ? '觸發關鍵字' : '!指令名稱'}
                 className="font-mono"
                 autoFocus
               />
               {editing.mode === 'create' && (
                 <span className="text-label text-muted-foreground">
                   {formIsCommand
-                    ? '✓ 將建立為自訂指令（需使用者輸入 !前綴 觸發）'
-                    : '✓ 將建立為自動回應（偵測到關鍵字時自動觸發）'}
+                    ? '使用者在聊天室輸入 !名稱 來觸發此指令'
+                    : '聊天訊息中出現此關鍵字時自動觸發回應'}
                 </span>
               )}
             </div>
           )}
 
-          {/* Response */}
+          {/* ── Match type — trigger primary field ── */}
+          {showTriggerFields && (
+            <div className="flex flex-col gap-2">
+              <Label>比對方式</Label>
+              <Select
+                value={form.matchType}
+                onValueChange={v =>
+                  dispatch({
+                    type: 'SET',
+                    field: 'matchType',
+                    value: v as TriggerConfig['match_type'],
+                  })
+                }
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent position="popper">
+                  <SelectItem value="contains">包含關鍵字</SelectItem>
+                  <SelectItem value="startswith">以關鍵字開頭</SelectItem>
+                  <SelectItem value="exact">完全相符</SelectItem>
+                  <SelectItem value="regex">正規表達式</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {/* ── Response ── */}
           {showResponseField && (
             <div className="flex flex-col gap-2">
-              <Label>回應</Label>
+              <Label>回應內容</Label>
               <Input
                 ref={inputRef}
                 value={form.response}
                 onChange={e => dispatch({ type: 'SET', field: 'response', value: e.target.value })}
-                placeholder={formIsCommand ? '回應文字 或 !指令名 $(query) 重導向' : '$(user) GG！'}
+                placeholder={showTriggerFields ? '$(user) GG！' : '$(user) 你好！'}
                 className="font-mono text-sub"
               />
               <VariableInserter variables={commandVars} onInsert={insertText} />
             </div>
           )}
 
-          {/* Enabled (edit only) */}
+          {/* ── Enabled (edit only) ── */}
           {editing?.mode !== 'create' && (
             <div className="flex items-center justify-between">
               <div className="flex flex-col gap-0.5">
@@ -377,7 +405,7 @@ export function CommandSheet({
             </div>
           )}
 
-          {/* Advanced toggle */}
+          {/* ── Advanced toggle ── */}
           <button
             type="button"
             className="flex cursor-pointer items-center gap-2 text-sub text-muted-foreground transition-colors hover:text-foreground"
@@ -403,56 +431,31 @@ export function CommandSheet({
                     onChange={e =>
                       dispatch({ type: 'SET', field: 'aliases', value: e.target.value })
                     }
-                    placeholder="hello,hey,hi"
+                    placeholder="hi,hey,hello"
                     className="font-mono text-sub"
                   />
                   <span className="text-label text-muted-foreground">
-                    多個別名用逗號分隔，不含 ! 前綴
+                    替代的指令名，自動加上 ! 前綴，多個用逗號分隔
                   </span>
                 </div>
               )}
 
-              {/* Match type + case sensitive — trigger only */}
+              {/* Case sensitive — trigger only */}
               {showTriggerFields && (
-                <>
-                  <div className="flex flex-col gap-2">
-                    <Label>比對方式</Label>
-                    <Select
-                      value={form.matchType}
-                      onValueChange={v =>
-                        dispatch({
-                          type: 'SET',
-                          field: 'matchType',
-                          value: v as TriggerConfig['match_type'],
-                        })
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="contains">包含關鍵字</SelectItem>
-                        <SelectItem value="startswith">以關鍵字開頭</SelectItem>
-                        <SelectItem value="exact">完全相符</SelectItem>
-                        <SelectItem value="regex">正規表達式</SelectItem>
-                      </SelectContent>
-                    </Select>
+                <div className="flex items-center justify-between">
+                  <div className="flex flex-col gap-0.5">
+                    <Label>區分大小寫</Label>
+                    <span className="text-label text-muted-foreground">
+                      開啟後 GG 與 gg 視為不同
+                    </span>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <div className="flex flex-col gap-0.5">
-                      <Label>區分大小寫</Label>
-                      <span className="text-label text-muted-foreground">
-                        開啟後 GG 與 gg 視為不同
-                      </span>
-                    </div>
-                    <Switch
-                      checked={form.caseSensitive}
-                      onCheckedChange={v =>
-                        dispatch({ type: 'SET', field: 'caseSensitive', value: v })
-                      }
-                    />
-                  </div>
-                </>
+                  <Switch
+                    checked={form.caseSensitive}
+                    onCheckedChange={v =>
+                      dispatch({ type: 'SET', field: 'caseSensitive', value: v })
+                    }
+                  />
+                </div>
               )}
 
               {/* Priority — trigger only */}
@@ -467,9 +470,11 @@ export function CommandSheet({
                       dispatch({ type: 'SET', field: 'priority', value: e.target.value })
                     }
                     placeholder="0"
-                    className="w-40"
+                    className="w-24"
                   />
-                  <span className="text-label text-muted-foreground">數字越大優先度越高</span>
+                  <span className="text-label text-muted-foreground">
+                    數字越大越優先觸發，預設為 0
+                  </span>
                 </div>
               )}
 
@@ -484,13 +489,13 @@ export function CommandSheet({
                   onChange={e =>
                     dispatch({ type: 'SET', field: 'cooldown', value: e.target.value })
                   }
-                  placeholder={showTriggerFields ? '建議 30' : `預設: ${defaults.default_cooldown}`}
-                  className="w-40"
+                  placeholder={showTriggerFields ? '30' : String(defaults.default_cooldown)}
+                  className="w-24"
                 />
                 <span className="text-label text-muted-foreground">
                   {showTriggerFields
-                    ? '留空則無冷卻，建議填 30 防洗頻'
-                    : '留空則使用頻道預設冷卻設定'}
+                    ? '留空表示無冷卻限制，建議設定避免重複觸發'
+                    : `留空則套用頻道預設 (${defaults.default_cooldown}s)`}
                 </span>
               </div>
 
@@ -501,10 +506,10 @@ export function CommandSheet({
                   value={form.role}
                   onValueChange={v => dispatch({ type: 'SET', field: 'role', value: v })}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className="w-24">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent position="popper" className="w-24 min-w-0">
                     {Object.entries(ROLE_LABELS).map(([value, label]) => (
                       <SelectItem key={value} value={value}>
                         {label}
@@ -512,6 +517,7 @@ export function CommandSheet({
                     ))}
                   </SelectContent>
                 </Select>
+                <span className="text-label text-muted-foreground">低於此權限的使用者無法觸發</span>
               </div>
             </div>
           )}

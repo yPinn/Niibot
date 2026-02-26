@@ -11,6 +11,9 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
 } from '@/components/ui'
 import type { SortState } from '@/hooks/useSortState'
 
@@ -79,7 +82,15 @@ export function CustomTab({ customRows, sortState, defaults, onToggle, onEdit }:
             >
               使用次數
             </SortableHead>
-            <TableHead className="w-[7%] text-center">狀態</TableHead>
+            <SortableHead
+              className="w-[8%] text-center"
+              sortKey="enabled"
+              currentKey={sortKey}
+              dir={sortDir}
+              onSort={toggleSort}
+            >
+              狀態
+            </SortableHead>
             <TableHead className="w-[7%] text-right">操作</TableHead>
           </TableRow>
         </TableHeader>
@@ -96,22 +107,30 @@ export function CustomTab({ customRows, sortState, defaults, onToggle, onEdit }:
                 row.kind === 'command'
                   ? `cmd:${row.data.command_name}`
                   : `trg:${row.data.trigger_name}`
-              const label =
-                row.kind === 'command' ? `編輯 !${row.data.command_name}` : `編輯觸發器`
+              const label = row.kind === 'command' ? `編輯 !${row.data.command_name}` : `編輯觸發器`
 
               return (
                 <TableRow key={key}>
                   <TableCell>
                     {row.kind === 'command' ? (
-                      <div className="flex flex-col">
+                      <div className="flex items-center gap-1.5">
                         <span className="font-mono font-medium">!{row.data.command_name}</span>
                         {row.data.aliases && (
-                          <span className="font-mono text-label text-muted-foreground">
-                            {row.data.aliases
-                              .split(',')
-                              .map((a: string) => `!${a.trim()}`)
-                              .join(' · ')}
-                          </span>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="cursor-default text-muted-foreground">
+                                <Icon icon="fa-solid fa-tags" wrapperClassName="size-3" />
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <span className="font-mono">
+                                {row.data.aliases
+                                  .split(',')
+                                  .map((a: string) => `!${a.trim()}`)
+                                  .join(' · ')}
+                              </span>
+                            </TooltipContent>
+                          </Tooltip>
                         )}
                       </div>
                     ) : (
@@ -126,9 +145,7 @@ export function CustomTab({ customRows, sortState, defaults, onToggle, onEdit }:
                     )}
                   </TableCell>
                   <TableCell className="max-w-0 truncate text-sub text-muted-foreground">
-                    {row.kind === 'command'
-                      ? (row.data.custom_response ?? '')
-                      : row.data.response}
+                    {row.kind === 'command' ? (row.data.custom_response ?? '') : row.data.response}
                   </TableCell>
                   <TableCell className="text-sub text-muted-foreground">
                     {formatCooldown(row.data.cooldown, defaults)}
@@ -136,15 +153,10 @@ export function CustomTab({ customRows, sortState, defaults, onToggle, onEdit }:
                   <TableCell className="text-sub">
                     {ROLE_LABELS[row.data.min_role] ?? row.data.min_role}
                   </TableCell>
-                  <TableCell className="text-right text-sub text-muted-foreground">
-                    {row.data.usage_count}
-                  </TableCell>
+                  <TableCell className="text-right">{row.data.usage_count}</TableCell>
                   <TableCell className="text-center">
                     <div className="flex justify-center">
-                      <Switch
-                        checked={row.data.enabled}
-                        onCheckedChange={() => onToggle(row)}
-                      />
+                      <Switch checked={row.data.enabled} onCheckedChange={() => onToggle(row)} />
                     </div>
                   </TableCell>
                   <TableCell className="text-right">
