@@ -2,9 +2,11 @@
 
 import asyncio
 import logging
+import os
 import time
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -31,10 +33,13 @@ from routers.bots_router import close_bots_http_client
 
 logger = logging.getLogger(__name__)
 
-# Track server start time
+# Track server start time and build info
 _start_time: float = 0.0
+_started_at: str = ""
 _pool_heartbeat_task: asyncio.Task | None = None
 _db_retry_task: asyncio.Task | None = None
+_APP_VERSION = os.getenv("APP_VERSION", "dev")
+_GIT_COMMIT = os.getenv("GIT_COMMIT", "unknown")
 
 
 async def _pool_heartbeat_loop() -> None:
@@ -111,8 +116,9 @@ async def _db_retry_loop(db_manager) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Handle startup and shutdown"""
-    global _start_time, _pool_heartbeat_task, _db_retry_task
+    global _start_time, _started_at, _pool_heartbeat_task, _db_retry_task
     _start_time = time.time()
+    _started_at = datetime.now(UTC).isoformat()
 
     settings = get_settings()
 
@@ -235,7 +241,9 @@ def create_app() -> FastAPI:
             db_ok = await db_manager.check_health()
         return {
             "service": "niibot-api",
-            "version": "2.0.0",
+            "version": _APP_VERSION,
+            "git_commit": _GIT_COMMIT,
+            "started_at": _started_at,
             "uptime_seconds": int(time.time() - _start_time),
             "db_connected": db_ok,
             "environment": settings.environment,

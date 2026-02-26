@@ -4,9 +4,13 @@ import asyncio
 import logging
 import os
 import time
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from aiohttp import web
+
+_APP_VERSION = os.getenv("APP_VERSION", "dev")
+_GIT_COMMIT = os.getenv("GIT_COMMIT", "unknown")
 
 if TYPE_CHECKING:
     from discord.ext.commands import Bot
@@ -27,6 +31,7 @@ class HealthCheckServer:
         self.app = web.Application()
         self.runner: web.AppRunner | None = None
         self._start_time: float = time.time()
+        self._started_at: str = datetime.now(UTC).isoformat()
         self._heartbeat_task: asyncio.Task | None = None
         self._setup_routes()
 
@@ -51,12 +56,18 @@ class HealthCheckServer:
     async def handle_status(self, request: web.Request) -> web.Response:
         """Status endpoint for API server integration"""
         bot_ready = self.bot is not None and self.bot.is_ready()
+        ws_latency_ms = round(self.bot.latency * 1000) if bot_ready else None
         return web.json_response(
             {
                 "service": "niibot-discord",
-                "bot_id": str(self.bot.user.id) if bot_ready and self.bot.user else None,
+                "version": _APP_VERSION,
+                "git_commit": _GIT_COMMIT,
+                "started_at": self._started_at,
                 "uptime_seconds": int(time.time() - self._start_time),
-                "connected_channels": len(self.bot.guilds) if bot_ready else 0,
+                "bot_id": str(self.bot.user.id) if bot_ready and self.bot.user else None,
+                "ready": bot_ready,
+                "guilds": len(self.bot.guilds) if bot_ready else 0,
+                "ws_latency_ms": ws_latency_ms,
             }
         )
 

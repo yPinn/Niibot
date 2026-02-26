@@ -7,6 +7,7 @@ RUN uv sync --frozen --no-cache --no-install-project --no-dev
 
 FROM python:3.11.11-slim
 ARG APP_VERSION=dev
+ARG GIT_COMMIT=unknown
 LABEL org.opencontainers.image.version=$APP_VERSION \
       org.opencontainers.image.source="https://github.com/yPinn/Niibot"
 WORKDIR /app
@@ -17,7 +18,9 @@ COPY data/ ./data/
 
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONPATH="/app" \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    APP_VERSION=$APP_VERSION \
+    GIT_COMMIT=$GIT_COMMIT
 
 WORKDIR /app/twitch
 EXPOSE 4344

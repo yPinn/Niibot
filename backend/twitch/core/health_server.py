@@ -3,11 +3,14 @@
 import logging
 import os
 import time
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from aiohttp import web
 from twitchio.ext import routines
+
+_APP_VERSION = os.getenv("APP_VERSION", "dev")
+_GIT_COMMIT = os.getenv("GIT_COMMIT", "unknown")
 
 if TYPE_CHECKING:
     from core.bot import Bot
@@ -26,6 +29,7 @@ class HealthCheckServer:
         self.app = web.Application()
         self.runner: web.AppRunner | None = None
         self._start_time: float = time.time()
+        self._started_at: str = datetime.now(UTC).isoformat()
         self._setup_routes()
 
     def _setup_routes(self) -> None:
@@ -48,11 +52,16 @@ class HealthCheckServer:
 
     async def handle_status(self, request: web.Request) -> web.Response:
         """Status endpoint for API server integration"""
+        ready = self.bot is not None and self.bot.bot_id is not None
         return web.json_response(
             {
                 "service": "niibot-twitch",
-                "bot_id": self.bot.bot_id if self.bot else None,
+                "version": _APP_VERSION,
+                "git_commit": _GIT_COMMIT,
+                "started_at": self._started_at,
                 "uptime_seconds": int(time.time() - self._start_time),
+                "bot_id": self.bot.bot_id if self.bot else None,
+                "ready": ready,
                 "connected_channels": len(self.bot._subscribed_channels) if self.bot else 0,
             }
         )

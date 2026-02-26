@@ -29,9 +29,17 @@ class BotStatusResponse(BaseModel):
 
     online: bool
     service: str | None = None
+    version: str | None = None
+    git_commit: str | None = None
+    started_at: str | None = None
     bot_id: str | None = None
     uptime_seconds: int | None = None
+    ready: bool | None = None
+    # Twitch
     connected_channels: int | None = None
+    # Discord
+    guilds: int | None = None
+    ws_latency_ms: int | None = None
 
 
 async def check_bot_health(bot_url: str, bot_name: str) -> BotStatusResponse:
@@ -46,9 +54,15 @@ async def check_bot_health(bot_url: str, bot_name: str) -> BotStatusResponse:
             return BotStatusResponse(
                 online=True,
                 service=data.get("service"),
+                version=data.get("version"),
+                git_commit=data.get("git_commit"),
+                started_at=data.get("started_at"),
                 bot_id=data.get("bot_id"),
                 uptime_seconds=data.get("uptime_seconds"),
+                ready=data.get("ready"),
                 connected_channels=data.get("connected_channels"),
+                guilds=data.get("guilds"),
+                ws_latency_ms=data.get("ws_latency_ms"),
             )
         else:
             logger.warning(f"{bot_name} bot health check returned status {response.status_code}")
