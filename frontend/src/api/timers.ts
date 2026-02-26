@@ -8,6 +8,7 @@ export interface TimerConfig {
   min_lines: number
   message_template: string
   enabled: boolean
+  command_alias: string | null
   created_at: string | null
   updated_at: string | null
 }
@@ -17,6 +18,7 @@ export interface TimerCreate {
   interval_seconds: number
   min_lines?: number
   message_template: string
+  command_alias?: string | null
 }
 
 export interface TimerUpdate {
@@ -24,6 +26,8 @@ export interface TimerUpdate {
   min_lines?: number
   message_template?: string
   enabled?: boolean
+  command_alias?: string | null
+  clear_alias?: boolean
 }
 
 export async function getTimerConfigs(): Promise<TimerConfig[]> {

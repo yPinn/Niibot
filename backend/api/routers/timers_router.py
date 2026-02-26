@@ -30,6 +30,7 @@ class TimerConfigResponse(BaseModel):
     min_lines: int
     message_template: str
     enabled: bool
+    command_alias: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -39,6 +40,7 @@ class TimerCreate(BaseModel):
     interval_seconds: int
     min_lines: int = 5
     message_template: str
+    command_alias: str | None = None
 
 
 class TimerUpdate(BaseModel):
@@ -46,6 +48,8 @@ class TimerUpdate(BaseModel):
     min_lines: int | None = None
     message_template: str | None = None
     enabled: bool | None = None
+    command_alias: str | None = None
+    clear_alias: bool = False
 
 
 class TimerToggle(BaseModel):
@@ -87,6 +91,7 @@ async def create_timer(
             interval_seconds=body.interval_seconds,
             min_lines=body.min_lines,
             message_template=body.message_template,
+            command_alias=body.command_alias,
         )
         logger.info(f"Channel {channel_id} created timer: {body.timer_name}")
         return TimerConfigResponse(**timer)
@@ -114,6 +119,8 @@ async def update_timer(
             min_lines=body.min_lines,
             message_template=body.message_template,
             enabled=body.enabled,
+            command_alias=body.command_alias,
+            clear_alias=body.clear_alias,
         )
         logger.info(f"Channel {channel_id} updated timer: {timer_name}")
         return TimerConfigResponse(**timer)

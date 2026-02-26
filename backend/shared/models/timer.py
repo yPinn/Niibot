@@ -15,5 +15,6 @@ class TimerConfig:
     min_lines: int
     message_template: str
     enabled: bool = True
+    command_alias: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None

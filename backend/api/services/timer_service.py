@@ -31,6 +31,7 @@ class TimerService:
         interval_seconds: int,
         min_lines: int,
         message_template: str,
+        command_alias: str | None = None,
     ) -> dict:
         if interval_seconds < 60:
             raise ValueError("interval_seconds must be at least 60")
@@ -43,6 +44,7 @@ class TimerService:
             min_lines=min_lines,
             message_template=message_template,
             enabled=True,
+            command_alias=command_alias,
         )
         return asdict(cfg)
 
@@ -55,6 +57,8 @@ class TimerService:
         min_lines: int | None = None,
         message_template: str | None = None,
         enabled: bool | None = None,
+        command_alias: str | None = None,
+        clear_alias: bool = False,
     ) -> dict:
         if interval_seconds is not None and interval_seconds < 60:
             raise ValueError("interval_seconds must be at least 60")
@@ -67,6 +71,8 @@ class TimerService:
             min_lines=min_lines,
             message_template=message_template,
             enabled=enabled,
+            command_alias=command_alias,
+            clear_alias=clear_alias,
         )
         return asdict(cfg)
 

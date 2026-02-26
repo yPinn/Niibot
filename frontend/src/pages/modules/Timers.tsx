@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 
 import {
@@ -12,6 +12,7 @@ import {
   updateTimer,
 } from '@/api/timers'
 import { PageHeader } from '@/components/PageHeader'
+import { SortableHead } from '@/components/SortableHead'
 import {
   Button,
   Card,
@@ -38,11 +39,18 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
 } from '@/components/ui'
 import { VariableInserter } from '@/components/VariableInserter'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { useInputInsert } from '@/hooks/useInputInsert'
 import { useOptimisticToggle } from '@/hooks/useOptimisticToggle'
+import { useSortState } from '@/hooks/useSortState'
+import { nameSort } from '@/lib/sort'
+
+type TimerSortKey = 'name' | 'interval' | 'enabled'
 
 function formatInterval(seconds: number): string {
   if (seconds < 60) return `${seconds}s`
@@ -69,8 +77,12 @@ export default function Timers() {
   const [formMinLines, setFormMinLines] = useState('5')
   const [formTemplate, setFormTemplate] = useState('')
   const [formEnabled, setFormEnabled] = useState(true)
+  const [formAlias, setFormAlias] = useState('')
+  const [showAdvanced, setShowAdvanced] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+
+  const timerSort = useSortState<TimerSortKey>('name')
 
   const fetchData = useCallback(async () => {
     try {
@@ -94,6 +106,25 @@ export default function Timers() {
     messages: { on: '計時器已啟用', off: '計時器已停用', error: '切換計時器狀態失敗' },
   })
 
+  const sorted = useMemo(() => {
+    const { sortKey, sortDir } = timerSort
+    return [...timers].sort((a, b) => {
+      let cmp = 0
+      switch (sortKey) {
+        case 'name':
+          cmp = nameSort(a.timer_name, b.timer_name)
+          break
+        case 'interval':
+          cmp = a.interval_seconds - b.interval_seconds
+          break
+        case 'enabled':
+          cmp = Number(a.enabled) - Number(b.enabled)
+          break
+      }
+      return sortDir === 'desc' ? -cmp : cmp
+    })
+  }, [timers, timerSort])
+
   const openCreate = () => {
     setEditing({ mode: 'create', timer: null })
     setFormName('')
@@ -101,6 +132,8 @@ export default function Timers() {
     setFormMinLines('5')
     setFormTemplate('')
     setFormEnabled(true)
+    setFormAlias('')
+    setShowAdvanced(false)
     setSaveError(null)
   }
 
@@ -111,6 +144,8 @@ export default function Timers() {
     setFormMinLines(String(timer.min_lines))
     setFormTemplate(timer.message_template)
     setFormEnabled(timer.enabled)
+    setFormAlias(timer.command_alias ?? '')
+    setShowAdvanced(false)
     setSaveError(null)
   }
 
@@ -133,6 +168,7 @@ export default function Timers() {
         setSaveError('訊息內容不可為空')
         return
       }
+      const aliasValue = formAlias.trim() || null
       if (editing.mode === 'create') {
         if (!formName.trim()) {
           setSaveError('計時器名稱不可為空')
@@ -143,15 +179,19 @@ export default function Timers() {
           interval_seconds: intervalVal,
           min_lines: Number(formMinLines) || 0,
           message_template: formTemplate.trim(),
+          command_alias: aliasValue,
         }
         const created = await createTimer(data)
         setTimers(prev => [...prev, created])
       } else if (editing.timer) {
+        const prevAlias = editing.timer.command_alias
         const data: TimerUpdate = {
           interval_seconds: intervalVal,
           min_lines: Number(formMinLines) || 0,
           message_template: formTemplate.trim(),
           enabled: formEnabled,
+          command_alias: aliasValue,
+          clear_alias: prevAlias !== null && aliasValue === null,
         }
         const updated = await updateTimer(editing.timer.timer_name, data)
         setTimers(prev => prev.map(t => (t.timer_name === updated.timer_name ? updated : t)))
@@ -177,6 +217,8 @@ export default function Timers() {
       toast.error('刪除計時器失敗')
     }
   }
+
+  const { sortKey, sortDir, toggleSort } = timerSort
 
   return (
     <main className="flex flex-1 flex-col gap-section p-page md:p-page-lg">
@@ -209,33 +251,70 @@ export default function Timers() {
               <Table className="table-fixed">
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[22%]">名稱</TableHead>
-                    <TableHead className="w-[12%]">間隔</TableHead>
-                    <TableHead className="w-[10%]">最低行數</TableHead>
+                    <SortableHead
+                      className="w-[24%]"
+                      sortKey="name"
+                      currentKey={sortKey}
+                      dir={sortDir}
+                      onSort={toggleSort}
+                    >
+                      名稱
+                    </SortableHead>
                     <TableHead>訊息內容</TableHead>
-                    <TableHead className="w-[10%] text-center">狀態</TableHead>
+                    <SortableHead
+                      className="w-[12%]"
+                      sortKey="interval"
+                      currentKey={sortKey}
+                      dir={sortDir}
+                      onSort={toggleSort}
+                    >
+                      間隔
+                    </SortableHead>
+                    <SortableHead
+                      className="w-[10%] text-center"
+                      sortKey="enabled"
+                      currentKey={sortKey}
+                      dir={sortDir}
+                      onSort={toggleSort}
+                    >
+                      狀態
+                    </SortableHead>
                     <TableHead className="w-[10%] text-right">操作</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {timers.length === 0 ? (
+                  {sorted.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center text-muted-foreground">
+                      <TableCell colSpan={5} className="text-center text-muted-foreground">
                         尚無計時器，點擊「新增計時器」開始設定
                       </TableCell>
                     </TableRow>
                   ) : (
-                    timers.map(timer => (
+                    sorted.map(timer => (
                       <TableRow key={timer.timer_name}>
-                        <TableCell className="font-mono font-medium">{timer.timer_name}</TableCell>
+                        <TableCell className="font-mono font-medium">
+                          <div className="flex items-center gap-1.5">
+                            <span>{timer.timer_name}</span>
+                            {timer.command_alias && (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="cursor-default text-muted-foreground">
+                                    <Icon icon="fa-solid fa-bolt" wrapperClassName="size-3" />
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <span className="font-mono">!{timer.command_alias}</span>
+                                  <span className="ml-1 text-muted-foreground">可手動觸發</span>
+                                </TooltipContent>
+                              </Tooltip>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="max-w-0 truncate text-sub text-muted-foreground">
+                          {timer.message_template}
+                        </TableCell>
                         <TableCell className="text-sub text-muted-foreground">
                           {formatInterval(timer.interval_seconds)}
-                        </TableCell>
-                        <TableCell className="text-sub text-muted-foreground">
-                          {timer.min_lines} 行
-                        </TableCell>
-                        <TableCell className="text-sub text-muted-foreground truncate max-w-0">
-                          {timer.message_template}
                         </TableCell>
                         <TableCell className="text-center">
                           <div className="flex justify-center">
@@ -278,7 +357,7 @@ export default function Timers() {
             </SheetDescription>
           </SheetHeader>
 
-          <div className="flex flex-col gap-card px-page">
+          <div className="flex flex-1 flex-col gap-card overflow-y-auto px-page">
             {/* Name (create only) */}
             {editing?.mode === 'create' && (
               <div className="flex flex-col gap-2">
@@ -288,9 +367,34 @@ export default function Timers() {
                   onChange={e => setFormName(e.target.value)}
                   placeholder="follow-reminder"
                   className="font-mono"
+                  autoFocus
                 />
+                <span className="text-label text-muted-foreground">
+                  唯一識別名稱，建立後無法修改
+                </span>
               </div>
             )}
+
+            {/* Message Template */}
+            <div className="flex flex-col gap-2">
+              <Label>訊息內容</Label>
+              <Input
+                ref={templateInputRef}
+                value={formTemplate}
+                onChange={e => setFormTemplate(e.target.value)}
+                placeholder="記得追蹤 $(channel)！"
+                className="font-mono text-sub"
+                autoFocus={editing?.mode === 'edit'}
+              />
+              <VariableInserter
+                variables={[
+                  { var: '$(channel)', desc: '頻道名稱' },
+                  { var: '$(random 1,100)', desc: '隨機數字' },
+                  { var: '$(pick a,b,c)', desc: '隨機選擇' },
+                ]}
+                onInsert={insertVariable}
+              />
+            </div>
 
             {/* Interval */}
             <div className="flex flex-col gap-2">
@@ -302,48 +406,11 @@ export default function Timers() {
                 value={formInterval}
                 onChange={e => setFormInterval(e.target.value)}
                 placeholder="900"
-                className="w-40"
+                className="w-24"
               />
               <span className="text-label text-muted-foreground">
-                最少 60 秒（建議 15 分鐘 = 900 秒）
+                最少 60 秒，建議 15 分鐘（900 秒）以上
               </span>
-            </div>
-
-            {/* Min Lines */}
-            <div className="flex flex-col gap-2">
-              <Label>最低聊天行數</Label>
-              <Input
-                type="number"
-                min={0}
-                step={1}
-                value={formMinLines}
-                onChange={e => setFormMinLines(e.target.value)}
-                placeholder="5"
-                className="w-40"
-              />
-              <span className="text-label text-muted-foreground">
-                間隔內聊天行數未達此值時不觸發，設為 0 則停用門檻
-              </span>
-            </div>
-
-            {/* Message Template */}
-            <div className="flex flex-col gap-2">
-              <Label>訊息內容</Label>
-              <Input
-                ref={templateInputRef}
-                value={formTemplate}
-                onChange={e => setFormTemplate(e.target.value)}
-                placeholder="記得追蹤 $(channel)！"
-                className="font-mono text-sub"
-              />
-              <VariableInserter
-                variables={[
-                  { var: '$(channel)', desc: '頻道名稱' },
-                  { var: '$(random 1,100)', desc: '隨機數字' },
-                  { var: '$(pick a,b,c)', desc: '隨機選擇' },
-                ]}
-                onInsert={insertVariable}
-              />
             </div>
 
             {/* Enabled (edit only) */}
@@ -357,10 +424,58 @@ export default function Timers() {
               </div>
             )}
 
+            {/* Advanced toggle */}
+            <button
+              type="button"
+              className="flex cursor-pointer items-center gap-2 text-sub text-muted-foreground transition-colors hover:text-foreground"
+              onClick={() => setShowAdvanced(v => !v)}
+            >
+              <Icon
+                icon={showAdvanced ? 'fa-solid fa-chevron-down' : 'fa-solid fa-chevron-right'}
+                wrapperClassName="size-3"
+              />
+              {showAdvanced ? '隱藏進階設定' : '顯示進階設定'}
+            </button>
+
+            {showAdvanced && (
+              <div className="flex flex-col gap-card border-l-2 border-muted pl-page">
+                {/* Min Lines */}
+                <div className="flex flex-col gap-2">
+                  <Label>最低聊天行數</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={formMinLines}
+                    onChange={e => setFormMinLines(e.target.value)}
+                    placeholder="5"
+                    className="w-24"
+                  />
+                  <span className="text-label text-muted-foreground">
+                    間隔內未達此行數時不發送，設為 0 則停用門檻
+                  </span>
+                </div>
+
+                {/* Command Alias */}
+                <div className="flex flex-col gap-2">
+                  <Label>別名指令</Label>
+                  <Input
+                    value={formAlias}
+                    onChange={e => setFormAlias(e.target.value)}
+                    placeholder="socials"
+                    className="w-40 font-mono"
+                  />
+                  <span className="text-label text-muted-foreground">
+                    設定後可用 !別名 在聊天室手動觸發此計時器，同時重置自動發送計時
+                  </span>
+                </div>
+              </div>
+            )}
+
             {saveError && <p className="text-label text-destructive">{saveError}</p>}
           </div>
 
-          <SheetFooter className="flex-row gap-2">
+          <SheetFooter className="shrink-0 flex-row gap-2">
             {editing?.mode === 'edit' && editing.timer && (
               <Button
                 variant="destructive"

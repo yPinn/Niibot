@@ -8,6 +8,7 @@ import re
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
+import twitchio
 from twitchio.ext import commands, routines
 
 if TYPE_CHECKING:
@@ -96,6 +97,44 @@ class TimerManagerComponent(commands.Component):
                     continue
 
                 await self._fire_timer(channel_id, timer, current_lines, now)
+
+    async def _get_channel_id_by_name(self, channel_name: str) -> str | None:
+        """Resolve a Twitch channel name to an internal channel_id."""
+        for channel_id in list(self.bot._subscribed_channels):
+            record = await self.bot.channels.get_channel(channel_id)
+            if record and record.channel_name == channel_name:
+                return channel_id
+        return None
+
+    @commands.Component.listener()
+    async def event_message(self, message: twitchio.Message) -> None:
+        """Handle timer alias commands — e.g. !socials fires the timer immediately.
+
+        Option B: manual trigger also resets the interval countdown so the timer
+        won't auto-fire again until another full interval has passed.
+        """
+        if not message.text or not message.text.startswith("!"):
+            return
+        cmd_name = message.text.split(None, 1)[0][1:].lower()
+        if not cmd_name:
+            return
+
+        channel_id = await self._get_channel_id_by_name(message.channel.name)
+        if not channel_id:
+            return
+
+        try:
+            timers = await self.bot.timer_configs.list_enabled(channel_id)
+        except Exception as e:
+            LOGGER.warning(f"Alias lookup failed for channel {channel_id}: {e}")
+            return
+
+        for timer in timers:
+            if timer.command_alias and timer.command_alias.lower() == cmd_name:
+                now = datetime.now()
+                current_lines = self.bot._channel_line_counts.get(channel_id, 0)
+                await self._fire_timer(channel_id, timer, current_lines, now)
+                break
 
     async def _fire_timer(self, channel_id: str, timer, current_lines: int, now: datetime) -> None:
         """Send the timer message and record the fire time/line snapshot."""
