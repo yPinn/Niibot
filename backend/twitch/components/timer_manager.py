@@ -107,7 +107,7 @@ class TimerManagerComponent(commands.Component):
         return None
 
     @commands.Component.listener()
-    async def event_message(self, message: twitchio.Message) -> None:
+    async def event_message(self, message: twitchio.ChatMessage) -> None:
         """Handle timer alias commands — e.g. !socials fires the timer immediately.
 
         Option B: manual trigger also resets the interval countdown so the timer
@@ -119,7 +119,7 @@ class TimerManagerComponent(commands.Component):
         if not cmd_name:
             return
 
-        channel_id = await self._get_channel_id_by_name(message.channel.name)
+        channel_id = message.broadcaster.id
         if not channel_id:
             return
 
