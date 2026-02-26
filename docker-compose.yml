@@ -31,6 +31,9 @@ services:
     build:
       context: ./backend
       dockerfile: api/Dockerfile
+      args:
+        APP_VERSION: ${APP_VERSION:-dev}
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
     container_name: niibot-migrate
     command: python /app/scripts/db_migrate.py
     env_file:
@@ -47,6 +50,9 @@ services:
     build:
       context: ./backend
       dockerfile: twitch/Dockerfile
+      args:
+        APP_VERSION: ${APP_VERSION:-dev}
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
     container_name: niibot-twitch
     restart: unless-stopped
     env_file:
@@ -75,6 +81,9 @@ services:
     build:
       context: ./backend
       dockerfile: discord/Dockerfile
+      args:
+        APP_VERSION: ${APP_VERSION:-dev}
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
     container_name: niibot-discord
     restart: unless-stopped
     env_file:
@@ -103,6 +112,9 @@ services:
     build:
       context: ./backend
       dockerfile: api/Dockerfile
+      args:
+        APP_VERSION: ${APP_VERSION:-dev}
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
     container_name: niibot-api
     restart: unless-stopped
     ports:

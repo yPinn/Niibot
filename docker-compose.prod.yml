@@ -1,0 +1,23 @@
+# Production override — pull pre-built images from ghcr.io
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Required env vars (set in VPS shell or .env):
+#   APP_VERSION  — e.g. v1.2.3 (default: latest)
+#   GHCR_OWNER   — github username lowercase (default: ypinn)
+
+services:
+  migrate:
+    image: ghcr.io/${GHCR_OWNER:-ypinn}/niibot-api:${APP_VERSION:-latest}
+    build: !reset {}
+
+  twitch-bot:
+    image: ghcr.io/${GHCR_OWNER:-ypinn}/niibot-twitch:${APP_VERSION:-latest}
+    build: !reset {}
+
+  discord-bot:
+    image: ghcr.io/${GHCR_OWNER:-ypinn}/niibot-discord:${APP_VERSION:-latest}
+    build: !reset {}
+
+  api:
+    image: ghcr.io/${GHCR_OWNER:-ypinn}/niibot-api:${APP_VERSION:-latest}
+    build: !reset {}
