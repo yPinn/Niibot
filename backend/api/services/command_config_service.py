@@ -45,13 +45,11 @@ class CommandConfigService:
     # ---- Command configs ----
 
     async def list_commands(self, channel_id: str) -> list[dict]:
-        """Get command configs with usage counts from command_stats."""
+        """Get command configs with all-time usage counts from command_configs."""
         configs = await self.cmd_repo.ensure_defaults(channel_id)
-        counts = await self._get_command_usage_counts(channel_id)
         return [
             {
                 **asdict(cfg),
-                "usage_count": counts.get(f"!{cfg.command_name}", 0),
                 "description": BUILTIN_DESCRIPTIONS.get(cfg.command_name, "")
                 if cfg.command_type == "builtin"
                 else "",
@@ -80,14 +78,12 @@ class CommandConfigService:
             min_role=min_role,
             aliases=aliases,
         )
-        counts = await self._get_command_usage_counts(channel_id)
-        return {**asdict(cfg), "usage_count": counts.get(f"!{cfg.command_name}", 0)}
+        return asdict(cfg)
 
     async def toggle_command(self, channel_id: str, command_name: str, enabled: bool) -> dict:
         """Toggle a command's enabled state."""
         cfg = await self.cmd_repo.upsert_config(channel_id, command_name, enabled=enabled)
-        counts = await self._get_command_usage_counts(channel_id)
-        return {**asdict(cfg), "usage_count": counts.get(f"!{cfg.command_name}", 0)}
+        return asdict(cfg)
 
     async def create_custom_command(
         self,
@@ -110,21 +106,11 @@ class CommandConfigService:
             min_role=min_role,
             aliases=aliases,
         )
-        return {**asdict(cfg), "usage_count": 0}
+        return asdict(cfg)
 
     async def delete_custom_command(self, channel_id: str, command_name: str) -> bool:
         """Delete a custom command. Returns True if deleted."""
         return await self.cmd_repo.delete_config(channel_id, command_name)
-
-    async def _get_command_usage_counts(self, channel_id: str) -> dict[str, int]:
-        """Sum usage_count per command_name across all sessions."""
-        async with self.pool.acquire() as conn:
-            rows = await conn.fetch(
-                "SELECT command_name, SUM(usage_count)::int as total "
-                "FROM command_stats WHERE channel_id = $1 GROUP BY command_name",
-                channel_id,
-            )
-            return {row["command_name"]: row["total"] for row in rows}
 
     # ---- Public commands ----
 

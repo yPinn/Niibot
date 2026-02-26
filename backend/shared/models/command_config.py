@@ -19,6 +19,7 @@ class CommandConfig:
     cooldown: int | None = None  # NULL = use channel default
     min_role: str = "everyone"  # 'everyone' | 'subscriber' | 'vip' | 'moderator' | 'broadcaster'
     aliases: str | None = None  # Comma-separated alias names, e.g. "hello,嗨"
+    usage_count: int = 0
     created_at: datetime | None = None
     updated_at: datetime | None = None
 

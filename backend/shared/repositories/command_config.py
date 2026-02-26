@@ -22,7 +22,7 @@ _redemption_cache = AsyncTTLCache(maxsize=64, ttl=3600)
 _CMD_COLUMNS = (
     "id, channel_id, command_name, command_type, enabled, "
     "custom_response, cooldown, "
-    "min_role, aliases, created_at, updated_at"
+    "min_role, aliases, usage_count, created_at, updated_at"
 )
 
 # Builtin commands — populated at runtime by the bot from component COMMANDS declarations.
@@ -198,6 +198,16 @@ class CommandConfigRepository:
                 return result
 
         return await _retry_on_db_error(_query)
+
+    async def increment_usage_count(self, channel_id: str, command_name: str) -> None:
+        """Increment usage_count for a command by 1. Does not invalidate cache."""
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE command_configs SET usage_count = usage_count + 1 "
+                "WHERE channel_id = $1 AND command_name = $2",
+                channel_id,
+                command_name,
+            )
 
     async def delete_config(self, channel_id: str, command_name: str) -> bool:
         """Delete a command config (custom commands only). Returns True if deleted."""
