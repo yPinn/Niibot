@@ -93,7 +93,7 @@ class TestVerifyTokenInvalid:
         assert service.verify_token("not.a.jwt.at.all") is None
 
     def test_returns_none_for_wrong_secret(self, service: AuthService):
-        other = AuthService(secret_key="completely-different-secret")
+        other = AuthService(secret_key="completely-different-secret-32bytes")
         token = other.create_access_token("u", "twitch", "1")
         assert service.verify_token(token) is None
 
