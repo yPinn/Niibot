@@ -351,9 +351,7 @@ export default function Timers() {
               {editing?.mode === 'create' ? '新增計時器' : `編輯 ${editing?.timer?.timer_name}`}
             </SheetTitle>
             <SheetDescription>
-              {editing?.mode === 'create'
-                ? '建立定時訊息，僅在直播中且達到最低行數後觸發'
-                : '修改計時器設定'}
+              {editing?.mode === 'create' ? '直播進行中按設定間隔自動發送訊息' : '修改計時器設定'}
             </SheetDescription>
           </SheetHeader>
 
@@ -418,7 +416,7 @@ export default function Timers() {
               <div className="flex items-center justify-between">
                 <div className="flex flex-col gap-0.5">
                   <Label>啟用</Label>
-                  <span className="text-label text-muted-foreground">關閉後計時器不會觸發</span>
+                  <span className="text-label text-muted-foreground">關閉後不會觸發</span>
                 </div>
                 <Switch checked={formEnabled} onCheckedChange={setFormEnabled} />
               </div>
@@ -452,21 +450,21 @@ export default function Timers() {
                     className="w-24"
                   />
                   <span className="text-label text-muted-foreground">
-                    間隔內未達此行數時不發送，設為 0 則停用門檻
+                    低於此值時跳過，0 則不限制
                   </span>
                 </div>
 
                 {/* Command Alias */}
                 <div className="flex flex-col gap-2">
-                  <Label>別名指令</Label>
+                  <Label>別名</Label>
                   <Input
                     value={formAlias}
                     onChange={e => setFormAlias(e.target.value)}
                     placeholder="socials"
-                    className="w-40 font-mono"
+                    className="font-mono text-sub"
                   />
                   <span className="text-label text-muted-foreground">
-                    設定後可用 !別名 在聊天室手動觸發此計時器，同時重置自動發送計時
+                    用 !別名 手動觸發，同時重置自動計時
                   </span>
                 </div>
               </div>

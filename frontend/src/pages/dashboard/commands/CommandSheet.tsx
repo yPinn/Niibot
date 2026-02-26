@@ -319,8 +319,8 @@ export function CommandSheet({
           <SheetDescription>
             {editing?.mode === 'create'
               ? formIsCommand
-                ? '以 ! 開頭建立指令，刪除 ! 可改為建立關鍵字自動回應'
-                : '偵測到此關鍵字時 Bot 自動回應，輸入 ! 開頭可改為建立指令'
+                ? '以 ! 開頭建立指令；不加 ! 則建立自動回應'
+                : '偵測到關鍵字時自動回應；加上 ! 可改為建立指令'
               : showTriggerFields
                 ? '修改自動回應設定'
                 : '修改指令設定'}
@@ -341,9 +341,7 @@ export function CommandSheet({
               />
               {editing.mode === 'create' && (
                 <span className="text-label text-muted-foreground">
-                  {formIsCommand
-                    ? '使用者在聊天室輸入 !名稱 來觸發此指令'
-                    : '聊天訊息中出現此關鍵字時自動觸發回應'}
+                  {formIsCommand ? '聊天室輸入 !名稱 觸發' : '訊息包含此關鍵字時觸發'}
                 </span>
               )}
             </div>
@@ -435,7 +433,7 @@ export function CommandSheet({
                     className="font-mono text-sub"
                   />
                   <span className="text-label text-muted-foreground">
-                    替代的指令名，自動加上 ! 前綴，多個用逗號分隔
+                    多個用逗號分隔，自動加 ! 前綴
                   </span>
                 </div>
               )}
@@ -472,9 +470,7 @@ export function CommandSheet({
                     placeholder="0"
                     className="w-24"
                   />
-                  <span className="text-label text-muted-foreground">
-                    數字越大越優先觸發，預設為 0
-                  </span>
+                  <span className="text-label text-muted-foreground">越大越優先，預設 0</span>
                 </div>
               )}
 
@@ -494,7 +490,7 @@ export function CommandSheet({
                 />
                 <span className="text-label text-muted-foreground">
                   {showTriggerFields
-                    ? '留空表示無冷卻限制，建議設定避免重複觸發'
+                    ? '留空則無限制'
                     : `留空則套用頻道預設 (${defaults.default_cooldown}s)`}
                 </span>
               </div>

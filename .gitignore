@@ -103,3 +103,7 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+*.bak
+
+# Task tracking (session-specific, lessons.md should be tracked)
+tasks/todo.md
