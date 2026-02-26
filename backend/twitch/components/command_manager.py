@@ -200,73 +200,140 @@ class CommandManagerComponent(commands.Component):
 
     @cmd.command(name="e")
     async def cmd_edit(self, ctx: commands.Context["Bot"], *, args: str | None = None) -> None:
-        """Edit a custom command."""
+        """Edit a custom command or trigger."""
         if not ctx.chatter.moderator and not ctx.chatter.broadcaster:  # type: ignore[attr-defined]
             return
 
         if not args or not args.strip():
-            await ctx.reply("用法: !cmd e !指令名 [選項] [新回覆文字]")
+            await ctx.reply("用法: !cmd e !指令名 [選項] / !cmd e 觸發詞 [選項] [新回覆文字]")
             return
 
         parts = args.strip().split(maxsplit=1)
-        cmd_name = parts[0].lstrip("!").lower()
+        first = parts[0]
         remaining = parts[1] if len(parts) > 1 else ""
-
-        if not cmd_name:
-            await ctx.reply("用法: !cmd e !指令名 [選項] [新回覆文字]")
-            return
-
+        is_command = first.startswith("!")
         channel_id = str(ctx.channel.id)
-        existing = await self.cmd_repo.get_config(channel_id, cmd_name)
-        if not existing or existing.command_type != "custom":
-            await ctx.reply(f"找不到自訂指令 !{cmd_name}，僅能編輯自訂指令")
-            return
-
         options, response_text = _parse_args(remaining)
 
-        # Build update kwargs (only include provided values)
-        kwargs: dict = {}
-        if "cd" in options:
-            kwargs["cooldown"] = int(options["cd"])
-        if "role" in options:
-            kwargs["min_role"] = ROLE_ALIASES.get(options["role"].lower(), "everyone")
-        if "alias" in options:
-            kwargs["aliases"] = options["alias"]
-        if "enable" in options:
-            enabled = _parse_bool(options["enable"])
-            if enabled is None:
-                await ctx.reply("無效的 -enable 值，請使用 on/off")
+        if is_command:
+            cmd_name = first.lstrip("!").lower()
+            if not cmd_name:
+                await ctx.reply("用法: !cmd e !指令名 [選項] [新回覆文字]")
                 return
-            kwargs["enabled"] = enabled
-        if response_text:
-            kwargs["custom_response"] = response_text
 
-        if not kwargs:
-            await ctx.reply("請提供要修改的內容，如 -cd=N / -enable=on / 新回覆文字")
-            return
+            existing = await self.cmd_repo.get_config(channel_id, cmd_name)
+            if not existing or existing.command_type != "custom":
+                await ctx.reply(f"找不到自訂指令 !{cmd_name}，僅能編輯自訂指令")
+                return
 
-        config = await self.cmd_repo.upsert_config(
-            channel_id,
-            cmd_name,
-            command_type="custom",
-            **kwargs,
-        )
+            kwargs: dict = {}
+            if "cd" in options:
+                kwargs["cooldown"] = int(options["cd"])
+            if "role" in options:
+                kwargs["min_role"] = ROLE_ALIASES.get(options["role"].lower(), "everyone")
+            if "alias" in options:
+                kwargs["aliases"] = options["alias"]
+            if "enable" in options:
+                enabled = _parse_bool(options["enable"])
+                if enabled is None:
+                    await ctx.reply("無效的 -enable 值，請使用 on/off")
+                    return
+                kwargs["enabled"] = enabled
+            if response_text:
+                kwargs["custom_response"] = response_text
 
-        changes = []
-        if response_text:
-            preview = response_text[:25] + ("…" if len(response_text) > 25 else "")
-            changes.append(f"回覆: {preview}")
-        if "cd" in options:
-            changes.append(f"冷卻: {config.cooldown}s")
-        if "role" in options:
-            changes.append(f"權限: {config.min_role}")
-        if "alias" in options:
-            changes.append(f"別名: {config.aliases}")
-        if "enable" in options:
-            changes.append("啟用" if config.enabled else "停用")
+            if not kwargs:
+                await ctx.reply("請提供要修改的內容，如 -cd=N / -enable=on / 新回覆文字")
+                return
 
-        await ctx.reply(f"已更新 !{cmd_name} — {' | '.join(changes)}")
-        LOGGER.info(f"Command edited: !{cmd_name} by {ctx.chatter.name}")
+            config = await self.cmd_repo.upsert_config(
+                channel_id, cmd_name, command_type="custom", **kwargs
+            )
+
+            changes = []
+            if response_text:
+                preview = response_text[:25] + ("…" if len(response_text) > 25 else "")
+                changes.append(f"回覆: {preview}")
+            if "cd" in options:
+                changes.append(f"冷卻: {config.cooldown}s")
+            if "role" in options:
+                changes.append(f"權限: {config.min_role}")
+            if "alias" in options:
+                changes.append(f"別名: {config.aliases}")
+            if "enable" in options:
+                changes.append("啟用" if config.enabled else "停用")
+
+            await ctx.reply(f"已更新 !{cmd_name} — {' | '.join(changes)}")
+            LOGGER.info(f"Command edited: !{cmd_name} by {ctx.chatter.name}")
+
+        else:
+            # Edit trigger by pattern
+            pattern = first
+            trigger_name = _sanitize_trigger_name(pattern)
+            existing_trigger = await self.bot.message_trigger_configs.get_by_name(
+                channel_id, trigger_name
+            )
+            if not existing_trigger:
+                await ctx.reply(f"找不到觸發詞：{pattern}")
+                return
+
+            tkwargs: dict = {}
+            if "cd" in options:
+                tkwargs["cooldown"] = int(options["cd"])
+            if "role" in options:
+                tkwargs["min_role"] = ROLE_ALIASES.get(options["role"].lower(), "everyone")
+            if "match" in options:
+                if options["match"] not in _MATCH_TYPES:
+                    await ctx.reply(f"無效的 -match 值，請使用: {', '.join(_MATCH_TYPES)}")
+                    return
+                tkwargs["match_type"] = options["match"]
+            if "cs" in options:
+                cs = _parse_bool(options["cs"])
+                if cs is None:
+                    await ctx.reply("無效的 -cs 值，請使用 on/off")
+                    return
+                tkwargs["case_sensitive"] = cs
+            if "enable" in options:
+                enabled_t = _parse_bool(options["enable"])
+                if enabled_t is None:
+                    await ctx.reply("無效的 -enable 值，請使用 on/off")
+                    return
+                tkwargs["enabled"] = enabled_t
+            if response_text:
+                tkwargs["response"] = response_text
+
+            if not tkwargs:
+                await ctx.reply("請提供要修改的內容，如 -cd=N / -enable=on / 新回覆文字")
+                return
+
+            # Only pass fields being changed; None → COALESCE keeps existing DB value
+            await self.bot.message_trigger_configs.upsert(
+                channel_id,
+                trigger_name,
+                match_type=tkwargs.get("match_type"),
+                case_sensitive=tkwargs.get("case_sensitive"),
+                response=tkwargs.get("response"),
+                min_role=tkwargs.get("min_role"),
+                cooldown=tkwargs.get("cooldown"),
+                enabled=tkwargs.get("enabled"),
+            )
+
+            changes = []
+            if response_text:
+                preview = response_text[:25] + ("…" if len(response_text) > 25 else "")
+                changes.append(f"回覆: {preview}")
+            if "cd" in options:
+                changes.append(f"冷卻: {options['cd']}s")
+            if "role" in options:
+                changes.append(f"權限: {options['role']}")
+            if "match" in options:
+                changes.append(f"比對: {options['match']}")
+            if "enable" in options:
+                val = _parse_bool(options["enable"])
+                changes.append("啟用" if val else "停用")
+
+            await ctx.reply(f"已更新觸發 {pattern} — {' | '.join(changes)}")
+            LOGGER.info(f"Trigger edited: '{pattern}' by {ctx.chatter.name}")
 
     @cmd.command(name="d")
     async def cmd_delete(self, ctx: commands.Context["Bot"], *, args: str | None = None) -> None:

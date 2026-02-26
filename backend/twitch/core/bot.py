@@ -197,10 +197,15 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
                 )
                 return
 
-            # Track chatter message count in-memory (only during active sessions)
             channel_id = payload.broadcaster.id
             chatter_id = payload.chatter.id
-            if chatter_id != self.bot_id and channel_id in self._active_sessions:
+
+            # Ignore bot's own messages — prevents self-triggering loops
+            if chatter_id == self.bot_id:
+                return
+
+            # Track chatter message count in-memory (only during active sessions)
+            if channel_id in self._active_sessions:
                 buf = self._chatter_buffers.setdefault(channel_id, {})
                 if chatter_id in buf:
                     buf[chatter_id]["count"] += 1

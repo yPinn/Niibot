@@ -30,7 +30,12 @@ class _MessageRouterMixin:
         """Check enabled triggers for the channel and respond to first match.
 
         Returns True if a trigger fired (caller should stop further processing).
+        Only responds to top-level messages — ignores replies to other messages.
         """
+        # Skip sub-comments: triggers should not react to reply threads
+        if payload.reply is not None:
+            return False
+
         channel_id = payload.broadcaster.id
         text = payload.text or ""
 
@@ -135,6 +140,9 @@ class _MessageRouterMixin:
             redirect = response[1:].replace("$(query)", query).strip()
             payload.text = f"!{redirect}"
             LOGGER.info(f"Custom command: !{cmd_name} -> !{redirect}")
+            asyncio.create_task(
+                self.command_configs.increment_usage_count(channel_id, config.command_name)  # type: ignore[attr-defined]
+            )
             return False
         else:
             response = _substitute_variables(
@@ -147,4 +155,7 @@ class _MessageRouterMixin:
                 reply_to_message_id=str(payload.id),
             )
             LOGGER.info(f"Custom command: !{cmd_name} -> text response")
+            asyncio.create_task(
+                self.command_configs.increment_usage_count(channel_id, config.command_name)  # type: ignore[attr-defined]
+            )
             return True

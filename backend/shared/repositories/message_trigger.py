@@ -34,6 +34,17 @@ class MessageTriggerRepository:
             )
             return [MessageTriggerConfig(**dict(row)) for row in rows]
 
+    async def get_by_name(self, channel_id: str, trigger_name: str) -> MessageTriggerConfig | None:
+        """Fetch a single trigger by channel_id + trigger_name."""
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"SELECT {_COLUMNS} FROM message_triggers "
+                "WHERE channel_id = $1 AND trigger_name = $2",
+                channel_id,
+                trigger_name,
+            )
+            return MessageTriggerConfig(**dict(row)) if row else None
+
     async def list_all(self, channel_id: str) -> list[MessageTriggerConfig]:
         """Return all triggers for a channel (enabled + disabled)."""
         async with self.pool.acquire() as conn:
