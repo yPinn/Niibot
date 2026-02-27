@@ -20,5 +20,6 @@ class MessageTriggerConfig:
     priority: int
     enabled: bool = True
     usage_count: int = 0
+    aliases: str | None = None  # Comma-separated alternative patterns, e.g. "gg,GG,好耶"
     created_at: datetime | None = None
     updated_at: datetime | None = None

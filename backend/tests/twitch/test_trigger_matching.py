@@ -12,6 +12,7 @@ def make_trigger(
     pattern: str,
     match_type: str,
     case_sensitive: bool = False,
+    aliases: str | None = None,
 ):
     """Return a minimal TriggerLike object."""
 
@@ -19,11 +20,13 @@ def make_trigger(
         pattern: str
         match_type: str
         case_sensitive: bool
+        aliases: str | None
 
     t = _T()
     t.pattern = pattern
     t.match_type = match_type
     t.case_sensitive = case_sensitive
+    t.aliases = aliases
     return t
 
 

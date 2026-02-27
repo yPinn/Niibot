@@ -45,6 +45,7 @@ interface FormState {
   cooldown: string
   role: string
   aliases: string
+  triggerAliases: string
   matchType: TriggerConfig['match_type']
   caseSensitive: boolean
   priority: string
@@ -88,6 +89,7 @@ const initialForm: FormState = {
   cooldown: '5',
   role: 'everyone',
   aliases: '',
+  triggerAliases: '',
   matchType: 'startswith',
   caseSensitive: false,
   priority: '0',
@@ -176,6 +178,7 @@ export function CommandSheet({
           caseSensitive: t.case_sensitive,
           priority: String(t.priority),
           enabled: t.enabled,
+          triggerAliases: t.aliases || '',
           showAdvanced: false,
         },
       })
@@ -238,6 +241,7 @@ export function CommandSheet({
             min_role: form.role,
             cooldown: parseCooldown(form.cooldown),
             priority: Number(form.priority) || 0,
+            aliases: form.triggerAliases.trim() || null,
           })
           onSaved({ triggers: [created] })
         }
@@ -264,6 +268,7 @@ export function CommandSheet({
           cooldown: parseCooldown(form.cooldown),
           priority: Number(form.priority) || 0,
           enabled: form.enabled,
+          aliases: form.triggerAliases.trim() || null,
         })
         onSaved({ triggers: [updated] })
       }
@@ -438,8 +443,26 @@ export function CommandSheet({
                 </div>
               )}
 
-              {/* Case sensitive — trigger only */}
+              {/* Trigger aliases — trigger only */}
               {showTriggerFields && (
+                <div className="flex flex-col gap-2">
+                  <Label>觸發別名</Label>
+                  <Input
+                    value={form.triggerAliases}
+                    onChange={e =>
+                      dispatch({ type: 'SET', field: 'triggerAliases', value: e.target.value })
+                    }
+                    placeholder="gg,GG,好耶"
+                    className="font-mono text-sub"
+                  />
+                  <span className="text-label text-muted-foreground">
+                    多個用逗號分隔，任一符合即觸發
+                  </span>
+                </div>
+              )}
+
+              {/* Case sensitive — trigger only, hidden for regex (regex handles its own case via flags) */}
+              {showTriggerFields && form.matchType !== 'regex' && (
                 <div className="flex items-center justify-between">
                   <div className="flex flex-col gap-0.5">
                     <Label>區分大小寫</Label>

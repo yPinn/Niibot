@@ -35,19 +35,21 @@ class MessageTriggerResponse(BaseModel):
     priority: int
     enabled: bool
     usage_count: int = 0
+    aliases: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
 
 class TriggerCreate(BaseModel):
     trigger_name: str
-    match_type: str = "contains"
+    match_type: str = "startswith"
     pattern: str
     case_sensitive: bool = False
     response: str
     min_role: str = "everyone"
     cooldown: int | None = None
     priority: int = 0
+    aliases: str | None = None
 
 
 class TriggerUpdate(BaseModel):
@@ -59,6 +61,7 @@ class TriggerUpdate(BaseModel):
     cooldown: int | None = None
     priority: int | None = None
     enabled: bool | None = None
+    aliases: str | None = None
 
 
 class TriggerToggle(BaseModel):
@@ -104,6 +107,7 @@ async def create_trigger(
             min_role=body.min_role,
             cooldown=body.cooldown,
             priority=body.priority,
+            aliases=body.aliases or None,
         )
         logger.info(f"Channel {channel_id} created trigger: {body.trigger_name}")
         return MessageTriggerResponse(**trigger)
@@ -135,6 +139,7 @@ async def update_trigger(
             cooldown=body.cooldown,
             priority=body.priority,
             enabled=body.enabled,
+            aliases=body.aliases,
         )
         logger.info(f"Channel {channel_id} updated trigger: {trigger_name}")
         return MessageTriggerResponse(**trigger)

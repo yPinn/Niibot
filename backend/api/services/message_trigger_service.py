@@ -36,6 +36,7 @@ class MessageTriggerService:
         min_role: str = "everyone",
         cooldown: int | None = None,
         priority: int = 0,
+        aliases: str | None = None,
     ) -> dict:
         if match_type not in VALID_MATCH_TYPES:
             raise ValueError(f"Invalid match_type: {match_type}")
@@ -52,6 +53,7 @@ class MessageTriggerService:
             cooldown=cooldown,
             priority=priority,
             enabled=True,
+            aliases=aliases or None,
         )
         return asdict(cfg)
 
@@ -68,6 +70,7 @@ class MessageTriggerService:
         cooldown: int | None = None,
         priority: int | None = None,
         enabled: bool | None = None,
+        aliases: str | None = None,
     ) -> dict:
         if match_type is not None and match_type not in VALID_MATCH_TYPES:
             raise ValueError(f"Invalid match_type: {match_type}")
@@ -84,6 +87,7 @@ class MessageTriggerService:
             cooldown=cooldown,
             priority=priority,
             enabled=enabled,
+            aliases=aliases,
         )
         return asdict(cfg)
 

@@ -13,6 +13,7 @@ export interface TriggerConfig {
   priority: number
   enabled: boolean
   usage_count: number
+  aliases: string | null
   created_at: string | null
   updated_at: string | null
 }
@@ -26,6 +27,7 @@ export interface TriggerCreate {
   min_role?: string
   cooldown?: number | null
   priority?: number
+  aliases?: string | null
 }
 
 export interface TriggerUpdate {
@@ -37,6 +39,7 @@ export interface TriggerUpdate {
   cooldown?: number | null
   priority?: number
   enabled?: boolean
+  aliases?: string | null
 }
 
 export async function getTriggerConfigs(): Promise<TriggerConfig[]> {

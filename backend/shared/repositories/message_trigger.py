@@ -11,7 +11,7 @@ _trigger_list_cache = AsyncTTLCache(maxsize=32, ttl=3600)
 
 _COLUMNS = (
     "id, channel_id, trigger_name, match_type, pattern, case_sensitive, "
-    "response, min_role, cooldown, priority, enabled, usage_count, created_at, updated_at"
+    "response, min_role, cooldown, priority, enabled, usage_count, aliases, created_at, updated_at"
 )
 
 
@@ -68,6 +68,7 @@ class MessageTriggerRepository:
         cooldown: int | None = None,
         priority: int | None = None,
         enabled: bool | None = None,
+        aliases: str | None = None,
     ) -> MessageTriggerConfig:
         """Insert or update a trigger. Invalidates list cache."""
         async with self.pool.acquire() as conn:
@@ -75,12 +76,12 @@ class MessageTriggerRepository:
                 f"""
                 INSERT INTO message_triggers
                     (channel_id, trigger_name, match_type, pattern, case_sensitive,
-                     response, min_role, cooldown, priority, enabled)
+                     response, min_role, cooldown, priority, enabled, aliases)
                 VALUES
                     ($1, $2,
-                     COALESCE($3, 'contains'), COALESCE($4, ''), COALESCE($5, FALSE),
+                     COALESCE($3, 'startswith'), COALESCE($4, ''), COALESCE($5, FALSE),
                      COALESCE($6, ''), COALESCE($7, 'everyone'), $8,
-                     COALESCE($9, 0), COALESCE($10, TRUE))
+                     COALESCE($9, 0), COALESCE($10, TRUE), $11)
                 ON CONFLICT (channel_id, trigger_name) DO UPDATE SET
                     match_type     = COALESCE($3, message_triggers.match_type),
                     pattern        = COALESCE($4, message_triggers.pattern),
@@ -89,7 +90,8 @@ class MessageTriggerRepository:
                     min_role       = COALESCE($7, message_triggers.min_role),
                     cooldown       = COALESCE($8, message_triggers.cooldown),
                     priority       = COALESCE($9, message_triggers.priority),
-                    enabled        = COALESCE($10, message_triggers.enabled)
+                    enabled        = COALESCE($10, message_triggers.enabled),
+                    aliases        = $11
                 RETURNING {_COLUMNS}
                 """,
                 channel_id,
@@ -102,6 +104,7 @@ class MessageTriggerRepository:
                 cooldown,
                 priority,
                 enabled,
+                aliases,
             )
             result = MessageTriggerConfig(**dict(row))
             _trigger_list_cache.invalidate(f"trigger_list:{channel_id}")
