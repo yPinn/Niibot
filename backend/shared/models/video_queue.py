@@ -14,7 +14,7 @@ class VideoQueueEntry:
     channel_id: str
     video_id: str
     requested_by: str
-    source: str  # 'chat' | 'redemption'
+    source: str  # 'chat' | 'redemption' | 'dashboard'
     status: str  # 'queued' | 'playing' | 'done' | 'skipped'
     title: str | None = None
     duration_seconds: int | None = None
@@ -32,5 +32,6 @@ class VideoQueueSettings:
     min_role_chat: str = "everyone"
     max_duration_seconds: int = 600
     max_queue_size: int = 20
+    min_view_count: int = 0  # 0 = no restriction
     created_at: datetime | None = None
     updated_at: datetime | None = None

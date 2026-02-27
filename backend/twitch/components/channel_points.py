@@ -342,9 +342,30 @@ class ChannelPointsComponent(commands.Component):
                 )
                 return
 
-            title, duration_seconds = await fetch_yt_info(
+            title, duration_seconds, view_count = await fetch_yt_info(
                 video_id, self.settings.youtube_api_key, self._session
             )
+
+            # View count check — if threshold is set and API failed to return view_count,
+            # reject rather than silently bypassing the filter.
+            if settings.min_view_count > 0:
+                if view_count is None:
+                    await broadcaster.send_message(
+                        message=f"@{user_name} 無法驗證影片資訊，請稍後再試",
+                        sender=self.bot.bot_id,
+                        token_for=self.bot.bot_id,
+                    )
+                    return
+                if view_count < settings.min_view_count:
+                    await broadcaster.send_message(
+                        message=(
+                            f"@{user_name} 影片觀看次數不足（{view_count:,} 次 < "
+                            f"{settings.min_view_count:,} 次），無法加入佇列"
+                        ),
+                        sender=self.bot.bot_id,
+                        token_for=self.bot.bot_id,
+                    )
+                    return
 
             if duration_seconds and duration_seconds > settings.max_duration_seconds:
                 max_m, max_s = divmod(settings.max_duration_seconds, 60)
@@ -366,9 +387,16 @@ class ChannelPointsComponent(commands.Component):
                 title=title,
                 duration_seconds=duration_seconds,
             )
-            position = queue_size + 1
+            position = await self.vq_repo.get_queue_size(channel_id)
+            title_part = f"「{title}」" if title else ""
+            dur_part = (
+                f"({duration_seconds // 60}:{duration_seconds % 60:02d})"
+                if duration_seconds
+                else ""
+            )
+            info = " ".join(filter(None, [title_part, dur_part]))
             await broadcaster.send_message(
-                message=f"@{user_name} 已加入影片佇列！({position}/{settings.max_queue_size})",
+                message=f"@{user_name} {info + ' ' if info else ''}已加入影片佇列！({position}/{settings.max_queue_size})",
                 sender=self.bot.bot_id,
                 token_for=self.bot.bot_id,
             )

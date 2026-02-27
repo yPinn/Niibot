@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import timedelta
 
 import aiohttp
 import asyncpg
@@ -54,18 +55,18 @@ async def fetch_yt_info(
     video_id: str,
     api_key: str,
     session: aiohttp.ClientSession | None = None,
-) -> tuple[str | None, int | None]:
-    """Fetch video title and duration via YouTube Data API v3.
+) -> tuple[str | None, int | None, int | None]:
+    """Fetch video title, duration, and view count via YouTube Data API v3.
 
     If `session` is None a temporary one-shot session is created and closed.
-    Returns (title, duration_seconds). Both None on any failure or missing key.
+    Returns (title, duration_seconds, view_count). All None on any failure.
     """
     if not api_key:
-        return None, None
+        return None, None, None
 
     url = (
         "https://www.googleapis.com/youtube/v3/videos"
-        f"?part=snippet,contentDetails&id={video_id}&key={api_key}"
+        f"?part=snippet,contentDetails,statistics&id={video_id}&key={api_key}"
     )
     _own_session = session is None
     _session: aiohttp.ClientSession = session or aiohttp.ClientSession()
@@ -73,19 +74,21 @@ async def fetch_yt_info(
         async with _session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
             if resp.status != 200:
                 logger.warning(f"[YouTube API] Unexpected status {resp.status} for {video_id}")
-                return None, None
+                return None, None, None
             data = await resp.json()
             items = data.get("items", [])
             if not items:
-                return None, None  # video not found / private
+                return None, None, None  # video not found / private
             item = items[0]
             title: str | None = item.get("snippet", {}).get("title")
             raw_duration: str = item.get("contentDetails", {}).get("duration", "")
             duration_seconds = _parse_iso8601_duration(raw_duration) if raw_duration else 0
-            return title, duration_seconds or None
+            raw_views: str | None = item.get("statistics", {}).get("viewCount")
+            view_count = int(raw_views) if raw_views else None
+            return title, duration_seconds or None, view_count
     except Exception as exc:
         logger.warning(f"[YouTube API] fetch_yt_info failed for {video_id}: {exc}")
-        return None, None
+        return None, None, None
     finally:
         if _own_session:
             await _session.close()
@@ -102,7 +105,7 @@ _ENTRY_COLUMNS = (
 
 _SETTINGS_COLUMNS = (
     "channel_id, enabled, min_role_chat, max_duration_seconds, max_queue_size, "
-    "created_at, updated_at"
+    "min_view_count, created_at, updated_at"
 )
 
 _settings_cache = AsyncTTLCache(maxsize=32, ttl=300)
@@ -237,6 +240,57 @@ class VideoQueueRepository:
             )
             return int(result.split()[-1])
 
+    async def set_as_next(self, entry_id: int, channel_id: str) -> bool:
+        """Move a queued entry to the absolute front of the queue (plays after current).
+
+        Finds the current minimum created_at among all other queued entries and
+        places this entry 1 second before it, so it always sorts first regardless
+        of how many entries have already been pinned. Each call inserts at position 1,
+        pushing any previously-pinned entries back.
+        Returns True if the entry was found and updated.
+        """
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                min_ts = await conn.fetchval(
+                    "SELECT MIN(created_at) FROM video_queue "
+                    "WHERE channel_id = $1 AND status = 'queued' AND id != $2",
+                    channel_id,
+                    entry_id,
+                )
+                new_ts = (min_ts - timedelta(seconds=1)) if min_ts is not None else None
+                result = await conn.execute(
+                    "UPDATE video_queue "
+                    "SET created_at = COALESCE($3, NOW() - INTERVAL '10 years') "
+                    "WHERE id = $1 AND channel_id = $2 AND status = 'queued'",
+                    entry_id,
+                    channel_id,
+                    new_ts,
+                )
+                return result == "UPDATE 1"
+
+    async def play_immediately(self, entry_id: int, channel_id: str) -> None:
+        """Skip the currently playing video and start playing this entry immediately.
+
+        1. Marks any 'playing' entry as 'skipped'.
+        2. Transitions this entry from 'queued' to 'playing'.
+        """
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                # Skip current playing entry (if any)
+                await conn.execute(
+                    "UPDATE video_queue SET status = 'skipped', ended_at = NOW() "
+                    "WHERE channel_id = $1 AND status = 'playing'",
+                    channel_id,
+                )
+                # Start playing the requested entry
+                await conn.execute(
+                    "UPDATE video_queue "
+                    "SET status = 'playing', started_at = NOW() "
+                    "WHERE id = $1 AND channel_id = $2 AND status = 'queued'",
+                    entry_id,
+                    channel_id,
+                )
+
     async def find_last_queued_by_user(
         self, channel_id: str, requested_by: str
     ) -> VideoQueueEntry | None:
@@ -289,6 +343,7 @@ class VideoQueueSettingsRepository:
         min_role_chat: str | None = None,
         max_duration_seconds: int | None = None,
         max_queue_size: int | None = None,
+        min_view_count: int | None = None,
     ) -> VideoQueueSettings:
         """Update settings. Only provided keyword args are applied."""
         async with self.pool.acquire() as conn:
@@ -300,7 +355,8 @@ class VideoQueueSettingsRepository:
                     enabled              = COALESCE($2, video_queue_settings.enabled),
                     min_role_chat        = COALESCE($3, video_queue_settings.min_role_chat),
                     max_duration_seconds = COALESCE($4, video_queue_settings.max_duration_seconds),
-                    max_queue_size       = COALESCE($5, video_queue_settings.max_queue_size)
+                    max_queue_size       = COALESCE($5, video_queue_settings.max_queue_size),
+                    min_view_count       = COALESCE($6, video_queue_settings.min_view_count)
                 RETURNING {_SETTINGS_COLUMNS}
                 """,
                 channel_id,
@@ -308,6 +364,7 @@ class VideoQueueSettingsRepository:
                 min_role_chat,
                 max_duration_seconds,
                 max_queue_size,
+                min_view_count,
             )
             result = VideoQueueSettings(**dict(row))
             _settings_cache.invalidate(f"vq_settings:{channel_id}")

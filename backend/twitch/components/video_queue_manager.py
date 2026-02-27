@@ -84,30 +84,36 @@ class VideoQueueManagerComponent(commands.Component):
 
         # Duplicate check
         if await self.vq_repo.video_is_active(channel_id, video_id):
-            await ctx.reply(f"@{ctx.chatter.display_name} 該影片已在佇列中")
+            await ctx.reply("該影片已在佇列中")
             return
 
         # Queue size check
         queue_size = await self.vq_repo.get_queue_size(channel_id)
         if queue_size >= settings.max_queue_size:
-            await ctx.reply(
-                f"@{ctx.chatter.display_name} 佇列已滿（{queue_size}/{settings.max_queue_size}）"
-            )
+            await ctx.reply(f"佇列已滿（{queue_size}/{settings.max_queue_size}）")
             return
 
         # Fetch info from YouTube Data API (graceful fallback on failure)
-        title, duration_seconds = await fetch_yt_info(
+        title, duration_seconds, view_count = await fetch_yt_info(
             video_id, self._settings.youtube_api_key, self._session
         )
+
+        # View count validation — if threshold is set and API failed, reject rather than bypass.
+        if settings.min_view_count > 0:
+            if view_count is None:
+                await ctx.reply("無法驗證影片資訊，請稍後再試")
+                return
+            if view_count < settings.min_view_count:
+                await ctx.reply(
+                    f"影片觀看次數不足（{view_count:,} 次 < {settings.min_view_count:,} 次），無法加入佇列"
+                )
+                return
 
         # Duration validation (only when API returned a value)
         if duration_seconds and duration_seconds > settings.max_duration_seconds:
             max_m, max_s = divmod(settings.max_duration_seconds, 60)
             vid_m, vid_s = divmod(duration_seconds, 60)
-            await ctx.reply(
-                f"@{ctx.chatter.display_name} "
-                f"影片長度 {vid_m}:{vid_s:02d} 超過上限 {max_m}:{max_s:02d}"
-            )
+            await ctx.reply(f"影片長度 {vid_m}:{vid_s:02d} 超過上限 {max_m}:{max_s:02d}")
             return
 
         await self.vq_repo.add(
@@ -118,11 +124,16 @@ class VideoQueueManagerComponent(commands.Component):
             title=title,
             duration_seconds=duration_seconds,
         )
-        position = queue_size + 1
-        title_display = f"「{title}」" if title else ""
+        position = await self.vq_repo.get_queue_size(channel_id)
+        title_part = f"「{title}」" if title else ""
+        dur_part = (
+            f"({duration_seconds // 60}:{duration_seconds % 60:02d})"
+            if duration_seconds
+            else ""
+        )
+        info = " ".join(filter(None, [title_part, dur_part]))
         await ctx.reply(
-            f"@{ctx.chatter.display_name} {title_display}已加入佇列！"
-            f"({position}/{settings.max_queue_size})"
+            f"{info + ' ' if info else ''}已加入佇列！（{position}/{settings.max_queue_size}）"
         )
 
     # ------------------------------------------------------------------
@@ -235,10 +246,10 @@ class VideoQueueManagerComponent(commands.Component):
         user_name = ctx.chatter.display_name or ctx.chatter.name or ""
         entry = await self.vq_repo.find_last_queued_by_user(channel_id, user_name)
         if not entry:
-            await ctx.reply(f"@{user_name} 沒有可移除的請求")
+            await ctx.reply("沒有可移除的請求")
             return
         await self.vq_repo.mark_skipped(entry.id, channel_id)
-        await ctx.reply(f"@{user_name} 已移除「{entry.title or entry.video_id}」")
+        await ctx.reply(f"已移除「{entry.title or entry.video_id}」")
 
 
 async def setup(bot: commands.Bot) -> None:
