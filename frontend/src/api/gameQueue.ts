@@ -71,6 +71,15 @@ export async function removePlayer(entryId: number): Promise<QueueState> {
   return response.json()
 }
 
+export async function promotePlayer(entryId: number): Promise<QueueState> {
+  const response = await apiFetch(API_ENDPOINTS.gameQueue.promoteEntry(entryId), {
+    method: 'POST',
+    credentials: 'include',
+  })
+  if (!response.ok) throw new Error(`Failed to promote player: ${response.statusText}`)
+  return response.json()
+}
+
 export async function clearQueue(): Promise<ClearResponse> {
   const response = await apiFetch(API_ENDPOINTS.gameQueue.clear, {
     method: 'DELETE',

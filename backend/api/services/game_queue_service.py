@@ -22,12 +22,17 @@ class GameQueueService:
 
     @staticmethod
     def _compute_batches(entries: list[dict], group_size: int) -> tuple[list[dict], list[dict]]:
-        """Slice entries into current and next batches with 1-indexed positions."""
+        """Slice entries into current and next batches with 1-indexed positions.
+
+        group_size is the *total* team size including the broadcaster, so the
+        queue contributes pull_size = max(1, group_size - 1) players per batch.
+        """
+        pull_size = max(1, group_size - 1)
         for i, entry in enumerate(entries):
             entry["position"] = i + 1
-            entry["batch"] = (i // group_size) + 1
-        current = entries[:group_size]
-        next_batch = entries[group_size : group_size * 2]
+            entry["batch"] = (i // pull_size) + 1
+        current = entries[:pull_size]
+        next_batch = entries[pull_size : pull_size * 2]
         return current, next_batch
 
     async def get_queue_state(self, channel_id: str) -> dict:
@@ -68,7 +73,8 @@ class GameQueueService:
         settings = await self.settings_repo.get_or_create(channel_id)
         entries = await self.queue_repo.get_active_entries(channel_id)
 
-        to_complete = entries[: settings.group_size]
+        pull_size = max(1, settings.group_size - 1)
+        to_complete = entries[:pull_size]
         if to_complete:
             entry_ids = [e.id for e in to_complete]
             await self.queue_repo.complete_batch(channel_id, entry_ids)
@@ -78,6 +84,13 @@ class GameQueueService:
     async def remove_player(self, channel_id: str, entry_id: int) -> dict:
         """Remove a single player and return new state."""
         await self.queue_repo.remove_entry(entry_id, channel_id, "kicked")
+        return await self.get_queue_state(channel_id)
+
+    async def promote_player(self, channel_id: str, entry_id: int) -> dict | None:
+        """Move a player to the front of the queue. Returns None if entry not found."""
+        moved = await self.queue_repo.promote_to_front(entry_id, channel_id)
+        if not moved:
+            return None
         return await self.get_queue_state(channel_id)
 
     async def clear_queue(self, channel_id: str) -> dict:

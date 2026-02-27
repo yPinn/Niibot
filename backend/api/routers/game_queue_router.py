@@ -123,6 +123,27 @@ async def remove_player(
         raise HTTPException(status_code=500, detail="Failed to remove player") from None
 
 
+@router.post("/entries/{entry_id}/promote", response_model=QueueStateResponse)
+async def promote_player(
+    entry_id: int,
+    channel_id: str = Depends(get_current_channel_id),
+    pool: Pool = Depends(get_db_pool),
+) -> QueueStateResponse:
+    """Move a player from the waiting area to the front of the current batch."""
+    try:
+        service = GameQueueService(pool)
+        state = await service.promote_player(channel_id, entry_id)
+        if state is None:
+            raise HTTPException(status_code=404, detail="Entry not found or already removed")
+        logger.info(f"Channel {channel_id} promoted queue entry {entry_id}")
+        return QueueStateResponse(**state)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to promote player: {e}")
+        raise HTTPException(status_code=500, detail="Failed to promote player") from None
+
+
 @router.delete("/clear", response_model=ClearResponse)
 async def clear_queue(
     channel_id: str = Depends(get_current_channel_id),

@@ -5,6 +5,7 @@ import {
   advanceBatch,
   clearQueue,
   getQueueState,
+  promotePlayer,
   type QueueEntry,
   type QueueState,
   removePlayer,
@@ -39,6 +40,7 @@ import { usePolling } from '@/hooks/usePolling'
 
 const POLL_INTERVAL = 15_000
 
+
 function formatTime(dateStr: string) {
   return new Date(dateStr).toLocaleTimeString('zh-TW', {
     hour: '2-digit',
@@ -49,13 +51,18 @@ function formatTime(dateStr: string) {
 function EntryTable({
   entries,
   onRemove,
+  onPromote,
   showRemove = false,
+  showPromote = false,
 }: {
   entries: QueueEntry[]
   onRemove?: (id: number) => void
+  onPromote?: (id: number) => void
   showRemove?: boolean
+  showPromote?: boolean
 }) {
   if (entries.length === 0) return null
+  const hasActions = showRemove || showPromote
   return (
     <Table>
       <TableHeader>
@@ -63,7 +70,7 @@ function EntryTable({
           <TableHead className="w-16">#</TableHead>
           <TableHead>玩家</TableHead>
           <TableHead className="w-24">加入時間</TableHead>
-          {showRemove && <TableHead className="w-16" />}
+          {hasActions && <TableHead className="w-32" />}
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -76,16 +83,31 @@ function EntryTable({
             <TableCell className="text-muted-foreground text-sub">
               {formatTime(entry.redeemed_at)}
             </TableCell>
-            {showRemove && onRemove && (
-              <TableCell>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => onRemove(entry.id)}
-                  className="h-7 w-7 p-0 text-destructive hover:text-destructive"
-                >
-                  <Icon icon="fa-solid fa-xmark" className="text-xs" />
-                </Button>
+            {hasActions && (
+              <TableCell className="text-right">
+                <div className="flex justify-end gap-1">
+                  {showPromote && onPromote && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => onPromote(entry.id)}
+                      title="移至當前"
+                    >
+                      <Icon icon="fa-solid fa-arrow-up-to-line" className="mr-1 size-3.5" />
+                      移至當前
+                    </Button>
+                  )}
+                  {showRemove && onRemove && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => onRemove(entry.id)}
+                      className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                    >
+                      <Icon icon="fa-solid fa-xmark" className="text-xs" />
+                    </Button>
+                  )}
+                </div>
               </TableCell>
             )}
           </TableRow>
@@ -165,6 +187,16 @@ export default function GameQueue() {
     }
   }
 
+  const handlePromote = async (entryId: number) => {
+    try {
+      const newState = await promotePlayer(entryId)
+      setState(newState)
+      toast.success('已移至當前批次')
+    } catch {
+      toast.error('移至失敗')
+    }
+  }
+
   const handleClear = async () => {
     try {
       const result = await clearQueue()
@@ -196,40 +228,76 @@ export default function GameQueue() {
     <main className="flex flex-1 flex-col gap-section p-page md:p-page-lg">
       <PageHeader title="Game Queue" description="管理遊戲排隊系統" />
 
-      {/* Settings */}
-      <Card>
-        <CardHeader>
-          <CardTitle>隊列設定</CardTitle>
-          <CardDescription>調整每場人數</CardDescription>
-          <CardAction>
-            <Switch
-              id="queue-enabled"
-              checked={state?.enabled ?? false}
-              onCheckedChange={handleToggleEnabled}
+      {/* Settings + Overlay Preview */}
+      <div className="grid grid-cols-1 gap-section lg:grid-cols-3">
+        <Card className="col-span-2">
+          <CardHeader>
+            <CardTitle>隊列設定</CardTitle>
+            <CardDescription>調整每場人數</CardDescription>
+            <CardAction>
+              <Switch
+                id="queue-enabled"
+                checked={state?.enabled ?? false}
+                onCheckedChange={handleToggleEnabled}
+              />
+            </CardAction>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center gap-2">
+              <span className="text-muted-foreground text-sub shrink-0">快速預設</span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setGroupSizeInput('5')}
+                className="h-7"
+              >
+                LoL / Val (5人)
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setGroupSizeInput('3')}
+                className="h-7"
+              >
+                Apex (3人)
+              </Button>
+            </div>
+            <div className="flex items-center gap-3">
+              <Label htmlFor="group-size" className="shrink-0">
+                每場人數（含台主）
+              </Label>
+              <Input
+                id="group-size"
+                type="number"
+                min={1}
+                max={20}
+                value={groupSizeInput}
+                onChange={e => setGroupSizeInput(e.target.value)}
+                className="w-20"
+              />
+              <Button size="sm" onClick={handleSaveGroupSize} disabled={saving}>
+                {saving ? '...' : '儲存'}
+              </Button>
+              {state && (
+                <span className="text-muted-foreground text-sub">
+                  從佇列取 {Math.max(1, state.group_size - 1)} 人
+                </span>
+              )}
+            </div>
+            <OverlayUrlBlock url={overlayUrl} />
+          </CardContent>
+        </Card>
+
+        {overlayUrl && (
+          <div className="overflow-hidden rounded-lg border bg-black">
+            <iframe
+              src={overlayUrl}
+              className="block h-full w-full"
+              title="Overlay 預覽"
             />
-          </CardAction>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center gap-3">
-            <Label htmlFor="group-size" className="shrink-0">
-              每場人數
-            </Label>
-            <Input
-              id="group-size"
-              type="number"
-              min={1}
-              max={20}
-              value={groupSizeInput}
-              onChange={e => setGroupSizeInput(e.target.value)}
-              className="w-20"
-            />
-            <Button size="sm" onClick={handleSaveGroupSize} disabled={saving}>
-              {saving ? '...' : '儲存'}
-            </Button>
           </div>
-          <OverlayUrlBlock url={overlayUrl} />
-        </CardContent>
-      </Card>
+        )}
+      </div>
 
       {/* Current Batch */}
       <Card>
@@ -238,7 +306,7 @@ export default function GameQueue() {
             <CardTitle>
               當前批次{' '}
               <Badge variant="secondary">
-                {state?.current_batch.length ?? 0} / {state?.group_size ?? 0}
+                {state?.current_batch.length ?? 0} / {Math.max(1, (state?.group_size ?? 1) - 1)}
               </Badge>
             </CardTitle>
           </div>
@@ -260,7 +328,13 @@ export default function GameQueue() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <EntryTable entries={state?.next_batch ?? []} />
+          <EntryTable
+            entries={state?.next_batch ?? []}
+            onRemove={handleRemove}
+            onPromote={handlePromote}
+            showRemove
+            showPromote
+          />
         </CardContent>
       </Card>
 
@@ -283,7 +357,13 @@ export default function GameQueue() {
           </Button>
         </CardHeader>
         <CardContent>
-          <EntryTable entries={state?.full_queue ?? []} onRemove={handleRemove} showRemove />
+          <EntryTable
+            entries={state?.full_queue ?? []}
+            onRemove={handleRemove}
+            onPromote={handlePromote}
+            showRemove
+            showPromote
+          />
         </CardContent>
       </Card>
     </main>

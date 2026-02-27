@@ -38,8 +38,13 @@ class GameQueueComponent(commands.Component):
         self.gq_settings_repo.pool = pool
 
     def _compute_batches(self, entries: list, group_size: int) -> list[list]:
-        """Split entries into batches of group_size."""
-        return [entries[i : i + group_size] for i in range(0, len(entries), group_size)]
+        """Split entries into batches.
+
+        group_size is the total team size including the broadcaster.
+        The queue contributes pull_size = max(1, group_size - 1) players per batch.
+        """
+        pull_size = max(1, group_size - 1)
+        return [entries[i : i + pull_size] for i in range(0, len(entries), pull_size)]
 
     @commands.group(name="gq")
     async def gq(self, ctx: commands.Context["Bot"]) -> None:
@@ -68,7 +73,6 @@ class GameQueueComponent(commands.Component):
         """Check personal queue position."""
         channel_id = ctx.channel.id
         user_id = ctx.chatter.id
-        user_name = ctx.chatter.display_name or ctx.chatter.name
 
         entries = await self.gq_repo.get_active_entries(channel_id)
         settings = await self.gq_settings_repo.get_or_create(channel_id)
@@ -77,12 +81,13 @@ class GameQueueComponent(commands.Component):
         user_index = next((i for i, e in enumerate(entries) if e.user_id == user_id), None)
 
         if user_index is None:
-            await ctx.reply(f"@{user_name} 未排隊 | !gq 查看隊列")
+            await ctx.reply("未排隊 | !gq 查看隊列")
             return
 
-        batch_num = (user_index // settings.group_size) + 1
-        batch_start = (batch_num - 1) * settings.group_size
-        batch_end = batch_start + settings.group_size
+        pull_size = max(1, settings.group_size - 1)
+        batch_num = (user_index // pull_size) + 1
+        batch_start = (batch_num - 1) * pull_size
+        batch_end = batch_start + pull_size
         teammates = [
             e.user_name
             for i, e in enumerate(entries[batch_start:batch_end])
@@ -91,7 +96,7 @@ class GameQueueComponent(commands.Component):
         teammates_str = ", ".join(teammates) if teammates else "無"
         ahead = batch_num - 1
 
-        msg = f"@{user_name} 第{batch_num}場 | 同場: {teammates_str}"
+        msg = f"第{batch_num}場 | 同場: {teammates_str}"
         if ahead > 0:
             msg += f" | 前方{ahead}場"
         await ctx.reply(msg)
@@ -106,7 +111,8 @@ class GameQueueComponent(commands.Component):
         settings = await self.gq_settings_repo.get_or_create(channel_id)
         entries = await self.gq_repo.get_active_entries(channel_id)
 
-        to_complete = entries[: settings.group_size]
+        pull_size = max(1, settings.group_size - 1)
+        to_complete = entries[:pull_size]
         if not to_complete:
             await ctx.reply("隊列為空")
             return
@@ -114,9 +120,9 @@ class GameQueueComponent(commands.Component):
         entry_ids = [e.id for e in to_complete]
         await self.gq_repo.complete_batch(channel_id, entry_ids)
 
-        remaining = entries[settings.group_size :]
+        remaining = entries[pull_size:]
         if remaining:
-            next_batch = remaining[: settings.group_size]
+            next_batch = remaining[:pull_size]
             next_names = ", ".join(e.user_name for e in next_batch)
             await ctx.reply(f"已結算 | 下一場: {next_names}")
         else:
@@ -140,11 +146,11 @@ class GameQueueComponent(commands.Component):
         target = next((e for e in entries if e.user_name.lower() == target_name), None)
 
         if not target:
-            await ctx.reply(f"找不到 @{target_name}")
+            await ctx.reply(f"找不到 {target_name}")
             return
 
         await self.gq_repo.remove_entry(target.id, channel_id, "kicked")
-        await ctx.reply(f"已移除 @{target.user_name}")
+        await ctx.reply(f"已移除 {target.user_name}")
 
     @gq.command(name="clear")
     async def gq_clear(self, ctx: commands.Context["Bot"]) -> None:

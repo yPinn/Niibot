@@ -131,6 +131,21 @@ class GameQueueRepository:
             )
             return int(result.split()[-1])
 
+    async def promote_to_front(self, entry_id: int, channel_id: str) -> bool:
+        """Move an active entry to the front of the queue by backdating redeemed_at.
+
+        Returns True if the entry was found and updated.
+        """
+        async with self.pool.acquire() as conn:
+            result = await conn.execute(
+                "UPDATE game_queue_entries "
+                "SET redeemed_at = NOW() - INTERVAL '10 years' "
+                "WHERE id = $1 AND channel_id = $2 AND removed_at IS NULL",
+                entry_id,
+                channel_id,
+            )
+            return result == "UPDATE 1"
+
 
 class GameQueueSettingsRepository:
     """Pure SQL operations for game_queue_settings."""
