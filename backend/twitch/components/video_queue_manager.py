@@ -127,9 +127,7 @@ class VideoQueueManagerComponent(commands.Component):
         position = await self.vq_repo.get_queue_size(channel_id)
         title_part = f"「{title}」" if title else ""
         dur_part = (
-            f"({duration_seconds // 60}:{duration_seconds % 60:02d})"
-            if duration_seconds
-            else ""
+            f"({duration_seconds // 60}:{duration_seconds % 60:02d})" if duration_seconds else ""
         )
         info = " ".join(filter(None, [title_part, dur_part]))
         await ctx.reply(

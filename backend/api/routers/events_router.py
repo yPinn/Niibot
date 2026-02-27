@@ -81,8 +81,8 @@ async def get_event_configs(
         service = EventConfigService(pool)
         configs = await service.list_configs_with_counts(channel_id)
         return [EventConfigResponse(**cfg) for cfg in configs]
-    except Exception as e:
-        logger.exception(f"Failed to get event configs: {e}")
+    except Exception:
+        logger.exception("Failed to get event configs")
         raise HTTPException(status_code=500, detail="Failed to fetch event configs") from None
 
 
@@ -103,8 +103,8 @@ async def update_event_config(
         )
         logger.info(f"Channel {channel_id} updated event config: {event_type}")
         return EventConfigResponse(**cfg)
-    except Exception as e:
-        logger.exception(f"Failed to update event config: {e}")
+    except Exception:
+        logger.exception("Failed to update event config")
         raise HTTPException(status_code=500, detail="Failed to update event config") from None
 
 
@@ -123,8 +123,8 @@ async def toggle_event_config(
         cfg = await service.toggle_config(channel_id, event_type, body.enabled)
         logger.info(f"Channel {channel_id} toggled event config: {event_type} -> {body.enabled}")
         return EventConfigResponse(**cfg)
-    except Exception as e:
-        logger.exception(f"Failed to toggle event config: {e}")
+    except Exception:
+        logger.exception("Failed to toggle event config")
         raise HTTPException(status_code=500, detail="Failed to toggle event config") from None
 
 
@@ -155,8 +155,8 @@ async def get_twitch_rewards(
         return [TwitchRewardResponse(**r) for r in rewards]
     except HTTPException:
         raise
-    except Exception as e:
-        logger.exception(f"Failed to fetch Twitch rewards: {e}")
+    except Exception:
+        logger.exception("Failed to fetch Twitch rewards")
         raise HTTPException(status_code=500, detail="Failed to fetch Twitch rewards") from None
 
 
@@ -177,8 +177,8 @@ async def get_redemption_configs(
         service = CommandConfigService(pool)
         configs = await service.list_redemptions(channel_id)
         return [RedemptionConfigResponse(**cfg) for cfg in configs]
-    except Exception as e:
-        logger.exception(f"Failed to get redemption configs: {e}")
+    except Exception:
+        logger.exception("Failed to get redemption configs")
         raise HTTPException(status_code=500, detail="Failed to fetch redemption configs") from None
 
 
@@ -199,6 +199,6 @@ async def update_redemption_config(
         )
         logger.info(f"Channel {channel_id} updated redemption: {action_type}")
         return RedemptionConfigResponse(**cfg)
-    except Exception as e:
-        logger.exception(f"Failed to update redemption config: {e}")
+    except Exception:
+        logger.exception("Failed to update redemption config")
         raise HTTPException(status_code=500, detail="Failed to update redemption config") from None

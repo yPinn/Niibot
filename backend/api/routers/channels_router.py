@@ -121,8 +121,8 @@ async def get_monitored_channels(
         logger.debug(f"Returning {len(result)} monitored channels for channel {channel_id}")
         return result
 
-    except Exception as e:
-        logger.exception(f"Failed to get monitored channels: {e}")
+    except Exception:
+        logger.exception("Failed to get monitored channels")
         raise HTTPException(status_code=500, detail="Failed to fetch channels") from None
 
 
@@ -137,8 +137,8 @@ async def get_my_channel_status(
         status = await channel_service.get_channel_status(channel_id)
         return ChannelStatusResponse(**status)
 
-    except Exception as e:
-        logger.exception(f"Failed to get channel status: {e}")
+    except Exception:
+        logger.exception("Failed to get channel status")
         raise HTTPException(status_code=500, detail="Failed to fetch status") from None
 
 
@@ -165,8 +165,8 @@ async def toggle_channel(
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.exception(f"Failed to toggle channel: {e}")
+    except Exception:
+        logger.exception("Failed to toggle channel")
         raise HTTPException(status_code=500, detail="Failed to toggle channel") from None
 
 
@@ -191,8 +191,8 @@ async def get_channel_defaults(
         return ChannelDefaultsResponse(
             default_cooldown=channel.default_cooldown,
         )
-    except Exception as e:
-        logger.exception(f"Failed to get channel defaults: {e}")
+    except Exception:
+        logger.exception("Failed to get channel defaults")
         raise HTTPException(status_code=500, detail="Failed to fetch channel defaults") from None
 
 
@@ -219,6 +219,6 @@ async def update_channel_defaults(
         )
     except HTTPException:
         raise
-    except Exception as e:
-        logger.exception(f"Failed to update channel defaults: {e}")
+    except Exception:
+        logger.exception("Failed to update channel defaults")
         raise HTTPException(status_code=500, detail="Failed to update channel defaults") from None

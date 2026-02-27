@@ -84,8 +84,8 @@ async def get_analytics_summary(
         logger.info(f"Channel {channel_id} requested analytics summary (days={days})")
         return AnalyticsSummary(**summary_data)
 
-    except Exception as e:
-        logger.exception(f"Failed to get analytics summary: {e}")
+    except Exception:
+        logger.exception("Failed to get analytics summary")
         raise HTTPException(status_code=500, detail="Failed to fetch analytics") from None
 
 
@@ -112,8 +112,8 @@ async def get_session_commands(
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.exception(f"Failed to get session commands: {e}")
+    except Exception:
+        logger.exception("Failed to get session commands")
         raise HTTPException(status_code=500, detail="Failed to fetch commands") from None
 
 
@@ -140,8 +140,8 @@ async def get_session_events(
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.exception(f"Failed to get session events: {e}")
+    except Exception:
+        logger.exception("Failed to get session events")
         raise HTTPException(status_code=500, detail="Failed to fetch events") from None
 
 
@@ -166,6 +166,6 @@ async def get_top_commands(
         logger.info(f"Channel {channel_id} requested top commands (days={days}, limit={limit})")
         return [CommandStat(**cmd) for cmd in commands]
 
-    except Exception as e:
-        logger.exception(f"Failed to get top commands: {e}")
+    except Exception:
+        logger.exception("Failed to get top commands")
         raise HTTPException(status_code=500, detail="Failed to fetch top commands") from None

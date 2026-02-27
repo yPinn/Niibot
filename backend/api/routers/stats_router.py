@@ -61,6 +61,6 @@ async def get_channel_stats(
             total_commands=total_commands,
         )
 
-    except Exception as e:
-        logger.exception(f"Failed to get channel stats: {e}")
+    except Exception:
+        logger.exception("Failed to get channel stats")
         raise HTTPException(status_code=500, detail="Failed to fetch statistics") from None

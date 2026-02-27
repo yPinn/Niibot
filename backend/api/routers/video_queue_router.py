@@ -66,7 +66,7 @@ class VideoQueueSettingsUpdate(BaseModel):
 
 
 class AddVideoRequest(BaseModel):
-    url: str
+    url: str = Field(max_length=2048)
 
 
 class AdvanceRequest(BaseModel):
@@ -150,8 +150,8 @@ async def get_public_state(
         return await _build_public_state(channel_id, repo, settings_repo)
     except HTTPException:
         raise
-    except Exception as e:
-        logger.exception(f"Failed to get public video queue state: {e}")
+    except Exception:
+        logger.exception("Failed to get public video queue state")
         raise HTTPException(status_code=500, detail="Failed to fetch queue state") from None
 
 
@@ -166,6 +166,11 @@ async def advance_queue(
 
     If done_id is provided, marks that entry as done.
     Then, if no entry is currently playing, promotes the next queued entry.
+
+    NOTE: This endpoint is intentionally unauthenticated. It is called directly by the
+    OBS browser source overlay, which has no mechanism to carry session cookies. The
+    accepted security trade-off: the only actions available are advancing the queue
+    and reading public queue state — no destructive or private operations are exposed.
     """
     try:
         channel_id = await _resolve_channel_id(username, twitch_api)
@@ -173,20 +178,23 @@ async def advance_queue(
         settings_repo = VideoQueueSettingsRepository(pool)
 
         if body.done_id:
-            await repo.mark_done(body.done_id, channel_id)
-
-        # Only promote if there is no entry currently playing (avoid double-play)
-        current = await repo.get_current(channel_id)
-        if current is None:
-            queued = await repo.get_queued(channel_id)
-            if queued:
-                await repo.set_playing(queued[0].id)
+            # advance_queue atomically marks done_id as done and promotes the next
+            # queued entry in a single transaction, eliminating the race condition
+            # between mark_done and set_playing.
+            await repo.advance_queue(channel_id, body.done_id)
+        else:
+            # Kickstart: no video finished, just promote if nothing is playing
+            current = await repo.get_current(channel_id)
+            if current is None:
+                queued = await repo.get_queued(channel_id)
+                if queued:
+                    await repo.set_playing(queued[0].id)
 
         return await _build_public_state(channel_id, repo, settings_repo)
     except HTTPException:
         raise
-    except Exception as e:
-        logger.exception(f"Failed to advance video queue: {e}")
+    except Exception:
+        logger.exception("Failed to advance video queue")
         raise HTTPException(status_code=500, detail="Failed to advance queue") from None
 
 
@@ -198,15 +206,21 @@ async def update_entry_metadata(
     pool: Pool = Depends(get_db_pool),
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
 ) -> None:
-    """Overlay reports duration after the YouTube player loads (fallback for API misses)."""
+    """Overlay reports duration after the YouTube player loads (fallback for API misses).
+
+    NOTE: This endpoint is intentionally unauthenticated. It is called by the OBS
+    browser source overlay after the YouTube player reports its loaded duration. The
+    accepted security trade-off: the only writable field is duration_seconds, scoped
+    to a specific entry_id and channel — no sensitive data is accessible or mutable.
+    """
     try:
         channel_id = await _resolve_channel_id(username, twitch_api)
         repo = VideoQueueRepository(pool)
         await repo.update_duration(entry_id, body.duration_seconds, channel_id)
     except HTTPException:
         raise
-    except Exception as e:
-        logger.exception(f"Failed to update video queue metadata: {e}")
+    except Exception:
+        logger.exception("Failed to update video queue metadata")
         raise HTTPException(status_code=500, detail="Failed to update metadata") from None
 
 
@@ -232,8 +246,8 @@ async def skip_current(
             await repo.set_playing(queued[0].id)
         logger.info(f"Channel {channel_id} skipped video queue entry")
         return await _build_public_state(channel_id, repo, settings_repo)
-    except Exception as e:
-        logger.exception(f"Failed to skip video: {e}")
+    except Exception:
+        logger.exception("Failed to skip video")
         raise HTTPException(status_code=500, detail="Failed to skip video") from None
 
 
@@ -252,13 +266,13 @@ async def clear_queue(
         await repo.clear_queued(channel_id)
         logger.info(f"Channel {channel_id} cleared video queue")
         return await _build_public_state(channel_id, repo, settings_repo)
-    except Exception as e:
-        logger.exception(f"Failed to clear video queue: {e}")
+    except Exception:
+        logger.exception("Failed to clear video queue")
         raise HTTPException(status_code=500, detail="Failed to clear queue") from None
 
 
 @router.get("/settings", response_model=VideoQueueSettingsResponse)
-async def get_settings(
+async def get_video_queue_settings(
     channel_id: str = Depends(get_current_channel_id),
     pool: Pool = Depends(get_db_pool),
 ) -> VideoQueueSettingsResponse:
@@ -274,13 +288,13 @@ async def get_settings(
             max_queue_size=s.max_queue_size,
             min_view_count=s.min_view_count,
         )
-    except Exception as e:
-        logger.exception(f"Failed to get video queue settings: {e}")
+    except Exception:
+        logger.exception("Failed to get video queue settings")
         raise HTTPException(status_code=500, detail="Failed to fetch settings") from None
 
 
 @router.put("/settings", response_model=VideoQueueSettingsResponse)
-async def update_settings(
+async def update_video_queue_settings(
     body: VideoQueueSettingsUpdate,
     channel_id: str = Depends(get_current_channel_id),
     pool: Pool = Depends(get_db_pool),
@@ -316,8 +330,8 @@ async def update_settings(
             max_queue_size=s.max_queue_size,
             min_view_count=s.min_view_count,
         )
-    except Exception as e:
-        logger.exception(f"Failed to update video queue settings: {e}")
+    except Exception:
+        logger.exception("Failed to update video queue settings")
         raise HTTPException(status_code=500, detail="Failed to update settings") from None
 
 
@@ -331,8 +345,8 @@ async def get_state(
         repo = VideoQueueRepository(pool)
         settings_repo = VideoQueueSettingsRepository(pool)
         return await _build_public_state(channel_id, repo, settings_repo)
-    except Exception as e:
-        logger.exception(f"Failed to get video queue state: {e}")
+    except Exception:
+        logger.exception("Failed to get video queue state")
         raise HTTPException(status_code=500, detail="Failed to fetch queue state") from None
 
 
@@ -353,8 +367,8 @@ async def set_entry_as_next(
         return await _build_public_state(channel_id, repo, settings_repo)
     except HTTPException:
         raise
-    except Exception as e:
-        logger.exception(f"Failed to set entry as next: {e}")
+    except Exception:
+        logger.exception("Failed to set entry as next")
         raise HTTPException(status_code=500, detail="Failed to reorder queue") from None
 
 
@@ -373,8 +387,8 @@ async def play_entry_now(
         return await _build_public_state(channel_id, repo, settings_repo)
     except HTTPException:
         raise
-    except Exception as e:
-        logger.exception(f"Failed to play entry immediately: {e}")
+    except Exception:
+        logger.exception("Failed to play entry immediately")
         raise HTTPException(status_code=500, detail="Failed to play entry") from None
 
 
@@ -404,14 +418,18 @@ async def add_video_entry(
 
         # Fetch YouTube metadata (graceful fallback if no API key or request fails)
         api_key = get_settings().youtube_api_key
+        # Dashboard adds bypass min_view_count — broadcaster has full authority over their own queue
         title, duration_seconds, _ = await fetch_yt_info(video_id, api_key)
 
-        # Look up broadcaster login name for the requested_by field
+        # Look up broadcaster display name for the requested_by field
         row = await pool.fetchrow(
-            "SELECT username FROM user_linked_accounts WHERE platform = 'twitch' AND platform_user_id = $1",
+            "SELECT u.display_name, la.username "
+            "FROM user_linked_accounts la "
+            "JOIN users u ON u.id = la.user_id "
+            "WHERE la.platform = 'twitch' AND la.platform_user_id = $1",
             channel_id,
         )
-        requested_by: str = row["username"] if row else channel_id
+        requested_by: str = (row["display_name"] or row["username"]) if row else channel_id
 
         await repo.add(
             channel_id=channel_id,
@@ -425,6 +443,6 @@ async def add_video_entry(
         return await _build_public_state(channel_id, repo, settings_repo)
     except HTTPException:
         raise
-    except Exception as e:
-        logger.exception(f"Failed to add video entry: {e}")
+    except Exception:
+        logger.exception("Failed to add video entry")
         raise HTTPException(status_code=500, detail="Failed to add video") from None

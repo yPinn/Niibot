@@ -73,8 +73,8 @@ async def get_command_configs(
         service = CommandConfigService(pool)
         configs = await service.list_commands(channel_id)
         return [CommandConfigResponse(**cfg) for cfg in configs]
-    except Exception as e:
-        logger.exception(f"Failed to get command configs: {e}")
+    except Exception:
+        logger.exception("Failed to get command configs")
         raise HTTPException(status_code=500, detail="Failed to fetch command configs") from None
 
 
@@ -101,8 +101,8 @@ async def create_custom_command(
         )
         logger.info(f"Channel {channel_id} created custom command: {body.command_name}")
         return CommandConfigResponse(**cfg)
-    except Exception as e:
-        logger.exception(f"Failed to create custom command: {e}")
+    except Exception:
+        logger.exception("Failed to create custom command")
         raise HTTPException(status_code=500, detail="Failed to create custom command") from None
 
 
@@ -129,8 +129,8 @@ async def update_command_config(
         )
         logger.info(f"Channel {channel_id} updated command config: {command_name}")
         return CommandConfigResponse(**cfg)
-    except Exception as e:
-        logger.exception(f"Failed to update command config: {e}")
+    except Exception:
+        logger.exception("Failed to update command config")
         raise HTTPException(status_code=500, detail="Failed to update command config") from None
 
 
@@ -147,8 +147,8 @@ async def toggle_command_config(
         cfg = await service.toggle_command(channel_id, command_name, body.enabled)
         logger.info(f"Channel {channel_id} toggled command: {command_name} -> {body.enabled}")
         return CommandConfigResponse(**cfg)
-    except Exception as e:
-        logger.exception(f"Failed to toggle command config: {e}")
+    except Exception:
+        logger.exception("Failed to toggle command config")
         raise HTTPException(status_code=500, detail="Failed to toggle command config") from None
 
 
@@ -170,8 +170,8 @@ async def delete_custom_command(
         logger.info(f"Channel {channel_id} deleted custom command: {command_name}")
     except HTTPException:
         raise
-    except Exception as e:
-        logger.exception(f"Failed to delete custom command: {e}")
+    except Exception:
+        logger.exception("Failed to delete custom command")
         raise HTTPException(status_code=500, detail="Failed to delete custom command") from None
 
 
@@ -231,6 +231,6 @@ async def get_public_commands(
         )
     except HTTPException:
         raise
-    except Exception as e:
-        logger.exception(f"Failed to get public commands: {e}")
+    except Exception:
+        logger.exception("Failed to get public commands")
         raise HTTPException(status_code=500, detail="Failed to fetch commands") from None

@@ -7,7 +7,7 @@ from datetime import datetime
 
 from asyncpg import Pool
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from core.dependencies import get_current_channel_id, get_db_pool
 from services.timer_service import TimerService
@@ -37,8 +37,8 @@ class TimerConfigResponse(BaseModel):
 
 class TimerCreate(BaseModel):
     timer_name: str
-    interval_seconds: int
-    min_lines: int = 5
+    interval_seconds: int = Field(ge=60)
+    min_lines: int = Field(default=5, ge=0)
     message_template: str
     command_alias: str | None = None
 
@@ -71,8 +71,8 @@ async def get_timer_configs(
         service = TimerService(pool)
         timers = await service.list_timers(channel_id)
         return [TimerConfigResponse(**t) for t in timers]
-    except Exception as e:
-        logger.exception(f"Failed to get timer configs: {e}")
+    except Exception:
+        logger.exception("Failed to get timer configs")
         raise HTTPException(status_code=500, detail="Failed to fetch timer configs") from None
 
 
@@ -97,8 +97,8 @@ async def create_timer(
         return TimerConfigResponse(**timer)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
-    except Exception as e:
-        logger.exception(f"Failed to create timer: {e}")
+    except Exception:
+        logger.exception("Failed to create timer")
         raise HTTPException(status_code=500, detail="Failed to create timer") from None
 
 
@@ -126,8 +126,8 @@ async def update_timer(
         return TimerConfigResponse(**timer)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
-    except Exception as e:
-        logger.exception(f"Failed to update timer: {e}")
+    except Exception:
+        logger.exception("Failed to update timer")
         raise HTTPException(status_code=500, detail="Failed to update timer") from None
 
 
@@ -144,8 +144,8 @@ async def toggle_timer(
         timer = await service.toggle_timer(channel_id, timer_name, body.enabled)
         logger.info(f"Channel {channel_id} toggled timer: {timer_name} -> {body.enabled}")
         return TimerConfigResponse(**timer)
-    except Exception as e:
-        logger.exception(f"Failed to toggle timer: {e}")
+    except Exception:
+        logger.exception("Failed to toggle timer")
         raise HTTPException(status_code=500, detail="Failed to toggle timer") from None
 
 
@@ -164,6 +164,6 @@ async def delete_timer(
         logger.info(f"Channel {channel_id} deleted timer: {timer_name}")
     except HTTPException:
         raise
-    except Exception as e:
-        logger.exception(f"Failed to delete timer: {e}")
+    except Exception:
+        logger.exception("Failed to delete timer")
         raise HTTPException(status_code=500, detail="Failed to delete timer") from None

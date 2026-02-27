@@ -210,7 +210,11 @@ class EventComponent(commands.Component):
         if payload.anonymous:
             user_name = "匿名用戶"
         else:
-            user_name = (payload.user.display_name or payload.user.name or "") if payload.user else "匿名用戶"
+            user_name = (
+                (payload.user.display_name or payload.user.name or "")
+                if payload.user
+                else "匿名用戶"
+            )
         broadcaster_name = payload.broadcaster.name
         channel_id = payload.broadcaster.id
         bits_amount = payload.bits
@@ -218,7 +222,9 @@ class EventComponent(commands.Component):
         try:
             config = await self.event_configs.get_config(channel_id, "bits")
             if config is not None and not config.enabled:
-                LOGGER.info(f"[{broadcaster_name}] Cheer: {user_name} {bits_amount} bits (disabled)")
+                LOGGER.info(
+                    f"[{broadcaster_name}] Cheer: {user_name} {bits_amount} bits (disabled)"
+                )
                 return
 
             # Determine message: check tier rules first, then fall back to template
@@ -308,7 +314,9 @@ class EventComponent(commands.Component):
 async def setup(bot: commands.Bot) -> None:
     component = EventComponent(bot)
     await bot.add_component(component)
-    LOGGER.info("EventComponent loaded with listeners: event_follow, event_subscribe, event_raid, event_cheer")
+    LOGGER.info(
+        "EventComponent loaded with listeners: event_follow, event_subscribe, event_raid, event_cheer"
+    )
 
 
 async def teardown(bot: commands.Bot) -> None: ...

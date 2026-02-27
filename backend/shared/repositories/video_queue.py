@@ -64,14 +64,18 @@ async def fetch_yt_info(
     if not api_key:
         return None, None, None
 
-    url = (
-        "https://www.googleapis.com/youtube/v3/videos"
-        f"?part=snippet,contentDetails,statistics&id={video_id}&key={api_key}"
-    )
+    url = "https://www.googleapis.com/youtube/v3/videos"
+    # Pass api_key via params dict so it never appears as a literal URL string
+    # (prevents accidental key exposure in logs, traces, or error messages).
+    params = {
+        "part": "snippet,contentDetails,statistics",
+        "id": video_id,
+        "key": api_key,
+    }
     _own_session = session is None
     _session: aiohttp.ClientSession = session or aiohttp.ClientSession()
     try:
-        async with _session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+        async with _session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=5)) as resp:
             if resp.status != 200:
                 logger.warning(f"[YouTube API] Unexpected status {resp.status} for {video_id}")
                 return None, None, None
@@ -87,7 +91,7 @@ async def fetch_yt_info(
             view_count = int(raw_views) if raw_views else None
             return title, duration_seconds or None, view_count
     except Exception as exc:
-        logger.warning(f"[YouTube API] fetch_yt_info failed for {video_id}: {exc}")
+        logger.warning(f"[YouTube API] fetch_yt_info failed for {video_id}: {type(exc).__name__}")
         return None, None, None
     finally:
         if _own_session:
@@ -220,6 +224,34 @@ class VideoQueueRepository:
                 channel_id,
             )
 
+    async def advance_queue(self, channel_id: str, done_id: int) -> None:
+        """Atomically mark done_id as done and promote the next queued entry to playing.
+
+        Both operations run inside a single transaction to prevent a race condition
+        where concurrent advance calls could promote the same entry twice. Follows
+        the same transaction pattern as play_immediately.
+
+        If no queued entry exists after marking done, the second UPDATE is a no-op.
+        """
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute(
+                    "UPDATE video_queue SET status = 'done', ended_at = NOW() "
+                    "WHERE id = $1 AND channel_id = $2 AND status = 'playing'",
+                    done_id,
+                    channel_id,
+                )
+                await conn.execute(
+                    "UPDATE video_queue "
+                    "SET status = 'playing', started_at = NOW() "
+                    "WHERE id = ("
+                    "    SELECT id FROM video_queue "
+                    "    WHERE channel_id = $1 AND status = 'queued' "
+                    "    ORDER BY created_at ASC LIMIT 1"
+                    ")",
+                    channel_id,
+                )
+
     async def mark_skipped(self, entry_id: int, channel_id: str) -> None:
         """Transition entry to 'skipped'. Only applies to entries owned by the channel."""
         async with self.pool.acquire() as conn:
@@ -259,6 +291,11 @@ class VideoQueueRepository:
                 )
                 new_ts = (min_ts - timedelta(seconds=1)) if min_ts is not None else None
                 result = await conn.execute(
+                    # When min_ts is None (only one entry in the queue), fall back to
+                    # NOW() - 10 years as a sentinel so this entry always sorts first.
+                    # Trade-off: repeated set_as_next calls on a single-item queue push
+                    # created_at further into the past each time, but this is harmless
+                    # because created_at is only used for queue ordering.
                     "UPDATE video_queue "
                     "SET created_at = COALESCE($3, NOW() - INTERVAL '10 years') "
                     "WHERE id = $1 AND channel_id = $2 AND status = 'queued'",

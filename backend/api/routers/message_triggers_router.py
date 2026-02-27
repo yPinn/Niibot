@@ -7,7 +7,7 @@ from datetime import datetime
 
 from asyncpg import Pool
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from core.dependencies import get_current_channel_id, get_db_pool
 from services.message_trigger_service import MessageTriggerService
@@ -48,7 +48,7 @@ class TriggerCreate(BaseModel):
     response: str
     min_role: str = "everyone"
     cooldown: int | None = None
-    priority: int = 0
+    priority: int = Field(default=0, ge=0, le=100)
     aliases: str | None = None
 
 
@@ -83,8 +83,8 @@ async def get_trigger_configs(
         service = MessageTriggerService(pool)
         triggers = await service.list_triggers(channel_id)
         return [MessageTriggerResponse(**t) for t in triggers]
-    except Exception as e:
-        logger.exception(f"Failed to get trigger configs: {e}")
+    except Exception:
+        logger.exception("Failed to get trigger configs")
         raise HTTPException(status_code=500, detail="Failed to fetch trigger configs") from None
 
 
@@ -113,8 +113,8 @@ async def create_trigger(
         return MessageTriggerResponse(**trigger)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
-    except Exception as e:
-        logger.exception(f"Failed to create trigger: {e}")
+    except Exception:
+        logger.exception("Failed to create trigger")
         raise HTTPException(status_code=500, detail="Failed to create trigger") from None
 
 
@@ -145,8 +145,8 @@ async def update_trigger(
         return MessageTriggerResponse(**trigger)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
-    except Exception as e:
-        logger.exception(f"Failed to update trigger: {e}")
+    except Exception:
+        logger.exception("Failed to update trigger")
         raise HTTPException(status_code=500, detail="Failed to update trigger") from None
 
 
@@ -163,8 +163,8 @@ async def toggle_trigger(
         trigger = await service.toggle_trigger(channel_id, trigger_name, body.enabled)
         logger.info(f"Channel {channel_id} toggled trigger: {trigger_name} -> {body.enabled}")
         return MessageTriggerResponse(**trigger)
-    except Exception as e:
-        logger.exception(f"Failed to toggle trigger: {e}")
+    except Exception:
+        logger.exception("Failed to toggle trigger")
         raise HTTPException(status_code=500, detail="Failed to toggle trigger") from None
 
 
@@ -183,6 +183,6 @@ async def delete_trigger(
         logger.info(f"Channel {channel_id} deleted trigger: {trigger_name}")
     except HTTPException:
         raise
-    except Exception as e:
-        logger.exception(f"Failed to delete trigger: {e}")
+    except Exception:
+        logger.exception("Failed to delete trigger")
         raise HTTPException(status_code=500, detail="Failed to delete trigger") from None

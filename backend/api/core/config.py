@@ -33,8 +33,6 @@ class Settings(BaseSettings):
     jwt_algorithm: str = Field(default="HS256", description="JWT signing algorithm")
     jwt_expire_days: int = Field(default=30, description="JWT token expiration in days")
 
-    _ALLOWED_JWT_ALGORITHMS: frozenset = frozenset({"HS256", "HS384", "HS512"})
-
     # Database
     database_url: str = Field(..., description="PostgreSQL database URL")
 
