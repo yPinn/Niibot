@@ -96,7 +96,11 @@ class EventComponent(commands.Component):
         self,
         payload: twitchio.ChannelFollow,
     ) -> None:
-        """追隨事件"""
+        """追隨事件
+
+        NOTE: always-on — fires via EventSub regardless of streaming state.
+        Analytics recording is the only part gated behind an active session.
+        """
         user_name = payload.user.display_name or payload.user.name or ""
         user_id = payload.user.id
         broadcaster_name = payload.broadcaster.name
@@ -141,7 +145,11 @@ class EventComponent(commands.Component):
         self,
         payload: twitchio.ChannelSubscribe,
     ) -> None:
-        """訂閱事件"""
+        """訂閱事件
+
+        NOTE: always-on — fires via EventSub regardless of streaming state.
+        Analytics recording is the only part gated behind an active session.
+        """
         user_name = payload.user.display_name or payload.user.name or ""
         broadcaster_name = payload.broadcaster.name
         channel_id = payload.broadcaster.id
@@ -189,11 +197,73 @@ class EventComponent(commands.Component):
             LOGGER.error(f"[{broadcaster_name}] {sub_type}: {user_name} ({tier_name}) (error: {e})")
 
     @commands.Component.listener()
+    async def event_cheer(
+        self,
+        payload: twitchio.ChannelCheer,
+    ) -> None:
+        """Bits (Cheer) 事件
+
+        NOTE: always-on — fires via EventSub regardless of streaming state.
+        Tier rules are stored in options.tiers (ascending by min_bits order).
+        Falls back to the top-level message_template if no tier matches.
+        """
+        if payload.anonymous:
+            user_name = "匿名用戶"
+        else:
+            user_name = (payload.user.display_name or payload.user.name or "") if payload.user else "匿名用戶"
+        broadcaster_name = payload.broadcaster.name
+        channel_id = payload.broadcaster.id
+        bits_amount = payload.bits
+
+        try:
+            config = await self.event_configs.get_config(channel_id, "bits")
+            if config is not None and not config.enabled:
+                LOGGER.info(f"[{broadcaster_name}] Cheer: {user_name} {bits_amount} bits (disabled)")
+                return
+
+            # Determine message: check tier rules first, then fall back to template
+            message: str | None = None
+            if config is not None:
+                tiers: list[dict] = config.options.get("tiers", [])
+                for tier in sorted(tiers, key=lambda t: t.get("min_bits", 0)):
+                    min_b = tier.get("min_bits", 0)
+                    max_b = tier.get("max_bits")
+                    if bits_amount >= min_b and (max_b is None or bits_amount <= max_b):
+                        tmpl = tier.get("message", "")
+                        if tmpl:
+                            message = tmpl.replace("$(user)", user_name).replace(
+                                "$(amount)", str(bits_amount)
+                            )
+                        break
+
+            if message is None:
+                # Fall back to main template
+                message = await self._get_message(
+                    channel_id, "bits", {"user": user_name, "amount": str(bits_amount)}
+                )
+
+            if message is None:
+                return
+
+            await payload.broadcaster.send_message(
+                message=message,
+                sender=self.bot.bot_id,
+                token_for=self.bot.bot_id,
+            )
+            LOGGER.info(f"[{broadcaster_name}] Cheer: {user_name} {bits_amount} bits")
+
+        except Exception as e:
+            LOGGER.error(f"[{broadcaster_name}] Cheer: {user_name} {bits_amount} bits (error: {e})")
+
+    @commands.Component.listener()
     async def event_raid(
         self,
         payload: twitchio.ChannelRaid,
     ) -> None:
-        """Raid 事件 - 自動 shoutout raider 頻道"""
+        """Raid 事件 - 自動 shoutout raider 頻道
+
+        NOTE: always-on — fires via EventSub regardless of streaming state.
+        """
         raider_name = payload.from_broadcaster.display_name or payload.from_broadcaster.name or ""
         raider_id = payload.from_broadcaster.id
         broadcaster_name = payload.to_broadcaster.name
@@ -238,7 +308,7 @@ class EventComponent(commands.Component):
 async def setup(bot: commands.Bot) -> None:
     component = EventComponent(bot)
     await bot.add_component(component)
-    LOGGER.info("EventComponent loaded with listeners: event_follow, event_subscribe, event_raid")
+    LOGGER.info("EventComponent loaded with listeners: event_follow, event_subscribe, event_raid, event_cheer")
 
 
 async def teardown(bot: commands.Bot) -> None: ...

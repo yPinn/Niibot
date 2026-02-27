@@ -68,7 +68,7 @@ class RedemptionConfigUpdate(BaseModel):
 # Event Config Endpoints
 # ============================================
 
-VALID_EVENT_TYPES = {"follow", "subscribe", "raid"}
+VALID_EVENT_TYPES = {"follow", "subscribe", "raid", "bits"}
 
 
 @router.get("/configs", response_model=list[EventConfigResponse])

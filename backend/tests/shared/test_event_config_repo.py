@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from shared.repositories.event_config import (
+    DEFAULT_TEMPLATES,
     EventConfigRepository,
     _config_cache,
     _config_list_cache,
@@ -224,8 +225,8 @@ class TestEnsureDefaults:
 
         result = await repo.ensure_defaults("new_channel")
 
-        # Should have called execute for each default event type (3 types)
-        assert conn.execute.call_count == 3
+        # Should have called execute for each default event type (4 types: follow, subscribe, raid, bits)
+        assert conn.execute.call_count == len(DEFAULT_TEMPLATES)
         assert isinstance(result, list)
 
     async def test_skips_db_insert_on_second_call(self):

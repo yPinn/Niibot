@@ -19,6 +19,7 @@ import {
   Badge,
   Button,
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -64,6 +65,16 @@ const TEMPLATE_VARIABLES: Record<string, { var: string; desc: string }[]> = {
     { var: '$(user)', desc: 'Raider 名稱' },
     { var: '$(count)', desc: '觀眾數量' },
   ],
+  bits: [
+    { var: '$(user)', desc: '投擲者名稱' },
+    { var: '$(amount)', desc: 'Bits 數量' },
+  ],
+}
+
+interface BitsTier {
+  min_bits: number
+  max_bits: number | null
+  message: string
 }
 
 const EVENT_TYPE_COLORS: Record<string, string> = {
@@ -118,11 +129,22 @@ export default function Events() {
   const [redemptionLoading, setRedemptionLoading] = useState(true)
   const [isNonPartner, setIsNonPartner] = useState(false)
 
+  // Bits tier state
+  const [bitsTiers, setBitsTiers] = useState<BitsTier[]>([])
+  const [newTierMin, setNewTierMin] = useState('')
+  const [newTierMax, setNewTierMax] = useState('')
+  const [newTierMsg, setNewTierMsg] = useState('')
+  const [bitsSaving, setBitsSaving] = useState(false)
+
   const fetchEvents = useCallback(async () => {
     try {
       setError(null)
       const data = await getEventConfigs()
       setEvents(data)
+      const bitsConfig = data.find(e => e.event_type === 'bits')
+      if (bitsConfig) {
+        setBitsTiers((bitsConfig.options as { tiers?: BitsTier[] }).tiers ?? [])
+      }
     } catch {
       setError('無法載入事件設定')
     } finally {
@@ -152,9 +174,11 @@ export default function Events() {
     fetchRedemptions()
   }, [fetchEvents, fetchRedemptions])
 
+  const bitsConfig = useMemo(() => events.find(e => e.event_type === 'bits') ?? null, [events])
+
   const sortedEvents = useMemo(() => {
     const { sortKey, sortDir } = eventSort
-    return [...events].sort((a, b) => {
+    return [...events].filter(e => e.event_type !== 'bits').sort((a, b) => {
       let cmp = 0
       switch (sortKey) {
         case 'event_type':
@@ -244,6 +268,66 @@ export default function Events() {
       toast.error('儲存事件設定失敗')
     } finally {
       setSaving(false)
+    }
+  }
+
+  // --- Bits handlers ---
+
+  const handleBitsToggle = async (enabled: boolean) => {
+    if (!bitsConfig) return
+    try {
+      const updated = await updateEventConfig('bits', {
+        message_template: bitsConfig.message_template,
+        enabled,
+        options: bitsConfig.options,
+      })
+      setEvents(prev => prev.map(e => (e.event_type === 'bits' ? updated : e)))
+      toast.success(enabled ? 'Bits 事件已啟用' : 'Bits 事件已停用')
+    } catch {
+      toast.error('切換 Bits 事件失敗')
+    }
+  }
+
+  const handleAddBitsTier = () => {
+    const min = parseInt(newTierMin, 10)
+    const max = newTierMax.trim() === '' ? null : parseInt(newTierMax, 10)
+    if (isNaN(min) || min < 1) {
+      toast.error('最低 Bits 需 >= 1')
+      return
+    }
+    if (max !== null && (isNaN(max) || max < min)) {
+      toast.error('最高 Bits 需大於最低 Bits')
+      return
+    }
+    if (!newTierMsg.trim()) {
+      toast.error('請輸入訊息模板')
+      return
+    }
+    setBitsTiers(prev => [...prev, { min_bits: min, max_bits: max, message: newTierMsg.trim() }])
+    setNewTierMin('')
+    setNewTierMax('')
+    setNewTierMsg('')
+  }
+
+  const handleRemoveBitsTier = (idx: number) => {
+    setBitsTiers(prev => prev.filter((_, i) => i !== idx))
+  }
+
+  const handleSaveBitsTiers = async () => {
+    if (!bitsConfig) return
+    setBitsSaving(true)
+    try {
+      const updated = await updateEventConfig('bits', {
+        message_template: bitsConfig.message_template,
+        enabled: bitsConfig.enabled,
+        options: { ...bitsConfig.options, tiers: bitsTiers },
+      })
+      setEvents(prev => prev.map(e => (e.event_type === 'bits' ? updated : e)))
+      toast.success('Bits 分級設定已儲存')
+    } catch {
+      toast.error('儲存 Bits 設定失敗')
+    } finally {
+      setBitsSaving(false)
     }
   }
 
@@ -486,6 +570,103 @@ export default function Events() {
               </Table>
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Bits (Cheer) */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Bits (打賞) 設定</CardTitle>
+          <CardDescription>根據 Bits 數量設定分級回應訊息</CardDescription>
+          <CardAction>
+            <Switch
+              checked={bitsConfig?.enabled ?? false}
+              onCheckedChange={handleBitsToggle}
+              disabled={!bitsConfig}
+            />
+          </CardAction>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {bitsTiers.length > 0 && (
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-28">最低 Bits</TableHead>
+                    <TableHead className="w-28">最高 Bits</TableHead>
+                    <TableHead>訊息模板</TableHead>
+                    <TableHead className="w-12" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {bitsTiers.map((tier, idx) => (
+                    <TableRow key={idx}>
+                      <TableCell>{tier.min_bits}</TableCell>
+                      <TableCell>{tier.max_bits ?? '不限'}</TableCell>
+                      <TableCell className="font-mono text-sub">{tier.message}</TableCell>
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleRemoveBitsTier(idx)}
+                          className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                        >
+                          <Icon icon="fa-solid fa-xmark" className="text-xs" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+          {/* Add tier form */}
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="flex flex-col gap-1">
+              <Label className="text-sub">最低 Bits</Label>
+              <Input
+                type="number"
+                min={1}
+                value={newTierMin}
+                onChange={e => setNewTierMin(e.target.value)}
+                className="w-24"
+                placeholder="1"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label className="text-sub">最高 Bits</Label>
+              <Input
+                type="number"
+                min={1}
+                value={newTierMax}
+                onChange={e => setNewTierMax(e.target.value)}
+                className="w-24"
+                placeholder="不限"
+              />
+            </div>
+            <div className="flex flex-1 flex-col gap-1">
+              <Label className="text-sub">
+                訊息模板
+                <span className="text-muted-foreground ml-1">
+                  (可用: $(user), $(amount))
+                </span>
+              </Label>
+              <Input
+                value={newTierMsg}
+                onChange={e => setNewTierMsg(e.target.value)}
+                placeholder="感謝 $(user) 的 $(amount) bits！"
+                className="font-mono"
+              />
+            </div>
+            <Button size="sm" onClick={handleAddBitsTier}>
+              新增
+            </Button>
+          </div>
+          <div className="flex justify-end">
+            <Button size="sm" onClick={handleSaveBitsTiers} disabled={bitsSaving}>
+              {bitsSaving ? '儲存中...' : '儲存分級設定'}
+            </Button>
+          </div>
         </CardContent>
       </Card>
 

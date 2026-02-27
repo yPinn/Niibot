@@ -3,7 +3,7 @@ import { API_ENDPOINTS, apiFetch } from './config'
 export interface EventConfig {
   id: number
   channel_id: string
-  event_type: 'follow' | 'subscribe' | 'raid'
+  event_type: 'follow' | 'subscribe' | 'raid' | 'bits'
   message_template: string
   enabled: boolean
   options: Record<string, unknown>

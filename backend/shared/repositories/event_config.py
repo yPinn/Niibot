@@ -22,11 +22,13 @@ DEFAULT_TEMPLATES: dict[str, str] = {
     "follow": "感謝 $(user) 的追隨！",
     "subscribe": "感謝 $(user) 的訂閱！",
     "raid": "$(user) 帶了 $(count) 個新朋友降落！",
+    "bits": "感謝 $(user) 投擲了 $(amount) 個 Bits！",
 }
 
 # Default options per event type (only event types with options need entries)
 DEFAULT_OPTIONS: dict[str, dict] = {
     "raid": {"auto_shoutout": True},
+    "bits": {"tiers": []},
 }
 
 EVENT_TYPES = list(DEFAULT_TEMPLATES.keys())
