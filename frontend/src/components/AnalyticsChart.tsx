@@ -1,4 +1,4 @@
-import { type ReactElement, useState } from 'react'
+import { type ReactElement, useMemo, useState } from 'react'
 import {
   Area,
   AreaChart,
@@ -213,49 +213,53 @@ export default function AnalyticsChart({
     recent_sessions: [],
   }
 
-  const sessionsByDate = new Map<string, SessionSummary[]>()
-  const MAX_CHART_DATA_POINTS = 20
-  const recentSessions = [...(analyticsData.recent_sessions || [])]
-    .reverse()
-    .slice(-MAX_CHART_DATA_POINTS)
+  const { realChartData, chartData } = useMemo(() => {
+    const sessionsByDate = new Map<string, SessionSummary[]>()
+    const MAX_CHART_DATA_POINTS = 20
+    const recentSessions = [...(analyticsData.recent_sessions || [])]
+      .reverse()
+      .slice(-MAX_CHART_DATA_POINTS)
 
-  recentSessions.forEach(session => {
-    const date = new Date(session.started_at)
-    const dateKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-    if (!sessionsByDate.has(dateKey)) sessionsByDate.set(dateKey, [])
-    sessionsByDate.get(dateKey)!.push(session)
-  })
+    recentSessions.forEach(session => {
+      const date = new Date(session.started_at)
+      const dateKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+      if (!sessionsByDate.has(dateKey)) sessionsByDate.set(dateKey, [])
+      sessionsByDate.get(dateKey)!.push(session)
+    })
 
-  const realChartData = Array.from(sessionsByDate.entries()).map(([dateKey, daySessions]) => {
-    const date = new Date(dateKey)
-    return {
-      date: `${date.getMonth() + 1}-${String(date.getDate()).padStart(2, '0')}`,
-      sessions: daySessions,
-      stream_hours: daySessions.reduce((sum, s) => sum + s.duration_hours, 0),
-      avg_viewers: analyticsData.avg_viewers || 0,
-      follows: daySessions.reduce((sum, s) => sum + s.new_follows, 0),
-      subs: daySessions.reduce((sum, s) => sum + s.new_subs, 0),
-      session_count: daySessions.length,
-    }
-  })
+    const real = Array.from(sessionsByDate.entries()).map(([dateKey, daySessions]) => {
+      const date = new Date(dateKey)
+      return {
+        date: `${date.getMonth() + 1}-${String(date.getDate()).padStart(2, '0')}`,
+        sessions: daySessions,
+        stream_hours: daySessions.reduce((sum, s) => sum + s.duration_hours, 0),
+        avg_viewers: analyticsData.avg_viewers || 0,
+        follows: daySessions.reduce((sum, s) => sum + s.new_follows, 0),
+        subs: daySessions.reduce((sum, s) => sum + s.new_subs, 0),
+        session_count: daySessions.length,
+      }
+    })
 
-  // When no data, generate last 7 days with 0 values so the chart renders a flat line
-  const chartData =
-    realChartData.length > 0
-      ? realChartData
-      : Array.from({ length: 7 }, (_, i) => {
-          const d = new Date()
-          d.setDate(d.getDate() - (6 - i))
-          return {
-            date: `${d.getMonth() + 1}-${String(d.getDate()).padStart(2, '0')}`,
-            sessions: [] as SessionSummary[],
-            stream_hours: 0,
-            avg_viewers: 0,
-            follows: 0,
-            subs: 0,
-            session_count: 0,
-          }
-        })
+    // When no data, generate last 7 days with 0 values so the chart renders a flat line
+    const chart =
+      real.length > 0
+        ? real
+        : Array.from({ length: 7 }, (_, i) => {
+            const d = new Date()
+            d.setDate(d.getDate() - (6 - i))
+            return {
+              date: `${d.getMonth() + 1}-${String(d.getDate()).padStart(2, '0')}`,
+              sessions: [] as SessionSummary[],
+              stream_hours: 0,
+              avg_viewers: 0,
+              follows: 0,
+              subs: 0,
+              session_count: 0,
+            }
+          })
+
+    return { realChartData: real, chartData: chart }
+  }, [data]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const isEmpty = realChartData.length === 0
 

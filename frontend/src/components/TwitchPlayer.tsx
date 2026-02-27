@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 interface TwitchPlayerProps {
   channel: string
@@ -31,6 +31,7 @@ export default function TwitchPlayer({
 }: TwitchPlayerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const playerRef = useRef<TwitchPlayerInstance | null>(null)
+  const [loadError, setLoadError] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -76,13 +77,21 @@ export default function TwitchPlayer({
       const poll = setInterval(() => {
         if (window.Twitch) {
           clearInterval(poll)
+          clearTimeout(timeout)
           initPlayer()
         }
       }, 100)
 
+      // Give up after 10 seconds if the Twitch embed script never loads
+      const timeout = setTimeout(() => {
+        clearInterval(poll)
+        if (!cancelled) setLoadError(true)
+      }, 10_000)
+
       return () => {
         cancelled = true
         clearInterval(poll)
+        clearTimeout(timeout)
       }
     }
 
@@ -98,6 +107,16 @@ export default function TwitchPlayer({
       }
     }
   }, [channel, width, height, muted, autoplay])
+
+  if (loadError) {
+    return (
+      <div
+        className={`flex items-center justify-center text-muted-foreground text-sm ${className}`}
+      >
+        播放器載入失敗
+      </div>
+    )
+  }
 
   return <div ref={containerRef} className={className} />
 }

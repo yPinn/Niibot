@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
 import {
@@ -47,7 +47,6 @@ import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { usePolling } from '@/hooks/usePolling'
 
 const POLL_INTERVAL = 10_000
-
 
 const ROLE_OPTIONS = [
   { value: 'everyone', label: '所有人' },
@@ -154,6 +153,7 @@ export default function VideoQueue() {
 
   const [addUrlInput, setAddUrlInput] = useState('')
   const [adding, setAdding] = useState(false)
+  const hasInitialized = useRef(false)
 
   const fetchData = useCallback(async () => {
     try {
@@ -163,8 +163,11 @@ export default function VideoQueue() {
       ])
       setState(queueState)
       setSettings(queueSettings)
-      setMaxDurationInput(String(queueSettings.max_duration_seconds))
-      setMaxQueueSizeInput(String(queueSettings.max_queue_size))
+      if (!hasInitialized.current) {
+        setMaxDurationInput(String(queueSettings.max_duration_seconds))
+        setMaxQueueSizeInput(String(queueSettings.max_queue_size))
+        hasInitialized.current = true
+      }
     } catch {
       // silent on poll errors
     } finally {
@@ -305,10 +308,7 @@ export default function VideoQueue() {
 
   return (
     <main className="flex flex-1 flex-col gap-section p-page md:p-page-lg">
-      <div>
-        <h1 className="text-page-title font-bold">Video Queue</h1>
-        <p className="text-sub text-muted-foreground">管理 YouTube 點播系統</p>
-      </div>
+      <PageHeader title="Video Queue" description="管理 YouTube 點播系統" />
 
       {/* Settings + Overlay Preview */}
       <div className="grid grid-cols-1 gap-section lg:grid-cols-3">
@@ -463,7 +463,12 @@ export default function VideoQueue() {
               <Icon icon="fa-solid fa-plus" className="mr-1.5 text-xs" />
               {adding ? '...' : '新增'}
             </Button>
-            <Button size="sm" variant="destructive" onClick={handleClear} disabled={queueSize === 0}>
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={handleClear}
+              disabled={queueSize === 0}
+            >
               <Icon icon="fa-solid fa-trash" className="mr-1.5 text-xs" />
               清空
             </Button>

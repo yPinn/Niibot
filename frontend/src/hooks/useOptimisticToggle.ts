@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import { toast } from 'sonner'
 
 export interface UseOptimisticToggleOptions<T extends { enabled: boolean }> {
@@ -32,10 +33,15 @@ export function useOptimisticToggle<T extends { enabled: boolean }>(
   options: UseOptimisticToggleOptions<T>
 ): { toggle: (item: T) => Promise<void> } {
   const { setState, getId, toggleFn, messages } = options
+  const pendingRef = useRef(new Set<string | number>())
 
   const toggle = async (item: T) => {
-    const newEnabled = !item.enabled
     const id = getId(item)
+    const newEnabled = !item.enabled
+
+    // Double-click guard: skip if this item's toggle is already in-flight
+    if (pendingRef.current.has(id)) return
+    pendingRef.current.add(id)
 
     // Optimistic update
     setState(prev => prev.map(x => (getId(x) === id ? { ...x, enabled: newEnabled } : x)))
@@ -47,6 +53,8 @@ export function useOptimisticToggle<T extends { enabled: boolean }>(
       // Revert
       setState(prev => prev.map(x => (getId(x) === id ? { ...x, enabled: item.enabled } : x)))
       toast.error(messages?.error ?? '切換失敗')
+    } finally {
+      pendingRef.current.delete(id)
     }
   }
 

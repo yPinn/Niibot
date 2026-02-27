@@ -1,18 +1,36 @@
 /* animations */
 
 @keyframes overlayEnter {
-  from { transform: scaleY(0.1); opacity: 0; }
-  to   { transform: scaleY(1);   opacity: 1; }
+  from {
+    transform: scaleY(0.1);
+    opacity: 0;
+  }
+  to {
+    transform: scaleY(1);
+    opacity: 1;
+  }
 }
 
 @keyframes overlayExit {
-  from { transform: scaleY(1);   opacity: 1; }
-  to   { transform: scaleY(0.1); opacity: 0; }
+  from {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+  to {
+    transform: scaleY(0.1);
+    opacity: 0;
+  }
 }
 
 @keyframes titleEnter {
-  from { opacity: 0; transform: translateY(-5px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* overlay */
@@ -93,7 +111,9 @@
   color: #000000;
   border: 4px solid;
   border-color: #ffffff #404040 #404040 #ffffff;
-  box-shadow: inset -2px -2px 0 #808080, inset 2px 2px 0 #f0ede8;
+  box-shadow:
+    inset -2px -2px 0 #808080,
+    inset 2px 2px 0 #f0ede8;
 }
 
 .charBoxNarrow {

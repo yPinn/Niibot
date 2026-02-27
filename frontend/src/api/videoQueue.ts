@@ -139,8 +139,11 @@ export async function addVideoToQueue(url: string): Promise<PublicVideoQueueStat
   })
   if (response.status === 409) {
     const body = await response.json().catch(() => ({}))
+    // detail strings are coupled to backend literals:
+    //   "Video already in queue"  → video_queue_router.py
+    //   "Queue is full"           → video_queue_router.py
     const detail: string = body?.detail ?? ''
-    if (detail.toLowerCase().includes('already')) throw new Error('該影片已在佇列中')
+    if (detail === 'Video already in queue') throw new Error('該影片已在佇列中')
     throw new Error('隊列已滿')
   }
   if (response.status === 422) throw new Error('無效的 YouTube 連結')

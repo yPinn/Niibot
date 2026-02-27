@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
 import {
@@ -39,7 +39,6 @@ import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { usePolling } from '@/hooks/usePolling'
 
 const POLL_INTERVAL = 15_000
-
 
 function formatTime(dateStr: string) {
   return new Date(dateStr).toLocaleTimeString('zh-TW', {
@@ -125,12 +124,16 @@ export default function GameQueue() {
   const [loading, setLoading] = useState(true)
   const [groupSizeInput, setGroupSizeInput] = useState('')
   const [saving, setSaving] = useState(false)
+  const hasInitialized = useRef(false)
 
   const fetchState = useCallback(async () => {
     try {
       const data = await getQueueState()
       setState(data)
-      setGroupSizeInput(String(data.group_size))
+      if (!hasInitialized.current) {
+        setGroupSizeInput(String(data.group_size))
+        hasInitialized.current = true
+      }
     } catch {
       // silent on poll errors
     } finally {
@@ -213,10 +216,7 @@ export default function GameQueue() {
   if (loading) {
     return (
       <main className="flex flex-1 flex-col gap-section p-page md:p-page-lg">
-        <div>
-          <h1 className="text-page-title font-bold">Game Queue</h1>
-          <p className="text-sub text-muted-foreground">管理遊戲排隊系統</p>
-        </div>
+        <PageHeader title="Game Queue" description="管理遊戲排隊系統" />
         <div className="flex items-center justify-center py-empty">
           <Spinner className="size-8 text-primary" />
         </div>
@@ -290,11 +290,7 @@ export default function GameQueue() {
 
         {overlayUrl && (
           <div className="overflow-hidden rounded-lg border bg-black">
-            <iframe
-              src={overlayUrl}
-              className="block h-full w-full"
-              title="Overlay 預覽"
-            />
+            <iframe src={overlayUrl} className="block h-full w-full" title="Overlay 預覽" />
           </div>
         )}
       </div>

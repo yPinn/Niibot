@@ -103,6 +103,10 @@ export default function VideoQueueOverlay() {
   const currentIdRef = useRef<number | null>(null)
   const advancingRef = useRef(false) // prevent concurrent advance calls
   const progressRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const usernameRef = useRef(username)
+  useEffect(() => {
+    usernameRef.current = username
+  }, [username])
 
   useDocumentTitle('Video Queue Overlay')
 
@@ -238,7 +242,7 @@ export default function VideoQueueOverlay() {
   }, [])
 
   function handleVideoEnd(doneId: number) {
-    if (advancingRef.current || !username) return
+    if (advancingRef.current || !usernameRef.current) return
     advancingRef.current = true
 
     if (progressRef.current) {
@@ -248,7 +252,7 @@ export default function VideoQueueOverlay() {
 
     setIsExiting(true)
     setTimeout(() => {
-      advanceVideoQueue(username, doneId)
+      advanceVideoQueue(usernameRef.current!, doneId)
         .then(newState => {
           setState(newState)
           setIsExiting(false)

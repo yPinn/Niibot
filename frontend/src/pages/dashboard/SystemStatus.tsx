@@ -196,9 +196,7 @@ export default function SystemStatus() {
               {service.online ? (
                 service.rows.map(row => <Row key={row.label} label={row.label} value={row.value} />)
               ) : (
-                <p className="text-sub text-muted-foreground font-mono py-2">
-                  service unreachable
-                </p>
+                <p className="text-sub text-muted-foreground font-mono py-2">service unreachable</p>
               )}
             </div>
           </div>

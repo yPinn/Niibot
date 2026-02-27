@@ -178,28 +178,30 @@ export default function Events() {
 
   const sortedEvents = useMemo(() => {
     const { sortKey, sortDir } = eventSort
-    return [...events].filter(e => e.event_type !== 'bits').sort((a, b) => {
-      let cmp = 0
-      switch (sortKey) {
-        case 'event_type':
-          cmp = (EVENT_TYPE_NAMES[a.event_type] || a.event_type).localeCompare(
-            EVENT_TYPE_NAMES[b.event_type] || b.event_type
-          )
-          break
-        case 'type_label':
-          cmp = (EVENT_TYPE_LABELS[a.event_type] || a.event_type).localeCompare(
-            EVENT_TYPE_LABELS[b.event_type] || b.event_type
-          )
-          break
-        case 'trigger_count':
-          cmp = a.trigger_count - b.trigger_count
-          break
-        case 'enabled':
-          cmp = Number(a.enabled) - Number(b.enabled)
-          break
-      }
-      return sortDir === 'desc' ? -cmp : cmp
-    })
+    return [...events]
+      .filter(e => e.event_type !== 'bits')
+      .sort((a, b) => {
+        let cmp = 0
+        switch (sortKey) {
+          case 'event_type':
+            cmp = (EVENT_TYPE_NAMES[a.event_type] || a.event_type).localeCompare(
+              EVENT_TYPE_NAMES[b.event_type] || b.event_type
+            )
+            break
+          case 'type_label':
+            cmp = (EVENT_TYPE_LABELS[a.event_type] || a.event_type).localeCompare(
+              EVENT_TYPE_LABELS[b.event_type] || b.event_type
+            )
+            break
+          case 'trigger_count':
+            cmp = a.trigger_count - b.trigger_count
+            break
+          case 'enabled':
+            cmp = Number(a.enabled) - Number(b.enabled)
+            break
+        }
+        return sortDir === 'desc' ? -cmp : cmp
+      })
   }, [events, eventSort])
 
   const sortedRedemptions = useMemo(() => {
@@ -600,7 +602,7 @@ export default function Events() {
                 </TableHeader>
                 <TableBody>
                   {bitsTiers.map((tier, idx) => (
-                    <TableRow key={idx}>
+                    <TableRow key={tier.min_bits}>
                       <TableCell>{tier.min_bits}</TableCell>
                       <TableCell>{tier.max_bits ?? '不限'}</TableCell>
                       <TableCell className="font-mono text-sub">{tier.message}</TableCell>
@@ -647,9 +649,7 @@ export default function Events() {
             <div className="flex flex-1 flex-col gap-1">
               <Label className="text-sub">
                 訊息模板
-                <span className="text-muted-foreground ml-1">
-                  (可用: $(user), $(amount))
-                </span>
+                <span className="text-muted-foreground ml-1">(可用: $(user), $(amount))</span>
               </Label>
               <Input
                 value={newTierMsg}

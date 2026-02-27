@@ -71,6 +71,9 @@ export default function Timers() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  // TODO: The form state below (editing, formName, formInterval, formMinLines, formTemplate,
+  // formEnabled, formAlias, showAdvanced, saving, saveError) should be refactored to a single
+  // useReducer for consistency with CommandSheet. Deferred due to risk/scope.
   const [editing, setEditing] = useState<EditingState | null>(null)
   const [formName, setFormName] = useState('')
   const [formInterval, setFormInterval] = useState('')
