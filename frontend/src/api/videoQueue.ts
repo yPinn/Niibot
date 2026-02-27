@@ -137,8 +137,13 @@ export async function addVideoToQueue(url: string): Promise<PublicVideoQueueStat
     credentials: 'include',
     body: JSON.stringify({ url }),
   })
-  if (response.status === 409) throw new Error('隊列已滿')
+  if (response.status === 409) {
+    const body = await response.json().catch(() => ({}))
+    const detail: string = body?.detail ?? ''
+    if (detail.toLowerCase().includes('already')) throw new Error('該影片已在佇列中')
+    throw new Error('隊列已滿')
+  }
   if (response.status === 422) throw new Error('無效的 YouTube 連結')
-  if (!response.ok) throw new Error(`Failed to add video: ${response.statusText}`)
+  if (!response.ok) throw new Error('新增失敗，請稍後再試')
   return response.json()
 }

@@ -399,6 +399,9 @@ async def add_video_entry(
         if queue_size >= settings.max_queue_size:
             raise HTTPException(status_code=409, detail="Queue is full")
 
+        if await repo.video_is_active(channel_id, video_id):
+            raise HTTPException(status_code=409, detail="Video already in queue")
+
         # Fetch YouTube metadata (graceful fallback if no API key or request fails)
         api_key = get_settings().youtube_api_key
         title, duration_seconds, _ = await fetch_yt_info(video_id, api_key)
