@@ -48,6 +48,9 @@ class Settings(BaseSettings):
         default="http://localhost:8080", description="Discord Bot Health Server URL"
     )
 
+    # YouTube Data API
+    youtube_api_key: str = Field(default="", description="YouTube Data API v3 key")
+
     # Environment
     environment: str = Field(default="development", description="Environment name")
     log_level: str = Field(default="INFO", description="Logging level")

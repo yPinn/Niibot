@@ -23,6 +23,7 @@ export interface VideoQueueSettings {
   min_role_chat: string
   max_duration_seconds: number
   max_queue_size: number
+  min_view_count: number
 }
 
 export interface VideoQueueSettingsUpdate {
@@ -30,6 +31,7 @@ export interface VideoQueueSettingsUpdate {
   min_role_chat?: string
   max_duration_seconds?: number
   max_queue_size?: number
+  min_view_count?: number
 }
 
 // ---- Public (OBS Overlay) ----
@@ -107,5 +109,36 @@ export async function updateVideoQueueSettings(
     body: JSON.stringify(data),
   })
   if (!response.ok) throw new Error(`Failed to update video queue settings: ${response.statusText}`)
+  return response.json()
+}
+
+export async function setVideoAsNext(entryId: number): Promise<PublicVideoQueueState> {
+  const response = await apiFetch(API_ENDPOINTS.videoQueue.setNext(entryId), {
+    method: 'POST',
+    credentials: 'include',
+  })
+  if (!response.ok) throw new Error(`Failed to set entry as next: ${response.statusText}`)
+  return response.json()
+}
+
+export async function playVideoNow(entryId: number): Promise<PublicVideoQueueState> {
+  const response = await apiFetch(API_ENDPOINTS.videoQueue.playNow(entryId), {
+    method: 'POST',
+    credentials: 'include',
+  })
+  if (!response.ok) throw new Error(`Failed to play entry now: ${response.statusText}`)
+  return response.json()
+}
+
+export async function addVideoToQueue(url: string): Promise<PublicVideoQueueState> {
+  const response = await apiFetch(API_ENDPOINTS.videoQueue.addEntry, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ url }),
+  })
+  if (response.status === 409) throw new Error('隊列已滿')
+  if (response.status === 422) throw new Error('無效的 YouTube 連結')
+  if (!response.ok) throw new Error(`Failed to add video: ${response.statusText}`)
   return response.json()
 }

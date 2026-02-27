@@ -67,6 +67,7 @@ export const API_ENDPOINTS = {
     state: join('/api/game-queue/state'),
     advance: join('/api/game-queue/advance'),
     removeEntry: (id: number) => join(`/api/game-queue/entries/${id}`),
+    promoteEntry: (id: number) => join(`/api/game-queue/entries/${id}/promote`),
     clear: join('/api/game-queue/clear'),
     settings: join('/api/game-queue/settings'),
     public: (username: string) => join(`/api/game-queue/public/${username}`),
@@ -80,6 +81,9 @@ export const API_ENDPOINTS = {
     skip: join('/api/video-queue/skip'),
     clear: join('/api/video-queue/clear'),
     settings: join('/api/video-queue/settings'),
+    setNext: (id: number) => join(`/api/video-queue/entries/${id}/set-next`),
+    playNow: (id: number) => join(`/api/video-queue/entries/${id}/play-now`),
+    addEntry: join('/api/video-queue/entries'),
   },
   timers: {
     configs: join('/api/timers/configs'),

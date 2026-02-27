@@ -9,9 +9,15 @@ from asyncpg import Pool
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from core.config import get_settings
 from core.dependencies import get_current_channel_id, get_db_pool, get_twitch_api
 from services import TwitchAPIClient
-from shared.repositories.video_queue import VideoQueueRepository, VideoQueueSettingsRepository
+from shared.repositories.video_queue import (
+    VideoQueueRepository,
+    VideoQueueSettingsRepository,
+    extract_youtube_id,
+    fetch_yt_info,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +52,7 @@ class VideoQueueSettingsResponse(BaseModel):
     min_role_chat: str
     max_duration_seconds: int
     max_queue_size: int
+    min_view_count: int
 
 
 class VideoQueueSettingsUpdate(BaseModel):
@@ -55,6 +62,11 @@ class VideoQueueSettingsUpdate(BaseModel):
     )
     max_duration_seconds: int | None = Field(default=None, ge=30, le=10800)
     max_queue_size: int | None = Field(default=None, ge=1, le=100)
+    min_view_count: int | None = Field(default=None, ge=0)
+
+
+class AddVideoRequest(BaseModel):
+    url: str
 
 
 class AdvanceRequest(BaseModel):
@@ -260,6 +272,7 @@ async def get_settings(
             min_role_chat=s.min_role_chat,
             max_duration_seconds=s.max_duration_seconds,
             max_queue_size=s.max_queue_size,
+            min_view_count=s.min_view_count,
         )
     except Exception as e:
         logger.exception(f"Failed to get video queue settings: {e}")
@@ -275,7 +288,13 @@ async def update_settings(
     """Update video queue settings."""
     if all(
         v is None
-        for v in [body.enabled, body.min_role_chat, body.max_duration_seconds, body.max_queue_size]
+        for v in [
+            body.enabled,
+            body.min_role_chat,
+            body.max_duration_seconds,
+            body.max_queue_size,
+            body.min_view_count,
+        ]
     ):
         raise HTTPException(status_code=400, detail="No fields to update")
     try:
@@ -286,6 +305,7 @@ async def update_settings(
             min_role_chat=body.min_role_chat,
             max_duration_seconds=body.max_duration_seconds,
             max_queue_size=body.max_queue_size,
+            min_view_count=body.min_view_count,
         )
         logger.info(f"Channel {channel_id} updated video queue settings")
         return VideoQueueSettingsResponse(
@@ -294,6 +314,7 @@ async def update_settings(
             min_role_chat=s.min_role_chat,
             max_duration_seconds=s.max_duration_seconds,
             max_queue_size=s.max_queue_size,
+            min_view_count=s.min_view_count,
         )
     except Exception as e:
         logger.exception(f"Failed to update video queue settings: {e}")
@@ -313,3 +334,94 @@ async def get_state(
     except Exception as e:
         logger.exception(f"Failed to get video queue state: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch queue state") from None
+
+
+@router.post("/entries/{entry_id}/set-next", response_model=PublicVideoQueueState)
+async def set_entry_as_next(
+    entry_id: int,
+    channel_id: str = Depends(get_current_channel_id),
+    pool: Pool = Depends(get_db_pool),
+) -> PublicVideoQueueState:
+    """Move a queued entry to the front of the queue (play next)."""
+    try:
+        repo = VideoQueueRepository(pool)
+        settings_repo = VideoQueueSettingsRepository(pool)
+        moved = await repo.set_as_next(entry_id, channel_id)
+        if not moved:
+            raise HTTPException(status_code=404, detail="Entry not found or not in queued state")
+        logger.info(f"Channel {channel_id} set entry {entry_id} as next")
+        return await _build_public_state(channel_id, repo, settings_repo)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to set entry as next: {e}")
+        raise HTTPException(status_code=500, detail="Failed to reorder queue") from None
+
+
+@router.post("/entries/{entry_id}/play-now", response_model=PublicVideoQueueState)
+async def play_entry_now(
+    entry_id: int,
+    channel_id: str = Depends(get_current_channel_id),
+    pool: Pool = Depends(get_db_pool),
+) -> PublicVideoQueueState:
+    """Skip current video and immediately start playing the specified queued entry."""
+    try:
+        repo = VideoQueueRepository(pool)
+        settings_repo = VideoQueueSettingsRepository(pool)
+        await repo.play_immediately(entry_id, channel_id)
+        logger.info(f"Channel {channel_id} played entry {entry_id} immediately")
+        return await _build_public_state(channel_id, repo, settings_repo)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to play entry immediately: {e}")
+        raise HTTPException(status_code=500, detail="Failed to play entry") from None
+
+
+@router.post("/entries", response_model=PublicVideoQueueState, status_code=201)
+async def add_video_entry(
+    body: AddVideoRequest,
+    channel_id: str = Depends(get_current_channel_id),
+    pool: Pool = Depends(get_db_pool),
+) -> PublicVideoQueueState:
+    """Broadcaster directly adds a video to the queue from the dashboard."""
+    video_id = extract_youtube_id(body.url)
+    if not video_id:
+        raise HTTPException(status_code=422, detail="Invalid YouTube URL")
+
+    try:
+        repo = VideoQueueRepository(pool)
+        settings_repo = VideoQueueSettingsRepository(pool)
+
+        # Enforce queue size limit
+        settings = await settings_repo.get_or_create(channel_id)
+        queue_size = await repo.get_queue_size(channel_id)
+        if queue_size >= settings.max_queue_size:
+            raise HTTPException(status_code=409, detail="Queue is full")
+
+        # Fetch YouTube metadata (graceful fallback if no API key or request fails)
+        api_key = get_settings().youtube_api_key
+        title, duration_seconds, _ = await fetch_yt_info(video_id, api_key)
+
+        # Look up broadcaster login name for the requested_by field
+        row = await pool.fetchrow(
+            "SELECT username FROM user_linked_accounts WHERE platform = 'twitch' AND platform_user_id = $1",
+            channel_id,
+        )
+        requested_by: str = row["username"] if row else channel_id
+
+        await repo.add(
+            channel_id=channel_id,
+            video_id=video_id,
+            requested_by=requested_by,
+            source="dashboard",
+            title=title,
+            duration_seconds=duration_seconds,
+        )
+        logger.info(f"Channel {channel_id} added video {video_id} from dashboard")
+        return await _build_public_state(channel_id, repo, settings_repo)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to add video entry: {e}")
+        raise HTTPException(status_code=500, detail="Failed to add video") from None

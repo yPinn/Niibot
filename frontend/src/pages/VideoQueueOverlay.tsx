@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useSearchParams } from 'react-router-dom'
 
 import {
   advanceVideoQueue,
   getPublicVideoQueueState,
   type PublicVideoQueueState,
   reportVideoMetadata,
-  type VideoQueueEntry,
 } from '@/api/videoQueue'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { usePolling } from '@/hooks/usePolling'
+
+import styles from './VideoQueueOverlay.module.css'
 
 // ---------------------------------------------------------------------------
 // YouTube IFrame API — minimal inline types
@@ -20,7 +21,6 @@ interface YTPlayer {
   destroy(): void
   getCurrentTime(): number
   getDuration(): number
-  getPlayerState(): number
 }
 
 interface YTPlayerOptions {
@@ -32,12 +32,13 @@ interface YTPlayerOptions {
     controls?: 0 | 1
     rel?: 0 | 1
     modestbranding?: 0 | 1
+    mute?: 0 | 1
+    iv_load_policy?: 1 | 3
   }
   events?: {
     onReady?: (event: { target: YTPlayer }) => void
     onStateChange?: (event: { target: YTPlayer; data: number }) => void
     onError?: (event: { target: YTPlayer }) => void
-    onAutoplayBlocked?: (event: { target: YTPlayer }) => void
   }
 }
 
@@ -75,61 +76,12 @@ function loadYouTubeAPI(): Promise<void> {
 
 const POLL_INTERVAL = 5_000
 
-function formatSeconds(seconds: number): string {
-  const m = Math.floor(seconds / 60)
-  const s = Math.floor(seconds % 60)
+function formatRemaining(elapsed: number, duration: number | null): string {
+  if (!duration) return '--:--'
+  const remaining = Math.max(0, duration - elapsed)
+  const m = Math.floor(remaining / 60)
+  const s = Math.floor(remaining % 60)
   return `${m}:${s.toString().padStart(2, '0')}`
-}
-
-// ---------------------------------------------------------------------------
-// Info bar shown over the video
-// ---------------------------------------------------------------------------
-
-function InfoBar({
-  entry,
-  elapsed,
-  queueCount,
-  totalQueuedDuration,
-}: {
-  entry: VideoQueueEntry
-  elapsed: number
-  queueCount: number
-  totalQueuedDuration: number | null
-}) {
-  const duration = entry.duration_seconds
-  const progress = duration && duration > 0 ? Math.min(elapsed / duration, 1) : 0
-  const remaining = duration ? Math.max(0, duration - elapsed) : null
-
-  return (
-    <div className="absolute bottom-0 left-0 right-0 bg-black/70 px-3 pb-2 pt-1 font-sans">
-      {/* Progress bar */}
-      <div className="mb-1.5 h-1 w-full rounded bg-white/20">
-        <div
-          className="h-1 rounded bg-red-500 transition-all duration-1000"
-          style={{ width: `${progress * 100}%` }}
-        />
-      </div>
-
-      {/* Title + requester row */}
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="truncate text-sm font-medium text-white">
-          ♪ {entry.title || entry.video_id}
-        </span>
-        <span className="shrink-0 text-xs text-white/50">by {entry.requested_by}</span>
-      </div>
-
-      {/* Remaining + queue info row */}
-      <div className="mt-0.5 flex items-center justify-between text-[11px] text-white/40">
-        <span>{remaining !== null ? `剩餘 ${formatSeconds(remaining)}` : ''}</span>
-        {queueCount > 0 && (
-          <span>
-            待播 {queueCount} 部
-            {totalQueuedDuration ? `（共 ${formatSeconds(totalQueuedDuration)}）` : ''}
-          </span>
-        )}
-      </div>
-    </div>
-  )
 }
 
 // ---------------------------------------------------------------------------
@@ -138,10 +90,12 @@ function InfoBar({
 
 export default function VideoQueueOverlay() {
   const { username } = useParams<{ username: string }>()
+  const [searchParams] = useSearchParams()
+  const isPreview = searchParams.get('preview') === '1'
   const [state, setState] = useState<PublicVideoQueueState | null>(null)
   const [elapsed, setElapsed] = useState(0)
   const [ytReady, setYtReady] = useState(false)
-  const [showClickPrompt, setShowClickPrompt] = useState(false)
+  const [isExiting, setIsExiting] = useState(false)
 
   const playerRef = useRef<YTPlayer | null>(null)
   // containerRef: stable React-managed div (empty in vdom, children managed imperatively)
@@ -223,7 +177,14 @@ export default function VideoQueueOverlay() {
       width: '100%',
       height: '100%',
       videoId: current.video_id,
-      playerVars: { autoplay: 1, controls: 0, rel: 0, modestbranding: 1 },
+      playerVars: {
+        autoplay: 1,
+        controls: 0,
+        rel: 0,
+        modestbranding: 1,
+        iv_load_policy: 3,
+        mute: isPreview ? 1 : 0,
+      },
       events: {
         onReady: event => {
           const duration = event.target.getDuration()
@@ -232,7 +193,6 @@ export default function VideoQueueOverlay() {
             reportVideoMetadata(username, current.id, Math.round(duration)).catch(() => {})
           }
           event.target.playVideo()
-          setShowClickPrompt(false)
 
           // Start 1s progress interval
           progressRef.current = setInterval(() => {
@@ -256,13 +216,7 @@ export default function VideoQueueOverlay() {
         },
 
         onError: () => {
-          // Skip unplayable / region-locked videos
           handleVideoEnd(current.id)
-        },
-
-        onAutoplayBlocked: () => {
-          // OBS never hits this; shown only in regular browser testing
-          setShowClickPrompt(true)
         },
       },
     })
@@ -284,7 +238,7 @@ export default function VideoQueueOverlay() {
   }, [])
 
   function handleVideoEnd(doneId: number) {
-    if (advancingRef.current) return
+    if (advancingRef.current || !username) return
     advancingRef.current = true
 
     if (progressRef.current) {
@@ -292,51 +246,65 @@ export default function VideoQueueOverlay() {
       progressRef.current = null
     }
 
-    if (!username) return
-    advanceVideoQueue(username, doneId)
-      .then(newState => setState(newState))
-      .catch(() => {})
-      .finally(() => {
-        advancingRef.current = false
-      })
+    setIsExiting(true)
+    setTimeout(() => {
+      advanceVideoQueue(username, doneId)
+        .then(newState => {
+          setState(newState)
+          setIsExiting(false)
+        })
+        .catch(() => {
+          setIsExiting(false)
+        })
+        .finally(() => {
+          advancingRef.current = false
+        })
+    }, 600)
   }
 
   if (!username) return null
 
   const current = state?.current ?? null
   const queueCount = state?.queue_size ?? 0
-  const totalQueuedDuration = state?.total_queued_duration ?? null
+  const progress =
+    current?.duration_seconds && current.duration_seconds > 0
+      ? Math.min(elapsed / current.duration_seconds, 1)
+      : 0
 
   // Empty queue and no current → fully transparent (OBS sees nothing)
   if (!current && queueCount === 0) return null
 
   return (
-    <div className="relative h-screen w-screen overflow-hidden bg-black font-sans">
-      {/* YouTube player fills the entire browser source */}
-      <div ref={containerRef} className="h-full w-full" />
-
-      {/* Info overlay (only shown when a video is playing) */}
+    <div
+      className={`${styles.overlay}${isExiting ? ` ${styles.overlayExiting}` : ''}`}
+      style={isPreview ? { width: '100%', height: '100dvh' } : undefined}
+    >
       {current && (
-        <InfoBar
-          entry={current}
-          elapsed={elapsed}
-          queueCount={queueCount}
-          totalQueuedDuration={totalQueuedDuration}
-        />
-      )}
-
-      {/* Autoplay-blocked prompt (browser testing only; OBS never shows this) */}
-      {showClickPrompt && (
-        <div
-          className="absolute inset-0 flex cursor-pointer items-center justify-center bg-black/60"
-          onClick={() => {
-            playerRef.current?.playVideo()
-            setShowClickPrompt(false)
-          }}
-        >
-          <span className="text-2xl text-white">▶ 點擊開始播放</span>
+        <div key={current.id} className={styles.titleBar}>
+          <div className={styles.titleLeft}>
+            <span className={styles.titleName}>@ {current.requested_by}</span>
+          </div>
+          <div className={styles.controls}>
+            {Array.from(formatRemaining(elapsed, current.duration_seconds)).map((char, i) => (
+              <div
+                key={i}
+                className={char === ':' || char === '-' ? styles.charBoxNarrow : styles.charBox}
+              >
+                {char}
+              </div>
+            ))}
+          </div>
         </div>
       )}
+      <div className={styles.videoPanel}>
+        {current && (
+          <div className={styles.progressBar}>
+            <div className={styles.progressFill} style={{ width: `${progress * 100}%` }} />
+          </div>
+        )}
+        <div ref={containerRef} className={styles.videoContainer} />
+        <div className={styles.sunkenOverlay} />
+      </div>
     </div>
   )
 }
