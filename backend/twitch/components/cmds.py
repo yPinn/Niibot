@@ -39,12 +39,17 @@ class GeneralCommands(commands.Component):
         self.cmd_repo.pool = pool
 
     async def _record_command(self, ctx: commands.Context, command_name: str) -> None:
-        """Helper to record command usage to analytics and increment all-time usage_count."""
+        """Helper to record command usage to analytics and increment all-time usage_count.
+
+        Always increments usage_count regardless of streaming state (always-on).
+        Session-scoped analytics are only recorded when a live session is active —
+        this is intentional; do NOT remove the session guard from the analytics block.
+        """
         try:
             channel_id = ctx.channel.id
             # Always increment all-time usage_count regardless of stream status
             await self.cmd_repo.increment_usage_count(channel_id, command_name)
-            # Also record to session analytics if a stream is live
+            # Also record to session analytics if a stream is live (intentional gate)
             if hasattr(self.bot, "_active_sessions") and hasattr(self.bot, "analytics"):
                 session_id = self.bot._active_sessions.get(channel_id)
                 if session_id:

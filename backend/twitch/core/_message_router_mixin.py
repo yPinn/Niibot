@@ -31,6 +31,10 @@ class _MessageRouterMixin:
 
         Returns True if a trigger fired (caller should stop further processing).
         Only responds to top-level messages — ignores replies to other messages.
+
+        NOTE: always-on — triggers fire regardless of whether a stream session is
+        active.  Do NOT add an ``_active_sessions`` guard here; timer_manager.py
+        is the only component intentionally gated behind live-stream state.
         """
         # Skip sub-comments: triggers should not react to reply threads
         if payload.reply is not None:
@@ -91,6 +95,10 @@ class _MessageRouterMixin:
 
         Returns True if fully handled (text response sent, skip builtin pipeline),
         False if message should continue to builtin command pipeline.
+
+        NOTE: always-on — custom commands fire regardless of stream session state.
+        usage_count is incremented unconditionally.  Analytics (session-scoped) are
+        recorded separately in GeneralCommands._record_command when applicable.
         """
         text = payload.text
         if not text or not text.startswith("!"):

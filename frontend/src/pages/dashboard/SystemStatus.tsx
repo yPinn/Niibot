@@ -32,8 +32,8 @@ function formatStartedAt(iso?: string): string {
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex justify-between items-baseline gap-4 py-1.5 border-b border-border/30 last:border-0">
-      <span className="text-label text-muted-foreground shrink-0">{label}</span>
-      <span className="font-mono text-label text-right">{value}</span>
+      <span className="text-sub text-muted-foreground shrink-0">{label}</span>
+      <span className="font-mono text-sub text-right">{value}</span>
     </div>
   )
 }
@@ -78,7 +78,7 @@ function EnvBadge({ env }: { env?: string }) {
 
 function CommitLink({ commit }: { commit?: string }) {
   if (!commit || commit === 'unknown') {
-    return <span className="font-mono text-label text-muted-foreground">unknown</span>
+    return <span className="font-mono text-muted-foreground">unknown</span>
   }
   return (
     <a
@@ -167,7 +167,7 @@ export default function SystemStatus() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-page-title font-bold">System Status</h1>
-          <p className="text-label text-muted-foreground font-mono mt-1">
+          <p className="text-sub text-muted-foreground font-mono mt-1">
             polled every 30s · last update{' '}
             {lastUpdate.toLocaleTimeString('zh-TW', { hour12: false })}
           </p>
@@ -196,7 +196,7 @@ export default function SystemStatus() {
               {service.online ? (
                 service.rows.map(row => <Row key={row.label} label={row.label} value={row.value} />)
               ) : (
-                <p className="text-label text-muted-foreground font-mono py-2">
+                <p className="text-sub text-muted-foreground font-mono py-2">
                   service unreachable
                 </p>
               )}
