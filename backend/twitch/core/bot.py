@@ -4,18 +4,18 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 
 import asyncpg
 import twitchio
-from twitch.core._channel_mixin import _ChannelMixin
-from twitch.core._message_router_mixin import _MessageRouterMixin
-from twitch.core._notify_mixin import _NotifyMixin
-from twitch.core._session_mixin import _SessionMixin
 from twitchio import eventsub
 from twitchio.ext import commands
 from twitchio.ext.commands import CommandNotFound
 
+from core._channel_mixin import _ChannelMixin
+from core._message_router_mixin import _MessageRouterMixin
+from core._notify_mixin import _NotifyMixin
+from core._session_mixin import _SessionMixin
 from core.config import COMPONENTS_DIR
 from core.pg_listener import pg_listen
 from shared.database import DatabaseManager
@@ -209,13 +209,13 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
                 buf = self._chatter_buffers.setdefault(channel_id, {})
                 if chatter_id in buf:
                     buf[chatter_id]["count"] += 1
-                    buf[chatter_id]["last_at"] = datetime.now()
+                    buf[chatter_id]["last_at"] = datetime.now(UTC)
                     buf[chatter_id]["username"] = payload.chatter.name
                 else:
                     buf[chatter_id] = {
                         "username": payload.chatter.name,
                         "count": 1,
-                        "last_at": datetime.now(),
+                        "last_at": datetime.now(UTC),
                     }
                 self._channel_line_counts[channel_id] = (
                     self._channel_line_counts.get(channel_id, 0) + 1

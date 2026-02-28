@@ -13,10 +13,10 @@ import asyncio
 import logging
 
 import twitchio
-from twitch.utils.substitution import substitute_variables as _substitute_variables
-from twitch.utils.trigger_matching import match_trigger
 
 from core.guards import has_role, is_on_cooldown, record_cooldown
+from utils.substitution import substitute_variables as _substitute_variables
+from utils.trigger_matching import match_trigger
 
 LOGGER: logging.Logger = logging.getLogger("Bot")
 
@@ -151,6 +151,7 @@ class _MessageRouterMixin:
             asyncio.create_task(
                 self.command_configs.increment_usage_count(channel_id, config.command_name)  # type: ignore[attr-defined]
             )
+            self._record_custom_command_analytics(channel_id, cmd_name)
             return False
         else:
             response = _substitute_variables(
@@ -166,4 +167,19 @@ class _MessageRouterMixin:
             asyncio.create_task(
                 self.command_configs.increment_usage_count(channel_id, config.command_name)  # type: ignore[attr-defined]
             )
+            self._record_custom_command_analytics(channel_id, cmd_name)
             return True
+
+    def _record_custom_command_analytics(self, channel_id: str, cmd_name: str) -> None:
+        """Record custom command usage to session analytics if a stream is live."""
+        if not (hasattr(self, "_active_sessions") and hasattr(self, "analytics")):
+            return
+        session_id = self._active_sessions.get(channel_id)  # type: ignore[attr-defined]
+        if session_id:
+            asyncio.create_task(
+                self.analytics.record_command_usage(  # type: ignore[attr-defined]
+                    session_id=session_id,
+                    channel_id=channel_id,
+                    command_name=f"!{cmd_name}",
+                )
+            )

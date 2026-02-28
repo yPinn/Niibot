@@ -170,9 +170,21 @@ class _SessionMixin:
                     if cid in live_map:
                         continue
                     sid = self._active_sessions.pop(cid)  # type: ignore[attr-defined]
-                    self._chatter_buffers.pop(cid, None)  # type: ignore[attr-defined]
+                    chatter_data = self._chatter_buffers.pop(cid, {})  # type: ignore[attr-defined]
                     self._channel_line_counts.pop(cid, None)  # type: ignore[attr-defined]
                     if sid:
+                        if chatter_data:
+                            try:
+                                await self.analytics.flush_chatter_stats(  # type: ignore[attr-defined]
+                                    session_id=sid,
+                                    channel_id=cid,
+                                    chatters=chatter_data,
+                                )
+                                LOGGER.info(
+                                    f"Flushed {len(chatter_data)} chatters for session {sid} (poll)"
+                                )
+                            except Exception as e:
+                                LOGGER.warning(f"Failed to flush chatter stats for {sid}: {e}")
                         try:
                             await self.analytics.end_session(sid, datetime.now(UTC))  # type: ignore[attr-defined]
                             LOGGER.info(f"Session {sid} ended for channel {cid} (poll)")

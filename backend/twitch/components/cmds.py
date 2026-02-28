@@ -1,13 +1,16 @@
+import logging
 from datetime import UTC
 from typing import TYPE_CHECKING
 
 import twitchio
 from twitchio.ext import commands
 
-from core.bot import _substitute_variables
 from core.config import get_settings
 from core.guards import check_command
 from shared.repositories.command_config import CommandConfigRepository
+from utils.substitution import substitute_variables
+
+LOGGER: logging.Logger = logging.getLogger("Bot")
 
 FRONTEND_URL = get_settings().frontend_url.rstrip("/")
 
@@ -60,8 +63,6 @@ class GeneralCommands(commands.Component):
                         command_name=f"!{command_name}",
                     )
         except Exception as e:
-            from core.bot import LOGGER
-
             LOGGER.error(f"Failed to record command usage: {e}")
 
     @commands.command(aliases=["hello", "hey"])
@@ -78,7 +79,7 @@ class GeneralCommands(commands.Component):
 
         # Use custom response if set, otherwise default
         if config.custom_response:
-            response = _substitute_variables(
+            response = substitute_variables(
                 config.custom_response, ctx.chatter, ctx.channel.name, ""
             )
             await ctx.reply(response)
@@ -155,8 +156,6 @@ class GeneralCommands(commands.Component):
     async def event_stream_online(self, payload: twitchio.StreamOnline) -> None:
         from datetime import datetime
 
-        from core.bot import LOGGER
-
         LOGGER.info(f"頻道 {payload.broadcaster.name} 開始直播！")
 
         try:
@@ -197,8 +196,6 @@ class GeneralCommands(commands.Component):
     async def event_stream_offline(self, payload: twitchio.StreamOffline) -> None:
         import asyncio
         from datetime import datetime
-
-        from core.bot import LOGGER
 
         LOGGER.info(f"頻道 {payload.broadcaster.name} 結束直播")
 
