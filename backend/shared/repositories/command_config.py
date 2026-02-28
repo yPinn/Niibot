@@ -200,10 +200,10 @@ class CommandConfigRepository:
         return await _retry_on_db_error(_query)
 
     async def increment_usage_count(self, channel_id: str, command_name: str) -> None:
-        """Increment usage_count for a command by 1. Does not invalidate cache."""
+        """Increment usage_count for a command by 1 and record last_used_at. Does not invalidate cache."""
         async with self.pool.acquire() as conn:
             await conn.execute(
-                "UPDATE command_configs SET usage_count = usage_count + 1 "
+                "UPDATE command_configs SET usage_count = usage_count + 1, last_used_at = NOW() "
                 "WHERE channel_id = $1 AND command_name = $2",
                 channel_id,
                 command_name,

@@ -233,6 +233,48 @@ class _AnalyticsQueryMixin:
                 for row in rows
             ]
 
+    async def list_top_commands_from_config(
+        self, channel_id: str, days: int = 30, limit: int = 10
+    ) -> list[dict]:
+        """Get top commands directly from command_configs.usage_count.
+
+        Session-independent — always has data regardless of stream state.
+        Filters to commands used within the given time window via last_used_at.
+        """
+        async with self.pool.acquire() as conn:
+            since_date = datetime.now(UTC) - timedelta(days=days)
+            rows = await conn.fetch(
+                """
+                SELECT command_name, usage_count
+                FROM command_configs
+                WHERE channel_id = $1
+                  AND enabled = TRUE
+                  AND usage_count > 0
+                  AND last_used_at >= $2
+                ORDER BY usage_count DESC
+                LIMIT $3
+                """,
+                channel_id,
+                since_date,
+                limit,
+            )
+            return [
+                {
+                    "command_name": f"!{row['command_name']}",
+                    "usage_count": row["usage_count"],
+                }
+                for row in rows
+            ]
+
+    async def get_total_commands_from_config(self, channel_id: str) -> int:
+        """Get all-time total command usage from command_configs (session-independent)."""
+        async with self.pool.acquire() as conn:
+            total = await conn.fetchval(
+                "SELECT COALESCE(SUM(usage_count), 0) FROM command_configs WHERE channel_id = $1",
+                channel_id,
+            )
+            return int(total)
+
     async def get_total_messages(self, channel_id: str, days: int = 30) -> int:
         """Get total message count across all sessions in the given time window."""
         async with self.pool.acquire() as conn:

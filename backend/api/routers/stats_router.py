@@ -1,9 +1,11 @@
 """Channel statistics API routes"""
 
+import asyncio
 import logging
+from typing import Annotated
 
 from asyncpg import Pool
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from core.dependencies import get_current_channel_id, get_db_pool
@@ -33,16 +35,24 @@ class ChannelStats(BaseModel):
 
 @router.get("/channel")
 async def get_channel_stats(
+    days: Annotated[int, Query(ge=1, le=365)] = 30,
     channel_id: str = Depends(get_current_channel_id),
     pool: Pool = Depends(get_db_pool),
 ) -> ChannelStats:
-    """Get channel statistics"""
+    """Get channel statistics.
+
+    top_commands: from command_configs.usage_count — session-independent, always available.
+    top_chatters: from chatter_stats — aggregated from completed stream sessions.
+    """
     try:
         repo = AnalyticsRepository(pool)
 
-        top_chatters_data = await repo.list_top_chatters(channel_id, days=30, limit=10)
-        top_commands_data = await repo.list_top_commands(channel_id, days=30, limit=10)
-        total_messages = await repo.get_total_messages(channel_id, days=30)
+        top_chatters_data, top_commands_data, total_messages, total_commands = await asyncio.gather(
+            repo.list_top_chatters(channel_id, days=days, limit=10),
+            repo.list_top_commands_from_config(channel_id, days=days, limit=10),
+            repo.get_total_messages(channel_id, days=days),
+            repo.get_total_commands_from_config(channel_id),
+        )
 
         top_chatters = [
             ChatterStat(username=c["username"], message_count=c["message_count"])
@@ -51,12 +61,11 @@ async def get_channel_stats(
         top_commands = [
             CommandStat(name=c["command_name"], count=c["usage_count"]) for c in top_commands_data
         ]
-        total_commands = sum(cmd.count for cmd in top_commands)
 
-        logger.info(f"Channel {channel_id} requested channel stats")
+        logger.info(f"Channel {channel_id} requested channel stats (days={days})")
         return ChannelStats(
-            top_commands=top_commands[:5],
-            top_chatters=top_chatters[:5],
+            top_commands=top_commands,
+            top_chatters=top_chatters,
             total_messages=total_messages,
             total_commands=total_commands,
         )

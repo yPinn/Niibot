@@ -1,11 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import {
-  type AnalyticsCommandStat,
-  type AnalyticsSummary,
-  getAnalyticsSummary,
-  getTopCommands,
-} from '@/api/analytics'
+import { type AnalyticsSummary, getAnalyticsSummary } from '@/api/analytics'
 import { type ChannelStats, getChannelStats } from '@/api/stats'
 import AnalyticsChart from '@/components/AnalyticsChart'
 import StatsCard from '@/components/StatsCard'
@@ -27,7 +22,6 @@ export default function Dashboard() {
   const [statsLoading, setStatsLoading] = useState(true)
   const [stats, setStats] = useState<ChannelStats | null>(null)
   const [analytics, setAnalytics] = useState<AnalyticsSummary | null>(null)
-  const [topCommands, setTopCommands] = useState<AnalyticsCommandStat[]>([])
   const hasLoadedRef = useRef(false)
 
   const fetchStats = useCallback(async () => {
@@ -47,16 +41,10 @@ export default function Dashboard() {
     if (!user) return
     setAnalyticsLoading(true)
     try {
-      const [analyticsData, commandsData] = await Promise.all([
-        getAnalyticsSummary(30),
-        getTopCommands(30, 10),
-      ])
-      setAnalytics(analyticsData)
-      setTopCommands(commandsData)
+      setAnalytics(await getAnalyticsSummary(30))
     } catch (error) {
       console.error('Failed to fetch analytics:', error)
       setAnalytics(null)
-      setTopCommands([])
     } finally {
       setAnalyticsLoading(false)
     }
@@ -124,8 +112,8 @@ export default function Dashboard() {
         <StatsCard
           title="Top Commands"
           icon="fa-solid fa-terminal"
-          items={topCommands.map(cmd => ({ label: cmd.command_name, value: cmd.usage_count }))}
-          loading={analyticsLoading}
+          items={stats?.top_commands.map(cmd => ({ label: cmd.name, value: cmd.count })) || []}
+          loading={statsLoading}
           className="aspect-video overflow-hidden"
         />
       </div>
