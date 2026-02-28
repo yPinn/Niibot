@@ -15,7 +15,7 @@ from services import TwitchAPIClient
 from shared.repositories.video_queue import (
     VideoQueueRepository,
     VideoQueueSettingsRepository,
-    extract_youtube_id,
+    extract_youtube_info,
     fetch_yt_info,
 )
 
@@ -34,6 +34,7 @@ class VideoEntryResponse(BaseModel):
     video_id: str
     title: str | None
     duration_seconds: int | None
+    is_vertical: bool
     requested_by: str
     started_at: datetime | None
 
@@ -110,6 +111,7 @@ async def _build_public_state(
             video_id=current.video_id,
             title=current.title,
             duration_seconds=current.duration_seconds,
+            is_vertical=current.is_vertical,
             requested_by=current.requested_by,
             started_at=current.started_at,
         )
@@ -121,6 +123,7 @@ async def _build_public_state(
                 video_id=e.video_id,
                 title=e.title,
                 duration_seconds=e.duration_seconds,
+                is_vertical=e.is_vertical,
                 requested_by=e.requested_by,
                 started_at=e.started_at,
             )
@@ -399,7 +402,7 @@ async def add_video_entry(
     pool: Pool = Depends(get_db_pool),
 ) -> PublicVideoQueueState:
     """Broadcaster directly adds a video to the queue from the dashboard."""
-    video_id = extract_youtube_id(body.url)
+    video_id, is_vertical = extract_youtube_info(body.url)
     if not video_id:
         raise HTTPException(status_code=422, detail="Invalid YouTube URL")
 
@@ -438,6 +441,7 @@ async def add_video_entry(
             source="dashboard",
             title=title,
             duration_seconds=duration_seconds,
+            is_vertical=is_vertical,
         )
         logger.info(f"Channel {channel_id} added video {video_id} from dashboard")
         return await _build_public_state(channel_id, repo, settings_repo)

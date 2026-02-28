@@ -1,16 +1,14 @@
-"""Video Queue component: !sr, !np, !vq
+"""Video Queue component: !vq, !np
 
 Public:
-    !sr <URL>       Request a YouTube video
+    !vq <URL>       Request a video (YouTube)
+    !vq list        Show first 5 videos in queue
+    !vq remove      Remove your last queued (not yet playing) request
     !np             Now playing: title, link, remaining time, queue info
 
 Moderator+:
     !vq skip        Skip the current video
     !vq clear       Clear entire queue (current + all queued)
-    !vq list        Show first 5 videos in queue
-
-Anyone:
-    !vq remove      Remove your last queued (not yet playing) request
 """
 
 from __future__ import annotations
@@ -27,7 +25,7 @@ from core.guards import has_role
 from shared.repositories.video_queue import (
     VideoQueueRepository,
     VideoQueueSettingsRepository,
-    extract_youtube_id,
+    extract_youtube_info,
     fetch_yt_info,
 )
 
@@ -59,12 +57,11 @@ class VideoQueueManagerComponent(commands.Component):
         self.vq_settings_repo.pool = pool
 
     # ------------------------------------------------------------------
-    # !sr <URL>
+    # Shared: add video logic
     # ------------------------------------------------------------------
 
-    @commands.command(name="sr")
-    async def cmd_sr(self, ctx: commands.Context[Bot]) -> None:
-        """!sr <YouTube URL> — 投遞影片至佇列"""
+    async def _handle_add(self, ctx: commands.Context[Bot], url_str: str) -> None:
+        """Core logic for adding a video to the queue."""
         channel_id = ctx.channel.id
         settings = await self.vq_settings_repo.get_or_create(channel_id)
 
@@ -75,11 +72,9 @@ class VideoQueueManagerComponent(commands.Component):
         if not has_role(ctx.chatter, settings.min_role_chat):
             return  # silent — consistent with game_queue
 
-        args = (ctx.message.text if ctx.message else "").split(maxsplit=1)
-        url_str = args[1].strip() if len(args) > 1 else ""
-        video_id = extract_youtube_id(url_str)
+        video_id, is_vertical = extract_youtube_info(url_str)
         if not video_id:
-            await ctx.reply("請提供有效的 YouTube 連結，例如：!sr https://youtu.be/dQw4w9WgXcQ")
+            await ctx.reply("請提供有效的 YouTube 連結，例如：!vq https://youtu.be/dQw4w9WgXcQ")
             return
 
         # Duplicate check
@@ -123,6 +118,7 @@ class VideoQueueManagerComponent(commands.Component):
             source="chat",
             title=title,
             duration_seconds=duration_seconds,
+            is_vertical=is_vertical,
         )
         position = await self.vq_repo.get_queue_size(channel_id)
         title_part = f"「{title}」" if title else ""
@@ -177,10 +173,14 @@ class VideoQueueManagerComponent(commands.Component):
 
     @commands.group(name="vq")
     async def vq(self, ctx: commands.Context[Bot]) -> None:
-        """!vq — 影片佇列管理"""
+        """!vq <URL> 投遞影片 | !vq list/remove/skip/clear 管理佇列"""
         if ctx.invoked_subcommand is not None:
             return
-        await ctx.reply("用法: !vq skip | !vq clear | !vq list | !vq remove")
+        args = (ctx.message.text if ctx.message else "").split(maxsplit=1)
+        if len(args) > 1:
+            await self._handle_add(ctx, args[1].strip())
+        else:
+            await ctx.reply("📹 !vq <URL> 投遞影片 | !vq list 顯示佇列 | !vq remove 移除請求")
 
     @vq.command(name="skip")
     async def vq_skip(self, ctx: commands.Context[Bot]) -> None:

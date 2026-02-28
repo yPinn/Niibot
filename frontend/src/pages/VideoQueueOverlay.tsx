@@ -307,6 +307,13 @@ export default function VideoQueueOverlay() {
           </div>
         )}
         <div ref={containerRef} className={styles.videoContainer} />
+        {current?.is_vertical && (
+          <div className={styles.columnOverlay}>
+            <div className={styles.sidePanel} />
+            <div className={styles.centerPanel} />
+            <div className={styles.sidePanel} />
+          </div>
+        )}
         <div className={styles.sunkenOverlay} />
       </div>
     </div>

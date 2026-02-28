@@ -12,7 +12,7 @@ from shared.repositories.game_queue import GameQueueRepository, GameQueueSetting
 from shared.repositories.video_queue import (
     VideoQueueRepository,
     VideoQueueSettingsRepository,
-    extract_youtube_id,
+    extract_youtube_info,
     fetch_yt_info,
 )
 
@@ -316,7 +316,7 @@ class ChannelPointsComponent(commands.Component):
                 )
                 return
 
-            video_id = extract_youtube_id(user_input)
+            video_id, is_vertical = extract_youtube_info(user_input)
             if not video_id:
                 await broadcaster.send_message(
                     message=f"@{user_name} 請在兌換時輸入有效的 YouTube 連結",
@@ -386,6 +386,7 @@ class ChannelPointsComponent(commands.Component):
                 source="redemption",
                 title=title,
                 duration_seconds=duration_seconds,
+                is_vertical=is_vertical,
             )
             position = await self.vq_repo.get_queue_size(channel_id)
             title_part = f"「{title}」" if title else ""

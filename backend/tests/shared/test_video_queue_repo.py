@@ -13,6 +13,7 @@ from shared.repositories.video_queue import (
     _parse_iso8601_duration,
     _settings_cache,
     extract_youtube_id,
+    extract_youtube_info,
 )
 
 # ---------------------------------------------------------------------------
@@ -27,6 +28,7 @@ _ENTRY_ROW = {
     "video_id": "dQw4w9WgXcQ",
     "title": "Never Gonna Give You Up",
     "duration_seconds": 213,
+    "is_vertical": False,
     "requested_by": "user1",
     "source": "chat",
     "status": "queued",
@@ -113,6 +115,28 @@ class TestExtractYoutubeId:
             extract_youtube_id("check this out https://youtu.be/dQw4w9WgXcQ thanks")
             == "dQw4w9WgXcQ"
         )
+
+
+class TestExtractYoutubeInfo:
+    def test_regular_url_not_vertical(self):
+        video_id, is_vertical = extract_youtube_info("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+        assert video_id == "dQw4w9WgXcQ"
+        assert is_vertical is False
+
+    def test_short_url_not_vertical(self):
+        video_id, is_vertical = extract_youtube_info("https://youtu.be/dQw4w9WgXcQ")
+        assert video_id == "dQw4w9WgXcQ"
+        assert is_vertical is False
+
+    def test_shorts_url_is_vertical(self):
+        video_id, is_vertical = extract_youtube_info("https://www.youtube.com/shorts/dQw4w9WgXcQ")
+        assert video_id == "dQw4w9WgXcQ"
+        assert is_vertical is True
+
+    def test_invalid_url_returns_none(self):
+        video_id, is_vertical = extract_youtube_info("https://www.twitch.tv/something")
+        assert video_id is None
+        assert is_vertical is False
 
 
 class TestParseIso8601Duration:

@@ -23,6 +23,8 @@ logger = logging.getLogger(__name__)
 # YouTube utilities
 # ---------------------------------------------------------------------------
 
+_YT_SHORTS_RE = re.compile(r"(?:https?://)?(?:www\.)?youtube\.com/shorts/([A-Za-z0-9_-]{11})")
+
 _YT_RE = re.compile(
     r"(?:https?://)?(?:www\.)?(?:"
     r"youtube\.com/watch\?(?:.*&)?v=|"
@@ -38,6 +40,19 @@ def extract_youtube_id(text: str) -> str | None:
     """Extract 11-char YouTube video ID from a URL string. Returns None if not found."""
     m = _YT_RE.search(text)
     return m.group(1) if m else None
+
+
+def extract_youtube_info(text: str) -> tuple[str | None, bool]:
+    """Extract YouTube video ID and whether the URL is a Short (vertical video).
+
+    Returns:
+        (video_id, is_vertical) — video_id is None if no match found.
+    """
+    if _YT_SHORTS_RE.search(text):
+        m = _YT_RE.search(text)
+        return (m.group(1) if m else None, True)
+    m = _YT_RE.search(text)
+    return (m.group(1) if m else None, False)
 
 
 def _parse_iso8601_duration(duration: str) -> int:
@@ -103,7 +118,7 @@ async def fetch_yt_info(
 # ---------------------------------------------------------------------------
 
 _ENTRY_COLUMNS = (
-    "id, channel_id, video_id, title, duration_seconds, requested_by, "
+    "id, channel_id, video_id, title, duration_seconds, is_vertical, requested_by, "
     "source, status, created_at, started_at, ended_at"
 )
 
@@ -134,20 +149,22 @@ class VideoQueueRepository:
         source: str,
         title: str | None = None,
         duration_seconds: int | None = None,
+        is_vertical: bool = False,
     ) -> VideoQueueEntry:
         """Insert a new entry with status='queued'."""
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 f"""
                 INSERT INTO video_queue
-                    (channel_id, video_id, title, duration_seconds, requested_by, source)
-                VALUES ($1, $2, $3, $4, $5, $6)
+                    (channel_id, video_id, title, duration_seconds, is_vertical, requested_by, source)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
                 RETURNING {_ENTRY_COLUMNS}
                 """,
                 channel_id,
                 video_id,
                 title,
                 duration_seconds,
+                is_vertical,
                 requested_by,
                 source,
             )

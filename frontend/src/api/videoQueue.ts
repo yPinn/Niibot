@@ -5,6 +5,7 @@ export interface VideoQueueEntry {
   video_id: string
   title: string | null
   duration_seconds: number | null
+  is_vertical: boolean
   requested_by: string
   started_at: string | null
 }

@@ -18,6 +18,7 @@ class VideoQueueEntry:
     status: str  # 'queued' | 'playing' | 'done' | 'skipped'
     title: str | None = None
     duration_seconds: int | None = None
+    is_vertical: bool = False
     created_at: datetime | None = None
     started_at: datetime | None = None
     ended_at: datetime | None = None

@@ -173,3 +173,36 @@
   box-shadow: inset 3px 3px 8px rgba(0, 0, 0, 0.5);
   z-index: 2;
 }
+
+/* three-column vertical layout overlay */
+
+.columnOverlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  display: flex;
+  justify-content: center;
+  align-items: stretch;
+  z-index: 1;
+}
+
+.sidePanel {
+  aspect-ratio: 9 / 16;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.38);
+  flex-shrink: 0;
+}
+
+.sidePanel:first-child {
+  border-right: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.sidePanel:last-child {
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.centerPanel {
+  aspect-ratio: 9 / 16;
+  height: 100%;
+  flex-shrink: 0;
+}
