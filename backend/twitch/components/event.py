@@ -204,8 +204,6 @@ class EventComponent(commands.Component):
         """Bits (Cheer) 事件
 
         NOTE: always-on — fires via EventSub regardless of streaming state.
-        Tier rules are stored in options.tiers (ascending by min_bits order).
-        Falls back to the top-level message_template if no tier matches.
         """
         if payload.anonymous:
             user_name = "匿名用戶"
@@ -220,35 +218,13 @@ class EventComponent(commands.Component):
         bits_amount = payload.bits
 
         try:
-            config = await self.event_configs.get_config(channel_id, "bits")
-            if config is not None and not config.enabled:
+            message = await self._get_message(
+                channel_id, "bits", {"user": user_name, "amount": str(bits_amount)}
+            )
+            if message is None:
                 LOGGER.info(
                     f"[{broadcaster_name}] Cheer: {user_name} {bits_amount} bits (disabled)"
                 )
-                return
-
-            # Determine message: check tier rules first, then fall back to template
-            message: str | None = None
-            if config is not None:
-                tiers: list[dict] = config.options.get("tiers", [])
-                for tier in sorted(tiers, key=lambda t: t.get("min_bits", 0)):
-                    min_b = tier.get("min_bits", 0)
-                    max_b = tier.get("max_bits")
-                    if bits_amount >= min_b and (max_b is None or bits_amount <= max_b):
-                        tmpl = tier.get("message", "")
-                        if tmpl:
-                            message = tmpl.replace("$(user)", user_name).replace(
-                                "$(amount)", str(bits_amount)
-                            )
-                        break
-
-            if message is None:
-                # Fall back to main template
-                message = await self._get_message(
-                    channel_id, "bits", {"user": user_name, "amount": str(bits_amount)}
-                )
-
-            if message is None:
                 return
 
             await payload.broadcaster.send_message(
