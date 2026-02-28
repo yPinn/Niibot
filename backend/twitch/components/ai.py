@@ -39,7 +39,7 @@ _SYSTEM_PROMPT = (
     "你是 Twitch 聊天機器人。\n\n"
     "規則：\n"
     "- 語言：繁體中文，嚴禁使用簡體中文（除非使用者明確要求）\n"
-    "- 長度：50-100字，最多150字\n"
+    "- 長度：最多100字，1-2句話，必須是完整的句子\n"
     "- 語氣：友善、簡潔\n"
     "- 格式：一段連貫文字，禁止換行，禁止使用 Markdown 或列表符號（**、*、#、_、- 等）\n"
     "- 直接回答問題，不要輸出思考過程\n\n"
@@ -122,7 +122,7 @@ class AIComponent(commands.Component):
                     completion = await asyncio.wait_for(
                         self.client.chat.completions.create(
                             model=model,
-                            max_tokens=300,
+                            max_tokens=250,
                             messages=messages,
                             # Prevent reasoning models (e.g. DeepSeek R1) from
                             # consuming the max_tokens budget on <think> content.
@@ -157,9 +157,17 @@ class AIComponent(commands.Component):
                     LOGGER.warning(f"AI [{model}] timed out, trying next model")
                     continue
 
-            # Twitch message limit is 500 characters
+            # Twitch message limit is 500 characters — truncate at sentence boundary
             if len(response) > 500:
-                response = response[:497] + "..."
+                truncated = response[:497]
+                # Find the last sentence-ending punctuation within the limit
+                for punct in ("。", "！", "？", "!", "?", "."):
+                    pos = truncated.rfind(punct)
+                    if pos > len(truncated) // 2:  # must keep at least half the text
+                        response = truncated[: pos + 1]
+                        break
+                else:
+                    response = truncated + "…"
 
             if response:
                 await ctx.reply(response)
