@@ -121,6 +121,12 @@ class FortuneComponent(commands.Component):
         except Exception as e:
             LOGGER.error(f"Fortune reading error: {e}")
             await ctx.reply("占卜過程中發生神秘干擾，請稍後再試 BloodTrail")
+            return
+
+        try:
+            await self.cmd_repo.increment_usage_count(ctx.channel.id, "運勢")
+        except Exception as e:
+            LOGGER.warning(f"Failed to increment usage count for 運勢: {e}")
 
 
 async def setup(bot: commands.Bot) -> None:

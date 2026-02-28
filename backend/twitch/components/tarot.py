@@ -74,6 +74,10 @@ class TarotComponent(commands.Component):
         full_meaning = meaning.replace("\n", "")
 
         await ctx.reply(f"🃏 {card['name']}({orientation}) | {keywords} — {full_meaning}")
+        try:
+            await self.cmd_repo.increment_usage_count(ctx.channel.id, "tarot")
+        except Exception:
+            pass
 
 
 async def setup(bot: commands.Bot) -> None:

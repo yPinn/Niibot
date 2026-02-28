@@ -229,6 +229,11 @@ class LeaderboardComponent(commands.Component):
         if not config:
             return
 
+        try:
+            await self.cmd_repo.increment_usage_count(ctx.channel.id, "tft")
+        except Exception:
+            pass
+
         LOGGER.debug(f"!tft command - {ctx.author.name} query: {user_id or 'threshold'}")
 
         data = await self.get_leaderboard_data()

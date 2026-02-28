@@ -163,6 +163,10 @@ class AIComponent(commands.Component):
 
             if response:
                 await ctx.reply(response)
+                try:
+                    await self.cmd_repo.increment_usage_count(ctx.channel.id, "ai")
+                except Exception:
+                    pass
             elif last_error:
                 raise last_error
             else:
