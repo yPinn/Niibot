@@ -10,6 +10,7 @@ export interface Channel {
   is_live: boolean
   viewer_count?: number
   game_name?: string
+  title?: string
 }
 
 export interface ChannelStatus {

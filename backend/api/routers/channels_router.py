@@ -38,6 +38,7 @@ class ChannelInfo(BaseModel):
     is_live: bool
     viewer_count: int = 0
     game_name: str = ""
+    title: str = ""
 
 
 class ChannelStatusResponse(BaseModel):
@@ -112,6 +113,7 @@ async def get_monitored_channels(
                 is_live=stream is not None,
                 viewer_count=stream["viewer_count"] if stream else 0,
                 game_name=stream["game_name"] if stream else "",
+                title=stream["title"] if stream else "",
             )
 
         # Filter out the current user's channel and sort

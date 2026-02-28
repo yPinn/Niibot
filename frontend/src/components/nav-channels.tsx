@@ -16,6 +16,10 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
 } from '@/components/ui'
 
 interface Channel {
@@ -26,6 +30,7 @@ interface Channel {
   is_live: boolean
   viewer_count?: number
   game_name?: string
+  title?: string
 }
 
 type SortType = 'default' | 'alphabet' | 'viewers'
@@ -110,58 +115,71 @@ export function NavChannels({ channels }: { channels: Channel[] }) {
             <div className="px-2 py-1.5 text-sm text-muted-foreground">No channels found</div>
           </SidebarMenuItem>
         )}
-        {sortedChannels.map(channel => (
-          <SidebarMenuItem key={channel.id}>
-            <SidebarMenuButton
-              asChild
-              className={channel.is_live ? 'h-auto py-1.5 items-start' : ''}
-            >
-              <a
-                href={`https://twitch.tv/${channel.name}`}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <div className="relative shrink-0">
-                  <Avatar
-                    className={channel.is_live ? 'size-6 rounded-full' : 'size-5 rounded-full'}
+        <TooltipProvider delayDuration={400}>
+          {sortedChannels.map(channel => (
+            <SidebarMenuItem key={channel.id}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <SidebarMenuButton
+                    asChild
+                    className={channel.is_live ? 'h-auto py-1.5 items-start' : ''}
                   >
-                    <AvatarImage src={channel.avatar} alt={channel.display_name} />
-                    <AvatarFallback className="rounded-full text-[8px]">
-                      {channel.display_name.substring(0, 2).toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
-                  {channel.is_live && (
-                    <div className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-status-live ring-2 ring-sidebar" />
-                  )}
-                </div>
-                {channel.is_live ? (
-                  <div className="flex flex-1 min-w-0 flex-col gap-0.5">
-                    <span className="text-sm font-medium truncate leading-none">
-                      {channel.display_name}
-                    </span>
-                    {channel.game_name && (
-                      <span className="text-[11px] text-muted-foreground truncate leading-none">
-                        {channel.game_name}
-                      </span>
-                    )}
-                  </div>
-                ) : (
-                  <span className="flex-1 truncate">{channel.display_name}</span>
+                    <a
+                      href={`https://twitch.tv/${channel.name}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <div className="relative shrink-0">
+                        <Avatar
+                          className={
+                            channel.is_live ? 'size-6 rounded-full' : 'size-5 rounded-full'
+                          }
+                        >
+                          <AvatarImage src={channel.avatar} alt={channel.display_name} />
+                          <AvatarFallback className="rounded-full text-[8px]">
+                            {channel.display_name.substring(0, 2).toUpperCase()}
+                          </AvatarFallback>
+                        </Avatar>
+                        {channel.is_live && (
+                          <div className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-status-live ring-2 ring-sidebar" />
+                        )}
+                      </div>
+                      {channel.is_live ? (
+                        <div className="flex flex-1 min-w-0 flex-col gap-0.5">
+                          <span className="text-sm font-medium truncate leading-none">
+                            {channel.display_name}
+                          </span>
+                          {channel.game_name && (
+                            <span className="text-[11px] text-muted-foreground truncate leading-none">
+                              {channel.game_name}
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="flex-1 truncate">{channel.display_name}</span>
+                      )}
+                      <div className="flex items-center gap-1.5 shrink-0 ml-auto self-center">
+                        {channel.is_live && channel.viewer_count !== undefined && (
+                          <span className="text-xs tabular-nums text-muted-foreground">
+                            {channel.viewer_count}
+                          </span>
+                        )}
+                        <div
+                          className={`h-2 w-2 rounded-full ${channel.is_live ? 'bg-status-live animate-pulse' : 'bg-muted-foreground'}`}
+                        />
+                      </div>
+                    </a>
+                  </SidebarMenuButton>
+                </TooltipTrigger>
+                {channel.is_live && channel.title && (
+                  <TooltipContent side="right" className="max-w-56">
+                    {channel.title}
+                  </TooltipContent>
                 )}
-                <div className="flex items-center gap-1.5 shrink-0 ml-auto self-center">
-                  {channel.is_live && channel.viewer_count !== undefined && (
-                    <span className="text-xs tabular-nums text-muted-foreground">
-                      {channel.viewer_count}
-                    </span>
-                  )}
-                  <div
-                    className={`h-2 w-2 rounded-full ${channel.is_live ? 'bg-status-live animate-pulse' : 'bg-muted-foreground'}`}
-                  />
-                </div>
-              </a>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        ))}
+              </Tooltip>
+            </SidebarMenuItem>
+          ))}
+        </TooltipProvider>
       </SidebarMenu>
     </SidebarGroup>
   )
