@@ -124,6 +124,9 @@ class AIComponent(commands.Component):
                             model=model,
                             max_tokens=300,
                             messages=messages,
+                            # Prevent reasoning models (e.g. DeepSeek R1) from
+                            # consuming the max_tokens budget on <think> content.
+                            extra_body={"include_reasoning": False},
                         ),
                         timeout=20.0,
                     )

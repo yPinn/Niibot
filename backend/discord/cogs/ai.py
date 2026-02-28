@@ -106,6 +106,9 @@ class AI(commands.Cog):
                             model=model,
                             max_tokens=800,
                             messages=messages,
+                            # Prevent reasoning models (e.g. DeepSeek R1) from
+                            # consuming the max_tokens budget on <think> content.
+                            extra_body={"include_reasoning": False},
                         ),
                         timeout=40.0,
                     )
