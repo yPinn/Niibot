@@ -515,8 +515,9 @@ export default function Events() {
           <div className="flex flex-col gap-card px-page">
             {/* Message Template */}
             <div className="flex flex-col gap-2">
-              <Label>訊息模板</Label>
+              <Label htmlFor="event-template">訊息模板</Label>
               <Input
+                id="event-template"
                 ref={templateInputRef}
                 value={editTemplate}
                 onChange={e => setEditTemplate(e.target.value)}
@@ -537,12 +538,13 @@ export default function Events() {
             {editingEvent?.event_type === 'raid' && (
               <div className="flex items-center justify-between">
                 <div className="flex flex-col gap-0.5">
-                  <Label>自動推薦</Label>
+                  <span className="text-sm font-medium leading-none">自動推薦</span>
                   <span className="text-label text-muted-foreground">
                     揪團時自動執行 /shoutout 展示對方頻道
                   </span>
                 </div>
                 <Switch
+                  aria-label="自動推薦"
                   checked={(editOptions.auto_shoutout as boolean) ?? true}
                   onCheckedChange={v => setEditOptions(prev => ({ ...prev, auto_shoutout: v }))}
                 />
@@ -552,12 +554,12 @@ export default function Events() {
             {/* Enabled Toggle */}
             <div className="flex items-center justify-between">
               <div className="flex flex-col gap-0.5">
-                <Label>啟用</Label>
+                <span className="text-sm font-medium leading-none">啟用</span>
                 <span className="text-label text-muted-foreground">
                   關閉後事件觸發時不會發送訊息
                 </span>
               </div>
-              <Switch checked={editEnabled} onCheckedChange={setEditEnabled} />
+              <Switch aria-label="啟用" checked={editEnabled} onCheckedChange={setEditEnabled} />
             </div>
           </div>
 

@@ -336,8 +336,9 @@ export function CommandSheet({
           {/* ── Name / Pattern ── */}
           {(editing?.mode === 'create' || editing?.mode === 'edit-trigger') && (
             <div className="flex flex-col gap-2">
-              <Label>{showTriggerFields ? '觸發詞' : '指令名稱'}</Label>
+              <Label htmlFor="cmd-name">{showTriggerFields ? '觸發詞' : '指令名稱'}</Label>
               <Input
+                id="cmd-name"
                 value={form.name}
                 onChange={e => dispatch({ type: 'SET', field: 'name', value: e.target.value })}
                 placeholder={showTriggerFields ? '觸發關鍵字' : '!指令名稱'}
@@ -355,7 +356,7 @@ export function CommandSheet({
           {/* ── Match type — trigger primary field ── */}
           {showTriggerFields && (
             <div className="flex flex-col gap-2">
-              <Label>比對方式</Label>
+              <Label htmlFor="cmd-match-type">比對方式</Label>
               <Select
                 value={form.matchType}
                 onValueChange={v =>
@@ -366,7 +367,7 @@ export function CommandSheet({
                   })
                 }
               >
-                <SelectTrigger className="w-full">
+                <SelectTrigger id="cmd-match-type" className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent position="popper">
@@ -382,8 +383,9 @@ export function CommandSheet({
           {/* ── Response ── */}
           {showResponseField && (
             <div className="flex flex-col gap-2">
-              <Label>回應內容</Label>
+              <Label htmlFor="cmd-response">回應內容</Label>
               <Input
+                id="cmd-response"
                 ref={inputRef}
                 value={form.response}
                 onChange={e => dispatch({ type: 'SET', field: 'response', value: e.target.value })}
@@ -398,10 +400,11 @@ export function CommandSheet({
           {editing?.mode !== 'create' && (
             <div className="flex items-center justify-between">
               <div className="flex flex-col gap-0.5">
-                <Label>啟用</Label>
+                <span className="text-sm font-medium leading-none">啟用</span>
                 <span className="text-label text-muted-foreground">關閉後不會回應</span>
               </div>
               <Switch
+                aria-label="啟用"
                 checked={form.enabled}
                 onCheckedChange={v => dispatch({ type: 'SET', field: 'enabled', value: v })}
               />
@@ -428,8 +431,9 @@ export function CommandSheet({
               {/* Aliases — command only */}
               {(isCreatingCommand || isEditingCommand) && (
                 <div className="flex flex-col gap-2">
-                  <Label>別名</Label>
+                  <Label htmlFor="cmd-aliases">別名</Label>
                   <Input
+                    id="cmd-aliases"
                     value={form.aliases}
                     onChange={e =>
                       dispatch({ type: 'SET', field: 'aliases', value: e.target.value })
@@ -446,8 +450,9 @@ export function CommandSheet({
               {/* Trigger aliases — trigger only */}
               {showTriggerFields && (
                 <div className="flex flex-col gap-2">
-                  <Label>觸發別名</Label>
+                  <Label htmlFor="cmd-trigger-aliases">觸發別名</Label>
                   <Input
+                    id="cmd-trigger-aliases"
                     value={form.triggerAliases}
                     onChange={e =>
                       dispatch({ type: 'SET', field: 'triggerAliases', value: e.target.value })
@@ -465,12 +470,13 @@ export function CommandSheet({
               {showTriggerFields && form.matchType !== 'regex' && (
                 <div className="flex items-center justify-between">
                   <div className="flex flex-col gap-0.5">
-                    <Label>區分大小寫</Label>
+                    <span className="text-sm font-medium leading-none">區分大小寫</span>
                     <span className="text-label text-muted-foreground">
                       開啟後 GG 與 gg 視為不同
                     </span>
                   </div>
                   <Switch
+                    aria-label="區分大小寫"
                     checked={form.caseSensitive}
                     onCheckedChange={v =>
                       dispatch({ type: 'SET', field: 'caseSensitive', value: v })
@@ -482,8 +488,9 @@ export function CommandSheet({
               {/* Priority — trigger only */}
               {showTriggerFields && (
                 <div className="flex flex-col gap-2">
-                  <Label>優先度</Label>
+                  <Label htmlFor="cmd-priority">優先度</Label>
                   <Input
+                    id="cmd-priority"
                     type="number"
                     step={1}
                     value={form.priority}
@@ -499,8 +506,9 @@ export function CommandSheet({
 
               {/* Cooldown */}
               <div className="flex flex-col gap-2">
-                <Label>冷卻 (秒)</Label>
+                <Label htmlFor="cmd-cooldown">冷卻 (秒)</Label>
                 <Input
+                  id="cmd-cooldown"
                   type="number"
                   min={0}
                   step={5}
@@ -520,12 +528,12 @@ export function CommandSheet({
 
               {/* Min Role */}
               <div className="flex flex-col gap-2">
-                <Label>最低權限</Label>
+                <Label htmlFor="cmd-role">最低權限</Label>
                 <Select
                   value={form.role}
                   onValueChange={v => dispatch({ type: 'SET', field: 'role', value: v })}
                 >
-                  <SelectTrigger className="w-24">
+                  <SelectTrigger id="cmd-role" className="w-24">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent position="popper" className="w-24 min-w-0">

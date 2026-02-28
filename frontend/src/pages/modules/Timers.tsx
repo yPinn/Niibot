@@ -377,8 +377,9 @@ export default function Timers() {
             {/* Name (create only) */}
             {editing?.mode === 'create' && (
               <div className="flex flex-col gap-2">
-                <Label>計時器名稱</Label>
+                <Label htmlFor="timer-name">計時器名稱</Label>
                 <Input
+                  id="timer-name"
                   value={formName}
                   onChange={e => setFormName(e.target.value)}
                   placeholder="follow-reminder"
@@ -393,8 +394,9 @@ export default function Timers() {
 
             {/* Message Template */}
             <div className="flex flex-col gap-2">
-              <Label>訊息內容</Label>
+              <Label htmlFor="timer-template">訊息內容</Label>
               <Input
+                id="timer-template"
                 ref={templateInputRef}
                 value={formTemplate}
                 onChange={e => setFormTemplate(e.target.value)}
@@ -414,8 +416,9 @@ export default function Timers() {
 
             {/* Interval */}
             <div className="flex flex-col gap-2">
-              <Label>間隔時間 (秒)</Label>
+              <Label htmlFor="timer-interval">間隔時間 (秒)</Label>
               <Input
+                id="timer-interval"
                 type="number"
                 min={60}
                 step={60}
@@ -433,10 +436,10 @@ export default function Timers() {
             {editing?.mode === 'edit' && (
               <div className="flex items-center justify-between">
                 <div className="flex flex-col gap-0.5">
-                  <Label>啟用</Label>
+                  <span className="text-sm font-medium leading-none">啟用</span>
                   <span className="text-label text-muted-foreground">關閉後不會觸發</span>
                 </div>
-                <Switch checked={formEnabled} onCheckedChange={setFormEnabled} />
+                <Switch aria-label="啟用" checked={formEnabled} onCheckedChange={setFormEnabled} />
               </div>
             )}
 
@@ -457,8 +460,9 @@ export default function Timers() {
               <div className="flex flex-col gap-card border-l-2 border-muted pl-page">
                 {/* Min Lines */}
                 <div className="flex flex-col gap-2">
-                  <Label>最低聊天行數</Label>
+                  <Label htmlFor="timer-min-lines">最低聊天行數</Label>
                   <Input
+                    id="timer-min-lines"
                     type="number"
                     min={0}
                     step={1}
@@ -474,8 +478,9 @@ export default function Timers() {
 
                 {/* Command Alias */}
                 <div className="flex flex-col gap-2">
-                  <Label>別名</Label>
+                  <Label htmlFor="timer-alias">別名</Label>
                   <Input
+                    id="timer-alias"
                     value={formAlias}
                     onChange={e => setFormAlias(e.target.value)}
                     placeholder="socials"
@@ -489,12 +494,16 @@ export default function Timers() {
                 {/* Announce mode */}
                 <div className="flex items-center justify-between">
                   <div className="flex flex-col gap-0.5">
-                    <Label>公告模式</Label>
+                    <span className="text-sm font-medium leading-none">公告模式</span>
                     <span className="text-label text-muted-foreground">
                       以聊天室公告方式發送，訊息會被高亮顯示
                     </span>
                   </div>
-                  <Switch checked={formAnnounce} onCheckedChange={setFormAnnounce} />
+                  <Switch
+                    aria-label="公告模式"
+                    checked={formAnnounce}
+                    onCheckedChange={setFormAnnounce}
+                  />
                 </div>
               </div>
             )}
