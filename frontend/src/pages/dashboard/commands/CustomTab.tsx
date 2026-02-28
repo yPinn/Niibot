@@ -133,6 +133,19 @@ export function CustomTab({ customRows, sortState, defaults, onToggle, onEdit }:
                           </Tooltip>
                         )}
                       </div>
+                    ) : row.data.match_type === 'regex' ? (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="cursor-default font-mono text-sub">
+                            {row.data.pattern.length > 24
+                              ? `${row.data.pattern.slice(0, 22)}…`
+                              : row.data.pattern}
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-80">
+                          <span className="break-all font-mono text-xs">{row.data.pattern}</span>
+                        </TooltipContent>
+                      </Tooltip>
                     ) : (
                       <span className="font-mono text-sub">{row.data.pattern}</span>
                     )}
