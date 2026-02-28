@@ -32,7 +32,7 @@ export function CustomTab({ customRows, sortState, defaults, onToggle, onEdit }:
   const { sortKey, sortDir, toggleSort } = sortState
 
   return (
-    <div className="rounded-md border">
+    <div className="overflow-x-auto rounded-md border">
       <Table className="table-fixed">
         <TableHeader>
           <TableRow>

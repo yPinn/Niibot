@@ -181,7 +181,7 @@ export default function SystemStatus() {
         </button>
       </div>
 
-      <div className="grid gap-section md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-section lg:grid-cols-3">
         {services.map(service => (
           <div key={service.key} className="bg-card border rounded-lg p-card shadow-sm">
             <div className="flex items-center justify-between mb-3">

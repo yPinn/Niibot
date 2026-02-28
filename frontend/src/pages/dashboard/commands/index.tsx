@@ -177,7 +177,7 @@ export default function Commands() {
   }
 
   return (
-    <main className="flex flex-1 flex-col gap-section p-page md:p-page-lg">
+    <main className="flex flex-1 flex-col gap-section p-page lg:p-page-lg">
       <PageHeader title="Commands" description="管理 Twitch 機器人指令與自動回應" />
 
       <Card>

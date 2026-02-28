@@ -224,7 +224,7 @@ export default function Timers() {
   const { sortKey, sortDir, toggleSort } = timerSort
 
   return (
-    <main className="flex flex-1 flex-col gap-section p-page md:p-page-lg">
+    <main className="flex flex-1 flex-col gap-section p-page lg:p-page-lg">
       <PageHeader title="Timers" description="定時訊息 — 直播中定時自動發送設定好的訊息" />
 
       <Card>
@@ -250,7 +250,7 @@ export default function Timers() {
               {error}
             </div>
           ) : (
-            <div className="rounded-md border">
+            <div className="overflow-x-auto rounded-md border">
               <Table className="table-fixed">
                 <TableHeader>
                   <TableRow>

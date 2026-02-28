@@ -349,7 +349,7 @@ export default function Events() {
   }
 
   return (
-    <main className="flex flex-1 flex-col gap-section p-page md:p-page-lg">
+    <main className="flex flex-1 flex-col gap-section p-page lg:p-page-lg">
       <PageHeader title="Events" description="管理頻道事件、自動回應與忠誠點數兌換" />
 
       <Card>
@@ -367,7 +367,7 @@ export default function Events() {
               {error}
             </div>
           ) : (
-            <div className="rounded-md border">
+            <div className="overflow-x-auto rounded-md border">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -485,7 +485,7 @@ export default function Events() {
               <span className="text-sub">成為 Twitch 聯盟夥伴或合作夥伴後即可設定忠誠點數獎勵</span>
             </div>
           ) : (
-            <div className="rounded-md border">
+            <div className="overflow-x-auto rounded-md border">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -590,7 +590,7 @@ export default function Events() {
         </CardHeader>
         <CardContent className="space-y-4">
           {bitsTiers.length > 0 && (
-            <div className="rounded-md border">
+            <div className="overflow-x-auto rounded-md border">
               <Table>
                 <TableHeader>
                   <TableRow>

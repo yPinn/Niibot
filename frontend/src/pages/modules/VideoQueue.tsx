@@ -81,61 +81,63 @@ function QueueTable({
 }) {
   if (entries.length === 0) return null
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead className="w-16">#</TableHead>
-          <TableHead>影片</TableHead>
-          <TableHead className="w-24">長度</TableHead>
-          <TableHead className="w-28">點播者</TableHead>
-          {(onSetNext || onPlayNow) && <TableHead className="w-36" />}
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {entries.map((entry, idx) => (
-          <TableRow key={entry.id}>
-            <TableCell>
-              <Badge variant="outline">{idx + 1}</Badge>
-            </TableCell>
-            <TableCell className="max-w-xs truncate font-medium">
-              {entry.title || entry.video_id}
-            </TableCell>
-            <TableCell className="text-muted-foreground text-sub">
-              {entry.duration_seconds ? formatDuration(entry.duration_seconds) : '--:--'}
-            </TableCell>
-            <TableCell className="text-muted-foreground text-sub">{entry.requested_by}</TableCell>
-            {(onSetNext || onPlayNow) && (
-              <TableCell className="text-right">
-                <div className="flex justify-end gap-1">
-                  {onSetNext && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => onSetNext(entry.id)}
-                      title="排定為下一首"
-                    >
-                      <Icon icon="fa-solid fa-arrow-up-to-line" className="mr-1 size-3.5" />
-                      下一首
-                    </Button>
-                  )}
-                  {onPlayNow && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => onPlayNow(entry.id)}
-                      title="直接插播"
-                    >
-                      <Icon icon="fa-solid fa-play" className="mr-1 size-3.5" />
-                      插播
-                    </Button>
-                  )}
-                </div>
-              </TableCell>
-            )}
+    <div className="overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-16">#</TableHead>
+            <TableHead>影片</TableHead>
+            <TableHead className="w-24">長度</TableHead>
+            <TableHead className="w-28">點播者</TableHead>
+            {(onSetNext || onPlayNow) && <TableHead className="w-36" />}
           </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+        </TableHeader>
+        <TableBody>
+          {entries.map((entry, idx) => (
+            <TableRow key={entry.id}>
+              <TableCell>
+                <Badge variant="outline">{idx + 1}</Badge>
+              </TableCell>
+              <TableCell className="max-w-xs truncate font-medium">
+                {entry.title || entry.video_id}
+              </TableCell>
+              <TableCell className="text-muted-foreground text-sub">
+                {entry.duration_seconds ? formatDuration(entry.duration_seconds) : '--:--'}
+              </TableCell>
+              <TableCell className="text-muted-foreground text-sub">{entry.requested_by}</TableCell>
+              {(onSetNext || onPlayNow) && (
+                <TableCell className="text-right">
+                  <div className="flex justify-end gap-1">
+                    {onSetNext && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => onSetNext(entry.id)}
+                        title="排定為下一首"
+                      >
+                        <Icon icon="fa-solid fa-arrow-up-to-line" className="mr-1 size-3.5" />
+                        下一首
+                      </Button>
+                    )}
+                    {onPlayNow && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => onPlayNow(entry.id)}
+                        title="直接插播"
+                      >
+                        <Icon icon="fa-solid fa-play" className="mr-1 size-3.5" />
+                        插播
+                      </Button>
+                    )}
+                  </div>
+                </TableCell>
+              )}
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
   )
 }
 
@@ -292,7 +294,7 @@ export default function VideoQueue() {
 
   if (loading) {
     return (
-      <main className="flex flex-1 flex-col gap-section p-page md:p-page-lg">
+      <main className="flex flex-1 flex-col gap-section p-page lg:p-page-lg">
         <PageHeader title="Video Queue" description="管理 YouTube 點播系統" />
         <div className="flex items-center justify-center py-empty">
           <Spinner className="size-8 text-primary" />
@@ -307,7 +309,7 @@ export default function VideoQueue() {
   const totalQueuedDuration = state?.total_queued_duration ?? null
 
   return (
-    <main className="flex flex-1 flex-col gap-section p-page md:p-page-lg">
+    <main className="flex flex-1 flex-col gap-section p-page lg:p-page-lg">
       <PageHeader title="Video Queue" description="管理 YouTube 點播系統" />
 
       {/* Settings + Overlay Preview */}

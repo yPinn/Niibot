@@ -59,7 +59,7 @@ export function BuiltinTab({ commands, sortState, defaults, onToggle, onEdit }: 
   }, [commands, sortKey, sortDir])
 
   return (
-    <div className="rounded-md border">
+    <div className="overflow-x-auto rounded-md border">
       <Table className="table-fixed">
         <TableHeader>
           <TableRow>

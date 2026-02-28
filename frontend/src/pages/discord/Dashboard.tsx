@@ -4,7 +4,7 @@ import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 export default function DiscordDashboard() {
   useDocumentTitle('Discord Bot')
   return (
-    <main className="h-full p-page overflow-auto">
+    <main className="h-full p-page lg:p-page-lg overflow-auto">
       <div className="grid gap-section">
         {/* Header */}
         <div className="flex items-center gap-3">
@@ -18,7 +18,7 @@ export default function DiscordDashboard() {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid gap-section md:grid-cols-3">
+        <div className="grid gap-section lg:grid-cols-3">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">伺服器數量</CardTitle>
@@ -60,7 +60,7 @@ export default function DiscordDashboard() {
             <CardDescription>以下功能即將推出</CardDescription>
           </CardHeader>
           <CardContent>
-            <ul className="grid gap-element text-sub text-muted-foreground md:grid-cols-2">
+            <ul className="grid gap-element text-sub text-muted-foreground lg:grid-cols-2">
               <li className="flex items-center gap-2">
                 <Icon
                   icon="fa-solid fa-spinner"

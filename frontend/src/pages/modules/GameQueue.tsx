@@ -63,56 +63,58 @@ function EntryTable({
   if (entries.length === 0) return null
   const hasActions = showRemove || showPromote
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead className="w-16">#</TableHead>
-          <TableHead>玩家</TableHead>
-          <TableHead className="w-24">加入時間</TableHead>
-          {hasActions && <TableHead className="w-32" />}
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {entries.map(entry => (
-          <TableRow key={entry.id}>
-            <TableCell>
-              <Badge variant="outline">{entry.position}</Badge>
-            </TableCell>
-            <TableCell className="font-medium">{entry.user_name}</TableCell>
-            <TableCell className="text-muted-foreground text-sub">
-              {formatTime(entry.redeemed_at)}
-            </TableCell>
-            {hasActions && (
-              <TableCell className="text-right">
-                <div className="flex justify-end gap-1">
-                  {showPromote && onPromote && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => onPromote(entry.id)}
-                      title="移至當前"
-                    >
-                      <Icon icon="fa-solid fa-arrow-up-to-line" className="mr-1 size-3.5" />
-                      移至當前
-                    </Button>
-                  )}
-                  {showRemove && onRemove && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => onRemove(entry.id)}
-                      className="h-7 w-7 p-0 text-destructive hover:text-destructive"
-                    >
-                      <Icon icon="fa-solid fa-xmark" className="text-xs" />
-                    </Button>
-                  )}
-                </div>
-              </TableCell>
-            )}
+    <div className="overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-16">#</TableHead>
+            <TableHead>玩家</TableHead>
+            <TableHead className="w-24">加入時間</TableHead>
+            {hasActions && <TableHead className="w-32" />}
           </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+        </TableHeader>
+        <TableBody>
+          {entries.map(entry => (
+            <TableRow key={entry.id}>
+              <TableCell>
+                <Badge variant="outline">{entry.position}</Badge>
+              </TableCell>
+              <TableCell className="font-medium">{entry.user_name}</TableCell>
+              <TableCell className="text-muted-foreground text-sub">
+                {formatTime(entry.redeemed_at)}
+              </TableCell>
+              {hasActions && (
+                <TableCell className="text-right">
+                  <div className="flex justify-end gap-1">
+                    {showPromote && onPromote && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => onPromote(entry.id)}
+                        title="移至當前"
+                      >
+                        <Icon icon="fa-solid fa-arrow-up-to-line" className="mr-1 size-3.5" />
+                        移至當前
+                      </Button>
+                    )}
+                    {showRemove && onRemove && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => onRemove(entry.id)}
+                        className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                      >
+                        <Icon icon="fa-solid fa-xmark" className="text-xs" />
+                      </Button>
+                    )}
+                  </div>
+                </TableCell>
+              )}
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
   )
 }
 
@@ -215,7 +217,7 @@ export default function GameQueue() {
 
   if (loading) {
     return (
-      <main className="flex flex-1 flex-col gap-section p-page md:p-page-lg">
+      <main className="flex flex-1 flex-col gap-section p-page lg:p-page-lg">
         <PageHeader title="Game Queue" description="管理遊戲排隊系統" />
         <div className="flex items-center justify-center py-empty">
           <Spinner className="size-8 text-primary" />
@@ -225,7 +227,7 @@ export default function GameQueue() {
   }
 
   return (
-    <main className="flex flex-1 flex-col gap-section p-page md:p-page-lg">
+    <main className="flex flex-1 flex-col gap-section p-page lg:p-page-lg">
       <PageHeader title="Game Queue" description="管理遊戲排隊系統" />
 
       {/* Settings + Overlay Preview */}

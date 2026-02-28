@@ -87,11 +87,11 @@ export default function Dashboard() {
 
   return (
     <main
-      className={`h-full grid grid-rows-[1fr_auto] min-h-0 overflow-hidden transition-all duration-200 p-page gap-section`}
+      className={`h-full grid grid-rows-[1fr_auto] min-h-0 overflow-hidden transition-all duration-200 p-page lg:p-page-lg gap-section`}
     >
       <AnalyticsChart data={analytics} loading={analyticsLoading} className="min-h-0" />
 
-      <div className={`grid grid-cols-1 md:grid-cols-3 gap-section`}>
+      <div className={`grid grid-cols-1 lg:grid-cols-3 gap-section`}>
         <div className="aspect-video bg-muted/50 rounded-xl overflow-hidden relative">
           {user?.name ? (
             <TwitchPlayer
