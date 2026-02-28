@@ -80,8 +80,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const loadInitialData = async () => {
       try {
         const [userData, channelData] = await Promise.all([
-          getCurrentUser({ forceRefresh: false }),
-          getTwitchMonitoredChannels({ forceRefresh: false }),
+          getCurrentUser({ forceRefresh: true }),
+          getTwitchMonitoredChannels({ forceRefresh: true }),
         ])
         setUser(userData)
         setChannels(channelData)

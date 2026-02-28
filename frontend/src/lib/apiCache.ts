@@ -1,4 +1,6 @@
-// API cache with TTL and request deduplication
+// API cache with TTL and request deduplication.
+// Intentionally in-memory only — sessionStorage would cause stale data after
+// page refresh (same tab shares sessionStorage, new tab gets a fresh one).
 interface CacheEntry<T> {
   data: T
   timestamp: number
@@ -8,32 +10,6 @@ class ApiCache {
   private cache: Map<string, CacheEntry<unknown>> = new Map()
   private defaultTTL = 5 * 60 * 1000
   private pendingRequests: Map<string, Promise<unknown>> = new Map()
-  private storageKey = '__niibot_api_cache__'
-
-  constructor() {
-    this.loadFromStorage()
-  }
-
-  private loadFromStorage(): void {
-    try {
-      const stored = sessionStorage.getItem(this.storageKey)
-      if (stored) {
-        const data = JSON.parse(stored)
-        this.cache = new Map(Object.entries(data))
-      }
-    } catch {
-      // Ignore storage errors
-    }
-  }
-
-  private saveToStorage(): void {
-    try {
-      const data = Object.fromEntries(this.cache.entries())
-      sessionStorage.setItem(this.storageKey, JSON.stringify(data))
-    } catch {
-      // Ignore storage errors
-    }
-  }
 
   get<T>(key: string, ttl?: number): T | null {
     const entry = this.cache.get(key) as CacheEntry<T> | undefined
@@ -44,7 +20,6 @@ class ApiCache {
 
     if (age > maxAge) {
       this.cache.delete(key)
-      this.saveToStorage()
       return null
     }
 
@@ -56,24 +31,20 @@ class ApiCache {
       data,
       timestamp: Date.now(),
     })
-    this.saveToStorage()
   }
 
   patch<T>(key: string, updater: (data: T) => T): void {
     const entry = this.cache.get(key) as CacheEntry<T> | undefined
     if (!entry) return
     this.cache.set(key, { data: updater(entry.data), timestamp: Date.now() })
-    this.saveToStorage()
   }
 
   delete(key: string): void {
     this.cache.delete(key)
-    this.saveToStorage()
   }
 
   clear(): void {
     this.cache.clear()
-    sessionStorage.removeItem(this.storageKey)
   }
 
   async fetch<T>(
