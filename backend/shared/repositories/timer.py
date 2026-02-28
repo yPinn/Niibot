@@ -11,7 +11,7 @@ _timer_list_cache = AsyncTTLCache(maxsize=32, ttl=3600)
 
 _COLUMNS = (
     "id, channel_id, timer_name, interval_seconds, min_lines, "
-    "message_template, enabled, command_alias, created_at, updated_at"
+    "message_template, enabled, announce, command_alias, created_at, updated_at"
 )
 
 
@@ -51,6 +51,7 @@ class TimerConfigRepository:
         min_lines: int | None = None,
         message_template: str | None = None,
         enabled: bool | None = None,
+        announce: bool | None = None,
         command_alias: str | None = None,
         clear_alias: bool = False,
     ) -> TimerConfig:
@@ -63,13 +64,14 @@ class TimerConfigRepository:
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 f"""
-                INSERT INTO timers (channel_id, timer_name, interval_seconds, min_lines, message_template, enabled, command_alias)
-                VALUES ($1, $2, COALESCE($3, 300), COALESCE($4, 5), COALESCE($5, ''), COALESCE($6, TRUE), $7)
+                INSERT INTO timers (channel_id, timer_name, interval_seconds, min_lines, message_template, enabled, announce, command_alias)
+                VALUES ($1, $2, COALESCE($3, 300), COALESCE($4, 5), COALESCE($5, ''), COALESCE($6, TRUE), COALESCE($9, FALSE), $7)
                 ON CONFLICT (channel_id, timer_name) DO UPDATE SET
                     interval_seconds = COALESCE($3, timers.interval_seconds),
                     min_lines        = COALESCE($4, timers.min_lines),
                     message_template = COALESCE($5, timers.message_template),
                     enabled          = COALESCE($6, timers.enabled),
+                    announce         = COALESCE($9, timers.announce),
                     command_alias    = CASE WHEN $8 OR $7 IS NOT NULL THEN $7 ELSE timers.command_alias END
                 RETURNING {_COLUMNS}
                 """,
@@ -81,6 +83,7 @@ class TimerConfigRepository:
                 enabled,
                 alias_value,
                 clear_alias,
+                announce,
             )
             result = TimerConfig(**dict(row))
             _timer_list_cache.invalidate(f"timer_list:{channel_id}")

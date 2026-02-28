@@ -8,6 +8,7 @@ export interface TimerConfig {
   min_lines: number
   message_template: string
   enabled: boolean
+  announce: boolean
   command_alias: string | null
   created_at: string | null
   updated_at: string | null
@@ -18,6 +19,7 @@ export interface TimerCreate {
   interval_seconds: number
   min_lines?: number
   message_template: string
+  announce?: boolean
   command_alias?: string | null
 }
 
@@ -26,6 +28,7 @@ export interface TimerUpdate {
   min_lines?: number
   message_template?: string
   enabled?: boolean
+  announce?: boolean
   command_alias?: string | null
   clear_alias?: boolean
 }

@@ -31,6 +31,7 @@ class TimerService:
         interval_seconds: int,
         min_lines: int,
         message_template: str,
+        announce: bool = False,
         command_alias: str | None = None,
     ) -> dict:
         if interval_seconds < 60:
@@ -44,6 +45,7 @@ class TimerService:
             min_lines=min_lines,
             message_template=message_template,
             enabled=True,
+            announce=announce,
             command_alias=command_alias,
         )
         return asdict(cfg)
@@ -57,6 +59,7 @@ class TimerService:
         min_lines: int | None = None,
         message_template: str | None = None,
         enabled: bool | None = None,
+        announce: bool | None = None,
         command_alias: str | None = None,
         clear_alias: bool = False,
     ) -> dict:
@@ -71,6 +74,7 @@ class TimerService:
             min_lines=min_lines,
             message_template=message_template,
             enabled=enabled,
+            announce=announce,
             command_alias=command_alias,
             clear_alias=clear_alias,
         )

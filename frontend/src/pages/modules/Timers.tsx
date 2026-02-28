@@ -81,6 +81,7 @@ export default function Timers() {
   const [formTemplate, setFormTemplate] = useState('')
   const [formEnabled, setFormEnabled] = useState(true)
   const [formAlias, setFormAlias] = useState('')
+  const [formAnnounce, setFormAnnounce] = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -136,6 +137,7 @@ export default function Timers() {
     setFormTemplate('')
     setFormEnabled(true)
     setFormAlias('')
+    setFormAnnounce(false)
     setShowAdvanced(false)
     setSaveError(null)
   }
@@ -148,6 +150,7 @@ export default function Timers() {
     setFormTemplate(timer.message_template)
     setFormEnabled(timer.enabled)
     setFormAlias(timer.command_alias ?? '')
+    setFormAnnounce(timer.announce)
     setShowAdvanced(false)
     setSaveError(null)
   }
@@ -182,6 +185,7 @@ export default function Timers() {
           interval_seconds: intervalVal,
           min_lines: Number(formMinLines) || 0,
           message_template: formTemplate.trim(),
+          announce: formAnnounce,
           command_alias: aliasValue,
         }
         const created = await createTimer(data)
@@ -193,6 +197,7 @@ export default function Timers() {
           min_lines: Number(formMinLines) || 0,
           message_template: formTemplate.trim(),
           enabled: formEnabled,
+          announce: formAnnounce,
           command_alias: aliasValue,
           clear_alias: prevAlias !== null && aliasValue === null,
         }
@@ -298,6 +303,16 @@ export default function Timers() {
                         <TableCell className="font-mono font-medium">
                           <div className="flex items-center gap-1.5">
                             <span>{timer.timer_name}</span>
+                            {timer.announce && (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="cursor-default text-muted-foreground">
+                                    <Icon icon="fa-solid fa-bullhorn" wrapperClassName="size-3" />
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent>以公告方式發送</TooltipContent>
+                              </Tooltip>
+                            )}
                             {timer.command_alias && (
                               <Tooltip>
                                 <TooltipTrigger asChild>
@@ -469,6 +484,17 @@ export default function Timers() {
                   <span className="text-label text-muted-foreground">
                     用 !別名 手動觸發，同時重置自動計時
                   </span>
+                </div>
+
+                {/* Announce mode */}
+                <div className="flex items-center justify-between">
+                  <div className="flex flex-col gap-0.5">
+                    <Label>公告模式</Label>
+                    <span className="text-label text-muted-foreground">
+                      以聊天室公告方式發送，訊息會被高亮顯示
+                    </span>
+                  </div>
+                  <Switch checked={formAnnounce} onCheckedChange={setFormAnnounce} />
                 </div>
               </div>
             )}
