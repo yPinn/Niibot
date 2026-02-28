@@ -148,14 +148,19 @@ class TimerManagerComponent(commands.Component):
                 return
 
             message = _render_message(timer.message_template, channel_name)
-            twitch_channel = self.bot.get_channel(channel_name)
-            if not twitch_channel:
+
+            users = await self.bot.fetch_users(ids=[channel_id])
+            if not users:
                 LOGGER.warning(
-                    f"Timer '{timer.timer_name}': channel '{channel_name}' not in bot cache"
+                    f"Timer '{timer.timer_name}': could not fetch broadcaster for {channel_id}"
                 )
                 return
 
-            await twitch_channel.send(message)
+            await users[0].send_message(
+                message=message,
+                sender=self.bot.bot_id,
+                token_for=self.bot.bot_id,
+            )
             self._timer_last_fire[timer.id] = now
             self._timer_last_fire_lines[timer.id] = current_lines
             LOGGER.info(f"Timer '{timer.timer_name}' fired in #{channel_name}")
