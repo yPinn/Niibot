@@ -422,7 +422,8 @@ async def add_video_entry(
         # Fetch YouTube metadata (graceful fallback if no API key or request fails)
         api_key = get_settings().youtube_api_key
         # Dashboard adds bypass min_view_count — broadcaster has full authority over their own queue
-        title, duration_seconds, _ = await fetch_yt_info(video_id, api_key)
+        title, duration_seconds, _, is_vertical_from_api = await fetch_yt_info(video_id, api_key)
+        is_vertical = is_vertical or is_vertical_from_api
 
         # Look up broadcaster display name for the requested_by field
         row = await pool.fetchrow(

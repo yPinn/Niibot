@@ -89,9 +89,10 @@ class VideoQueueManagerComponent(commands.Component):
             return
 
         # Fetch info from YouTube Data API (graceful fallback on failure)
-        title, duration_seconds, view_count = await fetch_yt_info(
+        title, duration_seconds, view_count, is_vertical_from_api = await fetch_yt_info(
             video_id, self._settings.youtube_api_key, self._session
         )
+        is_vertical = is_vertical or is_vertical_from_api
 
         # View count validation — if threshold is set and API failed, reject rather than bypass.
         if settings.min_view_count > 0:

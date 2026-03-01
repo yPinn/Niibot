@@ -18,9 +18,11 @@ import styles from './VideoQueueOverlay.module.css'
 
 interface YTPlayer {
   playVideo(): void
+  pauseVideo(): void
   destroy(): void
   getCurrentTime(): number
   getDuration(): number
+  seekTo(seconds: number, allowSeekAhead?: boolean): void
 }
 
 interface YTPlayerOptions {
@@ -34,6 +36,7 @@ interface YTPlayerOptions {
     modestbranding?: 0 | 1
     mute?: 0 | 1
     iv_load_policy?: 1 | 3
+    cc_load_policy?: 1 | 3
   }
   events?: {
     onReady?: (event: { target: YTPlayer }) => void
@@ -84,6 +87,7 @@ function formatRemaining(elapsed: number, duration: number | null): string {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
+
 // ---------------------------------------------------------------------------
 // Main Overlay
 // ---------------------------------------------------------------------------
@@ -98,8 +102,12 @@ export default function VideoQueueOverlay() {
   const [isExiting, setIsExiting] = useState(false)
 
   const playerRef = useRef<YTPlayer | null>(null)
+  const leftPlayerRef = useRef<YTPlayer | null>(null)
+  const rightPlayerRef = useRef<YTPlayer | null>(null)
   // containerRef: stable React-managed div (empty in vdom, children managed imperatively)
   const containerRef = useRef<HTMLDivElement>(null)
+  const leftContainerRef = useRef<HTMLDivElement>(null)
+  const rightContainerRef = useRef<HTMLDivElement>(null)
   const currentIdRef = useRef<number | null>(null)
   const advancingRef = useRef(false) // prevent concurrent advance calls
   const progressRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -143,7 +151,7 @@ export default function VideoQueueOverlay() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [username, state?.current?.id, state?.queue.length])
 
-  // Create / destroy YouTube player when current video changes
+  // Create / destroy YouTube player(s) when current video changes
   useEffect(() => {
     if (!ytReady || !containerRef.current) return
 
@@ -152,14 +160,12 @@ export default function VideoQueueOverlay() {
 
     if (newId === currentIdRef.current) return // same video, nothing to do
 
-    // Destroy old player
-    if (playerRef.current) {
-      try {
-        playerRef.current.destroy()
-      } catch {
-        /* ignore */
+    // Destroy old players
+    for (const ref of [playerRef, leftPlayerRef, rightPlayerRef]) {
+      if (ref.current) {
+        try { ref.current.destroy() } catch { /* ignore */ }
+        ref.current = null
       }
-      playerRef.current = null
     }
     if (progressRef.current) {
       clearInterval(progressRef.current)
@@ -171,7 +177,56 @@ export default function VideoQueueOverlay() {
 
     if (!current || !newId) return // queue is empty, stay transparent
 
-    // Create new player — pass an imperative child div so YT.Player's
+    const currentId = current.id
+
+    // All-ready barrier: all players hold at autoplay:0 until every onReady has fired,
+    // then startAll() calls playVideo() on all simultaneously — zero staggered delay.
+    const totalPlayers = current.is_vertical ? 3 : 1
+    let readyCount = 0
+    let allStarted = false
+    let fallbackTimer = 0 as ReturnType<typeof setTimeout>
+
+    function startAll() {
+      if (allStarted) return
+      allStarted = true
+      for (const ref of [playerRef, leftPlayerRef, rightPlayerRef]) {
+        if (ref.current) try { ref.current.playVideo() } catch { /* ignore */ }
+      }
+      progressRef.current = setInterval(() => {
+        if (!playerRef.current) return
+        const t = playerRef.current.getCurrentTime()
+        setElapsed(t)
+
+        // Sync side players — resync if drift exceeds 0.3s
+        for (const ref of [leftPlayerRef, rightPlayerRef]) {
+          if (ref.current) {
+            try {
+              const st = ref.current.getCurrentTime()
+              if (Math.abs(st - t) > 0.3) ref.current.seekTo(t, true)
+            } catch { /* ignore */ }
+          }
+        }
+
+        // ENDED fallback: polling check to catch missed onStateChange ENDED events
+        const d = playerRef.current.getDuration()
+        if (d > 0 && t >= d - 0.5) {
+          handleVideoEnd(currentId)
+        }
+      }, 1000)
+    }
+
+    function onPlayerReady() {
+      readyCount++
+      if (readyCount >= totalPlayers) {
+        clearTimeout(fallbackTimer)
+        startAll()
+      }
+    }
+
+    // 8s fallback in case a player never fires onReady
+    fallbackTimer = setTimeout(startAll, 8000)
+
+    // Center player — pass an imperative child div so YT.Player's
     // parentNode.replaceChild() never detaches containerRef from the DOM
     const mountDiv = document.createElement('div')
     mountDiv.style.cssText = 'width:100%;height:100%'
@@ -182,11 +237,12 @@ export default function VideoQueueOverlay() {
       height: '100%',
       videoId: current.video_id,
       playerVars: {
-        autoplay: 1,
+        autoplay: 0,
         controls: 0,
         rel: 0,
         modestbranding: 1,
         iv_load_policy: 3,
+        cc_load_policy: 3,
         mute: isPreview ? 1 : 0,
       },
       events: {
@@ -194,47 +250,81 @@ export default function VideoQueueOverlay() {
           const duration = event.target.getDuration()
           // Report duration to backend (fallback for entries where API returned null)
           if (duration > 0 && !current.duration_seconds && username) {
-            reportVideoMetadata(username, current.id, Math.round(duration)).catch(() => {})
+            reportVideoMetadata(username, currentId, Math.round(duration)).catch(() => {})
           }
-          event.target.playVideo()
-
-          // Start 1s progress interval
-          progressRef.current = setInterval(() => {
-            if (!playerRef.current) return
-            const t = playerRef.current.getCurrentTime()
-            setElapsed(t)
-
-            // ENDED fallback: polling check to catch missed onStateChange ENDED events
-            const d = playerRef.current.getDuration()
-            if (d > 0 && t >= d - 0.5) {
-              handleVideoEnd(current.id)
-            }
-          }, 1000)
+          onPlayerReady()
         },
 
         onStateChange: event => {
+          if (event.data === 1) {
+            // YT.PlayerState.PLAYING = 1 — sync side panels
+            for (const ref of [leftPlayerRef, rightPlayerRef]) {
+              if (ref.current) try { ref.current.playVideo() } catch { /* ignore */ }
+            }
+          }
+          if (event.data === 2) {
+            // YT.PlayerState.PAUSED = 2 — pause side panels in lockstep
+            for (const ref of [leftPlayerRef, rightPlayerRef]) {
+              if (ref.current) try { ref.current.pauseVideo() } catch { /* ignore */ }
+            }
+          }
           if (event.data === 0) {
             // YT.PlayerState.ENDED = 0
-            handleVideoEnd(current.id)
+            handleVideoEnd(currentId)
           }
         },
 
         onError: () => {
-          handleVideoEnd(current.id)
+          handleVideoEnd(currentId)
         },
       },
     })
+
+    // Side players for vertical videos
+    if (current.is_vertical) {
+      const makeSideMount = (container: HTMLDivElement) => {
+        const div = document.createElement('div')
+        div.style.cssText = 'width:100%;height:100%'
+        container.innerHTML = ''
+        container.appendChild(div)
+        return div
+      }
+      if (leftContainerRef.current) {
+        leftPlayerRef.current = new window.YT.Player(makeSideMount(leftContainerRef.current), {
+          width: '100%',
+          height: '100%',
+          videoId: current.video_id,
+          playerVars: { autoplay: 0, controls: 0, rel: 0, modestbranding: 1, mute: 1, iv_load_policy: 3 },
+          events: { onReady: onPlayerReady },
+        })
+      } else {
+        onPlayerReady() // container not mounted — count as ready so barrier doesn't stall
+      }
+      if (rightContainerRef.current) {
+        rightPlayerRef.current = new window.YT.Player(makeSideMount(rightContainerRef.current), {
+          width: '100%',
+          height: '100%',
+          videoId: current.video_id,
+          playerVars: { autoplay: 0, controls: 0, rel: 0, modestbranding: 1, mute: 1, iv_load_policy: 3 },
+          events: { onReady: onPlayerReady },
+        })
+      } else {
+        onPlayerReady() // container not mounted — count as ready so barrier doesn't stall
+      }
+    }
+
+    return () => {
+      clearTimeout(fallbackTimer)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ytReady, state?.current?.id, username])
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (playerRef.current) {
-        try {
-          playerRef.current.destroy()
-        } catch {
-          /* ignore */
+      for (const ref of [playerRef, leftPlayerRef, rightPlayerRef]) {
+        if (ref.current) {
+          try { ref.current.destroy() } catch { /* ignore */ }
         }
       }
       if (progressRef.current) clearInterval(progressRef.current)
@@ -309,9 +399,15 @@ export default function VideoQueueOverlay() {
         <div ref={containerRef} className={styles.videoContainer} />
         {current?.is_vertical && (
           <div className={styles.columnOverlay}>
-            <div className={styles.sidePanel} />
+            <div className={styles.sidePanel}>
+              <div ref={leftContainerRef} className={styles.sidePlayerContainer} />
+              <div className={styles.sideDarkOverlay} />
+            </div>
             <div className={styles.centerPanel} />
-            <div className={styles.sidePanel} />
+            <div className={styles.sidePanel}>
+              <div ref={rightContainerRef} className={styles.sidePlayerContainer} />
+              <div className={styles.sideDarkOverlay} />
+            </div>
           </div>
         )}
         <div className={styles.sunkenOverlay} />

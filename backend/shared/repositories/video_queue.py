@@ -70,14 +70,16 @@ async def fetch_yt_info(
     video_id: str,
     api_key: str,
     session: aiohttp.ClientSession | None = None,
-) -> tuple[str | None, int | None, int | None]:
-    """Fetch video title, duration, and view count via YouTube Data API v3.
+) -> tuple[str | None, int | None, int | None, bool]:
+    """Fetch video title, duration, view count, and orientation via YouTube Data API v3.
 
     If `session` is None a temporary one-shot session is created and closed.
-    Returns (title, duration_seconds, view_count). All None on any failure.
+    Returns (title, duration_seconds, view_count, is_vertical).
+    is_vertical is True when the API reports portrait thumbnails (e.g. YouTube Shorts).
+    title/duration/view_count are None on any failure; is_vertical defaults to False.
     """
     if not api_key:
-        return None, None, None
+        return None, None, None, False
 
     url = "https://www.googleapis.com/youtube/v3/videos"
     # Pass api_key via params dict so it never appears as a literal URL string
@@ -104,10 +106,16 @@ async def fetch_yt_info(
             duration_seconds = _parse_iso8601_duration(raw_duration) if raw_duration else 0
             raw_views: str | None = item.get("statistics", {}).get("viewCount")
             view_count = int(raw_views) if raw_views else None
-            return title, duration_seconds or None, view_count
+            # Detect portrait orientation from thumbnail dimensions (Shorts have h > w)
+            thumbnails: dict = item.get("snippet", {}).get("thumbnails", {})
+            is_vertical = any(
+                (t.get("height", 0) or 0) > (t.get("width", 1) or 1)
+                for t in thumbnails.values()
+            )
+            return title, duration_seconds or None, view_count, is_vertical
     except Exception as exc:
         logger.warning(f"[YouTube API] fetch_yt_info failed for {video_id}: {type(exc).__name__}")
-        return None, None, None
+        return None, None, None, False
     finally:
         if _own_session:
             await _session.close()

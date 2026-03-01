@@ -181,24 +181,32 @@
   inset: 0;
   pointer-events: none;
   display: flex;
-  justify-content: center;
+  justify-content: space-evenly;
   align-items: stretch;
   z-index: 1;
 }
 
 .sidePanel {
+  position: relative;
   aspect-ratio: 9 / 16;
   height: 100%;
-  background: rgba(0, 0, 0, 0.38);
   flex-shrink: 0;
-}
-
-.sidePanel:first-child {
+  overflow: hidden;
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
   border-right: 1px solid rgba(255, 255, 255, 0.12);
 }
 
-.sidePanel:last-child {
-  border-left: 1px solid rgba(255, 255, 255, 0.12);
+.sidePlayerContainer {
+  position: absolute;
+  inset: 0;
+  filter: blur(3px);
+}
+
+.sideDarkOverlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  pointer-events: none;
 }
 
 .centerPanel {
