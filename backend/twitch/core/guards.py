@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Protocol
 
 from twitchio.ext import commands
@@ -69,7 +69,7 @@ def is_on_cooldown(
 
     key = f"{channel_id}:{command_name}"
     last = _cooldown_tracker.get(key)
-    if last and (datetime.now() - last).total_seconds() < effective_cd:
+    if last and (datetime.now(UTC) - last).total_seconds() < effective_cd:
         return True
 
     return False
@@ -77,7 +77,7 @@ def is_on_cooldown(
 
 def record_cooldown(channel_id: str, command_name: str) -> None:
     """Record cooldown timestamp after successful command execution."""
-    _cooldown_tracker[f"{channel_id}:{command_name}"] = datetime.now()
+    _cooldown_tracker[f"{channel_id}:{command_name}"] = datetime.now(UTC)
 
 
 async def check_command(

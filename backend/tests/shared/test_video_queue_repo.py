@@ -14,6 +14,7 @@ from shared.repositories.video_queue import (
     _settings_cache,
     extract_youtube_id,
     extract_youtube_info,
+    fetch_yt_info,
 )
 
 # ---------------------------------------------------------------------------
@@ -386,3 +387,176 @@ class TestUpdateSettings:
         from shared.cache import _MISSING
 
         assert _settings_cache.get("vq_settings:ch1") is _MISSING
+
+
+# ---------------------------------------------------------------------------
+# VideoQueueRepository — advance_queue + skip_current_atomic (new methods)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestAdvanceQueue:
+    async def test_uses_transaction(self):
+        pool, conn = _make_pool(execute="UPDATE 1")
+        repo = VideoQueueRepository(pool)
+
+        await repo.advance_queue("ch1", done_id=42)
+
+        conn.transaction.assert_called_once()
+
+    async def test_calls_two_updates(self):
+        pool, conn = _make_pool(execute="UPDATE 1")
+        repo = VideoQueueRepository(pool)
+
+        await repo.advance_queue("ch1", done_id=42)
+
+        assert conn.execute.call_count == 2
+
+    async def test_first_update_marks_done(self):
+        pool, conn = _make_pool(execute="UPDATE 1")
+        repo = VideoQueueRepository(pool)
+
+        await repo.advance_queue("ch1", done_id=42)
+
+        first_call_sql: str = conn.execute.call_args_list[0][0][0]
+        assert "done" in first_call_sql
+        assert "playing" in first_call_sql
+
+    async def test_second_update_promotes_queued(self):
+        pool, conn = _make_pool(execute="UPDATE 1")
+        repo = VideoQueueRepository(pool)
+
+        await repo.advance_queue("ch1", done_id=42)
+
+        second_call_sql: str = conn.execute.call_args_list[1][0][0]
+        assert "playing" in second_call_sql
+        assert "queued" in second_call_sql
+
+    async def test_done_id_is_passed_as_parameter(self):
+        pool, conn = _make_pool(execute="UPDATE 1")
+        repo = VideoQueueRepository(pool)
+
+        await repo.advance_queue("ch1", done_id=99)
+
+        first_call_args = conn.execute.call_args_list[0][0]
+        assert 99 in first_call_args
+
+
+@pytest.mark.asyncio
+class TestSkipCurrentAtomic:
+    async def test_uses_transaction(self):
+        pool, conn = _make_pool(execute="UPDATE 1")
+        repo = VideoQueueRepository(pool)
+
+        await repo.skip_current_atomic("ch1")
+
+        conn.transaction.assert_called_once()
+
+    async def test_calls_two_updates(self):
+        pool, conn = _make_pool(execute="UPDATE 1")
+        repo = VideoQueueRepository(pool)
+
+        await repo.skip_current_atomic("ch1")
+
+        assert conn.execute.call_count == 2
+
+    async def test_first_update_marks_skipped(self):
+        pool, conn = _make_pool(execute="UPDATE 1")
+        repo = VideoQueueRepository(pool)
+
+        await repo.skip_current_atomic("ch1")
+
+        first_call_sql: str = conn.execute.call_args_list[0][0][0]
+        assert "skipped" in first_call_sql
+        assert "playing" in first_call_sql
+
+    async def test_second_update_promotes_queued(self):
+        pool, conn = _make_pool(execute="UPDATE 1")
+        repo = VideoQueueRepository(pool)
+
+        await repo.skip_current_atomic("ch1")
+
+        second_call_sql: str = conn.execute.call_args_list[1][0][0]
+        assert "playing" in second_call_sql
+        assert "queued" in second_call_sql
+
+    async def test_channel_id_is_scoped(self):
+        pool, conn = _make_pool(execute="UPDATE 1")
+        repo = VideoQueueRepository(pool)
+
+        await repo.skip_current_atomic("ch_target")
+
+        for call in conn.execute.call_args_list:
+            assert "ch_target" in call[0]
+
+
+# ---------------------------------------------------------------------------
+# fetch_yt_info — error paths must return 4-tuple (title, duration, views, is_vertical)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestFetchYtInfo:
+    async def test_no_api_key_returns_4tuple(self):
+        result = await fetch_yt_info("dQw4w9WgXcQ", api_key="")
+        assert result == (None, None, None, False)
+        assert len(result) == 4
+
+    async def test_bad_status_returns_4tuple(self):
+        import aiohttp
+        from unittest.mock import patch, AsyncMock as AM
+
+        mock_resp = MagicMock()
+        mock_resp.status = 403
+        mock_resp.__aenter__ = AM(return_value=mock_resp)
+        mock_resp.__aexit__ = AM(return_value=None)
+
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(return_value=mock_resp)
+        mock_session.close = AM(return_value=None)
+
+        with patch("aiohttp.ClientSession", return_value=mock_session):
+            result = await fetch_yt_info("dQw4w9WgXcQ", api_key="fake_key")
+
+        assert len(result) == 4
+        title, duration, views, is_vertical = result
+        assert title is None
+        assert duration is None
+        assert views is None
+        assert is_vertical is False
+
+    async def test_empty_items_returns_4tuple(self):
+        from unittest.mock import patch, AsyncMock as AM
+
+        mock_resp = MagicMock()
+        mock_resp.status = 200
+        mock_resp.json = AM(return_value={"items": []})
+        mock_resp.__aenter__ = AM(return_value=mock_resp)
+        mock_resp.__aexit__ = AM(return_value=None)
+
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(return_value=mock_resp)
+        mock_session.close = AM(return_value=None)
+
+        with patch("aiohttp.ClientSession", return_value=mock_session):
+            result = await fetch_yt_info("dQw4w9WgXcQ", api_key="fake_key")
+
+        assert len(result) == 4
+        title, duration, views, is_vertical = result
+        assert title is None
+        assert is_vertical is False
+
+    async def test_network_error_returns_4tuple(self):
+        import aiohttp
+        from unittest.mock import patch
+
+        with patch("aiohttp.ClientSession") as mock_cls:
+            mock_session = MagicMock()
+            mock_session.get.side_effect = aiohttp.ClientError("connection refused")
+            mock_session.close = AsyncMock(return_value=None)
+            mock_cls.return_value = mock_session
+
+            result = await fetch_yt_info("dQw4w9WgXcQ", api_key="fake_key")
+
+        assert len(result) == 4
+        assert result == (None, None, None, False)

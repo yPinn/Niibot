@@ -129,17 +129,17 @@ def validate_env_vars() -> None:
 
 def load_env_config() -> dict[str, str]:
     """
-    Load and return environment configuration as dict (backward compatible).
+    Load and return non-secret environment configuration as dict (backward compatible).
 
     This function maintains compatibility with code that previously
     imported from env.py. It now uses Pydantic Settings.
+    Secrets (CLIENT_SECRET, DATABASE_URL) are intentionally excluded to prevent
+    accidental exposure via logging or debug output.
     """
     settings = get_settings()
     return {
         "CLIENT_ID": settings.client_id,
-        "CLIENT_SECRET": settings.client_secret,
         "BOT_ID": settings.bot_id,
         "OWNER_ID": settings.owner_id,
-        "DATABASE_URL": settings.database_url,
         "CONDUIT_ID": settings.conduit_id,
     }

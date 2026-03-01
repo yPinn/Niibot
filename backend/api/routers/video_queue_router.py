@@ -241,12 +241,7 @@ async def skip_current(
     try:
         repo = VideoQueueRepository(pool)
         settings_repo = VideoQueueSettingsRepository(pool)
-        current = await repo.get_current(channel_id)
-        if current:
-            await repo.mark_skipped(current.id, channel_id)
-        queued = await repo.get_queued(channel_id)
-        if queued:
-            await repo.set_playing(queued[0].id)
+        await repo.skip_current_atomic(channel_id)
         logger.info(f"Channel {channel_id} skipped video queue entry")
         return await _build_public_state(channel_id, repo, settings_repo)
     except Exception:

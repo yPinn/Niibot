@@ -104,7 +104,7 @@ def get_analytics_service(pool: asyncpg.Pool) -> AnalyticsService:
 # ============================================
 
 
-def _get_token_payload(auth_token: str | None = Cookie(None)) -> dict:
+def get_token_payload(auth_token: str | None = Cookie(None)) -> dict:
     """Verify JWT and return full payload"""
     auth_service = get_auth_service()
 
@@ -125,7 +125,7 @@ async def get_current_user_id(
     auth_token: str | None = Cookie(None),
 ) -> str:
     """Return users.id (UUID) for user-level operations (preferences, etc.)"""
-    payload = _get_token_payload(auth_token)
+    payload = get_token_payload(auth_token)
     return str(payload["sub"])
 
 
@@ -136,7 +136,7 @@ async def get_current_channel_id(
 
     Maps to TwitchIO broadcaster.id / Helix broadcaster_id
     """
-    payload = _get_token_payload(auth_token)
+    payload = get_token_payload(auth_token)
     return str(payload["platform_user_id"])
 
 

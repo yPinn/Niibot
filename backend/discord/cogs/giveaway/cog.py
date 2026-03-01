@@ -67,17 +67,17 @@ class Giveaway(commands.Cog):
             "host_avatar_url": host_avatar_url,
             "participants": [],
         }
-        self._persistence.save(self.active_giveaways)
+        await self._persistence.save(self.active_giveaways)
 
     async def remove_active_giveaway(self, message_id: int) -> None:
         if message_id in self.active_giveaways:
             del self.active_giveaways[message_id]
-            self._persistence.save(self.active_giveaways)
+            await self._persistence.save(self.active_giveaways)
 
     async def update_participants(self, message_id: int, participants: list[int]) -> None:
         if message_id in self.active_giveaways:
             self.active_giveaways[message_id]["participants"] = participants
-            self._persistence.save(self.active_giveaways)
+            await self._persistence.save(self.active_giveaways)
 
     # ------------------------------------------------------------------
     # Embed helpers (called by views and auto-end)

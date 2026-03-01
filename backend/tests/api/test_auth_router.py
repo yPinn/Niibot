@@ -347,7 +347,7 @@ class TestUpdatePreferences:
             json={"theme": "rainbow"},
             cookies={"auth_token": _token()},
         )
-        assert r.status_code == 400
+        assert r.status_code == 422  # Pydantic Literal validation → 422 Unprocessable Entity
 
     @pytest.mark.parametrize("theme", ["dark", "light", "system"])
     def test_valid_theme_returns_200(self, theme: str):

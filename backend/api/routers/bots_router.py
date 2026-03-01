@@ -6,14 +6,12 @@ import httpx
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from core.config import get_settings
+from core.config import Settings, get_settings
 from core.dependencies import get_current_user_id
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/bots", tags=["bots"])
-
-settings = get_settings()
 
 # Shared client — avoids a new TCP connection on every health check poll
 _http_client = httpx.AsyncClient(timeout=10.0)
@@ -80,6 +78,7 @@ async def check_bot_health(bot_url: str, bot_name: str) -> BotStatusResponse:
 @router.get("/twitch/status", response_model=BotStatusResponse)
 async def get_twitch_bot_status(
     _user_id: str = Depends(get_current_user_id),
+    settings: Settings = Depends(get_settings),
 ) -> BotStatusResponse:
     """Get Twitch bot status"""
     return await check_bot_health(settings.twitch_bot_url, "Twitch")
@@ -88,6 +87,7 @@ async def get_twitch_bot_status(
 @router.get("/twitch/health")
 async def get_twitch_bot_health(
     _user_id: str = Depends(get_current_user_id),
+    settings: Settings = Depends(get_settings),
 ):
     """Twitch bot health check"""
     try:
@@ -102,6 +102,7 @@ async def get_twitch_bot_health(
 @router.get("/discord/status", response_model=BotStatusResponse)
 async def get_discord_bot_status(
     _user_id: str = Depends(get_current_user_id),
+    settings: Settings = Depends(get_settings),
 ) -> BotStatusResponse:
     """Get Discord bot status"""
     return await check_bot_health(settings.discord_bot_url, "Discord")
@@ -110,6 +111,7 @@ async def get_discord_bot_status(
 @router.get("/discord/health")
 async def get_discord_bot_health(
     _user_id: str = Depends(get_current_user_id),
+    settings: Settings = Depends(get_settings),
 ):
     """Discord bot health check"""
     try:

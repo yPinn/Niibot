@@ -95,11 +95,11 @@ async def fetch_yt_info(
         async with _session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=5)) as resp:
             if resp.status != 200:
                 logger.warning(f"[YouTube API] Unexpected status {resp.status} for {video_id}")
-                return None, None, None
+                return None, None, None, False
             data = await resp.json()
             items = data.get("items", [])
             if not items:
-                return None, None, None  # video not found / private
+                return None, None, None, False  # video not found / private
             item = items[0]
             title: str | None = item.get("snippet", {}).get("title")
             raw_duration: str = item.get("contentDetails", {}).get("duration", "")
@@ -329,6 +329,31 @@ class VideoQueueRepository:
                     new_ts,
                 )
                 return result == "UPDATE 1"
+
+    async def skip_current_atomic(self, channel_id: str) -> None:
+        """Atomically mark the current playing entry as skipped and promote the next queued entry.
+
+        Both operations run inside a single transaction to prevent a race condition
+        where a concurrent advance_queue call (from the overlay) could promote the
+        same queued entry while the dashboard skip is in flight.
+        """
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute(
+                    "UPDATE video_queue SET status = 'skipped', ended_at = NOW() "
+                    "WHERE channel_id = $1 AND status = 'playing'",
+                    channel_id,
+                )
+                await conn.execute(
+                    "UPDATE video_queue "
+                    "SET status = 'playing', started_at = NOW() "
+                    "WHERE id = ("
+                    "    SELECT id FROM video_queue "
+                    "    WHERE channel_id = $1 AND status = 'queued' "
+                    "    ORDER BY created_at ASC LIMIT 1"
+                    ")",
+                    channel_id,
+                )
 
     async def play_immediately(self, entry_id: int, channel_id: str) -> None:
         """Skip the currently playing video and start playing this entry immediately.

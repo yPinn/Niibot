@@ -1,6 +1,7 @@
 """Authentication API routes"""
 
 import logging
+from typing import Literal
 from urllib.parse import quote as _url_quote
 
 from asyncpg import Pool
@@ -11,12 +12,12 @@ from pydantic import BaseModel
 from core.config import Settings, get_settings
 from core.database import get_database_manager
 from core.dependencies import (
-    _get_token_payload,
     get_auth_service,
     get_channel_service,
     get_current_user_id,
     get_db_pool,
     get_discord_api,
+    get_token_payload,
     get_twitch_api,
 )
 from services import AuthService, DiscordAPIClient, TwitchAPIClient
@@ -56,7 +57,7 @@ class LogoutResponse(BaseModel):
 
 
 class PreferencesUpdate(BaseModel):
-    theme: str
+    theme: Literal["dark", "light", "system"]
 
 
 # ============================================
@@ -72,10 +73,11 @@ async def get_twitch_oauth_url(
     settings: Settings = Depends(get_settings),
 ) -> OAuthURLResponse:
     """Get Twitch OAuth authorization URL. Use mode=link to link account."""
-    state = None
+    user_id_for_state = None
     if mode == "link":
-        payload = _get_token_payload(auth_token)
-        state = encode_oauth_state("link", user_id=str(payload["sub"]))
+        payload = get_token_payload(auth_token)
+        user_id_for_state = str(payload["sub"])
+    state = encode_oauth_state(mode, user_id=user_id_for_state, secret=settings.jwt_secret_key)
 
     oauth_url = twitch_api.generate_oauth_url(state=state)
     return OAuthURLResponse(
@@ -95,7 +97,7 @@ async def twitch_oauth_callback(
     settings: Settings = Depends(get_settings),
 ) -> RedirectResponse:
     """Handle Twitch OAuth callback"""
-    state_data = decode_oauth_state(state)
+    state_data = decode_oauth_state(state, secret=settings.jwt_secret_key)
     is_link_mode = state_data.get("mode") == "link"
     error_redirect = (
         f"{settings.frontend_url}/settings" if is_link_mode else f"{settings.frontend_url}/login"
@@ -151,7 +153,7 @@ async def twitch_oauth_callback(
 
             # Verify cookie user matches state user (prevent session swap)
             try:
-                payload = _get_token_payload(auth_token)
+                payload = get_token_payload(auth_token)
                 if str(payload["sub"]) != link_user_id:
                     logger.warning(
                         f"Link uid mismatch: cookie={payload['sub']}, state={link_user_id}"
@@ -209,7 +211,7 @@ async def get_current_user(
     pool: Pool = Depends(get_db_pool),
 ) -> UserInfoResponse:
     """Get current authenticated user information"""
-    payload = _get_token_payload(auth_token)
+    payload = get_token_payload(auth_token)
     user_id = str(payload["sub"])
     platform = payload["platform"]
     platform_user_id = str(payload["platform_user_id"])
@@ -256,7 +258,7 @@ async def logout(
     pool: Pool = Depends(get_db_pool),
 ) -> LogoutResponse:
     """Logout current user by clearing auth cookie"""
-    payload = _get_token_payload(auth_token)
+    payload = get_token_payload(auth_token)
     platform = payload["platform"]
     platform_user_id = str(payload["platform_user_id"])
 
@@ -291,9 +293,6 @@ async def update_preferences(
     pool: Pool = Depends(get_db_pool),
 ) -> dict:
     """Update user preferences (theme, etc.)"""
-    if body.theme not in ("dark", "light", "system"):
-        raise HTTPException(status_code=400, detail="Invalid theme value")
-
     await pool.execute(
         "UPDATE users SET theme = $1 WHERE id = $2::uuid",
         body.theme,
@@ -342,10 +341,11 @@ async def get_discord_oauth_url(
             detail="Discord OAuth is not configured",
         )
 
-    state = None
+    user_id_for_state = None
     if mode == "link":
-        payload = _get_token_payload(auth_token)
-        state = encode_oauth_state("link", user_id=str(payload["sub"]))
+        payload = get_token_payload(auth_token)
+        user_id_for_state = str(payload["sub"])
+    state = encode_oauth_state(mode, user_id=user_id_for_state, secret=settings.jwt_secret_key)
 
     oauth_url = discord_api.generate_oauth_url(state=state)
     return OAuthURLResponse(
@@ -365,7 +365,7 @@ async def discord_oauth_callback(
     settings: Settings = Depends(get_settings),
 ) -> RedirectResponse:
     """Handle Discord OAuth callback"""
-    state_data = decode_oauth_state(state)
+    state_data = decode_oauth_state(state, secret=settings.jwt_secret_key)
     is_link_mode = state_data.get("mode") == "link"
     error_redirect = (
         f"{settings.frontend_url}/settings" if is_link_mode else f"{settings.frontend_url}/login"
@@ -414,7 +414,7 @@ async def discord_oauth_callback(
 
             # Verify cookie user matches state user (prevent session swap)
             try:
-                payload = _get_token_payload(auth_token)
+                payload = get_token_payload(auth_token)
                 if str(payload["sub"]) != link_user_id:
                     logger.warning(
                         f"Link uid mismatch: cookie={payload['sub']}, state={link_user_id}"
@@ -511,7 +511,7 @@ async def unlink_account(
         raise HTTPException(status_code=400, detail="Invalid platform")
 
     # Cannot unlink the platform used for current session
-    payload = _get_token_payload(auth_token)
+    payload = get_token_payload(auth_token)
     if payload["platform"] == platform:
         raise HTTPException(status_code=400, detail="Cannot unlink your current session platform")
 

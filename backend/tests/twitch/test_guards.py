@@ -1,6 +1,6 @@
 """Unit tests for twitch.core.guards — has_role, is_on_cooldown, record_cooldown."""
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from twitch.core.guards import (
     ROLE_HIERARCHY,
@@ -147,8 +147,8 @@ class TestCooldown:
 
     def test_expired_cooldown_not_on_cooldown(self):
         cfg = make_cooldown_config(cooldown=10)
-        # Manually set timestamp far in the past
-        _cooldown_tracker["ch5:cmd5"] = datetime.now() - timedelta(seconds=60)
+        # Manually set timestamp far in the past (UTC-aware, matching guards.py)
+        _cooldown_tracker["ch5:cmd5"] = datetime.now(UTC) - timedelta(seconds=60)
         assert is_on_cooldown("ch5", "cmd5", cfg, None) is False
 
     def test_record_then_check_boundary(self):
