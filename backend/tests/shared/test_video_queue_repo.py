@@ -503,17 +503,16 @@ class TestFetchYtInfo:
         assert len(result) == 4
 
     async def test_bad_status_returns_4tuple(self):
-        import aiohttp
-        from unittest.mock import patch, AsyncMock as AM
+        from unittest.mock import AsyncMock, patch
 
         mock_resp = MagicMock()
         mock_resp.status = 403
-        mock_resp.__aenter__ = AM(return_value=mock_resp)
-        mock_resp.__aexit__ = AM(return_value=None)
+        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_resp.__aexit__ = AsyncMock(return_value=None)
 
         mock_session = MagicMock()
         mock_session.get = MagicMock(return_value=mock_resp)
-        mock_session.close = AM(return_value=None)
+        mock_session.close = AsyncMock(return_value=None)
 
         with patch("aiohttp.ClientSession", return_value=mock_session):
             result = await fetch_yt_info("dQw4w9WgXcQ", api_key="fake_key")
@@ -526,17 +525,17 @@ class TestFetchYtInfo:
         assert is_vertical is False
 
     async def test_empty_items_returns_4tuple(self):
-        from unittest.mock import patch, AsyncMock as AM
+        from unittest.mock import AsyncMock, patch
 
         mock_resp = MagicMock()
         mock_resp.status = 200
-        mock_resp.json = AM(return_value={"items": []})
-        mock_resp.__aenter__ = AM(return_value=mock_resp)
-        mock_resp.__aexit__ = AM(return_value=None)
+        mock_resp.json = AsyncMock(return_value={"items": []})
+        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_resp.__aexit__ = AsyncMock(return_value=None)
 
         mock_session = MagicMock()
         mock_session.get = MagicMock(return_value=mock_resp)
-        mock_session.close = AM(return_value=None)
+        mock_session.close = AsyncMock(return_value=None)
 
         with patch("aiohttp.ClientSession", return_value=mock_session):
             result = await fetch_yt_info("dQw4w9WgXcQ", api_key="fake_key")
@@ -547,8 +546,9 @@ class TestFetchYtInfo:
         assert is_vertical is False
 
     async def test_network_error_returns_4tuple(self):
-        import aiohttp
         from unittest.mock import patch
+
+        import aiohttp
 
         with patch("aiohttp.ClientSession") as mock_cls:
             mock_session = MagicMock()

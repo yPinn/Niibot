@@ -109,8 +109,7 @@ async def fetch_yt_info(
             # Detect portrait orientation from thumbnail dimensions (Shorts have h > w)
             thumbnails: dict = item.get("snippet", {}).get("thumbnails", {})
             is_vertical = any(
-                (t.get("height", 0) or 0) > (t.get("width", 1) or 1)
-                for t in thumbnails.values()
+                (t.get("height", 0) or 0) > (t.get("width", 1) or 1) for t in thumbnails.values()
             )
             return title, duration_seconds or None, view_count, is_vertical
     except Exception as exc:
