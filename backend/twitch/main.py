@@ -29,8 +29,9 @@ def main() -> None:
         from dotenv import load_dotenv
         from twitchio import eventsub
 
-        from core import get_channel_subscriptions, load_env_config, validate_env_vars
+        from core import get_channel_subscriptions, validate_env_vars
         from core.bot import Bot
+        from core.config import get_settings
         from shared.database import DatabaseManager, PoolConfig
         from shared.repositories.channel import ChannelRepository
 
@@ -39,14 +40,14 @@ def main() -> None:
         env_path = Path(__file__).parent / ".env"
         load_dotenv(dotenv_path=env_path)
         validate_env_vars()
-        env_config = load_env_config()
+        settings = get_settings()
 
-        client_id: str = env_config["CLIENT_ID"]
-        client_secret: str = env_config["CLIENT_SECRET"]
-        bot_id: str = env_config["BOT_ID"]
-        owner_id: str = env_config["OWNER_ID"]
-        database_url: str = env_config["DATABASE_URL"]
-        conduit_id: str | None = env_config["CONDUIT_ID"] or None
+        client_id: str = settings.client_id
+        client_secret: str = settings.client_secret
+        bot_id: str = settings.bot_id
+        owner_id: str = settings.owner_id
+        database_url: str = settings.database_url
+        conduit_id: str | None = settings.conduit_id or None
 
         # 3. Database connection pool
         db_manager = DatabaseManager(
