@@ -16,18 +16,20 @@ const ERROR_MESSAGES: Record<string, string> = {
 }
 
 export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) {
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [discordEnabled, setDiscordEnabled] = useState(false)
   const [discordLoading, setDiscordLoading] = useState(true)
 
-  const errorCode = searchParams.get('error')
-  const errorMessage = errorCode ? ERROR_MESSAGES[errorCode] || `登入失敗 (${errorCode})` : null
-
+  // Process error param once on mount — same pattern as Settings.tsx
   useEffect(() => {
-    if (errorMessage) {
+    const errorCode = searchParams.get('error')
+    if (errorCode) {
+      const errorMessage = ERROR_MESSAGES[errorCode] || `登入失敗 (${errorCode})`
       toast.error('登入失敗', { description: errorMessage })
+      setSearchParams({}, { replace: true })
     }
-  }, [errorMessage])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     getDiscordOAuthStatus()
