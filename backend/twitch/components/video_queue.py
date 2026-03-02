@@ -206,7 +206,7 @@ class VideoQueueComponent(commands.Component):
     # !vq — subcommand group
     # ------------------------------------------------------------------
 
-    @commands.group(name="vq")
+    @commands.group(name="vq", invoke_fallback=True)
     async def vq(self, ctx: commands.Context[Bot]) -> None:
         """!vq <URL> 投遞影片 | !vq list/remove/skip/clear 管理佇列"""
         if ctx.invoked_subcommand is not None:
