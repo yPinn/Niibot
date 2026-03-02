@@ -32,7 +32,7 @@ export function NavUser({ user }: { user: User }) {
       logout()
       window.location.href = '/login'
     } catch (error) {
-      console.error('Logout failed:', error)
+      if (import.meta.env.DEV) console.error('Logout failed:', error)
       logout()
       window.location.href = '/login'
     }

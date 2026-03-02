@@ -53,7 +53,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const userData = await getCurrentUser({ forceRefresh: true })
       setUser(userData)
     } catch (error) {
-      console.error('Failed to load user:', error)
+      if (import.meta.env.DEV) console.error('Failed to load user:', error)
       setUser(null)
     }
   }, [])
@@ -63,7 +63,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const channelData = await getTwitchMonitoredChannels({ forceRefresh: true })
       setChannels(channelData)
     } catch (error) {
-      console.error('Failed to load channels:', error)
+      if (import.meta.env.DEV) console.error('Failed to load channels:', error)
       setChannels([])
     }
   }, [])
@@ -86,7 +86,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(userData)
         setChannels(channelData)
       } catch (error) {
-        console.error('Failed to load initial data:', error)
+        if (import.meta.env.DEV) console.error('Failed to load initial data:', error)
         setUser(null)
         setChannels([])
       } finally {

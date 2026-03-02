@@ -175,6 +175,7 @@ export default function SystemStatus() {
         <button
           onClick={refresh}
           className="p-2 hover:bg-accent rounded-md transition-colors active:scale-95"
+          aria-label="Refresh now"
           title="Refresh now"
         >
           <Icon icon="fa-solid fa-rotate" className="w-4 h-4 text-muted-foreground" />

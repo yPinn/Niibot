@@ -70,6 +70,8 @@ export default function Settings() {
       })
       setSearchParams({}, { replace: true })
     }
+    // Intentionally runs only once on mount to process OAuth redirect params.
+    // setSearchParams is stable and searchParams is read synchronously.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

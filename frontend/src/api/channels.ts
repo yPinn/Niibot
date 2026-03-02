@@ -38,7 +38,7 @@ async function fetchTwitchMonitoredChannels(): Promise<Channel[]> {
     }
     return await response.json()
   } catch (error) {
-    console.error('Failed to get channels:', error)
+    if (import.meta.env.DEV) console.error('Failed to get channels:', error)
     return []
   }
 }
@@ -62,7 +62,7 @@ export async function getTwitchChannelStatus(): Promise<ChannelStatus | null> {
     }
     return response.json()
   } catch (error) {
-    console.error('Failed to get channel status:', error)
+    if (import.meta.env.DEV) console.error('Failed to get channel status:', error)
     return null
   }
 }

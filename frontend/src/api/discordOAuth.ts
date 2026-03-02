@@ -26,11 +26,6 @@ export async function getDiscordOAuthUrl(): Promise<string> {
 }
 
 export async function openDiscordOAuth(): Promise<void> {
-  try {
-    const oauthUrl = await getDiscordOAuthUrl()
-    window.location.href = oauthUrl
-  } catch (error) {
-    console.error('Failed to open Discord OAuth:', error)
-    throw error
-  }
+  const oauthUrl = await getDiscordOAuthUrl()
+  window.location.href = oauthUrl
 }

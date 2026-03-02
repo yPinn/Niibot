@@ -25,7 +25,7 @@ async function fetchCurrentUser(): Promise<User | null> {
 
     return await response.json()
   } catch (error) {
-    console.error('Failed to get user info:', error)
+    if (import.meta.env.DEV) console.error('Failed to get user info:', error)
     return null
   }
 }
@@ -53,17 +53,12 @@ export async function updateUserPreferences(prefs: { theme: Theme }): Promise<vo
 }
 
 export async function logout(): Promise<void> {
-  try {
-    const response = await apiFetch(API_ENDPOINTS.auth.logout, {
-      method: 'POST',
-      credentials: 'include',
-    })
-    if (!response.ok) {
-      throw new Error('Failed to logout')
-    }
-    apiCache.clear()
-  } catch (error) {
-    console.error('Failed to logout:', error)
-    throw error
+  const response = await apiFetch(API_ENDPOINTS.auth.logout, {
+    method: 'POST',
+    credentials: 'include',
+  })
+  if (!response.ok) {
+    throw new Error('Failed to logout')
   }
+  apiCache.clear()
 }

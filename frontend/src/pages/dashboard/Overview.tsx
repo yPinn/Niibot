@@ -30,7 +30,7 @@ export default function Dashboard() {
     try {
       setStats(await getChannelStats())
     } catch (error) {
-      console.error('Failed to fetch stats:', error)
+      if (import.meta.env.DEV) console.error('Failed to fetch stats:', error)
       setStats(null)
     } finally {
       setStatsLoading(false)
@@ -43,7 +43,7 @@ export default function Dashboard() {
     try {
       setAnalytics(await getAnalyticsSummary(30))
     } catch (error) {
-      console.error('Failed to fetch analytics:', error)
+      if (import.meta.env.DEV) console.error('Failed to fetch analytics:', error)
       setAnalytics(null)
     } finally {
       setAnalyticsLoading(false)
@@ -74,12 +74,10 @@ export default function Dashboard() {
   }, [channels, fetchStats, fetchAnalytics])
 
   return (
-    <main
-      className={`h-full grid grid-rows-[1fr_auto] min-h-0 overflow-hidden transition-all duration-200 p-page lg:p-page-lg gap-section`}
-    >
+    <main className="h-full grid grid-rows-[1fr_auto] min-h-0 overflow-hidden transition-all duration-200 p-page lg:p-page-lg gap-section">
       <AnalyticsChart data={analytics} loading={analyticsLoading} className="min-h-0" />
 
-      <div className={`grid grid-cols-1 lg:grid-cols-3 gap-section`}>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-section">
         <div className="aspect-video bg-muted/50 rounded-xl overflow-hidden relative">
           {user?.name ? (
             <TwitchPlayer

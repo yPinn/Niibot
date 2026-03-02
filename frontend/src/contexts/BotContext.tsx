@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useMemo } from 'react'
+import React, { createContext, useContext, useMemo } from 'react'
 
 import { useAuth } from './AuthContext'
 
@@ -41,15 +41,9 @@ export function BotProvider({ children }: { children: React.ReactNode }) {
 
   const activeBot: BotType = user?.platform || 'twitch'
 
-  // TODO: 實作帳戶連結後啟用
+  // Bot switching is disabled until multi-account linking is implemented.
+  // When enabled, this should persist activeBot to user preferences.
   const canSwitchBot = false
-
-  const handleSetActiveBot = useCallback(
-    (_bot: BotType) => {
-      if (!canSwitchBot) return
-    },
-    [canSwitchBot]
-  )
 
   const activeBotInfo = useMemo(() => BOTS.find(b => b.id === activeBot) ?? BOTS[0], [activeBot])
 
@@ -57,11 +51,11 @@ export function BotProvider({ children }: { children: React.ReactNode }) {
     () => ({
       activeBot,
       activeBotInfo,
-      setActiveBot: handleSetActiveBot,
+      setActiveBot: () => {},
       bots: BOTS,
       canSwitchBot,
     }),
-    [activeBot, activeBotInfo, handleSetActiveBot, canSwitchBot]
+    [activeBot, activeBotInfo, canSwitchBot]
   )
 
   return <BotContext.Provider value={value}>{children}</BotContext.Provider>

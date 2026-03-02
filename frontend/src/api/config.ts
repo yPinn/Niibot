@@ -132,7 +132,7 @@ export function assertTrustedOAuthUrl(raw: unknown, provider: 'twitch' | 'discor
     throw new Error('Malformed OAuth URL')
   }
   if (url.protocol !== 'https:' || !TRUSTED_OAUTH_ORIGINS[provider].has(url.origin)) {
-    throw new Error(`Untrusted OAuth redirect origin: ${url.origin}`)
+    throw new Error('OAuth redirect was blocked: untrusted origin')
   }
   return raw
 }
