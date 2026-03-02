@@ -6,10 +6,10 @@
 
 | 服務 | 技術 | 部署 | 對外 Port |
 | ---- | ---- | ---- | ---- |
-| API Server | FastAPI + asyncpg | Docker (Oracle VPS) | 8000 |
-| Twitch Bot | TwitchIO 3 | Docker (Oracle VPS) | — 僅內部 |
-| Discord Bot | discord.py 2 | Docker (Oracle VPS) | — 僅內部 |
-| PostgreSQL | postgres:16 | Docker (Oracle VPS) | — 僅內部 |
+| API Server | FastAPI + asyncpg | Docker | 8000 |
+| Twitch Bot | TwitchIO 3 | Docker | — 僅內部 |
+| Discord Bot | discord.py 2 | Docker | — 僅內部 |
+| PostgreSQL | postgres:16 | Docker | — 僅內部 |
 | Frontend | React 19 + Vite | Cloudflare Pages | — |
 
 ```text
@@ -44,17 +44,17 @@ npm install && npm run dev
 
 ### 前端（Cloudflare Pages）
 
-前端為 React SPA，部署在 Cloudflare Pages；CF Pages Functions 將 `/api/*`、`/health`、`/status` 代理到 VPS API，瀏覽器全程只與 CF Pages 域名通訊。
+前端為 React SPA，部署在 Cloudflare Pages；CF Pages Functions 將 `/api/*`、`/health`、`/status` 代理到後端 API，瀏覽器全程只與 CF Pages 域名通訊。
 
 在 CF Pages 專案設定 → 環境變數：
 
 | 變數 | 說明 |
 | ---- | ---- |
-| `API_BACKEND` | VPS API 位址，例如 `http://your-vps-ip:8000` |
+| `API_BACKEND` | 後端 API 位址，例如 `http://your-server-ip:8000` |
 
-### 後端（Oracle VPS — Docker Compose）
+### 後端（Docker Compose）
 
-後端服務（API、Twitch Bot、Discord Bot、PostgreSQL）統一透過 Docker Compose 管理。VPS 上只需對外開放 **port 8000**（API，供 CF Functions 呼叫）。
+後端服務（API、Twitch Bot、Discord Bot、PostgreSQL）統一透過 Docker Compose 管理。只需對外開放 **port 8000**（API，供 CF Functions 呼叫）。
 
 #### 1. 設定環境變數
 

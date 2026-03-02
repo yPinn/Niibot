@@ -1,7 +1,7 @@
 # Production override — pull pre-built images from ghcr.io
 # Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 #
-# Required env vars (set in VPS shell or .env):
+# Required env vars (set in .env):
 #   APP_VERSION  — e.g. v1.2.3 (default: latest)
 #   GHCR_OWNER   — github username lowercase (default: ypinn)
 

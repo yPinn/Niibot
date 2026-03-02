@@ -1,6 +1,6 @@
 # Niibot Discord Bot
 
-discord.py 2.x Slash Commands Bot。部署於 Oracle VPS (Docker)。
+discord.py 2.x Slash Commands Bot。部署於 Docker。
 
 ## 啟動
 

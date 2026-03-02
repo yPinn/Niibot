@@ -9,6 +9,6 @@
 
 ## Deployment
 
-- Backend: VPS (Docker)
+- Backend: Docker
 - Frontend: Cloudflare Pages
 - Auth: Third-party OAuth (Discord + Twitch) via backend cookie sessions
