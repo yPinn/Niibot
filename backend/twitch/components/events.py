@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from core.bot import Bot
 
 
-LOGGER: logging.Logger = logging.getLogger("EventComponent")
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 class EventComponent(commands.Component):

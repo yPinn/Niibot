@@ -4,13 +4,13 @@ from typing import TYPE_CHECKING
 
 import twitchio
 from twitchio.ext import commands
+from utils.substitution import substitute_variables
 
 from core.config import get_settings
 from core.guards import check_command
 from shared.repositories.command_config import CommandConfigRepository
-from utils.substitution import substitute_variables
 
-LOGGER: logging.Logger = logging.getLogger("Bot")
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 FRONTEND_URL = get_settings().frontend_url.rstrip("/")
 
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from core.bot import Bot
 
 
-class GeneralCommands(commands.Component):
+class GeneralCommandsComponent(commands.Component):
     """General user commands for the bot."""
 
     COMMANDS: list[dict] = [
@@ -254,7 +254,7 @@ class GeneralCommands(commands.Component):
 
 async def setup(bot: commands.Bot) -> None:
     """Entry point for the module."""
-    await bot.add_component(GeneralCommands(bot))
+    await bot.add_component(GeneralCommandsComponent(bot))
 
 
 async def teardown(bot: commands.Bot) -> None:

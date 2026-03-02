@@ -32,10 +32,10 @@ from shared.repositories.video_queue import (
 if TYPE_CHECKING:
     from core.bot import Bot
 
-LOGGER = logging.getLogger("VideoQueue")
+LOGGER = logging.getLogger(__name__)
 
 
-class VideoQueueManagerComponent(commands.Component):
+class VideoQueueComponent(commands.Component):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot: Bot = bot  # type: ignore[assignment]
         self._settings = get_settings()
@@ -252,7 +252,7 @@ class VideoQueueManagerComponent(commands.Component):
 
 
 async def setup(bot: commands.Bot) -> None:
-    await bot.add_component(VideoQueueManagerComponent(bot))
+    await bot.add_component(VideoQueueComponent(bot))
 
 
 async def teardown(bot: commands.Bot) -> None:

@@ -13,10 +13,10 @@ import asyncio
 import logging
 
 import twitchio
-
-from core.guards import has_role, is_on_cooldown, record_cooldown
 from utils.substitution import substitute_variables as _substitute_variables
 from utils.trigger_matching import match_trigger
+
+from core.guards import has_role, is_on_cooldown, record_cooldown
 
 LOGGER: logging.Logger = logging.getLogger("Bot")
 
@@ -98,7 +98,7 @@ class _MessageRouterMixin:
 
         NOTE: always-on — custom commands fire regardless of stream session state.
         usage_count is incremented unconditionally.  Analytics (session-scoped) are
-        recorded separately in GeneralCommands._record_command when applicable.
+        recorded separately in GeneralCommandsComponent._record_command when applicable.
         """
         text = payload.text
         if not text or not text.startswith("!"):

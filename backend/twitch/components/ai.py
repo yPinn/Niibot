@@ -25,7 +25,7 @@ else:
     from twitchio.ext.commands import Bot
 
 
-LOGGER: logging.Logger = logging.getLogger("AIComponent")
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 FALLBACK_MODELS: list[str] = [
     "deepseek/deepseek-r1-0528:free",

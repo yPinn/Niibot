@@ -13,7 +13,7 @@ from shared.repositories.command_config import CommandConfigRepository
 if TYPE_CHECKING:
     from core.bot import Bot
 
-LOGGER = logging.getLogger("FortuneComponent")
+LOGGER = logging.getLogger(__name__)
 
 
 class FortuneComponent(commands.Component):

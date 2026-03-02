@@ -22,7 +22,7 @@ else:
     from twitchio.ext.commands import Bot
 
 
-LOGGER: logging.Logger = logging.getLogger("ChannelPoints")
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 class ChannelPointsComponent(commands.Component):
@@ -342,7 +342,7 @@ class ChannelPointsComponent(commands.Component):
                 )
                 return
 
-            title, duration_seconds, view_count = await fetch_yt_info(
+            title, duration_seconds, view_count, _ = await fetch_yt_info(
                 video_id, self.settings.youtube_api_key, self._session
             )
 

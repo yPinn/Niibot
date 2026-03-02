@@ -14,7 +14,7 @@ from twitchio.ext import commands, routines
 if TYPE_CHECKING:
     from core.bot import Bot
 
-LOGGER = logging.getLogger("TimerManager")
+LOGGER = logging.getLogger(__name__)
 
 _RANDOM_PATTERN = re.compile(r"\$\(random\s+(\d+)\s*,\s*(\d+)\)")
 _PICK_PATTERN = re.compile(r"\$\(pick\s+(.+?)\)")

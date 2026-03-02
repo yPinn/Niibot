@@ -38,7 +38,7 @@ from shared.repositories.command_config import CommandConfigRepository
 if TYPE_CHECKING:
     from core.bot import Bot
 
-LOGGER = logging.getLogger("CommandManagerComponent")
+LOGGER = logging.getLogger(__name__)
 
 # Mapping short role names to DB values
 ROLE_ALIASES = {

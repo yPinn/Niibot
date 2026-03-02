@@ -14,7 +14,7 @@ class NotOwnerError(commands.GuardFailure):
     ...
 
 
-class OwnerCmds(commands.Component):
+class OwnerCommandsComponent(commands.Component):
     """Owner-only commands for bot management.
 
     Usage:
@@ -73,10 +73,10 @@ class OwnerCmds(commands.Component):
         """Unload a module dynamically.
 
         Usage: !comp u <module_name>
-        Example: !comp u components.cmds
+        Example: !comp u components.general_commands
         """
-        if module == "components.owner_cmds":
-            await ctx.reply("Cannot unload owner_cmds (would lose bot control)")
+        if module == "components.owner_commands":
+            await ctx.reply("Cannot unload owner_commands (would lose bot control)")
             return
 
         try:
@@ -110,7 +110,7 @@ class OwnerCmds(commands.Component):
 
 async def setup(bot: commands.Bot) -> None:
     """Entry point for the module."""
-    await bot.add_component(OwnerCmds(bot))
+    await bot.add_component(OwnerCommandsComponent(bot))
 
 
 async def teardown(bot: commands.Bot) -> None:

@@ -16,7 +16,7 @@ from shared.repositories.command_config import CommandConfigRepository
 if TYPE_CHECKING:
     from core.bot import Bot
 
-LOGGER = logging.getLogger("TFTComponent")
+LOGGER = logging.getLogger(__name__)
 
 # 段位中文映射
 TIER_TRANSLATION = {
@@ -33,7 +33,7 @@ TIER_TRANSLATION = {
 }
 
 
-class LeaderboardComponent(commands.Component):
+class TftComponent(commands.Component):
     COMMANDS: list[dict] = [
         {"command_name": "tft", "cooldown": 5},
     ]
@@ -53,6 +53,9 @@ class LeaderboardComponent(commands.Component):
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0",
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15",
         ]
+
+    async def component_teardown(self) -> None:
+        await self._client.aclose()
 
     def refresh_pool(self, pool) -> None:
         self.cmd_repo.pool = pool
@@ -312,12 +315,9 @@ class LeaderboardComponent(commands.Component):
 
 
 async def setup(bot: commands.Bot) -> None:
-    await bot.add_component(LeaderboardComponent(bot))
+    await bot.add_component(TftComponent(bot))
     LOGGER.info("TFT leaderboard component loaded")
 
 
 async def teardown(bot: commands.Bot) -> None:
-    for component in bot._components:
-        if isinstance(component, LeaderboardComponent):
-            await component._client.aclose()
     LOGGER.info("TFT leaderboard component unloaded")
