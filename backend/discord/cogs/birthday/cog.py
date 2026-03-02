@@ -16,7 +16,7 @@ from shared.repositories.birthday import BirthdayRepository
 from .constants import BIRTHDAY_COLOR, BIRTHDAY_THUMBNAIL, TZ_UTC8
 from .views import DashboardView, InitSetupView, UpdateSettingsView
 
-logger = logging.getLogger(__name__)
+LOGGER = logging.getLogger(__name__)
 
 
 class BirthdayCog(commands.Cog):
@@ -64,17 +64,17 @@ class BirthdayCog(commands.Cog):
                 self.monthly_birthday_list_task.start()
                 self.birthday_notify_task.start()
                 self.birthday_role_cleanup_task.start()
-                logger.info("Birthday cog loaded")
+                LOGGER.info("Birthday cog loaded")
                 return
             except Exception as e:
-                logger.warning(
+                LOGGER.warning(
                     f"Birthday DB connection failed ({attempt}/{max_retries}): "
                     f"{type(e).__name__}: {e}"
                 )
                 if attempt < max_retries:
                     await asyncio.sleep(delay)
 
-        logger.error("Birthday cog failed to connect after all retries")
+        LOGGER.error("Birthday cog failed to connect after all retries")
         self._ready = False
 
     async def cog_unload(self) -> None:
@@ -167,7 +167,7 @@ class BirthdayCog(commands.Cog):
                         await member.add_roles(role, reason="Birthday")
                         await asyncio.sleep(0.3)  # Rate limit 保護
                     except discord.Forbidden:
-                        logger.warning(f"Cannot add role to {member.id}")
+                        LOGGER.warning(f"Cannot add role to {member.id}")
 
                 # 發送通知
                 if members_with_age:
@@ -175,12 +175,12 @@ class BirthdayCog(commands.Cog):
                     try:
                         await channel.send(settings.message_template.format(users=users_str))
                     except discord.Forbidden:
-                        logger.warning(f"Cannot send to channel {channel.id}")
+                        LOGGER.warning(f"Cannot send to channel {channel.id}")
 
                 await self.repo.update_last_notified(settings.guild_id, today)
 
         except Exception as e:
-            logger.error(f"Error in birthday notify: {e}")
+            LOGGER.error(f"Error in birthday notify: {e}")
 
     @tasks.loop(time=time(hour=15, minute=59))  # 23:59 UTC+8
     async def birthday_role_cleanup_task(self) -> None:
@@ -202,10 +202,10 @@ class BirthdayCog(commands.Cog):
                         await member.remove_roles(role, reason="Birthday ended")
                         await asyncio.sleep(0.2)  # Rate limit 保護
                     except (discord.Forbidden, discord.HTTPException) as e:
-                        logger.warning(f"Cannot remove role: {e}")
+                        LOGGER.warning(f"Cannot remove role: {e}")
 
         except Exception as e:
-            logger.error(f"Error in role cleanup: {e}")
+            LOGGER.error(f"Error in role cleanup: {e}")
 
     @tasks.loop(time=time(hour=16, minute=0))  # 00:00 UTC+8
     async def monthly_birthday_list_task(self) -> None:
@@ -253,10 +253,10 @@ class BirthdayCog(commands.Cog):
                 try:
                     await channel.send(embed=embed)
                 except discord.Forbidden:
-                    logger.warning(f"Cannot send monthly list to {channel.id}")
+                    LOGGER.warning(f"Cannot send monthly list to {channel.id}")
 
         except Exception as e:
-            logger.error(f"Error in monthly birthday list: {e}")
+            LOGGER.error(f"Error in monthly birthday list: {e}")
 
     @birthday_notify_task.before_loop
     @birthday_role_cleanup_task.before_loop

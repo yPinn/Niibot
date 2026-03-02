@@ -7,10 +7,10 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-logger = logging.getLogger(__name__)
+LOGGER = logging.getLogger(__name__)
 
 
-class Events(commands.Cog):
+class EventsCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.log_channels: dict[int, int] = {}
@@ -29,7 +29,7 @@ class Events(commands.Cog):
         await interaction.response.send_message(
             f"已設定日誌頻道：{channel.mention}", ephemeral=True
         )
-        logger.info(
+        LOGGER.info(
             f"Log channel set | Guild: {interaction.guild.name} | Channel: #{channel.name} | By: {interaction.user.name}"
         )
 
@@ -43,7 +43,7 @@ class Events(commands.Cog):
         if interaction.guild.id in self.log_channels:
             del self.log_channels[interaction.guild.id]
             await interaction.response.send_message("已取消日誌頻道設定", ephemeral=True)
-            logger.info(
+            LOGGER.info(
                 f"Log channel unset | Guild: {interaction.guild.name} | By: {interaction.user.name}"
             )
         else:
@@ -172,4 +172,4 @@ class Events(commands.Cog):
 
 
 async def setup(bot: commands.Bot) -> None:
-    await bot.add_cog(Events(bot))
+    await bot.add_cog(EventsCog(bot))

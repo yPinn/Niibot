@@ -145,7 +145,7 @@ class RouletteView(ui.View):
                 item.disabled = True
 
 
-class Games(commands.Cog):
+class GamesCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self._load_data()
@@ -223,4 +223,4 @@ class Games(commands.Cog):
 
 
 async def setup(bot: commands.Bot) -> None:
-    await bot.add_cog(Games(bot))
+    await bot.add_cog(GamesCog(bot))

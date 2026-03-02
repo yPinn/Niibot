@@ -11,17 +11,17 @@ import discord
 from discord import ui
 
 if TYPE_CHECKING:
-    from .cog import Giveaway
+    from .cog import GiveawayCog
 
 from ._embeds import create_result_embed
 
-logger = logging.getLogger(__name__)
+LOGGER = logging.getLogger(__name__)
 
 
 class TimeSelectView(ui.View):
     """時間選擇視圖"""
 
-    def __init__(self, giveaway_cog: Giveaway):
+    def __init__(self, giveaway_cog: GiveawayCog):
         super().__init__(timeout=60)
         self.giveaway_cog = giveaway_cog
 
@@ -71,7 +71,7 @@ class GiveawayModal(ui.Modal, title="建立抽獎"):
         max_length=300,
     )
 
-    def __init__(self, giveaway_cog: Giveaway, end_time: datetime | None = None):
+    def __init__(self, giveaway_cog: GiveawayCog, end_time: datetime | None = None):
         super().__init__()
         self.giveaway_cog = giveaway_cog
         self.end_time = end_time
@@ -120,7 +120,7 @@ class GiveawayModal(ui.Modal, title="建立抽獎"):
 
         guild_name = interaction.guild.name if interaction.guild else "DM"
         duration_str = self.end_time.strftime("%Y-%m-%d %H:%M") if self.end_time else "手動結束"
-        logger.info(
+        LOGGER.info(
             f"Giveaway created | Guild: {guild_name} | "
             f"Host: {interaction.user.name} | "
             f"Prize: {self.prize_name.value} x{count} | "
@@ -154,7 +154,7 @@ class GiveawayView(ui.View):
         host_id: int,
         prize_name: str,
         prize_count: int,
-        giveaway_cog: Giveaway,
+        giveaway_cog: GiveawayCog,
         host_avatar_url: str,
         end_time: datetime | None = None,
     ):
@@ -280,7 +280,7 @@ class GiveawayView(ui.View):
             await self.giveaway_cog.remove_active_giveaway(original_message.id)
 
         guild_name = interaction.guild.name if interaction.guild else "DM"
-        logger.info(
+        LOGGER.info(
             f"Giveaway cancelled | Guild: {guild_name} | "
             f"Prize: {self.prize_name} | Participants: {len(self.participants)}"
         )
@@ -329,7 +329,7 @@ class GiveawayView(ui.View):
             await self.giveaway_cog.remove_active_giveaway(interaction.message.id)
 
         guild_name = interaction.guild.name if interaction.guild else "DM"
-        logger.info(
+        LOGGER.info(
             f"Giveaway ended | Guild: {guild_name} | "
             f"Prize: {self.prize_name} | "
             f"Participants: {len(self.participants)} | Winners: {len(winner_ids)}"

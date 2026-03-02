@@ -16,7 +16,7 @@ from core import DATA_DIR
 from .constants import EAT_COLOR, EAT_THUMBNAIL
 from .views import CategoryButtonsView, ItemListView, RecommendationView
 
-logger = logging.getLogger(__name__)
+LOGGER = logging.getLogger(__name__)
 
 EatData = dict[str, Any]
 
@@ -57,9 +57,9 @@ class EatCog(commands.Cog):
                 if log_stats:
                     category_count = len(self.data["categories"])
                     item_count = sum(len(items) for items in self.data["categories"].values())
-                    logger.info(f"Eat: loaded {category_count} categories, {item_count} items")
+                    LOGGER.info(f"Eat: loaded {category_count} categories, {item_count} items")
         except Exception as e:
-            logger.error(f"Eat: load failed - {e}")
+            LOGGER.error(f"Eat: load failed - {e}")
 
     async def save_data(self) -> None:
         try:
@@ -68,7 +68,7 @@ class EatCog(commands.Cog):
                     json.dump(self.data, f, ensure_ascii=False, indent=2)
                 self._dirty = False
         except Exception as e:
-            logger.error(f"Eat: save failed - {e}")
+            LOGGER.error(f"Eat: save failed - {e}")
 
     async def load_global_embed(self) -> None:
         try:
@@ -76,7 +76,7 @@ class EatCog(commands.Cog):
                 with open(self.global_embed_file, encoding="utf-8") as f:
                     self.global_embed_config = json.load(f)
         except Exception as e:
-            logger.warning(f"Eat: load global embed failed - {e}")
+            LOGGER.warning(f"Eat: load global embed failed - {e}")
 
     # ==================== Helpers ====================
 

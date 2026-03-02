@@ -18,10 +18,10 @@ from ._embeds import create_giveaway_embed, create_result_embed
 from ._persistence import GiveawayPersistence
 from ._views import TimeSelectView
 
-logger = logging.getLogger(__name__)
+LOGGER = logging.getLogger(__name__)
 
 
-class Giveaway(commands.Cog):
+class GiveawayCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self._load_data()
@@ -30,11 +30,11 @@ class Giveaway(commands.Cog):
 
     async def cog_load(self) -> None:
         self.check_giveaway_expiry.start()
-        logger.info("Giveaway expiry checker started")
+        LOGGER.info("Giveaway expiry checker started")
 
     async def cog_unload(self) -> None:
         self.check_giveaway_expiry.cancel()
-        logger.info("Giveaway expiry checker stopped")
+        LOGGER.info("Giveaway expiry checker stopped")
 
     def _load_data(self) -> None:
         with open(DATA_DIR / "giveaway.json", encoding="utf-8") as f:
@@ -137,7 +137,7 @@ class Giveaway(commands.Cog):
             try:
                 await self._auto_end_giveaway(message_id, data)
             except Exception as e:
-                logger.error(f"Failed to auto-end giveaway {message_id}: {e}")
+                LOGGER.error(f"Failed to auto-end giveaway {message_id}: {e}")
 
     @check_giveaway_expiry.before_loop
     async def before_check_giveaway_expiry(self) -> None:
@@ -147,13 +147,13 @@ class Giveaway(commands.Cog):
         try:
             channel = self.bot.get_channel(data["channel_id"])
             if not channel or not hasattr(channel, "fetch_message"):
-                logger.warning(f"Channel {data['channel_id']} not found for giveaway {message_id}")
+                LOGGER.warning(f"Channel {data['channel_id']} not found for giveaway {message_id}")
                 await self.remove_active_giveaway(message_id)
                 return
 
             message = await channel.fetch_message(message_id)  # type: ignore[union-attr]
             if not message:
-                logger.warning(f"Message {message_id} not found")
+                LOGGER.warning(f"Message {message_id} not found")
                 await self.remove_active_giveaway(message_id)
                 return
 
@@ -193,7 +193,7 @@ class Giveaway(commands.Cog):
                 no_p_embed.add_field(name="參加人數", value="**0** 人", inline=False)
                 await message.edit(embed=no_p_embed, view=view)
                 await self.remove_active_giveaway(message_id)
-                logger.info(
+                LOGGER.info(
                     f"Auto-ended giveaway {message_id} | Prize: {data['prize_name']} | No participants"
                 )
                 return
@@ -221,16 +221,16 @@ class Giveaway(commands.Cog):
                 )
 
             await self.remove_active_giveaway(message_id)
-            logger.info(
+            LOGGER.info(
                 f"Auto-ended giveaway {message_id} | Prize: {data['prize_name']} | "
                 f"Participants: {participant_count} | Winners: {winner_count}"
             )
 
         except discord.NotFound:
-            logger.warning(f"Message {message_id} not found, removing from active giveaways")
+            LOGGER.warning(f"Message {message_id} not found, removing from active giveaways")
             await self.remove_active_giveaway(message_id)
         except Exception as e:
-            logger.error(f"Error auto-ending giveaway {message_id}: {e}", exc_info=e)
+            LOGGER.error(f"Error auto-ending giveaway {message_id}: {e}", exc_info=e)
 
     # ------------------------------------------------------------------
     # Commands

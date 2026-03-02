@@ -22,7 +22,7 @@ from openai.types.chat import ChatCompletionMessageParam
 
 from core import DATA_DIR
 
-LOGGER = logging.getLogger("AI")
+LOGGER = logging.getLogger(__name__)
 
 FALLBACK_MODELS: list[str] = [
     "deepseek/deepseek-r1-0528:free",
@@ -50,7 +50,7 @@ _SYSTEM_PROMPT = (
 )
 
 
-class AI(commands.Cog):
+class AICog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
@@ -70,7 +70,7 @@ class AI(commands.Cog):
         with open(DATA_DIR / "embed.json", encoding="utf-8") as f:
             self.global_embed_config = json.load(f)
 
-        LOGGER.info(f"AI Cog initialized: primary={model}, fallbacks={len(self.models) - 1}")
+        LOGGER.info(f"AICog initialized: primary={model}, fallbacks={len(self.models) - 1}")
 
     @app_commands.command(name="ai", description="AI 問答")
     @app_commands.describe(question="你的問題")
@@ -188,4 +188,4 @@ class AI(commands.Cog):
 
 
 async def setup(bot: commands.Bot) -> None:
-    await bot.add_cog(AI(bot))
+    await bot.add_cog(AICog(bot))

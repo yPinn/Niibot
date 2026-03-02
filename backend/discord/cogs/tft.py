@@ -17,7 +17,7 @@ from discord.ext import commands
 
 from core import DATA_DIR
 
-logger = logging.getLogger("discord_bot.tft")
+LOGGER = logging.getLogger(__name__)
 
 # 段位中文映射
 TIER_TRANSLATION = {
@@ -48,7 +48,7 @@ TIER_IMAGES = {
 }
 
 
-class TFT(commands.Cog):
+class TftCog(commands.Cog):
     """TFT 戰棋排行榜查詢"""
 
     def __init__(self, bot: commands.Bot):
@@ -72,7 +72,7 @@ class TFT(commands.Cog):
             with open(DATA_DIR / "embed.json", encoding="utf-8") as f:
                 self.global_embed_config = json.load(f)
         except Exception as e:
-            logger.warning(f"Failed to load embed config: {e}")
+            LOGGER.warning(f"Failed to load embed config: {e}")
             self.global_embed_config = {}
 
     async def cog_unload(self) -> None:
@@ -84,11 +84,11 @@ class TFT(commands.Cog):
         now = time.time()
 
         if self._cache and (now - self._cache_time) < 30:
-            logger.debug("Using cached leaderboard data")
+            LOGGER.debug("Using cached leaderboard data")
             return self._cache
 
         if now - self._last_request < 3:
-            logger.debug("Rate limited, using cache")
+            LOGGER.debug("Rate limited, using cache")
             return self._cache
 
         try:
@@ -104,7 +104,7 @@ class TFT(commands.Cog):
             )
 
             if response.status_code != 200:
-                logger.warning(f"HTTP {response.status_code}, using cache")
+                LOGGER.warning(f"HTTP {response.status_code}, using cache")
                 return self._cache
 
             match = re.search(
@@ -113,7 +113,7 @@ class TFT(commands.Cog):
                 re.DOTALL,
             )
             if not match:
-                logger.error("Data element not found")
+                LOGGER.error("Data element not found")
                 return self._cache
 
             data: dict[str, Any] = json.loads(match.group(1))["props"]["pageProps"]["data"]
@@ -122,11 +122,11 @@ class TFT(commands.Cog):
             self._cache_time = now
             self._last_request = now
 
-            logger.info(f"Fetched leaderboard - {len(data.get('entries', []))} players")
+            LOGGER.info(f"Fetched leaderboard - {len(data.get('entries', []))} players")
             return data
 
         except Exception as e:
-            logger.error(f"Leaderboard fetch failed: {e}")
+            LOGGER.error(f"Leaderboard fetch failed: {e}")
             return self._cache
 
     async def _fetch_player_data(self, username: str, tag: str) -> dict[str, Any] | None:
@@ -141,7 +141,7 @@ class TFT(commands.Cog):
             url = (
                 f"https://tactics.tools/player/tw/{quote(username, safe='')}/{quote(tag, safe='')}"
             )
-            logger.info(f"Fetching player: {username}#{tag}")
+            LOGGER.info(f"Fetching player: {username}#{tag}")
 
             response = await self._client.get(
                 url,
@@ -153,7 +153,7 @@ class TFT(commands.Cog):
             )
 
             if response.status_code != 200:
-                logger.warning(f"Player page HTTP {response.status_code}")
+                LOGGER.warning(f"Player page HTTP {response.status_code}")
                 return None
 
             match = re.search(
@@ -162,7 +162,7 @@ class TFT(commands.Cog):
                 re.DOTALL,
             )
             if not match:
-                logger.error("Player data not found")
+                LOGGER.error("Player data not found")
                 return None
 
             page_props = json.loads(match.group(1)).get("props", {}).get("pageProps", {})
@@ -218,7 +218,7 @@ class TFT(commands.Cog):
             }
 
         except Exception as e:
-            logger.error(f"Player fetch failed: {e}")
+            LOGGER.error(f"Player fetch failed: {e}")
             return None
 
     async def get_player_data(self, username: str, tag: str) -> dict[str, Any] | None:
@@ -234,7 +234,7 @@ class TFT(commands.Cog):
             age_hours = (now - timestamp_sec) / 3600
 
             if age_hours > 24:
-                logger.info(f"Data is {age_hours:.1f} hours old, re-fetching after 3s...")
+                LOGGER.info(f"Data is {age_hours:.1f} hours old, re-fetching after 3s...")
                 await asyncio.sleep(3)
                 fresh_data = await self._fetch_player_data(username, tag)
                 if fresh_data:
@@ -368,7 +368,7 @@ class TFT(commands.Cog):
 
                     match_value = f"**{lp_sign}{last_match_lp} LP** ({time_ago})"
                 except Exception as e:
-                    logger.debug(f"Failed to parse match time: {e}")
+                    LOGGER.debug(f"Failed to parse match time: {e}")
         else:
             match_value = "無資料"
 
@@ -396,5 +396,5 @@ class TFT(commands.Cog):
 
 
 async def setup(bot: commands.Bot) -> None:
-    await bot.add_cog(TFT(bot))
-    logger.info("TFT cog loaded")
+    await bot.add_cog(TftCog(bot))
+    LOGGER.info("TFT cog loaded")

@@ -10,10 +10,10 @@ from discord.ext import commands
 
 from core import DATA_DIR
 
-logger = logging.getLogger(__name__)
+LOGGER = logging.getLogger(__name__)
 
 
-class Tarot(commands.Cog):
+class TarotCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self._load_data()
@@ -135,9 +135,9 @@ class Tarot(commands.Cog):
             await interaction.response.send_message(embed=embed)
 
         except Exception as e:
-            logger.exception(f"Tarot command error: {e}")
+            LOGGER.exception(f"Tarot command error: {e}")
             await interaction.response.send_message("塔羅牌抽取過程中發生神秘干擾", ephemeral=True)
 
 
 async def setup(bot: commands.Bot) -> None:
-    await bot.add_cog(Tarot(bot))
+    await bot.add_cog(TarotCog(bot))

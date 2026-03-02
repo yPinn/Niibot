@@ -9,7 +9,7 @@ from discord.ext import commands
 from core import BOT_NAME, BOT_VERSION
 
 
-class Utility(commands.Cog):
+class UtilityCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
@@ -252,4 +252,4 @@ class Utility(commands.Cog):
 
 
 async def setup(bot: commands.Bot) -> None:
-    await bot.add_cog(Utility(bot))
+    await bot.add_cog(UtilityCog(bot))

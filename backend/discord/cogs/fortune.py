@@ -11,10 +11,10 @@ from discord.ext import commands
 
 from core import DATA_DIR
 
-logger = logging.getLogger(__name__)
+LOGGER = logging.getLogger(__name__)
 
 
-class Fortune(commands.Cog):
+class FortuneCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self._load_data()
@@ -126,9 +126,9 @@ class Fortune(commands.Cog):
             await interaction.response.send_message(embed=embed)
 
         except Exception as e:
-            logger.exception(f"Fortune command error: {e}")
+            LOGGER.exception(f"Fortune command error: {e}")
             await interaction.response.send_message("占卜過程中發生神秘干擾", ephemeral=True)
 
 
 async def setup(bot: commands.Bot) -> None:
-    await bot.add_cog(Fortune(bot))
+    await bot.add_cog(FortuneCog(bot))

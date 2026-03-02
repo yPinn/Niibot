@@ -2,10 +2,10 @@
 
 from discord.ext import commands
 
-from .cog import Giveaway
+from .cog import GiveawayCog
 
-__all__ = ["Giveaway"]
+__all__ = ["GiveawayCog"]
 
 
 async def setup(bot: commands.Bot) -> None:
-    await bot.add_cog(Giveaway(bot))
+    await bot.add_cog(GiveawayCog(bot))

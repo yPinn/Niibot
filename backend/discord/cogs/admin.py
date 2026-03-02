@@ -8,10 +8,10 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-logger = logging.getLogger(__name__)
+LOGGER = logging.getLogger(__name__)
 
 
-class Admin(commands.Cog):
+class AdminCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
@@ -59,7 +59,7 @@ class Admin(commands.Cog):
     async def reload_cog(self, interaction: discord.Interaction, cog: str) -> None:
         if interaction.user.id != self.bot.owner_id:
             await interaction.response.send_message("權限不足", ephemeral=True)
-            logger.warning(
+            LOGGER.warning(
                 f"Unauthorized reload attempt: {interaction.user} (ID: {interaction.user.id})"
             )
             return
@@ -80,7 +80,7 @@ class Admin(commands.Cog):
                 sync_msg = "已全域同步"
 
             await interaction.response.send_message(f"已重載：{cog}\n{sync_msg}", ephemeral=True)
-            logger.info(f"Reloaded cog: {cog_path} (by {interaction.user})")
+            LOGGER.info(f"Reloaded cog: {cog_path} (by {interaction.user})")
 
         except commands.ExtensionNotLoaded:
             await interaction.response.send_message(f"Cog 未載入：{cog}", ephemeral=True)
@@ -88,7 +88,7 @@ class Admin(commands.Cog):
             await interaction.response.send_message(f"找不到 Cog：{cog}", ephemeral=True)
         except Exception as e:
             await interaction.response.send_message(f"重載失敗：{type(e).__name__}", ephemeral=True)
-            logger.exception(f"Error reloading {cog_path}: {e}")
+            LOGGER.exception(f"Error reloading {cog_path}: {e}")
 
     @app_commands.command(name="load", description="載入 Cog")
     @app_commands.describe(cog="Cog 名稱")
@@ -96,7 +96,7 @@ class Admin(commands.Cog):
     async def load_cog(self, interaction: discord.Interaction, cog: str) -> None:
         if interaction.user.id != self.bot.owner_id:
             await interaction.response.send_message("權限不足", ephemeral=True)
-            logger.warning(
+            LOGGER.warning(
                 f"Unauthorized load attempt: {interaction.user} (ID: {interaction.user.id})"
             )
             return
@@ -106,14 +106,14 @@ class Admin(commands.Cog):
         try:
             await self.bot.load_extension(cog_path)
             await interaction.response.send_message(f"已載入：{cog}", ephemeral=True)
-            logger.info(f"Loaded cog: {cog_path} (by {interaction.user})")
+            LOGGER.info(f"Loaded cog: {cog_path} (by {interaction.user})")
         except commands.ExtensionAlreadyLoaded:
             await interaction.response.send_message(f"Cog 已載入：{cog}", ephemeral=True)
         except commands.ExtensionNotFound:
             await interaction.response.send_message(f"找不到 Cog：{cog}", ephemeral=True)
         except Exception as e:
             await interaction.response.send_message(f"載入失敗：{type(e).__name__}", ephemeral=True)
-            logger.exception(f"Error loading {cog_path}: {e}")
+            LOGGER.exception(f"Error loading {cog_path}: {e}")
 
     @app_commands.command(name="unload", description="卸載 Cog")
     @app_commands.describe(cog="Cog 名稱")
@@ -121,7 +121,7 @@ class Admin(commands.Cog):
     async def unload_cog(self, interaction: discord.Interaction, cog: str) -> None:
         if interaction.user.id != self.bot.owner_id:
             await interaction.response.send_message("權限不足", ephemeral=True)
-            logger.warning(
+            LOGGER.warning(
                 f"Unauthorized unload attempt: {interaction.user} (ID: {interaction.user.id})"
             )
             return
@@ -135,12 +135,12 @@ class Admin(commands.Cog):
         try:
             await self.bot.unload_extension(cog_path)
             await interaction.response.send_message(f"已卸載：{cog}", ephemeral=True)
-            logger.info(f"Unloaded cog: {cog_path} (by {interaction.user})")
+            LOGGER.info(f"Unloaded cog: {cog_path} (by {interaction.user})")
         except commands.ExtensionNotLoaded:
             await interaction.response.send_message(f"Cog 未載入：{cog}", ephemeral=True)
         except Exception as e:
             await interaction.response.send_message(f"卸載失敗：{type(e).__name__}", ephemeral=True)
-            logger.exception(f"Error unloading {cog_path}: {e}")
+            LOGGER.exception(f"Error unloading {cog_path}: {e}")
 
     @app_commands.command(name="cogs", description="Cog 列表")
     async def list_cogs(self, interaction: discord.Interaction) -> None:
@@ -162,7 +162,7 @@ class Admin(commands.Cog):
     async def sync_commands(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != self.bot.owner_id:
             await interaction.response.send_message("權限不足", ephemeral=True)
-            logger.warning(
+            LOGGER.warning(
                 f"Unauthorized sync attempt: {interaction.user} (ID: {interaction.user.id})"
             )
             return
@@ -171,11 +171,11 @@ class Admin(commands.Cog):
             await interaction.response.defer(ephemeral=True)
             synced = await self.bot.tree.sync()
             await interaction.followup.send(f"已同步 {len(synced)} 個指令", ephemeral=True)
-            logger.info(f"Synced {len(synced)} commands (by {interaction.user})")
+            LOGGER.info(f"Synced {len(synced)} commands (by {interaction.user})")
         except Exception as e:
             await interaction.followup.send(f"同步失敗：{type(e).__name__}", ephemeral=True)
-            logger.exception(f"Error syncing commands: {e}")
+            LOGGER.exception(f"Error syncing commands: {e}")
 
 
 async def setup(bot: commands.Bot) -> None:
-    await bot.add_cog(Admin(bot))
+    await bot.add_cog(AdminCog(bot))
