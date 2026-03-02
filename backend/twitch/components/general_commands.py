@@ -4,11 +4,11 @@ from typing import TYPE_CHECKING
 
 import twitchio
 from twitchio.ext import commands
-from utils.substitution import substitute_variables
 
 from core.config import get_settings
 from core.guards import check_command
 from shared.repositories.command_config import CommandConfigRepository
+from utils.substitution import substitute_variables
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
