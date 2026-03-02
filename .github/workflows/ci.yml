@@ -33,6 +33,9 @@ jobs:
       - name: Format check
         run: npm run format
 
+      - name: Test
+        run: npm run test:coverage -- --run
+
       - name: Build & Type check
         run: npm run build
 
@@ -64,3 +67,6 @@ jobs:
 
       - name: Run tests
         run: uv run pytest tests/ -v --tb=short
+
+      - name: Mypy type check
+        run: uv run mypy .

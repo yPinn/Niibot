@@ -1,0 +1,9 @@
+# Ignore files that use # for shell-style comments — not Markdown headings.
+.secretlintignore
+.gitignore
+.prettierignore
+.eslintignore
+.dockerignore
+frontend/.prettierignore
+frontend/.dockerignore
+backend/.dockerignore
