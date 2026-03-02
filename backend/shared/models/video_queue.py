@@ -30,9 +30,13 @@ class VideoQueueSettings:
 
     channel_id: str
     enabled: bool = True
+    chat_enabled: bool = True
+    redemption_enabled: bool = True
     min_role_chat: str = "everyone"
     max_duration_seconds: int = 600
     max_queue_size: int = 20
     min_view_count: int = 0  # 0 = no restriction
+    user_cooldown_seconds: int = 0  # 0 = no restriction; chat only
+    max_per_user: int = 0  # 0 = no restriction; chat + redemption
     created_at: datetime | None = None
     updated_at: datetime | None = None

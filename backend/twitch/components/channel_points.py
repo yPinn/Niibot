@@ -308,7 +308,7 @@ class ChannelPointsComponent(commands.Component):
 
         try:
             settings = await self.vq_settings_repo.get_or_create(channel_id)
-            if not settings.enabled:
+            if not settings.enabled or not settings.redemption_enabled:
                 await broadcaster.send_message(
                     message=f"@{user_name} 影片佇列目前已關閉",
                     sender=self.bot.bot_id,
@@ -341,6 +341,16 @@ class ChannelPointsComponent(commands.Component):
                     token_for=self.bot.bot_id,
                 )
                 return
+
+            if settings.max_per_user > 0:
+                active = await self.vq_repo.count_active_by_user(channel_id, user_name)
+                if active >= settings.max_per_user:
+                    await broadcaster.send_message(
+                        message=f"@{user_name} 每人上限 {settings.max_per_user} 首，請等待您的影片播放後再點歌",
+                        sender=self.bot.bot_id,
+                        token_for=self.bot.bot_id,
+                    )
+                    return
 
             title, duration_seconds, view_count, _ = await fetch_yt_info(
                 video_id, self.settings.youtube_api_key, self._session

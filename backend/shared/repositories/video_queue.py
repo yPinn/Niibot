@@ -130,8 +130,10 @@ _ENTRY_COLUMNS = (
 )
 
 _SETTINGS_COLUMNS = (
-    "channel_id, enabled, min_role_chat, max_duration_seconds, max_queue_size, "
-    "min_view_count, created_at, updated_at"
+    "channel_id, enabled, chat_enabled, redemption_enabled, "
+    "min_role_chat, max_duration_seconds, max_queue_size, "
+    "min_view_count, user_cooldown_seconds, max_per_user, "
+    "created_at, updated_at"
 )
 
 _settings_cache = AsyncTTLCache(maxsize=32, ttl=300)
@@ -377,6 +379,16 @@ class VideoQueueRepository:
                     channel_id,
                 )
 
+    async def count_active_by_user(self, channel_id: str, requested_by: str) -> int:
+        """Count active (queued + playing) entries for a specific user in this channel."""
+        async with self.pool.acquire() as conn:
+            return await conn.fetchval(
+                "SELECT COUNT(*) FROM video_queue "
+                "WHERE channel_id = $1 AND requested_by = $2 AND status IN ('queued', 'playing')",
+                channel_id,
+                requested_by,
+            )
+
     async def find_last_queued_by_user(
         self, channel_id: str, requested_by: str
     ) -> VideoQueueEntry | None:
@@ -426,10 +438,14 @@ class VideoQueueSettingsRepository:
         channel_id: str,
         *,
         enabled: bool | None = None,
+        chat_enabled: bool | None = None,
+        redemption_enabled: bool | None = None,
         min_role_chat: str | None = None,
         max_duration_seconds: int | None = None,
         max_queue_size: int | None = None,
         min_view_count: int | None = None,
+        user_cooldown_seconds: int | None = None,
+        max_per_user: int | None = None,
     ) -> VideoQueueSettings:
         """Update settings. Only provided keyword args are applied."""
         async with self.pool.acquire() as conn:
@@ -438,19 +454,27 @@ class VideoQueueSettingsRepository:
                 INSERT INTO video_queue_settings (channel_id)
                 VALUES ($1)
                 ON CONFLICT (channel_id) DO UPDATE SET
-                    enabled              = COALESCE($2, video_queue_settings.enabled),
-                    min_role_chat        = COALESCE($3, video_queue_settings.min_role_chat),
-                    max_duration_seconds = COALESCE($4, video_queue_settings.max_duration_seconds),
-                    max_queue_size       = COALESCE($5, video_queue_settings.max_queue_size),
-                    min_view_count       = COALESCE($6, video_queue_settings.min_view_count)
+                    enabled                = COALESCE($2,  video_queue_settings.enabled),
+                    chat_enabled           = COALESCE($3,  video_queue_settings.chat_enabled),
+                    redemption_enabled     = COALESCE($4,  video_queue_settings.redemption_enabled),
+                    min_role_chat          = COALESCE($5,  video_queue_settings.min_role_chat),
+                    max_duration_seconds   = COALESCE($6,  video_queue_settings.max_duration_seconds),
+                    max_queue_size         = COALESCE($7,  video_queue_settings.max_queue_size),
+                    min_view_count         = COALESCE($8,  video_queue_settings.min_view_count),
+                    user_cooldown_seconds  = COALESCE($9,  video_queue_settings.user_cooldown_seconds),
+                    max_per_user           = COALESCE($10, video_queue_settings.max_per_user)
                 RETURNING {_SETTINGS_COLUMNS}
                 """,
                 channel_id,
                 enabled,
+                chat_enabled,
+                redemption_enabled,
                 min_role_chat,
                 max_duration_seconds,
                 max_queue_size,
                 min_view_count,
+                user_cooldown_seconds,
+                max_per_user,
             )
             result = VideoQueueSettings(**dict(row))
             _settings_cache.invalidate(f"vq_settings:{channel_id}")

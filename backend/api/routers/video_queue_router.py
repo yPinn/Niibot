@@ -50,20 +50,28 @@ class PublicVideoQueueState(BaseModel):
 class VideoQueueSettingsResponse(BaseModel):
     channel_id: str
     enabled: bool
+    chat_enabled: bool
+    redemption_enabled: bool
     min_role_chat: str
     max_duration_seconds: int
     max_queue_size: int
     min_view_count: int
+    user_cooldown_seconds: int
+    max_per_user: int
 
 
 class VideoQueueSettingsUpdate(BaseModel):
     enabled: bool | None = None
+    chat_enabled: bool | None = None
+    redemption_enabled: bool | None = None
     min_role_chat: str | None = Field(
         default=None, pattern="^(everyone|subscriber|vip|moderator|broadcaster)$"
     )
     max_duration_seconds: int | None = Field(default=None, ge=30, le=10800)
     max_queue_size: int | None = Field(default=None, ge=1, le=100)
     min_view_count: int | None = Field(default=None, ge=0)
+    user_cooldown_seconds: int | None = Field(default=None, ge=0, le=3600)
+    max_per_user: int | None = Field(default=None, ge=0, le=20)
 
 
 class AddVideoRequest(BaseModel):
@@ -281,10 +289,14 @@ async def get_video_queue_settings(
         return VideoQueueSettingsResponse(
             channel_id=s.channel_id,
             enabled=s.enabled,
+            chat_enabled=s.chat_enabled,
+            redemption_enabled=s.redemption_enabled,
             min_role_chat=s.min_role_chat,
             max_duration_seconds=s.max_duration_seconds,
             max_queue_size=s.max_queue_size,
             min_view_count=s.min_view_count,
+            user_cooldown_seconds=s.user_cooldown_seconds,
+            max_per_user=s.max_per_user,
         )
     except Exception:
         logger.exception("Failed to get video queue settings")
@@ -302,10 +314,14 @@ async def update_video_queue_settings(
         v is None
         for v in [
             body.enabled,
+            body.chat_enabled,
+            body.redemption_enabled,
             body.min_role_chat,
             body.max_duration_seconds,
             body.max_queue_size,
             body.min_view_count,
+            body.user_cooldown_seconds,
+            body.max_per_user,
         ]
     ):
         raise HTTPException(status_code=400, detail="No fields to update")
@@ -314,19 +330,27 @@ async def update_video_queue_settings(
         s = await settings_repo.update_settings(
             channel_id,
             enabled=body.enabled,
+            chat_enabled=body.chat_enabled,
+            redemption_enabled=body.redemption_enabled,
             min_role_chat=body.min_role_chat,
             max_duration_seconds=body.max_duration_seconds,
             max_queue_size=body.max_queue_size,
             min_view_count=body.min_view_count,
+            user_cooldown_seconds=body.user_cooldown_seconds,
+            max_per_user=body.max_per_user,
         )
         logger.info(f"Channel {channel_id} updated video queue settings")
         return VideoQueueSettingsResponse(
             channel_id=s.channel_id,
             enabled=s.enabled,
+            chat_enabled=s.chat_enabled,
+            redemption_enabled=s.redemption_enabled,
             min_role_chat=s.min_role_chat,
             max_duration_seconds=s.max_duration_seconds,
             max_queue_size=s.max_queue_size,
             min_view_count=s.min_view_count,
+            user_cooldown_seconds=s.user_cooldown_seconds,
+            max_per_user=s.max_per_user,
         )
     except Exception:
         logger.exception("Failed to update video queue settings")

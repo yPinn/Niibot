@@ -25,6 +25,9 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
   Icon,
   Input,
   Label,
@@ -33,6 +36,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  Separator,
   Spinner,
   Switch,
   Table,
@@ -151,7 +155,11 @@ export default function VideoQueue() {
 
   const [maxDurationInput, setMaxDurationInput] = useState('')
   const [maxQueueSizeInput, setMaxQueueSizeInput] = useState('')
+  const [userCooldownInput, setUserCooldownInput] = useState('')
+  const [maxPerUserInput, setMaxPerUserInput] = useState('')
   const [saving, setSaving] = useState(false)
+
+  const [advancedOpen, setAdvancedOpen] = useState(false)
 
   const [addUrlInput, setAddUrlInput] = useState('')
   const [adding, setAdding] = useState(false)
@@ -168,6 +176,8 @@ export default function VideoQueue() {
       if (!hasInitialized.current) {
         setMaxDurationInput(String(queueSettings.max_duration_seconds))
         setMaxQueueSizeInput(String(queueSettings.max_queue_size))
+        setUserCooldownInput(String(queueSettings.user_cooldown_seconds))
+        setMaxPerUserInput(String(queueSettings.max_per_user))
         hasInitialized.current = true
       }
     } catch {
@@ -184,6 +194,26 @@ export default function VideoQueue() {
       const updated = await updateVideoQueueSettings({ enabled })
       setSettings(updated)
       toast.success(enabled ? '點播已開啟' : '點播已關閉')
+    } catch {
+      toast.error('更新失敗')
+    }
+  }
+
+  const handleToggleChatEnabled = async (chat_enabled: boolean) => {
+    try {
+      const updated = await updateVideoQueueSettings({ chat_enabled })
+      setSettings(updated)
+      toast.success(chat_enabled ? '!vq 指令已開啟' : '!vq 指令已關閉')
+    } catch {
+      toast.error('更新失敗')
+    }
+  }
+
+  const handleToggleRedemptionEnabled = async (redemption_enabled: boolean) => {
+    try {
+      const updated = await updateVideoQueueSettings({ redemption_enabled })
+      setSettings(updated)
+      toast.success(redemption_enabled ? '點數兌換已開啟' : '點數兌換已關閉')
     } catch {
       toast.error('更新失敗')
     }
@@ -212,6 +242,8 @@ export default function VideoQueue() {
   const handleSaveSettings = async () => {
     const duration = parseInt(maxDurationInput, 10)
     const queueSize = parseInt(maxQueueSizeInput, 10)
+    const cooldown = parseInt(userCooldownInput, 10)
+    const perUser = parseInt(maxPerUserInput, 10)
     if (isNaN(duration) || duration < 30 || duration > 10800) {
       toast.error('影片長度上限範圍: 30 ~ 10800 秒')
       return
@@ -220,11 +252,21 @@ export default function VideoQueue() {
       toast.error('隊列上限範圍: 1 ~ 100')
       return
     }
+    if (isNaN(cooldown) || cooldown < 0 || cooldown > 3600) {
+      toast.error('點歌冷卻時間範圍: 0 ~ 3600 秒')
+      return
+    }
+    if (isNaN(perUser) || perUser < 0 || perUser > 20) {
+      toast.error('每人上限範圍: 0 ~ 20（0 為不限制）')
+      return
+    }
     setSaving(true)
     try {
       const updated = await updateVideoQueueSettings({
         max_duration_seconds: duration,
         max_queue_size: queueSize,
+        user_cooldown_seconds: cooldown,
+        max_per_user: perUser,
       })
       setSettings(updated)
       toast.success('設定已儲存')
@@ -313,8 +355,8 @@ export default function VideoQueue() {
       <PageHeader title="Video Queue" description="管理 YouTube 點播系統" />
 
       {/* Settings + Overlay Preview */}
-      <div className="grid grid-cols-1 gap-section lg:grid-cols-3">
-        <Card className="col-span-2">
+      <div className="grid grid-cols-1 gap-section lg:grid-cols-2">
+        <Card>
           <CardHeader>
             <CardTitle>點播設定</CardTitle>
             <CardDescription>調整點播規則與權限</CardDescription>
@@ -326,79 +368,169 @@ export default function VideoQueue() {
               />
             </CardAction>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center gap-3">
-              <Label htmlFor="min-role" className="shrink-0">
-                最低權限
-              </Label>
-              <Select
-                value={settings?.min_role_chat ?? 'everyone'}
-                onValueChange={handleRoleChange}
-              >
-                <SelectTrigger className="w-36">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {ROLE_OPTIONS.map(opt => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          <CardContent className="space-y-5">
+            {/* ── 來源開關 ── */}
+            <div className="flex items-center gap-6">
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="chat-enabled"
+                  checked={settings?.chat_enabled ?? true}
+                  onCheckedChange={handleToggleChatEnabled}
+                />
+                <Label htmlFor="chat-enabled" className="cursor-pointer">
+                  !vq 指令
+                </Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="redemption-enabled"
+                  checked={settings?.redemption_enabled ?? true}
+                  onCheckedChange={handleToggleRedemptionEnabled}
+                />
+                <Label htmlFor="redemption-enabled" className="cursor-pointer">
+                  點數兌換
+                </Label>
+              </div>
             </div>
 
-            <div className="flex items-center gap-3">
-              <Label htmlFor="max-duration" className="shrink-0">
-                影片長度上限 (秒)
-              </Label>
-              <Input
-                id="max-duration"
-                type="number"
-                min={30}
-                max={10800}
-                value={maxDurationInput}
-                onChange={e => setMaxDurationInput(e.target.value)}
-                className="w-24"
-              />
+            <Separator />
+
+            {/* ── 基本規則（2 欄）── */}
+            <div className="grid grid-cols-2 gap-x-8 gap-y-3">
+              <div className="flex items-center gap-3">
+                <Label htmlFor="min-role" className="w-24 shrink-0">
+                  最低點歌權限
+                </Label>
+                <Select
+                  value={settings?.min_role_chat ?? 'everyone'}
+                  onValueChange={handleRoleChange}
+                >
+                  <SelectTrigger id="min-role" className="w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ROLE_OPTIONS.map(opt => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <Label htmlFor="max-duration" className="w-24 shrink-0">
+                  影片長度上限
+                </Label>
+                <Input
+                  id="max-duration"
+                  type="number"
+                  min={30}
+                  max={10800}
+                  placeholder="600"
+                  value={maxDurationInput}
+                  onChange={e => setMaxDurationInput(e.target.value)}
+                  className="w-20"
+                />
+                <span className="text-muted-foreground text-sub">秒</span>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <Label htmlFor="max-queue-size" className="w-24 shrink-0">
+                  隊列上限
+                </Label>
+                <Input
+                  id="max-queue-size"
+                  type="number"
+                  min={1}
+                  max={100}
+                  placeholder="20"
+                  value={maxQueueSizeInput}
+                  onChange={e => setMaxQueueSizeInput(e.target.value)}
+                  className="w-20"
+                />
+                <span className="text-muted-foreground text-sub">首</span>
+              </div>
             </div>
 
-            <div className="flex items-center gap-3">
-              <Label htmlFor="max-queue-size" className="shrink-0">
-                隊列上限
-              </Label>
-              <Input
-                id="max-queue-size"
-                type="number"
-                min={1}
-                max={100}
-                value={maxQueueSizeInput}
-                onChange={e => setMaxQueueSizeInput(e.target.value)}
-                className="w-24"
-              />
+            {/* ── 進階設定（摺疊）── */}
+            <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
+              <CollapsibleTrigger className="text-muted-foreground hover:text-foreground flex items-center gap-1.5 text-sm transition-colors">
+                <Icon
+                  icon="fa-solid fa-chevron-right"
+                  className={`size-3 transition-transform duration-200 ${advancedOpen ? 'rotate-90' : ''}`}
+                />
+                進階設定
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <div className="grid grid-cols-2 gap-x-8 gap-y-3 pt-3">
+                  <div className="flex items-center gap-3">
+                    <Label htmlFor="max-per-user" className="w-24 shrink-0">
+                      每人同時上限
+                    </Label>
+                    <Input
+                      id="max-per-user"
+                      type="number"
+                      min={0}
+                      max={20}
+                      placeholder="0"
+                      value={maxPerUserInput}
+                      onChange={e => setMaxPerUserInput(e.target.value)}
+                      className="w-20"
+                    />
+                    <span className="text-muted-foreground text-sub">首</span>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <Label htmlFor="user-cooldown" className="w-24 shrink-0">
+                      點歌冷卻
+                    </Label>
+                    <Input
+                      id="user-cooldown"
+                      type="number"
+                      min={0}
+                      max={3600}
+                      placeholder="0"
+                      value={userCooldownInput}
+                      onChange={e => setUserCooldownInput(e.target.value)}
+                      className="w-20"
+                    />
+                    <span className="text-muted-foreground text-sub">秒</span>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <Label htmlFor="min-view-count" className="w-24 shrink-0">
+                      最低觀看次數
+                    </Label>
+                    <Select
+                      value={String(settings?.min_view_count ?? 0)}
+                      onValueChange={handleMinViewCountChange}
+                    >
+                      <SelectTrigger id="min-view-count" className="w-32">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {MIN_VIEW_COUNT_OPTIONS.map(opt => (
+                          <SelectItem key={opt.value} value={String(opt.value)}>
+                            {opt.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
+
+            {/* ── 儲存 ── */}
+            <div className="flex justify-end">
               <Button size="sm" onClick={handleSaveSettings} disabled={saving}>
                 {saving ? '...' : '儲存'}
               </Button>
             </div>
 
-            <div className="flex items-center gap-3">
-              <Label className="shrink-0">最低觀看次數</Label>
-              <Select
-                value={String(settings?.min_view_count ?? 0)}
-                onValueChange={handleMinViewCountChange}
-              >
-                <SelectTrigger className="w-44">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {MIN_VIEW_COUNT_OPTIONS.map(opt => (
-                    <SelectItem key={opt.value} value={String(opt.value)}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            <Separator />
+
             <OverlayUrlBlock url={overlayUrl} />
           </CardContent>
         </Card>
@@ -455,6 +587,7 @@ export default function VideoQueue() {
           </div>
           <div className="flex items-center gap-2">
             <Input
+              aria-label="YouTube 連結"
               placeholder="YouTube 連結"
               value={addUrlInput}
               onChange={e => setAddUrlInput(e.target.value)}

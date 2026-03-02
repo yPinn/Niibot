@@ -41,9 +41,14 @@ _ENTRY_ROW = {
 _SETTINGS_ROW = {
     "channel_id": "ch1",
     "enabled": True,
+    "chat_enabled": True,
+    "redemption_enabled": True,
     "min_role_chat": "everyone",
     "max_duration_seconds": 600,
     "max_queue_size": 20,
+    "min_view_count": 0,
+    "user_cooldown_seconds": 0,
+    "max_per_user": 0,
     "created_at": _NOW,
     "updated_at": _NOW,
 }
@@ -248,6 +253,29 @@ class TestVideoIsActive:
         result = await repo.video_is_active("ch1", "dQw4w9WgXcQ")
 
         assert result is False
+
+
+@pytest.mark.asyncio
+class TestCountActiveByUser:
+    async def test_returns_count(self):
+        pool, conn = _make_pool(fetchval=2)
+        repo = VideoQueueRepository(pool)
+
+        result = await repo.count_active_by_user("ch1", "viewer1")
+
+        assert result == 2
+        conn.fetchval.assert_called_once()
+        sql = conn.fetchval.call_args[0][0]
+        assert "queued" in sql
+        assert "playing" in sql
+
+    async def test_returns_zero_when_none(self):
+        pool, _ = _make_pool(fetchval=0)
+        repo = VideoQueueRepository(pool)
+
+        result = await repo.count_active_by_user("ch1", "viewer1")
+
+        assert result == 0
 
 
 @pytest.mark.asyncio

@@ -42,6 +42,8 @@ class VideoQueueComponent(commands.Component):
         self.vq_repo = VideoQueueRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.vq_settings_repo = VideoQueueSettingsRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self._session: aiohttp.ClientSession | None = None
+        # (channel_id, user_name) → last successful queue time (for per-user cooldown)
+        self._cooldowns: dict[tuple[str, str], datetime] = {}
 
     async def component_load(self) -> None:
         self._session = aiohttp.ClientSession()
@@ -62,6 +64,14 @@ class VideoQueueComponent(commands.Component):
 
     async def _handle_add(self, ctx: commands.Context[Bot], url_str: str) -> None:
         """Core logic for adding a video to the queue."""
+        try:
+            await self._handle_add_inner(ctx, url_str)
+        except Exception:
+            LOGGER.exception("_handle_add failed for %s", url_str)
+            await ctx.reply("點歌失敗，請稍後再試")
+
+    async def _handle_add_inner(self, ctx: commands.Context[Bot], url_str: str) -> None:
+        """Inner implementation — separated so exceptions surface as a reply."""
         channel_id = ctx.channel.id
         settings = await self.vq_settings_repo.get_or_create(channel_id)
 
@@ -69,8 +79,30 @@ class VideoQueueComponent(commands.Component):
             await ctx.reply("影片佇列目前已關閉")
             return
 
+        if not settings.chat_enabled:
+            return  # silent — chat command disabled
+
         if not has_role(ctx.chatter, settings.min_role_chat):
             return  # silent — consistent with game_queue
+
+        user_name = ctx.chatter.display_name or ctx.chatter.name or ""
+
+        # Per-user cooldown check
+        if settings.user_cooldown_seconds > 0:
+            last = self._cooldowns.get((channel_id, user_name))
+            if last is not None:
+                elapsed = (datetime.now(UTC) - last).total_seconds()
+                remaining = settings.user_cooldown_seconds - elapsed
+                if remaining > 0:
+                    await ctx.reply(f"點歌冷卻中，請等待 {int(remaining) + 1} 秒")
+                    return
+
+        # Per-user active queue limit check
+        if settings.max_per_user > 0:
+            active = await self.vq_repo.count_active_by_user(channel_id, user_name)
+            if active >= settings.max_per_user:
+                await ctx.reply(f"每人上限 {settings.max_per_user} 首，請等待您的影片播放後再點歌")
+                return
 
         video_id, is_vertical = extract_youtube_info(url_str)
         if not video_id:
@@ -115,12 +147,14 @@ class VideoQueueComponent(commands.Component):
         await self.vq_repo.add(
             channel_id=channel_id,
             video_id=video_id,
-            requested_by=ctx.chatter.display_name or ctx.chatter.name or "",
+            requested_by=user_name,
             source="chat",
             title=title,
             duration_seconds=duration_seconds,
             is_vertical=is_vertical,
         )
+        if settings.user_cooldown_seconds > 0:
+            self._cooldowns[(channel_id, user_name)] = datetime.now(UTC)
         position = await self.vq_repo.get_queue_size(channel_id)
         title_part = f"「{title}」" if title else ""
         dur_part = (
