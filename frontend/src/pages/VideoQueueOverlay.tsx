@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  type MutableRefObject,
+  type RefObject,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 
 import {
@@ -87,6 +94,37 @@ function formatRemaining(elapsed: number, duration: number | null): string {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
+/** Destroy all active YT players and stop the progress interval. */
+function destroyAllPlayers(
+  refs: Array<MutableRefObject<YTPlayer | null>>,
+  progressRef: MutableRefObject<ReturnType<typeof setInterval> | null>,
+  setElapsed: (v: number) => void
+) {
+  for (const ref of refs) {
+    if (ref.current) {
+      try {
+        ref.current.destroy()
+      } catch {
+        /* ignore */
+      }
+      ref.current = null
+    }
+  }
+  if (progressRef.current) {
+    clearInterval(progressRef.current)
+    progressRef.current = null
+  }
+  setElapsed(0)
+}
+
+/** Create a fresh full-size mount div inside a container, clearing previous children. */
+function makeMountDiv(container: HTMLDivElement): HTMLDivElement {
+  const div = document.createElement('div')
+  div.style.cssText = 'width:100%;height:100%'
+  container.innerHTML = ''
+  container.appendChild(div)
+  return div
+}
 
 // ---------------------------------------------------------------------------
 // Main Overlay
@@ -148,6 +186,8 @@ export default function VideoQueueOverlay() {
           advancingRef.current = false
         })
     }
+    // Only react to specific state fields — not the full `state` object —
+    // to avoid re-running the advance logic on unrelated state updates.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [username, state?.current?.id, state?.queue.length])
 
@@ -160,19 +200,7 @@ export default function VideoQueueOverlay() {
 
     if (newId === currentIdRef.current) return // same video, nothing to do
 
-    // Destroy old players
-    for (const ref of [playerRef, leftPlayerRef, rightPlayerRef]) {
-      if (ref.current) {
-        try { ref.current.destroy() } catch { /* ignore */ }
-        ref.current = null
-      }
-    }
-    if (progressRef.current) {
-      clearInterval(progressRef.current)
-      progressRef.current = null
-    }
-    setElapsed(0)
-
+    destroyAllPlayers([playerRef, leftPlayerRef, rightPlayerRef], progressRef, setElapsed)
     currentIdRef.current = newId
 
     if (!current || !newId) return // queue is empty, stay transparent
@@ -190,28 +218,31 @@ export default function VideoQueueOverlay() {
       if (allStarted) return
       allStarted = true
       for (const ref of [playerRef, leftPlayerRef, rightPlayerRef]) {
-        if (ref.current) try { ref.current.playVideo() } catch { /* ignore */ }
+        if (ref.current)
+          try {
+            ref.current.playVideo()
+          } catch {
+            /* ignore */
+          }
       }
       progressRef.current = setInterval(() => {
         if (!playerRef.current) return
         const t = playerRef.current.getCurrentTime()
         setElapsed(t)
-
         // Sync side players — resync if drift exceeds 0.3s
         for (const ref of [leftPlayerRef, rightPlayerRef]) {
           if (ref.current) {
             try {
               const st = ref.current.getCurrentTime()
               if (Math.abs(st - t) > 0.3) ref.current.seekTo(t, true)
-            } catch { /* ignore */ }
+            } catch {
+              /* ignore */
+            }
           }
         }
-
         // ENDED fallback: polling check to catch missed onStateChange ENDED events
         const d = playerRef.current.getDuration()
-        if (d > 0 && t >= d - 0.5) {
-          handleVideoEnd(currentId)
-        }
+        if (d > 0 && t >= d - 0.5) handleVideoEnd(currentId)
       }, 1000)
     }
 
@@ -226,13 +257,34 @@ export default function VideoQueueOverlay() {
     // 8s fallback in case a player never fires onReady
     fallbackTimer = setTimeout(startAll, 8000)
 
+    // Muted side player for vertical video blurred columns.
+    function createSidePlayer(
+      containerRefArg: RefObject<HTMLDivElement | null>,
+      playerRefArg: MutableRefObject<YTPlayer | null>
+    ) {
+      if (!containerRefArg.current) {
+        onPlayerReady() // container not mounted — count as ready so barrier doesn't stall
+        return
+      }
+      playerRefArg.current = new window.YT.Player(makeMountDiv(containerRefArg.current), {
+        width: '100%',
+        height: '100%',
+        videoId: current!.video_id,
+        playerVars: {
+          autoplay: 0,
+          controls: 0,
+          rel: 0,
+          modestbranding: 1,
+          mute: 1,
+          iv_load_policy: 3,
+        },
+        events: { onReady: onPlayerReady },
+      })
+    }
+
     // Center player — pass an imperative child div so YT.Player's
     // parentNode.replaceChild() never detaches containerRef from the DOM
-    const mountDiv = document.createElement('div')
-    mountDiv.style.cssText = 'width:100%;height:100%'
-    containerRef.current.innerHTML = ''
-    containerRef.current.appendChild(mountDiv)
-    playerRef.current = new window.YT.Player(mountDiv, {
+    playerRef.current = new window.YT.Player(makeMountDiv(containerRef.current), {
       width: '100%',
       height: '100%',
       videoId: current.video_id,
@@ -254,68 +306,46 @@ export default function VideoQueueOverlay() {
           }
           onPlayerReady()
         },
-
         onStateChange: event => {
           if (event.data === 1) {
-            // YT.PlayerState.PLAYING = 1 — sync side panels
+            // YT.PlayerState.PLAYING — sync side panels
             for (const ref of [leftPlayerRef, rightPlayerRef]) {
-              if (ref.current) try { ref.current.playVideo() } catch { /* ignore */ }
+              if (ref.current)
+                try {
+                  ref.current.playVideo()
+                } catch {
+                  /* ignore */
+                }
             }
           }
           if (event.data === 2) {
-            // YT.PlayerState.PAUSED = 2 — pause side panels in lockstep
+            // YT.PlayerState.PAUSED — pause side panels in lockstep
             for (const ref of [leftPlayerRef, rightPlayerRef]) {
-              if (ref.current) try { ref.current.pauseVideo() } catch { /* ignore */ }
+              if (ref.current)
+                try {
+                  ref.current.pauseVideo()
+                } catch {
+                  /* ignore */
+                }
             }
           }
-          if (event.data === 0) {
-            // YT.PlayerState.ENDED = 0
-            handleVideoEnd(currentId)
-          }
+          if (event.data === 0) handleVideoEnd(currentId) // YT.PlayerState.ENDED
         },
-
-        onError: () => {
-          handleVideoEnd(currentId)
-        },
+        onError: () => handleVideoEnd(currentId),
       },
     })
 
-    // Side players for vertical videos
+    // Side players for vertical videos (blurred background columns)
     if (current.is_vertical) {
-      const makeSideMount = (container: HTMLDivElement) => {
-        const div = document.createElement('div')
-        div.style.cssText = 'width:100%;height:100%'
-        container.innerHTML = ''
-        container.appendChild(div)
-        return div
-      }
-      if (leftContainerRef.current) {
-        leftPlayerRef.current = new window.YT.Player(makeSideMount(leftContainerRef.current), {
-          width: '100%',
-          height: '100%',
-          videoId: current.video_id,
-          playerVars: { autoplay: 0, controls: 0, rel: 0, modestbranding: 1, mute: 1, iv_load_policy: 3 },
-          events: { onReady: onPlayerReady },
-        })
-      } else {
-        onPlayerReady() // container not mounted — count as ready so barrier doesn't stall
-      }
-      if (rightContainerRef.current) {
-        rightPlayerRef.current = new window.YT.Player(makeSideMount(rightContainerRef.current), {
-          width: '100%',
-          height: '100%',
-          videoId: current.video_id,
-          playerVars: { autoplay: 0, controls: 0, rel: 0, modestbranding: 1, mute: 1, iv_load_policy: 3 },
-          events: { onReady: onPlayerReady },
-        })
-      } else {
-        onPlayerReady() // container not mounted — count as ready so barrier doesn't stall
-      }
+      createSidePlayer(leftContainerRef, leftPlayerRef)
+      createSidePlayer(rightContainerRef, rightPlayerRef)
     }
 
     return () => {
       clearTimeout(fallbackTimer)
     }
+    // Player creation is keyed on video ID — not the full `state` object or `isPreview` —
+    // so the player is only rebuilt when the actual video changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ytReady, state?.current?.id, username])
 
@@ -324,7 +354,11 @@ export default function VideoQueueOverlay() {
     return () => {
       for (const ref of [playerRef, leftPlayerRef, rightPlayerRef]) {
         if (ref.current) {
-          try { ref.current.destroy() } catch { /* ignore */ }
+          try {
+            ref.current.destroy()
+          } catch {
+            /* ignore */
+          }
         }
       }
       if (progressRef.current) clearInterval(progressRef.current)
@@ -381,7 +415,7 @@ export default function VideoQueueOverlay() {
           <div className={styles.controls}>
             {Array.from(formatRemaining(elapsed, current.duration_seconds)).map((char, i) => (
               <div
-                key={i}
+                key={`${char}-${i}`}
                 className={char === ':' || char === '-' ? styles.charBoxNarrow : styles.charBox}
               >
                 {char}
