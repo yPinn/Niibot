@@ -7,6 +7,7 @@ export interface VideoQueueEntry {
   duration_seconds: number | null
   is_vertical: boolean
   requested_by: string
+  source: string
   started_at: string | null
 }
 
@@ -21,10 +22,8 @@ export interface PublicVideoQueueState {
 export interface VideoQueueSettings {
   channel_id: string
   enabled: boolean
-  chat_enabled: boolean
   redemption_enabled: boolean
-  min_role_chat: string
-  max_duration_seconds: number
+  max_duration_redemption: number
   max_queue_size: number
   min_view_count: number
   user_cooldown_seconds: number
@@ -33,10 +32,8 @@ export interface VideoQueueSettings {
 
 export interface VideoQueueSettingsUpdate {
   enabled?: boolean
-  chat_enabled?: boolean
   redemption_enabled?: boolean
-  min_role_chat?: string
-  max_duration_seconds?: number
+  max_duration_redemption?: number
   max_queue_size?: number
   min_view_count?: number
   user_cooldown_seconds?: number

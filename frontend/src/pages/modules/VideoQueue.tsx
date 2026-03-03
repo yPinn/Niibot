@@ -14,7 +14,6 @@ import {
   type VideoQueueEntry,
   type VideoQueueSettings,
 } from '@/api/videoQueue'
-import { OverlayUrlBlock } from '@/components/OverlayUrlBlock'
 import { PageHeader } from '@/components/PageHeader'
 import {
   Badge,
@@ -25,9 +24,6 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
   Icon,
   Input,
   Label,
@@ -36,7 +32,6 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-  Separator,
   Spinner,
   Switch,
   Table,
@@ -52,14 +47,6 @@ import { usePolling } from '@/hooks/usePolling'
 
 const POLL_INTERVAL = 10_000
 
-const ROLE_OPTIONS = [
-  { value: 'everyone', label: '所有人' },
-  { value: 'subscriber', label: '訂閱者' },
-  { value: 'vip', label: 'VIP' },
-  { value: 'moderator', label: '管理員' },
-  { value: 'broadcaster', label: '台主' },
-] as const
-
 const MIN_VIEW_COUNT_OPTIONS = [
   { value: 0, label: '不限制' },
   { value: 500, label: '500+' },
@@ -68,48 +55,144 @@ const MIN_VIEW_COUNT_OPTIONS = [
   { value: 10_000, label: '10,000+' },
 ] as const
 
+// redemption (channel points): starts at 1 video, up to 3 videos
+const REDEMPTION_DURATION_OPTIONS = [
+  { value: 300, label: '5 分鐘' },
+  { value: 600, label: '10 分鐘' },
+  { value: 900, label: '15 分鐘' },
+] as const
+
+/** Snap a raw seconds value to the nearest option in the list. */
+function snapToOption(options: readonly { value: number }[], value: number): number {
+  return options.reduce((prev, curr) =>
+    Math.abs(curr.value - value) < Math.abs(prev.value - value) ? curr : prev
+  ).value
+}
+
+// Source badge — label and Tailwind colour classes per source type
+const SOURCE_CONFIG: Record<string, { label: string; className: string }> = {
+  chat: { label: '聊天', className: 'text-muted-foreground' },
+  redemption: {
+    label: '兌換',
+    className: 'border-violet-300 text-violet-600 dark:border-violet-700 dark:text-violet-400',
+  },
+  donation: {
+    label: '斗內',
+    className: 'border-amber-300 text-amber-600 dark:border-amber-700 dark:text-amber-400',
+  },
+  dashboard: {
+    label: '主播',
+    className: 'border-blue-300 text-blue-600 dark:border-blue-700 dark:text-blue-400',
+  },
+}
+
+function SourceBadge({ source }: { source: string }) {
+  const cfg = SOURCE_CONFIG[source] ?? { label: source, className: '' }
+  return (
+    <Badge variant="outline" className={`shrink-0 text-xs ${cfg.className}`}>
+      {cfg.label}
+    </Badge>
+  )
+}
+
 function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60)
   const s = Math.floor(seconds % 60)
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
+function clampValue(value: string, min: number, max: number): string {
+  const n = parseInt(value, 10)
+  if (isNaN(n)) return String(min)
+  return String(Math.min(max, Math.max(min, n)))
+}
+
+// Combined table: playing entry (highlighted) + queued entries with source column
 function QueueTable({
+  current,
   entries,
+  onSkip,
   onSetNext,
   onPlayNow,
 }: {
+  current?: VideoQueueEntry | null
   entries: VideoQueueEntry[]
+  onSkip?: () => void
   onSetNext?: (id: number) => void
   onPlayNow?: (id: number) => void
 }) {
-  if (entries.length === 0) return null
+  const hasActions = !!(onSetNext || onPlayNow)
+  if (!current && entries.length === 0) return null
+
   return (
     <div className="overflow-x-auto">
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead className="w-16">#</TableHead>
+            <TableHead className="w-10" />
             <TableHead>影片</TableHead>
+            <TableHead className="w-20 text-center">來源</TableHead>
             <TableHead className="w-24">長度</TableHead>
             <TableHead className="w-28">點播者</TableHead>
-            {(onSetNext || onPlayNow) && <TableHead className="w-36" />}
+            {(hasActions || onSkip) && <TableHead className="w-20" />}
           </TableRow>
         </TableHeader>
         <TableBody>
+          {/* Currently playing row */}
+          {current && (
+            <TableRow className="bg-primary/5">
+              <TableCell>
+                <Icon
+                  icon="fa-solid fa-play"
+                  className="size-3 text-primary"
+                  wrapperClassName="mx-auto"
+                />
+              </TableCell>
+              <TableCell className="max-w-0 w-full">
+                <div className="truncate font-medium" title={current.title || current.video_id}>
+                  {current.title || current.video_id}
+                </div>
+              </TableCell>
+              <TableCell className="text-center">
+                <SourceBadge source={current.source} />
+              </TableCell>
+              <TableCell className="text-muted-foreground text-sub">
+                {current.duration_seconds ? formatDuration(current.duration_seconds) : '--:--'}
+              </TableCell>
+              <TableCell className="text-muted-foreground text-sub">
+                {current.requested_by}
+              </TableCell>
+              {(hasActions || onSkip) && (
+                <TableCell className="text-right">
+                  {onSkip && (
+                    <Button variant="ghost" size="sm" onClick={onSkip} title="跳過當前影片">
+                      <Icon icon="fa-solid fa-forward-step" className="size-3.5" />
+                    </Button>
+                  )}
+                </TableCell>
+              )}
+            </TableRow>
+          )}
+
+          {/* Queued entries */}
           {entries.map((entry, idx) => (
             <TableRow key={entry.id}>
-              <TableCell>
+              <TableCell className="text-center">
                 <Badge variant="outline">{idx + 1}</Badge>
               </TableCell>
-              <TableCell className="max-w-xs truncate font-medium">
-                {entry.title || entry.video_id}
+              <TableCell className="max-w-0 w-full">
+                <div className="truncate font-medium" title={entry.title || entry.video_id}>
+                  {entry.title || entry.video_id}
+                </div>
+              </TableCell>
+              <TableCell className="text-center">
+                <SourceBadge source={entry.source} />
               </TableCell>
               <TableCell className="text-muted-foreground text-sub">
                 {entry.duration_seconds ? formatDuration(entry.duration_seconds) : '--:--'}
               </TableCell>
               <TableCell className="text-muted-foreground text-sub">{entry.requested_by}</TableCell>
-              {(onSetNext || onPlayNow) && (
+              {(hasActions || onSkip) && (
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-1">
                     {onSetNext && (
@@ -119,8 +202,7 @@ function QueueTable({
                         onClick={() => onSetNext(entry.id)}
                         title="排定為下一首"
                       >
-                        <Icon icon="fa-solid fa-arrow-up-to-line" className="mr-1 size-3.5" />
-                        下一首
+                        <Icon icon="fa-solid fa-arrow-up-to-line" className="size-3.5" />
                       </Button>
                     )}
                     {onPlayNow && (
@@ -130,8 +212,7 @@ function QueueTable({
                         onClick={() => onPlayNow(entry.id)}
                         title="直接插播"
                       >
-                        <Icon icon="fa-solid fa-play" className="mr-1 size-3.5" />
-                        插播
+                        <Icon icon="fa-solid fa-play" className="size-3.5" />
                       </Button>
                     )}
                   </div>
@@ -153,14 +234,11 @@ export default function VideoQueue() {
   const [settings, setSettings] = useState<VideoQueueSettings | null>(null)
   const [loading, setLoading] = useState(true)
 
-  const [maxDurationInput, setMaxDurationInput] = useState('')
+  const [maxRedemptionDurationValue, setMaxRedemptionDurationValue] = useState('600')
   const [maxQueueSizeInput, setMaxQueueSizeInput] = useState('')
   const [userCooldownInput, setUserCooldownInput] = useState('')
   const [maxPerUserInput, setMaxPerUserInput] = useState('')
   const [saving, setSaving] = useState(false)
-
-  const [advancedOpen, setAdvancedOpen] = useState(false)
-
   const [addUrlInput, setAddUrlInput] = useState('')
   const [adding, setAdding] = useState(false)
   const hasInitialized = useRef(false)
@@ -174,7 +252,9 @@ export default function VideoQueue() {
       setState(queueState)
       setSettings(queueSettings)
       if (!hasInitialized.current) {
-        setMaxDurationInput(String(queueSettings.max_duration_seconds))
+        setMaxRedemptionDurationValue(
+          String(snapToOption(REDEMPTION_DURATION_OPTIONS, queueSettings.max_duration_redemption))
+        )
         setMaxQueueSizeInput(String(queueSettings.max_queue_size))
         setUserCooldownInput(String(queueSettings.user_cooldown_seconds))
         setMaxPerUserInput(String(queueSettings.max_per_user))
@@ -193,17 +273,7 @@ export default function VideoQueue() {
     try {
       const updated = await updateVideoQueueSettings({ enabled })
       setSettings(updated)
-      toast.success(enabled ? '點播已開啟' : '點播已關閉')
-    } catch {
-      toast.error('更新失敗')
-    }
-  }
-
-  const handleToggleChatEnabled = async (chat_enabled: boolean) => {
-    try {
-      const updated = await updateVideoQueueSettings({ chat_enabled })
-      setSettings(updated)
-      toast.success(chat_enabled ? '!vq 指令已開啟' : '!vq 指令已關閉')
+      toast.success(enabled ? '影片佇列已啟用' : '影片佇列已停用')
     } catch {
       toast.error('更新失敗')
     }
@@ -214,16 +284,6 @@ export default function VideoQueue() {
       const updated = await updateVideoQueueSettings({ redemption_enabled })
       setSettings(updated)
       toast.success(redemption_enabled ? '點數兌換已開啟' : '點數兌換已關閉')
-    } catch {
-      toast.error('更新失敗')
-    }
-  }
-
-  const handleRoleChange = async (role: string) => {
-    try {
-      const updated = await updateVideoQueueSettings({ min_role_chat: role })
-      setSettings(updated)
-      toast.success('已更新最低權限')
     } catch {
       toast.error('更新失敗')
     }
@@ -240,14 +300,10 @@ export default function VideoQueue() {
   }
 
   const handleSaveSettings = async () => {
-    const duration = parseInt(maxDurationInput, 10)
+    const redemptionDuration = parseInt(maxRedemptionDurationValue, 10)
     const queueSize = parseInt(maxQueueSizeInput, 10)
     const cooldown = parseInt(userCooldownInput, 10)
     const perUser = parseInt(maxPerUserInput, 10)
-    if (isNaN(duration) || duration < 30 || duration > 10800) {
-      toast.error('影片長度上限範圍: 30 ~ 10800 秒')
-      return
-    }
     if (isNaN(queueSize) || queueSize < 1 || queueSize > 100) {
       toast.error('隊列上限範圍: 1 ~ 100')
       return
@@ -263,7 +319,7 @@ export default function VideoQueue() {
     setSaving(true)
     try {
       const updated = await updateVideoQueueSettings({
-        max_duration_seconds: duration,
+        max_duration_redemption: redemptionDuration,
         max_queue_size: queueSize,
         user_cooldown_seconds: cooldown,
         max_per_user: perUser,
@@ -352,35 +408,110 @@ export default function VideoQueue() {
 
   return (
     <main className="flex flex-1 flex-col gap-section p-page lg:p-page-lg">
-      <PageHeader title="Video Queue" description="管理 YouTube 點播系統" />
+      <PageHeader title="Video Queue" description="管理 YouTube 影片佇列" />
 
-      {/* Settings + Overlay Preview */}
-      <div className="grid grid-cols-1 gap-section lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>點播設定</CardTitle>
-            <CardDescription>調整點播規則與權限</CardDescription>
-            <CardAction>
-              <Switch
-                id="vq-enabled"
-                checked={settings?.enabled ?? false}
-                onCheckedChange={handleToggleEnabled}
-              />
-            </CardAction>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            {/* ── 來源開關 ── */}
-            <div className="flex items-center gap-6">
+      {/* Row 1: Queue (col-8) always matches right column height */}
+      <div className="grid grid-cols-1 gap-section lg:grid-cols-12 lg:items-stretch">
+        {/* Queue card — fills full column height */}
+        <div className="lg:col-span-8">
+          <Card className="h-full">
+            <CardHeader className="flex flex-row items-center justify-between gap-4">
+              <CardTitle>
+                等待佇列
+                <Badge variant="outline" className="ml-2">
+                  {queueSize}
+                  {totalQueuedDuration ? ` — ${formatDuration(totalQueuedDuration)}` : ''}
+                </Badge>
+              </CardTitle>
               <div className="flex items-center gap-2">
-                <Switch
-                  id="chat-enabled"
-                  checked={settings?.chat_enabled ?? true}
-                  onCheckedChange={handleToggleChatEnabled}
+                <Input
+                  aria-label="YouTube 連結"
+                  placeholder="YouTube 連結"
+                  value={addUrlInput}
+                  onChange={e => setAddUrlInput(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleAddVideo()}
+                  className="w-56"
                 />
-                <Label htmlFor="chat-enabled" className="cursor-pointer">
-                  !vq 指令
-                </Label>
+                <Button size="sm" onClick={handleAddVideo} disabled={adding || !addUrlInput.trim()}>
+                  <Icon icon="fa-solid fa-plus" className="mr-1.5 text-xs" />
+                  {adding ? '...' : '新增'}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={handleClear}
+                  disabled={!current && queueSize === 0}
+                >
+                  <Icon icon="fa-solid fa-trash" className="mr-1.5 text-xs" />
+                  清空
+                </Button>
               </div>
+            </CardHeader>
+            <CardContent>
+              <QueueTable
+                current={current}
+                entries={queue}
+                onSkip={handleSkip}
+                onSetNext={handleSetNext}
+                onPlayNow={handlePlayNow}
+              />
+              {!current && queue.length === 0 && (
+                <p className="text-muted-foreground text-sub py-4 text-center">佇列為空</p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Right sidebar: Preview + Now Playing + source toggles + overlay buttons */}
+        <div className="flex flex-col gap-section lg:col-span-4">
+          {/* Overlay preview iframe */}
+          {overlayUrl && (
+            <div className="aspect-video overflow-hidden rounded-lg border bg-black">
+              <iframe
+                src={`${overlayUrl}?preview=1`}
+                className="block h-full w-full"
+                title="Overlay 預覽"
+              />
+            </div>
+          )}
+
+          {/* Now Playing + source controls (merged) */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                {current ? (
+                  <>
+                    <Icon icon="fa-solid fa-play" className="size-3 shrink-0 text-primary" />
+                    正在播放
+                  </>
+                ) : (
+                  '目前沒有播放'
+                )}
+                {current?.duration_seconds && (
+                  <Badge variant="secondary" className="text-xs">
+                    {formatDuration(current.duration_seconds)}
+                  </Badge>
+                )}
+              </CardTitle>
+              {current && (
+                <CardDescription className="min-w-0">
+                  <span className="block truncate" title={current.title || current.video_id}>
+                    {current.title || current.video_id}
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="min-w-0 truncate">{current.requested_by}</span>
+                    <SourceBadge source={current.source} />
+                  </span>
+                </CardDescription>
+              )}
+              <CardAction>
+                <Button size="sm" variant="outline" onClick={handleSkip} disabled={!current}>
+                  <Icon icon="fa-solid fa-forward-step" className="mr-1.5 size-3" />
+                  跳過
+                </Button>
+              </CardAction>
+            </CardHeader>
+            <CardContent className="space-y-3 pb-5">
               <div className="flex items-center gap-2">
                 <Switch
                   id="redemption-enabled"
@@ -391,229 +522,157 @@ export default function VideoQueue() {
                   點數兌換
                 </Label>
               </div>
-            </div>
-
-            <Separator />
-
-            {/* ── 基本規則（2 欄）── */}
-            <div className="grid grid-cols-2 gap-x-8 gap-y-3">
-              <div className="flex items-center gap-3">
-                <Label htmlFor="min-role" className="w-24 shrink-0">
-                  最低點歌權限
-                </Label>
-                <Select
-                  value={settings?.min_role_chat ?? 'everyone'}
-                  onValueChange={handleRoleChange}
-                >
-                  <SelectTrigger id="min-role" className="w-32">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {ROLE_OPTIONS.map(opt => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <Label htmlFor="max-duration" className="w-24 shrink-0">
-                  影片長度上限
-                </Label>
-                <Input
-                  id="max-duration"
-                  type="number"
-                  min={30}
-                  max={10800}
-                  placeholder="600"
-                  value={maxDurationInput}
-                  onChange={e => setMaxDurationInput(e.target.value)}
-                  className="w-20"
-                />
-                <span className="text-muted-foreground text-sub">秒</span>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <Label htmlFor="max-queue-size" className="w-24 shrink-0">
-                  隊列上限
-                </Label>
-                <Input
-                  id="max-queue-size"
-                  type="number"
-                  min={1}
-                  max={100}
-                  placeholder="20"
-                  value={maxQueueSizeInput}
-                  onChange={e => setMaxQueueSizeInput(e.target.value)}
-                  className="w-20"
-                />
-                <span className="text-muted-foreground text-sub">首</span>
-              </div>
-            </div>
-
-            {/* ── 進階設定（摺疊）── */}
-            <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
-              <CollapsibleTrigger className="text-muted-foreground hover:text-foreground flex items-center gap-1.5 text-sm transition-colors">
-                <Icon
-                  icon="fa-solid fa-chevron-right"
-                  className={`size-3 transition-transform duration-200 ${advancedOpen ? 'rotate-90' : ''}`}
-                />
-                進階設定
-              </CollapsibleTrigger>
-              <CollapsibleContent>
-                <div className="grid grid-cols-2 gap-x-8 gap-y-3 pt-3">
-                  <div className="flex items-center gap-3">
-                    <Label htmlFor="max-per-user" className="w-24 shrink-0">
-                      每人同時上限
-                    </Label>
-                    <Input
-                      id="max-per-user"
-                      type="number"
-                      min={0}
-                      max={20}
-                      placeholder="0"
-                      value={maxPerUserInput}
-                      onChange={e => setMaxPerUserInput(e.target.value)}
-                      className="w-20"
-                    />
-                    <span className="text-muted-foreground text-sub">首</span>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <Label htmlFor="user-cooldown" className="w-24 shrink-0">
-                      點歌冷卻
-                    </Label>
-                    <Input
-                      id="user-cooldown"
-                      type="number"
-                      min={0}
-                      max={3600}
-                      placeholder="0"
-                      value={userCooldownInput}
-                      onChange={e => setUserCooldownInput(e.target.value)}
-                      className="w-20"
-                    />
-                    <span className="text-muted-foreground text-sub">秒</span>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <Label htmlFor="min-view-count" className="w-24 shrink-0">
-                      最低觀看次數
-                    </Label>
-                    <Select
-                      value={String(settings?.min_view_count ?? 0)}
-                      onValueChange={handleMinViewCountChange}
-                    >
-                      <SelectTrigger id="min-view-count" className="w-32">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {MIN_VIEW_COUNT_OPTIONS.map(opt => (
-                          <SelectItem key={opt.value} value={String(opt.value)}>
-                            {opt.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+              {overlayUrl && (
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      navigator.clipboard.writeText(overlayUrl)
+                      toast.success('已複製 OBS 連結')
+                    }}
+                  >
+                    <Icon icon="fa-solid fa-copy" className="mr-1.5 text-xs" />
+                    複製連結
+                  </Button>
+                  <Button variant="outline" size="sm" asChild>
+                    <a href={overlayUrl} target="_blank" rel="noopener noreferrer">
+                      <Icon
+                        icon="fa-solid fa-arrow-up-right-from-square"
+                        className="mr-1.5 text-xs"
+                      />
+                      開啟預覽
+                    </a>
+                  </Button>
                 </div>
-              </CollapsibleContent>
-            </Collapsible>
-
-            {/* ── 儲存 ── */}
-            <div className="flex justify-end">
-              <Button size="sm" onClick={handleSaveSettings} disabled={saving}>
-                {saving ? '...' : '儲存'}
-              </Button>
-            </div>
-
-            <Separator />
-
-            <OverlayUrlBlock url={overlayUrl} />
-          </CardContent>
-        </Card>
-
-        {overlayUrl && (
-          <div className="aspect-16/10 overflow-hidden rounded-lg border bg-black">
-            <iframe
-              src={`${overlayUrl}?preview=1`}
-              className="block h-full w-full"
-              title="Overlay 預覽"
-            />
-          </div>
-        )}
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
-      {/* Now Playing */}
+      {/* Row 2: Queue settings */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div>
-            <CardTitle>
-              正在播放
-              {current && (
-                <Badge variant="secondary" className="ml-2">
-                  {current.duration_seconds ? formatDuration(current.duration_seconds) : 'LIVE'}
-                </Badge>
-              )}
-            </CardTitle>
-            {current && (
-              <CardDescription>
-                {current.title || current.video_id}
-                <span className="text-muted-foreground ml-2">— by {current.requested_by}</span>
-              </CardDescription>
-            )}
-            {!current && <CardDescription>目前沒有播放中的影片</CardDescription>}
-          </div>
-          <Button size="sm" onClick={handleSkip} disabled={!current}>
-            <Icon icon="fa-solid fa-forward-step" className="mr-1.5 text-xs" />
-            跳過
-          </Button>
+        <CardHeader>
+          <CardTitle>佇列設定</CardTitle>
+          <CardDescription>控制影片佇列啟閉與投稿限制</CardDescription>
+          <CardAction>
+            <div className="flex items-center gap-2">
+              <Label htmlFor="vq-enabled" className="cursor-pointer text-sm font-normal">
+                啟用
+              </Label>
+              <Switch
+                id="vq-enabled"
+                checked={settings?.enabled ?? false}
+                onCheckedChange={handleToggleEnabled}
+              />
+            </div>
+          </CardAction>
         </CardHeader>
-      </Card>
+        <CardContent className="space-y-5">
+          <div className="grid grid-cols-2 gap-x-8 gap-y-3 lg:grid-cols-4">
+            <div className="flex items-center gap-3">
+              <Label htmlFor="max-redemption-duration" className="w-24 shrink-0">
+                兌換長度上限
+              </Label>
+              <Select
+                value={maxRedemptionDurationValue}
+                onValueChange={setMaxRedemptionDurationValue}
+              >
+                <SelectTrigger id="max-redemption-duration" className="w-32">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {REDEMPTION_DURATION_OPTIONS.map(opt => (
+                    <SelectItem key={opt.value} value={String(opt.value)}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-      {/* Queue */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div>
-            <CardTitle>
-              等待隊列{' '}
-              <Badge variant="outline">
-                {queueSize}
-                {totalQueuedDuration ? ` — ${formatDuration(totalQueuedDuration)}` : ''}
-              </Badge>
-            </CardTitle>
+            <div className="flex items-center gap-3">
+              <Label htmlFor="max-queue-size" className="w-24 shrink-0">
+                隊列上限
+              </Label>
+              <Input
+                id="max-queue-size"
+                type="number"
+                min={1}
+                max={100}
+                placeholder="20"
+                value={maxQueueSizeInput}
+                onChange={e => setMaxQueueSizeInput(e.target.value)}
+                onBlur={e => setMaxQueueSizeInput(clampValue(e.target.value, 1, 100))}
+                className="w-20"
+              />
+              <span className="text-muted-foreground text-sub">首</span>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <Label htmlFor="max-per-user" className="w-24 shrink-0">
+                每人同時上限
+              </Label>
+              <Input
+                id="max-per-user"
+                type="number"
+                min={0}
+                max={20}
+                placeholder="0"
+                value={maxPerUserInput}
+                onChange={e => setMaxPerUserInput(e.target.value)}
+                onBlur={e => setMaxPerUserInput(clampValue(e.target.value, 0, 20))}
+                className="w-20"
+              />
+              <span className="text-muted-foreground text-sub">首</span>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <Label htmlFor="user-cooldown" className="w-24 shrink-0">
+                點歌冷卻
+              </Label>
+              <Input
+                id="user-cooldown"
+                type="number"
+                min={0}
+                max={3600}
+                placeholder="0"
+                value={userCooldownInput}
+                onChange={e => setUserCooldownInput(e.target.value)}
+                onBlur={e => setUserCooldownInput(clampValue(e.target.value, 0, 3600))}
+                className="w-20"
+              />
+              <span className="text-muted-foreground text-sub">秒</span>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <Label htmlFor="min-view-count" className="w-24 shrink-0">
+                最低觀看次數
+              </Label>
+              <Select
+                value={String(settings?.min_view_count ?? 0)}
+                onValueChange={handleMinViewCountChange}
+              >
+                <SelectTrigger id="min-view-count" className="w-32">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {MIN_VIEW_COUNT_OPTIONS.map(opt => (
+                    <SelectItem key={opt.value} value={String(opt.value)}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Input
-              aria-label="YouTube 連結"
-              placeholder="YouTube 連結"
-              value={addUrlInput}
-              onChange={e => setAddUrlInput(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleAddVideo()}
-              className="w-56"
-            />
-            <Button size="sm" onClick={handleAddVideo} disabled={adding || !addUrlInput.trim()}>
-              <Icon icon="fa-solid fa-plus" className="mr-1.5 text-xs" />
-              {adding ? '...' : '新增'}
-            </Button>
-            <Button
-              size="sm"
-              variant="destructive"
-              onClick={handleClear}
-              disabled={queueSize === 0}
-            >
-              <Icon icon="fa-solid fa-trash" className="mr-1.5 text-xs" />
-              清空
+
+          <div className="flex justify-end">
+            <Button size="sm" onClick={handleSaveSettings} disabled={saving}>
+              {saving ? '...' : '儲存'}
             </Button>
           </div>
-        </CardHeader>
-        <CardContent>
-          <QueueTable entries={queue} onSetNext={handleSetNext} onPlayNow={handlePlayNow} />
-          {queue.length === 0 && (
-            <p className="text-muted-foreground text-sub py-4 text-center">隊列為空</p>
-          )}
         </CardContent>
       </Card>
     </main>

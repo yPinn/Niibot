@@ -1,12 +1,12 @@
 """Video Queue component: !vq, !np
 
-Public:
-    !vq <URL>       Request a video (YouTube)
+Public (all users):
     !vq list        Show first 5 videos in queue
-    !vq remove      Remove your last queued (not yet playing) request
     !np             Now playing: title, link, remaining time, queue info
 
-Moderator+:
+Moderator+ only:
+    !vq <URL>       Add a video to the queue (YouTube)
+    !vq remove      Remove the most recent queued entry submitted by the caller
     !vq skip        Skip the current video
     !vq clear       Clear entire queue (current + all queued)
 """
@@ -21,8 +21,8 @@ import aiohttp
 from twitchio.ext import commands
 
 from core.config import get_settings
-from core.guards import has_role
 from shared.repositories.video_queue import (
+    SOURCE_PRIORITY,
     VideoQueueRepository,
     VideoQueueSettingsRepository,
     extract_youtube_info,
@@ -42,8 +42,6 @@ class VideoQueueComponent(commands.Component):
         self.vq_repo = VideoQueueRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.vq_settings_repo = VideoQueueSettingsRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self._session: aiohttp.ClientSession | None = None
-        # (channel_id, user_name) → last successful queue time (for per-user cooldown)
-        self._cooldowns: dict[tuple[str, str], datetime] = {}
 
     async def component_load(self) -> None:
         self._session = aiohttp.ClientSession()
@@ -79,30 +77,11 @@ class VideoQueueComponent(commands.Component):
             await ctx.reply("影片佇列目前已關閉")
             return
 
-        if not settings.chat_enabled:
-            return  # silent — chat command disabled
-
-        if not has_role(ctx.chatter, settings.min_role_chat):
-            return  # silent — consistent with game_queue
+        # CLI add is restricted to moderators and broadcaster
+        if not ctx.chatter.moderator and not ctx.chatter.broadcaster:  # type: ignore[attr-defined]
+            return  # silent
 
         user_name = ctx.chatter.display_name or ctx.chatter.name or ""
-
-        # Per-user cooldown check
-        if settings.user_cooldown_seconds > 0:
-            last = self._cooldowns.get((channel_id, user_name))
-            if last is not None:
-                elapsed = (datetime.now(UTC) - last).total_seconds()
-                remaining = settings.user_cooldown_seconds - elapsed
-                if remaining > 0:
-                    await ctx.reply(f"點歌冷卻中，請等待 {int(remaining) + 1} 秒")
-                    return
-
-        # Per-user active queue limit check
-        if settings.max_per_user > 0:
-            active = await self.vq_repo.count_active_by_user(channel_id, user_name)
-            if active >= settings.max_per_user:
-                await ctx.reply(f"每人上限 {settings.max_per_user} 首，請等待您的影片播放後再點歌")
-                return
 
         video_id, is_vertical = extract_youtube_info(url_str)
         if not video_id:
@@ -121,28 +100,10 @@ class VideoQueueComponent(commands.Component):
             return
 
         # Fetch info from YouTube Data API (graceful fallback on failure)
-        title, duration_seconds, view_count, is_vertical_from_api = await fetch_yt_info(
+        title, duration_seconds, _, is_vertical_from_api = await fetch_yt_info(
             video_id, self._settings.youtube_api_key, self._session
         )
         is_vertical = is_vertical or is_vertical_from_api
-
-        # View count validation — if threshold is set and API failed, reject rather than bypass.
-        if settings.min_view_count > 0:
-            if view_count is None:
-                await ctx.reply("無法驗證影片資訊，請稍後再試")
-                return
-            if view_count < settings.min_view_count:
-                await ctx.reply(
-                    f"影片觀看次數不足（{view_count:,} 次 < {settings.min_view_count:,} 次），無法加入佇列"
-                )
-                return
-
-        # Duration validation (only when API returned a value)
-        if duration_seconds and duration_seconds > settings.max_duration_seconds:
-            max_m, max_s = divmod(settings.max_duration_seconds, 60)
-            vid_m, vid_s = divmod(duration_seconds, 60)
-            await ctx.reply(f"影片長度 {vid_m}:{vid_s:02d} 超過上限 {max_m}:{max_s:02d}")
-            return
 
         await self.vq_repo.add(
             channel_id=channel_id,
@@ -152,9 +113,8 @@ class VideoQueueComponent(commands.Component):
             title=title,
             duration_seconds=duration_seconds,
             is_vertical=is_vertical,
+            priority=SOURCE_PRIORITY["chat"],
         )
-        if settings.user_cooldown_seconds > 0:
-            self._cooldowns[(channel_id, user_name)] = datetime.now(UTC)
         position = await self.vq_repo.get_queue_size(channel_id)
         title_part = f"「{title}」" if title else ""
         dur_part = (
@@ -274,7 +234,9 @@ class VideoQueueComponent(commands.Component):
 
     @vq.command(name="remove")
     async def vq_remove(self, ctx: commands.Context[Bot]) -> None:
-        """!vq remove — 移除自己最後一首尚未播放的請求"""
+        """!vq remove — 移除最後一首尚未播放的請求（moderator+）"""
+        if not ctx.chatter.moderator and not ctx.chatter.broadcaster:  # type: ignore[attr-defined]
+            return
         channel_id = ctx.channel.id
         user_name = ctx.chatter.display_name or ctx.chatter.name or ""
         entry = await self.vq_repo.find_last_queued_by_user(channel_id, user_name)

@@ -13,6 +13,7 @@ from core.config import get_settings
 from core.dependencies import get_current_channel_id, get_db_pool, get_twitch_api
 from services import TwitchAPIClient
 from shared.repositories.video_queue import (
+    SOURCE_PRIORITY,
     VideoQueueRepository,
     VideoQueueSettingsRepository,
     extract_youtube_info,
@@ -36,7 +37,8 @@ class VideoEntryResponse(BaseModel):
     duration_seconds: int | None
     is_vertical: bool
     requested_by: str
-    started_at: datetime | None
+    source: str
+    started_at: datetime | None  # for overlay seek-to-elapsed sync
 
 
 class PublicVideoQueueState(BaseModel):
@@ -50,10 +52,8 @@ class PublicVideoQueueState(BaseModel):
 class VideoQueueSettingsResponse(BaseModel):
     channel_id: str
     enabled: bool
-    chat_enabled: bool
     redemption_enabled: bool
-    min_role_chat: str
-    max_duration_seconds: int
+    max_duration_redemption: int  # redemption source limit
     max_queue_size: int
     min_view_count: int
     user_cooldown_seconds: int
@@ -62,12 +62,8 @@ class VideoQueueSettingsResponse(BaseModel):
 
 class VideoQueueSettingsUpdate(BaseModel):
     enabled: bool | None = None
-    chat_enabled: bool | None = None
     redemption_enabled: bool | None = None
-    min_role_chat: str | None = Field(
-        default=None, pattern="^(everyone|subscriber|vip|moderator|broadcaster)$"
-    )
-    max_duration_seconds: int | None = Field(default=None, ge=30, le=10800)
+    max_duration_redemption: int | None = Field(default=None, ge=30, le=10800)
     max_queue_size: int | None = Field(default=None, ge=1, le=100)
     min_view_count: int | None = Field(default=None, ge=0)
     user_cooldown_seconds: int | None = Field(default=None, ge=0, le=3600)
@@ -121,6 +117,7 @@ async def _build_public_state(
             duration_seconds=current.duration_seconds,
             is_vertical=current.is_vertical,
             requested_by=current.requested_by,
+            source=current.source,
             started_at=current.started_at,
         )
         if current
@@ -133,7 +130,8 @@ async def _build_public_state(
                 duration_seconds=e.duration_seconds,
                 is_vertical=e.is_vertical,
                 requested_by=e.requested_by,
-                started_at=e.started_at,
+                source=e.source,
+                started_at=None,
             )
             for e in queued
         ],
@@ -289,10 +287,8 @@ async def get_video_queue_settings(
         return VideoQueueSettingsResponse(
             channel_id=s.channel_id,
             enabled=s.enabled,
-            chat_enabled=s.chat_enabled,
             redemption_enabled=s.redemption_enabled,
-            min_role_chat=s.min_role_chat,
-            max_duration_seconds=s.max_duration_seconds,
+            max_duration_redemption=s.max_duration_redemption,
             max_queue_size=s.max_queue_size,
             min_view_count=s.min_view_count,
             user_cooldown_seconds=s.user_cooldown_seconds,
@@ -314,10 +310,8 @@ async def update_video_queue_settings(
         v is None
         for v in [
             body.enabled,
-            body.chat_enabled,
             body.redemption_enabled,
-            body.min_role_chat,
-            body.max_duration_seconds,
+            body.max_duration_redemption,
             body.max_queue_size,
             body.min_view_count,
             body.user_cooldown_seconds,
@@ -330,10 +324,8 @@ async def update_video_queue_settings(
         s = await settings_repo.update_settings(
             channel_id,
             enabled=body.enabled,
-            chat_enabled=body.chat_enabled,
             redemption_enabled=body.redemption_enabled,
-            min_role_chat=body.min_role_chat,
-            max_duration_seconds=body.max_duration_seconds,
+            max_duration_redemption=body.max_duration_redemption,
             max_queue_size=body.max_queue_size,
             min_view_count=body.min_view_count,
             user_cooldown_seconds=body.user_cooldown_seconds,
@@ -343,10 +335,8 @@ async def update_video_queue_settings(
         return VideoQueueSettingsResponse(
             channel_id=s.channel_id,
             enabled=s.enabled,
-            chat_enabled=s.chat_enabled,
             redemption_enabled=s.redemption_enabled,
-            min_role_chat=s.min_role_chat,
-            max_duration_seconds=s.max_duration_seconds,
+            max_duration_redemption=s.max_duration_redemption,
             max_queue_size=s.max_queue_size,
             min_view_count=s.min_view_count,
             user_cooldown_seconds=s.user_cooldown_seconds,
@@ -429,8 +419,12 @@ async def add_video_entry(
         repo = VideoQueueRepository(pool)
         settings_repo = VideoQueueSettingsRepository(pool)
 
-        # Enforce queue size limit
+        # Module-level gate: dashboard adds respect the enabled toggle
         settings = await settings_repo.get_or_create(channel_id)
+        if not settings.enabled:
+            raise HTTPException(status_code=403, detail="Video queue is disabled")
+
+        # Enforce queue size limit
         queue_size = await repo.get_queue_size(channel_id)
         if queue_size >= settings.max_queue_size:
             raise HTTPException(status_code=409, detail="Queue is full")
@@ -462,6 +456,7 @@ async def add_video_entry(
             title=title,
             duration_seconds=duration_seconds,
             is_vertical=is_vertical,
+            priority=SOURCE_PRIORITY["dashboard"],
         )
         logger.info(f"Channel {channel_id} added video {video_id} from dashboard")
         return await _build_public_state(channel_id, repo, settings_repo)

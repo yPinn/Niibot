@@ -121,22 +121,39 @@ async def fetch_yt_info(
 
 
 # ---------------------------------------------------------------------------
+# Priority constants
+# ---------------------------------------------------------------------------
+
+# Maps each submission source to its queue priority tier.
+# Higher value = plays before lower value entries within the same channel.
+# Same-tier entries are served FIFO (ORDER BY created_at ASC).
+SOURCE_PRIORITY: dict[str, int] = {
+    "chat": 0,
+    "redemption": 10,
+    "donation": 20,  # reserved for future payment platform integration
+    "dashboard": 30,
+}
+
+# Internal priority used by set_as_next to pin an entry above all normal tiers.
+PRIORITY_PINNED = 99
+
+# ---------------------------------------------------------------------------
 # Column constants
 # ---------------------------------------------------------------------------
 
 _ENTRY_COLUMNS = (
     "id, channel_id, video_id, title, duration_seconds, is_vertical, requested_by, "
-    "source, status, created_at, started_at, ended_at"
+    "source, status, priority, created_at, started_at"
 )
 
 _SETTINGS_COLUMNS = (
-    "channel_id, enabled, chat_enabled, redemption_enabled, "
-    "min_role_chat, max_duration_seconds, max_queue_size, "
+    "channel_id, enabled, redemption_enabled, "
+    "max_duration_redemption, max_queue_size, "
     "min_view_count, user_cooldown_seconds, max_per_user, "
     "created_at, updated_at"
 )
 
-_settings_cache = AsyncTTLCache(maxsize=32, ttl=300)
+_settings_cache = AsyncTTLCache(maxsize=32, ttl=15)
 
 
 # ---------------------------------------------------------------------------
@@ -159,14 +176,15 @@ class VideoQueueRepository:
         title: str | None = None,
         duration_seconds: int | None = None,
         is_vertical: bool = False,
+        priority: int = 0,
     ) -> VideoQueueEntry:
         """Insert a new entry with status='queued'."""
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 f"""
                 INSERT INTO video_queue
-                    (channel_id, video_id, title, duration_seconds, is_vertical, requested_by, source)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    (channel_id, video_id, title, duration_seconds, is_vertical, requested_by, source, priority)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                 RETURNING {_ENTRY_COLUMNS}
                 """,
                 channel_id,
@@ -176,6 +194,7 @@ class VideoQueueRepository:
                 is_vertical,
                 requested_by,
                 source,
+                priority,
             )
             return VideoQueueEntry(**dict(row))
 
@@ -191,12 +210,12 @@ class VideoQueueRepository:
             return VideoQueueEntry(**dict(row)) if row else None
 
     async def get_queued(self, channel_id: str) -> list[VideoQueueEntry]:
-        """Return all queued (not yet playing) entries ordered by created_at ASC."""
+        """Return all queued (not yet playing) entries ordered by priority DESC, created_at ASC."""
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
                 f"SELECT {_ENTRY_COLUMNS} FROM video_queue "
                 "WHERE channel_id = $1 AND status = 'queued' "
-                "ORDER BY created_at ASC",
+                "ORDER BY priority DESC, created_at ASC",
                 channel_id,
             )
             return [VideoQueueEntry(**dict(row)) for row in rows]
@@ -273,7 +292,7 @@ class VideoQueueRepository:
                     "WHERE id = ("
                     "    SELECT id FROM video_queue "
                     "    WHERE channel_id = $1 AND status = 'queued' "
-                    "    ORDER BY created_at ASC LIMIT 1"
+                    "    ORDER BY priority DESC, created_at ASC LIMIT 1"
                     ")",
                     channel_id,
                 )
@@ -301,10 +320,11 @@ class VideoQueueRepository:
     async def set_as_next(self, entry_id: int, channel_id: str) -> bool:
         """Move a queued entry to the absolute front of the queue (plays after current).
 
-        Finds the current minimum created_at among all other queued entries and
-        places this entry 1 second before it, so it always sorts first regardless
-        of how many entries have already been pinned. Each call inserts at position 1,
-        pushing any previously-pinned entries back.
+        Sets priority = PRIORITY_PINNED (99) to ensure the entry floats above all
+        normal-tier entries regardless of source. Also adjusts created_at to be
+        1 second before the current minimum among all queued entries, so multiple
+        consecutive set_as_next calls produce a stable "most-recently-pinned plays
+        first" order within the PRIORITY_PINNED tier.
         Returns True if the entry was found and updated.
         """
         async with self.pool.acquire() as conn:
@@ -317,17 +337,17 @@ class VideoQueueRepository:
                 )
                 new_ts = (min_ts - timedelta(seconds=1)) if min_ts is not None else None
                 result = await conn.execute(
-                    # When min_ts is None (only one entry in the queue), fall back to
-                    # NOW() - 10 years as a sentinel so this entry always sorts first.
-                    # Trade-off: repeated set_as_next calls on a single-item queue push
-                    # created_at further into the past each time, but this is harmless
-                    # because created_at is only used for queue ordering.
+                    # priority = PRIORITY_PINNED overrides all source-based tiers.
+                    # created_at is pushed before all others so the most-recently-pinned
+                    # entry always sorts first within the pinned tier.
                     "UPDATE video_queue "
-                    "SET created_at = COALESCE($3, NOW() - INTERVAL '10 years') "
+                    "SET priority = $4, "
+                    "    created_at = COALESCE($3, NOW() - INTERVAL '10 years') "
                     "WHERE id = $1 AND channel_id = $2 AND status = 'queued'",
                     entry_id,
                     channel_id,
                     new_ts,
+                    PRIORITY_PINNED,
                 )
                 return result == "UPDATE 1"
 
@@ -351,7 +371,7 @@ class VideoQueueRepository:
                     "WHERE id = ("
                     "    SELECT id FROM video_queue "
                     "    WHERE channel_id = $1 AND status = 'queued' "
-                    "    ORDER BY created_at ASC LIMIT 1"
+                    "    ORDER BY priority DESC, created_at ASC LIMIT 1"
                     ")",
                     channel_id,
                 )
@@ -438,10 +458,8 @@ class VideoQueueSettingsRepository:
         channel_id: str,
         *,
         enabled: bool | None = None,
-        chat_enabled: bool | None = None,
         redemption_enabled: bool | None = None,
-        min_role_chat: str | None = None,
-        max_duration_seconds: int | None = None,
+        max_duration_redemption: int | None = None,
         max_queue_size: int | None = None,
         min_view_count: int | None = None,
         user_cooldown_seconds: int | None = None,
@@ -454,23 +472,19 @@ class VideoQueueSettingsRepository:
                 INSERT INTO video_queue_settings (channel_id)
                 VALUES ($1)
                 ON CONFLICT (channel_id) DO UPDATE SET
-                    enabled                = COALESCE($2,  video_queue_settings.enabled),
-                    chat_enabled           = COALESCE($3,  video_queue_settings.chat_enabled),
-                    redemption_enabled     = COALESCE($4,  video_queue_settings.redemption_enabled),
-                    min_role_chat          = COALESCE($5,  video_queue_settings.min_role_chat),
-                    max_duration_seconds   = COALESCE($6,  video_queue_settings.max_duration_seconds),
-                    max_queue_size         = COALESCE($7,  video_queue_settings.max_queue_size),
-                    min_view_count         = COALESCE($8,  video_queue_settings.min_view_count),
-                    user_cooldown_seconds  = COALESCE($9,  video_queue_settings.user_cooldown_seconds),
-                    max_per_user           = COALESCE($10, video_queue_settings.max_per_user)
+                    enabled                  = COALESCE($2, video_queue_settings.enabled),
+                    redemption_enabled       = COALESCE($3, video_queue_settings.redemption_enabled),
+                    max_duration_redemption  = COALESCE($4, video_queue_settings.max_duration_redemption),
+                    max_queue_size           = COALESCE($5, video_queue_settings.max_queue_size),
+                    min_view_count           = COALESCE($6, video_queue_settings.min_view_count),
+                    user_cooldown_seconds    = COALESCE($7, video_queue_settings.user_cooldown_seconds),
+                    max_per_user             = COALESCE($8, video_queue_settings.max_per_user)
                 RETURNING {_SETTINGS_COLUMNS}
                 """,
                 channel_id,
                 enabled,
-                chat_enabled,
                 redemption_enabled,
-                min_role_chat,
-                max_duration_seconds,
+                max_duration_redemption,
                 max_queue_size,
                 min_view_count,
                 user_cooldown_seconds,

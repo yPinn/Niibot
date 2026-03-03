@@ -14,14 +14,14 @@ class VideoQueueEntry:
     channel_id: str
     video_id: str
     requested_by: str
-    source: str  # 'chat' | 'redemption' | 'dashboard'
+    source: str  # 'chat' | 'redemption' | 'donation' | 'dashboard'
     status: str  # 'queued' | 'playing' | 'done' | 'skipped'
+    priority: int = 0
     title: str | None = None
     duration_seconds: int | None = None
     is_vertical: bool = False
     created_at: datetime | None = None
     started_at: datetime | None = None
-    ended_at: datetime | None = None
 
 
 @dataclass
@@ -30,13 +30,11 @@ class VideoQueueSettings:
 
     channel_id: str
     enabled: bool = True
-    chat_enabled: bool = True
     redemption_enabled: bool = True
-    min_role_chat: str = "everyone"
-    max_duration_seconds: int = 600
+    max_duration_redemption: int = 600  # redemption source limit (10 min)
     max_queue_size: int = 20
     min_view_count: int = 0  # 0 = no restriction
-    user_cooldown_seconds: int = 0  # 0 = no restriction; chat only
-    max_per_user: int = 0  # 0 = no restriction; chat + redemption
+    user_cooldown_seconds: int = 0  # 0 = no restriction
+    max_per_user: int = 0  # 0 = no restriction
     created_at: datetime | None = None
     updated_at: datetime | None = None

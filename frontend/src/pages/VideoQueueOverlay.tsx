@@ -214,9 +214,37 @@ export default function VideoQueueOverlay() {
     let allStarted = false
     let fallbackTimer = 0 as ReturnType<typeof setTimeout>
 
+    // Compute elapsed seconds since started_at so late-joining overlays can seek
+    // into the correct position instead of always starting from T=0.
+    const joinElapsed = current.started_at
+      ? (Date.now() - new Date(current.started_at).getTime()) / 1000
+      : 0
+
     function startAll() {
       if (allStarted) return
       allStarted = true
+
+      // If elapsed >= duration the video has already ended — advance immediately
+      // rather than creating a player that would instantly finish.
+      if (current.duration_seconds && joinElapsed >= current.duration_seconds - 0.5) {
+        clearInterval(progressRef.current ?? undefined)
+        progressRef.current = null
+        handleVideoEnd(currentId)
+        return
+      }
+
+      // Seek all players to the correct position when joining mid-video (>2s in)
+      if (joinElapsed > 2) {
+        for (const ref of [playerRef, leftPlayerRef, rightPlayerRef]) {
+          if (ref.current)
+            try {
+              ref.current.seekTo(joinElapsed, true)
+            } catch {
+              /* ignore */
+            }
+        }
+      }
+
       for (const ref of [playerRef, leftPlayerRef, rightPlayerRef]) {
         if (ref.current)
           try {

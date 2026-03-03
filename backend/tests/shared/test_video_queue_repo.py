@@ -33,9 +33,9 @@ _ENTRY_ROW = {
     "requested_by": "user1",
     "source": "chat",
     "status": "queued",
+    "priority": 0,
     "created_at": _NOW,
     "started_at": None,
-    "ended_at": None,
 }
 
 _SETTINGS_ROW = {
@@ -45,6 +45,7 @@ _SETTINGS_ROW = {
     "redemption_enabled": True,
     "min_role_chat": "everyone",
     "max_duration_seconds": 600,
+    "max_duration_redemption": 1200,
     "max_queue_size": 20,
     "min_view_count": 0,
     "user_cooldown_seconds": 0,

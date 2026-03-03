@@ -10,6 +10,7 @@ from core.config import get_settings
 from shared.repositories.command_config import RedemptionConfigRepository
 from shared.repositories.game_queue import GameQueueRepository, GameQueueSettingsRepository
 from shared.repositories.video_queue import (
+    SOURCE_PRIORITY,
     VideoQueueRepository,
     VideoQueueSettingsRepository,
     extract_youtube_info,
@@ -377,8 +378,8 @@ class ChannelPointsComponent(commands.Component):
                     )
                     return
 
-            if duration_seconds and duration_seconds > settings.max_duration_seconds:
-                max_m, max_s = divmod(settings.max_duration_seconds, 60)
+            if duration_seconds and duration_seconds > settings.max_duration_redemption:
+                max_m, max_s = divmod(settings.max_duration_redemption, 60)
                 vid_m, vid_s = divmod(duration_seconds, 60)
                 await broadcaster.send_message(
                     message=(
@@ -397,6 +398,7 @@ class ChannelPointsComponent(commands.Component):
                 title=title,
                 duration_seconds=duration_seconds,
                 is_vertical=is_vertical,
+                priority=SOURCE_PRIORITY["redemption"],
             )
             position = await self.vq_repo.get_queue_size(channel_id)
             title_part = f"「{title}」" if title else ""
