@@ -26,6 +26,7 @@ const GameQueue = lazy(() => import('@/pages/modules/GameQueue'))
 const Timers = lazy(() => import('@/pages/modules/Timers'))
 const VideoQueue = lazy(() => import('@/pages/modules/VideoQueue'))
 const PublicCommands = lazy(() => import('@/pages/PublicCommands'))
+const GetStarted = lazy(() => import('@/pages/docs/GetStarted'))
 const Settings = lazy(() => import('@/pages/Settings'))
 const VideoQueueOverlay = lazy(() => import('@/pages/VideoQueueOverlay'))
 
@@ -83,6 +84,7 @@ function App() {
                       <Route path="/modules/game-queue" element={<GameQueue />} />
                       <Route path="/modules/video-queue" element={<VideoQueue />} />
                       {/* Discord Bot Routes */}
+                      <Route path="/docs" element={<GetStarted />} />
                       <Route path="/discord/dashboard" element={<DiscordDashboard />} />
                       <Route path="*" element={<NotFound />} />
                     </Route>
