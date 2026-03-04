@@ -30,7 +30,7 @@ export function OnlineDropdown() {
         setMyChannelSubscribed(data.subscribed)
       }
     } catch (error) {
-      console.error('Failed to fetch my channel status:', error)
+      if (import.meta.env.DEV) console.error('Failed to fetch my channel status:', error)
     }
   }, [user])
 
@@ -47,7 +47,7 @@ export function OnlineDropdown() {
       await toggleTwitchChannel(user.id, !myChannelSubscribed)
       await fetchMyStatus()
     } catch (error) {
-      console.error('Error toggling subscription:', error)
+      if (import.meta.env.DEV) console.error('Error toggling subscription:', error)
       toast.error('無法切換訂閱狀態', {
         description: error instanceof Error ? error.message : '未知錯誤',
       })

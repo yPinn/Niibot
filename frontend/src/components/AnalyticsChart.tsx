@@ -121,7 +121,7 @@ const ChartTooltip = ({
   const formattedDate = `${monthNames[sessionDate.getMonth()]} ${sessionDate.getDate()}, ${sessionDate.getFullYear()}`
 
   return (
-    <div className="bg-popover border border-border rounded-lg shadow-xl overflow-hidden w-75 flex flex-col pointer-events-auto">
+    <div className="bg-popover border border-border rounded-lg shadow-xl overflow-hidden w-75 max-w-[calc(100vw-2rem)] flex flex-col pointer-events-auto">
       <div className="px-3 py-2 bg-primary/10 border-b border-border shrink-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -311,7 +311,7 @@ export default function AnalyticsChart({
     <Card className={`flex flex-col ${className}`}>
       <CardContent className="px-4 py-1 flex-1 min-h-0 flex flex-col">
         <div className="flex flex-col flex-1 min-h-0 gap-3">
-          <div className="grid grid-cols-4 gap-5 shrink-0 mb-2">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-5 shrink-0 mb-2">
             {stats.map(stat => (
               <button
                 key={stat.mode}
@@ -346,12 +346,12 @@ export default function AnalyticsChart({
                     <span className="text-xs font-medium text-foreground/70">{stat.unit}</span>
                   )}
                 </div>
-                <div className="text-[10px] text-muted-foreground">{stat.subtitle}</div>
+                <div className="text-label text-muted-foreground">{stat.subtitle}</div>
               </button>
             ))}
           </div>
 
-          <div className="flex-1 min-h-0 h-72.5 relative">
+          <div className="flex-1 min-h-0 h-48 sm:h-72.5 relative">
             {isEmpty && (
               <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
                 <span className="text-sm text-muted-foreground/60">尚無直播數據</span>

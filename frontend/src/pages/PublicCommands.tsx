@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 
 import { getPublicCommands, type PublicChannelProfile, type PublicCommand } from '@/api/commands'
+import avatarFallback from '@/assets/images/Avatar.png'
 import { SortableHead } from '@/components/SortableHead'
 import { useTheme } from '@/components/theme-provider'
 import {
@@ -131,7 +132,7 @@ export default function PublicCommands() {
                       alt={`${displayName} avatar`}
                     />
                     <AvatarFallback>
-                      <img src="/images/Avatar.png" alt="fallback" className="h-full w-full" />
+                      <img src={avatarFallback} alt="預設頭像" className="h-full w-full" />
                     </AvatarFallback>
                   </Avatar>
                   <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">

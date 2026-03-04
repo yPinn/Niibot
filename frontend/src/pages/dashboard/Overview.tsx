@@ -74,8 +74,12 @@ export default function Dashboard() {
   }, [channels, fetchStats, fetchAnalytics])
 
   return (
-    <main className="h-full grid grid-rows-[1fr_auto] min-h-0 overflow-hidden transition-all duration-200 p-page lg:p-page-lg gap-section">
-      <AnalyticsChart data={analytics} loading={analyticsLoading} className="min-h-0" />
+    <main className="grid grid-rows-[auto_auto] gap-section p-page lg:p-page-lg lg:h-full lg:grid-rows-[1fr_auto] lg:min-h-0 lg:overflow-hidden transition-all duration-200">
+      <AnalyticsChart
+        data={analytics}
+        loading={analyticsLoading}
+        className="h-[420px] lg:h-auto lg:min-h-0"
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-section">
         <div className="aspect-video bg-muted/50 rounded-xl overflow-hidden relative">

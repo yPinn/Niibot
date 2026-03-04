@@ -1,4 +1,12 @@
-import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { toast } from 'sonner'
 
 import {
@@ -102,10 +110,13 @@ export function ServiceStatusProvider({ children }: { children: React.ReactNode 
     }
   }, [api])
 
+  const contextValue = useMemo(
+    () => ({ twitch, discord, api, lastUpdate, refresh }),
+    [twitch, discord, api, lastUpdate, refresh]
+  )
+
   return (
-    <ServiceStatusContext.Provider value={{ twitch, discord, api, lastUpdate, refresh }}>
-      {children}
-    </ServiceStatusContext.Provider>
+    <ServiceStatusContext.Provider value={contextValue}>{children}</ServiceStatusContext.Provider>
   )
 }
 

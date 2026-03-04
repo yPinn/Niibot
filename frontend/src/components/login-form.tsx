@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 
 import { getDiscordOAuthStatus, openDiscordOAuth, openTwitchOAuth } from '@/api'
+import rabbitBg from '@/assets/images/Rabbit.jpg'
 import { Button, Card, CardContent, Icon } from '@/components/ui'
 import { cn } from '@/lib/utils'
 
@@ -89,11 +90,7 @@ export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) 
                 </ul>
               </div>
               <div className="space-y-3">
-                <Button
-                  type="button"
-                  onClick={openTwitchOAuth}
-                  className="bg-[#9146FF] hover:bg-[#7d3dd4] text-white w-full"
-                >
+                <Button type="button" onClick={openTwitchOAuth} className="w-full">
                   <Icon icon="fa-brands fa-twitch" className="text-lg mr-2" wrapperClassName="" />
                   使用 Twitch 登入
                 </Button>
@@ -116,7 +113,7 @@ export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) 
           </form>
           <div className="bg-muted relative hidden md:block">
             <img
-              src="/images/Rabbit.jpg"
+              src={rabbitBg}
               alt="Image"
               className="absolute inset-0 h-full w-full object-cover dark:brightness-[0.75] "
             />

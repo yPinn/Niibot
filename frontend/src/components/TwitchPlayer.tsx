@@ -59,7 +59,7 @@ export default function TwitchPlayer({
           parent: [window.location.hostname],
         })
       } catch (error) {
-        console.error('Error initializing Twitch player:', error)
+        if (import.meta.env.DEV) console.error('Error initializing Twitch player:', error)
       }
     }
 

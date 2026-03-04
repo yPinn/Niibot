@@ -292,10 +292,11 @@ export default function Events() {
             </div>
           ) : (
             <div className="overflow-x-auto rounded-md border">
-              <Table>
+              <Table className="table-fixed">
                 <TableHeader>
                   <TableRow>
                     <SortableHead
+                      className="w-[20%]"
                       sortKey="event_type"
                       currentKey={eventSort.sortKey}
                       dir={eventSort.sortDir}
@@ -304,6 +305,7 @@ export default function Events() {
                       事件名稱
                     </SortableHead>
                     <SortableHead
+                      className="w-[12%]"
                       sortKey="type_label"
                       currentKey={eventSort.sortKey}
                       dir={eventSort.sortDir}
@@ -313,7 +315,7 @@ export default function Events() {
                     </SortableHead>
                     <TableHead>訊息模板</TableHead>
                     <SortableHead
-                      className="text-right"
+                      className="w-[12%] text-right"
                       sortKey="trigger_count"
                       currentKey={eventSort.sortKey}
                       dir={eventSort.sortDir}
@@ -322,7 +324,7 @@ export default function Events() {
                       觸發次數
                     </SortableHead>
                     <SortableHead
-                      className="text-center"
+                      className="w-[10%] text-center"
                       sortKey="enabled"
                       currentKey={eventSort.sortKey}
                       dir={eventSort.sortDir}
@@ -330,7 +332,7 @@ export default function Events() {
                     >
                       狀態
                     </SortableHead>
-                    <TableHead className="text-right">操作</TableHead>
+                    <TableHead className="w-[8%] text-right">操作</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -349,7 +351,7 @@ export default function Events() {
                             {EVENT_TYPE_LABELS[event.event_type] || event.event_type}
                           </Badge>
                         </TableCell>
-                        <TableCell className="max-w-md truncate font-mono text-label">
+                        <TableCell className="max-w-0 truncate font-mono text-label">
                           {locked ? (
                             <span className="text-muted-foreground">
                               需要聯盟夥伴或合作夥伴資格
@@ -465,7 +467,7 @@ export default function Events() {
                                 handleRewardSelect(red, v === '__none__' ? '' : v)
                               }
                             >
-                              <SelectTrigger size="sm" className="w-56">
+                              <SelectTrigger size="sm" className="w-full max-w-56">
                                 <SelectValue placeholder="選擇獎勵..." />
                               </SelectTrigger>
                               <SelectContent>
