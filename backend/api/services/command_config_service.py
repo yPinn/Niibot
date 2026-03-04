@@ -5,33 +5,10 @@ from dataclasses import asdict
 
 import asyncpg
 
+from shared.builtin_commands import BUILTIN_DESCRIPTIONS, PUBLIC_DESCRIPTIONS
 from shared.repositories.command_config import CommandConfigRepository, RedemptionConfigRepository
 
 logger = logging.getLogger(__name__)
-
-BUILTIN_DESCRIPTIONS: dict[str, str] = {
-    "hi": "向聊天室打招呼",
-    "help": "顯示所有可用指令列表",
-    "uptime": "查看目前已開播多久",
-    "ai": "向 AI 提問",
-    "tft": "查詢聯盟戰棋排名",
-    "運勢": "運勢占卜",
-    "tarot": "塔羅牌占卜（可指定感情、事業、財運）",
-    "斥責": "頻道反惡意言論聲明",
-}
-
-# 公開 /commands 頁面用，包含用法說明供觀眾參考
-# 有中文別名的指令，用法示例以中文別名為主
-PUBLIC_DESCRIPTIONS: dict[str, str] = {
-    "hi": "向聊天室打招呼",
-    "help": "顯示所有可用指令列表",
-    "uptime": "查看目前已開播多久",
-    "ai": "向 AI 提問，用法：!問 <問題>",
-    "tft": "查詢聯盟戰棋排名，用法：!tft <玩家名>#<tag>",
-    "運勢": "運勢占卜",
-    "tarot": "塔羅牌占卜，可指定分類：!塔羅 [感情/事業/財運]",
-    "斥責": "頻道反惡意言論聲明",
-}
 
 
 class CommandConfigService:
@@ -46,7 +23,7 @@ class CommandConfigService:
 
     async def list_commands(self, channel_id: str) -> list[dict]:
         """Get command configs with all-time usage counts from command_configs."""
-        configs = await self.cmd_repo.ensure_defaults(channel_id)
+        configs = await self.cmd_repo.list_configs(channel_id)
         return [
             {
                 **asdict(cfg),
@@ -116,7 +93,7 @@ class CommandConfigService:
 
     async def list_public_commands(self, channel_id: str) -> list[dict]:
         """Get enabled commands and triggers for a channel by channel_id."""
-        configs = await self.cmd_repo.ensure_defaults(channel_id)
+        configs = await self.cmd_repo.list_configs(channel_id)
         commands = [
             {
                 "name": f"!{cfg.command_name}",

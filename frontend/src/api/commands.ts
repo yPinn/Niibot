@@ -1,7 +1,7 @@
 import { API_ENDPOINTS, apiFetch } from './config'
 
 export interface CommandConfig {
-  id: number
+  id: number | null
   channel_id: string
   command_name: string
   command_type: 'builtin' | 'custom'

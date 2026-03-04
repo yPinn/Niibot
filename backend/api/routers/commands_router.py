@@ -23,7 +23,7 @@ VALID_ROLES = {"everyone", "subscriber", "vip", "moderator", "broadcaster"}
 
 
 class CommandConfigResponse(BaseModel):
-    id: int
+    id: int | None
     channel_id: str
     command_name: str
     command_type: str

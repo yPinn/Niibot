@@ -10,7 +10,7 @@ from datetime import datetime
 class CommandConfig:
     """Command configuration record (builtin + custom unified)."""
 
-    id: int
+    id: int | None
     channel_id: str
     command_name: str
     command_type: str = "builtin"  # 'builtin' | 'custom'

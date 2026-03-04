@@ -45,7 +45,6 @@ class _NotifyMixin:
                 if channel_id not in self._subscribed_channels:  # type: ignore[attr-defined]
                     await self.subscribe_channel_events(channel_id)  # type: ignore[attr-defined]
                     try:
-                        await self.command_configs.ensure_defaults(channel_id)  # type: ignore[attr-defined]
                         await self.redemption_configs.ensure_defaults(  # type: ignore[attr-defined]
                             channel_id,
                             owner_id=self.owner_id,  # type: ignore[attr-defined]
@@ -93,7 +92,6 @@ class _NotifyMixin:
                     await self.subscribe_channel_events(user_id)  # type: ignore[attr-defined]
 
                     try:
-                        await self.command_configs.ensure_defaults(user_id)  # type: ignore[attr-defined]
                         await self.redemption_configs.ensure_defaults(  # type: ignore[attr-defined]
                             user_id,
                             owner_id=self.owner_id,  # type: ignore[attr-defined]

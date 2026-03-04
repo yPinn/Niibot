@@ -38,7 +38,6 @@ class _SessionMixin:
                     continue
                 await self.subscribe_channel_events(ch.channel_id)  # type: ignore[attr-defined]
                 try:
-                    await self.command_configs.ensure_defaults(ch.channel_id)  # type: ignore[attr-defined]
                     await self.redemption_configs.ensure_defaults(  # type: ignore[attr-defined]
                         ch.channel_id,
                         owner_id=self.owner_id,  # type: ignore[attr-defined]

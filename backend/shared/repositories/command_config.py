@@ -8,6 +8,7 @@ from typing import TypeAlias
 
 import asyncpg
 
+from shared.builtin_commands import BUILTIN_ALIAS_MAP, BUILTIN_DEFS, BUILTIN_MAP
 from shared.cache import AsyncTTLCache, cached
 from shared.models.command_config import CommandConfig, RedemptionConfig
 
@@ -25,17 +26,6 @@ _CMD_COLUMNS = (
     "min_role, aliases, usage_count, created_at, updated_at"
 )
 
-# Builtin commands — populated at runtime by the bot from component COMMANDS declarations.
-# The bot calls set_builtin_commands() after loading all components.
-BUILTIN_COMMANDS: list[dict] = []
-
-
-def set_builtin_commands(commands: list[dict]) -> None:
-    """Replace the builtin commands list (called by bot after component loading)."""
-    BUILTIN_COMMANDS.clear()
-    BUILTIN_COMMANDS.extend(commands)
-
-
 # Default redemption actions: (action_type, reward_name)
 DEFAULT_REDEMPTIONS: list[dict] = [
     {"action_type": "vip", "reward_name": "vip"},
@@ -48,9 +38,32 @@ DEFAULT_REDEMPTIONS: list[dict] = [
 UnsetType: TypeAlias = object
 _UNSET: UnsetType = object()
 
-# Track channels that already have defaults seeded (avoids redundant INSERTs)
-_seeded_channels: set[str] = set()
+# Track channels that already have redemption defaults seeded (avoids redundant INSERTs)
 _seeded_redemptions: set[str] = set()
+
+
+def _make_virtual(channel_id: str, defn: dict) -> CommandConfig:
+    """Return a default CommandConfig for a builtin that has no DB row yet.
+
+    Virtual configs have id=None and reflect the hardcoded defaults in
+    shared.builtin_commands.BUILTIN_DEFS. They are stored in cache exactly
+    like real DB rows and are replaced by real rows as soon as the user
+    writes any override (toggle, cooldown change, etc.).
+    """
+    return CommandConfig(
+        id=None,
+        channel_id=channel_id,
+        command_name=defn["command_name"],
+        command_type="builtin",
+        enabled=True,
+        custom_response=defn.get("custom_response"),
+        cooldown=defn.get("cooldown"),
+        min_role="everyone",
+        aliases=defn.get("aliases"),
+        usage_count=0,
+        created_at=None,
+        updated_at=None,
+    )
 
 
 async def _retry_on_db_error(func, max_retries: int = 2):
@@ -74,7 +87,14 @@ async def _retry_on_db_error(func, max_retries: int = 2):
 
 
 class CommandConfigRepository:
-    """Pure SQL operations for command_configs."""
+    """Pure SQL operations for command_configs.
+
+    Builtin commands use a merge model: the DB only stores per-channel overrides
+    (enabled state, custom_response, cooldown). When no DB row exists for a
+    builtin, a virtual default is returned instead. This means new builtin
+    commands defined in shared.builtin_commands automatically appear for every
+    channel without any migration or seeding.
+    """
 
     def __init__(self, pool: asyncpg.Pool) -> None:
         self.pool = pool
@@ -84,7 +104,12 @@ class CommandConfigRepository:
         key_func=lambda self, channel_id, command_name: f"cmd_config:{channel_id}:{command_name}",
     )
     async def get_config(self, channel_id: str, command_name: str) -> CommandConfig | None:
-        """Get a single command config by exact name (with cache). Used by the bot at command time."""
+        """Get a single command config by exact name (with cache).
+
+        Returns the DB row if it exists (user has overrides), otherwise falls
+        back to the virtual default for known builtins. Used by the bot at
+        command execution time.
+        """
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 f"SELECT {_CMD_COLUMNS} "
@@ -92,9 +117,13 @@ class CommandConfigRepository:
                 channel_id,
                 command_name,
             )
-            if not row:
-                return None
-            return CommandConfig(**dict(row))
+            if row:
+                return CommandConfig(**dict(row))
+
+        # Virtual fallback for builtins not yet overridden in DB
+        if command_name in BUILTIN_MAP:
+            return _make_virtual(channel_id, BUILTIN_MAP[command_name])
+        return None
 
     async def find_by_name_or_alias(self, channel_id: str, name: str) -> CommandConfig | None:
         """Find a command config by command_name OR by alias match.
@@ -102,12 +131,12 @@ class CommandConfigRepository:
         Checks exact command_name first, then searches aliases (comma-separated).
         Used by custom command handler in event_message.
         """
-        # Try exact name first (uses cache)
+        # Try exact name first (uses cache + virtual fallback)
         config = await self.get_config(channel_id, name)
         if config:
             return config
 
-        # Search by alias (also cached with resilience)
+        # Search by alias (also cached with virtual fallback)
         return await self._find_by_alias(channel_id, name)
 
     @cached(
@@ -115,7 +144,7 @@ class CommandConfigRepository:
         key_func=lambda self, channel_id, name: f"cmd_alias:{channel_id}:{name}",
     )
     async def _find_by_alias(self, channel_id: str, name: str) -> CommandConfig | None:
-        """Search for a command config by alias."""
+        """Search for a command config by alias (DB first, then virtual builtin)."""
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 f"SELECT {_CMD_COLUMNS} "
@@ -125,22 +154,51 @@ class CommandConfigRepository:
                 channel_id,
                 name,
             )
-            if not row:
-                return None
-            return CommandConfig(**dict(row))
+            if row:
+                return CommandConfig(**dict(row))
+
+        # Virtual builtin alias fallback: use get_config so DB override is respected
+        if name in BUILTIN_ALIAS_MAP:
+            cmd_name = BUILTIN_ALIAS_MAP[name]
+            return await self.get_config(channel_id, cmd_name)
+        return None
 
     @cached(
         cache=_cmd_list_cache,
         key_func=lambda self, channel_id: f"cmd_list:{channel_id}",
     )
     async def list_configs(self, channel_id: str) -> list[CommandConfig]:
-        """Get all command configs for a channel."""
+        """Get all command configs for a channel.
+
+        Merges builtin defaults (from BUILTIN_DEFS) with DB rows:
+        - Builtins: DB row if the user has any override, otherwise virtual default.
+        - Custom commands: always from DB.
+
+        Order: builtins in BUILTIN_DEFS order, then custom commands.
+        """
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
-                f"SELECT {_CMD_COLUMNS} FROM command_configs WHERE channel_id = $1 ORDER BY command_type, command_name",
+                f"SELECT {_CMD_COLUMNS} FROM command_configs WHERE channel_id = $1",
                 channel_id,
             )
-            return [CommandConfig(**dict(row)) for row in rows]
+
+        db_rows: dict[str, CommandConfig] = {
+            r["command_name"]: CommandConfig(**dict(r)) for r in rows
+        }
+
+        result: list[CommandConfig] = []
+
+        # Builtins: respect DB override or fall back to virtual default
+        for defn in BUILTIN_DEFS:
+            name = defn["command_name"]
+            result.append(db_rows[name] if name in db_rows else _make_virtual(channel_id, defn))
+
+        # Custom commands (only from DB, ordered by name)
+        for row in sorted(db_rows.values(), key=lambda r: r.command_name):
+            if row.command_type == "custom":
+                result.append(row)
+
+        return result
 
     async def upsert_config(
         self,
@@ -189,25 +247,49 @@ class CommandConfigRepository:
                     cd_provided,
                 )
                 result = CommandConfig(**dict(row))
-                # Invalidate name, alias, and list caches
+
+                # Invalidate name cache
                 _cmd_cache.invalidate(f"cmd_config:{channel_id}:{command_name}")
                 _cmd_list_cache.invalidate(f"cmd_list:{channel_id}")
+
+                # Invalidate alias caches — explicit aliases passed + builtin default aliases
+                aliases_to_invalidate: set[str] = set()
                 if aliases:
-                    for alias in aliases.split(","):
-                        _cmd_cache.invalidate(f"cmd_alias:{channel_id}:{alias.strip()}")
+                    aliases_to_invalidate.update(a.strip() for a in aliases.split(",") if a.strip())
+                if command_name in BUILTIN_MAP:
+                    for a in (BUILTIN_MAP[command_name].get("aliases") or "").split(","):
+                        a = a.strip()
+                        if a:
+                            aliases_to_invalidate.add(a)
+                for alias in aliases_to_invalidate:
+                    _cmd_cache.invalidate(f"cmd_alias:{channel_id}:{alias}")
+
                 return result
 
         return await _retry_on_db_error(_query)
 
     async def increment_usage_count(self, channel_id: str, command_name: str) -> None:
-        """Increment usage_count for a command by 1 and record last_used_at. Does not invalidate cache."""
+        """Increment usage_count for a command by 1 and record last_used_at.
+
+        For virtual builtins (no DB row), this also creates the row so that
+        usage tracking works correctly.
+        """
         async with self.pool.acquire() as conn:
             await conn.execute(
-                "UPDATE command_configs SET usage_count = usage_count + 1, last_used_at = NOW() "
-                "WHERE channel_id = $1 AND command_name = $2",
+                """
+                INSERT INTO command_configs
+                    (channel_id, command_name, command_type, enabled, usage_count, last_used_at)
+                VALUES ($1, $2, 'builtin', TRUE, 1, NOW())
+                ON CONFLICT (channel_id, command_name) DO UPDATE SET
+                    usage_count = command_configs.usage_count + 1,
+                    last_used_at = NOW()
+                """,
                 channel_id,
                 command_name,
             )
+        # Invalidate the name cache so the updated usage_count is reflected
+        _cmd_cache.invalidate(f"cmd_config:{channel_id}:{command_name}")
+        _cmd_list_cache.invalidate(f"cmd_list:{channel_id}")
 
     async def delete_config(self, channel_id: str, command_name: str) -> bool:
         """Delete a command config (custom commands only). Returns True if deleted."""
@@ -231,48 +313,17 @@ class CommandConfigRepository:
 
         return await _retry_on_db_error(_query)
 
-    async def ensure_defaults(self, channel_id: str) -> list[CommandConfig]:
-        """Ensure default builtin commands exist for a channel, then return all configs."""
-        if channel_id not in _seeded_channels:
-
-            async def _query():
-                async with self.pool.acquire() as conn:
-                    for cmd in BUILTIN_COMMANDS:
-                        await conn.execute(
-                            """
-                            INSERT INTO command_configs
-                                (channel_id, command_name, command_type, enabled,
-                                 custom_response, cooldown, aliases)
-                            VALUES ($1, $2, 'builtin', TRUE, $3, $4, $5)
-                            ON CONFLICT (channel_id, command_name) DO UPDATE SET
-                                aliases = EXCLUDED.aliases
-                            WHERE command_configs.aliases IS DISTINCT FROM EXCLUDED.aliases
-                            """,
-                            channel_id,
-                            cmd["command_name"],
-                            cmd.get("custom_response"),
-                            cmd.get("cooldown"),
-                            cmd.get("aliases"),
-                        )
-
-            await _retry_on_db_error(_query)
-            _seeded_channels.add(channel_id)
-
-        return await self.list_configs(channel_id)
-
     async def warm_cache(self, channel_id: str) -> int:
         """Proactively load all command configs for a channel into the in-memory cache.
 
-        Populates both exact-name keys and alias keys so that runtime lookups
-        are O(1) memory access with zero DB dependency.
+        Populates both exact-name keys and alias keys (including virtual builtins)
+        so that runtime lookups are O(1) memory access with zero DB dependency.
 
         Returns the number of configs warmed.
         """
         configs = await self.list_configs(channel_id)
         for cfg in configs:
-            # Populate exact name cache
             _cmd_cache.set(f"cmd_config:{channel_id}:{cfg.command_name}", cfg)
-            # Populate alias cache entries
             if cfg.aliases:
                 for alias in cfg.aliases.split(","):
                     alias = alias.strip()
