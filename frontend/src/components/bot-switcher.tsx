@@ -1,9 +1,12 @@
 'use client'
 
+import { Link } from 'react-router-dom'
+
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
   SidebarMenu,
   SidebarMenuButton,
@@ -20,14 +23,16 @@ export function BotSwitcher() {
     return (
       <SidebarMenu>
         <SidebarMenuItem>
-          <SidebarMenuButton size="lg" className="cursor-default">
-            <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-              <i className={`${activeBotInfo.icon} text-base`} />
-            </div>
-            <div className="grid flex-1 text-left text-sm leading-tight">
-              <span className="truncate font-semibold">{activeBotInfo.name}</span>
-              <span className="truncate text-xs">{activeBotInfo.description}</span>
-            </div>
+          <SidebarMenuButton size="lg" asChild>
+            <Link to="/">
+              <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
+                <i className={`${activeBotInfo.icon} text-base`} />
+              </div>
+              <div className="grid flex-1 text-left text-sm leading-tight">
+                <span className="truncate font-semibold">{activeBotInfo.name}</span>
+                <span className="truncate text-xs">{activeBotInfo.description}</span>
+              </div>
+            </Link>
           </SidebarMenuButton>
         </SidebarMenuItem>
       </SidebarMenu>
@@ -36,7 +41,7 @@ export function BotSwitcher() {
 
   return (
     <SidebarMenu>
-      <SidebarMenuItem>
+      <SidebarMenuItem className="relative">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <SidebarMenuButton
@@ -59,6 +64,15 @@ export function BotSwitcher() {
             side={isMobile ? 'bottom' : 'right'}
             sideOffset={4}
           >
+            <DropdownMenuItem asChild className="gap-2 p-2">
+              <Link to="/">
+                <div className="flex size-6 items-center justify-center rounded-sm border">
+                  <i className="fa-solid fa-house text-sm" />
+                </div>
+                Landing Page
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
             {bots.map(bot => (
               <DropdownMenuItem
                 key={bot.id}
