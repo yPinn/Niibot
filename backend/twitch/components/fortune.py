@@ -18,7 +18,7 @@ LOGGER = logging.getLogger(__name__)
 
 class FortuneComponent(commands.Component):
     COMMANDS: list[dict] = [
-        {"command_name": "運勢", "cooldown": 5, "aliases": "fortune,占卜"},
+        {"command_name": "fortune", "cooldown": 5, "aliases": "運勢"},
     ]
 
     def __init__(self, bot: commands.Bot) -> None:
@@ -66,16 +66,15 @@ class FortuneComponent(commands.Component):
             return f"{text} {emote}"
         return text
 
-    @commands.command(name="運勢", aliases=["fortune", "占卜"])
+    @commands.command(name="fortune", aliases=["運勢"])
     async def fortune_command(self, ctx: commands.Context["Bot"]) -> None:
         """運勢占卜指令
 
         用法:
-            !運勢 - 查看今日運勢
-            !fortune - 同上（英文別名）
-            !占卜 - 同上（中文別名）
+            !fortune - 查看今日運勢
+            !運勢 - 同上（中文別名）
         """
-        config = await check_command(self.cmd_repo, ctx, "運勢", self.channel_repo)
+        config = await check_command(self.cmd_repo, ctx, "fortune", self.channel_repo)
         if not config:
             return
 
@@ -124,9 +123,9 @@ class FortuneComponent(commands.Component):
             return
 
         try:
-            await self.cmd_repo.increment_usage_count(ctx.channel.id, "運勢")
+            await self.cmd_repo.increment_usage_count(ctx.channel.id, "fortune")
         except Exception as e:
-            LOGGER.warning(f"Failed to increment usage count for 運勢: {e}")
+            LOGGER.warning(f"Failed to increment usage count for fortune: {e}")
 
 
 async def setup(bot: commands.Bot) -> None:

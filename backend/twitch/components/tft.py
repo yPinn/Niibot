@@ -35,7 +35,7 @@ TIER_TRANSLATION = {
 
 class TftComponent(commands.Component):
     COMMANDS: list[dict] = [
-        {"command_name": "tft", "cooldown": 5},
+        {"command_name": "tft", "cooldown": 5, "aliases": "戰棋"},
     ]
 
     def __init__(self, bot: commands.Bot) -> None:
@@ -223,7 +223,7 @@ class TftComponent(commands.Component):
 
         return data
 
-    @commands.command(name="tft")
+    @commands.command(name="tft", aliases=["戰棋"])
     async def leaderboard_command(
         self, ctx: commands.Context["Bot"], user_id: str | None = None
     ) -> None:

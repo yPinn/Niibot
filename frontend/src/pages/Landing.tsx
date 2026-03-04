@@ -40,7 +40,16 @@ const FEATURES = [
   },
 ]
 
-const COMMANDS = ['!ai', '!運勢', '!help', '!vq', '!gq']
+const BUILTIN_COMMANDS = [
+  { name: '!hi', desc: '向聊天室打招呼' },
+  { name: '!help', desc: '顯示頻道所有可用指令' },
+  { name: '!ai', desc: '向 AI 提問，用法：!問 <問題>' },
+  { name: '!tft', desc: '查詢聯盟戰棋排名' },
+  { name: '!運勢', desc: '運勢占卜' },
+  { name: '!塔羅', desc: '塔羅牌占卜，可指定感情 / 事業 / 財運' },
+  { name: '!開播時間', desc: '查看目前已開播多久' },
+  { name: '!斥責', desc: '頻道反惡意言論聲明' },
+]
 
 export default function Home() {
   useDocumentTitle('泥爸')
@@ -121,12 +130,17 @@ export default function Home() {
         {/* Commands + usage + CTA */}
         <section className="space-y-10 px-6 py-14 sm:px-10 lg:px-16">
           <div>
-            <h2 className="mb-4 text-xl font-semibold sm:text-2xl">常用指令</h2>
-            <div className="flex flex-wrap gap-2">
-              {COMMANDS.map(cmd => (
-                <Badge key={cmd} variant="secondary" className="px-3 py-1 font-mono text-sm">
-                  {cmd}
-                </Badge>
+            <h2 className="mb-2 text-xl font-semibold sm:text-2xl">內建指令</h2>
+            <p className="mb-6 text-base text-muted-foreground">開箱即用，無需設定。</p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {BUILTIN_COMMANDS.map(cmd => (
+                <div
+                  key={cmd.name}
+                  className="flex flex-col gap-1.5 rounded-xl border bg-card px-4 py-3"
+                >
+                  <span className="font-mono text-sm font-semibold text-primary">{cmd.name}</span>
+                  <span className="text-xs leading-relaxed text-muted-foreground">{cmd.desc}</span>
+                </div>
               ))}
             </div>
           </div>
