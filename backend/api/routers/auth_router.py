@@ -50,6 +50,7 @@ class UserInfoResponse(BaseModel):
     avatar: str
     platform: str  # "twitch" or "discord"
     theme: str  # "dark", "light", or "system"
+    broadcaster_type: str = ""  # "affiliate", "partner", or "" (non-affiliate)
 
 
 class LogoutResponse(BaseModel):

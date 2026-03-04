@@ -11,6 +11,7 @@ export interface User {
   avatar: string
   platform: 'twitch' | 'discord'
   theme: Theme
+  broadcaster_type: string // "affiliate", "partner", or "" (non-affiliate / discord)
 }
 
 async function fetchCurrentUser(): Promise<User | null> {

@@ -7,6 +7,7 @@ interface AuthContextType {
   user: User | null
   isAuthenticated: boolean
   isInitialized: boolean
+  isAffiliate: boolean // true for Twitch affiliate or partner
   channels: Channel[]
   logout: () => void
   refreshUser: () => Promise<void>
@@ -111,6 +112,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user,
         isAuthenticated: !!user,
         isInitialized,
+        isAffiliate: user?.broadcaster_type === 'affiliate' || user?.broadcaster_type === 'partner',
         channels,
         logout: () => {
           setUser(null)
