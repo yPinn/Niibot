@@ -41,11 +41,8 @@ _ENTRY_ROW = {
 _SETTINGS_ROW = {
     "channel_id": "ch1",
     "enabled": True,
-    "chat_enabled": True,
     "redemption_enabled": True,
-    "min_role_chat": "everyone",
-    "max_duration_seconds": 600,
-    "max_duration_redemption": 1200,
+    "max_duration_redemption": 600,
     "max_queue_size": 20,
     "min_view_count": 0,
     "user_cooldown_seconds": 0,
