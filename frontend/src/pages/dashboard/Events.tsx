@@ -6,7 +6,6 @@ import {
   getEventConfigs,
   getRedemptionConfigs,
   getTwitchRewards,
-  NonPartnerError,
   type RedemptionConfig,
   toggleEventConfig,
   type TwitchReward,
@@ -48,6 +47,7 @@ import {
   TableRow,
 } from '@/components/ui'
 import { VariableInserter } from '@/components/VariableInserter'
+import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { useInputInsert } from '@/hooks/useInputInsert'
 import { useOptimisticToggle } from '@/hooks/useOptimisticToggle'
@@ -106,6 +106,7 @@ type RedemptionSortKey = 'action_type' | 'reward_name' | 'enabled'
 
 export default function Events() {
   useDocumentTitle('Events')
+  const { isAffiliate } = useAuth()
   const [events, setEvents] = useState<EventConfig[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -125,7 +126,6 @@ export default function Events() {
   const [redemptions, setRedemptions] = useState<RedemptionConfig[]>([])
   const [twitchRewards, setTwitchRewards] = useState<TwitchReward[]>([])
   const [redemptionLoading, setRedemptionLoading] = useState(true)
-  const [isNonPartner, setIsNonPartner] = useState(false)
 
   const fetchEvents = useCallback(async () => {
     try {
@@ -142,10 +142,9 @@ export default function Events() {
   const fetchRedemptions = useCallback(async () => {
     try {
       const configsPromise = getRedemptionConfigs()
-      const rewardsPromise = getTwitchRewards().catch(e => {
-        if (e instanceof NonPartnerError) setIsNonPartner(true)
-        return [] as TwitchReward[]
-      })
+      const rewardsPromise = isAffiliate
+        ? getTwitchRewards().catch(() => [] as TwitchReward[])
+        : Promise.resolve([] as TwitchReward[])
       const [configs, rewards] = await Promise.all([configsPromise, rewardsPromise])
       setRedemptions(configs)
       setTwitchRewards([...rewards].sort((a, b) => a.cost - b.cost))
@@ -154,7 +153,7 @@ export default function Events() {
     } finally {
       setRedemptionLoading(false)
     }
-  }, [])
+  }, [isAffiliate])
 
   useEffect(() => {
     fetchEvents()
@@ -337,7 +336,9 @@ export default function Events() {
                 </TableHeader>
                 <TableBody>
                   {sortedEvents.map(event => {
-                    const locked = isNonPartner && event.event_type === 'subscribe'
+                    const locked =
+                      !isAffiliate &&
+                      (event.event_type === 'subscribe' || event.event_type === 'bits')
                     return (
                       <TableRow key={event.event_type} className={locked ? 'opacity-50' : ''}>
                         <TableCell className="font-medium">
@@ -391,11 +392,11 @@ export default function Events() {
       </Card>
 
       {/* Redemption Configs */}
-      <Card className={isNonPartner ? 'opacity-60' : ''}>
+      <Card className={!isAffiliate ? 'opacity-60' : ''}>
         <CardHeader>
           <CardTitle>忠誠點數兌換</CardTitle>
           <CardDescription>
-            {isNonPartner
+            {!isAffiliate
               ? '此功能需要 Twitch 聯盟夥伴或合作夥伴資格才能使用'
               : '選擇 Twitch 忠誠點數獎勵對應的動作'}
           </CardDescription>
@@ -405,7 +406,7 @@ export default function Events() {
             <div className="flex items-center justify-center py-empty">
               <Spinner className="size-8 text-primary" />
             </div>
-          ) : isNonPartner ? (
+          ) : !isAffiliate ? (
             <div className="flex flex-col items-center justify-center gap-2 py-empty text-muted-foreground">
               <Icon icon="fa-solid fa-lock" wrapperClassName="size-6" />
               <span className="text-sub">成為 Twitch 聯盟夥伴或合作夥伴後即可設定忠誠點數獎勵</span>

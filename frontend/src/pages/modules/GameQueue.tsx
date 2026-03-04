@@ -143,7 +143,7 @@ function EntryTable({
 export default function GameQueue() {
   useDocumentTitle('Game Queue')
 
-  const { user } = useAuth()
+  const { user, isAffiliate } = useAuth()
   const [state, setState] = useState<QueueState | null>(null)
   const [loading, setLoading] = useState(true)
   const [groupSizeInput, setGroupSizeInput] = useState('')
@@ -151,6 +151,10 @@ export default function GameQueue() {
   const hasInitialized = useRef(false)
 
   const fetchState = useCallback(async () => {
+    if (!isAffiliate) {
+      setLoading(false)
+      return
+    }
     try {
       const data = await getQueueState()
       setState(data)
@@ -163,7 +167,7 @@ export default function GameQueue() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [isAffiliate])
 
   usePolling({ fetchFn: fetchState, intervalMs: POLL_INTERVAL })
 
@@ -251,8 +255,19 @@ export default function GameQueue() {
     <main className="flex flex-1 flex-col gap-section p-page lg:p-page-lg">
       <PageHeader title="Game Queue" description="管理遊戲排隊系統" />
 
-      {/* Row 1: Full Queue (col-8) + sidebar (col-4) */}
-      <div className="grid grid-cols-1 gap-section lg:grid-cols-12 lg:items-stretch">
+      <div className="relative flex flex-1 flex-col gap-section">
+        {/* Inline overlay for non-affiliates — blurs preview, blocks interaction */}
+        {!isAffiliate && (
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-xl bg-background/70 backdrop-blur-sm">
+            <Icon icon="fa-solid fa-lock" wrapperClassName="size-10 text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">
+              成為 Twitch 聯盟夥伴或合作夥伴後即可使用遊戲排隊功能
+            </span>
+          </div>
+        )}
+
+        {/* Row 1: Full Queue (col-8) + sidebar (col-4) */}
+        <div className="grid grid-cols-1 gap-section lg:grid-cols-12 lg:items-stretch">
         {/* Full Queue card — fills full column height */}
         <div className="lg:col-span-8">
           <Card className="h-full min-h-[520px]">
@@ -366,6 +381,7 @@ export default function GameQueue() {
             </CardContent>
           </Card>
         </div>
+      </div>
       </div>
     </main>
   )
