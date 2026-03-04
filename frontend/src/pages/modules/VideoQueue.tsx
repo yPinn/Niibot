@@ -412,22 +412,21 @@ export default function VideoQueue() {
   const totalQueuedDuration = state?.total_queued_duration ?? null
 
   return (
-    <main className="flex flex-1 flex-col gap-section p-page lg:p-page-lg">
+    <main className="relative flex flex-1 flex-col gap-section p-page lg:p-page-lg">
       <PageHeader title="Video Queue" description="管理 YouTube 影片佇列" />
 
-      <div className="relative flex flex-1 flex-col gap-section">
-        {/* Inline overlay for non-affiliates — blurs preview, blocks interaction */}
-        {!isAffiliate && (
-          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-xl bg-background/70 backdrop-blur-sm">
-            <Icon icon="fa-solid fa-lock" wrapperClassName="size-10 text-muted-foreground" />
-            <span className="text-sm text-muted-foreground">
-              成為 Twitch 聯盟夥伴或合作夥伴後即可使用影片佇列功能
-            </span>
-          </div>
-        )}
+      {/* Inline overlay for non-affiliates — blurs preview, blocks interaction */}
+      {!isAffiliate && (
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-background/80 backdrop-blur-sm">
+          <Icon icon="fa-solid fa-lock" className="text-5xl text-muted-foreground" wrapperClassName="size-16" />
+          <span className="text-sm text-muted-foreground">
+            成為 Twitch 聯盟夥伴或合作夥伴後即可使用影片佇列功能
+          </span>
+        </div>
+      )}
 
-        {/* Row 1: Queue (col-8) always matches right column height */}
-        <div className="grid grid-cols-1 gap-section lg:grid-cols-12 lg:items-stretch">
+      {/* Row 1: Queue (col-8) always matches right column height */}
+      <div className="grid grid-cols-1 gap-section lg:grid-cols-12 lg:items-stretch">
         {/* Queue card — fills full column height */}
         <div className="lg:col-span-8">
           <Card className="h-full">
@@ -683,7 +682,6 @@ export default function VideoQueue() {
           </div>
         </CardContent>
       </Card>
-      </div>
     </main>
   )
 }
