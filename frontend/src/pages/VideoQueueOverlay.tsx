@@ -67,7 +67,7 @@ let _ytReadyPromise: Promise<void> | null = null
 
 function loadYouTubeAPI(): Promise<void> {
   if (_ytReadyPromise) return _ytReadyPromise
-  _ytReadyPromise = new Promise(resolve => {
+  _ytReadyPromise = new Promise((resolve, reject) => {
     if (typeof window !== 'undefined' && window.YT?.Player) {
       resolve()
       return
@@ -75,6 +75,10 @@ function loadYouTubeAPI(): Promise<void> {
     window.onYouTubeIframeAPIReady = resolve
     const script = document.createElement('script')
     script.src = 'https://www.youtube.com/iframe_api'
+    script.onerror = () => {
+      _ytReadyPromise = null // allow retry on next mount
+      reject(new Error('Failed to load YouTube IFrame API'))
+    }
     document.head.appendChild(script)
   })
   return _ytReadyPromise
@@ -150,15 +154,27 @@ export default function VideoQueueOverlay() {
   const advancingRef = useRef(false) // prevent concurrent advance calls
   const progressRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const usernameRef = useRef(username)
+  const mountedRef = useRef(true)
   useEffect(() => {
     usernameRef.current = username
   }, [username])
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
 
   useDocumentTitle('Video Queue Overlay')
 
   // Load YouTube IFrame API once
   useEffect(() => {
-    loadYouTubeAPI().then(() => setYtReady(true))
+    loadYouTubeAPI()
+      .then(() => {
+        if (mountedRef.current) setYtReady(true)
+      })
+      .catch(() => {}) // onerror resets _ytReadyPromise for retry on next mount
   }, [])
 
   const fetchState = useCallback(async () => {
@@ -223,6 +239,7 @@ export default function VideoQueueOverlay() {
     function startAll() {
       if (allStarted) return
       allStarted = true
+      if (!current) return // narrowing: current is non-null here by construction
 
       // If elapsed >= duration the video has already ended — advance immediately
       // rather than creating a player that would instantly finish.
@@ -406,10 +423,12 @@ export default function VideoQueueOverlay() {
     setTimeout(() => {
       advanceVideoQueue(usernameRef.current!, doneId)
         .then(newState => {
+          if (!mountedRef.current) return
           setState(newState)
           setIsExiting(false)
         })
         .catch(() => {
+          if (!mountedRef.current) return
           setIsExiting(false)
         })
         .finally(() => {

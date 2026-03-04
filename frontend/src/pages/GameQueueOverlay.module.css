@@ -1,0 +1,77 @@
+/* Game Queue overlay widget — dark panel for OBS */
+
+.panel {
+  display: inline-block;
+  min-width: 150px;
+  padding: 10px 14px;
+  background: rgba(0, 0, 0, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  font-family: 'Tahoma', Arial, sans-serif;
+}
+
+.section {
+  margin-bottom: 8px;
+}
+
+.section:last-of-type {
+  margin-bottom: 0;
+}
+
+.sectionLabel {
+  margin-bottom: 4px;
+  font-size: 10px;
+  font-weight: bold;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  font-size: 13px;
+  color: #ffffff;
+  line-height: 1.25;
+}
+
+.position {
+  width: 16px;
+  flex-shrink: 0;
+  text-align: right;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.name {
+  font-weight: 500;
+}
+
+.remaining {
+  margin-top: 6px;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.3);
+}
+
+/* Preview mode — simulate dark stream background, widget in top-left */
+
+.previewWrapper {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  width: 100%;
+  height: 100dvh;
+  padding: 12px;
+  box-sizing: border-box;
+  background: rgba(10, 10, 20, 0.9);
+}
+
+.previewEmpty {
+  width: 100%;
+  height: 100dvh;
+  background: rgba(10, 10, 20, 0.9);
+}

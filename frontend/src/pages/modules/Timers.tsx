@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useReducer, useState } from 'react'
 import { toast } from 'sonner'
 
 import {
@@ -65,26 +65,73 @@ interface EditingState {
   timer: TimerConfig | null
 }
 
+// ---------------------------------------------------------------------------
+// Form state — useReducer (same pattern as CommandSheet)
+// ---------------------------------------------------------------------------
+
+interface TimerFormState {
+  name: string
+  interval: string
+  minLines: string
+  template: string
+  enabled: boolean
+  alias: string
+  announce: boolean
+  showAdvanced: boolean
+  saving: boolean
+  saveError: string | null
+}
+
+type TimerFormAction =
+  | {
+      type: 'SET'
+      field: keyof Omit<TimerFormState, 'saving' | 'saveError'>
+      value: TimerFormState[keyof TimerFormState]
+    }
+  | { type: 'SAVING' }
+  | { type: 'SAVE_ERROR'; msg: string }
+  | { type: 'SAVE_DONE' }
+  | { type: 'RESET'; partial: Partial<TimerFormState> }
+
+const initialTimerForm: TimerFormState = {
+  name: '',
+  interval: '900',
+  minLines: '5',
+  template: '',
+  enabled: true,
+  alias: '',
+  announce: false,
+  showAdvanced: false,
+  saving: false,
+  saveError: null,
+}
+
+function timerFormReducer(state: TimerFormState, action: TimerFormAction): TimerFormState {
+  switch (action.type) {
+    case 'SET':
+      return { ...state, [action.field]: action.value }
+    case 'SAVING':
+      return { ...state, saving: true, saveError: null }
+    case 'SAVE_ERROR':
+      return { ...state, saving: false, saveError: action.msg }
+    case 'SAVE_DONE':
+      return { ...state, saving: false }
+    case 'RESET':
+      return { ...initialTimerForm, ...action.partial }
+    default:
+      return state
+  }
+}
+
+// ---------------------------------------------------------------------------
+
 export default function Timers() {
   useDocumentTitle('Timers')
   const [timers, setTimers] = useState<TimerConfig[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-
-  // TODO: The form state below (editing, formName, formInterval, formMinLines, formTemplate,
-  // formEnabled, formAlias, showAdvanced, saving, saveError) should be refactored to a single
-  // useReducer for consistency with CommandSheet. Deferred due to risk/scope.
   const [editing, setEditing] = useState<EditingState | null>(null)
-  const [formName, setFormName] = useState('')
-  const [formInterval, setFormInterval] = useState('')
-  const [formMinLines, setFormMinLines] = useState('5')
-  const [formTemplate, setFormTemplate] = useState('')
-  const [formEnabled, setFormEnabled] = useState(true)
-  const [formAlias, setFormAlias] = useState('')
-  const [formAnnounce, setFormAnnounce] = useState(false)
-  const [showAdvanced, setShowAdvanced] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [saveError, setSaveError] = useState<string | null>(null)
+  const [form, dispatch] = useReducer(timerFormReducer, initialTimerForm)
 
   const timerSort = useSortState<TimerSortKey>('name')
 
@@ -131,61 +178,55 @@ export default function Timers() {
 
   const openCreate = () => {
     setEditing({ mode: 'create', timer: null })
-    setFormName('')
-    setFormInterval('900')
-    setFormMinLines('5')
-    setFormTemplate('')
-    setFormEnabled(true)
-    setFormAlias('')
-    setFormAnnounce(false)
-    setShowAdvanced(false)
-    setSaveError(null)
+    dispatch({ type: 'RESET', partial: { interval: '900' } })
   }
 
   const openEditor = (timer: TimerConfig) => {
     setEditing({ mode: 'edit', timer })
-    setFormName(timer.timer_name)
-    setFormInterval(String(timer.interval_seconds))
-    setFormMinLines(String(timer.min_lines))
-    setFormTemplate(timer.message_template)
-    setFormEnabled(timer.enabled)
-    setFormAlias(timer.command_alias ?? '')
-    setFormAnnounce(timer.announce)
-    setShowAdvanced(false)
-    setSaveError(null)
+    dispatch({
+      type: 'RESET',
+      partial: {
+        name: timer.timer_name,
+        interval: String(timer.interval_seconds),
+        minLines: String(timer.min_lines),
+        template: timer.message_template,
+        enabled: timer.enabled,
+        alias: timer.command_alias ?? '',
+        announce: timer.announce,
+      },
+    })
   }
 
   const { inputRef: templateInputRef, insertText: insertVariable } = useInputInsert(
-    formTemplate,
-    setFormTemplate
+    form.template,
+    (val: string) => dispatch({ type: 'SET', field: 'template', value: val })
   )
 
   const handleSave = async () => {
     if (!editing) return
-    setSaving(true)
-    setSaveError(null)
+    dispatch({ type: 'SAVING' })
     try {
-      const intervalVal = Number(formInterval)
+      const intervalVal = Number(form.interval)
       if (!intervalVal || intervalVal < 60) {
-        setSaveError('間隔時間至少 60 秒')
+        dispatch({ type: 'SAVE_ERROR', msg: '間隔時間至少 60 秒' })
         return
       }
-      if (!formTemplate.trim()) {
-        setSaveError('訊息內容不可為空')
+      if (!form.template.trim()) {
+        dispatch({ type: 'SAVE_ERROR', msg: '訊息內容不可為空' })
         return
       }
-      const aliasValue = formAlias.trim() || null
+      const aliasValue = form.alias.trim() || null
       if (editing.mode === 'create') {
-        if (!formName.trim()) {
-          setSaveError('計時器名稱不可為空')
+        if (!form.name.trim()) {
+          dispatch({ type: 'SAVE_ERROR', msg: '計時器名稱不可為空' })
           return
         }
         const data: TimerCreate = {
-          timer_name: formName.trim(),
+          timer_name: form.name.trim(),
           interval_seconds: intervalVal,
-          min_lines: Number(formMinLines) || 0,
-          message_template: formTemplate.trim(),
-          announce: formAnnounce,
+          min_lines: Number(form.minLines) || 0,
+          message_template: form.template.trim(),
+          announce: form.announce,
           command_alias: aliasValue,
         }
         const created = await createTimer(data)
@@ -194,10 +235,10 @@ export default function Timers() {
         const prevAlias = editing.timer.command_alias
         const data: TimerUpdate = {
           interval_seconds: intervalVal,
-          min_lines: Number(formMinLines) || 0,
-          message_template: formTemplate.trim(),
-          enabled: formEnabled,
-          announce: formAnnounce,
+          min_lines: Number(form.minLines) || 0,
+          message_template: form.template.trim(),
+          enabled: form.enabled,
+          announce: form.announce,
           command_alias: aliasValue,
           clear_alias: prevAlias !== null && aliasValue === null,
         }
@@ -208,10 +249,10 @@ export default function Timers() {
       setEditing(null)
     } catch (e) {
       const msg = e instanceof Error ? e.message : '儲存失敗'
-      setSaveError(msg)
+      dispatch({ type: 'SAVE_ERROR', msg })
       toast.error('儲存失敗', { description: msg })
     } finally {
-      setSaving(false)
+      dispatch({ type: 'SAVE_DONE' })
     }
   }
 
@@ -293,8 +334,22 @@ export default function Timers() {
                 <TableBody>
                   {sorted.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={5} className="text-center text-muted-foreground">
-                        尚無計時器，點擊「新增計時器」開始設定
+                      <TableCell colSpan={5}>
+                        <div className="flex flex-col items-center justify-center gap-4 py-12 text-muted-foreground">
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            viewBox="0 0 512 512"
+                            className="size-20 opacity-25"
+                            fill="currentColor"
+                            aria-hidden="true"
+                          >
+                            <path d="M256 0a256 256 0 1 1 0 512A256 256 0 1 1 256 0zM232 120l0 136c0 8 4 15.5 10.7 20l96 64c11 7.4 25.9 4.5 33.3-6.5s4.5-25.9-6.5-33.3L280 243.2 280 120c0-13.3-10.7-24-24-24s-24 10.7-24 24z" />
+                          </svg>
+                          <div className="flex flex-col items-center gap-1">
+                            <span className="text-sm font-medium">尚無計時器</span>
+                            <span className="text-xs">點擊「新增計時器」開始設定</span>
+                          </div>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -380,8 +435,8 @@ export default function Timers() {
                 <Label htmlFor="timer-name">計時器名稱</Label>
                 <Input
                   id="timer-name"
-                  value={formName}
-                  onChange={e => setFormName(e.target.value)}
+                  value={form.name}
+                  onChange={e => dispatch({ type: 'SET', field: 'name', value: e.target.value })}
                   placeholder="follow-reminder"
                   className="font-mono"
                   autoFocus
@@ -398,8 +453,8 @@ export default function Timers() {
               <Input
                 id="timer-template"
                 ref={templateInputRef}
-                value={formTemplate}
-                onChange={e => setFormTemplate(e.target.value)}
+                value={form.template}
+                onChange={e => dispatch({ type: 'SET', field: 'template', value: e.target.value })}
                 placeholder="記得追蹤 $(channel)！"
                 className="font-mono text-sub"
                 autoFocus={editing?.mode === 'edit'}
@@ -422,8 +477,8 @@ export default function Timers() {
                 type="number"
                 min={60}
                 step={60}
-                value={formInterval}
-                onChange={e => setFormInterval(e.target.value)}
+                value={form.interval}
+                onChange={e => dispatch({ type: 'SET', field: 'interval', value: e.target.value })}
                 placeholder="900"
                 className="w-24"
               />
@@ -439,7 +494,11 @@ export default function Timers() {
                   <span className="text-sm font-medium leading-none">啟用</span>
                   <span className="text-label text-muted-foreground">關閉後不會觸發</span>
                 </div>
-                <Switch aria-label="啟用" checked={formEnabled} onCheckedChange={setFormEnabled} />
+                <Switch
+                  aria-label="啟用"
+                  checked={form.enabled}
+                  onCheckedChange={v => dispatch({ type: 'SET', field: 'enabled', value: v })}
+                />
               </div>
             )}
 
@@ -447,16 +506,18 @@ export default function Timers() {
             <button
               type="button"
               className="flex cursor-pointer items-center gap-2 text-sub text-muted-foreground transition-colors hover:text-foreground"
-              onClick={() => setShowAdvanced(v => !v)}
+              onClick={() =>
+                dispatch({ type: 'SET', field: 'showAdvanced', value: !form.showAdvanced })
+              }
             >
               <Icon
-                icon={showAdvanced ? 'fa-solid fa-chevron-down' : 'fa-solid fa-chevron-right'}
+                icon={form.showAdvanced ? 'fa-solid fa-chevron-down' : 'fa-solid fa-chevron-right'}
                 wrapperClassName="size-3"
               />
-              {showAdvanced ? '隱藏進階設定' : '顯示進階設定'}
+              {form.showAdvanced ? '隱藏進階設定' : '顯示進階設定'}
             </button>
 
-            {showAdvanced && (
+            {form.showAdvanced && (
               <div className="flex flex-col gap-card border-l-2 border-muted pl-page">
                 {/* Min Lines */}
                 <div className="flex flex-col gap-2">
@@ -466,8 +527,10 @@ export default function Timers() {
                     type="number"
                     min={0}
                     step={1}
-                    value={formMinLines}
-                    onChange={e => setFormMinLines(e.target.value)}
+                    value={form.minLines}
+                    onChange={e =>
+                      dispatch({ type: 'SET', field: 'minLines', value: e.target.value })
+                    }
                     placeholder="5"
                     className="w-24"
                   />
@@ -481,8 +544,8 @@ export default function Timers() {
                   <Label htmlFor="timer-alias">別名</Label>
                   <Input
                     id="timer-alias"
-                    value={formAlias}
-                    onChange={e => setFormAlias(e.target.value)}
+                    value={form.alias}
+                    onChange={e => dispatch({ type: 'SET', field: 'alias', value: e.target.value })}
                     placeholder="socials"
                     className="font-mono text-sub"
                   />
@@ -501,14 +564,14 @@ export default function Timers() {
                   </div>
                   <Switch
                     aria-label="公告模式"
-                    checked={formAnnounce}
-                    onCheckedChange={setFormAnnounce}
+                    checked={form.announce}
+                    onCheckedChange={v => dispatch({ type: 'SET', field: 'announce', value: v })}
                   />
                 </div>
               </div>
             )}
 
-            {saveError && <p className="text-label text-destructive">{saveError}</p>}
+            {form.saveError && <p className="text-label text-destructive">{form.saveError}</p>}
           </div>
 
           <SheetFooter className="shrink-0 flex-row gap-2">
@@ -525,8 +588,8 @@ export default function Timers() {
             <SheetClose asChild>
               <Button variant="outline">取消</Button>
             </SheetClose>
-            <Button onClick={handleSave} disabled={saving}>
-              {saving ? '儲存中...' : '儲存'}
+            <Button onClick={handleSave} disabled={form.saving}>
+              {form.saving ? '儲存中...' : '儲存'}
             </Button>
           </SheetFooter>
         </SheetContent>

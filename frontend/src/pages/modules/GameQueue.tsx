@@ -49,19 +49,41 @@ function formatTime(dateStr: string) {
 
 function EntryTable({
   entries,
+  emptyText,
   onRemove,
   onPromote,
   showRemove = false,
   showPromote = false,
 }: {
   entries: QueueEntry[]
+  emptyText?: string
   onRemove?: (id: number) => void
   onPromote?: (id: number) => void
   showRemove?: boolean
   showPromote?: boolean
 }) {
-  if (entries.length === 0) return null
   const hasActions = showRemove || showPromote
+
+  if (entries.length === 0) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center gap-4 text-muted-foreground">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 640 512"
+          className="size-20 opacity-25"
+          fill="currentColor"
+          aria-hidden="true"
+        >
+          {/* Font Awesome users path */}
+          <path d="M144 160A80 80 0 1 0 144 0a80 80 0 1 0 0 160zm368 0A80 80 0 1 0 512 0a80 80 0 1 0 0 160zM0 298.7C0 310.4 9.6 320 21.3 320l213.3 0c.2 0 .4 0 .7 0c-26.6-23.5-43.3-57.8-43.3-96c0-7.6 .7-15 1.9-22.3c-13.6-6.3-28.7-9.7-44.6-9.7l-42.7 0C47.8 192 0 239.8 0 298.7zM320 320a128 128 0 1 0 0-256 128 128 0 1 0 0 256zm45.3 32l-90.7 0C187.7 352 128 411.7 128 485.3c0 14.7 11.9 26.7 26.7 26.7l330.7 0c14.7 0 26.7-11.9 26.7-26.7C512 411.7 452.3 352 365.3 352zm143.4-128c-.3 0-.6 0-.7 0l0 .1c1.3 7.3 1.9 14.7 1.9 22.2c0 38.2-16.8 72.5-43.3 96l213.4 0c11.8 0 21.3-9.6 21.3-21.3C640 239.8 592.2 192 544 192l-42.7 0c-15.9 0-31 3.5-44.6 9.7z" />
+        </svg>
+        <div className="flex flex-col items-center gap-1">
+          <span className="text-sm font-medium">{emptyText ?? '目前無玩家'}</span>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="overflow-x-auto">
       <Table>
@@ -85,7 +107,7 @@ function EntryTable({
               </TableCell>
               {hasActions && (
                 <TableCell className="text-right">
-                  <div className="flex justify-end gap-1">
+                  <div className="flex items-center justify-end gap-1">
                     {showPromote && onPromote && (
                       <Button
                         variant="ghost"
@@ -93,7 +115,7 @@ function EntryTable({
                         onClick={() => onPromote(entry.id)}
                         title="移至當前"
                       >
-                        <Icon icon="fa-solid fa-arrow-up-to-line" className="mr-1 size-3.5" />
+                        <Icon icon="fa-solid fa-arrow-up-to-line" wrapperClassName="size-3.5" />
                         移至當前
                       </Button>
                     )}
@@ -102,7 +124,7 @@ function EntryTable({
                         variant="ghost"
                         size="sm"
                         onClick={() => onRemove(entry.id)}
-                        className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                        className="size-8 p-0 text-destructive hover:text-destructive"
                       >
                         <Icon icon="fa-solid fa-xmark" className="text-xs" />
                       </Button>
@@ -212,7 +234,6 @@ export default function GameQueue() {
     }
   }
 
-  // Build overlay URL
   const overlayUrl = user?.name ? `${window.location.origin}/${user.name}/game-queue/overlay` : ''
 
   if (loading) {
@@ -230,140 +251,122 @@ export default function GameQueue() {
     <main className="flex flex-1 flex-col gap-section p-page lg:p-page-lg">
       <PageHeader title="Game Queue" description="管理遊戲排隊系統" />
 
-      {/* Settings + Overlay Preview */}
-      <div className="grid grid-cols-1 gap-section lg:grid-cols-3">
-        <Card className="col-span-2">
-          <CardHeader>
-            <CardTitle>隊列設定</CardTitle>
-            <CardDescription>調整每場人數</CardDescription>
-            <CardAction>
-              <Switch
-                id="queue-enabled"
-                checked={state?.enabled ?? false}
-                onCheckedChange={handleToggleEnabled}
+      {/* Row 1: Full Queue (col-8) + sidebar (col-4) */}
+      <div className="grid grid-cols-1 gap-section lg:grid-cols-12 lg:items-stretch">
+        {/* Full Queue card — fills full column height */}
+        <div className="lg:col-span-8">
+          <Card className="h-full min-h-[520px]">
+            <CardHeader>
+              <CardTitle>
+                等待佇列
+                <Badge variant="outline" className="ml-2">
+                  {state?.total_active ?? 0}
+                </Badge>
+              </CardTitle>
+              <CardAction>
+                <div className="flex items-center gap-2">
+                  <Button size="sm" onClick={handleAdvance} disabled={!state?.current_batch.length}>
+                    <Icon icon="fa-solid fa-forward-step" className="mr-1.5 text-xs" />
+                    下一批
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={handleClear}
+                    disabled={!state?.total_active}
+                  >
+                    <Icon icon="fa-solid fa-trash" className="mr-1.5 text-xs" />
+                    清空
+                  </Button>
+                </div>
+              </CardAction>
+            </CardHeader>
+            <CardContent className="flex flex-1 flex-col">
+              <EntryTable
+                entries={state?.full_queue ?? []}
+                emptyText="目前佇列無玩家"
+                onRemove={handleRemove}
+                onPromote={handlePromote}
+                showRemove
+                showPromote
               />
-            </CardAction>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center gap-2">
-              <span className="text-muted-foreground text-sub shrink-0">快速預設</span>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setGroupSizeInput('5')}
-                className="h-7"
-              >
-                LoL / Val (5人)
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setGroupSizeInput('3')}
-                className="h-7"
-              >
-                Apex (3人)
-              </Button>
-            </div>
-            <div className="flex items-center gap-3">
-              <Label htmlFor="group-size" className="shrink-0">
-                每場人數（含台主）
-              </Label>
-              <Input
-                id="group-size"
-                type="number"
-                min={1}
-                max={20}
-                value={groupSizeInput}
-                onChange={e => setGroupSizeInput(e.target.value)}
-                className="w-20"
-              />
-              <Button size="sm" onClick={handleSaveGroupSize} disabled={saving}>
-                {saving ? '...' : '儲存'}
-              </Button>
-              {state && (
-                <span className="text-muted-foreground text-sub">
-                  從佇列取 {Math.max(1, state.group_size - 1)} 人
-                </span>
-              )}
-            </div>
-            <OverlayUrlBlock url={overlayUrl} />
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </div>
 
-        {overlayUrl && (
-          <div className="overflow-hidden rounded-lg border bg-black">
-            <iframe src={overlayUrl} className="block h-full w-full" title="Overlay 預覽" />
-          </div>
-        )}
+        {/* Right sidebar: Overlay preview + queue settings */}
+        <div className="flex flex-col gap-section lg:col-span-4">
+          {/* Overlay preview iframe — fills remaining sidebar height */}
+          {overlayUrl && (
+            <div className="min-h-0 flex-1 overflow-hidden rounded-lg border bg-black">
+              <iframe
+                src={`${overlayUrl}?preview=1`}
+                className="block h-full w-full"
+                title="Overlay 預覽"
+              />
+            </div>
+          )}
+
+          {/* Queue settings card */}
+          <Card>
+            <CardHeader>
+              <CardTitle>隊列設定</CardTitle>
+              <CardDescription>調整每場人數與開關</CardDescription>
+              <CardAction>
+                <Switch
+                  id="queue-enabled"
+                  checked={state?.enabled ?? false}
+                  onCheckedChange={handleToggleEnabled}
+                />
+              </CardAction>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center gap-2">
+                <span className="text-muted-foreground text-sub shrink-0">快速預設</span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setGroupSizeInput('5')}
+                  className="h-7"
+                >
+                  LoL / Val (5人)
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setGroupSizeInput('3')}
+                  className="h-7"
+                >
+                  Apex (3人)
+                </Button>
+              </div>
+              <div className="flex items-center gap-3">
+                <Label htmlFor="group-size" className="shrink-0">
+                  每場人數（含台主）
+                </Label>
+                <Input
+                  id="group-size"
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={groupSizeInput}
+                  onChange={e => setGroupSizeInput(e.target.value)}
+                  className="w-20"
+                />
+                <Button size="sm" onClick={handleSaveGroupSize} disabled={saving}>
+                  {saving ? '...' : '儲存'}
+                </Button>
+                {state && (
+                  <span className="text-muted-foreground text-sub">
+                    取 {Math.max(1, state.group_size - 1)} 人
+                  </span>
+                )}
+              </div>
+              <OverlayUrlBlock url={overlayUrl} />
+            </CardContent>
+          </Card>
+        </div>
       </div>
-
-      {/* Current Batch */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div>
-            <CardTitle>
-              當前批次{' '}
-              <Badge variant="secondary">
-                {state?.current_batch.length ?? 0} / {Math.max(1, (state?.group_size ?? 1) - 1)}
-              </Badge>
-            </CardTitle>
-          </div>
-          <Button size="sm" onClick={handleAdvance} disabled={!state?.current_batch.length}>
-            <Icon icon="fa-solid fa-forward-step" className="mr-1.5 text-xs" />
-            下一批
-          </Button>
-        </CardHeader>
-        <CardContent>
-          <EntryTable entries={state?.current_batch ?? []} onRemove={handleRemove} showRemove />
-        </CardContent>
-      </Card>
-
-      {/* Next Batch */}
-      <Card>
-        <CardHeader>
-          <CardTitle>
-            下一批次 <Badge variant="outline">{state?.next_batch.length ?? 0}</Badge>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <EntryTable
-            entries={state?.next_batch ?? []}
-            onRemove={handleRemove}
-            onPromote={handlePromote}
-            showRemove
-            showPromote
-          />
-        </CardContent>
-      </Card>
-
-      {/* Full Queue */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div>
-            <CardTitle>
-              完整隊列 <Badge variant="outline">{state?.total_active ?? 0}</Badge>
-            </CardTitle>
-          </div>
-          <Button
-            size="sm"
-            variant="destructive"
-            onClick={handleClear}
-            disabled={!state?.total_active}
-          >
-            <Icon icon="fa-solid fa-trash" className="mr-1.5 text-xs" />
-            清空
-          </Button>
-        </CardHeader>
-        <CardContent>
-          <EntryTable
-            entries={state?.full_queue ?? []}
-            onRemove={handleRemove}
-            onPromote={handlePromote}
-            showRemove
-            showPromote
-          />
-        </CardContent>
-      </Card>
     </main>
   )
 }

@@ -14,6 +14,7 @@ import {
   type VideoQueueEntry,
   type VideoQueueSettings,
 } from '@/api/videoQueue'
+import { OverlayUrlBlock } from '@/components/OverlayUrlBlock'
 import { PageHeader } from '@/components/PageHeader'
 import {
   Badge,
@@ -447,7 +448,7 @@ export default function VideoQueue() {
                 </Button>
               </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="flex flex-1 flex-col">
               <QueueTable
                 current={current}
                 entries={queue}
@@ -456,7 +457,22 @@ export default function VideoQueue() {
                 onPlayNow={handlePlayNow}
               />
               {!current && queue.length === 0 && (
-                <p className="text-muted-foreground text-sub py-4 text-center">佇列為空</p>
+                <div className="flex flex-1 flex-col items-center justify-center gap-4 text-muted-foreground">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 512 512"
+                    className="size-20 opacity-25"
+                    fill="currentColor"
+                    aria-hidden="true"
+                  >
+                    {/* Font Awesome circle-play path */}
+                    <path d="M0 256a256 256 0 1 1 512 0A256 256 0 1 1 0 256zM188.3 147.1c-7.6 4.2-12.3 12.3-12.3 20.9l0 176c0 8.7 4.7 16.7 12.3 20.9s16.8 4.1 24.3-.5l144-88c7.1-4.4 11.5-12.1 11.5-20.5s-4.4-16.1-11.5-20.5l-144-88c-7.4-4.5-16.7-4.7-24.3-.5z" />
+                  </svg>
+                  <div className="flex flex-col items-center gap-1">
+                    <span className="text-sm font-medium">佇列為空</span>
+                    <span className="text-xs">在上方輸入 YouTube 連結並點擊「新增」</span>
+                  </div>
+                </div>
               )}
             </CardContent>
           </Card>
@@ -522,30 +538,7 @@ export default function VideoQueue() {
                   點數兌換
                 </Label>
               </div>
-              {overlayUrl && (
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      navigator.clipboard.writeText(overlayUrl)
-                      toast.success('已複製 OBS 連結')
-                    }}
-                  >
-                    <Icon icon="fa-solid fa-copy" className="mr-1.5 text-xs" />
-                    複製連結
-                  </Button>
-                  <Button variant="outline" size="sm" asChild>
-                    <a href={overlayUrl} target="_blank" rel="noopener noreferrer">
-                      <Icon
-                        icon="fa-solid fa-arrow-up-right-from-square"
-                        className="mr-1.5 text-xs"
-                      />
-                      開啟預覽
-                    </a>
-                  </Button>
-                </div>
-              )}
+              <OverlayUrlBlock url={overlayUrl} />
             </CardContent>
           </Card>
         </div>
