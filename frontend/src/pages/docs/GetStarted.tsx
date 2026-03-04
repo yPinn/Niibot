@@ -206,7 +206,7 @@ export default function GetStarted() {
   useDocumentTitle('Get Started')
 
   return (
-    <main className="flex flex-1 flex-col gap-section p-page lg:p-page-lg">
+    <main className="flex flex-1 flex-col gap-card p-page lg:p-page-lg">
       <PageHeader title="快速上手" description="完成以下設定，讓機器人開始守護你的聊天室。" />
 
       {/* ── Setup Action ── */}
@@ -227,65 +227,75 @@ export default function GetStarted() {
             </p>
           </CardHeader>
 
-          <CardContent className="flex flex-col gap-section">
-            {/* Detail list */}
-            <ol className="flex flex-col gap-element">
-              {MOD_DETAILS.map((d, i) => (
-                <li key={i} className="flex items-start gap-2">
-                  <Icon
-                    icon={d.icon}
-                    wrapperClassName="size-4 shrink-0 mt-0.5 text-muted-foreground"
-                  />
-                  <span className="text-sub text-muted-foreground">{d.text}</span>
-                </li>
-              ))}
-            </ol>
+          <CardContent>
+            <div className="grid items-start gap-card lg:grid-cols-2">
+              {/* ── Left: step list + command + alt methods ── */}
+              <div className="flex flex-col gap-card">
+                {/* Detail list */}
+                <ol className="flex flex-col gap-element">
+                  {MOD_DETAILS.map((d, i) => (
+                    <li key={i} className="flex items-start gap-2">
+                      <Icon
+                        icon={d.icon}
+                        wrapperClassName="size-4 shrink-0 mt-0.5 text-muted-foreground"
+                      />
+                      <span className="text-sub text-muted-foreground">{d.text}</span>
+                    </li>
+                  ))}
+                </ol>
 
-            {/* Command block */}
-            <div className="flex flex-col gap-element">
-              <div className="flex items-center gap-3 rounded-lg border bg-muted/50 px-page py-3">
-                <Icon
-                  icon="fa-solid fa-terminal"
-                  wrapperClassName="size-4 shrink-0 text-muted-foreground"
-                />
-                <code className="font-mono text-content font-semibold tracking-wide">
-                  /mod niibot_
-                </code>
-                <CopyButton text="/mod niibot_" />
-              </div>
-
-              <p className="text-label text-muted-foreground">或選擇以下任一方式：</p>
-
-              <div className="grid gap-element sm:grid-cols-2">
-                {ALT_MOD_METHODS.map(method => (
-                  <div key={method.title} className="flex gap-3 rounded-lg border bg-card p-page">
+                {/* Command block */}
+                <div className="flex flex-col gap-element">
+                  <div className="flex items-center gap-3 rounded-lg border bg-muted/50 px-page py-3">
                     <Icon
-                      icon={method.icon}
-                      wrapperClassName="size-4 shrink-0 mt-0.5 text-muted-foreground"
+                      icon="fa-solid fa-terminal"
+                      wrapperClassName="size-4 shrink-0 text-muted-foreground"
                     />
-                    <div className="flex flex-col gap-element">
-                      <p className="text-label font-medium">{method.title}</p>
-                      <p className="text-label leading-relaxed text-muted-foreground">
-                        {method.desc}
-                      </p>
-                    </div>
+                    <code className="font-mono text-content font-semibold tracking-wide">
+                      /mod niibot_
+                    </code>
+                    <CopyButton text="/mod niibot_" />
                   </div>
-                ))}
+
+                  <p className="text-label text-muted-foreground">或選擇以下任一方式：</p>
+
+                  <div className="grid gap-element sm:grid-cols-2 lg:grid-cols-1">
+                    {ALT_MOD_METHODS.map(method => (
+                      <div
+                        key={method.title}
+                        className="flex gap-3 rounded-lg border bg-card p-page"
+                      >
+                        <Icon
+                          icon={method.icon}
+                          wrapperClassName="size-4 shrink-0 mt-0.5 text-muted-foreground"
+                        />
+                        <div className="flex flex-col gap-element">
+                          <p className="text-label font-medium">{method.title}</p>
+                          <p className="text-label leading-relaxed text-muted-foreground">
+                            {method.desc}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
-            </div>
 
-            {/* Twitch chat preview */}
-            <TwitchChatMockup channel="你的頻道" lines={MOD_CHAT_PREVIEW} />
+              {/* ── Right: Twitch chat preview + warning ── */}
+              <div className="flex flex-col gap-card">
+                <TwitchChatMockup channel="你的頻道" lines={MOD_CHAT_PREVIEW} />
 
-            {/* Warning note */}
-            <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-page py-3 dark:border-amber-900/50 dark:bg-amber-950/30">
-              <Icon
-                icon="fa-solid fa-triangle-exclamation"
-                wrapperClassName="size-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-500"
-              />
-              <p className="text-label leading-relaxed text-amber-800 dark:text-amber-400">
-                /mod 指令只有頻道主（Broadcaster）才能執行，請確認你是以主播帳號登入 Twitch。
-              </p>
+                {/* Warning note */}
+                <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-page py-3 dark:border-amber-900/50 dark:bg-amber-950/30">
+                  <Icon
+                    icon="fa-solid fa-triangle-exclamation"
+                    wrapperClassName="size-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-500"
+                  />
+                  <p className="text-label leading-relaxed text-amber-800 dark:text-amber-400">
+                    /mod 指令只有頻道主（Broadcaster）才能執行，請確認你是以主播帳號登入 Twitch。
+                  </p>
+                </div>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -298,7 +308,7 @@ export default function GetStarted() {
           <p className="text-sub text-muted-foreground">從這些功能開始，讓 Niibot 發揮最大價值。</p>
         </div>
 
-        <div className="grid gap-section sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-card sm:grid-cols-2 lg:grid-cols-3">
           {NEXT_STEPS.map(item => (
             <Link key={item.title} to={item.href} className="group">
               <Card className="h-full transition-colors hover:border-primary/50 hover:bg-accent/30">

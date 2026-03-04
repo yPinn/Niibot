@@ -13,11 +13,11 @@ export default function Dashboard() {
   const { user, isInitialized, channels } = useAuth()
 
   const defaultChannel = useMemo(() => {
-    if (channels.length === 0) return 'niibot_'
+    const fallback = user?.name ?? 'niibot_'
     const live = channels.filter(ch => ch.is_live)
-    if (live.length === 0) return channels[0].name
+    if (live.length === 0) return fallback
     return live.reduce((a, b) => ((a.viewer_count ?? 0) >= (b.viewer_count ?? 0) ? a : b)).name
-  }, [channels])
+  }, [channels, user?.name])
   const [analyticsLoading, setAnalyticsLoading] = useState(true)
   const [statsLoading, setStatsLoading] = useState(true)
   const [stats, setStats] = useState<ChannelStats | null>(null)

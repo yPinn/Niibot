@@ -33,41 +33,23 @@ interface Channel {
   title?: string
 }
 
-type SortType = 'default' | 'alphabet' | 'viewers'
+type SortType = 'alphabet' | 'viewers'
 
 export function NavChannels({ channels }: { channels: Channel[] }) {
-  const [sortType, setSortType] = useState<SortType>('default')
+  const [sortType, setSortType] = useState<SortType>('viewers')
 
   const sortedChannels = useMemo(() => {
     return [...channels].sort((a, b) => {
-      // 預設：直播中的在前面，然後按字母排序
-      if (sortType === 'default') {
-        if (a.is_live !== b.is_live) {
-          return a.is_live ? -1 : 1
-        }
-        return a.name.localeCompare(b.name)
-      }
+      // Live channels always first
+      if (a.is_live !== b.is_live) return a.is_live ? -1 : 1
 
-      // 字母排序：直播中的在前面，然後按字母排序
-      if (sortType === 'alphabet') {
-        if (a.is_live !== b.is_live) {
-          return a.is_live ? -1 : 1
-        }
-        return a.name.localeCompare(b.name)
-      }
-
-      // 觀眾人數：直播中的在前面，然後按觀眾數排序
       if (sortType === 'viewers') {
-        if (a.is_live !== b.is_live) {
-          return a.is_live ? -1 : 1
-        }
         if (a.is_live && b.is_live) {
           return (b.viewer_count || 0) - (a.viewer_count || 0)
         }
-        return a.name.localeCompare(b.name)
       }
 
-      return 0
+      return a.name.localeCompare(b.name)
     })
   }, [channels, sortType])
 
@@ -87,22 +69,22 @@ export function NavChannels({ channels }: { channels: Channel[] }) {
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-40">
             <DropdownMenuItem
-              onClick={() => setSortType('alphabet')}
-              className={sortType === 'alphabet' || sortType === 'default' ? 'bg-accent' : ''}
-            >
-              <Icon icon="fa-solid fa-font" wrapperClassName="mr-2 size-4" />
-              <span>字母排序</span>
-              {(sortType === 'alphabet' || sortType === 'default') && (
-                <Icon icon="fa-solid fa-check" wrapperClassName="ml-auto size-4" />
-              )}
-            </DropdownMenuItem>
-            <DropdownMenuItem
               onClick={() => setSortType('viewers')}
               className={sortType === 'viewers' ? 'bg-accent' : ''}
             >
               <Icon icon="fa-solid fa-users" wrapperClassName="mr-2 size-4" />
               <span>觀眾人數</span>
               {sortType === 'viewers' && (
+                <Icon icon="fa-solid fa-check" wrapperClassName="ml-auto size-4" />
+              )}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => setSortType('alphabet')}
+              className={sortType === 'alphabet' ? 'bg-accent' : ''}
+            >
+              <Icon icon="fa-solid fa-font" wrapperClassName="mr-2 size-4" />
+              <span>字母排序</span>
+              {sortType === 'alphabet' && (
                 <Icon icon="fa-solid fa-check" wrapperClassName="ml-auto size-4" />
               )}
             </DropdownMenuItem>
