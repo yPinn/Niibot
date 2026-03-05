@@ -336,15 +336,11 @@ export default function Timers() {
                     <TableRow>
                       <TableCell colSpan={5}>
                         <div className="flex flex-col items-center justify-center gap-4 py-12 text-muted-foreground">
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            viewBox="0 0 512 512"
-                            className="size-20 opacity-25"
-                            fill="currentColor"
-                            aria-hidden="true"
-                          >
-                            <path d="M256 0a256 256 0 1 1 0 512A256 256 0 1 1 256 0zM232 120l0 136c0 8 4 15.5 10.7 20l96 64c11 7.4 25.9 4.5 33.3-6.5s4.5-25.9-6.5-33.3L280 243.2 280 120c0-13.3-10.7-24-24-24s-24 10.7-24 24z" />
-                          </svg>
+                          <Icon
+                            icon="fa-solid fa-clock"
+                            wrapperClassName="size-20 opacity-25"
+                            className="text-[5rem]"
+                          />
                           <div className="flex flex-col items-center gap-1">
                             <span className="text-sm font-medium">尚無計時器</span>
                             <span className="text-xs">點擊「新增計時器」開始設定</span>

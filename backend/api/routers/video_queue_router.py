@@ -424,17 +424,12 @@ async def add_video_entry(
         if not settings.enabled:
             raise HTTPException(status_code=403, detail="Video queue is disabled")
 
-        # Enforce queue size limit
-        queue_size = await repo.get_queue_size(channel_id)
-        if queue_size >= settings.max_queue_size:
-            raise HTTPException(status_code=409, detail="Queue is full")
-
         if await repo.video_is_active(channel_id, video_id):
             raise HTTPException(status_code=409, detail="Video already in queue")
 
         # Fetch YouTube metadata (graceful fallback if no API key or request fails)
         api_key = get_settings().youtube_api_key
-        # Dashboard adds bypass min_view_count — broadcaster has full authority over their own queue
+        # Dashboard adds bypass max_queue_size and min_view_count — broadcaster has full authority over their own queue
         title, duration_seconds, _, is_vertical_from_api = await fetch_yt_info(video_id, api_key)
         is_vertical = is_vertical or is_vertical_from_api
 

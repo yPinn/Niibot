@@ -27,6 +27,8 @@ const Timers = lazy(() => import('@/pages/modules/Timers'))
 const VideoQueue = lazy(() => import('@/pages/modules/VideoQueue'))
 const PublicCommands = lazy(() => import('@/pages/PublicCommands'))
 const GetStarted = lazy(() => import('@/pages/docs/GetStarted'))
+const Terms = lazy(() => import('@/pages/docs/Terms'))
+const Privacy = lazy(() => import('@/pages/docs/Privacy'))
 const Settings = lazy(() => import('@/pages/Settings'))
 const VideoQueueOverlay = lazy(() => import('@/pages/VideoQueueOverlay'))
 
@@ -48,6 +50,8 @@ function App() {
               <Suspense fallback={<LoadingSpinner fullScreen />}>
                 <Routes>
                   <Route path="/" element={<Landing />} />
+                  <Route path="/terms" element={<Terms />} />
+                  <Route path="/privacy" element={<Privacy />} />
                   <Route path="/:username/commands" element={<PublicCommands />} />
                   <Route
                     path="/:username/game-queue/overlay"

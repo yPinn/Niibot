@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 
 import avatarSrc from '@/assets/images/Avatar.png'
 import { useTheme } from '@/components/theme-provider'
@@ -128,6 +128,7 @@ export default function Home() {
         <div className="border-t border-border" />
 
         {/* Commands + usage + CTA */}
+
         <section className="space-y-10 px-6 py-14 sm:px-10 lg:px-16">
           <div>
             <h2 className="mb-2 text-xl font-semibold sm:text-2xl">內建指令</h2>
@@ -145,6 +146,21 @@ export default function Home() {
             </div>
           </div>
         </section>
+
+        {/* Footer */}
+        <div className="border-t border-border px-6 py-6 sm:px-10 lg:px-16">
+          <div className="flex flex-wrap items-center justify-between gap-4 text-xs text-muted-foreground">
+            <span>© {new Date().getFullYear()} Niibot</span>
+            <div className="flex gap-4">
+              <Link to="/terms" className="hover:text-foreground hover:underline">
+                服務條款
+              </Link>
+              <Link to="/privacy" className="hover:text-foreground hover:underline">
+                隱私權政策
+              </Link>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   )

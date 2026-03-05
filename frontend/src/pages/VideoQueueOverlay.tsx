@@ -1,11 +1,4 @@
-import {
-  type MutableRefObject,
-  type RefObject,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from 'react'
+import { type RefObject, useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 
 import {
@@ -88,7 +81,7 @@ function loadYouTubeAPI(): Promise<void> {
 // Helpers
 // ---------------------------------------------------------------------------
 
-const POLL_INTERVAL = 5_000
+const POLL_INTERVAL = 3_000
 
 function formatRemaining(elapsed: number, duration: number | null): string {
   if (!duration) return '--:--'
@@ -100,8 +93,8 @@ function formatRemaining(elapsed: number, duration: number | null): string {
 
 /** Destroy all active YT players and stop the progress interval. */
 function destroyAllPlayers(
-  refs: Array<MutableRefObject<YTPlayer | null>>,
-  progressRef: MutableRefObject<ReturnType<typeof setInterval> | null>,
+  refs: Array<RefObject<YTPlayer | null>>,
+  progressRef: RefObject<ReturnType<typeof setInterval> | null>,
   setElapsed: (v: number) => void
 ) {
   for (const ref of refs) {
@@ -305,7 +298,7 @@ export default function VideoQueueOverlay() {
     // Muted side player for vertical video blurred columns.
     function createSidePlayer(
       containerRefArg: RefObject<HTMLDivElement | null>,
-      playerRefArg: MutableRefObject<YTPlayer | null>
+      playerRefArg: RefObject<YTPlayer | null>
     ) {
       if (!containerRefArg.current) {
         onPlayerReady() // container not mounted — count as ready so barrier doesn't stall

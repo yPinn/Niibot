@@ -423,6 +423,24 @@ class VideoQueueRepository:
             )
             return VideoQueueEntry(**dict(row)) if row else None
 
+    async def find_last_entry_by_user(
+        self, channel_id: str, requested_by: str
+    ) -> VideoQueueEntry | None:
+        """Find the most recently submitted entry for a given user regardless of status.
+
+        Used for user_cooldown_seconds enforcement — we want the last submission
+        time across all statuses (queued, playing, done, skipped).
+        """
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"SELECT {_ENTRY_COLUMNS} FROM video_queue "
+                "WHERE channel_id = $1 AND requested_by = $2 "
+                "ORDER BY created_at DESC LIMIT 1",
+                channel_id,
+                requested_by,
+            )
+            return VideoQueueEntry(**dict(row)) if row else None
+
 
 # ---------------------------------------------------------------------------
 # VideoQueueSettingsRepository

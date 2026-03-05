@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 
 import {
   addVideoToQueue,
+  advanceVideoQueue,
   clearVideoQueue,
   getVideoQueueSettings,
   getVideoQueueState,
@@ -46,7 +47,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { usePolling } from '@/hooks/usePolling'
 
-const POLL_INTERVAL = 10_000
+const POLL_INTERVAL = 5_000
 
 const MIN_VIEW_COUNT_OPTIONS = [
   { value: 0, label: '不限制' },
@@ -127,14 +128,16 @@ function QueueTable({
 
   return (
     <div className="overflow-x-auto">
-      <Table>
+      {/* table-fixed: column widths are enforced by <th> — dynamic content can't shift fixed cols */}
+      <Table className="table-fixed">
         <TableHeader>
           <TableRow>
             <TableHead className="w-10" />
             <TableHead>影片</TableHead>
-            <TableHead className="w-20 text-center">來源</TableHead>
-            <TableHead className="w-24">長度</TableHead>
+            {/* 點播者 before 來源: logical "what + who" grouping, both can truncate independently */}
             <TableHead className="w-28">點播者</TableHead>
+            <TableHead className="w-20 text-center">來源</TableHead>
+            <TableHead className="w-16 tabular-nums">長度</TableHead>
             {(hasActions || onSkip) && <TableHead className="w-20" />}
           </TableRow>
         </TableHeader>
@@ -149,19 +152,19 @@ function QueueTable({
                   wrapperClassName="mx-auto"
                 />
               </TableCell>
-              <TableCell className="max-w-0 w-full">
+              <TableCell>
                 <div className="truncate font-medium" title={current.title || current.video_id}>
                   {current.title || current.video_id}
                 </div>
               </TableCell>
+              <TableCell className="text-muted-foreground text-sub">
+                <span className="block truncate">{current.requested_by}</span>
+              </TableCell>
               <TableCell className="text-center">
                 <SourceBadge source={current.source} />
               </TableCell>
-              <TableCell className="text-muted-foreground text-sub">
+              <TableCell className="text-muted-foreground text-sub tabular-nums">
                 {current.duration_seconds ? formatDuration(current.duration_seconds) : '--:--'}
-              </TableCell>
-              <TableCell className="text-muted-foreground text-sub">
-                {current.requested_by}
               </TableCell>
               {(hasActions || onSkip) && (
                 <TableCell className="text-right">
@@ -181,18 +184,20 @@ function QueueTable({
               <TableCell className="text-center">
                 <Badge variant="outline">{idx + 1}</Badge>
               </TableCell>
-              <TableCell className="max-w-0 w-full">
+              <TableCell>
                 <div className="truncate font-medium" title={entry.title || entry.video_id}>
                   {entry.title || entry.video_id}
                 </div>
               </TableCell>
+              <TableCell className="text-muted-foreground text-sub">
+                <span className="block truncate">{entry.requested_by}</span>
+              </TableCell>
               <TableCell className="text-center">
                 <SourceBadge source={entry.source} />
               </TableCell>
-              <TableCell className="text-muted-foreground text-sub">
+              <TableCell className="text-muted-foreground text-sub tabular-nums">
                 {entry.duration_seconds ? formatDuration(entry.duration_seconds) : '--:--'}
               </TableCell>
-              <TableCell className="text-muted-foreground text-sub">{entry.requested_by}</TableCell>
               {(hasActions || onSkip) && (
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-1">
@@ -239,6 +244,7 @@ export default function VideoQueue() {
   const [maxQueueSizeInput, setMaxQueueSizeInput] = useState('')
   const [userCooldownInput, setUserCooldownInput] = useState('')
   const [maxPerUserInput, setMaxPerUserInput] = useState('')
+  const [minViewCountValue, setMinViewCountValue] = useState('0')
   const [saving, setSaving] = useState(false)
   const [addUrlInput, setAddUrlInput] = useState('')
   const [adding, setAdding] = useState(false)
@@ -263,6 +269,7 @@ export default function VideoQueue() {
         setMaxQueueSizeInput(String(queueSettings.max_queue_size))
         setUserCooldownInput(String(queueSettings.user_cooldown_seconds))
         setMaxPerUserInput(String(queueSettings.max_per_user))
+        setMinViewCountValue(String(queueSettings.min_view_count))
         hasInitialized.current = true
       }
     } catch {
@@ -294,21 +301,12 @@ export default function VideoQueue() {
     }
   }
 
-  const handleMinViewCountChange = async (value: string) => {
-    try {
-      const updated = await updateVideoQueueSettings({ min_view_count: Number(value) })
-      setSettings(updated)
-      toast.success('已更新最低觀看次數')
-    } catch {
-      toast.error('更新失敗')
-    }
-  }
-
   const handleSaveSettings = async () => {
     const redemptionDuration = parseInt(maxRedemptionDurationValue, 10)
     const queueSize = parseInt(maxQueueSizeInput, 10)
     const cooldown = parseInt(userCooldownInput, 10)
     const perUser = parseInt(maxPerUserInput, 10)
+    const minViews = parseInt(minViewCountValue, 10)
     if (isNaN(queueSize) || queueSize < 1 || queueSize > 100) {
       toast.error('隊列上限範圍: 1 ~ 100')
       return
@@ -328,6 +326,7 @@ export default function VideoQueue() {
         max_queue_size: queueSize,
         user_cooldown_seconds: cooldown,
         max_per_user: perUser,
+        min_view_count: minViews,
       })
       setSettings(updated)
       toast.success('設定已儲存')
@@ -382,7 +381,11 @@ export default function VideoQueue() {
     if (!addUrlInput.trim()) return
     setAdding(true)
     try {
-      const newState = await addVideoToQueue(addUrlInput.trim())
+      let newState = await addVideoToQueue(addUrlInput.trim())
+      // Nothing playing yet → advance immediately, same as overlay's kickstart logic
+      if (newState.current === null && newState.queue.length > 0 && user?.name) {
+        newState = await advanceVideoQueue(user.name, null)
+      }
       setState(newState)
       setAddUrlInput('')
       toast.success('已加入隊列')
@@ -417,13 +420,13 @@ export default function VideoQueue() {
 
       {/* Inline overlay for non-affiliates — blurs preview, blocks interaction */}
       {!isAffiliate && (
-        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-background/80 backdrop-blur-sm">
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-section bg-background/80 backdrop-blur-sm">
           <Icon
             icon="fa-solid fa-lock"
             className="text-5xl text-muted-foreground"
             wrapperClassName="size-16"
           />
-          <span className="text-sm text-muted-foreground">
+          <span className="text-sub text-muted-foreground">
             成為 Twitch 聯盟夥伴或合作夥伴後即可使用影片佇列功能
           </span>
         </div>
@@ -434,7 +437,7 @@ export default function VideoQueue() {
         {/* Queue card — fills full column height */}
         <div className="lg:col-span-8">
           <Card className="h-full">
-            <CardHeader className="flex flex-row items-center justify-between gap-4">
+            <CardHeader className="flex flex-row items-center justify-between gap-section">
               <CardTitle>
                 等待佇列
                 <Badge variant="outline" className="ml-2">
@@ -442,15 +445,22 @@ export default function VideoQueue() {
                   {totalQueuedDuration ? ` — ${formatDuration(totalQueuedDuration)}` : ''}
                 </Badge>
               </CardTitle>
-              <div className="flex items-center gap-2">
-                <Input
-                  aria-label="YouTube 連結"
-                  placeholder="YouTube 連結"
-                  value={addUrlInput}
-                  onChange={e => setAddUrlInput(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && handleAddVideo()}
-                  className="w-56"
-                />
+              <div className="flex items-center gap-element">
+                <div className="relative w-72">
+                  <Icon
+                    icon="fa-brands fa-youtube"
+                    className="text-sm text-muted-foreground"
+                    wrapperClassName="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2"
+                  />
+                  <Input
+                    aria-label="YouTube 連結"
+                    placeholder="貼上影片連結"
+                    value={addUrlInput}
+                    onChange={e => setAddUrlInput(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleAddVideo()}
+                    className="pl-8"
+                  />
+                </div>
                 <Button size="sm" onClick={handleAddVideo} disabled={adding || !addUrlInput.trim()}>
                   <Icon icon="fa-solid fa-plus" className="mr-1.5 text-xs" />
                   {adding ? '...' : '新增'}
@@ -475,20 +485,15 @@ export default function VideoQueue() {
                 onPlayNow={handlePlayNow}
               />
               {!current && queue.length === 0 && (
-                <div className="flex flex-1 flex-col items-center justify-center gap-4 text-muted-foreground">
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 512 512"
-                    className="size-20 opacity-25"
-                    fill="currentColor"
-                    aria-hidden="true"
-                  >
-                    {/* Font Awesome circle-play path */}
-                    <path d="M0 256a256 256 0 1 1 512 0A256 256 0 1 1 0 256zM188.3 147.1c-7.6 4.2-12.3 12.3-12.3 20.9l0 176c0 8.7 4.7 16.7 12.3 20.9s16.8 4.1 24.3-.5l144-88c7.1-4.4 11.5-12.1 11.5-20.5s-4.4-16.1-11.5-20.5l-144-88c-7.4-4.5-16.7-4.7-24.3-.5z" />
-                  </svg>
+                <div className="flex flex-1 flex-col items-center justify-center gap-section text-muted-foreground">
+                  <Icon
+                    icon="fa-solid fa-circle-play"
+                    wrapperClassName="size-20 opacity-25"
+                    className="text-[5rem]"
+                  />
                   <div className="flex flex-col items-center gap-1">
-                    <span className="text-sm font-medium">佇列為空</span>
-                    <span className="text-xs">在上方輸入 YouTube 連結並點擊「新增」</span>
+                    <span className="text-sub font-medium">佇列為空</span>
+                    <span className="text-label">貼上連結後按 Enter 或點擊「新增」</span>
                   </div>
                 </div>
               )}
@@ -500,7 +505,7 @@ export default function VideoQueue() {
         <div className="flex flex-col gap-section lg:col-span-4">
           {/* Overlay preview iframe */}
           {overlayUrl && (
-            <div className="aspect-video overflow-hidden rounded-lg border bg-black">
+            <div className="aspect-[16/10] overflow-hidden rounded-lg border bg-black">
               <iframe
                 src={`${overlayUrl}?preview=1`}
                 className="block h-full w-full"
@@ -509,35 +514,35 @@ export default function VideoQueue() {
             </div>
           )}
 
-          {/* Now Playing + source controls (merged) */}
-          <Card>
+          {/* Now Playing + controls */}
+          <Card className="flex-1">
             <CardHeader>
+              {/* Title is always fixed — only description content changes */}
               <CardTitle className="flex items-center gap-2">
-                {current ? (
-                  <>
-                    <Icon icon="fa-solid fa-play" className="size-3 shrink-0 text-primary" />
-                    正在播放
-                  </>
-                ) : (
-                  '目前沒有播放'
-                )}
-                {current?.duration_seconds && (
-                  <Badge variant="secondary" className="text-xs">
-                    {formatDuration(current.duration_seconds)}
-                  </Badge>
-                )}
+                正在播放
+                {/* Duration badge always rendered; invisible preserves height when absent */}
+                <Badge
+                  variant="secondary"
+                  className={`text-xs tabular-nums ${current?.duration_seconds ? '' : 'invisible'}`}
+                >
+                  {current?.duration_seconds ? formatDuration(current.duration_seconds) : '--:--'}
+                </Badge>
               </CardTitle>
-              {current && (
-                <CardDescription className="min-w-0">
-                  <span className="block truncate" title={current.title || current.video_id}>
-                    {current.title || current.video_id}
+              <CardDescription className="min-w-0">
+                {/* Line 1: video title when playing, status text when idle */}
+                <span className="block truncate" title={current?.title || current?.video_id}>
+                  {current ? current.title || current.video_id : '目前沒有播放'}
+                </span>
+                {/* Line 2: always same DOM structure — invisible holds badge height */}
+                <span className="flex items-center gap-1.5">
+                  <span className={`min-w-0 truncate ${current ? '' : 'invisible'}`}>
+                    {current?.requested_by ?? '\u00A0'}
                   </span>
-                  <span className="flex items-center gap-1.5">
-                    <span className="min-w-0 truncate">{current.requested_by}</span>
-                    <SourceBadge source={current.source} />
+                  <span className={`shrink-0 ${current ? '' : 'invisible'}`}>
+                    <SourceBadge source={current?.source ?? 'dashboard'} />
                   </span>
-                </CardDescription>
-              )}
+                </span>
+              </CardDescription>
               <CardAction>
                 <Button size="sm" variant="outline" onClick={handleSkip} disabled={!current}>
                   <Icon icon="fa-solid fa-forward-step" className="mr-1.5 size-3" />
@@ -545,18 +550,12 @@ export default function VideoQueue() {
                 </Button>
               </CardAction>
             </CardHeader>
-            <CardContent className="space-y-3 pb-5">
-              <div className="flex items-center gap-2">
-                <Switch
-                  id="redemption-enabled"
-                  checked={settings?.redemption_enabled ?? true}
-                  onCheckedChange={handleToggleRedemptionEnabled}
-                />
-                <Label htmlFor="redemption-enabled" className="cursor-pointer">
-                  點數兌換
-                </Label>
-              </div>
-              <OverlayUrlBlock url={overlayUrl} />
+            <CardContent className="pb-5">
+              <p className="text-label text-muted-foreground">
+                {queueSize > 0
+                  ? `待播 ${queueSize} 首${totalQueuedDuration ? ` · ${formatDuration(totalQueuedDuration)}` : ''}`
+                  : '待播佇列為空'}
+              </p>
             </CardContent>
           </Card>
         </div>
@@ -566,25 +565,124 @@ export default function VideoQueue() {
       <Card>
         <CardHeader>
           <CardTitle>佇列設定</CardTitle>
-          <CardDescription>控制影片佇列啟閉與投稿限制</CardDescription>
+          <CardDescription>設定各來源的投稿限制條件</CardDescription>
           <CardAction>
-            <div className="flex items-center gap-2">
-              <Label htmlFor="vq-enabled" className="cursor-pointer text-sm font-normal">
-                啟用
-              </Label>
-              <Switch
-                id="vq-enabled"
-                checked={settings?.enabled ?? false}
-                onCheckedChange={handleToggleEnabled}
-              />
+            <div className="flex items-center gap-section">
+              <div className="min-w-0 flex-1">
+                <OverlayUrlBlock url={overlayUrl} />
+              </div>
+              <div className="h-6 w-px shrink-0 bg-border" />
+              <div className="flex shrink-0 items-center gap-element">
+                <Switch
+                  id="vq-enabled"
+                  checked={settings?.enabled ?? false}
+                  onCheckedChange={handleToggleEnabled}
+                />
+                <Label htmlFor="vq-enabled" className="cursor-pointer text-sub font-normal">
+                  啟用
+                </Label>
+              </div>
             </div>
           </CardAction>
         </CardHeader>
-        <CardContent className="space-y-5">
-          <div className="grid grid-cols-2 gap-x-8 gap-y-3 lg:grid-cols-4">
+
+        <CardContent className="flex flex-col gap-section">
+          {/* Global limits — apply to all sources */}
+          <div className="flex flex-col gap-3">
+            <p className="text-sub text-muted-foreground">全域限制</p>
+            <div className="grid grid-cols-2 gap-x-8 gap-y-3 lg:grid-cols-4">
+              <div className="flex items-center gap-3">
+                <Label htmlFor="max-per-user" className="w-24 shrink-0">
+                  每人排隊上限
+                </Label>
+                <Input
+                  id="max-per-user"
+                  type="number"
+                  min={0}
+                  max={20}
+                  placeholder="0"
+                  value={maxPerUserInput}
+                  onChange={e => setMaxPerUserInput(e.target.value)}
+                  onBlur={e => setMaxPerUserInput(clampValue(e.target.value, 0, 20))}
+                  className="w-20"
+                />
+                <span className="text-muted-foreground text-sub">首</span>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <Label htmlFor="user-cooldown" className="w-24 shrink-0">
+                  點歌冷卻
+                </Label>
+                <Input
+                  id="user-cooldown"
+                  type="number"
+                  min={0}
+                  max={3600}
+                  placeholder="0"
+                  value={userCooldownInput}
+                  onChange={e => setUserCooldownInput(e.target.value)}
+                  onBlur={e => setUserCooldownInput(clampValue(e.target.value, 0, 3600))}
+                  className="w-20"
+                />
+                <span className="text-muted-foreground text-sub">秒</span>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <Label htmlFor="min-view-count" className="w-24 shrink-0">
+                  最低觀看數
+                </Label>
+                <Select value={minViewCountValue} onValueChange={setMinViewCountValue}>
+                  <SelectTrigger id="min-view-count" className="w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MIN_VIEW_COUNT_OPTIONS.map(opt => (
+                      <SelectItem key={opt.value} value={String(opt.value)}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <Label htmlFor="max-queue-size" className="w-24 shrink-0">
+                  佇列上限
+                </Label>
+                <Input
+                  id="max-queue-size"
+                  type="number"
+                  min={1}
+                  max={100}
+                  placeholder="20"
+                  value={maxQueueSizeInput}
+                  onChange={e => setMaxQueueSizeInput(e.target.value)}
+                  onBlur={e => setMaxQueueSizeInput(clampValue(e.target.value, 1, 100))}
+                  className="w-20"
+                />
+                <span className="text-muted-foreground text-sub">首</span>
+              </div>
+            </div>
+          </div>
+
+          <hr className="border-border" />
+
+          {/* Redemption-specific settings */}
+          <div className="flex flex-col gap-3">
+            <p className="text-sub text-muted-foreground">忠誠點數兌換</p>
+            <div className="flex items-center gap-element">
+              <Switch
+                id="redemption-enabled"
+                checked={settings?.redemption_enabled ?? true}
+                onCheckedChange={handleToggleRedemptionEnabled}
+              />
+              <Label htmlFor="redemption-enabled" className="cursor-pointer">
+                啟用點數兌換
+              </Label>
+            </div>
             <div className="flex items-center gap-3">
               <Label htmlFor="max-redemption-duration" className="w-24 shrink-0">
-                兌換長度上限
+                影片長度上限
               </Label>
               <Select
                 value={maxRedemptionDurationValue}
@@ -595,81 +693,6 @@ export default function VideoQueue() {
                 </SelectTrigger>
                 <SelectContent>
                   {REDEMPTION_DURATION_OPTIONS.map(opt => (
-                    <SelectItem key={opt.value} value={String(opt.value)}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <Label htmlFor="max-queue-size" className="w-24 shrink-0">
-                隊列上限
-              </Label>
-              <Input
-                id="max-queue-size"
-                type="number"
-                min={1}
-                max={100}
-                placeholder="20"
-                value={maxQueueSizeInput}
-                onChange={e => setMaxQueueSizeInput(e.target.value)}
-                onBlur={e => setMaxQueueSizeInput(clampValue(e.target.value, 1, 100))}
-                className="w-20"
-              />
-              <span className="text-muted-foreground text-sub">首</span>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <Label htmlFor="max-per-user" className="w-24 shrink-0">
-                每人同時上限
-              </Label>
-              <Input
-                id="max-per-user"
-                type="number"
-                min={0}
-                max={20}
-                placeholder="0"
-                value={maxPerUserInput}
-                onChange={e => setMaxPerUserInput(e.target.value)}
-                onBlur={e => setMaxPerUserInput(clampValue(e.target.value, 0, 20))}
-                className="w-20"
-              />
-              <span className="text-muted-foreground text-sub">首</span>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <Label htmlFor="user-cooldown" className="w-24 shrink-0">
-                點歌冷卻
-              </Label>
-              <Input
-                id="user-cooldown"
-                type="number"
-                min={0}
-                max={3600}
-                placeholder="0"
-                value={userCooldownInput}
-                onChange={e => setUserCooldownInput(e.target.value)}
-                onBlur={e => setUserCooldownInput(clampValue(e.target.value, 0, 3600))}
-                className="w-20"
-              />
-              <span className="text-muted-foreground text-sub">秒</span>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <Label htmlFor="min-view-count" className="w-24 shrink-0">
-                最低觀看次數
-              </Label>
-              <Select
-                value={String(settings?.min_view_count ?? 0)}
-                onValueChange={handleMinViewCountChange}
-              >
-                <SelectTrigger id="min-view-count" className="w-32">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {MIN_VIEW_COUNT_OPTIONS.map(opt => (
                     <SelectItem key={opt.value} value={String(opt.value)}>
                       {opt.label}
                     </SelectItem>

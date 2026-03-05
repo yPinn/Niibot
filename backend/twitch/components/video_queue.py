@@ -99,11 +99,41 @@ class VideoQueueComponent(commands.Component):
             await ctx.reply(f"佇列已滿（{queue_size}/{settings.max_queue_size}）")
             return
 
+        # Per-user active limit
+        if settings.max_per_user > 0:
+            active = await self.vq_repo.count_active_by_user(channel_id, user_name)
+            if active >= settings.max_per_user:
+                await ctx.reply(f"每人上限 {settings.max_per_user} 首，請等待您的影片播放後再點歌")
+                return
+
+        # User cooldown
+        if settings.user_cooldown_seconds > 0:
+            last = await self.vq_repo.find_last_entry_by_user(channel_id, user_name)
+            if last and last.created_at:
+                elapsed = (datetime.now(UTC) - last.created_at).total_seconds()
+                if elapsed < settings.user_cooldown_seconds:
+                    remaining = int(settings.user_cooldown_seconds - elapsed)
+                    m, s = divmod(remaining, 60)
+                    time_str = f"{m}:{s:02d}" if m > 0 else f"{s} 秒"
+                    await ctx.reply(f"點歌冷卻中，請等待 {time_str}")
+                    return
+
         # Fetch info from YouTube Data API (graceful fallback on failure)
-        title, duration_seconds, _, is_vertical_from_api = await fetch_yt_info(
+        title, duration_seconds, view_count, is_vertical_from_api = await fetch_yt_info(
             video_id, self._settings.youtube_api_key, self._session
         )
         is_vertical = is_vertical or is_vertical_from_api
+
+        # Minimum view count filter
+        if settings.min_view_count > 0:
+            if view_count is None:
+                await ctx.reply("無法驗證影片資訊，請稍後再試")
+                return
+            if view_count < settings.min_view_count:
+                await ctx.reply(
+                    f"影片觀看次數不足（{view_count:,} 次 < {settings.min_view_count:,} 次），無法加入佇列"
+                )
+                return
 
         await self.vq_repo.add(
             channel_id=channel_id,

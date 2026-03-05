@@ -67,16 +67,11 @@ function EntryTable({
   if (entries.length === 0) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-4 text-muted-foreground">
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 640 512"
-          className="size-20 opacity-25"
-          fill="currentColor"
-          aria-hidden="true"
-        >
-          {/* Font Awesome users path */}
-          <path d="M144 160A80 80 0 1 0 144 0a80 80 0 1 0 0 160zm368 0A80 80 0 1 0 512 0a80 80 0 1 0 0 160zM0 298.7C0 310.4 9.6 320 21.3 320l213.3 0c.2 0 .4 0 .7 0c-26.6-23.5-43.3-57.8-43.3-96c0-7.6 .7-15 1.9-22.3c-13.6-6.3-28.7-9.7-44.6-9.7l-42.7 0C47.8 192 0 239.8 0 298.7zM320 320a128 128 0 1 0 0-256 128 128 0 1 0 0 256zm45.3 32l-90.7 0C187.7 352 128 411.7 128 485.3c0 14.7 11.9 26.7 26.7 26.7l330.7 0c14.7 0 26.7-11.9 26.7-26.7C512 411.7 452.3 352 365.3 352zm143.4-128c-.3 0-.6 0-.7 0l0 .1c1.3 7.3 1.9 14.7 1.9 22.2c0 38.2-16.8 72.5-43.3 96l213.4 0c11.8 0 21.3-9.6 21.3-21.3C640 239.8 592.2 192 544 192l-42.7 0c-15.9 0-31 3.5-44.6 9.7z" />
-        </svg>
+        <Icon
+          icon="fa-solid fa-users"
+          wrapperClassName="size-20 opacity-25"
+          className="text-[5rem]"
+        />
         <div className="flex flex-col items-center gap-1">
           <span className="text-sm font-medium">{emptyText ?? '目前無玩家'}</span>
         </div>

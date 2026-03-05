@@ -1,4 +1,5 @@
 import logging
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import aiohttp
@@ -352,6 +353,21 @@ class ChannelPointsComponent(commands.Component):
                         token_for=self.bot.bot_id,
                     )
                     return
+
+            if settings.user_cooldown_seconds > 0:
+                last = await self.vq_repo.find_last_entry_by_user(channel_id, user_name)
+                if last and last.created_at:
+                    elapsed = (datetime.now(UTC) - last.created_at).total_seconds()
+                    if elapsed < settings.user_cooldown_seconds:
+                        remaining = int(settings.user_cooldown_seconds - elapsed)
+                        m, s = divmod(remaining, 60)
+                        time_str = f"{m}:{s:02d}" if m > 0 else f"{s} 秒"
+                        await broadcaster.send_message(
+                            message=f"@{user_name} 點歌冷卻中，請等待 {time_str}",
+                            sender=self.bot.bot_id,
+                            token_for=self.bot.bot_id,
+                        )
+                        return
 
             title, duration_seconds, view_count, _ = await fetch_yt_info(
                 video_id, self.settings.youtube_api_key, self._session
