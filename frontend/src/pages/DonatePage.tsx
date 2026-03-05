@@ -164,13 +164,17 @@ export default function DonatePage() {
 
   useEffect(() => {
     if (!username) return
-    setLoading(true)
-    getPublicDonateInfo(username)
-      .then(setInfo)
-      .catch(e => {
-        if (e.message === 'Streamer not found') setNotFound(true)
-      })
-      .finally(() => setLoading(false))
+    async function load() {
+      setLoading(true)
+      try {
+        setInfo(await getPublicDonateInfo(username!))
+      } catch (e: unknown) {
+        if (e instanceof Error && e.message === 'Streamer not found') setNotFound(true)
+      } finally {
+        setLoading(false)
+      }
+    }
+    void load()
   }, [username])
 
   if (loading) {
