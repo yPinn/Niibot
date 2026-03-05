@@ -99,6 +99,15 @@ export const API_ENDPOINTS = {
     toggleConfig: (name: string) => join(`/api/triggers/configs/${name}/toggle`),
     deleteConfig: (name: string) => join(`/api/triggers/configs/${name}`),
   },
+  paymentConfigs: {
+    list: join('/api/payment-configs'),
+    upsert: (platform: string) => join(`/api/payment-configs/${platform}`),
+    delete: (platform: string) => join(`/api/payment-configs/${platform}`),
+  },
+  donate: {
+    public: (username: string) => join(`/api/donate/public/${username}`),
+    checkout: (username: string) => join(`/api/donate/${username}/checkout`),
+  },
   bots: {
     twitch: {
       status: join('/api/bots/twitch/status'),

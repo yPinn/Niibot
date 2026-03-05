@@ -3,6 +3,15 @@ import { useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 
 import { getLinkedAccounts, type LinkedAccount, openOAuthLink, unlinkAccount } from '@/api'
+import {
+  deletePaymentConfig,
+  type DonationPlatform,
+  getPaymentConfigs,
+  NEEDS_HASH,
+  PLATFORM_LABELS,
+  type PaymentConfigResponse,
+  upsertPaymentConfig,
+} from '@/api/donation'
 import { PageHeader } from '@/components/PageHeader'
 import {
   Badge,
@@ -13,8 +22,11 @@ import {
   CardHeader,
   CardTitle,
   Icon,
+  Input,
+  Label,
   Separator,
   Skeleton,
+  Switch,
 } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
@@ -32,6 +44,39 @@ const PLATFORM_CONFIG = {
   discord: { icon: 'fa-brands fa-discord', label: 'Discord', color: 'text-blue-500' },
 } as const
 
+const ALL_PLATFORMS: DonationPlatform[] = ['ecpay', 'opay', 'newebpay', 'paypal']
+
+interface PaymentFormState {
+  merchant_id: string
+  hash_key: string
+  hash_iv: string
+  min_amount: string
+  media_share_enabled: boolean
+  enabled: boolean
+}
+
+function emptyForm(minAmount = 30): PaymentFormState {
+  return {
+    merchant_id: '',
+    hash_key: '',
+    hash_iv: '',
+    min_amount: String(minAmount),
+    media_share_enabled: false,
+    enabled: true,
+  }
+}
+
+function configToForm(c: PaymentConfigResponse): PaymentFormState {
+  return {
+    merchant_id: c.merchant_id,
+    hash_key: '',
+    hash_iv: '',
+    min_amount: String(c.min_amount),
+    media_share_enabled: c.media_share_enabled,
+    enabled: c.enabled,
+  }
+}
+
 export default function Settings() {
   useDocumentTitle('Settings')
   const { user } = useAuth()
@@ -39,6 +84,18 @@ export default function Settings() {
   const [accounts, setAccounts] = useState<LinkedAccount[]>([])
   const [loading, setLoading] = useState(true)
   const [unlinking, setUnlinking] = useState<string | null>(null)
+
+  // Payment config state
+  const [paymentConfigs, setPaymentConfigs] = useState<PaymentConfigResponse[]>([])
+  const [paymentLoading, setPaymentLoading] = useState(true)
+  const [paymentForms, setPaymentForms] = useState<Record<DonationPlatform, PaymentFormState>>({
+    ecpay: emptyForm(),
+    opay: emptyForm(),
+    paypal: emptyForm(),
+    newebpay: emptyForm(),
+  })
+  const [paymentSaving, setPaymentSaving] = useState<DonationPlatform | null>(null)
+  const [paymentDeleting, setPaymentDeleting] = useState<DonationPlatform | null>(null)
 
   const fetchAccounts = useCallback(async () => {
     try {
@@ -103,6 +160,64 @@ export default function Settings() {
   }
 
   const hasPlatform = (platform: string) => accounts.some(a => a.platform === platform)
+
+  const fetchPaymentConfigs = useCallback(async () => {
+    try {
+      setPaymentLoading(true)
+      const configs = await getPaymentConfigs()
+      setPaymentConfigs(configs)
+      setPaymentForms(prev => {
+        const updated = { ...prev }
+        for (const c of configs) {
+          updated[c.platform as DonationPlatform] = configToForm(c)
+        }
+        return updated
+      })
+    } catch {
+      toast.error('無法載入金流設定')
+    } finally {
+      setPaymentLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchPaymentConfigs()
+  }, [fetchPaymentConfigs])
+
+  const handleSavePaymentConfig = async (platform: DonationPlatform) => {
+    const form = paymentForms[platform]
+    setPaymentSaving(platform)
+    try {
+      await upsertPaymentConfig(platform, {
+        merchant_id: form.merchant_id,
+        hash_key: form.hash_key || undefined,
+        hash_iv: form.hash_iv || undefined,
+        min_amount: parseInt(form.min_amount, 10) || 30,
+        media_share_enabled: form.media_share_enabled,
+        enabled: form.enabled,
+      })
+      toast.success(`已儲存 ${PLATFORM_LABELS[platform]} 設定`)
+      await fetchPaymentConfigs()
+    } catch (err) {
+      toast.error('儲存失敗', { description: err instanceof Error ? err.message : '請稍後再試' })
+    } finally {
+      setPaymentSaving(null)
+    }
+  }
+
+  const handleDeletePaymentConfig = async (platform: DonationPlatform) => {
+    setPaymentDeleting(platform)
+    try {
+      await deletePaymentConfig(platform)
+      toast.success(`已刪除 ${PLATFORM_LABELS[platform]} 設定`)
+      setPaymentForms(prev => ({ ...prev, [platform]: emptyForm() }))
+      await fetchPaymentConfigs()
+    } catch (err) {
+      toast.error('刪除失敗', { description: err instanceof Error ? err.message : '請稍後再試' })
+    } finally {
+      setPaymentDeleting(null)
+    }
+  }
 
   return (
     <main className="flex flex-1 flex-col gap-section p-page lg:p-page-lg">
@@ -203,6 +318,181 @@ export default function Settings() {
                 </div>
               </div>
             </>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>斗內金流設定</CardTitle>
+          <CardDescription>
+            設定你的 ECPay / OPay / PayPal 收款帳號，讓觀眾可以透過 /donate/{user?.name} 斗內支持你
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-section">
+          {paymentLoading ? (
+            <div className="space-y-3">
+              <Skeleton className="h-32 w-full" />
+              <Skeleton className="h-32 w-full" />
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {ALL_PLATFORMS.map(platform => {
+                const form = paymentForms[platform]
+                const existing = paymentConfigs.find(c => c.platform === platform)
+                const needsHash = NEEDS_HASH[platform]
+                const label = PLATFORM_LABELS[platform]
+                const isSaving = paymentSaving === platform
+                const isDeleting = paymentDeleting === platform
+
+                return (
+                  <div key={platform} className="rounded-lg border p-card space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium">{label}</span>
+                      {existing && <Badge variant="secondary">已設定</Badge>}
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label htmlFor={`${platform}-merchant`}>
+                        {platform === 'paypal' ? 'PayPal.me URL' : '商店代號 (MerchantID)'}
+                      </Label>
+                      <Input
+                        id={`${platform}-merchant`}
+                        value={form.merchant_id}
+                        onChange={e =>
+                          setPaymentForms(prev => ({
+                            ...prev,
+                            [platform]: { ...prev[platform], merchant_id: e.target.value },
+                          }))
+                        }
+                        placeholder={
+                          platform === 'paypal' ? 'https://paypal.me/yourname' : '商店代號'
+                        }
+                      />
+                    </div>
+
+                    {needsHash && (
+                      <>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="space-y-1.5">
+                            <Label htmlFor={`${platform}-hashkey`}>
+                              HashKey{existing?.has_hash ? ' (留空保持不變)' : ''}
+                            </Label>
+                            <Input
+                              id={`${platform}-hashkey`}
+                              type="password"
+                              value={form.hash_key}
+                              onChange={e =>
+                                setPaymentForms(prev => ({
+                                  ...prev,
+                                  [platform]: { ...prev[platform], hash_key: e.target.value },
+                                }))
+                              }
+                              placeholder={existing?.has_hash ? '••••••••' : 'HashKey'}
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label htmlFor={`${platform}-hashiv`}>
+                              HashIV{existing?.has_hash ? ' (留空保持不變)' : ''}
+                            </Label>
+                            <Input
+                              id={`${platform}-hashiv`}
+                              type="password"
+                              value={form.hash_iv}
+                              onChange={e =>
+                                setPaymentForms(prev => ({
+                                  ...prev,
+                                  [platform]: { ...prev[platform], hash_iv: e.target.value },
+                                }))
+                              }
+                              placeholder={existing?.has_hash ? '••••••••' : 'HashIV'}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <Label htmlFor={`${platform}-minamount`}>最低斗內金額 (NT$)</Label>
+                          <Input
+                            id={`${platform}-minamount`}
+                            type="number"
+                            min={1}
+                            value={form.min_amount}
+                            onChange={e =>
+                              setPaymentForms(prev => ({
+                                ...prev,
+                                [platform]: { ...prev[platform], min_amount: e.target.value },
+                              }))
+                            }
+                          />
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                          <Label htmlFor={`${platform}-media`}>允許點播 YouTube 影片</Label>
+                          <Switch
+                            id={`${platform}-media`}
+                            checked={form.media_share_enabled}
+                            onCheckedChange={checked =>
+                              setPaymentForms(prev => ({
+                                ...prev,
+                                [platform]: { ...prev[platform], media_share_enabled: checked },
+                              }))
+                            }
+                          />
+                        </div>
+                      </>
+                    )}
+
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor={`${platform}-enabled`}>啟用</Label>
+                      <Switch
+                        id={`${platform}-enabled`}
+                        checked={form.enabled}
+                        onCheckedChange={checked =>
+                          setPaymentForms(prev => ({
+                            ...prev,
+                            [platform]: { ...prev[platform], enabled: checked },
+                          }))
+                        }
+                      />
+                    </div>
+
+                    <div className="flex gap-2 pt-1">
+                      <Button
+                        className="flex-1"
+                        onClick={() => handleSavePaymentConfig(platform)}
+                        disabled={isSaving || isDeleting}
+                      >
+                        {isSaving && (
+                          <Icon
+                            icon="fa-solid fa-spinner"
+                            className="animate-spin mr-2"
+                            wrapperClassName=""
+                          />
+                        )}
+                        儲存
+                      </Button>
+                      {existing && (
+                        <Button
+                          variant="outline"
+                          onClick={() => handleDeletePaymentConfig(platform)}
+                          disabled={isSaving || isDeleting}
+                        >
+                          {isDeleting ? (
+                            <Icon
+                              icon="fa-solid fa-spinner"
+                              className="animate-spin"
+                              wrapperClassName=""
+                            />
+                          ) : (
+                            <Icon icon="fa-solid fa-trash" wrapperClassName="" />
+                          )}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
           )}
         </CardContent>
       </Card>

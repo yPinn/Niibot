@@ -26,6 +26,7 @@ const GameQueue = lazy(() => import('@/pages/modules/GameQueue'))
 const Timers = lazy(() => import('@/pages/modules/Timers'))
 const VideoQueue = lazy(() => import('@/pages/modules/VideoQueue'))
 const PublicCommands = lazy(() => import('@/pages/PublicCommands'))
+const DonatePage = lazy(() => import('@/pages/DonatePage'))
 const GetStarted = lazy(() => import('@/pages/docs/GetStarted'))
 const Terms = lazy(() => import('@/pages/docs/Terms'))
 const Privacy = lazy(() => import('@/pages/docs/Privacy'))
@@ -53,6 +54,7 @@ function App() {
                   <Route path="/terms" element={<Terms />} />
                   <Route path="/privacy" element={<Privacy />} />
                   <Route path="/:username/commands" element={<PublicCommands />} />
+                  <Route path="/donate/:username" element={<DonatePage />} />
                   <Route
                     path="/:username/game-queue/overlay"
                     element={

@@ -22,9 +22,11 @@ from routers import (
     bots_router,
     channels_router,
     commands_router,
+    donation_router,
     events_router,
     game_queue_router,
     message_triggers_router,
+    payment_config_router,
     stats_router,
     timers_router,
     video_queue_router,
@@ -214,6 +216,8 @@ def create_app() -> FastAPI:
     app.include_router(video_queue_router.router)
     app.include_router(timers_router.router)
     app.include_router(message_triggers_router.router)
+    app.include_router(payment_config_router.router)
+    app.include_router(donation_router.router)
     app.include_router(bots_router.router)
 
     # Root endpoint
