@@ -15,9 +15,8 @@ import time
 import urllib.parse
 from datetime import datetime
 
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-
 from asyncpg import Pool
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field
@@ -69,7 +68,7 @@ def _build_check_mac_value(params: dict, hash_key: str, hash_iv: str) -> str:
         + "&".join(f"{k}={v}" for k, v in sorted_pairs)
         + f"&HashIV={hash_iv}"
     )
-    encoded = quote_plus(raw, safe="-_.!()*").lower()
+    encoded = urllib.parse.quote_plus(raw, safe="-_.!()*").lower()
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest().upper()
 
 
@@ -221,8 +220,6 @@ async def checkout(
     if body.platform not in _GATEWAYS and body.platform != "paypal":
         raise HTTPException(status_code=400, detail="Unsupported platform")
 
-    _HASH_PLATFORMS = {"ecpay", "opay", "newebpay"}
-
     repo = DonationRepository(pool)
     result = await repo.get_configs_by_username(username)
     if result is None:
@@ -281,16 +278,18 @@ async def checkout(
             return_url=body.return_url,
             message=body.message,
         )
+        if not config.hash_key or not config.hash_iv:
+            raise HTTPException(status_code=500, detail="Payment gateway not configured")
         trade_info_hex = _newebpay_aes_encrypt(trade_info_str, config.hash_key, config.hash_iv)
         trade_sha = _newebpay_sha256(trade_info_hex, config.hash_key, config.hash_iv)
 
-        params = {
+        nb_params: dict[str, str] = {
             "MerchantID": config.merchant_id,
             "TradeInfo": trade_info_hex,
             "TradeSha": trade_sha,
             "Version": "2.0",
         }
-        return CheckoutResponse(gateway_url=_GATEWAYS["newebpay"], form_params=params)
+        return CheckoutResponse(gateway_url=_GATEWAYS["newebpay"], form_params=nb_params)
 
     # ------------------------------------------------------------------
     # ECPay / OPay: generate signed payment form
@@ -344,6 +343,8 @@ async def checkout(
     if body.return_url:
         params["ClientBackURL"] = body.return_url
 
+    if not config.hash_key or not config.hash_iv:
+        raise HTTPException(status_code=500, detail="Payment gateway not configured")
     params["CheckMacValue"] = _build_check_mac_value(params, config.hash_key, config.hash_iv)
 
     gateway_url = _GATEWAYS[body.platform]
@@ -384,6 +385,11 @@ async def _handle_payment_webhook(
         logger.error("[%s webhook] No config found for user %s", platform, order.user_id)
         return "0|Error"
 
+    if not config.hash_key or not config.hash_iv:
+        logger.error(
+            "[%s webhook] hash_key/hash_iv not configured for user %s", platform, order.user_id
+        )
+        return "0|Error"
     if not _verify_webhook_mac(form_data, config.hash_key, config.hash_iv):
         logger.warning("[%s webhook] CheckMacValue mismatch for order %s", platform, trade_no)
         return "0|Error"
@@ -413,7 +419,7 @@ async def _handle_payment_webhook(
     if paid_order.youtube_video_id and config.media_share_enabled and paid_order.channel_id:
         try:
             vq_repo = VideoQueueRepository(pool)
-            await vq_repo.add_entry(
+            await vq_repo.add(
                 channel_id=paid_order.channel_id,
                 video_id=paid_order.youtube_video_id,
                 requested_by=paid_order.message or "斗內點播",
@@ -490,6 +496,12 @@ async def webhook_newebpay(
         logger.warning("[newebpay webhook] Unknown merchant_id: %s", merchant_id)
         return JSONResponse({"status": "error"}, status_code=200)
 
+    if not config_row.hash_key or not config_row.hash_iv:
+        logger.error(
+            "[newebpay webhook] hash_key/hash_iv not configured for merchant %s", merchant_id
+        )
+        return JSONResponse({"status": "error"}, status_code=200)
+
     # Verify TradeSha
     expected_sha = _newebpay_sha256(trade_info_hex, config_row.hash_key, config_row.hash_iv)
     if trade_sha.upper() != expected_sha:
@@ -535,7 +547,7 @@ async def webhook_newebpay(
     if paid_order.youtube_video_id and config_row.media_share_enabled and paid_order.channel_id:
         try:
             vq_repo = VideoQueueRepository(pool)
-            await vq_repo.add_entry(
+            await vq_repo.add(
                 channel_id=paid_order.channel_id,
                 video_id=paid_order.youtube_video_id,
                 requested_by=paid_order.message or "斗內點播",
