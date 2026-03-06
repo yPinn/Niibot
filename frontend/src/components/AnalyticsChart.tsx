@@ -14,8 +14,6 @@ import {
 
 import { Card, CardContent, Icon } from '@/components/ui'
 
-// --- 介面定義 (Interfaces) ---
-
 interface SessionSummary {
   session_id: number
   started_at: string
@@ -53,8 +51,6 @@ interface ChartConfig {
   unit: string
   label: string
 }
-
-// --- 子組件 (定義在外部以避免重新渲染與解決類型衝突) ---
 
 const CustomTick = ({ x, y, payload }: XAxisTickContentProps): ReactElement => (
   <g transform={`translate(${Number(x) || 0},${Number(y) || 0})`}>
@@ -193,8 +189,6 @@ const ChartTooltip = ({
   )
 }
 
-// --- 主組件 ---
-
 export default function AnalyticsChart({
   data,
   loading = false,
@@ -228,7 +222,9 @@ export default function AnalyticsChart({
     })
 
     const real = Array.from(sessionsByDate.entries()).map(([dateKey, daySessions]) => {
-      const date = new Date(dateKey)
+      // Append local midnight so the date parses in the browser's timezone,
+      // not as UTC (which could shift the day by -1 for negative-offset zones).
+      const date = new Date(`${dateKey}T00:00:00`)
       return {
         date: `${date.getMonth() + 1}-${String(date.getDate()).padStart(2, '0')}`,
         sessions: daySessions,

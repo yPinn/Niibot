@@ -18,8 +18,10 @@ export function OverlayUrlBlock({ url }: OverlayUrlBlockProps) {
   if (!url) return null
 
   const copy = () => {
-    navigator.clipboard.writeText(url)
-    toast.success('已複製')
+    navigator.clipboard.writeText(url).then(
+      () => toast.success('已複製'),
+      () => toast.error('複製失敗，請手動選取網址')
+    )
   }
 
   return (
