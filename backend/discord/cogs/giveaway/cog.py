@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import random
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 import discord
@@ -127,7 +127,7 @@ class GiveawayCog(commands.Cog):
 
     @tasks.loop(minutes=1)
     async def check_giveaway_expiry(self) -> None:
-        now = datetime.now()
+        now = datetime.now(UTC)
         expired = [
             (mid, data)
             for mid, data in self.active_giveaways.items()
@@ -182,7 +182,7 @@ class GiveawayCog(commands.Cog):
                     title="【抽獎已截止】",
                     description="此抽獎已截止，但沒有人參加",
                     color=discord.Color.orange(),
-                    timestamp=datetime.now(),
+                    timestamp=datetime.now(UTC),
                 )
                 no_p_embed.add_field(name="獎品", value=data["prize_name"], inline=True)
                 no_p_embed.add_field(

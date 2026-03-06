@@ -111,9 +111,6 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
             self._background_tasks.add(task)
             task.add_done_callback(self._background_tasks.discard)
 
-    async def setup_database(self) -> None:
-        pass
-
     # ------------------------------------------------------------------
     # Events
     # ------------------------------------------------------------------
