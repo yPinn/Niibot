@@ -32,3 +32,16 @@ services:
     build: !reset {}
     env_file: !reset
       - ./backend/api/.env.prod
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: niibot-cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+    networks:
+      - niibot-network
+    depends_on:
+      api:
+        condition: service_healthy
