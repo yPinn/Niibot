@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 
-import { logout as apiLogout, type User } from '@/api'
+import { type User } from '@/api'
 import { useTheme } from '@/components/theme-provider'
 import {
   Avatar,
@@ -26,17 +26,7 @@ export function NavUser({ user }: { user: User }) {
   const { logout } = useAuth()
   const navigate = useNavigate()
 
-  const handleLogout = async () => {
-    try {
-      await apiLogout()
-      logout()
-      window.location.href = '/login'
-    } catch (error) {
-      if (import.meta.env.DEV) console.error('Logout failed:', error)
-      logout()
-      window.location.href = '/login'
-    }
-  }
+  const handleLogout = () => logout()
 
   const getInitials = () => {
     const name = user.display_name || user.name || '??'

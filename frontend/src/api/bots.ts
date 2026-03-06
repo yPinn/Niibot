@@ -1,4 +1,4 @@
-import { API_ENDPOINTS } from './config'
+import { API_ENDPOINTS, apiFetch } from './config'
 
 export interface BotStatus {
   online: boolean
@@ -27,26 +27,20 @@ export interface ApiServerStatus {
   environment?: string
 }
 
-// ---------------------------------------------------------------------------
-// Public API
-// Polling is unified in ServiceStatusContext (30s interval + manual refresh).
-// No client-side cache needed here.
-// ---------------------------------------------------------------------------
-
 export async function getTwitchBotStatus(): Promise<BotStatus> {
-  const response = await fetch(API_ENDPOINTS.bots.twitch.status, { credentials: 'include' })
+  const response = await apiFetch(API_ENDPOINTS.bots.twitch.status, { credentials: 'include' })
   if (!response.ok) return { online: false }
   return response.json()
 }
 
 export async function getDiscordBotStatus(): Promise<BotStatus> {
-  const response = await fetch(API_ENDPOINTS.bots.discord.status, { credentials: 'include' })
+  const response = await apiFetch(API_ENDPOINTS.bots.discord.status, { credentials: 'include' })
   if (!response.ok) return { online: false }
   return response.json()
 }
 
 export async function getApiServerStatus(): Promise<ApiServerStatus> {
-  const response = await fetch(API_ENDPOINTS.status, { credentials: 'include' })
+  const response = await apiFetch(API_ENDPOINTS.status, { credentials: 'include' })
   if (!response.ok) return { online: false }
   const data = await response.json()
   return {

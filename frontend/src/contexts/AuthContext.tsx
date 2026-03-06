@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useEffect, useRef, useState } from 'react'
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 
 import { type Channel, getCurrentUser, getTwitchMonitoredChannels, type User } from '@/api'
+import { logout as apiLogout } from '@/api/user'
 import { apiCache } from '@/lib/apiCache'
 
 interface AuthContextType {
@@ -9,7 +10,7 @@ interface AuthContextType {
   isInitialized: boolean
   isAffiliate: boolean // true for Twitch affiliate or partner
   channels: Channel[]
-  logout: () => void
+  logout: () => Promise<void>
   refreshUser: () => Promise<void>
   refreshChannels: () => Promise<void>
 }
@@ -26,16 +27,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isLoading: false,
   })
 
-  // Track initialized state in a ref so the 401 handler closure stays current
-  // without needing to re-register the listener on every isInitialized change.
+  // Ref keeps the 401 handler closure current without re-registering on every render.
   const isInitializedRef = useRef(false)
   useEffect(() => {
     isInitializedRef.current = isInitialized
   }, [isInitialized])
 
-  // Global 401 interceptor — redirect to /login when the session expires.
-  // Skipped during initial auth check (not yet initialized) and on overlay
-  // routes (/:username/*/overlay) so live-stream OBS views are never disrupted.
+  // Global 401 interceptor — skip during init and on overlay routes.
   useEffect(() => {
     const handleUnauthorized = () => {
       if (!isInitializedRef.current) return
@@ -49,7 +47,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener('auth:unauthorized', handleUnauthorized)
   }, [])
 
-  const refreshUser = React.useCallback(async () => {
+  const refreshUser = useCallback(async () => {
     try {
       const userData = await getCurrentUser({ forceRefresh: true })
       setUser(userData)
@@ -59,7 +57,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
-  const refreshChannels = React.useCallback(async () => {
+  const logout = useCallback(async () => {
+    try {
+      await apiLogout()
+    } catch (error) {
+      if (import.meta.env.DEV) console.error('Logout request failed:', error)
+    }
+    setUser(null)
+    setChannels([])
+    window.location.href = '/login'
+  }, [])
+
+  const refreshChannels = useCallback(async () => {
     try {
       const channelData = await getTwitchMonitoredChannels({ forceRefresh: true })
       setChannels(channelData)
@@ -69,14 +78,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
-  // Initial data load
+  // Initial data load — guarded by ref against StrictMode double-mount.
   useEffect(() => {
     if (initRef.current.hasLoaded || initRef.current.isLoading) {
       return
     }
 
     initRef.current.isLoading = true
-    initRef.current.hasLoaded = true
 
     const loadInitialData = async () => {
       try {
@@ -93,6 +101,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } finally {
         setIsInitialized(true)
         initRef.current.isLoading = false
+        initRef.current.hasLoaded = true
       }
     }
 
@@ -114,10 +123,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isInitialized,
         isAffiliate: user?.broadcaster_type === 'affiliate' || user?.broadcaster_type === 'partner',
         channels,
-        logout: () => {
-          setUser(null)
-          setChannels([])
-        },
+        logout,
         refreshUser,
         refreshChannels,
       }}

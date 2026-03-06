@@ -11,6 +11,10 @@ export interface BotInfo {
   description: string
 }
 
+// Bot switching is disabled until multi-account linking is implemented.
+// When enabled, this should persist activeBot to user preferences.
+const CAN_SWITCH_BOT = false
+
 export const BOTS: BotInfo[] = [
   {
     id: 'twitch',
@@ -41,21 +45,23 @@ export function BotProvider({ children }: { children: React.ReactNode }) {
 
   const activeBot: BotType = user?.platform || 'twitch'
 
-  // Bot switching is disabled until multi-account linking is implemented.
-  // When enabled, this should persist activeBot to user preferences.
-  const canSwitchBot = false
-
   const activeBotInfo = useMemo(() => BOTS.find(b => b.id === activeBot) ?? BOTS[0], [activeBot])
 
   const value = useMemo(
     () => ({
       activeBot,
       activeBotInfo,
-      setActiveBot: () => {},
+      setActiveBot: () => {
+        if (import.meta.env.DEV) {
+          console.warn(
+            '[BotContext] setActiveBot is a no-op: bot switching is not yet implemented.'
+          )
+        }
+      },
       bots: BOTS,
-      canSwitchBot,
+      canSwitchBot: CAN_SWITCH_BOT,
     }),
-    [activeBot, activeBotInfo, canSwitchBot]
+    [activeBot, activeBotInfo]
   )
 
   return <BotContext.Provider value={value}>{children}</BotContext.Provider>
