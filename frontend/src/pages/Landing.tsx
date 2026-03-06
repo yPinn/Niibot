@@ -41,14 +41,14 @@ const FEATURES = [
 ]
 
 const BUILTIN_COMMANDS = [
-  { name: '!hi', desc: '向聊天室打招呼' },
+  { name: '!hi', desc: '確認機器人目前上線並回應' },
   { name: '!help', desc: '顯示頻道所有可用指令' },
-  { name: '!ai', desc: '向 AI 提問，用法：!問 <問題>' },
+  { name: '!ai', desc: '向 AI 提問，例：!ai 今天吃什麼' },
   { name: '!tft', desc: '查詢聯盟戰棋排名' },
-  { name: '!運勢', desc: '運勢占卜' },
+  { name: '!運勢', desc: '抽取今日運勢，每人每日一次' },
   { name: '!塔羅', desc: '塔羅牌占卜，可指定感情 / 事業 / 財運' },
   { name: '!開播時間', desc: '查看目前已開播多久' },
-  { name: '!斥責', desc: '頻道反惡意言論聲明' },
+  { name: '!斥責', desc: '宣讀頻道對惡意言論的立場聲明' },
 ]
 
 export default function Home() {
@@ -75,14 +75,17 @@ export default function Home() {
         {/* Hero — stacked on mobile/sm, side-by-side from md */}
         <section className="flex min-h-[60vh] flex-col items-center justify-center gap-10 px-6 py-20 text-center sm:px-10 md:flex-row md:items-center md:gap-16 md:text-left lg:px-16 lg:py-24">
           {/* Avatar */}
-          <div className="shrink-0">
+          <div className="shrink-0 animate-in fade-in-0 zoom-in-95 animation-duration-500">
             <div className="h-40 w-40 overflow-hidden rounded-full border-4 border-primary shadow-2xl sm:h-48 sm:w-48 lg:h-56 lg:w-56">
               <img src={avatarSrc} alt="Niibot 頭像" className="h-full w-full object-cover" />
             </div>
           </div>
 
           {/* Text */}
-          <div className="flex flex-col items-center md:items-start">
+          <div
+            className="flex flex-col items-center md:items-start animate-in fade-in-0 slide-in-from-bottom-4 animation-duration-500 fill-mode-backwards"
+            style={{ animationDelay: '150ms' }}
+          >
             <h1 className="text-4xl font-bold tracking-tight sm:text-5xl lg:text-7xl">Niibot</h1>
             <p className="mt-3 text-xl text-muted-foreground">Twitch 聊天機器人 | 泥爸</p>
             <p className="mt-6 max-w-xl text-lg leading-relaxed text-muted-foreground">
@@ -102,13 +105,21 @@ export default function Home() {
 
         {/* Features */}
         <section className="px-6 py-16 sm:px-10 lg:px-16">
-          <h2 className="mb-3 text-2xl font-semibold sm:text-3xl">我能幫你做什麼</h2>
-          <p className="mb-10 text-lg text-muted-foreground">讓你專心直播，雜事交給我。</p>
+          <h2 className="mb-3 text-2xl font-semibold sm:text-3xl animate-in fade-in-0 slide-in-from-bottom-2 animation-duration-400">
+            我能幫你做什麼
+          </h2>
+          <p
+            className="mb-10 text-lg text-muted-foreground animate-in fade-in-0 animation-duration-400 fill-mode-backwards"
+            style={{ animationDelay: '100ms' }}
+          >
+            讓你專心直播，雜事交給我。
+          </p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {FEATURES.map(item => (
+            {FEATURES.map((item, index) => (
               <div
                 key={item.title}
-                className="flex flex-col gap-3 rounded-xl border bg-card p-6 shadow-sm"
+                className="flex flex-col gap-3 rounded-xl border bg-card p-6 shadow-sm animate-in fade-in-0 slide-in-from-bottom-4 animation-duration-300 fill-mode-backwards"
+                style={{ animationDelay: `${index * 75}ms` }}
               >
                 <div className="flex items-center gap-3">
                   <Icon icon={item.icon} wrapperClassName="size-5 text-primary shrink-0" />
@@ -131,13 +142,21 @@ export default function Home() {
 
         <section className="space-y-10 px-6 py-14 sm:px-10 lg:px-16">
           <div>
-            <h2 className="mb-2 text-xl font-semibold sm:text-2xl">內建指令</h2>
-            <p className="mb-6 text-base text-muted-foreground">開箱即用，無需設定。</p>
+            <h2 className="mb-2 text-xl font-semibold sm:text-2xl animate-in fade-in-0 slide-in-from-bottom-2 animation-duration-400">
+              內建指令
+            </h2>
+            <p
+              className="mb-6 text-base text-muted-foreground animate-in fade-in-0 animation-duration-400 fill-mode-backwards"
+              style={{ animationDelay: '100ms' }}
+            >
+              開箱即用，無需設定。
+            </p>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              {BUILTIN_COMMANDS.map(cmd => (
+              {BUILTIN_COMMANDS.map((cmd, index) => (
                 <div
                   key={cmd.name}
-                  className="flex flex-col gap-1.5 rounded-xl border bg-card px-4 py-3"
+                  className="flex flex-col gap-1.5 rounded-xl border bg-card px-4 py-3 animate-in fade-in-0 slide-in-from-bottom-2 animation-duration-200 fill-mode-backwards"
+                  style={{ animationDelay: `${index * 50}ms` }}
                 >
                   <span className="font-mono text-sm font-semibold text-primary">{cmd.name}</span>
                   <span className="text-xs leading-relaxed text-muted-foreground">{cmd.desc}</span>

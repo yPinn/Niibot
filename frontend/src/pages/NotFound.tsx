@@ -6,7 +6,7 @@ import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 export default function NotFound() {
   useDocumentTitle('Not Found')
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-section p-page text-center">
+    <div className="flex h-full flex-col items-center justify-center gap-section p-page text-center animate-in fade-in-0 animation-duration-300">
       <Icon
         icon="fa-solid fa-compass"
         className="text-6xl text-muted-foreground/30"
