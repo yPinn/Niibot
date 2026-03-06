@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 
-import { Icon } from '@/components/ui'
+import { Button, Card, CardAction, CardContent, CardHeader, CardTitle, Icon } from '@/components/ui'
 import { useServiceStatus } from '@/contexts/ServiceStatusContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
@@ -172,35 +172,31 @@ export default function SystemStatus() {
             {lastUpdate.toLocaleTimeString('zh-TW', { hour12: false })}
           </p>
         </div>
-        <button
-          onClick={refresh}
-          className="p-2 hover:bg-accent rounded-md transition-colors active:scale-95"
-          aria-label="Refresh now"
-          title="Refresh now"
-        >
+        <Button variant="ghost" size="icon" onClick={refresh} aria-label="Refresh now">
           <Icon icon="fa-solid fa-rotate" className="w-4 h-4 text-muted-foreground" />
-        </button>
+        </Button>
       </div>
 
       <div className="grid gap-section lg:grid-cols-3">
         {services.map(service => (
-          <div key={service.key} className="bg-card border rounded-lg p-card shadow-sm">
-            <div className="flex items-center justify-between mb-3">
+          <Card key={service.key}>
+            <CardHeader>
               <div className="flex items-center gap-2">
                 <Icon icon={service.icon} className="w-4 h-4 text-muted-foreground" />
-                <h3 className="font-semibold text-card-title">{service.name}</h3>
+                <CardTitle>{service.name}</CardTitle>
               </div>
-              <StatusBadge online={service.online} ready={service.ready} />
-            </div>
-
-            <div className="border-t border-border/40 pt-3">
+              <CardAction>
+                <StatusBadge online={service.online} ready={service.ready} />
+              </CardAction>
+            </CardHeader>
+            <CardContent>
               {service.online ? (
                 service.rows.map(row => <Row key={row.label} label={row.label} value={row.value} />)
               ) : (
                 <p className="text-sub text-muted-foreground font-mono py-2">service unreachable</p>
               )}
-            </div>
-          </div>
+            </CardContent>
+          </Card>
         ))}
       </div>
     </main>
