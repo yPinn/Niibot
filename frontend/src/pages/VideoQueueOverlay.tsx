@@ -12,10 +12,6 @@ import { usePolling } from '@/hooks/usePolling'
 
 import styles from './VideoQueueOverlay.module.css'
 
-// ---------------------------------------------------------------------------
-// YouTube IFrame API — minimal inline types
-// ---------------------------------------------------------------------------
-
 interface YTPlayer {
   playVideo(): void
   pauseVideo(): void
@@ -52,10 +48,6 @@ declare global {
   }
 }
 
-// ---------------------------------------------------------------------------
-// YouTube API loader (singleton promise)
-// ---------------------------------------------------------------------------
-
 let _ytReadyPromise: Promise<void> | null = null
 
 function loadYouTubeAPI(): Promise<void> {
@@ -76,10 +68,6 @@ function loadYouTubeAPI(): Promise<void> {
   })
   return _ytReadyPromise
 }
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 const POLL_INTERVAL = 3_000
 
@@ -122,10 +110,6 @@ function makeMountDiv(container: HTMLDivElement): HTMLDivElement {
   container.appendChild(div)
   return div
 }
-
-// ---------------------------------------------------------------------------
-// Main Overlay
-// ---------------------------------------------------------------------------
 
 export default function VideoQueueOverlay() {
   const { username } = useParams<{ username: string }>()

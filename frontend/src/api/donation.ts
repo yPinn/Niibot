@@ -1,9 +1,5 @@
 import { API_ENDPOINTS, apiFetch } from './config'
 
-// ============================================================
-// Types
-// ============================================================
-
 export type DonationPlatform = 'ecpay' | 'opay' | 'paypal' | 'newebpay'
 
 export interface PaymentConfigResponse {
@@ -50,10 +46,6 @@ export interface CheckoutResponse {
   form_params: Record<string, string>
 }
 
-// ============================================================
-// Payment config API (authenticated — streamer settings)
-// ============================================================
-
 export async function getPaymentConfigs(): Promise<PaymentConfigResponse[]> {
   const res = await apiFetch(API_ENDPOINTS.paymentConfigs.list, {
     credentials: 'include',
@@ -90,10 +82,6 @@ export async function deletePaymentConfig(platform: DonationPlatform): Promise<v
   }
 }
 
-// ============================================================
-// Public donation API (no auth — donor-facing)
-// ============================================================
-
 export async function getPublicDonateInfo(username: string): Promise<PublicDonateInfo> {
   const res = await apiFetch(API_ENDPOINTS.donate.public(username))
   if (res.status === 404) throw new Error('Streamer not found')
@@ -116,10 +104,6 @@ export async function createCheckout(
   }
   return res.json()
 }
-
-// ============================================================
-// Helpers
-// ============================================================
 
 export const PLATFORM_LABELS: Record<DonationPlatform, string> = {
   ecpay: '綠界 ECPay',

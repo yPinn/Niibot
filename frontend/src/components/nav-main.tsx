@@ -34,7 +34,6 @@ export function NavMain({
   const [manuallyOpenedItems, setManuallyOpenedItems] = useState<Set<string>>(new Set())
   const [manuallyClosedItems, setManuallyClosedItems] = useState<Set<string>>(new Set())
 
-  // 檢查該選單項目是否包含當前路由
   const isItemActive = useCallback(
     (item: (typeof items)[0]) => {
       return item.items?.some(subItem => location.pathname === subItem.url) ?? false
@@ -42,7 +41,6 @@ export function NavMain({
     [location.pathname]
   )
 
-  // 計算哪些項目應該被打開
   const openItems = useMemo(() => {
     const open = new Set<string>()
     items.forEach(item => {
@@ -50,26 +48,19 @@ export function NavMain({
       const manuallyOpened = manuallyOpenedItems.has(item.title)
       const manuallyClosed = manuallyClosedItems.has(item.title)
 
-      // 如果用戶手動打開，則打開
       if (manuallyOpened) {
         open.add(item.title)
-      }
-      // 如果用戶手動關閉，則不打開
-      else if (manuallyClosed) {
-        // 不打開
-      }
-      // 如果是活躍項目且沒有被手動關閉，則自動打開
-      else if (active) {
+      } else if (manuallyClosed) {
+        // closed
+      } else if (active) {
         open.add(item.title)
       }
     })
     return open
   }, [items, isItemActive, manuallyOpenedItems, manuallyClosedItems])
 
-  // 切換選單展開/收起
   const toggleItem = (title: string, isOpen: boolean) => {
     if (isOpen) {
-      // 用戶手動打開選單
       setManuallyOpenedItems(prev => {
         const next = new Set(prev)
         next.add(title)
@@ -81,7 +72,6 @@ export function NavMain({
         return next
       })
     } else {
-      // 用戶手動關閉選單
       setManuallyClosedItems(prev => {
         const next = new Set(prev)
         next.add(title)

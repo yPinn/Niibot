@@ -46,18 +46,16 @@ export default function GameQueueOverlay() {
 
   if (!username) return null
 
-  const isEmpty = !state || (state.current_batch.length === 0 && state.next_batch.length === 0)
-
-  if (isEmpty) {
+  if (!state || (state.current_batch.length === 0 && state.next_batch.length === 0)) {
     return isPreview ? <div className={styles.previewEmpty} /> : null
   }
 
-  const remaining = state!.total_active - state!.current_batch.length - state!.next_batch.length
+  const remaining = state.total_active - state.current_batch.length - state.next_batch.length
 
   const panel = (
     <div className={styles.panel}>
-      <PlayerSection entries={state!.current_batch} label="現在上場" />
-      <PlayerSection entries={state!.next_batch} label="下一批" />
+      <PlayerSection entries={state.current_batch} label="現在上場" />
+      <PlayerSection entries={state.next_batch} label="下一批" />
       {remaining > 0 && <div className={styles.remaining}>+{remaining} 人排隊中</div>}
     </div>
   )

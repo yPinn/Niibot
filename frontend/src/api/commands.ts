@@ -1,6 +1,7 @@
 import { API_ENDPOINTS, apiFetch } from './config'
 
 export interface CommandConfig {
+  /** Null for builtin commands without an explicit DB row. */
   id: number | null
   channel_id: string
   command_name: string

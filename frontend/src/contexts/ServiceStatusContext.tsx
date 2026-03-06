@@ -75,7 +75,7 @@ export function ServiceStatusProvider({ children }: { children: React.ReactNode 
 
     refreshRef.current = fetchStatus
 
-    // 避免在 effect body 內同步呼叫 setState — 透過 setTimeout 延遲首次 fetch
+    // setTimeout keeps the interval aligned with the initial fetch.
     const initialTimeout = setTimeout(fetchStatus, 0)
     const interval = setInterval(fetchStatus, POLL_INTERVAL)
     return () => {

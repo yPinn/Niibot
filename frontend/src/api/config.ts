@@ -1,18 +1,19 @@
-// API 端點配置
-
 const getBaseUrl = (): string => {
-  // 1. 取得環境變數
   const rawBase = import.meta.env.VITE_API_URL || ''
-  if (!rawBase) return ''
-
-  // 2. 自動補齊 https:// 並移除結尾斜線
+  if (!rawBase) {
+    if (import.meta.env.DEV) {
+      console.warn(
+        '[config] VITE_API_URL is not set — falling back to relative paths (Vite proxy).'
+      )
+    }
+    return ''
+  }
   const withProtocol = rawBase.startsWith('http') ? rawBase : `https://${rawBase}`
   return withProtocol.replace(/\/$/, '')
 }
 
 export const API_BASE_URL = getBaseUrl()
 
-// 3. 核心工具：強制拼接 Base URL，避免請求發往前端網域
 const join = (path: string) => `${API_BASE_URL}${path}`
 
 export const API_ENDPOINTS = {
@@ -122,11 +123,7 @@ export const API_ENDPOINTS = {
   status: join('/status'),
 } as const
 
-// ---------------------------------------------------------------------------
-// OAuth redirect guard — ensures backend-provided OAuth URLs belong to
-// the expected provider origin before the browser follows them.
-// ---------------------------------------------------------------------------
-
+// OAuth redirect guard — validates provider origin before following the URL.
 const TRUSTED_OAUTH_ORIGINS: Record<string, Set<string>> = {
   twitch: new Set(['https://id.twitch.tv']),
   discord: new Set(['https://discord.com']),
@@ -146,19 +143,17 @@ export function assertTrustedOAuthUrl(raw: unknown, provider: 'twitch' | 'discor
   return raw
 }
 
-// ---------------------------------------------------------------------------
-// Retry-capable fetch — retries once on 503 (DB reconnecting) so transient
-// pool restarts are invisible to the user.
-// ---------------------------------------------------------------------------
-
+// Fetch wrapper: retries once on 503, dispatches auth:unauthorized on 401.
 export async function apiFetch(
   input: RequestInfo | URL,
   init?: RequestInit,
   retries = 1
 ): Promise<Response> {
-  for (let i = 0; i <= retries; i++) {
+  let attempt = 0
+  while (true) {
     const res = await fetch(input, init)
-    if (res.status === 503 && i < retries) {
+    if (res.status === 503 && attempt < retries) {
+      attempt++
       await new Promise(r => setTimeout(r, 1500))
       continue
     }
@@ -167,6 +162,4 @@ export async function apiFetch(
     }
     return res
   }
-  // Unreachable, but satisfies TS
-  return fetch(input, init)
 }

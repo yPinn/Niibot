@@ -40,11 +40,9 @@ export default function Commands() {
   const [error, setError] = useState<string | null>(null)
   const [editing, setEditing] = useState<EditingState | null>(null)
 
-  // Sort states
   const builtinSort = useSortState<SortKey>('command_name')
   const customSort = useSortState<CustomSortKey>('kind')
 
-  // Optimistic toggle for commands
   const { toggle: toggleCommand } = useOptimisticToggle<CommandConfig>({
     setState: setCommands,
     getId: c => c.command_name,
@@ -52,7 +50,6 @@ export default function Commands() {
     messages: { on: '指令已啟用', off: '指令已停用', error: '切換指令狀態失敗' },
   })
 
-  // Optimistic toggle for triggers
   const { toggle: toggleTriggerItem } = useOptimisticToggle<TriggerConfig>({
     setState: setTriggers,
     getId: t => t.trigger_name,
@@ -65,7 +62,6 @@ export default function Commands() {
     else toggleTriggerItem(row.data)
   }
 
-  // Combined custom rows with sort
   const customRows = useMemo((): CustomRow[] => {
     const { sortKey, sortDir } = customSort
     const all: CustomRow[] = [
@@ -127,8 +123,6 @@ export default function Commands() {
     fetchData()
   }, [fetchData])
 
-  // --- Sheet open helpers ---
-
   const openCreate = () => setEditing({ mode: 'create' })
 
   const openEditCommand = (cmd: CommandConfig) => setEditing({ mode: 'edit-command', command: cmd })
@@ -139,8 +133,6 @@ export default function Commands() {
     if (row.kind === 'command') openEditCommand(row.data)
     else openEditTrigger(row.data)
   }
-
-  // --- Sheet callbacks ---
 
   const handleSaved = ({
     commands: updatedCmds,
