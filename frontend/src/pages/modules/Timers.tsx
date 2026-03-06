@@ -14,6 +14,14 @@ import {
 import { PageHeader } from '@/components/PageHeader'
 import { SortableHead } from '@/components/SortableHead'
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
   Button,
   Card,
   CardAction,
@@ -64,10 +72,6 @@ interface EditingState {
   mode: 'edit' | 'create'
   timer: TimerConfig | null
 }
-
-// ---------------------------------------------------------------------------
-// Form state — useReducer (same pattern as CommandSheet)
-// ---------------------------------------------------------------------------
 
 interface TimerFormState {
   name: string
@@ -123,14 +127,13 @@ function timerFormReducer(state: TimerFormState, action: TimerFormAction): Timer
   }
 }
 
-// ---------------------------------------------------------------------------
-
 export default function Timers() {
   useDocumentTitle('Timers')
   const [timers, setTimers] = useState<TimerConfig[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [editing, setEditing] = useState<EditingState | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const [form, dispatch] = useReducer(timerFormReducer, initialTimerForm)
 
   const timerSort = useSortState<TimerSortKey>('name')
@@ -572,10 +575,7 @@ export default function Timers() {
 
           <SheetFooter className="shrink-0 flex-row gap-2">
             {editing?.mode === 'edit' && editing.timer && (
-              <Button
-                variant="destructive"
-                onClick={() => editing.timer && handleDelete(editing.timer)}
-              >
+              <Button variant="destructive" onClick={() => setConfirmDelete(true)}>
                 <Icon icon="fa-solid fa-trash" wrapperClassName="mr-1.5 size-3" />
                 刪除
               </Button>
@@ -590,6 +590,28 @@ export default function Timers() {
           </SheetFooter>
         </SheetContent>
       </Sheet>
+
+      <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>確定刪除計時器？</AlertDialogTitle>
+            <AlertDialogDescription>
+              即將刪除計時器「
+              <span className="font-medium text-foreground">{editing?.timer?.timer_name}</span>
+              」，此操作無法還原。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => editing?.timer && handleDelete(editing.timer)}
+            >
+              刪除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </main>
   )
 }

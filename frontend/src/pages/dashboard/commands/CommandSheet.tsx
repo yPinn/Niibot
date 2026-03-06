@@ -1,4 +1,4 @@
-import { useEffect, useReducer } from 'react'
+import { useEffect, useReducer, useState } from 'react'
 import { toast } from 'sonner'
 
 import { type ChannelDefaults } from '@/api/channels'
@@ -11,6 +11,14 @@ import {
 } from '@/api/commands'
 import { createTrigger, deleteTrigger, type TriggerConfig, updateTrigger } from '@/api/triggers'
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
   Button,
   Icon,
   Input,
@@ -34,10 +42,6 @@ import { useInputInsert } from '@/hooks/useInputInsert'
 
 import { EDITABLE_COMMANDS, ROLE_LABELS } from './constants'
 import type { EditingState } from './types'
-
-// ---------------------------------------------------------------------------
-// Form state via useReducer
-// ---------------------------------------------------------------------------
 
 interface FormState {
   name: string
@@ -99,10 +103,6 @@ const initialForm: FormState = {
   saveError: null,
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 function parseCooldown(value: string): number | null {
   if (value === '') return null
   return Number(value) || 0
@@ -119,10 +119,6 @@ function sanitizeTriggerName(pattern: string): string {
   )
 }
 
-// ---------------------------------------------------------------------------
-// Props
-// ---------------------------------------------------------------------------
-
 export interface CommandSheetProps {
   open: boolean
   editing: EditingState | null
@@ -131,10 +127,6 @@ export interface CommandSheetProps {
   onDeleted: (kind: 'command' | 'trigger', name: string) => void
   onClose: () => void
 }
-
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
 
 export function CommandSheet({
   open,
@@ -145,6 +137,7 @@ export function CommandSheet({
   onClose,
 }: CommandSheetProps) {
   const [form, dispatch] = useReducer(formReducer, initialForm)
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   // Sync form when editing changes (sheet opens / switches item)
   useEffect(() => {
@@ -199,12 +192,15 @@ export function CommandSheet({
     (editing?.mode === 'edit-command' && editing.command.command_type === 'custom') ||
     editing?.mode === 'edit-trigger'
 
-  const sheetTitle = () => {
-    if (!editing) return ''
-    if (editing.mode === 'create') return formIsCommand ? '新增自訂指令' : '新增自動回應'
-    if (editing.mode === 'edit-command') return `編輯 !${editing.command.command_name}`
-    return `編輯 ${editing.trigger.trigger_name}`
-  }
+  const sheetTitle = !editing
+    ? ''
+    : editing.mode === 'create'
+      ? formIsCommand
+        ? '新增自訂指令'
+        : '新增自動回應'
+      : editing.mode === 'edit-command'
+        ? `編輯 !${editing.command.command_name}`
+        : `編輯 ${editing.trigger.trigger_name}`
 
   const handleSave = async () => {
     if (!editing) return
@@ -320,7 +316,7 @@ export function CommandSheet({
     <Sheet open={open} onOpenChange={o => !o && onClose()}>
       <SheetContent>
         <SheetHeader>
-          <SheetTitle>{sheetTitle()}</SheetTitle>
+          <SheetTitle>{sheetTitle}</SheetTitle>
           <SheetDescription>
             {editing?.mode === 'create'
               ? formIsCommand
@@ -554,7 +550,7 @@ export function CommandSheet({
 
         <SheetFooter className="shrink-0 flex-row gap-2">
           {canDelete && (
-            <Button variant="destructive" onClick={handleDelete}>
+            <Button variant="destructive" onClick={() => setConfirmDelete(true)}>
               <Icon icon="fa-solid fa-trash" wrapperClassName="mr-1.5 size-3" />
               刪除
             </Button>
@@ -568,6 +564,28 @@ export function CommandSheet({
           </Button>
         </SheetFooter>
       </SheetContent>
+
+      <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>確定刪除？</AlertDialogTitle>
+            <AlertDialogDescription>
+              {editing?.mode === 'edit-trigger'
+                ? `即將刪除自動回應「${editing.trigger.pattern}」，此操作無法還原。`
+                : `即將刪除指令「!${editing?.mode === 'edit-command' ? editing.command.command_name : ''}」，此操作無法還原。`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={handleDelete}
+            >
+              刪除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Sheet>
   )
 }
