@@ -79,10 +79,12 @@ function formatRemaining(elapsed: number, duration: number | null): string {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
-/** Destroy all active YT players and stop the progress interval. */
+/** Destroy all active YT players, clear the clip timer, and stop the progress interval. */
 function destroyAllPlayers(
   refs: Array<RefObject<YTPlayer | null>>,
   progressRef: RefObject<ReturnType<typeof setInterval> | null>,
+  clipTimerRef: RefObject<ReturnType<typeof setTimeout> | null>,
+  containerRef: RefObject<HTMLDivElement | null>,
   setElapsed: (v: number) => void
 ) {
   for (const ref of refs) {
@@ -98,6 +100,14 @@ function destroyAllPlayers(
   if (progressRef.current) {
     clearInterval(progressRef.current)
     progressRef.current = null
+  }
+  if (clipTimerRef.current) {
+    clearTimeout(clipTimerRef.current)
+    clipTimerRef.current = null
+  }
+  // Clear any iframe left by a Twitch clip player
+  if (containerRef.current) {
+    containerRef.current.innerHTML = ''
   }
   setElapsed(0)
 }
@@ -130,6 +140,7 @@ export default function VideoQueueOverlay() {
   const currentIdRef = useRef<number | null>(null)
   const advancingRef = useRef(false) // prevent concurrent advance calls
   const progressRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const clipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const usernameRef = useRef(username)
   const mountedRef = useRef(true)
   useEffect(() => {
@@ -164,7 +175,7 @@ export default function VideoQueueOverlay() {
     }
   }, [username])
 
-  // Poll state every 5s
+  // Poll state every 3s
   usePolling({ fetchFn: fetchState, intervalMs: POLL_INTERVAL, enabled: !!username })
 
   // Auto-kickstart: if there is no current video but there is a queue, advance
@@ -184,34 +195,75 @@ export default function VideoQueueOverlay() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [username, state?.current?.id, state?.queue.length])
 
-  // Create / destroy YouTube player(s) when current video changes
+  // Create / destroy player(s) when current video changes
   useEffect(() => {
-    if (!ytReady || !containerRef.current) return
+    if (!containerRef.current) return
 
     const current = state?.current ?? null
     const newId = current?.id ?? null
 
     if (newId === currentIdRef.current) return // same video, nothing to do
 
-    destroyAllPlayers([playerRef, leftPlayerRef, rightPlayerRef], progressRef, setElapsed)
+    // YouTube requires the IFrame API to be loaded; Twitch clips use a plain iframe
+    if (current?.video_type !== 'twitch_clip' && !ytReady) return
+
+    destroyAllPlayers(
+      [playerRef, leftPlayerRef, rightPlayerRef],
+      progressRef,
+      clipTimerRef,
+      containerRef,
+      setElapsed
+    )
     currentIdRef.current = newId
 
     if (!current || !newId) return // queue is empty, stay transparent
 
     const currentId = current.id
 
+    // Compute elapsed seconds since started_at for late-joining overlays
+    const joinElapsed = current.started_at
+      ? (Date.now() - new Date(current.started_at).getTime()) / 1000
+      : 0
+
+    // ── Twitch Clip player ──────────────────────────────────────────────
+    if (current.video_type === 'twitch_clip') {
+      // If the clip has already ended, advance immediately
+      if (current.duration_seconds && joinElapsed >= current.duration_seconds - 0.5) {
+        handleVideoEnd(currentId)
+        return
+      }
+
+      setElapsed(joinElapsed)
+
+      const iframe = document.createElement('iframe')
+      iframe.src = `https://clips.twitch.tv/embed?clip=${current.video_id}&parent=${window.location.hostname}&autoplay=true${isPreview ? '&muted=true' : ''}`
+      iframe.style.cssText = 'width:100%;height:100%;border:0'
+      iframe.setAttribute('allowfullscreen', 'true')
+      if (containerRef.current) {
+        containerRef.current.innerHTML = ''
+        containerRef.current.appendChild(iframe)
+      }
+
+      // Progress: increment elapsed every second (no JS API available for Twitch clips)
+      progressRef.current = setInterval(() => {
+        setElapsed(prev => prev + 1)
+      }, 1000)
+
+      // End detection: timer based on remaining clip duration
+      if (current.duration_seconds) {
+        const remaining = Math.max(0, current.duration_seconds - joinElapsed)
+        clipTimerRef.current = setTimeout(() => handleVideoEnd(currentId), remaining * 1000 + 500)
+      }
+      return // skip YouTube player creation below
+    }
+
+    // ── YouTube player ──────────────────────────────────────────────────
     // All-ready barrier: all players hold at autoplay:0 until every onReady has fired,
     // then startAll() calls playVideo() on all simultaneously — zero staggered delay.
     const totalPlayers = current.is_vertical ? 3 : 1
     let readyCount = 0
     let allStarted = false
     let fallbackTimer = 0 as ReturnType<typeof setTimeout>
-
-    // Compute elapsed seconds since started_at so late-joining overlays can seek
-    // into the correct position instead of always starting from T=0.
-    const joinElapsed = current.started_at
-      ? (Date.now() - new Date(current.started_at).getTime()) / 1000
-      : 0
 
     function startAll() {
       if (allStarted) return
@@ -384,16 +436,23 @@ export default function VideoQueueOverlay() {
         }
       }
       if (progressRef.current) clearInterval(progressRef.current)
+      if (clipTimerRef.current) clearTimeout(clipTimerRef.current)
     }
   }, [])
 
-  function handleVideoEnd(doneId: number) {
+  // useCallback with empty deps: all reads are via refs (stable identity), setState/setIsExiting
+  // are stable React dispatch functions — no stale closure risk from future refactors.
+  const handleVideoEnd = useCallback((doneId: number) => {
     if (advancingRef.current || !usernameRef.current) return
     advancingRef.current = true
 
     if (progressRef.current) {
       clearInterval(progressRef.current)
       progressRef.current = null
+    }
+    if (clipTimerRef.current) {
+      clearTimeout(clipTimerRef.current)
+      clipTimerRef.current = null
     }
 
     setIsExiting(true)
@@ -412,7 +471,7 @@ export default function VideoQueueOverlay() {
           advancingRef.current = false
         })
     }, 600)
-  }
+  }, [])
 
   if (!username) return null
 
@@ -439,7 +498,7 @@ export default function VideoQueueOverlay() {
           <div className={styles.controls}>
             {Array.from(formatRemaining(elapsed, current.duration_seconds)).map((char, i) => (
               <div
-                key={`${char}-${i}`}
+                key={i}
                 className={char === ':' || char === '-' ? styles.charBoxNarrow : styles.charBox}
               >
                 {char}

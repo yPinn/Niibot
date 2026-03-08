@@ -5,7 +5,7 @@ Public (all users):
     !np             Now playing: title, link, remaining time, queue info
 
 Moderator+ only:
-    !vq <URL>       Add a video to the queue (YouTube)
+    !vq <URL>       Add a video to the queue (YouTube or Twitch Clip)
     !vq remove      Remove the most recent queued entry submitted by the caller
     !vq skip        Skip the current video
     !vq clear       Clear entire queue (current + all queued)
@@ -25,7 +25,9 @@ from shared.repositories.video_queue import (
     SOURCE_PRIORITY,
     VideoQueueRepository,
     VideoQueueSettingsRepository,
+    extract_twitch_clip_slug,
     extract_youtube_info,
+    fetch_twitch_clip_info,
     fetch_yt_info,
 )
 
@@ -83,13 +85,20 @@ class VideoQueueComponent(commands.Component):
 
         user_name = ctx.chatter.display_name or ctx.chatter.name or ""
 
+        # Detect URL type: try YouTube first, then Twitch clip
         video_id, is_vertical = extract_youtube_info(url_str)
+        clip_slug: str | None = None
         if not video_id:
-            await ctx.reply("請提供有效的 YouTube 連結，例如：!vq https://youtu.be/dQw4w9WgXcQ")
-            return
+            clip_slug = extract_twitch_clip_slug(url_str)
+            if not clip_slug:
+                await ctx.reply("請提供有效的 YouTube 或 Twitch Clip 連結")
+                return
+
+        # Exactly one of clip_slug or video_id is non-None here (the early return above ensures this).
+        active_id: str = clip_slug if clip_slug else video_id  # type: ignore[assignment]
 
         # Duplicate check
-        if await self.vq_repo.video_is_active(channel_id, video_id):
+        if await self.vq_repo.video_is_active(channel_id, active_id):
             await ctx.reply("該影片已在佇列中")
             return
 
@@ -118,11 +127,22 @@ class VideoQueueComponent(commands.Component):
                     await ctx.reply(f"點歌冷卻中，請等待 {time_str}")
                     return
 
-        # Fetch info from YouTube Data API (graceful fallback on failure)
-        title, duration_seconds, view_count, is_vertical_from_api = await fetch_yt_info(
-            video_id, self._settings.youtube_api_key, self._session
-        )
-        is_vertical = is_vertical or is_vertical_from_api
+        if clip_slug:
+            # Fetch Twitch clip metadata
+            title, duration_seconds, view_count = await fetch_twitch_clip_info(
+                clip_slug, self._settings.client_id, self._settings.client_secret, self._session
+            )
+            video_id = clip_slug
+            is_vertical = False
+            video_type = "twitch_clip"
+        else:
+            assert video_id is not None  # guaranteed: clip_slug is None only when video_id is set
+            # Fetch info from YouTube Data API (graceful fallback on failure)
+            title, duration_seconds, view_count, is_vertical_from_api = await fetch_yt_info(
+                video_id, self._settings.youtube_api_key, self._session
+            )
+            is_vertical = is_vertical or is_vertical_from_api
+            video_type = "youtube"
 
         # Minimum view count filter
         if settings.min_view_count > 0:
@@ -143,6 +163,7 @@ class VideoQueueComponent(commands.Component):
             title=title,
             duration_seconds=duration_seconds,
             is_vertical=is_vertical,
+            video_type=video_type,
             priority=SOURCE_PRIORITY["chat"],
         )
         position = await self.vq_repo.get_queue_size(channel_id)
@@ -168,7 +189,11 @@ class VideoQueueComponent(commands.Component):
             await ctx.reply("目前沒有正在播放的影片")
             return
 
-        url = f"https://youtu.be/{current.video_id}"
+        url = (
+            f"https://clips.twitch.tv/{current.video_id}"
+            if current.video_type == "twitch_clip"
+            else f"https://youtu.be/{current.video_id}"
+        )
         title_part = f"「{current.title}」 " if current.title else ""
 
         remaining_str = ""
