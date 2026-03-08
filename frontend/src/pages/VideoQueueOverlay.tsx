@@ -239,6 +239,8 @@ export default function VideoQueueOverlay() {
       iframe.src = `https://clips.twitch.tv/embed?clip=${current.video_id}&parent=${window.location.hostname}&autoplay=true${isPreview ? '&muted=true' : ''}`
       iframe.style.cssText = 'width:100%;height:100%;border:0'
       iframe.setAttribute('allowfullscreen', 'true')
+      iframe.setAttribute('allow', 'autoplay; encrypted-media')
+      iframe.setAttribute('scrolling', 'no')
       if (containerRef.current) {
         containerRef.current.innerHTML = ''
         containerRef.current.appendChild(iframe)

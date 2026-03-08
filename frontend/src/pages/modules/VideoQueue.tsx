@@ -529,6 +529,7 @@ export default function VideoQueue() {
                 src={`${overlayUrl}?preview=1`}
                 className="block h-full w-full"
                 title="Overlay 預覽"
+                allow="autoplay"
               />
             </div>
           )}
