@@ -180,9 +180,11 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
                     buf[chatter_id]["count"] += 1
                     buf[chatter_id]["last_at"] = datetime.now(UTC)
                     buf[chatter_id]["username"] = payload.chatter.name
+                    buf[chatter_id]["display_name"] = payload.chatter.display_name
                 else:
                     buf[chatter_id] = {
                         "username": payload.chatter.name,
+                        "display_name": payload.chatter.display_name,
                         "count": 1,
                         "last_at": datetime.now(UTC),
                     }

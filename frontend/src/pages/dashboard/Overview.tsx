@@ -13,7 +13,7 @@ export default function Dashboard() {
   const { user, isInitialized, channels } = useAuth()
 
   const defaultChannel = useMemo(() => {
-    const fallback = user?.name ?? 'niibot_'
+    const fallback = user?.name ?? 'niibot_' // dev fallback — user is always set in production
     const live = channels.filter(ch => ch.is_live)
     if (live.length === 0) return fallback
     return live.reduce((a, b) => ((a.viewer_count ?? 0) >= (b.viewer_count ?? 0) ? a : b)).name
@@ -103,7 +103,7 @@ export default function Dashboard() {
           icon="fa-solid fa-comments"
           items={
             stats?.top_chatters.map(chatter => ({
-              label: chatter.username,
+              label: chatter.display_name || chatter.username,
               value: chatter.message_count,
             })) || []
           }

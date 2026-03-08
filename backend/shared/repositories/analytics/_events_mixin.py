@@ -133,13 +133,21 @@ class _AnalyticsEventsMixin:
         """Batch-insert chatter stats for a completed session.
 
         Args:
-            chatters: {user_id: {"username": str, "count": int, "last_at": datetime}}
+            chatters: {user_id: {"username": str, "display_name": str | None, "count": int, "last_at": datetime}}
         """
         if not chatters:
             return
 
         rows = [
-            (session_id, channel_id, user_id, data["username"], data["count"], data["last_at"])
+            (
+                session_id,
+                channel_id,
+                user_id,
+                data["username"],
+                data.get("display_name"),
+                data["count"],
+                data["last_at"],
+            )
             for user_id, data in chatters.items()
         ]
 
@@ -147,10 +155,11 @@ class _AnalyticsEventsMixin:
             await conn.executemany(
                 """
                 INSERT INTO chatter_stats
-                    (session_id, channel_id, user_id, username, message_count, last_message_at)
-                VALUES ($1, $2, $3, $4, $5, $6)
+                    (session_id, channel_id, user_id, username, display_name, message_count, last_message_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
                 ON CONFLICT (session_id, user_id) DO UPDATE SET
                     username        = EXCLUDED.username,
+                    display_name    = EXCLUDED.display_name,
                     message_count   = EXCLUDED.message_count,
                     last_message_at = EXCLUDED.last_message_at
                 """,

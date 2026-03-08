@@ -23,6 +23,7 @@ class CommandStat(BaseModel):
 
 class ChatterStat(BaseModel):
     username: str
+    display_name: str | None = None
     message_count: int
 
 
@@ -55,7 +56,11 @@ async def get_channel_stats(
         )
 
         top_chatters = [
-            ChatterStat(username=c["username"], message_count=c["message_count"])
+            ChatterStat(
+                username=c["username"],
+                display_name=c.get("display_name"),
+                message_count=c["message_count"],
+            )
             for c in top_chatters_data
         ]
         top_commands = [
