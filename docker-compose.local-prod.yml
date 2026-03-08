@@ -1,0 +1,21 @@
+# Local build + production env files
+# Usage: docker compose -f docker-compose.yml -f docker-compose.local-prod.yml up -d --build
+#
+# .env.prod is appended after .env — later values override earlier ones.
+
+services:
+  migrate:
+    env_file:
+      - ./backend/api/.env.prod
+
+  twitch-bot:
+    env_file:
+      - ./backend/twitch/.env.prod
+
+  discord-bot:
+    env_file:
+      - ./backend/discord/.env.prod
+
+  api:
+    env_file:
+      - ./backend/api/.env.prod
