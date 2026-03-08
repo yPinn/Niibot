@@ -48,6 +48,42 @@ declare global {
   }
 }
 
+interface TwitchEmbedOptions {
+  clip?: string
+  channel?: string
+  video?: string
+  parent: string[]
+  autoplay?: boolean
+  muted?: boolean
+  width?: string | number
+  height?: string | number
+}
+
+interface TwitchEmbedInstance {
+  getPlayer(): TwitchPlayerInstance
+  addEventListener(event: string, callback: () => void): void
+}
+
+interface TwitchPlayerInstance {
+  play(): void
+  pause(): void
+  getMuted(): boolean
+  setMuted(muted: boolean): void
+}
+
+declare global {
+  interface Window {
+    Twitch?: {
+      Embed: {
+        new (container: HTMLElement, options: TwitchEmbedOptions): TwitchEmbedInstance
+        VIDEO_READY: string
+        VIDEO_PLAY: string
+      }
+      Player?: new (element: HTMLElement, options: Record<string, unknown>) => { destroy: () => void }
+    }
+  }
+}
+
 let _ytReadyPromise: Promise<void> | null = null
 
 function loadYouTubeAPI(): Promise<void> {
@@ -67,6 +103,27 @@ function loadYouTubeAPI(): Promise<void> {
     document.head.appendChild(script)
   })
   return _ytReadyPromise
+}
+
+let _twitchReadyPromise: Promise<void> | null = null
+
+function loadTwitchEmbedAPI(): Promise<void> {
+  if (_twitchReadyPromise) return _twitchReadyPromise
+  _twitchReadyPromise = new Promise((resolve, reject) => {
+    if (typeof window !== 'undefined' && window.Twitch?.Embed) {
+      resolve()
+      return
+    }
+    const script = document.createElement('script')
+    script.src = 'https://embed.twitch.tv/embed/v1.js'
+    script.onload = () => resolve()
+    script.onerror = () => {
+      _twitchReadyPromise = null
+      reject(new Error('Failed to load Twitch Embed API'))
+    }
+    document.head.appendChild(script)
+  })
+  return _twitchReadyPromise
 }
 
 const POLL_INTERVAL = 3_000
@@ -128,6 +185,7 @@ export default function VideoQueueOverlay() {
   const [state, setState] = useState<PublicVideoQueueState | null>(null)
   const [elapsed, setElapsed] = useState(0)
   const [ytReady, setYtReady] = useState(false)
+  const [twitchReady, setTwitchReady] = useState(false)
   const [isExiting, setIsExiting] = useState(false)
 
   const playerRef = useRef<YTPlayer | null>(null)
@@ -163,6 +221,15 @@ export default function VideoQueueOverlay() {
         if (mountedRef.current) setYtReady(true)
       })
       .catch(() => {}) // onerror resets _ytReadyPromise for retry on next mount
+  }, [])
+
+  // Load Twitch Embed API once
+  useEffect(() => {
+    loadTwitchEmbedAPI()
+      .then(() => {
+        if (mountedRef.current) setTwitchReady(true)
+      })
+      .catch(() => {})
   }, [])
 
   const fetchState = useCallback(async () => {
@@ -204,7 +271,8 @@ export default function VideoQueueOverlay() {
 
     if (newId === currentIdRef.current) return // same video, nothing to do
 
-    // YouTube requires the IFrame API to be loaded; Twitch clips use a plain iframe
+    // YouTube requires the IFrame API to be loaded; Twitch clips need the Twitch Embed API
+    if (current?.video_type === 'twitch_clip' && !twitchReady) return
     if (current?.video_type !== 'twitch_clip' && !ytReady) return
 
     destroyAllPlayers(
@@ -240,35 +308,35 @@ export default function VideoQueueOverlay() {
         setElapsed(prev => prev + 1)
       }, 1000)
 
-      // Defer iframe creation past the overlayEnter animation (600ms ease-out).
-      // Twitch's autoplay check runs at player init — if opacity/scaleY are still
-      // transitioning from 0 the check reports "style visibility" failure.
-      const MOUNT_DELAY_MS = 650
-      clipTimerRef.current = setTimeout(() => {
-        const iframe = document.createElement('iframe')
-        iframe.src = `https://player.twitch.tv/?clip=${current.video_id}&parent=${window.location.hostname}&autoplay=true${isPreview ? '&muted=true' : ''}`
-        iframe.style.cssText = 'width:100%;height:100%;border:0'
-        iframe.setAttribute('allowfullscreen', 'true')
-        iframe.setAttribute('allow', 'autoplay; encrypted-media')
-        iframe.setAttribute('scrolling', 'no')
-        if (containerRef.current) {
-          containerRef.current.innerHTML = ''
-          containerRef.current.appendChild(iframe)
-        }
+      // Use Twitch.Embed JS API (not a raw iframe) so the player has a proper
+      // postMessage channel with our page — raw iframes are blocked from autoplaying
+      // because player.twitch.tv can't verify embed legitimacy without it.
+      // autoplay:false + explicit play() in VIDEO_READY avoids any visibility
+      // check during the overlayEnter animation (animation completes in ~600ms,
+      // VIDEO_READY fires after the player finishes loading, typically 1-2s).
+      if (!containerRef.current) return
+      containerRef.current.innerHTML = ''
+      const embed = new window.Twitch!.Embed(containerRef.current, {
+        clip: current.video_id,
+        parent: [window.location.hostname],
+        autoplay: false,
+        muted: isPreview,
+        width: '100%',
+        height: '100%',
+      })
 
-        // End detection: schedule relative to actual elapsed (joinElapsed + mount delay)
-        if (current.duration_seconds) {
-          const remaining = Math.max(
-            0,
-            current.duration_seconds - (joinElapsed + MOUNT_DELAY_MS / 1000)
-          )
-          clipTimerRef.current = setTimeout(
-            () => handleVideoEnd(currentId),
-            remaining * 1000 + 500
-          )
+      embed.addEventListener(window.Twitch!.Embed.VIDEO_READY, () => {
+        // Guard: only play if this clip is still the current one
+        if (currentIdRef.current === currentId) {
+          embed.getPlayer().play()
         }
-      }, MOUNT_DELAY_MS)
+      })
 
+      // End detection: timer based on remaining clip duration
+      if (current.duration_seconds) {
+        const remaining = Math.max(0, current.duration_seconds - joinElapsed)
+        clipTimerRef.current = setTimeout(() => handleVideoEnd(currentId), remaining * 1000 + 500)
+      }
       return // skip YouTube player creation below
     }
 
@@ -436,7 +504,7 @@ export default function VideoQueueOverlay() {
     // Player creation is keyed on video ID — not the full `state` object or `isPreview` —
     // so the player is only rebuilt when the actual video changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ytReady, state?.current?.id, username])
+  }, [ytReady, twitchReady, state?.current?.id, username])
 
   // Cleanup on unmount
   useEffect(() => {

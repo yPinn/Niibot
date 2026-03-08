@@ -13,14 +13,6 @@ interface TwitchPlayerInstance {
   destroy: () => void
 }
 
-interface TwitchWindow extends Window {
-  Twitch?: {
-    Player: new (element: HTMLElement, options: Record<string, unknown>) => TwitchPlayerInstance
-  }
-}
-
-declare const window: TwitchWindow
-
 export default function TwitchPlayer({
   channel,
   width = '100%',
@@ -37,7 +29,7 @@ export default function TwitchPlayer({
     let cancelled = false
 
     function initPlayer() {
-      if (cancelled || !containerRef.current || !window.Twitch) return
+      if (cancelled || !containerRef.current || !window.Twitch?.Player) return
 
       // destroy previous instance
       if (playerRef.current) {
@@ -63,7 +55,7 @@ export default function TwitchPlayer({
       }
     }
 
-    if (window.Twitch) {
+    if (window.Twitch?.Player) {
       initPlayer()
     } else {
       const existing = document.querySelector('script[src*="embed.twitch.tv"]')
@@ -75,7 +67,7 @@ export default function TwitchPlayer({
       }
 
       const poll = setInterval(() => {
-        if (window.Twitch) {
+        if (window.Twitch?.Player) {
           clearInterval(poll)
           clearTimeout(timeout)
           initPlayer()
