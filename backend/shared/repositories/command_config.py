@@ -20,11 +20,21 @@ _cmd_cache = AsyncTTLCache(maxsize=128, ttl=3600)
 _cmd_list_cache = AsyncTTLCache(maxsize=32, ttl=3600)
 _redemption_cache = AsyncTTLCache(maxsize=64, ttl=3600)
 
-_CMD_COLUMNS = (
+# Base columns without aliases (used in RETURNING / simple fetches before alias join)
+_CMD_COLUMNS_BASE = (
     "id, channel_id, command_name, command_type, enabled, "
     "custom_response, cooldown, "
-    "min_role, aliases, usage_count, created_at, updated_at"
+    "min_role, usage_count, created_at, updated_at"
 )
+
+# Full SELECT with aliases aggregated from command_aliases table
+_CMD_SELECT = """
+    SELECT cc.id, cc.channel_id, cc.command_name, cc.command_type, cc.enabled,
+           cc.custom_response, cc.cooldown, cc.min_role,
+           string_agg(ca.alias, ',' ORDER BY ca.alias) AS aliases,
+           cc.usage_count, cc.created_at, cc.updated_at
+    FROM command_configs cc
+    LEFT JOIN command_aliases ca ON ca.command_id = cc.id"""
 
 # Default redemption actions: (action_type, reward_name)
 DEFAULT_REDEMPTIONS: list[dict] = [
@@ -112,8 +122,9 @@ class CommandConfigRepository:
         """
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
-                f"SELECT {_CMD_COLUMNS} "
-                "FROM command_configs WHERE channel_id = $1 AND command_name = $2",
+                f"{_CMD_SELECT} "
+                "WHERE cc.channel_id = $1 AND cc.command_name = $2 "
+                "GROUP BY cc.id",
                 channel_id,
                 command_name,
             )
@@ -128,7 +139,7 @@ class CommandConfigRepository:
     async def find_by_name_or_alias(self, channel_id: str, name: str) -> CommandConfig | None:
         """Find a command config by command_name OR by alias match.
 
-        Checks exact command_name first, then searches aliases (comma-separated).
+        Checks exact command_name first, then searches command_aliases table.
         Used by custom command handler in event_message.
         """
         # Try exact name first (uses cache + virtual fallback)
@@ -144,13 +155,13 @@ class CommandConfigRepository:
         key_func=lambda self, channel_id, name: f"cmd_alias:{channel_id}:{name}",
     )
     async def _find_by_alias(self, channel_id: str, name: str) -> CommandConfig | None:
-        """Search for a command config by alias (DB first, then virtual builtin)."""
+        """Search for a command config by alias via command_aliases table."""
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
-                f"SELECT {_CMD_COLUMNS} "
-                "FROM command_configs "
-                "WHERE channel_id = $1 AND aliases IS NOT NULL "
-                "AND $2 = ANY(string_to_array(aliases, ','))",
+                f"{_CMD_SELECT} "
+                "WHERE cc.channel_id = $1 "
+                "AND cc.id IN (SELECT command_id FROM command_aliases WHERE alias = $2) "
+                "GROUP BY cc.id",
                 channel_id,
                 name,
             )
@@ -178,7 +189,9 @@ class CommandConfigRepository:
         """
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
-                f"SELECT {_CMD_COLUMNS} FROM command_configs WHERE channel_id = $1",
+                f"{_CMD_SELECT} "
+                "WHERE cc.channel_id = $1 "
+                "GROUP BY cc.id",
                 channel_id,
             )
 
@@ -212,50 +225,67 @@ class CommandConfigRepository:
         min_role: str | None = None,
         aliases: str | None = None,
     ) -> CommandConfig:
-        """Insert or update a command config. Invalidates cache."""
+        """Insert or update a command config. Manages aliases in command_aliases table."""
         cd_value = None if cooldown is _UNSET else cooldown
         cd_provided = cooldown is not _UNSET
+        alias_list = [a.strip() for a in aliases.split(",") if a.strip()] if aliases else []
 
         async def _query():
             async with self.pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    f"""
-                    INSERT INTO command_configs
-                        (channel_id, command_name, command_type, enabled,
-                         custom_response, cooldown,
-                         min_role, aliases)
-                    VALUES ($1, $2, $3,
-                            COALESCE($4, TRUE), $5,
-                            $6,
-                            COALESCE($7, 'everyone'), $8)
-                    ON CONFLICT (channel_id, command_name) DO UPDATE SET
-                        enabled = COALESCE($4, command_configs.enabled),
-                        custom_response = COALESCE($5, command_configs.custom_response),
-                        cooldown = CASE WHEN $9 THEN $6 ELSE command_configs.cooldown END,
-                        min_role = COALESCE($7, command_configs.min_role),
-                        aliases = COALESCE($8, command_configs.aliases)
-                    RETURNING {_CMD_COLUMNS}
-                    """,
-                    channel_id,
-                    command_name,
-                    command_type,
-                    enabled,
-                    custom_response,
-                    cd_value,
-                    min_role,
-                    aliases,
-                    cd_provided,
-                )
-                result = CommandConfig(**dict(row))
+                async with conn.transaction():
+                    row = await conn.fetchrow(
+                        f"""
+                        INSERT INTO command_configs
+                            (channel_id, command_name, command_type, enabled,
+                             custom_response, cooldown, min_role)
+                        VALUES ($1, $2, $3,
+                                COALESCE($4, TRUE), $5,
+                                $6,
+                                COALESCE($7, 'everyone'))
+                        ON CONFLICT (channel_id, command_name) DO UPDATE SET
+                            enabled = COALESCE($4, command_configs.enabled),
+                            custom_response = COALESCE($5, command_configs.custom_response),
+                            cooldown = CASE WHEN $8 THEN $6 ELSE command_configs.cooldown END,
+                            min_role = COALESCE($7, command_configs.min_role)
+                        RETURNING {_CMD_COLUMNS_BASE}
+                        """,
+                        channel_id,
+                        command_name,
+                        command_type,
+                        enabled,
+                        custom_response,
+                        cd_value,
+                        min_role,
+                        cd_provided,
+                    )
+                    cmd_id = row["id"]
+
+                    # Replace aliases only when aliases argument was explicitly provided
+                    if aliases is not None:
+                        await conn.execute(
+                            "DELETE FROM command_aliases WHERE command_id = $1", cmd_id
+                        )
+                        for alias in alias_list:
+                            await conn.execute(
+                                "INSERT INTO command_aliases (command_id, alias) VALUES ($1, $2) "
+                                "ON CONFLICT DO NOTHING",
+                                cmd_id,
+                                alias,
+                            )
+
+                    # Fetch with aggregated aliases
+                    result_row = await conn.fetchrow(
+                        f"{_CMD_SELECT} WHERE cc.id = $1 GROUP BY cc.id",
+                        cmd_id,
+                    )
+                    result = CommandConfig(**dict(result_row))
 
                 # Invalidate name cache
                 _cmd_cache.invalidate(f"cmd_config:{channel_id}:{command_name}")
                 _cmd_list_cache.invalidate(f"cmd_list:{channel_id}")
 
                 # Invalidate alias caches — explicit aliases passed + builtin default aliases
-                aliases_to_invalidate: set[str] = set()
-                if aliases:
-                    aliases_to_invalidate.update(a.strip() for a in aliases.split(",") if a.strip())
+                aliases_to_invalidate: set[str] = set(alias_list)
                 if command_name in BUILTIN_MAP:
                     for a in (BUILTIN_MAP[command_name].get("aliases") or "").split(","):
                         a = a.strip()
@@ -292,8 +322,11 @@ class CommandConfigRepository:
         _cmd_list_cache.invalidate(f"cmd_list:{channel_id}")
 
     async def delete_config(self, channel_id: str, command_name: str) -> bool:
-        """Delete a command config (custom commands only). Returns True if deleted."""
-        # Get config first for cache invalidation
+        """Delete a command config (custom commands only). Returns True if deleted.
+
+        command_aliases rows are removed automatically via ON DELETE CASCADE.
+        """
+        # Get config first for alias cache invalidation
         config = await self.get_config(channel_id, command_name)
 
         async def _query():
