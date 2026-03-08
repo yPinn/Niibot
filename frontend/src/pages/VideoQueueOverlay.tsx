@@ -236,7 +236,7 @@ export default function VideoQueueOverlay() {
       setElapsed(joinElapsed)
 
       const iframe = document.createElement('iframe')
-      iframe.src = `https://clips.twitch.tv/embed?clip=${current.video_id}&parent=${window.location.hostname}&autoplay=true${isPreview ? '&muted=true' : ''}`
+      iframe.src = `https://player.twitch.tv/?clip=${current.video_id}&parent=${window.location.hostname}&autoplay=true${isPreview ? '&muted=true' : ''}`
       iframe.style.cssText = 'width:100%;height:100%;border:0'
       iframe.setAttribute('allowfullscreen', 'true')
       iframe.setAttribute('allow', 'autoplay; encrypted-media')
