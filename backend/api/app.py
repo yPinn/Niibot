@@ -14,7 +14,7 @@ from fastapi.responses import PlainTextResponse, Response
 
 from core.config import get_settings
 from core.database import get_database_manager, init_database_manager
-from core.dependencies import close_discord_api, close_twitch_api
+from core.dependencies import close_twitch_api
 from core.logging import setup_logging
 from routers import (
     analytics_router,
@@ -159,7 +159,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         _pool_heartbeat_task.cancel()
     try:
         await close_twitch_api()
-        await close_discord_api()
         await close_bots_http_client()
         await db_manager.disconnect()
         logger.info("Database disconnected")

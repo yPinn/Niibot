@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 
-import { getDiscordOAuthStatus, openDiscordOAuth, openTwitchOAuth } from '@/api'
+import { openTwitchOAuth } from '@/api'
 import rabbitBg from '@/assets/images/Rabbit.jpg'
 import { Button, Card, CardContent, Icon } from '@/components/ui'
 import { cn } from '@/lib/utils'
@@ -12,16 +12,13 @@ const ERROR_MESSAGES: Record<string, string> = {
   db_timeout: '伺服器連線逾時，請稍後再試',
   save_token_failed: '登入資料儲存失敗，請稍後再試',
   no_code: '未收到授權碼，請重新登入',
-  discord_not_configured: 'Discord 登入尚未設定',
   access_denied: '授權被拒絕',
 }
 
 export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) {
   const [searchParams, setSearchParams] = useSearchParams()
-  const [discordEnabled, setDiscordEnabled] = useState(false)
-  const [discordLoading, setDiscordLoading] = useState(true)
 
-  // Process error param once on mount — same pattern as Settings.tsx
+  // Process error param once on mount
   useEffect(() => {
     const errorCode = searchParams.get('error')
     if (errorCode) {
@@ -30,19 +27,6 @@ export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) 
       setSearchParams({}, { replace: true })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  useEffect(() => {
-    getDiscordOAuthStatus()
-      .then(status => {
-        setDiscordEnabled(status.enabled)
-      })
-      .catch(() => {
-        setDiscordEnabled(false)
-      })
-      .finally(() => {
-        setDiscordLoading(false)
-      })
   }, [])
 
   return (
@@ -95,26 +79,10 @@ export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) 
                   </li>
                 </ul>
               </div>
-              <div className="space-y-3">
-                <Button type="button" onClick={openTwitchOAuth} className="w-full">
-                  <Icon icon="fa-brands fa-twitch" className="text-lg mr-2" wrapperClassName="" />
-                  使用 Twitch 登入
-                </Button>
-                {!discordLoading && discordEnabled && (
-                  <Button
-                    type="button"
-                    onClick={openDiscordOAuth}
-                    className="bg-[#5865F2] hover:bg-[#4752C4] text-white w-full"
-                  >
-                    <Icon
-                      icon="fa-brands fa-discord"
-                      className="text-lg mr-2"
-                      wrapperClassName=""
-                    />
-                    使用 Discord 登入
-                  </Button>
-                )}
-              </div>
+              <Button type="button" onClick={openTwitchOAuth} className="w-full">
+                <Icon icon="fa-brands fa-twitch" className="text-lg mr-2" wrapperClassName="" />
+                使用 Twitch 登入
+              </Button>
             </div>
           </form>
           <div className="bg-muted relative hidden md:block">

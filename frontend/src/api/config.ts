@@ -20,16 +20,11 @@ export const API_ENDPOINTS = {
   auth: {
     twitchOAuth: join('/api/auth/twitch/oauth'),
     twitchCallback: join('/api/auth/twitch/callback'),
-    discordStatus: join('/api/auth/discord/status'),
-    discordOAuth: join('/api/auth/discord/oauth'),
-    discordCallback: join('/api/auth/discord/callback'),
     user: join('/api/auth/user'),
     logout: join('/api/auth/logout'),
   },
   user: {
     preferences: join('/api/user/preferences'),
-    linkedAccounts: join('/api/user/linked-accounts'),
-    unlinkAccount: (platform: string) => join(`/api/user/linked-accounts/${platform}`),
   },
   channels: {
     twitch: {
@@ -126,10 +121,9 @@ export const API_ENDPOINTS = {
 // OAuth redirect guard — validates provider origin before following the URL.
 const TRUSTED_OAUTH_ORIGINS: Record<string, Set<string>> = {
   twitch: new Set(['https://id.twitch.tv']),
-  discord: new Set(['https://discord.com']),
 }
 
-export function assertTrustedOAuthUrl(raw: unknown, provider: 'twitch' | 'discord'): string {
+export function assertTrustedOAuthUrl(raw: unknown, provider: 'twitch'): string {
   if (typeof raw !== 'string' || !raw) throw new Error('No OAuth URL returned')
   let url: URL
   try {

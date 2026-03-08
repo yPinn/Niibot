@@ -16,16 +16,14 @@ from core.dependencies import (
     get_channel_service,
     get_current_user_id,
     get_db_pool,
-    get_discord_api,
     get_token_payload,
     get_twitch_api,
 )
-from services import AuthService, DiscordAPIClient, TwitchAPIClient
+from services import AuthService, TwitchAPIClient
 from services.oauth_service import (
     decode_oauth_state,
     encode_oauth_state,
     find_or_create_user,
-    link_account,
 )
 
 logger = logging.getLogger(__name__)
@@ -48,9 +46,9 @@ class UserInfoResponse(BaseModel):
     name: str
     display_name: str
     avatar: str
-    platform: str  # "twitch" or "discord"
-    theme: str  # "dark", "light", or "system"
-    broadcaster_type: str = ""  # "affiliate", "partner", or "" (non-affiliate)
+    platform: str
+    theme: str
+    broadcaster_type: str = ""
 
 
 class LogoutResponse(BaseModel):
@@ -68,18 +66,11 @@ class PreferencesUpdate(BaseModel):
 
 @router.get("/auth/twitch/oauth", response_model=OAuthURLResponse)
 async def get_twitch_oauth_url(
-    mode: str = "login",
-    auth_token: str | None = Cookie(None),
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
     settings: Settings = Depends(get_settings),
 ) -> OAuthURLResponse:
-    """Get Twitch OAuth authorization URL. Use mode=link to link account."""
-    user_id_for_state = None
-    if mode == "link":
-        payload = get_token_payload(auth_token)
-        user_id_for_state = str(payload["sub"])
-    state = encode_oauth_state(mode, user_id=user_id_for_state, secret=settings.jwt_secret_key)
-
+    """Get Twitch OAuth authorization URL."""
+    state = encode_oauth_state("login", secret=settings.jwt_secret_key)
     oauth_url = twitch_api.generate_oauth_url(state=state)
     return OAuthURLResponse(
         oauth_url=oauth_url,
@@ -92,17 +83,12 @@ async def twitch_oauth_callback(
     code: str | None = None,
     error: str | None = None,
     state: str | None = None,
-    auth_token: str | None = Cookie(None),
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
     auth_service: AuthService = Depends(get_auth_service),
     settings: Settings = Depends(get_settings),
 ) -> RedirectResponse:
     """Handle Twitch OAuth callback"""
-    state_data = decode_oauth_state(state, secret=settings.jwt_secret_key)
-    is_link_mode = state_data.get("mode") == "link"
-    error_redirect = (
-        f"{settings.frontend_url}/settings" if is_link_mode else f"{settings.frontend_url}/login"
-    )
+    error_redirect = f"{settings.frontend_url}/login"
 
     if error:
         logger.error(f"OAuth error from Twitch: {error}")
@@ -146,33 +132,6 @@ async def twitch_oauth_callback(
             logger.error(f"Failed to save token and channel for {username}")
             return RedirectResponse(url=f"{error_redirect}?error=save_token_failed")
 
-        # Link mode: attach to existing user
-        if is_link_mode:
-            link_user_id = state_data.get("uid")
-            if not link_user_id:
-                return RedirectResponse(url=f"{error_redirect}?error=invalid_state")
-
-            # Verify cookie user matches state user (prevent session swap)
-            try:
-                payload = get_token_payload(auth_token)
-                if str(payload["sub"]) != link_user_id:
-                    logger.warning(
-                        f"Link uid mismatch: cookie={payload['sub']}, state={link_user_id}"
-                    )
-                    return RedirectResponse(url=f"{error_redirect}?error=session_mismatch")
-            except HTTPException:
-                return RedirectResponse(url=f"{error_redirect}?error=not_authenticated")
-
-            link_ok, link_err = await link_account(
-                pool, link_user_id, "twitch", platform_user_id, username
-            )
-            if not link_ok:
-                return RedirectResponse(url=f"{settings.frontend_url}/settings?error={link_err}")
-
-            logger.info(f"Linked Twitch {username} ({platform_user_id}) to user {link_user_id}")
-            return RedirectResponse(url=f"{settings.frontend_url}/settings?linked=twitch")
-
-        # Login mode: find or create unified user
         user_id = await find_or_create_user(
             pool,
             "twitch",
@@ -214,10 +173,8 @@ async def get_current_user(
     """Get current authenticated user information"""
     payload = get_token_payload(auth_token)
     user_id = str(payload["sub"])
-    platform = payload["platform"]
     platform_user_id = str(payload["platform_user_id"])
 
-    # Get theme from users table (non-critical — default to "system" on DB error)
     theme = "system"
     try:
         user_row = await pool.fetchrow("SELECT theme FROM users WHERE id = $1::uuid", user_id)
@@ -226,24 +183,7 @@ async def get_current_user(
     except Exception as e:
         logger.warning(f"DB error fetching theme for user {user_id}: {type(e).__name__}: {e}")
 
-    if platform == "discord":
-        try:
-            channel_svc = get_channel_service(pool)
-            user_info = await channel_svc.get_discord_user(platform_user_id)
-        except Exception as e:
-            logger.warning(
-                f"DB error fetching Discord user {platform_user_id}: {type(e).__name__}: {e}"
-            )
-            user_info = None
-
-        if not user_info:
-            raise HTTPException(status_code=404, detail="Discord user not found")
-
-        return UserInfoResponse(**user_info, platform="discord", theme=theme)
-
-    # Twitch user
     user_info = await twitch_api.get_user_info(platform_user_id)
-
     if not user_info:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -255,21 +195,13 @@ async def logout(
     response: Response,
     auth_token: str | None = Cookie(None),
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
-    settings: Settings = Depends(get_settings),
-    pool: Pool = Depends(get_db_pool),
 ) -> LogoutResponse:
     """Logout current user by clearing auth cookie"""
     payload = get_token_payload(auth_token)
-    platform = payload["platform"]
     platform_user_id = str(payload["platform_user_id"])
 
-    if platform == "discord":
-        channel_svc = get_channel_service(pool)
-        user_info = await channel_svc.get_discord_user(platform_user_id)
-        username = user_info.get("name", platform_user_id) if user_info else platform_user_id
-    else:
-        user_info = await twitch_api.get_user_info(platform_user_id)
-        username = user_info.get("name", platform_user_id) if user_info else platform_user_id
+    user_info = await twitch_api.get_user_info(platform_user_id)
+    username = user_info.get("name", platform_user_id) if user_info else platform_user_id
 
     response.delete_cookie(
         key="auth_token",
@@ -278,7 +210,7 @@ async def logout(
         secure=True,
         samesite="lax",
     )
-    logger.info(f"User logged out: {username} ({platform}:{platform_user_id})")
+    logger.info(f"User logged out: {username} (twitch:{platform_user_id})")
     return LogoutResponse(message="Logged out successfully")
 
 
@@ -300,238 +232,3 @@ async def update_preferences(
         user_id,
     )
     return {"theme": body.theme}
-
-
-# ============================================
-# Discord OAuth Endpoints
-# ============================================
-
-
-class DiscordOAuthStatusResponse(BaseModel):
-    enabled: bool
-    message: str
-
-
-@router.get("/auth/discord/status", response_model=DiscordOAuthStatusResponse)
-async def get_discord_oauth_status(
-    discord_api: DiscordAPIClient = Depends(get_discord_api),
-) -> DiscordOAuthStatusResponse:
-    """Check if Discord OAuth is configured and available"""
-    if discord_api.is_configured:
-        return DiscordOAuthStatusResponse(
-            enabled=True,
-            message="Discord OAuth is available",
-        )
-    return DiscordOAuthStatusResponse(
-        enabled=False,
-        message="Discord OAuth is not configured",
-    )
-
-
-@router.get("/auth/discord/oauth", response_model=OAuthURLResponse)
-async def get_discord_oauth_url(
-    mode: str = "login",
-    auth_token: str | None = Cookie(None),
-    discord_api: DiscordAPIClient = Depends(get_discord_api),
-    settings: Settings = Depends(get_settings),
-) -> OAuthURLResponse:
-    """Get Discord OAuth authorization URL. Use mode=link to link account."""
-    if not discord_api.is_configured:
-        raise HTTPException(
-            status_code=503,
-            detail="Discord OAuth is not configured",
-        )
-
-    user_id_for_state = None
-    if mode == "link":
-        payload = get_token_payload(auth_token)
-        user_id_for_state = str(payload["sub"])
-    state = encode_oauth_state(mode, user_id=user_id_for_state, secret=settings.jwt_secret_key)
-
-    oauth_url = discord_api.generate_oauth_url(state=state)
-    return OAuthURLResponse(
-        oauth_url=oauth_url,
-        redirect_uri=f"{settings.api_url}/api/auth/discord/callback",
-    )
-
-
-@router.get("/auth/discord/callback")
-async def discord_oauth_callback(
-    code: str | None = None,
-    error: str | None = None,
-    state: str | None = None,
-    auth_token: str | None = Cookie(None),
-    discord_api: DiscordAPIClient = Depends(get_discord_api),
-    auth_service: AuthService = Depends(get_auth_service),
-    settings: Settings = Depends(get_settings),
-) -> RedirectResponse:
-    """Handle Discord OAuth callback"""
-    state_data = decode_oauth_state(state, secret=settings.jwt_secret_key)
-    is_link_mode = state_data.get("mode") == "link"
-    error_redirect = (
-        f"{settings.frontend_url}/settings" if is_link_mode else f"{settings.frontend_url}/login"
-    )
-
-    if error:
-        logger.error(f"OAuth error from Discord: {error}")
-        return RedirectResponse(url=f"{error_redirect}?error={_url_quote(error, safe='')}")
-
-    if not code:
-        logger.error("No OAuth code received from Discord")
-        return RedirectResponse(url=f"{error_redirect}?error=no_code")
-
-    if not discord_api.is_configured:
-        logger.error("Discord OAuth not configured")
-        return RedirectResponse(url=f"{error_redirect}?error=discord_not_configured")
-
-    # Must redirect on DB error — cannot use Depends(get_db_pool)
-    try:
-        pool = get_database_manager().pool
-    except RuntimeError:
-        logger.error("Database not ready during Discord OAuth callback")
-        return RedirectResponse(url=f"{error_redirect}?error=db_not_ready")
-
-    success, error_msg, token_data = await discord_api.exchange_code_for_token(code)
-    if not success or not token_data:
-        logger.error(f"Failed to exchange code: {error_msg}")
-        return RedirectResponse(
-            url=f"{error_redirect}?error={_url_quote(error_msg or 'token_exchange_failed', safe='')}"
-        )
-
-    platform_user_id = token_data["user_id"]
-    username = token_data.get("username", platform_user_id)
-    display_name = token_data.get("global_name") or token_data.get("username", username)
-    avatar = token_data.get("avatar")
-
-    try:
-        channel_svc = get_channel_service(pool)
-        await channel_svc.save_discord_user(platform_user_id, username, display_name, avatar)
-
-        # Link mode: attach to existing user
-        if is_link_mode:
-            link_user_id = state_data.get("uid")
-            if not link_user_id:
-                return RedirectResponse(url=f"{error_redirect}?error=invalid_state")
-
-            # Verify cookie user matches state user (prevent session swap)
-            try:
-                payload = get_token_payload(auth_token)
-                if str(payload["sub"]) != link_user_id:
-                    logger.warning(
-                        f"Link uid mismatch: cookie={payload['sub']}, state={link_user_id}"
-                    )
-                    return RedirectResponse(url=f"{error_redirect}?error=session_mismatch")
-            except HTTPException:
-                return RedirectResponse(url=f"{error_redirect}?error=not_authenticated")
-
-            link_ok, link_err = await link_account(
-                pool, link_user_id, "discord", platform_user_id, username
-            )
-            if not link_ok:
-                return RedirectResponse(url=f"{settings.frontend_url}/settings?error={link_err}")
-
-            logger.info(f"Linked Discord {username} ({platform_user_id}) to user {link_user_id}")
-            return RedirectResponse(url=f"{settings.frontend_url}/settings?linked=discord")
-
-        # Login mode: find or create unified user
-        user_id = await find_or_create_user(
-            pool,
-            "discord",
-            platform_user_id,
-            username,
-            display_name=display_name,
-            avatar=avatar,
-        )
-    except Exception as e:
-        logger.error(f"DB error during Discord OAuth for {username}: {type(e).__name__}: {e}")
-        return RedirectResponse(url=f"{error_redirect}?error=db_timeout")
-
-    jwt_token = auth_service.create_access_token(
-        user_id=user_id,
-        platform="discord",
-        platform_user_id=platform_user_id,
-    )
-
-    response = RedirectResponse(url=f"{settings.frontend_url}/discord/dashboard")
-    response.set_cookie(
-        key="auth_token",
-        value=jwt_token,
-        httponly=True,
-        secure=True,
-        samesite="lax",
-        max_age=30 * 24 * 60 * 60,
-    )
-
-    logger.info(f"Discord user logged in: {username} ({platform_user_id})")
-    return response
-
-
-# ============================================
-# Linked Accounts
-# ============================================
-
-
-class LinkedAccountInfo(BaseModel):
-    platform: str
-    platform_user_id: str
-    username: str
-    created_at: str
-
-
-@router.get("/user/linked-accounts")
-async def get_linked_accounts(
-    user_id: str = Depends(get_current_user_id),
-    pool: Pool = Depends(get_db_pool),
-) -> list[LinkedAccountInfo]:
-    """Get all linked accounts for the current user."""
-    rows = await pool.fetch(
-        "SELECT platform, platform_user_id, username, created_at "
-        "FROM user_linked_accounts WHERE user_id = $1::uuid ORDER BY created_at ASC",
-        user_id,
-    )
-    return [
-        LinkedAccountInfo(
-            platform=row["platform"],
-            platform_user_id=row["platform_user_id"],
-            username=row["username"] or "",
-            created_at=row["created_at"].isoformat(),
-        )
-        for row in rows
-    ]
-
-
-@router.delete("/user/linked-accounts/{platform}")
-async def unlink_account(
-    platform: str,
-    user_id: str = Depends(get_current_user_id),
-    auth_token: str | None = Cookie(None),
-    pool: Pool = Depends(get_db_pool),
-) -> dict:
-    """Unlink a platform account from the current user."""
-    if platform not in ("twitch", "discord"):
-        raise HTTPException(status_code=400, detail="Invalid platform")
-
-    # Cannot unlink the platform used for current session
-    payload = get_token_payload(auth_token)
-    if payload["platform"] == platform:
-        raise HTTPException(status_code=400, detail="Cannot unlink your current session platform")
-
-    # Must keep at least one linked account
-    count = await pool.fetchval(
-        "SELECT COUNT(*) FROM user_linked_accounts WHERE user_id = $1::uuid",
-        user_id,
-    )
-    if count <= 1:
-        raise HTTPException(status_code=400, detail="Cannot unlink your last account")
-
-    result = await pool.execute(
-        "DELETE FROM user_linked_accounts WHERE user_id = $1::uuid AND platform = $2",
-        user_id,
-        platform,
-    )
-
-    if result == "DELETE 0":
-        raise HTTPException(status_code=404, detail="Account not found")
-
-    logger.info(f"User {user_id} unlinked {platform} account")
-    return {"message": f"{platform} account unlinked"}

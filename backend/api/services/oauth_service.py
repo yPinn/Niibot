@@ -58,49 +58,6 @@ async def find_or_create_user(
     return user_id
 
 
-async def link_account(
-    pool: Pool,
-    user_id: str,
-    platform: str,
-    platform_user_id: str,
-    username: str,
-) -> tuple[bool, str | None]:
-    """Link a platform account to an existing user.
-
-    Returns (success, error_code).
-    """
-    row = await pool.fetchrow(
-        "SELECT user_id FROM user_linked_accounts WHERE platform = $1 AND platform_user_id = $2",
-        platform,
-        platform_user_id,
-    )
-    if row:
-        existing_uid = str(row["user_id"])
-        if existing_uid == user_id:
-            return True, None  # Already linked to this user — idempotent
-        return False, "already_linked"
-
-    row = await pool.fetchrow(
-        "SELECT platform_user_id FROM user_linked_accounts"
-        " WHERE user_id = $1::uuid AND platform = $2",
-        user_id,
-        platform,
-    )
-    if row:
-        return False, "platform_already_linked"
-
-    await pool.execute(
-        "INSERT INTO user_linked_accounts (user_id, platform, platform_user_id, username)"
-        " VALUES ($1::uuid, $2, $3, $4)",
-        user_id,
-        platform,
-        platform_user_id,
-        username,
-    )
-    logger.info("Linked %s:%s (%s) to user %s", platform, platform_user_id, username, user_id)
-    return True, None
-
-
 # ---------------------------------------------------------------------------
 # OAuth state encoding with HMAC-SHA256 CSRF protection
 # ---------------------------------------------------------------------------

@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 class ChannelService:
-    """API-facing channel / token / discord-user operations."""
+    """API-facing channel / token operations."""
 
     def __init__(self, pool: asyncpg.Pool) -> None:
         self.pool = pool
@@ -142,41 +142,6 @@ class ChannelService:
             logger.exception(f"Error in save_token transaction: {e}")
             return False
 
-    # ==================== Discord User ====================
-
-    async def save_discord_user(
-        self,
-        user_id: str,
-        username: str,
-        display_name: str | None = None,
-        avatar: str | None = None,
-    ) -> bool:
-        """Save or update Discord user info."""
-        try:
-            await self.repo.upsert_discord_user(user_id, username, display_name, avatar)
-            logger.debug(f"Discord user saved: {username} ({user_id})")
-            return True
-        except Exception as e:
-            logger.exception(f"Error saving Discord user to database: {e}")
-            return False
-
-    async def get_discord_user(self, user_id: str) -> dict[str, str] | None:
-        """Get Discord user info formatted for the API response."""
-        try:
-            user = await self.repo.get_discord_user(user_id)
-            if not user:
-                return None
-            avatar_url = self._get_discord_avatar_url(user.user_id, user.avatar)
-            return {
-                "id": user.user_id,
-                "name": user.username,
-                "display_name": user.display_name or user.username,
-                "avatar": avatar_url,
-            }
-        except Exception as e:
-            logger.exception(f"Error getting Discord user {user_id}: {e}")
-            return None
-
     # ==================== Business Logic ====================
 
     async def sync_empty_names(self, twitch_api: TwitchAPIClient) -> None:
@@ -210,13 +175,3 @@ class ChannelService:
         except Exception as e:
             logger.exception(f"Error during sync_empty_names: {e}")
 
-    # ==================== Helpers ====================
-
-    @staticmethod
-    def _get_discord_avatar_url(user_id: str, avatar_hash: str | None) -> str:
-        """Generate Discord avatar CDN URL."""
-        if avatar_hash:
-            ext = "gif" if avatar_hash.startswith("a_") else "png"
-            return f"https://cdn.discordapp.com/avatars/{user_id}/{avatar_hash}.{ext}"
-        default_avatar_index = int(user_id) % 5
-        return f"https://cdn.discordapp.com/embed/avatars/{default_avatar_index}.png"
