@@ -235,27 +235,40 @@ export default function VideoQueueOverlay() {
 
       setElapsed(joinElapsed)
 
-      const iframe = document.createElement('iframe')
-      iframe.src = `https://player.twitch.tv/?clip=${current.video_id}&parent=${window.location.hostname}&autoplay=true${isPreview ? '&muted=true' : ''}`
-      iframe.style.cssText = 'width:100%;height:100%;border:0'
-      iframe.setAttribute('allowfullscreen', 'true')
-      iframe.setAttribute('allow', 'autoplay; encrypted-media')
-      iframe.setAttribute('scrolling', 'no')
-      if (containerRef.current) {
-        containerRef.current.innerHTML = ''
-        containerRef.current.appendChild(iframe)
-      }
-
-      // Progress: increment elapsed every second (no JS API available for Twitch clips)
+      // Start the elapsed counter immediately so the progress UI stays accurate.
       progressRef.current = setInterval(() => {
         setElapsed(prev => prev + 1)
       }, 1000)
 
-      // End detection: timer based on remaining clip duration
-      if (current.duration_seconds) {
-        const remaining = Math.max(0, current.duration_seconds - joinElapsed)
-        clipTimerRef.current = setTimeout(() => handleVideoEnd(currentId), remaining * 1000 + 500)
-      }
+      // Defer iframe creation past the overlayEnter animation (600ms ease-out).
+      // Twitch's autoplay check runs at player init — if opacity/scaleY are still
+      // transitioning from 0 the check reports "style visibility" failure.
+      const MOUNT_DELAY_MS = 650
+      clipTimerRef.current = setTimeout(() => {
+        const iframe = document.createElement('iframe')
+        iframe.src = `https://player.twitch.tv/?clip=${current.video_id}&parent=${window.location.hostname}&autoplay=true${isPreview ? '&muted=true' : ''}`
+        iframe.style.cssText = 'width:100%;height:100%;border:0'
+        iframe.setAttribute('allowfullscreen', 'true')
+        iframe.setAttribute('allow', 'autoplay; encrypted-media')
+        iframe.setAttribute('scrolling', 'no')
+        if (containerRef.current) {
+          containerRef.current.innerHTML = ''
+          containerRef.current.appendChild(iframe)
+        }
+
+        // End detection: schedule relative to actual elapsed (joinElapsed + mount delay)
+        if (current.duration_seconds) {
+          const remaining = Math.max(
+            0,
+            current.duration_seconds - (joinElapsed + MOUNT_DELAY_MS / 1000)
+          )
+          clipTimerRef.current = setTimeout(
+            () => handleVideoEnd(currentId),
+            remaining * 1000 + 500
+          )
+        }
+      }, MOUNT_DELAY_MS)
+
       return // skip YouTube player creation below
     }
 
