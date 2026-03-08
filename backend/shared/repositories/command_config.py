@@ -122,9 +122,7 @@ class CommandConfigRepository:
         """
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
-                f"{_CMD_SELECT} "
-                "WHERE cc.channel_id = $1 AND cc.command_name = $2 "
-                "GROUP BY cc.id",
+                f"{_CMD_SELECT} WHERE cc.channel_id = $1 AND cc.command_name = $2 GROUP BY cc.id",
                 channel_id,
                 command_name,
             )
@@ -189,9 +187,7 @@ class CommandConfigRepository:
         """
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
-                f"{_CMD_SELECT} "
-                "WHERE cc.channel_id = $1 "
-                "GROUP BY cc.id",
+                f"{_CMD_SELECT} WHERE cc.channel_id = $1 GROUP BY cc.id",
                 channel_id,
             )
 

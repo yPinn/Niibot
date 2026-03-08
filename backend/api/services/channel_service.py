@@ -174,4 +174,3 @@ class ChannelService:
 
         except Exception as e:
             logger.exception(f"Error during sync_empty_names: {e}")
-

@@ -21,7 +21,6 @@ from core.dependencies import (
 )
 from services import AuthService, TwitchAPIClient
 from services.oauth_service import (
-    decode_oauth_state,
     encode_oauth_state,
     find_or_create_user,
 )

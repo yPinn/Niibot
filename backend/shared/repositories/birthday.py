@@ -310,7 +310,5 @@ class BirthdayRepository:
     async def list_enabled_settings(self) -> list[BirthdaySettings]:
         """Get all enabled guild settings (for background notification task)."""
         async with self.pool.acquire() as conn:
-            rows = await conn.fetch(
-                "SELECT * FROM discord_birthday_settings WHERE enabled = TRUE"
-            )
+            rows = await conn.fetch("SELECT * FROM discord_birthday_settings WHERE enabled = TRUE")
             return [cast(BirthdaySettings, BirthdaySettings(**dict(row))) for row in rows]
