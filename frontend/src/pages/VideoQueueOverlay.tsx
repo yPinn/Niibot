@@ -53,6 +53,7 @@ interface TwitchEmbedOptions {
   channel?: string
   video?: string
   parent: string[]
+  layout?: 'video' | 'video-with-chat'
   autoplay?: boolean
   muted?: boolean
   width?: string | number
@@ -75,7 +76,7 @@ declare global {
   interface Window {
     Twitch?: {
       Embed: {
-        new (container: HTMLElement, options: TwitchEmbedOptions): TwitchEmbedInstance
+        new (container: string | HTMLElement, options: TwitchEmbedOptions): TwitchEmbedInstance
         VIDEO_READY: string
         VIDEO_PLAY: string
       }
@@ -316,9 +317,16 @@ export default function VideoQueueOverlay() {
       // VIDEO_READY fires after the player finishes loading, typically 1-2s).
       if (!containerRef.current) return
       containerRef.current.innerHTML = ''
-      const embed = new window.Twitch!.Embed(containerRef.current, {
+      // Twitch.Embed requires a string element ID as first argument
+      const mountDiv = document.createElement('div')
+      mountDiv.style.cssText = 'width:100%;height:100%'
+      const mountId = `twitch-embed-${currentId}`
+      mountDiv.id = mountId
+      containerRef.current.appendChild(mountDiv)
+      const embed = new window.Twitch!.Embed(mountId, {
         clip: current.video_id,
         parent: [window.location.hostname],
+        layout: 'video',
         autoplay: false,
         muted: isPreview,
         width: '100%',
