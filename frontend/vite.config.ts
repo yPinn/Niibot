@@ -11,6 +11,11 @@ export default defineConfig(() => ({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  build: {
+    // Disable the modulePreload polyfill inline script — all target browsers support
+    // <link rel="modulepreload"> natively, and the inline script violates our CSP.
+    modulePreload: { polyfill: false },
+  },
   esbuild: {
     // Strip console.* calls and debugger statements from production builds
     drop: ['console', 'debugger'] as ('console' | 'debugger')[],
