@@ -72,6 +72,12 @@ class TimerManagerComponent(commands.Component):
         """Main poll loop: checks all channels every 60 seconds."""
         now = datetime.now()
 
+        live_channels = [c for c in self.bot._subscribed_channels if c in self.bot._active_sessions]
+        LOGGER.debug(
+            f"[timer-poll] subscribed={len(self.bot._subscribed_channels)} "
+            f"live={len(live_channels)} active_sessions={list(self.bot._active_sessions.keys())}"
+        )
+
         for channel_id in list(self.bot._subscribed_channels):
             if channel_id not in self.bot._active_sessions:
                 continue  # Only during live streams
@@ -82,18 +88,32 @@ class TimerManagerComponent(commands.Component):
                 LOGGER.warning(f"Failed to load timers for {channel_id}: {e}")
                 continue
 
+            current_lines = self.bot._channel_line_counts.get(channel_id, 0)
+            LOGGER.debug(
+                f"[timer-poll] channel={channel_id} enabled_timers={len(timers)} "
+                f"line_count={current_lines}"
+            )
+
             for timer in timers:
                 # --- Time gate ---
                 last_fire = self._timer_last_fire.get(timer.id)
                 if last_fire is not None:
                     elapsed = (now - last_fire).total_seconds()
                     if elapsed < timer.interval_seconds:
+                        LOGGER.debug(
+                            f"[timer-poll] '{timer.timer_name}' skip: time "
+                            f"({elapsed:.0f}s / {timer.interval_seconds}s)"
+                        )
                         continue
 
                 # --- Chat-line gate ---
-                current_lines = self.bot._channel_line_counts.get(channel_id, 0)
                 lines_at_last = self._timer_last_fire_lines.get(timer.id, 0)
-                if current_lines - lines_at_last < timer.min_lines:
+                delta_lines = current_lines - lines_at_last
+                if delta_lines < timer.min_lines:
+                    LOGGER.debug(
+                        f"[timer-poll] '{timer.timer_name}' skip: min_lines "
+                        f"({delta_lines}/{timer.min_lines})"
+                    )
                     continue
 
                 await self._fire_timer(channel_id, timer, current_lines, now)
