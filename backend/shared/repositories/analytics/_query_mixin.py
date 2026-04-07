@@ -212,7 +212,8 @@ class _AnalyticsQueryMixin:
                 """
                 SELECT
                     c.user_id,
-                    (ARRAY_AGG(c.username ORDER BY c.last_message_at DESC))[1] AS username,
+                    (ARRAY_AGG(c.username     ORDER BY c.last_message_at DESC))[1] AS username,
+                    (ARRAY_AGG(c.display_name ORDER BY c.last_message_at DESC))[1] AS display_name,
                     SUM(c.message_count) AS total_messages
                 FROM chatter_stats c
                 JOIN stream_sessions s ON s.id = c.session_id
@@ -228,6 +229,7 @@ class _AnalyticsQueryMixin:
             return [
                 {
                     "username": row["username"],
+                    "display_name": row["display_name"],
                     "message_count": row["total_messages"],
                 }
                 for row in rows

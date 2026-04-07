@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
 from twitchio.ext import commands
@@ -20,11 +20,11 @@ class _HasCooldown(Protocol):
 
 LOGGER = logging.getLogger("CommandGuard")
 
-# In-memory cooldown tracker (reset on bot restart)
-# key: "{channel_id}:{command_name}"
+# In-memory cooldown tracker — key: "{channel_id}:{command_name}"
 _cooldown_tracker: dict[str, datetime] = {}
+_cooldown_call_count: int = 0
+_EVICT_INTERVAL = 500
 
-# Role hierarchy (higher index = higher privilege)
 ROLE_HIERARCHY = ["everyone", "subscriber", "vip", "moderator", "broadcaster"]
 
 
@@ -35,7 +35,6 @@ def has_role(chatter, min_role: str) -> bool:
 
     min_level = ROLE_HIERARCHY.index(min_role) if min_role in ROLE_HIERARCHY else 0
 
-    # Check from highest to lowest
     if chatter.broadcaster:
         return ROLE_HIERARCHY.index("broadcaster") >= min_level
     if chatter.moderator:
@@ -45,7 +44,6 @@ def has_role(chatter, min_role: str) -> bool:
     if chatter.subscriber:
         return ROLE_HIERARCHY.index("subscriber") >= min_level
 
-    # everyone level
     return min_level == 0
 
 
@@ -77,7 +75,20 @@ def is_on_cooldown(
 
 def record_cooldown(channel_id: str, command_name: str) -> None:
     """Record cooldown timestamp after successful command execution."""
+    global _cooldown_call_count
     _cooldown_tracker[f"{channel_id}:{command_name}"] = datetime.now(UTC)
+    _cooldown_call_count += 1
+    if _cooldown_call_count >= _EVICT_INTERVAL:
+        _cooldown_call_count = 0
+        _evict_cooldowns()
+
+
+def _evict_cooldowns() -> None:
+    """Remove entries older than 1 hour to prevent unbounded growth."""
+    cutoff = datetime.now(UTC) - timedelta(hours=1)
+    stale = [k for k, v in _cooldown_tracker.items() if v < cutoff]
+    for k in stale:
+        del _cooldown_tracker[k]
 
 
 async def check_command(
@@ -104,7 +115,6 @@ async def check_command(
     if not has_role(ctx.chatter, config.min_role):
         return None
 
-    # Fetch channel defaults for cooldown fallback
     try:
         channel = await channel_repo.get_channel(channel_id) if channel_repo else None
     except Exception as e:

@@ -88,6 +88,17 @@ const SOURCE_CONFIG: Record<string, { label: string; className: string }> = {
   },
 }
 
+function ClipBadge() {
+  return (
+    <Badge
+      variant="outline"
+      className="shrink-0 text-[10px] px-1 py-0 text-purple-500 border-purple-400"
+    >
+      Clip
+    </Badge>
+  )
+}
+
 function SourceBadge({ source }: { source: string }) {
   const cfg = SOURCE_CONFIG[source] ?? { label: source, className: '' }
   return (
@@ -153,8 +164,11 @@ function QueueTable({
                 />
               </TableCell>
               <TableCell>
-                <div className="truncate font-medium" title={current.title || current.video_id}>
-                  {current.title || current.video_id}
+                <div className="flex items-center gap-1.5 min-w-0">
+                  {current.video_type === 'twitch_clip' && <ClipBadge />}
+                  <div className="truncate font-medium" title={current.title || current.video_id}>
+                    {current.title || current.video_id}
+                  </div>
                 </div>
               </TableCell>
               <TableCell className="text-muted-foreground text-sub">
@@ -185,8 +199,11 @@ function QueueTable({
                 <Badge variant="outline">{idx + 1}</Badge>
               </TableCell>
               <TableCell>
-                <div className="truncate font-medium" title={entry.title || entry.video_id}>
-                  {entry.title || entry.video_id}
+                <div className="flex items-center gap-1.5 min-w-0">
+                  {entry.video_type === 'twitch_clip' && <ClipBadge />}
+                  <div className="truncate font-medium" title={entry.title || entry.video_id}>
+                    {entry.title || entry.video_id}
+                  </div>
                 </div>
               </TableCell>
               <TableCell className="text-muted-foreground text-sub">
@@ -382,7 +399,9 @@ export default function VideoQueue() {
     setAdding(true)
     try {
       let newState = await addVideoToQueue(addUrlInput.trim())
-      // Nothing playing yet → advance immediately, same as overlay's kickstart logic
+      // Nothing playing yet → advance immediately, mirroring the overlay's kickstart logic.
+      // Uses the public advance endpoint intentionally: the overlay is the authoritative player
+      // and the same unauthenticated endpoint is used there. No auth-gated advance exists.
       if (newState.current === null && newState.queue.length > 0 && user?.name) {
         newState = await advanceVideoQueue(user.name, null)
       }
@@ -510,6 +529,7 @@ export default function VideoQueue() {
                 src={`${overlayUrl}?preview=1`}
                 className="block h-full w-full"
                 title="Overlay 預覽"
+                allow="autoplay"
               />
             </div>
           )}
@@ -673,7 +693,7 @@ export default function VideoQueue() {
             <div className="flex items-center gap-element">
               <Switch
                 id="redemption-enabled"
-                checked={settings?.redemption_enabled ?? true}
+                checked={settings?.redemption_enabled ?? false}
                 onCheckedChange={handleToggleRedemptionEnabled}
               />
               <Label htmlFor="redemption-enabled" className="cursor-pointer">

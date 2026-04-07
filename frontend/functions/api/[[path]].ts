@@ -10,9 +10,12 @@ export const onRequest: PagesFunction<Env> = async context => {
   const target = `${backend}${url.pathname}${url.search}`
 
   try {
+    const headers = new Headers(context.request.headers)
+    headers.delete('host')
+
     const init: RequestInit = {
       method: context.request.method,
-      headers: context.request.headers,
+      headers,
       redirect: 'manual',
       signal: AbortSignal.timeout(15_000),
     }

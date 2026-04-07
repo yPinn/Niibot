@@ -8,6 +8,7 @@ export interface VideoQueueEntry {
   is_vertical: boolean
   requested_by: string
   source: string
+  video_type: 'youtube' | 'twitch_clip'
   started_at: string | null
 }
 
@@ -61,6 +62,7 @@ export async function advanceVideoQueue(
   return response.json()
 }
 
+// Best-effort: callers swallow errors (.catch(() => {})). No response.ok check is intentional.
 export async function reportVideoMetadata(
   username: string,
   entryId: number,
@@ -150,9 +152,10 @@ export async function addVideoToQueue(url: string): Promise<PublicVideoQueueStat
     //   "Queue is full"           → video_queue_router.py
     const detail: string = body?.detail ?? ''
     if (detail === 'Video already in queue') throw new Error('該影片已在佇列中')
-    throw new Error('隊列已滿')
+    else if (detail === 'Queue is full') throw new Error('隊列已滿')
+    else throw new Error(detail || '新增失敗，請稍後再試')
   }
-  if (response.status === 422) throw new Error('無效的 YouTube 連結')
+  if (response.status === 422) throw new Error('無效的 YouTube 或 Twitch Clip 連結')
   if (!response.ok) throw new Error('新增失敗，請稍後再試')
   return response.json()
 }

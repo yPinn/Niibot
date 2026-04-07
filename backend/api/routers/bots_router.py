@@ -71,7 +71,7 @@ async def check_bot_health(bot_url: str, bot_name: str) -> BotStatusResponse:
         return BotStatusResponse(online=False)
 
     except Exception:
-        logger.exception("Error checking {bot_name} bot status")
+        logger.exception(f"Error checking {bot_name} bot status")
         return BotStatusResponse(online=False)
 
 

@@ -3,6 +3,8 @@
 Also contains shared utilities:
   - extract_youtube_id(): pure string parsing, used by bot and channel_points
   - fetch_yt_info(): YouTube Data API v3 call, used by bot and channel_points
+  - extract_twitch_clip_slug(): pure string parsing for Twitch clip URLs
+  - fetch_twitch_clip_info(): Twitch Helix API call for clip metadata
 """
 
 from __future__ import annotations
@@ -121,6 +123,96 @@ async def fetch_yt_info(
 
 
 # ---------------------------------------------------------------------------
+# Twitch Clip utilities
+# ---------------------------------------------------------------------------
+
+_TWITCH_CLIP_RE = re.compile(
+    r"(?:https?://)?(?:clips\.twitch\.tv/|www\.twitch\.tv/\w+/clip/)([A-Za-z0-9_-]+)"
+)
+
+_TWITCH_OAUTH_URL = "https://id.twitch.tv/oauth2/token"
+_TWITCH_HELIX_CLIPS_URL = "https://api.twitch.tv/helix/clips"
+
+
+def extract_twitch_clip_slug(text: str) -> str | None:
+    """Extract clip slug from a Twitch clip URL. Returns None if not found.
+
+    Supports:
+      - https://clips.twitch.tv/{slug}
+      - https://www.twitch.tv/{channel}/clip/{slug}
+    """
+    m = _TWITCH_CLIP_RE.search(text)
+    return m.group(1) if m else None
+
+
+async def fetch_twitch_clip_info(
+    slug: str,
+    client_id: str,
+    client_secret: str,
+    session: aiohttp.ClientSession | None = None,
+) -> tuple[str | None, int | None, int | None]:
+    """Fetch clip title, duration, and view count via Twitch Helix API.
+
+    Obtains a fresh app access token per call (clips are added infrequently).
+    Returns (title, duration_seconds, view_count).
+    All values are None on any failure.
+    """
+    if not client_id or not client_secret:
+        return None, None, None
+
+    _own_session = session is None
+    _session: aiohttp.ClientSession = session or aiohttp.ClientSession()
+    try:
+        # Fetch app access token
+        async with _session.post(
+            _TWITCH_OAUTH_URL,
+            data={
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "grant_type": "client_credentials",
+            },
+            timeout=aiohttp.ClientTimeout(total=5),
+        ) as resp:
+            if resp.status != 200:
+                logger.warning(f"[Twitch API] Failed to get app token: {resp.status}")
+                return None, None, None
+            token_data = await resp.json()
+            app_token = token_data.get("access_token")
+            if not app_token:
+                return None, None, None
+
+        # Fetch clip metadata
+        async with _session.get(
+            _TWITCH_HELIX_CLIPS_URL,
+            params={"id": slug},
+            headers={"Authorization": f"Bearer {app_token}", "Client-Id": client_id},
+            timeout=aiohttp.ClientTimeout(total=5),
+        ) as resp:
+            if resp.status != 200:
+                logger.warning(f"[Twitch API] Unexpected status {resp.status} for clip {slug}")
+                return None, None, None
+            data = await resp.json()
+            clips = data.get("data", [])
+            if not clips:
+                return None, None, None  # clip not found or deleted
+            clip = clips[0]
+            title: str | None = clip.get("title")
+            duration_raw = clip.get("duration")
+            duration_seconds = int(round(float(duration_raw))) if duration_raw is not None else None
+            view_count_raw = clip.get("view_count")
+            view_count = int(view_count_raw) if view_count_raw is not None else None
+            return title, duration_seconds, view_count
+    except Exception as exc:
+        logger.warning(
+            f"[Twitch API] fetch_twitch_clip_info failed for {slug}: {type(exc).__name__}"
+        )
+        return None, None, None
+    finally:
+        if _own_session:
+            await _session.close()
+
+
+# ---------------------------------------------------------------------------
 # Priority constants
 # ---------------------------------------------------------------------------
 
@@ -143,7 +235,7 @@ PRIORITY_PINNED = 99
 
 _ENTRY_COLUMNS = (
     "id, channel_id, video_id, title, duration_seconds, is_vertical, requested_by, "
-    "source, status, priority, created_at, started_at"
+    "source, status, video_type, priority, created_at, started_at"
 )
 
 _SETTINGS_COLUMNS = (
@@ -176,6 +268,7 @@ class VideoQueueRepository:
         title: str | None = None,
         duration_seconds: int | None = None,
         is_vertical: bool = False,
+        video_type: str = "youtube",
         priority: int = 0,
     ) -> VideoQueueEntry:
         """Insert a new entry with status='queued'."""
@@ -183,8 +276,8 @@ class VideoQueueRepository:
             row = await conn.fetchrow(
                 f"""
                 INSERT INTO video_queue
-                    (channel_id, video_id, title, duration_seconds, is_vertical, requested_by, source, priority)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                    (channel_id, video_id, title, duration_seconds, is_vertical, requested_by, source, video_type, priority)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                 RETURNING {_ENTRY_COLUMNS}
                 """,
                 channel_id,
@@ -194,6 +287,7 @@ class VideoQueueRepository:
                 is_vertical,
                 requested_by,
                 source,
+                video_type,
                 priority,
             )
             return VideoQueueEntry(**dict(row))

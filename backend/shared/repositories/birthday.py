@@ -1,4 +1,4 @@
-"""Repository for birthdays, birthday_subscriptions, and birthday_settings tables."""
+"""Repository for discord_birthdays, discord_birthday_subscriptions, and discord_birthday_settings tables."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ _all_enabled_cache = AsyncTTLCache(maxsize=1, ttl=300)
 
 
 class BirthdayRepository:
-    """Pure SQL operations for birthday feature tables."""
+    """Pure SQL operations for Discord birthday feature tables."""
 
     def __init__(self, pool: asyncpg.Pool) -> None:
         self.pool = pool
@@ -29,7 +29,7 @@ class BirthdayRepository:
         """Get a user's birthday."""
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT * FROM birthdays WHERE user_id = $1",
+                "SELECT * FROM discord_birthdays WHERE user_id = $1",
                 user_id,
             )
             if not row:
@@ -47,7 +47,7 @@ class BirthdayRepository:
         async with self.pool.acquire() as conn:
             await conn.execute(
                 """
-                INSERT INTO birthdays (user_id, month, day, year)
+                INSERT INTO discord_birthdays (user_id, month, day, year)
                 VALUES ($1, $2, $3, $4)
                 ON CONFLICT (user_id) DO UPDATE SET
                     month = EXCLUDED.month,
@@ -66,7 +66,7 @@ class BirthdayRepository:
         """Delete a user's birthday. Returns True if a row was deleted."""
         async with self.pool.acquire() as conn:
             result: str = await conn.execute(
-                "DELETE FROM birthdays WHERE user_id = $1",
+                "DELETE FROM discord_birthdays WHERE user_id = $1",
                 user_id,
             )
         _birthday_cache.invalidate(f"bday:{user_id}")
@@ -78,7 +78,7 @@ class BirthdayRepository:
         """Check if a user is subscribed to a guild's birthday notifications."""
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT 1 FROM birthday_subscriptions WHERE guild_id = $1 AND user_id = $2",
+                "SELECT 1 FROM discord_birthday_subscriptions WHERE guild_id = $1 AND user_id = $2",
                 guild_id,
                 user_id,
             )
@@ -89,7 +89,7 @@ class BirthdayRepository:
         async with self.pool.acquire() as conn:
             await conn.execute(
                 """
-                INSERT INTO birthday_subscriptions (guild_id, user_id)
+                INSERT INTO discord_birthday_subscriptions (guild_id, user_id)
                 VALUES ($1, $2)
                 ON CONFLICT DO NOTHING
                 """,
@@ -101,7 +101,7 @@ class BirthdayRepository:
         """Unsubscribe a user. Returns True if a row was deleted."""
         async with self.pool.acquire() as conn:
             result: str = await conn.execute(
-                "DELETE FROM birthday_subscriptions WHERE guild_id = $1 AND user_id = $2",
+                "DELETE FROM discord_birthday_subscriptions WHERE guild_id = $1 AND user_id = $2",
                 guild_id,
                 user_id,
             )
@@ -111,7 +111,7 @@ class BirthdayRepository:
         """Delete all subscriptions for a guild."""
         async with self.pool.acquire() as conn:
             await conn.execute(
-                "DELETE FROM birthday_subscriptions WHERE guild_id = $1",
+                "DELETE FROM discord_birthday_subscriptions WHERE guild_id = $1",
                 guild_id,
             )
 
@@ -122,7 +122,7 @@ class BirthdayRepository:
         """Get guild birthday settings."""
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT * FROM birthday_settings WHERE guild_id = $1",
+                "SELECT * FROM discord_birthday_settings WHERE guild_id = $1",
                 guild_id,
             )
             if not row:
@@ -141,7 +141,7 @@ class BirthdayRepository:
             if message_template:
                 await conn.execute(
                     """
-                    INSERT INTO birthday_settings
+                    INSERT INTO discord_birthday_settings
                         (guild_id, channel_id, role_id, message_template)
                     VALUES ($1, $2, $3, $4)
                     """,
@@ -153,7 +153,7 @@ class BirthdayRepository:
             else:
                 await conn.execute(
                     """
-                    INSERT INTO birthday_settings (guild_id, channel_id, role_id)
+                    INSERT INTO discord_birthday_settings (guild_id, channel_id, role_id)
                     VALUES ($1, $2, $3)
                     """,
                     guild_id,
@@ -198,7 +198,7 @@ class BirthdayRepository:
 
         values.append(guild_id)
         query = (
-            f"UPDATE birthday_settings "
+            f"UPDATE discord_birthday_settings "
             f"SET {', '.join(updates)}, updated_at = NOW() "
             f"WHERE guild_id = ${idx}"
         )
@@ -212,7 +212,7 @@ class BirthdayRepository:
         async with self.pool.acquire() as conn:
             await conn.execute(
                 """
-                UPDATE birthday_settings
+                UPDATE discord_birthday_settings
                 SET last_notified_date = $1, updated_at = NOW()
                 WHERE guild_id = $2
                 """,
@@ -224,7 +224,7 @@ class BirthdayRepository:
         """Delete guild birthday settings."""
         async with self.pool.acquire() as conn:
             await conn.execute(
-                "DELETE FROM birthday_settings WHERE guild_id = $1",
+                "DELETE FROM discord_birthday_settings WHERE guild_id = $1",
                 guild_id,
             )
         _settings_cache.invalidate(f"settings:{guild_id}")
@@ -243,8 +243,8 @@ class BirthdayRepository:
             rows = await conn.fetch(
                 """
                 SELECT b.user_id, b.year
-                FROM birthdays b
-                JOIN birthday_subscriptions s ON b.user_id = s.user_id
+                FROM discord_birthdays b
+                JOIN discord_birthday_subscriptions s ON b.user_id = s.user_id
                 WHERE s.guild_id = $1 AND b.month = $2 AND b.day = $3
                 ORDER BY b.user_id
                 """,
@@ -265,8 +265,8 @@ class BirthdayRepository:
             rows = await conn.fetch(
                 """
                 SELECT b.user_id, b.month, b.day, b.year
-                FROM birthdays b
-                JOIN birthday_subscriptions s ON b.user_id = s.user_id
+                FROM discord_birthdays b
+                JOIN discord_birthday_subscriptions s ON b.user_id = s.user_id
                 WHERE s.guild_id = $1 AND b.month = $2
                 ORDER BY b.day, b.user_id
                 """,
@@ -286,8 +286,8 @@ class BirthdayRepository:
             rows = await conn.fetch(
                 """
                 SELECT b.user_id, b.month, b.day, b.year
-                FROM birthdays b
-                JOIN birthday_subscriptions s ON b.user_id = s.user_id
+                FROM discord_birthdays b
+                JOIN discord_birthday_subscriptions s ON b.user_id = s.user_id
                 WHERE s.guild_id = $1
                   AND (
                     (b.month > $2) OR
@@ -310,5 +310,5 @@ class BirthdayRepository:
     async def list_enabled_settings(self) -> list[BirthdaySettings]:
         """Get all enabled guild settings (for background notification task)."""
         async with self.pool.acquire() as conn:
-            rows = await conn.fetch("SELECT * FROM birthday_settings WHERE enabled = TRUE")
+            rows = await conn.fetch("SELECT * FROM discord_birthday_settings WHERE enabled = TRUE")
             return [cast(BirthdaySettings, BirthdaySettings(**dict(row))) for row in rows]

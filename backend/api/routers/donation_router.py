@@ -39,12 +39,6 @@ _GATEWAYS: dict[str, str] = {
     "newebpay": "https://core.newebpay.com/MPG/mpg_gateway",
 }
 
-_GATEWAYS_STAGE: dict[str, str] = {
-    "ecpay": "https://payment-stage.ecpay.com.tw/Cashier/AioCheckOut/V5",
-    "opay": "https://payment-stage.opay.tw/Cashier/AioCheckOut/V5",
-    "newebpay": "https://ccore.newebpay.com/MPG/mpg_gateway",
-}
-
 
 # ============================================================
 # CheckMacValue helpers (ECPay / OPay use identical algorithm)

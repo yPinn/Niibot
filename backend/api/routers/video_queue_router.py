@@ -16,7 +16,9 @@ from shared.repositories.video_queue import (
     SOURCE_PRIORITY,
     VideoQueueRepository,
     VideoQueueSettingsRepository,
+    extract_twitch_clip_slug,
     extract_youtube_info,
+    fetch_twitch_clip_info,
     fetch_yt_info,
 )
 
@@ -38,6 +40,7 @@ class VideoEntryResponse(BaseModel):
     is_vertical: bool
     requested_by: str
     source: str
+    video_type: str  # 'youtube' | 'twitch_clip'
     started_at: datetime | None  # for overlay seek-to-elapsed sync
 
 
@@ -118,6 +121,7 @@ async def _build_public_state(
             is_vertical=current.is_vertical,
             requested_by=current.requested_by,
             source=current.source,
+            video_type=current.video_type,
             started_at=current.started_at,
         )
         if current
@@ -131,6 +135,7 @@ async def _build_public_state(
                 is_vertical=e.is_vertical,
                 requested_by=e.requested_by,
                 source=e.source,
+                video_type=e.video_type,
                 started_at=None,
             )
             for e in queued
@@ -411,9 +416,13 @@ async def add_video_entry(
     pool: Pool = Depends(get_db_pool),
 ) -> PublicVideoQueueState:
     """Broadcaster directly adds a video to the queue from the dashboard."""
+    # Detect URL type: try YouTube first, then Twitch clip
     video_id, is_vertical = extract_youtube_info(body.url)
+    clip_slug: str | None = None
     if not video_id:
-        raise HTTPException(status_code=422, detail="Invalid YouTube URL")
+        clip_slug = extract_twitch_clip_slug(body.url)
+        if not clip_slug:
+            raise HTTPException(status_code=422, detail="Invalid YouTube or Twitch clip URL")
 
     try:
         repo = VideoQueueRepository(pool)
@@ -424,14 +433,27 @@ async def add_video_entry(
         if not settings.enabled:
             raise HTTPException(status_code=403, detail="Video queue is disabled")
 
-        if await repo.video_is_active(channel_id, video_id):
+        # Exactly one of clip_slug or video_id is non-None here (the 422 raise above ensures this).
+        active_id: str = clip_slug if clip_slug else video_id  # type: ignore[assignment]
+        if await repo.video_is_active(channel_id, active_id):
             raise HTTPException(status_code=409, detail="Video already in queue")
 
-        # Fetch YouTube metadata (graceful fallback if no API key or request fails)
-        api_key = get_settings().youtube_api_key
+        s = get_settings()
         # Dashboard adds bypass max_queue_size and min_view_count — broadcaster has full authority over their own queue
-        title, duration_seconds, _, is_vertical_from_api = await fetch_yt_info(video_id, api_key)
-        is_vertical = is_vertical or is_vertical_from_api
+        if clip_slug:
+            title, duration_seconds, _ = await fetch_twitch_clip_info(
+                clip_slug, s.client_id, s.client_secret
+            )
+            video_id = clip_slug
+            is_vertical = False
+            video_type = "twitch_clip"
+        else:
+            assert video_id is not None  # guaranteed: clip_slug is None only when video_id is set
+            title, duration_seconds, _, is_vertical_from_api = await fetch_yt_info(
+                video_id, s.youtube_api_key
+            )
+            is_vertical = is_vertical or is_vertical_from_api
+            video_type = "youtube"
 
         # Look up broadcaster display name for the requested_by field
         row = await pool.fetchrow(
@@ -451,9 +473,10 @@ async def add_video_entry(
             title=title,
             duration_seconds=duration_seconds,
             is_vertical=is_vertical,
+            video_type=video_type,
             priority=SOURCE_PRIORITY["dashboard"],
         )
-        logger.info(f"Channel {channel_id} added video {video_id} from dashboard")
+        logger.info(f"Channel {channel_id} added {video_type} {video_id} from dashboard")
         return await _build_public_state(channel_id, repo, settings_repo)
     except HTTPException:
         raise

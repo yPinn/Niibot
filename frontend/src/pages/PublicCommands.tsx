@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 
 import { getPublicCommands, type PublicChannelProfile, type PublicCommand } from '@/api/commands'
 import avatarFallback from '@/assets/images/Avatar.png'
@@ -97,6 +97,12 @@ export default function PublicCommands() {
 
   return (
     <div className="relative flex min-h-screen flex-col items-center justify-center bg-background px-page py-12">
+      <Button variant="ghost" size="icon" className="absolute left-4 top-4" asChild>
+        <Link to="/">
+          <Icon icon="fa-solid fa-house" wrapperClassName="" />
+        </Link>
+      </Button>
+
       <Button
         variant="ghost"
         size="icon"

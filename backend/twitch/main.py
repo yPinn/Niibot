@@ -99,7 +99,6 @@ def main() -> None:
                 subs=subs,
             ) as bot:
                 health_server.bot = bot
-                await bot.setup_database()
 
                 while retry_count < max_retries:
                     try:

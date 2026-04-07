@@ -7,6 +7,7 @@ export interface CommandStat {
 
 export interface ChatterStat {
   username: string
+  display_name?: string | null
   message_count: number
 }
 
