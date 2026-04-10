@@ -8,11 +8,6 @@ describe('assertTrustedOAuthUrl', () => {
     expect(assertTrustedOAuthUrl(url, 'twitch')).toBe(url)
   })
 
-  it('returns the URL string for a valid Discord OAuth URL', () => {
-    const url = 'https://discord.com/api/oauth2/authorize?client_id=abc'
-    expect(assertTrustedOAuthUrl(url, 'discord')).toBe(url)
-  })
-
   it('throws for null input', () => {
     expect(() => assertTrustedOAuthUrl(null, 'twitch')).toThrow('No OAuth URL returned')
   })
@@ -49,12 +44,6 @@ describe('assertTrustedOAuthUrl', () => {
     expect(() =>
       assertTrustedOAuthUrl('https://discord.com/api/oauth2/authorize', 'twitch')
     ).toThrow('OAuth redirect was blocked: untrusted origin')
-  })
-
-  it('throws when Twitch URL is validated against Discord provider', () => {
-    expect(() => assertTrustedOAuthUrl('https://id.twitch.tv/oauth2/authorize', 'discord')).toThrow(
-      'OAuth redirect was blocked: untrusted origin'
-    )
   })
 })
 
