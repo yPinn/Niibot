@@ -83,7 +83,7 @@ class VideoQueueComponent(commands.Component):
         if not ctx.chatter.moderator and not ctx.chatter.broadcaster:  # type: ignore[attr-defined]
             return  # silent
 
-        user_name = ctx.chatter.display_name or ctx.chatter.name or ""
+        user_name = ctx.chatter.name or ctx.chatter.display_name or ""
 
         # Detect URL type: try YouTube first, then Twitch clip
         video_id, is_vertical = extract_youtube_info(url_str)
@@ -293,7 +293,7 @@ class VideoQueueComponent(commands.Component):
         if not ctx.chatter.moderator and not ctx.chatter.broadcaster:  # type: ignore[attr-defined]
             return
         channel_id = ctx.channel.id
-        user_name = ctx.chatter.display_name or ctx.chatter.name or ""
+        user_name = ctx.chatter.name or ctx.chatter.display_name or ""
         entry = await self.vq_repo.find_last_queued_by_user(channel_id, user_name)
         if not entry:
             await ctx.reply("沒有可移除的請求")

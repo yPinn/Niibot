@@ -67,7 +67,7 @@ class ChannelPointsComponent(commands.Component):
         """Channel Points 兌換事件"""
         LOGGER.debug(f"event_custom_redemption_add triggered: {type(payload).__name__}")
 
-        user_name = payload.user.display_name or payload.user.name
+        user_name = payload.user.name or payload.user.display_name
         reward_title = payload.reward.title
         reward_cost = payload.reward.cost
         user_input = payload.user_input or ""
@@ -87,7 +87,7 @@ class ChannelPointsComponent(commands.Component):
     ) -> None:
         """處理兌換事件（DB 驅動比對）"""
         reward_title = payload.reward.title
-        user_name = payload.user.display_name or payload.user.name
+        user_name = payload.user.name or payload.user.display_name
         channel_id = payload.broadcaster.id
 
         # Look up matching redemption config from DB

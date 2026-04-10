@@ -470,11 +470,13 @@ class VideoQueueRepository:
                     channel_id,
                 )
 
-    async def play_immediately(self, entry_id: int, channel_id: str) -> None:
+    async def play_immediately(self, entry_id: int, channel_id: str) -> bool:
         """Skip the currently playing video and start playing this entry immediately.
 
         1. Marks any 'playing' entry as 'skipped'.
         2. Transitions this entry from 'queued' to 'playing'.
+
+        Returns True if the entry was promoted, False if it was not found or not queued.
         """
         async with self.pool.acquire() as conn:
             async with conn.transaction():
@@ -485,13 +487,14 @@ class VideoQueueRepository:
                     channel_id,
                 )
                 # Start playing the requested entry
-                await conn.execute(
+                result = await conn.execute(
                     "UPDATE video_queue "
                     "SET status = 'playing', started_at = NOW() "
                     "WHERE id = $1 AND channel_id = $2 AND status = 'queued'",
                     entry_id,
                     channel_id,
                 )
+                return result == "UPDATE 1"
 
     async def count_active_by_user(self, channel_id: str, requested_by: str) -> int:
         """Count active (queued + playing) entries for a specific user in this channel."""

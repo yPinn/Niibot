@@ -399,7 +399,9 @@ async def play_entry_now(
     try:
         repo = VideoQueueRepository(pool)
         settings_repo = VideoQueueSettingsRepository(pool)
-        await repo.play_immediately(entry_id, channel_id)
+        promoted = await repo.play_immediately(entry_id, channel_id)
+        if not promoted:
+            raise HTTPException(status_code=404, detail="Entry not found or not in queued state")
         logger.info(f"Channel {channel_id} played entry {entry_id} immediately")
         return await _build_public_state(channel_id, repo, settings_repo)
     except HTTPException:
