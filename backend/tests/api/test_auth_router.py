@@ -1,8 +1,8 @@
 """Integration tests for api.routers.auth_router.
 
 Each test class spins up a minimal FastAPI app that includes only the auth
-router. External dependencies (DB pool, Twitch/Discord APIs) are mocked so
-tests run without any network or database connection.
+router. External dependencies (DB pool, Twitch API) are mocked so tests run
+without any network or database connection.
 """
 
 # ruff: noqa: E402  — env vars must be set before Settings-using imports
@@ -21,8 +21,7 @@ os.environ.setdefault("CLIENT_SECRET", "test-client-secret")
 os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost/test")
 
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -33,7 +32,6 @@ from core.dependencies import (
     get_auth_service,
     get_current_user_id,
     get_db_pool,
-    get_discord_api,
     get_twitch_api,
 )
 from routers.auth_router import router as _auth_router
@@ -83,7 +81,7 @@ def _make_pool(
     # asyncpg pool.acquire() is synchronous — returns a context manager, not a coroutine.
     # Override with MagicMock so that async with pool.acquire() as conn works correctly.
     conn = AsyncMock()
-    conn.fetchrow.return_value = None  # discord user not found by default
+    conn.fetchrow.return_value = None
     acquire_ctx = MagicMock()
     acquire_ctx.__aenter__ = AsyncMock(return_value=conn)
     acquire_ctx.__aexit__ = AsyncMock(return_value=None)
@@ -106,17 +104,9 @@ def _make_twitch_api(user_info: dict | None = None) -> MagicMock:
     return api
 
 
-def _make_discord_api(is_configured: bool = True) -> MagicMock:
-    api = MagicMock()
-    api.is_configured = is_configured
-    api.generate_oauth_url.return_value = "https://discord.com/oauth2/authorize?test=1"
-    return api
-
-
 def _make_client(
     pool: AsyncMock | None = None,
     twitch_api: MagicMock | None = None,
-    discord_api: MagicMock | None = None,
     *,
     override_user_id: bool = False,
 ) -> TestClient:
@@ -128,7 +118,6 @@ def _make_client(
     app.dependency_overrides[get_auth_service] = lambda: _AUTH
     app.dependency_overrides[get_db_pool] = lambda: _pool
     app.dependency_overrides[get_twitch_api] = lambda: twitch_api or _make_twitch_api()
-    app.dependency_overrides[get_discord_api] = lambda: discord_api or _make_discord_api()
 
     if override_user_id:
 
@@ -211,15 +200,6 @@ class TestGetCurrentUser:
 
         assert r.status_code == 404
 
-    def test_discord_user_not_found_returns_404(self):
-        # pool.acquire conn.fetchrow returns None → discord user not found
-        pool = _make_pool(fetchrow=None)
-        token = _token(platform="discord", platform_user_id="dc999")
-        client = _make_client(pool=pool)
-        r = client.get("/api/auth/user", cookies={"auth_token": token})
-
-        assert r.status_code == 404
-
 
 # ---------------------------------------------------------------------------
 # POST /api/auth/logout
@@ -247,27 +227,6 @@ class TestLogout:
 
 
 # ---------------------------------------------------------------------------
-# GET /api/auth/discord/status
-# ---------------------------------------------------------------------------
-
-
-class TestDiscordStatus:
-    def test_configured_returns_enabled_true(self):
-        r = _make_client(discord_api=_make_discord_api(is_configured=True)).get(
-            "/api/auth/discord/status"
-        )
-        assert r.status_code == 200
-        assert r.json()["enabled"] is True
-
-    def test_not_configured_returns_enabled_false(self):
-        r = _make_client(discord_api=_make_discord_api(is_configured=False)).get(
-            "/api/auth/discord/status"
-        )
-        assert r.status_code == 200
-        assert r.json()["enabled"] is False
-
-
-# ---------------------------------------------------------------------------
 # GET /api/auth/twitch/oauth
 # ---------------------------------------------------------------------------
 
@@ -282,52 +241,70 @@ class TestTwitchOAuthUrl:
         assert "redirect_uri" in data
         assert "twitch" in data["oauth_url"]
 
-    def test_link_mode_without_cookie_returns_401(self):
-        r = _make_client().get("/api/auth/twitch/oauth?mode=link")
-        assert r.status_code == 401
-
-    def test_link_mode_with_valid_cookie_returns_url(self):
-        r = _make_client().get(
-            "/api/auth/twitch/oauth?mode=link",
-            cookies={"auth_token": _token()},
-        )
-        assert r.status_code == 200
-        assert "oauth_url" in r.json()
-
 
 # ---------------------------------------------------------------------------
-# GET /api/auth/discord/oauth
+# GET /api/auth/twitch/callback — CSRF / state validation
 # ---------------------------------------------------------------------------
 
 
-class TestDiscordOAuthUrl:
-    def test_not_configured_returns_503(self):
-        r = _make_client(discord_api=_make_discord_api(is_configured=False)).get(
-            "/api/auth/discord/oauth"
-        )
-        assert r.status_code == 503
+class TestTwitchOAuthCallback:
+    """Callback security: state must be present and HMAC-verified before code exchange."""
 
-    def test_configured_login_mode_returns_url(self):
-        r = _make_client(discord_api=_make_discord_api(is_configured=True)).get(
-            "/api/auth/discord/oauth"
+    def test_oauth_error_param_redirects_to_login(self):
+        """When Twitch sends ?error=access_denied the callback must redirect to /login."""
+        client = _make_client()
+        r = client.get(
+            "/api/auth/twitch/callback",
+            params={"error": "access_denied"},
+            follow_redirects=False,
         )
-        assert r.status_code == 200
-        data = r.json()
-        assert "oauth_url" in data
-        assert "discord" in data["oauth_url"]
+        assert r.status_code in (302, 307)
+        assert "/login" in r.headers["location"]
+        assert "access_denied" in r.headers["location"]
 
-    def test_link_mode_without_cookie_returns_401(self):
-        r = _make_client(discord_api=_make_discord_api(is_configured=True)).get(
-            "/api/auth/discord/oauth?mode=link"
+    def test_missing_state_redirects_with_invalid_state_error(self):
+        """No state parameter must be rejected — not silently treated as login."""
+        client = _make_client()
+        r = client.get(
+            "/api/auth/twitch/callback",
+            params={"code": "somecode"},
+            follow_redirects=False,
         )
-        assert r.status_code == 401
+        assert r.status_code in (302, 307)
+        location = r.headers["location"]
+        assert "/login" in location
+        assert "invalid_state" in location
 
-    def test_link_mode_with_valid_cookie_returns_url(self):
-        r = _make_client(discord_api=_make_discord_api(is_configured=True)).get(
-            "/api/auth/discord/oauth?mode=link",
-            cookies={"auth_token": _token()},
+    def test_tampered_state_redirects_with_invalid_state_error(self):
+        """Tampered state must be rejected before the code is exchanged."""
+        client = _make_client()
+        r = client.get(
+            "/api/auth/twitch/callback",
+            params={"code": "somecode", "state": "dGhpcyBpcyBub3QgdmFsaWQ"},
+            follow_redirects=False,
         )
-        assert r.status_code == 200
+        assert r.status_code in (302, 307)
+        location = r.headers["location"]
+        assert "/login" in location
+        assert "invalid_state" in location
+
+    def test_db_not_ready_redirects_with_error(self):
+        """If the DB manager raises RuntimeError the callback must redirect gracefully."""
+        from services.oauth_service import encode_oauth_state
+
+        settings = get_settings()
+        valid_state = encode_oauth_state("login", secret=settings.jwt_secret_key)
+
+        client = _make_client()
+        with patch("routers.auth_router.get_database_manager") as mock_dbm:
+            mock_dbm.side_effect = RuntimeError("pool not ready")
+            r = client.get(
+                "/api/auth/twitch/callback",
+                params={"code": "somecode", "state": valid_state},
+                follow_redirects=False,
+            )
+        assert r.status_code in (302, 307)
+        assert "db_not_ready" in r.headers["location"]
 
 
 # ---------------------------------------------------------------------------
@@ -340,14 +317,14 @@ class TestUpdatePreferences:
         r = _make_client().patch("/api/user/preferences", json={"theme": "dark"})
         assert r.status_code == 401
 
-    def test_invalid_theme_returns_400(self):
+    def test_invalid_theme_returns_422(self):
         client = _make_client(override_user_id=True)
         r = client.patch(
             "/api/user/preferences",
             json={"theme": "rainbow"},
             cookies={"auth_token": _token()},
         )
-        assert r.status_code == 422  # Pydantic Literal validation → 422 Unprocessable Entity
+        assert r.status_code == 422  # Pydantic Literal validation
 
     @pytest.mark.parametrize("theme", ["dark", "light", "system"])
     def test_valid_theme_returns_200(self, theme: str):
@@ -360,96 +337,3 @@ class TestUpdatePreferences:
         )
         assert r.status_code == 200
         assert r.json()["theme"] == theme
-
-
-# ---------------------------------------------------------------------------
-# GET /api/user/linked-accounts
-# ---------------------------------------------------------------------------
-
-
-class TestGetLinkedAccounts:
-    def test_no_cookie_returns_401(self):
-        r = _make_client().get("/api/user/linked-accounts")
-        assert r.status_code == 401
-
-    def test_returns_empty_list_when_no_accounts(self):
-        pool = _make_pool(fetch=[])
-        client = _make_client(pool=pool, override_user_id=True)
-        r = client.get("/api/user/linked-accounts", cookies={"auth_token": _token()})
-
-        assert r.status_code == 200
-        assert r.json() == []
-
-    def test_returns_mapped_account_list(self):
-        rows = [
-            {
-                "platform": "discord",
-                "platform_user_id": "dc123",
-                "username": "discorduser",
-                "created_at": datetime(2024, 1, 1, tzinfo=UTC),
-            }
-        ]
-        pool = _make_pool(fetch=rows)
-        client = _make_client(pool=pool, override_user_id=True)
-        r = client.get("/api/user/linked-accounts", cookies={"auth_token": _token()})
-
-        assert r.status_code == 200
-        accounts = r.json()
-        assert len(accounts) == 1
-        assert accounts[0]["platform"] == "discord"
-        assert accounts[0]["username"] == "discorduser"
-
-
-# ---------------------------------------------------------------------------
-# DELETE /api/user/linked-accounts/{platform}
-# ---------------------------------------------------------------------------
-
-
-class TestUnlinkAccount:
-    def test_no_cookie_returns_401(self):
-        r = _make_client().delete("/api/user/linked-accounts/discord")
-        assert r.status_code == 401
-
-    def test_invalid_platform_returns_400(self):
-        client = _make_client(override_user_id=True)
-        r = client.delete(
-            "/api/user/linked-accounts/steam",
-            cookies={"auth_token": _token(platform="twitch")},
-        )
-        assert r.status_code == 400
-
-    def test_cannot_unlink_current_session_platform(self):
-        client = _make_client(override_user_id=True)
-        r = client.delete(
-            "/api/user/linked-accounts/twitch",
-            cookies={"auth_token": _token(platform="twitch")},
-        )
-        assert r.status_code == 400
-
-    def test_cannot_unlink_last_account(self):
-        pool = _make_pool(fetchval=1)
-        client = _make_client(pool=pool, override_user_id=True)
-        r = client.delete(
-            "/api/user/linked-accounts/discord",
-            cookies={"auth_token": _token(platform="twitch")},
-        )
-        assert r.status_code == 400
-
-    def test_account_not_found_returns_404(self):
-        pool = _make_pool(fetchval=2, execute="DELETE 0")
-        client = _make_client(pool=pool, override_user_id=True)
-        r = client.delete(
-            "/api/user/linked-accounts/discord",
-            cookies={"auth_token": _token(platform="twitch")},
-        )
-        assert r.status_code == 404
-
-    def test_success_returns_200_with_platform_message(self):
-        pool = _make_pool(fetchval=2, execute="DELETE 1")
-        client = _make_client(pool=pool, override_user_id=True)
-        r = client.delete(
-            "/api/user/linked-accounts/discord",
-            cookies={"auth_token": _token(platform="twitch")},
-        )
-        assert r.status_code == 200
-        assert "discord" in r.json()["message"]
