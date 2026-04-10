@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
-import { useLocation } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 
 import {
   Collapsible,
@@ -114,9 +114,9 @@ export function NavMain({
                     {item.items?.map(subItem => (
                       <SidebarMenuSubItem key={subItem.title}>
                         <SidebarMenuSubButton asChild isActive={location.pathname === subItem.url}>
-                          <a href={subItem.url}>
+                          <Link to={subItem.url}>
                             <span>{subItem.title}</span>
-                          </a>
+                          </Link>
                         </SidebarMenuSubButton>
                       </SidebarMenuSubItem>
                     ))}

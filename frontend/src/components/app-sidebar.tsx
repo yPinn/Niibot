@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { Link } from 'react-router-dom'
 
 import { BotSwitcher } from '@/components/bot-switcher'
 import { NavChannels } from '@/components/nav-channels'
@@ -36,9 +37,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           <NavUser user={user} />
         ) : (
           <div className="flex items-center justify-center p-4">
-            <a href="/login" className="text-sm text-primary hover:underline">
+            <Link to="/login" className="text-sm text-primary hover:underline">
               Login
-            </a>
+            </Link>
           </div>
         )}
       </SidebarFooter>

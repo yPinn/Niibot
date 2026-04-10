@@ -80,7 +80,10 @@ declare global {
         VIDEO_READY: string
         VIDEO_PLAY: string
       }
-      Player?: new (element: HTMLElement, options: Record<string, unknown>) => { destroy: () => void }
+      Player?: new (
+        element: HTMLElement,
+        options: Record<string, unknown>
+      ) => { destroy: () => void }
     }
   }
 }

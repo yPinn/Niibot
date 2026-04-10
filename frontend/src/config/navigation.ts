@@ -31,10 +31,6 @@ export const navigationData = {
       icon: 'fa-solid fa-puzzle-piece',
       items: [
         {
-          title: 'Giveaways',
-          url: '/modules/giveaways',
-        },
-        {
           title: 'Game Queue',
           url: '/modules/game-queue',
         },
@@ -49,14 +45,6 @@ export const navigationData = {
       url: '#',
       icon: 'fa-solid fa-chart-mixed',
       items: [
-        {
-          title: 'Insights',
-          url: '/analytics',
-        },
-        {
-          title: 'Leaderboard',
-          url: '/analytics/leaderboard',
-        },
         {
           title: 'System Status',
           url: '/system',
@@ -74,7 +62,7 @@ export const navigationData = {
         },
         {
           title: 'Discord Bot',
-          url: '/discord',
+          url: '/discord/dashboard',
         },
       ],
     },
@@ -107,27 +95,8 @@ export const discordNavigationData = {
           url: '/discord/dashboard',
         },
         {
-          title: 'Servers',
-          url: '/discord/servers',
-        },
-        {
           title: 'System Status',
           url: '/system',
-        },
-      ],
-    },
-    {
-      title: 'Configuration',
-      url: '#',
-      icon: 'fa-solid fa-gear',
-      items: [
-        {
-          title: 'Commands',
-          url: '/discord/commands',
-        },
-        {
-          title: 'Auto Responses',
-          url: '/discord/auto-responses',
         },
       ],
     },
@@ -138,7 +107,7 @@ export const discordNavigationData = {
       items: [
         {
           title: 'Get Started',
-          url: '/discord/docs',
+          url: '/docs',
         },
       ],
     },
@@ -146,7 +115,7 @@ export const discordNavigationData = {
   navSecondary: [
     {
       title: 'Github',
-      url: '#',
+      url: 'https://github.com/yPinn/Niibot',
       icon: 'fa-brands fa-github',
     },
     {
