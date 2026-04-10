@@ -15,20 +15,17 @@ export interface User {
 }
 
 async function fetchCurrentUser(): Promise<User | null> {
-  try {
-    const response = await apiFetch(API_ENDPOINTS.auth.user, {
-      credentials: 'include',
-    })
+  // Let network errors propagate — callers distinguish "not logged in" (null)
+  // from "couldn't reach the server" (thrown error).
+  const response = await apiFetch(API_ENDPOINTS.auth.user, {
+    credentials: 'include',
+  })
 
-    if (!response.ok) {
-      return null
-    }
-
-    return await response.json()
-  } catch (error) {
-    if (import.meta.env.DEV) console.error('Failed to get user info:', error)
+  if (!response.ok) {
     return null
   }
+
+  return await response.json()
 }
 
 export async function getCurrentUser(options?: { forceRefresh?: boolean }): Promise<User | null> {

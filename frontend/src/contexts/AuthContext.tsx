@@ -8,18 +8,34 @@ interface AuthContextType {
   user: User | null
   isAuthenticated: boolean
   isInitialized: boolean
+  isInitError: boolean // true when init failed due to a network error (not a 401)
   isAffiliate: boolean // true for Twitch affiliate or partner
   channels: Channel[]
   logout: () => Promise<void>
   refreshUser: () => Promise<void>
   refreshChannels: () => Promise<void>
+  retryInit: () => void
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
+/** Public paths that don't need the auth bootstrap — skip the fetch entirely. */
+function isPublicPath(pathname: string): boolean {
+  return (
+    pathname === '/' ||
+    pathname === '/terms' ||
+    pathname === '/privacy' ||
+    pathname === '/login' ||
+    pathname.includes('/overlay') ||
+    pathname.startsWith('/donate/') ||
+    /^\/[^/]+\/commands$/.test(pathname)
+  )
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [isInitialized, setIsInitialized] = useState(false)
+  const [isInitError, setIsInitError] = useState(false)
   const [channels, setChannels] = useState<Channel[]>([])
 
   const initRef = React.useRef({
@@ -78,35 +94,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
-  // Initial data load — guarded by ref against StrictMode double-mount.
-  useEffect(() => {
-    if (initRef.current.hasLoaded || initRef.current.isLoading) {
+  const loadInitialData = useCallback(async () => {
+    if (initRef.current.isLoading) return
+    initRef.current.isLoading = true
+    setIsInitError(false)
+
+    // Public pages don't need auth data — skip the fetch entirely.
+    if (isPublicPath(window.location.pathname)) {
+      setIsInitialized(true)
+      initRef.current.isLoading = false
+      initRef.current.hasLoaded = true
       return
     }
 
-    initRef.current.isLoading = true
-
-    const loadInitialData = async () => {
-      try {
-        const [userData, channelData] = await Promise.all([
-          getCurrentUser({ forceRefresh: true }),
-          getTwitchMonitoredChannels({ forceRefresh: true }),
-        ])
-        setUser(userData)
-        setChannels(channelData)
-      } catch (error) {
-        if (import.meta.env.DEV) console.error('Failed to load initial data:', error)
-        setUser(null)
-        setChannels([])
-      } finally {
-        setIsInitialized(true)
-        initRef.current.isLoading = false
-        initRef.current.hasLoaded = true
-      }
+    try {
+      const [userData, channelData] = await Promise.all([
+        getCurrentUser({ forceRefresh: true }),
+        getTwitchMonitoredChannels({ forceRefresh: true }),
+      ])
+      setUser(userData)
+      setChannels(channelData)
+      setIsInitialized(true)
+      initRef.current.hasLoaded = true
+    } catch (error) {
+      // Network error (not a 401 — apiFetch handles those via auth:unauthorized).
+      // Don't treat a connectivity blip as "logged out".
+      if (import.meta.env.DEV) console.error('Failed to load initial data:', error)
+      setIsInitError(true)
+      setIsInitialized(true)
+    } finally {
+      initRef.current.isLoading = false
     }
-
-    loadInitialData()
   }, [])
+
+  // Initial data load — guarded by ref against StrictMode double-mount.
+  useEffect(() => {
+    if (initRef.current.hasLoaded || initRef.current.isLoading) return
+    loadInitialData()
+  }, [loadInitialData])
 
   // Channels polling: 60s (bot status 已移至 ServiceStatusContext)
   useEffect(() => {
@@ -121,11 +146,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user,
         isAuthenticated: !!user,
         isInitialized,
+        isInitError,
         isAffiliate: user?.broadcaster_type === 'affiliate' || user?.broadcaster_type === 'partner',
         channels,
         logout,
         refreshUser,
         refreshChannels,
+        retryInit: loadInitialData,
       }}
     >
       {children}
