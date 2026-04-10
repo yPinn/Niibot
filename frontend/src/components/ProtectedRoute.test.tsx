@@ -29,10 +29,13 @@ function makeAuthValue(overrides: Partial<ReturnType<typeof useAuth>>): ReturnTy
     user: null,
     isAuthenticated: false,
     isInitialized: true,
+    isInitError: false,
+    isAffiliate: false,
     channels: [],
     logout: vi.fn(),
     refreshUser: vi.fn(),
     refreshChannels: vi.fn(),
+    retryInit: vi.fn(),
     ...overrides,
   }
 }
@@ -92,6 +95,20 @@ describe('ProtectedRoute', () => {
   it('renders child content for authenticated users', () => {
     renderProtected({ isInitialized: true, isAuthenticated: true, user: TWITCH_USER })
     expect(screen.getByText('Protected Content')).toBeInTheDocument()
+  })
+
+  it('shows error UI when isInitError is true', () => {
+    renderProtected({ isInitialized: true, isInitError: true })
+    expect(screen.getByText(/無法連線/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /重試/ })).toBeInTheDocument()
+    expect(screen.queryByText('Protected Content')).not.toBeInTheDocument()
+  })
+
+  it('calls retryInit when retry button is clicked', async () => {
+    const retryInit = vi.fn()
+    renderProtected({ isInitialized: true, isInitError: true, retryInit })
+    screen.getByRole('button', { name: /重試/ }).click()
+    expect(retryInit).toHaveBeenCalledTimes(1)
   })
 })
 
