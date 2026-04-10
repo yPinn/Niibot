@@ -50,6 +50,12 @@ def _make_pool(
     if execute is not None:
         conn.execute.return_value = execute
 
+    # conn.transaction() must return an async context manager, not a coroutine.
+    tx_ctx = MagicMock()
+    tx_ctx.__aenter__ = AsyncMock(return_value=None)
+    tx_ctx.__aexit__ = AsyncMock(return_value=None)
+    conn.transaction = MagicMock(return_value=tx_ctx)
+
     pool = MagicMock()
     pool.acquire.return_value.__aenter__ = AsyncMock(return_value=conn)
     pool.acquire.return_value.__aexit__ = AsyncMock(return_value=None)
@@ -199,18 +205,20 @@ class TestUpsert:
             enabled=False,
         )
 
-        conn.fetchrow.assert_called_once()
-        args = conn.fetchrow.call_args[0]
-        assert "ch123" in args
-        assert "hello" in args
-        assert "exact" in args
-        assert "hello world" in args
-        assert True in args
-        assert "Hi!" in args
-        assert "mod" in args
-        assert 60 in args
-        assert 10 in args
-        assert False in args
+        # upsert calls fetchrow twice: (1) UPSERT INSERT, (2) SELECT with aliases join
+        assert conn.fetchrow.call_count == 2
+        # Verify the first call (upsert INSERT) carries all parameters
+        upsert_args = conn.fetchrow.call_args_list[0][0]
+        assert "ch123" in upsert_args
+        assert "hello" in upsert_args
+        assert "exact" in upsert_args
+        assert "hello world" in upsert_args
+        assert True in upsert_args
+        assert "Hi!" in upsert_args
+        assert "mod" in upsert_args
+        assert 60 in upsert_args
+        assert 10 in upsert_args
+        assert False in upsert_args
 
 
 # ---------------------------------------------------------------------------

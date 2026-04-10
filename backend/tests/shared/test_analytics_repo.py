@@ -416,8 +416,9 @@ class TestFlushChatterStats:
         assert row[1] == "ch_x"  # channel_id
         assert row[2] == "u1"  # user_id
         assert row[3] == "alice"  # username
-        assert row[4] == 10  # count
-        assert row[5] == _NOW  # last_at
+        assert row[4] is None  # display_name (optional, not provided in test data)
+        assert row[5] == 10  # count
+        assert row[6] == _NOW  # last_at
 
 
 # ---------------------------------------------------------------------------
@@ -559,13 +560,16 @@ class TestListTopChatters:
 
     async def test_returns_mapped_chatter_list(self):
         _clear_all_caches()
-        pool, _ = _make_pool(fetch=[{"username": "alice", "total_messages": 42}])
+        pool, _ = _make_pool(
+            fetch=[{"username": "alice", "display_name": "Alice", "total_messages": 42}]
+        )
         repo = AnalyticsRepository(pool)
 
         result = await repo.list_top_chatters("ch123")
 
         assert len(result) == 1
         assert result[0]["username"] == "alice"
+        assert result[0]["display_name"] == "Alice"
         assert result[0]["message_count"] == 42
 
     async def test_caches_result(self):

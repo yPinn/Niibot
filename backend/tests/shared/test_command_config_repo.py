@@ -98,6 +98,12 @@ def _make_pool(
     if execute is not _UNSET:
         conn.execute.return_value = execute
 
+    # conn.transaction() must return an async context manager, not a coroutine.
+    tx_ctx = MagicMock()
+    tx_ctx.__aenter__ = AsyncMock(return_value=None)
+    tx_ctx.__aexit__ = AsyncMock(return_value=None)
+    conn.transaction = MagicMock(return_value=tx_ctx)
+
     pool = MagicMock()
     pool.acquire.return_value.__aenter__ = AsyncMock(return_value=conn)
     pool.acquire.return_value.__aexit__ = AsyncMock(return_value=None)

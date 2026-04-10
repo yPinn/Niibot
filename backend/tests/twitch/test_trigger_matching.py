@@ -183,3 +183,35 @@ class TestUnknownMatchType:
     def test_empty_match_type_returns_false(self):
         t = make_trigger(pattern="x", match_type="")
         assert match_trigger(t, "x") is False
+
+
+# ---------------------------------------------------------------------------
+# ReDoS protection
+# ---------------------------------------------------------------------------
+
+
+class TestReDoSProtection:
+    def test_catastrophic_backtracking_returns_false_within_timeout(self):
+        """A catastrophic backtracking regex must return False, not hang indefinitely.
+
+        The ThreadPoolExecutor + timeout in match_trigger caps the regex execution.
+        We use (a+)+$ against a non-matching string — a classic ReDoS input — and
+        assert completion within 2 seconds (the thread still runs but the caller
+        doesn't block).
+        """
+        import time
+
+        t = make_trigger(pattern=r"(a+)+$", match_type="regex")
+        start = time.monotonic()
+        result = match_trigger(t, "a" * 25 + "b")
+        elapsed = time.monotonic() - start
+
+        assert result is False
+        assert elapsed < 2.0, f"ReDoS protection failed: took {elapsed:.2f}s"
+
+    def test_aliases_are_matched(self):
+        """Aliases field (comma-separated) must also be tested against the text."""
+        t = make_trigger(pattern="!hello", match_type="startswith", aliases="!hi,!hey")
+        assert match_trigger(t, "!hi there") is True
+        assert match_trigger(t, "!hey world") is True
+        assert match_trigger(t, "!bye") is False
