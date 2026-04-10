@@ -62,12 +62,12 @@ class TestDecodeOauthState:
     def test_empty_string_returns_login_default(self):
         assert decode_oauth_state("") == {"mode": "login"}
 
-    def test_invalid_base64_returns_login_default(self):
-        assert decode_oauth_state("not-valid-base64!!!") == {"mode": "login"}
+    def test_invalid_base64_returns_empty(self):
+        assert decode_oauth_state("not-valid-base64!!!") == {}
 
-    def test_valid_non_json_returns_login_default(self):
+    def test_valid_non_json_returns_empty(self):
         bad = base64.urlsafe_b64encode(b"this is not json").decode()
-        assert decode_oauth_state(bad) == {"mode": "login"}
+        assert decode_oauth_state(bad) == {}
 
     def test_roundtrip_preserves_extra_fields(self):
         """Extra keys encoded into state are preserved on decode (no-secret mode)."""
@@ -85,18 +85,29 @@ class TestDecodeOauthState:
         state = encode_oauth_state("link", user_id="u1", secret=_SECRET)
         # Flip a character to simulate tampering
         tampered = state[:-4] + "AAAA"
-        assert decode_oauth_state(tampered, secret=_SECRET) == {"mode": "login"}
+        assert decode_oauth_state(tampered, secret=_SECRET) == {}
 
     def test_with_secret_missing_sig_rejected(self):
         """State without sig field must be rejected when secret is given."""
         data = {"mode": "login", "nonce": "abc123"}
         unsigned_state = base64.urlsafe_b64encode(json.dumps(data).encode()).decode()
-        assert decode_oauth_state(unsigned_state, secret=_SECRET) == {"mode": "login"}
+        assert decode_oauth_state(unsigned_state, secret=_SECRET) == {}
 
     def test_with_secret_wrong_secret_rejected(self):
         """State signed with a different secret must fail verification."""
         state = encode_oauth_state("login", secret=_SECRET)
-        assert decode_oauth_state(state, secret="wrong-secret") == {"mode": "login"}
+        assert decode_oauth_state(state, secret="wrong-secret") == {}
+
+    def test_with_secret_none_state_rejected(self):
+        """Missing state must be rejected (not silently accepted) when secret is given."""
+        assert decode_oauth_state(None, secret=_SECRET) == {}
+
+    def test_with_secret_non_string_sig_rejected(self):
+        """A non-string sig value must not reach hmac.compare_digest (would raise TypeError)."""
+        data = {"mode": "login", "nonce": "abc", "sig": 12345}
+        bad_state = base64.urlsafe_b64encode(json.dumps(data).encode()).decode()
+        # Must return {} without raising TypeError
+        assert decode_oauth_state(bad_state, secret=_SECRET) == {}
 
     def test_no_secret_unsigned_state_still_works(self):
         """Without a secret, unsigned states decode normally (backward compat)."""
