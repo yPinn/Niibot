@@ -96,6 +96,20 @@ class _AnalyticsQueryMixin:
 
             rows = await conn.fetch(
                 """
+                WITH cmd_totals AS (
+                    SELECT session_id, SUM(usage_count) AS total_commands
+                    FROM command_stats
+                    GROUP BY session_id
+                ),
+                event_counts AS (
+                    SELECT
+                        session_id,
+                        SUM(CASE WHEN event_type = 'follow'    THEN 1 ELSE 0 END) AS new_follows,
+                        SUM(CASE WHEN event_type = 'subscribe' THEN 1 ELSE 0 END) AS new_subs,
+                        SUM(CASE WHEN event_type = 'raid'      THEN 1 ELSE 0 END) AS raids_received
+                    FROM stream_events
+                    GROUP BY session_id
+                )
                 SELECT
                     s.id AS session_id,
                     s.channel_id,
@@ -106,15 +120,14 @@ class _AnalyticsQueryMixin:
                     s.game_id,
                     EXTRACT(EPOCH FROM (COALESCE(s.ended_at, NOW()) - s.started_at)) / 3600
                         AS duration_hours,
-                    COALESCE(SUM(c.usage_count), 0) AS total_commands,
-                    COALESCE(SUM(CASE WHEN e.event_type = 'follow'    THEN 1 END), 0) AS new_follows,
-                    COALESCE(SUM(CASE WHEN e.event_type = 'subscribe' THEN 1 END), 0) AS new_subs,
-                    COALESCE(SUM(CASE WHEN e.event_type = 'raid'      THEN 1 END), 0) AS raids_received
+                    COALESCE(c.total_commands, 0)  AS total_commands,
+                    COALESCE(e.new_follows, 0)     AS new_follows,
+                    COALESCE(e.new_subs, 0)        AS new_subs,
+                    COALESCE(e.raids_received, 0)  AS raids_received
                 FROM stream_sessions s
-                LEFT JOIN command_stats c ON c.session_id = s.id
-                LEFT JOIN stream_events e ON e.session_id = s.id
+                LEFT JOIN cmd_totals  c ON c.session_id = s.id
+                LEFT JOIN event_counts e ON e.session_id = s.id
                 WHERE s.channel_id = $1 AND s.started_at >= $2
-                GROUP BY s.id
                 ORDER BY s.started_at DESC
                 """,
                 channel_id,
