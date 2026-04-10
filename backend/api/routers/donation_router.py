@@ -14,6 +14,7 @@ import logging
 import time
 import urllib.parse
 from datetime import datetime
+from urllib.parse import urlparse
 
 from asyncpg import Pool
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
@@ -21,6 +22,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 
+from core.config import Settings, get_settings
 from core.dependencies import get_db_pool
 from shared.repositories.donation import DonationRepository, generate_trade_no
 from shared.repositories.video_queue import VideoQueueRepository, extract_youtube_info
@@ -203,8 +205,8 @@ async def get_public_donate_info(
 async def checkout(
     username: str,
     body: CheckoutRequest,
-    request: Request,
     pool: Pool = Depends(get_db_pool),
+    settings: Settings = Depends(get_settings),
 ) -> CheckoutResponse:
     """Build a signed payment form for ECPay / OPay.
 
@@ -213,6 +215,12 @@ async def checkout(
     """
     if body.platform not in _GATEWAYS and body.platform != "paypal":
         raise HTTPException(status_code=400, detail="Unsupported platform")
+
+    if body.return_url:
+        _parsed = urlparse(body.return_url)
+        _allowed = urlparse(settings.frontend_url)
+        if _parsed.scheme != _allowed.scheme or _parsed.netloc != _allowed.netloc:
+            raise HTTPException(status_code=400, detail="Invalid return_url")
 
     repo = DonationRepository(pool)
     result = await repo.get_configs_by_username(username)
@@ -261,8 +269,7 @@ async def checkout(
             youtube_video_id=youtube_video_id_nb,
         )
 
-        base_url = str(request.base_url).rstrip("/")
-        notify_url = f"{base_url}/api/donate/webhook/newebpay"
+        notify_url = f"{settings.api_url}/api/donate/webhook/newebpay"
 
         trade_info_str = _build_newebpay_trade_info(
             merchant_id=config.merchant_id,
@@ -308,9 +315,7 @@ async def checkout(
         youtube_video_id=youtube_video_id,
     )
 
-    # Derive the webhook URL from the current request's base URL
-    base_url = str(request.base_url).rstrip("/")
-    notify_url = f"{base_url}/api/donate/webhook/{body.platform}"
+    notify_url = f"{settings.api_url}/api/donate/webhook/{body.platform}"
 
     trade_date = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
 
