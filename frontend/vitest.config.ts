@@ -25,6 +25,8 @@ export default defineConfig({
         'src/hooks/useDocumentTitle.ts',
         'src/hooks/usePolling.ts',
         'src/components/ProtectedRoute.tsx',
+        'src/api/user.ts',
+        'src/contexts/AuthContext.tsx',
       ],
       thresholds: { lines: 80, functions: 80, branches: 80 },
     },

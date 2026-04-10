@@ -20,7 +20,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 /** Public paths that don't need the auth bootstrap — skip the fetch entirely. */
-function isPublicPath(pathname: string): boolean {
+export function isPublicPath(pathname: string): boolean {
   return (
     pathname === '/' ||
     pathname === '/terms' ||
