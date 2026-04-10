@@ -14,7 +14,12 @@ Any match returns True.
 from __future__ import annotations
 
 import re
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 from typing import Protocol
+
+_regex_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="regex")
+_REGEX_TIMEOUT = 0.5  # seconds — rejects catastrophic backtracking before it stalls the event loop
 
 
 class TriggerLike(Protocol):
@@ -39,8 +44,9 @@ def _match_single(pattern: str, match_type: str, case_sensitive: bool, text: str
         return cmp == pat
     if match_type == "regex":
         try:
-            return bool(re.search(pat, cmp))
-        except re.error:
+            future = _regex_pool.submit(re.search, pat, cmp)
+            return bool(future.result(timeout=_REGEX_TIMEOUT))
+        except (re.error, FuturesTimeoutError):
             return False
     return False
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime
 
 from asyncpg import Pool
@@ -11,6 +12,8 @@ from pydantic import BaseModel, Field
 
 from core.dependencies import get_current_channel_id, get_db_pool
 from services.message_trigger_service import MessageTriggerService
+
+_REGEX_MAX_LEN = 200
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +71,21 @@ class TriggerToggle(BaseModel):
     enabled: bool
 
 
+def _validate_regex_pattern(pattern: str, match_type: str) -> None:
+    """Reject patterns that are too long or syntactically invalid."""
+    if match_type != "regex":
+        return
+    if len(pattern) > _REGEX_MAX_LEN:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Regex pattern exceeds maximum length of {_REGEX_MAX_LEN} characters",
+        )
+    try:
+        re.compile(pattern)
+    except re.error as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid regex pattern: {exc}") from exc
+
+
 # ============================================
 # Endpoints
 # ============================================
@@ -95,6 +113,7 @@ async def create_trigger(
     pool: Pool = Depends(get_db_pool),
 ) -> MessageTriggerResponse:
     """Create a new message trigger."""
+    _validate_regex_pattern(body.pattern, body.match_type)
     try:
         service = MessageTriggerService(pool)
         trigger = await service.create_trigger(
@@ -126,6 +145,8 @@ async def update_trigger(
     pool: Pool = Depends(get_db_pool),
 ) -> MessageTriggerResponse:
     """Update a message trigger's settings."""
+    if body.pattern is not None and body.match_type is not None:
+        _validate_regex_pattern(body.pattern, body.match_type)
     try:
         service = MessageTriggerService(pool)
         trigger = await service.update_trigger(
