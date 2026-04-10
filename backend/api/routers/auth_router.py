@@ -21,6 +21,7 @@ from core.dependencies import (
 )
 from services import AuthService, TwitchAPIClient
 from services.oauth_service import (
+    decode_oauth_state,
     encode_oauth_state,
     find_or_create_user,
 )
@@ -92,6 +93,11 @@ async def twitch_oauth_callback(
     if error:
         logger.error(f"OAuth error from Twitch: {error}")
         return RedirectResponse(url=f"{error_redirect}?error={_url_quote(error, safe='')}")
+
+    decoded_state = decode_oauth_state(state, secret=settings.jwt_secret_key)
+    if decoded_state.get("mode") != "login":
+        logger.warning("OAuth callback received invalid or tampered state — rejecting")
+        return RedirectResponse(url=f"{error_redirect}?error=invalid_state")
 
     if not code:
         logger.error("No OAuth code received from Twitch")

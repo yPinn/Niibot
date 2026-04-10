@@ -9,6 +9,7 @@ import logging
 import secrets
 
 from asyncpg import Pool
+from asyncpg.exceptions import UniqueViolationError
 
 logger = logging.getLogger(__name__)
 
@@ -27,32 +28,48 @@ async def find_or_create_user(
     Returns users.id as string.
     """
     async with pool.acquire() as conn:
-        async with conn.transaction():
+        # Fast path: linked account already exists (common case — no transaction needed)
+        row = await conn.fetchrow(
+            "SELECT user_id FROM user_linked_accounts"
+            " WHERE platform = $1 AND platform_user_id = $2",
+            platform,
+            platform_user_id,
+        )
+        if row:
+            return str(row["user_id"])
+
+        # Slow path: create new user + linked account inside a transaction.
+        # Under READ COMMITTED two concurrent OAuth callbacks can both pass the
+        # fast-path check above. The UNIQUE constraint on user_linked_accounts
+        # ensures only one INSERT wins; the loser catches UniqueViolationError
+        # and falls back to a plain SELECT to return the winner's user_id.
+        try:
+            async with conn.transaction():
+                user_row = await conn.fetchrow(
+                    "INSERT INTO users (display_name, avatar) VALUES ($1, $2) RETURNING id",
+                    display_name or username,
+                    avatar,
+                )
+                user_id = str(user_row["id"])
+
+                await conn.execute(
+                    "INSERT INTO user_linked_accounts"
+                    " (user_id, platform, platform_user_id, username)"
+                    " VALUES ($1, $2, $3, $4)",
+                    user_row["id"],
+                    platform,
+                    platform_user_id,
+                    username,
+                )
+        except UniqueViolationError:
+            # A concurrent request won the race — fetch the winner's user_id
             row = await conn.fetchrow(
                 "SELECT user_id FROM user_linked_accounts"
                 " WHERE platform = $1 AND platform_user_id = $2",
                 platform,
                 platform_user_id,
             )
-            if row:
-                return str(row["user_id"])
-
-            user_row = await conn.fetchrow(
-                "INSERT INTO users (display_name, avatar) VALUES ($1, $2) RETURNING id",
-                display_name or username,
-                avatar,
-            )
-            user_id = str(user_row["id"])
-
-            await conn.execute(
-                "INSERT INTO user_linked_accounts"
-                " (user_id, platform, platform_user_id, username)"
-                " VALUES ($1, $2, $3, $4)",
-                user_row["id"],
-                platform,
-                platform_user_id,
-                username,
-            )
+            return str(row["user_id"])
 
     logger.info("Created user %s for %s:%s (%s)", user_id, platform, platform_user_id, username)
     return user_id
@@ -85,30 +102,35 @@ def encode_oauth_state(mode: str, user_id: str | None = None, *, secret: str = "
 
 
 def decode_oauth_state(state: str | None, *, secret: str = "") -> dict:
-    """Decode OAuth state from base64 JSON.
+    """Decode and verify OAuth state from base64 JSON.
 
     When *secret* is provided, verifies the HMAC-SHA256 signature and rejects
-    tampered or unsigned states, returning the safe ``{"mode": "login"}`` fallback.
-    Always returns ``{"mode": "login"}`` on any parse or verification failure.
+    missing, tampered, or unsigned states — returning ``{}`` on any failure so
+    the caller's ``decoded.get("mode") != "login"`` check correctly rejects it.
+    Without a *secret*, accepts any parseable state (no CSRF protection).
     """
     if not state:
+        if secret:
+            logger.warning("OAuth callback received no state — rejecting")
+            return {}
         return {"mode": "login"}
+
     try:
         decoded: dict = json.loads(base64.urlsafe_b64decode(state.encode()).decode())
     except (ValueError, binascii.Error, UnicodeDecodeError, json.JSONDecodeError):
-        return {"mode": "login"}
+        return {}
 
     if not isinstance(decoded, dict):
-        return {"mode": "login"}
+        return {}
 
     if secret:
         sig = decoded.pop("sig", None)
-        if not sig:
-            logger.warning("OAuth state missing HMAC signature — rejecting")
-            return {"mode": "login"}
+        if not isinstance(sig, str) or not sig:
+            logger.warning("OAuth state missing or malformed HMAC signature — rejecting")
+            return {}
         expected = _hmac_sign(decoded, secret)
         if not hmac.compare_digest(sig, expected):
             logger.warning("OAuth state HMAC mismatch — possible CSRF attempt")
-            return {"mode": "login"}
+            return {}
 
     return decoded
