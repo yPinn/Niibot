@@ -33,8 +33,15 @@
 *.mjs text eol=lf
 *.cjs text eol=lf
 
+# CSS
+*.css text eol=lf
+
+# Lock files
+*.lock text eol=lf
+package-lock.json text eol=lf
+
 # Config files
-.env.example text eol=lf
+*.env.example text eol=lf
 .gitignore text eol=lf
 .gitattributes text eol=lf
 Dockerfile* text eol=lf

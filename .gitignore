@@ -8,9 +8,13 @@
 # Environment Variables (all levels)
 .env*
 **/.env*
+shared.env
+**/shared.env
 # Keep .env.example files for reference
 !.env.example
 !**/.env.example
+!shared.env.example
+!**/shared.env.example
 
 # Python
 __pycache__/
@@ -97,9 +101,20 @@ data/postgres/
 # Database backups
 data/backups/
 
-# OS
+# macOS
 .DS_Store
+.DS_Store?
+._*
+.AppleDouble
+.LSOverride
+.Spotlight-V100
+.Trashes
+__MACOSX/
+
+# Windows
 Thumbs.db
+ehthumbs.db
+Desktop.ini
 
 # Temporary files
 *.tmp

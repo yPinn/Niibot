@@ -51,12 +51,18 @@ uv run mypy .              # 型別檢查
 
 ## 環境變數
 
-各服務複製對應的 `.env.example` 為 `.env` 並填入設定：
+```bash
+cp shared.env.example shared.env      # 共用（DATABASE_URL、OPENROUTER_*、YOUTUBE_API_KEY）
+cp api/.env.example api/.env
+cp twitch/.env.example twitch/.env
+cp discord/.env.example discord/.env
+```
 
 | 檔案 | 說明 |
 | ---- | ---- |
-| `api/.env` | Twitch OAuth、JWT Secret、DB URL、服務 URL |
-| `twitch/.env` | Twitch Bot 金鑰、YouTube API |
+| `shared.env` | 共用 — DB URL、OpenRouter、YouTube API |
+| `api/.env` | Twitch OAuth、JWT Secret、服務 URL |
+| `twitch/.env` | Twitch Bot 金鑰 |
 | `discord/.env` | Discord Bot Token |
 
 ## DB Migrations

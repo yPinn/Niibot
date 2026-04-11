@@ -60,7 +60,8 @@ React SPA，部署在 Cloudflare Pages。CF Pages Functions 將 `/api/*`、`/hea
 #### 1. 設定環境變數
 
 ```bash
-cp .env.example .env                           # PostgreSQL 帳號 + Cloudflare Tunnel Token
+cp .env.example .env                                         # PostgreSQL 帳號 + Cloudflare Tunnel Token
+cp backend/shared.env.example backend/shared.env            # 共用（DB URL、OpenRouter、YouTube API）
 cp backend/api/.env.example backend/api/.env
 cp backend/twitch/.env.example backend/twitch/.env
 cp backend/discord/.env.example backend/discord/.env
@@ -75,12 +76,13 @@ docker compose up -d
 
 ## 環境變數
 
-| 檔案                   | 說明                                     |
-| ---------------------- | ---------------------------------------- |
-| `.env`                 | PostgreSQL 帳號、Cloudflare Tunnel Token |
-| `backend/api/.env`     | Twitch OAuth、JWT Secret、服務 URL       |
-| `backend/twitch/.env`  | Twitch Bot 金鑰、YouTube API             |
-| `backend/discord/.env` | Discord Bot Token                        |
+| 檔案                      | 說明                                     |
+| ------------------------- | ---------------------------------------- |
+| `.env`                    | PostgreSQL 帳號、Cloudflare Tunnel Token |
+| `backend/shared.env`      | 共用 — DB URL、OpenRouter API、YouTube API |
+| `backend/api/.env`        | Twitch OAuth、JWT Secret、服務 URL       |
+| `backend/twitch/.env`     | Twitch Bot 金鑰                          |
+| `backend/discord/.env`    | Discord Bot Token                        |
 
 ### 需準備的外部服務
 
