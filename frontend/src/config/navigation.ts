@@ -75,7 +75,7 @@ export const navigationData = {
     },
     {
       title: 'Discord',
-      url: 'https://discord.gg/GubS4Xcb7W',
+      url: 'https://discord.gg/zhtUKMuzpY',
       icon: 'fa-brands fa-discord',
     },
   ],

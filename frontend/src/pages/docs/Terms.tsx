@@ -5,7 +5,7 @@ import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
 const EFFECTIVE_DATE = '2026 年 3 月 5 日'
 const SERVICE_NAME = 'Niibot'
-const CONTACT_DISCORD = 'https://discord.gg/GubS4Xcb7W'
+const CONTACT_DISCORD = 'https://discord.gg/zhtUKMuzpY'
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (

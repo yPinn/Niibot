@@ -340,7 +340,7 @@ export default function GetStarted() {
           <span className="ml-1 text-muted-foreground">
             加入{' '}
             <a
-              href="https://discord.gg/GubS4Xcb7W"
+              href="https://discord.gg/zhtUKMuzpY"
               target="_blank"
               rel="noreferrer"
               className="text-primary underline-offset-4 hover:underline"
