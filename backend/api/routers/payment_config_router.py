@@ -71,7 +71,7 @@ async def list_payment_configs(
             for c in configs
         ]
     except Exception:
-        logger.exception("Failed to list payment configs for user %s", user_id)
+        logger.exception(f"Failed to list payment configs for user {user_id}")
         raise HTTPException(status_code=500, detail="Failed to fetch payment configs") from None
 
 
@@ -105,7 +105,7 @@ async def upsert_payment_config(
             media_share_enabled=body.media_share_enabled,
             enabled=body.enabled,
         )
-        logger.info("User %s upserted payment config for platform %s", user_id, platform)
+        logger.info(f"User {user_id} upserted payment config for platform {platform}")
         return PaymentConfigResponse(
             platform=config.platform,
             merchant_id=config.merchant_id,
@@ -118,9 +118,7 @@ async def upsert_payment_config(
     except HTTPException:
         raise
     except Exception:
-        logger.exception(
-            "Failed to upsert payment config for user %s platform %s", user_id, platform
-        )
+        logger.exception(f"Failed to upsert payment config for user {user_id} platform {platform}")
         raise HTTPException(status_code=500, detail="Failed to save payment config") from None
 
 
@@ -139,12 +137,10 @@ async def delete_payment_config(
         deleted = await repo.delete_config(user_id=user_id, platform=platform)
         if not deleted:
             raise HTTPException(status_code=404, detail="Config not found")
-        logger.info("User %s deleted payment config for platform %s", user_id, platform)
+        logger.info(f"User {user_id} deleted payment config for platform {platform}")
         return {"status": "ok"}
     except HTTPException:
         raise
     except Exception:
-        logger.exception(
-            "Failed to delete payment config for user %s platform %s", user_id, platform
-        )
+        logger.exception(f"Failed to delete payment config for user {user_id} platform {platform}")
         raise HTTPException(status_code=500, detail="Failed to delete payment config") from None

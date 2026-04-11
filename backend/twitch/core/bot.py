@@ -116,7 +116,7 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
     # ------------------------------------------------------------------
 
     async def event_ready(self) -> None:
-        LOGGER.info("Successfully logged in as: %s", self.bot_id)
+        LOGGER.info(f"Successfully logged in as: {self.bot_id}")
 
     async def event_eventsub_notification(self, payload) -> None:
         LOGGER.debug(f"EventSub notification received: {type(payload).__name__}")

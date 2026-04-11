@@ -27,10 +27,10 @@ class GiveawayPersistence:
             with open(self._filepath, encoding="utf-8") as f:
                 raw: dict = json.load(f)
             result = {int(k): v for k, v in raw.items()}
-            LOGGER.info("Loaded %d active giveaways", len(result))
+            LOGGER.info(f"Loaded {len(result)} active giveaways")
             return result
         except (OSError, ValueError, json.JSONDecodeError) as e:
-            LOGGER.error("Failed to load active giveaways: %s", e)
+            LOGGER.error(f"Failed to load active giveaways: {e}")
             return {}
 
     async def save(self, data: dict[int, dict]) -> None:
@@ -40,7 +40,7 @@ class GiveawayPersistence:
         try:
             await loop.run_in_executor(None, self._write_json, snapshot)
         except Exception as e:
-            LOGGER.error("Failed to save active giveaways: %s", e)
+            LOGGER.error(f"Failed to save active giveaways: {e}")
 
     def _write_json(self, data: dict) -> None:
         with open(self._filepath, "w", encoding="utf-8") as f:

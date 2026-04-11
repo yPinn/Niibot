@@ -1,5 +1,6 @@
+import asyncio
 import logging
-from datetime import UTC
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import twitchio
@@ -21,18 +22,6 @@ if TYPE_CHECKING:
 class GeneralCommandsComponent(commands.Component):
     """General user commands for the bot."""
 
-    COMMANDS: list[dict] = [
-        {
-            "command_name": "hi",
-            "custom_response": "你好,$(user)!",
-            "cooldown": 5,
-            "aliases": "hello,hey",
-        },
-        {"command_name": "help", "cooldown": 5, "aliases": "commands,指令"},
-        {"command_name": "uptime", "cooldown": 5, "aliases": "開播時間"},
-        {"command_name": "condemn", "cooldown": 10, "aliases": "斥責"},
-    ]
-
     def __init__(self, bot: commands.Bot) -> None:
         self.bot: Bot = bot  # type: ignore[assignment]
         self.cmd_repo = CommandConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
@@ -40,6 +29,10 @@ class GeneralCommandsComponent(commands.Component):
 
     def refresh_pool(self, pool) -> None:
         self.cmd_repo.pool = pool
+
+    @property
+    def _has_analytics(self) -> bool:
+        return hasattr(self.bot, "_active_sessions") and hasattr(self.bot, "analytics")
 
     async def _record_command(self, ctx: commands.Context, command_name: str) -> None:
         """Helper to record command usage to analytics and increment all-time usage_count.
@@ -53,7 +46,7 @@ class GeneralCommandsComponent(commands.Component):
             # Always increment all-time usage_count regardless of stream status
             await self.cmd_repo.increment_usage_count(channel_id, command_name)
             # Also record to session analytics if a stream is live (intentional gate)
-            if hasattr(self.bot, "_active_sessions") and hasattr(self.bot, "analytics"):
+            if self._has_analytics:
                 session_id = self.bot._active_sessions.get(channel_id)
                 if session_id:
                     analytics = self.bot.analytics
@@ -77,7 +70,6 @@ class GeneralCommandsComponent(commands.Component):
         if not config:
             return
 
-        # Use custom response if set, otherwise default
         if config.custom_response:
             response = substitute_variables(
                 config.custom_response, ctx.chatter, ctx.channel.name, ""
@@ -115,20 +107,17 @@ class GeneralCommandsComponent(commands.Component):
         if not config:
             return
 
-        streams = await ctx.bot.fetch_streams(user_ids=[ctx.channel.id])
+        stream = None
+        async for s in ctx.bot.fetch_streams(user_ids=[ctx.channel.id]):
+            stream = s
+            break
 
-        if streams:
-            stream = streams[0]
-            if stream.started_at:
-                from datetime import datetime
-
-                now = datetime.now(UTC)
-                uptime = now - stream.started_at
-                hours, remainder = divmod(int(uptime.total_seconds()), 3600)
-                minutes, seconds = divmod(remainder, 60)
-                await ctx.reply(f"已開播 {hours} 小時 {minutes} 分 {seconds} 秒")
-            else:
-                await ctx.reply("目前未開播")
+        if stream and stream.started_at:
+            now = datetime.now(UTC)
+            uptime = now - stream.started_at
+            hours, remainder = divmod(int(uptime.total_seconds()), 3600)
+            minutes, seconds = divmod(remainder, 60)
+            await ctx.reply(f"已開播 {hours} 小時 {minutes} 分 {seconds} 秒")
         else:
             await ctx.reply("目前未開播")
 
@@ -154,12 +143,10 @@ class GeneralCommandsComponent(commands.Component):
 
     @commands.Component.listener()
     async def event_stream_online(self, payload: twitchio.StreamOnline) -> None:
-        from datetime import datetime
-
-        LOGGER.info(f"頻道 {payload.broadcaster.name} 開始直播！")
+        LOGGER.info(f"Stream online: {payload.broadcaster.name}")
 
         try:
-            if not (hasattr(self.bot, "_active_sessions") and hasattr(self.bot, "analytics")):
+            if not self._has_analytics:
                 return
 
             channel_id = payload.broadcaster.id
@@ -172,10 +159,14 @@ class GeneralCommandsComponent(commands.Component):
                 )
                 return
 
-            streams = await self.bot.fetch_streams(user_ids=[channel_id])
-            title = streams[0].title if streams else None
-            game_name = streams[0].game_name if streams else None
-            game_id = str(streams[0].game_id) if streams and streams[0].game_id else None
+            stream = None
+            async for s in self.bot.fetch_streams(user_ids=[channel_id]):
+                stream = s
+                break
+
+            title = stream.title if stream else None
+            game_name = stream.game_name if stream else None
+            game_id = str(stream.game_id) if stream and stream.game_id else None
 
             analytics = self.bot.analytics
             session_id = await analytics.create_session(
@@ -194,13 +185,10 @@ class GeneralCommandsComponent(commands.Component):
 
     @commands.Component.listener()
     async def event_stream_offline(self, payload: twitchio.StreamOffline) -> None:
-        import asyncio
-        from datetime import datetime
-
-        LOGGER.info(f"頻道 {payload.broadcaster.name} 結束直播")
+        LOGGER.info(f"Stream offline: {payload.broadcaster.name}")
 
         try:
-            if not (hasattr(self.bot, "_active_sessions") and hasattr(self.bot, "analytics")):
+            if not self._has_analytics:
                 return
 
             channel_id = payload.broadcaster.id

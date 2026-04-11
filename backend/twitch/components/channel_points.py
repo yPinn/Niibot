@@ -73,11 +73,11 @@ class ChannelPointsComponent(commands.Component):
         user_input = payload.user_input or ""
 
         LOGGER.info(
-            f"[Channel Points] {user_name} 兌換「{reward_title}」"
-            f"(花費 {reward_cost} 點數，頻道: {payload.broadcaster.name})"
+            f"[Channel Points] {user_name} redeemed '{reward_title}'"
+            f" ({reward_cost} pts, channel: {payload.broadcaster.name})"
         )
         if user_input:
-            LOGGER.debug(f"[Channel Points] 用戶輸入: {user_input}")
+            LOGGER.debug(f"[Channel Points] User input: {user_input}")
 
         await self._handle_redemption(payload)
 
@@ -102,12 +102,12 @@ class ChannelPointsComponent(commands.Component):
                 await self._handle_niibot_redemption(payload, user_name)
             else:
                 LOGGER.warning(
-                    f"[Niibot] {user_name} 嘗試在非 owner 頻道 ({payload.broadcaster.name}) 兌換 Niibot"
+                    f"[Niibot] {user_name} attempted Niibot redemption on non-owner channel ({payload.broadcaster.name})"
                 )
         elif config.action_type == "first" and user_name:
             await self._handle_first_redemption(payload, user_name)
         elif config.action_type == "vip":
-            LOGGER.info(f"[Action] {user_name} 兌換了 VIP 獎勵")
+            LOGGER.info(f"[Action] {user_name} redeemed VIP reward")
             await self._handle_vip_redemption(payload, user_name)
         elif config.action_type == "game_queue" and user_name:
             await self._handle_game_queue_redemption(payload, user_name)
@@ -131,9 +131,9 @@ class ChannelPointsComponent(commands.Component):
                     sender=self.bot.bot_id,
                     token_for=self.bot.bot_id,
                 )
-                LOGGER.info(f"[VIP] 已授予 {user_name} VIP 身分並發送確認訊息")
+                LOGGER.info(f"[VIP] Granted VIP to {user_name} and sent confirmation")
             except Exception as e:
-                LOGGER.warning(f"[VIP] 已授予 VIP 但發送訊息失敗: {e}")
+                LOGGER.warning(f"[VIP] VIP granted but failed to send message: {e}")
 
         except Exception as e:
             error_str = str(e)
@@ -141,18 +141,18 @@ class ChannelPointsComponent(commands.Component):
             if "422" in error_str:
                 if "moderator" in error_str.lower():
                     LOGGER.warning(
-                        f"[VIP] {user_name} 已經是 Moderator，無法授予 VIP（Twitch 限制）"
+                        f"[VIP] {user_name} is already a Moderator, cannot grant VIP (Twitch restriction)"
                     )
                     error_message = f"{user_name}，你已經是 Moderator 了！"
                 elif "already a vip" in error_str.lower():
-                    LOGGER.info(f"[VIP] {user_name} 已經是 VIP")
+                    LOGGER.info(f"[VIP] {user_name} is already a VIP")
                     error_message = f"{user_name}，你已經是 VIP 了！"
                 else:
-                    LOGGER.error(f"[VIP] 授予 VIP 身分失敗 (422): {e}")
+                    LOGGER.error(f"[VIP] Failed to grant VIP (422): {e}")
                     error_message = f"{user_name}，VIP 授予失敗，請聯繫管理員！"
             else:
                 # 其他錯誤
-                LOGGER.error(f"[VIP] 授予 VIP 身分失敗: {e}")
+                LOGGER.error(f"[VIP] Failed to grant VIP: {e}")
                 error_message = f"{user_name}，VIP 授予失敗，請聯繫管理員！"
 
             # 發送錯誤訊息
@@ -181,9 +181,9 @@ class ChannelPointsComponent(commands.Component):
                     moderator=self.bot.bot_id,
                     color="primary",
                 )
-                LOGGER.info(f"[First] {user_name} 搶到第一，已發送公告")
+                LOGGER.info(f"[First] {user_name} claimed first, announcement sent")
             except Exception as e:
-                LOGGER.warning(f"[First] 發送公告失敗: {e}，fallback 到普通訊息")
+                LOGGER.warning(f"[First] Announcement failed: {e}, falling back to regular message")
                 fallback_message = f"恭喜 {user_name}，搶到第一！"
                 try:
                     await broadcaster.send_message(
@@ -191,12 +191,12 @@ class ChannelPointsComponent(commands.Component):
                         sender=self.bot.bot_id,
                         token_for=self.bot.bot_id,
                     )
-                    LOGGER.info(f"[First] 已發送普通訊息給 {user_name}")
+                    LOGGER.info(f"[First] Fallback message sent to {user_name}")
                 except Exception as fallback_error:
-                    LOGGER.error(f"[First] 連 fallback 都失敗: {fallback_error}")
+                    LOGGER.error(f"[First] Fallback also failed: {fallback_error}")
 
         except Exception as e:
-            LOGGER.error(f"[First] 處理搶第一兌換時發生錯誤: {e}")
+            LOGGER.error(f"[First] Error handling first-claim redemption: {e}")
 
     async def _handle_niibot_redemption(
         self,
@@ -208,7 +208,7 @@ class ChannelPointsComponent(commands.Component):
             try:
                 oauth_url = self._generate_oauth_url()
             except ValueError as e:
-                LOGGER.error(f"[Niibot] 生成 OAuth URL 失敗: {e}")
+                LOGGER.error(f"[Niibot] Failed to generate OAuth URL: {e}")
                 return
 
             broadcaster = payload.broadcaster
@@ -219,9 +219,9 @@ class ChannelPointsComponent(commands.Component):
                     sender=self.bot.bot_id,
                     token_for=self.bot.bot_id,
                 )
-                LOGGER.info(f"[Niibot] 已發送確認訊息給 {user_name}")
+                LOGGER.info(f"[Niibot] Sent confirmation message to {user_name}")
             except Exception as e:
-                LOGGER.warning(f"[Niibot] 發送公開訊息失敗: {e}")
+                LOGGER.warning(f"[Niibot] Failed to send public message: {e}")
 
             whisper_message = f"請點擊以下連結，授權 Niibot 存取你的頻道：{oauth_url}"
             try:
@@ -230,9 +230,9 @@ class ChannelPointsComponent(commands.Component):
                     to_user=payload.user,  # 接收者
                     message=whisper_message,
                 )
-                LOGGER.info(f"[Niibot] 已發送私訊給 {user_name}")
+                LOGGER.info(f"[Niibot] Whisper sent to {user_name}")
             except Exception as e:
-                LOGGER.error(f"[Niibot] 發送私訊失敗: {e}")
+                LOGGER.error(f"[Niibot] Failed to send whisper: {e}")
                 fallback_message = f"{user_name}，私訊發送失敗，請聯繫 Bot Owner 獲取授權連結！"
                 try:
                     await broadcaster.send_message(
@@ -240,12 +240,12 @@ class ChannelPointsComponent(commands.Component):
                         sender=self.bot.bot_id,
                         token_for=self.bot.bot_id,
                     )
-                    LOGGER.info("[Niibot] 已 fallback 到聊天室")
+                    LOGGER.info("[Niibot] Fell back to chat message")
                 except Exception as fallback_error:
-                    LOGGER.error(f"[Niibot] Fallback 也失敗: {fallback_error}")
+                    LOGGER.error(f"[Niibot] Fallback also failed: {fallback_error}")
 
         except Exception as e:
-            LOGGER.error(f"[Niibot] 處理兌換時發生錯誤: {e}")
+            LOGGER.error(f"[Niibot] Error handling redemption: {e}")
 
     async def _handle_game_queue_redemption(
         self,
@@ -293,10 +293,10 @@ class ChannelPointsComponent(commands.Component):
                 sender=self.bot.bot_id,
                 token_for=self.bot.bot_id,
             )
-            LOGGER.info(f"[GameQueue] {user_name} 加入隊列 (第 {position} 位)")
+            LOGGER.info(f"[GameQueue] {user_name} joined queue (position {position})")
 
         except Exception as e:
-            LOGGER.error(f"[GameQueue] 處理排隊兌換時發生錯誤: {e}")
+            LOGGER.error(f"[GameQueue] Error handling game queue redemption: {e}")
 
     async def _handle_video_queue_redemption(
         self,
@@ -431,7 +431,7 @@ class ChannelPointsComponent(commands.Component):
             )
 
         except Exception as e:
-            LOGGER.error(f"[VideoQueue] 處理兌換失敗: {e}")
+            LOGGER.error(f"[VideoQueue] Error handling video queue redemption: {e}")
 
 
 async def setup(bot: commands.Bot) -> None:

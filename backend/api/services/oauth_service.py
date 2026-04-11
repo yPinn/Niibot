@@ -71,7 +71,7 @@ async def find_or_create_user(
             )
             return str(row["user_id"])
 
-    logger.info("Created user %s for %s:%s (%s)", user_id, platform, platform_user_id, username)
+    logger.info(f"Created user {user_id} for {platform}:{platform_user_id} ({username})")
     return user_id
 
 

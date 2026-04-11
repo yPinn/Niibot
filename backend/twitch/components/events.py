@@ -280,7 +280,7 @@ class EventComponent(commands.Component):
                 )
             LOGGER.info(
                 f"[{broadcaster_name}] Raid: {raider_name} ({viewer_count})"
-                f" - Shoutout {'sent' if auto_shoutout else 'skipped'}"
+                f" (shoutout {'sent' if auto_shoutout else 'skipped'})"
             )
 
         except Exception as e:

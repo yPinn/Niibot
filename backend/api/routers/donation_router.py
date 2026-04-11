@@ -369,34 +369,32 @@ async def _handle_payment_webhook(
     rtn_code = form_data.get("RtnCode")
 
     if not trade_no:
-        logger.warning("[%s webhook] Missing MerchantTradeNo", platform)
+        logger.warning(f"[{platform} webhook] Missing MerchantTradeNo")
         return "0|Error"
 
     repo = DonationRepository(pool)
     order = await repo.get_order_by_trade_no(trade_no)
     if order is None:
-        logger.warning("[%s webhook] Unknown order: %s", platform, trade_no)
+        logger.warning(f"[{platform} webhook] Unknown order: {trade_no}")
         return "0|Error"
 
     # Look up the streamer's hash to verify the webhook signature
     config = await repo.get_config(order.user_id, platform)
     if config is None:
-        logger.error("[%s webhook] No config found for user %s", platform, order.user_id)
+        logger.error(f"[{platform} webhook] No config found for user {order.user_id}")
         return "0|Error"
 
     if not config.hash_key or not config.hash_iv:
         logger.error(
-            "[%s webhook] hash_key/hash_iv not configured for user %s", platform, order.user_id
+            f"[{platform} webhook] hash_key/hash_iv not configured for user {order.user_id}"
         )
         return "0|Error"
     if not _verify_webhook_mac(form_data, config.hash_key, config.hash_iv):
-        logger.warning("[%s webhook] CheckMacValue mismatch for order %s", platform, trade_no)
+        logger.warning(f"[{platform} webhook] CheckMacValue mismatch for order {trade_no}")
         return "0|Error"
 
     if rtn_code != "1":
-        logger.info(
-            "[%s webhook] Order %s failed/cancelled, RtnCode=%s", platform, trade_no, rtn_code
-        )
+        logger.info(f"[{platform} webhook] Order {trade_no} failed/cancelled, RtnCode={rtn_code}")
         await repo.mark_failed(trade_no)
         return "1|OK"
 
@@ -407,11 +405,7 @@ async def _handle_payment_webhook(
         return "1|OK"
 
     logger.info(
-        "[%s webhook] Order %s paid — user=%s amount=%s",
-        platform,
-        trade_no,
-        order.user_id,
-        order.amount,
+        f"[{platform} webhook] Order {trade_no} paid — user={order.user_id} amount={order.amount}"
     )
 
     # Enqueue YouTube video if media share is enabled
@@ -425,15 +419,10 @@ async def _handle_payment_webhook(
                 source="donation",
             )
             logger.info(
-                "[%s webhook] Enqueued video %s for channel %s",
-                platform,
-                paid_order.youtube_video_id,
-                paid_order.channel_id,
+                f"[{platform} webhook] Enqueued video {paid_order.youtube_video_id} for channel {paid_order.channel_id}"
             )
         except Exception:
-            logger.exception(
-                "[%s webhook] Failed to enqueue video for order %s", platform, trade_no
-            )
+            logger.exception(f"[{platform} webhook] Failed to enqueue video for order {trade_no}")
             # Don't fail the webhook — payment already confirmed
 
     return "1|OK"
@@ -492,19 +481,19 @@ async def webhook_newebpay(
     repo = DonationRepository(pool)
     config_row = await repo.get_config_by_merchant_id("newebpay", merchant_id)
     if config_row is None:
-        logger.warning("[newebpay webhook] Unknown merchant_id: %s", merchant_id)
+        logger.warning(f"[newebpay webhook] Unknown merchant_id: {merchant_id}")
         return JSONResponse({"status": "error"}, status_code=200)
 
     if not config_row.hash_key or not config_row.hash_iv:
         logger.error(
-            "[newebpay webhook] hash_key/hash_iv not configured for merchant %s", merchant_id
+            f"[newebpay webhook] hash_key/hash_iv not configured for merchant {merchant_id}"
         )
         return JSONResponse({"status": "error"}, status_code=200)
 
     # Verify TradeSha
     expected_sha = _newebpay_sha256(trade_info_hex, config_row.hash_key, config_row.hash_iv)
     if trade_sha.upper() != expected_sha:
-        logger.warning("[newebpay webhook] TradeSha mismatch for merchant %s", merchant_id)
+        logger.warning(f"[newebpay webhook] TradeSha mismatch for merchant {merchant_id}")
         return JSONResponse({"status": "error"}, status_code=200)
 
     # Decrypt TradeInfo
@@ -524,11 +513,11 @@ async def webhook_newebpay(
 
     order = await repo.get_order_by_trade_no(trade_no)
     if order is None:
-        logger.warning("[newebpay webhook] Unknown order: %s", trade_no)
+        logger.warning(f"[newebpay webhook] Unknown order: {trade_no}")
         return JSONResponse({"status": "error"}, status_code=200)
 
     if inner_status != "SUCCESS" or status != "SUCCESS":
-        logger.info("[newebpay webhook] Order %s failed, Status=%s", trade_no, inner_status)
+        logger.info(f"[newebpay webhook] Order {trade_no} failed, Status={inner_status}")
         await repo.mark_failed(trade_no)
         return JSONResponse({"status": "ok"}, status_code=200)
 
@@ -537,10 +526,7 @@ async def webhook_newebpay(
         return JSONResponse({"status": "ok"}, status_code=200)  # duplicate webhook
 
     logger.info(
-        "[newebpay webhook] Order %s paid — user=%s amount=%s",
-        trade_no,
-        order.user_id,
-        order.amount,
+        f"[newebpay webhook] Order {trade_no} paid — user={order.user_id} amount={order.amount}"
     )
 
     if paid_order.youtube_video_id and config_row.media_share_enabled and paid_order.channel_id:
@@ -553,6 +539,6 @@ async def webhook_newebpay(
                 source="donation",
             )
         except Exception:
-            logger.exception("[newebpay webhook] Failed to enqueue video for order %s", trade_no)
+            logger.exception(f"[newebpay webhook] Failed to enqueue video for order {trade_no}")
 
     return JSONResponse({"status": "ok"}, status_code=200)

@@ -80,7 +80,7 @@ class AdminCog(commands.Cog):
                 sync_msg = "已全域同步"
 
             await interaction.response.send_message(f"已重載：{cog}\n{sync_msg}", ephemeral=True)
-            LOGGER.info(f"Reloaded cog: {cog_path} (by {interaction.user})")
+            LOGGER.info(f"Cog reloaded: {cog_path} | By: {interaction.user}")
 
         except commands.ExtensionNotLoaded:
             await interaction.response.send_message(f"Cog 未載入：{cog}", ephemeral=True)
@@ -106,7 +106,7 @@ class AdminCog(commands.Cog):
         try:
             await self.bot.load_extension(cog_path)
             await interaction.response.send_message(f"已載入：{cog}", ephemeral=True)
-            LOGGER.info(f"Loaded cog: {cog_path} (by {interaction.user})")
+            LOGGER.info(f"Cog loaded: {cog_path} | By: {interaction.user}")
         except commands.ExtensionAlreadyLoaded:
             await interaction.response.send_message(f"Cog 已載入：{cog}", ephemeral=True)
         except commands.ExtensionNotFound:
@@ -135,7 +135,7 @@ class AdminCog(commands.Cog):
         try:
             await self.bot.unload_extension(cog_path)
             await interaction.response.send_message(f"已卸載：{cog}", ephemeral=True)
-            LOGGER.info(f"Unloaded cog: {cog_path} (by {interaction.user})")
+            LOGGER.info(f"Cog unloaded: {cog_path} | By: {interaction.user}")
         except commands.ExtensionNotLoaded:
             await interaction.response.send_message(f"Cog 未載入：{cog}", ephemeral=True)
         except Exception as e:
@@ -171,7 +171,7 @@ class AdminCog(commands.Cog):
             await interaction.response.defer(ephemeral=True)
             synced = await self.bot.tree.sync()
             await interaction.followup.send(f"已同步 {len(synced)} 個指令", ephemeral=True)
-            LOGGER.info(f"Synced {len(synced)} commands (by {interaction.user})")
+            LOGGER.info(f"Commands synced: {len(synced)} | By: {interaction.user}")
         except Exception as e:
             await interaction.followup.send(f"同步失敗：{type(e).__name__}", ephemeral=True)
             LOGGER.exception(f"Error syncing commands: {e}")

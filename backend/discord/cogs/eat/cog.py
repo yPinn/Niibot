@@ -59,7 +59,7 @@ class EatCog(commands.Cog):
                     item_count = sum(len(items) for items in self.data["categories"].values())
                     LOGGER.info(f"Eat: loaded {category_count} categories, {item_count} items")
         except Exception as e:
-            LOGGER.error(f"Eat: load failed - {e}")
+            LOGGER.error(f"Eat: load failed: {e}")
 
     async def save_data(self) -> None:
         try:
@@ -68,7 +68,7 @@ class EatCog(commands.Cog):
                     json.dump(self.data, f, ensure_ascii=False, indent=2)
                 self._dirty = False
         except Exception as e:
-            LOGGER.error(f"Eat: save failed - {e}")
+            LOGGER.error(f"Eat: save failed: {e}")
 
     async def load_global_embed(self) -> None:
         try:
@@ -76,7 +76,7 @@ class EatCog(commands.Cog):
                 with open(self.global_embed_file, encoding="utf-8") as f:
                     self.global_embed_config = json.load(f)
         except Exception as e:
-            LOGGER.warning(f"Eat: load global embed failed - {e}")
+            LOGGER.warning(f"Eat: load global embed failed: {e}")
 
     # ==================== Helpers ====================
 
