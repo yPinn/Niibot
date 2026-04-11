@@ -40,7 +40,6 @@ if TYPE_CHECKING:
 
 LOGGER = logging.getLogger(__name__)
 
-# Mapping short role names to DB values
 ROLE_ALIASES = {
     "everyone": "everyone",
     "all": "everyone",
@@ -53,7 +52,6 @@ ROLE_ALIASES = {
     "owner": "broadcaster",
 }
 
-# Pattern to match option flags like -cd=30, -alias=a,b
 _OPT_PATTERN = re.compile(r"-(\w+)=(\S+)")
 
 
@@ -106,11 +104,14 @@ class CommandManagerComponent(commands.Component):
     def refresh_pool(self, pool) -> None:
         self.cmd_repo.pool = pool
 
+    @commands.Component.guard()
+    def _is_mod(self, ctx: commands.Context) -> bool:
+        # .moderator already includes broadcaster (see Chatter.moderator source)
+        return ctx.chatter.moderator  # type: ignore[attr-defined]
+
     @commands.group(name="cmd")
     async def cmd(self, ctx: commands.Context["Bot"]) -> None:
         """Command management group. Moderator+ only."""
-        if not ctx.chatter.moderator and not ctx.chatter.broadcaster:  # type: ignore[attr-defined]
-            return
         if ctx.invoked_subcommand is None:
             await ctx.reply(
                 "用法: !cmd a/e/d !指令名 — 新增｜編輯｜刪除 (選項: -cd -role -alias -enable)"
@@ -119,9 +120,6 @@ class CommandManagerComponent(commands.Component):
     @cmd.command(name="a")
     async def cmd_add(self, ctx: commands.Context["Bot"], *, args: str | None = None) -> None:
         """Add a custom command (!prefix) or auto-response trigger (no prefix)."""
-        if not ctx.chatter.moderator and not ctx.chatter.broadcaster:  # type: ignore[attr-defined]
-            return
-
         if not args or not args.strip():
             await ctx.reply("用法: !cmd a !指令名 回覆 / !cmd a 觸發詞 回覆")
             return
@@ -201,9 +199,6 @@ class CommandManagerComponent(commands.Component):
     @cmd.command(name="e")
     async def cmd_edit(self, ctx: commands.Context["Bot"], *, args: str | None = None) -> None:
         """Edit a custom command or trigger."""
-        if not ctx.chatter.moderator and not ctx.chatter.broadcaster:  # type: ignore[attr-defined]
-            return
-
         if not args or not args.strip():
             await ctx.reply("用法: !cmd e !指令名 [選項] / !cmd e 觸發詞 [選項] [新回覆文字]")
             return
@@ -338,9 +333,6 @@ class CommandManagerComponent(commands.Component):
     @cmd.command(name="d")
     async def cmd_delete(self, ctx: commands.Context["Bot"], *, args: str | None = None) -> None:
         """Delete a custom command or trigger."""
-        if not ctx.chatter.moderator and not ctx.chatter.broadcaster:  # type: ignore[attr-defined]
-            return
-
         if not args or not args.strip():
             await ctx.reply("用法: !cmd d !指令名 / !cmd d 觸發詞")
             return

@@ -36,7 +36,7 @@ def has_role(chatter, min_role: str) -> bool:
     min_level = ROLE_HIERARCHY.index(min_role) if min_role in ROLE_HIERARCHY else 0
 
     if chatter.broadcaster:
-        return ROLE_HIERARCHY.index("broadcaster") >= min_level
+        return True
     if chatter.moderator:
         return ROLE_HIERARCHY.index("moderator") >= min_level
     if chatter.vip:
