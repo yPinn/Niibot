@@ -4,13 +4,13 @@
 
 ## 架構
 
-| 服務 | 技術 | 部署 | 對外 Port |
-| ---- | ---- | ---- | ---- |
-| API Server | FastAPI + asyncpg | Docker | 8000 |
-| Twitch Bot | TwitchIO 3 | Docker | — 僅內部 |
-| Discord Bot | discord.py 2 | Docker | — 僅內部 |
-| PostgreSQL | postgres:16 | Docker | — 僅內部 |
-| Frontend | React 19 + Vite | Cloudflare Pages | — |
+| 服務        | 技術              | 部署             | 對外 Port |
+| ----------- | ----------------- | ---------------- | --------- |
+| API Server  | FastAPI + asyncpg | Docker           | 8000      |
+| Twitch Bot  | TwitchIO 3        | Docker           | — 僅內部  |
+| Discord Bot | discord.py 2      | Docker           | — 僅內部  |
+| PostgreSQL  | postgres:16       | Docker           | — 僅內部  |
+| Frontend    | React 19 + Vite   | Cloudflare Pages | —         |
 
 ```text
 backend/
@@ -32,75 +32,65 @@ frontend/
 
 ```bash
 # Backend（需 Python 3.11+、uv）
-cd backend && cp api/.env.example api/.env
+cd backend && cp api/.env.example api/.env   # 填入設定
 uv sync && uv run python api/main.py
 
 # Frontend（需 Node 20+）
-cd frontend && cp .env.example .env
-npm install && npm run dev
+cd frontend && npm install && npm run dev
 ```
 
 ## 部署
 
 ### 前端（Cloudflare Pages）
 
-前端為 React SPA，部署在 Cloudflare Pages；CF Pages Functions 將 `/api/*`、`/health`、`/status` 代理到後端 API，瀏覽器全程只與 CF Pages 域名通訊。
+React SPA，部署在 Cloudflare Pages。CF Pages Functions 將 `/api/*`、`/health`、`/status` 代理到後端，瀏覽器全程只與 CF Pages 域名通訊。
 
-在 CF Pages 專案設定 → 環境變數：
+在 CF Pages 專案 → 環境變數中設定：
 
-| 變數 | 說明 |
-| ---- | ---- |
-| `API_BACKEND` | 後端 API 位址，例如 `http://your-server-ip:8000` |
+| 變數          | 說明                                         |
+| ------------- | -------------------------------------------- |
+| `API_BACKEND` | 後端 API 位址（經由 Cloudflare Tunnel 提供） |
 
 ### 後端（Docker Compose）
 
-後端服務（API、Twitch Bot、Discord Bot、PostgreSQL）統一透過 Docker Compose 管理。只需對外開放 **port 8000**（API，供 CF Functions 呼叫）。
+後端服務統一由 Docker Compose 管理。啟動後 `migrate` 容器會自動執行 DB Migration，成功後才啟動其他服務。
+
+生產環境透過 **Cloudflare Tunnel** 對外，cloudflared 作為系統服務運行並指向 `localhost:8000`。
 
 #### 1. 設定環境變數
 
 ```bash
-# 根目錄：PostgreSQL 帳號（供 docker-compose.yml 使用）
-cp .env.example .env
-
-# 各服務
+cp .env.example .env                           # PostgreSQL 帳號 + Cloudflare Tunnel Token
 cp backend/api/.env.example backend/api/.env
 cp backend/twitch/.env.example backend/twitch/.env
 cp backend/discord/.env.example backend/discord/.env
 ```
 
-#### 2. 啟動
+#### 2. 建置並啟動
 
 ```bash
+docker compose build
 docker compose up -d
-```
-
-#### 3. 初次建立資料表（首次部署）
-
-```bash
-docker compose run --rm \
-  -v ./backend/scripts:/app/scripts \
-  api python /app/scripts/db_migrate.py
 ```
 
 ## 環境變數
 
-各服務皆有 `.env.example`，複製為 `.env` 並填入設定。
-
-| 檔案 | 說明 |
-| ---- | ---- |
-| `.env` | PostgreSQL 帳號（`POSTGRES_USER/PASSWORD/DB`） |
-| `backend/api/.env` | Twitch OAuth、JWT、服務 URL |
-| `backend/twitch/.env` | Twitch Bot 金鑰、YouTube API |
-| `backend/discord/.env` | Discord Bot Token |
+| 檔案                   | 說明                                     |
+| ---------------------- | ---------------------------------------- |
+| `.env`                 | PostgreSQL 帳號、Cloudflare Tunnel Token |
+| `backend/api/.env`     | Twitch OAuth、JWT Secret、服務 URL       |
+| `backend/twitch/.env`  | Twitch Bot 金鑰、YouTube API             |
+| `backend/discord/.env` | Discord Bot Token                        |
 
 ### 需準備的外部服務
 
-| 服務 | 取得位置 | 用途 |
-| ---- | -------- | ---- |
-| Twitch Developer Console | [dev.twitch.tv/console](https://dev.twitch.tv/console) | CLIENT_ID / CLIENT_SECRET |
-| Discord Developer Portal | [discord.com/developers](https://discord.com/developers/applications) | Bot Token、OAuth CLIENT_ID / CLIENT_SECRET |
-| OpenRouter | [openrouter.ai/keys](https://openrouter.ai/keys) | OPENROUTER_API_KEY |
-| YouTube Data API v3 | [console.cloud.google.com](https://console.cloud.google.com/) | YOUTUBE_API_KEY（選用） |
+| 服務                     | 取得位置                                                              | 用途                                |
+| ------------------------ | --------------------------------------------------------------------- | ----------------------------------- |
+| Twitch Developer Console | [dev.twitch.tv/console](https://dev.twitch.tv/console)                | OAuth CLIENT_ID / CLIENT_SECRET     |
+| Discord Developer Portal | [discord.com/developers](https://discord.com/developers/applications) | Bot Token                           |
+| Cloudflare Zero Trust    | Cloudflare Dashboard → Networks → Tunnels                             | Tunnel Token（生產環境）            |
+| OpenRouter               | [openrouter.ai/keys](https://openrouter.ai/keys)                      | OPENROUTER_API_KEY（選用，AI 功能） |
+| YouTube Data API v3      | [console.cloud.google.com](https://console.cloud.google.com/)         | YOUTUBE_API_KEY（選用）             |
 
 ## License
 
