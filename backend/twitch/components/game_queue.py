@@ -104,7 +104,7 @@ class GameQueueComponent(commands.Component):
     @gq.command(name="next")
     async def gq_next(self, ctx: commands.Context["Bot"]) -> None:
         """Advance to next batch (mod+)."""
-        if not ctx.chatter.moderator and not ctx.chatter.broadcaster:  # type: ignore[attr-defined]
+        if not ctx.chatter.moderator:  # type: ignore[attr-defined]
             return
 
         channel_id = ctx.channel.id
@@ -131,7 +131,7 @@ class GameQueueComponent(commands.Component):
     @gq.command(name="kick")
     async def gq_kick(self, ctx: commands.Context["Bot"], *, args: str | None = None) -> None:
         """Kick a user from queue (mod+)."""
-        if not ctx.chatter.moderator and not ctx.chatter.broadcaster:  # type: ignore[attr-defined]
+        if not ctx.chatter.moderator:  # type: ignore[attr-defined]
             return
 
         if not args or not args.strip():
@@ -155,7 +155,7 @@ class GameQueueComponent(commands.Component):
     @gq.command(name="clear")
     async def gq_clear(self, ctx: commands.Context["Bot"]) -> None:
         """Clear entire queue (mod+)."""
-        if not ctx.chatter.moderator and not ctx.chatter.broadcaster:  # type: ignore[attr-defined]
+        if not ctx.chatter.moderator:  # type: ignore[attr-defined]
             return
 
         channel_id = ctx.channel.id
@@ -165,7 +165,7 @@ class GameQueueComponent(commands.Component):
     @gq.command(name="open")
     async def gq_open(self, ctx: commands.Context["Bot"]) -> None:
         """Enable queue (mod+)."""
-        if not ctx.chatter.moderator and not ctx.chatter.broadcaster:  # type: ignore[attr-defined]
+        if not ctx.chatter.moderator:  # type: ignore[attr-defined]
             return
 
         channel_id = ctx.channel.id
@@ -175,7 +175,7 @@ class GameQueueComponent(commands.Component):
     @gq.command(name="close")
     async def gq_close(self, ctx: commands.Context["Bot"]) -> None:
         """Disable queue (mod+)."""
-        if not ctx.chatter.moderator and not ctx.chatter.broadcaster:  # type: ignore[attr-defined]
+        if not ctx.chatter.moderator:  # type: ignore[attr-defined]
             return
 
         channel_id = ctx.channel.id
@@ -185,7 +185,7 @@ class GameQueueComponent(commands.Component):
     @gq.command(name="size")
     async def gq_size(self, ctx: commands.Context["Bot"], *, args: str | None = None) -> None:
         """Change group size (mod+)."""
-        if not ctx.chatter.moderator and not ctx.chatter.broadcaster:  # type: ignore[attr-defined]
+        if not ctx.chatter.moderator:  # type: ignore[attr-defined]
             return
 
         channel_id = ctx.channel.id

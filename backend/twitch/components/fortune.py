@@ -67,7 +67,7 @@ class FortuneComponent(commands.Component):
         return text
 
     @commands.command(name="fortune", aliases=["運勢"])
-    async def fortune_command(self, ctx: commands.Context["Bot"]) -> None:
+    async def fortune(self, ctx: commands.Context["Bot"]) -> None:
         """運勢占卜指令
 
         用法:
@@ -78,7 +78,7 @@ class FortuneComponent(commands.Component):
         if not config:
             return
 
-        user = ctx.author.display_name or ctx.author.name
+        user = ctx.chatter.display_name or ctx.chatter.name
         assert user is not None
 
         try:

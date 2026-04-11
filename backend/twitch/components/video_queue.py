@@ -80,7 +80,7 @@ class VideoQueueComponent(commands.Component):
             return
 
         # CLI add is restricted to moderators and broadcaster
-        if not ctx.chatter.moderator and not ctx.chatter.broadcaster:  # type: ignore[attr-defined]
+        if not ctx.chatter.moderator:  # type: ignore[attr-defined]
             return  # silent
 
         user_name = ctx.chatter.name or ctx.chatter.display_name or ""
@@ -235,7 +235,7 @@ class VideoQueueComponent(commands.Component):
     @vq.command(name="skip")
     async def vq_skip(self, ctx: commands.Context[Bot]) -> None:
         """!vq skip — 跳過當前影片（moderator+）"""
-        if not ctx.chatter.moderator and not ctx.chatter.broadcaster:  # type: ignore[attr-defined]
+        if not ctx.chatter.moderator:  # type: ignore[attr-defined]
             return
 
         channel_id = ctx.channel.id
@@ -256,7 +256,7 @@ class VideoQueueComponent(commands.Component):
     @vq.command(name="clear")
     async def vq_clear(self, ctx: commands.Context[Bot]) -> None:
         """!vq clear — 清空整個佇列（moderator+）"""
-        if not ctx.chatter.moderator and not ctx.chatter.broadcaster:  # type: ignore[attr-defined]
+        if not ctx.chatter.moderator:  # type: ignore[attr-defined]
             return
 
         channel_id = ctx.channel.id
@@ -290,7 +290,7 @@ class VideoQueueComponent(commands.Component):
     @vq.command(name="remove")
     async def vq_remove(self, ctx: commands.Context[Bot]) -> None:
         """!vq remove — 移除最後一首尚未播放的請求（moderator+）"""
-        if not ctx.chatter.moderator and not ctx.chatter.broadcaster:  # type: ignore[attr-defined]
+        if not ctx.chatter.moderator:  # type: ignore[attr-defined]
             return
         channel_id = ctx.channel.id
         user_name = ctx.chatter.name or ctx.chatter.display_name or ""

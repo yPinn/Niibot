@@ -224,9 +224,7 @@ class TftComponent(commands.Component):
         return data
 
     @commands.command(name="tft", aliases=["戰棋"])
-    async def leaderboard_command(
-        self, ctx: commands.Context["Bot"], user_id: str | None = None
-    ) -> None:
+    async def tft(self, ctx: commands.Context["Bot"], user_id: str | None = None) -> None:
         """查詢 TFT 排行榜（!tft 顯示門檻，!tft 玩家名#tag 查玩家）"""
         config = await check_command(self.cmd_repo, ctx, "tft", self.channel_repo)
         if not config:
@@ -237,7 +235,7 @@ class TftComponent(commands.Component):
         except Exception:
             pass
 
-        LOGGER.debug(f"!tft command - {ctx.author.name} query: {user_id or 'threshold'}")
+        LOGGER.debug(f"!tft command - {ctx.chatter.name} query: {user_id or 'threshold'}")
 
         data = await self.get_leaderboard_data()
         if not data:

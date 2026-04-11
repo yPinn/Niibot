@@ -105,7 +105,7 @@ class AIComponent(commands.Component):
 
         try:
             LOGGER.info(
-                f"AI request: channel={ctx.channel.name}, user={ctx.author.name}, message={message[:100]}"
+                f"AI request: channel={ctx.channel.name}, user={ctx.chatter.name}, message={message[:100]}"
             )
 
             messages: list[ChatCompletionMessageParam] = [
