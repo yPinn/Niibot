@@ -27,6 +27,7 @@ Examples:
     !cmd d 你好
 """
 
+import asyncio
 import logging
 import re
 from typing import TYPE_CHECKING
@@ -34,6 +35,7 @@ from typing import TYPE_CHECKING
 from twitchio.ext import commands
 
 from shared.repositories.command_config import CommandConfigRepository
+from utils.trigger_matching import validate_regex_pattern
 
 if TYPE_CHECKING:
     from core.bot import Bot
@@ -179,6 +181,13 @@ class CommandManagerComponent(commands.Component):
                 await ctx.reply(f"無效的 -match 值，請使用: {', '.join(_MATCH_TYPES)}")
                 return
             case_sensitive = _parse_bool(options.get("cs", "off")) or False
+            if match_type == "regex":
+                is_safe = await asyncio.get_event_loop().run_in_executor(
+                    None, validate_regex_pattern, pattern
+                )
+                if not is_safe:
+                    await ctx.reply("無效或不安全的 Regex 模式（可能導致 ReDoS），已拒絕")
+                    return
             trigger_name = _sanitize_trigger_name(pattern)
             await self.bot.message_trigger_configs.upsert(
                 channel_id,
@@ -282,6 +291,13 @@ class CommandManagerComponent(commands.Component):
                     await ctx.reply(f"無效的 -match 值，請使用: {', '.join(_MATCH_TYPES)}")
                     return
                 tkwargs["match_type"] = options["match"]
+                if options["match"] == "regex":
+                    is_safe = await asyncio.get_event_loop().run_in_executor(
+                        None, validate_regex_pattern, pattern
+                    )
+                    if not is_safe:
+                        await ctx.reply("無效或不安全的 Regex 模式（可能導致 ReDoS），已拒絕")
+                        return
             if "cs" in options:
                 cs = _parse_bool(options["cs"])
                 if cs is None:

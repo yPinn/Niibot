@@ -191,23 +191,29 @@ class TestUnknownMatchType:
 
 
 class TestReDoSProtection:
-    def test_catastrophic_backtracking_returns_false_within_timeout(self):
-        """A catastrophic backtracking regex must return False, not hang indefinitely.
+    def test_catastrophic_pattern_rejected_by_validate(self):
+        """validate_regex_pattern must reject catastrophic backtracking patterns.
 
-        The ThreadPoolExecutor + timeout in match_trigger caps the regex execution.
-        We use (a+)+$ against a non-matching string — a classic ReDoS input — and
-        assert completion within 2 seconds (the thread still runs but the caller
-        doesn't block).
+        Uses subprocess isolation (separate GIL) so the canary run cannot block
+        the test process.  The pattern (a+)+$ is a classic ReDoS input that
+        causes exponential backtracking on a non-matching string.
         """
-        import time
+        from twitch.utils.trigger_matching import validate_regex_pattern
 
-        t = make_trigger(pattern=r"(a+)+$", match_type="regex")
-        start = time.monotonic()
-        result = match_trigger(t, "a" * 25 + "b")
-        elapsed = time.monotonic() - start
+        assert validate_regex_pattern(r"(a+)+$") is False
 
-        assert result is False
-        assert elapsed < 2.0, f"ReDoS protection failed: took {elapsed:.2f}s"
+    def test_invalid_regex_rejected_by_validate(self):
+        """validate_regex_pattern must return False for syntactically invalid patterns."""
+        from twitch.utils.trigger_matching import validate_regex_pattern
+
+        assert validate_regex_pattern(r"[invalid(") is False
+
+    def test_safe_regex_accepted_by_validate(self):
+        """validate_regex_pattern must return True for well-behaved patterns."""
+        from twitch.utils.trigger_matching import validate_regex_pattern
+
+        assert validate_regex_pattern(r"\d+") is True
+        assert validate_regex_pattern(r"^hello\s+world$") is True
 
     def test_aliases_are_matched(self):
         """Aliases field (comma-separated) must also be tested against the text."""

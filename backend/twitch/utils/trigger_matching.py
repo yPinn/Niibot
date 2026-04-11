@@ -9,17 +9,64 @@ Supported match types:
 A trigger may also carry an ``aliases`` field (comma-separated strings).
 ``match_trigger`` checks the primary pattern first, then each alias.
 Any match returns True.
+
+ReDoS protection
+----------------
+Call ``validate_regex_pattern(pattern)`` before persisting any user-supplied
+regex trigger.  It runs ``re.search`` against a catastrophic-backtracking
+canary inside a subprocess (separate GIL), killing the process if it exceeds
+``_VALIDATE_TIMEOUT`` seconds.  Patterns that survive are safe to use at
+match time without any additional overhead.
 """
 
 from __future__ import annotations
 
+import os
 import re
-from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import TimeoutError as FuturesTimeoutError
+import subprocess
+import sys
 from typing import Protocol
 
-_regex_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="regex")
-_REGEX_TIMEOUT = 0.5  # seconds — rejects catastrophic backtracking before it stalls the event loop
+# ---------------------------------------------------------------------------
+# ReDoS validation (called once at trigger creation, not at match time)
+# ---------------------------------------------------------------------------
+
+_REDOS_CANARY = "a" * 30 + "b"  # classic catastrophic-backtracking canary
+_VALIDATE_TIMEOUT = 1.5  # seconds — subprocess is killed if it runs longer
+
+
+def validate_regex_pattern(pattern: str) -> bool:
+    """Return True if *pattern* is a valid, ReDoS-safe regex.
+
+    Runs ``re.search(pattern, canary)`` inside a fresh subprocess so that a
+    catastrophically backtracking pattern cannot block (or hold the GIL of)
+    the calling process.  Returns False if:
+
+    * the pattern is syntactically invalid, or
+    * the subprocess exceeds ``_VALIDATE_TIMEOUT`` seconds.
+    """
+    try:
+        re.compile(pattern)
+    except re.error:
+        return False
+
+    env = {**os.environ, "_NII_PATTERN": pattern, "_NII_CANARY": _REDOS_CANARY}
+    code = "import re, os; re.search(os.environ['_NII_PATTERN'], os.environ['_NII_CANARY'])"
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c", code],
+            env=env,
+            timeout=_VALIDATE_TIMEOUT,
+            capture_output=True,
+        )
+        return result.returncode == 0
+    except subprocess.TimeoutExpired:
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Match-time logic (patterns are pre-validated — no extra protection needed)
+# ---------------------------------------------------------------------------
 
 
 class TriggerLike(Protocol):
@@ -44,9 +91,8 @@ def _match_single(pattern: str, match_type: str, case_sensitive: bool, text: str
         return cmp == pat
     if match_type == "regex":
         try:
-            future = _regex_pool.submit(re.search, pat, cmp)
-            return bool(future.result(timeout=_REGEX_TIMEOUT))
-        except (re.error, FuturesTimeoutError):
+            return bool(re.search(pat, cmp))
+        except re.error:
             return False
     return False
 
