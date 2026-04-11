@@ -1,98 +1,129 @@
 # Niibot
 
-多平台直播整合 Bot — Twitch / Discord / Web Dashboard。
+多平台直播整合系統，包含 Twitch Bot、Discord Bot 與 Web Dashboard。
+
+## 功能概覽
+
+### Twitch Bot
+- **指令系統** — 自訂指令（`!cmd`）、別名、冷卻、權限分級
+- **訊息觸發** — 關鍵字自動回應（contains / startswith / exact / regex，含 ReDoS 防護）
+- **計時器** — 排程廣播訊息
+- **Channel Points** — 自訂兌換獎勵處理
+- **Events** — EventSub 事件回應（上線、訂閱、Raid 等）
+- **遊戲隊列** — 排隊管理（GameQueue / VideoQueue）
+- **占卜娛樂** — 每日運勢、塔羅牌、TFT 抽籤
+- **AI 對話** — 整合 OpenRouter API
+
+### Discord Bot
+- **生日追蹤** — 記錄、提醒、訂閱通知
+- **吃什麼** — 隨機美食推薦
+- **占卜娛樂** — 運勢、塔羅、TFT
+- **抽獎系統** — Giveaway 管理
+- **工具指令** — 通用、遊戲、管理、審核
+- **AI 對話** — 整合 OpenRouter API
+
+### Web Dashboard
+- 指令與觸發詞的 CRUD 管理
+- 計時器、VideoQueue、GameQueue 設定
+- EventSub 事件設定
+- 系統狀態監控
 
 ## 架構
 
-| 服務        | 技術              | 部署             | 對外 Port |
-| ----------- | ----------------- | ---------------- | --------- |
-| API Server  | FastAPI + asyncpg | Docker           | 8000      |
-| Twitch Bot  | TwitchIO 3        | Docker           | — 僅內部  |
-| Discord Bot | discord.py 2      | Docker           | — 僅內部  |
-| PostgreSQL  | postgres:16       | Docker           | — 僅內部  |
-| Frontend    | React 19 + Vite   | Cloudflare Pages | —         |
-
-```text
-backend/
-├── api/          # FastAPI — 認證、頻道管理、指令/事件設定
-├── twitch/       # Twitch Bot — 聊天指令、Channel Points、EventSub
-├── discord/      # Discord Bot — Slash Commands、管理功能
-├── shared/       # 共用模組 — DB、Cache、Models、Repositories、Migrations
-├── scripts/      # 工具腳本 — DB 管理、OAuth、Discord 資源
-├── data/         # 靜態資料 — 運勢、塔羅、遊戲等 JSON
-├── pyproject.toml
-└── uv.lock
-frontend/
-├── src/          # React SPA
-├── functions/    # CF Pages Functions（API 反向代理）
-└── public/
+```
+Niibot/
+├── backend/
+│   ├── api/        # FastAPI — JWT 認證、Dashboard API
+│   ├── twitch/     # TwitchIO 3 Bot
+│   ├── discord/    # discord.py 2 Bot
+│   ├── shared/     # 共用 DB、Cache、Repositories、Migrations
+│   └── scripts/    # DB 管理工具
+├── frontend/       # React 19 + Vite + Tailwind CSS v4
+│   └── functions/  # Cloudflare Pages Functions（API 反向代理）
+└── data/           # 靜態資料（運勢、塔羅、遊戲等 JSON）
 ```
 
-## 開發
+| 服務        | 技術              | 部署             |
+| ----------- | ----------------- | ---------------- |
+| API         | FastAPI + asyncpg | Docker           |
+| Twitch Bot  | TwitchIO 3        | Docker           |
+| Discord Bot | discord.py 2      | Docker           |
+| Database    | PostgreSQL 16     | Docker           |
+| Frontend    | React 19 + Vite   | Cloudflare Pages |
+
+後端透過 **Cloudflare Tunnel** 對外，前端部署在 **Cloudflare Pages**，CF Pages Functions 將 `/api/*` 代理至後端，瀏覽器只與 CF Pages 域名通訊。
+
+## 快速開始
+
+### 環境需求
+
+- Python 3.11+、[uv](https://docs.astral.sh/uv/)
+- Node.js 20+
+- Docker & Docker Compose
+
+### 設定環境變數
 
 ```bash
-# Backend（需 Python 3.11+、uv）
-cd backend && cp api/.env.example api/.env   # 填入設定
-uv sync && uv run python api/main.py
-
-# Frontend（需 Node 20+）
-cd frontend && npm install && npm run dev
-```
-
-## 部署
-
-### 前端（Cloudflare Pages）
-
-React SPA，部署在 Cloudflare Pages。CF Pages Functions 將 `/api/*`、`/health`、`/status` 代理到後端，瀏覽器全程只與 CF Pages 域名通訊。
-
-在 CF Pages 專案 → 環境變數中設定：
-
-| 變數          | 說明                                         |
-| ------------- | -------------------------------------------- |
-| `API_BACKEND` | 後端 API 位址（經由 Cloudflare Tunnel 提供） |
-
-### 後端（Docker Compose）
-
-後端服務統一由 Docker Compose 管理。啟動後 `migrate` 容器會自動執行 DB Migration，成功後才啟動其他服務。
-
-生產環境透過 **Cloudflare Tunnel** 對外，cloudflared 作為系統服務運行並指向 `localhost:8000`。
-
-#### 1. 設定環境變數
-
-```bash
-cp .env.example .env                                         # PostgreSQL 帳號 + Cloudflare Tunnel Token
-cp backend/shared.env.example backend/shared.env            # 共用（DB URL、OpenRouter、YouTube API）
+cp .env.example .env
+cp backend/shared.env.example backend/shared.env
 cp backend/api/.env.example backend/api/.env
 cp backend/twitch/.env.example backend/twitch/.env
 cp backend/discord/.env.example backend/discord/.env
 ```
 
-#### 2. 建置並啟動
+### 本機開發
+
+```bash
+# Backend
+cd backend
+uv sync --group dev
+uv run python api/main.py      # API Server
+uv run python twitch/main.py   # Twitch Bot
+uv run python discord/main.py  # Discord Bot
+
+# Frontend
+cd frontend
+npm install
+npm run dev
+```
+
+### 生產部署（Docker Compose）
 
 ```bash
 docker compose build
 docker compose up -d
 ```
 
+啟動時 `migrate` 容器會自動執行 DB Migration，成功後其他服務才會啟動。
+
 ## 環境變數
 
-| 檔案                      | 說明                                     |
-| ------------------------- | ---------------------------------------- |
-| `.env`                    | PostgreSQL 帳號、Cloudflare Tunnel Token |
-| `backend/shared.env`      | 共用 — DB URL、OpenRouter API、YouTube API |
-| `backend/api/.env`        | Twitch OAuth、JWT Secret、服務 URL       |
-| `backend/twitch/.env`     | Twitch Bot 金鑰                          |
-| `backend/discord/.env`    | Discord Bot Token                        |
+| 檔案                   | 內容                                        |
+| ---------------------- | ------------------------------------------- |
+| `.env`                 | PostgreSQL 帳號、Cloudflare Tunnel Token    |
+| `backend/shared.env`   | DB URL、OpenRouter API Key、YouTube API Key |
+| `backend/api/.env`     | Twitch OAuth、JWT Secret、服務 URL          |
+| `backend/twitch/.env`  | Twitch Bot 金鑰                             |
+| `backend/discord/.env` | Discord Bot Token                           |
 
-### 需準備的外部服務
+Cloudflare Pages 專案需設定環境變數 `API_BACKEND`（後端位址）。
 
-| 服務                     | 取得位置                                                              | 用途                                |
-| ------------------------ | --------------------------------------------------------------------- | ----------------------------------- |
-| Twitch Developer Console | [dev.twitch.tv/console](https://dev.twitch.tv/console)                | OAuth CLIENT_ID / CLIENT_SECRET     |
-| Discord Developer Portal | [discord.com/developers](https://discord.com/developers/applications) | Bot Token                           |
-| Cloudflare Zero Trust    | Cloudflare Dashboard → Networks → Tunnels                             | Tunnel Token（生產環境）            |
-| OpenRouter               | [openrouter.ai/keys](https://openrouter.ai/keys)                      | OPENROUTER_API_KEY（選用，AI 功能） |
-| YouTube Data API v3      | [console.cloud.google.com](https://console.cloud.google.com/)         | YOUTUBE_API_KEY（選用）             |
+## 外部服務
+
+| 服務                                                       | 用途                        |
+| ---------------------------------------------------------- | --------------------------- |
+| [Twitch Developer Console](https://dev.twitch.tv/console)  | OAuth CLIENT_ID / SECRET    |
+| [Discord Developer Portal](https://discord.com/developers) | Bot Token                   |
+| [Cloudflare Zero Trust](https://dash.cloudflare.com/)      | Tunnel Token（生產環境）    |
+| [OpenRouter](https://openrouter.ai/keys)                   | AI 功能（選用）             |
+| [Google Cloud Console](https://console.cloud.google.com/)  | YouTube Data API v3（選用） |
+
+## 測試
+
+```bash
+cd backend
+uv run pytest tests/ -v
+```
 
 ## License
 
