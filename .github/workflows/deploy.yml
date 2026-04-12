@@ -13,25 +13,28 @@ jobs:
       group: deploy
       cancel-in-progress: true
 
+    env:
+      PROJECT_DIR: /Users/pinn/Niibot
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Pull latest code
+        run: git -C $PROJECT_DIR pull
 
       - name: Set build metadata
         id: meta
         run: |
-          echo "commit=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-          echo "version=$(git describe --tags --always 2>/dev/null || echo dev)" >> $GITHUB_OUTPUT
+          echo "commit=$(git -C $PROJECT_DIR rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          echo "version=$(git -C $PROJECT_DIR describe --tags --always 2>/dev/null || echo dev)" >> $GITHUB_OUTPUT
 
       - name: Build images
-        env:
-          APP_VERSION: ${{ steps.meta.outputs.version }}
-          GIT_COMMIT: ${{ steps.meta.outputs.commit }}
+        working-directory: ${{ env.PROJECT_DIR }}
         run: |
           docker compose build \
-            --build-arg APP_VERSION=$APP_VERSION \
-            --build-arg GIT_COMMIT=$GIT_COMMIT
+            --build-arg APP_VERSION=${{ steps.meta.outputs.version }} \
+            --build-arg GIT_COMMIT=${{ steps.meta.outputs.commit }}
 
       - name: Deploy
+        working-directory: ${{ env.PROJECT_DIR }}
         run: docker compose up -d --force-recreate --remove-orphans
 
       - name: Health check
