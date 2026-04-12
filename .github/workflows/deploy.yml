@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      force_all:
+        description: 'Force rebuild and restart all services'
+        type: boolean
+        default: false
 
 jobs:
   deploy:
@@ -28,16 +33,84 @@ jobs:
           echo "commit=$(git -C $PROJECT_DIR rev-parse --short HEAD)" >> $GITHUB_OUTPUT
           echo "version=$(git -C $PROJECT_DIR describe --tags --always 2>/dev/null || echo dev)" >> $GITHUB_OUTPUT
 
+      - name: Detect changed services
+        id: changes
+        run: |
+          cd $PROJECT_DIR
+
+          FORCE="${{ github.event.inputs.force_all || 'false' }}"
+          CHANGED=$(git diff --name-only HEAD~1 HEAD 2>/dev/null) || true
+
+          # Force mode or can't determine diff → rebuild everything
+          if [ "$FORCE" = "true" ] || [ -z "$CHANGED" ]; then
+            echo "api=true"     >> $GITHUB_OUTPUT
+            echo "discord=true" >> $GITHUB_OUTPUT
+            echo "twitch=true"  >> $GITHUB_OUTPUT
+            echo "reason=force" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          api=false; discord=false; twitch=false
+
+          # shared/ and compose file affect all services
+          if echo "$CHANGED" | grep -qE "^backend/shared/|^backend/shared\.env|^docker-compose\.yml"; then
+            api=true; discord=true; twitch=true
+          fi
+
+          echo "$CHANGED" | grep -qE "^backend/api/"     && api=true     || true
+          echo "$CHANGED" | grep -qE "^backend/discord/" && discord=true  || true
+          echo "$CHANGED" | grep -qE "^backend/twitch/"  && twitch=true   || true
+
+          echo "api=$api"       >> $GITHUB_OUTPUT
+          echo "discord=$discord" >> $GITHUB_OUTPUT
+          echo "twitch=$twitch" >> $GITHUB_OUTPUT
+          echo "reason=path_filter" >> $GITHUB_OUTPUT
+
+      - name: Log planned changes
+        run: |
+          echo "api=${{ steps.changes.outputs.api }}"
+          echo "discord=${{ steps.changes.outputs.discord }}"
+          echo "twitch=${{ steps.changes.outputs.twitch }}"
+          echo "reason=${{ steps.changes.outputs.reason }}"
+
       - name: Build images
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          docker compose build \
+          SERVICES=""
+          [ "${{ steps.changes.outputs.api }}" = "true" ]     && SERVICES="$SERVICES api"
+          [ "${{ steps.changes.outputs.discord }}" = "true" ] && SERVICES="$SERVICES discord-bot"
+          [ "${{ steps.changes.outputs.twitch }}" = "true" ]  && SERVICES="$SERVICES twitch-bot"
+
+          if [ -z "$SERVICES" ]; then
+            echo "No images to build, skipping."
+            exit 0
+          fi
+
+          echo "Building:$SERVICES"
+          docker compose build $SERVICES \
             --build-arg APP_VERSION=${{ steps.meta.outputs.version }} \
             --build-arg GIT_COMMIT=${{ steps.meta.outputs.commit }}
 
-      - name: Deploy
+      - name: Run migrations
         working-directory: ${{ env.PROJECT_DIR }}
-        run: docker compose up -d --force-recreate --remove-orphans
+        if: steps.changes.outputs.api == 'true'
+        run: docker compose run --rm migrate
+
+      - name: Restart changed services
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          SERVICES=""
+          [ "${{ steps.changes.outputs.api }}" = "true" ]     && SERVICES="$SERVICES api"
+          [ "${{ steps.changes.outputs.discord }}" = "true" ] && SERVICES="$SERVICES discord-bot"
+          [ "${{ steps.changes.outputs.twitch }}" = "true" ]  && SERVICES="$SERVICES twitch-bot"
+
+          if [ -z "$SERVICES" ]; then
+            echo "No services to restart, skipping."
+            exit 0
+          fi
+
+          echo "Restarting:$SERVICES"
+          docker compose up -d $SERVICES
 
       - name: Health check
         run: |
