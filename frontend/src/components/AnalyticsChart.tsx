@@ -12,7 +12,7 @@ import {
   type YAxisTickContentProps,
 } from 'recharts'
 
-import { Card, CardContent, Icon } from '@/components/ui'
+import { Card, CardContent, Icon, Skeleton } from '@/components/ui'
 
 interface SessionSummary {
   session_id: number
@@ -308,43 +308,44 @@ export default function AnalyticsChart({
       <CardContent className="px-4 py-1 flex-1 min-h-0 flex flex-col">
         <div className="flex flex-col flex-1 min-h-0 gap-3">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-5 shrink-0 mb-2">
-            {stats.map(stat => (
-              <button
-                key={stat.mode}
-                onClick={() => setChartMode(stat.mode)}
-                disabled={loading}
-                className={`rounded-lg border px-3 py-2 transition-all text-left ${
-                  loading
-                    ? 'opacity-60 animate-pulse cursor-not-allowed'
-                    : chartMode === stat.mode
-                      ? 'bg-primary/10 border-primary shadow-sm'
-                      : 'bg-muted/30 hover:bg-muted/50'
-                }`}
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <span
-                    className={`text-xs font-medium ${chartMode === stat.mode ? 'text-primary' : 'text-foreground/80'}`}
+            {loading
+              ? Array.from({ length: 4 }).map((_, i) => (
+                  <Skeleton key={i} className="h-18 rounded-lg" />
+                ))
+              : stats.map(stat => (
+                  <button
+                    key={stat.mode}
+                    onClick={() => setChartMode(stat.mode)}
+                    className={`rounded-lg border px-3 py-2 transition-all text-left ${
+                      chartMode === stat.mode
+                        ? 'bg-primary/10 border-primary shadow-sm'
+                        : 'bg-muted/30 hover:bg-muted/50'
+                    }`}
                   >
-                    {stat.label}
-                  </span>
-                  <Icon
-                    icon={stat.icon}
-                    wrapperClassName={`size-3.5 ${chartMode === stat.mode ? 'text-primary' : 'text-muted-foreground'}`}
-                  />
-                </div>
-                <div className="flex items-baseline gap-1">
-                  <span
-                    className={`text-lg font-bold tabular-nums ${chartMode === stat.mode ? 'text-primary' : 'text-foreground'}`}
-                  >
-                    {loading ? '-' : stat.value}
-                  </span>
-                  {stat.unit && !loading && (
-                    <span className="text-xs font-medium text-foreground/70">{stat.unit}</span>
-                  )}
-                </div>
-                <div className="text-label text-muted-foreground">{stat.subtitle}</div>
-              </button>
-            ))}
+                    <div className="flex items-center justify-between mb-1">
+                      <span
+                        className={`text-xs font-medium ${chartMode === stat.mode ? 'text-primary' : 'text-foreground/80'}`}
+                      >
+                        {stat.label}
+                      </span>
+                      <Icon
+                        icon={stat.icon}
+                        wrapperClassName={`size-3.5 ${chartMode === stat.mode ? 'text-primary' : 'text-muted-foreground'}`}
+                      />
+                    </div>
+                    <div className="flex items-baseline gap-1">
+                      <span
+                        className={`text-lg font-bold tabular-nums ${chartMode === stat.mode ? 'text-primary' : 'text-foreground'}`}
+                      >
+                        {stat.value}
+                      </span>
+                      {stat.unit && (
+                        <span className="text-xs font-medium text-foreground/70">{stat.unit}</span>
+                      )}
+                    </div>
+                    <div className="text-label text-muted-foreground">{stat.subtitle}</div>
+                  </button>
+                ))}
           </div>
 
           <div className="flex-1 min-h-0 h-48 sm:h-72.5 relative">

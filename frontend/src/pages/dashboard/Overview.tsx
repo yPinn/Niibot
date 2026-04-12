@@ -5,6 +5,7 @@ import { type ChannelStats, getChannelStats } from '@/api/stats'
 import AnalyticsChart from '@/components/AnalyticsChart'
 import StatsCard from '@/components/StatsCard'
 import TwitchPlayer from '@/components/TwitchPlayer'
+import { Skeleton } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
@@ -78,7 +79,7 @@ export default function Dashboard() {
       <AnalyticsChart
         data={analytics}
         loading={analyticsLoading}
-        className="h-[420px] lg:h-auto lg:min-h-0"
+        className="h-105 lg:h-auto lg:min-h-0"
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-section">
@@ -92,9 +93,7 @@ export default function Dashboard() {
               className="w-full h-full"
             />
           ) : (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-muted-foreground text-sub">Loading player...</div>
-            </div>
+            <Skeleton className="absolute inset-0 rounded-xl" />
           )}
         </div>
 

@@ -26,6 +26,7 @@ interface ServiceStatusState {
   discord: BotStatus
   api: ApiServerStatus
   lastUpdate: Date
+  initialLoading: boolean
   refresh: () => Promise<void>
 }
 
@@ -34,6 +35,7 @@ const defaultStatus: ServiceStatusState = {
   discord: { online: false },
   api: { online: false },
   lastUpdate: new Date(),
+  initialLoading: true,
   refresh: async () => {},
 }
 
@@ -45,6 +47,7 @@ export function ServiceStatusProvider({ children }: { children: React.ReactNode 
   const [discord, setDiscord] = useState<BotStatus>({ online: false })
   const [api, setApi] = useState<ApiServerStatus>({ online: false })
   const [lastUpdate, setLastUpdate] = useState(new Date())
+  const [initialLoading, setInitialLoading] = useState(true)
   // refresh is exposed in context for on-demand calls; uses a ref so components
   // always call the latest version without stale closures.
   const refreshRef = useRef<() => Promise<void>>(async () => {})
@@ -71,6 +74,7 @@ export function ServiceStatusProvider({ children }: { children: React.ReactNode 
       setDiscord(d)
       setApi(a)
       setLastUpdate(new Date())
+      setInitialLoading(false)
     }
 
     refreshRef.current = fetchStatus
@@ -111,8 +115,8 @@ export function ServiceStatusProvider({ children }: { children: React.ReactNode 
   }, [api])
 
   const contextValue = useMemo(
-    () => ({ twitch, discord, api, lastUpdate, refresh }),
-    [twitch, discord, api, lastUpdate, refresh]
+    () => ({ twitch, discord, api, lastUpdate, initialLoading, refresh }),
+    [twitch, discord, api, lastUpdate, initialLoading, refresh]
   )
 
   return (

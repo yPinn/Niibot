@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 
-import { Button, Card, CardAction, CardContent, CardHeader, CardTitle, Icon } from '@/components/ui'
+import { Button, Card, CardAction, CardContent, CardHeader, CardTitle, Icon, Skeleton } from '@/components/ui'
 import { useServiceStatus } from '@/contexts/ServiceStatusContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
@@ -94,7 +94,7 @@ function CommitLink({ commit }: { commit?: string }) {
 
 export default function SystemStatus() {
   useDocumentTitle('System Status')
-  const { twitch, discord, api, lastUpdate, refresh } = useServiceStatus()
+  const { twitch, discord, api, lastUpdate, initialLoading, refresh } = useServiceStatus()
 
   const services = useMemo(
     () => [
@@ -186,11 +186,21 @@ export default function SystemStatus() {
                 <CardTitle>{service.name}</CardTitle>
               </div>
               <CardAction>
-                <StatusBadge online={service.online} ready={service.ready} />
+                {initialLoading ? (
+                  <Skeleton className="h-4 w-14" />
+                ) : (
+                  <StatusBadge online={service.online} ready={service.ready} />
+                )}
               </CardAction>
             </CardHeader>
             <CardContent>
-              {service.online ? (
+              {initialLoading ? (
+                <div className="space-y-2 py-1">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <Skeleton key={i} className="h-8 w-full" />
+                  ))}
+                </div>
+              ) : service.online ? (
                 service.rows.map(row => <Row key={row.label} label={row.label} value={row.value} />)
               ) : (
                 <p className="text-sub text-muted-foreground font-mono py-2">service unreachable</p>
