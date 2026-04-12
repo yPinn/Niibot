@@ -24,7 +24,7 @@ from fastapi.testclient import TestClient
 
 from core.config import get_settings
 from core.dependencies import get_db_pool
-from routers.donation_router import _build_check_mac_value
+from routers.donation_router import _build_check_mac_value, _verify_webhook_mac
 from routers.donation_router import router as _donation_router
 
 
@@ -198,3 +198,46 @@ class TestBuildCheckMacValue:
         mac1 = _build_check_mac_value(params, "key1", "iv_1")
         mac2 = _build_check_mac_value(params, "key2", "iv_2")
         assert mac1 != mac2
+
+
+# ---------------------------------------------------------------------------
+# _verify_webhook_mac — constant-time MAC verification
+# ---------------------------------------------------------------------------
+
+
+class TestVerifyWebhookMac:
+    """Verify hmac.compare_digest-based MAC check is correct and case-insensitive."""
+
+    _KEY = "5294y06JbISpM5x9"
+    _IV = "v77hoKGq4kWxNNIS"
+
+    def _make_params(self) -> dict:
+        return {"MerchantID": "2000132", "TotalAmount": "500", "TradeDesc": "test"}
+
+    def test_correct_mac_returns_true(self):
+        params = self._make_params()
+        correct_mac = _build_check_mac_value(params, self._KEY, self._IV)
+        form = {**params, "CheckMacValue": correct_mac}
+        assert _verify_webhook_mac(form, self._KEY, self._IV) is True
+
+    def test_wrong_mac_returns_false(self):
+        params = self._make_params()
+        form = {**params, "CheckMacValue": "DEADBEEF" * 8}
+        assert _verify_webhook_mac(form, self._KEY, self._IV) is False
+
+    def test_lowercase_received_mac_accepted(self):
+        """Gateway may send lowercase hex; comparison must be case-insensitive."""
+        params = self._make_params()
+        correct_mac = _build_check_mac_value(params, self._KEY, self._IV)
+        form = {**params, "CheckMacValue": correct_mac.lower()}
+        assert _verify_webhook_mac(form, self._KEY, self._IV) is True
+
+    def test_missing_check_mac_value_returns_false(self):
+        params = self._make_params()
+        assert _verify_webhook_mac(params, self._KEY, self._IV) is False
+
+    def test_wrong_key_returns_false(self):
+        params = self._make_params()
+        correct_mac = _build_check_mac_value(params, self._KEY, self._IV)
+        form = {**params, "CheckMacValue": correct_mac}
+        assert _verify_webhook_mac(form, "wrong_key", self._IV) is False

@@ -10,6 +10,8 @@ import pytest
 from shared.repositories.video_queue import (
     VideoQueueRepository,
     VideoQueueSettingsRepository,
+    _app_token_cache,
+    _get_twitch_app_token,
     _parse_iso8601_duration,
     _settings_cache,
     extract_youtube_id,
@@ -586,3 +588,91 @@ class TestFetchYtInfo:
 
         assert len(result) == 4
         assert result == (None, None, None, False)
+
+
+# ---------------------------------------------------------------------------
+# _get_twitch_app_token — caching behaviour
+# ---------------------------------------------------------------------------
+
+
+def _make_aiohttp_post_cm(status: int, json_data: dict) -> MagicMock:
+    """Return an async context manager that simulates aiohttp ClientSession.post."""
+    resp = AsyncMock()
+    resp.status = status
+    resp.json = AsyncMock(return_value=json_data)
+    cm = MagicMock()
+    cm.__aenter__ = AsyncMock(return_value=resp)
+    cm.__aexit__ = AsyncMock(return_value=None)
+    return cm
+
+
+def _make_session(post_cm: MagicMock) -> MagicMock:
+    """Return a MagicMock aiohttp session whose post() returns the given CM directly.
+
+    Must be MagicMock (not AsyncMock) because session.post() is used as
+    ``async with session.post(...) as resp:`` — calling an AsyncMock returns a
+    coroutine, which does not support the async context manager protocol.
+    """
+    session = MagicMock()
+    session.post.return_value = post_cm
+    return session
+
+
+@pytest.mark.asyncio
+class TestGetTwitchAppToken:
+    def setup_method(self):
+        """Clear the module-level token cache before each test."""
+        _app_token_cache.clear()
+
+    async def test_fetches_token_on_first_call(self):
+        session = _make_session(_make_aiohttp_post_cm(200, {"access_token": "tok_abc", "expires_in": 3600}))
+
+        result = await _get_twitch_app_token("cid", "csec", session)
+
+        assert result == "tok_abc"
+        session.post.assert_called_once()
+
+    async def test_returns_cached_token_on_second_call(self):
+        session = _make_session(_make_aiohttp_post_cm(200, {"access_token": "tok_cached", "expires_in": 3600}))
+
+        first = await _get_twitch_app_token("cid", "csec", session)
+        second = await _get_twitch_app_token("cid", "csec", session)
+
+        assert first == second == "tok_cached"
+        # Token endpoint must only be called once despite two invocations
+        session.post.assert_called_once()
+
+    async def test_expired_cache_triggers_refetch(self):
+        import time
+
+        # Pre-populate cache with an already-expired token
+        _app_token_cache[("cid", "csec")] = ("old_tok", time.monotonic() - 1)
+
+        session = _make_session(_make_aiohttp_post_cm(200, {"access_token": "new_tok", "expires_in": 3600}))
+
+        result = await _get_twitch_app_token("cid", "csec", session)
+
+        assert result == "new_tok"
+        session.post.assert_called_once()
+
+    async def test_failed_fetch_returns_none_and_does_not_cache(self):
+        session = _make_session(_make_aiohttp_post_cm(401, {}))
+
+        result = await _get_twitch_app_token("cid", "csec", session)
+
+        assert result is None
+        assert ("cid", "csec") not in _app_token_cache
+
+    async def test_different_credentials_use_separate_cache_entries(self):
+        session = MagicMock()
+        session.post.side_effect = [
+            _make_aiohttp_post_cm(200, {"access_token": "tok_A", "expires_in": 3600}),
+            _make_aiohttp_post_cm(200, {"access_token": "tok_B", "expires_in": 3600}),
+        ]
+
+        tok_a = await _get_twitch_app_token("cid_A", "csec_A", session)
+        tok_b = await _get_twitch_app_token("cid_B", "csec_B", session)
+
+        assert tok_a == "tok_A"
+        assert tok_b == "tok_B"
+        assert session.post.call_count == 2

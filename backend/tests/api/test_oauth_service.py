@@ -2,8 +2,11 @@
 
 import base64
 import json
+from unittest.mock import AsyncMock, MagicMock
 
-from api.services.oauth_service import decode_oauth_state, encode_oauth_state
+import pytest
+from api.services.oauth_service import decode_oauth_state, encode_oauth_state, find_or_create_user
+from asyncpg.exceptions import UniqueViolationError
 
 _SECRET = "test-secret-key"
 
@@ -114,3 +117,98 @@ class TestDecodeOauthState:
         data = {"mode": "login"}
         state = base64.urlsafe_b64encode(json.dumps(data).encode()).decode()
         assert decode_oauth_state(state) == {"mode": "login"}
+
+
+# ---------------------------------------------------------------------------
+# find_or_create_user — DB race condition paths
+# ---------------------------------------------------------------------------
+
+
+def _make_pool_with_conn(conn: AsyncMock) -> MagicMock:
+    pool = MagicMock()
+    pool.acquire.return_value.__aenter__ = AsyncMock(return_value=conn)
+    pool.acquire.return_value.__aexit__ = AsyncMock(return_value=None)
+    return pool
+
+
+def _make_tx_cm() -> MagicMock:
+    """Transaction context manager that re-raises exceptions (asyncpg default)."""
+    tx = MagicMock()
+    tx.__aenter__ = AsyncMock(return_value=None)
+    tx.__aexit__ = AsyncMock(return_value=None)  # None == False → exception propagates
+    return tx
+
+
+@pytest.mark.asyncio
+class TestFindOrCreateUser:
+    async def test_fast_path_existing_account(self):
+        """Existing linked account returns immediately without a transaction."""
+        conn = AsyncMock()
+        existing = MagicMock()
+        existing.__getitem__ = lambda self, k: "existing-uuid" if k == "user_id" else None
+        conn.fetchrow.return_value = existing
+        conn.transaction = MagicMock(return_value=_make_tx_cm())
+
+        pool = _make_pool_with_conn(conn)
+        result = await find_or_create_user(pool, "twitch", "12345", "testuser")
+
+        assert result == "existing-uuid"
+        conn.transaction.assert_not_called()
+
+    async def test_slow_path_creates_new_user(self):
+        """No existing account → INSERT inside transaction → returns new user_id."""
+        import uuid
+
+        new_id = uuid.uuid4()
+        conn = AsyncMock()
+        user_row = MagicMock()
+        user_row.__getitem__ = lambda self, k: new_id if k == "id" else None
+
+        # fast path SELECT → None; INSERT INTO users → user_row
+        conn.fetchrow.side_effect = [None, user_row]
+        conn.execute.return_value = None
+        conn.transaction = MagicMock(return_value=_make_tx_cm())
+
+        pool = _make_pool_with_conn(conn)
+        result = await find_or_create_user(pool, "twitch", "99999", "newuser")
+
+        assert result == str(new_id)
+
+    async def test_race_fallback_returns_winner_user_id(self):
+        """UniqueViolationError → fallback SELECT finds the winner's user_id."""
+        import uuid
+
+        winner_id = uuid.uuid4()
+        conn = AsyncMock()
+
+        winner_row = MagicMock()
+        winner_row.__getitem__ = lambda self, k: winner_id if k == "user_id" else None
+
+        # fast path → None; INSERT users → some row; fallback SELECT → winner
+        user_row = MagicMock()
+        user_row.__getitem__ = lambda self, k: uuid.uuid4() if k == "id" else None
+        conn.fetchrow.side_effect = [None, user_row, winner_row]
+        conn.execute.side_effect = UniqueViolationError("unique constraint violation")
+        conn.transaction = MagicMock(return_value=_make_tx_cm())
+
+        pool = _make_pool_with_conn(conn)
+        result = await find_or_create_user(pool, "twitch", "77777", "racewinner")
+
+        assert result == str(winner_id)
+
+    async def test_race_fallback_none_raises_runtime_error(self):
+        """If winner's account is also gone after the race, RuntimeError is raised."""
+        conn = AsyncMock()
+
+        user_row = MagicMock()
+        import uuid
+        user_row.__getitem__ = lambda self, k: uuid.uuid4() if k == "id" else None
+
+        # fast path → None; INSERT users → user_row; fallback SELECT → None (account gone)
+        conn.fetchrow.side_effect = [None, user_row, None]
+        conn.execute.side_effect = UniqueViolationError("unique constraint violation")
+        conn.transaction = MagicMock(return_value=_make_tx_cm())
+
+        pool = _make_pool_with_conn(conn)
+        with pytest.raises(RuntimeError, match="Concurrent OAuth race"):
+            await find_or_create_user(pool, "twitch", "00000", "ghost")

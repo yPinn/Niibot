@@ -121,3 +121,26 @@ class TestSave:
 
         saved = json.loads(fp.read_text(encoding="utf-8"))
         assert saved["1"]["prize"] == "A"
+
+    async def test_atomic_write_leaves_no_temp_file(self, tmp_path: Path):
+        """_write_json must use os.replace so no .tmp file is left after a successful write."""
+        fp = tmp_path / "active.json"
+        p = GiveawayPersistence(fp)
+
+        await p.save({1: {"prize": "atomictest"}})
+
+        leftover_tmps = list(tmp_path.glob("*.tmp"))
+        assert leftover_tmps == [], f"Unexpected temp files: {leftover_tmps}"
+        assert fp.exists()
+
+    async def test_final_file_is_valid_json_after_save(self, tmp_path: Path):
+        """The destination file must always be parseable JSON (never truncated)."""
+        fp = tmp_path / "active.json"
+        p = GiveawayPersistence(fp)
+        data = {i: {"prize": f"item_{i}", "participants": list(range(i))} for i in range(50)}
+
+        await p.save(data)
+
+        content = fp.read_text(encoding="utf-8")
+        parsed = json.loads(content)
+        assert len(parsed) == 50
