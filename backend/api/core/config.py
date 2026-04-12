@@ -53,6 +53,11 @@ class Settings(BaseSettings):
     host: str = Field(default="0.0.0.0", description="Server host")
     port: int = Field(default=8000, description="Server port")
 
+    @field_validator("frontend_url", "api_url", "twitch_bot_url", "discord_bot_url", mode="before")
+    @classmethod
+    def strip_trailing_slash(cls, v: str) -> str:
+        return v.rstrip("/")
+
     @field_validator("jwt_algorithm")
     @classmethod
     def validate_jwt_algorithm(cls, v: str) -> str:
