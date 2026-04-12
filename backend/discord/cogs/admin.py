@@ -96,7 +96,7 @@ class AdminCog(commands.Cog):
     @cog_group.command(name="load", description="載入 Cog")
     @app_commands.describe(cog="Cog 名稱")
     @app_commands.autocomplete(cog=_all_cog_autocomplete)
-    async def cog_load(self, interaction: discord.Interaction, cog: str) -> None:
+    async def cog_do_load(self, interaction: discord.Interaction, cog: str) -> None:
         if interaction.user.id != self.bot.owner_id:
             await interaction.response.send_message("權限不足", ephemeral=True)
             LOGGER.warning(
@@ -121,7 +121,7 @@ class AdminCog(commands.Cog):
     @cog_group.command(name="unload", description="卸載 Cog")
     @app_commands.describe(cog="Cog 名稱")
     @app_commands.autocomplete(cog=_loaded_cog_autocomplete)
-    async def cog_unload(self, interaction: discord.Interaction, cog: str) -> None:
+    async def cog_do_unload(self, interaction: discord.Interaction, cog: str) -> None:
         if interaction.user.id != self.bot.owner_id:
             await interaction.response.send_message("權限不足", ephemeral=True)
             LOGGER.warning(

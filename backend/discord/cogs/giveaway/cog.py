@@ -24,6 +24,8 @@ LOGGER = logging.getLogger(__name__)
 class GiveawayCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self.config: dict = {}
+        self.global_embed_config: dict = {}
         self._load_data()
         self._persistence = GiveawayPersistence(DATA_DIR / "active_giveaways.json")
         self.active_giveaways: dict[int, dict] = self._persistence.load()
