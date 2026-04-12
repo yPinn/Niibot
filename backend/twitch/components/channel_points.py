@@ -124,7 +124,7 @@ class ChannelPointsComponent(commands.Component):
             broadcaster = payload.broadcaster
             await broadcaster.add_vip(user=payload.user)
 
-            success_message = f"恭喜 {user_name}，成為尊榮的 VIP 大人！"
+            success_message = f"@{user_name} 恭喜你成為尊榮的 VIP 大人！"
             try:
                 await broadcaster.send_message(
                     message=success_message,
@@ -143,17 +143,17 @@ class ChannelPointsComponent(commands.Component):
                     LOGGER.warning(
                         f"[VIP] {user_name} is already a Moderator, cannot grant VIP (Twitch restriction)"
                     )
-                    error_message = f"{user_name}，你已經是 Moderator 了！"
+                    error_message = f"@{user_name} 你已經是 Moderator 了！"
                 elif "already a vip" in error_str.lower():
                     LOGGER.info(f"[VIP] {user_name} is already a VIP")
-                    error_message = f"{user_name}，你已經是 VIP 了！"
+                    error_message = f"@{user_name} 你已經是 VIP 了！"
                 else:
                     LOGGER.error(f"[VIP] Failed to grant VIP (422): {e}")
-                    error_message = f"{user_name}，VIP 授予失敗，請聯繫管理員！"
+                    error_message = f"@{user_name} VIP 授予失敗，請聯繫管理員！"
             else:
                 # 其他錯誤
                 LOGGER.error(f"[VIP] Failed to grant VIP: {e}")
-                error_message = f"{user_name}，VIP 授予失敗，請聯繫管理員！"
+                error_message = f"@{user_name} VIP 授予失敗，請聯繫管理員！"
 
             # 發送錯誤訊息
             try:
@@ -173,7 +173,7 @@ class ChannelPointsComponent(commands.Component):
         """處理搶第一遊戲兌換"""
         try:
             broadcaster = payload.broadcaster
-            announcement_message = f"恭喜 {user_name}，搶到沙發！"
+            announcement_message = f"@{user_name} 恭喜你搶到沙發！"
 
             try:
                 await broadcaster.send_announcement(
@@ -184,7 +184,7 @@ class ChannelPointsComponent(commands.Component):
                 LOGGER.info(f"[First] {user_name} claimed first, announcement sent")
             except Exception as e:
                 LOGGER.warning(f"[First] Announcement failed: {e}, falling back to regular message")
-                fallback_message = f"恭喜 {user_name}，搶到第一！"
+                fallback_message = f"@{user_name} 恭喜你搶到第一！"
                 try:
                     await broadcaster.send_message(
                         message=fallback_message,
@@ -212,7 +212,7 @@ class ChannelPointsComponent(commands.Component):
                 return
 
             broadcaster = payload.broadcaster
-            public_message = f"{user_name}，已將授權連結發送至你的 Twitch 私訊！"
+            public_message = f"@{user_name} 已將授權連結發送至你的 Twitch 私訊！"
             try:
                 await broadcaster.send_message(
                     message=public_message,
@@ -233,7 +233,7 @@ class ChannelPointsComponent(commands.Component):
                 LOGGER.info(f"[Niibot] Whisper sent to {user_name}")
             except Exception as e:
                 LOGGER.error(f"[Niibot] Failed to send whisper: {e}")
-                fallback_message = f"{user_name}，私訊發送失敗，請聯繫 Bot Owner 獲取授權連結！"
+                fallback_message = f"@{user_name} 私訊發送失敗，請聯繫 @llazypilot 獲取授權連結！"
                 try:
                     await broadcaster.send_message(
                         message=fallback_message,
