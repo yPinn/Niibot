@@ -38,9 +38,7 @@ class EventsCog(commands.Cog):
     @log.command(name="set", description="設定日誌頻道")
     @app_commands.describe(channel="要設定為日誌頻道的文字頻道")
     @app_commands.checks.has_permissions(administrator=True)
-    async def log_set(
-        self, interaction: discord.Interaction, channel: discord.TextChannel
-    ) -> None:
+    async def log_set(self, interaction: discord.Interaction, channel: discord.TextChannel) -> None:
         if not interaction.guild:
             await interaction.response.send_message("此指令只能在伺服器中使用", ephemeral=True)
             return

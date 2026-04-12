@@ -44,8 +44,7 @@ class GiveawayCog(commands.Cog):
                     setattr(self, attr, json.load(f))
             except FileNotFoundError:
                 raise FileNotFoundError(
-                    f"GiveawayCog requires '{filename}' in {DATA_DIR}. "
-                    f"Expected path: {path}"
+                    f"GiveawayCog requires '{filename}' in {DATA_DIR}. Expected path: {path}"
                 ) from None
 
     # ------------------------------------------------------------------

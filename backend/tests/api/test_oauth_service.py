@@ -202,6 +202,7 @@ class TestFindOrCreateUser:
 
         user_row = MagicMock()
         import uuid
+
         user_row.__getitem__ = lambda self, k: uuid.uuid4() if k == "id" else None
 
         # fast path → None; INSERT users → user_row; fallback SELECT → None (account gone)

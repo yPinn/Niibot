@@ -156,11 +156,7 @@ class UtilityCog(commands.Cog):
 
         embed.add_field(
             name="【占卜與活動】",
-            value=(
-                "`/fortune` - 今日運勢\n"
-                "`/tarot` - 每日塔羅\n"
-                "`/giveaway` - 建立抽獎活動"
-            ),
+            value=("`/fortune` - 今日運勢\n`/tarot` - 每日塔羅\n`/giveaway` - 建立抽獎活動"),
             inline=False,
         )
 
@@ -169,9 +165,7 @@ class UtilityCog(commands.Cog):
         embed.add_field(
             name="【餐點推薦】",
             value=(
-                "`/eat` - 餐點推薦選單\n"
-                "`/food cat` - 列出所有分類\n"
-                "`/food show` - 顯示分類內項目"
+                "`/eat` - 餐點推薦選單\n`/food cat` - 列出所有分類\n`/food show` - 顯示分類內項目"
             ),
             inline=False,
         )

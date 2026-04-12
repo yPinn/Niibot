@@ -625,7 +625,9 @@ class TestGetTwitchAppToken:
         _app_token_cache.clear()
 
     async def test_fetches_token_on_first_call(self):
-        session = _make_session(_make_aiohttp_post_cm(200, {"access_token": "tok_abc", "expires_in": 3600}))
+        session = _make_session(
+            _make_aiohttp_post_cm(200, {"access_token": "tok_abc", "expires_in": 3600})
+        )
 
         result = await _get_twitch_app_token("cid", "csec", session)
 
@@ -633,7 +635,9 @@ class TestGetTwitchAppToken:
         session.post.assert_called_once()
 
     async def test_returns_cached_token_on_second_call(self):
-        session = _make_session(_make_aiohttp_post_cm(200, {"access_token": "tok_cached", "expires_in": 3600}))
+        session = _make_session(
+            _make_aiohttp_post_cm(200, {"access_token": "tok_cached", "expires_in": 3600})
+        )
 
         first = await _get_twitch_app_token("cid", "csec", session)
         second = await _get_twitch_app_token("cid", "csec", session)
@@ -648,7 +652,9 @@ class TestGetTwitchAppToken:
         # Pre-populate cache with an already-expired token
         _app_token_cache[("cid", "csec")] = ("old_tok", time.monotonic() - 1)
 
-        session = _make_session(_make_aiohttp_post_cm(200, {"access_token": "new_tok", "expires_in": 3600}))
+        session = _make_session(
+            _make_aiohttp_post_cm(200, {"access_token": "new_tok", "expires_in": 3600})
+        )
 
         result = await _get_twitch_app_token("cid", "csec", session)
 
