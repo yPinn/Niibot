@@ -1,5 +1,6 @@
 """Event logging for Discord server events"""
 
+import json
 import logging
 from datetime import datetime
 
@@ -7,18 +8,37 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from core import DATA_DIR
+
 LOGGER = logging.getLogger(__name__)
+
+_LOG_CHANNELS_FILE = DATA_DIR / "log_channels.json"
+
+
+def _load_log_channels() -> dict[int, int]:
+    try:
+        with open(_LOG_CHANNELS_FILE, encoding="utf-8") as f:
+            return {int(k): int(v) for k, v in json.load(f).items()}
+    except (FileNotFoundError, json.JSONDecodeError, ValueError):
+        return {}
+
+
+def _save_log_channels(data: dict[int, int]) -> None:
+    with open(_LOG_CHANNELS_FILE, "w", encoding="utf-8") as f:
+        json.dump({str(k): v for k, v in data.items()}, f, ensure_ascii=False, indent=2)
 
 
 class EventsCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.log_channels: dict[int, int] = {}
+        self.log_channels: dict[int, int] = _load_log_channels()
 
-    @app_commands.command(name="setlog", description="設定日誌頻道")
+    log = app_commands.Group(name="log", description="日誌頻道設定")
+
+    @log.command(name="set", description="設定日誌頻道")
     @app_commands.describe(channel="要設定為日誌頻道的文字頻道")
     @app_commands.checks.has_permissions(administrator=True)
-    async def set_log_channel(
+    async def log_set(
         self, interaction: discord.Interaction, channel: discord.TextChannel
     ) -> None:
         if not interaction.guild:
@@ -26,6 +46,7 @@ class EventsCog(commands.Cog):
             return
 
         self.log_channels[interaction.guild.id] = channel.id
+        _save_log_channels(self.log_channels)
         await interaction.response.send_message(
             f"已設定日誌頻道：{channel.mention}", ephemeral=True
         )
@@ -33,15 +54,16 @@ class EventsCog(commands.Cog):
             f"Log channel set | Guild: {interaction.guild.name} | Channel: #{channel.name} | By: {interaction.user.name}"
         )
 
-    @app_commands.command(name="unsetlog", description="取消日誌頻道")
+    @log.command(name="unset", description="取消日誌頻道")
     @app_commands.checks.has_permissions(administrator=True)
-    async def unset_log_channel(self, interaction: discord.Interaction) -> None:
+    async def log_unset(self, interaction: discord.Interaction) -> None:
         if not interaction.guild:
             await interaction.response.send_message("此指令只能在伺服器中使用", ephemeral=True)
             return
 
         if interaction.guild.id in self.log_channels:
             del self.log_channels[interaction.guild.id]
+            _save_log_channels(self.log_channels)
             await interaction.response.send_message("已取消日誌頻道設定", ephemeral=True)
             LOGGER.info(
                 f"Log channel unset | Guild: {interaction.guild.name} | By: {interaction.user.name}"

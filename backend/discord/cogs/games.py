@@ -53,21 +53,6 @@ class RPSView(ui.View):
         await interaction.response.edit_message(embed=embed, view=RPSView())
 
 
-class CoinFlipView(ui.View):
-    def __init__(self) -> None:
-        super().__init__(timeout=60)
-
-    @ui.button(label="再擲一次", style=discord.ButtonStyle.primary)
-    async def flip_again(
-        self, interaction: discord.Interaction, button: ui.Button["CoinFlipView"]
-    ) -> None:
-        result = random.choice(["正面", "反面"])
-        embed = discord.Embed(title="擲硬幣", color=discord.Color.blue())
-        embed.add_field(name="結果", value=result, inline=False)
-
-        await interaction.response.edit_message(embed=embed, view=CoinFlipView())
-
-
 class RouletteView(ui.View):
     def __init__(self, user_id: int, global_embed_config: dict):
         super().__init__(timeout=300)
@@ -156,9 +141,11 @@ class GamesCog(commands.Cog):
         with open(DATA_DIR / "embed.json", encoding="utf-8") as f:
             self.global_embed_config = json.load(f)
 
-    @app_commands.command(name="roll", description="擲骰子")
-    @app_commands.describe(sides="骰子面數")
-    async def roll(self, interaction: discord.Interaction, sides: int = 6) -> None:
+    game = app_commands.Group(name="game", description="遊戲指令")
+
+    @game.command(name="roll", description="擲骰子")
+    @app_commands.describe(sides="骰子面數（預設 6）")
+    async def game_roll(self, interaction: discord.Interaction, sides: int = 6) -> None:
         if sides < 2:
             await interaction.response.send_message("骰子至少要有 2 面", ephemeral=True)
             return
@@ -166,9 +153,9 @@ class GamesCog(commands.Cog):
         result = random.randint(1, sides)
         await interaction.response.send_message(f"擲出了 {result} 點（D{sides}）")
 
-    @app_commands.command(name="choose", description="隨機選擇")
+    @game.command(name="choose", description="隨機選擇")
     @app_commands.describe(options="選項（用空格分隔）")
-    async def choose(self, interaction: discord.Interaction, options: str) -> None:
+    async def game_choose(self, interaction: discord.Interaction, options: str) -> None:
         choices = options.split()
         if len(choices) < 2:
             await interaction.response.send_message("請提供至少 2 個選項", ephemeral=True)
@@ -177,16 +164,8 @@ class GamesCog(commands.Cog):
         result = random.choice(choices)
         await interaction.response.send_message(f"我選擇: {result}")
 
-    @app_commands.command(name="coinflip", description="擲硬幣")
-    async def coinflip(self, interaction: discord.Interaction) -> None:
-        result = random.choice(["正面", "反面"])
-        embed = discord.Embed(title="擲硬幣", color=discord.Color.blue())
-        embed.add_field(name="結果", value=result, inline=False)
-
-        await interaction.response.send_message(embed=embed, view=CoinFlipView())
-
-    @app_commands.command(name="rps", description="猜拳遊戲")
-    async def rock_paper_scissors(self, interaction: discord.Interaction) -> None:
+    @game.command(name="rps", description="猜拳遊戲")
+    async def game_rps(self, interaction: discord.Interaction) -> None:
         embed = discord.Embed(
             title="猜拳遊戲",
             description="點擊下方按鈕選擇你的出拳",
@@ -195,8 +174,8 @@ class GamesCog(commands.Cog):
 
         await interaction.response.send_message(embed=embed, view=RPSView())
 
-    @app_commands.command(name="roulette", description="俄羅斯輪盤")
-    async def roulette(self, interaction: discord.Interaction) -> None:
+    @game.command(name="roulette", description="俄羅斯輪盤")
+    async def game_roulette(self, interaction: discord.Interaction) -> None:
         embed = discord.Embed(
             title="俄羅斯輪盤",
             color=discord.Color.orange(),

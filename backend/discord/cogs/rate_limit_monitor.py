@@ -10,19 +10,10 @@ class RateLimitMonitorCog(commands.Cog):
         self.bot = bot
         self.rate_limiter = bot.rate_limiter  # type: ignore[attr-defined]
 
-    @app_commands.command(name="rate_stats", description="速率統計")
+    @app_commands.command(name="rate", description="Discord API 速率限制統計")
     @app_commands.default_permissions(administrator=True)
-    async def rate_stats(self, interaction: discord.Interaction) -> None:
+    async def rate(self, interaction: discord.Interaction) -> None:
         stats = self.rate_limiter.get_stats_summary()
-
-        embed = discord.Embed(
-            title="Discord API 速率限制統計",
-            color=discord.Color.blue(),
-            timestamp=discord.utils.utcnow(),
-        )
-
-        embed.add_field(name="總請求數", value=f"`{stats['total_requests']:,}`", inline=True)
-        embed.add_field(name="速率限制次數", value=f"`{stats['rate_limited_count']}`", inline=True)
 
         recent_rps = stats["recent_1min_rps"]
         max_rps = self.rate_limiter.GLOBAL_RATE_LIMIT
@@ -38,7 +29,14 @@ class RateLimitMonitorCog(commands.Cog):
             status_text = "[NORMAL]"
             color = discord.Color.green()
 
-        embed.color = color
+        embed = discord.Embed(
+            title="Discord API 速率限制統計",
+            color=color,
+            timestamp=discord.utils.utcnow(),
+        )
+
+        embed.add_field(name="總請求數", value=f"`{stats['total_requests']:,}`", inline=True)
+        embed.add_field(name="速率限制次數", value=f"`{stats['rate_limited_count']}`", inline=True)
         embed.add_field(name="當前狀態", value=status_text, inline=True)
         embed.add_field(
             name="最近1分鐘請求數", value=f"`{stats['recent_1min_requests']}`", inline=True
@@ -73,32 +71,6 @@ class RateLimitMonitorCog(commands.Cog):
 
         if self.bot.user:
             embed.set_footer(text=f"Bot: {self.bot.user.name}")
-        await interaction.response.send_message(embed=embed)
-
-    @app_commands.command(name="rate_check", description="速率檢查")
-    @app_commands.default_permissions(administrator=True)
-    async def rate_check(self, interaction: discord.Interaction) -> None:
-        is_safe, message = self.rate_limiter.check_rate_limit_risk()
-
-        if is_safe:
-            color = discord.Color.green()
-            title = "[PASS] 速率檢查通過"
-        else:
-            color = discord.Color.red()
-            title = "[FAIL] 速率風險警告"
-
-        embed = discord.Embed(
-            title=title, description=message, color=color, timestamp=discord.utils.utcnow()
-        )
-
-        embed.add_field(
-            name="全局限制", value=f"{self.rate_limiter.GLOBAL_RATE_LIMIT} req/s", inline=True
-        )
-        embed.add_field(
-            name="訊息限制", value=f"{self.rate_limiter.MESSAGE_RATE_LIMIT} msg/5s/ch", inline=True
-        )
-        embed.add_field(name="反應限制", value=f"{int(1 / 0.25)} reactions/s", inline=True)
-
         await interaction.response.send_message(embed=embed)
 
 
