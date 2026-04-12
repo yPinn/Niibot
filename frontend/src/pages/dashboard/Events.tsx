@@ -37,7 +37,7 @@ import {
   SheetFooter,
   SheetHeader,
   SheetTitle,
-  Spinner,
+  Skeleton,
   Switch,
   Table,
   TableBody,
@@ -160,11 +160,11 @@ export default function Events() {
     fetchRedemptions()
   }, [fetchEvents, fetchRedemptions])
 
+  const { sortKey: eventSortKey, sortDir: eventSortDir } = eventSort
   const sortedEvents = useMemo(() => {
-    const { sortKey, sortDir } = eventSort
     return [...events].sort((a, b) => {
       let cmp = 0
-      switch (sortKey) {
+      switch (eventSortKey) {
         case 'event_type': {
           const ai = EVENT_TYPE_ORDER.indexOf(a.event_type)
           const bi = EVENT_TYPE_ORDER.indexOf(b.event_type)
@@ -183,15 +183,15 @@ export default function Events() {
           cmp = Number(a.enabled) - Number(b.enabled)
           break
       }
-      return sortDir === 'desc' ? -cmp : cmp
+      return eventSortDir === 'desc' ? -cmp : cmp
     })
-  }, [events, eventSort])
+  }, [events, eventSortKey, eventSortDir])
 
+  const { sortKey: redSortKey, sortDir: redSortDir } = redSort
   const sortedRedemptions = useMemo(() => {
-    const { sortKey, sortDir } = redSort
     return [...redemptions].sort((a, b) => {
       let cmp = 0
-      switch (sortKey) {
+      switch (redSortKey) {
         case 'action_type':
           cmp = (ACTION_TYPE_LABELS[a.action_type] || a.action_type).localeCompare(
             ACTION_TYPE_LABELS[b.action_type] || b.action_type
@@ -204,9 +204,9 @@ export default function Events() {
           cmp = Number(a.enabled) - Number(b.enabled)
           break
       }
-      return sortDir === 'desc' ? -cmp : cmp
+      return redSortDir === 'desc' ? -cmp : cmp
     })
-  }, [redemptions, redSort])
+  }, [redemptions, redSortKey, redSortDir])
 
   const { toggle: handleToggle } = useOptimisticToggle<EventConfig>({
     setState: setEvents,
@@ -282,8 +282,10 @@ export default function Events() {
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="flex items-center justify-center py-empty">
-              <Spinner className="size-8 text-primary" />
+            <div className="space-y-2">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton key={i} className="h-10 w-full" />
+              ))}
             </div>
           ) : error ? (
             <div className="flex items-center justify-center py-empty text-destructive">
@@ -403,8 +405,10 @@ export default function Events() {
         </CardHeader>
         <CardContent>
           {redemptionLoading ? (
-            <div className="flex items-center justify-center py-empty">
-              <Spinner className="size-8 text-primary" />
+            <div className="space-y-2">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} className="h-10 w-full" />
+              ))}
             </div>
           ) : !isAffiliate ? (
             <div className="flex flex-col items-center justify-center gap-2 py-empty text-muted-foreground">

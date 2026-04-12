@@ -23,7 +23,7 @@ export default function Dashboard() {
   const [statsLoading, setStatsLoading] = useState(true)
   const [stats, setStats] = useState<ChannelStats | null>(null)
   const [analytics, setAnalytics] = useState<AnalyticsSummary | null>(null)
-  const hasLoadedRef = useRef(false)
+  const loadedForUserRef = useRef<string | null>(null)
 
   const fetchStats = useCallback(async () => {
     if (!user) return
@@ -52,8 +52,9 @@ export default function Dashboard() {
   }, [user])
 
   useEffect(() => {
-    if (!isInitialized || !user || hasLoadedRef.current) return
-    hasLoadedRef.current = true
+    if (!isInitialized || !user) return
+    if (loadedForUserRef.current === user.id) return
+    loadedForUserRef.current = user.id
     fetchStats()
     fetchAnalytics()
   }, [isInitialized, user, fetchStats, fetchAnalytics])
@@ -65,7 +66,7 @@ export default function Dashboard() {
     prevChannelsRef.current = channels
 
     // Skip on initial load
-    if (!hasLoadedRef.current) return
+    if (loadedForUserRef.current === null) return
 
     const wentOffline = prev.some(p => p.is_live && !channels.find(c => c.id === p.id)?.is_live)
     if (wentOffline) {

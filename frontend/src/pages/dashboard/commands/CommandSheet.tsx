@@ -104,8 +104,10 @@ const initialForm: FormState = {
 }
 
 function parseCooldown(value: string): number | null {
-  if (value === '') return null
-  return Number(value) || 0
+  if (value.trim() === '') return null
+  const n = parseInt(value, 10)
+  if (isNaN(n) || n < 0) return null
+  return n
 }
 
 function sanitizeTriggerName(pattern: string): string {
@@ -204,20 +206,24 @@ export function CommandSheet({
 
   const handleSave = async () => {
     if (!editing) return
-    dispatch({ type: 'SAVING' })
 
+    // Synchronous validation before disabling the save button
+    if (editing.mode === 'create') {
+      if (!form.name.trim() || !form.response.trim()) {
+        dispatch({ type: 'SAVE_ERROR', msg: '名稱與回應不可為空' })
+        return
+      }
+      if (formIsCommand && !form.name.slice(1).trim()) {
+        dispatch({ type: 'SAVE_ERROR', msg: '指令名稱不可為空' })
+        return
+      }
+    }
+
+    dispatch({ type: 'SAVING' })
     try {
       if (editing.mode === 'create') {
-        if (!form.name.trim() || !form.response.trim()) {
-          dispatch({ type: 'SAVE_ERROR', msg: '名稱與回應不可為空' })
-          return
-        }
         if (formIsCommand) {
           const cmdName = form.name.slice(1).trim()
-          if (!cmdName) {
-            dispatch({ type: 'SAVE_ERROR', msg: '指令名稱不可為空' })
-            return
-          }
           const created = await createCustomCommand({
             command_name: cmdName,
             custom_response: form.response.trim(),

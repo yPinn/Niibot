@@ -266,6 +266,39 @@ export default function VideoQueueOverlay() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [username, state?.current?.id, state?.queue.length])
 
+  // useCallback with empty deps: all reads are via refs (stable identity), setState/setIsExiting
+  // are stable React dispatch functions — no stale closure risk from future refactors.
+  const handleVideoEnd = useCallback((doneId: number) => {
+    if (advancingRef.current || !usernameRef.current) return
+    advancingRef.current = true
+
+    if (progressRef.current) {
+      clearInterval(progressRef.current)
+      progressRef.current = null
+    }
+    if (clipTimerRef.current) {
+      clearTimeout(clipTimerRef.current)
+      clipTimerRef.current = null
+    }
+
+    setIsExiting(true)
+    setTimeout(() => {
+      advanceVideoQueue(usernameRef.current!, doneId)
+        .then(newState => {
+          if (!mountedRef.current) return
+          setState(newState)
+          setIsExiting(false)
+        })
+        .catch(() => {
+          if (!mountedRef.current) return
+          setIsExiting(false)
+        })
+        .finally(() => {
+          advancingRef.current = false
+        })
+    }, 600)
+  }, [])
+
   // Create / destroy player(s) when current video changes
   useEffect(() => {
     if (!containerRef.current) return
@@ -515,7 +548,7 @@ export default function VideoQueueOverlay() {
     // Player creation is keyed on video ID — not the full `state` object or `isPreview` —
     // so the player is only rebuilt when the actual video changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ytReady, twitchReady, state?.current?.id, username])
+  }, [ytReady, twitchReady, state?.current?.id, username, handleVideoEnd])
 
   // Cleanup on unmount
   useEffect(() => {
@@ -532,39 +565,6 @@ export default function VideoQueueOverlay() {
       if (progressRef.current) clearInterval(progressRef.current)
       if (clipTimerRef.current) clearTimeout(clipTimerRef.current)
     }
-  }, [])
-
-  // useCallback with empty deps: all reads are via refs (stable identity), setState/setIsExiting
-  // are stable React dispatch functions — no stale closure risk from future refactors.
-  const handleVideoEnd = useCallback((doneId: number) => {
-    if (advancingRef.current || !usernameRef.current) return
-    advancingRef.current = true
-
-    if (progressRef.current) {
-      clearInterval(progressRef.current)
-      progressRef.current = null
-    }
-    if (clipTimerRef.current) {
-      clearTimeout(clipTimerRef.current)
-      clipTimerRef.current = null
-    }
-
-    setIsExiting(true)
-    setTimeout(() => {
-      advanceVideoQueue(usernameRef.current!, doneId)
-        .then(newState => {
-          if (!mountedRef.current) return
-          setState(newState)
-          setIsExiting(false)
-        })
-        .catch(() => {
-          if (!mountedRef.current) return
-          setIsExiting(false)
-        })
-        .finally(() => {
-          advancingRef.current = false
-        })
-    }, 600)
   }, [])
 
   if (!username) return null

@@ -62,8 +62,8 @@ export default function Commands() {
     else toggleTriggerItem(row.data)
   }
 
+  const { sortKey: customSortKey, sortDir: customSortDir } = customSort
   const customRows = useMemo((): CustomRow[] => {
-    const { sortKey, sortDir } = customSort
     const all: CustomRow[] = [
       ...commands
         .filter(c => c.command_type === 'custom')
@@ -74,7 +74,7 @@ export default function Commands() {
       let cmp = 0
       const nameA = a.kind === 'command' ? a.data.command_name : a.data.pattern
       const nameB = b.kind === 'command' ? b.data.command_name : b.data.pattern
-      switch (sortKey) {
+      switch (customSortKey) {
         case 'name':
           cmp = nameSort(nameA, nameB)
           break
@@ -96,10 +96,10 @@ export default function Commands() {
           cmp = Number(a.data.enabled) - Number(b.data.enabled)
           break
       }
-      return sortDir === 'desc' ? -cmp : cmp
+      return customSortDir === 'desc' ? -cmp : cmp
     })
     return all
-  }, [commands, triggers, customSort])
+  }, [commands, triggers, customSortKey, customSortDir])
 
   const fetchData = useCallback(async () => {
     try {
@@ -147,7 +147,7 @@ export default function Commands() {
         updatedCmds.forEach(c => map.set(c.command_name, c))
         // New items (create) won't be in map yet — add them
         const newOnes = updatedCmds.filter(c => !prev.some(p => p.command_name === c.command_name))
-        return [...prev.map(c => map.get(c.command_name)!), ...newOnes]
+        return [...prev.map(c => map.get(c.command_name) ?? c), ...newOnes]
       })
     }
     if (updatedTrgs) {
@@ -155,7 +155,7 @@ export default function Commands() {
         const map = new Map(prev.map(t => [t.trigger_name, t]))
         updatedTrgs.forEach(t => map.set(t.trigger_name, t))
         const newOnes = updatedTrgs.filter(t => !prev.some(p => p.trigger_name === t.trigger_name))
-        return [...prev.map(t => map.get(t.trigger_name)!), ...newOnes]
+        return [...prev.map(t => map.get(t.trigger_name) ?? t), ...newOnes]
       })
     }
   }

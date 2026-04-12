@@ -16,7 +16,7 @@ import {
   CardHeader,
   CardTitle,
   Icon,
-  Spinner,
+  Skeleton,
   Table,
   TableBody,
   TableCell,
@@ -55,31 +55,31 @@ export default function PublicCommands() {
   const builtinSort = useSortState<BuiltinSortKey>('name')
   const customSort = useSortState<CustomSortKey>('kind')
 
+  const { sortKey: builtinSortKey, sortDir: builtinSortDir } = builtinSort
   const builtinRows = useMemo(() => {
-    const { sortKey, sortDir } = builtinSort
     const list = commands.filter(c => c.command_type === 'builtin')
     return [...list].sort((a, b) => {
       let cmp = 0
-      if (sortKey === 'name') cmp = nameSort(a.name, b.name)
+      if (builtinSortKey === 'name') cmp = nameSort(a.name, b.name)
       else cmp = (ROLE_ORDER[a.min_role] ?? 0) - (ROLE_ORDER[b.min_role] ?? 0)
-      return sortDir === 'desc' ? -cmp : cmp
+      return builtinSortDir === 'desc' ? -cmp : cmp
     })
-  }, [commands, builtinSort])
+  }, [commands, builtinSortKey, builtinSortDir])
 
+  const { sortKey: customSortKey, sortDir: customSortDir } = customSort
   const customRows = useMemo(() => {
-    const { sortKey, sortDir } = customSort
     const list = commands.filter(c => c.command_type === 'custom' || c.command_type === 'trigger')
     return [...list].sort((a, b) => {
       let cmp = 0
-      if (sortKey === 'name') cmp = nameSort(a.name, b.name)
-      else if (sortKey === 'kind') {
+      if (customSortKey === 'name') cmp = nameSort(a.name, b.name)
+      else if (customSortKey === 'kind') {
         const kindCmp =
           (a.command_type === 'custom' ? 0 : 1) - (b.command_type === 'custom' ? 0 : 1)
         cmp = kindCmp !== 0 ? kindCmp : nameSort(a.name, b.name)
       } else cmp = (ROLE_ORDER[a.min_role] ?? 0) - (ROLE_ORDER[b.min_role] ?? 0)
-      return sortDir === 'desc' ? -cmp : cmp
+      return customSortDir === 'desc' ? -cmp : cmp
     })
-  }, [commands, customSort])
+  }, [commands, customSortKey, customSortDir])
 
   useEffect(() => {
     if (!username) return
@@ -92,7 +92,7 @@ export default function PublicCommands() {
       .finally(() => setLoading(false))
   }, [username])
 
-  const displayName = channel?.display_name || username
+  const displayName = channel?.display_name ?? username ?? ''
   useDocumentTitle(channel ? `${displayName}'s Commands` : 'Commands')
 
   return (
@@ -117,8 +117,14 @@ export default function PublicCommands() {
 
       <div className="w-full max-w-2xl">
         {loading ? (
-          <div className="flex items-center justify-center py-empty">
-            <Spinner className="size-8 text-primary" />
+          <div className="space-y-3">
+            <Skeleton className="mx-auto h-24 w-24 rounded-full" />
+            <Skeleton className="mx-auto h-6 w-40" />
+            <div className="space-y-2 pt-2">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} className="h-10 w-full" />
+              ))}
+            </div>
           </div>
         ) : error ? (
           <div className="flex items-center justify-center py-empty text-destructive">{error}</div>
