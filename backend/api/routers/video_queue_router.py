@@ -450,7 +450,8 @@ async def add_video_entry(
             is_vertical = False
             video_type = "twitch_clip"
         else:
-            assert video_id is not None  # guaranteed: clip_slug is None only when video_id is set
+            if video_id is None:
+                raise HTTPException(status_code=422, detail="No valid video source")
             title, duration_seconds, _, is_vertical_from_api = await fetch_yt_info(
                 video_id, s.youtube_api_key
             )

@@ -69,6 +69,11 @@ async def find_or_create_user(
                 platform,
                 platform_user_id,
             )
+            if row is None:
+                raise RuntimeError(
+                    f"Concurrent OAuth race for {platform}:{platform_user_id} — "
+                    "winner's account disappeared before fallback SELECT"
+                ) from None
             return str(row["user_id"])
 
     logger.info(f"Created user {user_id} for {platform}:{platform_user_id} ({username})")
@@ -97,6 +102,10 @@ def encode_oauth_state(mode: str, user_id: str | None = None, *, secret: str = "
         data["uid"] = user_id
     if secret:
         data["nonce"] = secrets.token_urlsafe(16)
+        # Sign a snapshot of data *before* adding "sig" so the signed payload
+        # contains exactly {mode, [uid], nonce} — no more, no less.
+        # On decode, "sig" is popped before re-signing, reconstructing the same set.
+        # IMPORTANT: do not add new fields to `data` after this line.
         data["sig"] = _hmac_sign({k: v for k, v in data.items()}, secret)
     return base64.urlsafe_b64encode(json.dumps(data).encode()).decode()
 

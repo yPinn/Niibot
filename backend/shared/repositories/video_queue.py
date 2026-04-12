@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from datetime import timedelta
 
 import aiohttp
@@ -133,6 +134,10 @@ _TWITCH_CLIP_RE = re.compile(
 _TWITCH_OAUTH_URL = "https://id.twitch.tv/oauth2/token"
 _TWITCH_HELIX_CLIPS_URL = "https://api.twitch.tv/helix/clips"
 
+# Module-level app token cache keyed by (client_id, client_secret).
+# Twitch app tokens are valid for ~60 days; we refresh 5 min before expiry.
+_app_token_cache: dict[tuple[str, str], tuple[str, float]] = {}  # key → (token, expires_at)
+
 
 def extract_twitch_clip_slug(text: str) -> str | None:
     """Extract clip slug from a Twitch clip URL. Returns None if not found.
@@ -145,6 +150,44 @@ def extract_twitch_clip_slug(text: str) -> str | None:
     return m.group(1) if m else None
 
 
+async def _get_twitch_app_token(
+    client_id: str,
+    client_secret: str,
+    session: aiohttp.ClientSession,
+) -> str | None:
+    """Return a cached Twitch app token, fetching a new one only when expired.
+
+    Tokens are valid ~60 days; we treat them as expired 5 min before their
+    reported ``expires_in`` to guard against clock skew.
+    """
+    cache_key = (client_id, client_secret)
+    cached_token, expires_at = _app_token_cache.get(cache_key, (None, 0.0))
+    if cached_token and time.monotonic() < expires_at:
+        return cached_token
+
+    async with session.post(
+        _TWITCH_OAUTH_URL,
+        data={
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "grant_type": "client_credentials",
+        },
+        timeout=aiohttp.ClientTimeout(total=5),
+    ) as resp:
+        if resp.status != 200:
+            logger.warning(f"[Twitch API] Failed to get app token: {resp.status}")
+            return None
+        token_data = await resp.json()
+
+    new_token = token_data.get("access_token")
+    if not new_token:
+        return None
+
+    expires_in = token_data.get("expires_in", 3600)
+    _app_token_cache[cache_key] = (new_token, time.monotonic() + expires_in - 300)
+    return new_token
+
+
 async def fetch_twitch_clip_info(
     slug: str,
     client_id: str,
@@ -153,7 +196,8 @@ async def fetch_twitch_clip_info(
 ) -> tuple[str | None, int | None, int | None]:
     """Fetch clip title, duration, and view count via Twitch Helix API.
 
-    Obtains a fresh app access token per call (clips are added infrequently).
+    Reuses a cached app access token (valid ~60 days); only fetches a new
+    token when the cached one is missing or within 5 min of expiry.
     Returns (title, duration_seconds, view_count).
     All values are None on any failure.
     """
@@ -163,23 +207,9 @@ async def fetch_twitch_clip_info(
     _own_session = session is None
     _session: aiohttp.ClientSession = session or aiohttp.ClientSession()
     try:
-        # Fetch app access token
-        async with _session.post(
-            _TWITCH_OAUTH_URL,
-            data={
-                "client_id": client_id,
-                "client_secret": client_secret,
-                "grant_type": "client_credentials",
-            },
-            timeout=aiohttp.ClientTimeout(total=5),
-        ) as resp:
-            if resp.status != 200:
-                logger.warning(f"[Twitch API] Failed to get app token: {resp.status}")
-                return None, None, None
-            token_data = await resp.json()
-            app_token = token_data.get("access_token")
-            if not app_token:
-                return None, None, None
+        app_token = await _get_twitch_app_token(client_id, client_secret, _session)
+        if not app_token:
+            return None, None, None
 
         # Fetch clip metadata
         async with _session.get(

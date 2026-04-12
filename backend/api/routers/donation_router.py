@@ -9,6 +9,7 @@ Payment flow (ECPay / OPay — identical API):
 """
 
 import hashlib
+import hmac
 import json
 import logging
 import time
@@ -71,7 +72,7 @@ def _build_check_mac_value(params: dict, hash_key: str, hash_iv: str) -> str:
 def _verify_webhook_mac(form_data: dict, hash_key: str, hash_iv: str) -> bool:
     received = form_data.get("CheckMacValue", "")
     computed = _build_check_mac_value(form_data, hash_key, hash_iv)
-    return received.upper() == computed
+    return hmac.compare_digest(received.upper(), computed)
 
 
 # ============================================================
@@ -492,7 +493,7 @@ async def webhook_newebpay(
 
     # Verify TradeSha
     expected_sha = _newebpay_sha256(trade_info_hex, config_row.hash_key, config_row.hash_iv)
-    if trade_sha.upper() != expected_sha:
+    if not hmac.compare_digest(trade_sha.upper(), expected_sha):
         logger.warning(f"[newebpay webhook] TradeSha mismatch for merchant {merchant_id}")
         return JSONResponse({"status": "error"}, status_code=200)
 

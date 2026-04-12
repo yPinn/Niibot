@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import json
 import logging
-import threading
 import traceback
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 
 _LEVEL_COLORS = {
@@ -42,6 +42,9 @@ class DiscordWebhookHandler(logging.Handler):
         super().__init__(level=logging.ERROR)
         self._url = webhook_url
         self._service = service_name
+        # Single background thread — prevents thread storms on log bursts.
+        # max_workers=1 serialises sends; excess records are queued by the executor.
+        self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="webhook-log")
         # Plain formatter — Rich markup is stripped, Discord gets clean text
         self.setFormatter(logging.Formatter("%(message)s"))
 
@@ -56,7 +59,7 @@ class DiscordWebhookHandler(logging.Handler):
             self.handleError(record)
             return
 
-        threading.Thread(target=self._post, args=(payload,), daemon=True).start()
+        self._executor.submit(self._post, payload)
 
     # ------------------------------------------------------------------
     # Internals

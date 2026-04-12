@@ -37,10 +37,16 @@ class GiveawayCog(commands.Cog):
         LOGGER.info("Giveaway expiry checker stopped")
 
     def _load_data(self) -> None:
-        with open(DATA_DIR / "giveaway.json", encoding="utf-8") as f:
-            self.config = json.load(f)
-        with open(DATA_DIR / "embed.json", encoding="utf-8") as f:
-            self.global_embed_config = json.load(f)
+        for filename, attr in (("giveaway.json", "config"), ("embed.json", "global_embed_config")):
+            path = DATA_DIR / filename
+            try:
+                with open(path, encoding="utf-8") as f:
+                    setattr(self, attr, json.load(f))
+            except FileNotFoundError:
+                raise FileNotFoundError(
+                    f"GiveawayCog requires '{filename}' in {DATA_DIR}. "
+                    f"Expected path: {path}"
+                ) from None
 
     # ------------------------------------------------------------------
     # Persistence helpers (called by views)

@@ -180,8 +180,12 @@ class TwitchAPIClient:
             )
 
             if token_response.status_code != 200:
+                try:
+                    error_msg = token_response.json().get("message", "unknown")
+                except Exception:
+                    error_msg = "unparseable"
                 logger.error(
-                    f"Failed to exchange code: status={token_response.status_code} body={token_response.text}"
+                    f"Failed to exchange code: status={token_response.status_code} error={error_msg}"
                 )
                 return False, "token_exchange_failed", None
 

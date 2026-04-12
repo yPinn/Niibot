@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
+import tempfile
 from pathlib import Path
 
 LOGGER = logging.getLogger(__name__)
@@ -43,5 +45,15 @@ class GiveawayPersistence:
             LOGGER.error(f"Failed to save active giveaways: {e}")
 
     def _write_json(self, data: dict) -> None:
-        with open(self._filepath, "w", encoding="utf-8") as f:
+        """Write atomically: write to a temp file then rename into place.
+
+        os.replace() is atomic on both POSIX and Windows (Python 3.3+),
+        so a crash mid-write never leaves a truncated or corrupt JSON file.
+        """
+        dir_ = self._filepath.parent
+        with tempfile.NamedTemporaryFile(
+            "w", dir=dir_, delete=False, suffix=".tmp", encoding="utf-8"
+        ) as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
+            tmp_path = f.name
+        os.replace(tmp_path, self._filepath)
