@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     environment: str = Field(default="development", description="Environment name")
     log_level: str = Field(default="INFO", description="Logging level")
 
+    # Error reporting
+    error_webhook_url: str = Field(default="", description="Discord webhook URL for error alerts")
+
     # Server Configuration
     host: str = Field(default="0.0.0.0", description="Server host")
     port: int = Field(default=8000, description="Server port")

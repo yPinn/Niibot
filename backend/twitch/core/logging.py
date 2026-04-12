@@ -62,6 +62,19 @@ def setup_logging() -> None:
             force=True,
         )
 
+    webhook_url = os.getenv("ERROR_WEBHOOK_URL", "")
+    if webhook_url:
+        import sys
+        from pathlib import Path
+
+        _backend = str(Path(__file__).resolve().parent.parent.parent)
+        if _backend not in sys.path:
+            sys.path.insert(0, _backend)
+
+        from shared.discord_webhook_handler import DiscordWebhookHandler
+
+        logging.getLogger().addHandler(DiscordWebhookHandler(webhook_url, service_name="twitch"))
+
     if level == logging.DEBUG:
         logging.getLogger("twitchio").setLevel(logging.DEBUG)
         logging.getLogger("twitchio.eventsub").setLevel(logging.DEBUG)

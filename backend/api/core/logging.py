@@ -71,5 +71,12 @@ def setup_logging(settings: Settings) -> None:
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
 
+    if settings.error_webhook_url:
+        from shared.discord_webhook_handler import DiscordWebhookHandler
+
+        logging.getLogger().addHandler(
+            DiscordWebhookHandler(settings.error_webhook_url, service_name="api")
+        )
+
     logger = logging.getLogger(__name__)
     logger.info(f"Logging: {settings.log_level} | Env: {settings.environment}")
