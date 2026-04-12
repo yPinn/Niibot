@@ -39,7 +39,7 @@ import {
   SheetFooter,
   SheetHeader,
   SheetTitle,
-  Spinner,
+  Skeleton,
   Switch,
   Table,
   TableBody,
@@ -291,8 +291,25 @@ export default function Timers() {
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="flex items-center justify-center py-empty">
-              <Spinner className="size-8 text-primary" />
+            <div className="overflow-x-auto rounded-md border">
+              <div className="divide-y divide-border">
+                <div className="flex items-center gap-4 px-4 py-3 bg-muted/50">
+                  <Skeleton className="h-4 w-[24%]" />
+                  <Skeleton className="h-4 flex-1" />
+                  <Skeleton className="h-4 w-[12%]" />
+                  <Skeleton className="h-4 w-[10%]" />
+                  <Skeleton className="h-4 w-[10%]" />
+                </div>
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <div key={i} className="flex items-center gap-4 px-4 py-3">
+                    <Skeleton className="h-4 w-[24%]" />
+                    <Skeleton className="h-4 flex-1" />
+                    <Skeleton className="h-4 w-[12%]" />
+                    <Skeleton className="h-8 w-[10%]" />
+                    <Skeleton className="h-8 w-[10%]" />
+                  </div>
+                ))}
+              </div>
             </div>
           ) : error ? (
             <div className="flex items-center justify-center py-empty text-destructive">

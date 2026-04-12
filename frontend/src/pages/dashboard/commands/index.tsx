@@ -14,7 +14,7 @@ import {
   CardHeader,
   CardTitle,
   Icon,
-  Spinner,
+  Skeleton,
   Tabs,
   TabsContent,
   TabsList,
@@ -187,8 +187,13 @@ export default function Commands() {
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="flex items-center justify-center py-empty">
-              <Spinner className="size-8 text-primary" />
+            <div className="space-y-3">
+              <Skeleton className="h-9 w-48" />
+              <div className="space-y-2">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <Skeleton key={i} className="h-10 w-full" />
+                ))}
+              </div>
             </div>
           ) : error ? (
             <div className="flex items-center justify-center py-empty text-destructive">

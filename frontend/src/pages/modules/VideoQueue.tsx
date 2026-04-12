@@ -34,7 +34,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-  Spinner,
+  Skeleton,
   Switch,
   Table,
   TableBody,
@@ -421,8 +421,27 @@ export default function VideoQueue() {
     return (
       <main className="flex flex-1 flex-col gap-section p-page lg:p-page-lg">
         <PageHeader title="Video Queue" description="管理 YouTube 點播系統" />
-        <div className="flex items-center justify-center py-empty">
-          <Spinner className="size-8 text-primary" />
+        <div className="grid grid-cols-1 gap-section lg:grid-cols-12 lg:items-stretch">
+          <div className="lg:col-span-8">
+            <Card className="h-full">
+              <CardHeader>
+                <Skeleton className="h-5 w-24" />
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  <Skeleton className="h-9 w-full" />
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <Skeleton key={i} className="h-12 w-full" />
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+          <div className="lg:col-span-4 flex flex-col gap-section">
+            <Skeleton className="aspect-16/10 w-full rounded-xl" />
+            <Skeleton className="h-24 w-full rounded-xl" />
+            <Skeleton className="h-48 w-full rounded-xl" />
+          </div>
         </div>
       </main>
     )
