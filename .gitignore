@@ -121,5 +121,8 @@ Desktop.ini
 *.temp
 *.bak
 
+# GitHub Actions self-hosted runner
+actions-runner/
+
 # Task tracking (session-specific, lessons.md should be tracked)
 tasks/todo.md
