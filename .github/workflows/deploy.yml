@@ -18,7 +18,9 @@ jobs:
 
     steps:
       - name: Pull latest code
-        run: git -C $PROJECT_DIR pull
+        run: |
+          git -C $PROJECT_DIR fetch --force origin main
+          git -C $PROJECT_DIR reset --hard origin/main
 
       - name: Set build metadata
         id: meta
