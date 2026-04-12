@@ -73,7 +73,6 @@ def setup_logging() -> None:
 
     webhook_url = os.getenv("ERROR_WEBHOOK_URL", "")
     if webhook_url:
-        import sys
         from pathlib import Path
 
         _backend = str(Path(__file__).resolve().parent.parent.parent)
