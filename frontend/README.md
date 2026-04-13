@@ -51,7 +51,8 @@ VITE_API_URL=http://localhost:8000
 ```bash
 npm run build          # TypeScript 型別檢查 + Vite build
 npm run lint           # ESLint
-npm run format         # Prettier 格式檢查
+npm run format         # Prettier 格式修正（寫入）
+npm run format:check   # Prettier 格式檢查（唯讀，CI 用）
 npm run test           # Vitest（watch mode）
 npm run test:coverage  # 測試 + 覆蓋率報告（閾值 80%）
 ```
