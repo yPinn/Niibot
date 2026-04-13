@@ -13,10 +13,10 @@ import asyncio
 import logging
 
 import twitchio
-from utils.substitution import substitute_variables as _substitute_variables
-from utils.trigger_matching import match_trigger
 
 from core.guards import has_role, is_on_cooldown, record_cooldown
+from utils.substitution import substitute_variables as _substitute_variables
+from utils.trigger_matching import match_trigger
 
 LOGGER: logging.Logger = logging.getLogger("Bot")
 
