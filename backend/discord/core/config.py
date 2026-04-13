@@ -8,8 +8,9 @@ import discord
 
 logger = logging.getLogger(__name__)
 
-# Bot version
-BOT_VERSION = "1.0.0"
+# Bot version — injected at build time via Docker ARG → ENV
+BOT_VERSION = os.getenv("APP_VERSION", "dev")
+GIT_COMMIT = os.getenv("GIT_COMMIT", "unknown")
 BOT_NAME = "Niibot"
 
 # === Path Configuration ===

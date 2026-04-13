@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import random
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 import discord
@@ -42,9 +42,9 @@ class TimeSelectView(ui.View):
         end_time = None
         if value != "manual":
             if value.endswith("h"):
-                end_time = datetime.now() + timedelta(hours=int(value[:-1]))
+                end_time = datetime.now(UTC) + timedelta(hours=int(value[:-1]))
             elif value.endswith("d"):
-                end_time = datetime.now() + timedelta(days=int(value[:-1]))
+                end_time = datetime.now(UTC) + timedelta(days=int(value[:-1]))
 
         await interaction.response.send_modal(GiveawayModal(self.giveaway_cog, end_time))
 
@@ -160,7 +160,7 @@ class GiveawayView(ui.View):
     ):
         timeout_seconds = None
         if end_time:
-            remaining = (end_time - datetime.now()).total_seconds()
+            remaining = (end_time - datetime.now(UTC)).total_seconds()
             timeout_seconds = min(remaining, 900) if remaining > 0 else 1
 
         super().__init__(timeout=timeout_seconds)
@@ -178,7 +178,7 @@ class GiveawayView(ui.View):
 
     @ui.button(label="參加抽獎", style=discord.ButtonStyle.primary, custom_id="giveaway:join")
     async def join_button(self, interaction: discord.Interaction, button: ui.Button[Any]) -> None:
-        if self.end_time and datetime.now() >= self.end_time:
+        if self.end_time and datetime.now(UTC) >= self.end_time:
             await interaction.response.send_message("此抽獎已截止，無法再參加", ephemeral=True)
             return
 
@@ -262,7 +262,7 @@ class GiveawayView(ui.View):
             title="【抽獎已取消】",
             description="此抽獎已被主持人取消",
             color=discord.Color.red(),
-            timestamp=datetime.now(),
+            timestamp=datetime.now(UTC),
         )
         cancel_embed.add_field(name="獎品", value=self.prize_name, inline=True)
         cancel_embed.add_field(name="數量", value=f"**{self.prize_count}** 個", inline=True)

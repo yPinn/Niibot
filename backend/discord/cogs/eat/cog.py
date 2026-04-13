@@ -307,29 +307,29 @@ class EatCog(commands.Cog):
     async def food_add(self, interaction: discord.Interaction, category: str, item: str) -> None:
         """新增項目"""
         async with self._lock:
-            await self.load_data()
             key = self._find_category_key(category) or category
             items = self.data["categories"].setdefault(key, [])
             if any(self._normalize(i) == self._normalize(item) for i in items):
                 await interaction.response.send_message("該項目已存在", ephemeral=True)
                 return
             items.append(item)
-            await self.save_data()
-            embed = self.create_embed(
-                title="新增成功",
-                description=f"**{item}** → {key}",
-                color=discord.Color.green(),
-                footer=f"目前 {key} 共 {len(items)} 項",
-            )
-            await interaction.response.send_message(embed=embed)
+            item_count = len(items)
+        await self.save_data()
+        embed = self.create_embed(
+            title="新增成功",
+            description=f"**{item}** → {key}",
+            color=discord.Color.green(),
+            footer=f"目前 {key} 共 {item_count} 項",
+        )
+        await interaction.response.send_message(embed=embed)
 
     @food_group.command(name="remove", description="移除餐點")
     @app_commands.describe(category="分類名稱", item="項目名稱")
     @app_commands.default_permissions(manage_messages=True)
     async def food_remove(self, interaction: discord.Interaction, category: str, item: str) -> None:
         """移除項目"""
+        result: tuple[str, str, bool, int] | None = None
         async with self._lock:
-            await self.load_data()
             key = self._find_category_key(category)
             if key:
                 items: list[str] = self.data["categories"][key]
@@ -340,18 +340,22 @@ class EatCog(commands.Cog):
                         category_deleted = not items
                         if category_deleted:
                             del self.data["categories"][key]
-                        await self.save_data()
-                        desc = f"~~{val}~~ ← {key}"
-                        if category_deleted:
-                            desc += "\n\n*分類已清空並刪除*"
-                        embed = self.create_embed(
-                            title="移除成功",
-                            description=desc,
-                            color=discord.Color.orange(),
-                            footer=None if category_deleted else f"目前 {key} 剩餘 {len(items)} 項",
-                        )
-                        await interaction.response.send_message(embed=embed)
-                        return
+                        result = (key, val, category_deleted, len(items))
+                        break
+        if result:
+            key, val, category_deleted, remaining = result
+            await self.save_data()
+            desc = f"~~{val}~~ ← {key}"
+            if category_deleted:
+                desc += "\n\n*分類已清空並刪除*"
+            embed = self.create_embed(
+                title="移除成功",
+                description=desc,
+                color=discord.Color.orange(),
+                footer=None if category_deleted else f"目前 {key} 剩餘 {remaining} 項",
+            )
+            await interaction.response.send_message(embed=embed)
+        else:
             await interaction.response.send_message("找不到該項目", ephemeral=True)
 
     @food_group.command(name="delete", description="刪除整個分類")
@@ -359,18 +363,21 @@ class EatCog(commands.Cog):
     @app_commands.default_permissions(administrator=True)
     async def food_delete(self, interaction: discord.Interaction, category: str) -> None:
         """刪除分類"""
+        deleted: tuple[str, int] | None = None
         async with self._lock:
-            await self.load_data()
             key = self._find_category_key(category)
             if key:
                 item_count = len(self.data["categories"][key])
                 del self.data["categories"][key]
-                await self.save_data()
-                embed = self.create_embed(
-                    title="分類已刪除",
-                    description=f"~~{key}~~ ({item_count} 項)",
-                    color=discord.Color.red(),
-                )
-                await interaction.response.send_message(embed=embed)
-            else:
-                await interaction.response.send_message("找不到該分類", ephemeral=True)
+                deleted = (key, item_count)
+        if deleted:
+            key, item_count = deleted
+            await self.save_data()
+            embed = self.create_embed(
+                title="分類已刪除",
+                description=f"~~{key}~~ ({item_count} 項)",
+                color=discord.Color.red(),
+            )
+            await interaction.response.send_message(embed=embed)
+        else:
+            await interaction.response.send_message("找不到該分類", ephemeral=True)

@@ -10,6 +10,11 @@ from discord.ext import commands
 LOGGER = logging.getLogger(__name__)
 
 
+def _check_hierarchy(issuer: discord.Member, target: discord.Member) -> bool:
+    """Return True if issuer outranks target (action is allowed)."""
+    return issuer.top_role > target.top_role
+
+
 class ModerationCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -44,10 +49,11 @@ class ModerationCog(commands.Cog):
     async def mod_kick(
         self, interaction: discord.Interaction, member: discord.Member, reason: str | None = None
     ) -> None:
-        if isinstance(interaction.user, discord.Member):
-            if member.top_role >= interaction.user.top_role:
-                await interaction.response.send_message("你無法踢出此成員", ephemeral=True)
-                return
+        if isinstance(interaction.user, discord.Member) and not _check_hierarchy(
+            interaction.user, member
+        ):
+            await interaction.response.send_message("你無法踢出此成員", ephemeral=True)
+            return
 
         try:
             await member.kick(reason=reason or "未提供原因")
@@ -62,10 +68,11 @@ class ModerationCog(commands.Cog):
     async def mod_ban(
         self, interaction: discord.Interaction, member: discord.Member, reason: str | None = None
     ) -> None:
-        if isinstance(interaction.user, discord.Member):
-            if member.top_role >= interaction.user.top_role:
-                await interaction.response.send_message("你無法封鎖此成員", ephemeral=True)
-                return
+        if isinstance(interaction.user, discord.Member) and not _check_hierarchy(
+            interaction.user, member
+        ):
+            await interaction.response.send_message("你無法封鎖此成員", ephemeral=True)
+            return
 
         try:
             await member.ban(reason=reason or "未提供原因")
@@ -104,10 +111,11 @@ class ModerationCog(commands.Cog):
         duration: int,
         reason: str | None = None,
     ) -> None:
-        if isinstance(interaction.user, discord.Member):
-            if member.top_role >= interaction.user.top_role:
-                await interaction.response.send_message("你無法禁言此成員", ephemeral=True)
-                return
+        if isinstance(interaction.user, discord.Member) and not _check_hierarchy(
+            interaction.user, member
+        ):
+            await interaction.response.send_message("你無法禁言此成員", ephemeral=True)
+            return
 
         if duration < 1 or duration > 40320:
             await interaction.response.send_message("時長必須在 1-40320 分鐘之間", ephemeral=True)

@@ -1,12 +1,190 @@
 """Utility commands"""
 
 import sys
+from typing import NamedTuple
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
-from core import BOT_NAME, BOT_VERSION
+from core import BOT_NAME, BOT_VERSION, GIT_COMMIT
+
+
+class _Cmd(NamedTuple):
+    usage: str
+    description: str
+
+
+class _Category(NamedTuple):
+    title: str
+    intro: str
+    commands: list[_Cmd]
+
+
+_PUBLIC_CATEGORIES: list[_Category] = [
+    _Category(
+        "工具",
+        "Bot 基本功能與資訊查詢",
+        [
+            _Cmd("/ping", "查看 Bot 目前的網路延遲"),
+            _Cmd("/version", "顯示 Bot 版本與 Git Commit 資訊"),
+            _Cmd("/info server", "查看目前伺服器的詳細資訊"),
+            _Cmd("/info user [成員]", "查看指定成員的個人資訊"),
+            _Cmd("/info avatar [成員]", "查看指定成員的頭像"),
+            _Cmd("/help", "顯示此指令說明"),
+        ],
+    ),
+    _Category(
+        "遊戲",
+        "各種互動小遊戲",
+        [
+            _Cmd("/game roll [面數]", "擲骰子，預設為 D6"),
+            _Cmd("/game choose <選項...>", "從多個選項中隨機選一個"),
+            _Cmd("/game rps", "與 Bot 玩猜拳"),
+            _Cmd("/game roulette", "俄羅斯輪盤"),
+        ],
+    ),
+    _Category(
+        "占卜",
+        "每日運勢與塔羅牌",
+        [
+            _Cmd("/fortune", "抽取今日綜合運勢"),
+            _Cmd("/tarot [主題]", "抽取每日塔羅牌，可指定主題"),
+        ],
+    ),
+    _Category(
+        "AI",
+        "AI 問答功能",
+        [
+            _Cmd("/ai <問題>", "向 AI 提問，以繁體中文回答"),
+        ],
+    ),
+    _Category(
+        "餐點",
+        "餐點推薦與瀏覽",
+        [
+            _Cmd("/eat", "從餐點清單隨機推薦一份"),
+            _Cmd("/food cat", "列出所有餐點分類"),
+            _Cmd("/food show <分類>", "顯示指定分類內的所有餐點"),
+        ],
+    ),
+    _Category(
+        "TFT",
+        "TFT 戰棋資訊查詢",
+        [
+            _Cmd("/tft", "查看 TW 伺服器排行榜門檻"),
+            _Cmd("/tft <名稱#TAG>", "查詢指定玩家的段位與排名"),
+        ],
+    ),
+    _Category(
+        "活動",
+        "抽獎與生日相關功能",
+        [
+            _Cmd("/giveaway", "建立並管理抽獎活動"),
+            _Cmd("/bday menu", "生日功能選單（登記 / 訂閱 / 查看）"),
+        ],
+    ),
+]
+
+_MOD_CATEGORY = _Category(
+    "管理",
+    "需要管理權限的指令",
+    [
+        _Cmd("/mod clear <數量>", "清除指定數量的訊息（manage_messages）"),
+        _Cmd("/mod kick <成員>", "踢出成員（kick_members）"),
+        _Cmd("/mod ban <成員>", "封鎖成員（ban_members）"),
+        _Cmd("/mod unban <用戶ID>", "解除成員封鎖（ban_members）"),
+        _Cmd("/mod mute <成員>", "禁言成員（moderate_members）"),
+        _Cmd("/mod unmute <成員>", "解除成員禁言（moderate_members）"),
+        _Cmd("/food add <分類> <餐點>", "新增餐點（manage_messages）"),
+        _Cmd("/food remove <分類> <餐點>", "移除餐點（manage_messages）"),
+    ],
+)
+
+_ADMIN_CATEGORY = _Category(
+    "管理員",
+    "需要伺服器管理員權限的指令",
+    [
+        _Cmd("/log set <頻道>", "設定日誌記錄頻道"),
+        _Cmd("/log unset", "取消日誌記錄頻道設定"),
+        _Cmd("/rate", "查看 Discord API 速率限制統計"),
+        _Cmd("/food delete <分類>", "刪除整個餐點分類"),
+        _Cmd("/bday init", "初始化伺服器的生日功能"),
+    ],
+)
+
+_OWNER_CATEGORY = _Category(
+    "Bot Owner",
+    "Bot Owner 專用指令",
+    [
+        _Cmd("/cog reload <cog>", "重載指定 Cog"),
+        _Cmd("/cog load <cog>", "載入指定 Cog"),
+        _Cmd("/cog unload <cog>", "卸載指定 Cog"),
+        _Cmd("/cog list", "列出所有已載入的 Cog"),
+        _Cmd("/cog sync", "同步指令樹"),
+    ],
+)
+
+
+def _build_overview_embed(categories: list[_Category]) -> discord.Embed:
+    embed = discord.Embed(
+        title=f"{BOT_NAME} 指令列表",
+        description="從下方選單選擇分類以查看詳細說明",
+        color=discord.Color.blue(),
+    )
+    for i, cat in enumerate(categories):
+        embed.add_field(name=cat.title, value=cat.intro, inline=True)
+        # 每兩個 inline field 後插入空白佔位，強制換行，避免三欄過擠
+        if i % 2 == 1:
+            embed.add_field(name="\u200b", value="\u200b", inline=True)
+    return embed
+
+
+def _build_category_embed(cat: _Category) -> discord.Embed:
+    embed = discord.Embed(title=cat.title, description=cat.intro, color=discord.Color.blue())
+    value = "\n".join(f"`{cmd.usage}` — {cmd.description}" for cmd in cat.commands)
+    embed.add_field(name="指令", value=value, inline=False)
+    return embed
+
+
+_HELP_VIEW_TIMEOUT = 120
+
+
+class HelpView(discord.ui.View):
+    def __init__(self, categories: list[_Category], user_id: int) -> None:
+        super().__init__(timeout=_HELP_VIEW_TIMEOUT)
+        self.user_id = user_id
+        self.message: discord.Message | None = None
+        self._embeds = {cat.title: _build_category_embed(cat) for cat in categories}
+
+        options = [
+            discord.SelectOption(label=cat.title, description=cat.intro[:100]) for cat in categories
+        ]
+        self.select: discord.ui.Select = discord.ui.Select(
+            placeholder="選擇分類...",
+            options=options,
+            min_values=1,
+            max_values=1,
+        )
+        self.select.callback = self._on_select  # type: ignore[method-assign]
+        self.add_item(self.select)
+
+    async def _on_select(self, interaction: discord.Interaction) -> None:
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("這不是你的選單", ephemeral=True)
+            return
+
+        await interaction.response.edit_message(
+            embed=self._embeds[self.select.values[0]], view=self
+        )
+
+    async def on_timeout(self) -> None:
+        self.select.disabled = True
+        if self.message:
+            try:
+                await self.message.edit(view=self)
+            except discord.HTTPException:
+                pass
 
 
 class UtilityCog(commands.Cog):
@@ -20,13 +198,13 @@ class UtilityCog(commands.Cog):
 
     @app_commands.command(name="version", description="Bot 版本資訊")
     async def version(self, interaction: discord.Interaction) -> None:
-        embed = discord.Embed(title=f"{BOT_NAME} 版本資訊", color=discord.Color.blue())
-
         python_version = (
             f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
         )
 
+        embed = discord.Embed(title=f"{BOT_NAME} 版本資訊", color=discord.Color.blue())
         embed.add_field(name="Bot 版本", value=f"`{BOT_VERSION}`", inline=True)
+        embed.add_field(name="Commit", value=f"`{GIT_COMMIT}`", inline=True)
         embed.add_field(name="discord.py", value=f"`{discord.__version__}`", inline=True)
         embed.add_field(name="Python", value=f"`{python_version}`", inline=True)
 
@@ -59,7 +237,6 @@ class UtilityCog(commands.Cog):
         embed = discord.Embed(
             title=guild.name, description=f"伺服器 ID: {guild.id}", color=discord.Color.blue()
         )
-
         embed.add_field(
             name="擁有者", value=guild.owner.mention if guild.owner else "未知", inline=True
         )
@@ -82,7 +259,6 @@ class UtilityCog(commands.Cog):
         embed = discord.Embed(
             title=f"{target.display_name} 的資訊", color=target.color or discord.Color.default()
         )
-
         embed.add_field(name="用戶名", value=str(target), inline=True)
         embed.add_field(name="ID", value=str(target.id), inline=True)
 
@@ -124,108 +300,29 @@ class UtilityCog(commands.Cog):
 
     @app_commands.command(name="help", description="顯示所有指令")
     async def help(self, interaction: discord.Interaction) -> None:
-        embed = discord.Embed(
-            title="Niibot 指令列表",
-            description="以下是所有可用的斜線指令",
-            color=discord.Color.blue(),
-        )
+        categories: list[_Category] = list(_PUBLIC_CATEGORIES)
 
-        embed.add_field(
-            name="【工具指令】",
-            value=(
-                "`/ping` - Bot 延遲\n"
-                "`/version` - Bot 版本資訊\n"
-                "`/info server` - 伺服器資訊\n"
-                "`/info user` - 用戶資訊\n"
-                "`/info avatar` - 用戶頭像\n"
-                "`/help` - 顯示此說明"
-            ),
-            inline=False,
-        )
-
-        embed.add_field(
-            name="【遊戲指令】",
-            value=(
-                "`/game roll` - 擲骰子\n"
-                "`/game choose` - 隨機選擇\n"
-                "`/game rps` - 猜拳遊戲\n"
-                "`/game roulette` - 俄羅斯輪盤"
-            ),
-            inline=False,
-        )
-
-        embed.add_field(
-            name="【占卜與活動】",
-            value=("`/fortune` - 今日運勢\n`/tarot` - 每日塔羅\n`/giveaway` - 建立抽獎活動"),
-            inline=False,
-        )
-
-        embed.add_field(name="【AI 助手】", value="`/ai` - 向 AI 提問", inline=False)
-
-        embed.add_field(
-            name="【餐點推薦】",
-            value=(
-                "`/eat` - 餐點推薦選單\n`/food cat` - 列出所有分類\n`/food show` - 顯示分類內項目"
-            ),
-            inline=False,
-        )
-
-        embed.add_field(name="【TFT 戰棋】", value="`/tft` - 查詢 TFT 排行榜", inline=False)
-
-        embed.add_field(
-            name="【生日系統】", value="`/bday menu` - 生日功能選單（設定/訂閱/查看）", inline=False
-        )
-
-        if (
-            isinstance(interaction.user, discord.Member)
-            and interaction.user.guild_permissions.manage_messages
-        ):
-            embed.add_field(
-                name="【管理指令】（需要相應權限）",
-                value=(
-                    "`/mod clear` - 清除訊息\n"
-                    "`/mod kick` - 踢出成員\n"
-                    "`/mod ban` - 封鎖成員\n"
-                    "`/mod unban` - 解除封鎖\n"
-                    "`/mod mute` - 禁言成員\n"
-                    "`/mod unmute` - 解除禁言\n"
-                    "`/food add` - 新增餐點\n"
-                    "`/food remove` - 移除餐點"
-                ),
-                inline=False,
-            )
-
-        if (
-            isinstance(interaction.user, discord.Member)
-            and interaction.user.guild_permissions.administrator
-        ):
-            embed.add_field(
-                name="【管理員專用】",
-                value=(
-                    "`/log set` - 設定日誌頻道\n"
-                    "`/log unset` - 取消日誌頻道設定\n"
-                    "`/rate` - 查看 API 速率限制統計\n"
-                    "`/food delete` - 刪除餐點分類\n"
-                    "`/bday init` - 初始化生日系統"
-                ),
-                inline=False,
-            )
+        if isinstance(interaction.user, discord.Member):
+            perms = interaction.user.guild_permissions
+            if any(
+                (
+                    perms.manage_messages,
+                    perms.kick_members,
+                    perms.ban_members,
+                    perms.moderate_members,
+                )
+            ):
+                categories.append(_MOD_CATEGORY)
+            if perms.administrator:
+                categories.append(_ADMIN_CATEGORY)
 
         if interaction.user.id == self.bot.owner_id:
-            embed.add_field(
-                name="【Bot Owner 專用】",
-                value=(
-                    "`/cog reload` - 重載 Cog\n"
-                    "`/cog load` - 載入 Cog\n"
-                    "`/cog unload` - 卸載 Cog\n"
-                    "`/cog list` - 列出已載入的 Cog\n"
-                    "`/cog sync` - 同步指令樹"
-                ),
-                inline=False,
-            )
+            categories.append(_OWNER_CATEGORY)
 
-        embed.set_footer(text="使用 / 開頭來使用斜線指令")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        view = HelpView(categories, interaction.user.id)
+        embed = _build_overview_embed(categories)
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        view.message = await interaction.original_response()
 
 
 async def setup(bot: commands.Bot) -> None:

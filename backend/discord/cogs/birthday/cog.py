@@ -93,6 +93,22 @@ class BirthdayCog(commands.Cog):
         except (discord.NotFound, discord.HTTPException):
             return None
 
+    async def _build_birthday_lines(
+        self,
+        guild: discord.Guild,
+        birthdays: list,
+        with_rate_limit: bool = False,
+    ) -> list[str]:
+        """Build mention lines for a list of (user_id, month, day, ...) birthday rows."""
+        lines: list[str] = []
+        for i, (uid, m, d, *_) in enumerate(birthdays):
+            member = await self._fetch_member(guild, uid)
+            if member:
+                lines.append(f"`{m:>2}/{d:<2}` {member.mention}")
+            if with_rate_limit and i % 5 == 4:
+                await asyncio.sleep(0.5)
+        return lines
+
     def _get_age(self, birth_year: int) -> int:
         return datetime.now(TZ_UTC8).year - birth_year
 
@@ -232,13 +248,7 @@ class BirthdayCog(commands.Cog):
                     continue
 
                 # 建立當月壽星 Embed
-                lines = []
-                for i, (uid, m, d, _) in enumerate(month_bdays):
-                    member = await self._fetch_member(guild, uid)
-                    if member:
-                        lines.append(f"`{m:>2}/{d:<2}` {member.mention}")
-                    if i % 5 == 4:
-                        await asyncio.sleep(0.5)  # Rate limit 保護：每 5 筆暫停
+                lines = await self._build_birthday_lines(guild, month_bdays, with_rate_limit=True)
 
                 if not lines:
                     continue
@@ -451,21 +461,13 @@ class BirthdayCog(commands.Cog):
 
         # 本月壽星
         if month_bdays:
-            lines = []
-            for uid, m, d, _ in month_bdays:
-                member = await self._fetch_member(interaction.guild, uid)
-                if member:
-                    lines.append(f"`{m:>2}/{d:<2}` {member.mention}")
+            lines = await self._build_birthday_lines(interaction.guild, month_bdays)
             if lines:
                 embed.add_field(name=f"{now.month} 月壽星", value="\n".join(lines), inline=False)
 
         # 即將到來
         if upcoming:
-            lines = []
-            for uid, m, d, _ in upcoming:
-                member = await self._fetch_member(interaction.guild, uid)
-                if member:
-                    lines.append(f"`{m:>2}/{d:<2}` {member.mention}")
+            lines = await self._build_birthday_lines(interaction.guild, upcoming)
             if lines:
                 embed.add_field(name="即將到來", value="\n".join(lines), inline=False)
 

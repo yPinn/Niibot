@@ -15,8 +15,14 @@ class AdminCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    def cog_check(self, ctx: commands.Context) -> bool:
-        return ctx.author.id == self.bot.owner_id if self.bot.owner_id else False
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:  # type: ignore[override]
+        if interaction.user.id != self.bot.owner_id:
+            await interaction.response.send_message("權限不足", ephemeral=True)
+            LOGGER.warning(
+                f"Unauthorized cog command attempt: {interaction.user} (ID: {interaction.user.id})"
+            )
+            return False
+        return True
 
     async def _loaded_cog_autocomplete(
         self, interaction: discord.Interaction, current: str
@@ -60,13 +66,6 @@ class AdminCog(commands.Cog):
     @app_commands.describe(cog="Cog 名稱（例如：fortune, games）")
     @app_commands.autocomplete(cog=_loaded_cog_autocomplete)
     async def cog_reload(self, interaction: discord.Interaction, cog: str) -> None:
-        if interaction.user.id != self.bot.owner_id:
-            await interaction.response.send_message("權限不足", ephemeral=True)
-            LOGGER.warning(
-                f"Unauthorized reload attempt: {interaction.user} (ID: {interaction.user.id})"
-            )
-            return
-
         cog_path = f"cogs.{cog}"
 
         try:
@@ -97,13 +96,6 @@ class AdminCog(commands.Cog):
     @app_commands.describe(cog="Cog 名稱")
     @app_commands.autocomplete(cog=_all_cog_autocomplete)
     async def cog_do_load(self, interaction: discord.Interaction, cog: str) -> None:
-        if interaction.user.id != self.bot.owner_id:
-            await interaction.response.send_message("權限不足", ephemeral=True)
-            LOGGER.warning(
-                f"Unauthorized load attempt: {interaction.user} (ID: {interaction.user.id})"
-            )
-            return
-
         cog_path = f"cogs.{cog}"
 
         try:
@@ -122,13 +114,6 @@ class AdminCog(commands.Cog):
     @app_commands.describe(cog="Cog 名稱")
     @app_commands.autocomplete(cog=_loaded_cog_autocomplete)
     async def cog_do_unload(self, interaction: discord.Interaction, cog: str) -> None:
-        if interaction.user.id != self.bot.owner_id:
-            await interaction.response.send_message("權限不足", ephemeral=True)
-            LOGGER.warning(
-                f"Unauthorized unload attempt: {interaction.user} (ID: {interaction.user.id})"
-            )
-            return
-
         if cog.lower() == "admin":
             await interaction.response.send_message("無法卸載 Admin Cog", ephemeral=True)
             return
@@ -147,10 +132,6 @@ class AdminCog(commands.Cog):
 
     @cogmgr.command(name="list", description="列出已載入的 Cog")
     async def cog_list(self, interaction: discord.Interaction) -> None:
-        if interaction.user.id != self.bot.owner_id:
-            await interaction.response.send_message("權限不足", ephemeral=True)
-            return
-
         cogs = [ext.split(".")[-1] for ext in self.bot.extensions.keys() if "cogs" in ext]
 
         if cogs:
@@ -163,13 +144,6 @@ class AdminCog(commands.Cog):
 
     @cogmgr.command(name="sync", description="同步指令樹")
     async def cog_sync(self, interaction: discord.Interaction) -> None:
-        if interaction.user.id != self.bot.owner_id:
-            await interaction.response.send_message("權限不足", ephemeral=True)
-            LOGGER.warning(
-                f"Unauthorized sync attempt: {interaction.user} (ID: {interaction.user.id})"
-            )
-            return
-
         try:
             await interaction.response.defer(ephemeral=True)
             synced = await self.bot.tree.sync()

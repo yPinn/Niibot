@@ -6,7 +6,7 @@ import logging
 import random
 import re
 import time
-from datetime import UTC
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import quote
 
@@ -66,6 +66,13 @@ class TftCog(commands.Cog):
 
         self._load_embed_config()
 
+    def _make_headers(self) -> dict[str, str]:
+        return {
+            "User-Agent": random.choice(self._user_agents),
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "zh-TW,zh;q=0.9,en;q=0.8",
+        }
+
     def _load_embed_config(self) -> None:
         """載入全域 embed 配置"""
         try:
@@ -96,11 +103,7 @@ class TftCog(commands.Cog):
 
             response = await self._client.get(
                 "https://tactics.tools/leaderboards/tw",
-                headers={
-                    "User-Agent": random.choice(self._user_agents),
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                    "Accept-Language": "zh-TW,zh;q=0.9,en;q=0.8",
-                },
+                headers=self._make_headers(),
             )
 
             if response.status_code != 200:
@@ -145,11 +148,7 @@ class TftCog(commands.Cog):
 
             response = await self._client.get(
                 url,
-                headers={
-                    "User-Agent": random.choice(self._user_agents),
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                    "Accept-Language": "zh-TW,zh;q=0.9,en;q=0.8",
-                },
+                headers=self._make_headers(),
             )
 
             if response.status_code != 200:
@@ -308,9 +307,6 @@ class TftCog(commands.Cog):
         tag: str,
     ) -> None:
         """發送玩家資料 Embed"""
-        from datetime import datetime
-        from urllib.parse import quote
-
         tier = player_data.get("tier", "")
         rank_division = player_data.get("rank", "")
         lp = player_data.get("leaguePoints", 0)

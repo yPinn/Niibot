@@ -62,6 +62,18 @@ class RouletteView(ui.View):
         self.bullet_position = random.randint(0, 5)
         self.attempts = 0
 
+    def _build_result_embed(
+        self,
+        interaction: discord.Interaction,
+        color: discord.Color,
+        result_text: str,
+    ) -> discord.Embed:
+        embed = self._create_embed("俄羅斯輪盤", color)
+        embed.set_thumbnail(url=interaction.user.display_avatar.url)
+        embed.add_field(name="**結果**", value=f"> {result_text}", inline=False)
+        embed.add_field(name="**回合數**", value=f"> {self.chamber_position}/6", inline=True)
+        return embed
+
     def _create_embed(self, title: str, color: discord.Color) -> discord.Embed:
         embed = discord.Embed(title=title, color=color)
 
@@ -84,44 +96,23 @@ class RouletteView(ui.View):
         self.chamber_position += 1
 
         if self.chamber_position - 1 == self.bullet_position:
-            embed = self._create_embed("俄羅斯輪盤", discord.Color.red())
-            embed.set_thumbnail(url=interaction.user.display_avatar.url)
-
-            embed.add_field(
-                name="**結果**", value=f"> {interaction.user.display_name} 中彈身亡", inline=False
+            embed = self._build_result_embed(
+                interaction, discord.Color.red(), f"{interaction.user.display_name} 中彈身亡"
             )
-            embed.add_field(name="**回合數**", value=f"> {self.chamber_position}/6", inline=True)
-
             button.disabled = True
             await interaction.response.edit_message(embed=embed, view=self)
             self.stop()
         else:
             if self.chamber_position >= 6:
-                embed = self._create_embed("俄羅斯輪盤", discord.Color.gold())
-                embed.set_thumbnail(url=interaction.user.display_avatar.url)
-
-                embed.add_field(
-                    name="**結果**",
-                    value=f"> {interaction.user.display_name} 存活到最後",
-                    inline=False,
+                embed = self._build_result_embed(
+                    interaction, discord.Color.gold(), f"{interaction.user.display_name} 存活到最後"
                 )
-                embed.add_field(
-                    name="**回合數**", value=f"> {self.chamber_position}/6", inline=True
-                )
-
                 button.disabled = True
                 self.stop()
             else:
-                embed = self._create_embed("俄羅斯輪盤", discord.Color.green())
-                embed.set_thumbnail(url=interaction.user.display_avatar.url)
-
-                embed.add_field(
-                    name="**結果**", value=f"> {interaction.user.display_name} 倖存", inline=False
+                embed = self._build_result_embed(
+                    interaction, discord.Color.green(), f"{interaction.user.display_name} 倖存"
                 )
-                embed.add_field(
-                    name="**回合數**", value=f"> {self.chamber_position}/6", inline=True
-                )
-
             await interaction.response.edit_message(embed=embed, view=self)
 
     async def on_timeout(self) -> None:

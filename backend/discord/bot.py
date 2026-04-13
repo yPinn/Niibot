@@ -234,10 +234,10 @@ class NiibotClient(commands.Bot):
             except Exception as e:
                 logger.warning(f"Failed to fetch application_info: {e}")
 
+        status = BotConfig.get_status()
+        activity = BotConfig.get_activity()
         try:
-            await self.change_presence(
-                status=BotConfig.get_status(), activity=BotConfig.get_activity()
-            )
+            await self.change_presence(status=status, activity=activity)
         except Exception as e:
             logger.warning(f"Failed to set bot presence: {e}")
 
@@ -245,8 +245,6 @@ class NiibotClient(commands.Bot):
             logger.error("Bot user is None")
             return
 
-        status = BotConfig.get_status()
-        activity = BotConfig.get_activity()
         activity_str = f"{activity.name}" if activity else "None"
         logger.info(
             f"Bot ready: {self.user} (ID: {self.user.id}) | "
@@ -283,6 +281,11 @@ def _format_duration(seconds: float) -> str:
     return f"{s}s"
 
 
+def _is_cloudflare_error(e: discord.HTTPException) -> bool:
+    text = getattr(e, "text", "") or ""
+    return "1015" in text or "cloudflare" in text.lower()
+
+
 def _parse_retry_after(e: discord.HTTPException, base_delay: float, attempt: int) -> float:
     """Extract retry_after from a 429 response (headers, JSON body, or fallback).
 
@@ -317,7 +320,7 @@ def _parse_retry_after(e: discord.HTTPException, base_delay: float, attempt: int
 
     # 3. Detect Cloudflare ban (1015) — enforce minimum 20 min wait
     text = getattr(e, "text", "") or ""
-    is_cloudflare = "1015" in text or "cloudflare" in text.lower()
+    is_cloudflare = _is_cloudflare_error(e)
 
     if is_cloudflare:
         cf_min = 1200.0  # 20 minutes
@@ -365,8 +368,7 @@ async def main() -> None:
 
                 except discord.HTTPException as e:
                     if e.status == 429:
-                        text = getattr(e, "text", "") or ""
-                        is_cloudflare = "1015" in text or "cloudflare" in text.lower()
+                        is_cloudflare = _is_cloudflare_error(e)
 
                         # Cloudflare bans: always wait, never count toward retries
                         if not is_cloudflare:
