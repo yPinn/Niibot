@@ -14,10 +14,12 @@ vi.mock('@/lib/apiCache', () => ({
 }))
 
 import { getCurrentUser, getTwitchMonitoredChannels } from '@/api'
+import { logout as apiLogout } from '@/api/user'
 import { AuthProvider, isPublicPath, useAuth } from '@/contexts/AuthContext'
 
 const mockGetCurrentUser = getCurrentUser as ReturnType<typeof vi.fn>
 const mockGetChannels = getTwitchMonitoredChannels as ReturnType<typeof vi.fn>
+const mockApiLogout = apiLogout as ReturnType<typeof vi.fn>
 
 const TWITCH_USER = {
   id: 'u1',
@@ -66,6 +68,7 @@ describe('isPublicPath', () => {
 describe('AuthProvider', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.spyOn(console, 'error').mockImplementation(() => {})
     // Navigate to a protected path so the auth bootstrap actually fires.
     vi.stubGlobal('location', { pathname: '/dashboard', href: 'http://localhost/dashboard' })
     mockGetCurrentUser.mockResolvedValue(TWITCH_USER)
@@ -73,6 +76,7 @@ describe('AuthProvider', () => {
   })
 
   afterEach(() => {
+    vi.restoreAllMocks()
     vi.unstubAllGlobals()
   })
 
@@ -194,5 +198,136 @@ describe('AuthProvider 401 interceptor', () => {
     await waitFor(() => expect(result.current.isInitialized).toBe(true))
     // The event fired before isInitializedRef was true — handler should have bailed out
     expect(result.current.user).not.toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// refreshUser
+// ---------------------------------------------------------------------------
+
+describe('refreshUser', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.stubGlobal('location', { pathname: '/dashboard', href: 'http://localhost/dashboard' })
+    mockGetCurrentUser.mockResolvedValue(TWITCH_USER)
+    mockGetChannels.mockResolvedValue([])
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  it('updates user when called successfully', async () => {
+    const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider })
+    await waitFor(() => expect(result.current.isInitialized).toBe(true))
+
+    const updatedUser = { ...TWITCH_USER, display_name: 'Updated' }
+    mockGetCurrentUser.mockResolvedValue(updatedUser)
+
+    await act(async () => {
+      await result.current.refreshUser()
+    })
+
+    expect(result.current.user?.display_name).toBe('Updated')
+  })
+
+  it('sets user to null when getCurrentUser throws', async () => {
+    const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider })
+    await waitFor(() => expect(result.current.isInitialized).toBe(true))
+    expect(result.current.isAuthenticated).toBe(true)
+
+    mockGetCurrentUser.mockRejectedValue(new Error('fetch error'))
+
+    await act(async () => {
+      await result.current.refreshUser()
+    })
+
+    expect(result.current.user).toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// logout
+// ---------------------------------------------------------------------------
+
+describe('logout', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.stubGlobal('location', { pathname: '/dashboard', href: 'http://localhost/dashboard' })
+    mockGetCurrentUser.mockResolvedValue(TWITCH_USER)
+    mockGetChannels.mockResolvedValue([])
+    mockApiLogout.mockResolvedValue(undefined)
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  it('clears user and channels then redirects to /login', async () => {
+    const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider })
+    await waitFor(() => expect(result.current.isInitialized).toBe(true))
+    expect(result.current.isAuthenticated).toBe(true)
+
+    await act(async () => {
+      await result.current.logout()
+    })
+
+    expect(mockApiLogout).toHaveBeenCalledOnce()
+    expect(result.current.user).toBeNull()
+    expect(result.current.channels).toEqual([])
+    expect(window.location.href).toBe('/login')
+  })
+
+  it('still clears state and redirects even when apiLogout throws', async () => {
+    mockApiLogout.mockRejectedValue(new Error('network error'))
+    const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider })
+    await waitFor(() => expect(result.current.isInitialized).toBe(true))
+
+    await act(async () => {
+      await result.current.logout()
+    })
+
+    expect(result.current.user).toBeNull()
+    expect(result.current.channels).toEqual([])
+    expect(window.location.href).toBe('/login')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// refreshChannels — error path
+// ---------------------------------------------------------------------------
+
+describe('refreshChannels', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.stubGlobal('location', { pathname: '/dashboard', href: 'http://localhost/dashboard' })
+    mockGetCurrentUser.mockResolvedValue(TWITCH_USER)
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  it('sets channels to empty array when getTwitchMonitoredChannels throws', async () => {
+    // Initial load succeeds, explicit refreshChannels call fails
+    mockGetChannels
+      .mockResolvedValueOnce([{ id: 'c1' }])
+      .mockRejectedValueOnce(new Error('channels error'))
+
+    const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider })
+    await waitFor(() => expect(result.current.isInitialized).toBe(true))
+    expect(result.current.channels).toHaveLength(1)
+
+    await act(async () => {
+      await result.current.refreshChannels()
+    })
+
+    expect(result.current.channels).toEqual([])
   })
 })
