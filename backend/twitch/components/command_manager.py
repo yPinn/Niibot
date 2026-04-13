@@ -33,9 +33,9 @@ import re
 from typing import TYPE_CHECKING
 
 from twitchio.ext import commands
+from utils.trigger_matching import validate_regex_pattern
 
 from shared.repositories.command_config import CommandConfigRepository
-from utils.trigger_matching import validate_regex_pattern
 
 if TYPE_CHECKING:
     from core.bot import Bot
@@ -182,7 +182,7 @@ class CommandManagerComponent(commands.Component):
                 return
             case_sensitive = _parse_bool(options.get("cs", "off")) or False
             if match_type == "regex":
-                is_safe = await asyncio.get_event_loop().run_in_executor(
+                is_safe = await asyncio.get_running_loop().run_in_executor(
                     None, validate_regex_pattern, pattern
                 )
                 if not is_safe:
@@ -292,7 +292,7 @@ class CommandManagerComponent(commands.Component):
                     return
                 tkwargs["match_type"] = options["match"]
                 if options["match"] == "regex":
-                    is_safe = await asyncio.get_event_loop().run_in_executor(
+                    is_safe = await asyncio.get_running_loop().run_in_executor(
                         None, validate_regex_pattern, pattern
                     )
                     if not is_safe:

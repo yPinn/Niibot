@@ -136,7 +136,8 @@ class VideoQueueComponent(commands.Component):
             is_vertical = False
             video_type = "twitch_clip"
         else:
-            assert video_id is not None  # guaranteed: clip_slug is None only when video_id is set
+            if video_id is None:
+                raise RuntimeError("video_id is None but clip_slug is also None")
             # Fetch info from YouTube Data API (graceful fallback on failure)
             title, duration_seconds, view_count, is_vertical_from_api = await fetch_yt_info(
                 video_id, self._settings.youtube_api_key, self._session

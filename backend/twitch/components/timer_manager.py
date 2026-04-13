@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import random
 import re
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 import twitchio
@@ -70,7 +70,7 @@ class TimerManagerComponent(commands.Component):
     @routines.routine(delta=timedelta(seconds=60), wait_first=True)
     async def _timer_poll_loop(self) -> None:
         """Main poll loop: checks all channels every 60 seconds."""
-        now = datetime.now()
+        now = datetime.now(UTC)
 
         live_channels = [c for c in self.bot._subscribed_channels if c in self.bot._active_sessions]
         LOGGER.debug(
@@ -118,14 +118,6 @@ class TimerManagerComponent(commands.Component):
 
                 await self._fire_timer(channel_id, timer, current_lines, now)
 
-    async def _get_channel_id_by_name(self, channel_name: str) -> str | None:
-        """Resolve a Twitch channel name to an internal channel_id."""
-        for channel_id in list(self.bot._subscribed_channels):
-            record = await self.bot.channels.get_channel(channel_id)
-            if record and record.channel_name == channel_name:
-                return channel_id
-        return None
-
     @commands.Component.listener()
     async def event_message(self, message: twitchio.ChatMessage) -> None:
         """Handle timer alias commands — e.g. !socials fires the timer immediately.
@@ -151,7 +143,7 @@ class TimerManagerComponent(commands.Component):
 
         for timer in timers:
             if timer.command_alias and timer.command_alias.lower() == cmd_name:
-                now = datetime.now()
+                now = datetime.now(UTC)
                 current_lines = self.bot._channel_line_counts.get(channel_id, 0)
                 await self._fire_timer(channel_id, timer, current_lines, now)
                 break

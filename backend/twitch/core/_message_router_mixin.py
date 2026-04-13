@@ -13,10 +13,10 @@ import asyncio
 import logging
 
 import twitchio
-
-from core.guards import has_role, is_on_cooldown, record_cooldown
 from utils.substitution import substitute_variables as _substitute_variables
 from utils.trigger_matching import match_trigger
+
+from core.guards import has_role, is_on_cooldown, record_cooldown
 
 LOGGER: logging.Logger = logging.getLogger("Bot")
 
@@ -143,15 +143,16 @@ class _MessageRouterMixin:
 
         record_cooldown(channel_id, config.command_name)
 
+        asyncio.create_task(
+            self.command_configs.increment_usage_count(channel_id, config.command_name)  # type: ignore[attr-defined]
+        )
+        self._record_custom_command_analytics(channel_id, cmd_name)
+
         response = config.custom_response
         if response.startswith("!"):
             redirect = response[1:].replace("$(query)", query).strip()
             payload.text = f"!{redirect}"
             LOGGER.info(f"Custom command: !{cmd_name} -> !{redirect}")
-            asyncio.create_task(
-                self.command_configs.increment_usage_count(channel_id, config.command_name)  # type: ignore[attr-defined]
-            )
-            self._record_custom_command_analytics(channel_id, cmd_name)
             return False
         else:
             response = _substitute_variables(
@@ -164,10 +165,6 @@ class _MessageRouterMixin:
                 reply_to_message_id=str(payload.id),
             )
             LOGGER.info(f"Custom command: !{cmd_name} -> text response")
-            asyncio.create_task(
-                self.command_configs.increment_usage_count(channel_id, config.command_name)  # type: ignore[attr-defined]
-            )
-            self._record_custom_command_analytics(channel_id, cmd_name)
             return True
 
     def _record_custom_command_analytics(self, channel_id: str, cmd_name: str) -> None:

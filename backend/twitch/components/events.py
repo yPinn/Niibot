@@ -35,7 +35,7 @@ class EventComponent(commands.Component):
 
     def _cleanup_cache(self, cache: dict[str, datetime]) -> None:
         """清理過期的 cache 項目"""
-        now = datetime.now()
+        now = datetime.now(UTC)
         cooldown = timedelta(hours=self.COOLDOWN_HOURS)
         expired_keys = [
             user_id for user_id, last_time in cache.items() if now - last_time > cooldown
@@ -53,7 +53,7 @@ class EventComponent(commands.Component):
         if self._event_counter % self.CACHE_CLEANUP_INTERVAL == 0:
             self._cleanup_cache(self._follow_cache)
 
-        now = datetime.now()
+        now = datetime.now(UTC)
         cooldown = timedelta(hours=self.COOLDOWN_HOURS)
 
         if user_id in self._follow_cache:

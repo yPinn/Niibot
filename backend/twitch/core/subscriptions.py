@@ -1,9 +1,4 @@
-from typing import TYPE_CHECKING
-
 from twitchio import eventsub
-
-if TYPE_CHECKING:
-    pass
 
 
 def get_channel_subscriptions(

@@ -187,7 +187,6 @@ class _NotifyMixin:
 
         Catches any pg_notify misses (e.g. LISTEN connection dropped).
         """
-        await asyncio.sleep(300)
         while True:
             try:
                 for channel_id in list(self._subscribed_channels):  # type: ignore[attr-defined]

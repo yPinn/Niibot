@@ -55,10 +55,6 @@ class ChannelPointsComponent(commands.Component):
             await self._session.close()
             self._session = None
 
-    def _generate_oauth_url(self) -> str:
-        """返回前端頁面 URL"""
-        return self.settings.frontend_url
-
     @commands.Component.listener()
     async def event_custom_redemption_add(
         self,
@@ -205,12 +201,7 @@ class ChannelPointsComponent(commands.Component):
     ) -> None:
         """處理 Niibot 獎勵兌換"""
         try:
-            try:
-                oauth_url = self._generate_oauth_url()
-            except ValueError as e:
-                LOGGER.error(f"[Niibot] Failed to generate OAuth URL: {e}")
-                return
-
+            oauth_url = self.settings.frontend_url
             broadcaster = payload.broadcaster
             public_message = f"@{user_name} 已將授權連結發送至你的 Twitch 私訊！"
             try:
