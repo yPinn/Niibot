@@ -430,7 +430,7 @@ export default function Settings() {
       {/* Delete confirmation dialog */}
       <AlertDialog
         open={!!pendingDeletePlatform}
-        onOpenChange={open => !open && setPendingDeletePlatform(null)}
+        onOpenChange={(open: boolean) => !open && setPendingDeletePlatform(null)}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
