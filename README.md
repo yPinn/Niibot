@@ -5,6 +5,7 @@
 ## 功能概覽
 
 ### Twitch Bot
+
 - **指令系統** — 自訂指令（`!cmd`）、別名、冷卻、權限分級
 - **訊息觸發** — 關鍵字自動回應（contains / startswith / exact / regex，含 ReDoS 防護）
 - **計時器** — 排程廣播訊息
@@ -15,6 +16,7 @@
 - **AI 對話** — 整合 OpenRouter API
 
 ### Discord Bot
+
 - **生日追蹤** — 記錄、提醒、訂閱通知
 - **吃什麼** — 隨機美食推薦
 - **占卜娛樂** — 運勢、塔羅、TFT
@@ -23,6 +25,7 @@
 - **AI 對話** — 整合 OpenRouter API
 
 ### Web Dashboard
+
 - 指令與觸發詞的 CRUD 管理
 - 計時器、VideoQueue、GameQueue 設定
 - EventSub 事件設定
