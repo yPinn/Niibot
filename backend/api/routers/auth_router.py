@@ -162,7 +162,7 @@ async def twitch_oauth_callback(
         httponly=True,
         secure=True,
         samesite="lax",
-        max_age=30 * 24 * 60 * 60,
+        max_age=settings.jwt_expire_days * 24 * 60 * 60,
     )
 
     logger.info(f"User logged in and synced: {username} ({platform_user_id})")

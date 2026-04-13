@@ -7,12 +7,12 @@ from dataclasses import asdict
 
 import asyncpg
 
+from core.constants import VALID_ROLES as VALID_MIN_ROLES
 from shared.repositories.message_trigger import MessageTriggerRepository
 
 logger = logging.getLogger(__name__)
 
 VALID_MATCH_TYPES = {"contains", "startswith", "exact", "regex"}
-VALID_MIN_ROLES = {"everyone", "subscriber", "vip", "moderator", "broadcaster"}
 
 
 class MessageTriggerService:

@@ -9,7 +9,7 @@ from asyncpg import Pool
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from core.config import get_settings
+from core.config import Settings, get_settings
 from core.dependencies import get_current_channel_id, get_db_pool, get_twitch_api
 from services import TwitchAPIClient
 from shared.repositories.video_queue import (
@@ -109,7 +109,7 @@ async def _build_public_state(
     durations = [e.duration_seconds for e in queued]
     total_queued_duration: int | None = None
     if durations and all(d is not None for d in durations):
-        total_queued_duration = sum(d for d in durations if d is not None)
+        total_queued_duration = sum(durations)  # type: ignore[arg-type]
 
     return PublicVideoQueueState(
         enabled=settings.enabled,
@@ -416,6 +416,7 @@ async def add_video_entry(
     body: AddVideoRequest,
     channel_id: str = Depends(get_current_channel_id),
     pool: Pool = Depends(get_db_pool),
+    settings: Settings = Depends(get_settings),
 ) -> PublicVideoQueueState:
     """Broadcaster directly adds a video to the queue from the dashboard."""
     # Detect URL type: try YouTube first, then Twitch clip
@@ -440,11 +441,10 @@ async def add_video_entry(
         if await repo.video_is_active(channel_id, active_id):
             raise HTTPException(status_code=409, detail="Video already in queue")
 
-        s = get_settings()
         # Dashboard adds bypass max_queue_size and min_view_count — broadcaster has full authority over their own queue
         if clip_slug:
             title, duration_seconds, _ = await fetch_twitch_clip_info(
-                clip_slug, s.client_id, s.client_secret
+                clip_slug, settings.client_id, settings.client_secret
             )
             video_id = clip_slug
             is_vertical = False
@@ -453,7 +453,7 @@ async def add_video_entry(
             if video_id is None:
                 raise HTTPException(status_code=422, detail="No valid video source")
             title, duration_seconds, _, is_vertical_from_api = await fetch_yt_info(
-                video_id, s.youtube_api_key
+                video_id, settings.youtube_api_key
             )
             is_vertical = is_vertical or is_vertical_from_api
             video_type = "youtube"

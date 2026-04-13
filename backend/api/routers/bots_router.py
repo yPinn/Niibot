@@ -84,19 +84,23 @@ async def get_twitch_bot_status(
     return await check_bot_health(settings.twitch_bot_url, "Twitch")
 
 
+async def _proxy_health(url: str) -> dict:
+    try:
+        response = await _http_client.get(f"{url}/health")
+        if response.status_code == 200:
+            return response.json()
+        return {"status": "unhealthy", "bot_offline": True}
+    except Exception:
+        return {"status": "unhealthy", "bot_offline": True}
+
+
 @router.get("/twitch/health")
 async def get_twitch_bot_health(
     _user_id: str = Depends(get_current_user_id),
     settings: Settings = Depends(get_settings),
 ):
     """Twitch bot health check"""
-    try:
-        response = await _http_client.get(f"{settings.twitch_bot_url}/health")
-        if response.status_code == 200:
-            return response.json()
-        return {"status": "unhealthy", "bot_offline": True}
-    except Exception:
-        return {"status": "unhealthy", "bot_offline": True}
+    return await _proxy_health(settings.twitch_bot_url)
 
 
 @router.get("/discord/status", response_model=BotStatusResponse)
@@ -114,10 +118,4 @@ async def get_discord_bot_health(
     settings: Settings = Depends(get_settings),
 ):
     """Discord bot health check"""
-    try:
-        response = await _http_client.get(f"{settings.discord_bot_url}/health")
-        if response.status_code == 200:
-            return response.json()
-        return {"status": "unhealthy", "bot_offline": True}
-    except Exception:
-        return {"status": "unhealthy", "bot_offline": True}
+    return await _proxy_health(settings.discord_bot_url)

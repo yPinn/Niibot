@@ -11,8 +11,6 @@ from shared.repositories.timer import TimerConfigRepository
 
 logger = logging.getLogger(__name__)
 
-VALID_MIN_ROLES = {"everyone", "subscriber", "vip", "moderator", "broadcaster"}
-
 
 class TimerService:
     def __init__(self, pool: asyncpg.Pool) -> None:

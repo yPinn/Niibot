@@ -7,6 +7,7 @@ from asyncpg import Pool
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from core.constants import VALID_ROLES
 from core.dependencies import get_current_channel_id, get_db_pool, get_twitch_api
 from services import CommandConfigService, TwitchAPIClient
 
@@ -18,8 +19,6 @@ router = APIRouter(prefix="/api/commands", tags=["commands"])
 # ============================================
 # Response / Request Models
 # ============================================
-
-VALID_ROLES = {"everyone", "subscriber", "vip", "moderator", "broadcaster"}
 
 
 class CommandConfigResponse(BaseModel):

@@ -32,6 +32,45 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/donate", tags=["donation"])
 
+
+def _extract_video_id(youtube_url: str | None, media_share_enabled: bool) -> str | None:
+    """Validate and extract YouTube video ID from a URL.
+
+    Returns the video ID if valid and media share is enabled, else None.
+    Raises HTTPException(400) if the URL is provided but invalid.
+    """
+    if not youtube_url or not media_share_enabled:
+        return None
+    video_id, _ = extract_youtube_info(youtube_url)
+    if not video_id:
+        raise HTTPException(status_code=400, detail="Invalid YouTube URL")
+    return video_id
+
+
+async def _enqueue_donated_video(
+    pool: Pool,
+    channel_id: str,
+    youtube_video_id: str,
+    message: str | None,
+    platform: str,
+    trade_no: str,
+) -> None:
+    """Enqueue a donated YouTube video. Errors are logged but do not fail the webhook."""
+    try:
+        vq_repo = VideoQueueRepository(pool)
+        await vq_repo.add(
+            channel_id=channel_id,
+            video_id=youtube_video_id,
+            requested_by=message or "斗內點播",
+            source="donation",
+        )
+        logger.info(
+            f"[{platform} webhook] Enqueued video {youtube_video_id} for channel {channel_id}"
+        )
+    except Exception:
+        logger.exception(f"[{platform} webhook] Failed to enqueue video for order {trade_no}")
+
+
 # ============================================================
 # ECPay / OPay gateway constants
 # ============================================================
@@ -252,12 +291,7 @@ async def checkout(
     # NewebPay: AES-encrypted TradeInfo form
     # ------------------------------------------------------------------
     if body.platform == "newebpay":
-        youtube_video_id_nb: str | None = None
-        if body.youtube_url and config.media_share_enabled:
-            video_id, _ = extract_youtube_info(body.youtube_url)
-            if not video_id:
-                raise HTTPException(status_code=400, detail="Invalid YouTube URL")
-            youtube_video_id_nb = video_id
+        youtube_video_id_nb = _extract_video_id(body.youtube_url, config.media_share_enabled)
 
         trade_no = generate_trade_no()
         await repo.create_order(
@@ -296,12 +330,7 @@ async def checkout(
     # ------------------------------------------------------------------
     # ECPay / OPay: generate signed payment form
     # ------------------------------------------------------------------
-    youtube_video_id: str | None = None
-    if body.youtube_url and config.media_share_enabled:
-        video_id, _ = extract_youtube_info(body.youtube_url)
-        if not video_id:
-            raise HTTPException(status_code=400, detail="Invalid YouTube URL")
-        youtube_video_id = video_id
+    youtube_video_id = _extract_video_id(body.youtube_url, config.media_share_enabled)
 
     trade_no = generate_trade_no()
 
@@ -411,20 +440,14 @@ async def _handle_payment_webhook(
 
     # Enqueue YouTube video if media share is enabled
     if paid_order.youtube_video_id and config.media_share_enabled and paid_order.channel_id:
-        try:
-            vq_repo = VideoQueueRepository(pool)
-            await vq_repo.add(
-                channel_id=paid_order.channel_id,
-                video_id=paid_order.youtube_video_id,
-                requested_by=paid_order.message or "斗內點播",
-                source="donation",
-            )
-            logger.info(
-                f"[{platform} webhook] Enqueued video {paid_order.youtube_video_id} for channel {paid_order.channel_id}"
-            )
-        except Exception:
-            logger.exception(f"[{platform} webhook] Failed to enqueue video for order {trade_no}")
-            # Don't fail the webhook — payment already confirmed
+        await _enqueue_donated_video(
+            pool,
+            paid_order.channel_id,
+            paid_order.youtube_video_id,
+            paid_order.message,
+            platform,
+            trade_no,
+        )
 
     return "1|OK"
 
@@ -531,15 +554,13 @@ async def webhook_newebpay(
     )
 
     if paid_order.youtube_video_id and config_row.media_share_enabled and paid_order.channel_id:
-        try:
-            vq_repo = VideoQueueRepository(pool)
-            await vq_repo.add(
-                channel_id=paid_order.channel_id,
-                video_id=paid_order.youtube_video_id,
-                requested_by=paid_order.message or "斗內點播",
-                source="donation",
-            )
-        except Exception:
-            logger.exception(f"[newebpay webhook] Failed to enqueue video for order {trade_no}")
+        await _enqueue_donated_video(
+            pool,
+            paid_order.channel_id,
+            paid_order.youtube_video_id,
+            paid_order.message,
+            "newebpay",
+            trade_no,
+        )
 
     return JSONResponse({"status": "ok"}, status_code=200)
