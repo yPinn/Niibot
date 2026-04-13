@@ -92,22 +92,39 @@ AuthProvider
 
 ## 技術棧
 
-| 套件                                  | 版本   | 用途                     |
-| ------------------------------------- | ------ | ------------------------ |
-| React                                 | 19     | UI 框架                  |
-| TypeScript                            | ~5.9   | 型別系統                 |
-| Vite + `@vitejs/plugin-react-swc`     | 7      | 建置工具，SWC 編譯       |
-| Tailwind CSS v4 + `@tailwindcss/vite` | 4.1    | 原子 CSS，Vite plugin    |
-| `tw-animate-css`                      | 1.4    | Tailwind v4 動畫類別     |
-| React Router v7                       | 7.10   | 客戶端路由               |
-| Radix UI (`@radix-ui/react-*`)        | 各版本 | 無障礙原語元件           |
-| `next-themes`                         | 0.4    | 深色／淺色主題           |
-| `sonner`                              | 2.0    | Toast 通知               |
-| `recharts`                            | 3.7    | 數據圖表                 |
-| `class-variance-authority`            | 0.7    | 元件 variant API         |
-| `clsx` + `tailwind-merge`             | —      | className 合併           |
-| `motion`                              | 12     | 動畫（預計引入，未使用） |
-| Vitest + `@testing-library/react`     | 4.0    | 單元測試                 |
+### 核心
+
+| 套件                              | 版本 | 用途               |
+| --------------------------------- | ---- | ------------------ |
+| React                             | 19   | UI 框架            |
+| TypeScript                        | ~5.9 | 型別系統           |
+| Vite + `@vitejs/plugin-react-swc` | 7    | 建置工具，SWC 編譯 |
+| React Router v7                   | 7.10 | 客戶端路由         |
+
+### 樣式
+
+| 套件                                  | 版本 | 用途                     |
+| ------------------------------------- | ---- | ------------------------ |
+| Tailwind CSS v4 + `@tailwindcss/vite` | 4.1  | 原子 CSS，Vite plugin    |
+| `tw-animate-css`                      | 1.4  | Tailwind v4 動畫類別     |
+| `clsx` + `tailwind-merge`             | —    | className 合併           |
+| `motion`                              | 12   | 動畫（預計引入，未使用） |
+
+### UI 元件
+
+| 套件                           | 版本   | 用途             |
+| ------------------------------ | ------ | ---------------- |
+| Radix UI (`@radix-ui/react-*`) | 各版本 | 無障礙原語元件   |
+| `class-variance-authority`     | 0.7    | 元件 variant API |
+| `next-themes`                  | 0.4    | 深色／淺色主題   |
+| `sonner`                       | 2.0    | Toast 通知       |
+| `recharts`                     | 3.7    | 數據圖表         |
+
+### 測試
+
+| 套件                              | 版本 | 用途     |
+| --------------------------------- | ---- | -------- |
+| Vitest + `@testing-library/react` | 4.0  | 單元測試 |
 
 ## 部署
 
