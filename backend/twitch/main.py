@@ -12,6 +12,11 @@ if _backend_dir not in sys.path:
 
 
 def main() -> None:
+    # Load .env before setup_logging so ERROR_WEBHOOK_URL is available
+    from dotenv import load_dotenv
+
+    load_dotenv(dotenv_path=Path(__file__).parent / ".env")
+
     # Minimal imports for health server — bind port before heavy setup
     from core.health_server import HealthCheckServer
     from core.logging import setup_logging
