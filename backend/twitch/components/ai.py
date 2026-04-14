@@ -9,6 +9,7 @@ from openai import (
     AsyncOpenAI,
     AuthenticationError,
     BadRequestError,
+    NotFoundError,
     PermissionDeniedError,
     RateLimitError,
 )
@@ -155,6 +156,9 @@ class AIComponent(commands.Component):
                     continue
                 except APITimeoutError:
                     LOGGER.warning(f"AI [{model}] timed out, trying next model")
+                    continue
+                except NotFoundError:
+                    LOGGER.warning(f"AI [{model}] not found (404), trying next model")
                     continue
 
             # Twitch message limit is 500 characters — truncate at sentence boundary
