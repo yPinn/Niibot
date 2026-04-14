@@ -33,9 +33,9 @@ import re
 from typing import TYPE_CHECKING
 
 from twitchio.ext import commands
-from utils.trigger_matching import validate_regex_pattern
 
 from shared.repositories.command_config import CommandConfigRepository
+from utils.trigger_matching import validate_regex_pattern
 
 if TYPE_CHECKING:
     from core.bot import Bot
