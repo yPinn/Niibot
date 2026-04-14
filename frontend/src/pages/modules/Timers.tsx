@@ -14,6 +14,8 @@ import {
 import { PageHeader } from '@/components/PageHeader'
 import { SortableHead } from '@/components/SortableHead'
 import {
+  Alert,
+  AlertDescription,
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -29,6 +31,11 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
   Icon,
   Input,
   Label,
@@ -40,6 +47,7 @@ import {
   SheetHeader,
   SheetTitle,
   Skeleton,
+  Spinner,
   Switch,
   Table,
   TableBody,
@@ -312,9 +320,9 @@ export default function Timers() {
               </div>
             </div>
           ) : error ? (
-            <div className="flex items-center justify-center py-empty text-destructive">
-              {error}
-            </div>
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
           ) : (
             <div className="overflow-x-auto rounded-md border">
               <Table className="table-fixed">
@@ -355,17 +363,19 @@ export default function Timers() {
                   {sorted.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={5}>
-                        <div className="flex flex-col items-center justify-center gap-4 py-12 text-muted-foreground">
-                          <Icon
-                            icon="fa-solid fa-clock"
-                            wrapperClassName="size-20 opacity-25"
-                            className="text-[5rem]"
-                          />
-                          <div className="flex flex-col items-center gap-1">
-                            <span className="text-sm font-medium">尚無計時器</span>
-                            <span className="text-xs">點擊「新增計時器」開始設定</span>
-                          </div>
-                        </div>
+                        <Empty className="border-none">
+                          <EmptyHeader>
+                            <EmptyMedia>
+                              <Icon
+                                icon="fa-solid fa-clock"
+                                wrapperClassName="size-20 opacity-25"
+                                className="text-[5rem]"
+                              />
+                            </EmptyMedia>
+                            <EmptyTitle>尚無計時器</EmptyTitle>
+                            <EmptyDescription>點擊「新增計時器」開始設定</EmptyDescription>
+                          </EmptyHeader>
+                        </Empty>
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -519,9 +529,10 @@ export default function Timers() {
             )}
 
             {/* Advanced toggle */}
-            <button
-              type="button"
-              className="flex cursor-pointer items-center gap-2 text-sub text-muted-foreground transition-colors hover:text-foreground"
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-fit px-0 text-muted-foreground hover:text-foreground hover:bg-transparent"
               onClick={() =>
                 dispatch({ type: 'SET', field: 'showAdvanced', value: !form.showAdvanced })
               }
@@ -531,7 +542,7 @@ export default function Timers() {
                 wrapperClassName="size-3"
               />
               {form.showAdvanced ? '隱藏進階設定' : '顯示進階設定'}
-            </button>
+            </Button>
 
             {form.showAdvanced && (
               <div className="flex flex-col gap-card border-l-2 border-muted pl-page">
@@ -602,7 +613,8 @@ export default function Timers() {
               <Button variant="outline">取消</Button>
             </SheetClose>
             <Button onClick={handleSave} disabled={form.saving}>
-              {form.saving ? '儲存中...' : '儲存'}
+              {form.saving && <Spinner className="mr-1.5" />}
+              儲存
             </Button>
           </SheetFooter>
         </SheetContent>

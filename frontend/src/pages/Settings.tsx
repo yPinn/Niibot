@@ -12,6 +12,8 @@ import {
 } from '@/api'
 import { PageHeader } from '@/components/PageHeader'
 import {
+  Alert,
+  AlertDescription,
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -23,6 +25,7 @@ import {
   Badge,
   Button,
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -33,6 +36,7 @@ import {
   Input,
   Label,
   Skeleton,
+  Spinner,
   Switch,
 } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
@@ -73,7 +77,7 @@ function configToForm(c: PaymentConfigResponse): PaymentFormState {
 
 export default function Settings() {
   useDocumentTitle('Settings')
-  const { user } = useAuth()
+  const { user, isAffiliate } = useAuth()
 
   const [paymentConfigs, setPaymentConfigs] = useState<PaymentConfigResponse[]>([])
   const [paymentLoading, setPaymentLoading] = useState(true)
@@ -171,9 +175,14 @@ export default function Settings() {
             <code className="text-foreground">/donate/{user?.name}</code> 贊助
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-section">
+        <CardContent className="flex flex-col gap-section">
+          {!isAffiliate && user?.platform === 'twitch' && (
+            <Alert>
+              <AlertDescription>金流設定僅開放給 Twitch Affiliate / Partner 使用</AlertDescription>
+            </Alert>
+          )}
           {paymentLoading ? (
-            <div className="space-y-3">
+            <div className="flex flex-col gap-3">
               <Skeleton className="h-32 w-full" />
               <Skeleton className="h-32 w-full" />
             </div>
@@ -186,37 +195,58 @@ export default function Settings() {
                 const label = PLATFORM_LABELS[platform]
                 const isSaving = paymentSaving === platform
                 const isDeleting = paymentDeleting === platform
+                const locked = !isAffiliate && user?.platform === 'twitch'
 
                 return (
-                  <div key={platform} className="rounded-lg border p-card">
-                    {/* Header: name + enabled toggle */}
-                    <div className="flex items-center justify-between">
+                  <Card key={platform}>
+                    <CardHeader>
                       <div className="flex items-center gap-element">
-                        <span className="font-medium text-sub">{label}</span>
+                        <CardTitle className="text-sub">{label}</CardTitle>
                         {existing && (
                           <Badge variant="secondary" className="text-label">
                             已設定
                           </Badge>
                         )}
                       </div>
-                      <Switch
-                        id={`${platform}-enabled`}
-                        aria-label="啟用"
-                        checked={form.enabled}
-                        onCheckedChange={checked =>
-                          setPaymentForms(prev => ({
-                            ...prev,
-                            [platform]: { ...prev[platform], enabled: checked },
-                          }))
-                        }
-                      />
-                    </div>
+                      <CardAction>
+                        <div className="flex items-center gap-2">
+                          {existing && (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => setPendingDeletePlatform(platform)}
+                              disabled={isSaving || isDeleting || locked}
+                              className="text-muted-foreground hover:text-destructive"
+                              aria-label={`刪除 ${label} 設定`}
+                            >
+                              {isDeleting ? (
+                                <Spinner />
+                              ) : (
+                                <Icon icon="fa-solid fa-trash" wrapperClassName="size-3.5" />
+                              )}
+                            </Button>
+                          )}
+                          <Switch
+                            id={`${platform}-enabled`}
+                            aria-label="啟用"
+                            checked={form.enabled}
+                            disabled={locked}
+                            onCheckedChange={checked =>
+                              setPaymentForms(prev => ({
+                                ...prev,
+                                [platform]: { ...prev[platform], enabled: checked },
+                              }))
+                            }
+                          />
+                        </div>
+                      </CardAction>
+                    </CardHeader>
 
                     <Collapsible open={form.enabled}>
                       <CollapsibleContent>
-                        <div className="mt-element space-y-3">
+                        <CardContent className="flex flex-col gap-3 pt-0">
                           {/* MerchantID (full width) */}
-                          <div className="space-y-1">
+                          <div className="flex flex-col gap-1">
                             <Label
                               className="text-label text-muted-foreground"
                               htmlFor={`${platform}-merchant`}
@@ -226,6 +256,7 @@ export default function Settings() {
                             <Input
                               id={`${platform}-merchant`}
                               value={form.merchant_id}
+                              disabled={locked}
                               onChange={e =>
                                 setPaymentForms(prev => ({
                                   ...prev,
@@ -242,7 +273,7 @@ export default function Settings() {
                           {/* HashKey + HashIV (2 cols) */}
                           {needsHash && (
                             <div className="grid grid-cols-2 gap-element">
-                              <div className="space-y-1">
+                              <div className="flex flex-col gap-1">
                                 <Label
                                   className="text-label text-muted-foreground"
                                   htmlFor={`${platform}-hashkey`}
@@ -254,6 +285,7 @@ export default function Settings() {
                                     id={`${platform}-hashkey`}
                                     type={showHash[platform] ? 'text' : 'password'}
                                     value={form.hash_key}
+                                    disabled={locked}
                                     onChange={e =>
                                       setPaymentForms(prev => ({
                                         ...prev,
@@ -280,13 +312,12 @@ export default function Settings() {
                                           ? 'fa-solid fa-eye-slash'
                                           : 'fa-solid fa-eye'
                                       }
-                                      wrapperClassName=""
-                                      className="text-label"
+                                      wrapperClassName="size-3.5"
                                     />
                                   </button>
                                 </div>
                               </div>
-                              <div className="space-y-1">
+                              <div className="flex flex-col gap-1">
                                 <Label
                                   className="text-label text-muted-foreground"
                                   htmlFor={`${platform}-hashiv`}
@@ -298,6 +329,7 @@ export default function Settings() {
                                     id={`${platform}-hashiv`}
                                     type={showHash[platform] ? 'text' : 'password'}
                                     value={form.hash_iv}
+                                    disabled={locked}
                                     onChange={e =>
                                       setPaymentForms(prev => ({
                                         ...prev,
@@ -324,8 +356,7 @@ export default function Settings() {
                                           ? 'fa-solid fa-eye-slash'
                                           : 'fa-solid fa-eye'
                                       }
-                                      wrapperClassName=""
-                                      className="text-label"
+                                      wrapperClassName="size-3.5"
                                     />
                                   </button>
                                 </div>
@@ -333,7 +364,7 @@ export default function Settings() {
                             </div>
                           )}
 
-                          {/* Bottom: min amount + media toggle + save/delete */}
+                          {/* Bottom: min amount + media toggle + save */}
                           <div className="flex items-center gap-element border-t border-border/50 pt-2">
                             {needsHash && (
                               <>
@@ -345,6 +376,7 @@ export default function Settings() {
                                   type="number"
                                   min={1}
                                   value={form.min_amount}
+                                  disabled={locked}
                                   onChange={e =>
                                     setPaymentForms(prev => ({
                                       ...prev,
@@ -360,6 +392,7 @@ export default function Settings() {
                                   <Switch
                                     id={`${platform}-media`}
                                     checked={form.media_share_enabled}
+                                    disabled={locked}
                                     onCheckedChange={checked =>
                                       setPaymentForms(prev => ({
                                         ...prev,
@@ -383,43 +416,18 @@ export default function Settings() {
                               <Button
                                 size="sm"
                                 onClick={() => handleSavePaymentConfig(platform)}
-                                disabled={isSaving || isDeleting}
+                                disabled={isSaving || isDeleting || locked}
                                 className="h-7 px-3 text-label"
                               >
-                                {isSaving && (
-                                  <Icon
-                                    icon="fa-solid fa-spinner"
-                                    className="animate-spin mr-1"
-                                    wrapperClassName=""
-                                  />
-                                )}
+                                {isSaving && <Spinner className="mr-1" />}
                                 儲存
                               </Button>
-                              {existing && (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => setPendingDeletePlatform(platform)}
-                                  disabled={isSaving || isDeleting}
-                                  className="h-7 px-2"
-                                >
-                                  {isDeleting ? (
-                                    <Icon
-                                      icon="fa-solid fa-spinner"
-                                      className="animate-spin"
-                                      wrapperClassName=""
-                                    />
-                                  ) : (
-                                    <Icon icon="fa-solid fa-trash" wrapperClassName="" />
-                                  )}
-                                </Button>
-                              )}
                             </div>
                           </div>
-                        </div>
+                        </CardContent>
                       </CollapsibleContent>
                     </Collapsible>
-                  </div>
+                  </Card>
                 )
               })}
             </div>

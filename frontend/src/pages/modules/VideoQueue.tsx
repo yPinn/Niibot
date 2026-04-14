@@ -34,7 +34,9 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  Separator,
   Skeleton,
+  Spinner,
   Switch,
   Table,
   TableBody,
@@ -428,7 +430,7 @@ export default function VideoQueue() {
                 <Skeleton className="h-5 w-24" />
               </CardHeader>
               <CardContent>
-                <div className="space-y-2">
+                <div className="flex flex-col gap-2">
                   <Skeleton className="h-9 w-full" />
                   {Array.from({ length: 6 }).map((_, i) => (
                     <Skeleton key={i} className="h-12 w-full" />
@@ -475,7 +477,7 @@ export default function VideoQueue() {
         {/* Queue card — fills full column height */}
         <div className="lg:col-span-8">
           <Card className="h-full">
-            <CardHeader className="flex flex-row items-center justify-between gap-section">
+            <CardHeader>
               <CardTitle>
                 等待佇列
                 <Badge variant="outline" className="ml-2">
@@ -483,36 +485,49 @@ export default function VideoQueue() {
                   {totalQueuedDuration ? ` — ${formatDuration(totalQueuedDuration)}` : ''}
                 </Badge>
               </CardTitle>
-              <div className="flex items-center gap-element">
-                <div className="relative w-72">
-                  <Icon
-                    icon="fa-brands fa-youtube"
-                    className="text-sm text-muted-foreground"
-                    wrapperClassName="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2"
-                  />
-                  <Input
-                    aria-label="YouTube 連結"
-                    placeholder="貼上影片連結"
-                    value={addUrlInput}
-                    onChange={e => setAddUrlInput(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && handleAddVideo()}
-                    className="pl-8"
-                  />
+              <CardAction>
+                <div className="flex items-center gap-element">
+                  <div className="relative w-72">
+                    <Icon
+                      icon="fa-brands fa-youtube"
+                      className="text-sm text-muted-foreground"
+                      wrapperClassName="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2"
+                    />
+                    <Input
+                      aria-label="YouTube 連結"
+                      placeholder="貼上影片連結"
+                      value={addUrlInput}
+                      onChange={e => setAddUrlInput(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && handleAddVideo()}
+                      className="pl-8"
+                    />
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={handleAddVideo}
+                    disabled={adding || !addUrlInput.trim()}
+                  >
+                    <Icon icon="fa-solid fa-plus" wrapperClassName="mr-1.5 size-3" />
+                    {adding ? (
+                      <>
+                        <Spinner className="mr-1.5" />
+                        新增中
+                      </>
+                    ) : (
+                      '新增'
+                    )}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={handleClear}
+                    disabled={!current && queueSize === 0}
+                  >
+                    <Icon icon="fa-solid fa-trash" wrapperClassName="mr-1.5 size-3" />
+                    清空
+                  </Button>
                 </div>
-                <Button size="sm" onClick={handleAddVideo} disabled={adding || !addUrlInput.trim()}>
-                  <Icon icon="fa-solid fa-plus" className="mr-1.5 text-xs" />
-                  {adding ? '...' : '新增'}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  onClick={handleClear}
-                  disabled={!current && queueSize === 0}
-                >
-                  <Icon icon="fa-solid fa-trash" className="mr-1.5 text-xs" />
-                  清空
-                </Button>
-              </div>
+              </CardAction>
             </CardHeader>
             <CardContent className="flex flex-1 flex-col">
               <QueueTable
@@ -610,7 +625,7 @@ export default function VideoQueue() {
               <div className="min-w-0 flex-1">
                 <OverlayUrlBlock url={overlayUrl} />
               </div>
-              <div className="h-6 w-px shrink-0 bg-border" />
+              <Separator orientation="vertical" className="h-6" />
               <div className="flex shrink-0 items-center gap-element">
                 <Switch
                   id="vq-enabled"
@@ -704,7 +719,7 @@ export default function VideoQueue() {
             </div>
           </div>
 
-          <hr className="border-border" />
+          <Separator />
 
           {/* Redemption-specific settings */}
           <div className="flex flex-col gap-3">
@@ -743,7 +758,8 @@ export default function VideoQueue() {
 
           <div className="flex justify-end">
             <Button size="sm" onClick={handleSaveSettings} disabled={saving}>
-              {saving ? '...' : '儲存'}
+              {saving && <Spinner className="mr-1.5" />}
+              儲存
             </Button>
           </div>
         </CardContent>

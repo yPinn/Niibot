@@ -22,10 +22,15 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  Empty,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
   Icon,
   Input,
   Label,
   Skeleton,
+  Spinner,
   Switch,
   Table,
   TableBody,
@@ -66,16 +71,18 @@ function EntryTable({
 
   if (entries.length === 0) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-4 text-muted-foreground">
-        <Icon
-          icon="fa-solid fa-users"
-          wrapperClassName="size-20 opacity-25"
-          className="text-[5rem]"
-        />
-        <div className="flex flex-col items-center gap-1">
-          <span className="text-sm font-medium">{emptyText ?? '目前無玩家'}</span>
-        </div>
-      </div>
+      <Empty className="border-none">
+        <EmptyHeader>
+          <EmptyMedia>
+            <Icon
+              icon="fa-solid fa-users"
+              wrapperClassName="size-20 opacity-25"
+              className="text-[5rem]"
+            />
+          </EmptyMedia>
+          <EmptyTitle>{emptyText ?? '目前無玩家'}</EmptyTitle>
+        </EmptyHeader>
+      </Empty>
     )
   }
 
@@ -117,11 +124,11 @@ function EntryTable({
                     {showRemove && onRemove && (
                       <Button
                         variant="ghost"
-                        size="sm"
+                        size="icon"
                         onClick={() => onRemove(entry.id)}
-                        className="size-8 p-0 text-destructive hover:text-destructive"
+                        className="text-destructive hover:text-destructive"
                       >
-                        <Icon icon="fa-solid fa-xmark" className="text-xs" />
+                        <Icon icon="fa-solid fa-xmark" wrapperClassName="size-3.5" />
                       </Button>
                     )}
                   </div>
@@ -246,7 +253,7 @@ export default function GameQueue() {
                 <Skeleton className="h-5 w-24" />
               </CardHeader>
               <CardContent>
-                <div className="space-y-2">
+                <div className="flex flex-col gap-2">
                   <Skeleton className="h-9 w-full" />
                   {Array.from({ length: 7 }).map((_, i) => (
                     <Skeleton key={i} className="h-10 w-full" />
@@ -351,7 +358,7 @@ export default function GameQueue() {
                 />
               </CardAction>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="flex flex-col gap-4">
               <div className="flex items-center gap-2">
                 <span className="text-muted-foreground text-sub shrink-0">快速預設</span>
                 <Button
@@ -385,7 +392,8 @@ export default function GameQueue() {
                   className="w-20"
                 />
                 <Button size="sm" onClick={handleSaveGroupSize} disabled={saving}>
-                  {saving ? '...' : '儲存'}
+                  {saving && <Spinner className="mr-1" />}
+                  儲存
                 </Button>
                 {state && (
                   <span className="text-muted-foreground text-sub">

@@ -15,6 +15,8 @@ import {
 import { PageHeader } from '@/components/PageHeader'
 import { SortableHead } from '@/components/SortableHead'
 import {
+  Alert,
+  AlertDescription,
   Badge,
   Button,
   Card,
@@ -22,6 +24,10 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
   Icon,
   Input,
   Label,
@@ -38,6 +44,7 @@ import {
   SheetHeader,
   SheetTitle,
   Skeleton,
+  Spinner,
   Switch,
   Table,
   TableBody,
@@ -282,15 +289,15 @@ export default function Events() {
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="space-y-2">
+            <div className="flex flex-col gap-2">
               {Array.from({ length: 4 }).map((_, i) => (
                 <Skeleton key={i} className="h-10 w-full" />
               ))}
             </div>
           ) : error ? (
-            <div className="flex items-center justify-center py-empty text-destructive">
-              {error}
-            </div>
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
           ) : (
             <div className="overflow-x-auto rounded-md border">
               <Table className="table-fixed">
@@ -405,16 +412,22 @@ export default function Events() {
         </CardHeader>
         <CardContent>
           {redemptionLoading ? (
-            <div className="space-y-2">
+            <div className="flex flex-col gap-2">
               {Array.from({ length: 5 }).map((_, i) => (
                 <Skeleton key={i} className="h-10 w-full" />
               ))}
             </div>
           ) : !isAffiliate ? (
-            <div className="flex flex-col items-center justify-center gap-2 py-empty text-muted-foreground">
-              <Icon icon="fa-solid fa-lock" wrapperClassName="size-6" />
-              <span className="text-sub">成為 Twitch 聯盟夥伴或合作夥伴後即可設定忠誠點數獎勵</span>
-            </div>
+            <Empty>
+              <EmptyHeader>
+                <EmptyMedia>
+                  <Icon icon="fa-solid fa-lock" wrapperClassName="size-6" />
+                </EmptyMedia>
+                <EmptyDescription>
+                  成為 Twitch 聯盟夥伴或合作夥伴後即可設定忠誠點數獎勵
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
           ) : (
             <div className="overflow-x-auto rounded-md border">
               <Table>
@@ -575,7 +588,8 @@ export default function Events() {
               <Button variant="outline">取消</Button>
             </SheetClose>
             <Button onClick={handleSave} disabled={saving}>
-              {saving ? '儲存中...' : '儲存'}
+              {saving && <Spinner className="mr-1.5" />}
+              儲存
             </Button>
           </SheetFooter>
         </SheetContent>

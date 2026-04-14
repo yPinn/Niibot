@@ -1,0 +1,21 @@
+{
+  "name": "Niibot | 泥爸",
+  "short_name": "Niibot",
+  "description": "除了幫你上班，我什麼都能做。",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#09090b",
+  "theme_color": "#5865F2",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "48x48",
+      "type": "image/x-icon"
+    },
+    {
+      "src": "/images/Avatar.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

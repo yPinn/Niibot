@@ -1,15 +1,6 @@
 import { useMemo } from 'react'
 
-import {
-  Button,
-  Card,
-  CardAction,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  Icon,
-  Skeleton,
-} from '@/components/ui'
+import { Button, Card, CardContent, Icon, Skeleton } from '@/components/ui'
 import { useServiceStatus } from '@/contexts/ServiceStatusContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
@@ -36,15 +27,6 @@ function formatStartedAt(iso?: string): string {
     second: '2-digit',
     hour12: false,
   })
-}
-
-function Row({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="flex justify-between items-baseline gap-4 py-1.5 border-b border-border/30 last:border-0">
-      <span className="text-sub text-muted-foreground shrink-0">{label}</span>
-      <span className="font-mono text-sub text-right">{value}</span>
-    </div>
-  )
 }
 
 function StatusBadge({ online, ready }: { online: boolean; ready?: boolean }) {
@@ -101,36 +83,20 @@ function CommitLink({ commit }: { commit?: string }) {
   )
 }
 
+const DASH = <span className="text-muted-foreground/40">—</span>
+
 export default function SystemStatus() {
   useDocumentTitle('System Status')
   const { twitch, discord, api, lastUpdate, initialLoading, refresh } = useServiceStatus()
 
-  const services = useMemo(
+  const serviceHeaders = useMemo(
     () => [
       {
         key: 'api',
         name: 'API Server',
         icon: 'fa-solid fa-server',
         online: api.online,
-        ready: undefined,
-        rows: [
-          { label: 'version', value: api.version ?? '—' },
-          { label: 'commit', value: <CommitLink commit={api.git_commit} /> },
-          { label: 'env', value: <EnvBadge env={api.environment} /> },
-          { label: 'started', value: formatStartedAt(api.started_at) },
-          { label: 'uptime', value: formatUptime(api.uptime_seconds) },
-          {
-            label: 'database',
-            value:
-              api.db_connected === undefined ? (
-                '—'
-              ) : (
-                <span className={api.db_connected ? 'text-status-online' : 'text-status-offline'}>
-                  {api.db_connected ? 'connected' : 'disconnected'}
-                </span>
-              ),
-          },
-        ],
+        ready: undefined as boolean | undefined,
       },
       {
         key: 'twitch',
@@ -138,14 +104,6 @@ export default function SystemStatus() {
         icon: 'fa-brands fa-twitch',
         online: twitch.online,
         ready: twitch.ready,
-        rows: [
-          { label: 'version', value: twitch.version ?? '—' },
-          { label: 'commit', value: <CommitLink commit={twitch.git_commit} /> },
-          { label: 'started', value: formatStartedAt(twitch.started_at) },
-          { label: 'uptime', value: formatUptime(twitch.uptime_seconds) },
-          { label: 'bot_id', value: twitch.bot_id ?? '—' },
-          { label: 'channels', value: twitch.connected_channels ?? '—' },
-        ],
       },
       {
         key: 'discord',
@@ -153,21 +111,89 @@ export default function SystemStatus() {
         icon: 'fa-brands fa-discord',
         online: discord.online,
         ready: discord.ready,
-        rows: [
-          { label: 'version', value: discord.version ?? '—' },
-          { label: 'commit', value: <CommitLink commit={discord.git_commit} /> },
-          { label: 'started', value: formatStartedAt(discord.started_at) },
-          { label: 'uptime', value: formatUptime(discord.uptime_seconds) },
-          { label: 'bot_id', value: discord.bot_id ?? '—' },
-          { label: 'guilds', value: discord.guilds ?? '—' },
-          {
-            label: 'ws_latency',
-            value: discord.ws_latency_ms !== undefined ? `${discord.ws_latency_ms}ms` : '—',
-          },
-        ],
       },
     ],
+    [twitch, discord, api]
+  )
 
+  const fieldRows = useMemo(
+    () => [
+      {
+        label: 'version',
+        values: [
+          api.version ?? '—',
+          twitch.version ?? '—',
+          discord.version ?? '—',
+        ] as React.ReactNode[],
+      },
+      {
+        label: 'commit',
+        values: [
+          <CommitLink key="api" commit={api.git_commit} />,
+          <CommitLink key="twitch" commit={twitch.git_commit} />,
+          <CommitLink key="discord" commit={discord.git_commit} />,
+        ] as React.ReactNode[],
+      },
+      {
+        label: 'env',
+        values: [
+          <EnvBadge key="api" env={api.environment} />,
+          null,
+          null,
+        ] as (React.ReactNode | null)[],
+      },
+      {
+        label: 'started',
+        values: [
+          formatStartedAt(api.started_at),
+          formatStartedAt(twitch.started_at),
+          formatStartedAt(discord.started_at),
+        ] as React.ReactNode[],
+      },
+      {
+        label: 'uptime',
+        values: [
+          formatUptime(api.uptime_seconds),
+          formatUptime(twitch.uptime_seconds),
+          formatUptime(discord.uptime_seconds),
+        ] as React.ReactNode[],
+      },
+      {
+        label: 'database',
+        values: [
+          api.db_connected === undefined ? null : (
+            <span
+              key="api"
+              className={api.db_connected ? 'text-status-online' : 'text-status-offline'}
+            >
+              {api.db_connected ? 'connected' : 'disconnected'}
+            </span>
+          ),
+          null,
+          null,
+        ] as (React.ReactNode | null)[],
+      },
+      {
+        label: 'bot_id',
+        values: [null, twitch.bot_id ?? '—', discord.bot_id ?? '—'] as (React.ReactNode | null)[],
+      },
+      {
+        label: 'channels',
+        values: [null, twitch.connected_channels ?? '—', null] as (React.ReactNode | null)[],
+      },
+      {
+        label: 'guilds',
+        values: [null, null, discord.guilds ?? '—'] as (React.ReactNode | null)[],
+      },
+      {
+        label: 'ws_latency',
+        values: [
+          null,
+          null,
+          discord.ws_latency_ms !== undefined ? `${discord.ws_latency_ms}ms` : null,
+        ] as (React.ReactNode | null)[],
+      },
+    ],
     [twitch, discord, api]
   )
 
@@ -186,38 +212,64 @@ export default function SystemStatus() {
         </Button>
       </div>
 
-      <div className="grid gap-section lg:grid-cols-3">
-        {services.map(service => (
-          <Card key={service.key}>
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <Icon icon={service.icon} className="w-4 h-4 text-muted-foreground" />
-                <CardTitle>{service.name}</CardTitle>
-              </div>
-              <CardAction>
+      <Card>
+        <CardContent className="p-0 overflow-hidden">
+          <div className="grid grid-cols-[7rem_1fr_1fr_1fr]">
+            {/* ── Service header row ── */}
+            <div className="px-4 py-3 border-b border-border/40" />
+            {serviceHeaders.map(s => (
+              <div
+                key={s.key}
+                className="px-4 py-3 border-b border-l border-border/40 flex flex-col gap-1.5"
+              >
+                <div className="flex items-center gap-2">
+                  <Icon icon={s.icon} className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                  <span className="text-sub font-semibold truncate">{s.name}</span>
+                </div>
                 {initialLoading ? (
                   <Skeleton className="h-4 w-14" />
                 ) : (
-                  <StatusBadge online={service.online} ready={service.ready} />
+                  <StatusBadge online={s.online} ready={s.ready} />
                 )}
-              </CardAction>
-            </CardHeader>
-            <CardContent>
-              {initialLoading ? (
-                <div className="space-y-2 py-1">
-                  {Array.from({ length: 4 }).map((_, i) => (
-                    <Skeleton key={i} className="h-8 w-full" />
-                  ))}
+              </div>
+            ))}
+
+            {/* ── Field rows ── */}
+            {fieldRows.map((field, rowIdx) => {
+              const isLast = rowIdx === fieldRows.length - 1
+              const borderB = isLast ? '' : 'border-b border-border/30'
+              return (
+                <div key={field.label} className="contents">
+                  {/* Label cell */}
+                  <div className={`px-4 py-1.5 flex items-center ${borderB}`}>
+                    <span className="text-sub text-muted-foreground">{field.label}</span>
+                  </div>
+                  {/* Value cells */}
+                  {field.values.map((val, colIdx) => {
+                    const offline = !serviceHeaders[colIdx].online
+                    return (
+                      <div
+                        key={colIdx}
+                        className={`px-4 py-1.5 border-l border-border/20 font-mono text-sub flex items-center ${borderB}`}
+                      >
+                        {initialLoading ? (
+                          <Skeleton className="h-4 w-20" />
+                        ) : offline ? (
+                          DASH
+                        ) : val !== null ? (
+                          val
+                        ) : (
+                          DASH
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
-              ) : service.online ? (
-                service.rows.map(row => <Row key={row.label} label={row.label} value={row.value} />)
-              ) : (
-                <p className="text-sub text-muted-foreground font-mono py-2">service unreachable</p>
-              )}
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+              )
+            })}
+          </div>
+        </CardContent>
+      </Card>
     </main>
   )
 }
