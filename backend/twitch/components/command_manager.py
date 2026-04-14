@@ -33,9 +33,9 @@ import re
 from typing import TYPE_CHECKING
 
 from twitchio.ext import commands
+from utils.trigger_matching import validate_regex_pattern
 
 from shared.repositories.command_config import CommandConfigRepository
-from utils.trigger_matching import validate_regex_pattern
 
 if TYPE_CHECKING:
     from core.bot import Bot
@@ -119,7 +119,7 @@ class CommandManagerComponent(commands.Component):
                 "用法: !cmd a/e/d !指令名 — 新增｜編輯｜刪除 (選項: -cd -role -alias -enable)"
             )
 
-    @cmd.command(name="a")
+    @cmd.command(name="a", aliases=["add"])
     async def cmd_add(self, ctx: commands.Context["Bot"], *, args: str | None = None) -> None:
         """Add a custom command (!prefix) or auto-response trigger (no prefix)."""
         if not args or not args.strip():
@@ -138,7 +138,14 @@ class CommandManagerComponent(commands.Component):
             await ctx.reply("缺少回覆文字")
             return
 
-        cooldown = int(options["cd"]) if "cd" in options else None
+        if "cd" in options:
+            try:
+                cooldown = int(options["cd"])
+            except ValueError:
+                await ctx.reply("冷卻時間必須是整數（秒）")
+                return
+        else:
+            cooldown = None
         role_input = options.get("role", "everyone")
         min_role = ROLE_ALIASES.get(role_input.lower(), "everyone")
         enabled = _parse_bool(options["enable"]) if "enable" in options else True
@@ -180,7 +187,11 @@ class CommandManagerComponent(commands.Component):
             if match_type not in _MATCH_TYPES:
                 await ctx.reply(f"無效的 -match 值，請使用: {', '.join(_MATCH_TYPES)}")
                 return
-            case_sensitive = _parse_bool(options.get("cs", "off")) or False
+            case_sensitive_raw = _parse_bool(options.get("cs", "off"))
+            if case_sensitive_raw is None:
+                await ctx.reply("無效的 -cs 值，請使用 on/off")
+                return
+            case_sensitive = case_sensitive_raw
             if match_type == "regex":
                 is_safe = await asyncio.get_running_loop().run_in_executor(
                     None, validate_regex_pattern, pattern
@@ -189,6 +200,18 @@ class CommandManagerComponent(commands.Component):
                     await ctx.reply("無效或不安全的 Regex 模式（可能導致 ReDoS），已拒絕")
                     return
             trigger_name = _sanitize_trigger_name(pattern)
+            existing_trigger = await self.bot.message_trigger_configs.get_by_name(
+                channel_id, trigger_name
+            )
+            if existing_trigger and existing_trigger.pattern != pattern:
+                await ctx.reply(
+                    f"觸發詞與現有「{existing_trigger.pattern}」衝突，"
+                    f"請用 !cmd e {existing_trigger.pattern} 編輯，或先 !cmd d {existing_trigger.pattern} 刪除"
+                )
+                return
+            if existing_trigger:
+                await ctx.reply(f"「{pattern}」已存在，請用 !cmd e 編輯")
+                return
             await self.bot.message_trigger_configs.upsert(
                 channel_id,
                 trigger_name,
@@ -205,7 +228,7 @@ class CommandManagerComponent(commands.Component):
             await ctx.reply(f"已新增觸發 {pattern} → {preview}")
             LOGGER.info(f"Trigger added: '{pattern}' by {ctx.chatter.name}")
 
-    @cmd.command(name="e")
+    @cmd.command(name="e", aliases=["edit"])
     async def cmd_edit(self, ctx: commands.Context["Bot"], *, args: str | None = None) -> None:
         """Edit a custom command or trigger."""
         if not args or not args.strip():
@@ -232,7 +255,11 @@ class CommandManagerComponent(commands.Component):
 
             kwargs: dict = {}
             if "cd" in options:
-                kwargs["cooldown"] = int(options["cd"])
+                try:
+                    kwargs["cooldown"] = int(options["cd"])
+                except ValueError:
+                    await ctx.reply("冷卻時間必須是整數（秒）")
+                    return
             if "role" in options:
                 kwargs["min_role"] = ROLE_ALIASES.get(options["role"].lower(), "everyone")
             if "alias" in options:
@@ -283,7 +310,11 @@ class CommandManagerComponent(commands.Component):
 
             tkwargs: dict = {}
             if "cd" in options:
-                tkwargs["cooldown"] = int(options["cd"])
+                try:
+                    tkwargs["cooldown"] = int(options["cd"])
+                except ValueError:
+                    await ctx.reply("冷卻時間必須是整數（秒）")
+                    return
             if "role" in options:
                 tkwargs["min_role"] = ROLE_ALIASES.get(options["role"].lower(), "everyone")
             if "match" in options:
@@ -346,7 +377,7 @@ class CommandManagerComponent(commands.Component):
             await ctx.reply(f"已更新觸發 {pattern} — {' | '.join(changes)}")
             LOGGER.info(f"Trigger edited: '{pattern}' by {ctx.chatter.name}")
 
-    @cmd.command(name="d")
+    @cmd.command(name="d", aliases=["delete"])
     async def cmd_delete(self, ctx: commands.Context["Bot"], *, args: str | None = None) -> None:
         """Delete a custom command or trigger."""
         if not args or not args.strip():
