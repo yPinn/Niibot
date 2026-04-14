@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import time
+import urllib.parse
 import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
@@ -58,7 +59,7 @@ def _fetch(url: str) -> dict:
 
 def _fetch_uptime(model_id: str) -> float | None:
     """Return uptime_last_30m for the best (first) endpoint, or None."""
-    url = ENDPOINTS_URL.format(model_id=urllib.request.quote(model_id, safe=""))
+    url = ENDPOINTS_URL.format(model_id=urllib.parse.quote(model_id, safe=""))
     try:
         data = _fetch(url)
         endpoints = data.get("data", {}).get("endpoints", [])
