@@ -265,7 +265,7 @@ PRIORITY_PINNED = 99
 
 _ENTRY_COLUMNS = (
     "id, channel_id, video_id, title, duration_seconds, is_vertical, requested_by, "
-    "source, status, video_type, priority, created_at, started_at"
+    "source, status, video_type, priority, created_at, started_at, requested_by_id"
 )
 
 _SETTINGS_COLUMNS = (
@@ -300,14 +300,16 @@ class VideoQueueRepository:
         is_vertical: bool = False,
         video_type: str = "youtube",
         priority: int = 0,
+        requested_by_id: str | None = None,
     ) -> VideoQueueEntry:
         """Insert a new entry with status='queued'."""
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 f"""
                 INSERT INTO video_queue
-                    (channel_id, video_id, title, duration_seconds, is_vertical, requested_by, source, video_type, priority)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                    (channel_id, video_id, title, duration_seconds, is_vertical,
+                     requested_by, source, video_type, priority, requested_by_id)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                 RETURNING {_ENTRY_COLUMNS}
                 """,
                 channel_id,
@@ -319,6 +321,7 @@ class VideoQueueRepository:
                 source,
                 video_type,
                 priority,
+                requested_by_id,
             )
             return VideoQueueEntry(**dict(row))
 
@@ -441,6 +444,24 @@ class VideoQueueRepository:
             )
             return int(result.split()[-1])
 
+    async def clear_all_atomic(self, channel_id: str) -> int:
+        """Atomically skip all playing and queued entries in a single statement.
+
+        Using a single UPDATE avoids the race where advance_queue (triggered by
+        the overlay between two separate calls) promotes a queued entry to
+        'playing' after the playing entry has already been skipped but before
+        clear_queued runs — which would leave that entry un-cleared.
+
+        Returns total count of affected rows.
+        """
+        async with self.pool.acquire() as conn:
+            result = await conn.execute(
+                "UPDATE video_queue SET status = 'skipped', ended_at = NOW() "
+                "WHERE channel_id = $1 AND status IN ('playing', 'queued')",
+                channel_id,
+            )
+            return int(result.split()[-1])
+
     async def set_as_next(self, entry_id: int, channel_id: str) -> bool:
         """Move a queued entry to the absolute front of the queue (plays after current).
 
@@ -526,9 +547,27 @@ class VideoQueueRepository:
                 )
                 return result == "UPDATE 1"
 
-    async def count_active_by_user(self, channel_id: str, requested_by: str) -> int:
-        """Count active (queued + playing) entries for a specific user in this channel."""
+    async def count_active_by_user(
+        self,
+        channel_id: str,
+        requested_by: str,
+        requested_by_id: str | None = None,
+    ) -> int:
+        """Count active (queued + playing) entries for a specific user in this channel.
+
+        Matches by user_id when available (resilient to username changes),
+        falling back to username for legacy rows.
+        """
         async with self.pool.acquire() as conn:
+            if requested_by_id:
+                return await conn.fetchval(
+                    "SELECT COUNT(*) FROM video_queue "
+                    "WHERE channel_id = $1 AND status IN ('queued', 'playing') "
+                    "AND (requested_by_id = $2 OR (requested_by_id IS NULL AND requested_by = $3))",
+                    channel_id,
+                    requested_by_id,
+                    requested_by,
+                )
             return await conn.fetchval(
                 "SELECT COUNT(*) FROM video_queue "
                 "WHERE channel_id = $1 AND requested_by = $2 AND status IN ('queued', 'playing')",
@@ -537,35 +576,67 @@ class VideoQueueRepository:
             )
 
     async def find_last_queued_by_user(
-        self, channel_id: str, requested_by: str
+        self,
+        channel_id: str,
+        requested_by: str,
+        requested_by_id: str | None = None,
     ) -> VideoQueueEntry | None:
-        """Find the most recently submitted queued entry for a given user (for !vq remove)."""
+        """Find the most recently submitted queued entry for a given user (for !vq remove).
+
+        Matches by user_id when available, falling back to username for legacy rows.
+        """
         async with self.pool.acquire() as conn:
-            row = await conn.fetchrow(
-                f"SELECT {_ENTRY_COLUMNS} FROM video_queue "
-                "WHERE channel_id = $1 AND requested_by = $2 AND status = 'queued' "
-                "ORDER BY created_at DESC LIMIT 1",
-                channel_id,
-                requested_by,
-            )
+            if requested_by_id:
+                row = await conn.fetchrow(
+                    f"SELECT {_ENTRY_COLUMNS} FROM video_queue "
+                    "WHERE channel_id = $1 AND status = 'queued' "
+                    "AND (requested_by_id = $2 OR (requested_by_id IS NULL AND requested_by = $3)) "
+                    "ORDER BY created_at DESC LIMIT 1",
+                    channel_id,
+                    requested_by_id,
+                    requested_by,
+                )
+            else:
+                row = await conn.fetchrow(
+                    f"SELECT {_ENTRY_COLUMNS} FROM video_queue "
+                    "WHERE channel_id = $1 AND requested_by = $2 AND status = 'queued' "
+                    "ORDER BY created_at DESC LIMIT 1",
+                    channel_id,
+                    requested_by,
+                )
             return VideoQueueEntry(**dict(row)) if row else None
 
     async def find_last_entry_by_user(
-        self, channel_id: str, requested_by: str
+        self,
+        channel_id: str,
+        requested_by: str,
+        requested_by_id: str | None = None,
     ) -> VideoQueueEntry | None:
         """Find the most recently submitted entry for a given user regardless of status.
 
         Used for user_cooldown_seconds enforcement — we want the last submission
         time across all statuses (queued, playing, done, skipped).
+        Matches by user_id when available, falling back to username for legacy rows.
         """
         async with self.pool.acquire() as conn:
-            row = await conn.fetchrow(
-                f"SELECT {_ENTRY_COLUMNS} FROM video_queue "
-                "WHERE channel_id = $1 AND requested_by = $2 "
-                "ORDER BY created_at DESC LIMIT 1",
-                channel_id,
-                requested_by,
-            )
+            if requested_by_id:
+                row = await conn.fetchrow(
+                    f"SELECT {_ENTRY_COLUMNS} FROM video_queue "
+                    "WHERE channel_id = $1 "
+                    "AND (requested_by_id = $2 OR (requested_by_id IS NULL AND requested_by = $3)) "
+                    "ORDER BY created_at DESC LIMIT 1",
+                    channel_id,
+                    requested_by_id,
+                    requested_by,
+                )
+            else:
+                row = await conn.fetchrow(
+                    f"SELECT {_ENTRY_COLUMNS} FROM video_queue "
+                    "WHERE channel_id = $1 AND requested_by = $2 "
+                    "ORDER BY created_at DESC LIMIT 1",
+                    channel_id,
+                    requested_by,
+                )
             return VideoQueueEntry(**dict(row)) if row else None
 
 

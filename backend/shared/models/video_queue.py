@@ -23,6 +23,7 @@ class VideoQueueEntry:
     is_vertical: bool = False
     created_at: datetime | None = None
     started_at: datetime | None = None
+    requested_by_id: str | None = None  # Twitch user ID; None for legacy rows
 
 
 @dataclass

@@ -298,6 +298,7 @@ class ChannelPointsComponent(commands.Component):
         broadcaster = payload.broadcaster
         channel_id = broadcaster.id
         user_input = payload.user_input or ""
+        user_id: str | None = payload.user.id or None
 
         try:
             settings = await self.vq_settings_repo.get_or_create(channel_id)
@@ -336,7 +337,7 @@ class ChannelPointsComponent(commands.Component):
                 return
 
             if settings.max_per_user > 0:
-                active = await self.vq_repo.count_active_by_user(channel_id, user_name)
+                active = await self.vq_repo.count_active_by_user(channel_id, user_name, user_id)
                 if active >= settings.max_per_user:
                     await broadcaster.send_message(
                         message=f"@{user_name} 每人上限 {settings.max_per_user} 首，請等待您的影片播放後再點歌",
@@ -346,7 +347,7 @@ class ChannelPointsComponent(commands.Component):
                     return
 
             if settings.user_cooldown_seconds > 0:
-                last = await self.vq_repo.find_last_entry_by_user(channel_id, user_name)
+                last = await self.vq_repo.find_last_entry_by_user(channel_id, user_name, user_id)
                 if last and last.created_at:
                     elapsed = (datetime.now(UTC) - last.created_at).total_seconds()
                     if elapsed < settings.user_cooldown_seconds:
@@ -406,6 +407,7 @@ class ChannelPointsComponent(commands.Component):
                 duration_seconds=duration_seconds,
                 is_vertical=is_vertical,
                 priority=SOURCE_PRIORITY["redemption"],
+                requested_by_id=user_id,
             )
             position = await self.vq_repo.get_queue_size(channel_id)
             title_part = f"「{title}」" if title else ""

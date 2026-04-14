@@ -2,11 +2,11 @@
 
 Public (all users):
     !vq list        Show first 5 videos in queue
+    !vq remove      Remove caller's own most recent queued entry
     !np             Now playing: title, link, remaining time, queue info
 
 Moderator+ only:
     !vq <URL>       Add a video to the queue (YouTube or Twitch Clip)
-    !vq remove      Remove the most recent queued entry submitted by the caller
     !vq skip        Skip the current video
     !vq clear       Clear entire queue (current + all queued)
 """
@@ -80,10 +80,11 @@ class VideoQueueComponent(commands.Component):
             return
 
         # CLI add is restricted to moderators and broadcaster
-        if not ctx.chatter.moderator:  # type: ignore[attr-defined]
+        if not (ctx.chatter.moderator or ctx.chatter.broadcaster):  # type: ignore[attr-defined]
             return  # silent
 
         user_name = ctx.chatter.name or ctx.chatter.display_name or ""
+        user_id: str | None = ctx.chatter.id or None
 
         # Detect URL type: try YouTube first, then Twitch clip
         video_id, is_vertical = extract_youtube_info(url_str)
@@ -110,14 +111,14 @@ class VideoQueueComponent(commands.Component):
 
         # Per-user active limit
         if settings.max_per_user > 0:
-            active = await self.vq_repo.count_active_by_user(channel_id, user_name)
+            active = await self.vq_repo.count_active_by_user(channel_id, user_name, user_id)
             if active >= settings.max_per_user:
                 await ctx.reply(f"每人上限 {settings.max_per_user} 首，請等待您的影片播放後再點歌")
                 return
 
         # User cooldown
         if settings.user_cooldown_seconds > 0:
-            last = await self.vq_repo.find_last_entry_by_user(channel_id, user_name)
+            last = await self.vq_repo.find_last_entry_by_user(channel_id, user_name, user_id)
             if last and last.created_at:
                 elapsed = (datetime.now(UTC) - last.created_at).total_seconds()
                 if elapsed < settings.user_cooldown_seconds:
@@ -166,6 +167,7 @@ class VideoQueueComponent(commands.Component):
             is_vertical=is_vertical,
             video_type=video_type,
             priority=SOURCE_PRIORITY["chat"],
+            requested_by_id=user_id,
         )
         position = await self.vq_repo.get_queue_size(channel_id)
         title_part = f"「{title}」" if title else ""
@@ -215,7 +217,7 @@ class VideoQueueComponent(commands.Component):
                 queue_str = f" | 待播 {len(queued)} 部"
 
         await ctx.reply(
-            f"▶ {title_part}{url}{remaining_str}{queue_str} (由 {current.requested_by} 投遞)"
+            f"▶ {title_part}{url}{remaining_str}{queue_str} | 投遞者: {current.requested_by}"
         )
 
     # ------------------------------------------------------------------
@@ -231,12 +233,12 @@ class VideoQueueComponent(commands.Component):
         if len(args) > 1:
             await self._handle_add(ctx, args[1].strip())
         else:
-            await ctx.reply("📹 !vq <URL> 投遞影片 | !vq list 顯示佇列 | !vq remove 移除請求")
+            await ctx.reply("用法: !vq <URL> 投遞影片 | !vq list 顯示佇列 | !vq remove 移除請求")
 
     @vq.command(name="skip")
     async def vq_skip(self, ctx: commands.Context[Bot]) -> None:
         """!vq skip — 跳過當前影片（moderator+）"""
-        if not ctx.chatter.moderator:  # type: ignore[attr-defined]
+        if not (ctx.chatter.moderator or ctx.chatter.broadcaster):  # type: ignore[attr-defined]
             return
 
         channel_id = ctx.channel.id
@@ -245,10 +247,10 @@ class VideoQueueComponent(commands.Component):
             await ctx.reply("目前沒有正在播放的影片")
             return
 
-        await self.vq_repo.mark_skipped(current.id, channel_id)
+        # Fetch next before atomic skip so we can include title in reply
         queued = await self.vq_repo.get_queued(channel_id)
+        await self.vq_repo.skip_current_atomic(channel_id)
         if queued:
-            await self.vq_repo.set_playing(queued[0].id)
             next_title = queued[0].title or queued[0].video_id
             await ctx.reply(f"已跳過，下一首：「{next_title}」")
         else:
@@ -257,15 +259,11 @@ class VideoQueueComponent(commands.Component):
     @vq.command(name="clear")
     async def vq_clear(self, ctx: commands.Context[Bot]) -> None:
         """!vq clear — 清空整個佇列（moderator+）"""
-        if not ctx.chatter.moderator:  # type: ignore[attr-defined]
+        if not (ctx.chatter.moderator or ctx.chatter.broadcaster):  # type: ignore[attr-defined]
             return
 
         channel_id = ctx.channel.id
-        current = await self.vq_repo.get_current(channel_id)
-        if current:
-            await self.vq_repo.mark_skipped(current.id, channel_id)
-        count = await self.vq_repo.clear_queued(channel_id)
-        total = count + (1 if current else 0)
+        total = await self.vq_repo.clear_all_atomic(channel_id)
         await ctx.reply(f"已清空佇列（共 {total} 首）")
 
     @vq.command(name="list")
@@ -281,21 +279,20 @@ class VideoQueueComponent(commands.Component):
 
         parts: list[str] = []
         if current:
-            parts.append(f"▶ {current.title or current.video_id} ({current.requested_by})")
+            parts.append(f"▶ {current.title or current.video_id}（{current.requested_by}）")
         for i, e in enumerate(queued[:4], 1):
-            parts.append(f"{i}. {e.title or e.video_id} ({e.requested_by})")
+            parts.append(f"{i}. {e.title or e.video_id}（{e.requested_by}）")
         if len(queued) > 4:
             parts.append(f"...還有 {len(queued) - 4} 首")
         await ctx.reply(" | ".join(parts))
 
     @vq.command(name="remove")
     async def vq_remove(self, ctx: commands.Context[Bot]) -> None:
-        """!vq remove — 移除最後一首尚未播放的請求（moderator+）"""
-        if not ctx.chatter.moderator:  # type: ignore[attr-defined]
-            return
+        """!vq remove — 移除自己最後一首尚未播放的請求（所有人可用）"""
         channel_id = ctx.channel.id
         user_name = ctx.chatter.name or ctx.chatter.display_name or ""
-        entry = await self.vq_repo.find_last_queued_by_user(channel_id, user_name)
+        user_id: str | None = ctx.chatter.id or None
+        entry = await self.vq_repo.find_last_queued_by_user(channel_id, user_name, user_id)
         if not entry:
             await ctx.reply("沒有可移除的請求")
             return
