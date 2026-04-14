@@ -2,6 +2,17 @@
 
 多平台直播整合系統，包含 Twitch Bot、Discord Bot 與 Web Dashboard。
 
+## 目錄
+
+- [功能概覽](#功能概覽)
+- [架構](#架構)
+- [快速開始](#快速開始)
+- [環境變數](#環境變數)
+- [外部服務](#外部服務)
+- [測試](#測試)
+
+---
+
 ## 功能概覽
 
 ### Twitch Bot
@@ -33,7 +44,7 @@
 
 ## 架構
 
-```
+```text
 Niibot/
 ├── backend/
 │   ├── api/        # FastAPI — JWT 認證、Dashboard API
@@ -82,7 +93,7 @@ cd backend
 uv sync --group dev
 uv run python api/main.py      # API Server
 uv run python twitch/main.py   # Twitch Bot
-uv run python discord/main.py  # Discord Bot
+uv run python discord/bot.py   # Discord Bot
 
 # Frontend
 cd frontend
@@ -124,8 +135,13 @@ Cloudflare Pages 專案需設定環境變數 `API_BACKEND`（後端位址）。
 ## 測試
 
 ```bash
+# Backend
 cd backend
 uv run pytest tests/ -v
+
+# Frontend
+cd frontend
+npm run test:coverage
 ```
 
 ## License

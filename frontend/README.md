@@ -4,6 +4,15 @@ React SPA，部署在 Cloudflare Pages。CF Pages Functions 將 `/api/*`、`/hea
 
 > 以下所有指令均在 `frontend/` 目錄下執行。
 
+## 技術棧
+
+- **React 19 + TypeScript 5.9**：UI 框架與型別系統
+- **Vite 7**（SWC）+ **React Router 7**：建置工具與客戶端路由
+- **Tailwind CSS 4**：原子 CSS 樣式
+- **shadcn/ui**（基於 Radix UI）：UI 元件庫、主題切換、Toast
+- **Recharts**：數據圖表
+- **Vitest + Testing Library**：單元測試
+
 ## 前置需求
 
 - Node.js 20+
@@ -40,7 +49,7 @@ npm run test:coverage  # 測試 + 覆蓋率報告（閾值 80%）
 src/
 ├── api/            # API client — apiFetch、端點常數、各模組請求函式
 ├── components/
-│   ├── ui/         # shadcn-style 基礎元件（Button、Card、Sidebar…）
+│   ├── ui/         # shadcn/ui 元件（Button、Card、Sidebar…）
 │   ├── layouts/    # SidebarLayout（Dashboard 頁面外框）
 │   └── ...         # 業務元件（AnalyticsChart、ProtectedRoute、ErrorBoundary…）
 ├── contexts/
@@ -72,59 +81,6 @@ functions/          # CF Pages Functions — /api/*、/health、/status 反向�
 /login                        → PublicOnlyRoute（已登入者重導）
 /dashboard, /commands…        → ProtectedRoute → SidebarLayout
 ```
-
-Overlay 路由使用 `<Suspense fallback={null}>`，避免 chunk 載入時對 OBS 瀏覽器來源顯示 spinner。
-
-### Context 提供者順序
-
-```text
-AuthProvider
-  └── ThemeProvider
-        └── ServiceStatusProvider   ← 依賴 user，auth 後才開始 polling
-              └── BotProvider       ← 依賴 user，決定 activeBot 平台
-                    └── ErrorBoundary
-```
-
-### apiFetch 行為
-
-- 503 自動重試一次（間隔 1.5 秒）
-- 401 觸發全域 `auth:unauthorized` 自訂事件 → `AuthContext` 清除狀態並跳轉 `/login`
-
-## 技術棧
-
-### 核心
-
-| 套件                              | 版本 | 用途               |
-| --------------------------------- | ---- | ------------------ |
-| React                             | 19   | UI 框架            |
-| TypeScript                        | ~5.9 | 型別系統           |
-| Vite + `@vitejs/plugin-react-swc` | 7    | 建置工具，SWC 編譯 |
-| React Router v7                   | 7.10 | 客戶端路由         |
-
-### 樣式
-
-| 套件                                  | 版本 | 用途                     |
-| ------------------------------------- | ---- | ------------------------ |
-| Tailwind CSS v4 + `@tailwindcss/vite` | 4.1  | 原子 CSS，Vite plugin    |
-| `tw-animate-css`                      | 1.4  | Tailwind v4 動畫類別     |
-| `clsx` + `tailwind-merge`             | —    | className 合併           |
-| `motion`                              | 12   | 動畫（預計引入，未使用） |
-
-### UI 元件
-
-| 套件                           | 版本   | 用途             |
-| ------------------------------ | ------ | ---------------- |
-| Radix UI (`@radix-ui/react-*`) | 各版本 | 無障礙原語元件   |
-| `class-variance-authority`     | 0.7    | 元件 variant API |
-| `next-themes`                  | 0.4    | 深色／淺色主題   |
-| `sonner`                       | 2.0    | Toast 通知       |
-| `recharts`                     | 3.7    | 數據圖表         |
-
-### 測試
-
-| 套件                              | 版本 | 用途     |
-| --------------------------------- | ---- | -------- |
-| Vitest + `@testing-library/react` | 4.0  | 單元測試 |
 
 ## 部署
 
