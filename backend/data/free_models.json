@@ -2,24 +2,8 @@
   "updated_at": "2026-04-14T00:00:00Z",
   "models": [
     {
-      "id": "meta-llama/llama-3.3-70b-instruct:free",
-      "name": "Llama 3.3 70B Instruct",
-      "rpd": 200,
-      "rpm": 20,
-      "enabled": true,
-      "note": ""
-    },
-    {
       "id": "openai/gpt-oss-120b:free",
       "name": "OpenAI gpt-oss-120b",
-      "rpd": 200,
-      "rpm": 20,
-      "enabled": true,
-      "note": ""
-    },
-    {
-      "id": "openai/gpt-oss-20b:free",
-      "name": "OpenAI gpt-oss-20b",
       "rpd": 200,
       "rpm": 20,
       "enabled": true,
@@ -34,8 +18,8 @@
       "note": ""
     },
     {
-      "id": "nvidia/nemotron-3-super-120b-a12b:free",
-      "name": "NVIDIA Nemotron 3 Super 120B",
+      "id": "meta-llama/llama-3.3-70b-instruct:free",
+      "name": "Llama 3.3 70B Instruct",
       "rpd": 200,
       "rpm": 20,
       "enabled": true,
@@ -58,8 +42,24 @@
       "note": ""
     },
     {
+      "id": "nvidia/nemotron-3-super-120b-a12b:free",
+      "name": "NVIDIA Nemotron 3 Super 120B",
+      "rpd": 200,
+      "rpm": 20,
+      "enabled": true,
+      "note": ""
+    },
+    {
       "id": "nousresearch/hermes-3-llama-3.1-405b:free",
       "name": "Hermes 3 405B Instruct",
+      "rpd": 200,
+      "rpm": 20,
+      "enabled": true,
+      "note": ""
+    },
+    {
+      "id": "openai/gpt-oss-20b:free",
+      "name": "OpenAI gpt-oss-20b",
       "rpd": 200,
       "rpm": 20,
       "enabled": true,
