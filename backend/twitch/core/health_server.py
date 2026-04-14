@@ -63,6 +63,7 @@ class HealthCheckServer:
                 "bot_id": self.bot.bot_id if self.bot else None,
                 "ready": ready,
                 "connected_channels": len(self.bot._subscribed_channels) if self.bot else 0,
+                "components": len(self.bot._components) if self.bot else 0,
             }
         )
 

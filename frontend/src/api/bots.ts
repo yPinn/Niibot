@@ -11,8 +11,10 @@ export interface BotStatus {
   ready?: boolean
   // Twitch
   connected_channels?: number
+  components?: number
   // Discord
   guilds?: number
+  cogs?: number
   ws_latency_ms?: number
 }
 

@@ -67,9 +67,10 @@ function EnvBadge({ env }: { env?: string }) {
   )
 }
 
-function CommitLink({ commit }: { commit?: string }) {
+function VersionLink({ version, commit }: { version?: string; commit?: string }) {
+  const label = version && version !== 'dev' ? version : (version ?? '—')
   if (!commit || commit === 'unknown') {
-    return <span className="font-mono text-muted-foreground">unknown</span>
+    return <span className="font-mono">{label}</span>
   }
   return (
     <a
@@ -78,7 +79,7 @@ function CommitLink({ commit }: { commit?: string }) {
       rel="noopener noreferrer"
       className="font-mono text-status-info hover:underline"
     >
-      {commit.slice(0, 7)}
+      {label}
     </a>
   )
 }
@@ -121,17 +122,9 @@ export default function SystemStatus() {
       {
         label: 'version',
         values: [
-          api.version ?? '—',
-          twitch.version ?? '—',
-          discord.version ?? '—',
-        ] as React.ReactNode[],
-      },
-      {
-        label: 'commit',
-        values: [
-          <CommitLink key="api" commit={api.git_commit} />,
-          <CommitLink key="twitch" commit={twitch.git_commit} />,
-          <CommitLink key="discord" commit={discord.git_commit} />,
+          <VersionLink key="api" version={api.version} commit={api.git_commit} />,
+          <VersionLink key="twitch" version={twitch.version} commit={twitch.git_commit} />,
+          <VersionLink key="discord" version={discord.version} commit={discord.git_commit} />,
         ] as React.ReactNode[],
       },
       {
@@ -179,11 +172,15 @@ export default function SystemStatus() {
       },
       {
         label: 'channels',
-        values: [null, twitch.connected_channels ?? '—', null] as (React.ReactNode | null)[],
+        values: [
+          null,
+          twitch.connected_channels ?? '—',
+          discord.guilds ?? '—',
+        ] as (React.ReactNode | null)[],
       },
       {
-        label: 'guilds',
-        values: [null, null, discord.guilds ?? '—'] as (React.ReactNode | null)[],
+        label: 'features',
+        values: [null, twitch.components ?? '—', discord.cogs ?? '—'] as (React.ReactNode | null)[],
       },
       {
         label: 'ws_latency',

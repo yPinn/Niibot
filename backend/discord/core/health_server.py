@@ -67,6 +67,7 @@ class HealthCheckServer:
                 "bot_id": str(self.bot.user.id) if bot_ready and self.bot.user else None,
                 "ready": bot_ready,
                 "guilds": len(self.bot.guilds) if bot_ready else 0,
+                "cogs": len(self.bot.cogs) if bot_ready else 0,
                 "ws_latency_ms": ws_latency_ms,
             }
         )

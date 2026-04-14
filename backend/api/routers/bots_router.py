@@ -35,8 +35,10 @@ class BotStatusResponse(BaseModel):
     ready: bool | None = None
     # Twitch
     connected_channels: int | None = None
+    components: int | None = None
     # Discord
     guilds: int | None = None
+    cogs: int | None = None
     ws_latency_ms: int | None = None
 
 
@@ -59,7 +61,9 @@ async def check_bot_health(bot_url: str, bot_name: str) -> BotStatusResponse:
                 uptime_seconds=data.get("uptime_seconds"),
                 ready=data.get("ready"),
                 connected_channels=data.get("connected_channels"),
+                components=data.get("components"),
                 guilds=data.get("guilds"),
+                cogs=data.get("cogs"),
                 ws_latency_ms=data.get("ws_latency_ms"),
             )
         else:
