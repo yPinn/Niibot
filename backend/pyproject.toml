@@ -48,6 +48,7 @@ known-first-party = [
     "routers",
     "services",
     "shared",
+    "utils",
 ]
 
 [tool.ruff.format]
