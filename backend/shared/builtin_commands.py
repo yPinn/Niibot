@@ -23,6 +23,8 @@ BUILTIN_DEFS: list[dict] = [
     {"command_name": "tarot", "cooldown": 5, "aliases": "塔羅"},
     {"command_name": "ai", "cooldown": 15, "aliases": "問"},
     {"command_name": "tft", "cooldown": 5, "aliases": "戰棋"},
+    {"command_name": "roll", "cooldown": 3, "aliases": "骰子"},
+    {"command_name": "choose", "cooldown": 3, "aliases": "選擇"},
 ]
 
 # O(1) lookup by canonical command name
@@ -48,6 +50,8 @@ BUILTIN_DESCRIPTIONS: dict[str, str] = {
     "fortune": "運勢占卜",
     "tarot": "塔羅牌占卜（可指定感情、事業、財運）",
     "condemn": "頻道反惡意言論聲明",
+    "roll": "擲骰子（預設 d6，可指定面數）",
+    "choose": "從選項中隨機挑選一個",
 }
 
 # Public /commands page — includes usage examples
@@ -60,4 +64,6 @@ PUBLIC_DESCRIPTIONS: dict[str, str] = {
     "fortune": "運勢占卜",
     "tarot": "塔羅牌占卜，可指定分類：!塔羅 [感情/事業/財運]",
     "condemn": "頻道反惡意言論聲明",
+    "roll": "擲骰子，用法：!roll [面數]（預設 d6）",
+    "choose": "隨機選擇，用法：!choose 選項1 選項2 ...",
 }
