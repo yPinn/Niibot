@@ -3,10 +3,12 @@ name: Deploy
 on:
   push:
     branches: [main]
+  schedule:
+    - cron: "0 20 * * 2" # Every Tue 20:00 UTC (Wed 04:00 CST) — full rebuild for base image updates
   workflow_dispatch:
     inputs:
       force_all:
-        description: 'Force rebuild and restart all services'
+        description: "Force rebuild and restart all services"
         type: boolean
         default: false
 
@@ -40,6 +42,11 @@ jobs:
 
           FORCE="${{ github.event.inputs.force_all || 'false' }}"
           CHANGED=$(git diff --name-only HEAD~1 HEAD 2>/dev/null) || true
+
+          # Scheduled run → always full rebuild (picks up base image security updates)
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            FORCE="true"
+          fi
 
           # Force mode or can't determine diff → rebuild everything
           if [ "$FORCE" = "true" ] || [ -z "$CHANGED" ]; then
@@ -91,6 +98,15 @@ jobs:
             --build-arg APP_VERSION=${{ steps.meta.outputs.version }} \
             --build-arg GIT_COMMIT=${{ steps.meta.outputs.commit }}
 
+      - name: Tag images with version
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          VERSION=${{ steps.meta.outputs.version }}
+          [ "${{ steps.changes.outputs.api }}" = "true" ]     && docker tag niibot-api     niibot-api:$VERSION     || true
+          [ "${{ steps.changes.outputs.discord }}" = "true" ] && docker tag niibot-discord niibot-discord:$VERSION || true
+          [ "${{ steps.changes.outputs.twitch }}" = "true" ]  && docker tag niibot-twitch  niibot-twitch:$VERSION  || true
+          echo "Tagged rebuilt images as :$VERSION"
+
       - name: Run migrations
         working-directory: ${{ env.PROJECT_DIR }}
         if: steps.changes.outputs.api == 'true'
@@ -116,3 +132,17 @@ jobs:
         run: |
           sleep 10
           curl -sf http://localhost:8000/health || exit 1
+
+      - name: Prune old images
+        run: |
+          # Remove dangling images (untagged build leftovers)
+          docker image prune -f
+
+          # Keep only the 3 most recent version tags per service; remove the rest
+          for IMAGE in niibot-api niibot-twitch niibot-discord; do
+            docker images "$IMAGE" --format "{{.Tag}}" \
+              | grep -v "^latest$" \
+              | sort -rV \
+              | tail -n +4 \
+              | xargs -I{} docker rmi "$IMAGE:{}" 2>/dev/null || true
+          done

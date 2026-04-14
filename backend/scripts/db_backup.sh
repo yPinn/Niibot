@@ -4,8 +4,8 @@
 # Usage (run from project root where docker-compose.yml lives):
 #   bash backend/scripts/db_backup.sh
 #
-# Cron example (daily at 03:00, keep 7 days):
-#   0 3 * * * cd /opt/niibot && bash backend/scripts/db_backup.sh >> data/backups/backup.log 2>&1
+# Cron setup (run once on the host to register):
+#   (crontab -l 2>/dev/null; echo "0 4 * * * cd /Users/pinn/Niibot && bash backend/scripts/db_backup.sh >> data/backups/backup.log 2>&1") | crontab -
 #
 # Restoring a backup:
 #   gunzip -c data/backups/niibot-20260224.sql.gz | \
