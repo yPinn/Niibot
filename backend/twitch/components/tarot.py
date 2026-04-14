@@ -1,6 +1,6 @@
 import json
 import random
-from datetime import datetime
+from datetime import UTC, datetime
 from hashlib import md5
 from typing import TYPE_CHECKING
 
@@ -40,14 +40,13 @@ class TarotComponent(commands.Component):
             self.tarot_data = json.load(f)
 
     def _get_daily_card(self, user_id: str) -> tuple[str, bool]:
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
         seed = int(md5(f"{user_id}-{today}".encode()).hexdigest(), 16)
 
-        random.seed(seed)
+        rng = random.Random(seed)
         card_ids = list(self.tarot_data["cards"].keys())
-        card_id = random.choice(card_ids)
-        is_reversed = random.choice([True, False])
-        random.seed()
+        card_id = rng.choice(card_ids)
+        is_reversed = rng.choice([True, False])
 
         return card_id, is_reversed
 
@@ -73,7 +72,7 @@ class TarotComponent(commands.Component):
         meaning = info["meanings"].get(category, info["meanings"]["general"])
         full_meaning = meaning.replace("\n", "")
 
-        await ctx.reply(f"🃏 {card['name']}({orientation}) | {keywords} — {full_meaning}")
+        await ctx.reply(f"🃏 {card['name']}（{orientation}）| {keywords} — {full_meaning}")
         try:
             await self.cmd_repo.increment_usage_count(ctx.channel.id, "tarot")
         except Exception:
