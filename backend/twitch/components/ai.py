@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import re
 import time
@@ -16,7 +17,7 @@ from openai import (
 from openai.types.chat import ChatCompletionMessageParam
 from twitchio.ext import commands
 
-from core.config import get_settings
+from core.config import DATA_DIR, get_settings
 from core.guards import check_command
 from shared.repositories.command_config import CommandConfigRepository
 
@@ -28,13 +29,33 @@ else:
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
-FALLBACK_MODELS: list[str] = [
-    "deepseek/deepseek-r1-0528:free",
-    "stepfun/step-3.5-flash:free",
-    "z-ai/glm-4.5-air:free",
-    "openai/gpt-oss-120b:free",
+_FREE_MODELS_PATH = DATA_DIR / "free_models.json"
+
+# Hardcoded fallback used only when free_models.json is missing
+_HARDCODED_FALLBACKS: list[str] = [
     "meta-llama/llama-3.3-70b-instruct:free",
+    "openai/gpt-oss-120b:free",
+    "z-ai/glm-4.5-air:free",
 ]
+
+
+def _load_fallback_models(primary: str) -> list[str]:
+    """Load enabled fallback models from free_models.json, excluding primary."""
+    if _FREE_MODELS_PATH.exists():
+        try:
+            with open(_FREE_MODELS_PATH) as f:
+                data = json.load(f)
+            models = [m["id"] for m in data.get("models", []) if m.get("enabled", False)]
+            LOGGER.info(f"Loaded {len(models)} fallback models from {_FREE_MODELS_PATH.name}")
+        except Exception as e:
+            LOGGER.warning(f"Failed to load free_models.json: {e}, using hardcoded fallbacks")
+            models = list(_HARDCODED_FALLBACKS)
+    else:
+        LOGGER.warning(f"{_FREE_MODELS_PATH.name} not found, using hardcoded fallbacks")
+        models = list(_HARDCODED_FALLBACKS)
+
+    return [m for m in models if m != primary]
+
 
 _SYSTEM_PROMPT = (
     "你是 Twitch 聊天機器人。\n\n"
@@ -78,7 +99,7 @@ class AIComponent(commands.Component):
             api_key=api_key,
             timeout=20.0,
         )
-        self.models = [model] + [m for m in FALLBACK_MODELS if m != model]
+        self.models = [model] + _load_fallback_models(model)
 
         LOGGER.info(f"AIComponent initialized: primary={model}, fallbacks={len(self.models) - 1}")
 

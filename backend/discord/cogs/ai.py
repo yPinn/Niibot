@@ -15,6 +15,7 @@ from openai import (
     AsyncOpenAI,
     AuthenticationError,
     BadRequestError,
+    NotFoundError,
     PermissionDeniedError,
     RateLimitError,
 )
@@ -24,13 +25,32 @@ from core import DATA_DIR
 
 LOGGER = logging.getLogger(__name__)
 
-FALLBACK_MODELS: list[str] = [
-    "deepseek/deepseek-r1-0528:free",
-    "stepfun/step-3.5-flash:free",
-    "z-ai/glm-4.5-air:free",
-    "openai/gpt-oss-120b:free",
+_FREE_MODELS_PATH = DATA_DIR / "free_models.json"
+
+_HARDCODED_FALLBACKS: list[str] = [
     "meta-llama/llama-3.3-70b-instruct:free",
+    "openai/gpt-oss-120b:free",
+    "z-ai/glm-4.5-air:free",
 ]
+
+
+def _load_fallback_models(primary: str) -> list[str]:
+    """Load enabled fallback models from shared/free_models.json, excluding primary."""
+    if _FREE_MODELS_PATH.exists():
+        try:
+            with open(_FREE_MODELS_PATH) as f:
+                data = json.load(f)
+            models = [m["id"] for m in data.get("models", []) if m.get("enabled", False)]
+            LOGGER.info(f"Loaded {len(models)} fallback models from {_FREE_MODELS_PATH.name}")
+        except Exception as e:
+            LOGGER.warning(f"Failed to load free_models.json: {e}, using hardcoded fallbacks")
+            models = list(_HARDCODED_FALLBACKS)
+    else:
+        LOGGER.warning(f"{_FREE_MODELS_PATH.name} not found, using hardcoded fallbacks")
+        models = list(_HARDCODED_FALLBACKS)
+
+    return [m for m in models if m != primary]
+
 
 _SYSTEM_PROMPT = (
     "你是 Discord 聊天機器人。\n\n"
@@ -65,7 +85,7 @@ class AICog(commands.Cog):
             api_key=api_key,
             timeout=45.0,
         )
-        self.models = [model] + [m for m in FALLBACK_MODELS if m != model]
+        self.models = [model] + _load_fallback_models(model)
 
         with open(DATA_DIR / "embed.json", encoding="utf-8") as f:
             self.global_embed_config = json.load(f)
@@ -137,6 +157,9 @@ class AICog(commands.Cog):
                     continue
                 except APITimeoutError:
                     LOGGER.warning(f"AI [{model}] timed out, trying next model")
+                    continue
+                except NotFoundError:
+                    LOGGER.warning(f"AI [{model}] not found (404), trying next model")
                     continue
 
             if response:
