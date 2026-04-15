@@ -12,8 +12,6 @@ import {
 } from '@/api'
 import { PageHeader } from '@/components/PageHeader'
 import {
-  Alert,
-  AlertDescription,
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -169,7 +167,19 @@ export default function Settings() {
       <PageHeader title="Settings" description="金流設定" />
 
       <SlideUp inView>
-        <Card>
+        <Card className="relative overflow-hidden">
+          {!isAffiliate && user?.platform === 'twitch' && (
+            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-background/80 backdrop-blur-sm rounded-[inherit]">
+              <Icon
+                icon="fa-solid fa-lock"
+                className="text-5xl text-muted-foreground"
+                wrapperClassName="size-16"
+              />
+              <span className="text-sm text-muted-foreground">
+                成為 Twitch 聯盟夥伴或合作夥伴後即可設定金流
+              </span>
+            </div>
+          )}
           <CardHeader>
             <CardTitle>斗內金流設定</CardTitle>
             <CardDescription>
@@ -178,13 +188,6 @@ export default function Settings() {
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-section">
-            {!isAffiliate && user?.platform === 'twitch' && (
-              <Alert>
-                <AlertDescription>
-                  金流設定僅開放給 Twitch Affiliate / Partner 使用
-                </AlertDescription>
-              </Alert>
-            )}
             {paymentLoading ? (
               <div className="flex flex-col gap-3">
                 <Skeleton className="h-32 w-full" />

@@ -461,13 +461,13 @@ export default function VideoQueue() {
 
       {/* Inline overlay for non-affiliates — blurs preview, blocks interaction */}
       {!isAffiliate && (
-        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-section bg-background/80 backdrop-blur-sm">
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-background/80 backdrop-blur-sm">
           <Icon
             icon="fa-solid fa-lock"
             className="text-5xl text-muted-foreground"
             wrapperClassName="size-16"
           />
-          <span className="text-sub text-muted-foreground">
+          <span className="text-sm text-muted-foreground">
             成為 Twitch 聯盟夥伴或合作夥伴後即可使用影片佇列功能
           </span>
         </div>

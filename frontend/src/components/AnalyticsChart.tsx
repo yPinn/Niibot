@@ -348,7 +348,7 @@ export default function AnalyticsChart({
                 ))}
           </div>
 
-          <div className="flex-1 min-h-0 h-48 sm:h-72.5 relative">
+          <div className="flex-1 min-h-0 h-48 sm:h-72.5 relative [&_.recharts-wrapper]:outline-none [&_svg]:outline-none">
             {isEmpty && (
               <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
                 <span className="text-sm text-muted-foreground/60">尚無直播數據</span>
@@ -363,18 +363,8 @@ export default function AnalyticsChart({
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" opacity={0.5} />
-                <XAxis
-                  dataKey="date"
-                  tick={CustomTick}
-                  tickLine={false}
-                  axisLine={{ className: 'stroke-border' }}
-                />
-                <YAxis
-                  width={35}
-                  tick={CustomYAxisTick}
-                  tickLine={false}
-                  axisLine={{ className: 'stroke-border' }}
-                />
+                <XAxis dataKey="date" tick={CustomTick} tickLine={false} />
+                <YAxis width={35} tick={CustomYAxisTick} tickLine={false} />
                 {!isEmpty && (
                   <Tooltip
                     content={props => <ChartTooltip {...props} chartConfig={chartConfig} />}
