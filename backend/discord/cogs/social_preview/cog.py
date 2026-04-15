@@ -39,6 +39,7 @@ from .constants import (
     BILIBILI_API,
     BILIBILI_RE,
     DDINSTAGRAM_HOST,
+    DISMISS_TIMEOUT,
     HTTP_TIMEOUT,
     INSTAGRAM_RE,
     THREADS_RE,
@@ -55,6 +56,42 @@ _UA = (
 )
 
 _BILIBILI_BV_RE = re.compile(r"BV[A-Za-z0-9]+")
+
+
+# ── Dismiss button ────────────────────────────────────────────────────────────
+
+
+class _DismissView(discord.ui.View):
+    """A single ✕ button that lets the original poster (or a moderator)
+    delete the bot's preview reply.  Removes itself after *timeout* seconds.
+    """
+
+    def __init__(self, original_author_id: int) -> None:
+        super().__init__(timeout=DISMISS_TIMEOUT)
+        self.original_author_id = original_author_id
+        self.message: discord.Message | None = None
+
+    @discord.ui.button(label="✕", style=discord.ButtonStyle.secondary)
+    async def dismiss(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
+        can_dismiss = interaction.user.id == self.original_author_id
+        if (
+            not can_dismiss
+            and isinstance(interaction.channel, discord.TextChannel)
+            and isinstance(interaction.user, discord.Member)
+        ):
+            can_dismiss = interaction.channel.permissions_for(interaction.user).manage_messages
+
+        if can_dismiss:
+            await interaction.message.delete()  # type: ignore[union-attr]
+        else:
+            await interaction.response.send_message("只有原發文者可以關閉預覽。", ephemeral=True)
+
+    async def on_timeout(self) -> None:
+        if self.message:
+            try:
+                await self.message.edit(view=None)
+            except discord.NotFound:
+                pass
 
 
 # ── Open Graph scraper ────────────────────────────────────────────────────────
@@ -130,17 +167,14 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
         og = await self._fetch_og(proxy_url)
         if not og:
             return
-        await message.reply(
-            embed=build_instagram_embed(og, original_url),
-            mention_author=False,
-        )
+        await self._send_preview(message, build_instagram_embed(og, original_url), suppress=True)
 
     async def _handle_threads(self, message: discord.Message, match: re.Match[str]) -> None:
         post_url = match.group(0)
         og = await self._fetch_og(post_url)
         if not og:
             return
-        await message.reply(embed=build_threads_embed(og, post_url), mention_author=False)
+        await self._send_preview(message, build_threads_embed(og, post_url), suppress=True)
 
     async def _handle_bilibili(self, message: discord.Message, match: re.Match[str]) -> None:
         bvid = match.group(1)
@@ -172,9 +206,8 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
         if body.get("code") != 0 or not body.get("data"):
             return
 
-        await message.reply(
-            embed=build_bilibili_embed(body["data"], video_url),
-            mention_author=False,
+        await self._send_preview(
+            message, build_bilibili_embed(body["data"], video_url), suppress=False
         )
 
     async def _handle_tiktok(self, message: discord.Message, match: re.Match[str]) -> None:
@@ -191,12 +224,27 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
         if not oembed.get("title") and not oembed.get("author_name"):
             return
 
-        await message.reply(
-            embed=build_tiktok_embed(oembed, post_url),
-            mention_author=False,
-        )
+        await self._send_preview(message, build_tiktok_embed(oembed, post_url), suppress=True)
 
     # ── Helpers ───────────────────────────────────────────────────────────────
+
+    async def _send_preview(
+        self,
+        message: discord.Message,
+        embed: discord.Embed,
+        *,
+        suppress: bool,
+    ) -> None:
+        """Reply with *embed* + dismiss button, then suppress original embeds."""
+        view = _DismissView(message.author.id)
+        reply = await message.reply(embed=embed, view=view, mention_author=False)
+        view.message = reply
+
+        if suppress:
+            try:
+                await message.edit(suppress=True)
+            except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+                pass  # No manage_messages permission or message already gone
 
     async def _fetch_og(self, url: str) -> dict[str, str] | None:
         try:

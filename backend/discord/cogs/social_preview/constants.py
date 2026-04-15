@@ -54,3 +54,5 @@ COLOR_TIKTOK = 0x010101
 
 HTTP_TIMEOUT = 10.0
 DESCRIPTION_LIMIT = 300
+# Seconds before the dismiss (✕) button is removed from the bot reply
+DISMISS_TIMEOUT = 120.0
