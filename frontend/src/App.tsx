@@ -10,11 +10,9 @@ import { Toaster } from '@/components/ui'
 import { AuthProvider } from '@/contexts/AuthContext'
 import { BotProvider } from '@/contexts/BotContext'
 import { ServiceStatusProvider } from '@/contexts/ServiceStatusContext'
-// Eagerly loaded: critical path or tiny bundles
-import Landing from '@/pages/Landing'
-import NotFound from '@/pages/NotFound'
-
-// Lazy-loaded: large dashboard pages and overlays
+// Lazy-loaded: all pages including Landing and NotFound to keep motion out of main bundle
+const Landing = lazy(() => import('@/pages/Landing'))
+const NotFound = lazy(() => import('@/pages/NotFound'))
 const Commands = lazy(() => import('@/pages/dashboard/commands'))
 const Events = lazy(() => import('@/pages/dashboard/Events'))
 const Overview = lazy(() => import('@/pages/dashboard/Overview'))

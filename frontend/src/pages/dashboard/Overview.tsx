@@ -77,11 +77,11 @@ export default function Dashboard() {
 
   return (
     <main className="grid grid-rows-[auto_auto] gap-section p-page lg:p-page-lg lg:h-full lg:grid-rows-[1fr_auto] lg:min-h-0 lg:overflow-hidden transition-all duration-200">
-      <SlideUp inView>
+      <SlideUp inView className="min-h-0 lg:flex lg:flex-col">
         <AnalyticsChart
           data={analytics}
           loading={analyticsLoading}
-          className="h-105 lg:h-auto lg:min-h-0"
+          className="h-105 lg:flex-1 lg:min-h-0"
         />
       </SlideUp>
 

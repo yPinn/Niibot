@@ -34,7 +34,18 @@ import {
 
 // ── Shared prop types ──────────────────────────────────────────────────────
 
-interface BaseProps extends HTMLMotionProps<'div'> {
+interface BaseProps extends Omit<
+  HTMLMotionProps<'div'>,
+  | 'onAnimationStart'
+  | 'onDrag'
+  | 'onDragEnd'
+  | 'onDragStart'
+  | 'onDragEnter'
+  | 'onDragExit'
+  | 'onDragLeave'
+  | 'onDragOver'
+  | 'onDrop'
+> {
   /** Trigger animation when element enters the viewport (default: false = animate on mount) */
   inView?: boolean
   /** Delay before animation starts, in seconds */
