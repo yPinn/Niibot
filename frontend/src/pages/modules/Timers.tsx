@@ -216,23 +216,26 @@ export default function Timers() {
 
   const handleSave = async () => {
     if (!editing) return
+
+    // Validate before entering the saving state so we never need to unwind it on validation failure
+    const intervalVal = Number(form.interval)
+    if (!intervalVal || intervalVal < 60) {
+      dispatch({ type: 'SAVE_ERROR', msg: '間隔時間至少 60 秒' })
+      return
+    }
+    if (!form.template.trim()) {
+      dispatch({ type: 'SAVE_ERROR', msg: '訊息內容不可為空' })
+      return
+    }
+    if (editing.mode === 'create' && !form.name.trim()) {
+      dispatch({ type: 'SAVE_ERROR', msg: '計時器名稱不可為空' })
+      return
+    }
+
     dispatch({ type: 'SAVING' })
+    const aliasValue = form.alias.trim() || null
     try {
-      const intervalVal = Number(form.interval)
-      if (!intervalVal || intervalVal < 60) {
-        dispatch({ type: 'SAVE_ERROR', msg: '間隔時間至少 60 秒' })
-        return
-      }
-      if (!form.template.trim()) {
-        dispatch({ type: 'SAVE_ERROR', msg: '訊息內容不可為空' })
-        return
-      }
-      const aliasValue = form.alias.trim() || null
       if (editing.mode === 'create') {
-        if (!form.name.trim()) {
-          dispatch({ type: 'SAVE_ERROR', msg: '計時器名稱不可為空' })
-          return
-        }
         const data: TimerCreate = {
           timer_name: form.name.trim(),
           interval_seconds: intervalVal,

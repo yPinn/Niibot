@@ -196,16 +196,20 @@ export default function AnalyticsChart({
 }: AnalyticsChartProps) {
   const [chartMode, setChartMode] = useState<ChartMode>('stream_hours')
 
-  const analyticsData = data || {
-    total_stream_hours: 0,
-    total_sessions: 0,
-    total_commands: 0,
-    total_follows: 0,
-    total_subs: 0,
-    avg_session_duration: 0,
-    avg_viewers: 0,
-    recent_sessions: [],
-  }
+  const analyticsData = useMemo(
+    () =>
+      data || {
+        total_stream_hours: 0,
+        total_sessions: 0,
+        total_commands: 0,
+        total_follows: 0,
+        total_subs: 0,
+        avg_session_duration: 0,
+        avg_viewers: 0,
+        recent_sessions: [],
+      },
+    [data]
+  )
 
   const { realChartData, chartData } = useMemo(() => {
     const sessionsByDate = new Map<string, SessionSummary[]>()
@@ -255,7 +259,7 @@ export default function AnalyticsChart({
           })
 
     return { realChartData: real, chartData: chart }
-  }, [data]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [analyticsData])
 
   const isEmpty = realChartData.length === 0
 

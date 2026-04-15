@@ -25,13 +25,14 @@ export async function getChannelStats(): Promise<ChannelStats | null> {
     })
 
     if (!response.ok) {
-      console.error(`Failed to fetch stats: ${response.status} ${response.statusText}`)
+      if (import.meta.env.DEV)
+        console.error(`Failed to fetch stats: ${response.status} ${response.statusText}`)
       return null
     }
 
     return await response.json()
   } catch (error) {
-    console.error('Failed to get channel stats:', error)
+    if (import.meta.env.DEV) console.error('Failed to get channel stats:', error)
     return null
   }
 }
