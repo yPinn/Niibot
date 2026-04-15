@@ -1,6 +1,5 @@
 """Fortune telling commands"""
 
-import json
 import logging
 import random
 from datetime import datetime
@@ -9,7 +8,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from core import DATA_DIR
+from core import DATA_DIR, load_json
 
 LOGGER = logging.getLogger(__name__)
 
@@ -20,10 +19,8 @@ class FortuneCog(commands.Cog):
         self._load_data()
 
     def _load_data(self) -> None:
-        with open(DATA_DIR / "fortune.json", encoding="utf-8") as f:
-            self.fortune_data = json.load(f)
-        with open(DATA_DIR / "embed.json", encoding="utf-8") as f:
-            self.global_embed_config = json.load(f)
+        self.fortune_data = load_json(DATA_DIR / "fortune.json")
+        self.global_embed_config = load_json(DATA_DIR / "embed.json")
 
     def _get_fortune_level(self, date_modifier: float = 1.0) -> str:
         levels = list(self.fortune_data["fortune_levels"].keys())

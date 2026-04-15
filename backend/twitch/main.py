@@ -12,10 +12,13 @@ if _backend_dir not in sys.path:
 
 
 def main() -> None:
-    # Load .env before setup_logging so ERROR_WEBHOOK_URL is available
+    # Load .env files before setup_logging so ERROR_WEBHOOK_URL is available.
+    # Order mirrors docker-compose.yml: shared.env first, then service-specific .env.
     from dotenv import load_dotenv
 
-    load_dotenv(dotenv_path=Path(__file__).parent / ".env")
+    _twitch_dir = Path(__file__).parent
+    load_dotenv(dotenv_path=_twitch_dir.parent / "shared.env")
+    load_dotenv(dotenv_path=_twitch_dir / ".env", override=True)
 
     # Minimal imports for health server — bind port before heavy setup
     from core.health_server import HealthCheckServer
@@ -31,7 +34,6 @@ def main() -> None:
         # 2. Heavy imports — after port is open
         import logging
 
-        from dotenv import load_dotenv
         from twitchio import eventsub
 
         from core import get_channel_subscriptions, validate_env_vars
@@ -42,8 +44,6 @@ def main() -> None:
 
         logger = logging.getLogger("Bot")
 
-        env_path = Path(__file__).parent / ".env"
-        load_dotenv(dotenv_path=env_path)
         validate_env_vars()
         settings = get_settings()
 

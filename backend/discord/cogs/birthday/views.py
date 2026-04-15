@@ -14,9 +14,16 @@ if TYPE_CHECKING:
 def create_setup_complete_embed(
     channel: discord.abc.GuildChannel | discord.Thread | None,
     role: discord.Role | None,
+    cog: "BirthdayCog",
 ) -> discord.Embed:
     """建立設定完成 Embed"""
-    embed = discord.Embed(title="【設定完成】", color=discord.Color.green())
+    from .constants import BIRTHDAY_THUMBNAIL
+
+    embed: discord.Embed = cog._embed.build(
+        title="【設定完成】",
+        color=discord.Color.green(),
+        thumbnail=BIRTHDAY_THUMBNAIL,
+    )
     embed.add_field(
         name="通知頻道",
         value=channel.mention if channel else "未知",
@@ -151,7 +158,7 @@ class SelectExistingView(discord.ui.View):
 
         channel = interaction.guild.get_channel(self.channel_id)
         role = interaction.guild.get_role(self.role_id)
-        embed = create_setup_complete_embed(channel, role)
+        embed = create_setup_complete_embed(channel, role, self.cog)
 
         await interaction.edit_original_response(embed=embed, view=None)
         self.stop()
@@ -168,10 +175,13 @@ class InitSetupView(discord.ui.View):
     async def use_existing(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
-        embed = discord.Embed(
+        from .constants import BIRTHDAY_THUMBNAIL
+
+        embed = self.cog._embed.build(
             title="【生日功能設定】",
             description="請選擇要使用的頻道和身分組",
             color=BIRTHDAY_COLOR,
+            thumbnail=BIRTHDAY_THUMBNAIL,
         )
         await interaction.response.edit_message(
             content=None, embed=embed, view=SelectExistingView(self.cog)
@@ -205,7 +215,7 @@ class InitSetupView(discord.ui.View):
                 message_template=DEFAULT_MESSAGE_TEMPLATE,
             )
 
-            embed = create_setup_complete_embed(channel, role)
+            embed = create_setup_complete_embed(channel, role, self.cog)
             await interaction.followup.send(embed=embed, ephemeral=True)
 
         except discord.Forbidden:
@@ -226,10 +236,13 @@ class UpdateSettingsView(discord.ui.View):
     async def modify_resources(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
-        embed = discord.Embed(
+        from .constants import BIRTHDAY_THUMBNAIL
+
+        embed = self.cog._embed.build(
             title="【修改設定】",
             description="請選擇新的頻道和身分組",
             color=BIRTHDAY_COLOR,
+            thumbnail=BIRTHDAY_THUMBNAIL,
         )
         await interaction.response.edit_message(embed=embed, view=SelectExistingView(self.cog))
 

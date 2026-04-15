@@ -14,7 +14,11 @@ class Settings(BaseSettings):
     """Application settings with environment variable support"""
 
     model_config = SettingsConfigDict(
-        env_file=Path(__file__).parent.parent / ".env",
+        # Order mirrors docker-compose.yml: shared.env first, api/.env overrides.
+        env_file=(
+            Path(__file__).parent.parent.parent / "shared.env",
+            Path(__file__).parent.parent / ".env",
+        ),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",

@@ -15,7 +15,7 @@ import httpx
 from discord import app_commands
 from discord.ext import commands
 
-from core import DATA_DIR
+from core import DATA_DIR, EmbedFactory, load_json
 
 LOGGER = logging.getLogger(__name__)
 
@@ -75,12 +75,7 @@ class TftCog(commands.Cog):
 
     def _load_embed_config(self) -> None:
         """載入全域 embed 配置"""
-        try:
-            with open(DATA_DIR / "embed.json", encoding="utf-8") as f:
-                self.global_embed_config = json.load(f)
-        except Exception as e:
-            LOGGER.warning(f"Failed to load embed config: {e}")
-            self.global_embed_config = {}
+        self._embed = EmbedFactory(load_json(DATA_DIR / "embed.json"))
 
     async def cog_unload(self) -> None:
         """Cog 卸載時關閉 HTTP 客戶端"""
@@ -265,17 +260,14 @@ class TftCog(commands.Cog):
         c_lp = thresholds[0] if thresholds else 0
         gm_lp = thresholds[1] if len(thresholds) > 1 else 0
 
-        embed = discord.Embed(title="伺服器排行榜 [TW]", color=discord.Color.gold())
-
+        embed = self._embed.build(
+            title="伺服器排行榜 [TW]",
+            url="https://tactics.tools/leaderboards/tw",
+            color=discord.Color.gold(),
+            thumbnail=TIER_IMAGES.get("CHALLENGER"),
+        )
         embed.add_field(name="菁英", value=f"> **{c_lp:,} LP**", inline=False)
         embed.add_field(name="宗師", value=f"> **{gm_lp:,} LP**", inline=False)
-
-        global_author = self.global_embed_config.get("author", {})
-        if global_author.get("name"):
-            embed.set_author(name=global_author.get("name"), icon_url=global_author.get("icon_url"))
-
-        embed.set_footer(text="數據來源: tactics.tools")
-        embed.set_thumbnail(url=TIER_IMAGES.get("CHALLENGER"))
 
         await interaction.followup.send(embed=embed)
 
@@ -324,9 +316,16 @@ class TftCog(commands.Cog):
             tier_display = "未定級"
 
         formatted_name = player_input.replace("#", " #")
+        player_url = (
+            f"https://tactics.tools/player/tw/{quote(username, safe='')}/{quote(tag, safe='')}"
+        )
 
-        embed = discord.Embed(title=formatted_name, color=discord.Color.blue())
-
+        embed = self._embed.build(
+            title=formatted_name,
+            url=player_url,
+            color=discord.Color.blue(),
+            thumbnail=TIER_IMAGES.get(tier) or None,
+        )
         embed.add_field(name="段位", value=f"> {tier_display} **{lp:,} LP**", inline=False)
 
         # 排名顯示：≤1000 顯示數字，否則顯示百分位
@@ -370,19 +369,6 @@ class TftCog(commands.Cog):
 
         embed.add_field(name="最近比賽", value=f"> {match_value}", inline=False)
 
-        global_author = self.global_embed_config.get("author", {})
-        if global_author.get("name"):
-            embed.set_author(name=global_author.get("name"), icon_url=global_author.get("icon_url"))
-
-        embed.set_footer(text="數據來源: tactics.tools")
-
-        tier_image = TIER_IMAGES.get(tier)
-        if tier_image:
-            embed.set_thumbnail(url=tier_image)
-
-        player_url = (
-            f"https://tactics.tools/player/tw/{quote(username, safe='')}/{quote(tag, safe='')}"
-        )
         view = discord.ui.View()
         view.add_item(
             discord.ui.Button(label="詳細資料", url=player_url, style=discord.ButtonStyle.link)
