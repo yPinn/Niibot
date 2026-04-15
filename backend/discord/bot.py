@@ -11,11 +11,14 @@ _backend_dir = str(Path(__file__).resolve().parent.parent)
 if _backend_dir not in sys.path:
     sys.path.insert(0, _backend_dir)
 
-# Load .env before any config imports
+# Load .env files before any config imports.
+# Order mirrors docker-compose.yml: shared.env first, then service-specific .env.
+# Service-specific values override shared ones when keys overlap.
 from dotenv import load_dotenv  # noqa: E402
 
-env_path = Path(__file__).parent / ".env"
-load_dotenv(dotenv_path=env_path, encoding="utf-8")
+_discord_dir = Path(__file__).parent
+load_dotenv(dotenv_path=_discord_dir.parent / "shared.env", encoding="utf-8")
+load_dotenv(dotenv_path=_discord_dir / ".env", encoding="utf-8", override=True)
 
 import asyncpg  # noqa: E402
 import discord  # noqa: E402
