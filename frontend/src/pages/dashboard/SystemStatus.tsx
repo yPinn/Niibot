@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 
-import { Button, Card, CardContent, Icon, Skeleton } from '@/components/ui'
+import { Button, Card, CardContent, Icon, Skeleton, SlideUp } from '@/components/ui'
 import { useServiceStatus } from '@/contexts/ServiceStatusContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
@@ -196,7 +196,7 @@ export default function SystemStatus() {
 
   return (
     <main className="flex flex-1 flex-col gap-section p-page lg:gap-card lg:p-page-lg">
-      <div className="flex items-center justify-between">
+      <SlideUp className="flex items-center justify-between">
         <div>
           <h1 className="text-page-title font-bold">System Status</h1>
           <p className="text-sub text-muted-foreground font-mono mt-1">
@@ -207,66 +207,68 @@ export default function SystemStatus() {
         <Button variant="ghost" size="icon" onClick={refresh} aria-label="Refresh now">
           <Icon icon="fa-solid fa-rotate" className="w-4 h-4 text-muted-foreground" />
         </Button>
-      </div>
+      </SlideUp>
 
-      <Card>
-        <CardContent className="p-0 overflow-hidden">
-          <div className="grid grid-cols-[7rem_1fr_1fr_1fr]">
-            {/* ── Service header row ── */}
-            <div className="px-4 py-3 border-b border-border/40" />
-            {serviceHeaders.map(s => (
-              <div
-                key={s.key}
-                className="px-4 py-3 border-b border-l border-border/40 flex flex-col gap-1.5"
-              >
-                <div className="flex items-center gap-2">
-                  <Icon icon={s.icon} className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                  <span className="text-sub font-semibold truncate">{s.name}</span>
-                </div>
-                {initialLoading ? (
-                  <Skeleton className="h-4 w-14" />
-                ) : (
-                  <StatusBadge online={s.online} ready={s.ready} />
-                )}
-              </div>
-            ))}
-
-            {/* ── Field rows ── */}
-            {fieldRows.map((field, rowIdx) => {
-              const isLast = rowIdx === fieldRows.length - 1
-              const borderB = isLast ? '' : 'border-b border-border/30'
-              return (
-                <div key={field.label} className="contents">
-                  {/* Label cell */}
-                  <div className={`px-4 py-1.5 flex items-center ${borderB}`}>
-                    <span className="text-sub text-muted-foreground">{field.label}</span>
+      <SlideUp inView delay={0.1}>
+        <Card>
+          <CardContent className="p-0 overflow-hidden">
+            <div className="grid grid-cols-[7rem_1fr_1fr_1fr]">
+              {/* ── Service header row ── */}
+              <div className="px-4 py-3 border-b border-border/40" />
+              {serviceHeaders.map(s => (
+                <div
+                  key={s.key}
+                  className="px-4 py-3 border-b border-l border-border/40 flex flex-col gap-1.5"
+                >
+                  <div className="flex items-center gap-2">
+                    <Icon icon={s.icon} className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                    <span className="text-sub font-semibold truncate">{s.name}</span>
                   </div>
-                  {/* Value cells */}
-                  {field.values.map((val, colIdx) => {
-                    const offline = !serviceHeaders[colIdx].online
-                    return (
-                      <div
-                        key={colIdx}
-                        className={`px-4 py-1.5 border-l border-border/20 font-mono text-sub flex items-center ${borderB}`}
-                      >
-                        {initialLoading ? (
-                          <Skeleton className="h-4 w-20" />
-                        ) : offline ? (
-                          DASH
-                        ) : val !== null ? (
-                          val
-                        ) : (
-                          DASH
-                        )}
-                      </div>
-                    )
-                  })}
+                  {initialLoading ? (
+                    <Skeleton className="h-4 w-14" />
+                  ) : (
+                    <StatusBadge online={s.online} ready={s.ready} />
+                  )}
                 </div>
-              )
-            })}
-          </div>
-        </CardContent>
-      </Card>
+              ))}
+
+              {/* ── Field rows ── */}
+              {fieldRows.map((field, rowIdx) => {
+                const isLast = rowIdx === fieldRows.length - 1
+                const borderB = isLast ? '' : 'border-b border-border/30'
+                return (
+                  <div key={field.label} className="contents">
+                    {/* Label cell */}
+                    <div className={`px-4 py-1.5 flex items-center ${borderB}`}>
+                      <span className="text-sub text-muted-foreground">{field.label}</span>
+                    </div>
+                    {/* Value cells */}
+                    {field.values.map((val, colIdx) => {
+                      const offline = !serviceHeaders[colIdx].online
+                      return (
+                        <div
+                          key={colIdx}
+                          className={`px-4 py-1.5 border-l border-border/20 font-mono text-sub flex items-center ${borderB}`}
+                        >
+                          {initialLoading ? (
+                            <Skeleton className="h-4 w-20" />
+                          ) : offline ? (
+                            DASH
+                          ) : val !== null ? (
+                            val
+                          ) : (
+                            DASH
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      </SlideUp>
     </main>
   )
 }

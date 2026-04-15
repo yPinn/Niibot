@@ -15,6 +15,7 @@ import {
   CardTitle,
   Icon,
   Skeleton,
+  SlideUp,
   Tabs,
   TabsContent,
   TabsList,
@@ -172,73 +173,75 @@ export default function Commands() {
     <main className="flex flex-1 flex-col gap-section p-page lg:p-page-lg">
       <PageHeader title="Commands" description="管理 Twitch 機器人指令與自動回應" />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>指令設定</CardTitle>
-          <CardDescription>
-            管理內建指令、自訂指令（!prefix）與自動回應（關鍵字觸發）
-          </CardDescription>
-          <CardAction>
-            <Button size="sm" onClick={openCreate}>
-              <Icon icon="fa-solid fa-plus" wrapperClassName="mr-1.5 size-3" />
-              新增
-            </Button>
-          </CardAction>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="space-y-3">
-              <Skeleton className="h-9 w-48" />
-              <div className="space-y-2">
-                {Array.from({ length: 6 }).map((_, i) => (
-                  <Skeleton key={i} className="h-10 w-full" />
-                ))}
+      <SlideUp inView>
+        <Card>
+          <CardHeader>
+            <CardTitle>指令設定</CardTitle>
+            <CardDescription>
+              管理內建指令、自訂指令（!prefix）與自動回應（關鍵字觸發）
+            </CardDescription>
+            <CardAction>
+              <Button size="sm" onClick={openCreate}>
+                <Icon icon="fa-solid fa-plus" wrapperClassName="mr-1.5 size-3" />
+                新增
+              </Button>
+            </CardAction>
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <div className="space-y-3">
+                <Skeleton className="h-9 w-48" />
+                <div className="space-y-2">
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <Skeleton key={i} className="h-10 w-full" />
+                  ))}
+                </div>
               </div>
-            </div>
-          ) : error ? (
-            <div className="flex items-center justify-center py-empty text-destructive">
-              {error}
-            </div>
-          ) : (
-            <Tabs defaultValue="builtin">
-              <TabsList>
-                <TabsTrigger value="builtin">
-                  內建
-                  <Badge variant="secondary" className="ml-1.5 px-1.5 text-label">
-                    {commands.filter(c => c.command_type === 'builtin').length}
-                  </Badge>
-                </TabsTrigger>
-                <TabsTrigger value="custom">
-                  自訂
-                  <Badge variant="secondary" className="ml-1.5 px-1.5 text-label">
-                    {commands.filter(c => c.command_type === 'custom').length + triggers.length}
-                  </Badge>
-                </TabsTrigger>
-              </TabsList>
+            ) : error ? (
+              <div className="flex items-center justify-center py-empty text-destructive">
+                {error}
+              </div>
+            ) : (
+              <Tabs defaultValue="builtin">
+                <TabsList>
+                  <TabsTrigger value="builtin">
+                    內建
+                    <Badge variant="secondary" className="ml-1.5 px-1.5 text-label">
+                      {commands.filter(c => c.command_type === 'builtin').length}
+                    </Badge>
+                  </TabsTrigger>
+                  <TabsTrigger value="custom">
+                    自訂
+                    <Badge variant="secondary" className="ml-1.5 px-1.5 text-label">
+                      {commands.filter(c => c.command_type === 'custom').length + triggers.length}
+                    </Badge>
+                  </TabsTrigger>
+                </TabsList>
 
-              <TabsContent value="builtin">
-                <BuiltinTab
-                  commands={commands.filter(c => c.command_type === 'builtin')}
-                  sortState={builtinSort}
-                  defaults={defaults}
-                  onToggle={toggleCommand}
-                  onEdit={openEditCommand}
-                />
-              </TabsContent>
+                <TabsContent value="builtin">
+                  <BuiltinTab
+                    commands={commands.filter(c => c.command_type === 'builtin')}
+                    sortState={builtinSort}
+                    defaults={defaults}
+                    onToggle={toggleCommand}
+                    onEdit={openEditCommand}
+                  />
+                </TabsContent>
 
-              <TabsContent value="custom">
-                <CustomTab
-                  customRows={customRows}
-                  sortState={customSort}
-                  defaults={defaults}
-                  onToggle={handleToggleRow}
-                  onEdit={openEditRow}
-                />
-              </TabsContent>
-            </Tabs>
-          )}
-        </CardContent>
-      </Card>
+                <TabsContent value="custom">
+                  <CustomTab
+                    customRows={customRows}
+                    sortState={customSort}
+                    defaults={defaults}
+                    onToggle={handleToggleRow}
+                    onEdit={openEditRow}
+                  />
+                </TabsContent>
+              </Tabs>
+            )}
+          </CardContent>
+        </Card>
+      </SlideUp>
 
       <CommandSheet
         open={!!editing}

@@ -1,14 +1,16 @@
-import { Outlet } from 'react-router-dom'
+import { Outlet, useLocation } from 'react-router-dom'
 
 import { AppSidebar } from '@/components/app-sidebar'
 import { OnlineDropdown } from '@/components/OnlineDropdown'
 import {
+  AnimatePresence,
   Breadcrumb,
   BreadcrumbItem,
   BreadcrumbLink,
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
+  FadeIn,
   Separator,
   SidebarInset,
   SidebarProvider,
@@ -20,6 +22,7 @@ import { useBreadcrumbs } from '@/hooks/useBreadcrumbs'
 export default function SidebarLayout() {
   const { user } = useAuth()
   const breadcrumbs = useBreadcrumbs()
+  const location = useLocation()
 
   return (
     <SidebarProvider className="h-svh! min-h-0!">
@@ -50,9 +53,11 @@ export default function SidebarLayout() {
           </div>
           {user && <OnlineDropdown />}
         </header>
-        <div className="flex-1 min-h-0 overflow-auto">
-          <Outlet />
-        </div>
+        <AnimatePresence mode="wait">
+          <FadeIn key={location.pathname} className="flex-1 min-h-0 overflow-auto">
+            <Outlet />
+          </FadeIn>
+        </AnimatePresence>
       </SidebarInset>
     </SidebarProvider>
   )

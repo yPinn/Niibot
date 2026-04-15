@@ -4,7 +4,7 @@ import { toast } from 'sonner'
 
 import { openTwitchOAuth } from '@/api'
 import rabbitBg from '@/assets/images/Rabbit.jpg'
-import { Button, Card, CardContent, Icon } from '@/components/ui'
+import { Button, Card, CardContent, Icon, SlideUp } from '@/components/ui'
 import { cn } from '@/lib/utils'
 
 const ERROR_MESSAGES: Record<string, string> = {
@@ -30,13 +30,7 @@ export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) 
   }, [])
 
   return (
-    <div
-      className={cn(
-        'flex flex-col gap-6 animate-in fade-in-0 slide-in-from-bottom-4 animation-duration-500',
-        className
-      )}
-      {...props}
-    >
+    <SlideUp className={cn('flex flex-col gap-6', className)} {...props}>
       <Card className="overflow-hidden p-0">
         <CardContent className="grid p-0 md:grid-cols-2">
           <form className="p-6 md:p-8">
@@ -94,6 +88,6 @@ export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) 
           </div>
         </CardContent>
       </Card>
-    </div>
+    </SlideUp>
   )
 }

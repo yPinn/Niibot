@@ -63,6 +63,18 @@ export { Icon } from './icon'
 export { Input } from './input'
 export { Label } from './label'
 export {
+  AnimatePresence,
+  FadeIn,
+  FadeInZoom,
+  Reveal,
+  SlideInLeft,
+  SlideInRight,
+  SlideUp,
+  SlideUpSm,
+  Stagger,
+  StaggerItem,
+} from './motion'
+export {
   Select,
   SelectContent,
   SelectGroup,

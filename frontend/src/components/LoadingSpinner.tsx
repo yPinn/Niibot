@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-import { Spinner } from '@/components/ui'
+import { FadeIn, Spinner } from '@/components/ui'
 
 interface LoadingSpinnerProps {
   size?: 'sm' | 'md' | 'lg'
@@ -46,9 +46,9 @@ export function LoadingSpinner({
 
   if (fullScreen) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm animate-in fade-in animation-duration-200">
+      <FadeIn className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
         {spinner}
-      </div>
+      </FadeIn>
     )
   }
 

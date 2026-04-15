@@ -26,6 +26,7 @@ import {
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
+  FadeIn,
   Icon,
   Input,
   Label,
@@ -290,7 +291,7 @@ export default function GameQueue() {
       )}
 
       {/* Row 1: Full Queue (col-8) + sidebar (col-4) */}
-      <div className="grid grid-cols-1 gap-section lg:grid-cols-12 lg:items-stretch">
+      <FadeIn inView className="grid grid-cols-1 gap-section lg:grid-cols-12 lg:items-stretch">
         {/* Full Queue card — fills full column height */}
         <div className="lg:col-span-8">
           <Card className="h-full min-h-[520px]">
@@ -405,7 +406,7 @@ export default function GameQueue() {
             </CardContent>
           </Card>
         </div>
-      </div>
+      </FadeIn>
     </main>
   )
 }

@@ -5,7 +5,7 @@ import { type ChannelStats, getChannelStats } from '@/api/stats'
 import AnalyticsChart from '@/components/AnalyticsChart'
 import StatsCard from '@/components/StatsCard'
 import TwitchPlayer from '@/components/TwitchPlayer'
-import { Skeleton } from '@/components/ui'
+import { Skeleton, SlideUp, Stagger, StaggerItem } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
@@ -77,14 +77,16 @@ export default function Dashboard() {
 
   return (
     <main className="grid grid-rows-[auto_auto] gap-section p-page lg:p-page-lg lg:h-full lg:grid-rows-[1fr_auto] lg:min-h-0 lg:overflow-hidden transition-all duration-200">
-      <AnalyticsChart
-        data={analytics}
-        loading={analyticsLoading}
-        className="h-105 lg:h-auto lg:min-h-0"
-      />
+      <SlideUp inView>
+        <AnalyticsChart
+          data={analytics}
+          loading={analyticsLoading}
+          className="h-105 lg:h-auto lg:min-h-0"
+        />
+      </SlideUp>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-section">
-        <div className="aspect-video bg-muted/50 rounded-xl overflow-hidden relative">
+      <Stagger inView className="grid grid-cols-1 lg:grid-cols-3 gap-section">
+        <StaggerItem className="aspect-video bg-muted/50 rounded-xl overflow-hidden relative">
           {user?.name ? (
             <TwitchPlayer
               channel={defaultChannel}
@@ -96,29 +98,33 @@ export default function Dashboard() {
           ) : (
             <Skeleton className="absolute inset-0 rounded-xl" />
           )}
-        </div>
+        </StaggerItem>
 
-        <StatsCard
-          title="Top Chatters"
-          icon="fa-solid fa-comments"
-          items={
-            stats?.top_chatters.map(chatter => ({
-              label: chatter.display_name || chatter.username,
-              value: chatter.message_count,
-            })) || []
-          }
-          loading={statsLoading}
-          className="aspect-video overflow-hidden"
-        />
+        <StaggerItem>
+          <StatsCard
+            title="Top Chatters"
+            icon="fa-solid fa-comments"
+            items={
+              stats?.top_chatters.map(chatter => ({
+                label: chatter.display_name || chatter.username,
+                value: chatter.message_count,
+              })) || []
+            }
+            loading={statsLoading}
+            className="aspect-video overflow-hidden"
+          />
+        </StaggerItem>
 
-        <StatsCard
-          title="Top Commands"
-          icon="fa-solid fa-terminal"
-          items={stats?.top_commands.map(cmd => ({ label: cmd.name, value: cmd.count })) || []}
-          loading={statsLoading}
-          className="aspect-video overflow-hidden"
-        />
-      </div>
+        <StaggerItem>
+          <StatsCard
+            title="Top Commands"
+            icon="fa-solid fa-terminal"
+            items={stats?.top_commands.map(cmd => ({ label: cmd.name, value: cmd.count })) || []}
+            loading={statsLoading}
+            className="aspect-video overflow-hidden"
+          />
+        </StaggerItem>
+      </Stagger>
     </main>
   )
 }

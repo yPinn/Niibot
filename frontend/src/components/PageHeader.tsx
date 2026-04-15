@@ -1,3 +1,4 @@
+import { SlideUp } from '@/components/ui'
 import { cn } from '@/lib/utils'
 
 export interface PageHeaderProps {
@@ -12,9 +13,9 @@ export interface PageHeaderProps {
  */
 export function PageHeader({ title, description, className }: PageHeaderProps) {
   return (
-    <div className={cn(className)}>
+    <SlideUp className={cn(className)}>
       <h1 className="text-page-title font-bold">{title}</h1>
       {description && <p className="text-sub text-muted-foreground">{description}</p>}
-    </div>
+    </SlideUp>
   )
 }

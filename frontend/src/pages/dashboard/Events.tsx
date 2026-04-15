@@ -44,6 +44,7 @@ import {
   SheetHeader,
   SheetTitle,
   Skeleton,
+  SlideUp,
   Spinner,
   Switch,
   Table,
@@ -282,242 +283,247 @@ export default function Events() {
     <main className="flex flex-1 flex-col gap-section p-page lg:p-page-lg">
       <PageHeader title="Events" description="管理頻道事件、自動回應與忠誠點數兌換" />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>事件列表</CardTitle>
-          <CardDescription>設定頻道事件觸發時的自動回應訊息</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="flex flex-col gap-2">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <Skeleton key={i} className="h-10 w-full" />
-              ))}
-            </div>
-          ) : error ? (
-            <Alert variant="destructive">
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          ) : (
-            <div className="overflow-x-auto rounded-md border">
-              <Table className="table-fixed">
-                <TableHeader>
-                  <TableRow>
-                    <SortableHead
-                      className="w-[20%]"
-                      sortKey="event_type"
-                      currentKey={eventSort.sortKey}
-                      dir={eventSort.sortDir}
-                      onSort={eventSort.toggleSort}
-                    >
-                      事件名稱
-                    </SortableHead>
-                    <SortableHead
-                      className="w-[12%]"
-                      sortKey="type_label"
-                      currentKey={eventSort.sortKey}
-                      dir={eventSort.sortDir}
-                      onSort={eventSort.toggleSort}
-                    >
-                      類型
-                    </SortableHead>
-                    <TableHead>訊息模板</TableHead>
-                    <SortableHead
-                      className="w-[12%] text-right"
-                      sortKey="trigger_count"
-                      currentKey={eventSort.sortKey}
-                      dir={eventSort.sortDir}
-                      onSort={eventSort.toggleSort}
-                    >
-                      觸發次數
-                    </SortableHead>
-                    <SortableHead
-                      className="w-[10%] text-center"
-                      sortKey="enabled"
-                      currentKey={eventSort.sortKey}
-                      dir={eventSort.sortDir}
-                      onSort={eventSort.toggleSort}
-                    >
-                      狀態
-                    </SortableHead>
-                    <TableHead className="w-[8%] text-right">操作</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {sortedEvents.map(event => {
-                    const locked =
-                      !isAffiliate &&
-                      (event.event_type === 'subscribe' || event.event_type === 'bits')
-                    return (
-                      <TableRow key={event.event_type} className={locked ? 'opacity-50' : ''}>
-                        <TableCell className="font-medium">
-                          <span className="flex items-center gap-1.5">
-                            {EVENT_TYPE_NAMES[event.event_type] || event.event_type}
-                            {locked && <Icon icon="fa-solid fa-lock" wrapperClassName="size-3.5" />}
-                          </span>
-                        </TableCell>
-                        <TableCell>
-                          <Badge className={EVENT_TYPE_COLORS[event.event_type] || ''}>
-                            {EVENT_TYPE_LABELS[event.event_type] || event.event_type}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="max-w-0 truncate font-mono text-label">
-                          {locked ? (
-                            <span className="text-muted-foreground">
-                              需要聯盟夥伴或合作夥伴資格
-                            </span>
-                          ) : (
-                            event.message_template
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right">{event.trigger_count}</TableCell>
-                        <TableCell className="text-center">
-                          <div className="flex justify-center">
-                            <Switch
-                              checked={event.enabled}
-                              onCheckedChange={() => handleToggle(event)}
-                              disabled={locked}
-                            />
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => openEditor(event)}
-                            disabled={locked}
-                          >
-                            編輯
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    )
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Redemption Configs */}
-      <Card className={!isAffiliate ? 'opacity-60' : ''}>
-        <CardHeader>
-          <CardTitle>忠誠點數兌換</CardTitle>
-          <CardDescription>
-            {!isAffiliate
-              ? '此功能需要 Twitch 聯盟夥伴或合作夥伴資格才能使用'
-              : '選擇 Twitch 忠誠點數獎勵對應的動作'}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {redemptionLoading ? (
-            <div className="flex flex-col gap-2">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <Skeleton key={i} className="h-10 w-full" />
-              ))}
-            </div>
-          ) : !isAffiliate ? (
-            <Empty>
-              <EmptyHeader>
-                <EmptyMedia>
-                  <Icon icon="fa-solid fa-lock" wrapperClassName="size-6" />
-                </EmptyMedia>
-                <EmptyDescription>
-                  成為 Twitch 聯盟夥伴或合作夥伴後即可設定忠誠點數獎勵
-                </EmptyDescription>
-              </EmptyHeader>
-            </Empty>
-          ) : (
-            <div className="overflow-x-auto rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <SortableHead
-                      sortKey="action_type"
-                      currentKey={redSort.sortKey}
-                      dir={redSort.sortDir}
-                      onSort={redSort.toggleSort}
-                    >
-                      動作
-                    </SortableHead>
-                    <SortableHead
-                      sortKey="reward_name"
-                      currentKey={redSort.sortKey}
-                      dir={redSort.sortDir}
-                      onSort={redSort.toggleSort}
-                    >
-                      獎勵名稱
-                    </SortableHead>
-                    <SortableHead
-                      className="text-center"
-                      sortKey="enabled"
-                      currentKey={redSort.sortKey}
-                      dir={redSort.sortDir}
-                      onSort={redSort.toggleSort}
-                    >
-                      狀態
-                    </SortableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {sortedRedemptions.length === 0 ? (
+      <SlideUp inView>
+        <Card>
+          <CardHeader>
+            <CardTitle>事件列表</CardTitle>
+            <CardDescription>設定頻道事件觸發時的自動回應訊息</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <div className="flex flex-col gap-2">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <Skeleton key={i} className="h-10 w-full" />
+                ))}
+              </div>
+            ) : error ? (
+              <Alert variant="destructive">
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            ) : (
+              <div className="overflow-x-auto rounded-md border">
+                <Table className="table-fixed">
+                  <TableHeader>
                     <TableRow>
-                      <TableCell colSpan={3} className="text-center text-muted-foreground">
-                        尚無兌換設定
-                      </TableCell>
+                      <SortableHead
+                        className="w-[20%]"
+                        sortKey="event_type"
+                        currentKey={eventSort.sortKey}
+                        dir={eventSort.sortDir}
+                        onSort={eventSort.toggleSort}
+                      >
+                        事件名稱
+                      </SortableHead>
+                      <SortableHead
+                        className="w-[12%]"
+                        sortKey="type_label"
+                        currentKey={eventSort.sortKey}
+                        dir={eventSort.sortDir}
+                        onSort={eventSort.toggleSort}
+                      >
+                        類型
+                      </SortableHead>
+                      <TableHead>訊息模板</TableHead>
+                      <SortableHead
+                        className="w-[12%] text-right"
+                        sortKey="trigger_count"
+                        currentKey={eventSort.sortKey}
+                        dir={eventSort.sortDir}
+                        onSort={eventSort.toggleSort}
+                      >
+                        觸發次數
+                      </SortableHead>
+                      <SortableHead
+                        className="w-[10%] text-center"
+                        sortKey="enabled"
+                        currentKey={eventSort.sortKey}
+                        dir={eventSort.sortDir}
+                        onSort={eventSort.toggleSort}
+                      >
+                        狀態
+                      </SortableHead>
+                      <TableHead className="w-[8%] text-right">操作</TableHead>
                     </TableRow>
-                  ) : (
-                    sortedRedemptions.map(red => (
-                      <TableRow key={red.action_type}>
-                        <TableCell className="font-medium">
-                          {ACTION_TYPE_LABELS[red.action_type] || red.action_type}
-                        </TableCell>
-                        <TableCell>
-                          {twitchRewards.length === 0 ? (
-                            <span className="text-sub text-muted-foreground">
-                              請先在 Twitch 建立自訂獎勵
+                  </TableHeader>
+                  <TableBody>
+                    {sortedEvents.map(event => {
+                      const locked =
+                        !isAffiliate &&
+                        (event.event_type === 'subscribe' || event.event_type === 'bits')
+                      return (
+                        <TableRow key={event.event_type} className={locked ? 'opacity-50' : ''}>
+                          <TableCell className="font-medium">
+                            <span className="flex items-center gap-1.5">
+                              {EVENT_TYPE_NAMES[event.event_type] || event.event_type}
+                              {locked && (
+                                <Icon icon="fa-solid fa-lock" wrapperClassName="size-3.5" />
+                              )}
                             </span>
-                          ) : (
-                            <Select
-                              value={red.reward_name || '__none__'}
-                              onValueChange={v =>
-                                handleRewardSelect(red, v === '__none__' ? '' : v)
-                              }
+                          </TableCell>
+                          <TableCell>
+                            <Badge className={EVENT_TYPE_COLORS[event.event_type] || ''}>
+                              {EVENT_TYPE_LABELS[event.event_type] || event.event_type}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="max-w-0 truncate font-mono text-label">
+                            {locked ? (
+                              <span className="text-muted-foreground">
+                                需要聯盟夥伴或合作夥伴資格
+                              </span>
+                            ) : (
+                              event.message_template
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right">{event.trigger_count}</TableCell>
+                          <TableCell className="text-center">
+                            <div className="flex justify-center">
+                              <Switch
+                                checked={event.enabled}
+                                onCheckedChange={() => handleToggle(event)}
+                                disabled={locked}
+                              />
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => openEditor(event)}
+                              disabled={locked}
                             >
-                              <SelectTrigger size="sm" className="w-full max-w-56">
-                                <SelectValue placeholder="選擇獎勵..." />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="__none__" className="text-muted-foreground">
-                                  未選擇
-                                </SelectItem>
-                                {twitchRewards.map(reward => (
-                                  <SelectItem key={reward.id} value={reward.title}>
-                                    {reward.title} ({reward.cost.toLocaleString()} 點)
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <div className="flex justify-center">
-                            <Switch
-                              checked={red.enabled}
-                              onCheckedChange={() => handleRedemptionToggle(red)}
-                            />
-                          </div>
+                              編輯
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </SlideUp>
+
+      <SlideUp inView delay={0.1}>
+        <Card className={!isAffiliate ? 'opacity-60' : ''}>
+          <CardHeader>
+            <CardTitle>忠誠點數兌換</CardTitle>
+            <CardDescription>
+              {!isAffiliate
+                ? '此功能需要 Twitch 聯盟夥伴或合作夥伴資格才能使用'
+                : '選擇 Twitch 忠誠點數獎勵對應的動作'}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {redemptionLoading ? (
+              <div className="flex flex-col gap-2">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <Skeleton key={i} className="h-10 w-full" />
+                ))}
+              </div>
+            ) : !isAffiliate ? (
+              <Empty>
+                <EmptyHeader>
+                  <EmptyMedia>
+                    <Icon icon="fa-solid fa-lock" wrapperClassName="size-6" />
+                  </EmptyMedia>
+                  <EmptyDescription>
+                    成為 Twitch 聯盟夥伴或合作夥伴後即可設定忠誠點數獎勵
+                  </EmptyDescription>
+                </EmptyHeader>
+              </Empty>
+            ) : (
+              <div className="overflow-x-auto rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <SortableHead
+                        sortKey="action_type"
+                        currentKey={redSort.sortKey}
+                        dir={redSort.sortDir}
+                        onSort={redSort.toggleSort}
+                      >
+                        動作
+                      </SortableHead>
+                      <SortableHead
+                        sortKey="reward_name"
+                        currentKey={redSort.sortKey}
+                        dir={redSort.sortDir}
+                        onSort={redSort.toggleSort}
+                      >
+                        獎勵名稱
+                      </SortableHead>
+                      <SortableHead
+                        className="text-center"
+                        sortKey="enabled"
+                        currentKey={redSort.sortKey}
+                        dir={redSort.sortDir}
+                        onSort={redSort.toggleSort}
+                      >
+                        狀態
+                      </SortableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {sortedRedemptions.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={3} className="text-center text-muted-foreground">
+                          尚無兌換設定
                         </TableCell>
                       </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                    ) : (
+                      sortedRedemptions.map(red => (
+                        <TableRow key={red.action_type}>
+                          <TableCell className="font-medium">
+                            {ACTION_TYPE_LABELS[red.action_type] || red.action_type}
+                          </TableCell>
+                          <TableCell>
+                            {twitchRewards.length === 0 ? (
+                              <span className="text-sub text-muted-foreground">
+                                請先在 Twitch 建立自訂獎勵
+                              </span>
+                            ) : (
+                              <Select
+                                value={red.reward_name || '__none__'}
+                                onValueChange={v =>
+                                  handleRewardSelect(red, v === '__none__' ? '' : v)
+                                }
+                              >
+                                <SelectTrigger size="sm" className="w-full max-w-56">
+                                  <SelectValue placeholder="選擇獎勵..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="__none__" className="text-muted-foreground">
+                                    未選擇
+                                  </SelectItem>
+                                  {twitchRewards.map(reward => (
+                                    <SelectItem key={reward.id} value={reward.title}>
+                                      {reward.title} ({reward.cost.toLocaleString()} 點)
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <div className="flex justify-center">
+                              <Switch
+                                checked={red.enabled}
+                                onCheckedChange={() => handleRedemptionToggle(red)}
+                              />
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </SlideUp>
 
       {/* Edit Sheet */}
       <Sheet open={!!editingEvent} onOpenChange={open => !open && setEditingEvent(null)}>

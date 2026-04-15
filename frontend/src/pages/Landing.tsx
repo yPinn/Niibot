@@ -2,7 +2,17 @@ import { Link, useNavigate } from 'react-router-dom'
 
 import avatarSrc from '@/assets/images/Avatar.png'
 import { useTheme } from '@/components/theme-provider'
-import { Badge, Button, Icon } from '@/components/ui'
+import {
+  Badge,
+  Button,
+  FadeIn,
+  FadeInZoom,
+  Icon,
+  SlideUp,
+  SlideUpSm,
+  Stagger,
+  StaggerItem,
+} from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
 const FEATURES = [
@@ -75,17 +85,14 @@ export default function Home() {
         {/* Hero — stacked on mobile/sm, side-by-side from md */}
         <section className="flex min-h-[60vh] flex-col items-center justify-center gap-10 px-6 py-20 text-center sm:px-10 md:flex-row md:items-center md:gap-16 md:text-left lg:px-16 lg:py-24">
           {/* Avatar */}
-          <div className="shrink-0 animate-in fade-in-0 zoom-in-95 animation-duration-500">
+          <FadeInZoom className="shrink-0">
             <div className="h-40 w-40 overflow-hidden rounded-full border-4 border-primary shadow-2xl sm:h-48 sm:w-48 lg:h-56 lg:w-56">
               <img src={avatarSrc} alt="Niibot 頭像" className="h-full w-full object-cover" />
             </div>
-          </div>
+          </FadeInZoom>
 
           {/* Text */}
-          <div
-            className="flex flex-col items-center md:items-start animate-in fade-in-0 slide-in-from-bottom-4 animation-duration-500 fill-mode-backwards"
-            style={{ animationDelay: '150ms' }}
-          >
+          <SlideUp delay={0.15} className="flex flex-col items-center md:items-start">
             <h1 className="text-4xl font-bold tracking-tight sm:text-5xl lg:text-7xl">Niibot</h1>
             <p className="mt-3 text-xl text-muted-foreground">Twitch 聊天機器人 | 泥爸</p>
             <p className="mt-6 max-w-xl text-lg leading-relaxed text-muted-foreground">
@@ -98,28 +105,25 @@ export default function Home() {
             <Button className="mt-8 h-12 px-10 text-base" onClick={() => navigate('/login')}>
               開始使用
             </Button>
-          </div>
+          </SlideUp>
         </section>
 
         <div className="border-t border-border" />
 
         {/* Features */}
         <section className="px-6 py-16 sm:px-10 lg:px-16">
-          <h2 className="mb-3 text-2xl font-semibold sm:text-3xl animate-in fade-in-0 slide-in-from-bottom-2 animation-duration-400">
+          <SlideUpSm inView className="mb-3 text-2xl font-semibold sm:text-3xl">
             我能幫你做什麼
-          </h2>
-          <p
-            className="mb-10 text-lg text-muted-foreground animate-in fade-in-0 animation-duration-400 fill-mode-backwards"
-            style={{ animationDelay: '100ms' }}
-          >
+          </SlideUpSm>
+          <FadeIn inView delay={0.1} className="mb-10 text-lg text-muted-foreground">
             讓你專心直播，雜事交給我。
-          </p>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {FEATURES.map((item, index) => (
-              <div
+          </FadeIn>
+
+          <Stagger inView className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {FEATURES.map(item => (
+              <StaggerItem
                 key={item.title}
-                className="flex flex-col gap-3 rounded-xl border bg-card p-6 shadow-sm animate-in fade-in-0 slide-in-from-bottom-4 animation-duration-300 fill-mode-backwards"
-                style={{ animationDelay: `${index * 75}ms` }}
+                className="flex flex-col gap-3 rounded-xl border bg-card p-6 shadow-sm"
               >
                 <div className="flex items-center gap-3">
                   <Icon icon={item.icon} wrapperClassName="size-5 text-primary shrink-0" />
@@ -131,38 +135,38 @@ export default function Home() {
                   )}
                 </div>
                 <p className="text-sm leading-relaxed text-muted-foreground">{item.desc}</p>
-              </div>
+              </StaggerItem>
             ))}
-          </div>
+          </Stagger>
         </section>
 
         <div className="border-t border-border" />
 
         {/* Commands + usage + CTA */}
-
         <section className="space-y-10 px-6 py-14 sm:px-10 lg:px-16">
           <div>
-            <h2 className="mb-2 text-xl font-semibold sm:text-2xl animate-in fade-in-0 slide-in-from-bottom-2 animation-duration-400">
+            <SlideUpSm inView className="mb-2 text-xl font-semibold sm:text-2xl">
               內建指令
-            </h2>
-            <p
-              className="mb-6 text-base text-muted-foreground animate-in fade-in-0 animation-duration-400 fill-mode-backwards"
-              style={{ animationDelay: '100ms' }}
-            >
+            </SlideUpSm>
+            <FadeIn inView delay={0.1} className="mb-6 text-base text-muted-foreground">
               開箱即用，無需設定。
-            </p>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              {BUILTIN_COMMANDS.map((cmd, index) => (
-                <div
+            </FadeIn>
+
+            <Stagger
+              inView
+              staggerChildren={0.05}
+              className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"
+            >
+              {BUILTIN_COMMANDS.map(cmd => (
+                <StaggerItem
                   key={cmd.name}
-                  className="flex flex-col gap-1.5 rounded-xl border bg-card px-4 py-3 animate-in fade-in-0 slide-in-from-bottom-2 animation-duration-200 fill-mode-backwards"
-                  style={{ animationDelay: `${index * 50}ms` }}
+                  className="flex flex-col gap-1.5 rounded-xl border bg-card px-4 py-3"
                 >
                   <span className="font-mono text-sm font-semibold text-primary">{cmd.name}</span>
                   <span className="text-xs leading-relaxed text-muted-foreground">{cmd.desc}</span>
-                </div>
+                </StaggerItem>
               ))}
-            </div>
+            </Stagger>
           </div>
         </section>
 

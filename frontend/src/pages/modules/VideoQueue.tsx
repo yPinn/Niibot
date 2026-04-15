@@ -26,6 +26,7 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  FadeIn,
   Icon,
   Input,
   Label,
@@ -473,7 +474,7 @@ export default function VideoQueue() {
       )}
 
       {/* Row 1: Queue (col-8) always matches right column height */}
-      <div className="grid grid-cols-1 gap-section lg:grid-cols-12 lg:items-stretch">
+      <FadeIn inView className="grid grid-cols-1 gap-section lg:grid-cols-12 lg:items-stretch">
         {/* Queue card — fills full column height */}
         <div className="lg:col-span-8">
           <Card className="h-full">
@@ -613,84 +614,141 @@ export default function VideoQueue() {
             </CardContent>
           </Card>
         </div>
-      </div>
+      </FadeIn>
 
       {/* Row 2: Queue settings */}
-      <Card>
-        <CardHeader>
-          <CardTitle>佇列設定</CardTitle>
-          <CardDescription>設定各來源的投稿限制條件</CardDescription>
-          <CardAction>
-            <div className="flex items-center gap-section">
-              <div className="min-w-0 flex-1">
-                <OverlayUrlBlock url={overlayUrl} />
+      <FadeIn inView delay={0.1}>
+        <Card>
+          <CardHeader>
+            <CardTitle>佇列設定</CardTitle>
+            <CardDescription>設定各來源的投稿限制條件</CardDescription>
+            <CardAction>
+              <div className="flex items-center gap-section">
+                <div className="min-w-0 flex-1">
+                  <OverlayUrlBlock url={overlayUrl} />
+                </div>
+                <Separator orientation="vertical" className="h-6" />
+                <div className="flex shrink-0 items-center gap-element">
+                  <Switch
+                    id="vq-enabled"
+                    checked={settings?.enabled ?? false}
+                    onCheckedChange={handleToggleEnabled}
+                  />
+                  <Label htmlFor="vq-enabled" className="cursor-pointer text-sub font-normal">
+                    啟用
+                  </Label>
+                </div>
               </div>
-              <Separator orientation="vertical" className="h-6" />
-              <div className="flex shrink-0 items-center gap-element">
-                <Switch
-                  id="vq-enabled"
-                  checked={settings?.enabled ?? false}
-                  onCheckedChange={handleToggleEnabled}
-                />
-                <Label htmlFor="vq-enabled" className="cursor-pointer text-sub font-normal">
-                  啟用
-                </Label>
+            </CardAction>
+          </CardHeader>
+
+          <CardContent className="flex flex-col gap-section">
+            {/* Global limits — apply to all sources */}
+            <div className="flex flex-col gap-3">
+              <p className="text-sub text-muted-foreground">全域限制</p>
+              <div className="grid grid-cols-2 gap-x-8 gap-y-3 lg:grid-cols-4">
+                <div className="flex items-center gap-3">
+                  <Label htmlFor="max-per-user" className="w-24 shrink-0">
+                    每人排隊上限
+                  </Label>
+                  <Input
+                    id="max-per-user"
+                    type="number"
+                    min={0}
+                    max={20}
+                    placeholder="0"
+                    value={maxPerUserInput}
+                    onChange={e => setMaxPerUserInput(e.target.value)}
+                    onBlur={e => setMaxPerUserInput(clampValue(e.target.value, 0, 20))}
+                    className="w-20"
+                  />
+                  <span className="text-muted-foreground text-sub">首</span>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <Label htmlFor="user-cooldown" className="w-24 shrink-0">
+                    點歌冷卻
+                  </Label>
+                  <Input
+                    id="user-cooldown"
+                    type="number"
+                    min={0}
+                    max={3600}
+                    placeholder="0"
+                    value={userCooldownInput}
+                    onChange={e => setUserCooldownInput(e.target.value)}
+                    onBlur={e => setUserCooldownInput(clampValue(e.target.value, 0, 3600))}
+                    className="w-20"
+                  />
+                  <span className="text-muted-foreground text-sub">秒</span>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <Label htmlFor="min-view-count" className="w-24 shrink-0">
+                    最低觀看數
+                  </Label>
+                  <Select value={minViewCountValue} onValueChange={setMinViewCountValue}>
+                    <SelectTrigger id="min-view-count" className="w-32">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {MIN_VIEW_COUNT_OPTIONS.map(opt => (
+                        <SelectItem key={opt.value} value={String(opt.value)}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <Label htmlFor="max-queue-size" className="w-24 shrink-0">
+                    佇列上限
+                  </Label>
+                  <Input
+                    id="max-queue-size"
+                    type="number"
+                    min={1}
+                    max={100}
+                    placeholder="20"
+                    value={maxQueueSizeInput}
+                    onChange={e => setMaxQueueSizeInput(e.target.value)}
+                    onBlur={e => setMaxQueueSizeInput(clampValue(e.target.value, 1, 100))}
+                    className="w-20"
+                  />
+                  <span className="text-muted-foreground text-sub">首</span>
+                </div>
               </div>
             </div>
-          </CardAction>
-        </CardHeader>
 
-        <CardContent className="flex flex-col gap-section">
-          {/* Global limits — apply to all sources */}
-          <div className="flex flex-col gap-3">
-            <p className="text-sub text-muted-foreground">全域限制</p>
-            <div className="grid grid-cols-2 gap-x-8 gap-y-3 lg:grid-cols-4">
-              <div className="flex items-center gap-3">
-                <Label htmlFor="max-per-user" className="w-24 shrink-0">
-                  每人排隊上限
-                </Label>
-                <Input
-                  id="max-per-user"
-                  type="number"
-                  min={0}
-                  max={20}
-                  placeholder="0"
-                  value={maxPerUserInput}
-                  onChange={e => setMaxPerUserInput(e.target.value)}
-                  onBlur={e => setMaxPerUserInput(clampValue(e.target.value, 0, 20))}
-                  className="w-20"
+            <Separator />
+
+            {/* Redemption-specific settings */}
+            <div className="flex flex-col gap-3">
+              <p className="text-sub text-muted-foreground">忠誠點數兌換</p>
+              <div className="flex items-center gap-element">
+                <Switch
+                  id="redemption-enabled"
+                  checked={settings?.redemption_enabled ?? false}
+                  onCheckedChange={handleToggleRedemptionEnabled}
                 />
-                <span className="text-muted-foreground text-sub">首</span>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <Label htmlFor="user-cooldown" className="w-24 shrink-0">
-                  點歌冷卻
+                <Label htmlFor="redemption-enabled" className="cursor-pointer">
+                  啟用點數兌換
                 </Label>
-                <Input
-                  id="user-cooldown"
-                  type="number"
-                  min={0}
-                  max={3600}
-                  placeholder="0"
-                  value={userCooldownInput}
-                  onChange={e => setUserCooldownInput(e.target.value)}
-                  onBlur={e => setUserCooldownInput(clampValue(e.target.value, 0, 3600))}
-                  className="w-20"
-                />
-                <span className="text-muted-foreground text-sub">秒</span>
               </div>
-
               <div className="flex items-center gap-3">
-                <Label htmlFor="min-view-count" className="w-24 shrink-0">
-                  最低觀看數
+                <Label htmlFor="max-redemption-duration" className="w-24 shrink-0">
+                  影片長度上限
                 </Label>
-                <Select value={minViewCountValue} onValueChange={setMinViewCountValue}>
-                  <SelectTrigger id="min-view-count" className="w-32">
+                <Select
+                  value={maxRedemptionDurationValue}
+                  onValueChange={setMaxRedemptionDurationValue}
+                >
+                  <SelectTrigger id="max-redemption-duration" className="w-32">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {MIN_VIEW_COUNT_OPTIONS.map(opt => (
+                    {REDEMPTION_DURATION_OPTIONS.map(opt => (
                       <SelectItem key={opt.value} value={String(opt.value)}>
                         {opt.label}
                       </SelectItem>
@@ -698,72 +756,17 @@ export default function VideoQueue() {
                   </SelectContent>
                 </Select>
               </div>
-
-              <div className="flex items-center gap-3">
-                <Label htmlFor="max-queue-size" className="w-24 shrink-0">
-                  佇列上限
-                </Label>
-                <Input
-                  id="max-queue-size"
-                  type="number"
-                  min={1}
-                  max={100}
-                  placeholder="20"
-                  value={maxQueueSizeInput}
-                  onChange={e => setMaxQueueSizeInput(e.target.value)}
-                  onBlur={e => setMaxQueueSizeInput(clampValue(e.target.value, 1, 100))}
-                  className="w-20"
-                />
-                <span className="text-muted-foreground text-sub">首</span>
-              </div>
             </div>
-          </div>
 
-          <Separator />
-
-          {/* Redemption-specific settings */}
-          <div className="flex flex-col gap-3">
-            <p className="text-sub text-muted-foreground">忠誠點數兌換</p>
-            <div className="flex items-center gap-element">
-              <Switch
-                id="redemption-enabled"
-                checked={settings?.redemption_enabled ?? false}
-                onCheckedChange={handleToggleRedemptionEnabled}
-              />
-              <Label htmlFor="redemption-enabled" className="cursor-pointer">
-                啟用點數兌換
-              </Label>
+            <div className="flex justify-end">
+              <Button size="sm" onClick={handleSaveSettings} disabled={saving}>
+                {saving && <Spinner className="mr-1.5" />}
+                儲存
+              </Button>
             </div>
-            <div className="flex items-center gap-3">
-              <Label htmlFor="max-redemption-duration" className="w-24 shrink-0">
-                影片長度上限
-              </Label>
-              <Select
-                value={maxRedemptionDurationValue}
-                onValueChange={setMaxRedemptionDurationValue}
-              >
-                <SelectTrigger id="max-redemption-duration" className="w-32">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {REDEMPTION_DURATION_OPTIONS.map(opt => (
-                    <SelectItem key={opt.value} value={String(opt.value)}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <div className="flex justify-end">
-            <Button size="sm" onClick={handleSaveSettings} disabled={saving}>
-              {saving && <Spinner className="mr-1.5" />}
-              儲存
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      </FadeIn>
     </main>
   )
 }
