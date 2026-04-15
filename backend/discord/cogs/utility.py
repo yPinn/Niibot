@@ -7,7 +7,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from core import BOT_NAME, BOT_VERSION, GIT_COMMIT
+from core import BOT_NAME, BOT_VERSION, DATA_DIR, GIT_COMMIT, EmbedFactory, UserBoundView, load_json
 
 
 class _Cmd(NamedTuple):
@@ -126,8 +126,8 @@ _OWNER_CATEGORY = _Category(
 )
 
 
-def _build_overview_embed(categories: list[_Category]) -> discord.Embed:
-    embed = discord.Embed(
+def _build_overview_embed(categories: list[_Category], factory: EmbedFactory) -> discord.Embed:
+    embed: discord.Embed = factory.build(
         title=f"{BOT_NAME} 指令列表",
         description="從下方選單選擇分類以查看詳細說明",
         color=discord.Color.blue(),
@@ -140,8 +140,10 @@ def _build_overview_embed(categories: list[_Category]) -> discord.Embed:
     return embed
 
 
-def _build_category_embed(cat: _Category) -> discord.Embed:
-    embed = discord.Embed(title=cat.title, description=cat.intro, color=discord.Color.blue())
+def _build_category_embed(cat: _Category, factory: EmbedFactory) -> discord.Embed:
+    embed: discord.Embed = factory.build(
+        title=cat.title, description=cat.intro, color=discord.Color.blue()
+    )
     value = "\n".join(f"`{cmd.usage}` — {cmd.description}" for cmd in cat.commands)
     embed.add_field(name="指令", value=value, inline=False)
     return embed
@@ -150,12 +152,10 @@ def _build_category_embed(cat: _Category) -> discord.Embed:
 _HELP_VIEW_TIMEOUT = 120
 
 
-class HelpView(discord.ui.View):
-    def __init__(self, categories: list[_Category], user_id: int) -> None:
-        super().__init__(timeout=_HELP_VIEW_TIMEOUT)
-        self.user_id = user_id
-        self.message: discord.Message | None = None
-        self._embeds = {cat.title: _build_category_embed(cat) for cat in categories}
+class HelpView(UserBoundView):
+    def __init__(self, categories: list[_Category], user_id: int, factory: EmbedFactory) -> None:
+        super().__init__(user_id, timeout=_HELP_VIEW_TIMEOUT)
+        self._embeds = {cat.title: _build_category_embed(cat, factory) for cat in categories}
 
         options = [
             discord.SelectOption(label=cat.title, description=cat.intro[:100]) for cat in categories
@@ -190,6 +190,7 @@ class HelpView(discord.ui.View):
 class UtilityCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self._embed = EmbedFactory(load_json(DATA_DIR / "embed.json"))
 
     @app_commands.command(name="ping", description="Bot 延遲")
     async def ping(self, interaction: discord.Interaction) -> None:
@@ -202,14 +203,17 @@ class UtilityCog(commands.Cog):
             f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
         )
 
-        embed = discord.Embed(title=f"{BOT_NAME} 版本資訊", color=discord.Color.blue())
+        bot_id = self.bot.user.id if self.bot.user else "Unknown"
+        embed = self._embed.build(
+            title=f"{BOT_NAME} 版本資訊",
+            color=discord.Color.blue(),
+            thumbnail=self.bot.user.display_avatar.url if self.bot.user else None,
+            footer=f"Bot ID: {bot_id}",
+        )
         embed.add_field(name="Bot 版本", value=f"`{BOT_VERSION}`", inline=True)
         embed.add_field(name="Commit", value=f"`{GIT_COMMIT}`", inline=True)
         embed.add_field(name="discord.py", value=f"`{discord.__version__}`", inline=True)
         embed.add_field(name="Python", value=f"`{python_version}`", inline=True)
-
-        if self.bot.user:
-            embed.set_thumbnail(url=self.bot.user.display_avatar.url)
 
         cog_count = len([ext for ext in self.bot.extensions.keys() if "cogs" in ext])
         embed.add_field(
@@ -222,7 +226,6 @@ class UtilityCog(commands.Cog):
             inline=False,
         )
 
-        embed.set_footer(text=f"Bot ID: {self.bot.user.id if self.bot.user else 'Unknown'}")
         await interaction.response.send_message(embed=embed)
 
     info = app_commands.Group(name="info", description="資訊查詢")
@@ -234,8 +237,11 @@ class UtilityCog(commands.Cog):
             await interaction.response.send_message("此指令只能在伺服器中使用", ephemeral=True)
             return
 
-        embed = discord.Embed(
-            title=guild.name, description=f"伺服器 ID: {guild.id}", color=discord.Color.blue()
+        embed = self._embed.build(
+            title=guild.name,
+            description=f"伺服器 ID: {guild.id}",
+            color=discord.Color.blue(),
+            thumbnail=guild.icon.url if guild.icon else None,
         )
         embed.add_field(
             name="擁有者", value=guild.owner.mention if guild.owner else "未知", inline=True
@@ -243,9 +249,6 @@ class UtilityCog(commands.Cog):
         embed.add_field(name="成員數", value=str(guild.member_count), inline=True)
         embed.add_field(name="頻道數", value=str(len(guild.channels)), inline=True)
         embed.add_field(name="創建時間", value=guild.created_at.strftime("%Y-%m-%d"), inline=True)
-
-        if guild.icon:
-            embed.set_thumbnail(url=guild.icon.url)
 
         await interaction.response.send_message(embed=embed)
 
@@ -256,8 +259,10 @@ class UtilityCog(commands.Cog):
     ) -> None:
         target = member or interaction.user
 
-        embed = discord.Embed(
-            title=f"{target.display_name} 的資訊", color=target.color or discord.Color.default()
+        embed = self._embed.build(
+            title=f"{target.display_name} 的資訊",
+            color=target.color or discord.Color.default(),
+            thumbnail=target.avatar.url if target.avatar else None,
         )
         embed.add_field(name="用戶名", value=str(target), inline=True)
         embed.add_field(name="ID", value=str(target.id), inline=True)
@@ -276,9 +281,6 @@ class UtilityCog(commands.Cog):
             if roles:
                 embed.add_field(name="身分組", value=" ".join(roles[:10]), inline=False)
 
-        if target.avatar:
-            embed.set_thumbnail(url=target.avatar.url)
-
         await interaction.response.send_message(embed=embed)
 
     @info.command(name="avatar", description="用戶頭像")
@@ -288,15 +290,16 @@ class UtilityCog(commands.Cog):
     ) -> None:
         target = member or interaction.user
 
-        embed = discord.Embed(
-            title=f"{target.display_name} 的頭像", color=target.color or discord.Color.default()
-        )
-
-        if target.avatar:
-            embed.set_image(url=target.avatar.url)
-            await interaction.response.send_message(embed=embed)
-        else:
+        if not target.avatar:
             await interaction.response.send_message("此用戶沒有設定頭像", ephemeral=True)
+            return
+
+        embed = self._embed.build(
+            title=f"{target.display_name} 的頭像",
+            color=target.color or discord.Color.default(),
+            image=target.avatar.url,
+        )
+        await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="help", description="顯示所有指令")
     async def help(self, interaction: discord.Interaction) -> None:
@@ -319,8 +322,8 @@ class UtilityCog(commands.Cog):
         if interaction.user.id == self.bot.owner_id:
             categories.append(_OWNER_CATEGORY)
 
-        view = HelpView(categories, interaction.user.id)
-        embed = _build_overview_embed(categories)
+        view = HelpView(categories, interaction.user.id, self._embed)
+        embed = _build_overview_embed(categories, self._embed)
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
         view.message = await interaction.original_response()
 

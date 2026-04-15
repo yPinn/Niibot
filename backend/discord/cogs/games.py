@@ -1,18 +1,18 @@
 """Interactive game commands"""
 
-import json
 import random
 
 import discord
 from discord import app_commands, ui
 from discord.ext import commands
 
-from core import DATA_DIR
+from core import DATA_DIR, EmbedFactory, UserBoundView, load_json
 
 
-class RPSView(ui.View):
-    def __init__(self) -> None:
-        super().__init__(timeout=60)
+class RPSView(UserBoundView):
+    def __init__(self, user_id: int, embed_factory: EmbedFactory) -> None:
+        super().__init__(user_id, timeout=60)
+        self._embed = embed_factory
 
     @ui.button(label="石頭", style=discord.ButtonStyle.secondary)
     async def rock(self, interaction: discord.Interaction, button: ui.Button["RPSView"]) -> None:
@@ -32,32 +32,31 @@ class RPSView(ui.View):
         bot_choice = random.choice(["石頭", "剪刀", "布"])
 
         if choice == bot_choice:
-            result = "平手"
-            color = discord.Color.gold()
+            result, color = "平手", discord.Color.gold()
         elif (
             (choice == "石頭" and bot_choice == "剪刀")
             or (choice == "剪刀" and bot_choice == "布")
             or (choice == "布" and bot_choice == "石頭")
         ):
-            result = "你贏了"
-            color = discord.Color.green()
+            result, color = "你贏了", discord.Color.green()
         else:
-            result = "你輸了"
-            color = discord.Color.red()
+            result, color = "你輸了", discord.Color.red()
 
-        embed = discord.Embed(title="猜拳遊戲", color=color)
+        embed = self._embed.build(title="猜拳遊戲", color=color)
         embed.add_field(name="你的選擇", value=choice, inline=True)
         embed.add_field(name="Bot 的選擇", value=bot_choice, inline=True)
         embed.add_field(name="結果", value=result, inline=False)
 
-        await interaction.response.edit_message(embed=embed, view=RPSView())
+        await interaction.response.edit_message(
+            embed=embed, view=RPSView(self.user_id, self._embed)
+        )
 
 
 class RouletteView(ui.View):
-    def __init__(self, user_id: int, global_embed_config: dict):
+    def __init__(self, user_id: int, embed_factory: EmbedFactory):
         super().__init__(timeout=300)
         self.user_id = user_id
-        self.global_embed_config = global_embed_config
+        self._embed = embed_factory
         self.chamber_position = 0
         self.bullet_position = random.randint(0, 5)
         self.attempts = 0
@@ -68,23 +67,10 @@ class RouletteView(ui.View):
         color: discord.Color,
         result_text: str,
     ) -> discord.Embed:
-        embed = self._create_embed("俄羅斯輪盤", color)
+        embed: discord.Embed = self._embed.build(title="俄羅斯輪盤", color=color)
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
         embed.add_field(name="**結果**", value=f"> {result_text}", inline=False)
         embed.add_field(name="**回合數**", value=f"> {self.chamber_position}/6", inline=True)
-        return embed
-
-    def _create_embed(self, title: str, color: discord.Color) -> discord.Embed:
-        embed = discord.Embed(title=title, color=color)
-
-        global_author = self.global_embed_config.get("author", {})
-        if global_author.get("name"):
-            embed.set_author(
-                name=global_author.get("name"),
-                icon_url=global_author.get("icon_url"),
-                url=global_author.get("url"),
-            )
-
         return embed
 
     @ui.button(label="扣下扳機", style=discord.ButtonStyle.danger)
@@ -127,10 +113,8 @@ class GamesCog(commands.Cog):
         self._load_data()
 
     def _load_data(self) -> None:
-        with open(DATA_DIR / "games.json", encoding="utf-8") as f:
-            self.games_data = json.load(f)
-        with open(DATA_DIR / "embed.json", encoding="utf-8") as f:
-            self.global_embed_config = json.load(f)
+        self.games_data = load_json(DATA_DIR / "games.json")
+        self._embed = EmbedFactory(load_json(DATA_DIR / "embed.json"))
 
     game = app_commands.Group(name="game", description="遊戲指令")
 
@@ -157,38 +141,27 @@ class GamesCog(commands.Cog):
 
     @game.command(name="rps", description="猜拳遊戲")
     async def game_rps(self, interaction: discord.Interaction) -> None:
-        embed = discord.Embed(
+        embed = self._embed.build(
             title="猜拳遊戲",
             description="點擊下方按鈕選擇你的出拳",
             color=discord.Color.blue(),
         )
 
-        await interaction.response.send_message(embed=embed, view=RPSView())
+        await interaction.response.send_message(
+            embed=embed, view=RPSView(interaction.user.id, self._embed)
+        )
 
     @game.command(name="roulette", description="俄羅斯輪盤")
     async def game_roulette(self, interaction: discord.Interaction) -> None:
-        embed = discord.Embed(
-            title="俄羅斯輪盤",
-            color=discord.Color.orange(),
-        )
-
-        global_author = self.global_embed_config.get("author", {})
-        if global_author.get("name"):
-            embed.set_author(
-                name=global_author.get("name"),
-                icon_url=global_author.get("icon_url"),
-                url=global_author.get("url"),
-            )
-
+        embed = self._embed.build(title="俄羅斯輪盤", color=discord.Color.orange())
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
-
         embed.add_field(
             name="**遊戲規則**", value="> 彈匣中有 6 個位置，其中 1 發子彈", inline=False
         )
         embed.add_field(name="**回合數**", value="> 1/6", inline=True)
 
         await interaction.response.send_message(
-            embed=embed, view=RouletteView(interaction.user.id, self.global_embed_config)
+            embed=embed, view=RouletteView(interaction.user.id, self._embed)
         )
 
 

@@ -2,7 +2,6 @@
 
 import asyncio
 import calendar
-import json
 import logging
 from datetime import date, datetime, time
 
@@ -10,7 +9,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
-from core import DATA_DIR
+from core import DATA_DIR, EmbedFactory, load_json
 from shared.repositories.birthday import BirthdayRepository
 
 from .constants import BIRTHDAY_COLOR, BIRTHDAY_THUMBNAIL, TZ_UTC8
@@ -26,27 +25,7 @@ class BirthdayCog(commands.Cog):
         self.bot = bot
         self.repo: BirthdayRepository
         self._ready = False
-        self._embed_config = self._load_embed_config()
-
-    @staticmethod
-    def _load_embed_config() -> dict:
-        try:
-            with open(DATA_DIR / "embed.json", encoding="utf-8") as f:
-                return dict(json.load(f))
-        except Exception:
-            return {}
-
-    def _apply_embed_style(self, embed: discord.Embed) -> discord.Embed:
-        """套用 Embed 樣式"""
-        if author := self._embed_config.get("author", {}):
-            if author.get("name"):
-                embed.set_author(
-                    name=author["name"],
-                    icon_url=author.get("icon_url"),
-                    url=author.get("url"),
-                )
-        embed.set_thumbnail(url=BIRTHDAY_THUMBNAIL)
-        return embed
+        self._embed = EmbedFactory(load_json(DATA_DIR / "embed.json"))
 
     async def cog_load(self) -> None:
         # 非阻塞載入，讓 Bot 先啟動，後台連接資料庫
@@ -253,12 +232,12 @@ class BirthdayCog(commands.Cog):
                 if not lines:
                     continue
 
-                embed = discord.Embed(
+                embed = self._embed.build(
                     title=f"【{now.month} 月壽星名單】",
                     description="\n".join(lines),
                     color=BIRTHDAY_COLOR,
+                    thumbnail=BIRTHDAY_THUMBNAIL,
                 )
-                embed = self._apply_embed_style(embed)
 
                 try:
                     await channel.send(embed=embed)
@@ -298,7 +277,9 @@ class BirthdayCog(commands.Cog):
         settings = await self.repo.get_settings(interaction.guild.id)
 
         # 建立 Embed
-        embed = discord.Embed(title="【生日功能】", color=BIRTHDAY_COLOR)
+        embed = self._embed.build(
+            title="【生日功能】", color=BIRTHDAY_COLOR, thumbnail=BIRTHDAY_THUMBNAIL
+        )
 
         if birthday:
             date_str = self._format_date(birthday.month, birthday.day)
@@ -319,8 +300,6 @@ class BirthdayCog(commands.Cog):
             )
         else:
             embed.add_field(name="通知", value="尚未啟用", inline=False)
-
-        embed = self._apply_embed_style(embed)
 
         view: DashboardView | None = (
             DashboardView(self, birthday is not None, is_subscribed) if settings else None
@@ -353,10 +332,11 @@ class BirthdayCog(commands.Cog):
             role = interaction.guild.get_role(settings.role_id)
             is_healthy = channel and role and settings.enabled
 
-            embed = discord.Embed(
+            embed = self._embed.build(
                 title="【生日功能設定】",
                 description=f"狀態：{'正常' if is_healthy else '**異常**'}",
                 color=discord.Color.green() if is_healthy else discord.Color.red(),
+                thumbnail=BIRTHDAY_THUMBNAIL,
             )
             embed.add_field(
                 name="通知頻道",
@@ -373,17 +353,16 @@ class BirthdayCog(commands.Cog):
                 value=f"`{settings.message_template}`",
                 inline=False,
             )
-            embed = self._apply_embed_style(embed)
 
             view = UpdateSettingsView(self, settings)
         else:
             # 新設定
-            embed = discord.Embed(
+            embed = self._embed.build(
                 title="【生日功能設定】",
                 description="請選擇設定方式",
                 color=BIRTHDAY_COLOR,
+                thumbnail=BIRTHDAY_THUMBNAIL,
             )
-            embed = self._apply_embed_style(embed)
             view = InitSetupView(self)
 
         await interaction.followup.send(embed=embed, view=view)
@@ -457,7 +436,9 @@ class BirthdayCog(commands.Cog):
             interaction.guild.id, now.month, now.day, limit=3
         )
 
-        embed = discord.Embed(title="【生日列表】", color=BIRTHDAY_COLOR)
+        embed = self._embed.build(
+            title="【生日列表】", color=BIRTHDAY_COLOR, thumbnail=BIRTHDAY_THUMBNAIL
+        )
 
         # 本月壽星
         if month_bdays:
@@ -470,8 +451,6 @@ class BirthdayCog(commands.Cog):
             lines = await self._build_birthday_lines(interaction.guild, upcoming)
             if lines:
                 embed.add_field(name="即將到來", value="\n".join(lines), inline=False)
-
-        embed = self._apply_embed_style(embed)
 
         if embed.fields:
             await interaction.followup.send(embed=embed)

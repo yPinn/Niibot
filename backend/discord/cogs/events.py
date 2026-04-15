@@ -8,7 +8,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from core import DATA_DIR
+from core import DATA_DIR, EmbedFactory, load_json
 
 LOGGER = logging.getLogger(__name__)
 
@@ -32,6 +32,7 @@ class EventsCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.log_channels: dict[int, int] = _load_log_channels()
+        self._embed = EmbedFactory(load_json(DATA_DIR / "embed.json"))
 
     log = app_commands.Group(name="log", description="日誌頻道設定")
 
@@ -86,7 +87,7 @@ class EventsCog(commands.Cog):
         if not log_channel or log_channel == message.channel:
             return
 
-        embed = discord.Embed(
+        embed = self._embed.build(
             title="訊息刪除", color=discord.Color.orange(), timestamp=datetime.now()
         )
         embed.add_field(name="作者", value=message.author.mention, inline=True)
@@ -114,7 +115,7 @@ class EventsCog(commands.Cog):
         if not log_channel or log_channel == before.channel:
             return
 
-        embed = discord.Embed(
+        embed = self._embed.build(
             title="訊息編輯", color=discord.Color.blue(), timestamp=datetime.now()
         )
         embed.add_field(name="作者", value=before.author.mention, inline=True)
@@ -154,7 +155,7 @@ class EventsCog(commands.Cog):
                 changes.append(f"移除身分組: {', '.join([r.mention for r in removed_roles])}")
 
         if changes:
-            embed = discord.Embed(
+            embed = self._embed.build(
                 title="成員資訊更新",
                 description=f"{after.mention} 的資訊已更新",
                 color=discord.Color.purple(),
@@ -181,7 +182,7 @@ class EventsCog(commands.Cog):
             else str(messages[0].channel)
         )
 
-        embed = discord.Embed(
+        embed = self._embed.build(
             title="批量訊息刪除",
             description=f"在 {channel_name} 刪除了 {len(messages)} 則訊息",
             color=discord.Color.red(),

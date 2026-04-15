@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import random
 from datetime import UTC, datetime
@@ -12,7 +11,7 @@ import discord
 from discord import app_commands, ui
 from discord.ext import commands, tasks
 
-from core import DATA_DIR
+from core import DATA_DIR, EmbedFactory, load_json
 
 from ._embeds import create_giveaway_embed, create_result_embed
 from ._persistence import GiveawayPersistence
@@ -39,15 +38,14 @@ class GiveawayCog(commands.Cog):
         LOGGER.info("Giveaway expiry checker stopped")
 
     def _load_data(self) -> None:
-        for filename, attr in (("giveaway.json", "config"), ("embed.json", "global_embed_config")):
-            path = DATA_DIR / filename
-            try:
-                with open(path, encoding="utf-8") as f:
-                    setattr(self, attr, json.load(f))
-            except FileNotFoundError:
-                raise FileNotFoundError(
-                    f"GiveawayCog requires '{filename}' in {DATA_DIR}. Expected path: {path}"
-                ) from None
+        giveaway_path = DATA_DIR / "giveaway.json"
+        if not giveaway_path.exists():
+            raise FileNotFoundError(
+                f"GiveawayCog requires 'giveaway.json' in {DATA_DIR}. Expected path: {giveaway_path}"
+            )
+        self.config = load_json(giveaway_path)
+        self.global_embed_config = load_json(DATA_DIR / "embed.json")
+        self._embed = EmbedFactory(self.global_embed_config)
 
     # ------------------------------------------------------------------
     # Persistence helpers (called by views)
@@ -185,7 +183,7 @@ class GiveawayCog(commands.Cog):
                             )
 
             if participant_count == 0:
-                no_p_embed = discord.Embed(
+                no_p_embed = self._embed.build(
                     title="【抽獎已截止】",
                     description="此抽獎已截止，但沒有人參加",
                     color=discord.Color.orange(),

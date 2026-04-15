@@ -4,11 +4,14 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from core import DATA_DIR, EmbedFactory, load_json
+
 
 class RateLimitMonitorCog(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
         self.rate_limiter = bot.rate_limiter  # type: ignore[attr-defined]
+        self._embed = EmbedFactory(load_json(DATA_DIR / "embed.json"))
 
     @app_commands.command(name="rate", description="Discord API 速率限制統計")
     @app_commands.default_permissions(administrator=True)
@@ -29,7 +32,7 @@ class RateLimitMonitorCog(commands.Cog):
             status_text = "[NORMAL]"
             color = discord.Color.green()
 
-        embed = discord.Embed(
+        embed = self._embed.build(
             title="Discord API 速率限制統計",
             color=color,
             timestamp=discord.utils.utcnow(),
@@ -69,8 +72,6 @@ class RateLimitMonitorCog(commands.Cog):
         elif usage_percent >= 70:
             embed.add_field(name="提示", value="速率使用率偏高，建議關注請求頻率", inline=False)
 
-        if self.bot.user:
-            embed.set_footer(text=f"Bot: {self.bot.user.name}")
         await interaction.response.send_message(embed=embed)
 
 

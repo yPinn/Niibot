@@ -258,7 +258,7 @@ class GiveawayView(ui.View):
     async def _cancel_giveaway(self, interaction: discord.Interaction) -> None:
         self.is_ended = True
 
-        cancel_embed = discord.Embed(
+        cancel_embed = self.giveaway_cog._embed.build(
             title="【抽獎已取消】",
             description="此抽獎已被主持人取消",
             color=discord.Color.red(),

@@ -21,7 +21,7 @@ from openai import (
 )
 from openai.types.chat import ChatCompletionMessageParam
 
-from core import DATA_DIR
+from core import DATA_DIR, EmbedFactory, load_json
 
 LOGGER = logging.getLogger(__name__)
 
@@ -87,8 +87,7 @@ class AICog(commands.Cog):
         )
         self.models = [model] + _load_fallback_models(model)
 
-        with open(DATA_DIR / "embed.json", encoding="utf-8") as f:
-            self.global_embed_config = json.load(f)
+        self._embed = EmbedFactory(load_json(DATA_DIR / "embed.json"))
 
         LOGGER.info(f"AICog initialized: primary={model}, fallbacks={len(self.models) - 1}")
 
@@ -163,24 +162,13 @@ class AICog(commands.Cog):
                     continue
 
             if response:
-                embed = discord.Embed(
+                embed = self._embed.build(
                     title="AI 回應",
                     color=discord.Color.blue(),
+                    thumbnail=interaction.user.display_avatar.url,
                 )
 
-                global_author = self.global_embed_config.get("author", {})
-                if global_author.get("name"):
-                    embed.set_author(
-                        name=global_author.get("name"),
-                        icon_url=global_author.get("icon_url"),
-                        url=global_author.get("url"),
-                    )
-
-                embed.set_thumbnail(url=interaction.user.display_avatar.url)
-
-                question_display = question
-                if len(question) > 1020:
-                    question_display = question[:1017] + "..."
+                question_display = question if len(question) <= 1020 else question[:1017] + "..."
                 embed.add_field(name="**提問**", value=f"> {question_display}", inline=False)
 
                 if len(response) > 1020:

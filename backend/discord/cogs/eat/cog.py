@@ -11,7 +11,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from core import DATA_DIR
+from core import DATA_DIR, EmbedFactory, load_json
 
 from .constants import EAT_COLOR, EAT_THUMBNAIL
 from .views import CategoryButtonsView, ItemListView, RecommendationView
@@ -27,15 +27,13 @@ class EatCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.data_file = DATA_DIR / "eat.json"
-        self.global_embed_file = DATA_DIR / "embed.json"
         self.data: EatData = {}
-        self.global_embed_config: dict[str, Any] = {}
+        self._embed = EmbedFactory(load_json(DATA_DIR / "embed.json"))
         self._lock = asyncio.Lock()
         self._dirty = False
 
     async def cog_load(self) -> None:
         await self.load_data(log_stats=True)
-        await self.load_global_embed()
 
     async def load_data(self, log_stats: bool = False) -> None:
         try:
@@ -70,14 +68,6 @@ class EatCog(commands.Cog):
         except Exception as e:
             LOGGER.error(f"Eat: save failed: {e}")
 
-    async def load_global_embed(self) -> None:
-        try:
-            if self.global_embed_file.exists():
-                with open(self.global_embed_file, encoding="utf-8") as f:
-                    self.global_embed_config = json.load(f)
-        except Exception as e:
-            LOGGER.warning(f"Eat: load global embed failed: {e}")
-
     # ==================== Helpers ====================
 
     def create_embed(
@@ -88,21 +78,13 @@ class EatCog(commands.Cog):
         footer: str | None = None,
     ) -> discord.Embed:
         """建立 Embed"""
-        embed = discord.Embed(title=title, description=description, color=color)
-
-        # Author from global embed config
-        if author := self.global_embed_config.get("author", {}):
-            if author.get("name"):
-                embed.set_author(
-                    name=author["name"], icon_url=author.get("icon_url"), url=author.get("url")
-                )
-
-        embed.set_thumbnail(url=EAT_THUMBNAIL)
-
-        if footer:
-            embed.set_footer(text=footer)
-
-        return embed
+        kwargs: dict = dict(
+            title=title, description=description, color=color, thumbnail=EAT_THUMBNAIL
+        )
+        if footer is not None:
+            kwargs["footer"] = footer
+        result: discord.Embed = self._embed.build(**kwargs)
+        return result
 
     def get_category_item_count(self, category: str) -> int:
         """取得分類項目數量"""
