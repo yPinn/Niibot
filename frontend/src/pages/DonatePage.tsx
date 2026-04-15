@@ -19,6 +19,9 @@ import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 // ============================================================
 
 function submitPaymentForm(gatewayUrl: string, params: Record<string, string>) {
+  if (!gatewayUrl.startsWith('https://')) {
+    throw new Error(`Invalid gateway URL: must use HTTPS`)
+  }
   const form = document.createElement('form')
   form.method = 'POST'
   form.action = gatewayUrl

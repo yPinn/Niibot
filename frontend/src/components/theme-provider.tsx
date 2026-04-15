@@ -39,17 +39,23 @@ export function ThemeProvider({
   const [systemTheme, setSystemTheme] = useState<'dark' | 'light'>(getSystemTheme)
   const [syncedUserId, setSyncedUserId] = useState<string | null>(null)
 
-  // Sync theme from user on login (adjust-state-from-props pattern)
+  // Sync theme from user on login.
+  // React's documented during-render adjustment pattern — avoids setState-in-effect lint errors.
+  // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
   if (user?.id && syncedUserId !== user.id) {
     setSyncedUserId(user.id)
     if (user.theme && theme !== user.theme) {
       setThemeState(user.theme)
-      localStorage.setItem(storageKey, user.theme)
     }
   }
   if (!user && syncedUserId !== null) {
     setSyncedUserId(null)
   }
+
+  // Persist theme to localStorage whenever it changes (covers both login sync and manual changes)
+  useEffect(() => {
+    localStorage.setItem(storageKey, theme)
+  }, [theme, storageKey])
 
   const resolvedTheme = useMemo(() => {
     return theme === 'system' ? systemTheme : theme
@@ -74,7 +80,6 @@ export function ThemeProvider({
     theme,
     resolvedTheme,
     setTheme: (newTheme: Theme) => {
-      localStorage.setItem(storageKey, newTheme)
       setThemeState(newTheme)
 
       // Persist to server if logged in
