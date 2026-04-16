@@ -1,16 +1,12 @@
 """Constants for the social preview cog."""
 
+import os
 import re
 
 # ── URL patterns ──────────────────────────────────────────────────────────────
-#
-# X / Twitter  — excluded, Discord native embed is sufficient
-# YouTube      — excluded, Discord native embed is sufficient
-# Facebook     — excluded, no viable server-side scraping solution (JS login wall)
-# 小紅書        — excluded, requires maintained cookie session (7-day expiry)
 
 INSTAGRAM_RE = re.compile(
-    r"https?://(?:www\.)?instagram\.com/(?:p|reel|tv)/([A-Za-z0-9_-]+)/?",
+    r"https?://(?:www\.)?instagram\.com/(p|reel|tv)/([A-Za-z0-9_-]+)/?",
     re.IGNORECASE,
 )
 
@@ -39,9 +35,11 @@ TIKTOK_RE = re.compile(
 BILIBILI_API = "https://api.bilibili.com/x/web-interface/view?bvid={bvid}"
 TIKTOK_OEMBED_API = "https://www.tiktok.com/oembed?url={url}"
 
-# Instagram proxy — InstaFix (github.com/Wikidepia/InstaFix)
-# Replaces instagram.com with ddinstagram.com; returns static HTML with OG tags.
-DDINSTAGRAM_HOST = "www.ddinstagram.com"
+# Self-hosted InstaFix (github.com/Wikidepia/InstaFix).
+# Docker: "instafix:3000" (niibot-network) | Local dev: "localhost:3000"
+INSTAFIX_HOST = os.getenv("INSTAFIX_HOST", "instafix:3000")
+INSTAGRAM_PROXY_URL = "http://{host}/{path}/{shortcode}/"
+INSTAGRAM_ICON_URL = "https://upload.wikimedia.org/wikipedia/commons/a/a5/Instagram_icon.png"
 
 # ── Colours ───────────────────────────────────────────────────────────────────
 
@@ -54,5 +52,4 @@ COLOR_TIKTOK = 0x010101
 
 HTTP_TIMEOUT = 10.0
 DESCRIPTION_LIMIT = 300
-# Seconds before the dismiss (✕) button is removed from the bot reply
-DISMISS_TIMEOUT = 120.0
+DISMISS_TIMEOUT = 120.0  # seconds before ✕ button is removed

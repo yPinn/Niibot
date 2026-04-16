@@ -89,7 +89,8 @@ class AICog(commands.Cog):
 
         self._embed = EmbedFactory(load_json(DATA_DIR / "embed.json"))
 
-        LOGGER.info(f"AICog initialized: primary={model}, fallbacks={len(self.models) - 1}")
+    async def cog_load(self) -> None:
+        LOGGER.info(f"AI ready: primary={self.models[0]}, fallbacks={len(self.models) - 1}")
 
     @app_commands.command(name="ai", description="AI 問答")
     @app_commands.describe(question="你的問題")

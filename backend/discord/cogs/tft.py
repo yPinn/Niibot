@@ -66,6 +66,9 @@ class TftCog(commands.Cog):
 
         self._load_embed_config()
 
+    async def cog_load(self) -> None:
+        LOGGER.info("TFT ready")
+
     def _make_headers(self) -> dict[str, str]:
         return {
             "User-Agent": random.choice(self._user_agents),
@@ -379,4 +382,3 @@ class TftCog(commands.Cog):
 
 async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(TftCog(bot))
-    LOGGER.info("TFT cog loaded")

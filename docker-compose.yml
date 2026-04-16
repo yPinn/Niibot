@@ -5,6 +5,21 @@ x-healthcheck: &default-healthcheck
   start_period: 30s
 
 services:
+  instafix:
+    image: ghcr.io/wikidepia/instafix:main
+    container_name: niibot-instafix
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    networks:
+      - niibot-network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
   postgres:
     image: postgres:16
     container_name: niibot-postgres
@@ -94,6 +109,8 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      instafix:
+        condition: service_healthy
     healthcheck:
       <<: *default-healthcheck
       test:
