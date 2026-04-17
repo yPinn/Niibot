@@ -46,6 +46,10 @@ class TestInstagramRE:
             "https://www.instagram.com/reel/XYZ789/",
             "https://www.instagram.com/tv/QQQ111/",
             "http://instagram.com/p/lower-case/",
+            "https://m.instagram.com/p/Abc123/",
+            "https://m.instagram.com/reel/XYZ789/",
+            "https://instagr.am/p/Abc123/",
+            "https://www.instagr.am/p/Abc123/",
         ],
     )
     def test_matches(self, url: str) -> None:
@@ -87,6 +91,7 @@ class TestInstagramProfileRE:
             "https://www.instagram.com/someuser/",
             "https://www.instagram.com/user.name_123/",
             "https://www.instagram.com/testuser/?hl=en",
+            "https://m.instagram.com/testuser/",
         ],
     )
     def test_matches(self, url: str) -> None:
@@ -154,6 +159,7 @@ class TestBilibiliRE:
         [
             "https://www.bilibili.com/video/BV1xx411c7mD",
             "https://bilibili.com/video/BVabcDEF123",
+            "https://m.bilibili.com/video/BV1xx411c7mD",
             "https://b23.tv/AbCdEf",
         ],
     )

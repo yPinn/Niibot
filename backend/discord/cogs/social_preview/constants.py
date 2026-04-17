@@ -5,15 +5,17 @@ import re
 
 # ── URL patterns ──────────────────────────────────────────────────────────────
 
+_IG_HOST = r"(?:(?:www\.|m\.)?instagram\.com|(?:www\.)?instagr\.am)"
+
 INSTAGRAM_RE = re.compile(
-    r"https?://(?:www\.)?instagram\.com/(p|reel|tv)/([A-Za-z0-9_-]+)/?",
+    rf"https?://{_IG_HOST}/(p|reel|tv)/([A-Za-z0-9_-]+)/?",
     re.IGNORECASE,
 )
 
 # Matches profile pages (e.g. instagram.com/tp.y__/) but not post/reel/tv/stories/… paths.
 # Trailing lookahead prevents matching sub-paths (e.g. /stories/username/…).
 INSTAGRAM_PROFILE_RE = re.compile(
-    r"https?://(?:www\.)?instagram\.com/"
+    r"https?://(?:www\.|m\.)?instagram\.com/"
     r"(?!(?:p|reel|tv|stories|explore|accounts|direct|api|tags|locations|login)(?:/|\?|\s|$))"
     r"([A-Za-z0-9_.]{1,30})(?=/?(?:\?|\s|$))",
     re.IGNORECASE,
@@ -25,8 +27,13 @@ THREADS_RE = re.compile(
 )
 
 BILIBILI_RE = re.compile(
-    r"https?://(?:(?:www\.)?bilibili\.com/video/(BV[A-Za-z0-9]+)"
+    r"https?://(?:(?:www\.|m\.)?bilibili\.com/video/(BV[A-Za-z0-9]+)"
     r"|b23\.tv/([A-Za-z0-9]+))",
+    re.IGNORECASE,
+)
+
+BILIBILI_SPACE_RE = re.compile(
+    r"https?://space\.bilibili\.com/(\d+)",
     re.IGNORECASE,
 )
 
