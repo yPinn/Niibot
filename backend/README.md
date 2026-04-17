@@ -28,7 +28,7 @@ Python 後端，包含 API Server、Twitch Bot、Discord Bot 三個服務，共�
 backend/
 ├── api/        # FastAPI — 認證（Twitch OAuth + JWT）、頻道管理、指令/事件/排隊/贊助設定
 ├── twitch/     # Twitch Bot — 聊天指令、影片佇列、遊戲排隊、Channel Points、EventSub
-├── discord/    # Discord Bot — Slash Commands、事件日誌、生日提醒、AI 功能
+├── discord/    # Discord Bot — Slash Commands、事件日誌、生日提醒、社群預覽、AI 功能
 ├── shared/     # 共用模組（詳見下方）
 ├── scripts/    # 工具腳本 — DB 管理、OAuth token 取得、Discord 資源
 ├── data/       # 靜態 JSON 資料（運勢、塔羅、遊戲清單等）
@@ -85,7 +85,8 @@ Frontend ──HTTP──▶ API (8000)
 - **TwitchIO 3**：Twitch Bot 框架（Component 架構、EventSub）
 - **discord.py**：Discord Bot 框架
 - **asyncpg**：PostgreSQL 非同步驅動
-- **aiohttp**：HTTP 客戶端（YouTube / Twitch API 呼叫）
+- **httpx**：HTTP 客戶端（外部 API 呼叫：Riot、Bilibili、TikTok 等）
+- **aiohttp**：HTTP 伺服器框架（Bot 健康檢查端點）
 - **uv**：套件與虛擬環境管理
 - **pytest**：測試框架
 
@@ -248,18 +249,21 @@ uv run python scripts/db_migrate.py
 ### Discord 管理員
 
 - `/clear`, `/kick`, `/ban`, `/unban`, `/mute`, `/unmute`
-- `/setlog`, `/unsetlog` — 事件日誌頻道
-- `/rate_stats`, `/rate_check` — API 速率監控
+- `/log set`, `/log unset` — 事件日誌頻道
+- `/rate` — Discord API 速率限制統計
 
 ### Discord 一般
 
 - `/ping`, `/version`, `/info`, `/userinfo`, `/avatar`, `/help`
-- `/rps`, `/roll`, `/choose`, `/coinflip`, `/roulette`
-- `/fortune`, `/tarot`, `/giveaway`, `/tft`
+- `/game roll`, `/game choose`, `/game rps`, `/game roulette`
+- `/fortune`, `/tarot` — 占卜娛樂
+- `/tft`, `/tft <名稱#TAG>` — TFT 戰棋段位查詢
+- `/giveaway` — 抽獎
 - `/ai` — AI 對話
 - `/eat` — 隨機推薦餐點
-- `/food cat|show|add|remove|delete` — 餐點管理
-- `/bday menu|init` — 生日系統
+- `/food cat|show` — 餐點分類瀏覽
+- `/bday menu` — 生日系統
+- 社群連結自動展開 — Instagram、Bilibili、TikTok、Threads
 
 ---
 

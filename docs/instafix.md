@@ -20,12 +20,8 @@ services:
     restart: unless-stopped
     networks:
       - niibot-network # internal only — no host port needed
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000/"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
+    # No healthcheck — the image is a Go binary on a minimal base (no wget/curl).
+    # discord-bot depends on instafix with condition: service_started, not service_healthy.
 ```
 
 - **No `ports:` mapping required** — other services access it via Docker DNS (`instafix:3000`)
