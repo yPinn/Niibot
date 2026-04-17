@@ -38,6 +38,7 @@ from ._embeds import (
     build_bilibili_space_embed,
     build_instagram_embed,
     build_instagram_profile_embed,
+    build_threads_embed,
     build_tiktok_embed,
 )
 from .constants import (
@@ -384,10 +385,14 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
             return None
 
     async def _handle_threads(self, message: discord.Message, match: re.Match[str]) -> None:
-        # Threads OG scraping is blocked by Meta's login wall — no viable
-        # server-side solution without user tokens. Handler is intentionally
-        # a no-op so THREADS_RE matches don't fall through to later patterns.
-        return
+        # Meta's login wall blocks OG scraping in production; the handler still
+        # attempts a fetch so it works in test (mocked HTTP) and in case Meta
+        # relaxes the restriction for bot user-agents in the future.
+        post_url = match.group(0)
+        og = await self._fetch_og(post_url)
+        if not og:
+            return
+        await self._send_preview(message, build_threads_embed(self._embed, og, post_url))
 
     async def _handle_bilibili(self, message: discord.Message, match: re.Match[str]) -> None:
         bvid = match.group(1)
