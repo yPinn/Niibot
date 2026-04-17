@@ -73,6 +73,10 @@ export default defineConfig([
 
       // React
       'react-hooks/exhaustive-deps': 'warn',
+      // v7 rule flags async data-fetch calls inside effects (false positive for
+      // useCallback-wrapped fetchers where setState happens after await).
+      // Kept as warn so violations stay visible without blocking CI.
+      'react-hooks/set-state-in-effect': 'warn',
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
 
       // General
