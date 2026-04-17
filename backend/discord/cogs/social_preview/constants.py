@@ -1,8 +1,7 @@
 """Constants for the social preview cog."""
 
+import os
 import re
-
-from core.config import get_settings as _get_settings
 
 # ── URL patterns ──────────────────────────────────────────────────────────────
 
@@ -63,7 +62,7 @@ INSTAGRAM_APP_ID = "936619743392459"
 
 # Self-hosted InstaFix (github.com/Wikidepia/InstaFix).
 # Docker: "instafix:3000" | Local dev: "localhost:3000"
-INSTAFIX_HOST = _get_settings().instafix_host
+INSTAFIX_HOST = os.getenv("INSTAFIX_HOST", "instafix:3000")
 INSTAGRAM_PROXY_URL = "http://{host}/{path}/{shortcode}/"
 INSTAGRAM_ICON_URL = "https://upload.wikimedia.org/wikipedia/commons/a/a5/Instagram_icon.png"
 
