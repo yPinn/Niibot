@@ -10,6 +10,15 @@ INSTAGRAM_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Matches profile pages (e.g. instagram.com/tp.y__/) but not post/reel/tv/stories/… paths.
+# Trailing lookahead prevents matching sub-paths (e.g. /stories/username/…).
+INSTAGRAM_PROFILE_RE = re.compile(
+    r"https?://(?:www\.)?instagram\.com/"
+    r"(?!(?:p|reel|tv|stories|explore|accounts|direct|api|tags|locations|login)(?:/|\?|\s|$))"
+    r"([A-Za-z0-9_.]{1,30})(?=/?(?:\?|\s|$))",
+    re.IGNORECASE,
+)
+
 THREADS_RE = re.compile(
     r"https?://(?:www\.)?threads\.(?:net|com)/@?[\w.]+/post/([A-Za-z0-9_-]+)",
     re.IGNORECASE,
@@ -35,8 +44,15 @@ TIKTOK_RE = re.compile(
 BILIBILI_API = "https://api.bilibili.com/x/web-interface/view?bvid={bvid}"
 TIKTOK_OEMBED_API = "https://www.tiktok.com/oembed?url={url}"
 
+# Instagram internal web API. Unauthenticated requests 429 quickly;
+# set INSTAGRAM_SESSION_ID in .env to inject a sessionid cookie.
+INSTAGRAM_PROFILE_API = (
+    "https://www.instagram.com/api/v1/users/web_profile_info/?username={username}"
+)
+INSTAGRAM_APP_ID = "936619743392459"
+
 # Self-hosted InstaFix (github.com/Wikidepia/InstaFix).
-# Docker: "instafix:3000" (niibot-network) | Local dev: "localhost:3000"
+# Docker: "instafix:3000" | Local dev: "localhost:3000"
 INSTAFIX_HOST = os.getenv("INSTAFIX_HOST", "instafix:3000")
 INSTAGRAM_PROXY_URL = "http://{host}/{path}/{shortcode}/"
 INSTAGRAM_ICON_URL = "https://upload.wikimedia.org/wikipedia/commons/a/a5/Instagram_icon.png"
@@ -51,5 +67,6 @@ COLOR_TIKTOK = 0x010101
 # ── Misc ──────────────────────────────────────────────────────────────────────
 
 HTTP_TIMEOUT = 10.0
-DESCRIPTION_LIMIT = 300
-DISMISS_TIMEOUT = 120.0  # seconds before ✕ button is removed
+DESCRIPTION_LIMIT = 4096  # Discord embed description hard limit — do not lower
+DISMISS_TIMEOUT = 120.0
+VIDEO_MAX_BYTES = 50 * 1024 * 1024  # 50 MB — Discord Level 1 Boost upload limit

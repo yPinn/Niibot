@@ -1,19 +1,17 @@
 """Unified embed builder for social media previews.
 
-All platforms share the same visual structure so the output is
-consistent regardless of which platform generated it.
-
 Layout
 ------
-  [Author row]  post author name (+ icon if available)
-  [Title]       optional — used for content with a distinct headline
-                (Bilibili video title, …)
-  [Description] post body / caption, auto-truncated
+  [Author row]  post author name + icon
+  [Title]       optional headline (Bilibili title, Instagram username, …)
+  [Description] post caption, auto-truncated
   [Image]       first photo or video thumbnail
-  [Footer]      platform name  +  Niibot avatar icon (via EmbedFactory)
+  [Footer]      platform name + Niibot avatar (via EmbedFactory)
 """
 
 from __future__ import annotations
+
+from typing import Any
 
 import discord
 
@@ -29,18 +27,38 @@ from .constants import (
 )
 
 
-def _truncate(text: str, limit: int = DESCRIPTION_LIMIT) -> str:
+def _fmt_count(n: int) -> str:
+    """Format a large integer as a compact human-readable string (e.g. 46200 → '46.2K')."""
+    if n >= 1_000_000:
+        return f"{n / 1_000_000:.1f}M"
+    if n >= 1_000:
+        return f"{n / 1_000:.1f}K"
+    return str(n)
+
+
+def _truncate(text: str, limit: int) -> str:
     if len(text) <= limit:
         return text
+    for sep in ("\n\n", "\n", " "):
+        cut = text.rfind(sep, 0, limit)
+        if cut > limit // 2:
+            return text[:cut].rstrip() + "…"
     return text[: limit - 1] + "…"
 
 
-def _extract_author(raw_title: str, suffix: str, *, fallback: str | None = None) -> str | None:
-    """Strip a platform suffix from an OG title to get the author name.
+def _strip_trailing_hashtags(text: str) -> str:
+    lines = text.splitlines()
+    while lines:
+        tokens = lines[-1].strip().split()
+        if tokens and all(t.startswith("#") for t in tokens):
+            lines.pop()
+        else:
+            break
+    return "\n".join(lines).rstrip()
 
-    e.g. "Alice on Instagram: 'hi'" → "Alice"
-    Falls back to *fallback* when the suffix is absent.
-    """
+
+def _extract_author(raw_title: str, suffix: str, *, fallback: str | None = None) -> str | None:
+    """Strip a platform suffix from an OG title. e.g. "Alice on Instagram: 'hi'" → "Alice"."""
     if suffix in raw_title:
         return raw_title.split(suffix)[0]
     return fallback
@@ -66,20 +84,18 @@ def build_social_embed(
 ) -> discord.Embed:
     """Unified embed template used by every platform handler.
 
-    Uses EmbedFactory so the footer inherits the global Niibot avatar icon
-    while the footer text shows the originating platform name.
-    Pass *use_platform_footer=False* to fall back to the Niibot config footer
-    (useful when the platform is already shown in the author row).
+    Pass use_platform_footer=False when the platform is already shown in the
+    author row (e.g. Instagram, which uses the Instagram icon as author).
     """
     author = (
         {"name": author_name, "icon_url": author_icon_url, "url": author_url}
         if author_name
         else None
     )
-    footer_kwargs: dict = {} if not use_platform_footer else {"footer": platform}
-    return factory.build(
+    footer_kwargs: dict[str, Any] = {"footer": platform} if use_platform_footer else {}
+    return factory.build(  # type: ignore[no-any-return]
         title=_truncate(title, 256) if title else None,
-        description=_truncate(description) if description else None,
+        description=_truncate(description, DESCRIPTION_LIMIT) if description else None,
         color=discord.Color(color),
         url=url,
         author=author,
@@ -103,7 +119,7 @@ def build_instagram_embed(
     else:
         # InstaFix newer format: title is just "@handle" or "handle"
         username = raw_title or None
-    description = og.get("description", "")
+    description = _strip_trailing_hashtags(og.get("description", ""))
 
     handle = username.lstrip("@") if username else None
     # Display names from Instagram OG (reels) may be non-ASCII; only use as URL path if ASCII-safe
@@ -124,6 +140,51 @@ def build_instagram_embed(
         image_url=og.get("image"),
         use_platform_footer=False,
     )
+
+
+def build_instagram_profile_embed(
+    factory: EmbedFactory,
+    og: dict[str, str],
+    username: str,
+    profile_url: str,
+    *,
+    posts: int | None = None,
+    followers: int | None = None,
+    following: int | None = None,
+) -> discord.Embed:
+    raw_title = og.get("title", "")
+    # OG title formats: "Display Name (@handle) • Instagram…" or just "Display Name" / "@handle"
+    display_name: str | None = None
+    if "•" in raw_title:
+        part = raw_title.split("•")[0].strip()
+        if part.endswith(")") and " (@" in part:
+            part = part.rsplit(" (@", 1)[0].strip()
+        display_name = part or None
+    elif raw_title:
+        display_name = raw_title
+
+    embed = build_social_embed(
+        factory,
+        platform="Instagram",
+        color=COLOR_INSTAGRAM,
+        url=profile_url,
+        author_name="Instagram",
+        author_icon_url=INSTAGRAM_ICON_URL,
+        author_url=profile_url,
+        title=display_name or f"@{username}",
+        description=og.get("description") or None,
+        image_url=og.get("image") or None,
+        use_platform_footer=False,
+    )
+
+    if posts is not None:
+        embed.add_field(name="Posts", value=f"{posts:,}", inline=True)
+    if followers is not None:
+        embed.add_field(name="Followers", value=_fmt_count(followers), inline=True)
+    if following is not None:
+        embed.add_field(name="Following", value=f"{following:,}", inline=True)
+
+    return embed
 
 
 def build_threads_embed(factory: EmbedFactory, og: dict[str, str], post_url: str) -> discord.Embed:

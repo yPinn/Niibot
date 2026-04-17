@@ -21,10 +21,12 @@ Excluded platforms
 from __future__ import annotations
 
 import asyncio
+import io
 import logging
+import os
 import re
 from html.parser import HTMLParser
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, unquote
 
 import discord
 import httpx
@@ -35,6 +37,7 @@ from core import DATA_DIR, EmbedFactory, UserBoundView, load_json
 from ._embeds import (
     build_bilibili_embed,
     build_instagram_embed,
+    build_instagram_profile_embed,
     build_threads_embed,
     build_tiktok_embed,
 )
@@ -44,11 +47,15 @@ from .constants import (
     DISMISS_TIMEOUT,
     HTTP_TIMEOUT,
     INSTAFIX_HOST,
+    INSTAGRAM_APP_ID,
+    INSTAGRAM_PROFILE_API,
+    INSTAGRAM_PROFILE_RE,
     INSTAGRAM_PROXY_URL,
     INSTAGRAM_RE,
     THREADS_RE,
     TIKTOK_OEMBED_API,
     TIKTOK_RE,
+    VIDEO_MAX_BYTES,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -63,8 +70,6 @@ _BILIBILI_BV_RE = re.compile(r"BV[A-Za-z0-9]+")
 
 
 class _BasePreviewView(UserBoundView):
-    """Shared timeout behaviour: remove buttons without modifying the embed."""
-
     async def on_timeout(self) -> None:
         if self.message:
             try:
@@ -73,72 +78,85 @@ class _BasePreviewView(UserBoundView):
                 pass
 
 
-class _DismissView(_BasePreviewView):
-    """A single ✕ button that lets the original poster (or a moderator)
-    delete the bot's preview reply.  Removes itself after *timeout* seconds.
-    """
-
-    def __init__(self, user_id: int) -> None:
-        super().__init__(user_id, timeout=DISMISS_TIMEOUT)
-
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        if interaction.user.id == self.user_id:
-            return True
-        if (
-            isinstance(interaction.channel, discord.TextChannel)
-            and isinstance(interaction.user, discord.Member)
-            and interaction.channel.permissions_for(interaction.user).manage_messages
-        ):
-            return True
-        await interaction.response.send_message("只有原發文者可以關閉預覽。", ephemeral=True)
-        return False
-
-    @discord.ui.button(label="✕", style=discord.ButtonStyle.secondary)
-    async def dismiss(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
-        await interaction.message.delete()  # type: ignore[union-attr]
-
-
 class _InstagramCarouselView(_BasePreviewView):
-    """◀ 1/N ▶ navigation for multi-image Instagram posts."""
+    """◀ 1/N ▶ navigation for mixed photo/video carousel posts.
+
+    Videos are pre-downloaded at init so navigation is instant. Each video
+    is sent as a separate follow-up message so the embed always appears above
+    the video player (Discord limitation).
+    """
 
     def __init__(
         self,
         user_id: int,
-        cdn_urls: list[str],
+        items: list[tuple[str | None, str | None]],
+        video_bytes: dict[int, bytes],
         factory: EmbedFactory,
         og_meta: dict[str, str],
         post_url: str,
     ) -> None:
         super().__init__(user_id, timeout=DISMISS_TIMEOUT)
-        self.cdn_urls = cdn_urls
+        self._items = items
+        self._video_bytes = video_bytes  # index → pre-downloaded MP4 bytes
         self._factory = factory
         self._og_meta = og_meta
         self._post_url = post_url
         self.current = 0
+        self._video_message: discord.Message | None = None
         self._sync_buttons()
 
     def _sync_buttons(self) -> None:
         self.prev_btn.disabled = self.current == 0
-        self.next_btn.disabled = self.current == len(self.cdn_urls) - 1
-        self.page_btn.label = f"{self.current + 1}/{len(self.cdn_urls)}"
+        self.next_btn.disabled = self.current == len(self._items) - 1
+        self.page_btn.label = f"{self.current + 1}/{len(self._items)}"
 
     def _build_embed(self) -> discord.Embed:
-        embed = build_instagram_embed(
-            self._factory,
-            {**self._og_meta, "image": self.cdn_urls[self.current]},
-            self._post_url,
-        )
-        embed.set_footer(
-            text=f"Niibot • {self.current + 1}/{len(self.cdn_urls)}",
-            icon_url=embed.footer.icon_url,
-        )
-        return embed
+        image_cdn, _ = self._items[self.current]
+        meta = {**self._og_meta, "image": image_cdn} if image_cdn else self._og_meta
+        return build_instagram_embed(self._factory, meta, self._post_url)
+
+    async def _delete_video_message(self) -> None:
+        if self._video_message:
+            try:
+                await self._video_message.delete()
+            except (discord.NotFound, discord.HTTPException):
+                pass
+            self._video_message = None
+
+    def _make_video_file(self) -> discord.File | None:
+        data = self._video_bytes.get(self.current)
+        return discord.File(io.BytesIO(data), filename="reel.mp4") if data else None
+
+    async def _send_video_reply(self, file: discord.File) -> None:
+        if not self.message:
+            return
+        try:
+            self._video_message = await self.message.channel.send(  # type: ignore[union-attr]
+                file=file, reference=self.message
+            )
+        except (discord.Forbidden, discord.HTTPException):
+            pass
+
+    async def _navigate(self, interaction: discord.Interaction) -> None:
+        # Guard against Discord race condition where a disabled button fires late.
+        if not (0 <= self.current < len(self._items)):
+            await interaction.response.defer()
+            return
+
+        embed = self._build_embed()
+        file = self._make_video_file()
+
+        await self._delete_video_message()
+        await interaction.response.edit_message(embed=embed, view=self, attachments=[])
+
+        if file:
+            await self._send_video_reply(file)
 
     @discord.ui.button(label="◀", style=discord.ButtonStyle.secondary, disabled=True)
     async def prev_btn(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
-        self.current -= 1
+        self.current = max(0, self.current - 1)
         self._sync_buttons()
-        await interaction.response.edit_message(embed=self._build_embed(), view=self)
+        await self._navigate(interaction)
 
     @discord.ui.button(label="…", style=discord.ButtonStyle.secondary, disabled=True)
     async def page_btn(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
@@ -146,9 +164,18 @@ class _InstagramCarouselView(_BasePreviewView):
 
     @discord.ui.button(label="▶", style=discord.ButtonStyle.secondary)
     async def next_btn(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
-        self.current += 1
+        self.current = min(len(self._items) - 1, self.current + 1)
         self._sync_buttons()
-        await interaction.response.edit_message(embed=self._build_embed(), view=self)
+        await self._navigate(interaction)
+
+    async def on_timeout(self) -> None:
+        await self._delete_video_message()
+        if self.message:
+            try:
+                self.current = 0
+                await self.message.edit(embed=self._build_embed(), view=None, attachments=[])
+            except (discord.NotFound, discord.HTTPException):
+                pass
 
 
 class _OGParser(HTMLParser):
@@ -198,30 +225,28 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
 
         for pattern, handler in (
             (INSTAGRAM_RE, self._handle_instagram),
+            (INSTAGRAM_PROFILE_RE, self._handle_instagram_profile),
             (THREADS_RE, self._handle_threads),
             (BILIBILI_RE, self._handle_bilibili),
             (TIKTOK_RE, self._handle_tiktok),
         ):
             m = pattern.search(content)
             if m:
-                await handler(message, m)
+                try:
+                    await handler(message, m)
+                except Exception:
+                    LOGGER.exception("Unhandled error in %s handler", handler.__name__)
                 return
 
     async def _handle_instagram(self, message: discord.Message, match: re.Match[str]) -> None:
         path, shortcode = match.group(1), match.group(2)
         original_url = f"https://www.instagram.com/{path}/{shortcode}/"
 
-        # Reels/TV: InstaFix redirects to Instagram directly — skip the proxy hop.
-        if path in ("reel", "tv"):
-            og = await self._fetch_og(original_url, bot_ua=True, follow_redirects=True)
-            if not og or not og.get("image", "").startswith("http"):
-                LOGGER.debug("Instagram reel: no OG data for %s", shortcode)
-                return
-            await self._send_preview(message, build_instagram_embed(self._embed, og, original_url))
-            return
-
         proxy_url = INSTAGRAM_PROXY_URL.format(host=INSTAFIX_HOST, path=path, shortcode=shortcode)
         og = await self._fetch_og(proxy_url, bot_ua=True)
+        if not og:
+            # InstaFix may have cached a failed scrape — retry once with a cache-bust param.
+            og = await self._fetch_og(f"{proxy_url}?_={shortcode[:6]}", bot_ua=True)
         if not og:
             LOGGER.debug("Instagram: no OG data from InstaFix for %s", shortcode)
             return
@@ -231,41 +256,130 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
         og_meta = {k: v for k, v in og.items() if k != "image"}
 
         if img_path.startswith("/grid/"):
-            cdn_urls, fallback_title = await self._probe_instagram_images(shortcode)
-            if not cdn_urls:
+            items, fallback_title = await self._probe_instagram_items(shortcode)
+            if not items:
                 return
             if not og_meta.get("title") and fallback_title:
                 og_meta = {**og_meta, "title": fallback_title}
-        elif img_path.startswith("/images/"):
-            cdn = await self._resolve_instafix_image(img_path)
-            cdn_urls = [cdn] if cdn else []
-            if not cdn_urls:
-                return
-        else:
-            return
 
-        embed = build_instagram_embed(
-            self._embed,
-            {**og_meta, "image": cdn_urls[0]},
-            original_url,
-        )
+            # Pre-download all videos concurrently so navigation is instant.
+            async def _dl(i: int, cdn: str) -> tuple[int, bytes | None]:
+                f = await self._download_cdn_video(cdn)
+                if f is None:
+                    return i, None
+                f.fp.seek(0)
+                return i, f.fp.read()
 
-        if len(cdn_urls) > 1:
-            embed.set_footer(
-                text=f"Niibot • 1/{len(cdn_urls)}",
-                icon_url=embed.footer.icon_url,
+            dl_results = await asyncio.gather(
+                *(_dl(i, vid) for i, (_, vid) in enumerate(items) if vid is not None)
             )
-            view: discord.ui.View = _InstagramCarouselView(
-                message.author.id,
-                cdn_urls,
+            video_bytes: dict[int, bytes] = {i: data for i, data in dl_results if data is not None}
+
+            first_image, _ = items[0]
+            embed = build_instagram_embed(
                 self._embed,
-                og_meta,
+                {**og_meta, "image": first_image} if first_image else og_meta,
                 original_url,
             )
-        else:
-            view = _DismissView(message.author.id)
+            first_data = video_bytes.get(0)
+            first_file = (
+                discord.File(io.BytesIO(first_data), filename="reel.mp4") if first_data else None
+            )
 
-        await self._send_preview(message, embed, view=view)
+            if len(items) > 1:
+                carousel_view = _InstagramCarouselView(
+                    message.author.id,
+                    items,
+                    video_bytes,
+                    self._embed,
+                    og_meta,
+                    original_url,
+                )
+                await self._send_preview(message, embed, view=carousel_view)
+                if first_file:
+                    await carousel_view._send_video_reply(first_file)
+            else:
+                await self._send_preview(message, embed, file=first_file)
+
+        elif img_path.startswith("/images/"):
+            cdn, video_cdn = await asyncio.gather(
+                self._resolve_instafix_redirect(img_path),
+                self._resolve_instafix_redirect(f"/videos/{shortcode}/1", require_mp4=True),
+            )
+            if not cdn:
+                return
+            embed = build_instagram_embed(self._embed, {**og_meta, "image": cdn}, original_url)
+            file = await self._download_cdn_video(video_cdn) if video_cdn else None
+            await self._send_preview(message, embed, file=file)
+
+        elif not img_path:
+            # Reel with no thumbnail — video only.
+            video_path = og_meta.get("video", "")
+            if not video_path.startswith("/videos/"):
+                return
+            embed = build_instagram_embed(self._embed, og_meta, original_url)
+            file = await self._download_instafix_video(video_path)
+            await self._send_preview(message, embed, file=file)
+
+        else:
+            LOGGER.debug("Instagram: unexpected image path %r for %s", img_path, shortcode)
+
+    async def _handle_instagram_profile(
+        self, message: discord.Message, match: re.Match[str]
+    ) -> None:
+        username = match.group(1)
+        profile_url = f"https://www.instagram.com/{username}/"
+
+        user = await self._fetch_instagram_profile(username)
+
+        if user:
+            og: dict[str, str] = {
+                "title": user.get("full_name") or f"@{username}",
+                "description": user.get("biography") or "",
+                "image": (user.get("profile_pic_url_hd") or user.get("profile_pic_url") or ""),
+            }
+            posts = (user.get("edge_owner_to_timeline_media") or {}).get("count")
+            followers = (user.get("edge_followed_by") or {}).get("count")
+            following = (user.get("edge_follow") or {}).get("count")
+        else:
+            og = {}
+            posts = followers = following = None
+            LOGGER.debug("Instagram profile: API failed for @%s, sending minimal embed", username)
+
+        embed = build_instagram_profile_embed(
+            self._embed,
+            og,
+            username,
+            profile_url,
+            posts=posts,
+            followers=followers,
+            following=following,
+        )
+        await self._send_preview(message, embed)
+
+    async def _fetch_instagram_profile(self, username: str) -> dict | None:
+        """Fetch public profile data from Instagram's internal web API.
+
+        Unauthenticated requests 429 quickly; set INSTAGRAM_SESSION_ID in .env.
+        Returns data.user dict, or None on any failure.
+        """
+        url = INSTAGRAM_PROFILE_API.format(username=username)
+        headers: dict[str, str] = {
+            "X-IG-App-ID": INSTAGRAM_APP_ID,
+            "Referer": "https://www.instagram.com/",
+            "Accept": "*/*",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Origin": "https://www.instagram.com",
+        }
+        if session_id := os.getenv("INSTAGRAM_SESSION_ID"):
+            headers["Cookie"] = f"sessionid={unquote(session_id)}"
+        try:
+            resp = await self._http.get(url, headers=headers)
+            resp.raise_for_status()
+            return (resp.json().get("data") or {}).get("user")
+        except Exception as exc:
+            LOGGER.debug("Instagram profile API failed for @%s: %s", username, exc)
+            return None
 
     async def _handle_threads(self, message: discord.Message, match: re.Match[str]) -> None:
         # TODO: Threads OG scraping is blocked by Meta's login wall.
@@ -331,67 +445,160 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
         message: discord.Message,
         embed: discord.Embed,
         *,
-        view: discord.ui.View | None = None,
+        view: _BasePreviewView | None = None,
+        file: discord.File | None = None,
     ) -> None:
-        if view is None:
-            view = _DismissView(message.author.id)
-        sent = await message.channel.send(embed=embed, view=view)
-        if hasattr(view, "message"):
-            view.message = sent  # type: ignore[union-attr]
+        kwargs: dict = {"embed": embed}
+        if view is not None:
+            kwargs["view"] = view
+        try:
+            sent = await message.channel.send(**kwargs)
+        except (discord.Forbidden, discord.HTTPException):
+            return
+        if view is not None:
+            view.message = sent
+
+        # Send video as a reply so it appears below the embed (Discord renders
+        # attachments above embeds when combined in the same message).
+        if file is not None:
+            try:
+                await message.channel.send(file=file, reference=sent)  # type: ignore[union-attr]
+            except (discord.Forbidden, discord.HTTPException):
+                pass
 
         try:
             await message.delete()
         except (discord.Forbidden, discord.NotFound, discord.HTTPException):
             pass
 
-    async def _resolve_instafix_image(self, img_path: str) -> str | None:
-        """Follow InstaFix's 302 redirect to get the Instagram CDN URL without downloading the image."""
-        img_url = f"http://{INSTAFIX_HOST}{img_path}"
+    async def _resolve_instafix_redirect(
+        self, path: str, *, require_mp4: bool = False
+    ) -> str | None:
+        """Follow a single InstaFix 302 and return the CDN URL.
+
+        require_mp4=True discards non-MP4 redirects (InstaFix can return .jpg
+        via the /videos/ endpoint for photo carousel items).
+        """
+        if not path.startswith("/"):
+            LOGGER.warning("Unexpected InstaFix path (not relative): %r", path)
+            return None
+        url = f"http://{INSTAFIX_HOST}{path}"
         try:
             resp = await self._http.get(
-                img_url,
+                url,
                 headers={"User-Agent": "Discordbot/2.0"},
                 follow_redirects=False,
             )
-            if resp.is_redirect:
-                return str(resp.headers["location"])
-            # Unexpected 200 — return None rather than using internal URL
-            return None
+            if not resp.is_redirect:
+                return None
+            cdn_url = str(resp.headers["location"])
+            if require_mp4 and ".mp4" not in cdn_url.split("?")[0]:
+                return None
+            return cdn_url
         except Exception as exc:
-            LOGGER.debug("Image resolve failed for %s: %s", img_path, exc)
+            LOGGER.debug("InstaFix redirect failed for %s: %s", path, exc)
             return None
 
-    async def _probe_instagram_images(self, shortcode: str) -> tuple[list[str], str | None]:
-        """Fetch carousel CDN URLs concurrently. Probes 1–4 first, extends to 10 only if needed.
+    async def _download_cdn_video(self, cdn_url: str) -> discord.File | None:
+        try:
+            chunks: list[bytes] = []
+            total = 0
+            async with self._http.stream("GET", cdn_url) as resp:
+                resp.raise_for_status()
+                async for chunk in resp.aiter_bytes(65536):
+                    total += len(chunk)
+                    if total > VIDEO_MAX_BYTES:
+                        LOGGER.debug(
+                            "Video exceeds %d MB limit, skipping",
+                            VIDEO_MAX_BYTES // 1024 // 1024,
+                        )
+                        await resp.aclose()
+                        return None
+                    chunks.append(chunk)
+            return discord.File(io.BytesIO(b"".join(chunks)), filename="reel.mp4")
+        except Exception as exc:
+            LOGGER.debug("CDN video download failed for %s: %s", cdn_url, exc)
+            return None
 
-        Returns (cdn_urls, fallback_title).
-        fallback_title covers carousel posts where the /grid/ request omits og:title.
+    async def _download_instafix_video(self, video_path: str) -> discord.File | None:
+        cdn_url = await self._resolve_instafix_redirect(video_path, require_mp4=True)
+        if not cdn_url:
+            return None
+        return await self._download_cdn_video(cdn_url)
+
+    async def _probe_instagram_items(
+        self, shortcode: str
+    ) -> tuple[list[tuple[str | None, str | None]], str | None]:
+        """Probe carousel items concurrently (1–4, extending to 10 if index 4 has media).
+
+        Returns (items, fallback_title); each item is (image_cdn_url, video_cdn_url).
+        fallback_title is needed because the /grid/ OG response often omits og:title.
         """
 
-        async def _fetch_one(i: int) -> tuple[str | None, str | None]:
+        async def _fetch_one(
+            i: int,
+        ) -> tuple[str | None, str | None, str | None]:
+            # image_cdn, video_cdn, title
             url = f"http://{INSTAFIX_HOST}/p/{shortcode}/?img_index={i}"
             og = await self._fetch_og(url, bot_ua=True)
-            if not og or not og.get("image", "").startswith("/images/"):
-                return None, None
-            if i == 1:
-                LOGGER.debug("Instagram img_index=1 OG for %s → %r", shortcode, og)
-            cdn = await self._resolve_instafix_image(og["image"])
-            return cdn, og.get("title")
+
+            og_image = og.get("image", "") if og else ""
+
+            # Determine redirect path for the image (None → direct URL or unknown)
+            if og_image.startswith("/images/"):
+                image_redirect = og_image
+            elif og_image.startswith("/videos/"):
+                # InstaFix uses /videos/ as og:image for video items; swap prefix for JPEG.
+                image_redirect = og_image.replace("/videos/", "/images/", 1)
+            else:
+                image_redirect = None
+
+            image_cdn_resolved = (
+                await self._resolve_instafix_redirect(image_redirect) if image_redirect else None
+            )
+            video_cdn = await self._resolve_instafix_redirect(
+                f"/videos/{shortcode}/{i}", require_mp4=True
+            )
+            image_cdn: str | None = image_cdn_resolved or (
+                og_image if og_image.startswith(("http://", "https://")) else None
+            )
+
+            LOGGER.debug(
+                "Instagram img_index=%d for %s → og_image=%r image_cdn=%s video_cdn=%s",
+                i,
+                shortcode,
+                og_image,
+                bool(image_cdn),
+                bool(video_cdn),
+            )
+
+            # Video items sometimes have no og:image — probe /images/ as fallback.
+            if image_cdn is None and video_cdn is not None:
+                candidate = await self._resolve_instafix_redirect(f"/images/{shortcode}/{i}")
+                # InstaFix may redirect /images/ to MP4 for video items; discard those.
+                if candidate and ".mp4" in candidate.split("?")[0]:
+                    LOGGER.debug("Instagram img_index=%d fallback returned MP4 URL, discarding", i)
+                    candidate = None
+                image_cdn = candidate
+                LOGGER.debug(
+                    "Instagram img_index=%d fallback image_cdn=%r",
+                    i,
+                    image_cdn[:80] if image_cdn else None,
+                )
+
+            title = og.get("title") if og else None
+            return image_cdn, video_cdn, title
 
         results = list(await asyncio.gather(*(_fetch_one(i) for i in range(1, 5))))
-        # Only probe 5–10 if index 4 returned a result (carousel has >4 images)
-        if results[-1][0] is not None:
+        # Only probe 5–10 if index 4 returned any media
+        if results[-1][0] is not None or results[-1][1] is not None:
             results += list(await asyncio.gather(*(_fetch_one(i) for i in range(5, 11))))
 
-        cdn_urls: list[str] = []
-        fallback_title: str | None = None
-        for cdn, title in results:
-            if cdn is None:
-                break
-            cdn_urls.append(cdn)
-            if fallback_title is None:
-                fallback_title = title
-        return cdn_urls, fallback_title
+        items = [(img, vid) for img, vid, _ in results if img is not None or vid is not None]
+        fallback_title: str | None = next(
+            (title for _, _, title in results if title is not None), None
+        )
+        return items, fallback_title
 
     async def _fetch_og(
         self, url: str, *, bot_ua: bool = False, follow_redirects: bool = False
