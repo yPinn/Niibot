@@ -179,11 +179,11 @@ def build_instagram_profile_embed(
     )
 
     if posts is not None:
-        embed.add_field(name="Posts", value=f"{posts:,}", inline=True)
+        embed.add_field(name="Posts", value=_fmt_count(posts), inline=True)
     if followers is not None:
         embed.add_field(name="Followers", value=_fmt_count(followers), inline=True)
     if following is not None:
-        embed.add_field(name="Following", value=f"{following:,}", inline=True)
+        embed.add_field(name="Following", value=_fmt_count(following), inline=True)
 
     return embed
 
