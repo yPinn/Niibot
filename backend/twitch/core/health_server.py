@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING, Any
 from aiohttp import web
 from twitchio.ext import routines
 
+from .config import get_settings
+
 _APP_VERSION = os.getenv("APP_VERSION", "dev")
 _GIT_COMMIT = os.getenv("GIT_COMMIT", "unknown")
 
@@ -25,7 +27,7 @@ class HealthCheckServer:
         self.bot: Any = bot
         self.host = host
         # Prefer PORT env var if set
-        self.port = port or int(os.getenv("PORT", "4344"))
+        self.port = port or get_settings().port
         self.app = web.Application()
         self.runner: web.AppRunner | None = None
         self._start_time: float = time.time()

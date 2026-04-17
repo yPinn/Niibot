@@ -42,7 +42,11 @@ class TwitchBotSettings(BaseSettings):
     """Twitch bot settings"""
 
     model_config = SettingsConfigDict(
-        env_file=Path(__file__).parent.parent / ".env",
+        # Order mirrors docker-compose.yml: shared.env first, twitch/.env overrides.
+        env_file=(
+            Path(__file__).parent.parent.parent / "shared.env",
+            Path(__file__).parent.parent / ".env",
+        ),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
@@ -67,14 +71,13 @@ class TwitchBotSettings(BaseSettings):
 
     # OpenRouter AI
     openrouter_api_key: str = Field(default="", description="OpenRouter API key")
-    openrouter_model: str = Field(
-        default="deepseek/deepseek-r1-0528:free", description="OpenRouter model"
-    )
+    openrouter_model: str = Field(default="", description="OpenRouter model")
 
     # YouTube Data API
     youtube_api_key: str = Field(default="", description="YouTube Data API v3 key")
 
-    # Environment
+    # Server
+    port: int = Field(default=4344, description="Health server port")
     log_level: str = Field(default="INFO", description="Logging level")
 
     @field_validator("database_url")
