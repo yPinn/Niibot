@@ -49,6 +49,8 @@ TIKTOK_RE = re.compile(
 # ── External APIs ─────────────────────────────────────────────────────────────
 
 BILIBILI_API = "https://api.bilibili.com/x/web-interface/view?bvid={bvid}"
+BILIBILI_CARD_API = "https://api.bilibili.com/x/web-interface/card?mid={mid}"
+BILIBILI_SPACE_URL = "https://space.bilibili.com/{mid}"
 TIKTOK_OEMBED_API = "https://www.tiktok.com/oembed?url={url}"
 
 # Instagram internal web API. Unauthenticated requests 429 quickly;

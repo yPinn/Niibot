@@ -18,6 +18,7 @@ import discord
 from core import EmbedFactory
 
 from .constants import (
+    BILIBILI_SPACE_URL,
     COLOR_BILIBILI,
     COLOR_INSTAGRAM,
     COLOR_THREADS,
@@ -210,6 +211,9 @@ def build_bilibili_embed(factory: EmbedFactory, data: dict, video_url: str) -> d
     desc = data.get("desc") or ""
     description = desc if desc and desc != title else None
 
+    mid = owner.get("mid")
+    author_url = BILIBILI_SPACE_URL.format(mid=mid) if mid else None
+
     embed = build_social_embed(
         factory,
         platform="Bilibili",
@@ -218,21 +222,57 @@ def build_bilibili_embed(factory: EmbedFactory, data: dict, video_url: str) -> d
         title=title,
         author_name=owner.get("name") or None,
         author_icon_url=owner.get("face") or None,
+        author_url=author_url,
         description=description,
         image_url=data.get("pic") or None,
+        use_platform_footer=False,
     )
 
-    metrics: list[str] = []
-    if stat.get("view"):
-        metrics.append(f"▶ {stat['view']:,}")
-    if stat.get("like"):
-        metrics.append(f"👍 {stat['like']:,}")
-    if stat.get("coin"):
-        metrics.append(f"🪙 {stat['coin']:,}")
-    if stat.get("favorite"):
-        metrics.append(f"⭐ {stat['favorite']:,}")
-    if metrics:
-        embed.add_field(name="", value="  ".join(metrics), inline=False)
+    view_share = [
+        (label, val)
+        for label, val in (
+            ("播放", stat.get("view") or 0),
+            ("分享", stat.get("share") or 0),
+        )
+        if val
+    ]
+    for label, val in view_share:
+        embed.add_field(name=label, value=_fmt_count(val), inline=True)
+    if len(view_share) == 2:
+        embed.add_field(name="\u200b", value="\u200b", inline=True)
+
+    for label, val in (
+        ("點讚", stat.get("like") or 0),
+        ("投幣", stat.get("coin") or 0),
+        ("收藏", stat.get("favorite") or 0),
+    ):
+        if val:
+            embed.add_field(name=label, value=_fmt_count(val), inline=True)
+
+    return embed
+
+
+def build_bilibili_space_embed(factory: EmbedFactory, data: dict, space_url: str) -> discord.Embed:
+    card = data.get("card") or {}
+    embed = build_social_embed(
+        factory,
+        platform="Bilibili",
+        color=COLOR_BILIBILI,
+        url=space_url,
+        author_name=card.get("name") or None,
+        author_icon_url=card.get("face") or None,
+        author_url=space_url,
+        description=card.get("sign") or None,
+        use_platform_footer=False,
+    )
+
+    for label, val in (
+        ("影片", data.get("archive_count") or 0),
+        ("粉絲", card.get("fans") or 0),
+        ("關注", card.get("attention") or 0),
+    ):
+        if val:
+            embed.add_field(name=label, value=_fmt_count(val), inline=True)
 
     return embed
 

@@ -401,8 +401,8 @@ class TestBuildBilibiliEmbed:
             "title": "My Video",
             "desc": "A description",
             "pic": "https://img.com/v.jpg",
-            "owner": {"name": "Creator", "face": "https://img.com/avatar.jpg"},
-            "stat": {"view": 1000, "like": 500, "coin": 100, "favorite": 200},
+            "owner": {"mid": 12345, "name": "Creator", "face": "https://img.com/avatar.jpg"},
+            "stat": {"view": 1000, "like": 500, "coin": 100, "favorite": 200, "share": 50},
         }
 
     def test_title_set(self, embed_factory: EmbedFactory) -> None:
@@ -417,14 +417,52 @@ class TestBuildBilibiliEmbed:
         )
         assert embed.author.name == "Creator"
 
-    def test_metrics_field_added(self, embed_factory: EmbedFactory) -> None:
+    def test_author_url_links_to_space(self, embed_factory: EmbedFactory) -> None:
         embed = embeds_mod.build_bilibili_embed(
             embed_factory, self._data(), "https://bilibili.com/video/BV1x"
         )
-        assert len(embed.fields) == 1
-        field_value = embed.fields[0].value
-        assert "▶" in field_value
-        assert "👍" in field_value
+        assert embed.author.url == "https://space.bilibili.com/12345"
+
+    def test_author_url_absent_when_no_mid(self, embed_factory: EmbedFactory) -> None:
+        data = self._data()
+        data["owner"] = {"name": "Creator", "face": "https://img.com/avatar.jpg"}
+        embed = embeds_mod.build_bilibili_embed(
+            embed_factory, data, "https://bilibili.com/video/BV1x"
+        )
+        assert not embed.author.url
+
+    def test_metrics_layout(self, embed_factory: EmbedFactory) -> None:
+        embed = embeds_mod.build_bilibili_embed(
+            embed_factory, self._data(), "https://bilibili.com/video/BV1x"
+        )
+        # row 1: 播放 + 分享 + spacer (inline x3), row 2: engagement (inline x3)
+        assert len(embed.fields) == 6
+        assert embed.fields[0].name == "播放"
+        assert embed.fields[0].inline
+        assert embed.fields[1].name == "分享"
+        assert embed.fields[1].inline
+        assert embed.fields[2].name == "\u200b"  # spacer
+        assert embed.fields[2].inline
+        assert embed.fields[3].name == "點讚"
+        assert embed.fields[3].inline
+        assert embed.fields[4].name == "投幣"
+        assert embed.fields[4].inline
+        assert embed.fields[5].name == "收藏"
+        assert embed.fields[5].inline
+
+    def test_view_count_uses_compact_format(self, embed_factory: EmbedFactory) -> None:
+        embed = embeds_mod.build_bilibili_embed(
+            embed_factory, self._data(), "https://bilibili.com/video/BV1x"
+        )
+        assert embed.fields[0].value == "1.0K"  # 播放 is fields[0]
+
+    def test_share_absent_when_zero(self, embed_factory: EmbedFactory) -> None:
+        data = self._data()
+        data["stat"]["share"] = 0
+        embed = embeds_mod.build_bilibili_embed(
+            embed_factory, data, "https://bilibili.com/video/BV1x"
+        )
+        assert all(f.name != "分享" for f in embed.fields)
 
     def test_no_metrics_field_when_stat_empty(self, embed_factory: EmbedFactory) -> None:
         data = self._data()
@@ -442,17 +480,76 @@ class TestBuildBilibiliEmbed:
         )
         assert embed.description is None
 
-    def test_footer_is_bilibili(self, embed_factory: EmbedFactory) -> None:
+    def test_footer_defers_to_factory(self, embed_factory: EmbedFactory) -> None:
         embed = embeds_mod.build_bilibili_embed(
             embed_factory, self._data(), "https://bilibili.com/video/BV1x"
         )
-        assert embed.footer.text == "Bilibili"
+        # use_platform_footer=False — factory config (empty in tests) drives footer
+        assert embed.footer.text != "Bilibili"
 
     def test_image_set(self, embed_factory: EmbedFactory) -> None:
         embed = embeds_mod.build_bilibili_embed(
             embed_factory, self._data(), "https://bilibili.com/video/BV1x"
         )
         assert embed.image.url == "https://img.com/v.jpg"
+
+
+class TestBuildBilibiliSpaceEmbed:
+    _SPACE_URL = "https://space.bilibili.com/12345678"
+
+    def _data(self) -> dict:
+        return {
+            "card": {
+                "mid": "12345678",
+                "name": "Test User",
+                "face": "https://img.com/avatar.jpg",
+                "sign": "A short bio.",
+                "fans": 79803,
+                "attention": 743,
+            },
+            "archive_count": 275,
+        }
+
+    def test_no_title(self, embed_factory: EmbedFactory) -> None:
+        embed = embeds_mod.build_bilibili_space_embed(embed_factory, self._data(), self._SPACE_URL)
+        assert embed.title is None
+
+    def test_author_name_and_icon(self, embed_factory: EmbedFactory) -> None:
+        embed = embeds_mod.build_bilibili_space_embed(embed_factory, self._data(), self._SPACE_URL)
+        assert embed.author.name == "Test User"
+        assert embed.author.icon_url == "https://img.com/avatar.jpg"
+        assert embed.author.url == self._SPACE_URL
+
+    def test_description_is_sign(self, embed_factory: EmbedFactory) -> None:
+        embed = embeds_mod.build_bilibili_space_embed(embed_factory, self._data(), self._SPACE_URL)
+        assert "bio" in embed.description
+
+    def test_stats_fields(self, embed_factory: EmbedFactory) -> None:
+        embed = embeds_mod.build_bilibili_space_embed(embed_factory, self._data(), self._SPACE_URL)
+        names = [f.name for f in embed.fields]
+        assert "粉絲" in names
+        assert "關注" in names
+        assert "影片" in names
+
+    def test_fans_compact_format(self, embed_factory: EmbedFactory) -> None:
+        embed = embeds_mod.build_bilibili_space_embed(embed_factory, self._data(), self._SPACE_URL)
+        fans_field = next(f for f in embed.fields if f.name == "粉絲")
+        assert fans_field.value == "79.8K"
+
+
+class TestBilibiliSpaceRegex:
+    RE = constants.BILIBILI_SPACE_RE
+
+    def test_matches(self) -> None:
+        assert self.RE.search("https://space.bilibili.com/12345678") is not None
+
+    def test_captures_mid(self) -> None:
+        m = self.RE.search("https://space.bilibili.com/12345678")
+        assert m is not None
+        assert m.group(1) == "12345678"
+
+    def test_no_match_on_video_url(self) -> None:
+        assert self.RE.search("https://www.bilibili.com/video/BV1xx") is None
 
 
 class TestBuildTiktokEmbed:
@@ -934,7 +1031,6 @@ class TestCogBilibili:
 
         msg.channel.send.assert_awaited_once()
         embed = msg.channel.send.call_args.kwargs["embed"]
-        assert embed.footer.text == "Bilibili"
         assert embed.title == "My BV Video"
 
     @pytest.mark.asyncio

@@ -36,6 +36,7 @@ from core import DATA_DIR, EmbedFactory, UserBoundView, load_json
 
 from ._embeds import (
     build_bilibili_embed,
+    build_bilibili_space_embed,
     build_instagram_embed,
     build_instagram_profile_embed,
     build_threads_embed,
@@ -43,7 +44,9 @@ from ._embeds import (
 )
 from .constants import (
     BILIBILI_API,
+    BILIBILI_CARD_API,
     BILIBILI_RE,
+    BILIBILI_SPACE_RE,
     DISMISS_TIMEOUT,
     HTTP_TIMEOUT,
     INSTAFIX_HOST,
@@ -227,6 +230,7 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
             (INSTAGRAM_RE, self._handle_instagram),
             (INSTAGRAM_PROFILE_RE, self._handle_instagram_profile),
             (THREADS_RE, self._handle_threads),
+            (BILIBILI_SPACE_RE, self._handle_bilibili_space),
             (BILIBILI_RE, self._handle_bilibili),
             (TIKTOK_RE, self._handle_tiktok),
         ):
@@ -396,7 +400,7 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
         if not bvid:
             short_url = match.group(0)
             try:
-                resp = await self._http.head(short_url)
+                resp = await self._http.head(short_url, follow_redirects=True)
                 bv_m = _BILIBILI_BV_RE.search(str(resp.url))
                 if not bv_m:
                     return
@@ -422,6 +426,30 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
 
         await self._send_preview(
             message, build_bilibili_embed(self._embed, body["data"], video_url)
+        )
+
+    async def _handle_bilibili_space(self, message: discord.Message, match: re.Match[str]) -> None:
+        mid = match.group(1)
+        space_url = f"https://space.bilibili.com/{mid}"
+        try:
+            resp = await self._http.get(
+                BILIBILI_CARD_API.format(mid=mid),
+                headers={
+                    "Referer": "https://www.bilibili.com",
+                    "User-Agent": _UA,
+                },
+            )
+            resp.raise_for_status()
+            body = resp.json()
+        except Exception as exc:
+            LOGGER.debug("Bilibili card API failed for mid=%s: %s", mid, exc)
+            return
+
+        if body.get("code") != 0 or not body.get("data"):
+            return
+
+        await self._send_preview(
+            message, build_bilibili_space_embed(self._embed, body["data"], space_url)
         )
 
     async def _handle_tiktok(self, message: discord.Message, match: re.Match[str]) -> None:
