@@ -18,7 +18,7 @@ jobs:
     runs-on: self-hosted
     concurrency:
       group: deploy
-      cancel-in-progress: true
+      cancel-in-progress: false  # never interrupt a deploy mid-run (risk of partial migration)
 
     env:
       PROJECT_DIR: /Users/pinn/Niibot
@@ -94,7 +94,13 @@ jobs:
           fi
 
           echo "Building:$SERVICES"
-          docker compose build $SERVICES \
+
+          # --pull on scheduled/force runs so the base image security updates
+          # (python:3.11-slim-bookworm patches) are actually fetched from the registry.
+          PULL_FLAG=""
+          [ "${{ steps.changes.outputs.reason }}" = "force" ] && PULL_FLAG="--pull"
+
+          docker compose build $PULL_FLAG $SERVICES \
             --build-arg APP_VERSION=${{ steps.meta.outputs.version }} \
             --build-arg GIT_COMMIT=${{ steps.meta.outputs.commit }}
 
@@ -130,19 +136,30 @@ jobs:
 
       - name: Health check
         run: |
-          sleep 10
+          # Wait for start_period (30s) + a buffer, then verify both liveness
+          # and DB connectivity. /status is unauthenticated and safe to poll here.
+          sleep 35
+
+          # API — hard failure (DB connectivity required)
           curl -sf http://localhost:8000/health || exit 1
+          curl -sf http://localhost:8000/status | python3 -c \
+            "import sys, json; d=json.load(sys.stdin); sys.exit(0 if d.get('db_connected') else 1)" || exit 1
+
+          # Bots — soft check (log warning only; Discord/Twitch gateway latency varies)
+          curl -sf http://localhost:8080/health && echo "discord-bot: OK" || echo "WARN: discord-bot not responding"
+          curl -sf http://localhost:4344/health && echo "twitch-bot:  OK" || echo "WARN: twitch-bot not responding"
 
       - name: Prune old images
         run: |
           # Remove dangling images (untagged build leftovers)
           docker image prune -f
 
-          # Keep only the 3 most recent version tags per service; remove the rest
+          # Keep only the 3 most recent version tags per service; remove the rest.
+          # docker images lists newest-first by default — no sort needed (avoids
+          # BSD sort -V incompatibility on macOS runners).
           for IMAGE in niibot-api niibot-twitch niibot-discord; do
             docker images "$IMAGE" --format "{{.Tag}}" \
               | grep -v "^latest$" \
-              | sort -rV \
               | tail -n +4 \
               | xargs -I{} docker rmi "$IMAGE:{}" 2>/dev/null || true
           done
