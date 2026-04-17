@@ -2,9 +2,12 @@
 
 import logging
 import os
+from functools import lru_cache
 from pathlib import Path
 
 import discord
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = logging.getLogger(__name__)
 
@@ -26,15 +29,91 @@ else:
     DATA_DIR = BACKEND_DIR / "data"
 
 
-class BotConfig:
-    STATUS: str = os.getenv("DISCORD_STATUS", "")
-    ACTIVITY_TYPE: str = os.getenv("DISCORD_ACTIVITY_TYPE", "")
-    ACTIVITY_NAME: str = os.getenv("DISCORD_ACTIVITY_NAME", "")
-    ACTIVITY_URL: str = os.getenv("DISCORD_ACTIVITY_URL", "")
+class DiscordBotSettings(BaseSettings):
+    """Discord bot settings"""
 
-    RATE_LIMIT_ENABLED: bool = os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true"
-    RATE_LIMIT_WARNING_THRESHOLD: float = float(os.getenv("RATE_LIMIT_WARNING_THRESHOLD", "0.7"))
-    RATE_LIMIT_CRITICAL_THRESHOLD: float = float(os.getenv("RATE_LIMIT_CRITICAL_THRESHOLD", "0.9"))
+    model_config = SettingsConfigDict(
+        # Order mirrors docker-compose.yml: shared.env first, discord/.env overrides.
+        env_file=(
+            Path(__file__).parent.parent.parent / "shared.env",
+            Path(__file__).parent.parent / ".env",
+        ),
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    # Discord
+    discord_bot_token: str = Field(..., description="Discord bot token")
+
+    # Database
+    database_url: str = Field(..., description="PostgreSQL database URL")
+
+    # Server
+    port: int = Field(default=8080, description="Health server port")
+    log_level: str = Field(default="INFO", description="Logging level")
+
+    # Presence
+    discord_status: str = Field(default="online", description="Bot status")
+    discord_activity_type: str = Field(
+        default="", description="Activity type (playing/listening/watching/competing/streaming)"
+    )
+    discord_activity_name: str = Field(default="", description="Activity name")
+    discord_activity_url: str = Field(
+        default="", description="Streaming URL (twitch.tv only, required for streaming type)"
+    )
+
+    # Rate Limit Monitor
+    rate_limit_enabled: bool = Field(default=True, description="Enable rate limit monitoring")
+    rate_limit_warning_threshold: float = Field(default=0.7, description="Warning threshold (0–1)")
+    rate_limit_critical_threshold: float = Field(
+        default=0.9, description="Critical threshold (0–1)"
+    )
+
+    # Instagram (Social Preview)
+    instafix_host: str = Field(
+        default="instafix:3000",
+        description="InstaFix host (Docker: instafix:3000, local: localhost:3000)",
+    )
+    instagram_session_id: str = Field(
+        default="", description="Instagram session cookie for profile embeds"
+    )
+
+    # OpenRouter AI
+    openrouter_api_key: str = Field(default="", description="OpenRouter API key")
+    openrouter_model: str = Field(default="", description="OpenRouter model")
+
+    # Error reporting
+    error_webhook_url: str = Field(
+        default="", description="Discord webhook URL for ERROR/CRITICAL alerts"
+    )
+
+    @field_validator("log_level")
+    @classmethod
+    def validate_log_level(cls, v: str) -> str:
+        valid_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+        v_upper = v.upper()
+        if v_upper not in valid_levels:
+            logger.warning(f"Invalid log level '{v}', defaulting to INFO")
+            return "INFO"
+        return v_upper
+
+    @field_validator("database_url")
+    @classmethod
+    def validate_database_url(cls, v: str) -> str:
+        if not v.startswith("postgresql://"):
+            raise ValueError("DATABASE_URL must start with 'postgresql://'")
+        return v
+
+
+@lru_cache
+def get_settings() -> DiscordBotSettings:
+    """Get cached settings instance"""
+    return DiscordBotSettings()  # type: ignore[call-arg]
+
+
+class BotConfig:
+    """Discord presence configuration — backed by DiscordBotSettings."""
 
     @classmethod
     def get_status(cls) -> discord.Status:
@@ -44,36 +123,41 @@ class BotConfig:
             "dnd": discord.Status.dnd,
             "invisible": discord.Status.invisible,
         }
-        return status_map.get(cls.STATUS.lower(), discord.Status.online)
+        return status_map.get(get_settings().discord_status.lower(), discord.Status.online)
 
     @classmethod
     def get_activity(cls) -> discord.Activity | discord.Streaming | None:
-        """Get bot activity from environment variables
+        """Get bot activity from settings.
 
         Supports: playing, listening, watching, competing, streaming
-        For streaming: DISCORD_ACTIVITY_URL must be a valid Twitch URL
+        For streaming: discord_activity_url must be a valid Twitch URL
         """
-        if not cls.ACTIVITY_NAME:
+        s = get_settings()
+        if not s.discord_activity_name:
             return None
 
-        activity_type_lower = cls.ACTIVITY_TYPE.lower()
+        activity_type_lower = s.discord_activity_type.lower()
 
         if activity_type_lower == "streaming":
-            if not cls.ACTIVITY_URL:
+            if not s.discord_activity_url:
                 logger.warning(
                     "Streaming activity requires DISCORD_ACTIVITY_URL to be set. "
                     "Falling back to 'playing' activity."
                 )
-                return discord.Activity(type=discord.ActivityType.playing, name=cls.ACTIVITY_NAME)
+                return discord.Activity(
+                    type=discord.ActivityType.playing, name=s.discord_activity_name
+                )
 
-            if not cls.ACTIVITY_URL.startswith("https://twitch.tv/"):
+            if not s.discord_activity_url.startswith("https://twitch.tv/"):
                 logger.warning(
                     f"Streaming activity URL must be a valid Twitch URL (https://twitch.tv/*). "
-                    f"Got: {cls.ACTIVITY_URL}. Falling back to 'playing' activity."
+                    f"Got: {s.discord_activity_url}. Falling back to 'playing' activity."
                 )
-                return discord.Activity(type=discord.ActivityType.playing, name=cls.ACTIVITY_NAME)
+                return discord.Activity(
+                    type=discord.ActivityType.playing, name=s.discord_activity_name
+                )
 
-            return discord.Streaming(name=cls.ACTIVITY_NAME, url=cls.ACTIVITY_URL)
+            return discord.Streaming(name=s.discord_activity_name, url=s.discord_activity_url)
 
         activity_map = {
             "playing": discord.ActivityType.playing,
@@ -81,6 +165,5 @@ class BotConfig:
             "watching": discord.ActivityType.watching,
             "competing": discord.ActivityType.competing,
         }
-
         activity_type = activity_map.get(activity_type_lower, discord.ActivityType.playing)
-        return discord.Activity(type=activity_type, name=cls.ACTIVITY_NAME)
+        return discord.Activity(type=activity_type, name=s.discord_activity_name)

@@ -15,6 +15,7 @@ from .config import (
     DISCORD_DIR,
     GIT_COMMIT,
     BotConfig,
+    get_settings,
 )
 from .embed_factory import EmbedFactory
 from .health_server import HealthCheckServer
@@ -35,6 +36,7 @@ def load_json(path: Path, default: dict | list | None = None) -> Any:
 __all__ = [
     # Config
     "BotConfig",
+    "get_settings",
     "BOT_NAME",
     "BOT_VERSION",
     "GIT_COMMIT",

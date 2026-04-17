@@ -23,7 +23,6 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
-import os
 import re
 from html.parser import HTMLParser
 from urllib.parse import quote_plus, unquote
@@ -32,14 +31,13 @@ import discord
 import httpx
 from discord.ext import commands
 
-from core import DATA_DIR, EmbedFactory, UserBoundView, load_json
+from core import DATA_DIR, EmbedFactory, UserBoundView, get_settings, load_json
 
 from ._embeds import (
     build_bilibili_embed,
     build_bilibili_space_embed,
     build_instagram_embed,
     build_instagram_profile_embed,
-    build_threads_embed,
     build_tiktok_embed,
 )
 from .constants import (
@@ -375,7 +373,7 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
             "Accept-Language": "en-US,en;q=0.9",
             "Origin": "https://www.instagram.com",
         }
-        if session_id := os.getenv("INSTAGRAM_SESSION_ID"):
+        if session_id := get_settings().instagram_session_id:
             headers["Cookie"] = f"sessionid={unquote(session_id)}"
         try:
             resp = await self._http.get(url, headers=headers)
@@ -386,13 +384,10 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
             return None
 
     async def _handle_threads(self, message: discord.Message, match: re.Match[str]) -> None:
-        # TODO: Threads OG scraping is blocked by Meta's login wall.
-        # Needs a dedicated solution (proxy or official API with user token).
-        post_url = match.group(0)
-        og = await self._fetch_og(post_url)
-        if not og:
-            return
-        await self._send_preview(message, build_threads_embed(self._embed, og, post_url))
+        # Threads OG scraping is blocked by Meta's login wall — no viable
+        # server-side solution without user tokens. Handler is intentionally
+        # a no-op so THREADS_RE matches don't fall through to later patterns.
+        return
 
     async def _handle_bilibili(self, message: discord.Message, match: re.Match[str]) -> None:
         bvid = match.group(1)

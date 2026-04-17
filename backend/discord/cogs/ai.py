@@ -3,7 +3,6 @@
 import asyncio
 import json
 import logging
-import os
 import re
 import time
 
@@ -21,7 +20,7 @@ from openai import (
 )
 from openai.types.chat import ChatCompletionMessageParam
 
-from core import DATA_DIR, EmbedFactory, load_json
+from core import DATA_DIR, EmbedFactory, get_settings, load_json
 
 LOGGER = logging.getLogger(__name__)
 
@@ -74,11 +73,15 @@ class AICog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-        api_key = os.getenv("OPENROUTER_API_KEY", "")
-        model = os.getenv("OPENROUTER_MODEL", "openrouter/free")
+        s = get_settings()
+        api_key = s.openrouter_api_key
+        model = s.openrouter_model
 
         if not api_key or api_key.strip() == "":
             raise ValueError("OPENROUTER_API_KEY is required but not set in .env file")
+
+        if not model or model.strip() == "":
+            raise ValueError("OPENROUTER_MODEL is required but not set in .env file")
 
         self.client = AsyncOpenAI(
             base_url="https://openrouter.ai/api/v1",

@@ -29,6 +29,7 @@ from core import (  # noqa: E402
     BotConfig,
     HealthCheckServer,
     RateLimitMonitor,
+    get_settings,
     setup_logging,
 )
 from shared.database import DatabaseManager, PoolConfig  # noqa: E402
@@ -60,10 +61,7 @@ class NiibotClient(commands.Bot):
 
     async def setup_database(self, max_retries: int = 5, retry_delay: float = 5.0) -> None:
         """Initialize database connection pool"""
-        database_url = os.getenv("DATABASE_URL")
-        if not database_url:
-            raise ValueError("DATABASE_URL environment variable is not set")
-
+        database_url = get_settings().database_url
         safe_url = database_url.split("@")[-1] if "@" in database_url else "invalid"
         logger.info(f"Connecting to database: {safe_url}")
 
@@ -349,11 +347,7 @@ async def main() -> None:
     health_server = HealthCheckServer()
     await health_server.start()
 
-    token = os.getenv("DISCORD_BOT_TOKEN")
-    if not token:
-        logger.error("DISCORD_BOT_TOKEN not set")
-        await health_server.stop()
-        return
+    token = get_settings().discord_bot_token
 
     retry_count = 0
     max_normal_retries = 5  # cap for normal 429s only
