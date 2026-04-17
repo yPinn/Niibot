@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import logging
 from typing import TypeAlias
 
@@ -86,7 +87,7 @@ def _fill_builtin_aliases(cfg: CommandConfig) -> CommandConfig:
     if cfg.command_type == "builtin" and cfg.aliases is None and cfg.command_name in BUILTIN_MAP:
         default_aliases = BUILTIN_MAP[cfg.command_name].get("aliases")
         if default_aliases:
-            cfg.aliases = default_aliases
+            return dataclasses.replace(cfg, aliases=default_aliases)
     return cfg
 
 
