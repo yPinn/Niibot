@@ -1,11 +1,11 @@
-FROM python:3.11.11-slim AS builder
+FROM python:3.11.11-slim-bookworm AS builder
 COPY --from=ghcr.io/astral-sh/uv:0.11.7 /uv /bin/uv
 ENV UV_LINK_MODE=copy
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-cache --no-install-project --no-dev
 
-FROM python:3.11.11-slim
+FROM python:3.11.11-slim-bookworm
 ARG APP_VERSION=dev
 ARG GIT_COMMIT=unknown
 LABEL org.opencontainers.image.version=$APP_VERSION \
@@ -14,7 +14,6 @@ WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
 COPY shared/ ./shared/
 COPY discord/ ./discord/
-COPY data/ ./data/
 
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONPATH="/app" \
