@@ -5,6 +5,19 @@ x-healthcheck: &default-healthcheck
   start_period: 30s
 
 services:
+  instafix:
+    image: ghcr.io/wikidepia/instafix:main
+    container_name: niibot-instafix
+    restart: unless-stopped
+    networks:
+      - niibot-network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
   postgres:
     image: postgres:16
     container_name: niibot-postgres
@@ -13,8 +26,6 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
-    ports:
-      - "5433:5432" # 5433 avoids conflict with a local postgres installation
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
     networks:
@@ -94,6 +105,8 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      instafix:
+        condition: service_healthy
     healthcheck:
       <<: *default-healthcheck
       test:

@@ -1,4 +1,5 @@
 # Ignore files that use # for shell-style comments — not Markdown headings.
+
 .secretlintignore
 .gitignore
 .prettierignore

@@ -31,7 +31,7 @@ class GiveawayCog(commands.Cog):
 
     async def cog_load(self) -> None:
         self.check_giveaway_expiry.start()
-        LOGGER.info("Giveaway expiry checker started")
+        LOGGER.info("Giveaway ready")
 
     async def cog_unload(self) -> None:
         self.check_giveaway_expiry.cancel()

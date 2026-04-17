@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import logging
 from typing import TypeAlias
 
@@ -76,6 +77,20 @@ def _make_virtual(channel_id: str, defn: dict) -> CommandConfig:
     )
 
 
+def _fill_builtin_aliases(cfg: CommandConfig) -> CommandConfig:
+    """Fill missing aliases on a builtin DB row from BUILTIN_MAP defaults.
+
+    DB rows created by usage tracking (increment_usage_count) never write to
+    command_aliases, so the LEFT JOIN returns NULL for aliases. Rather than
+    showing no aliases in the UI, we fall back to the hardcoded defaults.
+    """
+    if cfg.command_type == "builtin" and cfg.aliases is None and cfg.command_name in BUILTIN_MAP:
+        default_aliases = BUILTIN_MAP[cfg.command_name].get("aliases")
+        if default_aliases:
+            return dataclasses.replace(cfg, aliases=default_aliases)
+    return cfg
+
+
 async def _retry_on_db_error(func, max_retries: int = 2):
     """Retry helper for write operations."""
     for attempt in range(1, max_retries + 1):
@@ -127,7 +142,7 @@ class CommandConfigRepository:
                 command_name,
             )
             if row:
-                return CommandConfig(**dict(row))
+                return _fill_builtin_aliases(CommandConfig(**dict(row)))
 
         # Virtual fallback for builtins not yet overridden in DB
         if command_name in BUILTIN_MAP:
@@ -200,7 +215,10 @@ class CommandConfigRepository:
         # Builtins: respect DB override or fall back to virtual default
         for defn in BUILTIN_DEFS:
             name = defn["command_name"]
-            result.append(db_rows[name] if name in db_rows else _make_virtual(channel_id, defn))
+            if name in db_rows:
+                result.append(_fill_builtin_aliases(db_rows[name]))
+            else:
+                result.append(_make_virtual(channel_id, defn))
 
         # Custom commands (only from DB, ordered by name)
         for row in sorted(db_rows.values(), key=lambda r: r.command_name):

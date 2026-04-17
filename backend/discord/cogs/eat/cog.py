@@ -55,7 +55,7 @@ class EatCog(commands.Cog):
                 if log_stats:
                     category_count = len(self.data["categories"])
                     item_count = sum(len(items) for items in self.data["categories"].values())
-                    LOGGER.info(f"Eat: loaded {category_count} categories, {item_count} items")
+                    LOGGER.info(f"Eat ready: {category_count} categories, {item_count} items")
         except Exception as e:
             LOGGER.error(f"Eat: load failed: {e}")
 

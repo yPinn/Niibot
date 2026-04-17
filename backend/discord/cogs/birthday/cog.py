@@ -28,7 +28,7 @@ class BirthdayCog(commands.Cog):
         self._embed = EmbedFactory(load_json(DATA_DIR / "embed.json"))
 
     async def cog_load(self) -> None:
-        # 非阻塞載入，讓 Bot 先啟動，後台連接資料庫
+        LOGGER.info("Birthday ready (DB connecting in background...)")
         asyncio.create_task(self._connect_db_with_retry())
 
     async def _connect_db_with_retry(self, max_retries: int = 5, delay: int = 10) -> None:
@@ -43,7 +43,7 @@ class BirthdayCog(commands.Cog):
                 self.monthly_birthday_list_task.start()
                 self.birthday_notify_task.start()
                 self.birthday_role_cleanup_task.start()
-                LOGGER.info("Birthday cog loaded")
+                LOGGER.info("Birthday ready: DB connected")
                 return
             except Exception as e:
                 LOGGER.warning(
