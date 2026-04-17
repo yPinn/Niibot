@@ -1,0 +1,11 @@
+# Dev overrides — exposes internal ports to the host for local inspection.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+
+services:
+  instafix:
+    ports:
+      - "3000:3000"
+
+  postgres:
+    ports:
+      - "5433:5432" # 5433 avoids conflict with a local postgres installation
