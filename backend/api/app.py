@@ -237,20 +237,31 @@ def create_app() -> FastAPI:
     # Detailed status endpoint (includes DB health)
     @app.get("/status")
     async def status():
-        """Readiness / status endpoint — includes actual DB health check"""
+        """Readiness / status endpoint — includes actual DB health check.
+
+        In production, build metadata (version, git_commit, environment) is
+        omitted to avoid leaking deployment internals to unauthenticated callers.
+        """
         db_manager = get_database_manager()
         db_ok = False
         if db_manager is not None and db_manager._pool is not None:
             db_ok = await db_manager.check_health()
-        return {
+
+        data: dict = {
             "service": "niibot-api",
-            "version": _APP_VERSION,
-            "git_commit": _GIT_COMMIT,
-            "started_at": _started_at,
             "uptime_seconds": int(time.time() - _start_time),
             "db_connected": db_ok,
-            "environment": settings.environment,
         }
+        if not settings.is_production:
+            data.update(
+                {
+                    "version": _APP_VERSION,
+                    "git_commit": _GIT_COMMIT,
+                    "started_at": _started_at,
+                    "environment": settings.environment,
+                }
+            )
+        return data
 
     # Ping endpoint
     @app.api_route("/ping", methods=["GET", "HEAD"], response_class=PlainTextResponse)
