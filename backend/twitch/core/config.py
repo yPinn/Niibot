@@ -53,8 +53,8 @@ class TwitchBotSettings(BaseSettings):
     )
 
     # Twitch OAuth
-    client_id: str = Field(..., description="Twitch OAuth Client ID")
-    client_secret: str = Field(..., description="Twitch OAuth Client Secret")
+    twitch_client_id: str = Field(..., description="Twitch OAuth Client ID")
+    twitch_client_secret: str = Field(..., description="Twitch OAuth Client Secret")
 
     # Bot Configuration
     bot_id: str = Field(..., description="Bot User ID")
@@ -141,7 +141,7 @@ def load_env_config() -> dict[str, str]:
     """
     settings = get_settings()
     return {
-        "CLIENT_ID": settings.client_id,
+        "CLIENT_ID": settings.twitch_client_id,
         "BOT_ID": settings.bot_id,
         "OWNER_ID": settings.owner_id,
         "CONDUIT_ID": settings.conduit_id,

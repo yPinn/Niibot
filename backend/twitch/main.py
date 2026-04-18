@@ -47,8 +47,8 @@ def main() -> None:
         validate_env_vars()
         settings = get_settings()
 
-        client_id: str = settings.client_id
-        client_secret: str = settings.client_secret
+        client_id: str = settings.twitch_client_id
+        client_secret: str = settings.twitch_client_secret
         bot_id: str = settings.bot_id
         owner_id: str = settings.owner_id
         database_url: str = settings.database_url

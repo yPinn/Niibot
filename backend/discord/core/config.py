@@ -79,6 +79,12 @@ class DiscordBotSettings(BaseSettings):
         default="", description="Instagram session cookie for profile embeds"
     )
 
+    # Twitch (Social Preview — clip embeds)
+    twitch_client_id: str = Field(default="", description="Twitch app Client ID (Helix API)")
+    twitch_client_secret: str = Field(
+        default="", description="Twitch app Client Secret (Helix API)"
+    )
+
     # OpenRouter AI
     openrouter_api_key: str = Field(default="", description="OpenRouter API key")
     openrouter_model: str = Field(default="", description="OpenRouter model")
