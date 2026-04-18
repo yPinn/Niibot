@@ -9,6 +9,7 @@ Supported platforms
 - Threads    — Direct OG scraping (currently broken: Meta login wall)
 - Bilibili   — Public API (no key required)
 - TikTok     — oEmbed API (public, no key required)
+- Twitch     — Helix API (requires TWITCH_CLIENT_ID + TWITCH_CLIENT_SECRET)
 
 Excluded platforms
 ------------------
@@ -24,6 +25,7 @@ import asyncio
 import io
 import logging
 import re
+import time
 from html.parser import HTMLParser
 from urllib.parse import quote_plus, unquote
 
@@ -40,6 +42,8 @@ from ._embeds import (
     build_instagram_profile_embed,
     build_threads_embed,
     build_tiktok_embed,
+    build_twitch_channel_embed,
+    build_twitch_clip_embed,
 )
 from .constants import (
     BILIBILI_API,
@@ -57,6 +61,14 @@ from .constants import (
     THREADS_RE,
     TIKTOK_OEMBED_API,
     TIKTOK_RE,
+    TWITCH_CHANNEL_RE,
+    TWITCH_CLIP_RE,
+    TWITCH_HELIX_CLIPS_API,
+    TWITCH_HELIX_GAMES_API,
+    TWITCH_HELIX_STREAMS_API,
+    TWITCH_HELIX_USERS_API,
+    TWITCH_HELIX_USERS_LOGIN_API,
+    TWITCH_TOKEN_URL,
     VIDEO_MAX_BYTES,
 )
 
@@ -69,6 +81,26 @@ _UA = (
 )
 
 _BILIBILI_BV_RE = re.compile(r"BV[A-Za-z0-9]+")
+_TWITCH_THUMB_RE = re.compile(r"-preview-\d+x\d+\.jpg$", re.IGNORECASE)
+
+
+async def _anone() -> None:
+    return None
+
+
+async def _anone_pair() -> tuple[None, None]:
+    return None, None
+
+
+def _twitch_clip_mp4_url(thumbnail_url: str) -> str | None:
+    """Derive the direct MP4 URL from a Twitch clip thumbnail URL.
+
+    Twitch CDN pattern: <base>-preview-<W>x<H>.jpg → <base>.mp4
+    Returns None if the thumbnail URL doesn't match the expected pattern.
+    """
+    if not thumbnail_url or not _TWITCH_THUMB_RE.search(thumbnail_url):
+        return None
+    return _TWITCH_THUMB_RE.sub(".mp4", thumbnail_url)
 
 
 class _BasePreviewView(UserBoundView):
@@ -214,6 +246,9 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
             timeout=HTTP_TIMEOUT,
             headers={"User-Agent": _UA},
         )
+        self._twitch_token: str | None = None
+        self._twitch_token_exp: float = 0.0
+        self._twitch_token_lock = asyncio.Lock()
 
     async def cog_unload(self) -> None:
         await self._http.aclose()
@@ -232,6 +267,8 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
             (BILIBILI_SPACE_RE, self._handle_bilibili_space),
             (BILIBILI_RE, self._handle_bilibili),
             (TIKTOK_RE, self._handle_tiktok),
+            (TWITCH_CLIP_RE, self._handle_twitch_clip),
+            (TWITCH_CHANNEL_RE, self._handle_twitch_channel),
         ):
             m = pattern.search(content)
             if m:
@@ -468,6 +505,122 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
 
         await self._send_preview(message, build_tiktok_embed(self._embed, oembed, post_url))
 
+    async def _get_twitch_token(self) -> str | None:
+        """Return a cached app-access token, refreshing if expired or missing."""
+        if self._twitch_token and time.monotonic() < self._twitch_token_exp:
+            return self._twitch_token
+        async with self._twitch_token_lock:
+            if self._twitch_token and time.monotonic() < self._twitch_token_exp:
+                return self._twitch_token
+            s = get_settings()
+            if not s.twitch_client_id or not s.twitch_client_secret:
+                return None
+            try:
+                resp = await self._http.post(
+                    TWITCH_TOKEN_URL,
+                    data={
+                        "client_id": s.twitch_client_id,
+                        "client_secret": s.twitch_client_secret,
+                        "grant_type": "client_credentials",
+                    },
+                )
+                resp.raise_for_status()
+                body = resp.json()
+                self._twitch_token = body["access_token"]
+                # Expire 60 s early to avoid using a token right at its boundary.
+                self._twitch_token_exp = time.monotonic() + body.get("expires_in", 3600) - 60
+                return self._twitch_token
+            except Exception as exc:
+                LOGGER.debug("Twitch token fetch failed: %s", exc)
+                return None
+
+    async def _twitch_helix_get(self, url: str, token: str) -> list[dict]:
+        """GET a Twitch Helix endpoint and return the data list, or [] on failure."""
+        s = get_settings()
+        try:
+            resp = await self._http.get(
+                url,
+                headers={"Client-ID": s.twitch_client_id, "Authorization": f"Bearer {token}"},
+            )
+            resp.raise_for_status()
+            return resp.json().get("data", [])  # type: ignore[no-any-return]
+        except Exception as exc:
+            LOGGER.debug("Twitch Helix request failed for %s: %s", url, exc)
+            return []
+
+    async def _fetch_twitch_user_info(
+        self, user_id: str, token: str
+    ) -> tuple[str | None, str | None]:
+        data = await self._twitch_helix_get(TWITCH_HELIX_USERS_API.format(user_id=user_id), token)
+        if not data:
+            return None, None
+        u = data[0]
+        return u.get("profile_image_url"), u.get("login")
+
+    async def _fetch_twitch_game_name(self, game_id: str, token: str) -> str | None:
+        data = await self._twitch_helix_get(TWITCH_HELIX_GAMES_API.format(game_id=game_id), token)
+        return data[0].get("name") if data else None
+
+    async def _handle_twitch_clip(self, message: discord.Message, match: re.Match[str]) -> None:
+        clip_id = match.group(1) or match.group(2)
+        token = await self._get_twitch_token()
+        if not token:
+            return
+
+        clips = await self._twitch_helix_get(TWITCH_HELIX_CLIPS_API.format(clip_id=clip_id), token)
+        if not clips:
+            return
+
+        clip = clips[0]
+        clip_url = f"https://clips.twitch.tv/{clip_id}"
+        broadcaster_id = clip.get("broadcaster_id", "")
+        game_id = clip.get("game_id", "")
+        mp4_url = _twitch_clip_mp4_url(clip.get("thumbnail_url", ""))
+
+        user_info, game_name, file = await asyncio.gather(
+            self._fetch_twitch_user_info(broadcaster_id, token)
+            if broadcaster_id
+            else _anone_pair(),
+            self._fetch_twitch_game_name(game_id, token) if game_id else _anone(),
+            self._download_cdn_video(mp4_url, filename="clip.mp4") if mp4_url else _anone(),
+        )
+
+        broadcaster_avatar, broadcaster_login = user_info
+        broadcaster_url = f"https://twitch.tv/{broadcaster_login}" if broadcaster_login else None
+
+        embed = build_twitch_clip_embed(
+            self._embed,
+            clip,
+            clip_url,
+            broadcaster_avatar=broadcaster_avatar,
+            broadcaster_url=broadcaster_url,
+            game_name=game_name,
+        )
+        await self._send_preview(message, embed, file=file)
+
+    async def _handle_twitch_channel(self, message: discord.Message, match: re.Match[str]) -> None:
+        login = match.group(1).lower()
+        channel_url = f"https://twitch.tv/{login}"
+        token = await self._get_twitch_token()
+        if not token:
+            return
+
+        streams, users = await asyncio.gather(
+            self._twitch_helix_get(TWITCH_HELIX_STREAMS_API.format(login=login), token),
+            self._twitch_helix_get(TWITCH_HELIX_USERS_LOGIN_API.format(login=login), token),
+        )
+
+        if not users:
+            return
+
+        embed = build_twitch_channel_embed(
+            self._embed,
+            streams[0] if streams else None,
+            users[0],
+            channel_url,
+        )
+        await self._send_preview(message, embed)
+
     async def _send_preview(
         self,
         message: discord.Message,
@@ -527,7 +680,9 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
             LOGGER.debug("InstaFix redirect failed for %s: %s", path, exc)
             return None
 
-    async def _download_cdn_video(self, cdn_url: str) -> discord.File | None:
+    async def _download_cdn_video(
+        self, cdn_url: str, filename: str = "reel.mp4"
+    ) -> discord.File | None:
         try:
             chunks: list[bytes] = []
             total = 0
@@ -543,7 +698,7 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
                         await resp.aclose()
                         return None
                     chunks.append(chunk)
-            return discord.File(io.BytesIO(b"".join(chunks)), filename="reel.mp4")
+            return discord.File(io.BytesIO(b"".join(chunks)), filename=filename)
         except Exception as exc:
             LOGGER.debug("CDN video download failed for %s: %s", cdn_url, exc)
             return None

@@ -11,6 +11,7 @@ Layout
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import discord
@@ -23,9 +24,21 @@ from .constants import (
     COLOR_INSTAGRAM,
     COLOR_THREADS,
     COLOR_TIKTOK,
+    COLOR_TWITCH,
     DESCRIPTION_LIMIT,
     INSTAGRAM_ICON_URL,
 )
+
+_TZ_GMT8 = timezone(timedelta(hours=8))
+
+
+def _fmt_twitch_dt(iso: str, fmt: str, *, fallback: str = "") -> str:
+    """Parse a Twitch UTC ISO timestamp and return a GMT+8 formatted string."""
+    try:
+        dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        return dt.astimezone(_TZ_GMT8).strftime(fmt)
+    except ValueError:
+        return fallback
 
 
 def _fmt_count(n: int) -> str:
@@ -288,3 +301,108 @@ def build_tiktok_embed(factory: EmbedFactory, oembed: dict, post_url: str) -> di
         author_url=oembed.get("author_url") or None,
         image_url=oembed.get("thumbnail_url") or None,
     )
+
+
+def build_twitch_channel_embed(
+    factory: EmbedFactory,
+    stream: dict | None,
+    user: dict,
+    channel_url: str,
+) -> discord.Embed:
+    """Embed for a Twitch channel page — live or offline."""
+    raw_name = user.get("display_name") or user.get("login", "")
+    broadcaster_type = user.get("broadcaster_type", "")
+    display_name = f"{raw_name}  ✔" if broadcaster_type == "partner" else raw_name
+    avatar = user.get("profile_image_url") or None
+
+    if stream:
+        thumb = (
+            (stream.get("thumbnail_url") or "")
+            .replace("{width}", "1280")
+            .replace("{height}", "720")
+        )
+        embed = build_social_embed(
+            factory,
+            platform="Twitch",
+            color=COLOR_TWITCH,
+            url=channel_url,
+            title=stream.get("title") or None,
+            author_name=display_name,
+            author_icon_url=avatar,
+            author_url=channel_url,
+            image_url=thumb or None,
+            use_platform_footer=False,
+        )
+        game = stream.get("game_name") or None
+        viewers = stream.get("viewer_count")
+        started_at = stream.get("started_at", "")
+        start_time = _fmt_twitch_dt(started_at, "%H:%M") if started_at else None
+
+        if game:
+            embed.add_field(name="遊戲分類", value=game, inline=True)
+        if start_time:
+            embed.add_field(name="開播時間", value=start_time, inline=True)
+        if viewers is not None:
+            embed.add_field(name="觀看人數", value=_fmt_count(viewers), inline=True)
+    else:
+        bio = user.get("description") or None
+        offline_image = user.get("offline_image_url") or None
+        embed = build_social_embed(
+            factory,
+            platform="Twitch",
+            color=COLOR_TWITCH,
+            url=channel_url,
+            author_name=display_name,
+            author_icon_url=avatar,
+            author_url=channel_url,
+            description=bio,
+            image_url=offline_image,
+            use_platform_footer=False,
+        )
+
+    return embed
+
+
+def build_twitch_clip_embed(
+    factory: EmbedFactory,
+    data: dict,
+    clip_url: str,
+    *,
+    broadcaster_avatar: str | None = None,
+    broadcaster_url: str | None = None,
+    game_name: str | None = None,
+) -> discord.Embed:
+    duration = data.get("duration", 0)
+    minutes, seconds = divmod(int(duration), 60)
+
+    embed = build_social_embed(
+        factory,
+        platform="Twitch",
+        color=COLOR_TWITCH,
+        url=clip_url,
+        title=data.get("title") or None,
+        author_name=data.get("broadcaster_name") or None,
+        author_icon_url=broadcaster_avatar,
+        author_url=broadcaster_url,
+        image_url=data.get("thumbnail_url") or None,
+        use_platform_footer=False,
+    )
+
+    # Row 1: category | duration | clip date
+    if game_name:
+        embed.add_field(name="遊戲分類", value=game_name, inline=True)
+    embed.add_field(name="片段時長", value=f"{minutes:02d}:{seconds:02d}", inline=True)
+    created_at = data.get("created_at", "")
+    if created_at:
+        embed.add_field(name="剪輯時間", value=_fmt_twitch_dt(created_at, "%Y-%m-%d"), inline=True)
+
+    # Row 2: creator | views | spacer
+    creator = data.get("creator_name")
+    if creator:
+        embed.add_field(name="剪輯作者", value=creator, inline=True)
+    views = data.get("view_count")
+    if views:
+        embed.add_field(name="觀看次數", value=_fmt_count(views), inline=True)
+    embed.add_field(name="\u200b", value="\u200b", inline=True)
+
+    return embed
