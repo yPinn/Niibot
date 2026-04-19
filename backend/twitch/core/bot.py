@@ -13,8 +13,8 @@ from twitchio.ext import commands
 from twitchio.ext.commands import CommandNotFound
 
 from core._channel_mixin import _ChannelMixin
-from core._message_router_mixin import _MessageRouterMixin
 from core._notify_mixin import _NotifyMixin
+from core._router_mixin import _MessageRouterMixin
 from core._session_mixin import _SessionMixin
 from core.config import COMPONENTS_DIR
 from core.pg_listener import pg_listen
@@ -28,7 +28,7 @@ from shared.repositories.command_config import (
 from shared.repositories.message_trigger import MessageTriggerRepository
 from shared.repositories.timer import TimerConfigRepository
 
-LOGGER: logging.Logger = logging.getLogger("Bot")
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, commands.AutoBot):

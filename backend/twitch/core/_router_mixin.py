@@ -18,10 +18,17 @@ from core.guards import has_role, is_on_cooldown, record_cooldown
 from utils.substitution import substitute_variables as _substitute_variables
 from utils.trigger_matching import match_trigger
 
-LOGGER: logging.Logger = logging.getLogger("Bot")
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 class _MessageRouterMixin:
+    _background_tasks: set[asyncio.Task] = set()
+
+    def _fire_and_forget(self, coro) -> None:
+        task = asyncio.create_task(coro)
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
+
     # ------------------------------------------------------------------
     # Message trigger handling
     # ------------------------------------------------------------------
@@ -77,7 +84,7 @@ class _MessageRouterMixin:
                     f"[TRIGGER] '{trigger.trigger_name}' fired for "
                     f"{payload.chatter.name} in {channel_id}"
                 )
-                asyncio.create_task(
+                self._fire_and_forget(
                     self.message_trigger_configs.increment_usage_count(trigger.id)  # type: ignore[attr-defined]
                 )
             except Exception as e:
@@ -143,7 +150,7 @@ class _MessageRouterMixin:
 
         record_cooldown(channel_id, config.command_name)
 
-        asyncio.create_task(
+        self._fire_and_forget(
             self.command_configs.increment_usage_count(channel_id, config.command_name)  # type: ignore[attr-defined]
         )
         self._record_custom_command_analytics(channel_id, cmd_name)
@@ -158,13 +165,16 @@ class _MessageRouterMixin:
             response = _substitute_variables(
                 response, payload.chatter, payload.broadcaster.name or "", query
             )
-            await payload.broadcaster.send_message(
-                message=response,
-                sender=self.bot_id,  # type: ignore[attr-defined]
-                token_for=self.bot_id,  # type: ignore[attr-defined]
-                reply_to_message_id=str(payload.id),
-            )
-            LOGGER.info(f"Custom command: !{cmd_name} -> text response")
+            try:
+                await payload.broadcaster.send_message(
+                    message=response,
+                    sender=self.bot_id,  # type: ignore[attr-defined]
+                    token_for=self.bot_id,  # type: ignore[attr-defined]
+                    reply_to_message_id=str(payload.id),
+                )
+                LOGGER.info(f"Custom command: !{cmd_name} -> text response")
+            except Exception as e:
+                LOGGER.warning(f"[CMD] Failed to send response for !{cmd_name}: {e}")
             return True
 
     def _record_custom_command_analytics(self, channel_id: str, cmd_name: str) -> None:
@@ -173,7 +183,7 @@ class _MessageRouterMixin:
             return
         session_id = self._active_sessions.get(channel_id)  # type: ignore[attr-defined]
         if session_id:
-            asyncio.create_task(
+            self._fire_and_forget(
                 self.analytics.record_command_usage(  # type: ignore[attr-defined]
                     session_id=session_id,
                     channel_id=channel_id,

@@ -3,45 +3,25 @@
 from __future__ import annotations
 
 import logging
-import random
-import re
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 import twitchio
 from twitchio.ext import commands, routines
 
+from utils.substitution import substitute_variables
+
 if TYPE_CHECKING:
     from core.bot import Bot
 
 LOGGER = logging.getLogger(__name__)
 
-_RANDOM_PATTERN = re.compile(r"\$\(random\s+(\d+)\s*,\s*(\d+)\)")
-_PICK_PATTERN = re.compile(r"\$\(pick\s+(.+?)\)")
 
+class _NoChatter:
+    """Minimal chatter stub for timer substitution (no user context)."""
 
-def _render_message(template: str, channel_name: str) -> str:
-    """Substitute supported variables in a timer message template.
-
-    Supported: $(channel), $(random min,max), $(pick a,b,c)
-    $(user) and $(query) are not applicable for timers and are left as-is.
-    """
-    text = template.replace("$(channel)", channel_name)
-
-    def _random_replace(m: re.Match) -> str:
-        lo, hi = int(m.group(1)), int(m.group(2))
-        if lo > hi:
-            lo, hi = hi, lo
-        return str(random.randint(lo, hi))
-
-    text = _RANDOM_PATTERN.sub(_random_replace, text)
-
-    def _pick_replace(m: re.Match) -> str:
-        items = [i.strip() for i in m.group(1).split(",") if i.strip()]
-        return random.choice(items) if items else ""
-
-    text = _PICK_PATTERN.sub(_pick_replace, text)
-    return text
+    display_name: str | None = None
+    name: str | None = None
 
 
 class TimerManagerComponent(commands.Component):
@@ -159,7 +139,7 @@ class TimerManagerComponent(commands.Component):
                 )
                 return
 
-            message = _render_message(timer.message_template, channel_name)
+            message = substitute_variables(timer.message_template, _NoChatter(), channel_name, "")
 
             users = await self.bot.fetch_users(ids=[channel_id])
             if not users:

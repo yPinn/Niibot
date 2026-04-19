@@ -9,6 +9,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from core import DATA_DIR, load_json
+from core.embed_factory import EmbedFactory
 
 LOGGER = logging.getLogger(__name__)
 
@@ -20,7 +21,16 @@ class FortuneCog(commands.Cog):
 
     def _load_data(self) -> None:
         self.fortune_data = load_json(DATA_DIR / "fortune.json")
-        self.global_embed_config = load_json(DATA_DIR / "embed.json")
+        global_cfg = load_json(DATA_DIR / "embed.json")
+        fortune_embed = self.fortune_data.get("embed", {})
+        # Merge: fortune's nested author/footer dicts override global
+        merged: dict = dict(global_cfg)
+        for key in ("author", "footer"):
+            fortune_val = fortune_embed.get(key, {})
+            if fortune_val:
+                merged[key] = {**global_cfg.get(key, {}), **fortune_val}
+        self._embed = EmbedFactory(merged)
+        self._fortune_embed = fortune_embed
 
     def _get_fortune_level(self, date_modifier: float = 1.0) -> str:
         levels = list(self.fortune_data["fortune_levels"].keys())
@@ -66,35 +76,13 @@ class FortuneCog(commands.Cog):
                 "差": discord.Colour.dark_gray(),  # type: ignore[misc]
             }
 
-            embed = discord.Embed(
+            embed = self._embed.build(
                 title=f"今日運勢【{fortune_level}】",
-                description=f"{description}",
+                description=description,
                 color=color_map.get(category, discord.Colour.purple()),
+                thumbnail=self._fortune_embed.get("thumbnail"),
+                image=self._fortune_embed.get("image") if category == "好" else None,
             )
-
-            fortune_author = self.fortune_data["embed"].get("author", {})
-            global_author = self.global_embed_config.get("author", {})
-
-            author_name = fortune_author.get("name") or global_author.get("name")
-            if author_name:
-                author_icon = (
-                    fortune_author.get("icon_url") or global_author.get("icon_url") or None
-                )
-                author_url = fortune_author.get("url") or global_author.get("url") or None
-                embed.set_author(
-                    name=author_name,
-                    icon_url=author_icon,
-                    url=author_url,
-                )
-
-            thumbnail_url = self.fortune_data["embed"].get("thumbnail")
-            if thumbnail_url:
-                embed.set_thumbnail(url=thumbnail_url)
-
-            if category == "好":
-                image_url = self.fortune_data["embed"].get("image")
-                if image_url:
-                    embed.set_image(url=image_url)
 
             if special_event:
                 embed.add_field(
@@ -109,16 +97,6 @@ class FortuneCog(commands.Cog):
 
             lucky_text = f"> 幸運色：{lucky_color}\n> 數字：{lucky_number}\n> 吉時：{lucky_hour}"
             embed.add_field(name="**幸運元素**", value=lucky_text, inline=False)
-
-            fortune_footer = self.fortune_data["embed"].get("footer", {})
-            global_footer = self.global_embed_config.get("footer", {})
-
-            footer_text = fortune_footer.get("text") or global_footer.get("text")
-            if footer_text:
-                footer_icon = (
-                    fortune_footer.get("icon_url") or global_footer.get("icon_url") or None
-                )
-                embed.set_footer(text=footer_text, icon_url=footer_icon)
 
             await interaction.response.send_message(embed=embed)
 

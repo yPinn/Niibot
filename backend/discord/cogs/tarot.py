@@ -8,6 +8,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from core import DATA_DIR, load_json
+from core.embed_factory import EmbedFactory
 
 LOGGER = logging.getLogger(__name__)
 
@@ -19,7 +20,7 @@ class TarotCog(commands.Cog):
 
     def _load_data(self) -> None:
         self.tarot_data = load_json(DATA_DIR / "tarot.json")
-        self.global_embed_config = load_json(DATA_DIR / "embed.json")
+        self._embed = EmbedFactory(load_json(DATA_DIR / "embed.json"))
 
     def _format_quote(self, text: str) -> str:
         """
@@ -36,11 +37,10 @@ class TarotCog(commands.Cog):
         seed_string = f"{user_id}-{today}"
         seed = int(md5(seed_string.encode()).hexdigest(), 16)
 
-        random.seed(seed)
+        rng = random.Random(seed)
         card_ids = list(self.tarot_data["cards"].keys())
-        card_id = random.choice(card_ids)
-        is_reversed = random.choice([True, False])
-        random.seed()
+        card_id = rng.choice(card_ids)
+        is_reversed = rng.choice([True, False])
 
         return card_id, is_reversed
 
@@ -84,27 +84,13 @@ class TarotCog(commands.Cog):
 
             color = discord.Colour(int(color_hex.lstrip("#"), 16))
 
-            # 建立 Embed
-            embed = discord.Embed(
+            # 建立 Embed (author/footer 由 EmbedFactory 從 embed.json 套用)
+            embed = self._embed.build(
                 title=f"{card_name} ({orientation})",
                 description=f"*{card_name_en} - {orientation_en}*",
                 color=color,
+                image=card_data.get("image_url"),
             )
-
-            # 作者資訊處理
-            tarot_author = self.tarot_data["embed"].get("author", {})
-            global_author = self.global_embed_config.get("author", {})
-            author_name = tarot_author.get("name") or global_author.get("name")
-            if author_name:
-                embed.set_author(
-                    name=author_name,
-                    icon_url=tarot_author.get("icon_url") or global_author.get("icon_url"),
-                    url=tarot_author.get("url") or global_author.get("url"),
-                )
-
-            # 設置牌面圖片
-            if card_data.get("image_url"):
-                embed.set_image(url=card_data["image_url"])
 
             # 主題標籤轉換
             cat_label = {
@@ -118,16 +104,6 @@ class TarotCog(commands.Cog):
             embed.add_field(name="**關鍵字**", value=f"> {keywords}", inline=False)
             embed.add_field(name=f"**{cat_label}解析**", value=formatted_meaning, inline=False)
             embed.add_field(name="**今日建議**", value=formatted_advice, inline=False)
-
-            # 頁尾資訊處理
-            tarot_footer = self.tarot_data["embed"].get("footer", {})
-            global_footer = self.global_embed_config.get("footer", {})
-            footer_text = tarot_footer.get("text") or global_footer.get("text")
-            if footer_text:
-                embed.set_footer(
-                    text=footer_text,
-                    icon_url=tarot_footer.get("icon_url") or global_footer.get("icon_url"),
-                )
 
             await interaction.response.send_message(embed=embed)
 

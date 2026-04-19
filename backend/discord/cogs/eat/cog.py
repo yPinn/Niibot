@@ -13,8 +13,8 @@ from discord.ext import commands
 
 from core import DATA_DIR, EmbedFactory, load_json
 
+from ._views import CategoryButtonsView, ItemListView, RecommendationView
 from .constants import EAT_COLOR, EAT_THUMBNAIL
-from .views import CategoryButtonsView, ItemListView, RecommendationView
 
 LOGGER = logging.getLogger(__name__)
 
@@ -200,7 +200,6 @@ class EatCog(commands.Cog):
         self, interaction: discord.Interaction, category: str | None = None
     ) -> None:
         """主要 UI 指令：顯示分類按鈕或直接推薦"""
-        await self.load_data()
 
         if not category:
             if not self.data["categories"]:
@@ -240,7 +239,6 @@ class EatCog(commands.Cog):
     @food_group.command(name="cat", description="列出所有分類")
     async def food_cat(self, interaction: discord.Interaction) -> None:
         """列出所有分類"""
-        await self.load_data()
 
         if not self.data["categories"]:
             await interaction.response.send_message("目前沒有任何分類", ephemeral=True)
@@ -259,7 +257,6 @@ class EatCog(commands.Cog):
     @app_commands.describe(category="分類名稱")
     async def food_show(self, interaction: discord.Interaction, category: str) -> None:
         """顯示分類內容"""
-        await self.load_data()
 
         key = self._find_category_key(category)
         if not key:
@@ -285,7 +282,7 @@ class EatCog(commands.Cog):
 
     @food_group.command(name="add", description="新增餐點")
     @app_commands.describe(category="分類名稱", item="項目名稱")
-    @app_commands.default_permissions(manage_messages=True)
+    @app_commands.checks.has_permissions(manage_messages=True)
     async def food_add(self, interaction: discord.Interaction, category: str, item: str) -> None:
         """新增項目"""
         async with self._lock:
@@ -307,7 +304,7 @@ class EatCog(commands.Cog):
 
     @food_group.command(name="remove", description="移除餐點")
     @app_commands.describe(category="分類名稱", item="項目名稱")
-    @app_commands.default_permissions(manage_messages=True)
+    @app_commands.checks.has_permissions(manage_messages=True)
     async def food_remove(self, interaction: discord.Interaction, category: str, item: str) -> None:
         """移除項目"""
         result: tuple[str, str, bool, int] | None = None
@@ -342,7 +339,7 @@ class EatCog(commands.Cog):
 
     @food_group.command(name="delete", description="刪除整個分類")
     @app_commands.describe(category="分類名稱")
-    @app_commands.default_permissions(administrator=True)
+    @app_commands.checks.has_permissions(administrator=True)
     async def food_delete(self, interaction: discord.Interaction, category: str) -> None:
         """刪除分類"""
         deleted: tuple[str, int] | None = None
