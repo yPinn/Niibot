@@ -164,7 +164,9 @@ export default function Events() {
   }, [isAffiliate])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchEvents()
+
     fetchRedemptions()
   }, [fetchEvents, fetchRedemptions])
 

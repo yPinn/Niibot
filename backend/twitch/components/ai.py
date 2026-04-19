@@ -181,6 +181,10 @@ class AIComponent(commands.Component):
                 except NotFoundError:
                     LOGGER.warning(f"AI [{model}] not found (404), trying next model")
                     continue
+                except Exception as e:
+                    LOGGER.warning(f"AI [{model}] error ({type(e).__name__}), trying next model")
+                    last_error = e
+                    continue
 
             # Twitch message limit is 500 characters — truncate at sentence boundary
             if len(response) > 500:

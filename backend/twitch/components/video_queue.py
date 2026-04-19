@@ -131,7 +131,10 @@ class VideoQueueComponent(commands.Component):
         if clip_slug:
             # Fetch Twitch clip metadata
             title, duration_seconds, view_count = await fetch_twitch_clip_info(
-                clip_slug, self._settings.client_id, self._settings.client_secret, self._session
+                clip_slug,
+                self._settings.twitch_client_id,
+                self._settings.twitch_client_secret,
+                self._session,
             )
             video_id = clip_slug
             is_vertical = False

@@ -164,6 +164,10 @@ class AICog(commands.Cog):
                 except NotFoundError:
                     LOGGER.warning(f"AI [{model}] not found (404), trying next model")
                     continue
+                except Exception as e:
+                    LOGGER.warning(f"AI [{model}] error ({type(e).__name__}), trying next model")
+                    last_error = e
+                    continue
 
             if response:
                 embed = self._embed.build(
