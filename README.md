@@ -29,7 +29,7 @@
 
 ### Discord Bot
 
-- **社群預覽** — Instagram、Bilibili、TikTok 連結自動展開嵌入
+- **社群預覽** — Instagram、Bilibili、TikTok、Threads、Twitch Clip / 頻道連結自動展開嵌入
 - **生日追蹤** — 記錄、提醒、訂閱通知
 - **抽獎系統** — Giveaway 管理
 - **吃什麼** — 隨機餐點推薦與分類瀏覽

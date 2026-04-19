@@ -11,4 +11,4 @@
 
 - Backend: Docker
 - Frontend: Cloudflare Pages
-- Auth: Third-party OAuth (Discord + Twitch) via backend cookie sessions
+- Auth: Twitch OAuth via backend JWT cookie sessions (Discord dashboard OAuth removed)

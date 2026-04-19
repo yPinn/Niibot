@@ -39,15 +39,19 @@ backend/
 
 ### shared/ 模組
 
-| 模組                         | 說明                                                      |
-| ---------------------------- | --------------------------------------------------------- |
-| `database.py`                | asyncpg 連線池管理                                        |
-| `cache.py`                   | cachetools 快取工具                                       |
-| `models/`                    | Pydantic 資料模型（channel、command、event、donation 等） |
-| `repositories/`              | 資料庫存取層（per-domain repository 類別）                |
-| `migrations/`                | 自製 migration runner，版本腳本位於 `versions/`           |
-| `builtin_commands.py`        | 內建指令定義                                              |
-| `discord_webhook_handler.py` | 將 ERROR / CRITICAL log 推送至 Discord webhook            |
+| 模組                         | 說明                                                                  |
+| ---------------------------- | --------------------------------------------------------------------- |
+| `database.py`                | asyncpg 連線池管理、`pool_heartbeat_loop`（三服務共用）               |
+| `cache.py`                   | cachetools 快取工具                                                   |
+| `config_base.py`             | `BaseServiceSettings`：三服務 config 共用基底（DB URL、log level 等） |
+| `health_server_base.py`      | `BaseHealthServer`：Discord / Twitch health server 共用基底           |
+| `logging_setup.py`           | 結構化 logging 設定（格式、webhook handler 整合）                     |
+| `retry_utils.py`             | `parse_retry_after`、`format_duration`（啟動重試工具）                |
+| `discord_webhook_handler.py` | 將 ERROR / CRITICAL log 推送至 Discord webhook                        |
+| `builtin_commands.py`        | 內建指令定義                                                          |
+| `models/`                    | Pydantic 資料模型（channel、command、event、donation 等）             |
+| `repositories/`              | 資料庫存取層（per-domain repository 類別）                            |
+| `migrations/`                | 自製 migration runner，版本腳本位於 `versions/`                       |
 
 ---
 
@@ -67,6 +71,12 @@ Frontend ──HTTP──▶ API (8000)
 - **共用 DB**：三個服務共用同一個 PostgreSQL，透過 `shared/` 模組存取
 - **錯誤告警**：`shared/discord_webhook_handler` 將後端 ERROR 以上等級 log 推送至 Discord webhook
 
+### `/health` 回應格式（三服務統一）
+
+```json
+{ "status": "healthy", "ready": true, "uptime_seconds": 42 }
+```
+
 ### 本地 Port 對照
 
 | 服務                 | Port   |
@@ -83,10 +93,11 @@ Frontend ──HTTP──▶ API (8000)
 - **Python 3.11+**：語言執行環境
 - **FastAPI + uvicorn**：REST API 服務
 - **TwitchIO 3**：Twitch Bot 框架（Component 架構、EventSub）
-- **discord.py**：Discord Bot 框架
+- **discord.py 2**：Discord Bot 框架
 - **asyncpg**：PostgreSQL 非同步驅動
+- **Pydantic v2 + pydantic-settings**：資料驗證與 config 管理
 - **httpx**：HTTP 客戶端（外部 API 呼叫：Riot、Bilibili、TikTok 等）
-- **aiohttp**：HTTP 伺服器框架（Bot 健康檢查端點）
+- **aiohttp**：Bot 健康檢查端點
 - **uv**：套件與虛擬環境管理
 - **pytest**：測試框架
 
@@ -139,12 +150,14 @@ cp twitch/.env.example twitch/.env
 cp discord/.env.example discord/.env
 ```
 
-| 檔案           | 說明                               |
-| -------------- | ---------------------------------- |
-| `shared.env`   | DB URL、OpenRouter、YouTube API    |
-| `api/.env`     | Twitch OAuth、JWT Secret、服務 URL |
-| `twitch/.env`  | Twitch Bot 金鑰                    |
-| `discord/.env` | Discord Bot Token                  |
+| 檔案           | 說明                                                         |
+| -------------- | ------------------------------------------------------------ |
+| `shared.env`   | DB URL、Twitch App 金鑰、OpenRouter、YouTube API Key         |
+| `api/.env`     | Twitch OAuth（CLIENT_ID/SECRET）、JWT Secret、服務 URL       |
+| `twitch/.env`  | Twitch Bot Token、EventSub 設定                              |
+| `discord/.env` | Discord Bot Token、Presence 設定、速率限制閾值               |
+
+> `shared.env` 的 `TWITCH_CLIENT_ID` / `TWITCH_CLIENT_SECRET` 由 Twitch Bot 與 Discord Bot 共用（社群預覽功能）。API 服務使用 `api/.env` 中的 `CLIENT_ID` / `CLIENT_SECRET`。
 
 ---
 
@@ -263,7 +276,7 @@ uv run python scripts/db_migrate.py
 - `/eat` — 隨機推薦餐點
 - `/food cat|show` — 餐點分類瀏覽
 - `/bday menu` — 生日系統
-- 社群連結自動展開 — Instagram、Bilibili、TikTok、Threads
+- 社群連結自動展開 — Instagram、Bilibili、TikTok、Threads、Twitch Clip / 頻道
 
 ---
 
