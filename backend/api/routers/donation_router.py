@@ -14,7 +14,7 @@ import json
 import logging
 import time
 import urllib.parse
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 
 from asyncpg import Pool
@@ -28,7 +28,7 @@ from core.dependencies import get_db_pool
 from shared.repositories.donation import DonationRepository, generate_trade_no
 from shared.repositories.video_queue import VideoQueueRepository, extract_youtube_info
 
-logger = logging.getLogger(__name__)
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/donate", tags=["donation"])
 
@@ -64,11 +64,11 @@ async def _enqueue_donated_video(
             requested_by=message or "斗內點播",
             source="donation",
         )
-        logger.info(
+        LOGGER.info(
             f"[{platform} webhook] Enqueued video {youtube_video_id} for channel {channel_id}"
         )
     except Exception:
-        logger.exception(f"[{platform} webhook] Failed to enqueue video for order {trade_no}")
+        LOGGER.exception(f"[{platform} webhook] Failed to enqueue video for order {trade_no}")
 
 
 # ============================================================
@@ -125,7 +125,15 @@ def _pkcs7_pad(data: bytes, block_size: int = 16) -> bytes:
 
 
 def _pkcs7_unpad(data: bytes) -> bytes:
+    if not data:
+        raise ValueError("Empty data cannot be unpadded")
     pad_len = data[-1]
+    if pad_len == 0 or pad_len > 16:
+        raise ValueError(f"Invalid PKCS7 padding length: {pad_len}")
+    if len(data) < pad_len:
+        raise ValueError("Data shorter than padding length")
+    if data[-pad_len:] != bytes([pad_len] * pad_len):
+        raise ValueError("Invalid PKCS7 padding bytes")
     return data[:-pad_len]
 
 
@@ -347,7 +355,7 @@ async def checkout(
 
     notify_url = f"{settings.api_url}/api/donate/webhook/{body.platform}"
 
-    trade_date = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+    trade_date = datetime.now(timezone(timedelta(hours=8))).strftime("%Y/%m/%d %H:%M:%S")
 
     params: dict[str, str] = {
         "MerchantID": config.merchant_id,
@@ -399,32 +407,32 @@ async def _handle_payment_webhook(
     rtn_code = form_data.get("RtnCode")
 
     if not trade_no:
-        logger.warning(f"[{platform} webhook] Missing MerchantTradeNo")
+        LOGGER.warning(f"[{platform} webhook] Missing MerchantTradeNo")
         return "0|Error"
 
     repo = DonationRepository(pool)
     order = await repo.get_order_by_trade_no(trade_no)
     if order is None:
-        logger.warning(f"[{platform} webhook] Unknown order: {trade_no}")
+        LOGGER.warning(f"[{platform} webhook] Unknown order: {trade_no}")
         return "0|Error"
 
     # Look up the streamer's hash to verify the webhook signature
     config = await repo.get_config(order.user_id, platform)
     if config is None:
-        logger.error(f"[{platform} webhook] No config found for user {order.user_id}")
+        LOGGER.error(f"[{platform} webhook] No config found for user {order.user_id}")
         return "0|Error"
 
     if not config.hash_key or not config.hash_iv:
-        logger.error(
+        LOGGER.error(
             f"[{platform} webhook] hash_key/hash_iv not configured for user {order.user_id}"
         )
         return "0|Error"
     if not _verify_webhook_mac(form_data, config.hash_key, config.hash_iv):
-        logger.warning(f"[{platform} webhook] CheckMacValue mismatch for order {trade_no}")
+        LOGGER.warning(f"[{platform} webhook] CheckMacValue mismatch for order {trade_no}")
         return "0|Error"
 
     if rtn_code != "1":
-        logger.info(f"[{platform} webhook] Order {trade_no} failed/cancelled, RtnCode={rtn_code}")
+        LOGGER.info(f"[{platform} webhook] Order {trade_no} failed/cancelled, RtnCode={rtn_code}")
         await repo.mark_failed(trade_no)
         return "1|OK"
 
@@ -434,7 +442,7 @@ async def _handle_payment_webhook(
         # Already processed (duplicate webhook)
         return "1|OK"
 
-    logger.info(
+    LOGGER.info(
         f"[{platform} webhook] Order {trade_no} paid — user={order.user_id} amount={order.amount}"
     )
 
@@ -496,7 +504,7 @@ async def webhook_newebpay(
     trade_sha = str(form.get("TradeSha", ""))
 
     if not trade_info_hex or not trade_sha:
-        logger.warning("[newebpay webhook] Missing TradeInfo or TradeSha")
+        LOGGER.warning("[newebpay webhook] Missing TradeInfo or TradeSha")
         return JSONResponse({"status": "error"}, status_code=200)
 
     # Resolve the merchant's credentials from MerchantID in the raw form
@@ -505,11 +513,11 @@ async def webhook_newebpay(
     repo = DonationRepository(pool)
     config_row = await repo.get_config_by_merchant_id("newebpay", merchant_id)
     if config_row is None:
-        logger.warning(f"[newebpay webhook] Unknown merchant_id: {merchant_id}")
+        LOGGER.warning(f"[newebpay webhook] Unknown merchant_id: {merchant_id}")
         return JSONResponse({"status": "error"}, status_code=200)
 
     if not config_row.hash_key or not config_row.hash_iv:
-        logger.error(
+        LOGGER.error(
             f"[newebpay webhook] hash_key/hash_iv not configured for merchant {merchant_id}"
         )
         return JSONResponse({"status": "error"}, status_code=200)
@@ -517,7 +525,7 @@ async def webhook_newebpay(
     # Verify TradeSha
     expected_sha = _newebpay_sha256(trade_info_hex, config_row.hash_key, config_row.hash_iv)
     if not hmac.compare_digest(trade_sha.upper(), expected_sha):
-        logger.warning(f"[newebpay webhook] TradeSha mismatch for merchant {merchant_id}")
+        LOGGER.warning(f"[newebpay webhook] TradeSha mismatch for merchant {merchant_id}")
         return JSONResponse({"status": "error"}, status_code=200)
 
     # Decrypt TradeInfo
@@ -525,23 +533,23 @@ async def webhook_newebpay(
         trade_json = _newebpay_aes_decrypt(trade_info_hex, config_row.hash_key, config_row.hash_iv)
         trade_data = json.loads(trade_json)
     except Exception:
-        logger.exception("[newebpay webhook] Failed to decrypt TradeInfo")
+        LOGGER.exception("[newebpay webhook] Failed to decrypt TradeInfo")
         return JSONResponse({"status": "error"}, status_code=200)
 
     inner_status = trade_data.get("Status", "")
     trade_no = trade_data.get("MerchantOrderNo", "")
 
     if not trade_no:
-        logger.warning("[newebpay webhook] Missing MerchantOrderNo in decrypted data")
+        LOGGER.warning("[newebpay webhook] Missing MerchantOrderNo in decrypted data")
         return JSONResponse({"status": "error"}, status_code=200)
 
     order = await repo.get_order_by_trade_no(trade_no)
     if order is None:
-        logger.warning(f"[newebpay webhook] Unknown order: {trade_no}")
+        LOGGER.warning(f"[newebpay webhook] Unknown order: {trade_no}")
         return JSONResponse({"status": "error"}, status_code=200)
 
     if inner_status != "SUCCESS" or status != "SUCCESS":
-        logger.info(f"[newebpay webhook] Order {trade_no} failed, Status={inner_status}")
+        LOGGER.info(f"[newebpay webhook] Order {trade_no} failed, Status={inner_status}")
         await repo.mark_failed(trade_no)
         return JSONResponse({"status": "ok"}, status_code=200)
 
@@ -549,7 +557,7 @@ async def webhook_newebpay(
     if paid_order is None:
         return JSONResponse({"status": "ok"}, status_code=200)  # duplicate webhook
 
-    logger.info(
+    LOGGER.info(
         f"[newebpay webhook] Order {trade_no} paid — user={order.user_id} amount={order.amount}"
     )
 

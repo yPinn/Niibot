@@ -15,7 +15,7 @@ from services.message_trigger_service import MessageTriggerService
 
 _REGEX_MAX_LEN = 200
 
-logger = logging.getLogger(__name__)
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/triggers", tags=["triggers"])
 
@@ -102,7 +102,7 @@ async def get_trigger_configs(
         triggers = await service.list_triggers(channel_id)
         return [MessageTriggerResponse(**t) for t in triggers]
     except Exception:
-        logger.exception("Failed to get trigger configs")
+        LOGGER.exception("Failed to get trigger configs")
         raise HTTPException(status_code=500, detail="Failed to fetch trigger configs") from None
 
 
@@ -128,12 +128,12 @@ async def create_trigger(
             priority=body.priority,
             aliases=body.aliases or None,
         )
-        logger.info(f"Channel {channel_id} created trigger: {body.trigger_name}")
+        LOGGER.info(f"Channel {channel_id} created trigger: {body.trigger_name}")
         return MessageTriggerResponse(**trigger)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception:
-        logger.exception("Failed to create trigger")
+        LOGGER.exception("Failed to create trigger")
         raise HTTPException(status_code=500, detail="Failed to create trigger") from None
 
 
@@ -145,10 +145,16 @@ async def update_trigger(
     pool: Pool = Depends(get_db_pool),
 ) -> MessageTriggerResponse:
     """Update a message trigger's settings."""
-    if body.pattern is not None and body.match_type is not None:
-        _validate_regex_pattern(body.pattern, body.match_type)
     try:
         service = MessageTriggerService(pool)
+        if body.pattern is not None:
+            effective_match_type = body.match_type
+            if effective_match_type is None:
+                existing = await service.get_trigger(channel_id, trigger_name)
+                effective_match_type = (
+                    existing.get("match_type", "contains") if existing else "contains"
+                )
+            _validate_regex_pattern(body.pattern, effective_match_type)
         trigger = await service.update_trigger(
             channel_id,
             trigger_name,
@@ -162,12 +168,14 @@ async def update_trigger(
             enabled=body.enabled,
             aliases=body.aliases,
         )
-        logger.info(f"Channel {channel_id} updated trigger: {trigger_name}")
+        LOGGER.info(f"Channel {channel_id} updated trigger: {trigger_name}")
         return MessageTriggerResponse(**trigger)
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception:
-        logger.exception("Failed to update trigger")
+        LOGGER.exception("Failed to update trigger")
         raise HTTPException(status_code=500, detail="Failed to update trigger") from None
 
 
@@ -182,10 +190,10 @@ async def toggle_trigger(
     try:
         service = MessageTriggerService(pool)
         trigger = await service.toggle_trigger(channel_id, trigger_name, body.enabled)
-        logger.info(f"Channel {channel_id} toggled trigger: {trigger_name} -> {body.enabled}")
+        LOGGER.info(f"Channel {channel_id} toggled trigger: {trigger_name} -> {body.enabled}")
         return MessageTriggerResponse(**trigger)
     except Exception:
-        logger.exception("Failed to toggle trigger")
+        LOGGER.exception("Failed to toggle trigger")
         raise HTTPException(status_code=500, detail="Failed to toggle trigger") from None
 
 
@@ -201,9 +209,9 @@ async def delete_trigger(
         deleted = await service.delete_trigger(channel_id, trigger_name)
         if not deleted:
             raise HTTPException(status_code=404, detail="Trigger not found")
-        logger.info(f"Channel {channel_id} deleted trigger: {trigger_name}")
+        LOGGER.info(f"Channel {channel_id} deleted trigger: {trigger_name}")
     except HTTPException:
         raise
     except Exception:
-        logger.exception("Failed to delete trigger")
+        LOGGER.exception("Failed to delete trigger")
         raise HTTPException(status_code=500, detail="Failed to delete trigger") from None

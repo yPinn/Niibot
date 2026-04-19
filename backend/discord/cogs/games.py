@@ -60,6 +60,7 @@ class RouletteView(ui.View):
         self.chamber_position = 0
         self.bullet_position = random.randint(0, 5)
         self.attempts = 0
+        self.message: discord.Message | None = None
 
     def _build_result_embed(
         self,
@@ -105,6 +106,11 @@ class RouletteView(ui.View):
         for item in self.children:
             if isinstance(item, ui.Button):
                 item.disabled = True
+        if self.message:
+            try:
+                await self.message.edit(view=self)
+            except (discord.NotFound, discord.HTTPException):
+                pass
 
 
 class GamesCog(commands.Cog):
@@ -160,9 +166,9 @@ class GamesCog(commands.Cog):
         )
         embed.add_field(name="**回合數**", value="> 1/6", inline=True)
 
-        await interaction.response.send_message(
-            embed=embed, view=RouletteView(interaction.user.id, self._embed)
-        )
+        view = RouletteView(interaction.user.id, self._embed)
+        await interaction.response.send_message(embed=embed, view=view)
+        view.message = await interaction.original_response()
 
 
 async def setup(bot: commands.Bot) -> None:

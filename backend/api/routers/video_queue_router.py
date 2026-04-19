@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 from datetime import datetime
 
 from asyncpg import Pool
@@ -22,7 +24,7 @@ from shared.repositories.video_queue import (
     fetch_yt_info,
 )
 
-logger = logging.getLogger(__name__)
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/video-queue", tags=["video-queue"])
 
@@ -90,11 +92,20 @@ class MetadataUpdate(BaseModel):
 # ============================================
 
 
+_CHANNEL_ID_CACHE: dict[str, tuple[str, float]] = {}
+_CHANNEL_ID_TTL = 300.0  # 5 minutes
+
+
 async def _resolve_channel_id(username: str, twitch_api: TwitchAPIClient) -> str:
+    cached = _CHANNEL_ID_CACHE.get(username)
+    if cached and time.monotonic() - cached[1] < _CHANNEL_ID_TTL:
+        return cached[0]
     user_info = await twitch_api.get_user_by_login(username)
     if not user_info:
         raise HTTPException(status_code=404, detail="Channel not found")
-    return user_info["id"]
+    channel_id = user_info["id"]
+    _CHANNEL_ID_CACHE[username] = (channel_id, time.monotonic())
+    return channel_id
 
 
 async def _build_public_state(
@@ -102,9 +113,11 @@ async def _build_public_state(
     repo: VideoQueueRepository,
     settings_repo: VideoQueueSettingsRepository,
 ) -> PublicVideoQueueState:
-    settings = await settings_repo.get_or_create(channel_id)
-    current = await repo.get_current(channel_id)
-    queued = await repo.get_queued(channel_id)
+    settings, current, queued = await asyncio.gather(
+        settings_repo.get_or_create(channel_id),
+        repo.get_current(channel_id),
+        repo.get_queued(channel_id),
+    )
 
     durations = [e.duration_seconds for e in queued]
     total_queued_duration: int | None = None
@@ -165,7 +178,7 @@ async def get_public_state(
     except HTTPException:
         raise
     except Exception:
-        logger.exception("Failed to get public video queue state")
+        LOGGER.exception("Failed to get public video queue state")
         raise HTTPException(status_code=500, detail="Failed to fetch queue state") from None
 
 
@@ -208,7 +221,7 @@ async def advance_queue(
     except HTTPException:
         raise
     except Exception:
-        logger.exception("Failed to advance video queue")
+        LOGGER.exception("Failed to advance video queue")
         raise HTTPException(status_code=500, detail="Failed to advance queue") from None
 
 
@@ -234,7 +247,7 @@ async def update_entry_metadata(
     except HTTPException:
         raise
     except Exception:
-        logger.exception("Failed to update video queue metadata")
+        LOGGER.exception("Failed to update video queue metadata")
         raise HTTPException(status_code=500, detail="Failed to update metadata") from None
 
 
@@ -253,10 +266,10 @@ async def skip_current(
         repo = VideoQueueRepository(pool)
         settings_repo = VideoQueueSettingsRepository(pool)
         await repo.skip_current_atomic(channel_id)
-        logger.info(f"Channel {channel_id} skipped video queue entry")
+        LOGGER.info(f"Channel {channel_id} skipped video queue entry")
         return await _build_public_state(channel_id, repo, settings_repo)
     except Exception:
-        logger.exception("Failed to skip video")
+        LOGGER.exception("Failed to skip video")
         raise HTTPException(status_code=500, detail="Failed to skip video") from None
 
 
@@ -273,10 +286,10 @@ async def clear_queue(
         if current:
             await repo.mark_skipped(current.id, channel_id)
         await repo.clear_queued(channel_id)
-        logger.info(f"Channel {channel_id} cleared video queue")
+        LOGGER.info(f"Channel {channel_id} cleared video queue")
         return await _build_public_state(channel_id, repo, settings_repo)
     except Exception:
-        logger.exception("Failed to clear video queue")
+        LOGGER.exception("Failed to clear video queue")
         raise HTTPException(status_code=500, detail="Failed to clear queue") from None
 
 
@@ -300,7 +313,7 @@ async def get_video_queue_settings(
             max_per_user=s.max_per_user,
         )
     except Exception:
-        logger.exception("Failed to get video queue settings")
+        LOGGER.exception("Failed to get video queue settings")
         raise HTTPException(status_code=500, detail="Failed to fetch settings") from None
 
 
@@ -336,7 +349,7 @@ async def update_video_queue_settings(
             user_cooldown_seconds=body.user_cooldown_seconds,
             max_per_user=body.max_per_user,
         )
-        logger.info(f"Channel {channel_id} updated video queue settings")
+        LOGGER.info(f"Channel {channel_id} updated video queue settings")
         return VideoQueueSettingsResponse(
             channel_id=s.channel_id,
             enabled=s.enabled,
@@ -348,7 +361,7 @@ async def update_video_queue_settings(
             max_per_user=s.max_per_user,
         )
     except Exception:
-        logger.exception("Failed to update video queue settings")
+        LOGGER.exception("Failed to update video queue settings")
         raise HTTPException(status_code=500, detail="Failed to update settings") from None
 
 
@@ -363,7 +376,7 @@ async def get_state(
         settings_repo = VideoQueueSettingsRepository(pool)
         return await _build_public_state(channel_id, repo, settings_repo)
     except Exception:
-        logger.exception("Failed to get video queue state")
+        LOGGER.exception("Failed to get video queue state")
         raise HTTPException(status_code=500, detail="Failed to fetch queue state") from None
 
 
@@ -380,12 +393,12 @@ async def set_entry_as_next(
         moved = await repo.set_as_next(entry_id, channel_id)
         if not moved:
             raise HTTPException(status_code=404, detail="Entry not found or not in queued state")
-        logger.info(f"Channel {channel_id} set entry {entry_id} as next")
+        LOGGER.info(f"Channel {channel_id} set entry {entry_id} as next")
         return await _build_public_state(channel_id, repo, settings_repo)
     except HTTPException:
         raise
     except Exception:
-        logger.exception("Failed to set entry as next")
+        LOGGER.exception("Failed to set entry as next")
         raise HTTPException(status_code=500, detail="Failed to reorder queue") from None
 
 
@@ -402,12 +415,12 @@ async def play_entry_now(
         promoted = await repo.play_immediately(entry_id, channel_id)
         if not promoted:
             raise HTTPException(status_code=404, detail="Entry not found or not in queued state")
-        logger.info(f"Channel {channel_id} played entry {entry_id} immediately")
+        LOGGER.info(f"Channel {channel_id} played entry {entry_id} immediately")
         return await _build_public_state(channel_id, repo, settings_repo)
     except HTTPException:
         raise
     except Exception:
-        logger.exception("Failed to play entry immediately")
+        LOGGER.exception("Failed to play entry immediately")
         raise HTTPException(status_code=500, detail="Failed to play entry") from None
 
 
@@ -416,7 +429,7 @@ async def add_video_entry(
     body: AddVideoRequest,
     channel_id: str = Depends(get_current_channel_id),
     pool: Pool = Depends(get_db_pool),
-    settings: Settings = Depends(get_settings),
+    app_settings: Settings = Depends(get_settings),
 ) -> PublicVideoQueueState:
     """Broadcaster directly adds a video to the queue from the dashboard."""
     # Detect URL type: try YouTube first, then Twitch clip
@@ -444,7 +457,7 @@ async def add_video_entry(
         # Dashboard adds bypass max_queue_size and min_view_count — broadcaster has full authority over their own queue
         if clip_slug:
             title, duration_seconds, _ = await fetch_twitch_clip_info(
-                clip_slug, settings.client_id, settings.client_secret
+                clip_slug, app_settings.client_id, app_settings.client_secret
             )
             video_id = clip_slug
             is_vertical = False
@@ -453,7 +466,7 @@ async def add_video_entry(
             if video_id is None:
                 raise HTTPException(status_code=422, detail="No valid video source")
             title, duration_seconds, _, is_vertical_from_api = await fetch_yt_info(
-                video_id, settings.youtube_api_key
+                video_id, app_settings.youtube_api_key
             )
             is_vertical = is_vertical or is_vertical_from_api
             video_type = "youtube"
@@ -479,10 +492,10 @@ async def add_video_entry(
             video_type=video_type,
             priority=SOURCE_PRIORITY["dashboard"],
         )
-        logger.info(f"Channel {channel_id} added {video_type} {video_id} from dashboard")
+        LOGGER.info(f"Channel {channel_id} added {video_type} {video_id} from dashboard")
         return await _build_public_state(channel_id, repo, settings_repo)
     except HTTPException:
         raise
     except Exception:
-        logger.exception("Failed to add video entry")
+        LOGGER.exception("Failed to add video entry")
         raise HTTPException(status_code=500, detail="Failed to add video") from None

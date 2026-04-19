@@ -104,7 +104,10 @@ class EventsCog(commands.Cog):
             attachments_text = "\n".join([att.filename for att in message.attachments[:5]])
             embed.add_field(name="附件", value=attachments_text, inline=False)
 
-        await log_channel.send(embed=embed)
+        try:
+            await log_channel.send(embed=embed)
+        except (discord.Forbidden, discord.HTTPException) as e:
+            LOGGER.warning(f"Failed to send delete log to {log_channel.id}: {e}")
 
     @commands.Cog.listener()
     async def on_message_edit(self, before: discord.Message, after: discord.Message) -> None:
@@ -132,7 +135,10 @@ class EventsCog(commands.Cog):
         embed.add_field(name="編輯後", value=after_content, inline=False)
         embed.add_field(name="跳轉", value=f"[查看訊息]({after.jump_url})", inline=False)
 
-        await log_channel.send(embed=embed)
+        try:
+            await log_channel.send(embed=embed)
+        except (discord.Forbidden, discord.HTTPException) as e:
+            LOGGER.warning(f"Failed to send edit log to {log_channel.id}: {e}")
 
     @commands.Cog.listener()
     async def on_member_update(self, before: discord.Member, after: discord.Member) -> None:
@@ -164,7 +170,10 @@ class EventsCog(commands.Cog):
             embed.add_field(name="用戶", value=str(after), inline=False)
             embed.add_field(name="變更內容", value="\n".join(changes), inline=False)
 
-            await log_channel.send(embed=embed)
+            try:
+                await log_channel.send(embed=embed)
+            except (discord.Forbidden, discord.HTTPException) as e:
+                LOGGER.warning(f"Failed to send member update log to {log_channel.id}: {e}")
 
     @commands.Cog.listener()
     async def on_bulk_message_delete(self, messages: list[discord.Message]) -> None:
@@ -189,7 +198,10 @@ class EventsCog(commands.Cog):
             timestamp=datetime.now(),
         )
 
-        await log_channel.send(embed=embed)
+        try:
+            await log_channel.send(embed=embed)
+        except (discord.Forbidden, discord.HTTPException) as e:
+            LOGGER.warning(f"Failed to send bulk delete log to {log_channel.id}: {e}")
 
 
 async def setup(bot: commands.Bot) -> None:

@@ -10,7 +10,7 @@ import asyncpg
 from core.constants import VALID_ROLES as VALID_MIN_ROLES
 from shared.repositories.message_trigger import MessageTriggerRepository
 
-logger = logging.getLogger(__name__)
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 VALID_MATCH_TYPES = {"contains", "startswith", "exact", "regex"}
 
@@ -23,6 +23,10 @@ class MessageTriggerService:
     async def list_triggers(self, channel_id: str) -> list[dict]:
         configs = await self.repo.list_all(channel_id)
         return [asdict(cfg) for cfg in configs]
+
+    async def get_trigger(self, channel_id: str, trigger_name: str) -> dict | None:
+        cfg = await self.repo.get_by_name(channel_id, trigger_name)
+        return asdict(cfg) if cfg else None
 
     async def create_trigger(
         self,

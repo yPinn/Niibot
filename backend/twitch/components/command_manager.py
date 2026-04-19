@@ -122,6 +122,8 @@ class CommandManagerComponent(commands.Component):
     @cmd.command(name="a", aliases=["add"])
     async def cmd_add(self, ctx: commands.Context["Bot"], *, args: str | None = None) -> None:
         """Add a custom command (!prefix) or auto-response trigger (no prefix)."""
+        if not ctx.chatter.moderator:  # type: ignore[attr-defined]
+            return
         if not args or not args.strip():
             await ctx.reply("用法: !cmd a !指令名 回覆 / !cmd a 觸發詞 回覆")
             return
@@ -231,6 +233,8 @@ class CommandManagerComponent(commands.Component):
     @cmd.command(name="e", aliases=["edit"])
     async def cmd_edit(self, ctx: commands.Context["Bot"], *, args: str | None = None) -> None:
         """Edit a custom command or trigger."""
+        if not ctx.chatter.moderator:  # type: ignore[attr-defined]
+            return
         if not args or not args.strip():
             await ctx.reply("用法: !cmd e !指令名 [選項] / !cmd e 觸發詞 [選項] [新回覆文字]")
             return
@@ -380,6 +384,8 @@ class CommandManagerComponent(commands.Component):
     @cmd.command(name="d", aliases=["delete"])
     async def cmd_delete(self, ctx: commands.Context["Bot"], *, args: str | None = None) -> None:
         """Delete a custom command or trigger."""
+        if not ctx.chatter.moderator:  # type: ignore[attr-defined]
+            return
         if not args or not args.strip():
             await ctx.reply("用法: !cmd d !指令名 / !cmd d 觸發詞")
             return

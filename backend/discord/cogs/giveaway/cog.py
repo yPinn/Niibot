@@ -15,7 +15,7 @@ from core import DATA_DIR, EmbedFactory, load_json
 
 from ._embeds import create_giveaway_embed, create_result_embed
 from ._persistence import GiveawayPersistence
-from ._views import TimeSelectView
+from ._views import GiveawayView, TimeSelectView
 
 LOGGER = logging.getLogger(__name__)
 
@@ -30,6 +30,18 @@ class GiveawayCog(commands.Cog):
         self.active_giveaways: dict[int, dict] = self._persistence.load()
 
     async def cog_load(self) -> None:
+        for message_id, data in list(self.active_giveaways.items()):
+            end_time = datetime.fromisoformat(data["end_time"]) if data.get("end_time") else None
+            view = GiveawayView(
+                host_id=data["host_id"],
+                prize_name=data["prize_name"],
+                prize_count=data["prize_count"],
+                giveaway_cog=self,
+                host_avatar_url=data["host_avatar_url"],
+                end_time=end_time,
+            )
+            view.participants = set(data.get("participants", []))
+            self.bot.add_view(view, message_id=message_id)
         self.check_giveaway_expiry.start()
         LOGGER.info("Giveaway ready")
 

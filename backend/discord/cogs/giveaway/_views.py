@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import random
 from datetime import UTC, datetime, timedelta
@@ -172,6 +173,7 @@ class GiveawayView(ui.View):
         self.is_ended = False
         self.host_avatar_url = host_avatar_url
         self.end_time = end_time
+        self._lock = asyncio.Lock()
 
     async def on_timeout(self) -> None:
         pass
@@ -188,19 +190,20 @@ class GiveawayView(ui.View):
             )
             return
 
-        user_id = interaction.user.id
+        async with self._lock:
+            user_id = interaction.user.id
 
-        if user_id in self.participants:
-            self.participants.remove(user_id)
-            message = "已取消參加此抽獎"
-        else:
-            self.participants.add(user_id)
-            message = f"{self.giveaway_cog.config['messages']['joined_success']}\n提示：再次點擊按鈕可取消參加"
+            if user_id in self.participants:
+                self.participants.remove(user_id)
+                message = "已取消參加此抽獎"
+            else:
+                self.participants.add(user_id)
+                message = f"{self.giveaway_cog.config['messages']['joined_success']}\n提示：再次點擊按鈕可取消參加"
 
-        if interaction.message:
-            await self.giveaway_cog.update_participants(
-                interaction.message.id, list(self.participants)
-            )
+            if interaction.message:
+                await self.giveaway_cog.update_participants(
+                    interaction.message.id, list(self.participants)
+                )
 
         await interaction.response.send_message(message, ephemeral=True)
 

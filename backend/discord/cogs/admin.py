@@ -16,7 +16,7 @@ class AdminCog(commands.Cog):
         self.bot = bot
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:  # type: ignore[override]
-        if interaction.user.id != self.bot.owner_id:
+        if self.bot.owner_id is None or interaction.user.id != self.bot.owner_id:
             await interaction.response.send_message("權限不足", ephemeral=True)
             LOGGER.warning(
                 f"Unauthorized cog command attempt: {interaction.user} (ID: {interaction.user.id})"

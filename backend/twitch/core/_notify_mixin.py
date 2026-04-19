@@ -16,7 +16,7 @@ from datetime import UTC, datetime
 
 import twitchio
 
-LOGGER: logging.Logger = logging.getLogger("Bot")
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 class _NotifyMixin:
@@ -68,10 +68,9 @@ class _NotifyMixin:
 
     async def _handle_new_token(self, connection, pid, channel, payload) -> None:
         try:
-            LOGGER.info(f"[NOTIFY] Received new token notification: {payload}")
-
             data = json.loads(payload)
             user_id = data["user_id"]
+            LOGGER.info(f"[NOTIFY] Received new token notification for user_id: {user_id}")
 
             if user_id == self._bot_id:  # type: ignore[attr-defined]
                 LOGGER.debug(f"[NOTIFY] Ignoring new token for bot's own account: {user_id}")

@@ -12,8 +12,8 @@ from discord.ext import commands, tasks
 from core import DATA_DIR, EmbedFactory, load_json
 from shared.repositories.birthday import BirthdayRepository
 
+from ._views import DashboardView, InitSetupView, UpdateSettingsView
 from .constants import BIRTHDAY_COLOR, BIRTHDAY_THUMBNAIL, TZ_UTC8
-from .views import DashboardView, InitSetupView, UpdateSettingsView
 
 LOGGER = logging.getLogger(__name__)
 
@@ -168,7 +168,7 @@ class BirthdayCog(commands.Cog):
                 if members_with_age:
                     users_str = self._format_birthday_users(members_with_age)
                     try:
-                        await channel.send(settings.message_template.format(users=users_str))
+                        await channel.send(settings.message_template.replace("{users}", users_str))
                     except discord.Forbidden:
                         LOGGER.warning(f"Cannot send to channel {channel.id}")
 
