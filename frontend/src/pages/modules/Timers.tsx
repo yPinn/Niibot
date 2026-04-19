@@ -159,6 +159,7 @@ export default function Timers() {
   }, [])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchData()
   }, [fetchData])
 
@@ -221,6 +222,10 @@ export default function Timers() {
     const intervalVal = Number(form.interval)
     if (!intervalVal || intervalVal < 60) {
       dispatch({ type: 'SAVE_ERROR', msg: '間隔時間至少 60 秒' })
+      return
+    }
+    if (intervalVal > 86400) {
+      dispatch({ type: 'SAVE_ERROR', msg: '間隔時間最多 86400 秒（24 小時）' })
       return
     }
     if (!form.template.trim()) {
@@ -508,6 +513,7 @@ export default function Timers() {
                 id="timer-interval"
                 type="number"
                 min={60}
+                max={86400}
                 step={60}
                 value={form.interval}
                 onChange={e => dispatch({ type: 'SET', field: 'interval', value: e.target.value })}

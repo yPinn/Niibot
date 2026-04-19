@@ -186,7 +186,7 @@ class TestCreateTriggerRegexValidation:
 
 
 class TestUpdateTriggerRegexValidation:
-    """The fix: validation runs only when BOTH pattern AND match_type are given."""
+    """Validation fetches existing match_type from DB when only pattern is provided."""
 
     def test_invalid_regex_with_match_type_returns_400(self):
         """Sending an invalid regex pattern WITH match_type=regex must be rejected."""
@@ -197,24 +197,45 @@ class TestUpdateTriggerRegexValidation:
         assert r.status_code == 400
         assert "regex" in r.json()["detail"].lower()
 
-    def test_pattern_only_no_match_type_skips_validation(self):
-        """Sending only pattern (no match_type) must NOT validate as regex — old bypass fix."""
+    def test_pattern_only_existing_non_regex_skips_validation(self):
+        """Pattern-only update when existing match_type is 'startswith' → no regex check."""
         import unittest.mock as um
 
         import services.message_trigger_service as svc_mod
 
+        existing = {**_TRIGGER_ROW, "match_type": "startswith"}
         row = {**_TRIGGER_ROW, "pattern": "[invalid(", "match_type": "startswith"}
-        with um.patch.object(
-            svc_mod.MessageTriggerService,
-            "update_trigger",
-            AsyncMock(return_value=row),
+        with (
+            um.patch.object(
+                svc_mod.MessageTriggerService, "get_trigger", AsyncMock(return_value=existing)
+            ),
+            um.patch.object(
+                svc_mod.MessageTriggerService, "update_trigger", AsyncMock(return_value=row)
+            ),
         ):
             r = _make_client().put(
                 "/api/triggers/configs/mytest",
                 json={"pattern": "[invalid("},
             )
-        # 200 = validation was skipped (pattern with no match_type)
+        # Non-regex existing match_type → invalid regex pattern is accepted
         assert r.status_code == 200
+
+    def test_pattern_only_existing_regex_validates(self):
+        """Pattern-only update when existing match_type is 'regex' → must validate pattern."""
+        import unittest.mock as um
+
+        import services.message_trigger_service as svc_mod
+
+        existing = {**_TRIGGER_ROW, "match_type": "regex"}
+        with um.patch.object(
+            svc_mod.MessageTriggerService, "get_trigger", AsyncMock(return_value=existing)
+        ):
+            r = _make_client().put(
+                "/api/triggers/configs/mytest",
+                json={"pattern": "[invalid("},
+            )
+        assert r.status_code == 400
+        assert "regex" in r.json()["detail"].lower()
 
     def test_match_type_only_no_pattern_skips_validation(self):
         """Sending only match_type=regex (no pattern) must not attempt validation."""
