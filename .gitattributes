@@ -33,8 +33,12 @@
 *.mjs text eol=lf
 *.cjs text eol=lf
 
-# CSS
+# CSS / HTML
 *.css text eol=lf
+*.html text eol=lf
+
+# Web manifests
+*.webmanifest text eol=lf
 
 # Lock files
 *.lock text eol=lf
