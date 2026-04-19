@@ -1,0 +1,44 @@
+"""Shared base settings for all Niibot services."""
+
+from __future__ import annotations
+
+import logging
+
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings
+
+LOGGER: logging.Logger = logging.getLogger(__name__)
+
+
+class BaseServiceSettings(BaseSettings):
+    """Common settings shared across api, discord, and twitch services.
+
+    Each subclass must define its own ``model_config`` with the correct
+    ``env_file`` tuple (shared.env first, service .env second).
+    """
+
+    # Database
+    database_url: str = Field(..., description="PostgreSQL database URL")
+
+    # Logging
+    log_level: str = Field(default="INFO", description="Logging level")
+
+    # Error reporting
+    error_webhook_url: str = Field(default="", description="Discord webhook URL for error alerts")
+
+    @field_validator("database_url")
+    @classmethod
+    def validate_database_url(cls, v: str) -> str:
+        if not v.startswith("postgresql://"):
+            raise ValueError("DATABASE_URL must start with 'postgresql://'")
+        return v
+
+    @field_validator("log_level")
+    @classmethod
+    def validate_log_level(cls, v: str) -> str:
+        valid_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+        v_upper = v.upper()
+        if v_upper not in valid_levels:
+            LOGGER.warning(f"Invalid log level '{v}', defaulting to INFO")
+            return "INFO"
+        return v_upper
