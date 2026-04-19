@@ -26,7 +26,7 @@ from services.oauth_service import (
     find_or_create_user,
 )
 
-logger = logging.getLogger(__name__)
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["authentication"])
 
@@ -91,28 +91,28 @@ async def twitch_oauth_callback(
     error_redirect = f"{settings.frontend_url}/login"
 
     if error:
-        logger.error(f"OAuth error from Twitch: {error}")
+        LOGGER.error(f"OAuth error from Twitch: {error}")
         return RedirectResponse(url=f"{error_redirect}?error={_url_quote(error, safe='')}")
 
     decoded_state = decode_oauth_state(state, secret=settings.jwt_secret_key)
     if decoded_state.get("mode") != "login":
-        logger.warning("OAuth callback received invalid or tampered state — rejecting")
+        LOGGER.warning("OAuth callback received invalid or tampered state — rejecting")
         return RedirectResponse(url=f"{error_redirect}?error=invalid_state")
 
     if not code:
-        logger.error("No OAuth code received from Twitch")
+        LOGGER.error("No OAuth code received from Twitch")
         return RedirectResponse(url=f"{error_redirect}?error=no_code")
 
     # Must redirect on DB error — cannot use Depends(get_db_pool)
     try:
         pool = get_database_manager().pool
     except RuntimeError:
-        logger.error("Database not ready during Twitch OAuth callback")
+        LOGGER.error("Database not ready during Twitch OAuth callback")
         return RedirectResponse(url=f"{error_redirect}?error=db_not_ready")
 
     success, error_msg, token_data = await twitch_api.exchange_code_for_token(code)
     if not success or not token_data:
-        logger.error(f"Failed to exchange code: {error_msg}")
+        LOGGER.error(f"Failed to exchange code: {error_msg}")
         return RedirectResponse(
             url=f"{error_redirect}?error={_url_quote(error_msg or 'token_exchange_failed', safe='')}"
         )
@@ -134,7 +134,7 @@ async def twitch_oauth_callback(
         )
 
         if not save_success:
-            logger.error(f"Failed to save token and channel for {username}")
+            LOGGER.error(f"Failed to save token and channel for {username}")
             return RedirectResponse(url=f"{error_redirect}?error=save_token_failed")
 
         user_id = await find_or_create_user(
@@ -146,7 +146,7 @@ async def twitch_oauth_callback(
             avatar=user_info.get("avatar"),
         )
     except Exception as e:
-        logger.error(f"DB error during Twitch OAuth for {username}: {type(e).__name__}: {e}")
+        LOGGER.error(f"DB error during Twitch OAuth for {username}: {type(e).__name__}: {e}")
         return RedirectResponse(url=f"{error_redirect}?error=db_timeout")
 
     jwt_token = auth_service.create_access_token(
@@ -165,7 +165,7 @@ async def twitch_oauth_callback(
         max_age=settings.jwt_expire_days * 24 * 60 * 60,
     )
 
-    logger.info(f"User logged in and synced: {username} ({platform_user_id})")
+    LOGGER.info(f"User logged in and synced: {username} ({platform_user_id})")
     return response
 
 
@@ -186,7 +186,7 @@ async def get_current_user(
         if user_row:
             theme = user_row["theme"]
     except Exception as e:
-        logger.warning(f"DB error fetching theme for user {user_id}: {type(e).__name__}: {e}")
+        LOGGER.warning(f"DB error fetching theme for user {user_id}: {type(e).__name__}: {e}")
 
     user_info = await twitch_api.get_user_info(platform_user_id)
     if not user_info:
@@ -215,7 +215,7 @@ async def logout(
         secure=True,
         samesite="lax",
     )
-    logger.info(f"User logged out: {username} (twitch:{platform_user_id})")
+    LOGGER.info(f"User logged out: {username} (twitch:{platform_user_id})")
     return LogoutResponse(message="Logged out successfully")
 
 

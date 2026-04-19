@@ -10,7 +10,7 @@ from pydantic import BaseModel
 
 from core.dependencies import get_analytics_service, get_current_channel_id, get_db_pool
 
-logger = logging.getLogger(__name__)
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 
@@ -81,11 +81,11 @@ async def get_analytics_summary(
         analytics_service = get_analytics_service(pool)
         summary_data = await analytics_service.get_summary(channel_id, days)
 
-        logger.info(f"Channel {channel_id} requested analytics summary (days={days})")
+        LOGGER.info(f"Channel {channel_id} requested analytics summary (days={days})")
         return AnalyticsSummary(**summary_data)
 
     except Exception:
-        logger.exception("Failed to get analytics summary")
+        LOGGER.exception("Failed to get analytics summary")
         raise HTTPException(status_code=500, detail="Failed to fetch analytics") from None
 
 
@@ -113,7 +113,7 @@ async def get_session_commands(
     except HTTPException:
         raise
     except Exception:
-        logger.exception("Failed to get session commands")
+        LOGGER.exception("Failed to get session commands")
         raise HTTPException(status_code=500, detail="Failed to fetch commands") from None
 
 
@@ -141,7 +141,7 @@ async def get_session_events(
     except HTTPException:
         raise
     except Exception:
-        logger.exception("Failed to get session events")
+        LOGGER.exception("Failed to get session events")
         raise HTTPException(status_code=500, detail="Failed to fetch events") from None
 
 
@@ -163,9 +163,9 @@ async def get_top_commands(
         analytics_service = get_analytics_service(pool)
         commands = await analytics_service.get_top_commands(channel_id, days, limit)
 
-        logger.info(f"Channel {channel_id} requested top commands (days={days}, limit={limit})")
+        LOGGER.info(f"Channel {channel_id} requested top commands (days={days}, limit={limit})")
         return [CommandStat(**cmd) for cmd in commands]
 
     except Exception:
-        logger.exception("Failed to get top commands")
+        LOGGER.exception("Failed to get top commands")
         raise HTTPException(status_code=500, detail="Failed to fetch top commands") from None

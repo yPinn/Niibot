@@ -9,7 +9,7 @@ import asyncpg
 from shared.cache import AsyncTTLCache, cached
 from shared.models.game_queue import GameQueueEntry, GameQueueSettings
 
-logger = logging.getLogger(__name__)
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 _ENTRY_COLUMNS = (
     "id, channel_id, user_id, user_name, redeemed_at, removed_at, removal_reason, created_at"

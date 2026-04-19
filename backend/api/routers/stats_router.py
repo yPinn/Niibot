@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from core.dependencies import get_current_channel_id, get_db_pool
 from shared.repositories.analytics import AnalyticsRepository
 
-logger = logging.getLogger(__name__)
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/stats", tags=["stats"])
 
@@ -67,7 +67,7 @@ async def get_channel_stats(
             CommandStat(name=c["command_name"], count=c["usage_count"]) for c in top_commands_data
         ]
 
-        logger.info(f"Channel {channel_id} requested channel stats (days={days})")
+        LOGGER.info(f"Channel {channel_id} requested channel stats (days={days})")
         return ChannelStats(
             top_commands=top_commands,
             top_chatters=top_chatters,
@@ -76,5 +76,5 @@ async def get_channel_stats(
         )
 
     except Exception:
-        logger.exception("Failed to get channel stats")
+        LOGGER.exception("Failed to get channel stats")
         raise HTTPException(status_code=500, detail="Failed to fetch statistics") from None

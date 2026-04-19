@@ -10,6 +10,8 @@ _backend_dir = str(Path(__file__).resolve().parent.parent)
 if _backend_dir not in sys.path:
     sys.path.insert(0, _backend_dir)
 
+LOGGER: logging.Logger = logging.getLogger(__name__)
+
 
 def main() -> None:
     # Load .env files before setup_logging so ERROR_WEBHOOK_URL is available.
@@ -32,8 +34,6 @@ def main() -> None:
         await health_server.start()
 
         # 2. Heavy imports — after port is open
-        import logging
-
         from twitchio import eventsub
 
         from core import get_channel_subscriptions, validate_env_vars
@@ -41,8 +41,7 @@ def main() -> None:
         from core.config import get_settings
         from shared.database import DatabaseManager, PoolConfig
         from shared.repositories.channel import ChannelRepository
-
-        logger = logging.getLogger("Bot")
+        from shared.retry_utils import format_duration, parse_retry_after
 
         validate_env_vars()
         settings = get_settings()
@@ -76,14 +75,14 @@ def main() -> None:
                         subs.extend(get_channel_subscriptions(ch.channel_id, bot_id))
                     break
                 except (TimeoutError, OSError) as e:
-                    logger.warning(f"Database connect attempt ({attempt}/5): {type(e).__name__}")
+                    LOGGER.warning(f"Database connect attempt ({attempt}/5): {type(e).__name__}")
                     if attempt < 5:
                         await asyncio.sleep(5)
 
             if subs:
-                logger.info(f"Starting bot with {len(subs)} initial subscriptions")
+                LOGGER.info(f"Starting bot with {len(subs)} initial subscriptions")
             else:
-                logger.warning(
+                LOGGER.warning(
                     "Starting bot without initial subscriptions — background task will retry"
                 )
 
@@ -113,63 +112,33 @@ def main() -> None:
                         status = getattr(e, "status", None) or getattr(e, "code", None)
                         if status == 429 or "429" in str(e) or "rate" in str(e).lower():
                             retry_count += 1
+                            fallback = base_delay * (2 ** (retry_count - 1))
+                            wait_time = parse_retry_after(e, fallback=fallback)
 
-                            # Extract retry_after from response if available
-                            retry_after = base_delay * (2 ** (retry_count - 1))
-                            resp = getattr(e, "response", None)
-                            if resp:
-                                headers = getattr(resp, "headers", {})
-                                for key in ("Retry-After", "retry-after", "retry_after"):
-                                    if key in headers:
-                                        try:
-                                            retry_after = float(headers[key])
-                                        except (ValueError, TypeError):
-                                            pass
-                                        break
-                            if hasattr(e, "retry_after"):
-                                try:
-                                    retry_after = float(e.retry_after)
-                                except (ValueError, TypeError):
-                                    pass
-
-                            wait_time = max(retry_after, base_delay * (2 ** (retry_count - 1)))
-
-                            # Human-readable duration
-                            secs = int(wait_time)
-                            if secs >= 3600:
-                                readable = f"{secs // 3600}h{(secs % 3600) // 60}m"
-                            elif secs >= 60:
-                                readable = f"{secs // 60}m{secs % 60}s"
-                            else:
-                                readable = f"{secs}s"
-
-                            logger.warning(
+                            LOGGER.warning(
                                 f"Twitch rate limit (429). "
-                                f"retry_after={retry_after:.0f}s, "
-                                f"waiting {readable}, "
+                                f"retry_after={wait_time:.0f}s, "
+                                f"waiting {format_duration(wait_time)}, "
                                 f"attempt={retry_count}/{max_retries}"
                             )
-
-                            logger.debug(f"429 response detail: {str(e)[:500]}")
-
+                            LOGGER.debug(f"429 response detail: {str(e)[:500]}")
                             await asyncio.sleep(wait_time)
                         else:
                             raise
                 else:
-                    logger.error(
+                    LOGGER.error(
                         f"Max retries reached ({max_retries}). Bot cannot connect to Twitch."
                     )
         finally:
             await health_server.stop()
             await db_manager.disconnect()
 
-    bot_logger = logging.getLogger("Bot")
     try:
         asyncio.run(runner())
     except KeyboardInterrupt:
-        bot_logger.warning("Shutting down due to KeyboardInterrupt...")
+        LOGGER.warning("Shutting down due to KeyboardInterrupt...")
     except Exception as e:
-        bot_logger.critical(f"Fatal error: {type(e).__name__}: {e}")
+        LOGGER.critical(f"Fatal error: {type(e).__name__}: {e}")
         raise SystemExit(1) from None
 
 

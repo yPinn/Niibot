@@ -11,7 +11,7 @@ from core.constants import VALID_ROLES
 from core.dependencies import get_current_channel_id, get_db_pool, get_twitch_api
 from services import CommandConfigService, TwitchAPIClient
 
-logger = logging.getLogger(__name__)
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/commands", tags=["commands"])
 
@@ -73,7 +73,7 @@ async def get_command_configs(
         configs = await service.list_commands(channel_id)
         return [CommandConfigResponse(**cfg) for cfg in configs]
     except Exception:
-        logger.exception("Failed to get command configs")
+        LOGGER.exception("Failed to get command configs")
         raise HTTPException(status_code=500, detail="Failed to fetch command configs") from None
 
 
@@ -98,10 +98,10 @@ async def create_custom_command(
             min_role=body.min_role,
             aliases=body.aliases,
         )
-        logger.info(f"Channel {channel_id} created custom command: {body.command_name}")
+        LOGGER.info(f"Channel {channel_id} created custom command: {body.command_name}")
         return CommandConfigResponse(**cfg)
     except Exception:
-        logger.exception("Failed to create custom command")
+        LOGGER.exception("Failed to create custom command")
         raise HTTPException(status_code=500, detail="Failed to create custom command") from None
 
 
@@ -126,10 +126,10 @@ async def update_command_config(
             min_role=body.min_role,
             aliases=body.aliases,
         )
-        logger.info(f"Channel {channel_id} updated command config: {command_name}")
+        LOGGER.info(f"Channel {channel_id} updated command config: {command_name}")
         return CommandConfigResponse(**cfg)
     except Exception:
-        logger.exception("Failed to update command config")
+        LOGGER.exception("Failed to update command config")
         raise HTTPException(status_code=500, detail="Failed to update command config") from None
 
 
@@ -144,10 +144,10 @@ async def toggle_command_config(
     try:
         service = CommandConfigService(pool)
         cfg = await service.toggle_command(channel_id, command_name, body.enabled)
-        logger.info(f"Channel {channel_id} toggled command: {command_name} -> {body.enabled}")
+        LOGGER.info(f"Channel {channel_id} toggled command: {command_name} -> {body.enabled}")
         return CommandConfigResponse(**cfg)
     except Exception:
-        logger.exception("Failed to toggle command config")
+        LOGGER.exception("Failed to toggle command config")
         raise HTTPException(status_code=500, detail="Failed to toggle command config") from None
 
 
@@ -166,11 +166,11 @@ async def delete_custom_command(
                 status_code=404,
                 detail="Custom command not found or cannot delete builtin commands",
             )
-        logger.info(f"Channel {channel_id} deleted custom command: {command_name}")
+        LOGGER.info(f"Channel {channel_id} deleted custom command: {command_name}")
     except HTTPException:
         raise
     except Exception:
-        logger.exception("Failed to delete custom command")
+        LOGGER.exception("Failed to delete custom command")
         raise HTTPException(status_code=500, detail="Failed to delete custom command") from None
 
 
@@ -231,5 +231,5 @@ async def get_public_commands(
     except HTTPException:
         raise
     except Exception:
-        logger.exception("Failed to get public commands")
+        LOGGER.exception("Failed to get public commands")
         raise HTTPException(status_code=500, detail="Failed to fetch commands") from None

@@ -13,7 +13,7 @@ import asyncio
 import logging
 from datetime import UTC, datetime
 
-LOGGER: logging.Logger = logging.getLogger("Bot")
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 class _SessionMixin:

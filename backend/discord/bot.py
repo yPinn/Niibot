@@ -32,10 +32,12 @@ from core import (  # noqa: E402
     get_settings,
     setup_logging,
 )
-from shared.database import DatabaseManager, PoolConfig  # noqa: E402
+from shared.database import DatabaseManager, PoolConfig, pool_heartbeat_loop  # noqa: E402
+from shared.retry_utils import format_duration as _format_duration  # noqa: E402
+from shared.retry_utils import parse_retry_after as _parse_retry_after_shared  # noqa: E402
 
 setup_logging()
-logger = logging.getLogger("discord_bot")
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 class NiibotClient(commands.Bot):
@@ -63,7 +65,7 @@ class NiibotClient(commands.Bot):
         """Initialize database connection pool"""
         database_url = get_settings().database_url
         safe_url = database_url.split("@")[-1] if "@" in database_url else "invalid"
-        logger.info(f"Connecting to database: {safe_url}")
+        LOGGER.info(f"Connecting to database: {safe_url}")
 
         self._db_manager = DatabaseManager(
             database_url,
@@ -75,7 +77,7 @@ class NiibotClient(commands.Bot):
         )
         await self._db_manager.connect()
         self.db_pool = self._db_manager.pool
-        self._heartbeat_task = asyncio.create_task(self._pool_heartbeat_loop())
+        self._heartbeat_task = asyncio.create_task(pool_heartbeat_loop(self._db_manager))
 
     async def close_database(self) -> None:
         """Close the database connection pool."""
@@ -86,53 +88,6 @@ class NiibotClient(commands.Bot):
             await self._db_manager.disconnect()
             self._db_manager = None
             self.db_pool = None
-
-    async def _pool_heartbeat_loop(self) -> None:
-        """Periodically ping the DB pool to detect and recover dead connections.
-
-        On failure, backs off to avoid flooding logs and wasting connections.
-        After 3 consecutive failures, destroys the dead pool and creates a
-        fresh one via ``DatabaseManager.reconnect()``.
-        """
-        interval = 60
-        fail_count = 0
-        while True:
-            await asyncio.sleep(interval)
-            try:
-                if self.db_pool is None:
-                    raise RuntimeError("Pool is None")
-                async with self.db_pool.acquire(timeout=10.0) as conn:
-                    await conn.fetchval("SELECT 1")
-                if fail_count > 0:
-                    logger.info(f"Pool heartbeat recovered after {fail_count} failures")
-                fail_count = 0
-                interval = 60
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                fail_count += 1
-                if fail_count <= 3:
-                    logger.warning(f"Pool heartbeat failed ({fail_count}): {type(e).__name__}: {e}")
-
-                # After 3 consecutive failures the pool is likely dead — reconnect
-                if fail_count == 3 and self._db_manager is not None:
-                    logger.warning("Pool appears dead, attempting reconnect...")
-                    try:
-                        await self._db_manager.reconnect()
-                        self.db_pool = self._db_manager.pool
-                        logger.info("Pool reconnected successfully")
-                        fail_count = 0
-                        interval = 60
-                        continue
-                    except Exception as re_err:
-                        logger.error(f"Pool reconnect failed: {type(re_err).__name__}: {re_err}")
-                        # Reset so the counter climbs back to 3 and triggers
-                        # another reconnect attempt; use slow interval to avoid hammering.
-                        fail_count = 0
-                        interval = 120
-                        continue
-
-                interval = min(60 * (2 ** min(fail_count - 1, 1)), 120)
 
     def _get_extensions(self) -> list[str]:
         """Scan cogs directory for loadable extensions"""
@@ -164,47 +119,47 @@ class NiibotClient(commands.Bot):
                 failed.append(f"{extension.split('.')[-1]} ({e})")
 
         if loaded:
-            logger.info(f"Loaded cogs: {', '.join(loaded)}")
+            LOGGER.info(f"Loaded cogs: {', '.join(loaded)}")
         if failed:
-            logger.error(f"Failed to load cogs: {', '.join(failed)}")
+            LOGGER.error(f"Failed to load cogs: {', '.join(failed)}")
 
         guild_id = os.getenv("DISCORD_GUILD_ID")
         if guild_id:
             self._sync_guild_id = guild_id
 
-        logger.info("Connecting to Discord...")
+        LOGGER.info("Connecting to Discord...")
 
     async def _sync_commands(self) -> None:
         """Sync slash commands (runs once after first on_ready)"""
         sync_commands = os.getenv("DISCORD_SYNC_COMMANDS", "false").lower() == "true"
         if not sync_commands:
-            logger.info("Skipping command sync (DISCORD_SYNC_COMMANDS=false)")
+            LOGGER.info("Skipping command sync (DISCORD_SYNC_COMMANDS=false)")
             self._commands_synced = True
             return
 
         try:
-            logger.info("Syncing slash commands...")
+            LOGGER.info("Syncing slash commands...")
             guild_id = getattr(self, "_sync_guild_id", None)
 
             if guild_id:
                 guild = discord.Object(id=int(guild_id))
                 self.tree.copy_global_to(guild=guild)
                 synced = await self.tree.sync(guild=guild)
-                logger.info(f"Synced {len(synced)} commands to test guild")
+                LOGGER.info(f"Synced {len(synced)} commands to test guild")
             else:
                 synced = await self.tree.sync()
-                logger.info(f"Synced {len(synced)} commands globally")
+                LOGGER.info(f"Synced {len(synced)} commands globally")
 
             self._commands_synced = True
 
         except discord.HTTPException as e:
-            logger.error(f"Command sync failed (HTTP {e.status}): {e.text}")
+            LOGGER.error(f"Command sync failed (HTTP {e.status}): {e.text}")
             if e.status == 429:
-                logger.warning("Command sync hit 429, will retry on next reconnect")
+                LOGGER.warning("Command sync hit 429, will retry on next reconnect")
             else:
                 self._commands_synced = True
         except Exception as e:
-            logger.error(f"Command sync error: {e}")
+            LOGGER.error(f"Command sync error: {e}")
             self._commands_synced = True
 
     async def on_ready(self) -> None:
@@ -222,32 +177,32 @@ class NiibotClient(commands.Bot):
         if hasattr(self, "_sync_guild_id"):
             guild_obj = self.get_guild(int(self._sync_guild_id))
             if guild_obj:
-                logger.info(f"Test guild: {guild_obj.name} (ID: {self._sync_guild_id})")
+                LOGGER.info(f"Test guild: {guild_obj.name} (ID: {self._sync_guild_id})")
 
         if not self.owner_id:
             try:
                 app_info = await self.application_info()
                 self.owner_id = app_info.owner.id
                 owner_name = app_info.owner.global_name or app_info.owner.name
-                logger.info(f"Bot owner: {owner_name} (ID: {self.owner_id})")
+                LOGGER.info(f"Bot owner: {owner_name} (ID: {self.owner_id})")
             except discord.HTTPException as e:
-                logger.warning(f"Failed to fetch application_info (HTTP {e.status}): {e.text}")
+                LOGGER.warning(f"Failed to fetch application_info (HTTP {e.status}): {e.text}")
             except Exception as e:
-                logger.warning(f"Failed to fetch application_info: {e}")
+                LOGGER.warning(f"Failed to fetch application_info: {e}")
 
         status = BotConfig.get_status()
         activity = BotConfig.get_activity()
         try:
             await self.change_presence(status=status, activity=activity)
         except Exception as e:
-            logger.warning(f"Failed to set bot presence: {e}")
+            LOGGER.warning(f"Failed to set bot presence: {e}")
 
         if self.user is None:
-            logger.error("Bot user is None")
+            LOGGER.error("Bot user is None")
             return
 
         activity_str = f"{activity.name}" if activity else "None"
-        logger.info(
+        LOGGER.info(
             f"Bot ready: {self.user} (ID: {self.user.id}) | "
             f"{len(self.guilds)} guilds | {status.name} | {activity_str}"
         )
@@ -265,21 +220,8 @@ class NiibotClient(commands.Bot):
             await ctx.send(f"Missing required argument: `{error.param.name}`")
             return
 
-        logger.error(f"Command error: {error}", exc_info=error)
+        LOGGER.error(f"Command error: {error}", exc_info=error)
         await ctx.send("An error occurred while executing the command")
-
-
-def _format_duration(seconds: float) -> str:
-    """Format seconds into human-readable duration."""
-    s = int(seconds)
-    if s >= 3600:
-        h, m = divmod(s, 3600)
-        m //= 60
-        return f"{h}h{m}m" if m else f"{h}h"
-    if s >= 60:
-        m, sec = divmod(s, 60)
-        return f"{m}m{sec}s" if sec else f"{m}m"
-    return f"{s}s"
 
 
 def _is_cloudflare_error(e: discord.HTTPException) -> bool:
@@ -288,55 +230,24 @@ def _is_cloudflare_error(e: discord.HTTPException) -> bool:
 
 
 def _parse_retry_after(e: discord.HTTPException, base_delay: float, attempt: int) -> float:
-    """Extract retry_after from a 429 response (headers, JSON body, or fallback).
+    """Extract retry_after from a 429 response.
 
-    Priority: discord.py parsed value > response headers > exponential backoff.
-    For Cloudflare 1015 bans, enforces a minimum 20-minute wait.
+    Uses shared parse_retry_after for generic extraction, then applies
+    Discord-specific Cloudflare 1015 ban handling (minimum 20-minute wait).
     """
-    retry_after: float | None = None
+    fallback = base_delay * (2 ** (attempt - 1))
+    retry_after = _parse_retry_after_shared(e, fallback=fallback)
 
-    # 1. discord.py may parse retry_after from JSON body into the exception
-    if hasattr(e, "retry_after"):
-        try:
-            val = float(e.retry_after)
-            if val > 0:
-                retry_after = val
-        except (ValueError, TypeError):
-            pass
-
-    # 2. Try response headers
-    if retry_after is None:
-        resp = getattr(e, "response", None)
-        if resp:
-            headers = getattr(resp, "headers", {})
-            for key in ("Retry-After", "retry-after", "retry_after"):
-                if key in headers:
-                    try:
-                        val = float(headers[key])
-                        if val > 0:
-                            retry_after = val
-                    except (ValueError, TypeError):
-                        pass
-                    break
-
-    # 3. Detect Cloudflare ban (1015) — enforce minimum 20 min wait
-    text = getattr(e, "text", "") or ""
+    # Detect Cloudflare ban (1015) — enforce minimum 20 min wait
     is_cloudflare = _is_cloudflare_error(e)
-
     if is_cloudflare:
         cf_min = 1200.0  # 20 minutes
-        retry_after = max(retry_after or cf_min, cf_min)
-        logger.error(
-            f"[CLOUDFLARE BAN] Blocked by Cloudflare (1015). "
-            f"Retry after {_format_duration(retry_after)}."
-        )
-    elif retry_after is None:
-        # 4. Fallback: exponential backoff only when no retry_after provided
-        retry_after = base_delay * (2 ** (attempt - 1))
-
-    # 5. Log raw response body for debugging (non-Cloudflare only)
-    if text and not is_cloudflare:
-        logger.info(f"[429 Response] {text[:500]}")
+        retry_after = max(retry_after, cf_min)
+        LOGGER.error(f"Cloudflare ban (1015). Retry after {_format_duration(retry_after)}.")
+    else:
+        text = getattr(e, "text", "") or ""
+        if text:
+            LOGGER.info(f"Rate limit 429 response body: {text[:500]}")
 
     return retry_after
 
@@ -371,7 +282,7 @@ async def main() -> None:
                         if not is_cloudflare:
                             retry_count += 1
                             if retry_count > max_normal_retries:
-                                logger.error(
+                                LOGGER.error(
                                     f"Max retries reached ({max_normal_retries}). "
                                     f"Bot cannot connect to Discord."
                                 )
@@ -379,11 +290,11 @@ async def main() -> None:
 
                         wait_time = _parse_retry_after(e, base_delay, retry_count or 1)
 
-                        logger.warning(
-                            f"[429 {'CLOUDFLARE' if is_cloudflare else 'Rate Limit'}] "
+                        LOGGER.warning(
+                            f"{'Cloudflare' if is_cloudflare else 'Rate limit'} 429, "
                             f"waiting {_format_duration(wait_time)}"
                             + (
-                                f", attempt={retry_count}/{max_normal_retries}"
+                                f" | attempt={retry_count}/{max_normal_retries}"
                                 if not is_cloudflare
                                 else ""
                             )
@@ -402,22 +313,22 @@ async def main() -> None:
                         raise
 
         except (KeyboardInterrupt, asyncio.CancelledError):
-            logger.info("Received stop signal...")
+            LOGGER.info("Received stop signal...")
         except Exception as e:
-            logger.error(f"Fatal error during bot runtime: {e}", exc_info=True)
+            LOGGER.error(f"Fatal error during bot runtime: {e}", exc_info=True)
         finally:
             await bot.close_database()
             await health_server.stop()
             if not bot.is_closed():
                 await bot.close()
-            logger.info("Bot shut down.")
+            LOGGER.info("Bot shut down.")
 
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.warning("Shutting down due to KeyboardInterrupt...")
+        LOGGER.warning("Shutting down due to KeyboardInterrupt...")
     except Exception as e:
-        logger.critical(f"Fatal error: {type(e).__name__}: {e}")
+        LOGGER.critical(f"Fatal error: {type(e).__name__}: {e}")
         raise SystemExit(1) from None

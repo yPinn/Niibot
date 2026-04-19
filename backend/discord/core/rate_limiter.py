@@ -15,7 +15,7 @@ import discord
 
 from .config import get_settings
 
-logger = logging.getLogger("discord_bot.rate_limiter")
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -69,7 +69,7 @@ class RateLimitMonitor:
         client_any.add_listener(self._on_rate_limit, "on_rate_limit")
 
         asyncio.create_task(self._periodic_reset())
-        logger.info("Rate Limit Monitor started")
+        LOGGER.info("Rate Limit Monitor started")
 
     async def stop_monitoring(self) -> None:
         """停止監控"""
@@ -82,7 +82,7 @@ class RateLimitMonitor:
         client_any = cast(Any, self.client)
         client_any.remove_listener(self._on_request, "on_socket_raw_send")
         client_any.remove_listener(self._on_rate_limit, "on_rate_limit")
-        logger.info("Rate Limit Monitor stopped")
+        LOGGER.info("Rate Limit Monitor stopped")
 
     async def _on_request(self, payload: Any) -> None:
         """記錄每個發送的請求"""
@@ -101,7 +101,7 @@ class RateLimitMonitor:
         }
         self.stats.rate_limit_errors.append(error_info)
 
-        logger.warning(
+        LOGGER.warning(
             f"Rate limit triggered - "
             f"Bucket: {error_info['bucket']}, "
             f"Retry: {error_info['retry_after']:.2f}s, "
@@ -150,7 +150,7 @@ class RateLimitMonitor:
                 return
 
         self._warning_cooldown[key] = current_time
-        logger.warning(message)
+        LOGGER.warning(message)
 
     async def safe_send_message(
         self, channel: Any, *args: Any, **kwargs: Any
@@ -159,7 +159,7 @@ class RateLimitMonitor:
         is_safe, msg = self.check_rate_limit_risk("message")
 
         if not is_safe:
-            logger.error(f"Message cancelled due to rate limit: {msg}")
+            LOGGER.error(f"Message cancelled due to rate limit: {msg}")
             return None
 
         try:
@@ -168,7 +168,7 @@ class RateLimitMonitor:
             return cast(discord.Message | None, result)
         except discord.HTTPException as e:
             if e.status == 429:
-                logger.error(f"HTTP 429 received: {e}")
+                LOGGER.error(f"HTTP 429 received: {e}")
             raise
 
     async def _periodic_reset(self) -> None:
@@ -187,7 +187,7 @@ class RateLimitMonitor:
 
         recent_rps = self._get_recent_count(60.0) / 60
 
-        logger.info(
+        LOGGER.info(
             f"Rate Stats (Last {time_elapsed / 60:.1f} min): "
             f"Total: {self.stats.total_requests}, "
             f"Avg: {rps:.2f} req/s, "

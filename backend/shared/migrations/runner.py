@@ -7,7 +7,7 @@ from pathlib import Path
 
 import asyncpg
 
-logger = logging.getLogger(__name__)
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 # Default directory for migration SQL files
 VERSIONS_DIR = Path(__file__).resolve().parent / "versions"
@@ -67,14 +67,14 @@ class MigrationRunner:
         # Discover SQL files sorted by filename (NNN_ prefix ensures order)
         sql_files = sorted(migrations_dir.glob("*.sql"))
         if not sql_files:
-            logger.info("No migration files found in %s", migrations_dir)
+            LOGGER.info("No migration files found in %s", migrations_dir)
             return []
 
         newly_applied: list[str] = []
         for sql_path in sql_files:
             version = sql_path.stem  # e.g. "000_initial_schema"
             if version in applied:
-                logger.debug("Migration %s already applied, skipping", version)
+                LOGGER.debug("Migration %s already applied, skipping", version)
                 continue
 
             sql = sql_path.read_text(encoding="utf-8")
@@ -82,13 +82,13 @@ class MigrationRunner:
             newly_applied.append(version)
 
         if newly_applied:
-            logger.info(
+            LOGGER.info(
                 "Applied %d migration(s): %s",
                 len(newly_applied),
                 ", ".join(newly_applied),
             )
         else:
-            logger.info("Database is up to date — no pending migrations")
+            LOGGER.info("Database is up to date — no pending migrations")
 
         return newly_applied
 
@@ -98,7 +98,7 @@ class MigrationRunner:
 
     async def _apply_one(self, version: str, name: str, sql: str) -> None:
         """Execute a single migration inside a transaction."""
-        logger.info("Applying migration: %s", version)
+        LOGGER.info("Applying migration: %s", version)
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 await conn.execute(sql)
@@ -110,4 +110,4 @@ class MigrationRunner:
                     version,
                     name,
                 )
-        logger.info("Migration %s applied successfully", version)
+        LOGGER.info("Migration %s applied successfully", version)

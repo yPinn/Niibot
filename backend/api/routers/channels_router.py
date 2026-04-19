@@ -15,7 +15,7 @@ from core.dependencies import (
 )
 from services import TwitchAPIClient
 
-logger = logging.getLogger(__name__)
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/channels", tags=["channels"])
 
@@ -80,7 +80,7 @@ async def get_monitored_channels(
 
         # Get enabled channels from database
         enabled_channels = await channel_service.get_enabled_channels()
-        logger.debug(f"Found {len(enabled_channels)} enabled channels")
+        LOGGER.debug(f"Found {len(enabled_channels)} enabled channels")
 
         if not enabled_channels:
             return []
@@ -94,7 +94,7 @@ async def get_monitored_channels(
         )
 
         if not users_data:
-            logger.warning("No user data returned from Twitch API")
+            LOGGER.warning("No user data returned from Twitch API")
             return []
 
         # Index live streams by user_id for O(1) lookup
@@ -120,11 +120,11 @@ async def get_monitored_channels(
         result = [ch for ch in channels_info.values() if ch.id != channel_id]
         result.sort(key=lambda x: (not x.is_live, x.display_name))
 
-        logger.debug(f"Returning {len(result)} monitored channels for channel {channel_id}")
+        LOGGER.debug(f"Returning {len(result)} monitored channels for channel {channel_id}")
         return result
 
     except Exception:
-        logger.exception("Failed to get monitored channels")
+        LOGGER.exception("Failed to get monitored channels")
         raise HTTPException(status_code=500, detail="Failed to fetch channels") from None
 
 
@@ -140,7 +140,7 @@ async def get_my_channel_status(
         return ChannelStatusResponse(**status)
 
     except Exception:
-        logger.exception("Failed to get channel status")
+        LOGGER.exception("Failed to get channel status")
         raise HTTPException(status_code=500, detail="Failed to fetch status") from None
 
 
@@ -160,7 +160,7 @@ async def toggle_channel(
 
         if success:
             action = "enabled" if request.enabled else "disabled"
-            logger.info(f"Channel {action}: {channel_id}")
+            LOGGER.info(f"Channel {action}: {channel_id}")
             return ToggleResponse(message=f"Channel {action} successfully")
         else:
             raise HTTPException(status_code=500, detail="Failed to update channel status")
@@ -168,7 +168,7 @@ async def toggle_channel(
     except HTTPException:
         raise
     except Exception:
-        logger.exception("Failed to toggle channel")
+        LOGGER.exception("Failed to toggle channel")
         raise HTTPException(status_code=500, detail="Failed to toggle channel") from None
 
 
@@ -194,7 +194,7 @@ async def get_channel_defaults(
             default_cooldown=channel.default_cooldown,
         )
     except Exception:
-        logger.exception("Failed to get channel defaults")
+        LOGGER.exception("Failed to get channel defaults")
         raise HTTPException(status_code=500, detail="Failed to fetch channel defaults") from None
 
 
@@ -215,12 +215,12 @@ async def update_channel_defaults(
         )
         if not channel:
             raise HTTPException(status_code=404, detail="Channel not found")
-        logger.info(f"Channel {channel_id} updated channel defaults")
+        LOGGER.info(f"Channel {channel_id} updated channel defaults")
         return ChannelDefaultsResponse(
             default_cooldown=channel.default_cooldown,
         )
     except HTTPException:
         raise
     except Exception:
-        logger.exception("Failed to update channel defaults")
+        LOGGER.exception("Failed to update channel defaults")
         raise HTTPException(status_code=500, detail="Failed to update channel defaults") from None

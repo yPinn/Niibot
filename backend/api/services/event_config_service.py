@@ -7,7 +7,7 @@ import asyncpg
 
 from shared.repositories.event_config import DEFAULT_TEMPLATES, EVENT_TYPES, EventConfigRepository
 
-logger = logging.getLogger(__name__)
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 class EventConfigService:

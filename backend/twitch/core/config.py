@@ -4,10 +4,12 @@ import logging
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field
+from pydantic_settings import SettingsConfigDict
 
-logger = logging.getLogger(__name__)
+from shared.config_base import BaseServiceSettings
+
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 # === Path Configuration ===
 TWITCH_DIR = Path(__file__).resolve().parent.parent
@@ -38,7 +40,7 @@ BROADCASTER_SCOPES = [
 ]
 
 
-class TwitchBotSettings(BaseSettings):
+class TwitchBotSettings(BaseServiceSettings):
     """Twitch bot settings"""
 
     model_config = SettingsConfigDict(
@@ -60,9 +62,6 @@ class TwitchBotSettings(BaseSettings):
     bot_id: str = Field(..., description="Bot User ID")
     owner_id: str = Field(..., description="Owner User ID")
 
-    # Database
-    database_url: str = Field(..., description="PostgreSQL database URL")
-
     # EventSub
     conduit_id: str = Field(default="", description="Twitch EventSub Conduit ID")
 
@@ -78,26 +77,6 @@ class TwitchBotSettings(BaseSettings):
 
     # Server
     port: int = Field(default=4344, description="Health server port")
-    log_level: str = Field(default="INFO", description="Logging level")
-
-    @field_validator("database_url")
-    @classmethod
-    def validate_database_url(cls, v: str) -> str:
-        """Validate database URL starts with postgresql://"""
-        if not v.startswith("postgresql://"):
-            raise ValueError("DATABASE_URL must start with 'postgresql://'")
-        return v
-
-    @field_validator("log_level")
-    @classmethod
-    def validate_log_level(cls, v: str) -> str:
-        """Validate log level is valid"""
-        valid_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
-        v_upper = v.upper()
-        if v_upper not in valid_levels:
-            logger.warning(f"Invalid log level '{v}', defaulting to INFO")
-            return "INFO"
-        return v_upper
 
 
 @lru_cache
@@ -122,11 +101,9 @@ def validate_env_vars() -> None:
     """
     try:
         get_settings()
-        logger.info("All required environment variables validated successfully")
+        LOGGER.info("All required environment variables validated successfully")
     except Exception as e:
-        # Use "Bot" logger to match old behavior
-        bot_logger = logging.getLogger("Bot")
-        bot_logger.error(f"Environment validation failed: {e}")
+        LOGGER.error(f"Environment validation failed: {e}")
         raise ValueError(str(e)) from e
 
 

@@ -14,7 +14,7 @@ from services import (
     TwitchAPIClient,
 )
 
-logger = logging.getLogger(__name__)
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 # ============================================
@@ -84,13 +84,13 @@ def get_token_payload(auth_token: str | None = Cookie(None)) -> dict:
     auth_service = get_auth_service()
 
     if not auth_token:
-        logger.warning("No auth token provided")
+        LOGGER.warning("No auth token provided")
         raise HTTPException(status_code=401, detail="Not logged in")
 
     payload = auth_service.verify_token(auth_token)
 
     if not payload:
-        logger.warning("Invalid or expired token")
+        LOGGER.warning("Invalid or expired token")
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     return payload

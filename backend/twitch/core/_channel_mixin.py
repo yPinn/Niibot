@@ -12,7 +12,7 @@ import logging
 
 from core.subscriptions import get_channel_subscriptions
 
-LOGGER: logging.Logger = logging.getLogger("Bot")
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 class _ChannelMixin:

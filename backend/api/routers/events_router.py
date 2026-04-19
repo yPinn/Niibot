@@ -11,7 +11,7 @@ from core.dependencies import get_current_channel_id, get_db_pool, get_twitch_ap
 from services import CommandConfigService, EventConfigService, TwitchAPIClient
 from services.channel_service import ChannelService
 
-logger = logging.getLogger(__name__)
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/events", tags=["events"])
 
@@ -82,7 +82,7 @@ async def get_event_configs(
         configs = await service.list_configs_with_counts(channel_id)
         return [EventConfigResponse(**cfg) for cfg in configs]
     except Exception:
-        logger.exception("Failed to get event configs")
+        LOGGER.exception("Failed to get event configs")
         raise HTTPException(status_code=500, detail="Failed to fetch event configs") from None
 
 
@@ -101,10 +101,10 @@ async def update_event_config(
         cfg = await service.update_config(
             channel_id, event_type, body.message_template, body.enabled, body.options
         )
-        logger.info(f"Channel {channel_id} updated event config: {event_type}")
+        LOGGER.info(f"Channel {channel_id} updated event config: {event_type}")
         return EventConfigResponse(**cfg)
     except Exception:
-        logger.exception("Failed to update event config")
+        LOGGER.exception("Failed to update event config")
         raise HTTPException(status_code=500, detail="Failed to update event config") from None
 
 
@@ -121,10 +121,10 @@ async def toggle_event_config(
     try:
         service = EventConfigService(pool)
         cfg = await service.toggle_config(channel_id, event_type, body.enabled)
-        logger.info(f"Channel {channel_id} toggled event config: {event_type} -> {body.enabled}")
+        LOGGER.info(f"Channel {channel_id} toggled event config: {event_type} -> {body.enabled}")
         return EventConfigResponse(**cfg)
     except Exception:
-        logger.exception("Failed to toggle event config")
+        LOGGER.exception("Failed to toggle event config")
         raise HTTPException(status_code=500, detail="Failed to toggle event config") from None
 
 
@@ -156,7 +156,7 @@ async def get_twitch_rewards(
     except HTTPException:
         raise
     except Exception:
-        logger.exception("Failed to fetch Twitch rewards")
+        LOGGER.exception("Failed to fetch Twitch rewards")
         raise HTTPException(status_code=500, detail="Failed to fetch Twitch rewards") from None
 
 
@@ -178,7 +178,7 @@ async def get_redemption_configs(
         configs = await service.list_redemptions(channel_id)
         return [RedemptionConfigResponse(**cfg) for cfg in configs]
     except Exception:
-        logger.exception("Failed to get redemption configs")
+        LOGGER.exception("Failed to get redemption configs")
         raise HTTPException(status_code=500, detail="Failed to fetch redemption configs") from None
 
 
@@ -197,8 +197,8 @@ async def update_redemption_config(
         cfg = await service.update_redemption(
             channel_id, action_type, body.reward_name, body.enabled
         )
-        logger.info(f"Channel {channel_id} updated redemption: {action_type}")
+        LOGGER.info(f"Channel {channel_id} updated redemption: {action_type}")
         return RedemptionConfigResponse(**cfg)
     except Exception:
-        logger.exception("Failed to update redemption config")
+        LOGGER.exception("Failed to update redemption config")
         raise HTTPException(status_code=500, detail="Failed to update redemption config") from None

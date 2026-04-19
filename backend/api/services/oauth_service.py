@@ -11,7 +11,7 @@ import secrets
 from asyncpg import Pool
 from asyncpg.exceptions import UniqueViolationError
 
-logger = logging.getLogger(__name__)
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 async def find_or_create_user(
@@ -76,7 +76,7 @@ async def find_or_create_user(
                 ) from None
             return str(row["user_id"])
 
-    logger.info(f"Created user {user_id} for {platform}:{platform_user_id} ({username})")
+    LOGGER.info(f"Created user {user_id} for {platform}:{platform_user_id} ({username})")
     return user_id
 
 
@@ -120,7 +120,7 @@ def decode_oauth_state(state: str | None, *, secret: str = "") -> dict:
     """
     if not state:
         if secret:
-            logger.warning("OAuth callback received no state — rejecting")
+            LOGGER.warning("OAuth callback received no state — rejecting")
             return {}
         return {"mode": "login"}
 
@@ -135,11 +135,11 @@ def decode_oauth_state(state: str | None, *, secret: str = "") -> dict:
     if secret:
         sig = decoded.pop("sig", None)
         if not isinstance(sig, str) or not sig:
-            logger.warning("OAuth state missing or malformed HMAC signature — rejecting")
+            LOGGER.warning("OAuth state missing or malformed HMAC signature — rejecting")
             return {}
         expected = _hmac_sign(decoded, secret)
         if not hmac.compare_digest(sig, expected):
-            logger.warning("OAuth state HMAC mismatch — possible CSRF attempt")
+            LOGGER.warning("OAuth state HMAC mismatch — possible CSRF attempt")
             return {}
 
     return decoded

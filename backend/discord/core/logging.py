@@ -1,16 +1,18 @@
-"""Logging configuration"""
+"""Discord bot logging configuration."""
 
 import logging
 import os
-import sys
 
-try:
-    from rich.console import Console
-    from rich.logging import RichHandler
+from shared.logging_setup import setup_logging as _setup_logging
 
-    RICH_AVAILABLE = True
-except ImportError:
-    RICH_AVAILABLE = False
+# Discord-specific logger suppression
+_SUPPRESS: dict[str, int] = {
+    "discord": logging.WARNING,
+    "discord.http": logging.WARNING,
+    "aiohttp": logging.WARNING,
+    "httpx": logging.WARNING,
+    "httpcore": logging.WARNING,
+}
 
 
 class _ModuleFormatter(logging.Formatter):
@@ -20,7 +22,7 @@ class _ModuleFormatter(logging.Formatter):
     Third-party / built-in         → dim
     """
 
-    _OWN_PREFIXES = ("cogs.", "core.", "discord_bot", "shared.")
+    _OWN_PREFIXES = ("cogs.", "core.", "discord.", "shared.")
 
     def _module_tag(self, record: logging.LogRecord) -> str:
         parts = record.name.split(".")
@@ -35,76 +37,18 @@ class _ModuleFormatter(logging.Formatter):
         return super().format(record)
 
 
+def _make_formatter() -> logging.Formatter:
+    return _ModuleFormatter(
+        fmt="%(module_tag)s │ %(message)s",
+        datefmt="[%Y-%m-%d %H:%M:%S]",
+    )
+
+
 def setup_logging() -> None:
-    """Configure application logging with Rich handler"""
-    level = getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO)
-
-    if RICH_AVAILABLE:
-        try:
-            # Enable UTF-8 output on Windows
-            if sys.platform == "win32":
-                import codecs
-
-                sys.stdout = codecs.getwriter("utf-8")(sys.stdout.buffer)
-                sys.stderr = codecs.getwriter("utf-8")(sys.stderr.buffer)
-
-            console = Console(
-                force_terminal=True,
-                width=120,
-            )
-
-            rich_handler = RichHandler(
-                console=console,
-                show_time=True,
-                show_level=True,
-                show_path=False,
-                markup=True,
-                rich_tracebacks=True,
-                tracebacks_show_locals=False,
-                tracebacks_width=120,
-            )
-
-            rich_handler.setFormatter(
-                _ModuleFormatter(
-                    fmt="%(module_tag)s │ %(message)s",
-                    datefmt="[%Y-%m-%d %H:%M:%S]",
-                )
-            )
-
-            logging.basicConfig(level=level, handlers=[rich_handler], force=True)
-        except Exception as e:
-            logging.basicConfig(
-                level=level,
-                format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-                datefmt="%Y-%m-%d %H:%M:%S",
-                force=True,
-            )
-            logging.getLogger(__name__).warning(
-                f"Rich logging setup failed: {e}, using standard logging"
-            )
-    else:
-        logging.basicConfig(
-            level=level,
-            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-            force=True,
-        )
-
-    webhook_url = os.getenv("ERROR_WEBHOOK_URL", "")
-    if webhook_url:
-        from pathlib import Path
-
-        _backend = str(Path(__file__).resolve().parent.parent.parent)
-        if _backend not in sys.path:
-            sys.path.insert(0, _backend)
-
-        from shared.discord_webhook_handler import DiscordWebhookHandler
-
-        logging.getLogger().addHandler(DiscordWebhookHandler(webhook_url, service_name="discord"))
-
-    # Reduce third-party log noise
-    logging.getLogger("discord").setLevel(logging.WARNING)
-    logging.getLogger("discord.http").setLevel(logging.WARNING)
-    logging.getLogger("aiohttp").setLevel(logging.WARNING)
-    logging.getLogger("httpx").setLevel(logging.WARNING)
-    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    _setup_logging(
+        log_level=os.getenv("LOG_LEVEL", "INFO"),
+        webhook_url=os.getenv("ERROR_WEBHOOK_URL", ""),
+        service_name="discord",
+        suppress_loggers=_SUPPRESS,
+        formatter_factory=_make_formatter,
+    )

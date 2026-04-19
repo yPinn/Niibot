@@ -11,7 +11,7 @@ from core.dependencies import get_current_channel_id, get_db_pool, get_twitch_ap
 from services import TwitchAPIClient
 from services.game_queue_service import GameQueueService
 
-logger = logging.getLogger(__name__)
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/game-queue", tags=["game-queue"])
 
@@ -86,7 +86,7 @@ async def get_queue_state(
         state = await service.get_queue_state(channel_id)
         return QueueStateResponse(**state)
     except Exception:
-        logger.exception("Failed to get queue state")
+        LOGGER.exception("Failed to get queue state")
         raise HTTPException(status_code=500, detail="Failed to fetch queue state") from None
 
 
@@ -99,10 +99,10 @@ async def advance_batch(
     try:
         service = GameQueueService(pool)
         state = await service.advance_batch(channel_id)
-        logger.info(f"Channel {channel_id} advanced game queue batch")
+        LOGGER.info(f"Channel {channel_id} advanced game queue batch")
         return QueueStateResponse(**state)
     except Exception:
-        logger.exception("Failed to advance batch")
+        LOGGER.exception("Failed to advance batch")
         raise HTTPException(status_code=500, detail="Failed to advance batch") from None
 
 
@@ -116,10 +116,10 @@ async def remove_player(
     try:
         service = GameQueueService(pool)
         state = await service.remove_player(channel_id, entry_id)
-        logger.info(f"Channel {channel_id} removed queue entry {entry_id}")
+        LOGGER.info(f"Channel {channel_id} removed queue entry {entry_id}")
         return QueueStateResponse(**state)
     except Exception:
-        logger.exception("Failed to remove player")
+        LOGGER.exception("Failed to remove player")
         raise HTTPException(status_code=500, detail="Failed to remove player") from None
 
 
@@ -135,12 +135,12 @@ async def promote_player(
         state = await service.promote_player(channel_id, entry_id)
         if state is None:
             raise HTTPException(status_code=404, detail="Entry not found or already removed")
-        logger.info(f"Channel {channel_id} promoted queue entry {entry_id}")
+        LOGGER.info(f"Channel {channel_id} promoted queue entry {entry_id}")
         return QueueStateResponse(**state)
     except HTTPException:
         raise
     except Exception:
-        logger.exception("Failed to promote player")
+        LOGGER.exception("Failed to promote player")
         raise HTTPException(status_code=500, detail="Failed to promote player") from None
 
 
@@ -153,10 +153,10 @@ async def clear_queue(
     try:
         service = GameQueueService(pool)
         state = await service.clear_queue(channel_id)
-        logger.info(f"Channel {channel_id} cleared game queue")
+        LOGGER.info(f"Channel {channel_id} cleared game queue")
         return ClearResponse(**state)
     except Exception:
-        logger.exception("Failed to clear queue")
+        LOGGER.exception("Failed to clear queue")
         raise HTTPException(status_code=500, detail="Failed to clear queue") from None
 
 
@@ -176,7 +176,7 @@ async def get_settings(
         settings = await service.get_settings(channel_id)
         return QueueSettingsResponse(**settings)
     except Exception:
-        logger.exception("Failed to get queue settings")
+        LOGGER.exception("Failed to get queue settings")
         raise HTTPException(status_code=500, detail="Failed to fetch queue settings") from None
 
 
@@ -194,10 +194,10 @@ async def update_settings(
         settings = await service.update_settings(
             channel_id, group_size=body.group_size, enabled=body.enabled
         )
-        logger.info(f"Channel {channel_id} updated queue settings")
+        LOGGER.info(f"Channel {channel_id} updated queue settings")
         return QueueSettingsResponse(**settings)
     except Exception:
-        logger.exception("Failed to update queue settings")
+        LOGGER.exception("Failed to update queue settings")
         raise HTTPException(status_code=500, detail="Failed to update queue settings") from None
 
 
@@ -224,5 +224,5 @@ async def get_public_queue_state(
     except HTTPException:
         raise
     except Exception:
-        logger.exception("Failed to get public queue state")
+        LOGGER.exception("Failed to get public queue state")
         raise HTTPException(status_code=500, detail="Failed to fetch queue state") from None

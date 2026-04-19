@@ -11,7 +11,7 @@ import asyncpg
 
 from shared.models.donation import DonationOrder, PaymentConfig
 
-logger = logging.getLogger(__name__)
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 _PAYMENT_CONFIG_COLS = (
     "user_id, platform, merchant_id, hash_key, hash_iv, "

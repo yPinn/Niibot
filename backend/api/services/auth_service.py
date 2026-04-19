@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 
 import jwt
 
-logger = logging.getLogger(__name__)
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 class AuthService:
@@ -32,7 +32,7 @@ class AuthService:
         }
 
         token = jwt.encode(payload, self.secret_key, algorithm=self.algorithm)
-        logger.debug(f"JWT created for user: {user_id} ({platform}:{platform_user_id})")
+        LOGGER.debug(f"JWT created for user: {user_id} ({platform}:{platform_user_id})")
 
         return token
 
@@ -43,14 +43,14 @@ class AuthService:
             user_id = payload.get("sub")
 
             if user_id is None:
-                logger.warning("Token missing sub")
+                LOGGER.warning("Token missing sub")
                 return None
 
             return payload
 
         except jwt.ExpiredSignatureError:
-            logger.warning("Token expired")
+            LOGGER.warning("Token expired")
             return None
         except jwt.InvalidTokenError as e:
-            logger.warning(f"Invalid token: {e}")
+            LOGGER.warning(f"Invalid token: {e}")
             return None

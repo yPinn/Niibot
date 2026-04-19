@@ -6,10 +6,12 @@ from functools import lru_cache
 from pathlib import Path
 
 import discord
-from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field
+from pydantic_settings import SettingsConfigDict
 
-logger = logging.getLogger(__name__)
+from shared.config_base import BaseServiceSettings
+
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 # Bot version — injected at build time via Docker ARG → ENV
 BOT_VERSION = os.getenv("APP_VERSION", "dev")
@@ -29,7 +31,7 @@ else:
     DATA_DIR = BACKEND_DIR / "data"
 
 
-class DiscordBotSettings(BaseSettings):
+class DiscordBotSettings(BaseServiceSettings):
     """Discord bot settings"""
 
     model_config = SettingsConfigDict(
@@ -46,12 +48,8 @@ class DiscordBotSettings(BaseSettings):
     # Discord
     discord_bot_token: str = Field(..., description="Discord bot token")
 
-    # Database
-    database_url: str = Field(..., description="PostgreSQL database URL")
-
     # Server
     port: int = Field(default=8080, description="Health server port")
-    log_level: str = Field(default="INFO", description="Logging level")
 
     # Presence
     discord_status: str = Field(default="online", description="Bot status")
@@ -89,28 +87,6 @@ class DiscordBotSettings(BaseSettings):
     openrouter_api_key: str = Field(default="", description="OpenRouter API key")
     openrouter_model: str = Field(default="", description="OpenRouter model")
 
-    # Error reporting
-    error_webhook_url: str = Field(
-        default="", description="Discord webhook URL for ERROR/CRITICAL alerts"
-    )
-
-    @field_validator("log_level")
-    @classmethod
-    def validate_log_level(cls, v: str) -> str:
-        valid_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
-        v_upper = v.upper()
-        if v_upper not in valid_levels:
-            logger.warning(f"Invalid log level '{v}', defaulting to INFO")
-            return "INFO"
-        return v_upper
-
-    @field_validator("database_url")
-    @classmethod
-    def validate_database_url(cls, v: str) -> str:
-        if not v.startswith("postgresql://"):
-            raise ValueError("DATABASE_URL must start with 'postgresql://'")
-        return v
-
 
 @lru_cache
 def get_settings() -> DiscordBotSettings:
@@ -146,7 +122,7 @@ class BotConfig:
 
         if activity_type_lower == "streaming":
             if not s.discord_activity_url:
-                logger.warning(
+                LOGGER.warning(
                     "Streaming activity requires DISCORD_ACTIVITY_URL to be set. "
                     "Falling back to 'playing' activity."
                 )
@@ -155,7 +131,7 @@ class BotConfig:
                 )
 
             if not s.discord_activity_url.startswith("https://twitch.tv/"):
-                logger.warning(
+                LOGGER.warning(
                     f"Streaming activity URL must be a valid Twitch URL (https://twitch.tv/*). "
                     f"Got: {s.discord_activity_url}. Falling back to 'playing' activity."
                 )

@@ -9,7 +9,7 @@ import asyncpg
 
 from shared.repositories.timer import TimerConfigRepository
 
-logger = logging.getLogger(__name__)
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 class TimerService:

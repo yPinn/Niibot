@@ -16,7 +16,7 @@ from typing import Any, TypeVar
 
 from cachetools import TTLCache  # type: ignore[import-untyped]
 
-logger = logging.getLogger(__name__)
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 # Sentinel object to distinguish "not in cache" from cached None values
 _MISSING = object()
@@ -148,7 +148,7 @@ def cached(
                         last_exc = exc
                         if attempt < retry:
                             delay = 1.0 * attempt
-                            logger.warning(
+                            LOGGER.warning(
                                 "DB attempt %d/%d failed for %s: %s, retrying in %.1fs…",
                                 attempt,
                                 retry,
@@ -161,7 +161,7 @@ def cached(
                 # 4. All retries exhausted — try stale fallback
                 stale = cache.get_stale(cache_key)
                 if stale is not _MISSING:
-                    logger.warning(
+                    LOGGER.warning(
                         "Returning stale data for %s (%s)",
                         cache_key,
                         type(last_exc).__name__,

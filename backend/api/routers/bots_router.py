@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from core.config import Settings, get_settings
 from core.dependencies import get_current_user_id
 
-logger = logging.getLogger(__name__)
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/bots", tags=["bots"])
 
@@ -49,7 +49,7 @@ async def check_bot_health(bot_url: str, bot_name: str) -> BotStatusResponse:
 
         if response.status_code == 200:
             data = response.json()
-            logger.debug(f"{bot_name} bot status check successful: {data}")
+            LOGGER.debug(f"{bot_name} bot status check successful: {data}")
 
             return BotStatusResponse(
                 online=True,
@@ -67,15 +67,15 @@ async def check_bot_health(bot_url: str, bot_name: str) -> BotStatusResponse:
                 ws_latency_ms=data.get("ws_latency_ms"),
             )
         else:
-            logger.warning(f"{bot_name} bot health check returned status {response.status_code}")
+            LOGGER.warning(f"{bot_name} bot health check returned status {response.status_code}")
             return BotStatusResponse(online=False)
 
     except (httpx.TimeoutException, httpx.ConnectError):
-        logger.debug(f"{bot_name} bot offline")
+        LOGGER.debug(f"{bot_name} bot offline")
         return BotStatusResponse(online=False)
 
     except Exception:
-        logger.exception(f"Error checking {bot_name} bot status")
+        LOGGER.exception(f"Error checking {bot_name} bot status")
         return BotStatusResponse(online=False)
 
 

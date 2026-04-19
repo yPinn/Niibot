@@ -18,7 +18,7 @@ class _HasCooldown(Protocol):
     cooldown: int | None
 
 
-LOGGER = logging.getLogger("CommandGuard")
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 # In-memory cooldown tracker — key: "{channel_id}:{command_name}"
 _cooldown_tracker: dict[str, datetime] = {}

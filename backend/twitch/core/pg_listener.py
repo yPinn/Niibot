@@ -13,7 +13,7 @@ from typing import Any
 
 import asyncpg
 
-LOGGER = logging.getLogger("PgListener")
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 async def pg_listen(

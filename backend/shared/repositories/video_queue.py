@@ -20,7 +20,7 @@ import asyncpg
 from shared.cache import AsyncTTLCache, cached
 from shared.models.video_queue import VideoQueueEntry, VideoQueueSettings
 
-logger = logging.getLogger(__name__)
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # YouTube utilities
@@ -97,7 +97,7 @@ async def fetch_yt_info(
     try:
         async with _session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=5)) as resp:
             if resp.status != 200:
-                logger.warning(f"[YouTube API] Unexpected status {resp.status} for {video_id}")
+                LOGGER.warning(f"[YouTube API] Unexpected status {resp.status} for {video_id}")
                 return None, None, None, False
             data = await resp.json()
             items = data.get("items", [])
@@ -116,7 +116,7 @@ async def fetch_yt_info(
             )
             return title, duration_seconds or None, view_count, is_vertical
     except Exception as exc:
-        logger.warning(f"[YouTube API] fetch_yt_info failed for {video_id}: {type(exc).__name__}")
+        LOGGER.warning(f"[YouTube API] fetch_yt_info failed for {video_id}: {type(exc).__name__}")
         return None, None, None, False
     finally:
         if _own_session:
@@ -175,7 +175,7 @@ async def _get_twitch_app_token(
         timeout=aiohttp.ClientTimeout(total=5),
     ) as resp:
         if resp.status != 200:
-            logger.warning(f"[Twitch API] Failed to get app token: {resp.status}")
+            LOGGER.warning(f"[Twitch API] Failed to get app token: {resp.status}")
             return None
         token_data = await resp.json()
 
@@ -219,7 +219,7 @@ async def fetch_twitch_clip_info(
             timeout=aiohttp.ClientTimeout(total=5),
         ) as resp:
             if resp.status != 200:
-                logger.warning(f"[Twitch API] Unexpected status {resp.status} for clip {slug}")
+                LOGGER.warning(f"[Twitch API] Unexpected status {resp.status} for clip {slug}")
                 return None, None, None
             data = await resp.json()
             clips = data.get("data", [])
@@ -233,7 +233,7 @@ async def fetch_twitch_clip_info(
             view_count = int(view_count_raw) if view_count_raw is not None else None
             return title, duration_seconds, view_count
     except Exception as exc:
-        logger.warning(
+        LOGGER.warning(
             f"[Twitch API] fetch_twitch_clip_info failed for {slug}: {type(exc).__name__}"
         )
         return None, None, None

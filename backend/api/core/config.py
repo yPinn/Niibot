@@ -1,16 +1,15 @@
 """Application configuration using Pydantic Settings"""
 
-import logging
 from functools import lru_cache
 from pathlib import Path
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import SettingsConfigDict
 
-logger = logging.getLogger(__name__)
+from shared.config_base import BaseServiceSettings
 
 
-class Settings(BaseSettings):
+class Settings(BaseServiceSettings):
     """Application settings with environment variable support"""
 
     model_config = SettingsConfigDict(
@@ -33,9 +32,6 @@ class Settings(BaseSettings):
     jwt_algorithm: str = Field(default="HS256", description="JWT signing algorithm")
     jwt_expire_days: int = Field(default=30, description="JWT token expiration in days")
 
-    # Database
-    database_url: str = Field(..., description="PostgreSQL database URL")
-
     # Server URLs
     frontend_url: str = Field(default="http://localhost:3000", description="Frontend URL for CORS")
     api_url: str = Field(default="http://localhost:8000", description="API server URL")
@@ -51,10 +47,6 @@ class Settings(BaseSettings):
 
     # Environment
     environment: str = Field(default="development", description="Environment name")
-    log_level: str = Field(default="INFO", description="Logging level")
-
-    # Error reporting
-    error_webhook_url: str = Field(default="", description="Discord webhook URL for error alerts")
 
     # Server Configuration
     host: str = Field(default="0.0.0.0", description="Server host")
@@ -72,17 +64,6 @@ class Settings(BaseSettings):
         if v not in allowed:
             raise ValueError(f"jwt_algorithm must be one of {sorted(allowed)}, got '{v}'")
         return v
-
-    @field_validator("log_level")
-    @classmethod
-    def validate_log_level(cls, v: str) -> str:
-        """Validate log level is a valid logging level"""
-        valid_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
-        v_upper = v.upper()
-        if v_upper not in valid_levels:
-            logger.warning(f"Invalid log level '{v}', defaulting to INFO")
-            return "INFO"
-        return v_upper
 
     @property
     def cors_origins(self) -> list[str]:

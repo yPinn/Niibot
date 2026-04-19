@@ -9,7 +9,7 @@ import asyncpg
 from shared.cache import AsyncTTLCache, cached
 from shared.models.channel import Channel, DiscordUser, Token
 
-logger = logging.getLogger(__name__)
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 # --- In-process caches ---
 # Long TTL for memory-first reads; freshness via pg_notify + periodic refresh.

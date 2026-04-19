@@ -13,7 +13,7 @@ from shared.repositories.channel import ChannelRepository
 
 from .twitch_api import TwitchAPIClient
 
-logger = logging.getLogger(__name__)
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 class ChannelService:
@@ -41,7 +41,7 @@ class ChannelService:
                 "channel_name": channel.channel_name if channel else "",
             }
         except Exception as e:
-            logger.exception(f"Error getting channel status for user {user_id}: {e}")
+            LOGGER.exception(f"Error getting channel status for user {user_id}: {e}")
             return {
                 "subscribed": False,
                 "channel_id": user_id,
@@ -53,10 +53,10 @@ class ChannelService:
         try:
             await self.repo.update_channel_enabled(channel_id, enabled)
             action = "enabled" if enabled else "disabled"
-            logger.debug(f"Channel {channel_id} {action}")
+            LOGGER.debug(f"Channel {channel_id} {action}")
             return True
         except Exception as e:
-            logger.exception(f"Error toggling channel {channel_id}: {e}")
+            LOGGER.exception(f"Error toggling channel {channel_id}: {e}")
             return False
 
     async def get_enabled_channels(self) -> list[dict]:
@@ -67,7 +67,7 @@ class ChannelService:
                 {"channel_id": ch.channel_id, "channel_name": ch.channel_name} for ch in channels
             ]
         except Exception as e:
-            logger.exception(f"Error getting enabled channels: {e}")
+            LOGGER.exception(f"Error getting enabled channels: {e}")
             return []
 
     # ==================== Token ====================
@@ -78,7 +78,7 @@ class ChannelService:
             token_obj = await self.repo.get_token(user_id)
             return token_obj.token if token_obj else None
         except Exception as e:
-            logger.exception(f"Error getting token for user {user_id}: {e}")
+            LOGGER.exception(f"Error getting token for user {user_id}: {e}")
             return None
 
     async def get_token_with_refresh(self, user_id: str, twitch_api: TwitchAPIClient) -> str | None:
@@ -97,7 +97,7 @@ class ChannelService:
         try:
             token_obj = await self.repo.get_token(user_id)
             if not token_obj:
-                logger.warning(f"No token found for user: {user_id}")
+                LOGGER.warning(f"No token found for user: {user_id}")
                 return None
 
             # Validate current token
@@ -107,14 +107,14 @@ class ChannelService:
 
             # Token expired, try refresh
             if not token_obj.refresh:
-                logger.warning(f"Token expired and no refresh token for user: {user_id}")
+                LOGGER.warning(f"Token expired and no refresh token for user: {user_id}")
                 return None
 
-            logger.info(f"Token expired for user {user_id}, attempting refresh...")
+            LOGGER.info(f"Token expired for user {user_id}, attempting refresh...")
             result = await twitch_api.refresh_access_token(token_obj.refresh)
 
             if not result.success or not result.access_token:
-                logger.error(f"Token refresh failed for user {user_id}: {result.error}")
+                LOGGER.error(f"Token refresh failed for user {user_id}: {result.error}")
                 return None
 
             # Update database with new tokens
@@ -123,11 +123,11 @@ class ChannelService:
                 token=result.access_token,
                 refresh=result.refresh_token or token_obj.refresh,
             )
-            logger.info(f"Token refreshed successfully for user: {user_id}")
+            LOGGER.info(f"Token refreshed successfully for user: {user_id}")
             return result.access_token
 
         except Exception as e:
-            logger.exception(f"Error getting token with refresh for user {user_id}: {e}")
+            LOGGER.exception(f"Error getting token with refresh for user {user_id}: {e}")
             return None
 
     async def save_token(
@@ -136,10 +136,10 @@ class ChannelService:
         """Save or update a user's OAuth token (+ ensure channel row)."""
         try:
             await self.repo.upsert_token(user_id, access_token, refresh_token, username)
-            logger.info(f"Successfully synced token and channel for: {username} ({user_id})")
+            LOGGER.info(f"Successfully synced token and channel for: {username} ({user_id})")
             return True
         except Exception as e:
-            logger.exception(f"Error in save_token transaction: {e}")
+            LOGGER.exception(f"Error in save_token transaction: {e}")
             return False
 
     # ==================== Business Logic ====================
@@ -149,10 +149,10 @@ class ChannelService:
         try:
             empty_channels = await self.repo.list_empty_name_channels()
             if not empty_channels:
-                logger.debug("No empty channel names to sync.")
+                LOGGER.debug("No empty channel names to sync.")
                 return
 
-            logger.info(f"Found {len(empty_channels)} channels with empty names. Starting sync...")
+            LOGGER.info(f"Found {len(empty_channels)} channels with empty names. Starting sync...")
 
             for ch in empty_channels:
                 try:
@@ -165,12 +165,12 @@ class ChannelService:
                         )
                         if new_name:
                             await self.repo.update_channel_name(ch.channel_id, new_name)
-                            logger.info(
+                            LOGGER.info(
                                 f"Successfully updated name for {ch.channel_id} to {new_name}"
                             )
                 except Exception as api_err:
-                    logger.error(f"Failed to fetch info for channel {ch.channel_id}: {api_err}")
+                    LOGGER.error(f"Failed to fetch info for channel {ch.channel_id}: {api_err}")
                     continue
 
         except Exception as e:
-            logger.exception(f"Error during sync_empty_names: {e}")
+            LOGGER.exception(f"Error during sync_empty_names: {e}")

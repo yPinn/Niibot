@@ -32,8 +32,9 @@ from routers import (
     video_queue_router,
 )
 from routers.bots_router import close_bots_http_client
+from shared.database import pool_heartbeat_loop
 
-logger = logging.getLogger(__name__)
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 # Track server start time and build info
 _start_time: float = 0.0
@@ -44,55 +45,6 @@ _APP_VERSION = os.getenv("APP_VERSION", "dev")
 _GIT_COMMIT = os.getenv("GIT_COMMIT", "unknown")
 
 
-async def _pool_heartbeat_loop() -> None:
-    """Periodically ping the DB pool to detect and recover dead connections.
-
-    On failure, backs off to avoid flooding logs and wasting connections.
-    After 3 consecutive failures, destroys the dead pool and creates a fresh
-    one via ``DatabaseManager.reconnect()``.
-    """
-    interval = 60
-    fail_count = 0
-    while True:
-        await asyncio.sleep(interval)
-        try:
-            db_manager = get_database_manager()
-            if db_manager._pool is None:
-                raise RuntimeError("Pool is None")
-            async with db_manager._pool.acquire(timeout=10.0) as conn:
-                await conn.fetchval("SELECT 1")
-            if fail_count > 0:
-                logger.info(f"Pool heartbeat recovered after {fail_count} failures")
-            fail_count = 0
-            interval = 60
-        except asyncio.CancelledError:
-            break
-        except Exception as e:
-            fail_count += 1
-            if fail_count <= 3:
-                logger.warning(f"Pool heartbeat failed ({fail_count}): {type(e).__name__}: {e}")
-
-            # After 3 consecutive failures the pool is likely dead — reconnect
-            if fail_count == 3:
-                logger.warning("Pool appears dead, attempting reconnect...")
-                try:
-                    await db_manager.reconnect()
-                    logger.info("Pool reconnected successfully")
-                    fail_count = 0
-                    interval = 60
-                    continue
-                except Exception as re_err:
-                    logger.error(f"Pool reconnect failed: {type(re_err).__name__}: {re_err}")
-                    # Reset so the counter climbs back to 3 and triggers
-                    # another reconnect attempt; use slow interval to avoid hammering.
-                    fail_count = 0
-                    interval = 120
-                    continue
-
-            # Backoff: 60s → 120s max
-            interval = min(60 * (2 ** min(fail_count - 1, 1)), 120)
-
-
 async def _db_retry_loop(db_manager) -> None:
     """Background loop to retry DB connection after startup timeout."""
     delay = 5
@@ -100,16 +52,16 @@ async def _db_retry_loop(db_manager) -> None:
     while True:
         await asyncio.sleep(delay)
         if db_manager._pool is not None:
-            logger.info("DB retry loop: pool already connected, stopping")
+            LOGGER.info("DB retry loop: pool already connected, stopping")
             return
         try:
             await db_manager.connect()
-            logger.info("Database connected (background retry)")
+            LOGGER.info("Database connected (background retry)")
             return
         except asyncio.CancelledError:
             return
         except Exception as e:
-            logger.warning(
+            LOGGER.warning(
                 f"DB background retry failed: {type(e).__name__}: {e}, next retry in {min(delay * 2, max_delay)}s"
             )
             delay = min(delay * 2, max_delay)
@@ -125,9 +77,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     settings = get_settings()
 
     # Startup
-    logger.info("Starting Niibot API server")
-    logger.info(f"Environment: {settings.environment}")
-    logger.info(f"Frontend URL: {settings.frontend_url}")
+    LOGGER.info("Starting Niibot API server")
+    LOGGER.info(f"Environment: {settings.environment}")
+    LOGGER.info(f"Frontend URL: {settings.frontend_url}")
 
     # Initialize and connect database — wait up to 30s before accepting requests.
     # This prevents the "pool is closed" race where requests arrive before
@@ -136,23 +88,23 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     try:
         await asyncio.wait_for(db_manager.connect(), timeout=30)
-        logger.info("Database connected")
+        LOGGER.info("Database connected")
     except TimeoutError:
-        logger.warning("DB connection timed out during startup, retrying in background")
+        LOGGER.warning("DB connection timed out during startup, retrying in background")
         _db_retry_task = asyncio.create_task(_db_retry_loop(db_manager))
     except Exception as e:
-        logger.error(
+        LOGGER.error(
             f"DB connection failed during startup: {type(e).__name__}: {e}, retrying in background"
         )
         _db_retry_task = asyncio.create_task(_db_retry_loop(db_manager))
 
     # Start pool heartbeat to detect and recover dead connections
-    _pool_heartbeat_task = asyncio.create_task(_pool_heartbeat_loop())
+    _pool_heartbeat_task = asyncio.create_task(pool_heartbeat_loop(db_manager))
 
     yield
 
     # Shutdown
-    logger.info("Shutting down Niibot API server")
+    LOGGER.info("Shutting down Niibot API server")
     if _db_retry_task:
         _db_retry_task.cancel()
     if _pool_heartbeat_task:
@@ -161,9 +113,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await close_twitch_api()
         await close_bots_http_client()
         await db_manager.disconnect()
-        logger.info("Database disconnected")
+        LOGGER.info("Database disconnected")
     except Exception as e:
-        logger.exception(f"Error during shutdown: {e}")
+        LOGGER.exception(f"Error during shutdown: {e}")
 
 
 def create_app() -> FastAPI:
@@ -177,7 +129,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="Niibot API",
         description="API server for Niibot - Twitch/Discord bot management",
-        version="2.0.0",
+        version="1.1.0",
         lifespan=lifespan,
         docs_url="/docs" if settings.is_development else None,
         redoc_url="/redoc" if settings.is_development else None,
@@ -229,8 +181,13 @@ def create_app() -> FastAPI:
     @app.get("/health")
     async def health():
         """Liveness check — no DB dependency"""
+        try:
+            ready = get_database_manager()._pool is not None
+        except RuntimeError:
+            ready = False
         return {
             "status": "healthy",
+            "ready": ready,
             "uptime_seconds": int(time.time() - _start_time),
         }
 
@@ -269,6 +226,6 @@ def create_app() -> FastAPI:
         """Ping endpoint"""
         return "pong"
 
-    logger.info("FastAPI application configured")
+    LOGGER.info("FastAPI application configured")
 
     return app

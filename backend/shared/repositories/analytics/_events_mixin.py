@@ -11,7 +11,7 @@ from datetime import datetime
 
 import asyncpg
 
-logger = logging.getLogger(__name__)
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 class _AnalyticsEventsMixin:
@@ -166,4 +166,4 @@ class _AnalyticsEventsMixin:
                 rows,
             )
 
-        logger.info(f"Flushed chatter stats for session {session_id}: {len(rows)} chatters")
+        LOGGER.info(f"Flushed chatter stats for session {session_id}: {len(rows)} chatters")

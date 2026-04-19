@@ -13,7 +13,7 @@ from shared.builtin_commands import BUILTIN_ALIAS_MAP, BUILTIN_DEFS, BUILTIN_MAP
 from shared.cache import AsyncTTLCache, cached
 from shared.models.command_config import CommandConfig, RedemptionConfig
 
-logger = logging.getLogger(__name__)
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 # In-process caches — long TTL for memory-first reads.
 # Freshness is maintained by pg_notify (instant) + periodic refresh (5 min safety net).
@@ -101,13 +101,13 @@ async def _retry_on_db_error(func, max_retries: int = 2):
         except Exception as e:
             if attempt < max_retries:
                 delay = 0.5 * attempt
-                logger.warning(
+                LOGGER.warning(
                     f"DB operation attempt {attempt}/{max_retries} failed: {type(e).__name__}, "
                     f"retrying in {delay}s..."
                 )
                 await asyncio.sleep(delay)
             else:
-                logger.exception(f"DB operation failed after {max_retries} attempts")
+                LOGGER.exception(f"DB operation failed after {max_retries} attempts")
                 raise
 
 

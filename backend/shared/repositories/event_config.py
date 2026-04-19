@@ -10,7 +10,7 @@ import asyncpg
 from shared.cache import AsyncTTLCache, cached
 from shared.models.event_config import EventConfig
 
-logger = logging.getLogger(__name__)
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 # In-process cache for bot-side lookups — long TTL for memory-first reads.
 _config_cache = AsyncTTLCache(maxsize=64, ttl=3600)

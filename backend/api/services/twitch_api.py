@@ -16,7 +16,7 @@ from urllib.parse import quote
 
 import httpx
 
-logger = logging.getLogger(__name__)
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 # Pre-compiled regex for duration parsing
 _DURATION_RE = re.compile(r"(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?")
@@ -98,7 +98,7 @@ class TwitchAPIClient:
                     },
                 )
                 if response.status_code != 200:
-                    logger.error(f"Failed to get app token: {response.status_code}")
+                    LOGGER.error(f"Failed to get app token: {response.status_code}")
                     return None
 
                 data = response.json()
@@ -109,7 +109,7 @@ class TwitchAPIClient:
                 return self._app_token
 
             except Exception as e:
-                logger.exception(f"Error getting app access token: {e}")
+                LOGGER.exception(f"Error getting app access token: {e}")
                 return None
 
     async def _helix_get(
@@ -131,7 +131,7 @@ class TwitchAPIClient:
                 headers=self._app_headers(token),
             )
         except Exception as e:
-            logger.exception(f"Helix GET /{path} error: {e}")
+            LOGGER.exception(f"Helix GET /{path} error: {e}")
             return None
 
     # ------------------------------------------------------------------
@@ -184,7 +184,7 @@ class TwitchAPIClient:
                     error_msg = token_response.json().get("message", "unknown")
                 except Exception:
                     error_msg = "unparseable"
-                logger.error(
+                LOGGER.error(
                     f"Failed to exchange code: status={token_response.status_code} error={error_msg}"
                 )
                 return False, "token_exchange_failed", None
@@ -194,7 +194,7 @@ class TwitchAPIClient:
             refresh_token = token_data.get("refresh_token")
 
             if not access_token:
-                logger.error("No access_token in response")
+                LOGGER.error("No access_token in response")
                 return False, "no_access_token", None
 
             # Get user info with the new user token
@@ -207,7 +207,7 @@ class TwitchAPIClient:
                 return False, "user_fetch_failed", None
 
             user_id = users[0].get("id")
-            logger.debug(f"Token exchanged for user: {user_id}")
+            LOGGER.debug(f"Token exchanged for user: {user_id}")
 
             return (
                 True,
@@ -220,10 +220,10 @@ class TwitchAPIClient:
             )
 
         except httpx.TimeoutException:
-            logger.error("Timeout while exchanging code for token")
+            LOGGER.error("Timeout while exchanging code for token")
             return False, "timeout", None
         except Exception as e:
-            logger.exception(f"Unexpected error exchanging code: {e}")
+            LOGGER.exception(f"Unexpected error exchanging code: {e}")
             return False, "exchange_failed", None
 
     # ------------------------------------------------------------------
@@ -250,7 +250,7 @@ class TwitchAPIClient:
             if response.status_code != 200:
                 error_data = response.json() if response.text else {}
                 error_msg = error_data.get("message", f"HTTP {response.status_code}")
-                logger.error(f"Token refresh failed: {error_msg}")
+                LOGGER.error(f"Token refresh failed: {error_msg}")
                 return TokenRefreshResult(success=False, error=error_msg)
 
             data = response.json()
@@ -262,7 +262,7 @@ class TwitchAPIClient:
                     success=False, error="No access_token in refresh response"
                 )
 
-            logger.debug("Successfully refreshed user access token")
+            LOGGER.debug("Successfully refreshed user access token")
             return TokenRefreshResult(
                 success=True,
                 access_token=new_access_token,
@@ -270,10 +270,10 @@ class TwitchAPIClient:
             )
 
         except httpx.TimeoutException:
-            logger.error("Timeout while refreshing token")
+            LOGGER.error("Timeout while refreshing token")
             return TokenRefreshResult(success=False, error="timeout")
         except Exception as e:
-            logger.exception(f"Unexpected error refreshing token: {e}")
+            LOGGER.exception(f"Unexpected error refreshing token: {e}")
             return TokenRefreshResult(success=False, error=str(e))
 
     async def validate_token(self, access_token: str) -> bool:
@@ -285,7 +285,7 @@ class TwitchAPIClient:
             )
             return response.status_code == 200
         except Exception as e:
-            logger.warning(f"Token validation failed: {e}")
+            LOGGER.warning(f"Token validation failed: {e}")
             return False
 
     # ------------------------------------------------------------------
@@ -305,12 +305,12 @@ class TwitchAPIClient:
         try:
             response = await self._helix_get("users", params)
             if not response or response.status_code != 200:
-                logger.error(f"Failed to fetch user: params={params}")
+                LOGGER.error(f"Failed to fetch user: params={params}")
                 return None
 
             users = response.json().get("data", [])
             if not users:
-                logger.warning(f"No user found for params: {params}")
+                LOGGER.warning(f"No user found for params: {params}")
                 return None
 
             user = users[0]
@@ -323,7 +323,7 @@ class TwitchAPIClient:
             }
 
         except Exception as e:
-            logger.exception(f"Error fetching user info: {e}")
+            LOGGER.exception(f"Error fetching user info: {e}")
             return None
 
     async def get_users_by_ids(self, user_ids: list[str]) -> list[dict]:
@@ -331,13 +331,13 @@ class TwitchAPIClient:
         try:
             response = await self._helix_get("users", {"id": user_ids})
             if not response or response.status_code != 200:
-                logger.error(f"Failed to fetch users: {len(user_ids)} ids")
+                LOGGER.error(f"Failed to fetch users: {len(user_ids)} ids")
                 return []
 
             return cast(list[dict], response.json().get("data", []))
 
         except Exception as e:
-            logger.exception(f"Error getting users: {e}")
+            LOGGER.exception(f"Error getting users: {e}")
             return []
 
     # ------------------------------------------------------------------
@@ -349,13 +349,13 @@ class TwitchAPIClient:
         try:
             response = await self._helix_get("streams", {"user_id": user_ids})
             if not response or response.status_code != 200:
-                logger.error("Failed to fetch streams")
+                LOGGER.error("Failed to fetch streams")
                 return []
 
             return cast(list[dict], response.json().get("data", []))
 
         except Exception as e:
-            logger.exception(f"Error getting streams: {e}")
+            LOGGER.exception(f"Error getting streams: {e}")
             return []
 
     # ------------------------------------------------------------------
@@ -369,13 +369,13 @@ class TwitchAPIClient:
         try:
             response = await self._helix_get("games", {"id": game_ids})
             if not response or response.status_code != 200:
-                logger.error("Failed to fetch games by ids")
+                LOGGER.error("Failed to fetch games by ids")
                 return []
 
             return cast(list[dict], response.json().get("data", []))
 
         except Exception as e:
-            logger.exception(f"Error getting games: {e}")
+            LOGGER.exception(f"Error getting games: {e}")
             return []
 
     async def get_games_by_names(self, game_names: list[str]) -> list[dict]:
@@ -385,13 +385,13 @@ class TwitchAPIClient:
         try:
             response = await self._helix_get("games", {"name": game_names})
             if not response or response.status_code != 200:
-                logger.error("Failed to fetch games by names")
+                LOGGER.error("Failed to fetch games by names")
                 return []
 
             return cast(list[dict], response.json().get("data", []))
 
         except Exception as e:
-            logger.exception(f"Error getting games by names: {e}")
+            LOGGER.exception(f"Error getting games by names: {e}")
             return []
 
     # ------------------------------------------------------------------
@@ -407,7 +407,7 @@ class TwitchAPIClient:
                 token=access_token,
             )
             if not response or response.status_code != 200:
-                logger.error(f"Failed to fetch custom rewards: broadcaster={broadcaster_id}")
+                LOGGER.error(f"Failed to fetch custom rewards: broadcaster={broadcaster_id}")
                 return []
 
             return [
@@ -416,7 +416,7 @@ class TwitchAPIClient:
             ]
 
         except Exception as e:
-            logger.exception(f"Error getting custom rewards: {e}")
+            LOGGER.exception(f"Error getting custom rewards: {e}")
             return []
 
     # ------------------------------------------------------------------
@@ -436,13 +436,13 @@ class TwitchAPIClient:
                 {"user_id": user_id, "type": video_type, "first": min(first, 100)},
             )
             if not response or response.status_code != 200:
-                logger.error(f"Failed to fetch videos: user={user_id}")
+                LOGGER.error(f"Failed to fetch videos: user={user_id}")
                 return []
 
             return cast(list[dict], response.json().get("data", []))
 
         except Exception as e:
-            logger.exception(f"Error getting videos: {e}")
+            LOGGER.exception(f"Error getting videos: {e}")
             return []
 
     @staticmethod

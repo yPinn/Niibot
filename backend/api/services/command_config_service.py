@@ -8,7 +8,7 @@ import asyncpg
 from shared.builtin_commands import BUILTIN_DESCRIPTIONS, PUBLIC_DESCRIPTIONS
 from shared.repositories.command_config import CommandConfigRepository, RedemptionConfigRepository
 
-logger = logging.getLogger(__name__)
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 class CommandConfigService:
