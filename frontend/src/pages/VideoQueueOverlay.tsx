@@ -338,6 +338,7 @@ export default function VideoQueueOverlay() {
         return
       }
 
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setElapsed(joinElapsed)
 
       // Start the elapsed counter immediately so the progress UI stays accurate.
