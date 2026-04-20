@@ -37,6 +37,11 @@ BILIBILI_SPACE_RE = re.compile(
     re.IGNORECASE,
 )
 
+BILIBILI_LIVE_RE = re.compile(
+    r"https?://live\.bilibili\.com/(\d+)",
+    re.IGNORECASE,
+)
+
 TIKTOK_RE = re.compile(
     r"https?://(?:"
     r"(?:www\.)?tiktok\.com/@[\w.]+/video/\d+"
@@ -68,6 +73,7 @@ TWITCH_CHANNEL_RE = re.compile(
 BILIBILI_API = "https://api.bilibili.com/x/web-interface/view?bvid={bvid}"
 BILIBILI_CARD_API = "https://api.bilibili.com/x/web-interface/card?mid={mid}"
 BILIBILI_SPACE_URL = "https://space.bilibili.com/{mid}"
+BILIBILI_LIVE_API = "https://api.live.bilibili.com/room/v1/Room/get_info?room_id={room_id}"
 TIKTOK_OEMBED_API = "https://www.tiktok.com/oembed?url={url}"
 TWITCH_HELIX_CLIPS_API = "https://api.twitch.tv/helix/clips?id={clip_id}"
 TWITCH_HELIX_USERS_API = "https://api.twitch.tv/helix/users?id={user_id}"
