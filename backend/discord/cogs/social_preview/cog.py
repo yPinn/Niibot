@@ -445,35 +445,30 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
             LOGGER.debug("Threads: all fetch paths failed for %s", post_url)
             return
 
-        # 3. Scrapling sidecar — enrich with post caption (requires scrapling service)
+        # 3. Scrapling sidecar — enrich with post caption + engagement counts
         if SCRAPLING_HOST:
-            caption = await self._fetch_threads_caption(post_url)
-            if caption:
-                data = dict(data)
-                data["caption"] = caption
+            scrapling_data = await self._fetch_threads_data(post_url)
+            if scrapling_data:
+                data = {**data, **scrapling_data}
 
         await self._send_preview(message, build_threads_embed(self._embed, data, post_url))
 
-    async def _fetch_threads_caption(self, post_url: str) -> str:
-        """Call the Scrapling sidecar to get the post caption via browser automation.
+    async def _fetch_threads_data(self, post_url: str) -> dict[str, str]:
+        """Call the Scrapling sidecar for post caption + engagement counts.
 
-        Timeout is 35 s — the sidecar may spend up to 30 s navigating and
-        waiting for the React SPA to hydrate.
-        Returns the caption string, or empty string on failure / unavailable.
+        Timeout is 35 s — sidecar may spend up to 30 s on navigation + hydration.
+        Returns non-empty fields dict, or {} on any failure.
         """
         url = f"http://{SCRAPLING_HOST}/threads?url={quote_plus(post_url)}"
         try:
             resp = await self._http.get(url, timeout=35.0)
             resp.raise_for_status()
-            caption: str = resp.json().get("caption", "")
-            if caption:
-                LOGGER.info("Scrapling: caption received (%d chars)", len(caption))
-            else:
-                LOGGER.info("Scrapling: responded with empty caption for %s", post_url)
-            return caption
+            body: dict[str, str] = resp.json()
+            LOGGER.info("Scrapling: %s", {k: v for k, v in body.items() if v})
+            return {k: v for k, v in body.items() if v}
         except Exception as exc:
             LOGGER.warning("Scrapling sidecar unavailable for %s: %s", post_url, exc)
-            return ""
+            return {}
 
     async def _fetch_threads_oembed(self, post_url: str) -> dict | None:
         """Fetch Threads oEmbed metadata for *post_url*.

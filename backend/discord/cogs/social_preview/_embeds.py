@@ -293,7 +293,7 @@ def build_threads_embed(
             )
         image_url = data.get("image") or None
 
-    return build_social_embed(
+    embed = build_social_embed(
         factory,
         platform="Threads",
         color=COLOR_THREADS,
@@ -306,6 +306,11 @@ def build_threads_embed(
         image_url=image_url,
         use_platform_footer=False,
     )
+
+    for key, label in (("like_count", "點讚"), ("reply_count", "留言"), ("repost_count", "轉發")):
+        embed.add_field(name=label, value=data.get(key) or "—", inline=True)
+
+    return embed
 
 
 def build_bilibili_embed(factory: EmbedFactory, data: dict, video_url: str) -> discord.Embed:
