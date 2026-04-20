@@ -7,7 +7,7 @@ Supported platforms
 -------------------
 - Instagram  — Self-hosted InstaFix proxy (github.com/Wikidepia/InstaFix)
 - Threads    — Direct OG scraping (currently broken: Meta login wall)
-- Bilibili   — Public API (no key required)
+- Bilibili   — Public API (no key required); videos, spaces, and live rooms
 - TikTok     — oEmbed API (public, no key required)
 - Twitch     — Helix API (requires TWITCH_CLIENT_ID + TWITCH_CLIENT_SECRET)
 
@@ -37,6 +37,7 @@ from core import DATA_DIR, EmbedFactory, UserBoundView, get_settings, load_json
 
 from ._embeds import (
     build_bilibili_embed,
+    build_bilibili_live_embed,
     build_bilibili_space_embed,
     build_instagram_embed,
     build_instagram_profile_embed,
@@ -48,6 +49,8 @@ from ._embeds import (
 from .constants import (
     BILIBILI_API,
     BILIBILI_CARD_API,
+    BILIBILI_LIVE_API,
+    BILIBILI_LIVE_RE,
     BILIBILI_RE,
     BILIBILI_SPACE_RE,
     DISMISS_TIMEOUT,
@@ -264,6 +267,7 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
             (INSTAGRAM_RE, self._handle_instagram),
             (INSTAGRAM_PROFILE_RE, self._handle_instagram_profile),
             (THREADS_RE, self._handle_threads),
+            (BILIBILI_LIVE_RE, self._handle_bilibili_live),
             (BILIBILI_SPACE_RE, self._handle_bilibili_space),
             (BILIBILI_RE, self._handle_bilibili),
             (TIKTOK_RE, self._handle_tiktok),
@@ -487,6 +491,44 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
 
         await self._send_preview(
             message, build_bilibili_space_embed(self._embed, body["data"], space_url)
+        )
+
+    async def _handle_bilibili_live(self, message: discord.Message, match: re.Match[str]) -> None:
+        room_id = match.group(1)
+        room_url = f"https://live.bilibili.com/{room_id}"
+        try:
+            resp = await self._http.get(
+                BILIBILI_LIVE_API.format(room_id=room_id),
+                headers={"Referer": "https://live.bilibili.com"},
+            )
+            resp.raise_for_status()
+            body = resp.json()
+        except Exception as exc:
+            LOGGER.debug("Bilibili live API failed for room_id=%s: %s", room_id, exc)
+            return
+
+        if body.get("code") != 0 or not body.get("data"):
+            return
+
+        room = body["data"]
+        uid = room.get("uid")
+
+        card_data: dict | None = None
+        if uid:
+            try:
+                card_resp = await self._http.get(
+                    BILIBILI_CARD_API.format(mid=uid),
+                    headers={"Referer": "https://www.bilibili.com"},
+                )
+                card_resp.raise_for_status()
+                card_body = card_resp.json()
+                if card_body.get("code") == 0 and card_body.get("data"):
+                    card_data = card_body["data"]
+            except Exception as exc:
+                LOGGER.debug("Bilibili card API failed for uid=%s: %s", uid, exc)
+
+        await self._send_preview(
+            message, build_bilibili_live_embed(self._embed, room, card_data, room_url)
         )
 
     async def _handle_tiktok(self, message: discord.Message, match: re.Match[str]) -> None:

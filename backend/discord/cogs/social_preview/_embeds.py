@@ -32,13 +32,37 @@ from .constants import (
 _TZ_GMT8 = timezone(timedelta(hours=8))
 
 
-def _fmt_twitch_dt(iso: str, fmt: str, *, fallback: str = "") -> str:
-    """Parse a Twitch UTC ISO timestamp and return a GMT+8 formatted string."""
+def _fmt_dt(
+    raw: str,
+    out_fmt: str,
+    *,
+    utc_to_gmt8: bool = False,
+    skip_prefix: str | None = None,
+) -> str | None:
+    """Parse a datetime string and return a formatted string, or None on failure.
+
+    Handles both UTC ISO 8601 (Twitch: "2024-03-15T10:00:00Z") and Bilibili's
+    native "YYYY-MM-DD HH:MM:SS" format (already CST/UTC+8) — fromisoformat
+    accepts both after the "Z" → "+00:00" substitution.
+
+    Args:
+        raw:          Input datetime string; empty strings return None.
+        out_fmt:      strftime format for the output value.
+        utc_to_gmt8:  Convert from UTC → GMT+8 before formatting (Twitch).
+                      Leave False when the timestamp is already CST (Bilibili).
+        skip_prefix:  Return None immediately if raw starts with this prefix,
+                      e.g. "0000" to skip Bilibili's offline sentinel
+                      "0000-00-00 00:00:00".
+    """
+    if not raw or (skip_prefix and raw.startswith(skip_prefix)):
+        return None
     try:
-        dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
-        return dt.astimezone(_TZ_GMT8).strftime(fmt)
+        dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if utc_to_gmt8:
+            dt = dt.astimezone(_TZ_GMT8)
+        return dt.strftime(out_fmt)
     except ValueError:
-        return fallback
+        return None
 
 
 def _fmt_count(n: int) -> str:
@@ -335,8 +359,7 @@ def build_twitch_channel_embed(
         )
         game = stream.get("game_name") or None
         viewers = stream.get("viewer_count")
-        started_at = stream.get("started_at", "")
-        start_time = _fmt_twitch_dt(started_at, "%H:%M") if started_at else None
+        start_time = _fmt_dt(stream.get("started_at", ""), "%H:%M", utc_to_gmt8=True)
 
         if game:
             embed.add_field(name="遊戲分類", value=game, inline=True)
@@ -359,6 +382,80 @@ def build_twitch_channel_embed(
             image_url=offline_image,
             use_platform_footer=False,
         )
+
+    return embed
+
+
+_BILIBILI_LIVE_STATUS: dict[int, str] = {0: "下播", 1: "直播中", 2: "輪播"}
+
+
+def build_bilibili_live_embed(
+    factory: EmbedFactory,
+    room: dict,
+    card_data: dict | None,
+    room_url: str,
+) -> discord.Embed:
+    """Embed for a Bilibili live room — live, offline, or rotating.
+
+    Field layout (inline grid, 3 per row):
+      Live:    狀態 | 分類 | 觀看人數
+               開播時間 | 關注 | ​(spacer)
+      Offline: 狀態 | 分類 | 關注
+    """
+    title = room.get("title") or None
+    live_status = room.get("live_status", 0)
+    status_label = _BILIBILI_LIVE_STATUS.get(live_status, "下播")
+
+    # keyframe = live screenshot (only valid while streaming); fallback to cover
+    cover: str | None
+    if live_status == 1:
+        cover = room.get("keyframe") or room.get("user_cover") or None
+    else:
+        cover = room.get("user_cover") or None
+
+    card = (card_data or {}).get("card") or {}
+    uid = room.get("uid")
+    author_url = f"https://space.bilibili.com/{uid}" if uid else None
+
+    embed = build_social_embed(
+        factory,
+        platform="Bilibili",
+        color=COLOR_BILIBILI,
+        url=room_url,
+        title=title,
+        author_name=card.get("name") or None,
+        author_icon_url=card.get("face") or None,
+        author_url=author_url,
+        image_url=cover,
+        use_platform_footer=False,
+    )
+
+    # ── Row 1 ──────────────────────────────────────────────────────────────────
+    embed.add_field(name="狀態", value=status_label, inline=True)
+    area = room.get("area_name") or room.get("parent_area_name") or None
+    if area:
+        embed.add_field(name="分類", value=area, inline=True)
+    attention = room.get("attention") or 0
+    if live_status == 1:
+        online = room.get("online")
+        if online is not None:
+            embed.add_field(name="觀看人數", value=_fmt_count(online), inline=True)
+    else:
+        if attention:
+            embed.add_field(name="關注", value=_fmt_count(attention), inline=True)
+
+    # ── Row 2 (live only) ──────────────────────────────────────────────────────
+    if live_status == 1:
+        row2: list[tuple[str, str]] = []
+        start_time = _fmt_dt(room.get("live_time", ""), "%H:%M", skip_prefix="0000")
+        if start_time:
+            row2.append(("開播時間", start_time))
+        if attention:
+            row2.append(("關注", _fmt_count(attention)))
+        for name, value in row2:
+            embed.add_field(name=name, value=value, inline=True)
+        if len(row2) == 2:
+            embed.add_field(name="\u200b", value="\u200b", inline=True)
 
     return embed
 
@@ -392,9 +489,8 @@ def build_twitch_clip_embed(
     if game_name:
         embed.add_field(name="遊戲分類", value=game_name, inline=True)
     embed.add_field(name="片段時長", value=f"{minutes:02d}:{seconds:02d}", inline=True)
-    created_at = data.get("created_at", "")
-    if created_at:
-        embed.add_field(name="剪輯時間", value=_fmt_twitch_dt(created_at, "%Y-%m-%d"), inline=True)
+    if clip_date := _fmt_dt(data.get("created_at", ""), "%Y-%m-%d", utc_to_gmt8=True):
+        embed.add_field(name="剪輯時間", value=clip_date, inline=True)
 
     # Row 2: creator | views | spacer
     creator = data.get("creator_name")
