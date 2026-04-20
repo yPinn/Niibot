@@ -11,6 +11,7 @@ Layout
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -27,6 +28,7 @@ from .constants import (
     COLOR_TWITCH,
     DESCRIPTION_LIMIT,
     INSTAGRAM_ICON_URL,
+    THREADS_ICON_URL,
 )
 
 _TZ_GMT8 = timezone(timedelta(hours=8))
@@ -225,19 +227,84 @@ def build_instagram_profile_embed(
     return embed
 
 
-def build_threads_embed(factory: EmbedFactory, og: dict[str, str], post_url: str) -> discord.Embed:
-    raw_title = og.get("title", "")
-    description = og.get("description", "")
-    author_name = _extract_author(raw_title, " on Threads", fallback=raw_title or None)
+# Matches Meta's Discordbot OG title: "DisplayName (@handle)" or "DisplayName (@handle) on Threads"
+_THREADS_OG_TITLE_RE = re.compile(r"^(.+?)\s+\(@([\w.]+)\)(?:\s+on\s+Threads)?$", re.IGNORECASE)
+# Strips Meta's "N Replies. See more…" CTA from the end of a description, preserving any caption that precedes it.
+_THREADS_CTA_SUFFIX_RE = re.compile(
+    r"\s*\d[\d,.]*[KMB]?\s+\w+\.\s+See more\b.*$", re.IGNORECASE | re.DOTALL
+)
+
+
+def get_threads_handle(data: dict[str, str]) -> str | None:
+    """Extract the Threads username from oEmbed or OG scrape data.
+
+    - oEmbed: reads ``author_url`` (e.g. ``https://www.threads.com/@handle``)
+    - OG:     parses ``title`` (e.g. ``"DisplayName (@handle) on Threads"``)
+    """
+    if "author_url" in data:
+        m = re.search(r"/@([\w.]+)/?(?:\?.*)?$", data["author_url"])
+        return m.group(1) if m else None
+    m = _THREADS_OG_TITLE_RE.match(data.get("title", ""))
+    return m.group(2) if m else None
+
+
+def build_threads_embed(
+    factory: EmbedFactory,
+    data: dict[str, str],
+    post_url: str,
+) -> discord.Embed:
+    """Build embed from Threads oEmbed data or OG tags.
+
+    Layout mirrors the Instagram pattern:
+    - author row: Threads logo + "Threads" → post URL
+    - title:       account display (DisplayName (@handle) or oEmbed author_name)
+    - description: post caption (CTA suffix stripped)
+    - image:       post photo / video thumbnail
+
+    Accepts either:
+    - oEmbed dict (``author_name``, ``author_url``, optionally ``thumbnail_url``)
+    - OG scrape dict (``title``, ``description``, ``image``) served to Discordbot UA
+    """
+    if "author_name" in data:
+        # oEmbed path — author_name is already the display name
+        account = data.get("author_name") or None
+        profile_url = data.get("author_url") or post_url
+        description: str | None = None
+        image_url = data.get("thumbnail_url") or None
+    else:
+        # OG path — "DisplayName (@handle)" or "DisplayName (@handle) on Threads"
+        raw_title = data.get("title", "")
+        m = _THREADS_OG_TITLE_RE.match(raw_title)
+        if m:
+            display_name, handle = m.group(1), m.group(2)
+            account = f"{display_name} (@{handle})"
+            profile_url = f"https://www.threads.com/@{handle}"
+        else:
+            account = _extract_author(raw_title, " on Threads", fallback=raw_title or None)
+            profile_url = post_url
+
+        # Prefer explicit caption injected by Scrapling sidecar; otherwise strip
+        # Meta's "N Replies. See more…" CTA from og:description, preserving any real caption.
+        if explicit := data.get("caption"):
+            description = explicit
+        else:
+            description = (
+                _THREADS_CTA_SUFFIX_RE.sub("", data.get("description", "")).strip() or None
+            )
+        image_url = data.get("image") or None
 
     return build_social_embed(
         factory,
         platform="Threads",
         color=COLOR_THREADS,
-        url=post_url,
-        author_name=author_name,
-        description=description or None,
-        image_url=og.get("image"),
+        url=profile_url,
+        author_name="Threads",
+        author_icon_url=THREADS_ICON_URL,
+        author_url=post_url,
+        title=account,
+        description=description,
+        image_url=image_url,
+        use_platform_footer=False,
     )
 
 

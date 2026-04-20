@@ -6,7 +6,8 @@ replies with a unified rich embed preview.
 Supported platforms
 -------------------
 - Instagram  — Self-hosted InstaFix proxy (github.com/Wikidepia/InstaFix)
-- Threads    — Direct OG scraping (currently broken: Meta login wall)
+- Threads    — Discordbot UA OG scraping; oEmbed as forward-compat fallback
+               Post captions require the Scrapling sidecar (browser automation)
 - Bilibili   — Public API (no key required); videos, spaces, and live rooms
 - TikTok     — oEmbed API (public, no key required)
 - Twitch     — Helix API (requires TWITCH_CLIENT_ID + TWITCH_CLIENT_SECRET)
@@ -61,6 +62,8 @@ from .constants import (
     INSTAGRAM_PROFILE_RE,
     INSTAGRAM_PROXY_URL,
     INSTAGRAM_RE,
+    SCRAPLING_HOST,
+    THREADS_OEMBED_API,
     THREADS_RE,
     TIKTOK_OEMBED_API,
     TIKTOK_RE,
@@ -426,14 +429,81 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
             return None
 
     async def _handle_threads(self, message: discord.Message, match: re.Match[str]) -> None:
-        # Meta's login wall blocks OG scraping in production; the handler still
-        # attempts a fetch so it works in test (mocked HTTP) and in case Meta
-        # relaxes the restriction for bot user-agents in the future.
         post_url = match.group(0)
-        og = await self._fetch_og(post_url)
-        if not og:
+        data: dict | None = None
+
+        # 1. Discordbot UA — Meta injects OG tags (author + image) even in login-wall HTML
+        data = await self._fetch_og(post_url, bot_ua=True, follow_redirects=True)
+        LOGGER.debug("Threads bot-UA OG: %r", data)
+
+        # 2. oEmbed — currently returns HTML login-wall; kept for forward-compatibility
+        if not data:
+            data = await self._fetch_threads_oembed(post_url)
+            LOGGER.debug("Threads oEmbed: %r", data)
+
+        if not data:
+            LOGGER.debug("Threads: all fetch paths failed for %s", post_url)
             return
-        await self._send_preview(message, build_threads_embed(self._embed, og, post_url))
+
+        # 3. Scrapling sidecar — enrich with post caption (requires scrapling service)
+        if SCRAPLING_HOST:
+            caption = await self._fetch_threads_caption(post_url)
+            if caption:
+                data = dict(data)
+                data["caption"] = caption
+
+        await self._send_preview(message, build_threads_embed(self._embed, data, post_url))
+
+    async def _fetch_threads_caption(self, post_url: str) -> str:
+        """Call the Scrapling sidecar to get the post caption via browser automation.
+
+        Timeout is 35 s — the sidecar may spend up to 30 s navigating and
+        waiting for the React SPA to hydrate.
+        Returns the caption string, or empty string on failure / unavailable.
+        """
+        url = f"http://{SCRAPLING_HOST}/threads?url={quote_plus(post_url)}"
+        try:
+            resp = await self._http.get(url, timeout=35.0)
+            resp.raise_for_status()
+            caption: str = resp.json().get("caption", "")
+            if caption:
+                LOGGER.info("Scrapling: caption received (%d chars)", len(caption))
+            else:
+                LOGGER.info("Scrapling: responded with empty caption for %s", post_url)
+            return caption
+        except Exception as exc:
+            LOGGER.warning("Scrapling sidecar unavailable for %s: %s", post_url, exc)
+            return ""
+
+    async def _fetch_threads_oembed(self, post_url: str) -> dict | None:
+        """Fetch Threads oEmbed metadata for *post_url*.
+
+        The unauthenticated threads.com oEmbed endpoint currently returns an HTML
+        login-wall regardless of Accept headers; kept as forward-compatibility fallback.
+
+        Returns the parsed JSON dict if ``author_name`` is present, else None.
+        """
+        api_url = THREADS_OEMBED_API.format(url=quote_plus(post_url))
+        try:
+            resp = await self._http.get(
+                api_url,
+                follow_redirects=True,
+                headers={"Accept": "application/json"},
+            )
+            resp.raise_for_status()
+            if "json" not in resp.headers.get("content-type", ""):
+                LOGGER.debug(
+                    "Threads oEmbed non-JSON response: ct=%r body=%r for %s",
+                    resp.headers.get("content-type", ""),
+                    resp.text[:120],
+                    post_url,
+                )
+                return None
+            data = resp.json()
+            return data if data.get("author_name") else None
+        except Exception as exc:
+            LOGGER.debug("Threads oEmbed failed for %s: %s", post_url, exc)
+            return None
 
     async def _handle_bilibili(self, message: discord.Message, match: re.Match[str]) -> None:
         bvid = match.group(1)
@@ -826,7 +896,11 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
         return items, fallback_title
 
     async def _fetch_og(
-        self, url: str, *, bot_ua: bool = False, follow_redirects: bool = False
+        self,
+        url: str,
+        *,
+        bot_ua: bool = False,
+        follow_redirects: bool = False,
     ) -> dict[str, str] | None:
         """Fetch OG tags from *url*. Use *bot_ua=True* for InstaFix (redirects Chrome UAs)."""
         headers = {"User-Agent": "Discordbot/2.0"} if bot_ua else {}
