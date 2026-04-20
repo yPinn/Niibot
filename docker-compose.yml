@@ -12,6 +12,28 @@ services:
     networks:
       - niibot-network
 
+  scrapling:
+    image: niibot-scrapling
+    build:
+      context: ./backend
+      dockerfile: scrapling/Dockerfile
+    container_name: niibot-scrapling
+    restart: unless-stopped
+    environment:
+      PORT: 3001
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    networks:
+      - niibot-network
+    healthcheck:
+      <<: *default-healthcheck
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:3001/health').read()",
+        ]
+
   postgres:
     image: postgres:16
     container_name: niibot-postgres
@@ -101,6 +123,9 @@ services:
         condition: service_completed_successfully
       instafix:
         condition: service_started
+      scrapling:
+        condition: service_started
+        required: false
     healthcheck:
       <<: *default-healthcheck
       test:
