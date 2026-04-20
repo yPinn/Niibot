@@ -19,6 +19,8 @@ services:
       dockerfile: scrapling/Dockerfile
     container_name: niibot-scrapling
     restart: unless-stopped
+    env_file:
+      - ./backend/scrapling/.env
     environment:
       PORT: 3001
       LOG_LEVEL: ${LOG_LEVEL:-INFO}

@@ -16,6 +16,7 @@ import os
 import re
 import time
 from contextlib import asynccontextmanager
+from urllib.parse import unquote
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Query
@@ -25,6 +26,7 @@ LOGGER = logging.getLogger(__name__)
 
 PORT = int(os.getenv("PORT", "3001"))
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+_THREADS_SESSION_ID = unquote(os.getenv("THREADS_SESSION_ID", ""))
 
 _THREADS_POST_RE = re.compile(
     r"https?://(?:www\.)?threads\.(?:net|com)/(?:@[\w.]+/)?post/[\w-]+",
@@ -52,7 +54,7 @@ async def lifespan(app: FastAPI):  # type: ignore[type-arg]
     LOGGER.info("scrapling: launching browser session …")
     async with AsyncDynamicSession(
         headless=True,
-        disable_resources=True,  # block images / fonts / media for speed
+        disable_resources=True,
         block_ads=True,
         locale="en-US",
     ) as session:
@@ -74,12 +76,28 @@ async def _scrape_threads_caption(post_url: str) -> str:
     t0 = time.monotonic()
     LOGGER.info("scrapling: scraping %s", post_url)
 
+    async def _inject_cookie(page):  # type: ignore[no-untyped-def]
+        if _THREADS_SESSION_ID:
+            await page.context.add_cookies(
+                [
+                    {
+                        "name": "sessionid",
+                        "value": _THREADS_SESSION_ID,
+                        "domain": ".threads.com",
+                        "path": "/",
+                        "httpOnly": True,
+                        "secure": True,
+                    }
+                ]
+            )
+
     try:
-        response = await _session.get(
+        response = await _session.fetch(
             post_url,
             wait_selector="article",
             timeout=_GOTO_TIMEOUT_MS + _ARTICLE_TIMEOUT_MS,
             load_dom=True,
+            page_setup=_inject_cookie,
         )
         LOGGER.debug("scrapling: page ready (%.1f s)", time.monotonic() - t0)
     except Exception as exc:
