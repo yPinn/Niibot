@@ -101,6 +101,9 @@ data/postgres/
 # Database backups
 data/backups/
 
+# Bot runtime data (guild-specific, not for version control)
+backend/data/log_channels.json
+
 # macOS
 .DS_Store
 .DS_Store?

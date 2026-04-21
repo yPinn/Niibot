@@ -6,6 +6,12 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-cache --no-install-project --no-dev
 
 FROM python:3.11.11-slim-bookworm
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    fonts-noto-cjk \
+    fonts-noto-core \
+    fonts-noto-extra \
+    fonts-noto-ui-core \
+    && rm -rf /var/lib/apt/lists/*
 ARG APP_VERSION=dev
 ARG GIT_COMMIT=unknown
 LABEL org.opencontainers.image.version=$APP_VERSION \
