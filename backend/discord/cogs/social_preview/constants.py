@@ -26,6 +26,13 @@ THREADS_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Matches profile pages (e.g. threads.com/@handle). Checked after THREADS_RE so
+# post URLs are never captured here.
+THREADS_PROFILE_RE = re.compile(
+    r"https?://(?:www\.)?threads\.(?:net|com)/@([\w.]+)(?:/?(?:\?[^\s]*)?)?(?=\s|$)",
+    re.IGNORECASE,
+)
+
 BILIBILI_RE = re.compile(
     r"https?://(?:(?:www\.|m\.)?bilibili\.com/video/(BV[A-Za-z0-9]+)"
     r"|b23\.tv/([A-Za-z0-9]+))",
@@ -74,6 +81,7 @@ BILIBILI_API = "https://api.bilibili.com/x/web-interface/view?bvid={bvid}"
 BILIBILI_CARD_API = "https://api.bilibili.com/x/web-interface/card?mid={mid}"
 BILIBILI_SPACE_URL = "https://space.bilibili.com/{mid}"
 BILIBILI_LIVE_API = "https://api.live.bilibili.com/room/v1/Room/get_info?room_id={room_id}"
+THREADS_OEMBED_API = "https://www.threads.com/oembed/?url={url}&format=json"
 TIKTOK_OEMBED_API = "https://www.tiktok.com/oembed?url={url}"
 TWITCH_HELIX_CLIPS_API = "https://api.twitch.tv/helix/clips?id={clip_id}"
 TWITCH_HELIX_USERS_API = "https://api.twitch.tv/helix/users?id={user_id}"
@@ -94,6 +102,12 @@ INSTAGRAM_APP_ID = "936619743392459"
 INSTAFIX_HOST = os.getenv("INSTAFIX_HOST", "instafix:3000")
 INSTAGRAM_PROXY_URL = "http://{host}/{path}/{shortcode}/"
 INSTAGRAM_ICON_URL = "https://upload.wikimedia.org/wikipedia/commons/a/a5/Instagram_icon.png"
+
+# Scrapling sidecar (backend/scrapling/) — JS-rendered caption extraction.
+# Docker: "scrapling:3001" | Local dev: "localhost:3001"
+# Leave empty to disable caption extraction.
+SCRAPLING_HOST = os.getenv("SCRAPLING_HOST", "")
+THREADS_ICON_URL = "https://www.google.com/s2/favicons?domain=threads.com&sz=64"
 
 # ── Colours ───────────────────────────────────────────────────────────────────
 
