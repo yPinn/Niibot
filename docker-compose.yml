@@ -1,5 +1,5 @@
 x-db-env: &docker-db-env
-  DATABASE_URL: ${DOCKER_DATABASE_URL}
+  DATABASE_URL: ${DOCKER_DATABASE_URL:?DOCKER_DATABASE_URL must be set in root .env (see .env.example)}
 
 # API service URLs — code defaults to localhost; containers must use service names.
 x-api-svc-urls: &docker-api-svc-urls
@@ -23,15 +23,16 @@ services:
     container_name: niibot-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER must be set in root .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in root .env}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB must be set in root .env}
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
     networks:
       - niibot-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test:
+        ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:?} -d ${POSTGRES_DB:?}"]
       interval: 30s
       timeout: 5s
       retries: 5
@@ -71,7 +72,6 @@ services:
       - ./backend/scrapling/.env
     environment:
       PORT: ${SCRAPLING_PORT:-3001}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
     networks:
       - niibot-network
     healthcheck:

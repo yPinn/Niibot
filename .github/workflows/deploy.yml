@@ -18,12 +18,28 @@ jobs:
     runs-on: self-hosted
     concurrency:
       group: deploy
-      cancel-in-progress: false  # never interrupt a deploy mid-run (risk of partial migration)
+      cancel-in-progress: false # never interrupt a deploy mid-run (risk of partial migration)
 
     env:
       PROJECT_DIR: /Users/pinn/Niibot
 
     steps:
+      - name: Validate environment
+        run: |
+          ENV_FILE="$PROJECT_DIR/.env"
+          if [ ! -f "$ENV_FILE" ]; then
+            echo "ERROR: $ENV_FILE not found — copy .env.example and fill in values."
+            exit 1
+          fi
+          MISSING=""
+          for VAR in POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB DOCKER_DATABASE_URL; do
+            grep -q "^${VAR}=." "$ENV_FILE" || MISSING="$MISSING $VAR"
+          done
+          if [ -n "$MISSING" ]; then
+            echo "ERROR: Missing or empty in $ENV_FILE:$MISSING"
+            exit 1
+          fi
+
       - name: Pull latest code
         run: |
           git -C $PROJECT_DIR fetch --force --tags origin main
