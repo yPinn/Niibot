@@ -87,6 +87,7 @@ cp backend/shared.env.example backend/shared.env
 cp backend/api/.env.example backend/api/.env
 cp backend/twitch/.env.example backend/twitch/.env
 cp backend/discord/.env.example backend/discord/.env
+cp backend/scrapling/.env.example backend/scrapling/.env
 ```
 
 ### 本機開發
@@ -116,13 +117,14 @@ docker compose up -d
 
 ## 環境變數
 
-| 檔案                   | 內容                                        |
-| ---------------------- | ------------------------------------------- |
-| `.env`                 | PostgreSQL 帳號、Cloudflare Tunnel Token    |
-| `backend/shared.env`   | DB URL、OpenRouter API Key、YouTube API Key |
-| `backend/api/.env`     | Twitch OAuth、JWT Secret、服務 URL          |
-| `backend/twitch/.env`  | Twitch Bot 金鑰                             |
-| `backend/discord/.env` | Discord Bot Token                           |
+| 檔案                     | 內容                                                               |
+| ------------------------ | ------------------------------------------------------------------ |
+| `.env`                   | PostgreSQL 帳號、Cloudflare Tunnel Token                           |
+| `backend/shared.env`     | DB URL、Frontend URL、Twitch App 金鑰、OpenRouter、YouTube API Key |
+| `backend/api/.env`       | JWT Secret、API URL                                                |
+| `backend/twitch/.env`    | Bot ID、Owner ID                                                   |
+| `backend/discord/.env`   | Discord Bot Token、Presence 設定                                   |
+| `backend/scrapling/.env` | Threads session cookie                                             |
 
 Cloudflare Pages 專案需設定環境變數 `API_BACKEND`（後端位址）。
 

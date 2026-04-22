@@ -84,6 +84,7 @@ Frontend ──HTTP──▶ API (8000)
 | API                  | `8000` |
 | Discord Bot health   | `8080` |
 | Twitch Bot health    | `4344` |
+| Scrapling sidecar    | `3001` |
 | PostgreSQL（Docker） | `5433` |
 
 ---
@@ -148,16 +149,18 @@ cp shared.env.example shared.env
 cp api/.env.example api/.env
 cp twitch/.env.example twitch/.env
 cp discord/.env.example discord/.env
+cp scrapling/.env.example scrapling/.env
 ```
 
-| 檔案           | 說明                                                         |
-| -------------- | ------------------------------------------------------------ |
-| `shared.env`   | DB URL、Twitch App 金鑰、OpenRouter、YouTube API Key         |
-| `api/.env`     | Twitch OAuth（CLIENT_ID/SECRET）、JWT Secret、服務 URL       |
-| `twitch/.env`  | Twitch Bot Token、EventSub 設定                              |
-| `discord/.env` | Discord Bot Token、Presence 設定、速率限制閾值               |
+| 檔案             | 說明                                                               |
+| ---------------- | ------------------------------------------------------------------ |
+| `shared.env`     | DB URL、Frontend URL、Twitch App 金鑰、OpenRouter、YouTube API Key |
+| `api/.env`       | JWT Secret、API URL                                                |
+| `twitch/.env`    | Bot ID、Owner ID、EventSub 設定                                    |
+| `discord/.env`   | Discord Bot Token、Presence 設定                                   |
+| `scrapling/.env` | Threads session cookie                                             |
 
-> `shared.env` 的 `TWITCH_CLIENT_ID` / `TWITCH_CLIENT_SECRET` 由 Twitch Bot 與 Discord Bot 共用（社群預覽功能）。API 服務使用 `api/.env` 中的 `CLIENT_ID` / `CLIENT_SECRET`。
+> `shared.env` 的 `TWITCH_CLIENT_ID` / `TWITCH_CLIENT_SECRET` 由三個後端服務共用。API 服務透過 `AliasChoices` 讀取，不需在 `api/.env` 重複設定。
 
 ---
 
