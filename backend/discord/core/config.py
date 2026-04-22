@@ -36,8 +36,10 @@ class DiscordBotSettings(BaseServiceSettings):
 
     model_config = SettingsConfigDict(
         # Order mirrors docker-compose.yml: shared.env first, discord/.env overrides.
+        # shared.env.local (gitignored) overrides shared.env for local dev (e.g. localhost DB).
         env_file=(
             Path(__file__).parent.parent.parent / "shared.env",
+            Path(__file__).parent.parent.parent / "shared.env.local",
             Path(__file__).parent.parent / ".env",
         ),
         env_file_encoding="utf-8",

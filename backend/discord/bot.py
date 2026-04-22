@@ -18,6 +18,7 @@ from dotenv import load_dotenv  # noqa: E402
 
 _discord_dir = Path(__file__).parent
 load_dotenv(dotenv_path=_discord_dir.parent / "shared.env", encoding="utf-8")
+load_dotenv(dotenv_path=_discord_dir.parent / "shared.env.local", encoding="utf-8", override=True)
 load_dotenv(dotenv_path=_discord_dir / ".env", encoding="utf-8", override=True)
 
 import asyncpg  # noqa: E402

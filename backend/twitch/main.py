@@ -20,6 +20,7 @@ def main() -> None:
 
     _twitch_dir = Path(__file__).parent
     load_dotenv(dotenv_path=_twitch_dir.parent / "shared.env")
+    load_dotenv(dotenv_path=_twitch_dir.parent / "shared.env.local", override=True)
     load_dotenv(dotenv_path=_twitch_dir / ".env", override=True)
 
     # Minimal imports for health server — bind port before heavy setup
