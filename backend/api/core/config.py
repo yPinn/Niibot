@@ -3,7 +3,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, field_validator
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import SettingsConfigDict
 
 from shared.config_base import BaseServiceSettings
@@ -23,9 +23,11 @@ class Settings(BaseServiceSettings):
         extra="ignore",
     )
 
-    # Twitch OAuth
-    client_id: str = Field(..., description="Twitch OAuth Client ID")
-    client_secret: str = Field(..., description="Twitch OAuth Client Secret")
+    # Twitch OAuth — reads TWITCH_CLIENT_ID/SECRET from shared.env via alias
+    client_id: str = Field(..., validation_alias=AliasChoices("client_id", "twitch_client_id"))
+    client_secret: str = Field(
+        ..., validation_alias=AliasChoices("client_secret", "twitch_client_secret")
+    )
 
     # JWT Configuration
     jwt_secret_key: str = Field(..., description="Secret key for JWT token signing")

@@ -36,7 +36,7 @@ from shared.database import DatabaseManager, PoolConfig, pool_heartbeat_loop  # 
 from shared.retry_utils import format_duration as _format_duration  # noqa: E402
 from shared.retry_utils import parse_retry_after as _parse_retry_after_shared  # noqa: E402
 
-setup_logging()
+setup_logging(get_settings())
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 

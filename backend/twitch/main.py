@@ -14,7 +14,7 @@ LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 def main() -> None:
-    # Load .env files before setup_logging so ERROR_WEBHOOK_URL is available.
+    # Load .env files into OS env for os.getenv() call sites.
     # Order mirrors docker-compose.yml: shared.env first, then service-specific .env.
     from dotenv import load_dotenv
 
@@ -23,10 +23,11 @@ def main() -> None:
     load_dotenv(dotenv_path=_twitch_dir / ".env", override=True)
 
     # Minimal imports for health server — bind port before heavy setup
+    from core.config import get_settings
     from core.health_server import HealthCheckServer
     from core.logging import setup_logging
 
-    setup_logging()
+    setup_logging(get_settings())
 
     async def runner() -> None:
         # 1. Health server FIRST (bind port before heavy setup)

@@ -1,9 +1,14 @@
 """Twitch bot logging configuration."""
 
+from __future__ import annotations
+
 import logging
-import os
+from typing import TYPE_CHECKING
 
 from shared.logging_setup import setup_logging as _setup_logging
+
+if TYPE_CHECKING:
+    from core.config import TwitchBotSettings
 
 
 def _build_suppress(level: int) -> dict[str, int]:
@@ -35,12 +40,11 @@ def _build_suppress(level: int) -> dict[str, int]:
     }
 
 
-def setup_logging() -> None:
-    log_level_str = os.getenv("LOG_LEVEL", "INFO")
-    level = getattr(logging, log_level_str.upper(), logging.INFO)
+def setup_logging(settings: TwitchBotSettings) -> None:
+    level = getattr(logging, settings.log_level, logging.INFO)
     _setup_logging(
-        log_level=log_level_str,
-        webhook_url=os.getenv("ERROR_WEBHOOK_URL", ""),
+        log_level=settings.log_level,
+        webhook_url=settings.error_webhook_url,
         service_name="twitch",
         suppress_loggers=_build_suppress(level),
     )

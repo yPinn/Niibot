@@ -1,9 +1,14 @@
 """Discord bot logging configuration."""
 
+from __future__ import annotations
+
 import logging
-import os
+from typing import TYPE_CHECKING
 
 from shared.logging_setup import setup_logging as _setup_logging
+
+if TYPE_CHECKING:
+    from core.config import DiscordBotSettings
 
 # Discord-specific logger suppression
 _SUPPRESS: dict[str, int] = {
@@ -16,11 +21,7 @@ _SUPPRESS: dict[str, int] = {
 
 
 class _ModuleFormatter(logging.Formatter):
-    """Colour-coded module tag prefix for Rich logging.
-
-    First-party loggers (our code) → cyan
-    Third-party / built-in         → dim
-    """
+    """Colour-coded prefix: first-party loggers → cyan, third-party → dim."""
 
     _OWN_PREFIXES = ("cogs.", "core.", "discord.", "shared.")
 
@@ -44,10 +45,10 @@ def _make_formatter() -> logging.Formatter:
     )
 
 
-def setup_logging() -> None:
+def setup_logging(settings: DiscordBotSettings) -> None:
     _setup_logging(
-        log_level=os.getenv("LOG_LEVEL", "INFO"),
-        webhook_url=os.getenv("ERROR_WEBHOOK_URL", ""),
+        log_level=settings.log_level,
+        webhook_url=settings.error_webhook_url,
         service_name="discord",
         suppress_loggers=_SUPPRESS,
         formatter_factory=_make_formatter,
