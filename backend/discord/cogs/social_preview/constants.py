@@ -26,6 +26,13 @@ THREADS_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Matches profile pages (e.g. threads.com/@handle). Checked after THREADS_RE so
+# post URLs are never captured here.
+THREADS_PROFILE_RE = re.compile(
+    r"https?://(?:www\.)?threads\.(?:net|com)/@([\w.]+)(?:/?(?:\?[^\s]*)?)?(?=\s|$)",
+    re.IGNORECASE,
+)
+
 BILIBILI_RE = re.compile(
     r"https?://(?:(?:www\.|m\.)?bilibili\.com/video/(BV[A-Za-z0-9]+)"
     r"|b23\.tv/([A-Za-z0-9]+))",

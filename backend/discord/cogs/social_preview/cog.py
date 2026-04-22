@@ -43,6 +43,7 @@ from ._embeds import (
     build_instagram_embed,
     build_instagram_profile_embed,
     build_threads_embed,
+    build_threads_profile_embed,
     build_tiktok_embed,
     build_twitch_channel_embed,
     build_twitch_clip_embed,
@@ -64,6 +65,7 @@ from .constants import (
     INSTAGRAM_RE,
     SCRAPLING_HOST,
     THREADS_OEMBED_API,
+    THREADS_PROFILE_RE,
     THREADS_RE,
     TIKTOK_OEMBED_API,
     TIKTOK_RE,
@@ -186,8 +188,8 @@ class _InstagramCarouselView(_BasePreviewView):
         embed = self._build_embed()
         file = self._make_video_file()
 
-        await self._delete_video_message()
         await interaction.response.edit_message(embed=embed, view=self, attachments=[])
+        await self._delete_video_message()
 
         if file:
             await self._send_video_reply(file)
@@ -214,6 +216,75 @@ class _InstagramCarouselView(_BasePreviewView):
             try:
                 self.current = 0
                 await self.message.edit(embed=self._build_embed(), view=None, attachments=[])
+            except (discord.NotFound, discord.HTTPException):
+                pass
+
+
+class _ThreadsCarouselView(_BasePreviewView):
+    """◀ 1/N ▶ navigation for Threads image carousel posts.
+
+    Paginates image slots only. Videos are sent once as a bundled reply at
+    creation time and are never deleted by this view.
+    """
+
+    def __init__(
+        self,
+        user_id: int,
+        items: list[tuple[str | None, str | None]],
+        factory: EmbedFactory,
+        data: dict,
+        post_url: str,
+    ) -> None:
+        super().__init__(user_id, timeout=DISMISS_TIMEOUT)
+        self._items = items
+        self._factory = factory
+        self._data = data
+        self._post_url = post_url
+        self.current = 0
+        self._sync_buttons()
+
+    def _sync_buttons(self) -> None:
+        self.prev_btn.disabled = self.current == 0
+        self.next_btn.disabled = self.current == len(self._items) - 1
+        self.page_btn.label = f"{self.current + 1}/{len(self._items)}"
+
+    def _build_embed(self) -> discord.Embed:
+        image_url, _ = self._items[self.current]
+        return build_threads_embed(
+            self._factory,
+            {**self._data, "image_urls": [image_url] if image_url else [], "video_urls": []},
+            self._post_url,
+        )
+
+    async def _navigate(self, interaction: discord.Interaction) -> None:
+        if not (0 <= self.current < len(self._items)):
+            await interaction.response.defer()
+            return
+        await interaction.response.edit_message(
+            embed=self._build_embed(), view=self, attachments=[]
+        )
+
+    @discord.ui.button(label="◀", style=discord.ButtonStyle.secondary, disabled=True)
+    async def prev_btn(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
+        self.current = max(0, self.current - 1)
+        self._sync_buttons()
+        await self._navigate(interaction)
+
+    @discord.ui.button(label="…", style=discord.ButtonStyle.secondary, disabled=True)
+    async def page_btn(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
+        await interaction.response.defer()
+
+    @discord.ui.button(label="▶", style=discord.ButtonStyle.secondary)
+    async def next_btn(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
+        self.current = min(len(self._items) - 1, self.current + 1)
+        self._sync_buttons()
+        await self._navigate(interaction)
+
+    async def on_timeout(self) -> None:
+        if self.message:
+            try:
+                self.current = 0
+                await self.message.edit(embed=self._build_embed(), view=None)
             except (discord.NotFound, discord.HTTPException):
                 pass
 
@@ -270,6 +341,7 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
             (INSTAGRAM_RE, self._handle_instagram),
             (INSTAGRAM_PROFILE_RE, self._handle_instagram_profile),
             (THREADS_RE, self._handle_threads),
+            (THREADS_PROFILE_RE, self._handle_threads_profile),
             (BILIBILI_LIVE_RE, self._handle_bilibili_live),
             (BILIBILI_SPACE_RE, self._handle_bilibili_space),
             (BILIBILI_RE, self._handle_bilibili),
@@ -432,11 +504,10 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
         post_url = match.group(0)
         data: dict | None = None
 
-        # 1. Discordbot UA — Meta injects OG tags (author + image) even in login-wall HTML
         data = await self._fetch_og(post_url, bot_ua=True, follow_redirects=True)
         LOGGER.debug("Threads bot-UA OG: %r", data)
 
-        # 2. oEmbed — currently returns HTML login-wall; kept for forward-compatibility
+        # oEmbed currently returns a login-wall; kept as forward-compatibility fallback.
         if not data:
             data = await self._fetch_threads_oembed(post_url)
             LOGGER.debug("Threads oEmbed: %r", data)
@@ -445,16 +516,105 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
             LOGGER.debug("Threads: all fetch paths failed for %s", post_url)
             return
 
-        # 3. Scrapling sidecar — enrich with post caption + engagement counts
         if SCRAPLING_HOST:
             scrapling_data = await self._fetch_threads_data(post_url)
             if scrapling_data:
                 data = {**data, **scrapling_data}
 
-        await self._send_preview(message, build_threads_embed(self._embed, data, post_url))
+        raw_media = data.get("media_items") or []
+        all_items: list[tuple[str | None, str | None]]
+        if raw_media:
+            all_items = [
+                (None, m["url"]) if m["type"] == "video" else (m["url"], None)  # type: ignore[index]
+                for m in raw_media
+            ]
+        else:
+            image_urls = data.get("image_urls") or []
+            video_urls_og = data.get("video_urls") or []
+            all_items = [(url, None) for url in image_urls] + [(None, url) for url in video_urls_og]  # type: ignore[list-item]
 
-    async def _fetch_threads_data(self, post_url: str) -> dict[str, str]:
-        """Call the Scrapling sidecar for post caption + engagement counts.
+        image_items: list[tuple[str | None, str | None]] = [
+            (img, None) for img, vid in all_items if img is not None
+        ]
+        video_url_list = [vid for img, vid in all_items if vid is not None]
+
+        async def _dl(vid_url: str) -> bytes | None:
+            f = await self._download_cdn_video(vid_url, filename="video.mp4")
+            if f is None:
+                return None
+            f.fp.seek(0)  # type: ignore[union-attr]
+            return f.fp.read()
+
+        dl_results = await asyncio.gather(*(_dl(url) for url in video_url_list))
+        video_bytes_list: list[bytes] = [b for b in dl_results if b is not None]
+
+        async def _send_video_bundle(ref: discord.Message) -> None:
+            if not video_bytes_list:
+                return
+            files = [discord.File(io.BytesIO(b), filename="video.mp4") for b in video_bytes_list]
+            try:
+                await message.channel.send(files=files, reference=ref)
+            except (discord.Forbidden, discord.HTTPException):
+                pass
+
+        if len(image_items) >= 2:
+            carousel_view = _ThreadsCarouselView(
+                message.author.id, image_items, self._embed, data, post_url
+            )
+            sent = await self._send_preview(
+                message, carousel_view._build_embed(), view=carousel_view
+            )
+            if sent:
+                await _send_video_bundle(sent)
+        elif image_items:
+            img_url = image_items[0][0]
+            embed = build_threads_embed(
+                self._embed, {**data, "image_urls": [img_url], "video_urls": []}, post_url
+            )
+            sent = await self._send_preview(message, embed)
+            if sent:
+                await _send_video_bundle(sent)
+        else:
+            embed_data = (
+                {**data, "image_urls": [], "video_urls": [], "image": ""}
+                if video_bytes_list
+                else data
+            )
+            sent = await self._send_preview(
+                message, build_threads_embed(self._embed, embed_data, post_url)
+            )
+            if sent:
+                await _send_video_bundle(sent)
+
+    async def _handle_threads_profile(self, message: discord.Message, match: re.Match[str]) -> None:
+        handle = match.group(1)
+        profile_url = f"https://www.threads.com/@{handle}"
+        og, scrapling_data = await asyncio.gather(
+            self._fetch_og(profile_url, bot_ua=True, follow_redirects=True),
+            self._fetch_threads_profile_data(profile_url),
+        )
+        if not og:
+            LOGGER.debug("Threads profile: no OG data for @%s", handle)
+            return
+        embed = build_threads_profile_embed(self._embed, {**og, **scrapling_data}, profile_url)
+        await self._send_preview(message, embed)
+
+    async def _fetch_threads_profile_data(self, profile_url: str) -> dict:
+        if not SCRAPLING_HOST:
+            return {}
+        url = f"http://{SCRAPLING_HOST}/threads/profile?url={quote_plus(profile_url)}"
+        try:
+            resp = await self._http.get(url, timeout=35.0)
+            resp.raise_for_status()
+            body: dict = resp.json()
+            LOGGER.info("Scrapling profile: %s", {k: v for k, v in body.items() if v})
+            return {k: v for k, v in body.items() if v}
+        except Exception as exc:
+            LOGGER.warning("Scrapling profile sidecar failed for %s: %s", profile_url, exc)
+            return {}
+
+    async def _fetch_threads_data(self, post_url: str) -> dict:
+        """Call the Scrapling sidecar for caption, engagement counts, and media URLs.
 
         Timeout is 35 s — sidecar may spend up to 30 s on navigation + hydration.
         Returns non-empty fields dict, or {} on any failure.
@@ -463,7 +623,7 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
         try:
             resp = await self._http.get(url, timeout=35.0)
             resp.raise_for_status()
-            body: dict[str, str] = resp.json()
+            body: dict = resp.json()
             LOGGER.info("Scrapling: %s", {k: v for k, v in body.items() if v})
             return {k: v for k, v in body.items() if v}
         except Exception as exc:
@@ -735,14 +895,14 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
         *,
         view: _BasePreviewView | None = None,
         file: discord.File | None = None,
-    ) -> None:
+    ) -> discord.Message | None:
         kwargs: dict = {"embed": embed}
         if view is not None:
             kwargs["view"] = view
         try:
             sent = await message.channel.send(**kwargs)
         except (discord.Forbidden, discord.HTTPException):
-            return
+            return None
         if view is not None:
             view.message = sent
 
@@ -758,6 +918,8 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
             await message.delete()
         except (discord.Forbidden, discord.NotFound, discord.HTTPException):
             pass
+
+        return sent
 
     async def _resolve_instafix_redirect(
         self, path: str, *, require_mp4: bool = False
@@ -793,7 +955,7 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
         try:
             chunks: list[bytes] = []
             total = 0
-            async with self._http.stream("GET", cdn_url) as resp:
+            async with self._http.stream("GET", cdn_url, follow_redirects=True) as resp:
                 resp.raise_for_status()
                 async for chunk in resp.aiter_bytes(65536):
                     total += len(chunk)

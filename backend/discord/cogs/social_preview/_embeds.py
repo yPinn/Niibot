@@ -229,6 +229,8 @@ def build_instagram_profile_embed(
 
 # Matches Meta's Discordbot OG title: "DisplayName (@handle)" or "DisplayName (@handle) on Threads"
 _THREADS_OG_TITLE_RE = re.compile(r"^(.+?)\s+\(@([\w.]+)\)(?:\s+on\s+Threads)?$", re.IGNORECASE)
+# Matches profile OG title: "DisplayName (@handle) • Threads, Say more"
+_THREADS_PROFILE_TITLE_RE = re.compile(r"^(.+?)\s+\(@([\w.]+)\)\s*[•·]", re.IGNORECASE)
 # Strips Meta's "N Replies. See more…" CTA from the end of a description, preserving any caption that precedes it.
 _THREADS_CTA_SUFFIX_RE = re.compile(
     r"\s*\d[\d,.]*[KMB]?\s+\w+\.\s+See more\b.*$", re.IGNORECASE | re.DOTALL
@@ -250,7 +252,7 @@ def get_threads_handle(data: dict[str, str]) -> str | None:
 
 def build_threads_embed(
     factory: EmbedFactory,
-    data: dict[str, str],
+    data: dict[str, Any],
     post_url: str,
 ) -> discord.Embed:
     """Build embed from Threads oEmbed data or OG tags.
@@ -265,12 +267,17 @@ def build_threads_embed(
     - oEmbed dict (``author_name``, ``author_url``, optionally ``thumbnail_url``)
     - OG scrape dict (``title``, ``description``, ``image``) served to Discordbot UA
     """
+    # Prefer scrapling media in order: image → video poster → OG fallback.
+    image_urls: list[str] = data.get("image_urls") or []
+    video_urls: list[str] = data.get("video_urls") or []
+    scrapling_image = image_urls[0] if image_urls else (video_urls[0] if video_urls else None)
+
     if "author_name" in data:
         # oEmbed path — author_name is already the display name
         account = data.get("author_name") or None
         profile_url = data.get("author_url") or post_url
         description: str | None = None
-        image_url = data.get("thumbnail_url") or None
+        image_url = scrapling_image or data.get("thumbnail_url") or None
     else:
         # OG path — "DisplayName (@handle)" or "DisplayName (@handle) on Threads"
         raw_title = data.get("title", "")
@@ -291,7 +298,7 @@ def build_threads_embed(
             description = (
                 _THREADS_CTA_SUFFIX_RE.sub("", data.get("description", "")).strip() or None
             )
-        image_url = data.get("image") or None
+        image_url = scrapling_image or data.get("image") or None
 
     embed = build_social_embed(
         factory,
@@ -307,8 +314,44 @@ def build_threads_embed(
         use_platform_footer=False,
     )
 
-    for key, label in (("like_count", "點讚"), ("reply_count", "留言"), ("repost_count", "轉發")):
+    for key, label in (("like_count", "點讚"), ("reply_count", "留言"), ("share_count", "分享")):
         embed.add_field(name=label, value=data.get(key) or "—", inline=True)
+
+    return embed
+
+
+def build_threads_profile_embed(
+    factory: EmbedFactory,
+    data: dict[str, str],
+    profile_url: str,
+) -> discord.Embed:
+    raw_title = data.get("title", "")
+    m = _THREADS_PROFILE_TITLE_RE.match(raw_title) or _THREADS_OG_TITLE_RE.match(raw_title)
+    title: str | None
+    if m:
+        display_name, handle = m.group(1), m.group(2)
+        title = f"{display_name} (@{handle})"
+    else:
+        title = raw_title or None
+
+    embed = build_social_embed(
+        factory,
+        platform="Threads",
+        color=COLOR_THREADS,
+        url=profile_url,
+        author_name="Threads",
+        author_icon_url=THREADS_ICON_URL,
+        author_url=None,
+        title=title,
+        description=data.get("bio") or None,
+        thumbnail_url=data.get("image") or None,
+        use_platform_footer=False,
+    )
+
+    if followers := data.get("followers"):
+        embed.add_field(name="粉絲", value=followers, inline=True)
+    if recent_views := data.get("recent_views"):
+        embed.add_field(name="近期瀏覽", value=recent_views, inline=True)
 
     return embed
 
