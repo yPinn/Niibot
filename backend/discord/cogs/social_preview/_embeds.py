@@ -157,14 +157,21 @@ def build_instagram_embed(
     if " on Instagram" in raw_title:
         username = _extract_author(raw_title, " on Instagram")
     else:
-        # InstaFix newer format: title is just "@handle" or "handle"
+        # InstaFix newer format: title is "@handle" or enriched "Display Name (@handle)"
         username = raw_title or None
     description = _strip_trailing_hashtags(og.get("description", ""))
 
-    handle = username.lstrip("@") if username else None
-    # Display names from Instagram OG (reels) may be non-ASCII; only use as URL path if ASCII-safe
+    # Enriched title "Display Name (@handle)": extract handle from parens for profile URL.
+    handle: str | None
+    if username and " (@" in username and username.endswith(")"):
+        handle = username.rsplit(" (@", 1)[1].rstrip(")")
+    else:
+        handle = username.lstrip("@") if username else None
+    # Display names from old InstaFix format may be non-ASCII; only use as URL path if valid.
     profile_url = (
-        f"https://www.instagram.com/{handle}/" if handle and handle.isascii() else post_url
+        f"https://www.instagram.com/{handle}/"
+        if handle and re.fullmatch(r"[\w.]{1,30}", handle)
+        else post_url
     )
 
     return build_social_embed(
@@ -203,6 +210,7 @@ def build_instagram_profile_embed(
     elif raw_title:
         display_name = raw_title
 
+    title = f"{display_name} (@{username})" if display_name else f"@{username}"
     embed = build_social_embed(
         factory,
         platform="Instagram",
@@ -210,10 +218,9 @@ def build_instagram_profile_embed(
         url=profile_url,
         author_name="Instagram",
         author_icon_url=INSTAGRAM_ICON_URL,
-        author_url=profile_url,
-        title=display_name or f"@{username}",
+        title=title,
         description=og.get("description") or None,
-        image_url=og.get("image") or None,
+        thumbnail_url=og.get("image") or None,
         use_platform_footer=False,
     )
 
