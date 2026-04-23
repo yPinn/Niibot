@@ -169,13 +169,16 @@ class TestGetCurrentUser:
         assert r.status_code == 401
 
     def test_invalid_token_returns_401(self):
-        r = _make_client().get("/api/auth/user", cookies={"auth_token": "not.a.valid.jwt"})
+        client = _make_client()
+        client.cookies.set("auth_token", "not.a.valid.jwt")
+        r = client.get("/api/auth/user")
         assert r.status_code == 401
 
     def test_valid_twitch_token_returns_user_info(self):
         pool = _make_pool(fetchrow={"theme": "dark"})
         client = _make_client(pool=pool)
-        r = client.get("/api/auth/user", cookies={"auth_token": _token()})
+        client.cookies.set("auth_token", _token())
+        r = client.get("/api/auth/user")
 
         assert r.status_code == 200
         data = r.json()
@@ -186,7 +189,8 @@ class TestGetCurrentUser:
     def test_theme_defaults_to_system_when_no_user_row(self):
         pool = _make_pool(fetchrow=None)
         client = _make_client(pool=pool)
-        r = client.get("/api/auth/user", cookies={"auth_token": _token()})
+        client.cookies.set("auth_token", _token())
+        r = client.get("/api/auth/user")
 
         assert r.status_code == 200
         assert r.json()["theme"] == "system"
@@ -196,7 +200,8 @@ class TestGetCurrentUser:
         twitch_api = _make_twitch_api()
         twitch_api.get_user_info = AsyncMock(return_value=None)
         client = _make_client(pool=pool, twitch_api=twitch_api)
-        r = client.get("/api/auth/user", cookies={"auth_token": _token()})
+        client.cookies.set("auth_token", _token())
+        r = client.get("/api/auth/user")
 
         assert r.status_code == 404
 
@@ -213,14 +218,16 @@ class TestLogout:
 
     def test_valid_twitch_token_returns_200(self):
         client = _make_client()
-        r = client.post("/api/auth/logout", cookies={"auth_token": _token()})
+        client.cookies.set("auth_token", _token())
+        r = client.post("/api/auth/logout")
 
         assert r.status_code == 200
         assert r.json()["message"] == "Logged out successfully"
 
     def test_logout_clears_auth_cookie(self):
         client = _make_client()
-        r = client.post("/api/auth/logout", cookies={"auth_token": _token()})
+        client.cookies.set("auth_token", _token())
+        r = client.post("/api/auth/logout")
 
         set_cookie = r.headers.get("set-cookie", "")
         assert "auth_token" in set_cookie
@@ -319,10 +326,10 @@ class TestUpdatePreferences:
 
     def test_invalid_theme_returns_422(self):
         client = _make_client(override_user_id=True)
+        client.cookies.set("auth_token", _token())
         r = client.patch(
             "/api/user/preferences",
             json={"theme": "rainbow"},
-            cookies={"auth_token": _token()},
         )
         assert r.status_code == 422  # Pydantic Literal validation
 
@@ -330,10 +337,10 @@ class TestUpdatePreferences:
     def test_valid_theme_returns_200(self, theme: str):
         pool = _make_pool(execute="UPDATE 1")
         client = _make_client(pool=pool, override_user_id=True)
+        client.cookies.set("auth_token", _token())
         r = client.patch(
             "/api/user/preferences",
             json={"theme": theme},
-            cookies={"auth_token": _token()},
         )
         assert r.status_code == 200
         assert r.json()["theme"] == theme
