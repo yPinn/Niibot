@@ -17,7 +17,7 @@ from ._embeds import create_giveaway_embed, create_result_embed
 from ._persistence import GiveawayPersistence
 from ._views import GiveawayView, TimeSelectView
 
-LOGGER = logging.getLogger(__name__)
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 class GiveawayCog(commands.Cog):

@@ -14,7 +14,7 @@ from shared.repositories.command_config import CommandConfigRepository
 if TYPE_CHECKING:
     from core.bot import Bot
 
-LOGGER = logging.getLogger(__name__)
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 _MAX_SIDES = 10_000
 _MAX_OPTIONS = 20

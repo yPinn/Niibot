@@ -9,7 +9,7 @@ import os
 import tempfile
 from pathlib import Path
 
-LOGGER = logging.getLogger(__name__)
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 class GiveawayPersistence:

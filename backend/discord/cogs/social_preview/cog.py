@@ -78,7 +78,7 @@ from .constants import (
     VIDEO_MAX_BYTES,
 )
 
-LOGGER = logging.getLogger(__name__)
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 _UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "

@@ -15,7 +15,7 @@ from shared.repositories.birthday import BirthdayRepository
 from ._views import DashboardView, InitSetupView, UpdateSettingsView
 from .constants import BIRTHDAY_COLOR, BIRTHDAY_THUMBNAIL, TZ_UTC8
 
-LOGGER = logging.getLogger(__name__)
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 class BirthdayCog(commands.Cog):

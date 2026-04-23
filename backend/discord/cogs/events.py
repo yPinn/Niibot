@@ -15,7 +15,7 @@ from discord.ext import commands
 
 from core import DATA_DIR, EmbedFactory, load_json, render_message_image
 
-LOGGER = logging.getLogger(__name__)
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 _LOG_CHANNELS_FILE = DATA_DIR / "log_channels.json"
 _MSG_CACHE_SIZE = 2000  # max cached messages across all guilds

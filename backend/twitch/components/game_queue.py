@@ -23,7 +23,7 @@ from shared.repositories.game_queue import GameQueueRepository, GameQueueSetting
 if TYPE_CHECKING:
     from core.bot import Bot
 
-LOGGER = logging.getLogger(__name__)
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 class GameQueueComponent(commands.Component):

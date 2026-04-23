@@ -40,7 +40,7 @@ from utils.trigger_matching import validate_regex_pattern
 if TYPE_CHECKING:
     from core.bot import Bot
 
-LOGGER = logging.getLogger(__name__)
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 ROLE_ALIASES = {
     "everyone": "everyone",

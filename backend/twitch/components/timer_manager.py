@@ -14,7 +14,7 @@ from utils.substitution import substitute_variables
 if TYPE_CHECKING:
     from core.bot import Bot
 
-LOGGER = logging.getLogger(__name__)
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 class _NoChatter:

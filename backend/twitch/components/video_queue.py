@@ -34,7 +34,7 @@ from shared.repositories.video_queue import (
 if TYPE_CHECKING:
     from core.bot import Bot
 
-LOGGER = logging.getLogger(__name__)
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 class VideoQueueComponent(commands.Component):

@@ -16,7 +16,7 @@ from core import DATA_DIR, EmbedFactory, load_json
 from ._views import CategoryButtonsView, ItemListView, RecommendationView
 from .constants import EAT_COLOR, EAT_THUMBNAIL
 
-LOGGER = logging.getLogger(__name__)
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 EatData = dict[str, Any]
 

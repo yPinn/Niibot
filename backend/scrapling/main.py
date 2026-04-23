@@ -42,7 +42,7 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)-8s %(name)s | %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
-LOGGER = logging.getLogger(__name__)
+LOGGER: logging.Logger = logging.getLogger(__name__)
 _THREADS_SESSION_ID = unquote(os.getenv("THREADS_SESSION_ID", ""))
 _STEALTH_JS_PATH = os.path.join(os.path.dirname(__file__), "stealth.js")
 

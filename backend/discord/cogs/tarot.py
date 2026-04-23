@@ -10,7 +10,7 @@ from discord.ext import commands
 from core import DATA_DIR, load_json
 from core.embed_factory import EmbedFactory
 
-LOGGER = logging.getLogger(__name__)
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 class TarotCog(commands.Cog):

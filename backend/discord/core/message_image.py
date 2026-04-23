@@ -14,7 +14,7 @@ from pathlib import Path
 import aiohttp
 from PIL import Image, ImageDraw, ImageFont
 
-LOGGER = logging.getLogger(__name__)
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 # ── Discord dark theme exact values ─────────────────────────────────────────
 _BG = (49, 51, 56)  # #313338

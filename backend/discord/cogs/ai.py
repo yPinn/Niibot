@@ -22,7 +22,7 @@ from openai.types.chat import ChatCompletionMessageParam
 
 from core import DATA_DIR, EmbedFactory, get_settings, load_json
 
-LOGGER = logging.getLogger(__name__)
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 _FREE_MODELS_PATH = DATA_DIR / "free_models.json"
 
