@@ -1,3 +1,5 @@
+import { apiCache, CACHE_KEYS } from '@/lib/apiCache'
+
 import { API_ENDPOINTS, apiFetch } from './config'
 
 export interface SessionSummary {
@@ -40,56 +42,65 @@ export interface AnalyticsSummary {
   recent_sessions: SessionSummary[]
 }
 
+const ANALYTICS_TTL = 5 * 60 * 1000
+const SESSION_TTL = 10 * 60 * 1000
+
 export async function getAnalyticsSummary(days: number = 30): Promise<AnalyticsSummary> {
-  const response = await apiFetch(`${API_ENDPOINTS.analytics.summary}?days=${days}`, {
-    credentials: 'include',
-  })
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch analytics summary: ${response.statusText}`)
-  }
-
-  return response.json()
+  return apiCache.fetch(
+    CACHE_KEYS.ANALYTICS_SUMMARY(days),
+    async () => {
+      const response = await apiFetch(`${API_ENDPOINTS.analytics.summary}?days=${days}`, {
+        credentials: 'include',
+      })
+      if (!response.ok) throw new Error(`Failed to fetch analytics summary: ${response.statusText}`)
+      return response.json() as Promise<AnalyticsSummary>
+    },
+    { ttl: ANALYTICS_TTL }
+  )
 }
 
 export async function getTopCommands(
   days: number = 30,
   limit: number = 10
 ): Promise<AnalyticsCommandStat[]> {
-  const response = await apiFetch(
-    `${API_ENDPOINTS.analytics.topCommands}?days=${days}&limit=${limit}`,
-    {
-      credentials: 'include',
-    }
+  return apiCache.fetch(
+    CACHE_KEYS.ANALYTICS_TOP_COMMANDS(days, limit),
+    async () => {
+      const response = await apiFetch(
+        `${API_ENDPOINTS.analytics.topCommands}?days=${days}&limit=${limit}`,
+        { credentials: 'include' }
+      )
+      if (!response.ok) throw new Error(`Failed to fetch top commands: ${response.statusText}`)
+      return response.json() as Promise<AnalyticsCommandStat[]>
+    },
+    { ttl: ANALYTICS_TTL }
   )
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch top commands: ${response.statusText}`)
-  }
-
-  return response.json()
 }
 
 export async function getSessionCommands(session_id: number): Promise<AnalyticsCommandStat[]> {
-  const response = await apiFetch(API_ENDPOINTS.analytics.sessionCommands(session_id), {
-    credentials: 'include',
-  })
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch session commands: ${response.statusText}`)
-  }
-
-  return response.json()
+  return apiCache.fetch(
+    CACHE_KEYS.ANALYTICS_SESSION_COMMANDS(session_id),
+    async () => {
+      const response = await apiFetch(API_ENDPOINTS.analytics.sessionCommands(session_id), {
+        credentials: 'include',
+      })
+      if (!response.ok) throw new Error(`Failed to fetch session commands: ${response.statusText}`)
+      return response.json() as Promise<AnalyticsCommandStat[]>
+    },
+    { ttl: SESSION_TTL }
+  )
 }
 
 export async function getSessionEvents(session_id: number): Promise<StreamEvent[]> {
-  const response = await apiFetch(API_ENDPOINTS.analytics.sessionEvents(session_id), {
-    credentials: 'include',
-  })
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch session events: ${response.statusText}`)
-  }
-
-  return response.json()
+  return apiCache.fetch(
+    CACHE_KEYS.ANALYTICS_SESSION_EVENTS(session_id),
+    async () => {
+      const response = await apiFetch(API_ENDPOINTS.analytics.sessionEvents(session_id), {
+        credentials: 'include',
+      })
+      if (!response.ok) throw new Error(`Failed to fetch session events: ${response.statusText}`)
+      return response.json() as Promise<StreamEvent[]>
+    },
+    { ttl: SESSION_TTL }
+  )
 }

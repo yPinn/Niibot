@@ -133,12 +133,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     loadInitialData()
   }, [loadInitialData])
 
-  // Channels polling: 60s (bot status 已移至 ServiceStatusContext)
+  // Channels polling: 5 min base; doubles on failure, capped at 30 min
   useEffect(() => {
     if (!user) return
-    const interval = setInterval(refreshChannels, 60_000)
-    return () => clearInterval(interval)
-  }, [user, refreshChannels])
+
+    const BASE_MS = 5 * 60_000
+    const MAX_MS = 30 * 60_000
+    let failures = 0
+    let cancelled = false
+    let timeoutId: ReturnType<typeof setTimeout>
+
+    const poll = async () => {
+      try {
+        const data = await getTwitchMonitoredChannels({ forceRefresh: true })
+        if (!cancelled) {
+          setChannels(data)
+          failures = 0
+        }
+      } catch {
+        if (!cancelled) failures++
+      }
+      if (!cancelled) {
+        timeoutId = setTimeout(poll, Math.min(BASE_MS * 2 ** failures, MAX_MS))
+      }
+    }
+
+    timeoutId = setTimeout(poll, BASE_MS)
+    return () => {
+      cancelled = true
+      clearTimeout(timeoutId)
+    }
+  }, [user])
 
   return (
     <AuthContext.Provider

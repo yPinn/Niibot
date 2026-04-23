@@ -44,7 +44,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { usePolling } from '@/hooks/usePolling'
 
-const POLL_INTERVAL = 15_000
+const POLL_INTERVAL = 30_000
 
 function formatTime(dateStr: string) {
   return new Date(dateStr).toLocaleTimeString('zh-TW', {

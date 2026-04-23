@@ -83,4 +83,10 @@ export const apiCache = new ApiCache()
 export const CACHE_KEYS = {
   CURRENT_USER: 'auth:current-user',
   CHANNELS: 'channels:list',
+  STATS_CHANNEL: (days: number) => `stats:channel:${days}`,
+  ANALYTICS_SUMMARY: (days: number) => `analytics:summary:${days}`,
+  ANALYTICS_TOP_COMMANDS: (days: number, limit: number) =>
+    `analytics:top-commands:${days}:${limit}`,
+  ANALYTICS_SESSION_COMMANDS: (sessionId: number) => `analytics:session-commands:${sessionId}`,
+  ANALYTICS_SESSION_EVENTS: (sessionId: number) => `analytics:session-events:${sessionId}`,
 } as const

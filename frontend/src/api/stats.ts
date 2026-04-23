@@ -1,3 +1,5 @@
+import { apiCache, CACHE_KEYS } from '@/lib/apiCache'
+
 import { API_ENDPOINTS, apiFetch } from './config'
 
 export interface CommandStat {
@@ -18,21 +20,25 @@ export interface ChannelStats {
   total_commands: number
 }
 
-export async function getChannelStats(): Promise<ChannelStats | null> {
-  try {
-    const response = await apiFetch(API_ENDPOINTS.stats.channel, {
-      credentials: 'include',
-    })
-
-    if (!response.ok) {
-      if (import.meta.env.DEV)
-        console.error(`Failed to fetch stats: ${response.status} ${response.statusText}`)
-      return null
-    }
-
-    return await response.json()
-  } catch (error) {
-    if (import.meta.env.DEV) console.error('Failed to get channel stats:', error)
-    return null
-  }
+export async function getChannelStats(days = 30): Promise<ChannelStats | null> {
+  return apiCache.fetch(
+    CACHE_KEYS.STATS_CHANNEL(days),
+    async () => {
+      try {
+        const response = await apiFetch(`${API_ENDPOINTS.stats.channel}?days=${days}`, {
+          credentials: 'include',
+        })
+        if (!response.ok) {
+          if (import.meta.env.DEV)
+            console.error(`Failed to fetch stats: ${response.status} ${response.statusText}`)
+          return null
+        }
+        return (await response.json()) as ChannelStats
+      } catch (error) {
+        if (import.meta.env.DEV) console.error('Failed to get channel stats:', error)
+        return null
+      }
+    },
+    { ttl: 5 * 60 * 1000 }
+  )
 }

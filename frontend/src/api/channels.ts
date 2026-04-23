@@ -47,7 +47,7 @@ export async function getTwitchMonitoredChannels(options?: {
   forceRefresh?: boolean
 }): Promise<Channel[]> {
   return apiCache.fetch(CACHE_KEYS.CHANNELS, fetchTwitchMonitoredChannels, {
-    ttl: 2 * 60 * 1000,
+    ttl: 10 * 60 * 1000,
     forceRefresh: options?.forceRefresh,
   })
 }
