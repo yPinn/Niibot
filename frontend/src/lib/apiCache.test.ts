@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { apiCache } from '@/lib/apiCache'
+import { apiCache, CACHE_KEYS } from '@/lib/apiCache'
 
 const KEY = 'test-key'
 
@@ -81,6 +81,28 @@ describe('patch', () => {
 
   it('does nothing silently when the key is absent', () => {
     expect(() => apiCache.patch('missing', (d: unknown) => d)).not.toThrow()
+  })
+})
+
+describe('CACHE_KEYS', () => {
+  it('STATS_CHANNEL returns keyed string', () => {
+    expect(CACHE_KEYS.STATS_CHANNEL(7)).toBe('stats:channel:7')
+  })
+
+  it('ANALYTICS_SUMMARY returns keyed string', () => {
+    expect(CACHE_KEYS.ANALYTICS_SUMMARY(30)).toBe('analytics:summary:30')
+  })
+
+  it('ANALYTICS_TOP_COMMANDS returns keyed string', () => {
+    expect(CACHE_KEYS.ANALYTICS_TOP_COMMANDS(7, 10)).toBe('analytics:top-commands:7:10')
+  })
+
+  it('ANALYTICS_SESSION_COMMANDS returns keyed string', () => {
+    expect(CACHE_KEYS.ANALYTICS_SESSION_COMMANDS(42)).toBe('analytics:session-commands:42')
+  })
+
+  it('ANALYTICS_SESSION_EVENTS returns keyed string', () => {
+    expect(CACHE_KEYS.ANALYTICS_SESSION_EVENTS(42)).toBe('analytics:session-events:42')
   })
 })
 

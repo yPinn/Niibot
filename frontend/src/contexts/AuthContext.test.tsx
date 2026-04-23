@@ -330,4 +330,113 @@ describe('refreshChannels', () => {
 
     expect(result.current.channels).toEqual([])
   })
+
+  it('updates channels when getTwitchMonitoredChannels resolves', async () => {
+    const CHANNEL = { id: 'c1', name: 'ch' }
+    mockGetChannels.mockResolvedValueOnce([]).mockResolvedValueOnce([CHANNEL])
+
+    const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider })
+    await waitFor(() => expect(result.current.isInitialized).toBe(true))
+
+    await act(async () => {
+      await result.current.refreshChannels()
+    })
+
+    expect(result.current.channels).toEqual([CHANNEL])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// channels polling
+// ---------------------------------------------------------------------------
+
+describe('channels polling', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.stubGlobal('location', { pathname: '/dashboard', href: 'http://localhost/dashboard' })
+    mockGetCurrentUser.mockResolvedValue(TWITCH_USER)
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+    vi.useRealTimers()
+  })
+
+  it('polls channels after BASE_MS and updates state on success', async () => {
+    const CHANNEL = { id: 'c1', name: 'ch' }
+    mockGetChannels
+      .mockResolvedValueOnce([]) // initial load
+      .mockResolvedValueOnce([CHANNEL]) // first poll
+
+    vi.useFakeTimers()
+    const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider })
+
+    // Flush initial async load (Promise.all inside loadInitialData)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+
+    // Advance by BASE_MS (5 min) to trigger the first poll
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5 * 60_000)
+    })
+
+    expect(mockGetChannels).toHaveBeenCalledTimes(2)
+    expect(result.current.channels).toEqual([CHANNEL])
+  })
+
+  it('increments failure count and backs off when poll throws', async () => {
+    mockGetChannels
+      .mockResolvedValueOnce([]) // initial load
+      .mockRejectedValueOnce(new Error('timeout')) // first poll fails
+
+    vi.useFakeTimers()
+    renderHook(() => useAuth(), { wrapper: AuthProvider })
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+
+    // Advance by BASE_MS to trigger the failing poll
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5 * 60_000)
+    })
+
+    // After failure, next poll is scheduled (backoff = BASE_MS * 2^1 = 10 min)
+    // Verify the poll was attempted
+    expect(mockGetChannels).toHaveBeenCalledTimes(2)
+  })
+
+  it('stops polling when the component unmounts', async () => {
+    mockGetChannels.mockResolvedValue([])
+
+    vi.useFakeTimers()
+    const { unmount } = renderHook(() => useAuth(), { wrapper: AuthProvider })
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+
+    unmount()
+
+    // Advance past BASE_MS — poll should not fire after unmount
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5 * 60_000)
+    })
+
+    // Only the initial load call, no polling
+    expect(mockGetChannels).toHaveBeenCalledTimes(1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// useAuth outside AuthProvider
+// ---------------------------------------------------------------------------
+
+describe('useAuth', () => {
+  it('throws when used outside AuthProvider', () => {
+    expect(() => renderHook(() => useAuth())).toThrow('useAuth must be used within an AuthProvider')
+  })
 })
