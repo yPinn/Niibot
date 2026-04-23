@@ -52,7 +52,7 @@ class TarotComponent(commands.Component):
 
     @commands.command(aliases=["塔羅"])
     async def tarot(self, ctx: commands.Context, *, args: str | None = None) -> None:
-        """每日塔羅占卜。用法: !塔羅 [感情/事業/財運]"""
+        """塔羅占卜。用法: !塔羅 [感情/事業/財運]"""
         config = await check_command(
             self.cmd_repo, ctx, channel_repo=self.channel_repo, command_name="tarot"
         )

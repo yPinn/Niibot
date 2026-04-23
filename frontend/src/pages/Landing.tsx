@@ -78,7 +78,7 @@ const BUILTIN_COMMANDS = [
   { name: '!help', desc: '顯示頻道所有可用指令' },
   { name: '!ai', desc: '向 AI 提問，例：!ai 今天吃什麼' },
   { name: '!tft', desc: '查詢聯盟戰棋排名' },
-  { name: '!運勢', desc: '抽取今日運勢，每人每日一次' },
+  { name: '!運勢', desc: '抽取今日運勢' },
   { name: '!塔羅', desc: '塔羅牌占卜，可指定感情 / 事業 / 財運' },
   { name: '!開播時間', desc: '查看目前已開播多久' },
   { name: '!斥責', desc: '宣讀頻道對惡意言論的立場聲明' },

@@ -44,7 +44,7 @@ class TarotCog(commands.Cog):
 
         return card_id, is_reversed
 
-    @app_commands.command(name="tarot", description="每日塔羅占卜")
+    @app_commands.command(name="tarot", description="塔羅占卜")
     @app_commands.describe(category="想詢問的主題（可選）")
     @app_commands.choices(
         category=[

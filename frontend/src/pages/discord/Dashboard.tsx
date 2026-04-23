@@ -55,7 +55,7 @@ const COMMANDS = [
   { cmd: '/setlog', desc: '指定要記錄伺服器動態的頻道（需管理員）' },
   { cmd: '/bday menu', desc: '登錄、查詢或訂閱成員生日通知' },
   { cmd: '/giveaway', desc: '建立與管理抽獎活動' },
-  { cmd: '/fortune', desc: '今日運勢（每人每日一次）' },
+  { cmd: '/fortune', desc: '今日運勢' },
   { cmd: '/tarot', desc: '塔羅牌占卜' },
   { cmd: '/tft [名稱#TAG]', desc: '查詢 TFT 當季排行門檻，或輸入玩家名稱查段位' },
   { cmd: '/ai <問題>', desc: '向 AI 提問' },

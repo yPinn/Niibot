@@ -46,10 +46,10 @@ _PUBLIC_CATEGORIES: list[_Category] = [
     ),
     _Category(
         "占卜",
-        "每日運勢與塔羅牌",
+        "運勢與塔羅牌",
         [
             _Cmd("/fortune", "抽取今日綜合運勢"),
-            _Cmd("/tarot [主題]", "抽取每日塔羅牌，可指定主題"),
+            _Cmd("/tarot [主題]", "抽取塔羅牌，可指定主題"),
         ],
     ),
     _Category(

@@ -64,7 +64,7 @@ export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) 
                     className="text-primary mt-0.5"
                     wrapperClassName=""
                   />
-                  <span>Discord 社群預覽與伺服器日誌</span>
+                  <span>Discord 社群連結預覽與伺服器日誌</span>
                 </li>
               </ul>
               <Button type="button" onClick={openTwitchOAuth} className="w-full">
