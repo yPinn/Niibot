@@ -125,7 +125,7 @@ const MOD_DETAILS = [
   { icon: 'fa-solid fa-terminal', text: '在聊天室輸入以下指令並送出' },
   {
     icon: 'fa-solid fa-user-shield',
-    text: '看到通知「你的頻道 已賦予 niibot_ 的 Mod 優先權。」即代表設定成功',
+    text: '看到通知「已賦予 niibot_ 的 Mod 優先權」即代表設定成功',
   },
 ]
 
@@ -158,7 +158,7 @@ const ALT_MOD_METHODS = [
   {
     icon: 'fa-solid fa-gear',
     title: '從 Twitch 後台設定',
-    desc: '前往 Creator Dashboard → Community → Roles Manager → 搜尋「泥爸」→ 設定為 Moderator',
+    desc: '前往 Twitch 後台 → 社群 → 角色管理 → 搜尋「泥爸」→ 設定為主持人（Moderator）',
   },
 ]
 
@@ -166,35 +166,35 @@ const NEXT_STEPS = [
   {
     icon: 'fa-solid fa-terminal',
     title: '建立第一個指令',
-    desc: '新增自訂指令讓觀眾在聊天室呼叫，支援冷卻時間與權限設定。',
+    desc: '新增觀眾可在聊天室呼叫的指令，可設定使用間隔與開放對象。',
     href: '/commands',
     badge: null,
   },
   {
     icon: 'fa-solid fa-bolt',
     title: '設定事件自動回應',
-    desc: '追蹤、訂閱、Raid 等事件發生時自動發送定制訊息。',
+    desc: '有人追蹤、訂閱或突襲時，自動發出你設定好的訊息。',
     href: '/events',
     badge: null,
   },
   {
     icon: 'fa-solid fa-clock',
     title: '新增定時訊息',
-    desc: '定時廣播頻道資訊或活動公告，支援最低聊天門檻避免冷場打擾。',
+    desc: '定時廣播頻道資訊或活動公告，沒人聊天時不打擾。',
     href: '/timers',
     badge: null,
   },
   {
     icon: 'fa-solid fa-gamepad',
     title: '啟用遊戲排隊系統',
-    desc: '管理觀眾排隊上下車，搭配 OBS 疊加層即時顯示隊列狀況。',
+    desc: '管理觀眾排隊上下車，隊伍狀況同步顯示在直播畫面上。',
     href: '/modules/game-queue',
     badge: 'OBS',
   },
   {
     icon: 'fa-solid fa-film',
     title: '啟用影片排隊系統',
-    desc: '讓觀眾投 YouTube 影片，按來源優先級自動排隊播放。',
+    desc: '觀眾投票想看的 YouTube 影片，自動排隊依序播放。',
     href: '/modules/video-queue',
     badge: 'OBS',
   },
@@ -203,11 +203,14 @@ const NEXT_STEPS = [
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function GetStarted() {
-  useDocumentTitle('Get Started')
+  useDocumentTitle('快速上手 — Niibot')
 
   return (
-    <main className="flex flex-1 flex-col gap-card p-page lg:p-page-lg">
-      <PageHeader title="快速上手" description="完成以下設定，讓機器人開始守護你的聊天室。" />
+    <main className="flex flex-1 flex-col gap-card p-page lg:p-page-lg select-none">
+      <PageHeader
+        title="快速上手"
+        description="完成 Mod 授權設定，Niibot 就能在你的頻道正常運作。"
+      />
 
       {/* ── Setup Action ── */}
       <section className="flex flex-col gap-section">
@@ -220,10 +223,10 @@ export default function GetStarted() {
                 icon="fa-solid fa-shield-halved"
                 wrapperClassName="size-4 shrink-0 text-amber-500"
               />
-              在頻道中賦予機器人 Mod 權限
+              讓機器人成為聊天室主持人
             </CardTitle>
             <p className="text-sub text-muted-foreground">
-              機器人需要 Mod 身份才能正常發送訊息、管理聊天室與執行指令。
+              機器人需要主持人（Mod）身份才能在你的頻道正常發言與執行指令。
             </p>
           </CardHeader>
 
@@ -251,7 +254,7 @@ export default function GetStarted() {
                       icon="fa-solid fa-terminal"
                       wrapperClassName="size-4 shrink-0 text-muted-foreground"
                     />
-                    <code className="font-mono text-content font-semibold tracking-wide">
+                    <code className="font-mono text-content font-semibold tracking-wide select-text">
                       /mod niibot_
                     </code>
                     <CopyButton text="/mod niibot_" />
@@ -347,16 +350,7 @@ export default function GetStarted() {
             >
               Discord 社群
             </a>{' '}
-            或前往{' '}
-            <a
-              href="https://github.com/yPinn/Niibot"
-              target="_blank"
-              rel="noreferrer"
-              className="text-primary underline-offset-4 hover:underline"
-            >
-              GitHub
-            </a>{' '}
-            回報問題。
+            回報問題或提出建議。
           </span>
         </p>
       </div>

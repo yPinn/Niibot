@@ -19,34 +19,57 @@ const FEATURES = [
   {
     icon: 'fa-solid fa-terminal',
     title: '自訂指令與觸發器',
-    desc: '設好指令，觀眾直接呼叫。支援關鍵字自動回應、冷卻時間與權限設定，你專心直播就好。',
+    desc: '設好指令，觀眾直接呼叫。支援關鍵字自動回應、使用間隔與開放對象設定，你專心直播就好。',
   },
   {
     icon: 'fa-solid fa-bolt',
     title: '事件自動回應',
-    desc: '追蹤、訂閱、Raid、Bits、頻道點數兌換，全部自動觸發定制訊息，一個都不漏。',
+    desc: '有人追蹤、訂閱、突襲或兌換點數時，自動發出你設定好的訊息，一個都不漏。',
   },
   {
     icon: 'fa-solid fa-clock',
     title: '定時訊息',
-    desc: '定時廣播頻道資訊或活動公告。支援最低聊天門檻，冷場不打擾。',
+    desc: '定時廣播頻道資訊或活動公告，沒人聊天時不打擾。',
   },
   {
     icon: 'fa-solid fa-gamepad',
     title: '遊戲排隊系統',
-    desc: '管理觀眾上下車、批次叫號，OBS 疊加層即時顯示排隊狀況，直播畫面不跳出。',
+    desc: '管理觀眾排隊上下車、批次叫號，隊伍狀況同步顯示在直播畫面上。',
     badge: 'OBS',
   },
   {
     icon: 'fa-solid fa-film',
     title: '影片排隊系統',
-    desc: '觀眾用聊天、頻道點數或贊助投 YouTube 影片，按來源優先級自動排隊播放。',
+    desc: '觀眾投票想看的 YouTube 影片，自動排隊依序播放。',
     badge: 'OBS',
   },
   {
     icon: 'fa-solid fa-chart-line',
     title: '數據分析',
     desc: '30 天直播趨勢、聊天量、最活躍觀眾與最常用指令，掌握頻道成長一目了然。',
+  },
+]
+
+const DISCORD_FEATURES = [
+  {
+    icon: 'fa-brands fa-instagram',
+    title: '社群連結預覽',
+    desc: '有人分享 Instagram、Bilibili、TikTok、Threads 或 Twitch 連結，Bot 自動顯示預覽。',
+  },
+  {
+    icon: 'fa-solid fa-scroll',
+    title: '伺服器事件日誌',
+    desc: '誰刪了訊息、誰的身份被調整，全部自動記錄在你指定的頻道裡。',
+  },
+  {
+    icon: 'fa-solid fa-stars',
+    title: '娛樂與占卜',
+    desc: '每日運勢、塔羅牌、TFT 戰棋段位查詢、AI 對話，讓伺服器氣氛活絡起來。',
+  },
+  {
+    icon: 'fa-solid fa-gift',
+    title: '生日追蹤 & 抽獎',
+    desc: '成員登錄生日後 Bot 在當天自動送出祝賀，搭配抽獎功能讓活動更熱鬧。',
   },
 ]
 
@@ -67,7 +90,7 @@ export default function Home() {
   const { resolvedTheme, setTheme } = useTheme()
 
   return (
-    <div className="min-h-screen overflow-x-hidden bg-background text-foreground">
+    <div className="min-h-screen overflow-x-hidden bg-background text-foreground select-none">
       {/* Theme toggle */}
       <Button
         variant="ghost"
@@ -87,7 +110,12 @@ export default function Home() {
           {/* Avatar */}
           <FadeInZoom className="shrink-0">
             <div className="h-40 w-40 overflow-hidden rounded-full border-4 border-primary shadow-2xl sm:h-48 sm:w-48 lg:h-56 lg:w-56">
-              <img src={avatarSrc} alt="Niibot 頭像" className="h-full w-full object-cover" />
+              <img
+                src={avatarSrc}
+                alt="Niibot 頭像"
+                draggable="false"
+                className="h-full w-full object-cover"
+              />
             </div>
           </FadeInZoom>
 
@@ -168,6 +196,38 @@ export default function Home() {
               ))}
             </Stagger>
           </div>
+        </section>
+
+        <div className="border-t border-border" />
+
+        {/* Discord */}
+        <section className="px-6 py-16 sm:px-10 lg:px-16">
+          <div className="mb-3 flex items-center gap-3">
+            <SlideUpSm inView className="text-2xl font-semibold sm:text-3xl">
+              Discord 也顧到了
+            </SlideUpSm>
+            <FadeIn inView delay={0.1}>
+              <Icon icon="fa-brands fa-discord" wrapperClassName="size-6 text-[#5865F2]" />
+            </FadeIn>
+          </div>
+          <FadeIn inView delay={0.15} className="mb-10 text-lg text-muted-foreground">
+            同一套系統，同時服務你的 Discord 伺服器。
+          </FadeIn>
+
+          <Stagger inView className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {DISCORD_FEATURES.map(item => (
+              <StaggerItem
+                key={item.title}
+                className="flex flex-col gap-3 rounded-xl border bg-card p-6 shadow-sm"
+              >
+                <div className="flex items-center gap-3">
+                  <Icon icon={item.icon} wrapperClassName="size-5 text-[#5865F2] shrink-0" />
+                  <span className="text-base font-semibold text-foreground">{item.title}</span>
+                </div>
+                <p className="text-sm leading-relaxed text-muted-foreground">{item.desc}</p>
+              </StaggerItem>
+            ))}
+          </Stagger>
         </section>
 
         {/* Footer */}
