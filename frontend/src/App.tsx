@@ -90,9 +90,9 @@ function App() {
                       {/* Discord Bot Routes */}
                       <Route path="/docs" element={<GetStarted />} />
                       <Route path="/discord/dashboard" element={<DiscordDashboard />} />
-                      <Route path="*" element={<NotFound />} />
                     </Route>
                   </Route>
+                  <Route path="*" element={<NotFound />} />
                 </Routes>
               </Suspense>
             </ErrorBoundary>
