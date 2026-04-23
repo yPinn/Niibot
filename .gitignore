@@ -10,6 +10,9 @@
 **/.env*
 shared.env
 **/shared.env
+# GitHub Secrets/Variables upload files (contain real credentials)
+secrets.env
+variables.env
 # Keep .env.example files for reference
 !.env.example
 !**/.env.example
