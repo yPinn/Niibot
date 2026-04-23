@@ -1,6 +1,5 @@
 """Constants for the social preview cog."""
 
-import os
 import re
 
 # ── URL patterns ──────────────────────────────────────────────────────────────
@@ -99,14 +98,11 @@ INSTAGRAM_APP_ID = "936619743392459"
 
 # Self-hosted InstaFix (github.com/Wikidepia/InstaFix).
 # Docker: "instafix:3000" | Local dev: "localhost:3000"
-INSTAFIX_HOST = os.getenv("INSTAFIX_HOST", "instafix:3000")
+# Configured via INSTAFIX_HOST env var → get_settings().instafix_host
 INSTAGRAM_PROXY_URL = "http://{host}/{path}/{shortcode}/"
 INSTAGRAM_ICON_URL = "https://upload.wikimedia.org/wikipedia/commons/a/a5/Instagram_icon.png"
 
-# Scrapling sidecar (backend/scrapling/) — JS-rendered caption extraction.
-# Docker: "scrapling:3001" | Local dev: "localhost:3001"
-# Leave empty to disable caption extraction.
-SCRAPLING_HOST = os.getenv("SCRAPLING_HOST", "")
+# Scrapling sidecar host configured via SCRAPLING_HOST env var → get_settings().scrapling_host
 THREADS_ICON_URL = "https://www.google.com/s2/favicons?domain=threads.com&sz=64"
 
 # ── Colours ───────────────────────────────────────────────────────────────────

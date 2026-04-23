@@ -18,6 +18,7 @@ from dotenv import load_dotenv  # noqa: E402
 
 _discord_dir = Path(__file__).parent
 load_dotenv(dotenv_path=_discord_dir.parent / "shared.env", encoding="utf-8")
+load_dotenv(dotenv_path=_discord_dir.parent / "shared.env.local", encoding="utf-8", override=True)
 load_dotenv(dotenv_path=_discord_dir / ".env", encoding="utf-8", override=True)
 
 import asyncpg  # noqa: E402
@@ -36,7 +37,6 @@ from shared.database import DatabaseManager, PoolConfig, pool_heartbeat_loop  # 
 from shared.retry_utils import format_duration as _format_duration  # noqa: E402
 from shared.retry_utils import parse_retry_after as _parse_retry_after_shared  # noqa: E402
 
-setup_logging(get_settings())
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
@@ -254,6 +254,12 @@ def _parse_retry_after(e: discord.HTTPException, base_delay: float, attempt: int
 
 async def main() -> None:
     """Bot startup with auto-retry and rate limit protection"""
+    try:
+        setup_logging(get_settings())
+    except Exception as exc:
+        print(f"FATAL: Environment configuration error:\n  {exc}", file=sys.stderr)
+        raise SystemExit(1) from None
+
     # 1. Health server FIRST (bind port before heavy setup)
     health_server = HealthCheckServer()
     await health_server.start()
