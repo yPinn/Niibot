@@ -635,7 +635,13 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
             return
 
         await self._send_preview(
-            message, build_bilibili_embed(self._embed, body["data"], video_url)
+            message,
+            build_bilibili_embed(
+                self._embed,
+                body["data"],
+                video_url,
+                sender_avatar_url=str(message.author.display_avatar.url),
+            ),
         )
 
     async def _handle_bilibili_space(self, message: discord.Message, match: re.Match[str]) -> None:
@@ -697,7 +703,14 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
                 LOGGER.debug("Bilibili card API failed for uid=%s: %s", uid, exc)
 
         await self._send_preview(
-            message, build_bilibili_live_embed(self._embed, room, card_data, room_url)
+            message,
+            build_bilibili_live_embed(
+                self._embed,
+                room,
+                card_data,
+                room_url,
+                sender_avatar_url=str(message.author.display_avatar.url),
+            ),
         )
 
     async def _handle_tiktok(self, message: discord.Message, match: re.Match[str]) -> None:
@@ -714,7 +727,15 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
         if not oembed.get("title") and not oembed.get("author_name"):
             return
 
-        await self._send_preview(message, build_tiktok_embed(self._embed, oembed, post_url))
+        await self._send_preview(
+            message,
+            build_tiktok_embed(
+                self._embed,
+                oembed,
+                post_url,
+                sender_avatar_url=str(message.author.display_avatar.url),
+            ),
+        )
 
     async def _get_twitch_token(self) -> str | None:
         """Return a cached app-access token, refreshing if expired or missing."""
@@ -806,6 +827,7 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
             broadcaster_avatar=broadcaster_avatar,
             broadcaster_url=broadcaster_url,
             game_name=game_name,
+            sender_avatar_url=str(message.author.display_avatar.url),
         )
         sent = await self._send_preview(message, embed)
         if sent and vid_bytes:
@@ -831,6 +853,7 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
             streams[0] if streams else None,
             users[0],
             channel_url,
+            sender_avatar_url=str(message.author.display_avatar.url),
         )
         await self._send_preview(message, embed)
 

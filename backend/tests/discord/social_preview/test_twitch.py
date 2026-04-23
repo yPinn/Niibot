@@ -8,7 +8,7 @@ import pytest
 from discord.cogs.social_preview import constants
 from discord.cogs.social_preview.cog import SocialPreviewCog, _twitch_clip_mp4_url
 
-from ._helpers import _make_message, aiter_bytes
+from ._helpers import SENDER_AVATAR_URL, _make_message, aiter_bytes
 
 # ===========================================================================
 # constants — URL regex patterns
@@ -282,3 +282,12 @@ class TestCogTwitchClip:
         await cog.on_message(msg)
 
         msg.channel.send.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_clip_embed_thumbnail_is_sender_avatar(self, cog: SocialPreviewCog) -> None:
+        self._inject_token(cog)
+        cog._http.get = AsyncMock(return_value=self._make_clips_resp([self._clip_data()]))
+        msg = _make_message("https://clips.twitch.tv/AbcDef123")
+        await cog.on_message(msg)
+        embed = msg.channel.send.call_args.kwargs["embed"]
+        assert embed.thumbnail.url == SENDER_AVATAR_URL

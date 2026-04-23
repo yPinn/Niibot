@@ -363,7 +363,9 @@ def build_threads_profile_embed(
     return embed
 
 
-def build_bilibili_embed(factory: EmbedFactory, data: dict, video_url: str) -> discord.Embed:
+def build_bilibili_embed(
+    factory: EmbedFactory, data: dict, video_url: str, *, sender_avatar_url: str | None = None
+) -> discord.Embed:
     owner = data.get("owner") or {}
     stat = data.get("stat") or {}
     title = data.get("title") or None
@@ -384,6 +386,7 @@ def build_bilibili_embed(factory: EmbedFactory, data: dict, video_url: str) -> d
         author_url=author_url,
         description=description,
         image_url=data.get("pic") or None,
+        thumbnail_url=sender_avatar_url,
         use_platform_footer=False,
     )
 
@@ -436,7 +439,9 @@ def build_bilibili_space_embed(factory: EmbedFactory, data: dict, space_url: str
     return embed
 
 
-def build_tiktok_embed(factory: EmbedFactory, oembed: dict, post_url: str) -> discord.Embed:
+def build_tiktok_embed(
+    factory: EmbedFactory, oembed: dict, post_url: str, *, sender_avatar_url: str | None = None
+) -> discord.Embed:
     return build_social_embed(
         factory,
         platform="TikTok",
@@ -446,6 +451,7 @@ def build_tiktok_embed(factory: EmbedFactory, oembed: dict, post_url: str) -> di
         author_name=oembed.get("author_name") or None,
         author_url=oembed.get("author_url") or None,
         image_url=oembed.get("thumbnail_url") or None,
+        thumbnail_url=sender_avatar_url,
     )
 
 
@@ -454,6 +460,8 @@ def build_twitch_channel_embed(
     stream: dict | None,
     user: dict,
     channel_url: str,
+    *,
+    sender_avatar_url: str | None = None,
 ) -> discord.Embed:
     """Embed for a Twitch channel page — live or offline."""
     raw_name = user.get("display_name") or user.get("login", "")
@@ -477,6 +485,7 @@ def build_twitch_channel_embed(
             author_icon_url=avatar,
             author_url=channel_url,
             image_url=thumb or None,
+            thumbnail_url=sender_avatar_url,
             use_platform_footer=False,
         )
         game = stream.get("game_name") or None
@@ -502,6 +511,7 @@ def build_twitch_channel_embed(
             author_url=channel_url,
             description=bio,
             image_url=offline_image,
+            thumbnail_url=sender_avatar_url,
             use_platform_footer=False,
         )
 
@@ -516,6 +526,8 @@ def build_bilibili_live_embed(
     room: dict,
     card_data: dict | None,
     room_url: str,
+    *,
+    sender_avatar_url: str | None = None,
 ) -> discord.Embed:
     """Embed for a Bilibili live room — live, offline, or rotating.
 
@@ -549,6 +561,7 @@ def build_bilibili_live_embed(
         author_icon_url=card.get("face") or None,
         author_url=author_url,
         image_url=cover,
+        thumbnail_url=sender_avatar_url,
         use_platform_footer=False,
     )
 
@@ -590,6 +603,7 @@ def build_twitch_clip_embed(
     broadcaster_avatar: str | None = None,
     broadcaster_url: str | None = None,
     game_name: str | None = None,
+    sender_avatar_url: str | None = None,
 ) -> discord.Embed:
     duration = data.get("duration", 0)
     minutes, seconds = divmod(int(duration), 60)
@@ -604,6 +618,7 @@ def build_twitch_clip_embed(
         author_icon_url=broadcaster_avatar,
         author_url=broadcaster_url,
         image_url=data.get("thumbnail_url") or None,
+        thumbnail_url=sender_avatar_url,
         use_platform_footer=False,
     )
 

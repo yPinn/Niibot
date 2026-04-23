@@ -11,7 +11,7 @@ from discord.cogs.social_preview.cog import SocialPreviewCog
 
 from core import EmbedFactory
 
-from ._helpers import _make_message
+from ._helpers import SENDER_AVATAR_URL, _make_message
 
 # ===========================================================================
 # constants — URL regex patterns
@@ -82,6 +82,16 @@ class TestBuildTiktokEmbed:
         )
         assert embed.footer.text == "TikTok"
 
+    def test_sender_avatar_set_as_thumbnail(self, embed_factory: EmbedFactory) -> None:
+        avatar = "https://cdn.discordapp.com/avatars/1/abc.png"
+        embed = embeds_mod.build_tiktok_embed(
+            embed_factory,
+            self._oembed(),
+            "https://www.tiktok.com/@creator/video/123",
+            sender_avatar_url=avatar,
+        )
+        assert embed.thumbnail.url == avatar
+
 
 # ===========================================================================
 # cog — _handle_tiktok (mocked HTTP)
@@ -125,3 +135,16 @@ class TestCogTiktok:
         msg = _make_message("https://www.tiktok.com/@creator/video/1234567890123456789")
         await cog.on_message(msg)
         msg.channel.send.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_embed_thumbnail_is_sender_avatar(self, cog: SocialPreviewCog) -> None:
+        oembed = {
+            "title": "Funny video",
+            "author_name": "@creator",
+            "thumbnail_url": "https://img.com/thumb.jpg",
+        }
+        cog._http.get = AsyncMock(return_value=self._make_resp(oembed))
+        msg = _make_message("https://www.tiktok.com/@creator/video/1234567890123456789")
+        await cog.on_message(msg)
+        embed = msg.channel.send.call_args.kwargs["embed"]
+        assert embed.thumbnail.url == SENDER_AVATAR_URL

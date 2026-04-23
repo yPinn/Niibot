@@ -13,7 +13,7 @@ from discord.cogs.social_preview.cog import SocialPreviewCog
 
 from core import EmbedFactory
 
-from ._helpers import _make_message
+from ._helpers import SENDER_AVATAR_URL, _make_message
 
 # ===========================================================================
 # constants — URL regex patterns
@@ -204,6 +204,19 @@ class TestBuildBilibiliEmbed:
             embed_factory, self._data(), "https://bilibili.com/video/BV1x"
         )
         assert embed.image.url == "https://img.com/v.jpg"
+
+    def test_sender_avatar_set_as_thumbnail(self, embed_factory: EmbedFactory) -> None:
+        avatar = "https://cdn.discordapp.com/avatars/1/abc.png"
+        embed = embeds_mod.build_bilibili_embed(
+            embed_factory, self._data(), "https://bilibili.com/video/BV1x", sender_avatar_url=avatar
+        )
+        assert embed.thumbnail.url == avatar
+
+    def test_no_thumbnail_when_sender_avatar_omitted(self, embed_factory: EmbedFactory) -> None:
+        embed = embeds_mod.build_bilibili_embed(
+            embed_factory, self._data(), "https://bilibili.com/video/BV1x"
+        )
+        assert not embed.thumbnail.url
 
 
 class TestBuildBilibiliSpaceEmbed:
@@ -506,6 +519,14 @@ class TestCogBilibili:
         await cog.on_message(msg)
         msg.channel.send.assert_not_awaited()
 
+    @pytest.mark.asyncio
+    async def test_embed_thumbnail_is_sender_avatar(self, cog: SocialPreviewCog) -> None:
+        cog._http.get = AsyncMock(return_value=self._make_resp(self._api_response()))
+        msg = _make_message("https://www.bilibili.com/video/BV1xx411c7mD")
+        await cog.on_message(msg)
+        embed = msg.channel.send.call_args.kwargs["embed"]
+        assert embed.thumbnail.url == SENDER_AVATAR_URL
+
 
 class TestCogBilibiliLive:
     def _live_api_resp(self, **overrides: object) -> MagicMock:
@@ -598,6 +619,14 @@ class TestCogBilibiliLive:
         msg = _make_message("https://live.bilibili.com/10000001")
         await cog.on_message(msg)
         msg.channel.send.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_embed_thumbnail_is_sender_avatar(self, cog: SocialPreviewCog) -> None:
+        cog._http.get = AsyncMock(side_effect=[self._live_api_resp(), self._card_api_resp()])
+        msg = _make_message("https://live.bilibili.com/10000001")
+        await cog.on_message(msg)
+        embed = msg.channel.send.call_args.kwargs["embed"]
+        assert embed.thumbnail.url == SENDER_AVATAR_URL
 
     @pytest.mark.asyncio
     async def test_offline_room_embed(self, cog: SocialPreviewCog) -> None:
