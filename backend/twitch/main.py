@@ -28,7 +28,13 @@ def main() -> None:
     from core.health_server import HealthCheckServer
     from core.logging import setup_logging
 
-    setup_logging(get_settings())
+    try:
+        setup_logging(get_settings())
+    except Exception as exc:
+        import sys as _sys
+
+        print(f"FATAL: Environment configuration error:\n  {exc}", file=_sys.stderr)
+        raise SystemExit(1) from None
 
     async def runner() -> None:
         # 1. Health server FIRST (bind port before heavy setup)
@@ -38,14 +44,13 @@ def main() -> None:
         # 2. Heavy imports — after port is open
         from twitchio import eventsub
 
-        from core import get_channel_subscriptions, validate_env_vars
+        from core import get_channel_subscriptions
         from core.bot import Bot
         from core.config import get_settings
         from shared.database import DatabaseManager, PoolConfig
         from shared.repositories.channel import ChannelRepository
         from shared.retry_utils import format_duration, parse_retry_after
 
-        validate_env_vars()
         settings = get_settings()
 
         client_id: str = settings.twitch_client_id
