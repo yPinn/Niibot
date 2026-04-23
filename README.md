@@ -76,7 +76,7 @@ Niibot/
 ### 環境需求
 
 - Python 3.11+、[uv](https://docs.astral.sh/uv/)
-- Node.js 20+
+- Node.js 22+
 - Docker & Docker Compose
 
 ### 設定環境變數
@@ -89,6 +89,8 @@ cp backend/twitch/.env.example backend/twitch/.env
 cp backend/discord/.env.example backend/discord/.env
 cp backend/scrapling/.env.example backend/scrapling/.env
 ```
+
+> 本機開發時可建立 `backend/shared.env.local`（gitignored），用於覆蓋 `shared.env` 中的值（如 DB URL），不需修改 `shared.env` 本身。
 
 ### 本機開發
 
@@ -115,6 +117,14 @@ docker compose up -d
 
 啟動時 `migrate` 容器會自動執行 DB Migration，成功後其他服務才會啟動。
 
+CI/CD 密鑰上傳（GitHub Actions 部署前執行一次）：
+
+```bash
+cp secrets.env.example secrets.env    # 填入所有 GitHub Secrets
+cp variables.env.example variables.env # 填入所有 GitHub Variables
+bash scripts/push-secrets.sh
+```
+
 ## 環境變數
 
 | 檔案                     | 內容                                                               |
@@ -124,7 +134,7 @@ docker compose up -d
 | `backend/api/.env`       | JWT Secret、API URL                                                |
 | `backend/twitch/.env`    | Bot ID、Owner ID                                                   |
 | `backend/discord/.env`   | Discord Bot Token、Presence 設定                                   |
-| `backend/scrapling/.env` | Threads session cookie                                             |
+| `backend/scrapling/.env` | Threads 與 Instagram session cookie                                |
 
 Cloudflare Pages 專案需設定環境變數 `API_BACKEND`（後端位址）。
 

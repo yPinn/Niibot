@@ -152,13 +152,15 @@ cp discord/.env.example discord/.env
 cp scrapling/.env.example scrapling/.env
 ```
 
+> 本機開發時可建立 `shared.env.local`（gitignored），用於覆蓋 `shared.env` 中的值（如 DB URL），不需修改 `shared.env` 本身。
+
 | 檔案             | 說明                                                               |
 | ---------------- | ------------------------------------------------------------------ |
 | `shared.env`     | DB URL、Frontend URL、Twitch App 金鑰、OpenRouter、YouTube API Key |
 | `api/.env`       | JWT Secret、API URL                                                |
 | `twitch/.env`    | Bot ID、Owner ID、EventSub 設定                                    |
 | `discord/.env`   | Discord Bot Token、Presence 設定                                   |
-| `scrapling/.env` | Threads session cookie                                             |
+| `scrapling/.env` | Threads 與 Instagram session cookie                                |
 
 > `shared.env` 的 `TWITCH_CLIENT_ID` / `TWITCH_CLIENT_SECRET` 由三個後端服務共用。API 服務透過 `AliasChoices` 讀取，不需在 `api/.env` 重複設定。
 
