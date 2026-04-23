@@ -5,7 +5,7 @@ import logging
 from typing import Annotated
 
 from asyncpg import Pool
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 
 from core.dependencies import get_current_channel_id, get_db_pool
@@ -36,6 +36,7 @@ class ChannelStats(BaseModel):
 
 @router.get("/channel")
 async def get_channel_stats(
+    response: Response,
     days: Annotated[int, Query(ge=1, le=365)] = 30,
     channel_id: str = Depends(get_current_channel_id),
     pool: Pool = Depends(get_db_pool),
@@ -67,6 +68,7 @@ async def get_channel_stats(
             CommandStat(name=c["command_name"], count=c["usage_count"]) for c in top_commands_data
         ]
 
+        response.headers["Cache-Control"] = "private, max-age=300"
         LOGGER.info(f"Channel {channel_id} requested channel stats (days={days})")
         return ChannelStats(
             top_commands=top_commands,

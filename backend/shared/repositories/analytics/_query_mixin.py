@@ -94,7 +94,7 @@ class _AnalyticsQueryMixin:
         async with self.pool.acquire() as conn:
             since_date = datetime.now(UTC) - timedelta(days=days)
 
-            rows = await conn.fetch(
+            row = await conn.fetchrow(
                 """
                 WITH cmd_totals AS (
                     SELECT session_id, SUM(usage_count) AS total_commands
@@ -109,64 +109,68 @@ class _AnalyticsQueryMixin:
                         SUM(CASE WHEN event_type = 'raid'      THEN 1 ELSE 0 END) AS raids_received
                     FROM stream_events
                     GROUP BY session_id
+                ),
+                session_data AS (
+                    SELECT
+                        s.id AS session_id,
+                        s.channel_id,
+                        s.started_at,
+                        s.ended_at,
+                        s.title,
+                        s.game_name,
+                        s.game_id,
+                        EXTRACT(EPOCH FROM (COALESCE(s.ended_at, NOW()) - s.started_at)) / 3600
+                            AS duration_hours,
+                        COALESCE(c.total_commands, 0)  AS total_commands,
+                        COALESCE(e.new_follows, 0)     AS new_follows,
+                        COALESCE(e.new_subs, 0)        AS new_subs,
+                        COALESCE(e.raids_received, 0)  AS raids_received
+                    FROM stream_sessions s
+                    LEFT JOIN cmd_totals   c ON c.session_id = s.id
+                    LEFT JOIN event_counts e ON e.session_id = s.id
+                    WHERE s.channel_id = $1 AND s.started_at >= $2
+                ),
+                aggregates AS (
+                    SELECT
+                        COUNT(*)                        AS total_sessions,
+                        COALESCE(SUM(duration_hours),  0) AS total_stream_hours,
+                        COALESCE(SUM(total_commands),  0) AS total_commands,
+                        COALESCE(SUM(new_follows),     0) AS total_follows,
+                        COALESCE(SUM(new_subs),        0) AS total_subs,
+                        CASE WHEN COUNT(*) > 0
+                            THEN SUM(duration_hours) / COUNT(*)
+                            ELSE 0
+                        END                             AS avg_session_duration
+                    FROM session_data
                 )
                 SELECT
-                    s.id AS session_id,
-                    s.channel_id,
-                    s.started_at,
-                    s.ended_at,
-                    s.title,
-                    s.game_name,
-                    s.game_id,
-                    EXTRACT(EPOCH FROM (COALESCE(s.ended_at, NOW()) - s.started_at)) / 3600
-                        AS duration_hours,
-                    COALESCE(c.total_commands, 0)  AS total_commands,
-                    COALESCE(e.new_follows, 0)     AS new_follows,
-                    COALESCE(e.new_subs, 0)        AS new_subs,
-                    COALESCE(e.raids_received, 0)  AS raids_received
-                FROM stream_sessions s
-                LEFT JOIN cmd_totals  c ON c.session_id = s.id
-                LEFT JOIN event_counts e ON e.session_id = s.id
-                WHERE s.channel_id = $1 AND s.started_at >= $2
-                ORDER BY s.started_at DESC
+                    a.total_sessions,
+                    a.total_stream_hours,
+                    a.total_commands,
+                    a.total_follows,
+                    a.total_subs,
+                    a.avg_session_duration,
+                    COALESCE(
+                        (SELECT json_agg(s ORDER BY s.started_at DESC)
+                         FROM (SELECT * FROM session_data ORDER BY started_at DESC LIMIT 25) s),
+                        '[]'::json
+                    ) AS recent_sessions
+                FROM aggregates a
                 """,
                 channel_id,
                 since_date,
             )
 
-            sessions = [
-                {
-                    "session_id": row["session_id"],
-                    "channel_id": row["channel_id"],
-                    "started_at": row["started_at"],
-                    "ended_at": row["ended_at"],
-                    "title": row["title"],
-                    "game_name": row["game_name"],
-                    "game_id": row["game_id"],
-                    "duration_hours": float(row["duration_hours"] or 0),
-                    "total_commands": row["total_commands"] or 0,
-                    "new_follows": row["new_follows"] or 0,
-                    "new_subs": row["new_subs"] or 0,
-                    "raids_received": row["raids_received"] or 0,
-                }
-                for row in rows
-            ]
-
-            total_sessions = len(sessions)
-            total_stream_hours = sum(s["duration_hours"] for s in sessions)
-            total_commands = sum(s["total_commands"] for s in sessions)
-            total_follows = sum(s["new_follows"] for s in sessions)
-            total_subs = sum(s["new_subs"] for s in sessions)
-            avg_duration = total_stream_hours / total_sessions if total_sessions > 0 else 0
+            sessions = row["recent_sessions"] or []
 
             return {
-                "total_sessions": total_sessions,
-                "total_stream_hours": round(total_stream_hours, 2),
-                "total_commands": total_commands,
-                "total_follows": total_follows,
-                "total_subs": total_subs,
-                "avg_session_duration": round(avg_duration, 2),
-                "recent_sessions": sessions[:25],
+                "total_sessions": row["total_sessions"],
+                "total_stream_hours": round(float(row["total_stream_hours"]), 2),
+                "total_commands": row["total_commands"],
+                "total_follows": row["total_follows"],
+                "total_subs": row["total_subs"],
+                "avg_session_duration": round(float(row["avg_session_duration"]), 2),
+                "recent_sessions": sessions,
             }
 
     @cached(
@@ -223,16 +227,27 @@ class _AnalyticsQueryMixin:
 
             rows = await conn.fetch(
                 """
-                SELECT
-                    c.user_id,
-                    (ARRAY_AGG(c.username     ORDER BY c.last_message_at DESC))[1] AS username,
-                    (ARRAY_AGG(c.display_name ORDER BY c.last_message_at DESC))[1] AS display_name,
-                    SUM(c.message_count) AS total_messages
-                FROM chatter_stats c
-                JOIN stream_sessions s ON s.id = c.session_id
-                WHERE c.channel_id = $1 AND s.started_at >= $2
-                GROUP BY c.user_id
-                ORDER BY total_messages DESC
+                WITH recent AS (
+                    SELECT DISTINCT ON (c.user_id)
+                        c.user_id,
+                        c.username,
+                        c.display_name
+                    FROM chatter_stats c
+                    JOIN stream_sessions s ON s.id = c.session_id
+                    WHERE c.channel_id = $1 AND s.started_at >= $2
+                    ORDER BY c.user_id, c.last_message_at DESC
+                ),
+                totals AS (
+                    SELECT c.user_id, SUM(c.message_count) AS total_messages
+                    FROM chatter_stats c
+                    JOIN stream_sessions s ON s.id = c.session_id
+                    WHERE c.channel_id = $1 AND s.started_at >= $2
+                    GROUP BY c.user_id
+                )
+                SELECT r.user_id, r.username, r.display_name, t.total_messages
+                FROM recent r
+                JOIN totals t ON t.user_id = r.user_id
+                ORDER BY t.total_messages DESC
                 LIMIT $3
                 """,
                 channel_id,

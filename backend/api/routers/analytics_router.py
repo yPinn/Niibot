@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Annotated
 
 from asyncpg import Pool
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 
 from core.dependencies import get_analytics_service, get_current_channel_id, get_db_pool
@@ -67,6 +67,7 @@ class AnalyticsSummary(BaseModel):
 
 @router.get("/summary", response_model=AnalyticsSummary)
 async def get_analytics_summary(
+    response: Response,
     days: Annotated[int, Query(ge=1, le=365)] = 30,
     channel_id: str = Depends(get_current_channel_id),
     pool: Pool = Depends(get_db_pool),
@@ -81,6 +82,7 @@ async def get_analytics_summary(
         analytics_service = get_analytics_service(pool)
         summary_data = await analytics_service.get_summary(channel_id, days)
 
+        response.headers["Cache-Control"] = "private, max-age=300"
         LOGGER.info(f"Channel {channel_id} requested analytics summary (days={days})")
         return AnalyticsSummary(**summary_data)
 
@@ -92,6 +94,7 @@ async def get_analytics_summary(
 @router.get("/sessions/{session_id}/commands", response_model=list[CommandStat])
 async def get_session_commands(
     session_id: int,
+    response: Response,
     channel_id: str = Depends(get_current_channel_id),
     pool: Pool = Depends(get_db_pool),
 ) -> list[CommandStat]:
@@ -108,6 +111,7 @@ async def get_session_commands(
         if commands is None:
             raise HTTPException(status_code=404, detail="Session not found")
 
+        response.headers["Cache-Control"] = "private, max-age=600"
         return [CommandStat(**cmd) for cmd in commands]
 
     except HTTPException:
@@ -120,6 +124,7 @@ async def get_session_commands(
 @router.get("/sessions/{session_id}/events", response_model=list[StreamEvent])
 async def get_session_events(
     session_id: int,
+    response: Response,
     channel_id: str = Depends(get_current_channel_id),
     pool: Pool = Depends(get_db_pool),
 ) -> list[StreamEvent]:
@@ -136,6 +141,7 @@ async def get_session_events(
         if events is None:
             raise HTTPException(status_code=404, detail="Session not found")
 
+        response.headers["Cache-Control"] = "private, max-age=600"
         return [StreamEvent(**event) for event in events]
 
     except HTTPException:
