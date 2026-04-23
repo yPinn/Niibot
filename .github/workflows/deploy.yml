@@ -271,15 +271,32 @@ jobs:
           docker compose up -d $SERVICES
 
       - name: Health check
+        working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          # Wait for start_period (30s) + a buffer, then verify both liveness
-          # and DB connectivity. /status is unauthenticated and safe to poll here.
-          sleep 35
+          # Poll until the API responds (covers cold start + migration time after a rebuild).
+          # Timeout 120s; print progress every 5s so the log shows what's happening.
+          deadline=$((SECONDS + 120))
+          until curl -sf http://localhost:8000/health > /dev/null; do
+            if [ $SECONDS -ge $deadline ]; then
+              echo "ERROR: API did not respond within 120s"
+              docker compose ps
+              docker compose logs api --tail=30
+              exit 1
+            fi
+            echo "Waiting for API... (${SECONDS}s elapsed)"
+            sleep 5
+          done
+          echo "API liveness: OK"
 
-          # API — hard failure (DB connectivity required)
-          curl -sf http://localhost:8000/health || exit 1
-          curl -sf http://localhost:8000/status | python3 -c \
-            "import sys, json; d=json.load(sys.stdin); sys.exit(0 if d.get('db_connected') else 1)" || exit 1
+          # DB connectivity — hard failure
+          if ! curl -sf http://localhost:8000/status | python3 -c \
+            "import sys, json; d=json.load(sys.stdin); sys.exit(0 if d.get('db_connected') else 1)"; then
+            echo "ERROR: API is up but db_connected=false"
+            curl -s http://localhost:8000/status
+            docker compose logs api --tail=30
+            exit 1
+          fi
+          echo "API db_connected: OK"
 
           # Bots — soft check (log warning only; Discord/Twitch gateway latency varies)
           curl -sf http://localhost:8080/health && echo "discord-bot: OK" || echo "WARN: discord-bot not responding"
