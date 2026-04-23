@@ -1,5 +1,38 @@
 name: Deploy
 
+# ─── GitHub Secrets required ──────────────────────────────────────────────────
+# Settings → Secrets and variables → Actions → Repository secrets:
+#   POSTGRES_USER          — PostgreSQL username
+#   POSTGRES_PASSWORD      — PostgreSQL password
+#   POSTGRES_DB            — PostgreSQL database name
+#   FRONTEND_URL           — Production frontend URL (OAuth redirect + CORS)
+#   TWITCH_CLIENT_ID       — Twitch app Client ID (dev.twitch.tv)
+#   TWITCH_CLIENT_SECRET   — Twitch app Client Secret
+#   JWT_SECRET_KEY         — API JWT signing secret (python -c "import secrets; print(secrets.token_urlsafe(32))")
+#   DISCORD_BOT_TOKEN      — Discord bot token (discord.com/developers)
+#   BOT_ID                 — Twitch bot user ID
+#   OWNER_ID               — Twitch channel owner user ID
+#
+# Optional secrets (leave unset to disable the feature):
+#   YOUTUBE_API_KEY        — YouTube Data API v3
+#   OPENROUTER_API_KEY     — OpenRouter AI
+#   OPENROUTER_MODEL       — OpenRouter model name
+#   INSTAGRAM_SESSION_ID   — Instagram session cookie (~90-day expiry)
+#   THREADS_SESSION_ID     — Threads session cookie (~90-day expiry)
+#   CONDUIT_ID             — Twitch EventSub conduit ID
+#   ERROR_WEBHOOK_URL      — Discord webhook for ERROR/CRITICAL alerts
+#
+# GitHub Variables (Settings → Secrets and variables → Actions → Variables):
+#   API_URL                — Production API base URL (e.g. https://api.example.com)
+#   ENVIRONMENT            — Deployment environment (default: production)
+#   LOG_LEVEL              — Log level override (default: INFO)
+#   DISCORD_STATUS         — Bot presence status (default: online)
+#   DISCORD_ACTIVITY_TYPE  — Activity type: playing/watching/listening (default: playing)
+#   DISCORD_ACTIVITY_NAME  — Activity display name (optional)
+#   DISCORD_ACTIVITY_URL   — Streaming URL — twitch.tv only (optional)
+#   SCRAPLING_PORT         — Scrapling sidecar port (default: 3001)
+# ─────────────────────────────────────────────────────────────────────────────
+
 on:
   push:
     branches: [main]
@@ -24,21 +57,108 @@ jobs:
       PROJECT_DIR: /Users/pinn/Niibot
 
     steps:
-      - name: Validate environment
+      - name: Write env files from secrets
+        env:
+          # Required secrets
+          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+          FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
+          TWITCH_CLIENT_ID: ${{ secrets.TWITCH_CLIENT_ID }}
+          TWITCH_CLIENT_SECRET: ${{ secrets.TWITCH_CLIENT_SECRET }}
+          JWT_SECRET_KEY: ${{ secrets.JWT_SECRET_KEY }}
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+          BOT_ID: ${{ secrets.BOT_ID }}
+          OWNER_ID: ${{ secrets.OWNER_ID }}
+          # Optional secrets
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_MODEL: ${{ secrets.OPENROUTER_MODEL }}
+          INSTAGRAM_SESSION_ID: ${{ secrets.INSTAGRAM_SESSION_ID }}
+          THREADS_SESSION_ID: ${{ secrets.THREADS_SESSION_ID }}
+          CONDUIT_ID: ${{ secrets.CONDUIT_ID }}
+          ERROR_WEBHOOK_URL: ${{ secrets.ERROR_WEBHOOK_URL }}
+          # Non-sensitive variables
+          API_URL: ${{ vars.API_URL }}
+          ENVIRONMENT: ${{ vars.ENVIRONMENT || 'production' }}
+          LOG_LEVEL: ${{ vars.LOG_LEVEL || 'INFO' }}
+          DISCORD_STATUS: ${{ vars.DISCORD_STATUS || 'online' }}
+          DISCORD_ACTIVITY_TYPE: ${{ vars.DISCORD_ACTIVITY_TYPE || 'playing' }}
+          DISCORD_ACTIVITY_NAME: ${{ vars.DISCORD_ACTIVITY_NAME }}
+          DISCORD_ACTIVITY_URL: ${{ vars.DISCORD_ACTIVITY_URL }}
+          SCRAPLING_PORT: ${{ vars.SCRAPLING_PORT }}
         run: |
-          ENV_FILE="$PROJECT_DIR/.env"
-          if [ ! -f "$ENV_FILE" ]; then
-            echo "ERROR: $ENV_FILE not found — copy .env.example and fill in values."
-            exit 1
-          fi
+          # Validate required secrets are non-empty
           MISSING=""
-          for VAR in POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB DOCKER_DATABASE_URL; do
-            grep -q "^${VAR}=." "$ENV_FILE" || MISSING="$MISSING $VAR"
+          for VAR in POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB FRONTEND_URL \
+                     TWITCH_CLIENT_ID TWITCH_CLIENT_SECRET JWT_SECRET_KEY \
+                     DISCORD_BOT_TOKEN BOT_ID OWNER_ID; do
+            [ -n "${!VAR}" ] || MISSING="$MISSING $VAR"
           done
           if [ -n "$MISSING" ]; then
-            echo "ERROR: Missing or empty in $ENV_FILE:$MISSING"
+            echo "ERROR: Missing GitHub Secrets:$MISSING"
+            echo "Configure at: Settings → Secrets and variables → Actions"
             exit 1
           fi
+
+          # Compute DB URL from Postgres credentials (same URL for both root .env and shared.env;
+          # Docker Compose always uses DOCKER_DATABASE_URL to reach the postgres service container).
+          DB_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
+
+          # --- Root .env (PostgreSQL + Docker Compose interpolation) ---
+          {
+            echo "POSTGRES_USER=${POSTGRES_USER}"
+            echo "POSTGRES_PASSWORD=${POSTGRES_PASSWORD}"
+            echo "POSTGRES_DB=${POSTGRES_DB}"
+            echo "DOCKER_DATABASE_URL=${DB_URL}"
+            [ -n "${SCRAPLING_PORT}" ] && echo "SCRAPLING_PORT=${SCRAPLING_PORT}"
+          } > "$PROJECT_DIR/.env"
+
+          # --- Shared env (api + discord + twitch) ---
+          {
+            echo "DATABASE_URL=${DB_URL}"
+            echo "FRONTEND_URL=${FRONTEND_URL}"
+            echo "TWITCH_CLIENT_ID=${TWITCH_CLIENT_ID}"
+            echo "TWITCH_CLIENT_SECRET=${TWITCH_CLIENT_SECRET}"
+            echo "LOG_LEVEL=${LOG_LEVEL}"
+            [ -n "${YOUTUBE_API_KEY}" ]    && echo "YOUTUBE_API_KEY=${YOUTUBE_API_KEY}"
+            [ -n "${OPENROUTER_API_KEY}" ] && echo "OPENROUTER_API_KEY=${OPENROUTER_API_KEY}"
+            [ -n "${OPENROUTER_MODEL}" ]   && echo "OPENROUTER_MODEL=${OPENROUTER_MODEL}"
+            [ -n "${ERROR_WEBHOOK_URL}" ]  && echo "ERROR_WEBHOOK_URL=${ERROR_WEBHOOK_URL}"
+          } > "$PROJECT_DIR/backend/shared.env"
+
+          # --- API .env ---
+          {
+            echo "JWT_SECRET_KEY=${JWT_SECRET_KEY}"
+            echo "API_URL=${API_URL}"
+            echo "ENVIRONMENT=${ENVIRONMENT}"
+          } > "$PROJECT_DIR/backend/api/.env"
+
+          # --- Discord .env ---
+          {
+            echo "DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}"
+            echo "DISCORD_STATUS=${DISCORD_STATUS}"
+            echo "DISCORD_ACTIVITY_TYPE=${DISCORD_ACTIVITY_TYPE}"
+            [ -n "${DISCORD_ACTIVITY_NAME}" ] && echo "DISCORD_ACTIVITY_NAME=${DISCORD_ACTIVITY_NAME}"
+            [ -n "${DISCORD_ACTIVITY_URL}" ]  && echo "DISCORD_ACTIVITY_URL=${DISCORD_ACTIVITY_URL}"
+            [ -n "${INSTAGRAM_SESSION_ID}" ]  && echo "INSTAGRAM_SESSION_ID=${INSTAGRAM_SESSION_ID}"
+          } > "$PROJECT_DIR/backend/discord/.env"
+
+          # --- Twitch .env ---
+          {
+            echo "BOT_ID=${BOT_ID}"
+            echo "OWNER_ID=${OWNER_ID}"
+            [ -n "${CONDUIT_ID}" ] && echo "CONDUIT_ID=${CONDUIT_ID}"
+          } > "$PROJECT_DIR/backend/twitch/.env"
+
+          # --- Scrapling .env ---
+          {
+            echo "PORT=${SCRAPLING_PORT:-3001}"
+            echo "LOG_LEVEL=${LOG_LEVEL}"
+            [ -n "${THREADS_SESSION_ID}" ] && echo "THREADS_SESSION_ID=${THREADS_SESSION_ID}"
+          } > "$PROJECT_DIR/backend/scrapling/.env"
+
+          echo "Env files written."
 
       - name: Pull latest code
         run: |
