@@ -98,4 +98,5 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 filterwarnings = [
     "ignore::DeprecationWarning:twitchio",
+    "ignore::DeprecationWarning:discord",
 ]
