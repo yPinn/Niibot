@@ -7,7 +7,6 @@ import time
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from importlib.metadata import version
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -130,7 +129,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="Niibot API",
         description="API server for Niibot - Twitch/Discord bot management",
-        version=version("niibot-backend"),
+        version=_APP_VERSION,
         lifespan=lifespan,
         docs_url="/docs" if settings.is_development else None,
         redoc_url="/redoc" if settings.is_development else None,
