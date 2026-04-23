@@ -79,6 +79,12 @@ class DiscordBotSettings(BaseServiceSettings):
         default="", description="Instagram session cookie for profile embeds"
     )
 
+    # Threads (Social Preview — Scrapling sidecar for JS-rendered captions)
+    scrapling_host: str = Field(
+        default="",
+        description="Scrapling sidecar host (Docker: scrapling:3001, local: localhost:3001). Empty = disabled.",
+    )
+
     # Twitch (Social Preview — clip embeds)
     twitch_client_id: str = Field(default="", description="Twitch app Client ID (Helix API)")
     twitch_client_secret: str = Field(

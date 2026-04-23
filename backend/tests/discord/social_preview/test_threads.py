@@ -292,8 +292,10 @@ class TestCogThreads:
     async def test_scraper_caption_enriches_embed(
         self, cog: SocialPreviewCog, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """When SCRAPLING_HOST is set, caption from scraper appears in description."""
-        monkeypatch.setattr("discord.cogs.social_preview.cog.SCRAPLING_HOST", "scrapling:3001")
+        """When scrapling_host is set, caption from scraper appears in description."""
+        mock_settings = MagicMock()
+        mock_settings.scrapling_host = "scrapling:3001"
+        monkeypatch.setattr("discord.cogs.social_preview.cog.get_settings", lambda: mock_settings)
         og_html = '<meta property="og:title" content="User on Threads">'
 
         scraper_resp = MagicMock()
@@ -313,7 +315,9 @@ class TestCogThreads:
         self, cog: SocialPreviewCog, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """A scraper error is swallowed; embed is still sent without caption."""
-        monkeypatch.setattr("discord.cogs.social_preview.cog.SCRAPLING_HOST", "scrapling:3001")
+        mock_settings = MagicMock()
+        mock_settings.scrapling_host = "scrapling:3001"
+        monkeypatch.setattr("discord.cogs.social_preview.cog.get_settings", lambda: mock_settings)
         og_html = (
             '<meta property="og:title" content="User on Threads">'
             '<meta property="og:description" content="Check out this link">'
@@ -331,8 +335,10 @@ class TestCogThreads:
     async def test_scraper_skipped_when_host_not_configured(
         self, cog: SocialPreviewCog, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """When SCRAPLING_HOST is empty, scraper is never called."""
-        monkeypatch.setattr("discord.cogs.social_preview.cog.SCRAPLING_HOST", "")
+        """When scrapling_host is empty, scraper is never called."""
+        mock_settings = MagicMock()
+        mock_settings.scrapling_host = ""
+        monkeypatch.setattr("discord.cogs.social_preview.cog.get_settings", lambda: mock_settings)
         og_html = '<meta property="og:title" content="User on Threads">'
         cog._http.get = AsyncMock(return_value=self._make_og_resp(og_html))
         msg = _make_message(self._MSG_URL)

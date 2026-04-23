@@ -262,8 +262,8 @@ class TestCogTwitchClip:
 
         assert msg.channel.send.await_count == 2
         file_call_kwargs = msg.channel.send.call_args_list[1].kwargs
-        assert file_call_kwargs.get("file") is not None
-        assert file_call_kwargs["file"].filename == "clip.mp4"
+        assert file_call_kwargs.get("files") is not None
+        assert file_call_kwargs["files"][0].filename == "clip.mp4"
 
     @pytest.mark.asyncio
     async def test_falls_back_to_embed_when_mp4_fails(self, cog: SocialPreviewCog) -> None:
