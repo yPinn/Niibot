@@ -33,58 +33,54 @@ export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) 
     <SlideUp className={cn('flex flex-col gap-6', className)} {...props}>
       <Card className="overflow-hidden p-0">
         <CardContent className="grid p-0 md:grid-cols-2">
-          <form className="p-6 md:p-8">
+          <form className="select-none p-6 md:p-8">
             <div className="flex flex-col gap-6">
               <div className="flex flex-col items-center gap-2 text-center">
                 <h1 className="text-page-title font-bold">歡迎使用 Niibot</h1>
                 <p className="text-muted-foreground text-balance text-sub">
-                  一個功能強大的 Twitch 聊天機器人
+                  Twitch 直播 × Discord 社群的機器人助手
                 </p>
               </div>
-              <div className="my-6 space-y-4">
-                <p className="text-foreground/80 text-sm leading-relaxed">
-                  Niibot
-                  提供豐富的互動功能，讓您的直播更加生動有趣。透過簡單的設定，即可為您的頻道增添更多樂趣。
-                </p>
-                <ul className="text-muted-foreground space-y-2 text-sub">
-                  <li className="flex items-start gap-2">
-                    <Icon
-                      icon="fa-solid fa-check"
-                      className="text-primary mt-0.5"
-                      wrapperClassName=""
-                    />
-                    <span>自訂指令與自動回覆</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <Icon
-                      icon="fa-solid fa-check"
-                      className="text-primary mt-0.5"
-                      wrapperClassName=""
-                    />
-                    <span>即時聊天室管理</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <Icon
-                      icon="fa-solid fa-check"
-                      className="text-primary mt-0.5"
-                      wrapperClassName=""
-                    />
-                    <span>觀眾互動遊戲</span>
-                  </li>
-                </ul>
-              </div>
+              <ul className="text-muted-foreground my-6 space-y-2 text-sub">
+                <li className="flex items-start gap-2">
+                  <Icon
+                    icon="fa-solid fa-check"
+                    className="text-primary mt-0.5"
+                    wrapperClassName=""
+                  />
+                  <span>自訂指令、觸發詞與定時訊息</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <Icon
+                    icon="fa-solid fa-check"
+                    className="text-primary mt-0.5"
+                    wrapperClassName=""
+                  />
+                  <span>遊戲 / 影片排隊與 OBS 疊加層</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <Icon
+                    icon="fa-solid fa-check"
+                    className="text-primary mt-0.5"
+                    wrapperClassName=""
+                  />
+                  <span>Discord 社群預覽與伺服器日誌</span>
+                </li>
+              </ul>
               <Button type="button" onClick={openTwitchOAuth} className="w-full">
                 <Icon icon="fa-brands fa-twitch" className="text-lg mr-2" wrapperClassName="" />
                 使用 Twitch 登入
               </Button>
             </div>
           </form>
-          <div className="bg-muted relative hidden md:block">
+          <div className="bg-muted relative hidden min-h-72 select-none md:block">
             <img
               src={rabbitBg}
-              alt="Image"
-              className="absolute inset-0 h-full w-full object-cover dark:brightness-[0.75] "
+              alt=""
+              draggable="false"
+              className="absolute inset-0 h-full w-full object-cover dark:brightness-[0.75]"
             />
+            <div className="absolute inset-0 bg-gradient-to-r from-card via-card/10 to-transparent" />
           </div>
         </CardContent>
       </Card>

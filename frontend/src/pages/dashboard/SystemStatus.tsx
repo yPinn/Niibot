@@ -4,8 +4,6 @@ import { Button, Card, CardContent, Icon, Skeleton, SlideUp } from '@/components
 import { useServiceStatus } from '@/contexts/ServiceStatusContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
-const GITHUB_COMMIT_BASE = 'https://github.com/yPinn/Niibot/commit/'
-
 function formatUptime(seconds?: number): string {
   if (seconds === undefined) return '—'
   const d = Math.floor(seconds / 86400)
@@ -69,19 +67,8 @@ function EnvBadge({ env }: { env?: string }) {
 
 function VersionLink({ version, commit }: { version?: string; commit?: string }) {
   const label = version && version !== 'dev' ? version : (version ?? '—')
-  if (!commit || commit === 'unknown') {
-    return <span className="font-mono">{label}</span>
-  }
-  return (
-    <a
-      href={`${GITHUB_COMMIT_BASE}${commit}`}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="font-mono text-status-info hover:underline"
-    >
-      {label}
-    </a>
-  )
+  const display = commit && commit !== 'unknown' ? `${label} (${commit.slice(0, 7)})` : label
+  return <span className="font-mono">{display}</span>
 }
 
 const DASH = <span className="text-muted-foreground/40">—</span>

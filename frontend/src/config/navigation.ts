@@ -69,11 +69,6 @@ export const navigationData = {
   ],
   navSecondary: [
     {
-      title: 'Github',
-      url: 'https://github.com/yPinn/Niibot',
-      icon: 'fa-brands fa-github',
-    },
-    {
       title: 'Discord',
       url: 'https://discord.gg/zhtUKMuzpY',
       icon: 'fa-brands fa-discord',
@@ -114,14 +109,9 @@ export const discordNavigationData = {
   ],
   navSecondary: [
     {
-      title: 'Github',
-      url: 'https://github.com/yPinn/Niibot',
-      icon: 'fa-brands fa-github',
-    },
-    {
-      title: 'Twitch',
-      url: 'https://twitch.tv',
-      icon: 'fa-brands fa-twitch',
+      title: 'Discord',
+      url: 'https://discord.gg/zhtUKMuzpY',
+      icon: 'fa-brands fa-discord',
     },
   ],
 }
