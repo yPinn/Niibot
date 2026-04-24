@@ -76,6 +76,11 @@ function PlatformCard({ platform, username }: PlatformCardProps) {
 
       // PayPal: simple redirect
       if (platform.platform === 'paypal' || Object.keys(checkout.form_params).length === 0) {
+        if (!checkout.gateway_url.startsWith('https://')) {
+          setError('無效的付款網址')
+          setLoading(false)
+          return
+        }
         window.location.href = checkout.gateway_url
         return
       }
