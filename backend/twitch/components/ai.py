@@ -211,19 +211,19 @@ class AIComponent(commands.Component):
                 await ctx.reply("AI 回應為空，請重試")
         except RateLimitError as e:
             await ctx.reply("AI 功能目前使用人數過多，請稍後再試")
-            LOGGER.error(f"AI command error: {e}")
+            LOGGER.warning(f"[{ctx.channel.name}] AI rate limit: {e}")
         except PermissionDeniedError as e:
             await ctx.reply("AI 服務暫時無法使用，請聯絡管理員")
-            LOGGER.error(f"AI command error: {e}")
+            LOGGER.error(f"[{ctx.channel.name}] AI permission denied: {e}")
         except AuthenticationError as e:
             await ctx.reply("AI 服務設定異常，請聯絡管理員")
-            LOGGER.error(f"AI command error: {e}")
+            LOGGER.error(f"[{ctx.channel.name}] AI authentication error: {e}")
         except APITimeoutError as e:
             await ctx.reply("AI 回應逾時，請稍後再試")
-            LOGGER.error(f"AI command error: {e}")
+            LOGGER.warning(f"[{ctx.channel.name}] AI timeout: {e}")
         except (BadRequestError, Exception) as e:
             await ctx.reply("AI 服務暫時無法使用，請稍後再試")
-            LOGGER.error(f"AI command error: {e}")
+            LOGGER.error(f"[{ctx.channel.name}] AI unexpected error ({type(e).__name__}): {e}")
 
 
 async def setup(bot: commands.Bot) -> None:

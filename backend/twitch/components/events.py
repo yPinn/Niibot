@@ -70,9 +70,10 @@ class EventComponent(commands.Component):
         """Fetch template from DB and resolve variables. Returns None if disabled."""
         try:
             config = await self.event_configs.get_config(channel_id, event_type)
-        except Exception:
-            # DB unavailable — fall back to default template so the event message
-            # still fires even when the pool is closed or reconnecting.
+        except Exception as e:
+            LOGGER.warning(
+                f"DB unavailable for event config ({event_type}), using default template: {e}"
+            )
             config = None
         if config is None:
             # No config yet — use hardcoded default

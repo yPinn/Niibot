@@ -31,7 +31,6 @@ class GameQueueComponent(commands.Component):
         self.bot: Bot = bot  # type: ignore[assignment]
         self.gq_repo = GameQueueRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.gq_settings_repo = GameQueueSettingsRepository(self.bot.token_database)  # type: ignore[attr-defined]
-        LOGGER.info("GameQueue component initialized")
 
     def refresh_pool(self, pool) -> None:
         self.gq_repo.pool = pool
@@ -77,7 +76,6 @@ class GameQueueComponent(commands.Component):
         entries = await self.gq_repo.get_active_entries(channel_id)
         settings = await self.gq_settings_repo.get_or_create(channel_id)
 
-        # Find user in queue
         user_index = next((i for i, e in enumerate(entries) if e.user_id == user_id), None)
 
         if user_index is None:

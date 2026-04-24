@@ -101,7 +101,6 @@ class CommandManagerComponent(commands.Component):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot: Bot = bot  # type: ignore[assignment]
         self.cmd_repo = CommandConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
-        LOGGER.info("CommandManager component initialized")
 
     def refresh_pool(self, pool) -> None:
         self.cmd_repo.pool = pool

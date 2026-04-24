@@ -109,10 +109,7 @@ class OwnerCommandsComponent(commands.Component):
 
 
 async def setup(bot: commands.Bot) -> None:
-    """Entry point for the module."""
     await bot.add_component(OwnerCommandsComponent(bot))
 
 
-async def teardown(bot: commands.Bot) -> None:
-    """Optional teardown coroutine for cleanup."""
-    ...
+async def teardown(bot: commands.Bot) -> None: ...

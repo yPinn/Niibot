@@ -94,7 +94,7 @@ class TftComponent(commands.Component):
                 re.DOTALL,
             )
             if not match:
-                LOGGER.error("Data element not found, using cache")
+                LOGGER.warning("Leaderboard data element not found in page, using cache")
                 return self._cache
 
             data: dict[str, Any] = json.loads(match.group(1))["props"]["pageProps"]["data"]
@@ -107,7 +107,7 @@ class TftComponent(commands.Component):
             return data
 
         except Exception as e:
-            LOGGER.error(f"Scraping failed: {e}, using cache")
+            LOGGER.warning(f"Leaderboard scraping failed, using cache: {e}")
             return self._cache
 
     async def _fetch_player_data(self, username: str, tag: str) -> dict[str, Any] | None:
@@ -143,7 +143,7 @@ class TftComponent(commands.Component):
                 re.DOTALL,
             )
             if not match:
-                LOGGER.error("Player data not found")
+                LOGGER.warning(f"Player data element not found in page for {username}#{tag}")
                 return None
 
             page_props = json.loads(match.group(1)).get("props", {}).get("pageProps", {})

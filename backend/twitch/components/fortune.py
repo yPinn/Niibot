@@ -26,7 +26,6 @@ class FortuneComponent(commands.Component):
         self.cmd_repo = CommandConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.channel_repo = self.bot.channels  # type: ignore[attr-defined]
         self._load_data()
-        LOGGER.info("Fortune component initialized")
 
     def refresh_pool(self, pool) -> None:
         self.cmd_repo.pool = pool
@@ -55,7 +54,6 @@ class FortuneComponent(commands.Component):
         return None, 1.0
 
     def _add_twitch_emotes(self, text: str, category: str) -> str:
-        """為 Twitch 訊息添加適當的表情符號"""
         emote_map = {
             "好": "BloodTrail",
             "中": "SeemsGood",
@@ -78,8 +76,7 @@ class FortuneComponent(commands.Component):
         if not config:
             return
 
-        user = ctx.chatter.display_name or ctx.chatter.name
-        assert user is not None
+        user = ctx.chatter.display_name or ctx.chatter.name or ""
 
         try:
             special_event, date_modifier = self._get_date_bonus()

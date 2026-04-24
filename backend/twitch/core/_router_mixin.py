@@ -37,11 +37,8 @@ class _MessageRouterMixin:
         """Check enabled triggers for the channel and respond to first match.
 
         Returns True if a trigger fired (caller should stop further processing).
-        Only responds to top-level messages — ignores replies to other messages.
-
-        NOTE: always-on — triggers fire regardless of whether a stream session is
-        active.  Do NOT add an ``_active_sessions`` guard here; timer_manager.py
-        is the only component intentionally gated behind live-stream state.
+        Only responds to top-level messages — ignores replies.
+        Always-on: do NOT add an _active_sessions guard (timer_manager is the only gated component).
         """
         if payload.reply is not None:
             return False
@@ -101,10 +98,7 @@ class _MessageRouterMixin:
 
         Returns True if fully handled (text response sent, skip builtin pipeline),
         False if message should continue to builtin command pipeline.
-
-        NOTE: always-on — custom commands fire regardless of stream session state.
-        usage_count is incremented unconditionally.  Analytics (session-scoped) are
-        recorded separately in GeneralCommandsComponent._record_command when applicable.
+        Always-on: usage_count incremented unconditionally; session analytics recorded separately.
         """
         text = payload.text
         if not text or not text.startswith("!"):

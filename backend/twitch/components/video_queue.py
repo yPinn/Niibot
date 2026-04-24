@@ -67,7 +67,7 @@ class VideoQueueComponent(commands.Component):
         try:
             await self._handle_add_inner(ctx, url_str)
         except Exception:
-            LOGGER.exception("_handle_add failed for %s", url_str)
+            LOGGER.exception(f"VideoQueue add failed for {url_str}")
             await ctx.reply("點歌失敗，請稍後再試")
 
     async def _handle_add_inner(self, ctx: commands.Context[Bot], url_str: str) -> None:

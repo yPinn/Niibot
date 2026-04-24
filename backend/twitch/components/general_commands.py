@@ -35,12 +35,8 @@ class GeneralCommandsComponent(commands.Component):
         return hasattr(self.bot, "_active_sessions") and hasattr(self.bot, "analytics")
 
     async def _record_command(self, ctx: commands.Context, command_name: str) -> None:
-        """Helper to record command usage to analytics and increment all-time usage_count.
-
-        Always increments usage_count regardless of streaming state (always-on).
-        Session-scoped analytics are only recorded when a live session is active —
-        this is intentional; do NOT remove the session guard from the analytics block.
-        """
+        # Session analytics gate is intentional — always increments usage_count but
+        # only records to session when a stream is live. Do NOT remove the gate.
         try:
             channel_id = ctx.channel.id
             # Always increment all-time usage_count regardless of stream status
@@ -241,10 +237,7 @@ class GeneralCommandsComponent(commands.Component):
 
 
 async def setup(bot: commands.Bot) -> None:
-    """Entry point for the module."""
     await bot.add_component(GeneralCommandsComponent(bot))
 
 
-async def teardown(bot: commands.Bot) -> None:
-    """Optional teardown coroutine for cleanup."""
-    ...
+async def teardown(bot: commands.Bot) -> None: ...
