@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 import twitchio
 from twitchio.ext import commands, routines
 
+from utils.reauth import is_scope_error, reauth_notifier
 from utils.substitution import substitute_variables
 
 if TYPE_CHECKING:
@@ -149,10 +150,24 @@ class TimerManagerComponent(commands.Component):
                 return
 
             if timer.announce:
-                await users[0].send_announcement(
-                    moderator=self.bot.bot_id,
-                    message=message,
-                )
+                try:
+                    await users[0].send_announcement(
+                        moderator=self.bot.bot_id,
+                        message=message,
+                    )
+                except Exception as announce_err:
+                    if is_scope_error(announce_err):
+                        await reauth_notifier.notify(
+                            broadcaster_login=channel_name,
+                            channel_id=channel_id,
+                            send_fn=lambda msg: users[0].send_message(
+                                message=msg,
+                                sender=self.bot.bot_id,
+                                token_for=self.bot.bot_id,
+                            ),
+                        )
+                        return
+                    raise
             else:
                 await users[0].send_message(
                     message=message,

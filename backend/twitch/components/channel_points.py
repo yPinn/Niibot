@@ -17,6 +17,7 @@ from shared.repositories.video_queue import (
     extract_youtube_info,
     fetch_yt_info,
 )
+from utils.reauth import is_scope_error, reauth_notifier
 
 if TYPE_CHECKING:
     from core.bot import Bot
@@ -131,6 +132,18 @@ class ChannelPointsComponent(commands.Component):
                 LOGGER.warning(f"[{channel_name}] VIP granted but failed to send message: {e}")
 
         except Exception as e:
+            if is_scope_error(e):
+                await reauth_notifier.notify(
+                    broadcaster_login=channel_name,
+                    channel_id=str(payload.broadcaster.id),
+                    send_fn=lambda msg: payload.broadcaster.send_message(
+                        message=msg,
+                        sender=self.bot.bot_id,
+                        token_for=self.bot.bot_id,
+                    ),
+                )
+                return
+
             error_str = str(e)
 
             if "422" in error_str:
@@ -177,7 +190,7 @@ class ChannelPointsComponent(commands.Component):
                 )
                 LOGGER.info(f"[{channel_name}] First claimed by {user_name}")
             except Exception as e:
-                LOGGER.warning(f"[{channel_name}] First announcement failed: {e}, falling back")
+                LOGGER.error(f"[{channel_name}] First announcement failed, falling back: {e}")
                 fallback_message = f"@{user_name} 恭喜你搶到第一！"
                 try:
                     await broadcaster.send_message(
@@ -223,6 +236,16 @@ class ChannelPointsComponent(commands.Component):
                 LOGGER.info(f"[{channel_name}] Niibot auth: whisper sent to {user_name}")
             except Exception as e:
                 LOGGER.error(f"[{channel_name}] Niibot auth: failed to send whisper: {e}")
+                if is_scope_error(e):
+                    await reauth_notifier.notify(
+                        broadcaster_login=channel_name,
+                        channel_id=str(payload.broadcaster.id),
+                        send_fn=lambda msg: broadcaster.send_message(
+                            message=msg,
+                            sender=self.bot.bot_id,
+                            token_for=self.bot.bot_id,
+                        ),
+                    )
                 fallback_message = f"@{user_name} 私訊發送失敗，請聯繫 @llazypilot 獲取授權連結！"
                 try:
                     await broadcaster.send_message(
@@ -230,7 +253,9 @@ class ChannelPointsComponent(commands.Component):
                         sender=self.bot.bot_id,
                         token_for=self.bot.bot_id,
                     )
-                    LOGGER.info(f"[{channel_name}] Niibot auth: fell back to chat message")
+                    LOGGER.error(
+                        f"[{channel_name}] Niibot auth: whisper failed, fell back to chat message"
+                    )
                 except Exception as fallback_error:
                     LOGGER.error(
                         f"[{channel_name}] Niibot auth: fallback also failed: {fallback_error}"
@@ -428,10 +453,7 @@ class ChannelPointsComponent(commands.Component):
 
 
 async def setup(bot: commands.Bot) -> None:
-    """Entry point for the module."""
     await bot.add_component(ChannelPointsComponent(bot))
 
 
-async def teardown(bot: commands.Bot) -> None:
-    """Optional teardown coroutine for cleanup."""
-    ...
+async def teardown(bot: commands.Bot) -> None: ...

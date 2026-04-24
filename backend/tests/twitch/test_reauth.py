@@ -122,7 +122,7 @@ class TestReauthNotifier:
         assert captured
         assert "alice" in captured[0]
 
-    async def test_message_contains_dashboard_path(self):
+    async def test_message_contains_frontend_url(self):
         notifier = self._notifier()
         captured: list[str] = []
 
@@ -130,8 +130,8 @@ class TestReauthNotifier:
             captured.append(msg)
 
         await notifier.notify("alice", "ch1", capture)
-        assert "/docs/get-started" in captured[0]
         assert "niibot.tv" in captured[0]
+        assert "/docs/get-started" not in captured[0]
 
     async def test_second_call_within_cooldown_skips_send(self):
         notifier = self._notifier()

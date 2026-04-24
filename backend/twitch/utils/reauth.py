@@ -58,8 +58,6 @@ def is_scope_error(obj: object) -> bool:
 class ReauthNotifier:
     """Rate-limits reauth chat notifications to once per channel per hour."""
 
-    _DASHBOARD_PATH = "/docs/get-started"
-
     def __init__(self) -> None:
         self._last_notified: dict[str, datetime] = {}
 
@@ -69,9 +67,7 @@ class ReauthNotifier:
 
     def _build_message(self, broadcaster_login: str) -> str:
         url = get_settings().frontend_url.rstrip("/")
-        return (
-            f"@{broadcaster_login} 此功能需要重新授權，請前往 {url}{self._DASHBOARD_PATH} 完成設定"
-        )
+        return f"@{broadcaster_login} 請重新登入以恢復功能：{url}"
 
     async def notify(
         self,
