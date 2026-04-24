@@ -161,8 +161,19 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
 
             if payload.broadcaster.id not in self._subscribed_channels:
                 LOGGER.debug(
-                    f"[BLOCK] Ignoring message from unsubscribed channel: "
-                    f"{payload.broadcaster.name}"
+                    f"Ignoring message from unsubscribed channel: {payload.broadcaster.name}"
+                )
+                return
+
+            # Skip messages that originated in a shared-chat partner's channel —
+            # source_broadcaster is set only when the message came from a different
+            # channel in an active shared-chat session.  The partner's own
+            # subscription fires a separate event where source_broadcaster is None,
+            # so processing there avoids duplicate command responses across channels.
+            if payload.source_broadcaster is not None:
+                LOGGER.debug(
+                    f"Skipping shared-chat message from {payload.source_broadcaster.name}"
+                    f" seen in {payload.broadcaster.name}"
                 )
                 return
 
@@ -173,7 +184,6 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
             if chatter_id == self.bot_id:
                 return
 
-            # Track chatter message count in-memory (only during active sessions)
             if channel_id in self._active_sessions:
                 buf = self._chatter_buffers.setdefault(channel_id, {})
                 if chatter_id in buf:
@@ -192,7 +202,6 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
                     self._channel_line_counts.get(channel_id, 0) + 1
                 )
 
-            # Normalize command name to lowercase for case-insensitive matching
             if payload.text and payload.text.startswith("!"):
                 parts = payload.text.split(maxsplit=1)
                 if parts:
