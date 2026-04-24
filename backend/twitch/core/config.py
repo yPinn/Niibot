@@ -1,6 +1,5 @@
 """Twitch bot configuration"""
 
-import logging
 from functools import lru_cache
 from pathlib import Path
 
@@ -8,8 +7,6 @@ from pydantic import Field
 from pydantic_settings import SettingsConfigDict
 
 from shared.config_base import BaseServiceSettings
-
-LOGGER: logging.Logger = logging.getLogger(__name__)
 
 # === Path Configuration ===
 TWITCH_DIR = Path(__file__).resolve().parent.parent
@@ -85,43 +82,3 @@ class TwitchBotSettings(BaseServiceSettings):
 def get_settings() -> TwitchBotSettings:
     """Get cached settings instance"""
     return TwitchBotSettings()  # type: ignore[call-arg]
-
-
-# ============================================
-# Backward Compatibility Functions
-# ============================================
-# These functions maintain compatibility with existing code
-# that uses the old env.py interface
-
-
-def validate_env_vars() -> None:
-    """
-    Validate required environment variables (backward compatible).
-
-    This function maintains compatibility with code that previously
-    imported from env.py. It now uses Pydantic Settings validation.
-    """
-    try:
-        get_settings()
-        LOGGER.info("All required environment variables validated successfully")
-    except Exception as e:
-        LOGGER.error(f"Environment validation failed: {e}")
-        raise ValueError(str(e)) from e
-
-
-def load_env_config() -> dict[str, str]:
-    """
-    Load and return non-secret environment configuration as dict (backward compatible).
-
-    This function maintains compatibility with code that previously
-    imported from env.py. It now uses Pydantic Settings.
-    Secrets (CLIENT_SECRET, DATABASE_URL) are intentionally excluded to prevent
-    accidental exposure via logging or debug output.
-    """
-    settings = get_settings()
-    return {
-        "CLIENT_ID": settings.twitch_client_id,
-        "BOT_ID": settings.bot_id,
-        "OWNER_ID": settings.owner_id,
-        "CONDUIT_ID": settings.conduit_id,
-    }

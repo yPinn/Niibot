@@ -7,8 +7,6 @@ from .config import (
     DATA_DIR,
     TWITCH_DIR,
     get_settings,
-    load_env_config,
-    validate_env_vars,
 )
 from .guards import check_command, has_role, is_on_cooldown, record_cooldown
 from .health_server import HealthCheckServer
@@ -19,8 +17,6 @@ from .subscriptions import get_channel_subscriptions
 __all__ = [
     # Settings
     "get_settings",
-    "validate_env_vars",
-    "load_env_config",
     # Path Constants
     "TWITCH_DIR",
     "COMPONENTS_DIR",
