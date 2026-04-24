@@ -605,3 +605,100 @@ class TestGetTotalMessages:
         result = await repo.get_total_messages("ch123")
 
         assert result == 0
+
+
+# ---------------------------------------------------------------------------
+# Query mixin — get_summary
+# ---------------------------------------------------------------------------
+
+
+def _make_summary_row(recent_sessions_json: str) -> dict:
+    """Build a mock asyncpg row for get_summary.
+
+    asyncpg returns the json / jsonb column as a raw Python str — that is the
+    bug this test suite covers.  Callers pass the JSON string directly.
+    """
+    return {
+        "total_sessions": 3,
+        "total_stream_hours": 7.5,
+        "total_commands": 42,
+        "total_follows": 10,
+        "total_subs": 2,
+        "avg_session_duration": 2.5,
+        "recent_sessions": recent_sessions_json,
+    }
+
+
+@pytest.mark.asyncio
+class TestGetSummary:
+    def setup_method(self):
+        _clear_all_caches()
+
+    async def test_empty_sessions_json_string_returns_empty_list(self):
+        """asyncpg returns '[]' (truthy string) — must be decoded, not used as-is."""
+        pool, _ = _make_pool(fetchrow=_make_summary_row("[]"))
+        repo = AnalyticsRepository(pool)
+
+        result = await repo.get_summary("ch123")
+
+        assert result["recent_sessions"] == []
+
+    async def test_populated_sessions_json_string_returns_list(self):
+        """asyncpg returns a JSON array string — must be decoded to a Python list."""
+        import json as _json
+
+        session = {
+            "session_id": 1,
+            "channel_id": "ch123",
+            "started_at": "2024-06-01T10:00:00+00:00",
+            "ended_at": "2024-06-01T12:00:00+00:00",
+            "title": "Test stream",
+            "game_name": "Just Chatting",
+            "game_id": "509658",
+            "duration_hours": 2.0,
+            "total_commands": 10,
+            "new_follows": 5,
+            "new_subs": 1,
+            "raids_received": 0,
+        }
+        pool, _ = _make_pool(fetchrow=_make_summary_row(_json.dumps([session])))
+        repo = AnalyticsRepository(pool)
+
+        result = await repo.get_summary("ch123")
+
+        assert isinstance(result["recent_sessions"], list)
+        assert len(result["recent_sessions"]) == 1
+        assert result["recent_sessions"][0]["session_id"] == 1
+
+    async def test_none_recent_sessions_returns_empty_list(self):
+        """If asyncpg somehow returns None for the column, return [] not None."""
+        pool, _ = _make_pool(fetchrow=_make_summary_row(None))
+        repo = AnalyticsRepository(pool)
+
+        result = await repo.get_summary("ch123")
+
+        assert result["recent_sessions"] == []
+
+    async def test_scalar_fields_are_returned_correctly(self):
+        pool, _ = _make_pool(fetchrow=_make_summary_row("[]"))
+        repo = AnalyticsRepository(pool)
+
+        result = await repo.get_summary("ch123")
+
+        assert result["total_sessions"] == 3
+        assert result["total_stream_hours"] == 7.5
+        assert result["total_commands"] == 42
+        assert result["total_follows"] == 10
+        assert result["total_subs"] == 2
+        assert result["avg_session_duration"] == 2.5
+
+    async def test_already_decoded_list_is_returned_as_is(self):
+        """If a future asyncpg version / codec returns a real list, pass it through."""
+        decoded = [{"session_id": 99}]
+        row = _make_summary_row(decoded)  # type: ignore[arg-type]
+        pool, _ = _make_pool(fetchrow=row)
+        repo = AnalyticsRepository(pool)
+
+        result = await repo.get_summary("ch123")
+
+        assert result["recent_sessions"] is decoded
