@@ -14,19 +14,18 @@ if TYPE_CHECKING:
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
+_TIER_MAP = {"1000": "T1", "2000": "T2", "3000": "T3"}
+
 
 class EventComponent(commands.Component):
     """EventSub 事件監聽組件"""
 
-    # 防刷機制設定
-    COOLDOWN_HOURS = 24  # 冷卻時間（小時）
-    CACHE_CLEANUP_INTERVAL = 100  # 每處理 N 個事件就清理一次過期 cache
+    COOLDOWN_HOURS = 24
+    CACHE_CLEANUP_INTERVAL = 100
 
     def __init__(self, bot: commands.Bot) -> None:
         self.bot: Bot = bot  # type: ignore[assignment]
-        # 追隨事件 cache: {user_id: last_notified_time}
         self._follow_cache: dict[str, datetime] = {}
-        # 事件計數器，用於定期清理
         self._event_counter = 0
         # Event config repository (with TTL cache)
         self.event_configs = EventConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
@@ -50,7 +49,6 @@ class EventComponent(commands.Component):
         """檢查是否應該發送通知（防刷機制，僅用於追隨事件）"""
         self._event_counter += 1
 
-        # 定期清理過期 cache
         if self._event_counter % self.CACHE_CLEANUP_INTERVAL == 0:
             self._cleanup_cache(self._follow_cache)
 
@@ -63,7 +61,6 @@ class EventComponent(commands.Component):
             if time_diff < cooldown:
                 return False
 
-        # 更新 cache
         self._follow_cache[user_id] = now
         return True
 
@@ -107,7 +104,6 @@ class EventComponent(commands.Component):
         broadcaster_name = payload.broadcaster.name
         channel_id = payload.broadcaster.id
 
-        # 防刷檢查
         if not self._should_notify(user_id):
             LOGGER.info(f"[{broadcaster_name}] Follow: {user_name} (cooldown)")
             return
@@ -125,7 +121,6 @@ class EventComponent(commands.Component):
             )
             LOGGER.info(f"[{broadcaster_name}] Follow: {user_name}")
 
-            # Record to analytics database
             if hasattr(self.bot, "_active_sessions") and hasattr(self.bot, "analytics"):
                 session_id = self.bot._active_sessions.get(channel_id)
                 if session_id:
@@ -154,11 +149,7 @@ class EventComponent(commands.Component):
         user_name = payload.user.display_name or payload.user.name or ""
         broadcaster_name = payload.broadcaster.name
         channel_id = payload.broadcaster.id
-        tier_name = {
-            "1000": "T1",
-            "2000": "T2",
-            "3000": "T3",
-        }.get(payload.tier, payload.tier)
+        tier_name = _TIER_MAP.get(payload.tier, payload.tier)
 
         sub_type = "Gift" if payload.gift else "Sub"
 
@@ -179,7 +170,6 @@ class EventComponent(commands.Component):
             )
             LOGGER.info(f"[{broadcaster_name}] {sub_type}: {user_name} ({tier_name})")
 
-            # Record to analytics database
             if hasattr(self.bot, "_active_sessions") and hasattr(self.bot, "analytics"):
                 session_id = self.bot._active_sessions.get(channel_id)
                 if session_id:
@@ -254,13 +244,11 @@ class EventComponent(commands.Component):
         viewer_count = payload.viewer_count
 
         try:
-            # 取得 config 以判斷 auto_shoutout 選項
             config = await self.event_configs.get_config(broadcaster_id, "raid")
             auto_shoutout = True
             if config is not None:
                 auto_shoutout = config.options.get("auto_shoutout", True)
 
-            # 發送感謝訊息（可被 disabled）
             message = await self._get_message(
                 broadcaster_id, "raid", {"user": raider_name, "count": str(viewer_count)}
             )
@@ -271,7 +259,6 @@ class EventComponent(commands.Component):
                     token_for=self.bot.bot_id,
                 )
 
-            # 執行 Shoutout（依據 config options 控制）
             shoutout_sent = False
             if auto_shoutout:
                 try:
@@ -306,11 +293,7 @@ class EventComponent(commands.Component):
 
 
 async def setup(bot: commands.Bot) -> None:
-    component = EventComponent(bot)
-    await bot.add_component(component)
-    LOGGER.info(
-        "EventComponent loaded with listeners: event_follow, event_subscribe, event_raid, event_cheer"
-    )
+    await bot.add_component(EventComponent(bot))
 
 
 async def teardown(bot: commands.Bot) -> None: ...

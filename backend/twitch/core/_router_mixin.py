@@ -43,7 +43,6 @@ class _MessageRouterMixin:
         active.  Do NOT add an ``_active_sessions`` guard here; timer_manager.py
         is the only component intentionally gated behind live-stream state.
         """
-        # Skip sub-comments: triggers should not react to reply threads
         if payload.reply is not None:
             return False
 
@@ -53,7 +52,7 @@ class _MessageRouterMixin:
         try:
             triggers = await self.message_trigger_configs.list_enabled(channel_id)  # type: ignore[attr-defined]
         except Exception as e:
-            LOGGER.warning(f"[TRIGGER] Failed to load triggers for {channel_id}: {e}")
+            LOGGER.warning(f"[TRIGGER] Failed to load triggers for channel {channel_id}: {e}")
             return False
 
         for trigger in triggers:
@@ -82,13 +81,13 @@ class _MessageRouterMixin:
                 )
                 LOGGER.info(
                     f"[TRIGGER] '{trigger.trigger_name}' fired for "
-                    f"{payload.chatter.name} in {channel_id}"
+                    f"{payload.chatter.name} in channel {channel_id}"
                 )
                 self._fire_and_forget(
                     self.message_trigger_configs.increment_usage_count(trigger.id)  # type: ignore[attr-defined]
                 )
             except Exception as e:
-                LOGGER.warning(f"[TRIGGER] Failed to send response: {e}")
+                LOGGER.warning(f"[TRIGGER] Failed to send trigger response: {e}")
             return True
 
         return False
@@ -124,7 +123,7 @@ class _MessageRouterMixin:
             config = await self.command_configs.find_by_name_or_alias(channel_id, cmd_name)  # type: ignore[attr-defined]
         except Exception as e:
             LOGGER.warning(
-                f"[GUARD] DB error looking up command '{cmd_name}': {type(e).__name__}: {e}"
+                f"[CMD] DB error looking up command '{cmd_name}': {type(e).__name__}: {e}"
             )
             return False
 
@@ -140,9 +139,7 @@ class _MessageRouterMixin:
         try:
             channel = await self.channels.get_channel(channel_id)  # type: ignore[attr-defined]
         except Exception as e:
-            LOGGER.warning(
-                f"[GUARD] DB error fetching channel {channel_id}: {type(e).__name__}: {e}"
-            )
+            LOGGER.warning(f"[CMD] DB error fetching channel {channel_id}: {type(e).__name__}: {e}")
             channel = None
 
         if is_on_cooldown(channel_id, config.command_name, config, channel):
@@ -159,7 +156,7 @@ class _MessageRouterMixin:
         if response.startswith("!"):
             redirect = response[1:].replace("$(query)", query).strip()
             payload.text = f"!{redirect}"
-            LOGGER.info(f"Custom command: !{cmd_name} -> !{redirect}")
+            LOGGER.info(f"[CMD] !{cmd_name} -> !{redirect}")
             return False
         else:
             response = _substitute_variables(
@@ -172,7 +169,7 @@ class _MessageRouterMixin:
                     token_for=self.bot_id,  # type: ignore[attr-defined]
                     reply_to_message_id=str(payload.id),
                 )
-                LOGGER.info(f"Custom command: !{cmd_name} -> text response")
+                LOGGER.info(f"[CMD] !{cmd_name} -> text response")
             except Exception as e:
                 LOGGER.warning(f"[CMD] Failed to send response for !{cmd_name}: {e}")
             return True
