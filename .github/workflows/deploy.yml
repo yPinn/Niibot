@@ -120,6 +120,7 @@ jobs:
             echo "FRONTEND_URL=${FRONTEND_URL}"
             echo "TWITCH_CLIENT_ID=${TWITCH_CLIENT_ID}"
             echo "TWITCH_CLIENT_SECRET=${TWITCH_CLIENT_SECRET}"
+            echo "BOT_ID=${BOT_ID}"
             echo "LOG_LEVEL=${LOG_LEVEL}"
             [ -n "${YOUTUBE_API_KEY}" ]    && echo "YOUTUBE_API_KEY=${YOUTUBE_API_KEY}"
             [ -n "${OPENROUTER_API_KEY}" ] && echo "OPENROUTER_API_KEY=${OPENROUTER_API_KEY}"
@@ -146,7 +147,6 @@ jobs:
 
           # --- Twitch .env ---
           {
-            echo "BOT_ID=${BOT_ID}"
             echo "OWNER_ID=${OWNER_ID}"
             [ -n "${CONDUIT_ID}" ] && echo "CONDUIT_ID=${CONDUIT_ID}"
           } > "$PROJECT_DIR/backend/twitch/.env"
