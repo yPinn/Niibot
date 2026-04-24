@@ -6,6 +6,7 @@ import twitchio
 from twitchio.ext import commands
 
 from shared.repositories.event_config import DEFAULT_TEMPLATES, EventConfigRepository
+from utils.reauth import is_scope_error, reauth_notifier
 
 if TYPE_CHECKING:
     from core.bot import Bot
@@ -271,16 +272,33 @@ class EventComponent(commands.Component):
                 )
 
             # 執行 Shoutout（依據 config options 控制）
+            shoutout_sent = False
             if auto_shoutout:
-                await self.bot._http.post_chat_shoutout(
-                    broadcaster_id=broadcaster_id,
-                    to_broadcaster_id=raider_id,
-                    moderator_id=self.bot.bot_id,
-                    token_for=broadcaster_id,
-                )
+                try:
+                    await self.bot._http.post_chat_shoutout(
+                        broadcaster_id=broadcaster_id,
+                        to_broadcaster_id=raider_id,
+                        moderator_id=self.bot.bot_id,
+                        token_for=broadcaster_id,
+                    )
+                    shoutout_sent = True
+                except Exception as shoutout_err:
+                    if is_scope_error(shoutout_err):
+                        await reauth_notifier.notify(
+                            broadcaster_login=broadcaster_name,
+                            channel_id=broadcaster_id,
+                            send_fn=lambda msg: payload.to_broadcaster.send_message(
+                                message=msg,
+                                sender=self.bot.bot_id,
+                                token_for=self.bot.bot_id,
+                            ),
+                        )
+                    else:
+                        LOGGER.error(f"[{broadcaster_name}] Shoutout failed: {shoutout_err}")
+
             LOGGER.info(
                 f"[{broadcaster_name}] Raid: {raider_name} ({viewer_count})"
-                f" (shoutout {'sent' if auto_shoutout else 'skipped'})"
+                f" (shoutout {'sent' if shoutout_sent else 'skipped'})"
             )
 
         except Exception as e:

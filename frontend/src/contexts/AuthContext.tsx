@@ -1,6 +1,8 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
+import { toast } from 'sonner'
 
 import { type Channel, getCurrentUser, getTwitchMonitoredChannels, type User } from '@/api'
+import { openTwitchOAuth } from '@/api/twitchOAuth'
 import { logout as apiLogout } from '@/api/user'
 import { apiCache } from '@/lib/apiCache'
 
@@ -57,10 +59,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       apiCache.clear()
       setUser(null)
       setChannels([])
-      window.location.href = '/login'
+      window.location.href = '/login?reason=session_expired'
     }
     window.addEventListener('auth:unauthorized', handleUnauthorized)
     return () => window.removeEventListener('auth:unauthorized', handleUnauthorized)
+  }, [])
+
+  // Global reauth interceptor — Twitch scope missing, show persistent toast.
+  useEffect(() => {
+    const handleReauthRequired = () => {
+      toast.error('需要重新授權 Twitch 帳號', {
+        description: '此功能需要額外的 Twitch 授權，請重新登入以繼續',
+        action: { label: '重新授權', onClick: openTwitchOAuth },
+        duration: 12000,
+      })
+    }
+    window.addEventListener('auth:reauth-required', handleReauthRequired)
+    return () => window.removeEventListener('auth:reauth-required', handleReauthRequired)
   }, [])
 
   const refreshUser = useCallback(async () => {

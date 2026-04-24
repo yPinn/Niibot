@@ -15,16 +15,27 @@ const ERROR_MESSAGES: Record<string, string> = {
   access_denied: '授權被拒絕',
 }
 
+const REASON_MESSAGES: Record<string, string> = {
+  session_expired: '登入已過期，請重新登入',
+}
+
 export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) {
   const [searchParams, setSearchParams] = useSearchParams()
 
-  // Process error param once on mount
+  // Process error / reason params once on mount
   useEffect(() => {
     const errorCode = searchParams.get('error')
+    const reasonCode = searchParams.get('reason')
     if (errorCode) {
       const errorMessage = ERROR_MESSAGES[errorCode] || `登入失敗 (${errorCode})`
       toast.error('登入失敗', { description: errorMessage })
       setSearchParams({}, { replace: true })
+    } else if (reasonCode) {
+      const reasonMessage = REASON_MESSAGES[reasonCode]
+      if (reasonMessage) {
+        toast.warning(reasonMessage)
+        setSearchParams({}, { replace: true })
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -33,7 +44,7 @@ export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) 
     <SlideUp className={cn('flex flex-col gap-6', className)} {...props}>
       <Card className="overflow-hidden p-0">
         <CardContent className="grid p-0 md:grid-cols-2">
-          <form className="select-none p-6 md:p-8">
+          <form className="select-none p-5 sm:p-6 md:p-8">
             <div className="flex flex-col gap-6">
               <div className="flex flex-col items-center gap-2 text-center">
                 <h1 className="text-page-title font-bold">歡迎使用 Niibot</h1>
@@ -41,7 +52,7 @@ export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) 
                   Twitch 直播 × Discord 社群的機器人助手
                 </p>
               </div>
-              <ul className="text-muted-foreground my-6 space-y-2 text-sub">
+              <ul className="text-muted-foreground my-4 space-y-2 text-sub sm:my-6">
                 <li className="flex items-start gap-2">
                   <Icon
                     icon="fa-solid fa-check"
