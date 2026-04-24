@@ -46,6 +46,7 @@ class TwitchAPIClient:
         "channel:bot",
         "channel:read:redemptions",
         "channel:read:subscriptions",
+        "channel:manage:moderators",
         "bits:read",
     ]
 
@@ -393,6 +394,37 @@ class TwitchAPIClient:
         except Exception as e:
             LOGGER.exception(f"Error getting games by names: {e}")
             return []
+
+    # ------------------------------------------------------------------
+    # Moderation
+    # ------------------------------------------------------------------
+
+    async def check_bot_is_moderator(
+        self, broadcaster_id: str, bot_id: str, access_token: str
+    ) -> bool:
+        """Return True if bot_id is currently a moderator in broadcaster_id's channel."""
+        try:
+            response = await self._helix_get(
+                "moderation/moderators",
+                {"broadcaster_id": broadcaster_id, "user_id": bot_id},
+                token=access_token,
+            )
+            if not response or response.status_code != 200:
+                return False
+            return len(response.json().get("data", [])) > 0
+        except Exception as e:
+            LOGGER.exception(f"Error checking moderator status: {e}")
+            return False
+
+    async def add_moderator(
+        self, broadcaster_id: str, moderator_user_id: str, access_token: str
+    ) -> httpx.Response:
+        """Grant moderator status. Returns the raw Helix response for caller inspection."""
+        return await self._http.post(
+            f"{HELIX_BASE}/moderation/moderators",
+            json={"broadcaster_id": broadcaster_id, "user_id": moderator_user_id},
+            headers=self._app_headers(access_token),
+        )
 
     # ------------------------------------------------------------------
     # Channel Points

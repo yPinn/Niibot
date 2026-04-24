@@ -7,6 +7,7 @@ from asyncpg import Pool
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from core.config import get_settings
 from core.dependencies import (
     get_channel_service,
     get_current_channel_id,
@@ -57,6 +58,15 @@ class ChannelDefaultsResponse(BaseModel):
 
 class ChannelDefaultsUpdate(BaseModel):
     default_cooldown: int | None = None
+
+
+class ModStatusResponse(BaseModel):
+    is_moderator: bool
+
+
+class GrantModResponse(BaseModel):
+    granted: bool
+    already_mod: bool = False
 
 
 # ============================================
@@ -170,6 +180,76 @@ async def toggle_channel(
     except Exception:
         LOGGER.exception("Failed to toggle channel")
         raise HTTPException(status_code=500, detail="Failed to toggle channel") from None
+
+
+# ============================================
+# Bot Mod Status
+# ============================================
+
+
+@router.get("/twitch/mod-status", response_model=ModStatusResponse)
+async def get_bot_mod_status(
+    channel_id: str = Depends(get_current_channel_id),
+    twitch_api: TwitchAPIClient = Depends(get_twitch_api),
+    pool: Pool = Depends(get_db_pool),
+) -> ModStatusResponse:
+    """Check whether the bot currently holds moderator status in the caller's channel."""
+    from fastapi.responses import JSONResponse
+
+    channel_service = get_channel_service(pool)
+    token = await channel_service.get_token_with_refresh(channel_id, twitch_api)
+    if not token:
+        return JSONResponse(  # type: ignore[return-value]
+            status_code=403,
+            headers={"X-Reauth-Required": "true"},
+            content={"detail": "Token unavailable or missing required scope"},
+        )
+    bot_id = get_settings().bot_id
+    is_mod = await twitch_api.check_bot_is_moderator(channel_id, bot_id, token)
+    return ModStatusResponse(is_moderator=is_mod)
+
+
+@router.post("/twitch/grant-mod", response_model=GrantModResponse)
+async def grant_bot_mod(
+    channel_id: str = Depends(get_current_channel_id),
+    twitch_api: TwitchAPIClient = Depends(get_twitch_api),
+    pool: Pool = Depends(get_db_pool),
+) -> GrantModResponse:
+    """Grant the bot moderator status in the caller's channel."""
+    from fastapi.responses import JSONResponse
+
+    channel_service = get_channel_service(pool)
+    token = await channel_service.get_token_with_refresh(channel_id, twitch_api)
+    if not token:
+        return JSONResponse(  # type: ignore[return-value]
+            status_code=403,
+            headers={"X-Reauth-Required": "true"},
+            content={"detail": "Token unavailable or missing required scope"},
+        )
+
+    bot_id = get_settings().bot_id
+    try:
+        resp = await twitch_api.add_moderator(channel_id, bot_id, token)
+    except Exception:
+        LOGGER.exception("Failed to call Twitch grant-mod API")
+        raise HTTPException(status_code=500, detail="Failed to grant moderator status") from None
+
+    if resp.status_code == 204:
+        LOGGER.info(f"Granted bot mod for channel {channel_id}")
+        return GrantModResponse(granted=True)
+
+    if resp.status_code == 422:
+        return GrantModResponse(granted=False, already_mod=True)
+
+    if resp.status_code in (401, 403):
+        return JSONResponse(  # type: ignore[return-value]
+            status_code=403,
+            headers={"X-Reauth-Required": "true"},
+            content={"detail": "Missing required Twitch scope"},
+        )
+
+    LOGGER.error(f"Unexpected grant-mod response {resp.status_code}: {resp.text}")
+    raise HTTPException(status_code=502, detail="Twitch API error")
 
 
 # ============================================
