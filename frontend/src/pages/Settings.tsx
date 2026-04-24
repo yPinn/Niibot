@@ -384,7 +384,7 @@ export default function Settings() {
                               )}
 
                               {/* Bottom: min amount + media toggle + save */}
-                              <div className="flex items-center gap-element border-t border-border/50 pt-2">
+                              <div className="flex flex-wrap items-center gap-x-element gap-y-2 border-t border-border/50 pt-2">
                                 {needsHash && (
                                   <>
                                     <span className="text-label text-muted-foreground shrink-0">

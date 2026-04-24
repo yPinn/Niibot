@@ -56,7 +56,7 @@ export function CustomTab({ customRows, sortState, defaults, onToggle, onEdit }:
             </SortableHead>
             <TableHead>回應</TableHead>
             <SortableHead
-              className="w-[8%]"
+              className="hidden md:table-cell w-[8%]"
               sortKey="cooldown"
               currentKey={sortKey}
               dir={sortDir}
@@ -65,7 +65,7 @@ export function CustomTab({ customRows, sortState, defaults, onToggle, onEdit }:
               冷卻
             </SortableHead>
             <SortableHead
-              className="w-[8%]"
+              className="hidden md:table-cell w-[8%]"
               sortKey="min_role"
               currentKey={sortKey}
               dir={sortDir}
@@ -74,7 +74,7 @@ export function CustomTab({ customRows, sortState, defaults, onToggle, onEdit }:
               權限
             </SortableHead>
             <SortableHead
-              className="w-[10%] text-right"
+              className="hidden md:table-cell w-[10%] text-right"
               sortKey="usage_count"
               currentKey={sortKey}
               dir={sortDir}
@@ -160,13 +160,15 @@ export function CustomTab({ customRows, sortState, defaults, onToggle, onEdit }:
                   <TableCell className="max-w-0 truncate text-sub text-muted-foreground">
                     {row.kind === 'command' ? (row.data.custom_response ?? '') : row.data.response}
                   </TableCell>
-                  <TableCell className="text-sub text-muted-foreground">
+                  <TableCell className="hidden md:table-cell text-sub text-muted-foreground">
                     {formatCooldown(row.data.cooldown, defaults)}
                   </TableCell>
-                  <TableCell className="text-sub">
+                  <TableCell className="hidden md:table-cell text-sub">
                     {ROLE_LABELS[row.data.min_role] ?? row.data.min_role}
                   </TableCell>
-                  <TableCell className="text-right">{row.data.usage_count}</TableCell>
+                  <TableCell className="hidden md:table-cell text-right">
+                    {row.data.usage_count}
+                  </TableCell>
                   <TableCell className="text-center">
                     <div className="flex justify-center">
                       <Switch checked={row.data.enabled} onCheckedChange={() => onToggle(row)} />

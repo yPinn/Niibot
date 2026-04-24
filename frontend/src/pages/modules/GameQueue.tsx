@@ -249,7 +249,7 @@ export default function GameQueue() {
         <PageHeader title="Game Queue" description="管理遊戲排隊系統" />
         <div className="grid grid-cols-1 gap-section lg:grid-cols-12 lg:items-stretch">
           <div className="lg:col-span-8">
-            <Card className="h-full min-h-130">
+            <Card className="h-full min-h-[360px] lg:min-h-130">
               <CardHeader>
                 <Skeleton className="h-5 w-24" />
               </CardHeader>
@@ -294,7 +294,7 @@ export default function GameQueue() {
       <FadeIn inView className="grid grid-cols-1 gap-section lg:grid-cols-12 lg:items-stretch">
         {/* Full Queue card — fills full column height */}
         <div className="lg:col-span-8">
-          <Card className="h-full min-h-[520px]">
+          <Card className="h-full min-h-[360px] lg:min-h-[520px]">
             <CardHeader>
               <CardTitle>
                 等待佇列
@@ -360,7 +360,7 @@ export default function GameQueue() {
               </CardAction>
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="text-muted-foreground text-sub shrink-0">快速預設</span>
                 <Button
                   variant="outline"

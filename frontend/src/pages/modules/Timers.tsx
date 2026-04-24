@@ -350,7 +350,7 @@ export default function Timers() {
                       </SortableHead>
                       <TableHead>訊息內容</TableHead>
                       <SortableHead
-                        className="w-[12%]"
+                        className="hidden md:table-cell w-[12%]"
                         sortKey="interval"
                         currentKey={sortKey}
                         dir={sortDir}
@@ -423,7 +423,7 @@ export default function Timers() {
                           <TableCell className="max-w-0 truncate text-sub text-muted-foreground">
                             {timer.message_template}
                           </TableCell>
-                          <TableCell className="text-sub text-muted-foreground">
+                          <TableCell className="hidden md:table-cell text-sub text-muted-foreground">
                             {formatInterval(timer.interval_seconds)}
                           </TableCell>
                           <TableCell className="text-center">

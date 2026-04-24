@@ -74,7 +74,7 @@ export function BuiltinTab({ commands, sortState, defaults, onToggle, onEdit }: 
             </SortableHead>
             <TableHead>描述</TableHead>
             <SortableHead
-              className="w-[8%]"
+              className="hidden md:table-cell w-[8%]"
               sortKey="cooldown"
               currentKey={sortKey}
               dir={sortDir}
@@ -83,7 +83,7 @@ export function BuiltinTab({ commands, sortState, defaults, onToggle, onEdit }: 
               冷卻
             </SortableHead>
             <SortableHead
-              className="w-[8%]"
+              className="hidden md:table-cell w-[8%]"
               sortKey="min_role"
               currentKey={sortKey}
               dir={sortDir}
@@ -92,7 +92,7 @@ export function BuiltinTab({ commands, sortState, defaults, onToggle, onEdit }: 
               權限
             </SortableHead>
             <SortableHead
-              className="w-[10%] text-right"
+              className="hidden md:table-cell w-[10%] text-right"
               sortKey="usage_count"
               currentKey={sortKey}
               dir={sortDir}
@@ -140,13 +140,13 @@ export function BuiltinTab({ commands, sortState, defaults, onToggle, onEdit }: 
               <TableCell className="max-w-0 truncate text-sub text-muted-foreground">
                 {cmd.description}
               </TableCell>
-              <TableCell className="text-sub text-muted-foreground">
+              <TableCell className="hidden md:table-cell text-sub text-muted-foreground">
                 {formatCooldown(cmd.cooldown, defaults)}
               </TableCell>
-              <TableCell className="text-sub">
+              <TableCell className="hidden md:table-cell text-sub">
                 {ROLE_LABELS[cmd.min_role] || cmd.min_role}
               </TableCell>
-              <TableCell className="text-right">{cmd.usage_count}</TableCell>
+              <TableCell className="hidden md:table-cell text-right">{cmd.usage_count}</TableCell>
               <TableCell className="text-center">
                 <div className="flex justify-center">
                   <Switch checked={cmd.enabled} onCheckedChange={() => onToggle(cmd)} />

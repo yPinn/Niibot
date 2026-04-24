@@ -149,8 +149,8 @@ function QueueTable({
             <TableHead className="w-10" />
             <TableHead>影片</TableHead>
             {/* 點播者 before 來源: logical "what + who" grouping, both can truncate independently */}
-            <TableHead className="w-28">點播者</TableHead>
-            <TableHead className="w-20 text-center">來源</TableHead>
+            <TableHead className="w-20 sm:w-28">點播者</TableHead>
+            <TableHead className="hidden sm:table-cell w-20 text-center">來源</TableHead>
             <TableHead className="w-16 tabular-nums">長度</TableHead>
             {(hasActions || onSkip) && <TableHead className="w-20" />}
           </TableRow>
@@ -177,7 +177,7 @@ function QueueTable({
               <TableCell className="text-muted-foreground text-sub">
                 <span className="block truncate">{current.requested_by}</span>
               </TableCell>
-              <TableCell className="text-center">
+              <TableCell className="hidden sm:table-cell text-center">
                 <SourceBadge source={current.source} />
               </TableCell>
               <TableCell className="text-muted-foreground text-sub tabular-nums">
@@ -212,7 +212,7 @@ function QueueTable({
               <TableCell className="text-muted-foreground text-sub">
                 <span className="block truncate">{entry.requested_by}</span>
               </TableCell>
-              <TableCell className="text-center">
+              <TableCell className="hidden sm:table-cell text-center">
                 <SourceBadge source={entry.source} />
               </TableCell>
               <TableCell className="text-muted-foreground text-sub tabular-nums">
@@ -646,7 +646,7 @@ export default function VideoQueue() {
             {/* Global limits — apply to all sources */}
             <div className="flex flex-col gap-3">
               <p className="text-sub text-muted-foreground">全域限制</p>
-              <div className="grid grid-cols-2 gap-x-3 gap-y-3 sm:gap-x-8 lg:grid-cols-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-3 sm:gap-x-8 lg:grid-cols-4">
                 <div className="flex items-center gap-3">
                   <Label htmlFor="max-per-user" className="w-24 shrink-0">
                     每人排隊上限

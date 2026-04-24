@@ -317,7 +317,7 @@ export default function Events() {
                         事件名稱
                       </SortableHead>
                       <SortableHead
-                        className="w-[12%]"
+                        className="hidden md:table-cell w-[12%]"
                         sortKey="type_label"
                         currentKey={eventSort.sortKey}
                         dir={eventSort.sortDir}
@@ -325,9 +325,9 @@ export default function Events() {
                       >
                         類型
                       </SortableHead>
-                      <TableHead>訊息模板</TableHead>
+                      <TableHead className="hidden md:table-cell">訊息模板</TableHead>
                       <SortableHead
-                        className="w-[12%] text-right"
+                        className="hidden md:table-cell w-[12%] text-right"
                         sortKey="trigger_count"
                         currentKey={eventSort.sortKey}
                         dir={eventSort.sortDir}
@@ -362,12 +362,12 @@ export default function Events() {
                               )}
                             </span>
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="hidden md:table-cell">
                             <Badge className={EVENT_TYPE_COLORS[event.event_type] || ''}>
                               {EVENT_TYPE_LABELS[event.event_type] || event.event_type}
                             </Badge>
                           </TableCell>
-                          <TableCell className="max-w-0 truncate font-mono text-label">
+                          <TableCell className="hidden md:table-cell max-w-0 truncate font-mono text-label">
                             {locked ? (
                               <span className="text-muted-foreground">
                                 需要聯盟夥伴或合作夥伴資格
@@ -376,7 +376,9 @@ export default function Events() {
                               event.message_template
                             )}
                           </TableCell>
-                          <TableCell className="text-right">{event.trigger_count}</TableCell>
+                          <TableCell className="hidden md:table-cell text-right">
+                            {event.trigger_count}
+                          </TableCell>
                           <TableCell className="text-center">
                             <div className="flex justify-center">
                               <Switch
@@ -500,7 +502,7 @@ export default function Events() {
                                   handleRewardSelect(red, v === '__none__' ? '' : v)
                                 }
                               >
-                                <SelectTrigger size="sm" className="w-full max-w-56">
+                                <SelectTrigger size="sm" className="w-full md:max-w-56">
                                   <SelectValue placeholder="選擇獎勵..." />
                                 </SelectTrigger>
                                 <SelectContent>
