@@ -1,9 +1,11 @@
 import type { CSSProperties } from 'react'
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { toast } from 'sonner'
 
+import { getBotModStatus, grantBotMod } from '@/api/channels'
 import { PageHeader } from '@/components/PageHeader'
-import { Badge, Card, CardContent, CardHeader, CardTitle, Icon } from '@/components/ui'
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Icon } from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
 // ─── Copy Button ─────────────────────────────────────────────────────────────
@@ -205,6 +207,33 @@ const NEXT_STEPS = [
 export default function GetStarted() {
   useDocumentTitle('快速上手 — Niibot')
 
+  const [isMod, setIsMod] = useState<boolean | null>(null)
+  const [granting, setGranting] = useState(false)
+
+  useEffect(() => {
+    getBotModStatus().then(res => {
+      if (res !== null) setIsMod(res.is_moderator)
+    })
+  }, [])
+
+  const handleGrantMod = useCallback(async () => {
+    setGranting(true)
+    try {
+      const res = await grantBotMod()
+      if (res.already_mod) {
+        setIsMod(true)
+        toast.info('Niibot 已經是主持人了')
+      } else if (res.granted) {
+        setIsMod(true)
+        toast.success('主持人授予成功')
+      }
+    } catch {
+      toast.error('授予失敗，請稍後再試')
+    } finally {
+      setGranting(false)
+    }
+  }, [])
+
   return (
     <main className="flex flex-1 flex-col gap-card p-page lg:p-page-lg select-none">
       <PageHeader
@@ -218,13 +247,21 @@ export default function GetStarted() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-3 text-card-title">
-              <Icon
-                icon="fa-solid fa-shield-halved"
-                wrapperClassName="size-4 shrink-0 text-amber-500"
-              />
-              讓機器人成為聊天室主持人
-            </CardTitle>
+            <div className="flex items-start justify-between gap-3">
+              <CardTitle className="flex items-center gap-3 text-card-title">
+                <Icon
+                  icon="fa-solid fa-shield-halved"
+                  wrapperClassName="size-4 shrink-0 text-amber-500"
+                />
+                讓機器人成為聊天室主持人
+              </CardTitle>
+              {isMod === true && (
+                <Badge className="shrink-0 bg-green-600 text-white hover:bg-green-600">
+                  <Icon icon="fa-solid fa-check" wrapperClassName="mr-1 size-3" />
+                  已設定
+                </Badge>
+              )}
+            </div>
             <p className="text-sub text-muted-foreground">
               機器人需要主持人（Mod）身份才能在你的頻道正常發言與執行指令。
             </p>
@@ -259,6 +296,35 @@ export default function GetStarted() {
                     </code>
                     <CopyButton text="/mod niibot_" />
                   </div>
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleGrantMod}
+                    disabled={granting || isMod === true}
+                    className="w-full"
+                  >
+                    {granting ? (
+                      <>
+                        <Icon icon="fa-solid fa-spinner fa-spin" wrapperClassName="mr-2 size-3" />
+                        授予中…
+                      </>
+                    ) : isMod === true ? (
+                      <>
+                        <Icon
+                          icon="fa-solid fa-check"
+                          wrapperClassName="mr-2 size-3 text-green-500"
+                        />
+                        已授予主持人
+                      </>
+                    ) : (
+                      <>
+                        <Icon icon="fa-solid fa-user-shield" wrapperClassName="mr-2 size-3" />
+                        一鍵授予主持人
+                      </>
+                    )}
+                  </Button>
 
                   <p className="text-label text-muted-foreground">或選擇以下任一方式：</p>
 

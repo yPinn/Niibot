@@ -31,6 +31,8 @@ export const API_ENDPOINTS = {
       monitored: join('/api/channels/twitch/monitored'),
       myStatus: join('/api/channels/twitch/my-status'),
       toggle: join('/api/channels/twitch/toggle'),
+      modStatus: join('/api/channels/twitch/mod-status'),
+      grantMod: join('/api/channels/twitch/grant-mod'),
     },
     defaults: join('/api/channels/defaults'),
   },
@@ -137,7 +139,7 @@ export function assertTrustedOAuthUrl(raw: unknown, provider: 'twitch'): string 
   return raw
 }
 
-// Fetch wrapper: retries once on 503, dispatches auth:unauthorized on 401.
+// Fetch wrapper: retries once on 503, dispatches auth events on 401/403.
 export async function apiFetch(
   input: RequestInfo | URL,
   init?: RequestInit,
@@ -153,6 +155,9 @@ export async function apiFetch(
     }
     if (res.status === 401) {
       window.dispatchEvent(new CustomEvent('auth:unauthorized'))
+    }
+    if (res.status === 403 && res.headers.get('X-Reauth-Required') === 'true') {
+      window.dispatchEvent(new CustomEvent('auth:reauth-required'))
     }
     return res
   }

@@ -24,6 +24,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  Badge,
   Button,
   Card,
   CardAction,
@@ -596,7 +597,12 @@ export default function Timers() {
                 {/* Announce mode */}
                 <div className="flex items-center justify-between">
                   <div className="flex flex-col gap-0.5">
-                    <span className="text-sm font-medium leading-none">公告模式</span>
+                    <span className="flex items-center gap-1.5 text-sm font-medium leading-none">
+                      公告模式
+                      <Badge variant="secondary" className="text-label">
+                        需要 Mod
+                      </Badge>
+                    </span>
                     <span className="text-label text-muted-foreground">
                       以聊天室公告方式發送，訊息會被高亮顯示
                     </span>

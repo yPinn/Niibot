@@ -574,7 +574,12 @@ export default function Events() {
             {editingEvent?.event_type === 'raid' && (
               <div className="flex items-center justify-between">
                 <div className="flex flex-col gap-0.5">
-                  <span className="text-sm font-medium leading-none">自動推薦</span>
+                  <span className="flex items-center gap-1.5 text-sm font-medium leading-none">
+                    自動推薦
+                    <Badge variant="secondary" className="text-label">
+                      需要 Mod
+                    </Badge>
+                  </span>
                   <span className="text-label text-muted-foreground">
                     揪團時自動執行 /shoutout 展示對方頻道
                   </span>

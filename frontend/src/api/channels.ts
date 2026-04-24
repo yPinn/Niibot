@@ -94,6 +94,38 @@ export async function updateChannelDefaults(
   return response.json()
 }
 
+// ---- Bot Mod Status ----
+
+export interface ModStatusResponse {
+  is_moderator: boolean
+}
+
+export interface GrantModResponse {
+  granted: boolean
+  already_mod: boolean
+}
+
+export async function getBotModStatus(): Promise<ModStatusResponse | null> {
+  try {
+    const response = await apiFetch(API_ENDPOINTS.channels.twitch.modStatus, {
+      credentials: 'include',
+    })
+    if (!response.ok) return null
+    return response.json()
+  } catch {
+    return null
+  }
+}
+
+export async function grantBotMod(): Promise<GrantModResponse> {
+  const response = await apiFetch(API_ENDPOINTS.channels.twitch.grantMod, {
+    method: 'POST',
+    credentials: 'include',
+  })
+  if (!response.ok) throw new Error('Failed to grant moderator status')
+  return response.json()
+}
+
 export async function toggleTwitchChannel(
   channelId: string,
   enabled: boolean
