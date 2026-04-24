@@ -6,6 +6,7 @@ Depends on attributes defined in AnalyticsRepository.__init__:
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 
 import asyncpg
@@ -161,7 +162,8 @@ class _AnalyticsQueryMixin:
                 since_date,
             )
 
-            sessions = row["recent_sessions"] or []
+            raw = row["recent_sessions"]
+            sessions = json.loads(raw) if isinstance(raw, str) else (raw or [])
 
             return {
                 "total_sessions": row["total_sessions"],
