@@ -5,7 +5,7 @@ import { toast } from 'sonner'
 
 import { getBotModStatus, grantBotMod } from '@/api/channels'
 import { PageHeader } from '@/components/PageHeader'
-import { Button, Card, CardContent, CardHeader, CardTitle, Icon } from '@/components/ui'
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Icon } from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
 // ─── Copy Button ─────────────────────────────────────────────────────────────
