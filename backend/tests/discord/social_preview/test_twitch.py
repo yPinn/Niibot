@@ -254,7 +254,7 @@ class TestCogTwitchClip:
         stream_resp.raise_for_status = MagicMock()
         stream_resp.__aenter__ = AsyncMock(return_value=stream_resp)
         stream_resp.__aexit__ = AsyncMock(return_value=False)
-        stream_resp.aiter_bytes = MagicMock(return_value=aiter_bytes([mp4_bytes]))
+        stream_resp.aiter_bytes = lambda _: aiter_bytes([mp4_bytes])
         cog._http.stream = MagicMock(return_value=stream_resp)
 
         msg = _make_message("https://clips.twitch.tv/AbcDef123")

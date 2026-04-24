@@ -24,6 +24,13 @@ def cog(embed_factory: EmbedFactory) -> SocialPreviewCog:
     c.bot = bot
     c._embed = embed_factory
     c._http = AsyncMock()
+    # httpx.AsyncClient.stream is synchronous (returns an async CM, not a coroutine).
+    # Using MagicMock avoids "coroutine never awaited" warnings in tests that call
+    # _download_cdn_bytes without an explicit stream mock.
+    stream_cm = MagicMock()
+    stream_cm.__aenter__ = AsyncMock(return_value=stream_cm)
+    stream_cm.__aexit__ = AsyncMock(return_value=False)
+    c._http.stream = MagicMock(return_value=stream_cm)
     c._twitch_token = None
     c._twitch_token_exp = 0.0
     return c

@@ -244,6 +244,17 @@ class TestOnMessage:
 
 
 class TestOnMessageDelete:
+    def test_skip_delete_log_adds_id(self, cog):
+        cog.skip_delete_log(999)
+        assert 999 in cog._log_skip_ids
+
+    async def test_skips_registered_id_and_clears_it(self, cog):
+        msg = _make_message(msg_id=123)
+        cog.skip_delete_log(123)
+        await cog.on_message_delete(msg)
+        cog._send_log.assert_not_called()
+        assert 123 not in cog._log_skip_ids
+
     async def test_skips_bot_message(self, cog):
         msg = _make_message(is_bot=True)
         await cog.on_message_delete(msg)
