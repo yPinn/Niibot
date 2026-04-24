@@ -71,6 +71,11 @@ class EventsCog(commands.Cog):
         self.log_channels: dict[int, int] = _load_log_channels()
         self._embed = EmbedFactory(load_json(DATA_DIR / "embed.json"))
         self._msg_cache: LRUCache[int, discord.Message] = LRUCache(maxsize=_MSG_CACHE_SIZE)
+        self._log_skip_ids: set[int] = set()
+
+    def skip_delete_log(self, message_id: int) -> None:
+        """Register a message ID to be excluded from the next delete log entry."""
+        self._log_skip_ids.add(message_id)
 
     # ── Slash command group ──────────────────────────────────────────────────
 
@@ -172,6 +177,9 @@ class EventsCog(commands.Cog):
     @commands.Cog.listener()
     async def on_message_delete(self, message: discord.Message) -> None:
         if message.author.bot or not message.guild:
+            return
+        if message.id in self._log_skip_ids:
+            self._log_skip_ids.discard(message.id)
             return
 
         log_channel = self.get_log_channel(message.guild)

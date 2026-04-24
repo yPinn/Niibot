@@ -354,6 +354,9 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
                 vid_bytes_list: list[bytes] = [b for b in dl_results if b is not None]
 
                 first_image = photo_items[0][0] if photo_items else None
+                first_img_bytes = (
+                    await self._download_cdn_bytes(first_image) if first_image else None
+                )
                 embed = build_instagram_embed(
                     self._embed,
                     {**og_meta, "image": first_image} if first_image else og_meta,
@@ -368,9 +371,11 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
                         og_meta,
                         original_url,
                     )
-                    sent = await self._send_preview(message, embed, view=carousel_view)
+                    sent = await self._send_preview(
+                        message, embed, view=carousel_view, image_bytes=first_img_bytes
+                    )
                 else:
-                    sent = await self._send_preview(message, embed)
+                    sent = await self._send_preview(message, embed, image_bytes=first_img_bytes)
 
                 if sent:
                     await self._send_file_bundle(message, vid_bytes_list, sent, filename="reel.mp4")
@@ -384,8 +389,11 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
                 if not cdn:
                     return
                 embed = build_instagram_embed(self._embed, {**og_meta, "image": cdn}, original_url)
-                vid_bytes = await self._download_cdn_bytes(video_cdn) if video_cdn else None
-                sent = await self._send_preview(message, embed)
+                img_bytes, vid_bytes = await asyncio.gather(
+                    self._download_cdn_bytes(cdn),
+                    self._download_cdn_bytes(video_cdn) if video_cdn else _anone(),
+                )
+                sent = await self._send_preview(message, embed, image_bytes=img_bytes)
                 if sent and vid_bytes:
                     await self._send_file_bundle(message, [vid_bytes], sent, filename="reel.mp4")
 
@@ -513,11 +521,18 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
         video_bytes_list: list[bytes] = [b for b in dl_results if b is not None]
 
         if len(image_items) >= 2:
+            first_img_url = image_items[0][0]
+            first_img_bytes = (
+                await self._download_cdn_bytes(first_img_url) if first_img_url else None
+            )
             carousel_view = _ThreadsCarouselView(
                 message.author.id, image_items, self._embed, data, post_url
             )
             sent = await self._send_preview(
-                message, carousel_view._build_embed(), view=carousel_view
+                message,
+                carousel_view._build_embed(),
+                view=carousel_view,
+                image_bytes=first_img_bytes,
             )
             if sent:
                 await self._send_file_bundle(message, video_bytes_list, sent)
@@ -526,7 +541,8 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
             embed = build_threads_embed(
                 self._embed, {**data, "image_urls": [img_url], "video_urls": []}, post_url
             )
-            sent = await self._send_preview(message, embed)
+            img_bytes = await self._download_cdn_bytes(img_url) if img_url else None
+            sent = await self._send_preview(message, embed, image_bytes=img_bytes)
             if sent:
                 await self._send_file_bundle(message, video_bytes_list, sent)
         else:
@@ -727,6 +743,8 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
         if not oembed.get("title") and not oembed.get("author_name"):
             return
 
+        thumbnail_url = oembed.get("thumbnail_url") or None
+        img_bytes = await self._download_cdn_bytes(thumbnail_url) if thumbnail_url else None
         await self._send_preview(
             message,
             build_tiktok_embed(
@@ -735,6 +753,7 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
                 post_url,
                 sender_avatar_url=str(message.author.display_avatar.url),
             ),
+            image_bytes=img_bytes,
         )
 
     async def _get_twitch_token(self) -> str | None:
@@ -807,14 +826,16 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
         clip_url = f"https://clips.twitch.tv/{clip_id}"
         broadcaster_id = clip.get("broadcaster_id", "")
         game_id = clip.get("game_id", "")
+        thumbnail_url = clip.get("thumbnail_url") or None
         mp4_url = _twitch_clip_mp4_url(clip.get("thumbnail_url", ""))
 
-        user_info, game_name, vid_bytes = await asyncio.gather(
+        user_info, game_name, vid_bytes, img_bytes = await asyncio.gather(
             self._fetch_twitch_user_info(broadcaster_id, token)
             if broadcaster_id
             else _anone_pair(),
             self._fetch_twitch_game_name(game_id, token) if game_id else _anone(),
             self._download_cdn_bytes(mp4_url) if mp4_url else _anone(),
+            self._download_cdn_bytes(thumbnail_url) if thumbnail_url else _anone(),
         )
 
         broadcaster_avatar, broadcaster_login = user_info
@@ -829,7 +850,7 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
             game_name=game_name,
             sender_avatar_url=str(message.author.display_avatar.url),
         )
-        sent = await self._send_preview(message, embed)
+        sent = await self._send_preview(message, embed, image_bytes=img_bytes)
         if sent and vid_bytes:
             await self._send_file_bundle(message, [vid_bytes], sent, filename="clip.mp4")
 
@@ -848,6 +869,16 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
         if not users:
             return
 
+        if streams:
+            thumb_url: str | None = (
+                (streams[0].get("thumbnail_url") or "")
+                .replace("{width}", "1280")
+                .replace("{height}", "720")
+            ) or None
+        else:
+            thumb_url = users[0].get("offline_image_url") or None
+        img_bytes = await self._download_cdn_bytes(thumb_url) if thumb_url else None
+
         embed = build_twitch_channel_embed(
             self._embed,
             streams[0] if streams else None,
@@ -855,7 +886,7 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
             channel_url,
             sender_avatar_url=str(message.author.display_avatar.url),
         )
-        await self._send_preview(message, embed)
+        await self._send_preview(message, embed, image_bytes=img_bytes)
 
     async def _send_preview(
         self,
@@ -863,8 +894,14 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
         embed: discord.Embed,
         *,
         view: _BasePreviewView | None = None,
+        image_bytes: bytes | None = None,
+        image_filename: str = "preview.jpg",
     ) -> discord.Message | None:
+        if image_bytes:
+            embed.set_image(url=f"attachment://{image_filename}")
         kwargs: dict = {"embed": embed}
+        if image_bytes:
+            kwargs["file"] = discord.File(io.BytesIO(image_bytes), filename=image_filename)
         if view is not None:
             kwargs["view"] = view
         try:
@@ -874,6 +911,9 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
         if view is not None:
             view.message = sent
 
+        events_cog = self.bot.cogs.get("EventsCog")
+        if events_cog is not None:
+            getattr(events_cog, "skip_delete_log", lambda _: None)(message.id)
         try:
             await message.delete()
         except (discord.Forbidden, discord.NotFound, discord.HTTPException):
