@@ -12,8 +12,17 @@ vi.mock('@/lib/apiCache', () => ({
   apiCache: { clear: vi.fn(), fetch: vi.fn(), get: vi.fn(), set: vi.fn() },
   CACHE_KEYS: { CURRENT_USER: 'auth:current-user' },
 }))
+vi.mock('sonner', () => ({
+  toast: { error: vi.fn(), warning: vi.fn(), info: vi.fn(), success: vi.fn() },
+}))
+vi.mock('@/api/twitchOAuth', () => ({
+  openTwitchOAuth: vi.fn(),
+}))
+
+import { toast } from 'sonner'
 
 import { getCurrentUser, getTwitchMonitoredChannels } from '@/api'
+import { openTwitchOAuth } from '@/api/twitchOAuth'
 import { logout as apiLogout } from '@/api/user'
 import { AuthProvider, isPublicPath, useAuth } from '@/contexts/AuthContext'
 
@@ -163,7 +172,7 @@ describe('AuthProvider 401 interceptor', () => {
     expect(result.current.channels).toEqual([])
   })
 
-  it('redirects to /login when auth:unauthorized fires after initialization', async () => {
+  it('redirects to /login?reason=session_expired when auth:unauthorized fires after initialization', async () => {
     const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider })
     await waitFor(() => expect(result.current.isInitialized).toBe(true))
 
@@ -172,7 +181,7 @@ describe('AuthProvider 401 interceptor', () => {
     })
 
     // vi.stubGlobal replaces location with a plain object so href assignment is trackable
-    expect(window.location.href).toBe('/login')
+    expect(window.location.href).toBe('/login?reason=session_expired')
   })
 
   it('does not clear state when auth:unauthorized fires before initialization', async () => {
@@ -198,6 +207,53 @@ describe('AuthProvider 401 interceptor', () => {
     await waitFor(() => expect(result.current.isInitialized).toBe(true))
     // The event fired before isInitializedRef was true — handler should have bailed out
     expect(result.current.user).not.toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// AuthProvider — auth:reauth-required global interceptor
+// ---------------------------------------------------------------------------
+
+describe('AuthProvider reauth-required interceptor', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.stubGlobal('location', { pathname: '/dashboard', href: 'http://localhost/dashboard' })
+    mockGetCurrentUser.mockResolvedValue(TWITCH_USER)
+    mockGetChannels.mockResolvedValue([])
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
+  it('shows a toast.error when auth:reauth-required fires', async () => {
+    const mockToast = toast as { error: ReturnType<typeof vi.fn> }
+    renderHook(() => useAuth(), { wrapper: AuthProvider })
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent('auth:reauth-required'))
+    })
+
+    expect(mockToast.error).toHaveBeenCalledWith(
+      expect.stringContaining('重新授權'),
+      expect.objectContaining({
+        action: expect.objectContaining({ onClick: openTwitchOAuth }),
+      })
+    )
+  })
+
+  it('does not clear user state when auth:reauth-required fires', async () => {
+    const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider })
+    await waitFor(() => expect(result.current.isInitialized).toBe(true))
+    expect(result.current.isAuthenticated).toBe(true)
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent('auth:reauth-required'))
+    })
+
+    expect(result.current.user).not.toBeNull()
+    expect(result.current.isAuthenticated).toBe(true)
   })
 })
 

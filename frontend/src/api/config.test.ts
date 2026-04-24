@@ -96,4 +96,36 @@ describe('apiFetch', () => {
     window.removeEventListener('auth:unauthorized', listener)
     expect(listener).not.toHaveBeenCalled()
   })
+
+  it('dispatches auth:reauth-required when 403 has X-Reauth-Required: true', async () => {
+    const headers = new Headers({ 'X-Reauth-Required': 'true' })
+    const mockResponse = new Response('', { status: 403, headers })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse))
+    const listener = vi.fn()
+    window.addEventListener('auth:reauth-required', listener)
+    await apiFetch('/api/test')
+    window.removeEventListener('auth:reauth-required', listener)
+    expect(listener).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not dispatch auth:reauth-required on plain 403 without header', async () => {
+    const mockResponse = new Response('', { status: 403 })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse))
+    const listener = vi.fn()
+    window.addEventListener('auth:reauth-required', listener)
+    await apiFetch('/api/test')
+    window.removeEventListener('auth:reauth-required', listener)
+    expect(listener).not.toHaveBeenCalled()
+  })
+
+  it('does not dispatch auth:reauth-required when X-Reauth-Required is not true', async () => {
+    const headers = new Headers({ 'X-Reauth-Required': 'false' })
+    const mockResponse = new Response('', { status: 403, headers })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse))
+    const listener = vi.fn()
+    window.addEventListener('auth:reauth-required', listener)
+    await apiFetch('/api/test')
+    window.removeEventListener('auth:reauth-required', listener)
+    expect(listener).not.toHaveBeenCalled()
+  })
 })
