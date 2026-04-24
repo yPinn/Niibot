@@ -8,8 +8,6 @@ import { PageHeader } from '@/components/PageHeader'
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Icon } from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
-// ─── Copy Button ─────────────────────────────────────────────────────────────
-
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false)
 
@@ -32,8 +30,6 @@ function CopyButton({ text }: { text: string }) {
     </button>
   )
 }
-
-// ─── Twitch Chat Mockup ───────────────────────────────────────────────────────
 
 type ChatBadge = 'broadcaster' | 'mod' | null
 
@@ -74,14 +70,12 @@ function ChatBadgeIcon({ badge }: { badge: ChatBadge }) {
 function TwitchChatMockup({ channel, lines }: { channel: string; lines: ChatLine[] }) {
   return (
     <div className="overflow-hidden rounded-lg border border-zinc-700 bg-[#18181b] text-white">
-      {/* Header */}
       <div className="flex items-center gap-2 border-b border-zinc-700 bg-[#0e0e10] px-3 py-2">
         <i className="fa-brands fa-twitch text-label text-purple-400" />
         <span className="text-label font-semibold text-zinc-200">{channel}</span>
         <span className="ml-auto text-label text-zinc-500">聊天室</span>
       </div>
 
-      {/* Messages */}
       <div className="flex flex-col p-3" style={{ gap: '2px' }}>
         {lines.map((line, i) => {
           if (line.type === 'system') {
@@ -109,7 +103,6 @@ function TwitchChatMockup({ channel, lines }: { channel: string; lines: ChatLine
         })}
       </div>
 
-      {/* Input bar */}
       <div className="border-t border-zinc-700 px-3 py-2">
         <div className="flex items-center gap-2 rounded bg-zinc-800 px-2 py-1.5">
           <span className="text-label flex-1 text-zinc-500">在 {channel} 的聊天室發言…</span>
@@ -119,8 +112,6 @@ function TwitchChatMockup({ channel, lines }: { channel: string; lines: ChatLine
     </div>
   )
 }
-
-// ─── Setup Action ─────────────────────────────────────────────────────────────
 
 const MOD_DETAILS = [
   { icon: 'fa-brands fa-twitch', text: '開啟 Twitch 並進入你的直播頻道聊天室' },
@@ -145,11 +136,9 @@ const MOD_CHAT_PREVIEW: ChatLine[] = [
     badge: 'mod',
     username: 'niibot_',
     color: '#00e676',
-    message: '感謝 mod！我會好好守護這個聊天室的 ✓',
+    message: '帽子叔叔正在巡邏...',
   },
 ]
-
-// ─── Next Steps ───────────────────────────────────────────────────────────────
 
 const ALT_MOD_METHODS = [
   {
@@ -160,7 +149,7 @@ const ALT_MOD_METHODS = [
   {
     icon: 'fa-solid fa-gear',
     title: '從 Twitch 後台設定',
-    desc: '前往 Twitch 後台 → 社群 → 角色管理 → 搜尋「泥爸」→ 設定為主持人（Moderator）',
+    desc: '前往 Twitch 後台 → 社群 → 角色管理 → 搜尋「泥爸」→ 設定為管理員（Moderator）',
   },
 ]
 
@@ -202,8 +191,6 @@ const NEXT_STEPS = [
   },
 ]
 
-// ─── Component ────────────────────────────────────────────────────────────────
-
 export default function GetStarted() {
   useDocumentTitle('快速上手 — Niibot')
 
@@ -222,10 +209,10 @@ export default function GetStarted() {
       const res = await grantBotMod()
       if (res.already_mod) {
         setIsMod(true)
-        toast.info('Niibot 已經是主持人了')
+        toast.info('Niibot 已經是管理員了')
       } else if (res.granted) {
         setIsMod(true)
-        toast.success('主持人授予成功')
+        toast.success('管理員授予成功')
       }
     } catch {
       toast.error('授予失敗，請稍後再試')
@@ -238,10 +225,9 @@ export default function GetStarted() {
     <main className="flex flex-1 flex-col gap-card p-page lg:p-page-lg select-none">
       <PageHeader
         title="快速上手"
-        description="完成 Mod 授權設定，Niibot 就能在你的頻道正常運作。"
+        description="授予機器人管理員身份，Niibot 就能在你的頻道正常運作。"
       />
 
-      {/* ── Setup Action ── */}
       <section className="flex flex-col gap-section">
         <h2 className="text-section-title font-semibold">設定步驟</h2>
 
@@ -253,7 +239,7 @@ export default function GetStarted() {
                   icon="fa-solid fa-shield-halved"
                   wrapperClassName="size-4 shrink-0 text-amber-500"
                 />
-                讓機器人成為聊天室主持人
+                讓機器人成為聊天室管理員
               </CardTitle>
               <Button
                 type="button"
@@ -271,12 +257,12 @@ export default function GetStarted() {
                 ) : isMod === true ? (
                   <>
                     <Icon icon="fa-solid fa-check" wrapperClassName="mr-2 size-3 text-green-500" />
-                    已授予 Mod
+                    已是管理員
                   </>
                 ) : (
                   <>
                     <Icon icon="fa-solid fa-user-shield" wrapperClassName="mr-2 size-3" />
-                    一鍵授予 Mod
+                    一鍵授予管理員
                   </>
                 )}
               </Button>
@@ -288,7 +274,6 @@ export default function GetStarted() {
 
           <CardContent>
             <div className="grid items-start gap-card lg:grid-cols-2">
-              {/* ── Left: step list + command + alt methods ── */}
               <div className="flex flex-col gap-card">
                 {/* Detail list */}
                 <ol className="flex flex-col gap-element">
@@ -303,7 +288,6 @@ export default function GetStarted() {
                   ))}
                 </ol>
 
-                {/* Command block */}
                 <div className="flex flex-col gap-element">
                   <div className="flex items-center gap-3 rounded-lg border bg-muted/50 px-page py-3">
                     <Icon
@@ -340,11 +324,9 @@ export default function GetStarted() {
                 </div>
               </div>
 
-              {/* ── Right: Twitch chat preview + warning ── */}
               <div className="flex flex-col gap-card">
                 <TwitchChatMockup channel="你的頻道" lines={MOD_CHAT_PREVIEW} />
 
-                {/* Warning note */}
                 <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-page py-3 dark:border-amber-900/50 dark:bg-amber-950/30">
                   <Icon
                     icon="fa-solid fa-triangle-exclamation"
@@ -360,7 +342,6 @@ export default function GetStarted() {
         </Card>
       </section>
 
-      {/* ── Next Steps ── */}
       <section className="flex flex-col gap-section">
         <div className="flex flex-col gap-element">
           <h2 className="text-section-title font-semibold">設定完成後，接著做什麼？</h2>
@@ -391,7 +372,6 @@ export default function GetStarted() {
         </div>
       </section>
 
-      {/* ── Help footer ── */}
       <div className="flex items-center gap-3 rounded-xl border bg-muted/30 px-page py-3">
         <Icon icon="fa-brands fa-discord" wrapperClassName="size-5 shrink-0 text-blue-500" />
         <p className="text-sub">

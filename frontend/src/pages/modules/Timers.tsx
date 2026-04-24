@@ -467,7 +467,6 @@ export default function Timers() {
           </SheetHeader>
 
           <div className="flex flex-1 flex-col gap-card overflow-y-auto px-page">
-            {/* Name (create only) */}
             {editing?.mode === 'create' && (
               <div className="flex flex-col gap-2">
                 <Label htmlFor="timer-name">計時器名稱</Label>
@@ -485,7 +484,6 @@ export default function Timers() {
               </div>
             )}
 
-            {/* Message Template */}
             <div className="flex flex-col gap-2">
               <Label htmlFor="timer-template">訊息內容</Label>
               <Input
@@ -507,7 +505,6 @@ export default function Timers() {
               />
             </div>
 
-            {/* Interval */}
             <div className="flex flex-col gap-2">
               <Label htmlFor="timer-interval">間隔時間 (秒)</Label>
               <Input
@@ -526,7 +523,6 @@ export default function Timers() {
               </span>
             </div>
 
-            {/* Enabled (edit only) */}
             {editing?.mode === 'edit' && (
               <div className="flex items-center justify-between">
                 <div className="flex flex-col gap-0.5">
@@ -541,7 +537,6 @@ export default function Timers() {
               </div>
             )}
 
-            {/* Advanced toggle */}
             <Button
               variant="ghost"
               size="sm"
@@ -559,7 +554,6 @@ export default function Timers() {
 
             {form.showAdvanced && (
               <div className="flex flex-col gap-card border-l-2 border-muted pl-page">
-                {/* Min Lines */}
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="timer-min-lines">最低聊天行數</Label>
                   <Input
@@ -579,7 +573,6 @@ export default function Timers() {
                   </span>
                 </div>
 
-                {/* Command Alias */}
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="timer-alias">別名</Label>
                   <Input
@@ -594,13 +587,12 @@ export default function Timers() {
                   </span>
                 </div>
 
-                {/* Announce mode */}
                 <div className="flex items-center justify-between">
                   <div className="flex flex-col gap-0.5">
                     <span className="flex items-center gap-1.5 text-sm font-medium leading-none">
                       公告模式
                       <Badge variant="secondary" className="text-label">
-                        需要 Mod
+                        需要管理員
                       </Badge>
                     </span>
                     <span className="text-label text-muted-foreground">

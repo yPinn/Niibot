@@ -61,7 +61,6 @@ import { useInputInsert } from '@/hooks/useInputInsert'
 import { useOptimisticToggle } from '@/hooks/useOptimisticToggle'
 import { useSortState } from '@/hooks/useSortState'
 
-// 每種事件類型可用的模板變數
 const TEMPLATE_VARIABLES: Record<string, { var: string; desc: string }[]> = {
   follow: [{ var: '$(user)', desc: '追隨者名稱' }],
   subscribe: [
@@ -119,18 +118,15 @@ export default function Events() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Sheet editing state
   const [editingEvent, setEditingEvent] = useState<EventConfig | null>(null)
   const [editTemplate, setEditTemplate] = useState('')
   const [editEnabled, setEditEnabled] = useState(true)
   const [editOptions, setEditOptions] = useState<Record<string, unknown>>({})
   const [saving, setSaving] = useState(false)
 
-  // Sort states
   const eventSort = useSortState<EventSortKey>('event_type')
   const redSort = useSortState<RedemptionSortKey>('action_type')
 
-  // Redemption state
   const [redemptions, setRedemptions] = useState<RedemptionConfig[]>([])
   const [twitchRewards, setTwitchRewards] = useState<TwitchReward[]>([])
   const [redemptionLoading, setRedemptionLoading] = useState(true)
@@ -238,8 +234,6 @@ export default function Events() {
     setEditTemplate
   )
 
-  // Non-partner detection — determined by 403 from Twitch API, not by empty rewards
-
   const openEditor = (event: EventConfig) => {
     setEditingEvent(event)
     setEditTemplate(event.message_template)
@@ -265,8 +259,6 @@ export default function Events() {
       setSaving(false)
     }
   }
-
-  // --- Redemption handlers ---
 
   const handleRewardSelect = async (red: RedemptionConfig, rewardTitle: string) => {
     try {
@@ -537,7 +529,6 @@ export default function Events() {
         </Card>
       </SlideUp>
 
-      {/* Edit Sheet */}
       <Sheet open={!!editingEvent} onOpenChange={open => !open && setEditingEvent(null)}>
         <SheetContent>
           <SheetHeader>
@@ -551,7 +542,6 @@ export default function Events() {
           </SheetHeader>
 
           <div className="flex flex-col gap-card px-page">
-            {/* Message Template */}
             <div className="flex flex-col gap-2">
               <Label htmlFor="event-template">訊息模板</Label>
               <Input
@@ -563,7 +553,6 @@ export default function Events() {
                 className="font-mono text-sub"
               />
 
-              {/* Available Variables */}
               {editingEvent && TEMPLATE_VARIABLES[editingEvent.event_type] && (
                 <VariableInserter
                   variables={TEMPLATE_VARIABLES[editingEvent.event_type]}
@@ -572,14 +561,13 @@ export default function Events() {
               )}
             </div>
 
-            {/* Raid: Auto-Shoutout Toggle */}
             {editingEvent?.event_type === 'raid' && (
               <div className="flex items-center justify-between">
                 <div className="flex flex-col gap-0.5">
                   <span className="flex items-center gap-1.5 text-sm font-medium leading-none">
                     自動推薦
                     <Badge variant="secondary" className="text-label">
-                      需要 Mod
+                      需要管理員
                     </Badge>
                   </span>
                   <span className="text-label text-muted-foreground">
@@ -594,7 +582,6 @@ export default function Events() {
               </div>
             )}
 
-            {/* Enabled Toggle */}
             <div className="flex items-center justify-between">
               <div className="flex flex-col gap-0.5">
                 <span className="text-sm font-medium leading-none">啟用</span>
