@@ -205,6 +205,8 @@ async def get_bot_mod_status(
             content={"detail": "Token unavailable or missing required scope"},
         )
     bot_id = get_settings().bot_id
+    if not bot_id:
+        raise HTTPException(status_code=503, detail="BOT_ID not configured")
     is_mod = await twitch_api.check_bot_is_moderator(channel_id, bot_id, token)
     return ModStatusResponse(is_moderator=is_mod)
 
@@ -228,6 +230,8 @@ async def grant_bot_mod(
         )
 
     bot_id = get_settings().bot_id
+    if not bot_id:
+        raise HTTPException(status_code=503, detail="BOT_ID not configured")
     try:
         resp = await twitch_api.add_moderator(channel_id, bot_id, token)
     except Exception:
