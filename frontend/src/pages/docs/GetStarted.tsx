@@ -5,7 +5,7 @@ import { toast } from 'sonner'
 
 import { getBotModStatus, grantBotMod } from '@/api/channels'
 import { PageHeader } from '@/components/PageHeader'
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Icon } from '@/components/ui'
+import { Button, Card, CardContent, CardHeader, CardTitle, Icon } from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
 // ─── Copy Button ─────────────────────────────────────────────────────────────
@@ -255,15 +255,34 @@ export default function GetStarted() {
                 />
                 讓機器人成為聊天室主持人
               </CardTitle>
-              {isMod === true && (
-                <Badge className="shrink-0 bg-green-600 text-white hover:bg-green-600">
-                  <Icon icon="fa-solid fa-check" wrapperClassName="mr-1 size-3" />
-                  已設定
-                </Badge>
-              )}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleGrantMod}
+                disabled={granting || isMod === true}
+                className="shrink-0"
+              >
+                {granting ? (
+                  <>
+                    <Icon icon="fa-solid fa-spinner fa-spin" wrapperClassName="mr-2 size-3" />
+                    授予中…
+                  </>
+                ) : isMod === true ? (
+                  <>
+                    <Icon icon="fa-solid fa-check" wrapperClassName="mr-2 size-3 text-green-500" />
+                    已授予 Mod
+                  </>
+                ) : (
+                  <>
+                    <Icon icon="fa-solid fa-user-shield" wrapperClassName="mr-2 size-3" />
+                    一鍵授予 Mod
+                  </>
+                )}
+              </Button>
             </div>
             <p className="text-sub text-muted-foreground">
-              機器人需要主持人（Mod）身份才能在你的頻道正常發言與執行指令。
+              Mod 是 Twitch 頻道的管理員身份，機器人需要此身份才能在你的頻道正常發言與執行指令。
             </p>
           </CardHeader>
 
@@ -296,35 +315,6 @@ export default function GetStarted() {
                     </code>
                     <CopyButton text="/mod niibot_" />
                   </div>
-
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={handleGrantMod}
-                    disabled={granting || isMod === true}
-                    className="w-full"
-                  >
-                    {granting ? (
-                      <>
-                        <Icon icon="fa-solid fa-spinner fa-spin" wrapperClassName="mr-2 size-3" />
-                        授予中…
-                      </>
-                    ) : isMod === true ? (
-                      <>
-                        <Icon
-                          icon="fa-solid fa-check"
-                          wrapperClassName="mr-2 size-3 text-green-500"
-                        />
-                        已授予主持人
-                      </>
-                    ) : (
-                      <>
-                        <Icon icon="fa-solid fa-user-shield" wrapperClassName="mr-2 size-3" />
-                        一鍵授予主持人
-                      </>
-                    )}
-                  </Button>
 
                   <p className="text-label text-muted-foreground">或選擇以下任一方式：</p>
 
@@ -361,7 +351,7 @@ export default function GetStarted() {
                     wrapperClassName="size-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-500"
                   />
                   <p className="text-label leading-relaxed text-amber-800 dark:text-amber-400">
-                    /mod 指令只有頻道主（Broadcaster）才能執行，請確認你是以主播帳號登入 Twitch。
+                    /mod 指令需由頻道主（Broadcaster）或頻道內的主要 Mod 執行。
                   </p>
                 </div>
               </div>
