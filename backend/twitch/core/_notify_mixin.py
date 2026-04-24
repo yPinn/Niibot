@@ -53,6 +53,7 @@ class _NotifyMixin:
                         LOGGER.info(f"[NOTIFY] Warmed cache: {count} configs for {channel_id}")
                     except Exception as e:
                         LOGGER.warning(f"[NOTIFY] Failed to warm cache for {channel_id}: {e}")
+                    await self._send_welcome_message(channel_id)  # type: ignore[attr-defined]
                     LOGGER.info(f"[NOTIFY] Instantly subscribed to channel: {channel_id}")
                 else:
                     LOGGER.info(f"[NOTIFY] Channel {channel_id} already subscribed, skipping")
@@ -65,6 +66,21 @@ class _NotifyMixin:
 
         except Exception as e:
             LOGGER.exception(f"[NOTIFY] Error handling channel toggle notification: {e}")
+
+    async def _send_welcome_message(self, channel_id: str) -> None:
+        """Send a one-line welcome message when the bot is enabled for a channel."""
+        try:
+            users = await self.fetch_users(ids=[channel_id])  # type: ignore[attr-defined]
+            if not users:
+                return
+            await users[0].send_message(
+                message="Niibot 已上線，準備就緒。",
+                sender=self._bot_id,  # type: ignore[attr-defined]
+                token_for=self._bot_id,  # type: ignore[attr-defined]
+            )
+            LOGGER.info(f"[NOTIFY] Welcome message sent to channel {channel_id}")
+        except Exception as e:
+            LOGGER.warning(f"[NOTIFY] Failed to send welcome message to {channel_id}: {e}")
 
     async def _handle_new_token(self, connection, pid, channel, payload) -> None:
         try:
