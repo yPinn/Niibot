@@ -346,3 +346,67 @@ class TestCogThreads:
 
         assert cog._http.get.await_count == 1
         msg.channel.send.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_scraper_empty_result_still_sends_embed(
+        self,
+        cog: SocialPreviewCog,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """When scrapling returns all-empty values, embed still sends and a warning is logged."""
+        import logging
+
+        mock_settings = MagicMock()
+        mock_settings.scrapling_host = "scrapling:3001"
+        monkeypatch.setattr("discord.cogs.social_preview.cog.get_settings", lambda: mock_settings)
+        og_html = '<meta property="og:title" content="User on Threads">'
+
+        scraper_resp = MagicMock()
+        scraper_resp.raise_for_status = MagicMock()
+        scraper_resp.json = MagicMock(
+            return_value={"caption": "", "image_urls": [], "video_urls": []}
+        )
+
+        cog._http.get = AsyncMock(side_effect=[self._make_og_resp(og_html), scraper_resp])
+        msg = _make_message(self._MSG_URL)
+        with caplog.at_level(logging.WARNING, logger="discord.cogs.social_preview.cog"):
+            await cog.on_message(msg)
+
+        msg.channel.send.assert_awaited_once()
+        assert any("empty result" in r.message or "no data" in r.message for r in caplog.records)
+
+    @pytest.mark.asyncio
+    async def test_scraper_login_wall_warns_session_expired(
+        self,
+        cog: SocialPreviewCog,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """When scrapling returns _reason=login_wall, a specific session-expired warning is logged."""
+        import logging
+
+        mock_settings = MagicMock()
+        mock_settings.scrapling_host = "scrapling:3001"
+        monkeypatch.setattr("discord.cogs.social_preview.cog.get_settings", lambda: mock_settings)
+        og_html = '<meta property="og:title" content="User on Threads">'
+
+        scraper_resp = MagicMock()
+        scraper_resp.raise_for_status = MagicMock()
+        scraper_resp.json = MagicMock(
+            return_value={
+                "caption": "",
+                "image_urls": [],
+                "video_urls": [],
+                "_reason": "login_wall",
+            }
+        )
+
+        cog._http.get = AsyncMock(side_effect=[self._make_og_resp(og_html), scraper_resp])
+        msg = _make_message(self._MSG_URL)
+        with caplog.at_level(logging.WARNING, logger="discord.cogs.social_preview.cog"):
+            await cog.on_message(msg)
+
+        msg.channel.send.assert_awaited_once()
+        assert any("login wall" in r.message or "SESSION_ID" in r.message for r in caplog.records)
+        assert not any("empty result" in r.message for r in caplog.records)

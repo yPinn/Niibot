@@ -495,8 +495,14 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
             LOGGER.debug("Threads: all fetch paths failed for %s", post_url)
             return
 
-        if scrapling_data := await self._fetch_scrapling("threads", post_url):
+        scrapling_data = await self._fetch_scrapling("threads", post_url)
+        if scrapling_data:
             data = {**data, **scrapling_data}
+        elif get_settings().scrapling_host:
+            LOGGER.warning(
+                "Threads: scrapling returned no data for %s — embed may lack caption/media",
+                post_url,
+            )
 
         raw_media: list[dict] = data.get("media_items") or []  # type: ignore[assignment]
         all_items: list[tuple[str | None, str | None]]
@@ -567,6 +573,8 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
         if not og:
             LOGGER.debug("Threads profile: no OG data for @%s", handle)
             return
+        if not scrapling_data and get_settings().scrapling_host:
+            LOGGER.warning("Threads profile: scrapling returned no data for @%s", handle)
         embed = build_threads_profile_embed(self._embed, {**og, **scrapling_data}, profile_url)
         await self._send_preview(message, embed)
 
@@ -584,8 +592,17 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
             resp = await self._http.get(api_url, timeout=35.0)
             resp.raise_for_status()
             body: dict = resp.json()
-            LOGGER.info("Scrapling %s: %s", endpoint, {k: v for k, v in body.items() if v})
-            return {k: v for k, v in body.items() if v}
+            reason = body.get("_reason", "")
+            result = {k: v for k, v in body.items() if v and not k.startswith("_")}
+            if result:
+                LOGGER.info("Scrapling %s: %s", endpoint, result)
+            elif reason == "login_wall":
+                LOGGER.warning(
+                    "Scrapling %s: login wall — THREADS_SESSION_ID 可能已過期 (%s)", endpoint, url
+                )
+            else:
+                LOGGER.warning("Scrapling %s: empty result for %s", endpoint, url)
+            return result
         except Exception as exc:
             LOGGER.warning("Scrapling sidecar failed for %s: %s", url, exc)
             return {}

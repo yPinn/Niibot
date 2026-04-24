@@ -58,6 +58,8 @@ _THREADS_PROFILE_RE = re.compile(
 
 _FETCH_TIMEOUT_MS = 30_000
 _CONTENT_POLL_INTERVAL_MS = 300
+
+_LOGIN_URL_RE = re.compile(r"/login", re.IGNORECASE)
 _CONTENT_WAIT_MAX_MS = 6_000
 
 _session: AsyncDynamicSession | None = None
@@ -123,6 +125,14 @@ async def _get_post_data(post_url: str) -> dict[str, Any]:
     result_holder: list[dict[str, Any]] = []
 
     async def _extract_after_load(page):  # type: ignore[no-untyped-def]
+        if _LOGIN_URL_RE.search(page.url):
+            LOGGER.warning(
+                "scrapling: login redirect detected (%s) — THREADS_SESSION_ID may have expired",
+                page.url,
+            )
+            result_holder.append({"_reason": "login_wall"})
+            return
+
         deadline = time.monotonic() + _CONTENT_WAIT_MAX_MS / 1000
 
         while time.monotonic() < deadline:
@@ -278,7 +288,6 @@ async def _get_post_data(post_url: str) -> dict[str, Any]:
     try:
         await _session.fetch(
             post_url,
-            wait_selector="[data-pressable-container]",
             timeout=_FETCH_TIMEOUT_MS,
             page_setup=_inject_cookie,
             page_action=_extract_after_load,
@@ -289,10 +298,16 @@ async def _get_post_data(post_url: str) -> dict[str, Any]:
 
     if result_holder:
         data = result_holder[0]
+        if data.get("_reason") == "login_wall":
+            return {"caption": "", "image_urls": [], "video_urls": [], "_reason": "login_wall"}
         LOGGER.info(
             "scrapling: done — caption=%d chars counts=%s images=%d videos=%d (%.1f s)",
             len(data.get("caption", "")),
-            {k: v for k, v in data.items() if k not in ("caption", "image_urls", "video_urls")},
+            {
+                k: v
+                for k, v in data.items()
+                if k not in ("caption", "image_urls", "video_urls", "_reason")
+            },
             len(data.get("image_urls", [])),
             len(data.get("video_urls", [])),
             time.monotonic() - t0,
@@ -312,6 +327,14 @@ async def _get_profile_data(profile_url: str) -> dict[str, Any]:
     result_holder: list[dict[str, Any]] = []
 
     async def _extract_profile(page):  # type: ignore[no-untyped-def]
+        if _LOGIN_URL_RE.search(page.url):
+            LOGGER.warning(
+                "scrapling: login redirect detected (%s) — THREADS_SESSION_ID may have expired",
+                page.url,
+            )
+            result_holder.append({"_reason": "login_wall"})
+            return
+
         deadline = time.monotonic() + _CONTENT_WAIT_MAX_MS / 1000
         while time.monotonic() < deadline:
             try:
@@ -366,6 +389,8 @@ async def _get_profile_data(profile_url: str) -> dict[str, Any]:
 
     if result_holder:
         data = result_holder[0]
+        if data.get("_reason") == "login_wall":
+            return {"_reason": "login_wall"}
         LOGGER.info(
             "scrapling: profile done — bio=%d chars followers=%r (%.1f s)",
             len(data.get("bio", "")),
