@@ -396,6 +396,7 @@ export default function VideoQueueOverlay() {
     function startAll() {
       if (allStarted) return
       allStarted = true
+      clearTimeout(fallbackTimer)
       if (!current) return // narrowing: current is non-null here by construction
 
       // If elapsed >= duration the video has already ended — advance immediately
