@@ -85,7 +85,7 @@ export function ThemeProvider({
       // Persist to server if logged in
       if (user) {
         updateUserPreferences({ theme: newTheme }).catch(err => {
-          console.error('Failed to save theme preference:', err)
+          if (import.meta.env.DEV) console.error('Failed to save theme preference:', err)
         })
       }
     },

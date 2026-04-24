@@ -106,7 +106,7 @@ export default function Home() {
 
       <div className="mx-auto max-w-screen-2xl">
         {/* Hero — stacked on mobile/sm, side-by-side from md */}
-        <section className="flex min-h-[60vh] flex-col items-center justify-center gap-10 px-6 py-20 text-center sm:px-10 md:flex-row md:items-center md:gap-16 md:text-left lg:px-16 lg:py-24">
+        <section className="flex min-h-[60vh] flex-col items-center justify-center gap-8 px-6 py-12 text-center sm:gap-10 sm:px-10 sm:py-20 md:flex-row md:items-center md:gap-16 md:text-left lg:px-16 lg:py-24">
           {/* Avatar */}
           <FadeInZoom className="shrink-0">
             <div className="h-40 w-40 overflow-hidden rounded-full border-4 border-primary shadow-2xl sm:h-48 sm:w-48 lg:h-56 lg:w-56">
@@ -123,10 +123,10 @@ export default function Home() {
           <SlideUp delay={0.15} className="flex flex-col items-center md:items-start">
             <h1 className="text-4xl font-bold tracking-tight sm:text-5xl lg:text-7xl">Niibot</h1>
             <p className="mt-3 text-xl text-muted-foreground">Twitch 聊天機器人 | 泥爸</p>
-            <p className="mt-6 max-w-xl text-lg leading-relaxed text-muted-foreground">
+            <p className="mt-6 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg">
               大家好，我是 Niibot，一名沒有勞基法保障的虛擬社畜。
             </p>
-            <p className="mt-2 max-w-xl text-lg leading-relaxed text-muted-foreground">
+            <p className="mt-2 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg">
               我沒有薪水，沒有休假，只有一個使命：
               <strong className="text-foreground">讓你的聊天室繼續活著。</strong>
             </p>
@@ -139,7 +139,7 @@ export default function Home() {
         <div className="border-t border-border" />
 
         {/* Features */}
-        <section className="px-6 py-16 sm:px-10 lg:px-16">
+        <section className="px-6 py-10 sm:px-10 sm:py-16 lg:px-16">
           <SlideUpSm inView className="mb-3 text-2xl font-semibold sm:text-3xl">
             我能幫你做什麼
           </SlideUpSm>
@@ -151,7 +151,7 @@ export default function Home() {
             {FEATURES.map(item => (
               <StaggerItem
                 key={item.title}
-                className="flex flex-col gap-3 rounded-xl border bg-card p-6 shadow-sm"
+                className="flex flex-col gap-3 rounded-xl border bg-card p-4 shadow-sm sm:p-6"
               >
                 <div className="flex items-center gap-3">
                   <Icon icon={item.icon} wrapperClassName="size-5 text-primary shrink-0" />
@@ -171,7 +171,7 @@ export default function Home() {
         <div className="border-t border-border" />
 
         {/* Commands + usage + CTA */}
-        <section className="space-y-10 px-6 py-14 sm:px-10 lg:px-16">
+        <section className="space-y-10 px-6 py-10 sm:px-10 sm:py-14 lg:px-16">
           <div>
             <SlideUpSm inView className="mb-2 text-xl font-semibold sm:text-2xl">
               內建指令
@@ -201,7 +201,7 @@ export default function Home() {
         <div className="border-t border-border" />
 
         {/* Discord */}
-        <section className="px-6 py-16 sm:px-10 lg:px-16">
+        <section className="px-6 py-10 sm:px-10 sm:py-16 lg:px-16">
           <div className="mb-3 flex items-center gap-3">
             <SlideUpSm inView className="text-2xl font-semibold sm:text-3xl">
               Discord 也顧到了
@@ -218,7 +218,7 @@ export default function Home() {
             {DISCORD_FEATURES.map(item => (
               <StaggerItem
                 key={item.title}
-                className="flex flex-col gap-3 rounded-xl border bg-card p-6 shadow-sm"
+                className="flex flex-col gap-3 rounded-xl border bg-card p-4 shadow-sm sm:p-6"
               >
                 <div className="flex items-center gap-3">
                   <Icon icon={item.icon} wrapperClassName="size-5 text-[#5865F2] shrink-0" />
@@ -231,7 +231,7 @@ export default function Home() {
         </section>
 
         {/* Footer */}
-        <div className="border-t border-border px-6 py-6 sm:px-10 lg:px-16">
+        <div className="border-t border-border px-6 py-4 sm:px-10 sm:py-6 lg:px-16">
           <div className="flex flex-wrap items-center justify-between gap-4 text-xs text-muted-foreground">
             <span>© {new Date().getFullYear()} Niibot</span>
             <div className="flex gap-4">

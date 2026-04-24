@@ -193,7 +193,7 @@ export default function PublicCommands() {
                         尚無內建指令
                       </div>
                     ) : (
-                      <div className="rounded-md border">
+                      <div className="overflow-x-auto rounded-md border">
                         <Table>
                           <TableHeader>
                             <TableRow>
@@ -250,7 +250,7 @@ export default function PublicCommands() {
                         尚無自訂指令或自動回應
                       </div>
                     ) : (
-                      <div className="rounded-md border">
+                      <div className="overflow-x-auto rounded-md border">
                         <Table>
                           <TableHeader>
                             <TableRow>

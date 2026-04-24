@@ -488,7 +488,7 @@ export default function VideoQueue() {
               </CardTitle>
               <CardAction>
                 <div className="flex items-center gap-element">
-                  <div className="relative w-72">
+                  <div className="relative w-48 sm:w-72">
                     <Icon
                       icon="fa-brands fa-youtube"
                       className="text-sm text-muted-foreground"
@@ -623,7 +623,7 @@ export default function VideoQueue() {
             <CardTitle>佇列設定</CardTitle>
             <CardDescription>設定各來源的投稿限制條件</CardDescription>
             <CardAction>
-              <div className="flex items-center gap-section">
+              <div className="flex items-center gap-2 sm:gap-section">
                 <div className="min-w-0 flex-1">
                   <OverlayUrlBlock url={overlayUrl} />
                 </div>
@@ -646,7 +646,7 @@ export default function VideoQueue() {
             {/* Global limits — apply to all sources */}
             <div className="flex flex-col gap-3">
               <p className="text-sub text-muted-foreground">全域限制</p>
-              <div className="grid grid-cols-2 gap-x-8 gap-y-3 lg:grid-cols-4">
+              <div className="grid grid-cols-2 gap-x-3 gap-y-3 sm:gap-x-8 lg:grid-cols-4">
                 <div className="flex items-center gap-3">
                   <Label htmlFor="max-per-user" className="w-24 shrink-0">
                     每人排隊上限

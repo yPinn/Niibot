@@ -8,7 +8,7 @@ export default function LoginPage() {
   const { resolvedTheme, setTheme } = useTheme()
 
   return (
-    <div className="bg-muted flex min-h-svh flex-col items-center justify-center p-page-lg">
+    <div className="bg-muted flex min-h-svh flex-col items-center justify-center p-4 md:p-page-lg">
       <Button
         variant="ghost"
         size="icon"
@@ -20,7 +20,7 @@ export default function LoginPage() {
           wrapperClassName=""
         />
       </Button>
-      <div className="w-full max-w-sm md:max-w-4xl">
+      <div className="w-full max-w-sm sm:max-w-md md:max-w-4xl">
         <LoginForm />
       </div>
     </div>
