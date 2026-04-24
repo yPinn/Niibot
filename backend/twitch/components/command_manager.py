@@ -106,11 +106,6 @@ class CommandManagerComponent(commands.Component):
     def refresh_pool(self, pool) -> None:
         self.cmd_repo.pool = pool
 
-    @commands.Component.guard()
-    def _is_mod(self, ctx: commands.Context) -> bool:
-        # .moderator already includes broadcaster (see Chatter.moderator source)
-        return ctx.chatter.moderator  # type: ignore[attr-defined]
-
     @commands.group(name="cmd")
     async def cmd(self, ctx: commands.Context["Bot"]) -> None:
         """Command management group. Moderator+ only."""
@@ -302,7 +297,6 @@ class CommandManagerComponent(commands.Component):
             LOGGER.info(f"Command edited: !{cmd_name} by {ctx.chatter.name}")
 
         else:
-            # Edit trigger by pattern
             pattern = first
             trigger_name = _sanitize_trigger_name(pattern)
             existing_trigger = await self.bot.message_trigger_configs.get_by_name(
@@ -394,7 +388,6 @@ class CommandManagerComponent(commands.Component):
         channel_id = str(ctx.channel.id)
 
         if not target.startswith("!"):
-            # Delete trigger by pattern
             trigger_name = _sanitize_trigger_name(target)
             deleted = await self.bot.message_trigger_configs.delete(channel_id, trigger_name)
             if deleted:
