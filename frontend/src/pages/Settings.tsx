@@ -96,6 +96,8 @@ export default function Settings() {
     paypal: false,
   })
 
+  const locked = !isAffiliate && user?.platform === 'twitch'
+
   const fetchPaymentConfigs = useCallback(async () => {
     try {
       setPaymentLoading(true)
@@ -169,7 +171,7 @@ export default function Settings() {
 
       <SlideUp inView>
         <Card className="relative overflow-hidden">
-          {!isAffiliate && user?.platform === 'twitch' && (
+          {locked && (
             <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-background/80 backdrop-blur-sm rounded-[inherit]">
               <Icon
                 icon="fa-solid fa-lock"
@@ -203,7 +205,6 @@ export default function Settings() {
                   const label = PLATFORM_LABELS[platform]
                   const isSaving = paymentSaving === platform
                   const isDeleting = paymentDeleting === platform
-                  const locked = !isAffiliate && user?.platform === 'twitch'
 
                   return (
                     <StaggerItem key={platform}>
@@ -284,7 +285,7 @@ export default function Settings() {
 
                               {/* HashKey + HashIV (2 cols) */}
                               {needsHash && (
-                                <div className="grid grid-cols-2 gap-element">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-element">
                                   <div className="flex flex-col gap-1">
                                     <Label
                                       className="text-label text-muted-foreground"
