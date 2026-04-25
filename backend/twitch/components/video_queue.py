@@ -83,7 +83,7 @@ class VideoQueueComponent(commands.Component):
         if not (ctx.chatter.moderator or ctx.chatter.broadcaster):  # type: ignore[attr-defined]
             return  # silent
 
-        user_name = ctx.chatter.name or ctx.chatter.display_name or ""
+        user_name = ctx.chatter.display_name or ctx.chatter.name or ""
         user_id: str | None = ctx.chatter.id or None
 
         # Detect URL type: try YouTube first, then Twitch clip
@@ -293,7 +293,7 @@ class VideoQueueComponent(commands.Component):
     async def vq_remove(self, ctx: commands.Context[Bot]) -> None:
         """!vq remove — 移除自己最後一首尚未播放的請求（所有人可用）"""
         channel_id = ctx.channel.id
-        user_name = ctx.chatter.name or ctx.chatter.display_name or ""
+        user_name = ctx.chatter.display_name or ctx.chatter.name or ""
         user_id: str | None = ctx.chatter.id or None
         entry = await self.vq_repo.find_last_queued_by_user(channel_id, user_name, user_id)
         if not entry:

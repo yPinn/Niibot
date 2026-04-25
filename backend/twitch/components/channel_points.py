@@ -65,7 +65,7 @@ class ChannelPointsComponent(commands.Component):
         LOGGER.debug(f"event_custom_redemption_add triggered: {type(payload).__name__}")
 
         channel_name = payload.broadcaster.name
-        user_name = payload.user.name or payload.user.display_name
+        user_name = payload.user.display_name or payload.user.name
         reward_title = payload.reward.title
         reward_cost = payload.reward.cost
         user_input = payload.user_input or ""
@@ -82,7 +82,7 @@ class ChannelPointsComponent(commands.Component):
     ) -> None:
         """處理兌換事件（DB 驅動比對）"""
         reward_title = payload.reward.title
-        user_name = payload.user.name or payload.user.display_name
+        user_name = payload.user.display_name or payload.user.name
         channel_id = payload.broadcaster.id
 
         channel_name = payload.broadcaster.name
@@ -312,6 +312,17 @@ class ChannelPointsComponent(commands.Component):
             LOGGER.info(f"[{broadcaster.name}] GameQueue: {user_name} joined (position {position})")
 
         except Exception as e:
+            if is_scope_error(e):
+                await reauth_notifier.notify(
+                    broadcaster_login=broadcaster.name,
+                    channel_id=str(broadcaster.id),
+                    send_fn=lambda msg: broadcaster.send_message(
+                        message=msg,
+                        sender=self.bot.bot_id,
+                        token_for=self.bot.bot_id,
+                    ),
+                )
+                return
             LOGGER.error(f"[{broadcaster.name}] GameQueue error: {e}")
 
     async def _handle_video_queue_redemption(
@@ -449,6 +460,17 @@ class ChannelPointsComponent(commands.Component):
             )
 
         except Exception as e:
+            if is_scope_error(e):
+                await reauth_notifier.notify(
+                    broadcaster_login=broadcaster.name,
+                    channel_id=str(broadcaster.id),
+                    send_fn=lambda msg: broadcaster.send_message(
+                        message=msg,
+                        sender=self.bot.bot_id,
+                        token_for=self.bot.bot_id,
+                    ),
+                )
+                return
             LOGGER.error(f"[{broadcaster.name}] VideoQueue error: {e}")
 
 
