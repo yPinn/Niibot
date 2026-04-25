@@ -177,7 +177,8 @@ jobs:
           cd $PROJECT_DIR
 
           FORCE="${{ github.event.inputs.force_all || 'false' }}"
-          CHANGED=$(git diff --name-only HEAD~1 HEAD 2>/dev/null) || true
+          BASE_SHA="${{ github.event.before }}"
+          CHANGED=$(git diff --name-only "${BASE_SHA}" HEAD 2>/dev/null) || true
 
           # Scheduled run → always full rebuild (picks up base image security updates)
           if [ "${{ github.event_name }}" = "schedule" ]; then
