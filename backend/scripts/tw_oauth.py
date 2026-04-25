@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import socket
 import sys
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -155,6 +156,24 @@ async def save_token(database_url: str, user_id: str, token: str, refresh: str) 
 # Local callback server
 # ---------------------------------------------------------------------------
 
+
+class _DualStackHTTPServer(HTTPServer):
+    """HTTPServer that listens on IPv6 with dual-stack (IPv4+IPv6) where available.
+
+    On macOS, `localhost` resolves to ::1 (IPv6), so a plain IPv4-only server
+    would refuse the OAuth callback redirect. Binding AF_INET6 with IPV6_V6ONLY=0
+    accepts both ::1 and 127.0.0.1 connections on Linux/macOS.
+    Falls back to plain IPv4 if the OS does not support IPv6 or dual-stack.
+    """
+
+    def __init__(self, port: int, handler: type) -> None:
+        if socket.has_dualstack_ipv6():
+            self.address_family = socket.AF_INET6
+            super().__init__(("", port), handler)
+        else:
+            super().__init__(("127.0.0.1", port), handler)
+
+
 _callback_received = Event()
 
 
@@ -203,7 +222,7 @@ def wait_for_callback() -> tuple[str | None, str | None]:
     _CallbackHandler.error = None
     _callback_received.clear()
 
-    server = HTTPServer(("127.0.0.1", LISTEN_PORT), _CallbackHandler)
+    server = _DualStackHTTPServer(LISTEN_PORT, _CallbackHandler)
 
     def serve() -> None:
         while not _callback_received.is_set():
