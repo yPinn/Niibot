@@ -187,43 +187,48 @@ jobs:
 
           # Force mode or can't determine diff → rebuild everything
           if [ "$FORCE" = "true" ] || [ -z "$CHANGED" ]; then
-            echo "api=true"     >> $GITHUB_OUTPUT
-            echo "discord=true" >> $GITHUB_OUTPUT
-            echo "twitch=true"  >> $GITHUB_OUTPUT
-            echo "reason=force" >> $GITHUB_OUTPUT
+            echo "api=true"       >> $GITHUB_OUTPUT
+            echo "discord=true"   >> $GITHUB_OUTPUT
+            echo "twitch=true"    >> $GITHUB_OUTPUT
+            echo "scrapling=true" >> $GITHUB_OUTPUT
+            echo "reason=force"   >> $GITHUB_OUTPUT
             exit 0
           fi
 
-          api=false; discord=false; twitch=false
+          api=false; discord=false; twitch=false; scrapling=false
 
-          # shared/ and compose file affect all services
+          # shared/ and compose file affect api + bots (scrapling has no shared dependency)
           if echo "$CHANGED" | grep -qE "^backend/shared/|^backend/shared\.env|^docker-compose\.yml"; then
             api=true; discord=true; twitch=true
           fi
 
-          echo "$CHANGED" | grep -qE "^backend/api/"     && api=true     || true
-          echo "$CHANGED" | grep -qE "^backend/discord/" && discord=true  || true
-          echo "$CHANGED" | grep -qE "^backend/twitch/"  && twitch=true   || true
+          echo "$CHANGED" | grep -qE "^backend/api/"       && api=true       || true
+          echo "$CHANGED" | grep -qE "^backend/discord/"   && discord=true   || true
+          echo "$CHANGED" | grep -qE "^backend/twitch/"    && twitch=true    || true
+          echo "$CHANGED" | grep -qE "^backend/scrapling/" && scrapling=true || true
 
-          echo "api=$api"       >> $GITHUB_OUTPUT
-          echo "discord=$discord" >> $GITHUB_OUTPUT
-          echo "twitch=$twitch" >> $GITHUB_OUTPUT
-          echo "reason=path_filter" >> $GITHUB_OUTPUT
+          echo "api=$api"             >> $GITHUB_OUTPUT
+          echo "discord=$discord"     >> $GITHUB_OUTPUT
+          echo "twitch=$twitch"       >> $GITHUB_OUTPUT
+          echo "scrapling=$scrapling" >> $GITHUB_OUTPUT
+          echo "reason=path_filter"   >> $GITHUB_OUTPUT
 
       - name: Log planned changes
         run: |
           echo "api=${{ steps.changes.outputs.api }}"
           echo "discord=${{ steps.changes.outputs.discord }}"
           echo "twitch=${{ steps.changes.outputs.twitch }}"
+          echo "scrapling=${{ steps.changes.outputs.scrapling }}"
           echo "reason=${{ steps.changes.outputs.reason }}"
 
       - name: Build images
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           SERVICES=""
-          [ "${{ steps.changes.outputs.api }}" = "true" ]     && SERVICES="$SERVICES api"
-          [ "${{ steps.changes.outputs.discord }}" = "true" ] && SERVICES="$SERVICES discord-bot"
-          [ "${{ steps.changes.outputs.twitch }}" = "true" ]  && SERVICES="$SERVICES twitch-bot"
+          [ "${{ steps.changes.outputs.api }}" = "true" ]       && SERVICES="$SERVICES api"
+          [ "${{ steps.changes.outputs.discord }}" = "true" ]   && SERVICES="$SERVICES discord-bot"
+          [ "${{ steps.changes.outputs.twitch }}" = "true" ]    && SERVICES="$SERVICES twitch-bot"
+          [ "${{ steps.changes.outputs.scrapling }}" = "true" ] && SERVICES="$SERVICES scrapling"
 
           if [ -z "$SERVICES" ]; then
             echo "No images to build, skipping."
@@ -232,8 +237,7 @@ jobs:
 
           echo "Building:$SERVICES"
 
-          # --pull on scheduled/force runs so the base image security updates
-          # (python:3.11-slim-bookworm patches) are actually fetched from the registry.
+          # --pull on scheduled/force runs so base image security updates are fetched.
           PULL_FLAG=""
           [ "${{ steps.changes.outputs.reason }}" = "force" ] && PULL_FLAG="--pull"
 
@@ -245,9 +249,10 @@ jobs:
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           VERSION=${{ steps.meta.outputs.version }}
-          [ "${{ steps.changes.outputs.api }}" = "true" ]     && docker tag niibot-api     niibot-api:$VERSION     || true
-          [ "${{ steps.changes.outputs.discord }}" = "true" ] && docker tag niibot-discord niibot-discord:$VERSION || true
-          [ "${{ steps.changes.outputs.twitch }}" = "true" ]  && docker tag niibot-twitch  niibot-twitch:$VERSION  || true
+          [ "${{ steps.changes.outputs.api }}" = "true" ]       && docker tag niibot-api      niibot-api:$VERSION      || true
+          [ "${{ steps.changes.outputs.discord }}" = "true" ]   && docker tag niibot-discord  niibot-discord:$VERSION  || true
+          [ "${{ steps.changes.outputs.twitch }}" = "true" ]    && docker tag niibot-twitch   niibot-twitch:$VERSION   || true
+          [ "${{ steps.changes.outputs.scrapling }}" = "true" ] && docker tag niibot-scrapling niibot-scrapling:$VERSION || true
           echo "Tagged rebuilt images as :$VERSION"
 
       - name: Run migrations
@@ -259,9 +264,10 @@ jobs:
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           SERVICES=""
-          [ "${{ steps.changes.outputs.api }}" = "true" ]     && SERVICES="$SERVICES api"
-          [ "${{ steps.changes.outputs.discord }}" = "true" ] && SERVICES="$SERVICES discord-bot"
-          [ "${{ steps.changes.outputs.twitch }}" = "true" ]  && SERVICES="$SERVICES twitch-bot"
+          [ "${{ steps.changes.outputs.api }}" = "true" ]       && SERVICES="$SERVICES api"
+          [ "${{ steps.changes.outputs.discord }}" = "true" ]   && SERVICES="$SERVICES discord-bot"
+          [ "${{ steps.changes.outputs.twitch }}" = "true" ]    && SERVICES="$SERVICES twitch-bot"
+          [ "${{ steps.changes.outputs.scrapling }}" = "true" ] && SERVICES="$SERVICES scrapling"
 
           if [ -z "$SERVICES" ]; then
             echo "No services to restart, skipping."
@@ -299,9 +305,10 @@ jobs:
           fi
           echo "API db_connected: OK"
 
-          # Bots — soft check (log warning only; Discord/Twitch gateway latency varies)
+          # Bots / scrapling — soft check (log warning only; gateway latency varies)
           curl -sf http://localhost:8080/health && echo "discord-bot: OK" || echo "WARN: discord-bot not responding"
           curl -sf http://localhost:4344/health && echo "twitch-bot:  OK" || echo "WARN: twitch-bot not responding"
+          curl -sf "http://localhost:${SCRAPLING_PORT:-3001}/health" && echo "scrapling:   OK" || echo "WARN: scrapling not responding"
 
       - name: Prune old images
         run: |
@@ -311,7 +318,7 @@ jobs:
           # Keep only the 3 most recent version tags per service; remove the rest.
           # docker images lists newest-first by default — no sort needed (avoids
           # BSD sort -V incompatibility on macOS runners).
-          for IMAGE in niibot-api niibot-twitch niibot-discord; do
+          for IMAGE in niibot-api niibot-twitch niibot-discord niibot-scrapling; do
             docker images "$IMAGE" --format "{{.Tag}}" \
               | grep -v "^latest$" \
               | tail -n +4 \
