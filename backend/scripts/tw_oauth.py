@@ -28,8 +28,10 @@ import httpx
 from dotenv import load_dotenv
 from twitch.core.config import BOT_SCOPES, BROADCASTER_SCOPES
 
-# Load twitch .env
-load_dotenv(Path(__file__).resolve().parent.parent / "twitch" / ".env")
+_backend = Path(__file__).resolve().parent.parent
+load_dotenv(_backend / "shared.env")
+load_dotenv(_backend / "shared.env.local")
+load_dotenv(_backend / "twitch" / ".env")
 
 LISTEN_PORT = 3000
 REDIRECT_URI = f"http://localhost:{LISTEN_PORT}/callback"
@@ -227,15 +229,15 @@ MODES = {
 
 def main() -> None:
     # -- env validation --
-    client_id = os.getenv("CLIENT_ID")
-    client_secret = os.getenv("CLIENT_SECRET")
+    client_id = os.getenv("TWITCH_CLIENT_ID")
+    client_secret = os.getenv("TWITCH_CLIENT_SECRET")
     database_url = os.getenv("DATABASE_URL")
 
     missing = []
     if not client_id:
-        missing.append("CLIENT_ID")
+        missing.append("TWITCH_CLIENT_ID")
     if not client_secret:
-        missing.append("CLIENT_SECRET")
+        missing.append("TWITCH_CLIENT_SECRET")
     if not database_url:
         missing.append("DATABASE_URL")
     if missing:

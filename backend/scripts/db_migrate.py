@@ -19,8 +19,9 @@ from dotenv import load_dotenv
 
 from shared.migrations.runner import MigrationRunner
 
-# Try loading .env from api/ (has DATABASE_URL)
-load_dotenv(Path(__file__).resolve().parent.parent / "api" / ".env")
+_backend = Path(__file__).resolve().parent.parent
+load_dotenv(_backend / "shared.env")
+load_dotenv(_backend / "shared.env.local")
 
 logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s")
 
@@ -28,7 +29,7 @@ logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s")
 async def main() -> None:
     database_url = os.getenv("DATABASE_URL")
     if not database_url:
-        print("ERROR: DATABASE_URL not set. Check api/.env or environment variables.")
+        print("ERROR: DATABASE_URL not set. Check shared.env or environment variables.")
         sys.exit(1)
 
     pool = await asyncpg.create_pool(database_url, min_size=1, max_size=2, statement_cache_size=0)

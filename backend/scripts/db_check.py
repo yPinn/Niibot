@@ -17,7 +17,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import asyncpg
 from dotenv import load_dotenv
 
-load_dotenv(Path(__file__).resolve().parent.parent / "api" / ".env")
+_backend = Path(__file__).resolve().parent.parent
+load_dotenv(_backend / "shared.env")
+load_dotenv(_backend / "shared.env.local")
 
 
 async def main() -> None:
