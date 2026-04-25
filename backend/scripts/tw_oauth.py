@@ -31,7 +31,7 @@ from twitch.core.config import BOT_SCOPES, BROADCASTER_SCOPES
 
 _backend = Path(__file__).resolve().parent.parent
 load_dotenv(_backend / "shared.env")
-load_dotenv(_backend / "shared.env.local")
+load_dotenv(_backend / "shared.env.local", override=True)
 load_dotenv(_backend / "twitch" / ".env")
 
 LISTEN_PORT = 3000

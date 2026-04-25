@@ -19,7 +19,7 @@ from dotenv import load_dotenv
 
 _backend = Path(__file__).resolve().parent.parent
 load_dotenv(_backend / "shared.env")
-load_dotenv(_backend / "shared.env.local")
+load_dotenv(_backend / "shared.env.local", override=True)
 
 
 async def main() -> None:

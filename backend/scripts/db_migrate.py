@@ -21,7 +21,7 @@ from shared.migrations.runner import MigrationRunner
 
 _backend = Path(__file__).resolve().parent.parent
 load_dotenv(_backend / "shared.env")
-load_dotenv(_backend / "shared.env.local")
+load_dotenv(_backend / "shared.env.local", override=True)
 
 logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s")
 
