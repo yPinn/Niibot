@@ -31,11 +31,6 @@ LOGGER: logging.Logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["authentication"])
 
 
-# ============================================
-# Response Models
-# ============================================
-
-
 class OAuthURLResponse(BaseModel):
     oauth_url: str
     redirect_uri: str
@@ -57,11 +52,6 @@ class LogoutResponse(BaseModel):
 
 class PreferencesUpdate(BaseModel):
     theme: Literal["dark", "light", "system"]
-
-
-# ============================================
-# Endpoints
-# ============================================
 
 
 @router.get("/auth/twitch/oauth", response_model=OAuthURLResponse)
@@ -217,11 +207,6 @@ async def logout(
     )
     LOGGER.info(f"User logged out: {username} (twitch:{platform_user_id})")
     return LogoutResponse(message="Logged out successfully")
-
-
-# ============================================
-# User Preferences
-# ============================================
 
 
 @router.patch("/user/preferences")

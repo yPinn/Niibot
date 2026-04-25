@@ -71,20 +71,11 @@ async def _enqueue_donated_video(
         LOGGER.exception(f"[{platform} webhook] Failed to enqueue video for order {trade_no}")
 
 
-# ============================================================
-# ECPay / OPay gateway constants
-# ============================================================
-
 _GATEWAYS: dict[str, str] = {
     "ecpay": "https://payment.ecpay.com.tw/Cashier/AioCheckOut/V5",
     "opay": "https://payment.opay.tw/Cashier/AioCheckOut/V5",
     "newebpay": "https://core.newebpay.com/MPG/mpg_gateway",
 }
-
-
-# ============================================================
-# CheckMacValue helpers (ECPay / OPay use identical algorithm)
-# ============================================================
 
 
 def _build_check_mac_value(params: dict, hash_key: str, hash_iv: str) -> str:
@@ -112,11 +103,6 @@ def _verify_webhook_mac(form_data: dict, hash_key: str, hash_iv: str) -> bool:
     received = form_data.get("CheckMacValue", "")
     computed = _build_check_mac_value(form_data, hash_key, hash_iv)
     return hmac.compare_digest(received.upper(), computed)
-
-
-# ============================================================
-# NewebPay AES-256-CBC + SHA-256 helpers
-# ============================================================
 
 
 def _pkcs7_pad(data: bytes, block_size: int = 16) -> bytes:
@@ -188,11 +174,6 @@ def _build_newebpay_trade_info(
     return urllib.parse.urlencode(params)
 
 
-# ============================================================
-# Pydantic models
-# ============================================================
-
-
 class PublicPlatformInfo(BaseModel):
     platform: str
     min_amount: int
@@ -216,11 +197,6 @@ class CheckoutRequest(BaseModel):
 class CheckoutResponse(BaseModel):
     gateway_url: str
     form_params: dict[str, str]  # POST these to gateway_url
-
-
-# ============================================================
-# Public endpoints
-# ============================================================
 
 
 @router.get("/public/{username}", response_model=PublicDonateInfo)
@@ -342,7 +318,6 @@ async def checkout(
 
     trade_no = generate_trade_no()
 
-    # Persist pending order before redirecting to gateway
     await repo.create_order(
         user_id=user_id,
         channel_id=channel_id,
@@ -370,13 +345,12 @@ async def checkout(
         "EncryptType": "1",
     }
 
-    # Pass YouTube video ID and message through custom fields (50-char limit each)
+    # ECPay/OPay spec limits CustomField1/2 to 50 chars each
     if youtube_video_id:
-        params["CustomField1"] = youtube_video_id  # 11-char video ID
+        params["CustomField1"] = youtube_video_id
     if body.message:
         params["CustomField2"] = body.message[:50]
 
-    # Optional: client-side success redirect
     if body.return_url:
         params["ClientBackURL"] = body.return_url
 
@@ -386,11 +360,6 @@ async def checkout(
 
     gateway_url = _GATEWAYS[body.platform]
     return CheckoutResponse(gateway_url=gateway_url, form_params=params)
-
-
-# ============================================================
-# Webhook endpoints (ECPay & OPay share the same handler logic)
-# ============================================================
 
 
 async def _handle_payment_webhook(

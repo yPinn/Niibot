@@ -10,8 +10,6 @@ from shared.config_base import BaseServiceSettings
 
 
 class Settings(BaseServiceSettings):
-    """Application settings with environment variable support"""
-
     model_config = SettingsConfigDict(
         # Order mirrors docker-compose.yml: shared.env first, api/.env overrides.
         # shared.env.local (gitignored) overrides shared.env for local dev (e.g. localhost DB).
@@ -31,12 +29,10 @@ class Settings(BaseServiceSettings):
         ..., validation_alias=AliasChoices("client_secret", "twitch_client_secret")
     )
 
-    # JWT Configuration
     jwt_secret_key: str = Field(..., description="Secret key for JWT token signing")
     jwt_algorithm: str = Field(default="HS256", description="JWT signing algorithm")
     jwt_expire_days: int = Field(default=30, description="JWT token expiration in days")
 
-    # Server URLs
     frontend_url: str = Field(default="http://localhost:3000", description="Frontend URL for CORS")
     api_url: str = Field(default="http://localhost:8000", description="API server URL")
     twitch_bot_url: str = Field(
@@ -49,13 +45,8 @@ class Settings(BaseServiceSettings):
     # Bot identity (shared with twitch bot via shared.env)
     bot_id: str = Field(default="", description="Twitch bot user ID")
 
-    # YouTube Data API
     youtube_api_key: str = Field(default="", description="YouTube Data API v3 key")
-
-    # Environment
     environment: str = Field(default="development", description="Environment name")
-
-    # Server Configuration
     host: str = Field(default="0.0.0.0", description="Server host")
     port: int = Field(default=8000, description="Server port")
 
@@ -74,21 +65,17 @@ class Settings(BaseServiceSettings):
 
     @property
     def cors_origins(self) -> list[str]:
-        """Get CORS allowed origins"""
         return [self.frontend_url]
 
     @property
     def is_production(self) -> bool:
-        """Check if running in production environment"""
         return self.environment.lower() == "production"
 
     @property
     def is_development(self) -> bool:
-        """Check if running in development environment"""
         return self.environment.lower() == "development"
 
 
 @lru_cache
 def get_settings() -> Settings:
-    """Get cached settings instance"""
     return Settings()  # type: ignore[call-arg]

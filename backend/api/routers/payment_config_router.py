@@ -20,10 +20,6 @@ router = APIRouter(prefix="/api/payment-configs", tags=["payment-configs"])
 
 _VALID_PLATFORMS = {"ecpay", "opay", "paypal", "newebpay"}
 
-# ============================================================
-# Pydantic models
-# ============================================================
-
 
 class PaymentConfigUpsert(BaseModel):
     merchant_id: str = Field(..., min_length=1, max_length=100)
@@ -42,11 +38,6 @@ class PaymentConfigResponse(BaseModel):
     media_share_enabled: bool
     enabled: bool
     updated_at: datetime | None = None
-
-
-# ============================================================
-# Endpoints
-# ============================================================
 
 
 @router.get("", response_model=list[PaymentConfigResponse])

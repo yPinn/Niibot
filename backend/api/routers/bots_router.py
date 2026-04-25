@@ -23,8 +23,6 @@ async def close_bots_http_client() -> None:
 
 
 class BotStatusResponse(BaseModel):
-    """Bot status response"""
-
     online: bool
     service: str | None = None
     version: str | None = None
@@ -43,7 +41,6 @@ class BotStatusResponse(BaseModel):
 
 
 async def check_bot_health(bot_url: str, bot_name: str) -> BotStatusResponse:
-    """Check bot health status"""
     try:
         response = await _http_client.get(f"{bot_url}/status")
 
