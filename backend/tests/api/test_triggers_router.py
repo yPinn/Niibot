@@ -280,3 +280,57 @@ class TestUpdateTriggerRegexValidation:
             json={"match_type": "regex", "pattern": "x" * 201},
         )
         assert r.status_code == 400
+
+    def test_not_found_returns_404(self):
+        """Service returning None for update must yield 404."""
+        import unittest.mock as um
+
+        import services.message_trigger_service as svc_mod
+
+        with um.patch.object(
+            svc_mod.MessageTriggerService, "update_trigger", um.AsyncMock(return_value=None)
+        ):
+            r = _make_client().put(
+                "/api/triggers/configs/missing",
+                json={"enabled": False},
+            )
+        assert r.status_code == 404
+
+
+class TestToggleTrigger:
+    def test_toggles_trigger(self):
+        import unittest.mock as um
+
+        import services.message_trigger_service as svc_mod
+
+        row = {**_TRIGGER_ROW, "enabled": False}
+        with um.patch.object(
+            svc_mod.MessageTriggerService, "toggle_trigger", um.AsyncMock(return_value=row)
+        ):
+            r = _make_client().patch("/api/triggers/configs/mytest/toggle", json={"enabled": False})
+        assert r.status_code == 200
+        assert r.json()["enabled"] is False
+
+    def test_not_found_returns_404(self):
+        import unittest.mock as um
+
+        import services.message_trigger_service as svc_mod
+
+        with um.patch.object(
+            svc_mod.MessageTriggerService, "toggle_trigger", um.AsyncMock(return_value=None)
+        ):
+            r = _make_client().patch("/api/triggers/configs/missing/toggle", json={"enabled": True})
+        assert r.status_code == 404
+
+    def test_service_exception_returns_500(self):
+        import unittest.mock as um
+
+        import services.message_trigger_service as svc_mod
+
+        with um.patch.object(
+            svc_mod.MessageTriggerService,
+            "toggle_trigger",
+            um.AsyncMock(side_effect=RuntimeError),
+        ):
+            r = _make_client().patch("/api/triggers/configs/mytest/toggle", json={"enabled": True})
+        assert r.status_code == 500

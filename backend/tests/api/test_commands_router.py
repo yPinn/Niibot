@@ -189,6 +189,13 @@ class TestUpdateCommandConfig:
             r = _make_client().put("/api/commands/configs/shoutout", json={"min_role": "moderator"})
         assert r.status_code == 200
 
+    def test_not_found_returns_404(self):
+        import services.command_config_service as m
+
+        with patch.object(m.CommandConfigService, "update_command", AsyncMock(return_value=None)):
+            r = _make_client().put("/api/commands/configs/missing", json={"enabled": True})
+        assert r.status_code == 404
+
     def test_service_exception_returns_500(self):
         import services.command_config_service as m
 
@@ -215,6 +222,13 @@ class TestToggleCommandConfig:
             )
         assert r.status_code == 200
         assert r.json()["enabled"] is False
+
+    def test_not_found_returns_404(self):
+        import services.command_config_service as m
+
+        with patch.object(m.CommandConfigService, "toggle_command", AsyncMock(return_value=None)):
+            r = _make_client().patch("/api/commands/configs/missing/toggle", json={"enabled": True})
+        assert r.status_code == 404
 
     def test_service_exception_returns_500(self):
         import services.command_config_service as m

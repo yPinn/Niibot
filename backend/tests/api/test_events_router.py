@@ -135,6 +135,16 @@ class TestUpdateEventConfig:
                 )
             assert r.status_code == 200, f"failed for {event_type}"
 
+    def test_not_found_returns_404(self):
+        import services.event_config_service as m
+
+        with patch.object(m.EventConfigService, "update_config", AsyncMock(return_value=None)):
+            r = _make_client().put(
+                "/api/events/configs/follow",
+                json={"message_template": "test", "enabled": True},
+            )
+        assert r.status_code == 404
+
     def test_service_exception_returns_500(self):
         import services.event_config_service as m
 
@@ -164,6 +174,13 @@ class TestToggleEventConfig:
     def test_invalid_event_type_returns_400(self):
         r = _make_client().patch("/api/events/configs/bad_type/toggle", json={"enabled": True})
         assert r.status_code == 400
+
+    def test_not_found_returns_404(self):
+        import services.event_config_service as m
+
+        with patch.object(m.EventConfigService, "toggle_config", AsyncMock(return_value=None)):
+            r = _make_client().patch("/api/events/configs/follow/toggle", json={"enabled": True})
+        assert r.status_code == 404
 
     def test_service_exception_returns_500(self):
         import services.event_config_service as m
@@ -299,6 +316,18 @@ class TestUpdateRedemptionConfig:
                     json={"reward_name": "test", "enabled": True},
                 )
             assert r.status_code == 200, f"failed for {action_type}"
+
+    def test_not_found_returns_404(self):
+        import services.command_config_service as m
+
+        with patch.object(
+            m.CommandConfigService, "update_redemption", AsyncMock(return_value=None)
+        ):
+            r = _make_client().put(
+                "/api/events/redemptions/vip",
+                json={"reward_name": "test", "enabled": True},
+            )
+        assert r.status_code == 404
 
     def test_service_exception_returns_500(self):
         import services.command_config_service as m

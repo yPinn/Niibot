@@ -176,6 +176,13 @@ class TestUpdateTimer:
         assert r.status_code == 400
         assert "min_lines negative" in r.json()["detail"]
 
+    def test_not_found_returns_404(self):
+        import services.timer_service as m
+
+        with patch.object(m.TimerService, "update_timer", AsyncMock(return_value=None)):
+            r = _make_client().put("/api/timers/configs/missing", json={"enabled": True})
+        assert r.status_code == 404
+
     def test_service_exception_returns_500(self):
         import services.timer_service as m
 
@@ -196,6 +203,13 @@ class TestToggleTimer:
             r = _make_client().patch("/api/timers/configs/social/toggle", json={"enabled": False})
         assert r.status_code == 200
         assert r.json()["enabled"] is False
+
+    def test_not_found_returns_404(self):
+        import services.timer_service as m
+
+        with patch.object(m.TimerService, "toggle_timer", AsyncMock(return_value=None)):
+            r = _make_client().patch("/api/timers/configs/missing/toggle", json={"enabled": True})
+        assert r.status_code == 404
 
     def test_service_exception_returns_500(self):
         import services.timer_service as m

@@ -18,6 +18,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+import services.channel_service as cs
 from core.config import get_settings
 from core.dependencies import get_current_channel_id, get_db_pool, get_twitch_api
 from routers.channels_router import router as _channels_router
@@ -39,7 +40,6 @@ def _reset_settings_cache():
 
 def _make_client(
     *,
-    token: str | None = "valid-token",
     twitch_api: MagicMock | None = None,
 ) -> TestClient:
     """Build a TestClient with all heavyweight dependencies stubbed out."""
@@ -56,19 +56,6 @@ def _make_client(
     return TestClient(app, raise_server_exceptions=False)
 
 
-def _mock_channel_service(token: str | None):
-    """Return a patched get_channel_service whose ChannelService.get_token_with_refresh
-    resolves to *token*."""
-    svc = MagicMock()
-    svc.get_token_with_refresh = AsyncMock(return_value=token)
-
-    patcher = patch(
-        "routers.channels_router.get_channel_service",
-        return_value=svc,
-    )
-    return patcher, svc
-
-
 # ============================================
 # GET /api/channels/twitch/mod-status
 # ============================================
@@ -80,8 +67,9 @@ class TestGetBotModStatus:
         mock_api.check_bot_is_moderator = AsyncMock(return_value=True)
         client = _make_client(twitch_api=mock_api)
 
-        patcher, _ = _mock_channel_service("valid-token")
-        with patcher:
+        with patch.object(
+            cs.ChannelService, "get_token_with_refresh", AsyncMock(return_value="valid-token")
+        ):
             r = client.get("/api/channels/twitch/mod-status")
 
         assert r.status_code == 200
@@ -92,8 +80,9 @@ class TestGetBotModStatus:
         mock_api.check_bot_is_moderator = AsyncMock(return_value=False)
         client = _make_client(twitch_api=mock_api)
 
-        patcher, _ = _mock_channel_service("valid-token")
-        with patcher:
+        with patch.object(
+            cs.ChannelService, "get_token_with_refresh", AsyncMock(return_value="valid-token")
+        ):
             r = client.get("/api/channels/twitch/mod-status")
 
         assert r.status_code == 200
@@ -101,8 +90,10 @@ class TestGetBotModStatus:
 
     def test_returns_403_with_reauth_header_when_token_missing(self):
         client = _make_client()
-        patcher, _ = _mock_channel_service(None)
-        with patcher:
+
+        with patch.object(
+            cs.ChannelService, "get_token_with_refresh", AsyncMock(return_value=None)
+        ):
             r = client.get("/api/channels/twitch/mod-status")
 
         assert r.status_code == 403
@@ -113,8 +104,9 @@ class TestGetBotModStatus:
         mock_api.check_bot_is_moderator = AsyncMock(return_value=False)
         client = _make_client(twitch_api=mock_api)
 
-        patcher, _ = _mock_channel_service("valid-token")
-        with patcher:
+        with patch.object(
+            cs.ChannelService, "get_token_with_refresh", AsyncMock(return_value="valid-token")
+        ):
             client.get("/api/channels/twitch/mod-status")
 
         expected_bot_id = get_settings().bot_id
@@ -140,8 +132,9 @@ class TestGrantBotMod:
         mock_api.add_moderator = AsyncMock(return_value=self._helix_response(204))
         client = _make_client(twitch_api=mock_api)
 
-        patcher, _ = _mock_channel_service("valid-token")
-        with patcher:
+        with patch.object(
+            cs.ChannelService, "get_token_with_refresh", AsyncMock(return_value="valid-token")
+        ):
             r = client.post("/api/channels/twitch/grant-mod")
 
         assert r.status_code == 200
@@ -152,8 +145,9 @@ class TestGrantBotMod:
         mock_api.add_moderator = AsyncMock(return_value=self._helix_response(422))
         client = _make_client(twitch_api=mock_api)
 
-        patcher, _ = _mock_channel_service("valid-token")
-        with patcher:
+        with patch.object(
+            cs.ChannelService, "get_token_with_refresh", AsyncMock(return_value="valid-token")
+        ):
             r = client.post("/api/channels/twitch/grant-mod")
 
         assert r.status_code == 200
@@ -164,8 +158,9 @@ class TestGrantBotMod:
         mock_api.add_moderator = AsyncMock(return_value=self._helix_response(401))
         client = _make_client(twitch_api=mock_api)
 
-        patcher, _ = _mock_channel_service("valid-token")
-        with patcher:
+        with patch.object(
+            cs.ChannelService, "get_token_with_refresh", AsyncMock(return_value="valid-token")
+        ):
             r = client.post("/api/channels/twitch/grant-mod")
 
         assert r.status_code == 403
@@ -176,8 +171,9 @@ class TestGrantBotMod:
         mock_api.add_moderator = AsyncMock(return_value=self._helix_response(403))
         client = _make_client(twitch_api=mock_api)
 
-        patcher, _ = _mock_channel_service("valid-token")
-        with patcher:
+        with patch.object(
+            cs.ChannelService, "get_token_with_refresh", AsyncMock(return_value="valid-token")
+        ):
             r = client.post("/api/channels/twitch/grant-mod")
 
         assert r.status_code == 403
@@ -185,8 +181,10 @@ class TestGrantBotMod:
 
     def test_missing_token_returns_403_with_reauth_header(self):
         client = _make_client()
-        patcher, _ = _mock_channel_service(None)
-        with patcher:
+
+        with patch.object(
+            cs.ChannelService, "get_token_with_refresh", AsyncMock(return_value=None)
+        ):
             r = client.post("/api/channels/twitch/grant-mod")
 
         assert r.status_code == 403
@@ -197,8 +195,9 @@ class TestGrantBotMod:
         mock_api.add_moderator = AsyncMock(side_effect=Exception("network failure"))
         client = _make_client(twitch_api=mock_api)
 
-        patcher, _ = _mock_channel_service("valid-token")
-        with patcher:
+        with patch.object(
+            cs.ChannelService, "get_token_with_refresh", AsyncMock(return_value="valid-token")
+        ):
             r = client.post("/api/channels/twitch/grant-mod")
 
         assert r.status_code == 500
@@ -208,8 +207,9 @@ class TestGrantBotMod:
         mock_api.add_moderator = AsyncMock(return_value=self._helix_response(500, "server error"))
         client = _make_client(twitch_api=mock_api)
 
-        patcher, _ = _mock_channel_service("valid-token")
-        with patcher:
+        with patch.object(
+            cs.ChannelService, "get_token_with_refresh", AsyncMock(return_value="valid-token")
+        ):
             r = client.post("/api/channels/twitch/grant-mod")
 
         assert r.status_code == 502
@@ -219,8 +219,9 @@ class TestGrantBotMod:
         mock_api.add_moderator = AsyncMock(return_value=self._helix_response(204))
         client = _make_client(twitch_api=mock_api)
 
-        patcher, _ = _mock_channel_service("valid-token")
-        with patcher:
+        with patch.object(
+            cs.ChannelService, "get_token_with_refresh", AsyncMock(return_value="valid-token")
+        ):
             client.post("/api/channels/twitch/grant-mod")
 
         expected_bot_id = get_settings().bot_id
