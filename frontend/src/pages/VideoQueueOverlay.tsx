@@ -19,6 +19,7 @@ interface YTPlayer {
   getCurrentTime(): number
   getDuration(): number
   seekTo(seconds: number, allowSeekAhead?: boolean): void
+  setPlaybackQuality(quality: string): void
 }
 
 interface YTPlayerOptions {
@@ -33,6 +34,7 @@ interface YTPlayerOptions {
     mute?: 0 | 1
     iv_load_policy?: 1 | 3
     cc_load_policy?: 1 | 3
+    vq?: string
   }
   events?: {
     onReady?: (event: { target: YTPlayer }) => void
@@ -480,6 +482,7 @@ export default function VideoQueueOverlay() {
           modestbranding: 1,
           mute: 1,
           iv_load_policy: 3,
+          vq: 'highres',
         },
         events: { onReady: onPlayerReady },
       })
@@ -499,9 +502,11 @@ export default function VideoQueueOverlay() {
         iv_load_policy: 3,
         cc_load_policy: 3,
         mute: isPreview ? 1 : 0,
+        vq: 'highres',
       },
       events: {
         onReady: event => {
+          event.target.setPlaybackQuality('highres')
           const duration = event.target.getDuration()
           // Report duration to backend (fallback for entries where API returned null)
           if (duration > 0 && !current.duration_seconds && username) {
