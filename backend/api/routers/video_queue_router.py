@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from core.config import Settings, get_settings
 from core.dependencies import get_current_channel_id, get_db_pool, get_twitch_api
 from services import TwitchAPIClient
+from shared.repositories.channel import ChannelRepository
 from shared.repositories.video_queue import (
     SOURCE_PRIORITY,
     VideoQueueRepository,
@@ -27,11 +28,6 @@ from shared.repositories.video_queue import (
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/video-queue", tags=["video-queue"])
-
-
-# ============================================
-# Response / Request Models
-# ============================================
 
 
 class VideoEntryResponse(BaseModel):
@@ -85,11 +81,6 @@ class AdvanceRequest(BaseModel):
 
 class MetadataUpdate(BaseModel):
     duration_seconds: int = Field(..., ge=1)
-
-
-# ============================================
-# Helpers
-# ============================================
 
 
 _CHANNEL_ID_CACHE: dict[str, tuple[str, float]] = {}
@@ -156,11 +147,6 @@ async def _build_public_state(
         queue_size=len(queued),
         total_queued_duration=total_queued_duration,
     )
-
-
-# ============================================
-# Public Endpoints (OBS Overlay — no auth)
-# ============================================
 
 
 @router.get("/public/{username}", response_model=PublicVideoQueueState)
@@ -249,11 +235,6 @@ async def update_entry_metadata(
     except Exception:
         LOGGER.exception("Failed to update video queue metadata")
         raise HTTPException(status_code=500, detail="Failed to update metadata") from None
-
-
-# ============================================
-# Authenticated Endpoints (Dashboard)
-# ============================================
 
 
 @router.delete("/skip", status_code=200, response_model=PublicVideoQueueState)
@@ -472,14 +453,10 @@ async def add_video_entry(
             video_type = "youtube"
 
         # Look up broadcaster display name for the requested_by field
-        row = await pool.fetchrow(
-            "SELECT u.display_name, la.username "
-            "FROM user_linked_accounts la "
-            "JOIN users u ON u.id = la.user_id "
-            "WHERE la.platform = 'twitch' AND la.platform_user_id = $1",
-            channel_id,
+        channel_repo = ChannelRepository(pool)
+        requested_by: str = (
+            await channel_repo.get_broadcaster_display_name(channel_id) or channel_id
         )
-        requested_by: str = (row["display_name"] or row["username"]) if row else channel_id
 
         await repo.add(
             channel_id=channel_id,

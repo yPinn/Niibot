@@ -4,20 +4,15 @@ import logging
 from datetime import datetime
 from typing import Annotated
 
-from asyncpg import Pool
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 
-from core.dependencies import get_analytics_service, get_current_channel_id, get_db_pool
+from core.dependencies import get_analytics_service, get_current_channel_id
+from services import AnalyticsService
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
-
-
-# ============================================
-# Response Models
-# ============================================
 
 
 class SessionSummary(BaseModel):
@@ -60,27 +55,15 @@ class AnalyticsSummary(BaseModel):
     recent_sessions: list[SessionSummary]
 
 
-# ============================================
-# Endpoints
-# ============================================
-
-
 @router.get("/summary", response_model=AnalyticsSummary)
 async def get_analytics_summary(
     response: Response,
     days: Annotated[int, Query(ge=1, le=365)] = 30,
     channel_id: str = Depends(get_current_channel_id),
-    pool: Pool = Depends(get_db_pool),
+    service: AnalyticsService = Depends(get_analytics_service),
 ) -> AnalyticsSummary:
-    """
-    Get analytics summary for the authenticated user's channel
-
-    Args:
-        days: Number of days to look back (default: 30)
-    """
     try:
-        analytics_service = get_analytics_service(pool)
-        summary_data = await analytics_service.get_summary(channel_id, days)
+        summary_data = await service.get_summary(channel_id, days)
 
         response.headers["Cache-Control"] = "private, max-age=300"
         LOGGER.info(f"Channel {channel_id} requested analytics summary (days={days})")
@@ -96,17 +79,10 @@ async def get_session_commands(
     session_id: int,
     response: Response,
     channel_id: str = Depends(get_current_channel_id),
-    pool: Pool = Depends(get_db_pool),
+    service: AnalyticsService = Depends(get_analytics_service),
 ) -> list[CommandStat]:
-    """
-    Get command statistics for a specific session
-
-    Args:
-        session_id: Session ID to query
-    """
     try:
-        analytics_service = get_analytics_service(pool)
-        commands = await analytics_service.get_session_commands(session_id, channel_id)
+        commands = await service.get_session_commands(session_id, channel_id)
 
         if commands is None:
             raise HTTPException(status_code=404, detail="Session not found")
@@ -126,17 +102,10 @@ async def get_session_events(
     session_id: int,
     response: Response,
     channel_id: str = Depends(get_current_channel_id),
-    pool: Pool = Depends(get_db_pool),
+    service: AnalyticsService = Depends(get_analytics_service),
 ) -> list[StreamEvent]:
-    """
-    Get events for a specific session
-
-    Args:
-        session_id: Session ID to query
-    """
     try:
-        analytics_service = get_analytics_service(pool)
-        events = await analytics_service.get_session_events(session_id, channel_id)
+        events = await service.get_session_events(session_id, channel_id)
 
         if events is None:
             raise HTTPException(status_code=404, detail="Session not found")
@@ -156,18 +125,10 @@ async def get_top_commands(
     days: Annotated[int, Query(ge=1, le=365)] = 30,
     limit: Annotated[int, Query(ge=1, le=100)] = 10,
     channel_id: str = Depends(get_current_channel_id),
-    pool: Pool = Depends(get_db_pool),
+    service: AnalyticsService = Depends(get_analytics_service),
 ) -> list[CommandStat]:
-    """
-    Get top commands across all sessions
-
-    Args:
-        days: Number of days to look back (default: 30)
-        limit: Maximum number of commands to return (default: 10)
-    """
     try:
-        analytics_service = get_analytics_service(pool)
-        commands = await analytics_service.get_top_commands(channel_id, days, limit)
+        commands = await service.get_top_commands(channel_id, days, limit)
 
         LOGGER.info(f"Channel {channel_id} requested top commands (days={days}, limit={limit})")
         return [CommandStat(**cmd) for cmd in commands]

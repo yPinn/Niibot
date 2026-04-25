@@ -5,21 +5,15 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
-from asyncpg import Pool
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from core.dependencies import get_current_channel_id, get_db_pool
+from core.dependencies import get_current_channel_id, get_timer_service
 from services.timer_service import TimerService
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/timers", tags=["timers"])
-
-
-# ============================================
-# Request / Response Models
-# ============================================
 
 
 class TimerConfigResponse(BaseModel):
@@ -59,19 +53,13 @@ class TimerToggle(BaseModel):
     enabled: bool
 
 
-# ============================================
-# Endpoints
-# ============================================
-
-
 @router.get("/configs", response_model=list[TimerConfigResponse])
 async def get_timer_configs(
     channel_id: str = Depends(get_current_channel_id),
-    pool: Pool = Depends(get_db_pool),
+    service: TimerService = Depends(get_timer_service),
 ) -> list[TimerConfigResponse]:
     """Get all timers for the authenticated user's channel."""
     try:
-        service = TimerService(pool)
         timers = await service.list_timers(channel_id)
         return [TimerConfigResponse(**t) for t in timers]
     except Exception:
@@ -83,11 +71,10 @@ async def get_timer_configs(
 async def create_timer(
     body: TimerCreate,
     channel_id: str = Depends(get_current_channel_id),
-    pool: Pool = Depends(get_db_pool),
+    service: TimerService = Depends(get_timer_service),
 ) -> TimerConfigResponse:
     """Create a new timer."""
     try:
-        service = TimerService(pool)
         timer = await service.create_timer(
             channel_id,
             body.timer_name,
@@ -111,11 +98,10 @@ async def update_timer(
     timer_name: str,
     body: TimerUpdate,
     channel_id: str = Depends(get_current_channel_id),
-    pool: Pool = Depends(get_db_pool),
+    service: TimerService = Depends(get_timer_service),
 ) -> TimerConfigResponse:
     """Update a timer's settings."""
     try:
-        service = TimerService(pool)
         timer = await service.update_timer(
             channel_id,
             timer_name,
@@ -127,8 +113,12 @@ async def update_timer(
             command_alias=body.command_alias,
             clear_alias=body.clear_alias,
         )
+        if timer is None:
+            raise HTTPException(status_code=404, detail="Timer not found")
         LOGGER.info(f"Channel {channel_id} updated timer: {timer_name}")
         return TimerConfigResponse(**timer)
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception:
@@ -141,14 +131,17 @@ async def toggle_timer(
     timer_name: str,
     body: TimerToggle,
     channel_id: str = Depends(get_current_channel_id),
-    pool: Pool = Depends(get_db_pool),
+    service: TimerService = Depends(get_timer_service),
 ) -> TimerConfigResponse:
     """Toggle a timer's enabled state."""
     try:
-        service = TimerService(pool)
         timer = await service.toggle_timer(channel_id, timer_name, body.enabled)
+        if timer is None:
+            raise HTTPException(status_code=404, detail="Timer not found")
         LOGGER.info(f"Channel {channel_id} toggled timer: {timer_name} -> {body.enabled}")
         return TimerConfigResponse(**timer)
+    except HTTPException:
+        raise
     except Exception:
         LOGGER.exception("Failed to toggle timer")
         raise HTTPException(status_code=500, detail="Failed to toggle timer") from None
@@ -158,11 +151,10 @@ async def toggle_timer(
 async def delete_timer(
     timer_name: str,
     channel_id: str = Depends(get_current_channel_id),
-    pool: Pool = Depends(get_db_pool),
+    service: TimerService = Depends(get_timer_service),
 ) -> None:
     """Delete a timer."""
     try:
-        service = TimerService(pool)
         deleted = await service.delete_timer(channel_id, timer_name)
         if not deleted:
             raise HTTPException(status_code=404, detail="Timer not found")

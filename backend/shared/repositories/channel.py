@@ -248,6 +248,20 @@ class ChannelRepository:
             _enabled_channels_cache.clear()
             return result
 
+    async def get_broadcaster_display_name(self, channel_id: str) -> str | None:
+        """Return display_name (or username) for the linked Twitch account."""
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT u.display_name, la.username "
+                "FROM user_linked_accounts la "
+                "JOIN users u ON u.id = la.user_id "
+                "WHERE la.platform = 'twitch' AND la.platform_user_id = $1",
+                channel_id,
+            )
+            if not row:
+                return None
+            return row["display_name"] or row["username"]
+
     # ==================== Discord User Operations ====================
 
     @cached(

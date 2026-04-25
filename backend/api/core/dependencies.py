@@ -3,7 +3,7 @@
 import logging
 
 import asyncpg
-from fastapi import Cookie, HTTPException
+from fastapi import Cookie, Depends, HTTPException
 
 from core.config import get_settings
 from core.database import get_database_manager
@@ -11,19 +11,18 @@ from services import (
     AnalyticsService,
     AuthService,
     ChannelService,
+    CommandConfigService,
+    EventConfigService,
     TwitchAPIClient,
 )
+from services.game_queue_service import GameQueueService
+from services.message_trigger_service import MessageTriggerService
+from services.timer_service import TimerService
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-# ============================================
-# Service Dependencies
-# ============================================
-
-
 def get_auth_service() -> AuthService:
-    """Get AuthService instance (dependency injection)"""
     settings = get_settings()
     return AuthService(
         secret_key=settings.jwt_secret_key,
@@ -36,7 +35,7 @@ _twitch_api: TwitchAPIClient | None = None
 
 
 def get_twitch_api() -> TwitchAPIClient:
-    """Get shared TwitchAPIClient singleton (connection reuse + token cache)."""
+    """Singleton: reuses TCP connection and token cache across requests."""
     global _twitch_api
     if _twitch_api is None:
         settings = get_settings()
@@ -64,19 +63,32 @@ def get_db_pool() -> asyncpg.Pool:
         raise HTTPException(status_code=503, detail="Database not ready") from None
 
 
-def get_channel_service(pool: asyncpg.Pool) -> ChannelService:
-    """Get ChannelService instance (dependency injection)"""
+def get_channel_service(pool: asyncpg.Pool = Depends(get_db_pool)) -> ChannelService:
     return ChannelService(pool)
 
 
-def get_analytics_service(pool: asyncpg.Pool) -> AnalyticsService:
-    """Get AnalyticsService instance (dependency injection)"""
+def get_analytics_service(pool: asyncpg.Pool = Depends(get_db_pool)) -> AnalyticsService:
     return AnalyticsService(pool)
 
 
-# ============================================
-# Authentication Dependencies
-# ============================================
+def get_command_config_service(pool: asyncpg.Pool = Depends(get_db_pool)) -> CommandConfigService:
+    return CommandConfigService(pool)
+
+
+def get_event_config_service(pool: asyncpg.Pool = Depends(get_db_pool)) -> EventConfigService:
+    return EventConfigService(pool)
+
+
+def get_timer_service(pool: asyncpg.Pool = Depends(get_db_pool)) -> TimerService:
+    return TimerService(pool)
+
+
+def get_trigger_service(pool: asyncpg.Pool = Depends(get_db_pool)) -> MessageTriggerService:
+    return MessageTriggerService(pool)
+
+
+def get_game_queue_service(pool: asyncpg.Pool = Depends(get_db_pool)) -> GameQueueService:
+    return GameQueueService(pool)
 
 
 def get_token_payload(auth_token: str | None = Cookie(None)) -> dict:
@@ -107,42 +119,6 @@ async def get_current_user_id(
 async def get_current_channel_id(
     auth_token: str | None = Cookie(None),
 ) -> str:
-    """Return platform_user_id for channel-level operations
-
-    Maps to TwitchIO broadcaster.id / Helix broadcaster_id
-    """
+    """Return platform_user_id — maps to TwitchIO broadcaster.id / Helix broadcaster_id"""
     payload = get_token_payload(auth_token)
     return str(payload["platform_user_id"])
-
-
-# ============================================
-# Combined Dependencies (for convenience)
-# ============================================
-
-
-async def require_auth_with_channel_service(
-    auth_token: str | None = Cookie(None),
-) -> tuple[str, ChannelService]:
-    """
-    Require authentication and return (channel_id, channel_service)
-
-    Convenient dependency for endpoints that need both auth and channel operations
-    """
-    channel_id = await get_current_channel_id(auth_token)
-    pool = get_db_pool()
-    channel_service = get_channel_service(pool)
-    return channel_id, channel_service
-
-
-async def require_auth_with_analytics_service(
-    auth_token: str | None = Cookie(None),
-) -> tuple[str, AnalyticsService]:
-    """
-    Require authentication and return (channel_id, analytics_service)
-
-    Convenient dependency for endpoints that need both auth and analytics operations
-    """
-    channel_id = await get_current_channel_id(auth_token)
-    pool = get_db_pool()
-    analytics_service = get_analytics_service(pool)
-    return channel_id, analytics_service

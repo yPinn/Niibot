@@ -5,6 +5,7 @@ import logging
 
 from asyncpg import Pool
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from core.config import get_settings
@@ -14,16 +15,12 @@ from core.dependencies import (
     get_db_pool,
     get_twitch_api,
 )
-from services import TwitchAPIClient
+from services import ChannelService, TwitchAPIClient
+from shared.repositories.channel import ChannelRepository
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/channels", tags=["channels"])
-
-
-# ============================================
-# Request/Response Models
-# ============================================
 
 
 class ChannelToggleRequest(BaseModel):
@@ -69,16 +66,11 @@ class GrantModResponse(BaseModel):
     already_mod: bool = False
 
 
-# ============================================
-# Endpoints
-# ============================================
-
-
 @router.get("/twitch/monitored", response_model=list[ChannelInfo])
 async def get_monitored_channels(
     channel_id: str = Depends(get_current_channel_id),
+    channel_service: ChannelService = Depends(get_channel_service),
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
-    pool: Pool = Depends(get_db_pool),
 ) -> list[ChannelInfo]:
     """Get list of monitored channels with their live status.
 
@@ -86,9 +78,6 @@ async def get_monitored_channels(
     User token is not required for fetching user info and stream status.
     """
     try:
-        channel_service = get_channel_service(pool)
-
-        # Get enabled channels from database
         enabled_channels = await channel_service.get_enabled_channels()
         LOGGER.debug(f"Found {len(enabled_channels)} enabled channels")
 
@@ -141,11 +130,10 @@ async def get_monitored_channels(
 @router.get("/twitch/my-status", response_model=ChannelStatusResponse)
 async def get_my_channel_status(
     channel_id: str = Depends(get_current_channel_id),
-    pool: Pool = Depends(get_db_pool),
+    channel_service: ChannelService = Depends(get_channel_service),
 ) -> ChannelStatusResponse:
     """Get current user's channel status"""
     try:
-        channel_service = get_channel_service(pool)
         status = await channel_service.get_channel_status(channel_id)
         return ChannelStatusResponse(**status)
 
@@ -158,14 +146,13 @@ async def get_my_channel_status(
 async def toggle_channel(
     request: ChannelToggleRequest,
     channel_id: str = Depends(get_current_channel_id),
-    pool: Pool = Depends(get_db_pool),
+    channel_service: ChannelService = Depends(get_channel_service),
 ) -> ToggleResponse:
     """Enable or disable bot for a channel"""
     try:
         if request.channel_id != channel_id:
             raise HTTPException(status_code=403, detail="Cannot toggle another channel")
 
-        channel_service = get_channel_service(pool)
         success = await channel_service.toggle_channel(channel_id, request.enabled)
 
         if success:
@@ -182,21 +169,13 @@ async def toggle_channel(
         raise HTTPException(status_code=500, detail="Failed to toggle channel") from None
 
 
-# ============================================
-# Bot Mod Status
-# ============================================
-
-
 @router.get("/twitch/mod-status", response_model=ModStatusResponse)
 async def get_bot_mod_status(
     channel_id: str = Depends(get_current_channel_id),
+    channel_service: ChannelService = Depends(get_channel_service),
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
-    pool: Pool = Depends(get_db_pool),
 ) -> ModStatusResponse:
     """Check whether the bot currently holds moderator status in the caller's channel."""
-    from fastapi.responses import JSONResponse
-
-    channel_service = get_channel_service(pool)
     token = await channel_service.get_token_with_refresh(channel_id, twitch_api)
     if not token:
         return JSONResponse(  # type: ignore[return-value]
@@ -214,13 +193,10 @@ async def get_bot_mod_status(
 @router.post("/twitch/grant-mod", response_model=GrantModResponse)
 async def grant_bot_mod(
     channel_id: str = Depends(get_current_channel_id),
+    channel_service: ChannelService = Depends(get_channel_service),
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
-    pool: Pool = Depends(get_db_pool),
 ) -> GrantModResponse:
     """Grant the bot moderator status in the caller's channel."""
-    from fastapi.responses import JSONResponse
-
-    channel_service = get_channel_service(pool)
     token = await channel_service.get_token_with_refresh(channel_id, twitch_api)
     if not token:
         return JSONResponse(  # type: ignore[return-value]
@@ -256,19 +232,12 @@ async def grant_bot_mod(
     raise HTTPException(status_code=502, detail="Twitch API error")
 
 
-# ============================================
-# Channel Defaults (cooldown settings)
-# ============================================
-
-
 @router.get("/defaults", response_model=ChannelDefaultsResponse)
 async def get_channel_defaults(
     channel_id: str = Depends(get_current_channel_id),
     pool: Pool = Depends(get_db_pool),
 ) -> ChannelDefaultsResponse:
     """Get channel default cooldown settings."""
-    from shared.repositories.channel import ChannelRepository
-
     try:
         repo = ChannelRepository(pool)
         channel = await repo.get_channel(channel_id)
@@ -289,8 +258,6 @@ async def update_channel_defaults(
     pool: Pool = Depends(get_db_pool),
 ) -> ChannelDefaultsResponse:
     """Update channel default cooldown settings."""
-    from shared.repositories.channel import ChannelRepository
-
     try:
         repo = ChannelRepository(pool)
         channel = await repo.update_channel_defaults(

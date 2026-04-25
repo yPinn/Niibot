@@ -3,22 +3,16 @@
 import logging
 from datetime import datetime
 
-from asyncpg import Pool
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from core.dependencies import get_current_channel_id, get_db_pool, get_twitch_api
+from core.dependencies import get_current_channel_id, get_game_queue_service, get_twitch_api
 from services import TwitchAPIClient
 from services.game_queue_service import GameQueueService
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/game-queue", tags=["game-queue"])
-
-
-# ============================================
-# Response / Request Models
-# ============================================
 
 
 class QueueEntryResponse(BaseModel):
@@ -70,19 +64,13 @@ class ClearResponse(BaseModel):
     cleared_count: int
 
 
-# ============================================
-# Queue State Endpoints
-# ============================================
-
-
 @router.get("/state", response_model=QueueStateResponse)
 async def get_queue_state(
     channel_id: str = Depends(get_current_channel_id),
-    pool: Pool = Depends(get_db_pool),
+    service: GameQueueService = Depends(get_game_queue_service),
 ) -> QueueStateResponse:
     """Get full queue state for the authenticated user's channel."""
     try:
-        service = GameQueueService(pool)
         state = await service.get_queue_state(channel_id)
         return QueueStateResponse(**state)
     except Exception:
@@ -93,11 +81,10 @@ async def get_queue_state(
 @router.post("/advance", response_model=QueueStateResponse)
 async def advance_batch(
     channel_id: str = Depends(get_current_channel_id),
-    pool: Pool = Depends(get_db_pool),
+    service: GameQueueService = Depends(get_game_queue_service),
 ) -> QueueStateResponse:
     """Complete the current batch and advance to the next."""
     try:
-        service = GameQueueService(pool)
         state = await service.advance_batch(channel_id)
         LOGGER.info(f"Channel {channel_id} advanced game queue batch")
         return QueueStateResponse(**state)
@@ -110,11 +97,10 @@ async def advance_batch(
 async def remove_player(
     entry_id: int,
     channel_id: str = Depends(get_current_channel_id),
-    pool: Pool = Depends(get_db_pool),
+    service: GameQueueService = Depends(get_game_queue_service),
 ) -> QueueStateResponse:
     """Remove a specific player from the queue."""
     try:
-        service = GameQueueService(pool)
         state = await service.remove_player(channel_id, entry_id)
         LOGGER.info(f"Channel {channel_id} removed queue entry {entry_id}")
         return QueueStateResponse(**state)
@@ -127,11 +113,10 @@ async def remove_player(
 async def promote_player(
     entry_id: int,
     channel_id: str = Depends(get_current_channel_id),
-    pool: Pool = Depends(get_db_pool),
+    service: GameQueueService = Depends(get_game_queue_service),
 ) -> QueueStateResponse:
     """Move a player from the waiting area to the front of the current batch."""
     try:
-        service = GameQueueService(pool)
         state = await service.promote_player(channel_id, entry_id)
         if state is None:
             raise HTTPException(status_code=404, detail="Entry not found or already removed")
@@ -147,11 +132,10 @@ async def promote_player(
 @router.delete("/clear", response_model=ClearResponse)
 async def clear_queue(
     channel_id: str = Depends(get_current_channel_id),
-    pool: Pool = Depends(get_db_pool),
+    service: GameQueueService = Depends(get_game_queue_service),
 ) -> ClearResponse:
     """Clear entire queue."""
     try:
-        service = GameQueueService(pool)
         state = await service.clear_queue(channel_id)
         LOGGER.info(f"Channel {channel_id} cleared game queue")
         return ClearResponse(**state)
@@ -160,19 +144,13 @@ async def clear_queue(
         raise HTTPException(status_code=500, detail="Failed to clear queue") from None
 
 
-# ============================================
-# Settings Endpoints
-# ============================================
-
-
 @router.get("/settings", response_model=QueueSettingsResponse)
 async def get_settings(
     channel_id: str = Depends(get_current_channel_id),
-    pool: Pool = Depends(get_db_pool),
+    service: GameQueueService = Depends(get_game_queue_service),
 ) -> QueueSettingsResponse:
     """Get queue settings."""
     try:
-        service = GameQueueService(pool)
         settings = await service.get_settings(channel_id)
         return QueueSettingsResponse(**settings)
     except Exception:
@@ -184,13 +162,12 @@ async def get_settings(
 async def update_settings(
     body: QueueSettingsUpdate,
     channel_id: str = Depends(get_current_channel_id),
-    pool: Pool = Depends(get_db_pool),
+    service: GameQueueService = Depends(get_game_queue_service),
 ) -> QueueSettingsResponse:
     """Update queue settings (group_size, enabled)."""
     if body.group_size is None and body.enabled is None:
         raise HTTPException(status_code=400, detail="No fields to update")
     try:
-        service = GameQueueService(pool)
         settings = await service.update_settings(
             channel_id, group_size=body.group_size, enabled=body.enabled
         )
@@ -201,15 +178,10 @@ async def update_settings(
         raise HTTPException(status_code=500, detail="Failed to update queue settings") from None
 
 
-# ============================================
-# Public Endpoint (OBS Overlay)
-# ============================================
-
-
 @router.get("/public/{username}", response_model=PublicQueueStateResponse)
 async def get_public_queue_state(
     username: str,
-    pool: Pool = Depends(get_db_pool),
+    service: GameQueueService = Depends(get_game_queue_service),
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
 ) -> PublicQueueStateResponse:
     """Get queue state for OBS overlay (no auth required)."""
@@ -218,7 +190,6 @@ async def get_public_queue_state(
         if not user_info:
             raise HTTPException(status_code=404, detail="Channel not found")
         channel_id = user_info["id"]
-        service = GameQueueService(pool)
         state = await service.get_public_state(channel_id)
         return PublicQueueStateResponse(**state)
     except HTTPException:

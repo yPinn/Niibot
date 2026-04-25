@@ -6,11 +6,10 @@ import logging
 import re
 from datetime import datetime
 
-from asyncpg import Pool
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from core.dependencies import get_current_channel_id, get_db_pool
+from core.dependencies import get_current_channel_id, get_trigger_service
 from services.message_trigger_service import MessageTriggerService
 
 _REGEX_MAX_LEN = 200
@@ -18,11 +17,6 @@ _REGEX_MAX_LEN = 200
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/triggers", tags=["triggers"])
-
-
-# ============================================
-# Request / Response Models
-# ============================================
 
 
 class MessageTriggerResponse(BaseModel):
@@ -86,19 +80,13 @@ def _validate_regex_pattern(pattern: str, match_type: str) -> None:
         raise HTTPException(status_code=400, detail=f"Invalid regex pattern: {exc}") from exc
 
 
-# ============================================
-# Endpoints
-# ============================================
-
-
 @router.get("/configs", response_model=list[MessageTriggerResponse])
 async def get_trigger_configs(
     channel_id: str = Depends(get_current_channel_id),
-    pool: Pool = Depends(get_db_pool),
+    service: MessageTriggerService = Depends(get_trigger_service),
 ) -> list[MessageTriggerResponse]:
     """Get all message triggers for the authenticated user's channel."""
     try:
-        service = MessageTriggerService(pool)
         triggers = await service.list_triggers(channel_id)
         return [MessageTriggerResponse(**t) for t in triggers]
     except Exception:
@@ -110,12 +98,11 @@ async def get_trigger_configs(
 async def create_trigger(
     body: TriggerCreate,
     channel_id: str = Depends(get_current_channel_id),
-    pool: Pool = Depends(get_db_pool),
+    service: MessageTriggerService = Depends(get_trigger_service),
 ) -> MessageTriggerResponse:
     """Create a new message trigger."""
     _validate_regex_pattern(body.pattern, body.match_type)
     try:
-        service = MessageTriggerService(pool)
         trigger = await service.create_trigger(
             channel_id,
             body.trigger_name,
@@ -142,11 +129,10 @@ async def update_trigger(
     trigger_name: str,
     body: TriggerUpdate,
     channel_id: str = Depends(get_current_channel_id),
-    pool: Pool = Depends(get_db_pool),
+    service: MessageTriggerService = Depends(get_trigger_service),
 ) -> MessageTriggerResponse:
     """Update a message trigger's settings."""
     try:
-        service = MessageTriggerService(pool)
         if body.pattern is not None:
             effective_match_type = body.match_type
             if effective_match_type is None:
@@ -168,6 +154,8 @@ async def update_trigger(
             enabled=body.enabled,
             aliases=body.aliases,
         )
+        if trigger is None:
+            raise HTTPException(status_code=404, detail="Trigger not found")
         LOGGER.info(f"Channel {channel_id} updated trigger: {trigger_name}")
         return MessageTriggerResponse(**trigger)
     except HTTPException:
@@ -184,14 +172,17 @@ async def toggle_trigger(
     trigger_name: str,
     body: TriggerToggle,
     channel_id: str = Depends(get_current_channel_id),
-    pool: Pool = Depends(get_db_pool),
+    service: MessageTriggerService = Depends(get_trigger_service),
 ) -> MessageTriggerResponse:
     """Toggle a trigger's enabled state."""
     try:
-        service = MessageTriggerService(pool)
         trigger = await service.toggle_trigger(channel_id, trigger_name, body.enabled)
+        if trigger is None:
+            raise HTTPException(status_code=404, detail="Trigger not found")
         LOGGER.info(f"Channel {channel_id} toggled trigger: {trigger_name} -> {body.enabled}")
         return MessageTriggerResponse(**trigger)
+    except HTTPException:
+        raise
     except Exception:
         LOGGER.exception("Failed to toggle trigger")
         raise HTTPException(status_code=500, detail="Failed to toggle trigger") from None
@@ -201,11 +192,10 @@ async def toggle_trigger(
 async def delete_trigger(
     trigger_name: str,
     channel_id: str = Depends(get_current_channel_id),
-    pool: Pool = Depends(get_db_pool),
+    service: MessageTriggerService = Depends(get_trigger_service),
 ) -> None:
     """Delete a message trigger."""
     try:
-        service = MessageTriggerService(pool)
         deleted = await service.delete_trigger(channel_id, trigger_name)
         if not deleted:
             raise HTTPException(status_code=404, detail="Trigger not found")
