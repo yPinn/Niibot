@@ -84,6 +84,42 @@ class TestAsyncTTLCacheTTL:
         assert cache.get_stale("k") == "v"
 
 
+class TestAsyncTTLCacheInvalidatePrefix:
+    def setup_method(self):
+        self.cache = AsyncTTLCache(maxsize=10, ttl=60)
+
+    def test_removes_matching_keys(self):
+        self.cache.set("redemption:ch1:foo", 1)
+        self.cache.set("redemption:ch1:bar", 2)
+        self.cache.invalidate_prefix("redemption:ch1:")
+        assert self.cache.get("redemption:ch1:foo") is _MISSING
+        assert self.cache.get("redemption:ch1:bar") is _MISSING
+
+    def test_does_not_remove_non_matching_keys(self):
+        self.cache.set("redemption:ch1:foo", 1)
+        self.cache.set("redemption:ch2:baz", 3)
+        self.cache.invalidate_prefix("redemption:ch1:")
+        assert self.cache.get("redemption:ch2:baz") == 3
+
+    def test_preserves_stale_for_invalidated_keys(self):
+        self.cache.set("redemption:ch1:foo", 42)
+        self.cache.invalidate_prefix("redemption:ch1:")
+        assert self.cache.get("redemption:ch1:foo") is _MISSING
+        assert self.cache.get_stale("redemption:ch1:foo") == 42
+
+    def test_empty_prefix_removes_all_keys(self):
+        self.cache.set("a", 1)
+        self.cache.set("b", 2)
+        self.cache.invalidate_prefix("")
+        assert self.cache.get("a") is _MISSING
+        assert self.cache.get("b") is _MISSING
+
+    def test_no_match_is_noop(self):
+        self.cache.set("other:ch1:x", 99)
+        self.cache.invalidate_prefix("redemption:ch1:")  # no matches
+        assert self.cache.get("other:ch1:x") == 99
+
+
 class TestAsyncTTLCacheLRU:
     def test_oldest_stale_evicted_when_maxsize_exceeded(self):
         cache = AsyncTTLCache(maxsize=3, ttl=60)

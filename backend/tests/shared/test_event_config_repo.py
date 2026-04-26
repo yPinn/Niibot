@@ -9,6 +9,7 @@ import pytest
 
 from shared.repositories.event_config import (
     DEFAULT_TEMPLATES,
+    EVENT_TYPES,
     EventConfigRepository,
     _config_cache,
     _config_list_cache,
@@ -251,3 +252,37 @@ class TestEnsureDefaults:
         await repo.ensure_defaults("ch_new")
 
         assert "ch_new" in _seeded_events
+
+
+# ---------------------------------------------------------------------------
+# invalidate_channel
+# ---------------------------------------------------------------------------
+
+
+class TestInvalidateChannel:
+    def setup_method(self):
+        _clear_caches()
+
+    def test_removes_all_event_type_keys_for_channel(self):
+        from shared.cache import _MISSING
+
+        for et in EVENT_TYPES:
+            _config_cache.set(f"event_config:ch1:{et}", {"event_type": et})
+        _config_list_cache.set("event_list:ch1", [])
+
+        repo = EventConfigRepository(MagicMock())
+        repo.invalidate_channel("ch1")
+
+        for et in EVENT_TYPES:
+            assert _config_cache.get(f"event_config:ch1:{et}") is _MISSING
+        assert _config_list_cache.get("event_list:ch1") is _MISSING
+
+    def test_does_not_remove_other_channel_keys(self):
+        _config_cache.set("event_config:ch2:follow", {"event_type": "follow"})
+        _config_list_cache.set("event_list:ch2", [])
+
+        repo = EventConfigRepository(MagicMock())
+        repo.invalidate_channel("ch1")  # invalidate ch1, not ch2
+
+        assert _config_cache.get("event_config:ch2:follow") == {"event_type": "follow"}
+        assert _config_list_cache.get("event_list:ch2") == []

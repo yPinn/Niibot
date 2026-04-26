@@ -385,6 +385,10 @@ class RedemptionConfigRepository:
     def __init__(self, pool: asyncpg.Pool) -> None:
         self.pool = pool
 
+    def invalidate_channel(self, channel_id: str) -> None:
+        """Invalidate all cached redemptions for a single channel."""
+        _redemption_cache.invalidate_prefix(f"redemption:{channel_id}:")
+
     async def list_configs(self, channel_id: str) -> list[RedemptionConfig]:
         """Get all redemption configs for a channel."""
 

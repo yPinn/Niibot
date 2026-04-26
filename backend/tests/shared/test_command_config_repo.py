@@ -487,6 +487,30 @@ class TestRedemptionUpsertConfig:
         assert _redemption_cache.get("redemption:ch1:vip") is _MISSING
 
 
+class TestRedemptionInvalidateChannel:
+    def test_removes_matching_channel_keys_from_cache(self):
+        from shared.cache import _MISSING
+
+        _redemption_cache.set("redemption:ch1:vip", _REDEMPTION_ROW)
+        _redemption_cache.set("redemption:ch1:first", _REDEMPTION_ROW)
+        _redemption_cache.set("redemption:ch2:vip", _REDEMPTION_ROW)
+
+        repo = RedemptionConfigRepository(MagicMock())
+        repo.invalidate_channel("ch1")
+
+        assert _redemption_cache.get("redemption:ch1:vip") is _MISSING
+        assert _redemption_cache.get("redemption:ch1:first") is _MISSING
+        assert _redemption_cache.get("redemption:ch2:vip") == _REDEMPTION_ROW
+
+    def test_preserves_stale_data_for_invalidated_keys(self):
+        _redemption_cache.set("redemption:ch1:vip", _REDEMPTION_ROW)
+
+        repo = RedemptionConfigRepository(MagicMock())
+        repo.invalidate_channel("ch1")
+
+        assert _redemption_cache.get_stale("redemption:ch1:vip") == _REDEMPTION_ROW
+
+
 @pytest.mark.asyncio
 class TestRedemptionEnsureDefaults:
     async def test_seeds_defaults_on_first_call(self):

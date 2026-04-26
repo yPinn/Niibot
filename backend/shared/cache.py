@@ -72,6 +72,12 @@ class AsyncTTLCache:
         """Remove from fresh cache; stale store keeps the value."""
         self._cache.pop(key, None)
 
+    def invalidate_prefix(self, prefix: str) -> None:
+        """Remove all fresh-cache entries whose key starts with *prefix*."""
+        keys = [k for k in self._cache if k.startswith(prefix)]
+        for k in keys:
+            self._cache.pop(k, None)
+
     def clear(self) -> None:
         """Clear fresh cache; stale store is preserved."""
         self._cache.clear()

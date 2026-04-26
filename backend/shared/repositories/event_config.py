@@ -118,6 +118,12 @@ class EventConfigRepository:
             _config_list_cache.invalidate(f"event_list:{channel_id}")
             return result
 
+    def invalidate_channel(self, channel_id: str) -> None:
+        """Invalidate all cached event configs for a single channel."""
+        for event_type in EVENT_TYPES:
+            _config_cache.invalidate(f"event_config:{channel_id}:{event_type}")
+        _config_list_cache.invalidate(f"event_list:{channel_id}")
+
     async def ensure_defaults(self, channel_id: str) -> list[EventConfig]:
         """Ensure default configs exist for a channel, then return all configs."""
         if channel_id not in _seeded_events:
