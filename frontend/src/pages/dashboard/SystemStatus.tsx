@@ -67,7 +67,8 @@ function EnvBadge({ env }: { env?: string }) {
 
 function VersionLink({ version, commit }: { version?: string; commit?: string }) {
   const label = version && version !== 'dev' ? version : (version ?? '—')
-  const display = commit && commit !== 'unknown' ? `${label} (${commit.slice(0, 7)})` : label
+  const shortSha = commit && commit !== 'unknown' ? commit.slice(0, 7) : null
+  const display = shortSha && !label.includes(shortSha) ? `${label} (${shortSha})` : label
   return <span className="font-mono">{display}</span>
 }
 
