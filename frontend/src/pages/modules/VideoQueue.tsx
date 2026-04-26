@@ -36,6 +36,10 @@ import {
   SelectTrigger,
   SelectValue,
   Separator,
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
   Skeleton,
   Spinner,
   Switch,
@@ -260,6 +264,7 @@ export default function VideoQueue() {
   const [settings, setSettings] = useState<VideoQueueSettings | null>(null)
   const [loading, setLoading] = useState(true)
 
+  const [helpOpen, setHelpOpen] = useState(false)
   const [maxRedemptionDurationValue, setMaxRedemptionDurationValue] = useState('600')
   const [maxQueueSizeInput, setMaxQueueSizeInput] = useState('')
   const [userCooldownInput, setUserCooldownInput] = useState('')
@@ -457,7 +462,48 @@ export default function VideoQueue() {
 
   return (
     <main className="relative flex flex-1 flex-col gap-section p-page lg:p-page-lg">
-      <PageHeader title="Video Queue" description="管理 YouTube 影片佇列" />
+      <div className="flex items-start justify-between gap-2">
+        <PageHeader title="Video Queue" description="管理 YouTube 影片佇列" />
+        <Button
+          variant="ghost"
+          size="icon"
+          className="mt-0.5 shrink-0 text-muted-foreground"
+          onClick={() => setHelpOpen(true)}
+          title="使用說明"
+        >
+          <Icon icon="fa-regular fa-circle-question" className="size-5" />
+        </Button>
+      </div>
+
+      <Sheet open={helpOpen} onOpenChange={setHelpOpen}>
+        <SheetContent side="right" className="w-80 sm:w-96">
+          <SheetHeader>
+            <SheetTitle>Video Queue 使用說明</SheetTitle>
+          </SheetHeader>
+          <div className="flex flex-col gap-6 px-page text-sm">
+            <div className="flex flex-col gap-2">
+              <p className="font-semibold">Step 1 — Events 開啟兌換</p>
+              <p className="text-muted-foreground leading-relaxed">
+                進入 <span className="text-foreground font-medium">Events</span> →
+                忠誠點數兌換，找到「播放清單」那列，從下拉選取你在 Twitch
+                建立的自訂獎勵，並確認狀態開關已開啟。
+              </p>
+            </div>
+            <Separator />
+            <div className="flex flex-col gap-2">
+              <p className="font-semibold">Step 2 — OBS Overlay</p>
+              <p className="text-muted-foreground leading-relaxed">
+                回到此頁，在「佇列設定」右上角複製 Overlay URL，在 OBS 新增
+                <span className="text-foreground font-medium"> 瀏覽器來源</span>
+                貼上即可（建議 1920×1080）。
+              </p>
+              <p className="text-muted-foreground leading-relaxed">
+                佇列為空時 overlay 全透明；有影片時自動播放並依序跳下一首。
+              </p>
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
 
       {/* Inline overlay for non-affiliates — blurs preview, blocks interaction */}
       {!isAffiliate && (
