@@ -9,7 +9,6 @@ from openai import (
     APITimeoutError,
     AsyncOpenAI,
     AuthenticationError,
-    BadRequestError,
     NotFoundError,
     PermissionDeniedError,
     RateLimitError,
@@ -221,7 +220,7 @@ class AIComponent(commands.Component):
         except APITimeoutError as e:
             await ctx.reply("AI 回應逾時，請稍後再試")
             LOGGER.warning(f"[{ctx.channel.name}] AI timeout: {e}")
-        except (BadRequestError, Exception) as e:
+        except Exception as e:
             await ctx.reply("AI 服務暫時無法使用，請稍後再試")
             LOGGER.error(f"[{ctx.channel.name}] AI unexpected error ({type(e).__name__}): {e}")
 

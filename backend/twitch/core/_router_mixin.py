@@ -22,7 +22,7 @@ LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 class _MessageRouterMixin:
-    _background_tasks: set[asyncio.Task] = set()
+    _background_tasks: set[asyncio.Task]
 
     def _fire_and_forget(self, coro) -> None:
         task = asyncio.create_task(coro)
@@ -170,8 +170,6 @@ class _MessageRouterMixin:
 
     def _record_custom_command_analytics(self, channel_id: str, cmd_name: str) -> None:
         """Record custom command usage to session analytics if a stream is live."""
-        if not (hasattr(self, "_active_sessions") and hasattr(self, "analytics")):
-            return
         session_id = self._active_sessions.get(channel_id)  # type: ignore[attr-defined]
         if session_id:
             self._fire_and_forget(

@@ -163,39 +163,45 @@ class _NotifyMixin:
 
     async def _refresh_channel_cache(self, channel_id: str) -> None:
         """Reload all config caches for a single channel from DB."""
-        try:
-            await self.command_configs.warm_cache(channel_id)  # type: ignore[attr-defined]
-        except Exception as e:
-            LOGGER.warning(f"Cache refresh (commands) failed for {channel_id}: {e}")
-        try:
-            from shared.repositories.channel import _channel_cache, _enabled_channels_cache
+        from shared.repositories.channel import _channel_cache, _enabled_channels_cache
+        from shared.repositories.command_config import _redemption_cache
+        from shared.repositories.event_config import (
+            EVENT_TYPES,
+        )
+        from shared.repositories.event_config import (
+            _config_cache as _evt_cache,
+        )
+        from shared.repositories.event_config import (
+            _config_list_cache as _evt_list_cache,
+        )
 
+        def _invalidate_channel() -> None:
             _channel_cache.invalidate(f"channel:{channel_id}")
             _enabled_channels_cache.clear()
-        except Exception as e:
-            LOGGER.warning(f"Cache refresh (channel) failed for {channel_id}: {e}")
-        try:
-            from shared.repositories.event_config import _config_cache as _evt_cache
-            from shared.repositories.event_config import _config_list_cache as _evt_list_cache
 
-            _evt_cache.clear()
-            _evt_list_cache.clear()
-        except Exception as e:
-            LOGGER.warning(f"Cache refresh (events) failed for {channel_id}: {e}")
-        try:
-            from shared.repositories.command_config import _redemption_cache
+        def _invalidate_events() -> None:
+            for et in EVENT_TYPES:
+                _evt_cache.invalidate(f"event_config:{channel_id}:{et}")
+            _evt_list_cache.invalidate(f"event_list:{channel_id}")
 
-            _redemption_cache.clear()
-        except Exception as e:
-            LOGGER.warning(f"Cache refresh (redemptions) failed for {channel_id}: {e}")
-        try:
-            self.timer_configs.invalidate_cache(channel_id)  # type: ignore[attr-defined]
-        except Exception as e:
-            LOGGER.warning(f"Cache refresh (timers) failed for {channel_id}: {e}")
-        try:
-            self.message_trigger_configs.invalidate_cache(channel_id)  # type: ignore[attr-defined]
-        except Exception as e:
-            LOGGER.warning(f"Cache refresh (triggers) failed for {channel_id}: {e}")
+        ops: list[tuple[str, object]] = [
+            ("commands", self.command_configs.warm_cache(channel_id)),  # type: ignore[attr-defined]
+            ("channel", _invalidate_channel),
+            ("events", _invalidate_events),
+            (
+                "redemptions",
+                lambda: _redemption_cache.invalidate_prefix(f"redemption:{channel_id}:"),
+            ),
+            ("timers", lambda: self.timer_configs.invalidate_cache(channel_id)),  # type: ignore[attr-defined]
+            ("triggers", lambda: self.message_trigger_configs.invalidate_cache(channel_id)),  # type: ignore[attr-defined]
+        ]
+        for name, op in ops:
+            try:
+                result = op() if callable(op) else op  # type: ignore[operator]
+                if asyncio.iscoroutine(result):
+                    await result
+            except Exception as e:
+                LOGGER.warning(f"Cache refresh ({name}) failed for {channel_id}: {e}")
 
     async def _periodic_cache_refresh(self) -> None:
         """Safety net: reload all config caches every 5 minutes.

@@ -56,6 +56,14 @@ class ChannelPointsComponent(commands.Component):
             await self._session.close()
             self._session = None
 
+    async def _reply(self, broadcaster: twitchio.PartialUser, message: str) -> None:
+        """Send a bot message to a channel."""
+        await broadcaster.send_message(
+            message=message,
+            sender=self.bot.bot_id,
+            token_for=self.bot.bot_id,
+        )
+
     @commands.Component.listener()
     async def event_custom_redemption_add(
         self,
@@ -116,17 +124,11 @@ class ChannelPointsComponent(commands.Component):
     ) -> None:
         """處理 VIP 獎勵兌換"""
         channel_name = payload.broadcaster.name
+        broadcaster = payload.broadcaster
         try:
-            broadcaster = payload.broadcaster
             await broadcaster.add_vip(user=payload.user)
-
-            success_message = f"@{user_name} 恭喜你成為尊榮的 VIP 大人！"
             try:
-                await broadcaster.send_message(
-                    message=success_message,
-                    sender=self.bot.bot_id,
-                    token_for=self.bot.bot_id,
-                )
+                await self._reply(broadcaster, f"@{user_name} 恭喜你成為尊榮的 VIP 大人！")
                 LOGGER.info(f"[{channel_name}] VIP granted to {user_name}")
             except Exception as e:
                 LOGGER.warning(f"[{channel_name}] VIP granted but failed to send message: {e}")
@@ -135,24 +137,20 @@ class ChannelPointsComponent(commands.Component):
             if is_scope_error(e):
                 await reauth_notifier.notify(
                     broadcaster_login=channel_name,
-                    channel_id=str(payload.broadcaster.id),
-                    send_fn=lambda msg: payload.broadcaster.send_message(
-                        message=msg,
-                        sender=self.bot.bot_id,
-                        token_for=self.bot.bot_id,
-                    ),
+                    channel_id=str(broadcaster.id),
+                    send_fn=lambda msg: self._reply(broadcaster, msg),
                 )
                 return
 
-            error_str = str(e)
-
-            if "422" in error_str:
-                if "moderator" in error_str.lower():
+            status = getattr(e, "status", None) or getattr(e, "status_code", None)
+            body = str(e).lower()
+            if status == 422:
+                if "moderator" in body:
                     LOGGER.warning(
                         f"[{channel_name}] {user_name} is already a moderator, cannot grant VIP"
                     )
                     error_message = f"@{user_name} 你已經是 Moderator 了！"
-                elif "already a vip" in error_str.lower():
+                elif "already a vip" in body:
                     LOGGER.info(f"[{channel_name}] {user_name} is already a VIP")
                     error_message = f"@{user_name} 你已經是 VIP 了！"
                 else:
@@ -163,11 +161,7 @@ class ChannelPointsComponent(commands.Component):
                 error_message = f"@{user_name} VIP 授予失敗，請聯繫管理員！"
 
             try:
-                await payload.broadcaster.send_message(
-                    message=error_message,
-                    sender=self.bot.bot_id,
-                    token_for=self.bot.bot_id,
-                )
+                await self._reply(broadcaster, error_message)
             except Exception:
                 pass
 
@@ -178,26 +172,19 @@ class ChannelPointsComponent(commands.Component):
     ) -> None:
         """處理搶第一遊戲兌換"""
         channel_name = payload.broadcaster.name
+        broadcaster = payload.broadcaster
         try:
-            broadcaster = payload.broadcaster
-            announcement_message = f"@{user_name} 恭喜你搶到沙發！"
-
             try:
                 await broadcaster.send_announcement(
-                    message=announcement_message,
+                    message=f"@{user_name} 恭喜你搶到沙發！",
                     moderator=self.bot.bot_id,
                     color="primary",
                 )
                 LOGGER.info(f"[{channel_name}] First claimed by {user_name}")
             except Exception as e:
                 LOGGER.error(f"[{channel_name}] First announcement failed, falling back: {e}")
-                fallback_message = f"@{user_name} 恭喜你搶到第一！"
                 try:
-                    await broadcaster.send_message(
-                        message=fallback_message,
-                        sender=self.bot.bot_id,
-                        token_for=self.bot.bot_id,
-                    )
+                    await self._reply(broadcaster, f"@{user_name} 恭喜你搶到第一！")
                     LOGGER.info(f"[{channel_name}] First fallback message sent to {user_name}")
                 except Exception as fallback_error:
                     LOGGER.error(f"[{channel_name}] First fallback also failed: {fallback_error}")
@@ -212,16 +199,11 @@ class ChannelPointsComponent(commands.Component):
     ) -> None:
         """處理 Niibot 獎勵兌換"""
         channel_name = payload.broadcaster.name
+        broadcaster = payload.broadcaster
         try:
             oauth_url = self.settings.frontend_url
-            broadcaster = payload.broadcaster
-            public_message = f"@{user_name} 已將授權連結發送至你的 Twitch 私訊！"
             try:
-                await broadcaster.send_message(
-                    message=public_message,
-                    sender=self.bot.bot_id,
-                    token_for=self.bot.bot_id,
-                )
+                await self._reply(broadcaster, f"@{user_name} 已將授權連結發送至你的 Twitch 私訊！")
                 LOGGER.info(f"[{channel_name}] Niibot auth: confirmation sent to {user_name}")
             except Exception as e:
                 LOGGER.warning(f"[{channel_name}] Niibot auth: failed to send public message: {e}")
@@ -239,19 +221,13 @@ class ChannelPointsComponent(commands.Component):
                 if is_scope_error(e):
                     await reauth_notifier.notify(
                         broadcaster_login=channel_name,
-                        channel_id=str(payload.broadcaster.id),
-                        send_fn=lambda msg: broadcaster.send_message(
-                            message=msg,
-                            sender=self.bot.bot_id,
-                            token_for=self.bot.bot_id,
-                        ),
+                        channel_id=str(broadcaster.id),
+                        send_fn=lambda msg: self._reply(broadcaster, msg),
                     )
-                fallback_message = f"@{user_name} 私訊發送失敗，請聯繫 @llazypilot 獲取授權連結！"
                 try:
-                    await broadcaster.send_message(
-                        message=fallback_message,
-                        sender=self.bot.bot_id,
-                        token_for=self.bot.bot_id,
+                    await self._reply(
+                        broadcaster,
+                        f"@{user_name} 私訊發送失敗，請聯繫 @llazypilot 獲取授權連結！",
                     )
                     LOGGER.error(
                         f"[{channel_name}] Niibot auth: whisper failed, fell back to chat message"
@@ -277,22 +253,14 @@ class ChannelPointsComponent(commands.Component):
         try:
             settings = await self.gq_settings_repo.get_or_create(channel_id)
             if not settings.enabled:
-                await broadcaster.send_message(
-                    message=f"@{user_name} 隊列未開放",
-                    sender=self.bot.bot_id,
-                    token_for=self.bot.bot_id,
-                )
+                await self._reply(broadcaster, f"@{user_name} 隊列未開放")
                 return
 
             existing = await self.gq_repo.find_active_by_user(channel_id, user_id)
             if existing:
                 entries = await self.gq_repo.get_active_entries(channel_id)
                 position = next((i + 1 for i, e in enumerate(entries) if e.user_id == user_id), 0)
-                await broadcaster.send_message(
-                    message=f"@{user_name} 已在隊列中，第{position}位",
-                    sender=self.bot.bot_id,
-                    token_for=self.bot.bot_id,
-                )
+                await self._reply(broadcaster, f"@{user_name} 已在隊列中，第{position}位")
                 return
 
             try:
@@ -304,11 +272,7 @@ class ChannelPointsComponent(commands.Component):
                 return
 
             position = await self.gq_repo.count_active(channel_id)
-            await broadcaster.send_message(
-                message=f"@{user_name} 已加入隊列，第{position}位",
-                sender=self.bot.bot_id,
-                token_for=self.bot.bot_id,
-            )
+            await self._reply(broadcaster, f"@{user_name} 已加入隊列，第{position}位")
             LOGGER.info(f"[{broadcaster.name}] GameQueue: {user_name} joined (position {position})")
 
         except Exception as e:
@@ -316,11 +280,7 @@ class ChannelPointsComponent(commands.Component):
                 await reauth_notifier.notify(
                     broadcaster_login=broadcaster.name,
                     channel_id=str(broadcaster.id),
-                    send_fn=lambda msg: broadcaster.send_message(
-                        message=msg,
-                        sender=self.bot.bot_id,
-                        token_for=self.bot.bot_id,
-                    ),
+                    send_fn=lambda msg: self._reply(broadcaster, msg),
                 )
                 return
             LOGGER.error(f"[{broadcaster.name}] GameQueue error: {e}")
@@ -339,46 +299,32 @@ class ChannelPointsComponent(commands.Component):
         try:
             settings = await self.vq_settings_repo.get_or_create(channel_id)
             if not settings.enabled or not settings.redemption_enabled:
-                await broadcaster.send_message(
-                    message=f"@{user_name} 影片佇列目前已關閉",
-                    sender=self.bot.bot_id,
-                    token_for=self.bot.bot_id,
-                )
+                await self._reply(broadcaster, f"@{user_name} 影片佇列目前已關閉")
                 return
 
             video_id, is_vertical = extract_youtube_info(user_input)
             if not video_id:
-                await broadcaster.send_message(
-                    message=f"@{user_name} 請在兌換時輸入有效的 YouTube 連結",
-                    sender=self.bot.bot_id,
-                    token_for=self.bot.bot_id,
-                )
+                await self._reply(broadcaster, f"@{user_name} 請在兌換時輸入有效的 YouTube 連結")
                 return
 
             if await self.vq_repo.video_is_active(channel_id, video_id):
-                await broadcaster.send_message(
-                    message=f"@{user_name} 該影片已在佇列中",
-                    sender=self.bot.bot_id,
-                    token_for=self.bot.bot_id,
-                )
+                await self._reply(broadcaster, f"@{user_name} 該影片已在佇列中")
                 return
 
             queue_size = await self.vq_repo.get_queue_size(channel_id)
             if queue_size >= settings.max_queue_size:
-                await broadcaster.send_message(
-                    message=f"@{user_name} 佇列已滿（{queue_size}/{settings.max_queue_size}）",
-                    sender=self.bot.bot_id,
-                    token_for=self.bot.bot_id,
+                await self._reply(
+                    broadcaster,
+                    f"@{user_name} 佇列已滿（{queue_size}/{settings.max_queue_size}）",
                 )
                 return
 
             if settings.max_per_user > 0:
                 active = await self.vq_repo.count_active_by_user(channel_id, user_name, user_id)
                 if active >= settings.max_per_user:
-                    await broadcaster.send_message(
-                        message=f"@{user_name} 每人上限 {settings.max_per_user} 首，請等待您的影片播放後再點歌",
-                        sender=self.bot.bot_id,
-                        token_for=self.bot.bot_id,
+                    await self._reply(
+                        broadcaster,
+                        f"@{user_name} 每人上限 {settings.max_per_user} 首，請等待您的影片播放後再點歌",
                     )
                     return
 
@@ -390,10 +336,8 @@ class ChannelPointsComponent(commands.Component):
                         remaining = int(settings.user_cooldown_seconds - elapsed)
                         m, s = divmod(remaining, 60)
                         time_str = f"{m}:{s:02d}" if m > 0 else f"{s} 秒"
-                        await broadcaster.send_message(
-                            message=f"@{user_name} 點歌冷卻中，請等待 {time_str}",
-                            sender=self.bot.bot_id,
-                            token_for=self.bot.bot_id,
+                        await self._reply(
+                            broadcaster, f"@{user_name} 點歌冷卻中，請等待 {time_str}"
                         )
                         return
 
@@ -405,32 +349,24 @@ class ChannelPointsComponent(commands.Component):
             # reject rather than silently bypassing the filter.
             if settings.min_view_count > 0:
                 if view_count is None:
-                    await broadcaster.send_message(
-                        message=f"@{user_name} 無法驗證影片資訊，請稍後再試",
-                        sender=self.bot.bot_id,
-                        token_for=self.bot.bot_id,
-                    )
+                    await self._reply(broadcaster, f"@{user_name} 無法驗證影片資訊，請稍後再試")
                     return
                 if view_count < settings.min_view_count:
-                    await broadcaster.send_message(
-                        message=(
+                    await self._reply(
+                        broadcaster,
+                        (
                             f"@{user_name} 影片觀看次數不足（{view_count:,} 次 < "
                             f"{settings.min_view_count:,} 次），無法加入佇列"
                         ),
-                        sender=self.bot.bot_id,
-                        token_for=self.bot.bot_id,
                     )
                     return
 
             if duration_seconds and duration_seconds > settings.max_duration_redemption:
                 max_m, max_s = divmod(settings.max_duration_redemption, 60)
                 vid_m, vid_s = divmod(duration_seconds, 60)
-                await broadcaster.send_message(
-                    message=(
-                        f"@{user_name} 影片長度 {vid_m}:{vid_s:02d} 超過上限 {max_m}:{max_s:02d}"
-                    ),
-                    sender=self.bot.bot_id,
-                    token_for=self.bot.bot_id,
+                await self._reply(
+                    broadcaster,
+                    f"@{user_name} 影片長度 {vid_m}:{vid_s:02d} 超過上限 {max_m}:{max_s:02d}",
                 )
                 return
 
@@ -453,10 +389,9 @@ class ChannelPointsComponent(commands.Component):
                 else ""
             )
             info = " ".join(filter(None, [title_part, dur_part]))
-            await broadcaster.send_message(
-                message=f"@{user_name} {info + ' ' if info else ''}已加入影片佇列！({position}/{settings.max_queue_size})",
-                sender=self.bot.bot_id,
-                token_for=self.bot.bot_id,
+            await self._reply(
+                broadcaster,
+                f"@{user_name} {info + ' ' if info else ''}已加入影片佇列！({position}/{settings.max_queue_size})",
             )
 
         except Exception as e:
@@ -464,11 +399,7 @@ class ChannelPointsComponent(commands.Component):
                 await reauth_notifier.notify(
                     broadcaster_login=broadcaster.name,
                     channel_id=str(broadcaster.id),
-                    send_fn=lambda msg: broadcaster.send_message(
-                        message=msg,
-                        sender=self.bot.bot_id,
-                        token_for=self.bot.bot_id,
-                    ),
+                    send_fn=lambda msg: self._reply(broadcaster, msg),
                 )
                 return
             LOGGER.error(f"[{broadcaster.name}] VideoQueue error: {e}")

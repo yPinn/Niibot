@@ -30,6 +30,7 @@ Examples:
 import asyncio
 import logging
 import re
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 from twitchio.ext import commands
@@ -55,6 +56,10 @@ ROLE_ALIASES = {
 }
 
 _OPT_PATTERN = re.compile(r"-(\w+)=(\S+)")
+
+# Per-channel rate limit for regex trigger creation (subprocess spawn is expensive)
+_regex_create_tracker: dict[str, datetime] = {}
+_REGEX_CREATE_COOLDOWN = timedelta(seconds=30)
 
 
 def _parse_args(raw: str) -> tuple[dict[str, str], str]:
@@ -189,12 +194,18 @@ class CommandManagerComponent(commands.Component):
                 return
             case_sensitive = case_sensitive_raw
             if match_type == "regex":
+                _rl_key = f"regex_create:{channel_id}"
+                _last = _regex_create_tracker.get(_rl_key)
+                if _last and (datetime.now(UTC) - _last) < _REGEX_CREATE_COOLDOWN:
+                    await ctx.reply("Regex 觸發建立冷卻中（30 秒），請稍後再試")
+                    return
                 is_safe = await asyncio.get_running_loop().run_in_executor(
                     None, validate_regex_pattern, pattern
                 )
                 if not is_safe:
                     await ctx.reply("無效或不安全的 Regex 模式（可能導致 ReDoS），已拒絕")
                     return
+                _regex_create_tracker[_rl_key] = datetime.now(UTC)
             trigger_name = _sanitize_trigger_name(pattern)
             existing_trigger = await self.bot.message_trigger_configs.get_by_name(
                 channel_id, trigger_name

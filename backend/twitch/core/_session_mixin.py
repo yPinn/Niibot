@@ -126,6 +126,8 @@ class _SessionMixin:
     async def _session_verify_loop(self) -> None:
         """Poll all enabled channels against Twitch API every 3 min."""
         await asyncio.sleep(120)
+        _reconcile_ticks = 0
+        _reconcile_every = 10  # every 10 * 3 min = 30 min
         while True:
             try:
                 enabled = await self.channels.list_enabled_channels()  # type: ignore[attr-defined]
@@ -194,7 +196,10 @@ class _SessionMixin:
                 if closed:
                     LOGGER.info(f"Closed {closed} stale session(s)")
 
-                await self._reconcile_recent_sessions()  # type: ignore[attr-defined]
+                _reconcile_ticks += 1
+                if _reconcile_ticks >= _reconcile_every:
+                    await self._reconcile_recent_sessions()  # type: ignore[attr-defined]
+                    _reconcile_ticks = 0
 
             except asyncio.CancelledError:
                 break
