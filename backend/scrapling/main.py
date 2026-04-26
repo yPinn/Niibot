@@ -124,9 +124,10 @@ async def _get_post_data(post_url: str) -> dict[str, Any]:
 
     result_holder: list[dict[str, Any]] = []
 
-    # Normalize post path for URL verification (guards against SPA stale DOM).
-    # Use urlparse so both threads.com and threads.net URLs are handled correctly.
-    _expected_path = urlparse(post_url).path.rstrip("/") or "/"
+    # Extract the post ID for URL verification (guards against SPA stale DOM).
+    # Use the post ID rather than the full path so Threads canonical redirects
+    # (e.g. /@user/post/ID → /t/ID) don't break the check.
+    _post_id = urlparse(post_url).path.rstrip("/").rsplit("/", 1)[-1]
 
     async def _extract_after_load(page):  # type: ignore[no-untyped-def]
         if _LOGIN_URL_RE.search(page.url):
@@ -141,13 +142,12 @@ async def _get_post_data(post_url: str) -> dict[str, Any]:
 
         while time.monotonic() < deadline:
             # Guard: Threads is a SPA — old page DOM may still be present right after
-            # navigation. Skip extraction until the URL reflects the target post.
-            current_path = urlparse(page.url).path.rstrip("/") or "/"
-            if current_path != _expected_path:
+            # navigation. Skip extraction until the URL contains the target post ID.
+            if _post_id not in urlparse(page.url).path:
                 LOGGER.debug(
-                    "scrapling: URL not yet updated (%s != %s), waiting…",
-                    current_path,
-                    _expected_path,
+                    "scrapling: URL not yet updated (expected post_id=%s in %s), waiting…",
+                    _post_id,
+                    page.url,
                 )
                 await asyncio.sleep(_CONTENT_POLL_INTERVAL_MS / 1000)
                 continue
@@ -279,6 +279,9 @@ async def _get_post_data(post_url: str) -> dict[str, Any]:
                                         url = next(vid_iter, None)
                                         if url:
                                             new_items.append({"type": "video", "url": url})
+                                        else:
+                                            # No video found — placeholder was a photo, keep as image.
+                                            new_items.append({"type": "image", "url": m["url"]})
                                     else:
                                         new_items.append(m)
                                 for url in vid_iter:
