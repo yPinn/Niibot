@@ -28,7 +28,7 @@ import re
 import time
 from contextlib import asynccontextmanager
 from typing import Any
-from urllib.parse import unquote
+from urllib.parse import unquote, urlparse
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Query
@@ -124,6 +124,10 @@ async def _get_post_data(post_url: str) -> dict[str, Any]:
 
     result_holder: list[dict[str, Any]] = []
 
+    # Normalize post path for URL verification (guards against SPA stale DOM).
+    # Use urlparse so both threads.com and threads.net URLs are handled correctly.
+    _expected_path = urlparse(post_url).path.rstrip("/") or "/"
+
     async def _extract_after_load(page):  # type: ignore[no-untyped-def]
         if _LOGIN_URL_RE.search(page.url):
             LOGGER.warning(
@@ -136,6 +140,18 @@ async def _get_post_data(post_url: str) -> dict[str, Any]:
         deadline = time.monotonic() + _CONTENT_WAIT_MAX_MS / 1000
 
         while time.monotonic() < deadline:
+            # Guard: Threads is a SPA — old page DOM may still be present right after
+            # navigation. Skip extraction until the URL reflects the target post.
+            current_path = urlparse(page.url).path.rstrip("/") or "/"
+            if current_path != _expected_path:
+                LOGGER.debug(
+                    "scrapling: URL not yet updated (%s != %s), waiting…",
+                    current_path,
+                    _expected_path,
+                )
+                await asyncio.sleep(_CONTENT_POLL_INTERVAL_MS / 1000)
+                continue
+
             try:
                 result = await page.evaluate("""
                     () => {
@@ -170,7 +186,11 @@ async def _get_post_data(post_url: str) -> dict[str, Any]:
                                 _seenPaths.add(path);
                                 mediaItems.push({type: 'video', url: src});
                             } else {
-                                if (el.closest('a[href*="/@"]')) return;
+                                // Skip profile-picture links (/@handle with no /post/ segment).
+                                // Post images are also wrapped in /@handle/post/… links, so
+                                // the old `a[href*="/@"]` filter incorrectly dropped them.
+                                const parentLink = el.closest('a[href*="/@"]');
+                                if (parentLink && !parentLink.href.includes('/post/')) return;
                                 const src = el.src;
                                 if (!src.startsWith('http')) return;
                                 const noqs = src.split('?')[0];
