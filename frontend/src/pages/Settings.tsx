@@ -142,7 +142,7 @@ export default function Settings() {
       })
       toast.success(`已儲存 ${PLATFORM_LABELS[platform]} 設定`)
       await fetchPaymentConfigs()
-    } catch (err) {
+    } catch {
       toast.error('儲存失敗', { description: '請稍後再試' })
     } finally {
       setPaymentSaving(null)
@@ -159,7 +159,7 @@ export default function Settings() {
       toast.success(`已刪除 ${PLATFORM_LABELS[platform]} 設定`)
       setPaymentForms(prev => ({ ...prev, [platform]: emptyForm() }))
       await fetchPaymentConfigs()
-    } catch (err) {
+    } catch {
       toast.error('刪除失敗', { description: '請稍後再試' })
     } finally {
       setPaymentDeleting(null)
