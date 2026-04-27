@@ -201,9 +201,9 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full sm:max-w-90 p-0 overflow-y-auto flex flex-col">
+      <SheetContent className="w-full sm:max-w-75 p-0 overflow-y-auto flex flex-col">
         {/* Header */}
-        <div className="px-5 py-5 border-b shrink-0">
+        <div className="px-4 py-4 border-b shrink-0">
           <SheetHeader className="text-left pr-8">
             {loading ? (
               <div className="flex items-center gap-3">
@@ -238,7 +238,7 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
         </div>
 
         {loading ? (
-          <div className="px-5 py-4 space-y-4 flex-1">
+          <div className="px-4 py-4 space-y-4 flex-1">
             <div className="space-y-3">
               <Skeleton className="h-4 w-48" />
               <Skeleton className="h-4 w-40" />
@@ -257,7 +257,7 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
         ) : profile ? (
           <>
             {/* Follow / Sub status */}
-            <div className="px-5 py-4 border-b space-y-3 shrink-0">
+            <div className="px-4 py-4 border-b space-y-3 shrink-0">
               <StatusRow icon="fa-solid fa-heart" iconClass="text-rose-400">
                 {profile.follow_since ? (
                   <span>
@@ -288,7 +288,7 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
             </div>
 
             {/* Stats */}
-            <div className="px-5 py-4 border-b shrink-0">
+            <div className="px-4 py-4 border-b shrink-0">
               <div className="grid grid-cols-3 gap-3">
                 <StatTile
                   icon="fa-solid fa-comments"
@@ -313,7 +313,7 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
 
             {/* Events */}
             {profile.events.length > 0 && (
-              <div className="px-5 py-4 flex-1">
+              <div className="px-4 py-4 flex-1">
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2.5">
                   互動紀錄
                 </p>
@@ -352,7 +352,7 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
             )}
           </>
         ) : (
-          <p className="px-5 py-4 text-sm text-muted-foreground">無法載入觀眾資料</p>
+          <p className="px-4 py-4 text-sm text-muted-foreground">無法載入觀眾資料</p>
         )}
       </SheetContent>
     </Sheet>

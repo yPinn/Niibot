@@ -501,21 +501,20 @@ class TwitchAPIClient:
         """Check if user_id follows broadcaster_id.
 
         Requires broadcaster token with moderator:read:followers scope.
-        Returns follower object (with followed_at) or None if not following.
+        Returns follower object (with followed_at) or None if confirmed not following.
+        Raises on non-200 so callers can distinguish scope errors from a real non-follow.
         """
-        try:
-            response = await self._helix_get(
-                "channels/followers",
-                {"broadcaster_id": broadcaster_id, "user_id": user_id},
-                token=token,
-            )
-            if not response or response.status_code != 200:
-                return None
-            data = response.json().get("data", [])
-            return data[0] if data else None
-        except Exception as e:
-            LOGGER.exception(f"Error checking follow status: {e}")
-            return None
+        response = await self._helix_get(
+            "channels/followers",
+            {"broadcaster_id": broadcaster_id, "user_id": user_id},
+            token=token,
+        )
+        if not response:
+            raise RuntimeError("No response from Twitch API")
+        if response.status_code != 200:
+            raise RuntimeError(f"Twitch channels/followers returned {response.status_code}")
+        data = response.json().get("data", [])
+        return data[0] if data else None
 
     @staticmethod
     def parse_duration(duration_str: str) -> float:
