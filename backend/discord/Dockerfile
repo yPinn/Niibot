@@ -6,6 +6,7 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-cache --no-install-project --no-dev
 
 FROM python:3.11.11-slim-bookworm
+# hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-noto-cjk \
     fonts-noto-core \
@@ -15,7 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ARG APP_VERSION=dev
 ARG GIT_COMMIT=unknown
 LABEL org.opencontainers.image.version=$APP_VERSION \
-      org.opencontainers.image.source="https://github.com/yPinn/Niibot"
+    org.opencontainers.image.source="https://github.com/yPinn/Niibot"
 WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
 COPY shared/ ./shared/

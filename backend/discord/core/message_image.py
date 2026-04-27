@@ -52,7 +52,13 @@ _TAG_BADGE_SIZE = 16
 # ── Font paths (ordered: best coverage first) ────────────────────────────────
 # Linux (Docker) — Noto family covers the widest Unicode range
 _LINUX_FONTS = [
+    # Debian bookworm: fonts-noto-cjk (TTC collection — preferred)
     "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+    # Debian bookworm: fonts-noto-cjk (per-language OTF files)
+    "/usr/share/fonts/opentype/noto/NotoSansCJKtc-Regular.otf",  # Traditional Chinese
+    "/usr/share/fonts/opentype/noto/NotoSansCJKsc-Regular.otf",  # Simplified Chinese
+    "/usr/share/fonts/opentype/noto/NotoSansCJKjp-Regular.otf",  # Japanese
+    # Legacy / alternative install paths
     "/usr/share/fonts/noto-cjk/NotoSansCJKsc-Regular.otf",
     "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
     "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
@@ -63,6 +69,9 @@ _LINUX_FONTS = [
 ]
 _LINUX_FONTS_BOLD = [
     "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+    "/usr/share/fonts/opentype/noto/NotoSansCJKtc-Bold.otf",
+    "/usr/share/fonts/opentype/noto/NotoSansCJKsc-Bold.otf",
+    "/usr/share/fonts/opentype/noto/NotoSansCJKjp-Bold.otf",
     "/usr/share/fonts/noto-cjk/NotoSansCJKsc-Bold.otf",
     "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",
     "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",

@@ -220,7 +220,7 @@ class EventsCog(commands.Cog):
                 inline=False,
             )
 
-        if not content_available:
+        if not content_available or not cached.content:
             await self._send_log(log_channel, embed)
             return
 
