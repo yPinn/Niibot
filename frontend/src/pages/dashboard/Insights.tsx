@@ -203,20 +203,36 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="w-full sm:max-w-90 p-0 overflow-y-auto flex flex-col">
         {/* Header */}
-        <div className="px-5 pt-6 pb-4 border-b shrink-0">
+        <div className="px-5 py-5 border-b shrink-0">
           <SheetHeader className="text-left pr-8">
             {loading ? (
-              <>
-                <Skeleton className="h-5 w-36 mb-1" />
-                <Skeleton className="h-4 w-24" />
-              </>
+              <div className="flex items-center gap-3">
+                <Skeleton className="h-11 w-11 rounded-full shrink-0" />
+                <div className="space-y-1.5 flex-1 min-w-0">
+                  <Skeleton className="h-5 w-36" />
+                  <Skeleton className="h-4 w-24" />
+                </div>
+              </div>
             ) : (
-              <>
-                <SheetTitle className="text-base leading-snug">{name}</SheetTitle>
-                <SheetDescription className="text-xs">
-                  {username ? `@${username}` : '觀眾資料'}
-                </SheetDescription>
-              </>
+              <div className="flex items-center gap-3">
+                {profile?.profile_image_url ? (
+                  <img
+                    src={profile.profile_image_url}
+                    alt={name}
+                    className="h-11 w-11 rounded-full shrink-0 object-cover"
+                  />
+                ) : (
+                  <div className="h-11 w-11 rounded-full shrink-0 bg-muted flex items-center justify-center text-sm font-bold text-muted-foreground select-none">
+                    {name.charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <SheetTitle className="text-base leading-snug">{name}</SheetTitle>
+                  <SheetDescription className="text-xs mt-0.5">
+                    {username ? `@${username}` : '觀眾資料'}
+                  </SheetDescription>
+                </div>
+              </div>
             )}
           </SheetHeader>
         </div>

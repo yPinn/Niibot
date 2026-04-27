@@ -151,6 +151,7 @@ export interface ViewerTwitchStatus {
 }
 
 export interface ViewerProfile extends ViewerSummary {
+  profile_image_url: string | null
   follow_since: string | null
   twitch: ViewerTwitchStatus | null
   events: ViewerEvent[]

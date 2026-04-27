@@ -1,5 +1,6 @@
 """Analytics API routes"""
 
+import asyncio
 import json
 import logging
 from datetime import datetime
@@ -124,6 +125,7 @@ class ViewerProfile(BaseModel):
     user_id: str
     username: str
     display_name: str | None
+    profile_image_url: str | None = None
     total_messages: int
     sessions_attended: int
     last_seen: datetime | None
@@ -250,24 +252,39 @@ async def get_viewer_profile(
             raise HTTPException(status_code=404, detail="Viewer not found")
 
         twitch_status: ViewerTwitchStatus | None = None
-        try:
-            token = await channel_service.get_token_with_refresh(channel_id, twitch_api)
-            if token:
+        profile_image_url: str | None = None
+
+        async def _fetch_twitch_status() -> ViewerTwitchStatus | None:
+            try:
+                token = await channel_service.get_token_with_refresh(channel_id, twitch_api)
+                if not token:
+                    return None
                 sub_data = await twitch_api.get_sub_status(channel_id, user_id, token)
                 if sub_data:
                     raw_tier = sub_data.get("tier", "")
-                    twitch_status = ViewerTwitchStatus(
+                    return ViewerTwitchStatus(
                         is_subscribed=True,
                         sub_tier=_SUB_TIER_LABELS.get(raw_tier, raw_tier) or None,
                         sub_gifted=sub_data.get("is_gift", False),
                     )
-                else:
-                    twitch_status = ViewerTwitchStatus(is_subscribed=False)
-        except Exception:
-            LOGGER.warning(f"Twitch status fetch failed for viewer {user_id}")
+                return ViewerTwitchStatus(is_subscribed=False)
+            except Exception:
+                LOGGER.warning(f"Twitch status fetch failed for viewer {user_id}")
+                return None
+
+        async def _fetch_avatar() -> str | None:
+            try:
+                user_info = await twitch_api.get_user_info(user_id)
+                return user_info.get("avatar") if user_info else None
+            except Exception:
+                return None
+
+        twitch_status, profile_image_url = await asyncio.gather(
+            _fetch_twitch_status(), _fetch_avatar()
+        )
 
         response.headers["Cache-Control"] = "private, max-age=300"
-        return ViewerProfile(twitch=twitch_status, **profile)
+        return ViewerProfile(twitch=twitch_status, profile_image_url=profile_image_url, **profile)
     except HTTPException:
         raise
     except Exception:
