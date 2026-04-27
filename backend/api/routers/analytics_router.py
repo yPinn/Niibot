@@ -235,6 +235,9 @@ async def list_viewers(
 
 _SUB_TIER_LABELS = {"1000": "1", "2000": "2", "3000": "3"}
 
+# Sentinel: Twitch API call failed — fall back to DB value
+_UNCHECKED: object = object()
+
 
 @router.get("/viewers/{user_id}", response_model=ViewerProfile)
 async def get_viewer_profile(
@@ -251,14 +254,17 @@ async def get_viewer_profile(
         if profile is None:
             raise HTTPException(status_code=404, detail="Viewer not found")
 
-        twitch_status: ViewerTwitchStatus | None = None
-        profile_image_url: str | None = None
+        # Get broadcaster token once; shared by sub + follow checks
+        token: str | None = None
+        try:
+            token = await channel_service.get_token_with_refresh(channel_id, twitch_api)
+        except Exception:
+            LOGGER.warning("Token fetch failed for viewer profile")
 
-        async def _fetch_twitch_status() -> ViewerTwitchStatus | None:
+        async def _fetch_sub() -> ViewerTwitchStatus | None:
+            if not token:
+                return None
             try:
-                token = await channel_service.get_token_with_refresh(channel_id, twitch_api)
-                if not token:
-                    return None
                 sub_data = await twitch_api.get_sub_status(channel_id, user_id, token)
                 if sub_data:
                     raw_tier = sub_data.get("tier", "")
@@ -269,8 +275,25 @@ async def get_viewer_profile(
                     )
                 return ViewerTwitchStatus(is_subscribed=False)
             except Exception:
-                LOGGER.warning(f"Twitch status fetch failed for viewer {user_id}")
+                LOGGER.warning(f"Sub status fetch failed for viewer {user_id}")
                 return None
+
+        async def _fetch_follow() -> object:
+            """Returns datetime | None (confirmed), or _UNCHECKED (API failed)."""
+            if not token:
+                return _UNCHECKED
+            try:
+                follow_data = await twitch_api.get_follow_status(channel_id, user_id, token)
+                if follow_data:
+                    raw = follow_data.get("followed_at", "")
+                    try:
+                        return datetime.fromisoformat(raw.replace("Z", "+00:00")) if raw else None
+                    except ValueError:
+                        return None
+                return None  # confirmed not following
+            except Exception:
+                LOGGER.warning(f"Follow status fetch failed for viewer {user_id}")
+                return _UNCHECKED
 
         async def _fetch_avatar() -> str | None:
             try:
@@ -279,9 +302,13 @@ async def get_viewer_profile(
             except Exception:
                 return None
 
-        twitch_status, profile_image_url = await asyncio.gather(
-            _fetch_twitch_status(), _fetch_avatar()
+        twitch_status, follow_api, profile_image_url = await asyncio.gather(
+            _fetch_sub(), _fetch_follow(), _fetch_avatar()
         )
+
+        # Use Twitch API follow date; fall back to DB only when API call failed
+        follow_since = profile.get("follow_since") if follow_api is _UNCHECKED else follow_api
+        profile["follow_since"] = follow_since
 
         response.headers["Cache-Control"] = "private, max-age=300"
         return ViewerProfile(twitch=twitch_status, profile_image_url=profile_image_url, **profile)
