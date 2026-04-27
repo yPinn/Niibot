@@ -19,6 +19,7 @@ import {
   SheetContent,
   SheetDescription,
   SheetHeader,
+  SheetSection,
   SheetTitle,
   Skeleton,
   SlideUp,
@@ -201,44 +202,42 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full sm:max-w-75 p-0 overflow-y-auto flex flex-col">
+      <SheetContent className="w-full sm:max-w-90 p-0 gap-0 overflow-y-auto flex flex-col">
         {/* Header */}
-        <div className="px-4 py-4 border-b shrink-0">
-          <SheetHeader className="text-left pr-8">
-            {loading ? (
-              <div className="flex items-center gap-3">
-                <Skeleton className="h-11 w-11 rounded-full shrink-0" />
-                <div className="space-y-1.5 flex-1 min-w-0">
-                  <Skeleton className="h-5 w-36" />
-                  <Skeleton className="h-4 w-24" />
-                </div>
+        <SheetHeader className="border-b pr-10 shrink-0">
+          {loading ? (
+            <div className="flex items-center gap-3">
+              <Skeleton className="h-11 w-11 rounded-full shrink-0" />
+              <div className="space-y-1.5 flex-1 min-w-0">
+                <Skeleton className="h-5 w-36" />
+                <Skeleton className="h-4 w-24" />
               </div>
-            ) : (
-              <div className="flex items-center gap-3">
-                {profile?.profile_image_url ? (
-                  <img
-                    src={profile.profile_image_url}
-                    alt={name}
-                    className="h-11 w-11 rounded-full shrink-0 object-cover"
-                  />
-                ) : (
-                  <div className="h-11 w-11 rounded-full shrink-0 bg-muted flex items-center justify-center text-sm font-bold text-muted-foreground select-none">
-                    {name.charAt(0).toUpperCase()}
-                  </div>
-                )}
-                <div className="min-w-0">
-                  <SheetTitle className="text-base leading-snug">{name}</SheetTitle>
-                  <SheetDescription className="text-xs mt-0.5">
-                    {username ? `@${username}` : '觀眾資料'}
-                  </SheetDescription>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3">
+              {profile?.profile_image_url ? (
+                <img
+                  src={profile.profile_image_url}
+                  alt={name}
+                  className="h-11 w-11 rounded-full shrink-0 object-cover"
+                />
+              ) : (
+                <div className="h-11 w-11 rounded-full shrink-0 bg-muted flex items-center justify-center text-sm font-bold text-muted-foreground select-none">
+                  {name.charAt(0).toUpperCase()}
                 </div>
+              )}
+              <div className="min-w-0">
+                <SheetTitle className="text-base leading-snug">{name}</SheetTitle>
+                <SheetDescription className="text-xs mt-0.5">
+                  {username ? `@${username}` : '觀眾資料'}
+                </SheetDescription>
               </div>
-            )}
-          </SheetHeader>
-        </div>
+            </div>
+          )}
+        </SheetHeader>
 
         {loading ? (
-          <div className="px-4 py-4 space-y-4 flex-1">
+          <SheetSection className="space-y-4 flex-1">
             <div className="space-y-3">
               <Skeleton className="h-4 w-48" />
               <Skeleton className="h-4 w-40" />
@@ -253,11 +252,11 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
                 <Skeleton key={i} className="h-9 rounded-md" />
               ))}
             </div>
-          </div>
+          </SheetSection>
         ) : profile ? (
           <>
             {/* Follow / Sub status */}
-            <div className="px-4 py-4 border-b space-y-3 shrink-0">
+            <SheetSection className="space-y-3">
               <StatusRow icon="fa-solid fa-heart" iconClass="text-rose-400">
                 {profile.follow_since ? (
                   <span>
@@ -268,27 +267,24 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
                   <span className="text-muted-foreground">尚未追隨</span>
                 )}
               </StatusRow>
-
               {twitch?.is_subscribed ? (
                 <StatusRow icon="fa-solid fa-star" iconClass="text-[var(--status-special)]">
-                  <span>
-                    <span className="font-medium">
-                      {SUB_TIER_LABEL[twitch.sub_tier ?? ''] ?? '訂閱中'}
-                    </span>
-                    {twitch.sub_gifted && (
-                      <span className="ml-1 text-muted-foreground text-xs">（贈訂）</span>
-                    )}
+                  <span className="font-medium">
+                    {SUB_TIER_LABEL[twitch.sub_tier ?? ''] ?? '訂閱中'}
                   </span>
+                  {twitch.sub_gifted && (
+                    <span className="ml-1 text-muted-foreground text-xs">（贈訂）</span>
+                  )}
                 </StatusRow>
               ) : (
                 <StatusRow icon="fa-regular fa-star" iconClass="text-muted-foreground">
                   <span className="text-muted-foreground">尚未訂閱</span>
                 </StatusRow>
               )}
-            </div>
+            </SheetSection>
 
             {/* Stats */}
-            <div className="px-4 py-4 border-b shrink-0">
+            <SheetSection>
               <div className="grid grid-cols-3 gap-3">
                 <StatTile
                   icon="fa-solid fa-comments"
@@ -309,14 +305,11 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
               <p className="text-xs text-muted-foreground mt-3">
                 最後活躍：{formatDate(profile.last_seen)}
               </p>
-            </div>
+            </SheetSection>
 
             {/* Events */}
             {profile.events.length > 0 && (
-              <div className="px-4 py-4 flex-1">
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2.5">
-                  互動紀錄
-                </p>
+              <SheetSection title="互動紀錄" className="flex-1">
                 <div className="space-y-1.5">
                   {profile.events.map((ev, i) => {
                     const meta = EVENT_META[ev.event_type] ?? {
@@ -348,11 +341,13 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
                     )
                   })}
                 </div>
-              </div>
+              </SheetSection>
             )}
           </>
         ) : (
-          <p className="px-4 py-4 text-sm text-muted-foreground">無法載入觀眾資料</p>
+          <SheetSection>
+            <p className="text-sm text-muted-foreground">無法載入觀眾資料</p>
+          </SheetSection>
         )}
       </SheetContent>
     </Sheet>

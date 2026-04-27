@@ -94,6 +94,7 @@ export {
   SheetDescription,
   SheetFooter,
   SheetHeader,
+  SheetSection,
   SheetTitle,
   SheetTrigger,
 } from './sheet'

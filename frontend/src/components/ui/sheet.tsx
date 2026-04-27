@@ -85,6 +85,28 @@ function SheetHeader({ className, ...props }: React.ComponentProps<'div'>) {
   )
 }
 
+function SheetSection({
+  title,
+  className,
+  children,
+  ...props
+}: React.ComponentProps<'div'> & { title?: string }) {
+  return (
+    <div
+      data-slot="sheet-section"
+      className={cn('shrink-0 border-t px-page py-page', className)}
+      {...props}
+    >
+      {title && (
+        <p className="mb-element text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          {title}
+        </p>
+      )}
+      {children}
+    </div>
+  )
+}
+
 function SheetFooter({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
@@ -125,6 +147,7 @@ export {
   SheetDescription,
   SheetFooter,
   SheetHeader,
+  SheetSection,
   SheetTitle,
   SheetTrigger,
 }
