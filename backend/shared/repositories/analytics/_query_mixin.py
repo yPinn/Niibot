@@ -13,6 +13,19 @@ from datetime import UTC, datetime, timedelta
 import asyncpg
 
 from shared.cache import cached
+
+_KNOWN_BOTS: frozenset[str] = frozenset({
+    # Twitch-native / major bots
+    "nightbot", "streamlabs", "streamelements", "moobot", "wizebot",
+    "fossabot", "commanderroot", "electricallongboard", "sery_bot",
+    "soundalerts", "pokemoncommunitygame", "bingothemighty",
+    "kofistreambot", "rogueg1rl", "stay_hydrated_bot",
+    "anotherttvviewer", "own3d", "pretzel_rocks", "streambeats",
+    "rainmaker", "streamholics", "revlobot", "botisimo",
+    "p0sitivitybot", "lurxx", "streamloots", "fireside_bot",
+    "streamcapturebot", "staysafe_bot", "dinks_bot", "marbiebot",
+    "dixpermit", "playwithviewers",
+})
 from shared.repositories.analytics._caches import (
     _summary_cache,
     _top_chatters_cache,
@@ -525,6 +538,7 @@ class _AnalyticsQueryMixin:
                     "total_bits": int(r["total_bits"]),
                 }
                 for r in rows
+                if r["username"].lower() not in _KNOWN_BOTS
             ]
 
     async def get_viewer_profile(
