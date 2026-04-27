@@ -175,6 +175,8 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
     if (!userId || !open) return
 
     let cancelled = false
+    setProfile(null)
+    setLoading(true)
     getViewerProfile(userId, days)
       .then(data => {
         if (!cancelled) {
@@ -191,8 +193,6 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
 
     return () => {
       cancelled = true
-      setProfile(null)
-      setLoading(true)
     }
   }, [userId, open, days])
 
@@ -204,7 +204,7 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="w-full sm:max-w-90 p-0 gap-0 overflow-y-auto flex flex-col">
         {/* Header */}
-        <SheetHeader className="border-b pr-10 shrink-0">
+        <SheetHeader className="pr-10 shrink-0">
           {loading ? (
             <div className="flex items-center gap-3">
               <Skeleton className="h-11 w-11 rounded-full shrink-0" />

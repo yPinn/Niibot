@@ -484,7 +484,7 @@ export default function VideoQueue() {
 
       <Sheet open={helpOpen} onOpenChange={setHelpOpen}>
         <SheetContent side="right" className="w-80 sm:w-96 gap-0">
-          <SheetHeader className="border-b">
+          <SheetHeader>
             <SheetTitle>Video Queue 使用說明</SheetTitle>
             <SheetDescription>如何在 Twitch 設定點播獎勵並使用 Video Queue</SheetDescription>
           </SheetHeader>
