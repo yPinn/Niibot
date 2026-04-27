@@ -41,6 +41,7 @@ interface AnalyticsData {
 interface AnalyticsChartProps {
   data?: AnalyticsData | null
   loading?: boolean
+  days?: number
   className?: string
 }
 
@@ -214,6 +215,7 @@ const ChartTooltip = ({
 export default function AnalyticsChart({
   data,
   loading = false,
+  days = 30,
   className = '',
 }: AnalyticsChartProps) {
   const [chartMode, setChartMode] = useState<ChartMode>('stream_hours')
@@ -320,7 +322,7 @@ export default function AnalyticsChart({
         label: '新追隨者',
         value: analyticsData.total_follows,
         unit: '',
-        subtitle: '過去 30 天',
+        subtitle: `過去 ${days} 天`,
         icon: 'fa-solid fa-user-plus',
       },
       {
@@ -328,7 +330,7 @@ export default function AnalyticsChart({
         label: '新訂閱者',
         value: analyticsData.total_subs,
         unit: '',
-        subtitle: '過去 30 天',
+        subtitle: `過去 ${days} 天`,
         icon: 'fa-solid fa-star',
       },
       {
@@ -336,7 +338,7 @@ export default function AnalyticsChart({
         label: '指令使用',
         value: analyticsData.total_commands,
         unit: '次',
-        subtitle: '過去 30 天',
+        subtitle: `過去 ${days} 天`,
         icon: 'fa-solid fa-terminal',
       },
     ],
@@ -389,7 +391,7 @@ export default function AnalyticsChart({
           </div>
 
           <div
-            className="flex-1 min-h-0 h-48 sm:h-72.5 relative select-none [&_*]:outline-none"
+            className="flex-1 min-h-0 h-48 sm:h-72.5 relative select-none **:outline-none"
             onMouseDown={e => e.preventDefault()}
           >
             {isEmpty && (

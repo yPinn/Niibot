@@ -81,6 +81,7 @@ export default function Dashboard() {
         <AnalyticsChart
           data={analytics}
           loading={analyticsLoading}
+          days={30}
           className="h-105 lg:flex-1 lg:min-h-0"
         />
       </SlideUp>

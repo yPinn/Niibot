@@ -73,20 +73,22 @@ class DatabaseManager:
 
     # ── Pool builders (separate code paths, no if/else) ──────────────
 
+    @staticmethod
+    async def _register_json_codecs(conn: asyncpg.Connection) -> None:
+        """Register JSON/JSONB codecs so asyncpg returns dicts instead of raw strings."""
+        for typ in ("jsonb", "json"):
+            await conn.set_type_codec(
+                typ, encoder=_json.dumps, decoder=_json.loads, schema="pg_catalog"
+            )
+
     async def _init_session_connection(self, conn: asyncpg.Connection) -> None:
         """Initialize new connections for Session Pooler.
 
-        Sets session-level statement timeout and registers JSON/JSONB codecs
-        so asyncpg returns Python dicts instead of raw strings.
+        Sets session-level statement timeout and registers JSON/JSONB codecs.
         """
         timeout_ms = int(self.config.command_timeout * 1000)
         await conn.execute(f"SET statement_timeout = {timeout_ms}")
-        await conn.set_type_codec(
-            "jsonb", encoder=_json.dumps, decoder=_json.loads, schema="pg_catalog"
-        )
-        await conn.set_type_codec(
-            "json", encoder=_json.dumps, decoder=_json.loads, schema="pg_catalog"
-        )
+        await self._register_json_codecs(conn)
 
     def _session_pool_kwargs(self) -> dict[str, Any]:
         """Build asyncpg.create_pool kwargs for session mode (port 5432).
@@ -114,7 +116,8 @@ class DatabaseManager:
 
         PgBouncer/external pooler in transaction mode:
         - No prepared statements (cache=0)
-        - No init callback (SET commands don't persist across queries)
+        - JSON codecs registered via init (client-side, persists per connection object)
+        - SET commands not used (don't persist across transactions in pooler mode)
         - min_size=0: don't hold idle connections (pooler manages them)
         - max_inactive=0: release connections immediately after use
         - ssl="prefer": uses SSL when available
@@ -129,6 +132,7 @@ class DatabaseManager:
             "ssl": "prefer",
             "statement_cache_size": 0,
             "max_inactive_connection_lifetime": 0,
+            "init": self._register_json_codecs,
         }
 
     # ── Diagnostics ──────────────────────────────────────────────────

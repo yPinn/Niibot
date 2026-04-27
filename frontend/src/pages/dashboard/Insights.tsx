@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 
 import {
+  getInsights,
   getViewerProfile,
   listViewers,
+  type ChannelInsights,
   type ViewerProfile,
   type ViewerSummary,
 } from '@/api/analytics'
@@ -45,6 +47,20 @@ function formatDateFull(iso: string | null | undefined): string {
     month: 'long',
     day: 'numeric',
   })
+}
+
+// ─── Summary Tiles ───────────────────────────────────────────────────────────
+
+function SummaryTile({ icon, value, label }: { icon: string; value: string; label: string }) {
+  return (
+    <div className="rounded-md border bg-card px-3 py-2.5">
+      <div className="flex items-center justify-between mb-1">
+        <p className="text-xs text-muted-foreground">{label}</p>
+        <Icon icon={icon} size="sm" wrapperClassName="text-muted-foreground/60" />
+      </div>
+      <p className="text-xl font-bold tabular-nums">{value}</p>
+    </div>
+  )
 }
 
 // ─── Viewer List ─────────────────────────────────────────────────────────────
@@ -335,6 +351,8 @@ export default function Insights() {
   const [search, setSearch] = useState('')
   const [initialized, setInitialized] = useState(false)
   const [viewers, setViewers] = useState<ViewerSummary[]>([])
+  const [insights, setInsights] = useState<ChannelInsights | null>(null)
+  const [insightsLoading, setInsightsLoading] = useState(true)
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
   const loadedForRef = useRef<string | null>(null)
 
@@ -352,13 +370,29 @@ export default function Insights() {
     [user]
   )
 
+  const fetchInsights = useCallback(
+    async (days: number) => {
+      if (!user) return
+      try {
+        setInsights(await getInsights(days))
+      } catch {
+        setInsights(null)
+      } finally {
+        setInsightsLoading(false)
+      }
+    },
+    [user]
+  )
+
   useEffect(() => {
     if (!isInitialized || !user) return
     const key = `${user.id}:${period}`
     if (loadedForRef.current === key) return
     loadedForRef.current = key
-    fetchViewers(Number(period))
-  }, [isInitialized, user, period, fetchViewers])
+    const days = Number(period)
+    fetchViewers(days)
+    fetchInsights(days)
+  }, [isInitialized, user, period, fetchViewers, fetchInsights])
 
   const handlePeriodChange = (value: string) => {
     if (value === period) return
@@ -375,6 +409,39 @@ export default function Insights() {
   return (
     <PageMain>
       <PageHeader title="Insights" description="觀眾互動與活躍度數據" />
+
+      <SlideUp inView>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {insightsLoading ? (
+            Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-16 rounded-md" />
+            ))
+          ) : (
+            <>
+              <SummaryTile
+                icon="fa-solid fa-comments"
+                value={insights?.total_messages.toLocaleString() ?? '—'}
+                label="聊天訊息"
+              />
+              <SummaryTile
+                icon="fa-solid fa-heart"
+                value={insights?.total_follows.toLocaleString() ?? '—'}
+                label="新追隨"
+              />
+              <SummaryTile
+                icon="fa-solid fa-star"
+                value={insights?.total_subs.toLocaleString() ?? '—'}
+                label="新訂閱"
+              />
+              <SummaryTile
+                icon="fa-solid fa-gem"
+                value={insights?.total_bits > 0 ? insights.total_bits.toLocaleString() : '—'}
+                label="小奇點"
+              />
+            </>
+          )}
+        </div>
+      </SlideUp>
 
       <SlideUp inView>
         <div className="flex items-center gap-3 flex-wrap">
