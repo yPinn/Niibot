@@ -477,6 +477,30 @@ class TwitchAPIClient:
             LOGGER.exception(f"Error getting videos: {e}")
             return []
 
+    # ------------------------------------------------------------------
+    # Subscriptions
+    # ------------------------------------------------------------------
+
+    async def get_sub_status(self, broadcaster_id: str, user_id: str, token: str) -> dict | None:
+        """Check if user_id is subscribed to broadcaster_id's channel.
+
+        Requires broadcaster token with channel:read:subscriptions scope.
+        Returns the subscription object or None if not subscribed / error.
+        """
+        try:
+            response = await self._helix_get(
+                "subscriptions",
+                {"broadcaster_id": broadcaster_id, "user_id": user_id},
+                token=token,
+            )
+            if not response or response.status_code != 200:
+                return None
+            data = response.json().get("data", [])
+            return data[0] if data else None
+        except Exception as e:
+            LOGGER.exception(f"Error checking subscription status: {e}")
+            return None
+
     @staticmethod
     def parse_duration(duration_str: str) -> float:
         """Parse Twitch duration string (e.g. '3h2m1s') to hours."""

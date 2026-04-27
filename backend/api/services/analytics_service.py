@@ -36,3 +36,17 @@ class AnalyticsService:
     ) -> list[dict]:
         """Get top commands across all sessions."""
         return await self.repo.list_top_commands(channel_id, days, limit)
+
+    async def get_insights(self, channel_id: str, days: int = 30) -> dict:
+        """Get aggregated channel insights."""
+        return await self.repo.get_insights(channel_id, days)
+
+    async def list_viewers(self, channel_id: str, days: int = 30, limit: int = 50) -> list[dict]:
+        """Get top viewers list."""
+        return await self.repo.list_viewers(channel_id, days, limit)
+
+    async def get_viewer_profile(
+        self, channel_id: str, user_id: str, days: int = 30
+    ) -> dict | None:
+        """Get detailed profile for a single viewer."""
+        return await self.repo.get_viewer_profile(channel_id, user_id, days)
