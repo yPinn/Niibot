@@ -46,6 +46,10 @@ export const navigationData = {
       icon: 'fa-solid fa-chart-mixed',
       items: [
         {
+          title: 'Insights',
+          url: '/insights',
+        },
+        {
           title: 'System Status',
           url: '/system',
         },

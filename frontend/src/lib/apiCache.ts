@@ -89,4 +89,8 @@ export const CACHE_KEYS = {
     `analytics:top-commands:${days}:${limit}`,
   ANALYTICS_SESSION_COMMANDS: (sessionId: number) => `analytics:session-commands:${sessionId}`,
   ANALYTICS_SESSION_EVENTS: (sessionId: number) => `analytics:session-events:${sessionId}`,
+  ANALYTICS_INSIGHTS: (days: number) => `analytics:insights:${days}`,
+  ANALYTICS_VIEWERS: (days: number) => `analytics:viewers:${days}`,
+  ANALYTICS_VIEWER_PROFILE: (userId: string, days: number) =>
+    `analytics:viewer-profile:${userId}:${days}`,
 } as const

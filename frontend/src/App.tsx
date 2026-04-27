@@ -16,6 +16,7 @@ const NotFound = lazy(() => import('@/pages/NotFound'))
 const Commands = lazy(() => import('@/pages/dashboard/commands'))
 const Events = lazy(() => import('@/pages/dashboard/Events'))
 const Overview = lazy(() => import('@/pages/dashboard/Overview'))
+const Insights = lazy(() => import('@/pages/dashboard/Insights'))
 const SystemStatus = lazy(() => import('@/pages/dashboard/SystemStatus'))
 const DiscordDashboard = lazy(() => import('@/pages/discord/Dashboard'))
 const GameQueueOverlay = lazy(() => import('@/pages/GameQueueOverlay'))
@@ -81,6 +82,7 @@ function App() {
                       <Route path="/dashboard" element={<Overview />} />
                       <Route path="/commands" element={<Commands />} />
                       <Route path="/events" element={<Events />} />
+                      <Route path="/insights" element={<Insights />} />
                       <Route path="/system" element={<SystemStatus />} />
                       <Route path="/settings" element={<Settings />} />
                       {/* Module Routes */}

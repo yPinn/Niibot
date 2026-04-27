@@ -468,7 +468,7 @@ export default function VideoQueue() {
         <Button
           variant="ghost"
           size="icon"
-          className="mt-0.5 shrink-0 text-muted-foreground"
+          className="mt-0.5 shrink-0 border border-primary/40 text-muted-foreground hover:border-primary hover:text-primary/80"
           onClick={() => setHelpOpen(true)}
           title="使用說明"
         >

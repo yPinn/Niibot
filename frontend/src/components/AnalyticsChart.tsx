@@ -1,8 +1,9 @@
-import { type ReactElement, useMemo, useState } from 'react'
+import { type ReactElement, useMemo, useRef, useState } from 'react'
 import {
   Area,
   AreaChart,
   CartesianGrid,
+  Customized,
   ResponsiveContainer,
   Tooltip,
   type TooltipContentProps,
@@ -34,7 +35,6 @@ interface AnalyticsData {
   total_follows: number
   total_subs: number
   avg_session_duration: number
-  avg_viewers?: number
   recent_sessions?: SessionSummary[]
 }
 
@@ -44,13 +44,53 @@ interface AnalyticsChartProps {
   className?: string
 }
 
-type ChartMode = 'stream_hours' | 'avg_viewers' | 'follows' | 'subs'
+type ChartMode = 'stream_hours' | 'follows' | 'subs' | 'commands'
 
 interface ChartConfig {
   dataKey: string
   unit: string
   label: string
 }
+
+const EMPTY_ANALYTICS: AnalyticsData = {
+  total_stream_hours: 0,
+  total_sessions: 0,
+  total_commands: 0,
+  total_follows: 0,
+  total_subs: 0,
+  avg_session_duration: 0,
+  recent_sessions: [],
+}
+
+const MAX_CHART_DAYS = 30
+
+const CHART_CONFIGS: Record<ChartMode, ChartConfig> = {
+  stream_hours: { dataKey: 'stream_hours', unit: '小時', label: '直播時長' },
+  follows: { dataKey: 'follows', unit: '人', label: '新追隨者' },
+  subs: { dataKey: 'subs', unit: '人', label: '新訂閱者' },
+  commands: { dataKey: 'commands', unit: '次', label: '指令使用' },
+}
+
+const DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+})
+const TIME_FORMATTER = new Intl.DateTimeFormat('en-US', {
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+})
+
+// Transparent rect covering the full SVG area so mouse events fire in empty zones above the chart line
+const ChartBackground = ({
+  width = 0,
+  height = 0,
+}: {
+  width?: number
+  height?: number
+  [k: string]: unknown
+}) => <rect x={0} y={0} width={width} height={height} fill="transparent" />
 
 const CustomTick = ({ x, y, payload }: XAxisTickContentProps): ReactElement => (
   <g transform={`translate(${Number(x) || 0},${Number(y) || 0})`}>
@@ -85,9 +125,8 @@ const ChartTooltip = ({
   active,
   payload,
   chartConfig,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-}: TooltipContentProps<any, any> & { chartConfig: ChartConfig }) => {
-  if (!active || !payload || !payload.length) return null
+}: TooltipContentProps<number, string> & { chartConfig: ChartConfig }) => {
+  if (!active || !payload?.length) return null
 
   const data = payload[0].payload as {
     date: string
@@ -95,26 +134,8 @@ const ChartTooltip = ({
     session_count: number
   }
   const value = payload[0].value
-
   const firstSession = data.sessions[0]
   if (!firstSession) return null
-
-  const sessionDate = new Date(firstSession.started_at)
-  const monthNames = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ]
-  const formattedDate = `${monthNames[sessionDate.getMonth()]} ${sessionDate.getDate()}, ${sessionDate.getFullYear()}`
 
   return (
     <div className="bg-popover border border-border rounded-lg shadow-xl overflow-hidden w-75 max-w-[calc(100vw-2rem)] flex flex-col pointer-events-auto">
@@ -122,7 +143,9 @@ const ChartTooltip = ({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Icon icon="fa-solid fa-calendar" wrapperClassName="size-3.5 text-primary" />
-            <span className="text-sm font-semibold text-popover-foreground">{formattedDate}</span>
+            <span className="text-sm font-semibold text-popover-foreground">
+              {DATE_FORMATTER.format(new Date(firstSession.started_at))}
+            </span>
           </div>
           <span className="text-xs text-muted-foreground">{data.session_count} 場直播</span>
         </div>
@@ -130,9 +153,7 @@ const ChartTooltip = ({
 
       <div className="overflow-y-auto max-h-48">
         {data.sessions.map((session, index) => {
-          const sessionTime = new Date(session.started_at)
-          const formattedTime = `${String(sessionTime.getHours()).padStart(2, '0')}:${String(sessionTime.getMinutes()).padStart(2, '0')}`
-          const game_box_art_url = session.game_id
+          const gameBoxArtUrl = session.game_id
             ? `https://static-cdn.jtvnw.net/ttv-boxart/${session.game_id}-144x192.jpg`
             : null
 
@@ -142,9 +163,9 @@ const ChartTooltip = ({
               className={`flex h-24 ${index > 0 ? 'border-t border-border' : ''}`}
             >
               <div className="shrink-0 w-18 overflow-hidden">
-                {game_box_art_url ? (
+                {gameBoxArtUrl ? (
                   <img
-                    src={game_box_art_url}
+                    src={gameBoxArtUrl}
                     alt={session.game_name || ''}
                     className="w-full h-full object-cover"
                   />
@@ -165,7 +186,8 @@ const ChartTooltip = ({
                 <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <Icon icon="fa-solid fa-clock" wrapperClassName="size-2.5 shrink-0" />
                   <span>
-                    {formattedTime} · {session.duration_hours.toFixed(1)}h
+                    {TIME_FORMATTER.format(new Date(session.started_at))} ·{' '}
+                    {session.duration_hours.toFixed(1)}h
                   </span>
                 </div>
               </div>
@@ -195,50 +217,40 @@ export default function AnalyticsChart({
   className = '',
 }: AnalyticsChartProps) {
   const [chartMode, setChartMode] = useState<ChartMode>('stream_hours')
+  const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | undefined>(undefined)
+  // Track the last active data-point index so we only re-render when the snap target changes,
+  // not on every pixel of cursor movement.
+  const activeIdxRef = useRef<number | undefined>(undefined)
 
-  const analyticsData = useMemo(
-    () =>
-      data || {
-        total_stream_hours: 0,
-        total_sessions: 0,
-        total_commands: 0,
-        total_follows: 0,
-        total_subs: 0,
-        avg_session_duration: 0,
-        avg_viewers: 0,
-        recent_sessions: [],
-      },
-    [data]
-  )
+  const analyticsData = data ?? EMPTY_ANALYTICS
 
   const { realChartData, chartData } = useMemo(() => {
     const sessionsByDate = new Map<string, SessionSummary[]>()
-    const MAX_CHART_DATA_POINTS = 20
-    const recentSessions = [...(analyticsData.recent_sessions || [])]
-      .reverse()
-      .slice(-MAX_CHART_DATA_POINTS)
 
-    recentSessions.forEach(session => {
+    // API returns sessions ordered DESC; reverse to chronological for grouping
+    ;[...(analyticsData.recent_sessions ?? [])].reverse().forEach(session => {
       const date = new Date(session.started_at)
       const dateKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
       if (!sessionsByDate.has(dateKey)) sessionsByDate.set(dateKey, [])
       sessionsByDate.get(dateKey)!.push(session)
     })
 
-    const real = Array.from(sessionsByDate.entries()).map(([dateKey, daySessions]) => {
-      // Append local midnight so the date parses in the browser's timezone,
-      // not as UTC (which could shift the day by -1 for negative-offset zones).
-      const date = new Date(`${dateKey}T00:00:00`)
-      return {
-        date: `${date.getMonth() + 1}-${String(date.getDate()).padStart(2, '0')}`,
-        sessions: daySessions,
-        stream_hours: daySessions.reduce((sum, s) => sum + s.duration_hours, 0),
-        avg_viewers: analyticsData.avg_viewers || 0,
-        follows: daySessions.reduce((sum, s) => sum + s.new_follows, 0),
-        subs: daySessions.reduce((sum, s) => sum + s.new_subs, 0),
-        session_count: daySessions.length,
-      }
-    })
+    const real = Array.from(sessionsByDate.entries())
+      .slice(-MAX_CHART_DAYS)
+      .map(([dateKey, daySessions]) => {
+        // Append local midnight so the date parses in the browser's timezone,
+        // not as UTC (which could shift the day by -1 for negative-offset zones).
+        const date = new Date(`${dateKey}T00:00:00`)
+        return {
+          date: `${date.getMonth() + 1}-${String(date.getDate()).padStart(2, '0')}`,
+          sessions: daySessions,
+          stream_hours: daySessions.reduce((sum, s) => sum + s.duration_hours, 0),
+          follows: daySessions.reduce((sum, s) => sum + s.new_follows, 0),
+          subs: daySessions.reduce((sum, s) => sum + s.new_subs, 0),
+          commands: daySessions.reduce((sum, s) => sum + s.total_commands, 0),
+          session_count: daySessions.length,
+        }
+      })
 
     // When no data, generate last 7 days with 0 values so the chart renders a flat line
     const chart =
@@ -251,9 +263,9 @@ export default function AnalyticsChart({
               date: `${d.getMonth() + 1}-${String(d.getDate()).padStart(2, '0')}`,
               sessions: [] as SessionSummary[],
               stream_hours: 0,
-              avg_viewers: 0,
               follows: 0,
               subs: 0,
+              commands: 0,
               session_count: 0,
             }
           })
@@ -262,50 +274,74 @@ export default function AnalyticsChart({
   }, [analyticsData])
 
   const isEmpty = realChartData.length === 0
+  const chartConfig = CHART_CONFIGS[chartMode]
 
-  const chartConfigs: Record<ChartMode, ChartConfig> = {
-    stream_hours: { dataKey: 'stream_hours', unit: '小時', label: '直播時長' },
-    avg_viewers: { dataKey: 'avg_viewers', unit: '人', label: '平均觀眾' },
-    follows: { dataKey: 'follows', unit: '人', label: '新追隨者' },
-    subs: { dataKey: 'subs', unit: '人', label: '新訂閱者' },
+  // Derive tooltip position entirely from the data point, not the cursor.
+  // Recharts only uses `position` prop when BOTH x and y are provided as numbers;
+  // providing only y causes it to fall back to cursor-based positioning (the jitter source).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleChartMouseMove = (s: any) => {
+    if (s.activeTooltipIndex === activeIdxRef.current) return
+    activeIdxRef.current = s.activeTooltipIndex
+
+    const value = s.activePayload?.[0]?.value as number | undefined
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const yScale = (Object.values(s.yAxisMap ?? {})[0] as any)?.scale
+    const off = s.offset as { top: number; height: number } | undefined
+    const x = s.activeCoordinate?.x as number | undefined
+
+    if (value !== undefined && yScale && off && x !== undefined) {
+      const rawY = yScale(value) as number
+      // Clamp to plot area bounds so the tooltip never escapes the chart
+      const clampedY = Math.max(off.top, Math.min(off.top + off.height, rawY))
+      setTooltipPos({ x, y: clampedY })
+    } else {
+      setTooltipPos(undefined)
+    }
   }
 
-  const chartConfig = chartConfigs[chartMode]
+  const handleChartMouseLeave = () => {
+    activeIdxRef.current = undefined
+    setTooltipPos(undefined)
+  }
 
-  const stats = [
-    {
-      mode: 'stream_hours' as ChartMode,
-      label: '總直播時數',
-      value: analyticsData.total_stream_hours.toFixed(1),
-      unit: 'h',
-      subtitle: `${analyticsData.total_sessions} 場直播`,
-      icon: 'fa-solid fa-clock',
-    },
-    {
-      mode: 'avg_viewers' as ChartMode,
-      label: '平均觀眾',
-      value: analyticsData.avg_viewers || 0,
-      unit: '',
-      subtitle: '過去 30 天',
-      icon: 'fa-solid fa-users',
-    },
-    {
-      mode: 'follows' as ChartMode,
-      label: '新追隨者',
-      value: analyticsData.total_follows,
-      unit: '',
-      subtitle: '過去 30 天',
-      icon: 'fa-solid fa-user-plus',
-    },
-    {
-      mode: 'subs' as ChartMode,
-      label: '新訂閱者',
-      value: analyticsData.total_subs,
-      unit: '',
-      subtitle: '過去 30 天',
-      icon: 'fa-solid fa-star',
-    },
-  ]
+  const stats = useMemo(
+    () => [
+      {
+        mode: 'stream_hours' as ChartMode,
+        label: '總直播時數',
+        value: analyticsData.total_stream_hours.toFixed(1),
+        unit: 'h',
+        subtitle: `${analyticsData.total_sessions} 場直播`,
+        icon: 'fa-solid fa-clock',
+      },
+      {
+        mode: 'follows' as ChartMode,
+        label: '新追隨者',
+        value: analyticsData.total_follows,
+        unit: '',
+        subtitle: '過去 30 天',
+        icon: 'fa-solid fa-user-plus',
+      },
+      {
+        mode: 'subs' as ChartMode,
+        label: '新訂閱者',
+        value: analyticsData.total_subs,
+        unit: '',
+        subtitle: '過去 30 天',
+        icon: 'fa-solid fa-star',
+      },
+      {
+        mode: 'commands' as ChartMode,
+        label: '指令使用',
+        value: analyticsData.total_commands,
+        unit: '次',
+        subtitle: '過去 30 天',
+        icon: 'fa-solid fa-terminal',
+      },
+    ],
+    [analyticsData]
+  )
 
   return (
     <Card className={`flex flex-col ${className}`}>
@@ -352,14 +388,25 @@ export default function AnalyticsChart({
                 ))}
           </div>
 
-          <div className="flex-1 min-h-0 h-48 sm:h-72.5 relative [&_.recharts-wrapper]:outline-none [&_svg]:outline-none">
+          <div
+            className="flex-1 min-h-0 h-48 sm:h-72.5 relative select-none [&_*]:outline-none"
+            onMouseDown={e => e.preventDefault()}
+          >
             {isEmpty && (
               <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
                 <span className="text-sm text-muted-foreground/60">尚無直播數據</span>
               </div>
             )}
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+              <AreaChart
+                data={chartData}
+                margin={{ top: 5, right: 10, left: 0, bottom: 5 }}
+                tabIndex={-1}
+                style={{ outline: 'none' }}
+                onMouseMove={handleChartMouseMove}
+                onMouseLeave={handleChartMouseLeave}
+              >
+                <Customized component={ChartBackground} />
                 <defs>
                   <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.5} />
@@ -371,12 +418,15 @@ export default function AnalyticsChart({
                 <YAxis width={35} tick={CustomYAxisTick} tickLine={false} />
                 {!isEmpty && (
                   <Tooltip
-                    content={props => <ChartTooltip {...props} chartConfig={chartConfig} />}
-                    cursor={{
-                      stroke: 'var(--primary)',
-                      strokeWidth: 1,
-                      strokeDasharray: '5 5',
+                    isAnimationActive={false}
+                    position={tooltipPos}
+                    wrapperStyle={{
+                      transition:
+                        'transform 180ms ease-out, left 180ms ease-out, top 180ms ease-out',
+                      pointerEvents: 'none',
                     }}
+                    content={props => <ChartTooltip {...props} chartConfig={chartConfig} />}
+                    cursor={{ stroke: 'var(--primary)', strokeWidth: 1, strokeDasharray: '5 5' }}
                   />
                 )}
                 <Area
