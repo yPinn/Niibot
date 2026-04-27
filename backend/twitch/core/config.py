@@ -7,6 +7,7 @@ from pydantic import Field
 from pydantic_settings import SettingsConfigDict
 
 from shared.config_base import BaseServiceSettings
+from shared.twitch_scopes import BOT_SCOPES, BROADCASTER_SCOPES
 
 # === Path Configuration ===
 TWITCH_DIR = Path(__file__).resolve().parent.parent
@@ -14,27 +15,7 @@ BACKEND_DIR = TWITCH_DIR.parent
 COMPONENTS_DIR = TWITCH_DIR / "components"
 DATA_DIR = BACKEND_DIR / "data"
 
-BOT_SCOPES = [
-    # Core bot functionality
-    "user:bot",  # Bot identifier
-    "user:read:chat",  # Read chat messages
-    "user:write:chat",  # Send chat messages
-    # Moderation (requires bot to be mod in channel)
-    "moderator:read:followers",  # Follow EventSub
-    "moderator:manage:announcements",  # Send announcements
-    "moderator:manage:shoutouts",  # Shoutout on raid
-    # Optional features
-    "user:manage:whispers",  # Whisper messages
-]
-
-BROADCASTER_SCOPES = [
-    # Minimal scopes - broadcaster just grants bot access
-    "channel:bot",  # Allow bot to join channel
-    "channel:read:redemptions",  # Channel points EventSub
-    "channel:read:subscriptions",  # Subscription EventSub
-    "channel:manage:vips",  # VIP redemption
-    "bits:read",  # Bits EventSub
-]
+__all__ = ["BOT_SCOPES", "BROADCASTER_SCOPES"]
 
 
 class TwitchBotSettings(BaseServiceSettings):

@@ -16,6 +16,8 @@ from urllib.parse import quote
 
 import httpx
 
+from shared.twitch_scopes import BROADCASTER_SCOPES as _BROADCASTER_SCOPES
+
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 # Pre-compiled regex for duration parsing
@@ -42,13 +44,7 @@ class TwitchAPIClient:
     the app access token to avoid redundant token requests.
     """
 
-    BROADCASTER_SCOPES = [
-        "channel:bot",
-        "channel:read:redemptions",
-        "channel:read:subscriptions",
-        "channel:manage:moderators",
-        "bits:read",
-    ]
+    BROADCASTER_SCOPES = _BROADCASTER_SCOPES
 
     def __init__(self, client_id: str, client_secret: str, api_url: str):
         if not client_id or not client_secret:
