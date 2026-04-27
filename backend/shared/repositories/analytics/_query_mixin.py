@@ -13,23 +13,48 @@ from datetime import UTC, datetime, timedelta
 import asyncpg
 
 from shared.cache import cached
-
-_KNOWN_BOTS: frozenset[str] = frozenset({
-    # Twitch-native / major bots
-    "nightbot", "streamlabs", "streamelements", "moobot", "wizebot",
-    "fossabot", "commanderroot", "electricallongboard", "sery_bot",
-    "soundalerts", "pokemoncommunitygame", "bingothemighty",
-    "kofistreambot", "rogueg1rl", "stay_hydrated_bot",
-    "anotherttvviewer", "own3d", "pretzel_rocks", "streambeats",
-    "rainmaker", "streamholics", "revlobot", "botisimo",
-    "p0sitivitybot", "lurxx", "streamloots", "fireside_bot",
-    "streamcapturebot", "staysafe_bot", "dinks_bot", "marbiebot",
-    "dixpermit", "playwithviewers",
-})
 from shared.repositories.analytics._caches import (
     _summary_cache,
     _top_chatters_cache,
     _top_commands_cache,
+)
+
+_KNOWN_BOTS: frozenset[str] = frozenset(
+    {
+        "nightbot",
+        "streamlabs",
+        "streamelements",
+        "moobot",
+        "wizebot",
+        "fossabot",
+        "commanderroot",
+        "electricallongboard",
+        "sery_bot",
+        "soundalerts",
+        "pokemoncommunitygame",
+        "bingothemighty",
+        "kofistreambot",
+        "rogueg1rl",
+        "stay_hydrated_bot",
+        "anotherttvviewer",
+        "own3d",
+        "pretzel_rocks",
+        "streambeats",
+        "rainmaker",
+        "streamholics",
+        "revlobot",
+        "botisimo",
+        "p0sitivitybot",
+        "lurxx",
+        "streamloots",
+        "fireside_bot",
+        "streamcapturebot",
+        "staysafe_bot",
+        "dinks_bot",
+        "marbiebot",
+        "dixpermit",
+        "playwithviewers",
+    }
 )
 
 
@@ -251,6 +276,7 @@ class _AnalyticsQueryMixin:
                     FROM chatter_stats c
                     JOIN stream_sessions s ON s.id = c.session_id
                     WHERE c.channel_id = $1 AND s.started_at >= $2
+                      AND c.user_id != $1
                     ORDER BY c.user_id, c.last_message_at DESC
                 ),
                 totals AS (
@@ -258,6 +284,7 @@ class _AnalyticsQueryMixin:
                     FROM chatter_stats c
                     JOIN stream_sessions s ON s.id = c.session_id
                     WHERE c.channel_id = $1 AND s.started_at >= $2
+                      AND c.user_id != $1
                     GROUP BY c.user_id
                 )
                 SELECT r.user_id, r.username, r.display_name, t.total_messages
@@ -339,6 +366,7 @@ class _AnalyticsQueryMixin:
                 FROM chatter_stats c
                 JOIN stream_sessions s ON s.id = c.session_id
                 WHERE c.channel_id = $1 AND s.started_at >= $2
+                  AND c.user_id != $1
                 """,
                 channel_id,
                 since_date,
@@ -366,6 +394,7 @@ class _AnalyticsQueryMixin:
                         FROM chatter_stats c
                         WHERE c.channel_id = $1
                           AND c.session_id IN (SELECT id FROM session_scope)
+                          AND c.user_id != $1
                     ),
                     cmd_totals AS (
                         SELECT COALESCE(SUM(c.usage_count), 0) AS total_commands
@@ -419,6 +448,7 @@ class _AnalyticsQueryMixin:
                         FROM chatter_stats c
                         JOIN stream_sessions s ON s.id = c.session_id
                         WHERE c.channel_id = $1 AND s.started_at >= $2
+                          AND c.user_id != $1
                         GROUP BY c.user_id
                     ),
                     latest_name AS (
@@ -426,6 +456,7 @@ class _AnalyticsQueryMixin:
                         FROM chatter_stats c
                         JOIN stream_sessions s ON s.id = c.session_id
                         WHERE c.channel_id = $1 AND s.started_at >= $2
+                          AND c.user_id != $1
                         ORDER BY c.user_id, c.last_message_at DESC
                     )
                     SELECT n.username, n.display_name, t.total AS message_count
@@ -490,6 +521,7 @@ class _AnalyticsQueryMixin:
                     FROM chatter_stats c
                     WHERE c.channel_id = $1
                       AND c.session_id IN (SELECT id FROM session_scope)
+                      AND c.user_id != $1
                     GROUP BY c.user_id
                 ),
                 latest_name AS (
@@ -498,6 +530,7 @@ class _AnalyticsQueryMixin:
                     FROM chatter_stats c
                     WHERE c.channel_id = $1
                       AND c.session_id IN (SELECT id FROM session_scope)
+                      AND c.user_id != $1
                     ORDER BY c.user_id, c.last_message_at DESC
                 ),
                 cheer_totals AS (
