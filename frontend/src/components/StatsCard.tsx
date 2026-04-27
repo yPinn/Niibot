@@ -32,8 +32,8 @@ export default function StatsCard({
   return (
     <Card className={`flex flex-col ${className}`}>
       <CardHeader className="shrink-0">
-        <CardTitle className="flex items-center gap-2 text-sm font-semibold">
-          {icon && <Icon icon={icon} wrapperClassName="size-5 text-primary" />}
+        <CardTitle className="flex items-center gap-element text-card-title">
+          {icon && <Icon icon={icon} size="lg" wrapperClassName="text-primary" />}
           {title}
         </CardTitle>
       </CardHeader>
