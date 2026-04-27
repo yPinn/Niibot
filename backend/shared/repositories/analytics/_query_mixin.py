@@ -395,6 +395,7 @@ class _AnalyticsQueryMixin:
                         WHERE c.channel_id = $1
                           AND c.session_id IN (SELECT id FROM session_scope)
                           AND c.user_id != $1
+                          AND lower(c.username) != ALL($3::text[])
                     ),
                     cmd_totals AS (
                         SELECT COALESCE(SUM(c.usage_count), 0) AS total_commands
@@ -428,6 +429,7 @@ class _AnalyticsQueryMixin:
                     """,
                     channel_id,
                     since_date,
+                    list(_KNOWN_BOTS),
                 )
                 return {
                     "total_messages": int(row["total_messages"]),
@@ -449,6 +451,7 @@ class _AnalyticsQueryMixin:
                         JOIN stream_sessions s ON s.id = c.session_id
                         WHERE c.channel_id = $1 AND s.started_at >= $2
                           AND c.user_id != $1
+                          AND lower(c.username) != ALL($3::text[])
                         GROUP BY c.user_id
                     ),
                     latest_name AS (
@@ -457,6 +460,7 @@ class _AnalyticsQueryMixin:
                         JOIN stream_sessions s ON s.id = c.session_id
                         WHERE c.channel_id = $1 AND s.started_at >= $2
                           AND c.user_id != $1
+                          AND lower(c.username) != ALL($3::text[])
                         ORDER BY c.user_id, c.last_message_at DESC
                     )
                     SELECT n.username, n.display_name, t.total AS message_count
@@ -467,6 +471,7 @@ class _AnalyticsQueryMixin:
                     """,
                     channel_id,
                     since_date,
+                    list(_KNOWN_BOTS),
                 )
                 return [
                     {
