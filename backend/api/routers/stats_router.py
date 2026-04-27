@@ -53,7 +53,7 @@ async def get_channel_stats(
             repo.list_top_chatters(channel_id, days=days, limit=10),
             repo.list_top_commands_from_config(channel_id, days=days, limit=10),
             repo.get_total_messages(channel_id, days=days),
-            repo.get_total_commands_from_config(channel_id),
+            repo.get_total_commands_from_config(channel_id, days=days),
         )
 
         top_chatters = [
