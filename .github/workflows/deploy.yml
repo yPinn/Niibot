@@ -253,17 +253,17 @@ jobs:
           [ "${{ steps.changes.outputs.reason }}" = "force" ] && PULL_FLAG="--pull"
 
           docker compose build $PULL_FLAG $SERVICES \
-            --build-arg APP_VERSION=${{ steps.meta.outputs.version }} \
-            --build-arg GIT_COMMIT=${{ steps.meta.outputs.commit }}
+            --build-arg "APP_VERSION=${{ steps.meta.outputs.version }}" \
+            --build-arg "GIT_COMMIT=${{ steps.meta.outputs.commit }}"
 
       - name: Tag images with version
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          VERSION=${{ steps.meta.outputs.version }}
-          [ "${{ steps.changes.outputs.api }}" = "true" ]       && docker tag niibot-api      niibot-api:$VERSION      || true
-          [ "${{ steps.changes.outputs.discord }}" = "true" ]   && docker tag niibot-discord  niibot-discord:$VERSION  || true
-          [ "${{ steps.changes.outputs.twitch }}" = "true" ]    && docker tag niibot-twitch   niibot-twitch:$VERSION   || true
-          [ "${{ steps.changes.outputs.scrapling }}" = "true" ] && docker tag niibot-scrapling niibot-scrapling:$VERSION || true
+          VERSION="${{ steps.meta.outputs.version }}"
+          [ "${{ steps.changes.outputs.api }}" = "true" ]       && docker tag niibot-api      "niibot-api:$VERSION"      || true
+          [ "${{ steps.changes.outputs.discord }}" = "true" ]   && docker tag niibot-discord  "niibot-discord:$VERSION"  || true
+          [ "${{ steps.changes.outputs.twitch }}" = "true" ]    && docker tag niibot-twitch   "niibot-twitch:$VERSION"   || true
+          [ "${{ steps.changes.outputs.scrapling }}" = "true" ] && docker tag niibot-scrapling "niibot-scrapling:$VERSION" || true
           echo "Tagged rebuilt images as :$VERSION"
 
       - name: Run migrations

@@ -6,7 +6,16 @@ import { toast } from 'sonner'
 import { getBotModStatus, grantBotMod } from '@/api/channels'
 import { PageHeader } from '@/components/PageHeader'
 import { PageMain } from '@/components/PageMain'
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Icon, Skeleton } from '@/components/ui'
+import {
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  Icon,
+  Skeleton,
+} from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
 function CopyButton({ text }: { text: string }) {
