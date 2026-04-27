@@ -49,7 +49,7 @@ export function OnlineDropdown() {
     } catch (error) {
       if (import.meta.env.DEV) console.error('Error toggling subscription:', error)
       toast.error('無法切換訂閱狀態', {
-        description: error instanceof Error ? error.message : '未知錯誤',
+        description: '請稍後再試',
       })
     } finally {
       setLoading(false)

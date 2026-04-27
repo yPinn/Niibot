@@ -349,7 +349,7 @@ export default function Timers() {
                       >
                         名稱
                       </SortableHead>
-                      <TableHead>訊息內容</TableHead>
+                      <TableHead className="hidden md:table-cell">訊息內容</TableHead>
                       <SortableHead
                         className="hidden md:table-cell w-[12%]"
                         sortKey="interval"
@@ -421,7 +421,7 @@ export default function Timers() {
                               )}
                             </div>
                           </TableCell>
-                          <TableCell className="max-w-0 truncate text-sub text-muted-foreground">
+                          <TableCell className="hidden md:table-cell max-w-0 truncate text-sub text-muted-foreground">
                             {timer.message_template}
                           </TableCell>
                           <TableCell className="hidden md:table-cell text-sub text-muted-foreground">

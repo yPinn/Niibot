@@ -1,4 +1,5 @@
 import { PageHeader } from '@/components/PageHeader'
+import { PageMain } from '@/components/PageMain'
 import {
   Badge,
   Button,
@@ -71,7 +72,7 @@ export default function DiscordDashboard() {
   useDocumentTitle('Discord Bot — Niibot')
 
   return (
-    <main className="flex flex-1 flex-col gap-section px-page pb-page pt-card lg:p-page-lg select-none">
+    <PageMain className="select-none">
       <PageHeader
         title="Discord Bot"
         description="加入伺服器後即可使用，社群連結預覽、事件日誌等功能自動運行，無需額外設定。"
@@ -194,6 +195,6 @@ export default function DiscordDashboard() {
           </p>
         </div>
       </SlideUp>
-    </main>
+    </PageMain>
   )
 }

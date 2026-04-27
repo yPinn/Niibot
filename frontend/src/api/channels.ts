@@ -105,15 +105,17 @@ export interface GrantModResponse {
   already_mod: boolean
 }
 
-export async function getBotModStatus(): Promise<ModStatusResponse | null> {
+export type ModStatusResult = { ok: true; data: ModStatusResponse } | { ok: false; status: number }
+
+export async function getBotModStatus(): Promise<ModStatusResult> {
   try {
     const response = await apiFetch(API_ENDPOINTS.channels.twitch.modStatus, {
       credentials: 'include',
     })
-    if (!response.ok) return null
-    return response.json()
+    if (!response.ok) return { ok: false, status: response.status }
+    return { ok: true, data: await response.json() }
   } catch {
-    return null
+    return { ok: false, status: 0 }
   }
 }
 

@@ -206,7 +206,7 @@ export default function PublicCommands() {
                               >
                                 指令
                               </SortableHead>
-                              <TableHead>說明</TableHead>
+                              <TableHead className="hidden md:table-cell">說明</TableHead>
                               <SortableHead
                                 className="w-[15%] text-center"
                                 sortKey="min_role"
@@ -226,7 +226,7 @@ export default function PublicCommands() {
                                   <TableCell className="font-mono font-medium">
                                     {cmd.name}
                                   </TableCell>
-                                  <TableCell className="text-muted-foreground">
+                                  <TableCell className="hidden md:table-cell text-muted-foreground">
                                     {cmd.description}
                                   </TableCell>
                                   <TableCell className="text-center">
@@ -272,7 +272,7 @@ export default function PublicCommands() {
                               >
                                 類型
                               </SortableHead>
-                              <TableHead>說明</TableHead>
+                              <TableHead className="hidden md:table-cell">說明</TableHead>
                               <SortableHead
                                 className="w-[15%] text-center"
                                 sortKey="min_role"
@@ -299,7 +299,7 @@ export default function PublicCommands() {
                                       <Badge variant="secondary">觸發</Badge>
                                     )}
                                   </TableCell>
-                                  <TableCell className="text-muted-foreground">
+                                  <TableCell className="hidden md:table-cell text-muted-foreground">
                                     {cmd.description}
                                   </TableCell>
                                   <TableCell className="text-center">

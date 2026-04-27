@@ -54,7 +54,7 @@ export function CustomTab({ customRows, sortState, defaults, onToggle, onEdit }:
             >
               類型
             </SortableHead>
-            <TableHead>回應</TableHead>
+            <TableHead className="hidden md:table-cell">回應</TableHead>
             <SortableHead
               className="hidden md:table-cell w-[8%]"
               sortKey="cooldown"
@@ -157,7 +157,7 @@ export function CustomTab({ customRows, sortState, defaults, onToggle, onEdit }:
                       <Badge variant="secondary">觸發</Badge>
                     )}
                   </TableCell>
-                  <TableCell className="max-w-0 truncate text-sub text-muted-foreground">
+                  <TableCell className="hidden md:table-cell max-w-0 truncate text-sub text-muted-foreground">
                     {row.kind === 'command' ? (row.data.custom_response ?? '') : row.data.response}
                   </TableCell>
                   <TableCell className="hidden md:table-cell text-sub text-muted-foreground">

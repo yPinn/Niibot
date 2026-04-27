@@ -213,7 +213,9 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
             ) : (
               <>
                 <SheetTitle className="text-base leading-snug">{name}</SheetTitle>
-                {username && <SheetDescription className="text-xs">@{username}</SheetDescription>}
+                <SheetDescription className="text-xs">
+                  {username ? `@${username}` : '觀眾資料'}
+                </SheetDescription>
               </>
             )}
           </SheetHeader>
@@ -435,7 +437,9 @@ export default function Insights() {
               />
               <SummaryTile
                 icon="fa-solid fa-gem"
-                value={insights?.total_bits > 0 ? insights.total_bits.toLocaleString() : '—'}
+                value={
+                  insights && insights.total_bits > 0 ? insights.total_bits.toLocaleString() : '—'
+                }
                 label="小奇點"
               />
             </>

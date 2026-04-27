@@ -338,7 +338,7 @@ export default function GameQueue() {
         <div className="flex flex-col gap-section lg:col-span-4">
           {/* Overlay preview iframe — fills remaining sidebar height */}
           {overlayUrl && (
-            <div className="min-h-0 flex-1 overflow-hidden rounded-lg border bg-black">
+            <div className="aspect-video overflow-hidden rounded-lg border bg-black lg:aspect-auto lg:min-h-0 lg:flex-1">
               <iframe
                 src={`${overlayUrl}?preview=1`}
                 className="block h-full w-full"

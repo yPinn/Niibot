@@ -39,6 +39,7 @@ import {
   Separator,
   Sheet,
   SheetContent,
+  SheetDescription,
   SheetHeader,
   SheetTitle,
   Skeleton,
@@ -484,6 +485,7 @@ export default function VideoQueue() {
         <SheetContent side="right" className="w-80 sm:w-96">
           <SheetHeader>
             <SheetTitle>Video Queue 使用說明</SheetTitle>
+            <SheetDescription>如何在 Twitch 設定點播獎勵並使用 Video Queue</SheetDescription>
           </SheetHeader>
           <div className="flex flex-col px-page py-2">
             {/* Step 1 — Twitch 新增獎勵 */}
@@ -611,50 +613,46 @@ export default function VideoQueue() {
                 </Badge>
               </CardTitle>
               <CardAction>
-                <div className="flex items-center gap-element">
-                  <div className="relative w-48 sm:w-72">
-                    <Icon
-                      icon="fa-brands fa-youtube"
-                      className="text-sm text-muted-foreground"
-                      wrapperClassName="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2"
-                    />
-                    <Input
-                      aria-label="YouTube 連結"
-                      placeholder="貼上影片連結"
-                      value={addUrlInput}
-                      onChange={e => setAddUrlInput(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && handleAddVideo()}
-                      className="pl-8"
-                    />
-                  </div>
-                  <Button
-                    size="sm"
-                    onClick={handleAddVideo}
-                    disabled={adding || !addUrlInput.trim()}
-                  >
-                    <Icon icon="fa-solid fa-plus" wrapperClassName="mr-1.5 size-3" />
-                    {adding ? (
-                      <>
-                        <Spinner className="mr-1.5" />
-                        新增中
-                      </>
-                    ) : (
-                      '新增'
-                    )}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    onClick={handleClear}
-                    disabled={!current && queueSize === 0}
-                  >
-                    <Icon icon="fa-solid fa-trash" wrapperClassName="mr-1.5 size-3" />
-                    清空
-                  </Button>
-                </div>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={handleClear}
+                  disabled={!current && queueSize === 0}
+                >
+                  <Icon icon="fa-solid fa-trash" wrapperClassName="mr-1.5 size-3" />
+                  清空
+                </Button>
               </CardAction>
             </CardHeader>
-            <CardContent className="flex flex-1 flex-col">
+            <CardContent className="flex flex-1 flex-col gap-section pt-0">
+              <div className="flex items-center gap-element">
+                <div className="relative flex-1 sm:max-w-72">
+                  <Icon
+                    icon="fa-brands fa-youtube"
+                    className="text-sm text-muted-foreground"
+                    wrapperClassName="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2"
+                  />
+                  <Input
+                    aria-label="YouTube 連結"
+                    placeholder="貼上影片連結"
+                    value={addUrlInput}
+                    onChange={e => setAddUrlInput(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleAddVideo()}
+                    className="pl-8"
+                  />
+                </div>
+                <Button size="sm" onClick={handleAddVideo} disabled={adding || !addUrlInput.trim()}>
+                  <Icon icon="fa-solid fa-plus" wrapperClassName="mr-1.5 size-3" />
+                  {adding ? (
+                    <>
+                      <Spinner className="mr-1.5" />
+                      新增中
+                    </>
+                  ) : (
+                    '新增'
+                  )}
+                </Button>
+              </div>
               <QueueTable
                 current={current}
                 entries={queue}

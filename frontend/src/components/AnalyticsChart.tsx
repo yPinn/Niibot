@@ -399,7 +399,7 @@ export default function AnalyticsChart({
                 <span className="text-sm text-muted-foreground/60">尚無直播數據</span>
               </div>
             )}
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" debounce={50}>
               <AreaChart
                 data={chartData}
                 margin={{ top: 5, right: 10, left: 0, bottom: 5 }}
@@ -427,7 +427,8 @@ export default function AnalyticsChart({
                         'transform 180ms ease-out, left 180ms ease-out, top 180ms ease-out',
                       pointerEvents: 'none',
                     }}
-                    content={props => <ChartTooltip {...props} chartConfig={chartConfig} />}
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    content={(props: any) => <ChartTooltip {...props} chartConfig={chartConfig} />}
                     cursor={{ stroke: 'var(--primary)', strokeWidth: 1, strokeDasharray: '5 5' }}
                   />
                 )}

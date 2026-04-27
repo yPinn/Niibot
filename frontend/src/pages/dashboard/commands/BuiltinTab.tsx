@@ -72,7 +72,7 @@ export function BuiltinTab({ commands, sortState, defaults, onToggle, onEdit }: 
             >
               指令
             </SortableHead>
-            <TableHead>描述</TableHead>
+            <TableHead className="hidden md:table-cell">描述</TableHead>
             <SortableHead
               className="hidden md:table-cell w-[8%]"
               sortKey="cooldown"
@@ -137,7 +137,7 @@ export function BuiltinTab({ commands, sortState, defaults, onToggle, onEdit }: 
                   )}
                 </div>
               </TableCell>
-              <TableCell className="max-w-0 truncate text-sub text-muted-foreground">
+              <TableCell className="hidden md:table-cell max-w-0 truncate text-sub text-muted-foreground">
                 {cmd.description}
               </TableCell>
               <TableCell className="hidden md:table-cell text-sub text-muted-foreground">

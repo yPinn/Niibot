@@ -34,24 +34,24 @@ afterEach(() => vi.restoreAllMocks())
 // ---------------------------------------------------------------------------
 
 describe('getBotModStatus', () => {
-  it('returns ModStatusResponse when response is ok', async () => {
+  it('returns ok result with data when response is ok', async () => {
     mockApiFetch.mockResolvedValue(
       new Response(JSON.stringify({ is_moderator: true }), { status: 200 })
     )
     const result = await getBotModStatus()
-    expect(result).toEqual({ is_moderator: true })
+    expect(result).toEqual({ ok: true, data: { is_moderator: true } })
   })
 
-  it('returns null when response is not ok', async () => {
+  it('returns error result with status when response is not ok', async () => {
     mockApiFetch.mockResolvedValue(new Response('', { status: 403 }))
     const result = await getBotModStatus()
-    expect(result).toBeNull()
+    expect(result).toEqual({ ok: false, status: 403 })
   })
 
-  it('returns null when apiFetch throws', async () => {
+  it('returns error result with status 0 when apiFetch throws', async () => {
     mockApiFetch.mockRejectedValue(new Error('network error'))
     const result = await getBotModStatus()
-    expect(result).toBeNull()
+    expect(result).toEqual({ ok: false, status: 0 })
   })
 
   it('calls the correct endpoint with credentials', async () => {

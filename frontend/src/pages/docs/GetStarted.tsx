@@ -6,7 +6,7 @@ import { toast } from 'sonner'
 import { getBotModStatus, grantBotMod } from '@/api/channels'
 import { PageHeader } from '@/components/PageHeader'
 import { PageMain } from '@/components/PageMain'
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Icon } from '@/components/ui'
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Icon, Skeleton } from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
 function CopyButton({ text }: { text: string }) {
@@ -196,7 +196,11 @@ export default function GetStarted() {
 
   useEffect(() => {
     getBotModStatus().then(res => {
-      if (res !== null) setIsMod(res.is_moderator)
+      if (res.ok) {
+        setIsMod(res.data.is_moderator)
+      } else if (res.status === 503) {
+        toast.warning('機器人服務暫時無法使用，請稍後再試')
+      }
     })
   }, [])
 
@@ -241,7 +245,7 @@ export default function GetStarted() {
             {/* Left: primary CTA + manual fallback */}
             <div className="flex flex-col gap-card">
               {isMod === null ? (
-                <div className="h-9 w-full animate-pulse rounded-md bg-muted" />
+                <Skeleton className="h-9 w-full" />
               ) : (
                 <Button
                   type="button"
