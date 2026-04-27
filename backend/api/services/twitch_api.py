@@ -497,6 +497,26 @@ class TwitchAPIClient:
             LOGGER.exception(f"Error checking subscription status: {e}")
             return None
 
+    async def get_follow_status(self, broadcaster_id: str, user_id: str, token: str) -> dict | None:
+        """Check if user_id follows broadcaster_id.
+
+        Requires broadcaster token with moderator:read:followers scope.
+        Returns follower object (with followed_at) or None if not following.
+        """
+        try:
+            response = await self._helix_get(
+                "channels/followers",
+                {"broadcaster_id": broadcaster_id, "user_id": user_id},
+                token=token,
+            )
+            if not response or response.status_code != 200:
+                return None
+            data = response.json().get("data", [])
+            return data[0] if data else None
+        except Exception as e:
+            LOGGER.exception(f"Error checking follow status: {e}")
+            return None
+
     @staticmethod
     def parse_duration(duration_str: str) -> float:
         """Parse Twitch duration string (e.g. '3h2m1s') to hours."""
