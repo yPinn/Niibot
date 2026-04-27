@@ -20,6 +20,7 @@ class CommandConfig:
     min_role: str = "everyone"  # 'everyone' | 'subscriber' | 'vip' | 'moderator' | 'broadcaster'
     aliases: str | None = None  # Comma-separated alias names, e.g. "hello,嗨"
     usage_count: int = 0
+    last_used_at: datetime | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
