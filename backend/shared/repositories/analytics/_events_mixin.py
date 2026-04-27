@@ -92,6 +92,32 @@ class _AnalyticsEventsMixin:
                 occurred_at,
             )
 
+    async def record_cheer_event(
+        self,
+        session_id: int,
+        channel_id: str,
+        user_id: str | None,
+        username: str,
+        bits: int,
+        occurred_at: datetime,
+    ) -> None:
+        """Record a cheer (bits) event."""
+        metadata = {"bits": bits}
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO stream_events
+                    (session_id, channel_id, event_type, user_id, username, metadata, occurred_at)
+                VALUES ($1, $2, 'cheer', $3, $4, $5, $6)
+                """,
+                session_id,
+                channel_id,
+                user_id,
+                username,
+                metadata,
+                occurred_at,
+            )
+
     async def record_raid_event(
         self,
         session_id: int,

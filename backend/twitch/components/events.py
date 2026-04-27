@@ -226,6 +226,23 @@ class EventComponent(commands.Component):
             )
             LOGGER.info(f"[{broadcaster_name}] Cheer: {user_name} {bits_amount} bits")
 
+            if hasattr(self.bot, "_active_sessions") and hasattr(self.bot, "analytics"):
+                session_id = self.bot._active_sessions.get(channel_id)
+                if session_id:
+                    user_id = (
+                        None if payload.anonymous else (payload.user.id if payload.user else None)
+                    )
+                    await self.bot.analytics.record_cheer_event(
+                        session_id=session_id,
+                        channel_id=channel_id,
+                        user_id=user_id,
+                        username=payload.user.name
+                        if payload.user and not payload.anonymous
+                        else user_name,
+                        bits=bits_amount,
+                        occurred_at=datetime.now(UTC),
+                    )
+
         except Exception as e:
             LOGGER.error(f"[{broadcaster_name}] Cheer: {user_name} {bits_amount} bits (error: {e})")
 
@@ -283,6 +300,18 @@ class EventComponent(commands.Component):
                         )
                     else:
                         LOGGER.error(f"[{broadcaster_name}] Shoutout failed: {shoutout_err}")
+
+            if hasattr(self.bot, "_active_sessions") and hasattr(self.bot, "analytics"):
+                session_id = self.bot._active_sessions.get(broadcaster_id)
+                if session_id:
+                    await self.bot.analytics.record_raid_event(
+                        session_id=session_id,
+                        channel_id=broadcaster_id,
+                        from_broadcaster_id=raider_id,
+                        from_broadcaster_name=payload.from_broadcaster.name or raider_name,
+                        viewers=viewer_count,
+                        occurred_at=datetime.now(UTC),
+                    )
 
             LOGGER.info(
                 f"[{broadcaster_name}] Raid: {raider_name} ({viewer_count})"
