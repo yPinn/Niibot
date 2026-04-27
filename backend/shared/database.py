@@ -8,6 +8,7 @@ Connection modes (auto-detected from DATABASE_URL port):
 from __future__ import annotations
 
 import asyncio
+import json as _json
 import logging
 import socket
 import ssl as _ssl
@@ -75,11 +76,17 @@ class DatabaseManager:
     async def _init_session_connection(self, conn: asyncpg.Connection) -> None:
         """Initialize new connections for Session Pooler.
 
-        Sets session-level statement timeout. Only used with Session Pooler
-        where session state is preserved across queries.
+        Sets session-level statement timeout and registers JSON/JSONB codecs
+        so asyncpg returns Python dicts instead of raw strings.
         """
         timeout_ms = int(self.config.command_timeout * 1000)
         await conn.execute(f"SET statement_timeout = {timeout_ms}")
+        await conn.set_type_codec(
+            "jsonb", encoder=_json.dumps, decoder=_json.loads, schema="pg_catalog"
+        )
+        await conn.set_type_codec(
+            "json", encoder=_json.dumps, decoder=_json.loads, schema="pg_catalog"
+        )
 
     def _session_pool_kwargs(self) -> dict[str, Any]:
         """Build asyncpg.create_pool kwargs for session mode (port 5432).
