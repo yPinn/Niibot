@@ -168,8 +168,19 @@ jobs:
       - name: Set build metadata
         id: meta
         run: |
-          echo "commit=$(git -C $PROJECT_DIR rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-          echo "version=$(git -C $PROJECT_DIR describe --tags --always 2>/dev/null || echo dev)" >> $GITHUB_OUTPUT
+          COMMIT=$(git -C $PROJECT_DIR rev-parse --short HEAD)
+          echo "commit=$COMMIT" >> $GITHUB_OUTPUT
+          RAW=$(git -C $PROJECT_DIR describe --tags --always 2>/dev/null || echo "dev")
+          # Old 3-segment tags:  v1.3.2-9-g32f0417 → v1.3.9 (32f0417)
+          # New 2-segment tags:  v1.4-9-g32f0417   → v1.4.9 (32f0417)
+          # Exact 3-segment tag: v1.3.2             → v1.3.0 (sha)
+          # Exact 2-segment tag: v1.4               → v1.4.0 (sha)
+          VERSION=$(echo "$RAW" | sed -E \
+            -e 's/^v([0-9]+)\.([0-9]+)\.[0-9]+-([0-9]+)-g([0-9a-f]+)$/v\1.\2.\3 (\4)/' \
+            -e 's/^v([0-9]+)\.([0-9]+)-([0-9]+)-g([0-9a-f]+)$/v\1.\2.\3 (\4)/' \
+            -e 's/^v([0-9]+)\.([0-9]+)\.[0-9]+$/v\1.\2.0 ('"$COMMIT"')/' \
+            -e 's/^v([0-9]+)\.([0-9]+)$/v\1.\2.0 ('"$COMMIT"')/')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Detect changed services
         id: changes

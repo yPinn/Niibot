@@ -1,59 +1,78 @@
 # Versioning Convention
 
-## Format
+## Display Format
 
-This project uses **Semantic Versioning**: `MAJOR.MINOR.PATCH`
+```
+v1.3.9 (32f0417)
+ │ │ │   └─ short SHA — exact commit reference
+ │ │ └─── commit count since last tag — auto-increments with every commit
+ │ └───── MINOR — bumped on new features
+ └─────── MAJOR — bumped on breaking changes
+```
 
-Frontend (`frontend/package.json`) and backend (`backend/pyproject.toml`) share the **same version number** and are bumped together.
+PATCH is **never manually set**. It is generated at build time from `git describe`.
+
+---
+
+## How It Works
+
+The deploy workflow (`deploy.yml`) runs:
+
+```bash
+git describe --tags --always
+# e.g. v1.3.0-9-g32f0417
+```
+
+And transforms it to the display format:
+
+| `git describe` output   | Runtime version       | Note |
+| ----------------------- | --------------------- | ---- |
+| `v1.4-9-g32f0417`       | `v1.4.9 (32f0417)`    | new-style tag |
+| `v1.4` (exact tag)      | `v1.4.0 (sha)`        | new-style tag |
+| `v1.3.2-9-g32f0417`     | `v1.3.9 (32f0417)`    | legacy tag, still handled |
+| `v1.3.2` (exact tag)    | `v1.3.0 (sha)`        | legacy tag, still handled |
 
 ---
 
 ## When to Bump
 
-| Commit type                           | Version change              | Example         |
-| ------------------------------------- | --------------------------- | --------------- |
-| `fix:` — bug fixes                    | PATCH +1                    | `1.0.1 → 1.0.2` |
-| `feat:` — new features                | MINOR +1, reset PATCH       | `1.0.2 → 1.1.0` |
-| `feat!:` or `BREAKING CHANGE:` footer | MAJOR +1, reset MINOR/PATCH | `1.1.0 → 2.0.0` |
-| `refactor:`, `chore:`, `docs:`, `ci:` | No version change           | —               |
+| Change type                            | Action                           | Example          |
+| -------------------------------------- | -------------------------------- | ---------------- |
+| `fix:`, `refactor:`, `chore:`, `ci:`  | **Nothing** — commit count bumps automatically | — |
+| `feat:` — new feature                 | Tag new `vMAJOR.MINOR.0`         | `v1.3.0 → v1.4.0` |
+| `feat!:` or `BREAKING CHANGE:`        | Tag new `vMAJOR+1.0.0`           | `v1.4.0 → v2.0.0` |
 
 ---
 
 ## Release Process
 
 1. Merge all related PRs into `main`
-2. Decide the new version according to the table above
-3. Update both files to the new version:
-   - `frontend/package.json` → `"version": "x.y.z"`
-   - `backend/pyproject.toml` → `version = "x.y.z"`
-4. Commit the bump:
+2. Tag the commit (two segments only, no patch):
    ```
-   git commit -m "chore: bump version to x.y.z"
+   git tag v1.4
+   git push origin v1.4
    ```
-5. Tag the commit:
-   ```
-   git tag vx.y.z
-   git push origin main --tags
-   ```
-6. Create a GitHub Release from the tag (optional but recommended)
+3. Update `frontend/package.json` and `backend/pyproject.toml` to `MAJOR.MINOR.0` (metadata only — not used at runtime)
+
+No separate version bump commit is required.
 
 ---
 
 ## Rules
 
-- **Tag = deployable state.** Only tag commits on `main` that are ready to deploy.
-- **One tag per release.** Do not create separate tags for frontend and backend.
-- **No skipping.** If two feature PRs land before a release, the version still bumps MINOR once.
-- **Breaking changes require a major bump.** Examples: removing an API endpoint, incompatible DB migration, changing auth flow.
+- **Tags use `vMAJOR.MINOR`** — no patch segment; the runtime patch comes from commit count. (Tags before v1.4 used `vMAJOR.MINOR.PATCH` — these are kept as historical anchors and still handled correctly.)
+- **Tag only on `main`**, only when ready to deploy.
+- **One tag per release.** Frontend and backend share the same tag.
+- **`package.json` / `pyproject.toml` versions are metadata** — they are not read at runtime. Keep them in sync with the latest tag for IDE tooling and human reference only.
 
 ---
 
-## Current State
+## Component Reference
 
-| Component | File                     | Version field      |
-| --------- | ------------------------ | ------------------ |
-| Frontend  | `frontend/package.json`  | `"version"`        |
-| Backend   | `backend/pyproject.toml` | `version`          |
-| Git tag   | —                        | `vx.y.z` on `main` |
-
-All three must match after every release commit.
+| Component | Version source at runtime |
+| --------- | ------------------------- |
+| API Server | `APP_VERSION` env var (set from `git describe` in `deploy.yml`) |
+| Twitch Bot | same |
+| Discord Bot | same |
+| `frontend/package.json` | metadata only — not displayed at runtime |
+| `backend/pyproject.toml` | metadata only — not displayed at runtime |
