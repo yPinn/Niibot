@@ -12,6 +12,7 @@ import {
   updateTimer,
 } from '@/api/timers'
 import { PageHeader } from '@/components/PageHeader'
+import { PageMain } from '@/components/PageMain'
 import { SortableHead } from '@/components/SortableHead'
 import {
   Alert,
@@ -291,7 +292,7 @@ export default function Timers() {
   const { sortKey, sortDir, toggleSort } = timerSort
 
   return (
-    <main className="flex flex-1 flex-col gap-section p-page lg:p-page-lg">
+    <PageMain>
       <PageHeader title="Timers" description="定時訊息 — 直播中定時自動發送設定好的訊息" />
 
       <SlideUp inView>
@@ -651,6 +652,6 @@ export default function Timers() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </main>
+    </PageMain>
   )
 }

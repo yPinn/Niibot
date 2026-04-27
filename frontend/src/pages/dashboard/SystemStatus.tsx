@@ -1,6 +1,21 @@
 import { useMemo } from 'react'
 
-import { Button, Card, CardContent, Icon, Skeleton, SlideUp } from '@/components/ui'
+import { PageMain } from '@/components/PageMain'
+import {
+  Badge,
+  Button,
+  Card,
+  CardAction,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  Icon,
+  Separator,
+  Skeleton,
+  SlideUp,
+  Stagger,
+  StaggerItem,
+} from '@/components/ui'
 import { useServiceStatus } from '@/contexts/ServiceStatusContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
@@ -28,57 +43,75 @@ function formatStartedAt(iso?: string): string {
 }
 
 function StatusBadge({ online, ready }: { online: boolean; ready?: boolean }) {
-  if (!online) {
+  if (!online)
     return (
-      <span className="inline-flex items-center gap-1.5 text-label font-medium text-status-offline">
-        <Icon icon="fa-solid fa-circle-xmark" className="w-3 h-3" />
+      <Badge className="border-status-offline/20 bg-status-offline/10 text-status-offline gap-1.5">
+        <Icon icon="fa-solid fa-circle-xmark" size="xs" />
         offline
-      </span>
+      </Badge>
     )
-  }
-  if (ready === false) {
+  if (ready === false)
     return (
-      <span className="inline-flex items-center gap-1.5 text-label font-medium text-status-loading">
-        <Icon icon="fa-solid fa-circle-half-stroke" className="w-3 h-3" />
+      <Badge className="border-status-loading/20 bg-status-loading/10 text-status-loading gap-1.5">
+        <Icon icon="fa-solid fa-circle-half-stroke" size="xs" />
         starting
-      </span>
+      </Badge>
     )
-  }
   return (
-    <span className="inline-flex items-center gap-1.5 text-label font-medium text-status-online">
-      <Icon icon="fa-solid fa-circle-check" className="w-3 h-3" />
+    <Badge className="border-status-online/20 bg-status-online/10 text-status-online gap-1.5">
+      <Icon icon="fa-solid fa-circle-check" size="xs" />
       online
-    </span>
+    </Badge>
   )
 }
 
 function EnvBadge({ env }: { env?: string }) {
-  if (!env) return <span className="font-mono text-label text-muted-foreground">—</span>
-  const color =
+  if (!env) return <span className="text-muted-foreground/40">—</span>
+  const cls =
     env === 'production'
-      ? 'bg-status-live/10 text-status-live'
+      ? 'border-status-live/20 bg-status-live/10 text-status-live'
       : env === 'staging'
-        ? 'bg-status-loading/10 text-status-loading'
-        : 'bg-status-info/10 text-status-info'
-  return (
-    <span className={`px-1.5 py-0.5 rounded text-label font-mono font-medium ${color}`}>{env}</span>
-  )
+        ? 'border-status-loading/20 bg-status-loading/10 text-status-loading'
+        : 'border-status-info/20 bg-status-info/10 text-status-info'
+  return <Badge className={`font-mono ${cls}`}>{env}</Badge>
 }
 
-function VersionLink({ version, commit }: { version?: string; commit?: string }) {
+function VersionText({ version, commit }: { version?: string; commit?: string }) {
   const label = version && version !== 'dev' ? version : (version ?? '—')
   const shortSha = commit && commit !== 'unknown' ? commit.slice(0, 7) : null
-  const display = shortSha && !label.includes(shortSha) ? `${label} (${shortSha})` : label
-  return <span className="font-mono">{display}</span>
+  return <>{shortSha && !label.includes(shortSha) ? `${label} (${shortSha})` : label}</>
 }
 
 const DASH = <span className="text-muted-foreground/40">—</span>
+
+function FieldRow({
+  label,
+  value,
+  loading,
+  offline,
+}: {
+  label: string
+  value: React.ReactNode
+  loading?: boolean
+  offline?: boolean
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 py-2">
+      <span className="text-label font-medium uppercase tracking-wide text-muted-foreground shrink-0">
+        {label}
+      </span>
+      <div className="text-sub font-mono flex items-center">
+        {loading ? <Skeleton className="h-4 w-20" /> : offline ? DASH : value}
+      </div>
+    </div>
+  )
+}
 
 export default function SystemStatus() {
   useDocumentTitle('System Status')
   const { twitch, discord, api, lastUpdate, initialLoading, refresh } = useServiceStatus()
 
-  const serviceHeaders = useMemo(
+  const services = useMemo(
     () => [
       {
         key: 'api',
@@ -86,6 +119,26 @@ export default function SystemStatus() {
         icon: 'fa-solid fa-server',
         online: api.online,
         ready: undefined as boolean | undefined,
+        fields: [
+          {
+            label: 'version',
+            value: <VersionText version={api.version} commit={api.git_commit} />,
+          },
+          { label: 'started', value: formatStartedAt(api.started_at) },
+          { label: 'uptime', value: formatUptime(api.uptime_seconds) },
+          { label: 'env', value: <EnvBadge env={api.environment} /> },
+          {
+            label: 'database',
+            value:
+              api.db_connected === undefined ? (
+                DASH
+              ) : api.db_connected ? (
+                <span className="text-status-online">connected</span>
+              ) : (
+                <span className="text-status-offline">disconnected</span>
+              ),
+          },
+        ],
       },
       {
         key: 'twitch',
@@ -93,6 +146,17 @@ export default function SystemStatus() {
         icon: 'fa-brands fa-twitch',
         online: twitch.online,
         ready: twitch.ready,
+        fields: [
+          {
+            label: 'version',
+            value: <VersionText version={twitch.version} commit={twitch.git_commit} />,
+          },
+          { label: 'started', value: formatStartedAt(twitch.started_at) },
+          { label: 'uptime', value: formatUptime(twitch.uptime_seconds) },
+          { label: 'bot id', value: twitch.bot_id ?? '—' },
+          { label: 'channels', value: twitch.connected_channels ?? '—' },
+          { label: 'features', value: twitch.components ?? '—' },
+        ],
       },
       {
         key: 'discord',
@@ -100,163 +164,74 @@ export default function SystemStatus() {
         icon: 'fa-brands fa-discord',
         online: discord.online,
         ready: discord.ready,
-      },
-    ],
-    [twitch, discord, api]
-  )
-
-  const fieldRows = useMemo(
-    () => [
-      {
-        label: 'version',
-        values: [
-          <VersionLink key="api" version={api.version} commit={api.git_commit} />,
-          <VersionLink key="twitch" version={twitch.version} commit={twitch.git_commit} />,
-          <VersionLink key="discord" version={discord.version} commit={discord.git_commit} />,
-        ] as React.ReactNode[],
-      },
-      {
-        label: 'env',
-        values: [
-          <EnvBadge key="api" env={api.environment} />,
-          null,
-          null,
-        ] as (React.ReactNode | null)[],
-      },
-      {
-        label: 'started',
-        values: [
-          formatStartedAt(api.started_at),
-          formatStartedAt(twitch.started_at),
-          formatStartedAt(discord.started_at),
-        ] as React.ReactNode[],
-      },
-      {
-        label: 'uptime',
-        values: [
-          formatUptime(api.uptime_seconds),
-          formatUptime(twitch.uptime_seconds),
-          formatUptime(discord.uptime_seconds),
-        ] as React.ReactNode[],
-      },
-      {
-        label: 'database',
-        values: [
-          api.db_connected === undefined ? null : (
-            <span
-              key="api"
-              className={api.db_connected ? 'text-status-online' : 'text-status-offline'}
-            >
-              {api.db_connected ? 'connected' : 'disconnected'}
-            </span>
-          ),
-          null,
-          null,
-        ] as (React.ReactNode | null)[],
-      },
-      {
-        label: 'bot_id',
-        values: [null, twitch.bot_id ?? '—', discord.bot_id ?? '—'] as (React.ReactNode | null)[],
-      },
-      {
-        label: 'channels',
-        values: [
-          null,
-          twitch.connected_channels ?? '—',
-          discord.guilds ?? '—',
-        ] as (React.ReactNode | null)[],
-      },
-      {
-        label: 'features',
-        values: [null, twitch.components ?? '—', discord.cogs ?? '—'] as (React.ReactNode | null)[],
-      },
-      {
-        label: 'ws_latency',
-        values: [
-          null,
-          null,
-          discord.ws_latency_ms !== undefined ? `${discord.ws_latency_ms}ms` : null,
-        ] as (React.ReactNode | null)[],
+        fields: [
+          {
+            label: 'version',
+            value: <VersionText version={discord.version} commit={discord.git_commit} />,
+          },
+          { label: 'started', value: formatStartedAt(discord.started_at) },
+          { label: 'uptime', value: formatUptime(discord.uptime_seconds) },
+          { label: 'bot id', value: discord.bot_id ?? '—' },
+          { label: 'guilds', value: discord.guilds ?? '—' },
+          { label: 'features', value: discord.cogs ?? '—' },
+          ...(discord.ws_latency_ms !== undefined
+            ? [{ label: 'ws latency', value: `${discord.ws_latency_ms}ms` }]
+            : []),
+        ],
       },
     ],
     [twitch, discord, api]
   )
 
   return (
-    <main className="flex flex-1 flex-col gap-section p-page lg:gap-card lg:p-page-lg">
+    <PageMain className="lg:gap-card">
       <SlideUp className="flex items-center justify-between">
         <div>
           <h1 className="text-page-title font-bold">System Status</h1>
-          <p className="text-sub text-muted-foreground font-mono mt-1">
-            polled every 30s · last update{' '}
+          <p className="text-label text-muted-foreground font-mono mt-1">
+            polled every 30s · last updated{' '}
             {lastUpdate.toLocaleTimeString('zh-TW', { hour12: false })}
           </p>
         </div>
-        <Button variant="ghost" size="icon" onClick={refresh} aria-label="Refresh now">
-          <Icon icon="fa-solid fa-rotate" className="w-4 h-4 text-muted-foreground" />
+        <Button variant="ghost" size="icon" onClick={refresh} aria-label="Refresh">
+          <Icon icon="fa-solid fa-rotate" wrapperClassName="text-muted-foreground" />
         </Button>
       </SlideUp>
 
-      <SlideUp inView delay={0.1}>
-        <Card>
-          <CardContent className="p-0 overflow-hidden">
-            <div className="grid grid-cols-[7rem_1fr_1fr_1fr]">
-              {/* ── Service header row ── */}
-              <div className="px-4 py-3 border-b border-border/40" />
-              {serviceHeaders.map(s => (
-                <div
-                  key={s.key}
-                  className="px-4 py-3 border-b border-l border-border/40 flex flex-col gap-1.5"
-                >
-                  <div className="flex items-center gap-2">
-                    <Icon icon={s.icon} className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                    <span className="text-sub font-semibold truncate">{s.name}</span>
-                  </div>
-                  {initialLoading ? (
-                    <Skeleton className="h-4 w-14" />
-                  ) : (
-                    <StatusBadge online={s.online} ready={s.ready} />
-                  )}
+      <Stagger className="grid gap-section grid-cols-1 md:grid-cols-3" delayChildren={0.05}>
+        {services.map(service => (
+          <StaggerItem key={service.key}>
+            <Card>
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <Icon icon={service.icon} size="sm" wrapperClassName="text-muted-foreground" />
+                  <CardTitle className="text-card-title">{service.name}</CardTitle>
                 </div>
-              ))}
-
-              {/* ── Field rows ── */}
-              {fieldRows.map((field, rowIdx) => {
-                const isLast = rowIdx === fieldRows.length - 1
-                const borderB = isLast ? '' : 'border-b border-border/30'
-                return (
-                  <div key={field.label} className="contents">
-                    {/* Label cell */}
-                    <div className={`px-4 py-1.5 flex items-center ${borderB}`}>
-                      <span className="text-sub text-muted-foreground">{field.label}</span>
-                    </div>
-                    {/* Value cells */}
-                    {field.values.map((val, colIdx) => {
-                      const offline = !serviceHeaders[colIdx].online
-                      return (
-                        <div
-                          key={colIdx}
-                          className={`px-4 py-1.5 border-l border-border/20 font-mono text-sub flex items-center ${borderB}`}
-                        >
-                          {initialLoading ? (
-                            <Skeleton className="h-4 w-20" />
-                          ) : offline ? (
-                            DASH
-                          ) : val !== null ? (
-                            val
-                          ) : (
-                            DASH
-                          )}
-                        </div>
-                      )
-                    })}
+                <CardAction>
+                  {initialLoading ? (
+                    <Skeleton className="h-5 w-16 rounded-full" />
+                  ) : (
+                    <StatusBadge online={service.online} ready={service.ready} />
+                  )}
+                </CardAction>
+              </CardHeader>
+              <CardContent>
+                {service.fields.map((field, idx) => (
+                  <div key={field.label}>
+                    {idx > 0 && <Separator className="opacity-40" />}
+                    <FieldRow
+                      label={field.label}
+                      value={field.value}
+                      loading={initialLoading}
+                      offline={!service.online}
+                    />
                   </div>
-                )
-              })}
-            </div>
-          </CardContent>
-        </Card>
-      </SlideUp>
-    </main>
+                ))}
+              </CardContent>
+            </Card>
+          </StaggerItem>
+        ))}
+      </Stagger>
+    </PageMain>
   )
 }

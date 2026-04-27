@@ -1,6 +1,7 @@
 import { PageHeader } from '@/components/PageHeader'
 import {
   Badge,
+  Button,
   Card,
   CardContent,
   CardHeader,
@@ -64,32 +65,61 @@ const COMMANDS = [
   { cmd: '/kick /ban /mute', desc: '踢出、封鎖或禁言成員（需管理員）' },
 ]
 
+const INVITE_URL = import.meta.env.VITE_DISCORD_INVITE_URL as string | undefined
+
 export default function DiscordDashboard() {
   useDocumentTitle('Discord Bot — Niibot')
 
   return (
-    <main className="flex flex-1 flex-col gap-card p-page lg:p-page-lg select-none">
+    <main className="flex flex-1 flex-col gap-section px-page pb-page pt-card lg:p-page-lg select-none">
+      <PageHeader
+        title="Discord Bot"
+        description="加入伺服器後即可使用，社群連結預覽、事件日誌等功能自動運行，無需額外設定。"
+      />
+
+      {/* Invite CTA */}
       <SlideUp>
-        <PageHeader
-          title="Discord Bot"
-          description="加入伺服器後即可使用，社群連結預覽、事件日誌等功能自動運行，無需額外設定。"
-        />
+        <div className="flex flex-col gap-4 rounded-2xl border border-[#5865F2]/20 bg-[#5865F2]/5 p-6 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-4">
+            <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-[#5865F2]/10">
+              <Icon icon="fa-brands fa-discord" size="xl" wrapperClassName="text-[#5865F2]" />
+            </div>
+            <div>
+              <p className="text-card-title font-semibold">邀請 Bot 至您的伺服器</p>
+              <p className="mt-0.5 text-sub text-muted-foreground">
+                一鍵加入，功能立即可用，無需複雜設定。
+              </p>
+            </div>
+          </div>
+          {INVITE_URL ? (
+            <Button asChild className="shrink-0 bg-[#5865F2] hover:bg-[#5865F2]/90">
+              <a href={INVITE_URL} target="_blank" rel="noreferrer">
+                <Icon icon="fa-solid fa-plus" size="sm" />
+                邀請 Bot
+              </a>
+            </Button>
+          ) : (
+            <span className="shrink-0 rounded-lg border border-dashed border-[#5865F2]/40 px-page py-2.5 text-sub text-muted-foreground">
+              邀請連結設定中
+            </span>
+          )}
+        </div>
       </SlideUp>
 
       {/* Features */}
       <section className="flex flex-col gap-section">
         <h2 className="text-section-title font-semibold">功能介紹</h2>
-        <Stagger inView className="grid gap-card sm:grid-cols-2 lg:grid-cols-3">
+        <Stagger inView className="grid gap-section sm:grid-cols-2 lg:grid-cols-3">
           {FEATURES.map(f => (
             <StaggerItem key={f.title}>
-              <Card className="h-full">
-                <CardHeader className="pb-2">
-                  <CardTitle className="flex items-center gap-2 text-card-title">
-                    <Icon icon={f.icon} wrapperClassName="size-4 shrink-0 text-[#5865F2]" />
+              <Card className="h-full py-section">
+                <CardHeader className="px-section pb-element">
+                  <CardTitle className="flex items-center gap-element text-card-title">
+                    <Icon icon={f.icon} size="md" wrapperClassName="text-[#5865F2]" />
                     {f.title}
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="flex flex-col gap-3">
+                <CardContent className="flex flex-col gap-element px-section">
                   <p className="text-sub leading-relaxed text-muted-foreground">{f.desc}</p>
                   {f.tags.length > 0 && (
                     <div className="flex flex-wrap gap-1">
@@ -115,7 +145,7 @@ export default function DiscordDashboard() {
             <CardContent className="p-0">
               <div className="divide-y">
                 {COMMANDS.map(({ cmd, desc }) => (
-                  <div key={cmd} className="flex items-baseline gap-4 px-page py-3">
+                  <div key={cmd} className="flex items-baseline gap-4 px-page py-2">
                     <code className="w-44 shrink-0 font-mono text-sub font-semibold text-primary select-text">
                       {cmd}
                     </code>
@@ -146,7 +176,7 @@ export default function DiscordDashboard() {
       {/* Help */}
       <SlideUp inView delay={0.1}>
         <div className="flex items-center gap-3 rounded-xl border bg-muted/30 px-page py-3">
-          <Icon icon="fa-brands fa-discord" wrapperClassName="size-5 shrink-0 text-[#5865F2]" />
+          <Icon icon="fa-brands fa-discord" size="lg" wrapperClassName="text-[#5865F2]" />
           <p className="text-sub">
             <span className="font-medium">遇到問題？</span>
             <span className="ml-1 text-muted-foreground">

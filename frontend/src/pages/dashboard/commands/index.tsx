@@ -4,6 +4,7 @@ import { type ChannelDefaults, getChannelDefaults } from '@/api/channels'
 import { type CommandConfig, getCommandConfigs, toggleCommandConfig } from '@/api/commands'
 import { getTriggerConfigs, toggleTrigger, type TriggerConfig } from '@/api/triggers'
 import { PageHeader } from '@/components/PageHeader'
+import { PageMain } from '@/components/PageMain'
 import {
   Badge,
   Button,
@@ -171,7 +172,7 @@ export default function Commands() {
   }
 
   return (
-    <main className="flex flex-1 flex-col gap-section p-page lg:p-page-lg">
+    <PageMain>
       <PageHeader title="Commands" description="管理 Twitch 機器人指令與自動回應" />
 
       <SlideUp inView>
@@ -252,6 +253,6 @@ export default function Commands() {
         onDeleted={handleDeleted}
         onClose={() => setEditing(null)}
       />
-    </main>
+    </PageMain>
   )
 }

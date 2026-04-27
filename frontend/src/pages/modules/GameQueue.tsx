@@ -13,6 +13,7 @@ import {
 } from '@/api/gameQueue'
 import { OverlayUrlBlock } from '@/components/OverlayUrlBlock'
 import { PageHeader } from '@/components/PageHeader'
+import { PageMain } from '@/components/PageMain'
 import {
   Badge,
   Button,
@@ -245,7 +246,7 @@ export default function GameQueue() {
 
   if (loading) {
     return (
-      <main className="flex flex-1 flex-col gap-section p-page lg:p-page-lg">
+      <PageMain>
         <PageHeader title="Game Queue" description="管理遊戲排隊系統" />
         <div className="grid grid-cols-1 gap-section lg:grid-cols-12 lg:items-stretch">
           <div className="lg:col-span-8">
@@ -268,12 +269,12 @@ export default function GameQueue() {
             <Skeleton className="h-40 w-full rounded-xl" />
           </div>
         </div>
-      </main>
+      </PageMain>
     )
   }
 
   return (
-    <main className="relative flex flex-1 flex-col gap-section p-page lg:p-page-lg">
+    <PageMain className="relative">
       <PageHeader title="Game Queue" description="管理遊戲排隊系統" />
 
       {/* Inline overlay for non-affiliates — blurs preview, blocks interaction */}
@@ -407,6 +408,6 @@ export default function GameQueue() {
           </Card>
         </div>
       </FadeIn>
-    </main>
+    </PageMain>
   )
 }

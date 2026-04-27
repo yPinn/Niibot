@@ -11,6 +11,7 @@ import {
   upsertPaymentConfig,
 } from '@/api'
 import { PageHeader } from '@/components/PageHeader'
+import { PageMain } from '@/components/PageMain'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -166,7 +167,7 @@ export default function Settings() {
   }
 
   return (
-    <main className="flex flex-1 flex-col gap-section p-page lg:p-page-lg">
+    <PageMain>
       <PageHeader title="Settings" description="金流設定" />
 
       <SlideUp inView>
@@ -486,6 +487,6 @@ export default function Settings() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </main>
+    </PageMain>
   )
 }

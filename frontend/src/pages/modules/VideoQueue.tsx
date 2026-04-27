@@ -17,6 +17,7 @@ import {
 } from '@/api/videoQueue'
 import { OverlayUrlBlock } from '@/components/OverlayUrlBlock'
 import { PageHeader } from '@/components/PageHeader'
+import { PageMain } from '@/components/PageMain'
 import {
   Badge,
   Button,
@@ -427,7 +428,7 @@ export default function VideoQueue() {
 
   if (loading) {
     return (
-      <main className="flex flex-1 flex-col gap-section p-page lg:p-page-lg">
+      <PageMain>
         <PageHeader title="Video Queue" description="管理 YouTube 點播系統" />
         <div className="grid grid-cols-1 gap-section lg:grid-cols-12 lg:items-stretch">
           <div className="lg:col-span-8">
@@ -451,7 +452,7 @@ export default function VideoQueue() {
             <Skeleton className="h-48 w-full rounded-xl" />
           </div>
         </div>
-      </main>
+      </PageMain>
     )
   }
 
@@ -461,7 +462,7 @@ export default function VideoQueue() {
   const totalQueuedDuration = state?.total_queued_duration ?? null
 
   return (
-    <main className="relative flex flex-1 flex-col gap-section p-page lg:p-page-lg">
+    <PageMain className="relative">
       <div className="flex items-start justify-between gap-2">
         <PageHeader title="Video Queue" description="管理 YouTube 影片佇列" />
         <Button
@@ -471,7 +472,11 @@ export default function VideoQueue() {
           onClick={() => setHelpOpen(true)}
           title="使用說明"
         >
-          <Icon icon="fa-regular fa-circle-question" className="size-5" />
+          <Icon
+            icon="fa-regular fa-circle-question"
+            wrapperClassName="size-5"
+            className="text-[18px]"
+          />
         </Button>
       </div>
 
@@ -480,26 +485,99 @@ export default function VideoQueue() {
           <SheetHeader>
             <SheetTitle>Video Queue 使用說明</SheetTitle>
           </SheetHeader>
-          <div className="flex flex-col gap-6 px-page text-sm">
-            <div className="flex flex-col gap-2">
-              <p className="font-semibold">Step 1 — Events 開啟兌換</p>
-              <p className="text-muted-foreground leading-relaxed">
-                進入 <span className="text-foreground font-medium">Events</span> →
-                忠誠點數兌換，找到「播放清單」那列，從下拉選取你在 Twitch
-                建立的自訂獎勵，並確認狀態開關已開啟。
-              </p>
+          <div className="flex flex-col px-page py-2">
+            {/* Step 1 — Twitch 新增獎勵 */}
+            <div className="flex gap-3">
+              <div className="flex flex-col items-center">
+                <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10 ring-1 ring-primary/20">
+                  <Icon
+                    icon="fa-brands fa-twitch"
+                    wrapperClassName="size-3.5"
+                    className="text-label text-primary"
+                  />
+                </div>
+                <div className="mt-1 w-px flex-1 bg-border" />
+              </div>
+              <div className="flex flex-col gap-element pb-6">
+                <p className="text-content font-semibold">Twitch 新增獎勵</p>
+                <p className="text-sub text-muted-foreground">
+                  建立自訂獎勵，供觀眾以點數兌換點播。
+                </p>
+                <ul className="flex flex-col gap-1">
+                  {[
+                    '後台 → 社群 → 忠誠點數 → 管理獎勵',
+                    '新增自訂獎勵，設定名稱與點數花費',
+                    '確認獎勵已啟用',
+                  ].map(item => (
+                    <li key={item} className="flex items-start gap-1.5">
+                      <span className="mt-[5px] size-1 shrink-0 rounded-full bg-muted-foreground/50" />
+                      <span className="text-label text-muted-foreground">{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             </div>
-            <Separator />
-            <div className="flex flex-col gap-2">
-              <p className="font-semibold">Step 2 — OBS Overlay</p>
-              <p className="text-muted-foreground leading-relaxed">
-                回到此頁，在「佇列設定」右上角複製 Overlay URL，在 OBS 新增
-                <span className="text-foreground font-medium"> 瀏覽器來源</span>
-                貼上即可（建議 1920×1080）。
-              </p>
-              <p className="text-muted-foreground leading-relaxed">
-                佇列為空時 overlay 全透明；有影片時自動播放並依序跳下一首。
-              </p>
+
+            {/* Step 2 — Events 綁定兌換 */}
+            <div className="flex gap-3">
+              <div className="flex flex-col items-center">
+                <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10 ring-1 ring-primary/20">
+                  <Icon
+                    icon="fa-solid fa-bolt"
+                    wrapperClassName="size-3.5"
+                    className="text-label text-primary"
+                  />
+                </div>
+                <div className="mt-1 w-px flex-1 bg-border" />
+              </div>
+              <div className="flex flex-col gap-element pb-6">
+                <p className="text-content font-semibold">Events 綁定兌換</p>
+                <p className="text-sub text-muted-foreground">將 Twitch 獎勵與播放清單功能連結。</p>
+                <ul className="flex flex-col gap-1">
+                  {[
+                    'Events → 忠誠點數兌換',
+                    '「播放清單」列 → 選取剛建立的獎勵',
+                    '確認狀態開關已開啟',
+                  ].map(item => (
+                    <li key={item} className="flex items-start gap-1.5">
+                      <span className="mt-[5px] size-1 shrink-0 rounded-full bg-muted-foreground/50" />
+                      <span className="text-label text-muted-foreground">{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+
+            {/* Step 3 — OBS Overlay */}
+            <div className="flex gap-3">
+              <div className="flex flex-col items-center">
+                <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10 ring-1 ring-primary/20">
+                  <Icon
+                    icon="fa-solid fa-display"
+                    wrapperClassName="size-3.5"
+                    className="text-label text-primary"
+                  />
+                </div>
+              </div>
+              <div className="flex flex-col gap-element pb-2">
+                <p className="text-content font-semibold">OBS 加入 Overlay</p>
+                <p className="text-sub text-muted-foreground">
+                  觀眾兌換後影片自動播放，佇列空時全透明。
+                </p>
+                <ul className="flex flex-col gap-1">
+                  {[
+                    '「佇列設定」右上角複製 Overlay URL',
+                    'OBS 新增瀏覽器來源，貼上 URL（1920×1080）',
+                    '來源屬性勾選「控制音訊（透過 OBS）」',
+                    '混音器開啟「監聽並輸出」（預設靜音）',
+                  ].map(item => (
+                    <li key={item} className="flex items-start gap-1.5">
+                      <span className="mt-[5px] size-1 shrink-0 rounded-full bg-muted-foreground/50" />
+                      <span className="text-label text-muted-foreground">{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             </div>
           </div>
         </SheetContent>
@@ -813,6 +891,6 @@ export default function VideoQueue() {
           </CardContent>
         </Card>
       </FadeIn>
-    </main>
+    </PageMain>
   )
 }

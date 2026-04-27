@@ -13,6 +13,7 @@ import {
   updateRedemptionConfig,
 } from '@/api/events'
 import { PageHeader } from '@/components/PageHeader'
+import { PageMain } from '@/components/PageMain'
 import { SortableHead } from '@/components/SortableHead'
 import {
   Alert,
@@ -274,7 +275,7 @@ export default function Events() {
   }
 
   return (
-    <main className="flex flex-1 flex-col gap-section p-page lg:p-page-lg">
+    <PageMain>
       <PageHeader title="Events" description="管理頻道事件、自動回應與忠誠點數兌換" />
 
       <SlideUp inView>
@@ -604,6 +605,6 @@ export default function Events() {
           </SheetFooter>
         </SheetContent>
       </Sheet>
-    </main>
+    </PageMain>
   )
 }
