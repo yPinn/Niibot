@@ -41,6 +41,7 @@ import {
   SheetContent,
   SheetDescription,
   SheetHeader,
+  SheetSection,
   SheetTitle,
   Skeleton,
   Spinner,
@@ -482,12 +483,12 @@ export default function VideoQueue() {
       </div>
 
       <Sheet open={helpOpen} onOpenChange={setHelpOpen}>
-        <SheetContent side="right" className="w-80 sm:w-96">
-          <SheetHeader>
+        <SheetContent side="right" className="w-80 sm:w-96 gap-0">
+          <SheetHeader className="border-b">
             <SheetTitle>Video Queue 使用說明</SheetTitle>
             <SheetDescription>如何在 Twitch 設定點播獎勵並使用 Video Queue</SheetDescription>
           </SheetHeader>
-          <div className="flex flex-col px-page py-2">
+          <SheetSection className="flex flex-col flex-1 overflow-y-auto">
             {/* Step 1 — Twitch 新增獎勵 */}
             <div className="flex gap-3">
               <div className="flex flex-col items-center">
@@ -581,7 +582,7 @@ export default function VideoQueue() {
                 </ul>
               </div>
             </div>
-          </div>
+          </SheetSection>
         </SheetContent>
       </Sheet>
 
