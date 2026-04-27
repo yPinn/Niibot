@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 
 import {
+  type ChannelInsights,
   getInsights,
   getViewerProfile,
   listViewers,
-  type ChannelInsights,
   type ViewerProfile,
   type ViewerSummary,
 } from '@/api/analytics'
@@ -201,7 +201,7 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full sm:max-w-[360px] p-0 overflow-y-auto flex flex-col">
+      <SheetContent className="w-full sm:max-w-90 p-0 overflow-y-auto flex flex-col">
         {/* Header */}
         <div className="px-5 pt-6 pb-4 border-b shrink-0">
           <SheetHeader className="text-left pr-8">

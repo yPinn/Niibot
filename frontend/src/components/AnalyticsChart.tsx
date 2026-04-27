@@ -342,7 +342,7 @@ export default function AnalyticsChart({
         icon: 'fa-solid fa-terminal',
       },
     ],
-    [analyticsData]
+    [analyticsData, days]
   )
 
   return (
