@@ -27,11 +27,11 @@ import {
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
-  FadeIn,
   Icon,
   Input,
   Label,
   Skeleton,
+  SlideUp,
   Spinner,
   Switch,
   Table,
@@ -120,7 +120,7 @@ function EntryTable({
                         title="移至當前"
                       >
                         <Icon icon="fa-solid fa-arrow-up-to-line" wrapperClassName="size-3.5" />
-                        移至當前
+                        <span className="hidden sm:inline">移至當前</span>
                       </Button>
                     )}
                     {showRemove && onRemove && (
@@ -255,7 +255,7 @@ export default function GameQueue() {
                 <Skeleton className="h-5 w-24" />
               </CardHeader>
               <CardContent>
-                <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-element">
                   <Skeleton className="h-9 w-full" />
                   {Array.from({ length: 7 }).map((_, i) => (
                     <Skeleton key={i} className="h-10 w-full" />
@@ -285,14 +285,14 @@ export default function GameQueue() {
             className="text-5xl text-muted-foreground"
             wrapperClassName="size-16"
           />
-          <span className="text-sm text-muted-foreground">
+          <span className="text-sub text-muted-foreground">
             成為 Twitch 聯盟夥伴或合作夥伴後即可使用遊戲排隊功能
           </span>
         </div>
       )}
 
       {/* Row 1: Full Queue (col-8) + sidebar (col-4) */}
-      <FadeIn inView className="grid grid-cols-1 gap-section lg:grid-cols-12 lg:items-stretch">
+      <SlideUp inView className="grid grid-cols-1 gap-section lg:grid-cols-12 lg:items-stretch">
         {/* Full Queue card — fills full column height */}
         <div className="lg:col-span-8">
           <Card className="h-full min-h-[360px] lg:min-h-[520px]">
@@ -360,7 +360,7 @@ export default function GameQueue() {
                 />
               </CardAction>
             </CardHeader>
-            <CardContent className="flex flex-col gap-4">
+            <CardContent className="flex flex-col gap-section">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-muted-foreground text-sub shrink-0">快速預設</span>
                 <Button
@@ -380,7 +380,7 @@ export default function GameQueue() {
                   Apex (3人)
                 </Button>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 <Label htmlFor="group-size" className="shrink-0">
                   每場人數（含台主）
                 </Label>
@@ -407,7 +407,7 @@ export default function GameQueue() {
             </CardContent>
           </Card>
         </div>
-      </FadeIn>
+      </SlideUp>
     </PageMain>
   )
 }
