@@ -27,7 +27,6 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-  FadeIn,
   Icon,
   Input,
   Label,
@@ -44,6 +43,7 @@ import {
   SheetSection,
   SheetTitle,
   Skeleton,
+  SlideUp,
   Spinner,
   Switch,
   Table,
@@ -112,7 +112,7 @@ function ClipBadge() {
 function SourceBadge({ source }: { source: string }) {
   const cfg = SOURCE_CONFIG[source] ?? { label: source, className: '' }
   return (
-    <Badge variant="outline" className={`shrink-0 text-xs ${cfg.className}`}>
+    <Badge variant="outline" className={`shrink-0 text-label ${cfg.className}`}>
       {cfg.label}
     </Badge>
   )
@@ -439,7 +439,7 @@ export default function VideoQueue() {
                 <Skeleton className="h-5 w-24" />
               </CardHeader>
               <CardContent>
-                <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-element">
                   <Skeleton className="h-9 w-full" />
                   {Array.from({ length: 6 }).map((_, i) => (
                     <Skeleton key={i} className="h-12 w-full" />
@@ -594,14 +594,14 @@ export default function VideoQueue() {
             className="text-5xl text-muted-foreground"
             wrapperClassName="size-16"
           />
-          <span className="text-sm text-muted-foreground">
+          <span className="text-sub text-muted-foreground">
             成為 Twitch 聯盟夥伴或合作夥伴後即可使用影片佇列功能
           </span>
         </div>
       )}
 
       {/* Row 1: Queue (col-8) always matches right column height */}
-      <FadeIn inView className="grid grid-cols-1 gap-section lg:grid-cols-12 lg:items-stretch">
+      <SlideUp inView className="grid grid-cols-1 gap-section lg:grid-cols-12 lg:items-stretch">
         {/* Queue card — fills full column height */}
         <div className="lg:col-span-8">
           <Card className="h-full">
@@ -701,7 +701,7 @@ export default function VideoQueue() {
                 {/* Duration badge always rendered; invisible preserves height when absent */}
                 <Badge
                   variant="secondary"
-                  className={`text-xs tabular-nums ${current?.duration_seconds ? '' : 'invisible'}`}
+                  className={`text-label tabular-nums ${current?.duration_seconds ? '' : 'invisible'}`}
                 >
                   {current?.duration_seconds ? formatDuration(current.duration_seconds) : '--:--'}
                 </Badge>
@@ -737,10 +737,10 @@ export default function VideoQueue() {
             </CardContent>
           </Card>
         </div>
-      </FadeIn>
+      </SlideUp>
 
       {/* Row 2: Queue settings */}
-      <FadeIn inView delay={0.1}>
+      <SlideUp inView delay={0.1}>
         <Card>
           <CardHeader>
             <CardTitle>佇列設定</CardTitle>
@@ -889,7 +889,7 @@ export default function VideoQueue() {
             </div>
           </CardContent>
         </Card>
-      </FadeIn>
+      </SlideUp>
     </PageMain>
   )
 }
