@@ -254,6 +254,8 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
     if (!userId || !open) return
 
     let cancelled = false
+    setProfile(null)
+    setLoading(true)
     getViewerProfile(userId, days)
       .then(data => {
         if (!cancelled) {
