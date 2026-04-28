@@ -601,6 +601,7 @@ class _AnalyticsQueryMixin:
                             c.username,
                             c.display_name,
                             c.message_count,
+                            c.watch_seconds,
                             c.session_id,
                             c.last_message_at,
                             ROW_NUMBER() OVER (ORDER BY c.last_message_at DESC) AS rn
