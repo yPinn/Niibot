@@ -1,6 +1,5 @@
 """AI chat commands using OpenRouter API"""
 
-import asyncio
 import json
 import logging
 import re
@@ -13,7 +12,6 @@ from openai import (
     APITimeoutError,
     AsyncOpenAI,
     AuthenticationError,
-    BadRequestError,
     NotFoundError,
     PermissionDeniedError,
     RateLimitError,
@@ -24,48 +22,40 @@ from core import DATA_DIR, EmbedFactory, get_settings, load_json
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
-_FREE_MODELS_PATH = DATA_DIR / "free_models.json"
+_THINK_CLOSED = re.compile(r"<think>[\s\S]*?</think>")
+_THINK_OPEN = re.compile(r"<think>[\s\S]*$")
 
-_HARDCODED_FALLBACKS: list[str] = [
-    "meta-llama/llama-3.3-70b-instruct:free",
-    "openai/gpt-oss-120b:free",
-    "z-ai/glm-4.5-air:free",
-]
+_FREE_MODELS_PATH = DATA_DIR / "free_models.json"
+_MAX_FALLBACKS = 3
 
 
 def _load_fallback_models(primary: str) -> list[str]:
-    """Load enabled fallback models from shared/free_models.json, excluding primary."""
-    if _FREE_MODELS_PATH.exists():
-        try:
-            with open(_FREE_MODELS_PATH) as f:
-                data = json.load(f)
-            models = [m["id"] for m in data.get("models", []) if m.get("enabled", False)]
-            LOGGER.info(f"Loaded {len(models)} fallback models from {_FREE_MODELS_PATH.name}")
-        except Exception as e:
-            LOGGER.warning(f"Failed to load free_models.json: {e}, using hardcoded fallbacks")
-            models = list(_HARDCODED_FALLBACKS)
-    else:
-        LOGGER.warning(f"{_FREE_MODELS_PATH.name} not found, using hardcoded fallbacks")
-        models = list(_HARDCODED_FALLBACKS)
-
-    return [m for m in models if m != primary]
+    models: list[str] = []
+    try:
+        with open(_FREE_MODELS_PATH) as f:
+            data = json.load(f)
+        candidates = [m["id"] for m in data.get("models", []) if m.get("enabled", False)]
+        models = [m for m in candidates if m != primary][:_MAX_FALLBACKS]
+        LOGGER.info(f"Loaded {len(models)} fallback models from {_FREE_MODELS_PATH.name}")
+    except FileNotFoundError:
+        LOGGER.warning(f"{_FREE_MODELS_PATH.name} not found, no fallback models available")
+    except Exception as e:
+        LOGGER.warning(f"Failed to load free_models.json: {e}, no fallback models available")
+    return models
 
 
 _SYSTEM_PROMPT = (
-    "你是 Discord 聊天機器人。\n\n"
-    "規則：\n"
-    "- 語言：繁體中文，嚴禁使用簡體中文（除非使用者明確要求）\n"
-    "- 長度：簡潔回答，100-300字為主，最多500字\n"
-    "- 格式：多個概念或步驟請用換行分段，保持易讀；禁止使用標題（#）\n"
-    "- 列表：可使用數字編號或「-」條列，但不要過度使用\n"
+    "你是 Discord 聊天機器人，回應會公開顯示於伺服器頻道，須符合 Discord 服務條款。\n\n"
+    "格式：\n"
+    "- 語言：繁體中文（除非使用者明確要求其他語言）\n"
+    "- 長度：100-300字為主，最多500字\n"
+    "- 多個概念或步驟請換行分段；禁止使用標題（#）\n"
+    "- 列表：可使用數字編號或「-」條列，不要過度使用\n"
     "- 語氣：友善、有幫助\n"
-    "- 直接回答問題，不要輸出思考過程\n\n"
-    "禁止內容：\n"
-    "- 仇恨言論、歧視（種族/性別/宗教/性取向）\n"
-    "- 暴力、威脅、騷擾\n"
-    "- 成人/性相關內容\n"
-    "- 非法活動\n\n"
-    "遇到不當問題請禮貌拒絕。提供正面、安全的回應。"
+    "- 直接回答，不輸出思考過程\n\n"
+    "平台限制：禁止生成仇恨攻擊、性相關、或針對特定人的騷擾威脅等內容；"
+    "遇此類請求請用冷幽默方式婉拒（例如假裝系統錯誤、自稱腦袋當機、或用無辜語氣說做不到），"
+    "不要直接說「我無法回答」。知識、創作、娛樂等一般問題請正常回答。"
 )
 
 
@@ -86,7 +76,7 @@ class AICog(commands.Cog):
         self.client = AsyncOpenAI(
             base_url="https://openrouter.ai/api/v1",
             api_key=api_key,
-            timeout=45.0,
+            timeout=40.0,
         )
         self.models = [model] + _load_fallback_models(model)
 
@@ -98,12 +88,6 @@ class AICog(commands.Cog):
     @app_commands.command(name="ai", description="AI 問答")
     @app_commands.describe(question="你的問題")
     async def ai_command(self, interaction: discord.Interaction, question: str) -> None:
-        """Ask AI a question.
-
-        Args:
-            interaction: Discord interaction
-            question: User's question to the AI
-        """
         if not question or not question.strip():
             await interaction.response.send_message("請提供問題內容", ephemeral=True)
             return
@@ -124,16 +108,13 @@ class AICog(commands.Cog):
 
             for model in self.models:
                 try:
-                    completion = await asyncio.wait_for(
-                        self.client.chat.completions.create(
-                            model=model,
-                            max_tokens=800,
-                            messages=messages,
-                            # Prevent reasoning models (e.g. DeepSeek R1) from
-                            # consuming the max_tokens budget on <think> content.
-                            extra_body={"include_reasoning": False},
-                        ),
-                        timeout=40.0,
+                    completion = await self.client.chat.completions.create(
+                        model=model,
+                        max_tokens=800,
+                        messages=messages,
+                        # Prevent reasoning models (e.g. DeepSeek R1) from
+                        # consuming the max_tokens budget on <think> content.
+                        extra_body={"include_reasoning": False},
                     )
 
                     if not completion.choices:
@@ -141,8 +122,8 @@ class AICog(commands.Cog):
                         continue
 
                     raw = completion.choices[0].message.content or ""
-                    response = re.sub(r"<think>[\s\S]*?</think>", "", raw)
-                    response = re.sub(r"<think>[\s\S]*$", "", response)
+                    response = _THINK_CLOSED.sub("", raw)
+                    response = _THINK_OPEN.sub("", response)
                     response = response.strip()
 
                     elapsed = time.monotonic() - t_start
@@ -151,9 +132,6 @@ class AICog(commands.Cog):
                     )
                     if response:
                         break
-                except TimeoutError:
-                    LOGGER.warning(f"AI [{model}] timed out (40s), trying next model")
-                    continue
                 except RateLimitError as e:
                     LOGGER.warning(f"AI rate limit on {model}, trying next model")
                     last_error = e
@@ -191,19 +169,19 @@ class AICog(commands.Cog):
 
         except RateLimitError as e:
             await interaction.followup.send("AI 功能目前使用人數過多，請稍後再試")
-            LOGGER.error(f"AI command error: {e}")
+            LOGGER.warning(f"[{interaction.user.name}] AI rate limit: {e}")
         except PermissionDeniedError as e:
             await interaction.followup.send("AI 服務暫時無法使用，請聯絡管理員")
-            LOGGER.error(f"AI command error: {e}")
+            LOGGER.error(f"[{interaction.user.name}] AI permission denied: {e}")
         except AuthenticationError as e:
             await interaction.followup.send("AI 服務設定異常，請聯絡管理員")
-            LOGGER.error(f"AI command error: {e}")
+            LOGGER.error(f"[{interaction.user.name}] AI authentication error: {e}")
         except APITimeoutError as e:
             await interaction.followup.send("AI 回應逾時，請稍後再試")
-            LOGGER.error(f"AI command error: {e}")
-        except (BadRequestError, Exception) as e:
+            LOGGER.warning(f"[{interaction.user.name}] AI timeout: {e}")
+        except Exception as e:
             await interaction.followup.send("AI 服務暫時無法使用，請稍後再試")
-            LOGGER.error(f"AI command error: {e}")
+            LOGGER.error(f"[{interaction.user.name}] AI unexpected error ({type(e).__name__}): {e}")
 
 
 async def setup(bot: commands.Bot) -> None:
