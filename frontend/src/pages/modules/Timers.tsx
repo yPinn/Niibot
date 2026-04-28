@@ -457,7 +457,7 @@ export default function Timers() {
       </SlideUp>
 
       <Sheet open={!!editing} onOpenChange={open => !open && setEditing(null)}>
-        <SheetContent>
+        <SheetContent className="gap-section">
           <SheetHeader>
             <SheetTitle>
               {editing?.mode === 'create' ? '新增計時器' : `編輯 ${editing?.timer?.timer_name}`}

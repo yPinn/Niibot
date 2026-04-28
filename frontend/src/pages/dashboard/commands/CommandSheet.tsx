@@ -320,7 +320,7 @@ export function CommandSheet({
 
   return (
     <Sheet open={open} onOpenChange={o => !o && onClose()}>
-      <SheetContent>
+      <SheetContent className="gap-section">
         <SheetHeader>
           <SheetTitle>{sheetTitle}</SheetTitle>
           <SheetDescription>

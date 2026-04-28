@@ -531,7 +531,7 @@ export default function Events() {
       </SlideUp>
 
       <Sheet open={!!editingEvent} onOpenChange={open => !open && setEditingEvent(null)}>
-        <SheetContent>
+        <SheetContent className="gap-section">
           <SheetHeader>
             <SheetTitle>
               編輯{' '}
