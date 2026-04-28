@@ -1,4 +1,3 @@
-import asyncio
 import json
 import logging
 import re
@@ -14,6 +13,7 @@ from openai import (
     RateLimitError,
 )
 from openai.types.chat import ChatCompletionMessageParam
+from pypinyin import lazy_pinyin
 from twitchio.ext import commands
 
 from core.config import DATA_DIR, get_settings
@@ -28,48 +28,101 @@ else:
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
-_FREE_MODELS_PATH = DATA_DIR / "free_models.json"
+_THINK_CLOSED = re.compile(r"<think>[\s\S]*?</think>")
+_THINK_OPEN = re.compile(r"<think>[\s\S]*$")
 
-# Hardcoded fallback used only when free_models.json is missing
-_HARDCODED_FALLBACKS: list[str] = [
-    "meta-llama/llama-3.3-70b-instruct:free",
-    "openai/gpt-oss-120b:free",
-    "z-ai/glm-4.5-air:free",
-]
+_FREE_MODELS_PATH = DATA_DIR / "free_models.json"
+_MAX_FALLBACKS = 3
 
 
 def _load_fallback_models(primary: str) -> list[str]:
-    """Load enabled fallback models from free_models.json, excluding primary."""
-    if _FREE_MODELS_PATH.exists():
-        try:
-            with open(_FREE_MODELS_PATH) as f:
-                data = json.load(f)
-            models = [m["id"] for m in data.get("models", []) if m.get("enabled", False)]
-            LOGGER.info(f"Loaded {len(models)} fallback models from {_FREE_MODELS_PATH.name}")
-        except Exception as e:
-            LOGGER.warning(f"Failed to load free_models.json: {e}, using hardcoded fallbacks")
-            models = list(_HARDCODED_FALLBACKS)
-    else:
-        LOGGER.warning(f"{_FREE_MODELS_PATH.name} not found, using hardcoded fallbacks")
-        models = list(_HARDCODED_FALLBACKS)
+    models: list[str] = []
+    try:
+        with open(_FREE_MODELS_PATH) as f:
+            data = json.load(f)
+        candidates = [m["id"] for m in data.get("models", []) if m.get("enabled", False)]
+        models = [m for m in candidates if m != primary][:_MAX_FALLBACKS]
+        LOGGER.info(f"Loaded {len(models)} fallback models from {_FREE_MODELS_PATH.name}")
+    except FileNotFoundError:
+        LOGGER.warning(f"{_FREE_MODELS_PATH.name} not found, no fallback models available")
+    except Exception as e:
+        LOGGER.warning(f"Failed to load free_models.json: {e}, no fallback models available")
+    return models
 
-    return [m for m in models if m != primary]
+
+_CHAT_FILTER_PATH = DATA_DIR / "chat_filter.json"
+
+_FALLBACK_SUBSTRINGS: list[str] = ["尼哥", "黑鬼"]
+_FALLBACK_PINYIN: list[str] = ["nige", "heigui"]
+
+
+def _load_chat_filter() -> tuple[list[str], list[str]]:
+    substrings: list[str] = _FALLBACK_SUBSTRINGS
+    pinyin_patterns: list[str] = _FALLBACK_PINYIN
+    try:
+        with open(_CHAT_FILTER_PATH, encoding="utf-8") as f:
+            data = json.load(f)
+        substrings = data.get("substrings", _FALLBACK_SUBSTRINGS)
+        pinyin_patterns = data.get("pinyin", _FALLBACK_PINYIN)
+        LOGGER.info(
+            f"chat_filter.json loaded: {len(substrings)} substrings, {len(pinyin_patterns)} pinyin"
+        )
+    except FileNotFoundError:
+        LOGGER.warning("chat_filter.json not found, using hardcoded fallback")
+    except Exception as e:
+        LOGGER.warning(f"Failed to load chat_filter.json: {e}, using hardcoded fallback")
+    return substrings, pinyin_patterns
+
+
+_FLAGGED_SUBSTRINGS, _FLAGGED_PINYIN = _load_chat_filter()
+
+
+# Dialect confusion pairs applied before pinyin matching.
+# Each tuple is (source, replacement); order matters.
+_PINYIN_NORM: list[tuple[str, str]] = [
+    ("l", "n"),  # l/n confusion common in many Mandarin dialects (哩哥 → nige)
+]
+
+
+def _to_flat_pinyin(text: str) -> str:
+    """Convert Chinese characters to concatenated tone-less lowercase pinyin."""
+    return "".join(lazy_pinyin(text)).lower()
+
+
+def _normalize_pinyin(p: str) -> str:
+    for src, dst in _PINYIN_NORM:
+        p = p.replace(src, dst)
+    return p
+
+
+def _scan_response(text: str) -> str | None:
+    """Return a description of the matched pattern if flagged content is found, else None."""
+    for pattern in _FLAGGED_SUBSTRINGS:
+        if pattern in text:
+            return pattern
+
+    if not _FLAGGED_PINYIN:
+        return None
+    pinyin = _normalize_pinyin(_to_flat_pinyin(text))
+    for pattern in _FLAGGED_PINYIN:
+        if pattern in pinyin:
+            return f"pinyin:{pattern}"
+
+    return None
 
 
 _SYSTEM_PROMPT = (
-    "你是 Twitch 聊天機器人。\n\n"
-    "規則：\n"
-    "- 語言：繁體中文，嚴禁使用簡體中文（除非使用者明確要求）\n"
-    "- 長度：最多100字，1-2句話，必須是完整的句子\n"
-    "- 語氣：友善、簡潔\n"
-    "- 格式：一段連貫文字，禁止換行，禁止使用 Markdown 或列表符號（**、*、#、_、- 等）\n"
-    "- 直接回答問題，不要輸出思考過程\n\n"
-    "禁止內容：\n"
-    "- 仇恨言論、歧視（種族/性別/宗教/性取向）\n"
-    "- 暴力、威脅、騷擾\n"
-    "- 成人/性相關內容\n"
-    "- 非法活動\n\n"
-    "遇到不當問題請禮貌拒絕。提供正面、安全的回應。"
+    "你是 Twitch 聊天室機器人，回應直接顯示於公開直播聊天室，須符合 Twitch 服務條款。\n\n"
+    "格式：\n"
+    "- 語言：繁體中文（除非使用者明確要求其他語言）\n"
+    "- 長度：最多100字，1-2句完整句子\n"
+    "- 一段連貫文字，禁止換行，禁止 Markdown 符號（**、*、#、_、- 等）\n"
+    "- 直接回答，不輸出思考過程\n"
+    "- 人名、地名等專有名詞請附上英文原名或優先使用英文（例：Copernicus、Newton），"
+    "避免中文字元組合意外觸發平台自動過濾器\n\n"
+    "平台限制：禁止生成仇恨攻擊、性相關、或針對特定人的騷擾威脅等內容；"
+    "遇此類請求請用冷幽默方式婉拒（例如假裝系統錯誤、自稱腦袋當機、或用無辜語氣說做不到），"
+    "不要直接說「我無法回答」。知識、遊戲、娛樂等一般問題請正常回答。"
 )
 
 
@@ -140,16 +193,13 @@ class AIComponent(commands.Component):
 
             for model in self.models:
                 try:
-                    completion = await asyncio.wait_for(
-                        self.client.chat.completions.create(
-                            model=model,
-                            max_tokens=250,
-                            messages=messages,
-                            # Prevent reasoning models (e.g. DeepSeek R1) from
-                            # consuming the max_tokens budget on <think> content.
-                            extra_body={"include_reasoning": False},
-                        ),
-                        timeout=20.0,
+                    completion = await self.client.chat.completions.create(
+                        model=model,
+                        max_tokens=250,
+                        messages=messages,
+                        # Prevent reasoning models (e.g. DeepSeek R1) from
+                        # consuming the max_tokens budget on <think> content.
+                        extra_body={"include_reasoning": False},
                     )
 
                     if not completion.choices:
@@ -157,8 +207,8 @@ class AIComponent(commands.Component):
                         continue
 
                     raw = completion.choices[0].message.content or ""
-                    response = re.sub(r"<think>[\s\S]*?</think>", "", raw)
-                    response = re.sub(r"<think>[\s\S]*$", "", response)
+                    response = _THINK_CLOSED.sub("", raw)
+                    response = _THINK_OPEN.sub("", response)
                     response = response.strip()
 
                     elapsed = time.monotonic() - t_start
@@ -167,9 +217,6 @@ class AIComponent(commands.Component):
                     )
                     if response:
                         break
-                except TimeoutError:
-                    LOGGER.warning(f"AI [{model}] timed out (20s), trying next model")
-                    continue
                 except RateLimitError as e:
                     LOGGER.warning(f"AI rate limit on {model}, trying next model")
                     last_error = e
@@ -188,7 +235,6 @@ class AIComponent(commands.Component):
             # Twitch message limit is 500 characters — truncate at sentence boundary
             if len(response) > 500:
                 truncated = response[:497]
-                # Find the last sentence-ending punctuation within the limit
                 for punct in ("。", "！", "？", "!", "?", "."):
                     pos = truncated.rfind(punct)
                     if pos > len(truncated) // 2:  # must keep at least half the text
@@ -198,6 +244,13 @@ class AIComponent(commands.Component):
                     response = truncated + "…"
 
             if response:
+                flagged = _scan_response(response)
+                if flagged:
+                    LOGGER.warning(
+                        f"[{ctx.channel.name}] AI response blocked — flagged substring: {flagged!r}"
+                    )
+                    await ctx.reply("訊號不穩，剛才那句話被宇宙射線干擾掉了，換個問題試試？")
+                    return
                 await ctx.reply(response)
                 try:
                     await self.cmd_repo.increment_usage_count(ctx.channel.id, "ai")
