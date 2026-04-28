@@ -316,7 +316,9 @@ class TwitchAPIClient:
                 "name": user.get("login"),
                 "display_name": user.get("display_name"),
                 "avatar": user.get("profile_image_url"),
+                "offline_image_url": user.get("offline_image_url") or None,
                 "broadcaster_type": user.get("broadcaster_type", ""),
+                "account_created_at": user.get("created_at"),
             }
 
         except Exception as e:
@@ -411,6 +413,84 @@ class TwitchAPIClient:
         except Exception as e:
             LOGGER.exception(f"Error checking moderator status: {e}")
             return False
+
+    async def get_mod_status(self, broadcaster_id: str, user_id: str, token: str) -> bool:
+        """Return True if user_id is currently a moderator in broadcaster_id's channel."""
+        try:
+            response = await self._helix_get(
+                "moderation/moderators",
+                {"broadcaster_id": broadcaster_id, "user_id": user_id},
+                token=token,
+            )
+            if not response or response.status_code != 200:
+                return False
+            return len(response.json().get("data", [])) > 0
+        except Exception as e:
+            LOGGER.warning(f"Error checking mod status for viewer {user_id}: {e}")
+            return False
+
+    async def get_vip_status(self, broadcaster_id: str, user_id: str, token: str) -> bool:
+        """Return True if user_id is a VIP in broadcaster_id's channel."""
+        try:
+            response = await self._helix_get(
+                "channels/vips",
+                {"broadcaster_id": broadcaster_id, "user_id": user_id},
+                token=token,
+            )
+            if not response or response.status_code != 200:
+                return False
+            return len(response.json().get("data", [])) > 0
+        except Exception as e:
+            LOGGER.warning(f"Error checking VIP status for viewer {user_id}: {e}")
+            return False
+
+    async def get_ban_status(self, broadcaster_id: str, user_id: str, token: str) -> dict | None:
+        """Return ban info dict if user_id is banned, else None.
+
+        Requires moderation:read scope on broadcaster token.
+        Returns {"expires_at": str|None, "reason": str|None} when banned.
+        expires_at is None for permanent bans.
+        """
+        try:
+            response = await self._helix_get(
+                "moderation/banned",
+                {"broadcaster_id": broadcaster_id, "user_id": user_id},
+                token=token,
+            )
+            if not response or response.status_code != 200:
+                return None
+            data = response.json().get("data", [])
+            if not data:
+                return None
+            ban = data[0]
+            return {
+                "expires_at": ban.get("expires_at") or None,
+                "reason": ban.get("reason") or None,
+            }
+        except Exception as e:
+            LOGGER.warning(f"Error checking ban status for viewer {user_id}: {e}")
+            return None
+
+    async def get_bits_rank(self, user_id: str, token: str) -> int | None:
+        """Return broadcaster-channel bits leaderboard rank for user_id, or None if unranked.
+
+        Uses the broadcaster token (bits:read scope). The broadcaster is implicit in the token.
+        """
+        try:
+            response = await self._helix_get(
+                "bits/leaderboard",
+                {"user_id": user_id, "period": "all"},
+                token=token,
+            )
+            if not response or response.status_code != 200:
+                return None
+            data = response.json().get("data", [])
+            if not data:
+                return None
+            return cast(int | None, data[0].get("rank"))
+        except Exception as e:
+            LOGGER.warning(f"Error fetching bits rank for viewer {user_id}: {e}")
+            return None
 
     async def add_moderator(
         self, broadcaster_id: str, moderator_user_id: str, access_token: str

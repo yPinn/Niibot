@@ -135,6 +135,7 @@ export interface ViewerSummary {
   total_messages: number
   sessions_attended: number
   last_seen: string | null
+  watch_seconds: number
   total_bits: number
 }
 
@@ -148,10 +149,20 @@ export interface ViewerTwitchStatus {
   is_subscribed: boolean
   sub_tier: string | null
   sub_gifted: boolean | null
+  sub_gifter: string | null
+  is_mod: boolean
+  is_vip: boolean
+  is_banned: boolean
+  ban_expires_at: string | null
+  ban_reason: string | null
+  bits_rank: number | null
 }
 
 export interface ViewerProfile extends ViewerSummary {
   profile_image_url: string | null
+  offline_image_url: string | null
+  account_created_at: string | null
+  broadcaster_type: string | null
   follow_since: string | null
   twitch: ViewerTwitchStatus | null
   events: ViewerEvent[]

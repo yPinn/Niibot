@@ -26,6 +26,10 @@ import {
   Tabs,
   TabsList,
   TabsTrigger,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
 } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
@@ -50,21 +54,57 @@ function formatDateFull(iso: string | null | undefined): string {
   })
 }
 
+function formatDuration(seconds: number): string {
+  if (!seconds || !Number.isFinite(seconds) || seconds <= 0) return '—'
+  const d = Math.floor(seconds / 86400)
+  const h = Math.floor((seconds % 86400) / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const hh = String(h).padStart(2, '0')
+  const mm = String(m).padStart(2, '0')
+  return d > 0 ? `${d}/${hh}:${mm}` : `${hh}:${mm}`
+}
+
+function formatCompact(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
+  return n.toLocaleString()
+}
+
 // ─── Summary Tiles ───────────────────────────────────────────────────────────
 
-function SummaryTile({ icon, value, label }: { icon: string; value: string; label: string }) {
+function SummaryTile({
+  icon,
+  value,
+  label,
+  iconClassName,
+}: {
+  icon: string
+  value: string
+  label: string
+  iconClassName?: string
+}) {
   return (
     <div className="rounded-md border bg-card px-3 py-2.5">
       <div className="flex items-center justify-between mb-1">
-        <p className="text-xs text-muted-foreground">{label}</p>
-        <Icon icon={icon} size="sm" wrapperClassName="text-muted-foreground/60" />
+        <p className="text-label text-muted-foreground">{label}</p>
+        <Icon
+          icon={icon}
+          size="sm"
+          wrapperClassName={iconClassName ?? 'text-muted-foreground/60'}
+        />
       </div>
-      <p className="text-xl font-bold tabular-nums">{value}</p>
+      <p className="text-section-title font-bold tabular-nums">{value}</p>
     </div>
   )
 }
 
 // ─── Viewer List ─────────────────────────────────────────────────────────────
+
+// Mobile:  rank | name | bits | messages            (2 data cols)
+// sm+:     +sessions +watch                          (4 data cols)
+// lg+:     +last_seen                               (5 data cols)
+const ROW_GRID =
+  'grid-cols-[1.25rem_minmax(0,1fr)_6rem_6rem] sm:grid-cols-[1.25rem_minmax(0,1fr)_repeat(4,6rem)] lg:grid-cols-[1.25rem_minmax(0,1fr)_repeat(5,6rem)]'
 
 interface ViewerRowProps {
   viewer: ViewerSummary
@@ -77,27 +117,26 @@ function ViewerRow({ viewer, rank, onClick }: ViewerRowProps) {
   return (
     <button
       onClick={onClick}
-      className="w-full flex items-center gap-3 rounded-md border bg-card px-3 py-2.5 hover:bg-accent transition-colors text-left"
+      className={`w-full grid items-center gap-3 rounded-md border bg-card px-3 py-2.5 hover:bg-accent transition-colors text-left ${ROW_GRID}`}
     >
-      <span className="text-xs font-mono text-muted-foreground w-5 shrink-0 text-right">
+      <span className="text-sub font-mono font-semibold text-muted-foreground text-right">
         {rank}
       </span>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium truncate">{name}</p>
-        <p className="text-xs text-muted-foreground truncate">@{viewer.username}</p>
+      <div className="min-w-0">
+        <p className="text-sub font-medium truncate">{name}</p>
+        <p className="text-label text-muted-foreground truncate">@{viewer.username}</p>
       </div>
-      <div className="flex items-center gap-4 shrink-0">
-        <Col value={viewer.total_messages.toLocaleString()} label="留言" />
-        <Col value={String(viewer.sessions_attended)} label="場次" />
-        <Col
-          value={viewer.total_bits > 0 ? viewer.total_bits.toLocaleString() : '—'}
-          label="小奇點"
-          valueClassName={viewer.total_bits > 0 ? 'text-primary' : 'text-muted-foreground'}
-        />
-        <span className="text-xs text-muted-foreground w-12 text-right shrink-0 hidden sm:block">
-          {formatDate(viewer.last_seen)}
-        </span>
-      </div>
+      <Col
+        value={viewer.total_bits > 0 ? viewer.total_bits.toLocaleString() : '—'}
+        label="小奇點"
+        valueClassName={viewer.total_bits > 0 ? 'text-primary' : 'text-muted-foreground'}
+      />
+      <Col value={viewer.total_messages.toLocaleString()} label="留言" />
+      <Col value={String(viewer.sessions_attended)} label="場次" className="hidden sm:block" />
+      <Col value={formatDuration(viewer.watch_seconds)} label="時長" className="hidden sm:block" />
+      <span className="text-label text-muted-foreground text-right hidden lg:block">
+        {formatDate(viewer.last_seen)}
+      </span>
     </button>
   )
 }
@@ -106,15 +145,17 @@ function Col({
   value,
   label,
   valueClassName,
+  className,
 }: {
   value: string
   label: string
   valueClassName?: string
+  className?: string
 }) {
   return (
-    <div className="w-14 text-right shrink-0">
-      <p className={`text-sm font-bold tabular-nums ${valueClassName ?? ''}`}>{value}</p>
-      <p className="text-xs text-muted-foreground">{label}</p>
+    <div className={`text-right ${className ?? ''}`}>
+      <p className={`text-sub font-bold tabular-nums ${valueClassName ?? ''}`}>{value}</p>
+      <p className="text-label text-muted-foreground">{label}</p>
     </div>
   )
 }
@@ -123,8 +164,8 @@ function Col({
 
 const EVENT_META: Record<string, { icon: string; label: string; color: string }> = {
   follow: { icon: 'fa-solid fa-heart', label: '追隨', color: 'text-rose-400' },
-  subscribe: { icon: 'fa-solid fa-star', label: '訂閱', color: 'text-[var(--status-special)]' },
-  cheer: { icon: 'fa-solid fa-gem', label: '小奇點', color: 'text-primary' },
+  subscribe: { icon: 'fa-solid fa-star', label: '訂閱', color: 'text-status-special' },
+  cheer: { icon: 'fa-solid fa-diamond-half-stroke', label: '小奇點', color: 'text-primary' },
 }
 
 const SUB_TIER_LABEL: Record<string, string> = {
@@ -140,6 +181,21 @@ interface ViewerSheetProps {
   days: number
 }
 
+function PartnerBadge() {
+  return (
+    <TooltipProvider delayDuration={300}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="shrink-0 inline-flex">
+            <Icon icon="fa-solid fa-circle-check" size="sm" wrapperClassName="text-primary" />
+          </span>
+        </TooltipTrigger>
+        <TooltipContent>合作夥伴</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
+}
+
 function StatusRow({
   icon,
   iconClass,
@@ -152,18 +208,41 @@ function StatusRow({
   return (
     <div className="flex items-center gap-3">
       <Icon icon={icon} size="sm" wrapperClassName={`shrink-0 ${iconClass}`} />
-      <span className="text-sm text-foreground">{children}</span>
+      <span className="text-sub text-foreground">{children}</span>
     </div>
   )
 }
 
-function StatTile({ icon, value, label }: { icon: string; value: string; label: string }) {
-  return (
+function StatTile({
+  icon,
+  value,
+  label,
+  tooltip,
+}: {
+  icon: string
+  value: string
+  label: string
+  tooltip?: string
+}) {
+  const inner = (
     <div className="rounded-md border bg-card p-3 flex flex-col gap-1.5">
-      <Icon icon={icon} size="sm" wrapperClassName="text-primary/70" />
-      <p className="text-lg font-bold tabular-nums leading-none">{value}</p>
-      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="text-label text-muted-foreground">{label}</p>
+      <div className="flex items-end justify-between">
+        <p className="text-card-title font-bold tabular-nums leading-none">{value}</p>
+        <Icon icon={icon} size="sm" wrapperClassName="text-primary/70" />
+      </div>
     </div>
+  )
+
+  if (!tooltip) return inner
+
+  return (
+    <TooltipProvider delayDuration={300}>
+      <Tooltip>
+        <TooltipTrigger asChild>{inner}</TooltipTrigger>
+        <TooltipContent>{tooltip}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   )
 }
 
@@ -175,8 +254,6 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
     if (!userId || !open) return
 
     let cancelled = false
-    setProfile(null)
-    setLoading(true)
     getViewerProfile(userId, days)
       .then(data => {
         if (!cancelled) {
@@ -200,12 +277,16 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
   const username = profile?.username
   const twitch = profile?.twitch
 
+  const isPartner = profile?.broadcaster_type === 'partner'
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full sm:max-w-90 p-0 gap-0 overflow-y-auto flex flex-col">
+      <SheetContent className="w-full sm:max-w-90 p-0 overflow-y-auto flex flex-col select-none">
         {/* Header */}
-        <SheetHeader className="pr-10 shrink-0">
-          {loading ? (
+        {loading ? (
+          <SheetHeader className="pr-10 shrink-0">
+            <SheetTitle className="sr-only">載入觀眾資料</SheetTitle>
+            <SheetDescription className="sr-only">正在載入</SheetDescription>
             <div className="flex items-center gap-3">
               <Skeleton className="h-11 w-11 rounded-full shrink-0" />
               <div className="space-y-1.5 flex-1 min-w-0">
@@ -213,7 +294,63 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
                 <Skeleton className="h-4 w-24" />
               </div>
             </div>
-          ) : (
+          </SheetHeader>
+        ) : profile?.offline_image_url ? (
+          /* ── Banner mode: plain div so SheetHeader's p-page doesn't create gaps ── */
+          <div className="shrink-0">
+            <SheetTitle className="sr-only">{name}</SheetTitle>
+            <SheetDescription className="sr-only">
+              {username ? `@${username}` : '觀眾資料'}
+            </SheetDescription>
+            <div className="relative">
+              <img
+                src={profile.offline_image_url}
+                alt=""
+                className="w-full h-24 object-cover object-center"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent" />
+            </div>
+            <div className="relative z-10 flex items-end gap-3 px-page pb-3 pr-12 -mt-8">
+              <div className="shrink-0 relative z-10">
+                {profile.profile_image_url ? (
+                  <img
+                    src={profile.profile_image_url}
+                    alt={name}
+                    className="h-16 w-16 rounded-full object-cover ring-2 ring-background"
+                  />
+                ) : (
+                  <div className="h-16 w-16 rounded-full bg-muted ring-2 ring-background flex items-center justify-center text-sub font-bold text-muted-foreground select-none">
+                    {name.charAt(0).toUpperCase()}
+                  </div>
+                )}
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-base font-semibold leading-snug truncate select-text">
+                    {name}
+                  </span>
+                  {isPartner && <PartnerBadge />}
+                </div>
+                <p className="text-label text-muted-foreground mt-0.5">
+                  {username ? (
+                    <a
+                      href={`https://twitch.tv/${username}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="select-text hover:text-foreground hover:underline transition-colors"
+                    >
+                      @{username}
+                    </a>
+                  ) : (
+                    '觀眾資料'
+                  )}
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : (
+          /* ── No banner mode ── */
+          <SheetHeader className="pr-10 shrink-0">
             <div className="flex items-center gap-3">
               {profile?.profile_image_url ? (
                 <img
@@ -222,19 +359,33 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
                   className="h-11 w-11 rounded-full shrink-0 object-cover"
                 />
               ) : (
-                <div className="h-11 w-11 rounded-full shrink-0 bg-muted flex items-center justify-center text-sm font-bold text-muted-foreground select-none">
+                <div className="h-11 w-11 rounded-full shrink-0 bg-muted flex items-center justify-center text-sub font-bold text-muted-foreground select-none">
                   {name.charAt(0).toUpperCase()}
                 </div>
               )}
               <div className="min-w-0">
-                <SheetTitle className="text-base leading-snug">{name}</SheetTitle>
-                <SheetDescription className="text-xs mt-0.5">
-                  {username ? `@${username}` : '觀眾資料'}
+                <div className="flex items-center gap-2">
+                  <SheetTitle className="text-base leading-snug select-text">{name}</SheetTitle>
+                  {isPartner && <PartnerBadge />}
+                </div>
+                <SheetDescription className="text-label mt-0.5">
+                  {username ? (
+                    <a
+                      href={`https://twitch.tv/${username}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="select-text hover:text-foreground hover:underline transition-colors"
+                    >
+                      @{username}
+                    </a>
+                  ) : (
+                    '觀眾資料'
+                  )}
                 </SheetDescription>
               </div>
             </div>
-          )}
-        </SheetHeader>
+          </SheetHeader>
+        )}
 
         {loading ? (
           <SheetSection className="space-y-4 flex-1">
@@ -255,7 +406,7 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
           </SheetSection>
         ) : profile ? (
           <>
-            {/* Follow / Sub status */}
+            {/* Follow / Sub / Role / Ban status */}
             <SheetSection className="space-y-3">
               <StatusRow icon="fa-solid fa-heart" iconClass="text-rose-400">
                 {profile.follow_since ? (
@@ -268,12 +419,14 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
                 )}
               </StatusRow>
               {twitch?.is_subscribed ? (
-                <StatusRow icon="fa-solid fa-star" iconClass="text-[var(--status-special)]">
+                <StatusRow icon="fa-solid fa-star" iconClass="text-status-special">
                   <span className="font-medium">
                     {SUB_TIER_LABEL[twitch.sub_tier ?? ''] ?? '訂閱中'}
                   </span>
                   {twitch.sub_gifted && (
-                    <span className="ml-1 text-muted-foreground text-xs">（贈訂）</span>
+                    <span className="ml-1 text-muted-foreground text-label">
+                      {twitch.sub_gifter ? `・由 @${twitch.sub_gifter} 贈送` : '・贈禮訂閱'}
+                    </span>
                   )}
                 </StatusRow>
               ) : (
@@ -281,30 +434,91 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
                   <span className="text-muted-foreground">尚未訂閱</span>
                 </StatusRow>
               )}
+              {twitch?.is_mod && (
+                <StatusRow icon="fa-solid fa-sword" iconClass="text-status-success">
+                  <span className="font-medium">頻道管理員</span>
+                </StatusRow>
+              )}
+              {twitch?.is_vip && (
+                <StatusRow icon="fa-solid fa-gem" iconClass="text-[#e005b9]">
+                  <span className="font-medium">VIP</span>
+                </StatusRow>
+              )}
+              {twitch?.is_banned && (
+                <StatusRow icon="fa-solid fa-ban" iconClass="text-destructive">
+                  {twitch.ban_expires_at ? (
+                    <span>
+                      封禁至{' '}
+                      <span className="font-medium">{formatDateFull(twitch.ban_expires_at)}</span>
+                      {twitch.ban_reason && (
+                        <span className="text-muted-foreground ml-1">（{twitch.ban_reason}）</span>
+                      )}
+                    </span>
+                  ) : (
+                    <span>
+                      永久封禁
+                      {twitch.ban_reason && (
+                        <span className="text-muted-foreground ml-1">（{twitch.ban_reason}）</span>
+                      )}
+                    </span>
+                  )}
+                </StatusRow>
+              )}
             </SheetSection>
 
             {/* Stats */}
             <SheetSection>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 gap-3">
+                <StatTile
+                  icon="fa-solid fa-diamond-half-stroke"
+                  value={profile.total_bits > 0 ? formatCompact(profile.total_bits) : '—'}
+                  label="小奇點"
+                  tooltip={
+                    profile.total_bits >= 1_000 ? profile.total_bits.toLocaleString() : undefined
+                  }
+                />
                 <StatTile
                   icon="fa-solid fa-comments"
-                  value={profile.total_messages.toLocaleString()}
+                  value={formatCompact(profile.total_messages)}
                   label="留言次數"
+                  tooltip={
+                    profile.total_messages >= 1_000
+                      ? profile.total_messages.toLocaleString()
+                      : undefined
+                  }
                 />
                 <StatTile
                   icon="fa-solid fa-calendar-days"
-                  value={String(profile.sessions_attended)}
+                  value={formatCompact(profile.sessions_attended)}
                   label="出現場次"
                 />
                 <StatTile
-                  icon="fa-solid fa-gem"
-                  value={profile.total_bits > 0 ? profile.total_bits.toLocaleString() : '—'}
-                  label="小奇點"
+                  icon="fa-solid fa-clock"
+                  value={profile.watch_seconds > 0 ? formatDuration(profile.watch_seconds) : '—'}
+                  label="觀看時長"
+                  tooltip={
+                    profile.watch_seconds >= 3600
+                      ? `${Math.floor(profile.watch_seconds / 60).toLocaleString()} 分鐘`
+                      : undefined
+                  }
                 />
               </div>
-              <p className="text-xs text-muted-foreground mt-3">
-                最後活躍：{formatDate(profile.last_seen)}
-              </p>
+              <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3">
+                <p className="text-label text-muted-foreground">
+                  最後活躍：{formatDate(profile.last_seen)}
+                </p>
+                {twitch?.bits_rank != null && (
+                  <p className="text-label text-muted-foreground">
+                    小奇點排名：
+                    <span className="font-medium text-foreground">#{twitch.bits_rank}</span>
+                  </p>
+                )}
+                {profile.account_created_at && (
+                  <p className="text-label text-muted-foreground">
+                    帳號建立：{formatDateFull(profile.account_created_at)}
+                  </p>
+                )}
+              </div>
             </SheetSection>
 
             {/* Events */}
@@ -321,20 +535,44 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
                       ev.event_type === 'cheer'
                         ? (ev.metadata as { bits?: number })?.bits
                         : undefined
+                    const subMeta =
+                      ev.event_type === 'subscribe'
+                        ? (ev.metadata as {
+                            tier?: string
+                            is_gift?: boolean
+                            gift_count?: number
+                          } | null)
+                        : undefined
+                    const subTierLabel = subMeta?.tier
+                      ? (SUB_TIER_LABEL[String(Number(subMeta.tier) / 1000)] ?? null)
+                      : null
+                    const isGift = subMeta?.is_gift === true
+                    const giftCount = isGift ? (subMeta?.gift_count ?? null) : null
+                    const rowIcon = isGift ? 'fa-solid fa-gift' : meta.icon
+                    const rowColor = isGift ? 'text-status-special' : meta.color
+                    const rowLabel = isGift ? '贈禮訂閱' : meta.label
                     return (
                       <div key={i} className="flex items-center gap-3 py-1.5">
-                        <Icon
-                          icon={meta.icon}
-                          size="sm"
-                          wrapperClassName={`${meta.color} shrink-0`}
-                        />
-                        <span className="text-sm flex-1">
-                          {meta.label}
+                        <Icon icon={rowIcon} size="sm" wrapperClassName={`${rowColor} shrink-0`} />
+                        <span className="text-sub flex-1 flex items-center gap-1.5">
+                          {rowLabel}
+                          {subTierLabel && (
+                            <span className="text-muted-foreground">({subTierLabel})</span>
+                          )}
+                          {giftCount != null && (
+                            <>
+                              <span className="text-muted-foreground">×</span>
+                              <span>{giftCount}</span>
+                            </>
+                          )}
                           {bits !== undefined && (
-                            <span className="text-muted-foreground ml-1">× {bits}</span>
+                            <>
+                              <span className="text-muted-foreground">×</span>
+                              <span>{bits.toLocaleString()}</span>
+                            </>
                           )}
                         </span>
-                        <span className="text-xs text-muted-foreground shrink-0">
+                        <span className="text-label text-muted-foreground shrink-0">
                           {formatDate(ev.occurred_at)}
                         </span>
                       </div>
@@ -346,7 +584,7 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
           </>
         ) : (
           <SheetSection>
-            <p className="text-sm text-muted-foreground">無法載入觀眾資料</p>
+            <p className="text-sub text-muted-foreground">無法載入觀眾資料</p>
           </SheetSection>
         )}
       </SheetContent>
@@ -362,6 +600,8 @@ export default function Insights() {
 
   const [period, setPeriod] = useState('30')
   const [search, setSearch] = useState('')
+  const [sort, setSort] = useState<'messages' | 'watch' | 'bits' | 'sessions' | 'last_seen'>('bits')
+  const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc')
   const [initialized, setInitialized] = useState(false)
   const [viewers, setViewers] = useState<ViewerSummary[]>([])
   const [insights, setInsights] = useState<ChannelInsights | null>(null)
@@ -413,11 +653,75 @@ export default function Insights() {
     setPeriod(value)
   }
 
-  const filtered = viewers.filter(v => {
-    if (!search.trim()) return true
-    const q = search.toLowerCase()
-    return (v.display_name ?? '').toLowerCase().includes(q) || v.username.toLowerCase().includes(q)
-  })
+  const SORT_COLS = [
+    {
+      key: 'bits',
+      label: '小奇點',
+      icon: 'fa-solid fa-diamond-half-stroke',
+      natural: 'desc',
+      show: '',
+    },
+    { key: 'messages', label: '留言次數', icon: 'fa-solid fa-comment', natural: 'desc', show: '' },
+    {
+      key: 'sessions',
+      label: '出現場次',
+      icon: 'fa-solid fa-calendar-days',
+      natural: 'desc',
+      show: 'hidden sm:flex',
+    },
+    {
+      key: 'watch',
+      label: '觀看時長',
+      icon: 'fa-solid fa-clock',
+      natural: 'desc',
+      show: 'hidden sm:flex',
+    },
+    {
+      key: 'last_seen',
+      label: '最後出現',
+      icon: 'fa-solid fa-hourglass-end',
+      natural: 'desc',
+      show: 'hidden lg:flex',
+    },
+  ] as const
+
+  const handleSort = (key: typeof sort) => {
+    if (sort === key) {
+      setSortDir(d => (d === 'desc' ? 'asc' : 'desc'))
+    } else {
+      const col = SORT_COLS.find(c => c.key === key)!
+      setSort(key)
+      setSortDir(col.natural as 'desc' | 'asc')
+    }
+  }
+
+  const filtered = viewers
+    .filter(v => {
+      if (!search.trim()) return true
+      const q = search.toLowerCase()
+      return (
+        (v.display_name ?? '').toLowerCase().includes(q) || v.username.toLowerCase().includes(q)
+      )
+    })
+    .sort((a, b) => {
+      const dir = sortDir === 'desc' ? 1 : -1
+      switch (sort) {
+        case 'messages':
+          return dir * (b.total_messages - a.total_messages)
+        case 'watch':
+          return dir * (b.watch_seconds - a.watch_seconds)
+        case 'bits':
+          return dir * (b.total_bits - a.total_bits)
+        case 'sessions':
+          return dir * (b.sessions_attended - a.sessions_attended)
+        case 'last_seen': {
+          if (!a.last_seen && !b.last_seen) return 0
+          if (!a.last_seen) return 1
+          if (!b.last_seen) return -1
+          return dir * b.last_seen.localeCompare(a.last_seen)
+        }
+      }
+    })
 
   return (
     <PageMain>
@@ -435,23 +739,27 @@ export default function Insights() {
                 icon="fa-solid fa-comments"
                 value={insights?.total_messages.toLocaleString() ?? '—'}
                 label="聊天訊息"
+                iconClassName="text-status-info/80"
               />
               <SummaryTile
                 icon="fa-solid fa-heart"
                 value={insights?.total_follows.toLocaleString() ?? '—'}
                 label="新追隨"
+                iconClassName="text-rose-400/80"
               />
               <SummaryTile
                 icon="fa-solid fa-star"
                 value={insights?.total_subs.toLocaleString() ?? '—'}
                 label="新訂閱"
+                iconClassName="text-primary/80"
               />
               <SummaryTile
-                icon="fa-solid fa-gem"
+                icon="fa-solid fa-diamond-half-stroke"
                 value={
                   insights && insights.total_bits > 0 ? insights.total_bits.toLocaleString() : '—'
                 }
                 label="小奇點"
+                iconClassName="text-primary/80"
               />
             </>
           )}
@@ -493,6 +801,40 @@ export default function Insights() {
           </Empty>
         ) : (
           <div className="space-y-1">
+            <div
+              className={`grid items-center gap-3 px-3 pb-1 border border-transparent text-label text-muted-foreground ${ROW_GRID}`}
+            >
+              <span />
+              <span>觀眾</span>
+              {SORT_COLS.map(col => {
+                const active = sort === col.key
+                return (
+                  <button
+                    key={col.key}
+                    type="button"
+                    onClick={() => handleSort(col.key)}
+                    className={[
+                      'items-center justify-end gap-1 rounded pl-1 pr-0 py-0.5 transition-colors',
+                      col.show || 'flex',
+                      active ? 'text-foreground font-medium' : 'hover:text-foreground',
+                    ].join(' ')}
+                  >
+                    <i className={`${col.icon} text-[10px]`} />
+                    {col.label}
+                    <i
+                      className={[
+                        'fa-solid text-[9px] transition-opacity',
+                        active
+                          ? sortDir === 'desc'
+                            ? 'fa-arrow-down opacity-100'
+                            : 'fa-arrow-up opacity-100'
+                          : 'fa-sort opacity-30',
+                      ].join(' ')}
+                    />
+                  </button>
+                )
+              })}
+            </div>
             {filtered.map((v, i) => (
               <ViewerRow
                 key={v.user_id}
@@ -506,6 +848,7 @@ export default function Insights() {
       </SlideUp>
 
       <ViewerSheet
+        key={`${selectedUserId}-${period}`}
         userId={selectedUserId}
         open={selectedUserId !== null}
         onOpenChange={open => {

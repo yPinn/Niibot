@@ -21,6 +21,7 @@ BROADCASTER_SCOPES: list[str] = [
     "channel:manage:moderators",
     "channel:manage:vips",
     "bits:read",
+    "moderation:read",
     "moderator:read:followers",
     "moderator:read:chatters",
 ]

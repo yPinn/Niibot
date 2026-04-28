@@ -4,7 +4,7 @@ import asyncio
 import json
 import logging
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, field_validator
@@ -101,6 +101,7 @@ class ViewerSummary(BaseModel):
     total_messages: int
     sessions_attended: int
     last_seen: datetime | None
+    watch_seconds: int
     total_bits: int
 
 
@@ -119,6 +120,13 @@ class ViewerTwitchStatus(BaseModel):
     is_subscribed: bool
     sub_tier: str | None = None
     sub_gifted: bool | None = None
+    sub_gifter: str | None = None
+    is_mod: bool = False
+    is_vip: bool = False
+    is_banned: bool = False
+    ban_expires_at: datetime | None = None
+    ban_reason: str | None = None
+    bits_rank: int | None = None
 
 
 class ViewerProfile(BaseModel):
@@ -126,9 +134,13 @@ class ViewerProfile(BaseModel):
     username: str
     display_name: str | None
     profile_image_url: str | None = None
+    offline_image_url: str | None = None
+    account_created_at: datetime | None = None
+    broadcaster_type: str | None = None
     total_messages: int
     sessions_attended: int
     last_seen: datetime | None
+    watch_seconds: int
     total_bits: int
     follow_since: datetime | None = None
     twitch: ViewerTwitchStatus | None = None
@@ -235,8 +247,13 @@ async def list_viewers(
 
 _SUB_TIER_LABELS = {"1000": "1", "2000": "2", "3000": "3"}
 
+
 # Sentinel: Twitch API call failed — fall back to DB value
-_UNCHECKED: object = object()
+class _Unchecked:
+    pass
+
+
+_UNCHECKED = _Unchecked()
 
 
 @router.get("/viewers/{user_id}", response_model=ViewerProfile)
@@ -261,24 +278,28 @@ async def get_viewer_profile(
         except Exception:
             LOGGER.warning("Token fetch failed for viewer profile")
 
-        async def _fetch_sub() -> ViewerTwitchStatus | None:
+        async def _fetch_sub() -> tuple[bool, str | None, bool | None, str | None]:
+            """Returns (is_subscribed, sub_tier, sub_gifted, sub_gifter)."""
             if not token:
-                return None
+                return False, None, None, None
             try:
                 sub_data = await twitch_api.get_sub_status(channel_id, user_id, token)
                 if sub_data:
                     raw_tier = sub_data.get("tier", "")
-                    return ViewerTwitchStatus(
-                        is_subscribed=True,
-                        sub_tier=_SUB_TIER_LABELS.get(raw_tier, raw_tier) or None,
-                        sub_gifted=sub_data.get("is_gift", False),
+                    is_gift = sub_data.get("is_gift", False)
+                    gifter = sub_data.get("gifter_login") or None if is_gift else None
+                    return (
+                        True,
+                        _SUB_TIER_LABELS.get(raw_tier, raw_tier) or None,
+                        is_gift,
+                        gifter,
                     )
-                return ViewerTwitchStatus(is_subscribed=False)
+                return False, None, None, None
             except Exception:
                 LOGGER.warning(f"Sub status fetch failed for viewer {user_id}")
-                return None
+                return False, None, None, None
 
-        async def _fetch_follow() -> object:
+        async def _fetch_follow() -> datetime | None | _Unchecked:
             """Returns datetime | None (confirmed), or _UNCHECKED (API failed)."""
             if not token:
                 return _UNCHECKED
@@ -290,28 +311,108 @@ async def get_viewer_profile(
                         return datetime.fromisoformat(raw.replace("Z", "+00:00")) if raw else None
                     except ValueError:
                         return None
-                return None  # confirmed not following
+                return None
             except Exception:
                 LOGGER.warning(f"Follow status fetch failed for viewer {user_id}")
                 return _UNCHECKED
 
-        async def _fetch_avatar() -> str | None:
+        async def _fetch_user_info() -> dict | None:
             try:
-                user_info = await twitch_api.get_user_info(user_id)
-                return user_info.get("avatar") if user_info else None
+                return await twitch_api.get_user_info(user_id)
             except Exception:
                 return None
 
-        twitch_status, follow_api, profile_image_url = await asyncio.gather(
-            _fetch_sub(), _fetch_follow(), _fetch_avatar()
-        )
+        async def _fetch_mod() -> bool:
+            if not token:
+                return False
+            return await twitch_api.get_mod_status(channel_id, user_id, token)
 
-        # Use Twitch API follow date; fall back to DB only when API call failed
+        async def _fetch_vip() -> bool:
+            if not token:
+                return False
+            return await twitch_api.get_vip_status(channel_id, user_id, token)
+
+        async def _fetch_ban() -> dict | None:
+            if not token:
+                return None
+            return await twitch_api.get_ban_status(channel_id, user_id, token)
+
+        async def _fetch_bits_rank() -> int | None:
+            if not token:
+                return None
+            return await twitch_api.get_bits_rank(user_id, token)
+
+        _gathered = await asyncio.gather(
+            _fetch_sub(),
+            _fetch_follow(),
+            _fetch_user_info(),
+            _fetch_mod(),
+            _fetch_vip(),
+            _fetch_ban(),
+            _fetch_bits_rank(),
+        )
+        sub_result = cast(tuple[bool, str | None, bool | None, str | None], _gathered[0])
+        follow_api = cast(datetime | None | _Unchecked, _gathered[1])
+        user_info = cast(dict[str, Any] | None, _gathered[2])
+        is_mod = cast(bool, _gathered[3])
+        is_vip = cast(bool, _gathered[4])
+        ban_info = cast(dict[str, Any] | None, _gathered[5])
+        bits_rank = cast(int | None, _gathered[6])
+
+        # Follow date: use API result; fall back to DB only when API call failed
         follow_since = profile.get("follow_since") if follow_api is _UNCHECKED else follow_api
         profile["follow_since"] = follow_since
 
+        # User info fields
+        profile_image_url: str | None = user_info.get("avatar") if user_info else None
+        offline_image_url: str | None = (
+            (user_info.get("offline_image_url") or None) if user_info else None
+        )
+        broadcaster_type: str | None = (
+            (user_info.get("broadcaster_type") or None) if user_info else None
+        )
+        account_created_at: datetime | None = None
+        if user_info and user_info.get("account_created_at"):
+            try:
+                account_created_at = datetime.fromisoformat(
+                    user_info["account_created_at"].replace("Z", "+00:00")
+                )
+            except ValueError:
+                pass
+
+        # Ban date parsing
+        ban_expires_at: datetime | None = None
+        if ban_info and ban_info.get("expires_at"):
+            try:
+                ban_expires_at = datetime.fromisoformat(
+                    ban_info["expires_at"].replace("Z", "+00:00")
+                )
+            except ValueError:
+                pass
+
+        is_subscribed, sub_tier, sub_gifted, sub_gifter = sub_result
+        twitch_status = ViewerTwitchStatus(
+            is_subscribed=is_subscribed,
+            sub_tier=sub_tier,
+            sub_gifted=sub_gifted,
+            sub_gifter=sub_gifter,
+            is_mod=is_mod,
+            is_vip=is_vip,
+            is_banned=bool(ban_info),
+            ban_expires_at=ban_expires_at,
+            ban_reason=ban_info.get("reason") if ban_info else None,
+            bits_rank=bits_rank,
+        )
+
         response.headers["Cache-Control"] = "private, max-age=300"
-        return ViewerProfile(twitch=twitch_status, profile_image_url=profile_image_url, **profile)
+        return ViewerProfile(
+            twitch=twitch_status,
+            profile_image_url=profile_image_url,
+            offline_image_url=offline_image_url,
+            account_created_at=account_created_at,
+            broadcaster_type=broadcaster_type,
+            **profile,
+        )
     except HTTPException:
         raise
     except Exception:
