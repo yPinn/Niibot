@@ -522,7 +522,8 @@ class _AnalyticsQueryMixin:
                         c.user_id,
                         SUM(c.message_count)        AS total_messages,
                         COUNT(DISTINCT c.session_id) AS sessions_attended,
-                        MAX(c.last_message_at)       AS last_seen
+                        MAX(c.last_message_at)       AS last_seen,
+                        SUM(c.watch_seconds)         AS watch_seconds
                     FROM chatter_stats c
                     WHERE c.channel_id = $1
                       AND c.session_id IN (SELECT id FROM session_scope)
@@ -554,6 +555,7 @@ class _AnalyticsQueryMixin:
                     t.total_messages,
                     t.sessions_attended,
                     t.last_seen,
+                    t.watch_seconds,
                     COALESCE(ch.total_bits, 0) AS total_bits
                 FROM chatter_totals t
                 JOIN latest_name n ON n.user_id = t.user_id
@@ -573,6 +575,7 @@ class _AnalyticsQueryMixin:
                     "total_messages": int(r["total_messages"]),
                     "sessions_attended": int(r["sessions_attended"]),
                     "last_seen": r["last_seen"],
+                    "watch_seconds": int(r["watch_seconds"]),
                     "total_bits": int(r["total_bits"]),
                 }
                 for r in rows
@@ -610,7 +613,8 @@ class _AnalyticsQueryMixin:
                         MAX(CASE WHEN rn = 1 THEN display_name END) AS display_name,
                         COALESCE(SUM(message_count), 0)             AS total_messages,
                         COUNT(DISTINCT session_id)                   AS sessions_attended,
-                        MAX(last_message_at)                        AS last_seen
+                        MAX(last_message_at)                        AS last_seen,
+                        COALESCE(SUM(watch_seconds), 0)             AS watch_seconds
                     FROM rows
                     """,
                     channel_id,
@@ -625,6 +629,7 @@ class _AnalyticsQueryMixin:
                     "total_messages": int(row["total_messages"]),
                     "sessions_attended": int(row["sessions_attended"]),
                     "last_seen": row["last_seen"],
+                    "watch_seconds": int(row["watch_seconds"]),
                 }
 
         async def _events() -> list[dict]:

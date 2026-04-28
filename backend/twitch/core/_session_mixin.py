@@ -13,6 +13,8 @@ import asyncio
 import logging
 from datetime import UTC, datetime
 
+import httpx
+
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
@@ -206,6 +208,91 @@ class _SessionMixin:
             except Exception as e:
                 LOGGER.warning(f"Session verify error: {e}")
             await asyncio.sleep(180)
+
+    # ------------------------------------------------------------------
+    # Watch-time tracking
+    # ------------------------------------------------------------------
+
+    async def _fetch_chatters(self, channel_id: str, token: str) -> list[dict]:
+        """Fetch all current chatroom members via /helix/chat/chatters.
+
+        Returns list of {"user_id", "user_login", "user_name"}.
+        Paginates automatically; skips on non-200 response.
+        """
+        viewers: list[dict] = []
+        cursor: str | None = None
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            while True:
+                params: dict = {
+                    "broadcaster_id": channel_id,
+                    "moderator_id": channel_id,
+                    "first": 1000,
+                }
+                if cursor:
+                    params["after"] = cursor
+
+                resp = await client.get(
+                    "https://api.twitch.tv/helix/chat/chatters",
+                    headers={
+                        "Client-Id": self._client_id,  # type: ignore[attr-defined]
+                        "Authorization": f"Bearer {token}",
+                    },
+                    params=params,
+                )
+
+                if resp.status_code != 200:
+                    LOGGER.warning(
+                        f"fetch_chatters failed for {channel_id}: "
+                        f"{resp.status_code} {resp.text[:120]}"
+                    )
+                    break
+
+                data = resp.json()
+                viewers.extend(data.get("data", []))
+                cursor = data.get("pagination", {}).get("cursor")
+                if not cursor:
+                    break
+
+        return viewers
+
+    async def _watch_time_loop(self) -> None:
+        """Increment watch_seconds for all chatroom viewers every 5 minutes."""
+        _interval = 300
+        await asyncio.sleep(_interval)
+
+        while True:
+            try:
+                for channel_id, session_id in list(self._active_sessions.items()):  # type: ignore[attr-defined]
+                    try:
+                        token_row = await self.token_database.fetchrow(  # type: ignore[attr-defined]
+                            "SELECT token FROM tokens WHERE user_id = $1", channel_id
+                        )
+                        if not token_row:
+                            continue
+
+                        viewers = await self._fetch_chatters(channel_id, token_row["token"])
+                        if not viewers:
+                            continue
+
+                        await self.analytics.increment_watch_seconds(  # type: ignore[attr-defined]
+                            session_id=session_id,
+                            channel_id=channel_id,
+                            viewers=viewers,
+                            seconds=_interval,
+                        )
+                        LOGGER.debug(
+                            f"Watch time: +{_interval}s for {len(viewers)} viewers "
+                            f"in channel {channel_id}"
+                        )
+                    except Exception as e:
+                        LOGGER.warning(f"Watch time error for channel {channel_id}: {e}")
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                LOGGER.warning(f"Watch time loop error: {e}")
+
+            await asyncio.sleep(_interval)
 
     # ------------------------------------------------------------------
     # VOD reconciliation

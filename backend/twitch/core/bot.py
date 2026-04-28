@@ -48,6 +48,7 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
         subs: list[eventsub.SubscriptionPayload],
     ) -> None:
         self.token_database = token_database
+        self._client_id = client_id
         self._db_manager = db_manager
         self._database_url = database_url
         self._subscribed_channels: set[str] = set()
@@ -104,6 +105,7 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
             pg_listen(self._database_url, "config_change", self._handle_config_change),
             self._recover_active_sessions(),
             self._session_verify_loop(),
+            self._watch_time_loop(),
             self._pool_heartbeat_loop(),
             self._periodic_cache_refresh(),
         ):

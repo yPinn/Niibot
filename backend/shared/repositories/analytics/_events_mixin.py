@@ -193,3 +193,45 @@ class _AnalyticsEventsMixin:
             )
 
         LOGGER.info(f"Flushed chatter stats for session {session_id}: {len(rows)} chatters")
+
+    async def increment_watch_seconds(
+        self,
+        session_id: int,
+        channel_id: str,
+        viewers: list[dict],
+        seconds: int,
+    ) -> None:
+        """Upsert watch_seconds for all current chatroom viewers.
+
+        Args:
+            viewers: list of {"user_id", "user_login", "user_name"} from /helix/chat/chatters
+        """
+        if not viewers:
+            return
+
+        rows = [
+            (
+                session_id,
+                channel_id,
+                v["user_id"],
+                v["user_login"],
+                v.get("user_name"),
+                seconds,
+            )
+            for v in viewers
+        ]
+
+        async with self.pool.acquire() as conn:
+            await conn.executemany(
+                """
+                INSERT INTO chatter_stats
+                    (session_id, channel_id, user_id, username, display_name,
+                     message_count, watch_seconds, last_message_at)
+                VALUES ($1, $2, $3, $4, $5, 0, $6, NULL)
+                ON CONFLICT (session_id, user_id) DO UPDATE SET
+                    username      = EXCLUDED.username,
+                    display_name  = COALESCE(EXCLUDED.display_name, chatter_stats.display_name),
+                    watch_seconds = chatter_stats.watch_seconds + EXCLUDED.watch_seconds
+                """,
+                rows,
+            )
