@@ -162,19 +162,19 @@ class _FontChain:
         for f in self._fonts:
             try:
                 # Pillow FreeTypeFont: font.font is FT2Font (C ext).
-                # get_char_index available in Pillow < 10; use getbbox width as proxy otherwise.
                 raw = getattr(f, "font", None)
                 get_idx = getattr(raw, "get_char_index", None)
                 if get_idx is not None:
                     if get_idx(code):
                         return f
                     continue
-                # Fallback: non-zero getlength means font has SOME glyph for char.
-                # Compare against U+FFFD (replacement char) — if widths differ the
-                # font probably has a real glyph, not just the generic .notdef box.
-                w_char = _font_width(f, char)
-                w_ref = _font_width(f, "\ufffd")
-                if w_char > 0 and w_char != w_ref:
+                # Fallback when get_char_index is unavailable: accept any font with
+                # non-zero advance width. The previous U+FFFD comparison was broken
+                # for full-width CJK fonts — Noto CJK defines U+FFFD as a real
+                # full-width glyph whose width matches CJK char widths, so the
+                # comparison always returned False and Noto CJK was incorrectly
+                # skipped, falling back to a Latin-only font that renders boxes.
+                if _font_width(f, char) > 0:
                     return f
             except Exception:
                 continue
