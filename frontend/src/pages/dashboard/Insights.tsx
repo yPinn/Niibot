@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 
 import {
   type ChannelInsights,
@@ -246,28 +246,35 @@ function StatTile({
   )
 }
 
+type ViewerSheetState = { profile: ViewerProfile | null; loading: boolean }
+type ViewerSheetAction =
+  | { type: 'reset' }
+  | { type: 'success'; payload: ViewerProfile }
+  | { type: 'error' }
+
+function viewerSheetReducer(_: ViewerSheetState, action: ViewerSheetAction): ViewerSheetState {
+  if (action.type === 'reset') return { profile: null, loading: true }
+  if (action.type === 'success') return { profile: action.payload, loading: false }
+  return { profile: null, loading: false }
+}
+
 function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
-  const [profile, setProfile] = useState<ViewerProfile | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [{ profile, loading }, dispatch] = useReducer(viewerSheetReducer, {
+    profile: null,
+    loading: true,
+  })
 
   useEffect(() => {
     if (!userId || !open) return
 
     let cancelled = false
-    setProfile(null)
-    setLoading(true)
+    dispatch({ type: 'reset' })
     getViewerProfile(userId, days)
       .then(data => {
-        if (!cancelled) {
-          setProfile(data)
-          setLoading(false)
-        }
+        if (!cancelled) dispatch({ type: 'success', payload: data })
       })
       .catch(() => {
-        if (!cancelled) {
-          setProfile(null)
-          setLoading(false)
-        }
+        if (!cancelled) dispatch({ type: 'error' })
       })
 
     return () => {
