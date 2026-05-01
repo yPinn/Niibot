@@ -28,13 +28,14 @@ def _make_ctx(*, display_name: str = "Streamer", name: str = "streamer") -> Magi
     ctx.chatter.display_name = display_name
     ctx.chatter.name = name
     ctx.channel.id = "ch_test"
-    ctx.reply = AsyncMock()
     return ctx
 
 
 @pytest.fixture()
 def component() -> GamesComponent:
-    return GamesComponent(_make_bot())
+    comp = GamesComponent(_make_bot())
+    comp._ctx_reply = AsyncMock()
+    return comp
 
 
 async def _roll(component: GamesComponent, ctx: MagicMock, **kwargs) -> None:
@@ -97,14 +98,14 @@ class TestRoll:
         with patch(PATCH_CHECK, return_value=None):
             ctx = _make_ctx()
             await _roll(component, ctx)
-            ctx.reply.assert_not_called()
+            component._ctx_reply.assert_not_called()  # type: ignore[attr-defined]
 
     @pytest.mark.asyncio
     async def test_default_d6_output(self, component: GamesComponent) -> None:
         with patch(PATCH_CHECK, return_value=MagicMock()):
             ctx = _make_ctx()
             await _roll(component, ctx)
-            text: str = ctx.reply.call_args[0][0]
+            text: str = component._ctx_reply.call_args[0][1]  # type: ignore[attr-defined]
             assert "🎲" in text
             assert "d6" in text
             assert "Streamer" in text
@@ -114,7 +115,7 @@ class TestRoll:
         with patch(PATCH_CHECK, return_value=MagicMock()):
             ctx = _make_ctx()
             await _roll(component, ctx, args="20")
-            text: str = ctx.reply.call_args[0][0]
+            text: str = component._ctx_reply.call_args[0][1]  # type: ignore[attr-defined]
             assert "d20" in text
 
     @pytest.mark.asyncio
@@ -124,7 +125,7 @@ class TestRoll:
             for _ in range(50):
                 ctx = _make_ctx()
                 await _roll(component, ctx, args="6")
-                text: str = ctx.reply.call_args[0][0]
+                text: str = component._ctx_reply.call_args[0][1]  # type: ignore[attr-defined]
                 num = int(text.split("：")[-1])
                 results.add(num)
         assert results <= set(range(1, 7))
@@ -135,7 +136,7 @@ class TestRoll:
         with patch(PATCH_CHECK, return_value=MagicMock()):
             ctx = _make_ctx()
             await _roll(component, ctx, args="1")
-            text: str = ctx.reply.call_args[0][0]
+            text: str = component._ctx_reply.call_args[0][1]  # type: ignore[attr-defined]
             assert "至少" in text
 
     @pytest.mark.asyncio
@@ -143,7 +144,7 @@ class TestRoll:
         with patch(PATCH_CHECK, return_value=MagicMock()):
             ctx = _make_ctx()
             await _roll(component, ctx, args=str(_MAX_SIDES + 1))
-            text: str = ctx.reply.call_args[0][0]
+            text: str = component._ctx_reply.call_args[0][1]  # type: ignore[attr-defined]
             assert str(_MAX_SIDES) in text
 
     @pytest.mark.asyncio
@@ -151,7 +152,7 @@ class TestRoll:
         with patch(PATCH_CHECK, return_value=MagicMock()):
             ctx = _make_ctx()
             await _roll(component, ctx, args=str(_MAX_SIDES))
-            text: str = ctx.reply.call_args[0][0]
+            text: str = component._ctx_reply.call_args[0][1]  # type: ignore[attr-defined]
             assert "🎲" in text
 
     @pytest.mark.asyncio
@@ -159,7 +160,7 @@ class TestRoll:
         with patch(PATCH_CHECK, return_value=MagicMock()):
             ctx = _make_ctx()
             await _roll(component, ctx, args="abc")
-            text: str = ctx.reply.call_args[0][0]
+            text: str = component._ctx_reply.call_args[0][1]  # type: ignore[attr-defined]
             assert "d6" in text
 
     @pytest.mark.asyncio
@@ -167,7 +168,7 @@ class TestRoll:
         with patch(PATCH_CHECK, return_value=MagicMock()):
             ctx = _make_ctx()
             await _roll(component, ctx, args="12 garbage")
-            text: str = ctx.reply.call_args[0][0]
+            text: str = component._ctx_reply.call_args[0][1]  # type: ignore[attr-defined]
             assert "d12" in text
 
     @pytest.mark.asyncio
@@ -177,7 +178,7 @@ class TestRoll:
         with patch(PATCH_CHECK, return_value=MagicMock()):
             ctx = _make_ctx(display_name="", name="rawname")
             await _roll(component, ctx)
-            text: str = ctx.reply.call_args[0][0]
+            text: str = component._ctx_reply.call_args[0][1]  # type: ignore[attr-defined]
             assert "rawname" in text
 
 
@@ -192,14 +193,14 @@ class TestChoose:
         with patch(PATCH_CHECK, return_value=None):
             ctx = _make_ctx()
             await _choose(component, ctx, args="a b")
-            ctx.reply.assert_not_called()
+            component._ctx_reply.assert_not_called()  # type: ignore[attr-defined]
 
     @pytest.mark.asyncio
     async def test_no_args_returns_usage(self, component: GamesComponent) -> None:
         with patch(PATCH_CHECK, return_value=MagicMock()):
             ctx = _make_ctx()
             await _choose(component, ctx)
-            text: str = ctx.reply.call_args[0][0]
+            text: str = component._ctx_reply.call_args[0][1]  # type: ignore[attr-defined]
             assert "用法" in text
 
     @pytest.mark.asyncio
@@ -207,7 +208,7 @@ class TestChoose:
         with patch(PATCH_CHECK, return_value=MagicMock()):
             ctx = _make_ctx()
             await _choose(component, ctx, args="   ")
-            text: str = ctx.reply.call_args[0][0]
+            text: str = component._ctx_reply.call_args[0][1]  # type: ignore[attr-defined]
             assert "用法" in text
 
     @pytest.mark.asyncio
@@ -215,7 +216,7 @@ class TestChoose:
         with patch(PATCH_CHECK, return_value=MagicMock()):
             ctx = _make_ctx()
             await _choose(component, ctx, args="only")
-            text: str = ctx.reply.call_args[0][0]
+            text: str = component._ctx_reply.call_args[0][1]  # type: ignore[attr-defined]
             assert "兩個" in text
 
     @pytest.mark.asyncio
@@ -223,7 +224,7 @@ class TestChoose:
         with patch(PATCH_CHECK, return_value=MagicMock()):
             ctx = _make_ctx()
             await _choose(component, ctx, args="red blue")
-            text: str = ctx.reply.call_args[0][0]
+            text: str = component._ctx_reply.call_args[0][1]  # type: ignore[attr-defined]
             assert "🎯" in text
             assert "Streamer" in text
             assert "red" in text or "blue" in text
@@ -236,7 +237,7 @@ class TestChoose:
             for _ in range(40):
                 ctx = _make_ctx()
                 await _choose(component, ctx, args=" ".join(options))
-                text: str = ctx.reply.call_args[0][0]
+                text: str = component._ctx_reply.call_args[0][1]  # type: ignore[attr-defined]
                 picked = text.split("：")[-1].strip()
                 results.add(picked)
         assert results <= set(options)
@@ -248,7 +249,7 @@ class TestChoose:
             ctx = _make_ctx()
             many = " ".join(f"opt{i}" for i in range(_MAX_OPTIONS + 1))
             await _choose(component, ctx, args=many)
-            text: str = ctx.reply.call_args[0][0]
+            text: str = component._ctx_reply.call_args[0][1]  # type: ignore[attr-defined]
             assert str(_MAX_OPTIONS) in text
 
     @pytest.mark.asyncio
@@ -257,7 +258,7 @@ class TestChoose:
             ctx = _make_ctx()
             exact = " ".join(f"opt{i}" for i in range(_MAX_OPTIONS))
             await _choose(component, ctx, args=exact)
-            text: str = ctx.reply.call_args[0][0]
+            text: str = component._ctx_reply.call_args[0][1]  # type: ignore[attr-defined]
             assert "🎯" in text
 
     @pytest.mark.asyncio
@@ -267,5 +268,5 @@ class TestChoose:
         with patch(PATCH_CHECK, return_value=MagicMock()):
             ctx = _make_ctx(display_name="", name="rawname")
             await _choose(component, ctx, args="x y")
-            text: str = ctx.reply.call_args[0][0]
+            text: str = component._ctx_reply.call_args[0][1]  # type: ignore[attr-defined]
             assert "rawname" in text
