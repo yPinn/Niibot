@@ -265,13 +265,11 @@ class _SessionMixin:
             try:
                 for channel_id, session_id in list(self._active_sessions.items()):  # type: ignore[attr-defined]
                     try:
-                        token_row = await self.token_database.fetchrow(  # type: ignore[attr-defined]
-                            "SELECT token FROM tokens WHERE user_id = $1", channel_id
-                        )
-                        if not token_row:
+                        token_obj = await self.channels.get_token(channel_id)  # type: ignore[attr-defined]
+                        if not token_obj:
                             continue
 
-                        viewers = await self._fetch_chatters(channel_id, token_row["token"])
+                        viewers = await self._fetch_chatters(channel_id, token_obj.token)
                         if not viewers:
                             continue
 
@@ -309,16 +307,12 @@ class _SessionMixin:
                 if ch.channel_id == self._bot_id:  # type: ignore[attr-defined]
                     continue
                 try:
-                    videos = await self.fetch_videos(  # type: ignore[attr-defined, call-arg]
-                        user_id=ch.channel_id,
-                        video_type="archive",
-                        first=5,
-                    )
-                    if not videos:
-                        continue
-
                     vods = []
-                    for v in videos:
+                    async for v in self.fetch_videos(  # type: ignore[attr-defined]
+                        user_id=ch.channel_id,
+                        type="archive",
+                        first=5,
+                    ):
                         if v.created_at and v.duration:
                             vods.append(
                                 {
@@ -347,17 +341,12 @@ class _SessionMixin:
 
             for channel_id in channel_ids:
                 try:
-                    videos = await self.fetch_videos(  # type: ignore[attr-defined, call-arg]
-                        user_id=channel_id,
-                        video_type="archive",
-                        first=limit_per_channel,
-                    )
-
-                    if not videos:
-                        continue
-
                     synced_count = 0
-                    for video in videos:
+                    async for video in self.fetch_videos(  # type: ignore[attr-defined]
+                        user_id=channel_id,
+                        type="archive",
+                        first=limit_per_channel,
+                    ):
                         started_at = video.created_at
                         if not started_at:
                             continue
