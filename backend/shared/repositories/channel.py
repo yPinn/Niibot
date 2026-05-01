@@ -32,7 +32,7 @@ class ChannelRepository:
         """Get a user's OAuth token."""
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT user_id, token, refresh, created_at, updated_at "
+                "SELECT user_id, token, refresh, scopes, created_at, updated_at "
                 "FROM tokens WHERE user_id = $1",
                 user_id,
             )
@@ -45,21 +45,24 @@ class ChannelRepository:
         user_id: str,
         token: str,
         refresh: str,
+        scopes: str | None = None,
     ) -> None:
         """Insert or update an OAuth token (without touching the channels table)."""
         async with self.pool.acquire() as conn:
             await conn.execute(
                 """
-                INSERT INTO tokens (user_id, token, refresh)
-                VALUES ($1, $2, $3)
+                INSERT INTO tokens (user_id, token, refresh, scopes)
+                VALUES ($1, $2, $3, $4)
                 ON CONFLICT (user_id) DO UPDATE SET
                     token      = EXCLUDED.token,
                     refresh    = EXCLUDED.refresh,
+                    scopes     = COALESCE(EXCLUDED.scopes, tokens.scopes),
                     updated_at = NOW()
                 """,
                 user_id,
                 token,
                 refresh,
+                scopes,
             )
         _token_cache.invalidate(f"token:{user_id}")
 
@@ -67,7 +70,7 @@ class ChannelRepository:
         """Return all tokens."""
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
-                "SELECT user_id, token, refresh, created_at, updated_at FROM tokens"
+                "SELECT user_id, token, refresh, scopes, created_at, updated_at FROM tokens"
             )
             return [Token(**dict(r)) for r in rows]
 
@@ -77,6 +80,7 @@ class ChannelRepository:
         token: str,
         refresh: str,
         channel_name: str = "",
+        scopes: str | None = None,
     ) -> None:
         """Insert or update an OAuth token and ensure a channels row exists.
 
@@ -86,16 +90,18 @@ class ChannelRepository:
             async with conn.transaction():
                 await conn.execute(
                     """
-                    INSERT INTO tokens (user_id, token, refresh)
-                    VALUES ($1, $2, $3)
+                    INSERT INTO tokens (user_id, token, refresh, scopes)
+                    VALUES ($1, $2, $3, $4)
                     ON CONFLICT (user_id) DO UPDATE SET
                         token      = EXCLUDED.token,
                         refresh    = EXCLUDED.refresh,
+                        scopes     = COALESCE(EXCLUDED.scopes, tokens.scopes),
                         updated_at = NOW()
                     """,
                     user_id,
                     token,
                     refresh,
+                    scopes,
                 )
                 await conn.execute(
                     """

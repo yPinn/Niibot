@@ -110,6 +110,7 @@ async def twitch_oauth_callback(
     platform_user_id = token_data["user_id"]
     access_token = token_data["access_token"]
     refresh_token = token_data.get("refresh_token", "")
+    scopes = token_data.get("scopes")
 
     user_info = await twitch_api.get_user_info(platform_user_id)
     username = user_info.get("name") or user_info.get("display_name") or platform_user_id
@@ -121,6 +122,7 @@ async def twitch_oauth_callback(
             access_token=access_token,
             refresh_token=refresh_token,
             username=username,
+            scopes=scopes,
         )
 
         if not save_success:

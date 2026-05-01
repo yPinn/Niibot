@@ -189,6 +189,7 @@ class TwitchAPIClient:
             token_data = token_response.json()
             access_token = token_data.get("access_token")
             refresh_token = token_data.get("refresh_token")
+            scope_list: list[str] = token_data.get("scope") or []
 
             if not access_token:
                 LOGGER.error("No access_token in response")
@@ -213,6 +214,7 @@ class TwitchAPIClient:
                     "access_token": access_token,
                     "refresh_token": refresh_token or "",
                     "user_id": user_id,
+                    "scopes": " ".join(scope_list) if scope_list else None,
                 },
             )
 

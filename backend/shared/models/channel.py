@@ -13,6 +13,7 @@ class Token:
     user_id: str
     token: str
     refresh: str
+    scopes: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 

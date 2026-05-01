@@ -26,6 +26,7 @@ _TOKEN_ROW = {
     "user_id": "u1",
     "token": "tok",
     "refresh": "ref",
+    "scopes": "channel:bot channel:read:redemptions",
     "created_at": _NOW,
     "updated_at": _NOW,
 }
@@ -109,6 +110,7 @@ class TestGetToken:
         assert result is not None
         assert result.user_id == "u1"
         assert result.token == "tok"
+        assert result.scopes == "channel:bot channel:read:redemptions"
 
     async def test_result_is_cached(self):
         _clear_caches()
@@ -145,6 +147,16 @@ class TestUpsertTokenOnly:
         assert "u1" in args
         assert "tok" in args
         assert "ref" in args
+        assert None in args  # scopes defaults to None
+
+    async def test_executes_upsert_with_scopes(self):
+        pool, conn = _make_pool(execute="INSERT 0 1")
+        repo = ChannelRepository(pool)
+
+        await repo.upsert_token_only("u1", "tok", "ref", scopes="channel:bot bits:read")
+
+        args = conn.execute.call_args[0]
+        assert "channel:bot bits:read" in args
 
 
 @pytest.mark.asyncio
@@ -165,6 +177,7 @@ class TestListTokens:
 
         assert len(result) == 1
         assert result[0].user_id == "u1"
+        assert result[0].scopes == "channel:bot channel:read:redemptions"
 
 
 @pytest.mark.asyncio
@@ -191,6 +204,15 @@ class TestUpsertToken:
         await repo.upsert_token("u1", "tok", "ref")
 
         conn.transaction.assert_called_once()
+
+    async def test_executes_upsert_with_scopes(self):
+        pool, conn = _make_pool(execute="INSERT 0 1")
+        repo = ChannelRepository(pool)
+
+        await repo.upsert_token("u1", "tok", "ref", scopes="channel:bot bits:read")
+
+        first_execute_args = conn.execute.call_args_list[0][0]
+        assert "channel:bot bits:read" in first_execute_args
 
 
 # ---------------------------------------------------------------------------

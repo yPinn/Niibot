@@ -315,6 +315,73 @@ class TestTwitchOAuthCallback:
 
 
 # ---------------------------------------------------------------------------
+# GET /api/auth/twitch/callback — successful flow with scopes
+# ---------------------------------------------------------------------------
+
+
+class TestTwitchOAuthCallbackSuccess:
+    """Happy-path: verifies scopes flow from exchange_code_for_token → save_token."""
+
+    def _run(self, scopes_value):
+        from services.oauth_service import encode_oauth_state
+
+        settings = get_settings()
+        valid_state = encode_oauth_state("login", secret=settings.jwt_secret_key)
+
+        twitch_api = _make_twitch_api()
+        twitch_api.exchange_code_for_token = AsyncMock(
+            return_value=(
+                True,
+                None,
+                {
+                    "access_token": "acc_tok",
+                    "refresh_token": "ref_tok",
+                    "user_id": _TWITCH_UID,
+                    "scopes": scopes_value,
+                },
+            )
+        )
+
+        pool = _make_pool()
+        mock_svc = MagicMock()
+        mock_svc.save_token = AsyncMock(return_value=True)
+
+        with (
+            patch("routers.auth_router.get_database_manager") as mock_dbm,
+            patch("routers.auth_router.get_channel_service", return_value=mock_svc),
+            patch(
+                "routers.auth_router.find_or_create_user",
+                new=AsyncMock(return_value=_USER_UUID),
+            ),
+        ):
+            mock_dbm.return_value.pool = pool
+            client = _make_client(twitch_api=twitch_api)
+            r = client.get(
+                "/api/auth/twitch/callback",
+                params={"code": "validcode", "state": valid_state},
+                follow_redirects=False,
+            )
+
+        return r, mock_svc
+
+    def test_redirects_to_dashboard_on_success(self):
+        r, _ = self._run(scopes_value="channel:bot channel:read:redemptions")
+        assert r.status_code in (302, 307)
+        assert "/dashboard" in r.headers["location"]
+
+    def test_scopes_forwarded_to_save_token(self):
+        _, mock_svc = self._run(scopes_value="channel:bot channel:read:redemptions")
+        mock_svc.save_token.assert_awaited_once()
+        _, kwargs = mock_svc.save_token.call_args
+        assert kwargs.get("scopes") == "channel:bot channel:read:redemptions"
+
+    def test_none_scopes_forwarded_as_none(self):
+        _, mock_svc = self._run(scopes_value=None)
+        _, kwargs = mock_svc.save_token.call_args
+        assert kwargs.get("scopes") is None
+
+
+# ---------------------------------------------------------------------------
 # PATCH /api/user/preferences
 # ---------------------------------------------------------------------------
 

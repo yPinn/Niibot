@@ -11,6 +11,7 @@ import twitchio
 from twitchio import eventsub
 from twitchio.ext import commands
 from twitchio.ext.commands import CommandNotFound
+from twitchio.payloads import TokenRefreshedPayload as _TokenRefreshedPayload
 
 from core._channel_mixin import _ChannelMixin
 from core._notify_mixin import _NotifyMixin
@@ -160,6 +161,15 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
             await self.subscribe_channel_events(payload.user_id)
         else:
             LOGGER.debug(f"Channel {payload.user_id} already subscribed, skipping")
+
+    async def event_token_refreshed(self, payload: _TokenRefreshedPayload) -> None:
+        if not payload.user_id:
+            return
+        scopes_str = " ".join(list(payload.scopes)) if payload.scopes else None
+        await self.channels.upsert_token_only(
+            payload.user_id, payload.token, payload.refresh_token, scopes=scopes_str
+        )
+        LOGGER.info(f"Token refreshed and persisted for user: {payload.user_id}")
 
     async def event_message(self, payload: twitchio.ChatMessage) -> None:
         if payload.broadcaster:
