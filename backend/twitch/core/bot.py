@@ -68,6 +68,10 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
         self._channel_line_counts: dict[str, int] = {}
         # Strong references to background tasks to prevent GC collection
         self._background_tasks: set[asyncio.Task] = set()
+        # Channel IDs currently in an active Shared Chat session.
+        # User-token messages are automatically source-only (Twitch API design),
+        # so this set is for awareness/logging rather than routing decisions.
+        self._shared_chat_channels: set[str] = set()
 
         init_kwargs: dict = dict(
             client_id=client_id,
@@ -222,6 +226,22 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
             LOGGER.debug(f"[{payload.chatter.name}]: {payload.text}")
 
         await super().event_message(payload)
+
+    async def event_shared_chat_begin(self, payload: twitchio.SharedChatSessionBegin) -> None:
+        channel_id = str(payload.broadcaster.id)
+        self._shared_chat_channels.add(channel_id)
+        LOGGER.info(
+            f"[{payload.broadcaster.name}] Shared Chat session started "
+            f"(session={payload.session_id}, host={payload.host.name}). "
+            f"Bot replies use user token → source-only by default."
+        )
+
+    async def event_shared_chat_end(self, payload: twitchio.SharedChatSessionEnd) -> None:
+        channel_id = str(payload.broadcaster.id)
+        self._shared_chat_channels.discard(channel_id)
+        LOGGER.info(
+            f"[{payload.broadcaster.name}] Shared Chat session ended (session={payload.session_id})."
+        )
 
     async def event_command_error(self, payload: commands.CommandErrorPayload) -> None:
         """Suppress CommandNotFound to avoid log noise from unknown commands."""

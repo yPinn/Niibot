@@ -16,4 +16,6 @@ def get_channel_subscriptions(
         eventsub.ChannelSubscribeSubscription(broadcaster_user_id=broadcaster_user_id),
         eventsub.ChannelCheerSubscription(broadcaster_user_id=broadcaster_user_id),
         eventsub.ChannelRaidSubscription(to_broadcaster_user_id=broadcaster_user_id),
+        eventsub.SharedChatSessionBeginSubscription(broadcaster_user_id=broadcaster_user_id),
+        eventsub.SharedChatSessionEndSubscription(broadcaster_user_id=broadcaster_user_id),
     ]
