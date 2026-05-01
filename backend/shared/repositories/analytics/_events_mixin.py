@@ -227,7 +227,7 @@ class _AnalyticsEventsMixin:
                 INSERT INTO chatter_stats
                     (session_id, channel_id, user_id, username, display_name,
                      message_count, watch_seconds, last_message_at)
-                VALUES ($1, $2, $3, $4, $5, 0, $6, NULL)
+                VALUES ($1, $2, $3, $4, $5, 0, $6, NOW())
                 ON CONFLICT (session_id, user_id) DO UPDATE SET
                     username      = EXCLUDED.username,
                     display_name  = COALESCE(EXCLUDED.display_name, chatter_stats.display_name),
