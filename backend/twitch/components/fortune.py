@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from twitchio.ext import commands
 
+from core.component import BotComponent
 from core.config import DATA_DIR
 from core.guards import check_command
 from shared.repositories.command_config import CommandConfigRepository
@@ -16,7 +17,7 @@ if TYPE_CHECKING:
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-class FortuneComponent(commands.Component):
+class FortuneComponent(BotComponent):
     COMMANDS: list[dict] = [
         {"command_name": "fortune", "cooldown": 5, "aliases": "運勢"},
     ]
@@ -111,12 +112,12 @@ class FortuneComponent(commands.Component):
             )
 
             message = " | ".join(parts)
-            await ctx.reply(message)
+            await self._ctx_reply(ctx, message)
             LOGGER.debug(f"User {user} fortune: {fortune_level}")
 
         except Exception as e:
             LOGGER.error(f"Fortune reading error: {e}")
-            await ctx.reply("占卜過程中發生神秘干擾，請稍後再試 BloodTrail")
+            await self._ctx_reply(ctx, "占卜過程中發生神秘干擾，請稍後再試 BloodTrail")
             return
 
         try:

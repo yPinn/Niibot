@@ -10,6 +10,7 @@ from urllib.parse import quote
 import httpx
 from twitchio.ext import commands
 
+from core.component import BotComponent
 from core.guards import check_command
 from shared.repositories.command_config import CommandConfigRepository
 
@@ -33,7 +34,7 @@ TIER_TRANSLATION = {
 }
 
 
-class TftComponent(commands.Component):
+class TftComponent(BotComponent):
     COMMANDS: list[dict] = [
         {"command_name": "tft", "cooldown": 5, "aliases": "戰棋"},
     ]
@@ -239,7 +240,7 @@ class TftComponent(commands.Component):
 
         data = await self.get_leaderboard_data()
         if not data:
-            await ctx.reply("資料獲取失敗，請稍後再試")
+            await self._ctx_reply(ctx, "資料獲取失敗，請稍後再試")
             return
 
         entries = data.get("entries", [])
@@ -248,17 +249,17 @@ class TftComponent(commands.Component):
         if user_id is None:
             c_lp = thresholds[0] if thresholds else 0
             gm_lp = thresholds[1] if len(thresholds) > 1 else 0
-            await ctx.reply(f"[TW] 菁英：{c_lp} LP | 宗師：{gm_lp} LP")
+            await self._ctx_reply(ctx, f"[TW] 菁英：{c_lp} LP | 宗師：{gm_lp} LP")
             return
 
         if "#" not in user_id:
-            await ctx.reply("請使用正確格式：!tft <玩家名稱>#<tag>")
+            await self._ctx_reply(ctx, "請使用正確格式：!tft <玩家名稱>#<tag>")
             return
 
         parts = user_id.split("#", 1)
         username, tag = parts[0], parts[1] if len(parts) > 1 else ""
         if not username or not tag:
-            await ctx.reply("請使用正確格式：!tft <玩家名稱>#<tag>")
+            await self._ctx_reply(ctx, "請使用正確格式：!tft <玩家名稱>#<tag>")
             return
 
         # 步驟 1：先從排行榜查找
@@ -270,7 +271,7 @@ class TftComponent(commands.Component):
                 lp = rank_data[1] if len(rank_data) > 1 else 0
 
                 tier_display = TIER_TRANSLATION.get(tier, tier) if tier else "未知段位"
-                await ctx.reply(f"{tier_display} {lp} LP | [TW] #{rank_num}")
+                await self._ctx_reply(ctx, f"{tier_display} {lp} LP | [TW] #{rank_num}")
                 LOGGER.debug(f"Query success (leaderboard) - {user_id}")
                 return
 
@@ -305,11 +306,11 @@ class TftComponent(commands.Component):
                 lp_sign = "+" if last_match_lp > 0 else ""
                 lp_change_info = f" | 最近：{lp_sign}{last_match_lp} LP"
 
-            await ctx.reply(f"{tier_display} {lp} LP{rank_info}{lp_change_info}")
+            await self._ctx_reply(ctx, f"{tier_display} {lp} LP{rank_info}{lp_change_info}")
             LOGGER.debug(f"Query success (player page) - {user_id}")
             return
 
-        await ctx.reply(f"找不到玩家：{user_id}")
+        await self._ctx_reply(ctx, f"找不到玩家：{user_id}")
 
 
 async def setup(bot: commands.Bot) -> None:

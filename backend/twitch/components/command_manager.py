@@ -35,6 +35,7 @@ from typing import TYPE_CHECKING
 
 from twitchio.ext import commands
 
+from core.component import BotComponent
 from shared.repositories.command_config import CommandConfigRepository
 from utils.trigger_matching import validate_regex_pattern
 
@@ -102,7 +103,7 @@ def _parse_bool(value: str) -> bool | None:
     return None
 
 
-class CommandManagerComponent(commands.Component):
+class CommandManagerComponent(BotComponent):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot: Bot = bot  # type: ignore[assignment]
         self.cmd_repo = CommandConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
@@ -114,8 +115,8 @@ class CommandManagerComponent(commands.Component):
     async def cmd(self, ctx: commands.Context["Bot"]) -> None:
         """Command management group. Moderator+ only."""
         if ctx.invoked_subcommand is None:
-            await ctx.reply(
-                "用法: !cmd a/e/d !指令名 — 新增｜編輯｜刪除 (選項: -cd -role -alias -enable)"
+            await self._ctx_reply(
+                ctx, "用法: !cmd a/e/d !指令名 — 新增｜編輯｜刪除 (選項: -cd -role -alias -enable)"
             )
 
     @cmd.command(name="a", aliases=["add"])
@@ -124,7 +125,7 @@ class CommandManagerComponent(commands.Component):
         if not ctx.chatter.moderator:  # type: ignore[attr-defined]
             return
         if not args or not args.strip():
-            await ctx.reply("用法: !cmd a !指令名 回覆 / !cmd a 觸發詞 回覆")
+            await self._ctx_reply(ctx, "用法: !cmd a !指令名 回覆 / !cmd a 觸發詞 回覆")
             return
 
         parts = args.strip().split(maxsplit=1)
@@ -136,14 +137,14 @@ class CommandManagerComponent(commands.Component):
         options, response_text = _parse_args(remaining)
 
         if not response_text:
-            await ctx.reply("缺少回覆文字")
+            await self._ctx_reply(ctx, "缺少回覆文字")
             return
 
         if "cd" in options:
             try:
                 cooldown = int(options["cd"])
             except ValueError:
-                await ctx.reply("冷卻時間必須是整數（秒）")
+                await self._ctx_reply(ctx, "冷卻時間必須是整數（秒）")
                 return
         else:
             cooldown = None
@@ -151,17 +152,17 @@ class CommandManagerComponent(commands.Component):
         min_role = ROLE_ALIASES.get(role_input.lower(), "everyone")
         enabled = _parse_bool(options["enable"]) if "enable" in options else True
         if enabled is None:
-            await ctx.reply("無效的 -enable 值，請使用 on/off")
+            await self._ctx_reply(ctx, "無效的 -enable 值，請使用 on/off")
             return
 
         if is_command:
             cmd_name = first.lstrip("!").lower()
             if not cmd_name:
-                await ctx.reply("用法: !cmd a !指令名 回覆文字")
+                await self._ctx_reply(ctx, "用法: !cmd a !指令名 回覆文字")
                 return
             existing = await self.cmd_repo.get_config(channel_id, cmd_name)
             if existing:
-                await ctx.reply(f"!{cmd_name} 已存在，請用 !cmd e 編輯")
+                await self._ctx_reply(ctx, f"!{cmd_name} 已存在，請用 !cmd e 編輯")
                 return
             aliases = options.get("alias")
             config = await self.cmd_repo.upsert_config(
@@ -180,30 +181,32 @@ class CommandManagerComponent(commands.Component):
                 reply += f" | 別名: {config.aliases}"
             if not enabled:
                 reply += " | 已停用"
-            await ctx.reply(reply)
+            await self._ctx_reply(ctx, reply)
             LOGGER.info(f"Command added: !{cmd_name} by {ctx.chatter.name}")
         else:
             pattern = first
             match_type = options.get("match", "contains")
             if match_type not in _MATCH_TYPES:
-                await ctx.reply(f"無效的 -match 值，請使用: {', '.join(_MATCH_TYPES)}")
+                await self._ctx_reply(ctx, f"無效的 -match 值，請使用: {', '.join(_MATCH_TYPES)}")
                 return
             case_sensitive_raw = _parse_bool(options.get("cs", "off"))
             if case_sensitive_raw is None:
-                await ctx.reply("無效的 -cs 值，請使用 on/off")
+                await self._ctx_reply(ctx, "無效的 -cs 值，請使用 on/off")
                 return
             case_sensitive = case_sensitive_raw
             if match_type == "regex":
                 _rl_key = f"regex_create:{channel_id}"
                 _last = _regex_create_tracker.get(_rl_key)
                 if _last and (datetime.now(UTC) - _last) < _REGEX_CREATE_COOLDOWN:
-                    await ctx.reply("Regex 觸發建立冷卻中（30 秒），請稍後再試")
+                    await self._ctx_reply(ctx, "Regex 觸發建立冷卻中（30 秒），請稍後再試")
                     return
                 is_safe = await asyncio.get_running_loop().run_in_executor(
                     None, validate_regex_pattern, pattern
                 )
                 if not is_safe:
-                    await ctx.reply("無效或不安全的 Regex 模式（可能導致 ReDoS），已拒絕")
+                    await self._ctx_reply(
+                        ctx, "無效或不安全的 Regex 模式（可能導致 ReDoS），已拒絕"
+                    )
                     return
                 _regex_create_tracker[_rl_key] = datetime.now(UTC)
             trigger_name = _sanitize_trigger_name(pattern)
@@ -211,13 +214,14 @@ class CommandManagerComponent(commands.Component):
                 channel_id, trigger_name
             )
             if existing_trigger and existing_trigger.pattern != pattern:
-                await ctx.reply(
+                await self._ctx_reply(
+                    ctx,
                     f"觸發詞與現有「{existing_trigger.pattern}」衝突，"
-                    f"請用 !cmd e {existing_trigger.pattern} 編輯，或先 !cmd d {existing_trigger.pattern} 刪除"
+                    f"請用 !cmd e {existing_trigger.pattern} 編輯，或先 !cmd d {existing_trigger.pattern} 刪除",
                 )
                 return
             if existing_trigger:
-                await ctx.reply(f"「{pattern}」已存在，請用 !cmd e 編輯")
+                await self._ctx_reply(ctx, f"「{pattern}」已存在，請用 !cmd e 編輯")
                 return
             await self.bot.message_trigger_configs.upsert(
                 channel_id,
@@ -232,7 +236,7 @@ class CommandManagerComponent(commands.Component):
                 enabled=enabled,
             )
             preview = response_text[:30] + ("…" if len(response_text) > 30 else "")
-            await ctx.reply(f"已新增觸發 {pattern} → {preview}")
+            await self._ctx_reply(ctx, f"已新增觸發 {pattern} → {preview}")
             LOGGER.info(f"Trigger added: '{pattern}' by {ctx.chatter.name}")
 
     @cmd.command(name="e", aliases=["edit"])
@@ -241,7 +245,9 @@ class CommandManagerComponent(commands.Component):
         if not ctx.chatter.moderator:  # type: ignore[attr-defined]
             return
         if not args or not args.strip():
-            await ctx.reply("用法: !cmd e !指令名 [選項] / !cmd e 觸發詞 [選項] [新回覆文字]")
+            await self._ctx_reply(
+                ctx, "用法: !cmd e !指令名 [選項] / !cmd e 觸發詞 [選項] [新回覆文字]"
+            )
             return
 
         parts = args.strip().split(maxsplit=1)
@@ -254,12 +260,12 @@ class CommandManagerComponent(commands.Component):
         if is_command:
             cmd_name = first.lstrip("!").lower()
             if not cmd_name:
-                await ctx.reply("用法: !cmd e !指令名 [選項] [新回覆文字]")
+                await self._ctx_reply(ctx, "用法: !cmd e !指令名 [選項] [新回覆文字]")
                 return
 
             existing = await self.cmd_repo.get_config(channel_id, cmd_name)
             if not existing or existing.command_type != "custom":
-                await ctx.reply(f"找不到自訂指令 !{cmd_name}，僅能編輯自訂指令")
+                await self._ctx_reply(ctx, f"找不到自訂指令 !{cmd_name}，僅能編輯自訂指令")
                 return
 
             kwargs: dict = {}
@@ -267,7 +273,7 @@ class CommandManagerComponent(commands.Component):
                 try:
                     kwargs["cooldown"] = int(options["cd"])
                 except ValueError:
-                    await ctx.reply("冷卻時間必須是整數（秒）")
+                    await self._ctx_reply(ctx, "冷卻時間必須是整數（秒）")
                     return
             if "role" in options:
                 kwargs["min_role"] = ROLE_ALIASES.get(options["role"].lower(), "everyone")
@@ -276,14 +282,14 @@ class CommandManagerComponent(commands.Component):
             if "enable" in options:
                 enabled = _parse_bool(options["enable"])
                 if enabled is None:
-                    await ctx.reply("無效的 -enable 值，請使用 on/off")
+                    await self._ctx_reply(ctx, "無效的 -enable 值，請使用 on/off")
                     return
                 kwargs["enabled"] = enabled
             if response_text:
                 kwargs["custom_response"] = response_text
 
             if not kwargs:
-                await ctx.reply("請提供要修改的內容，如 -cd=N / -enable=on / 新回覆文字")
+                await self._ctx_reply(ctx, "請提供要修改的內容，如 -cd=N / -enable=on / 新回覆文字")
                 return
 
             config = await self.cmd_repo.upsert_config(
@@ -303,7 +309,7 @@ class CommandManagerComponent(commands.Component):
             if "enable" in options:
                 changes.append("啟用" if config.enabled else "停用")
 
-            await ctx.reply(f"已更新 !{cmd_name} — {' | '.join(changes)}")
+            await self._ctx_reply(ctx, f"已更新 !{cmd_name} — {' | '.join(changes)}")
             LOGGER.info(f"Command edited: !{cmd_name} by {ctx.chatter.name}")
 
         else:
@@ -313,7 +319,7 @@ class CommandManagerComponent(commands.Component):
                 channel_id, trigger_name
             )
             if not existing_trigger:
-                await ctx.reply(f"找不到觸發詞：{pattern}")
+                await self._ctx_reply(ctx, f"找不到觸發詞：{pattern}")
                 return
 
             tkwargs: dict = {}
@@ -321,13 +327,15 @@ class CommandManagerComponent(commands.Component):
                 try:
                     tkwargs["cooldown"] = int(options["cd"])
                 except ValueError:
-                    await ctx.reply("冷卻時間必須是整數（秒）")
+                    await self._ctx_reply(ctx, "冷卻時間必須是整數（秒）")
                     return
             if "role" in options:
                 tkwargs["min_role"] = ROLE_ALIASES.get(options["role"].lower(), "everyone")
             if "match" in options:
                 if options["match"] not in _MATCH_TYPES:
-                    await ctx.reply(f"無效的 -match 值，請使用: {', '.join(_MATCH_TYPES)}")
+                    await self._ctx_reply(
+                        ctx, f"無效的 -match 值，請使用: {', '.join(_MATCH_TYPES)}"
+                    )
                     return
                 tkwargs["match_type"] = options["match"]
                 if options["match"] == "regex":
@@ -335,25 +343,27 @@ class CommandManagerComponent(commands.Component):
                         None, validate_regex_pattern, pattern
                     )
                     if not is_safe:
-                        await ctx.reply("無效或不安全的 Regex 模式（可能導致 ReDoS），已拒絕")
+                        await self._ctx_reply(
+                            ctx, "無效或不安全的 Regex 模式（可能導致 ReDoS），已拒絕"
+                        )
                         return
             if "cs" in options:
                 cs = _parse_bool(options["cs"])
                 if cs is None:
-                    await ctx.reply("無效的 -cs 值，請使用 on/off")
+                    await self._ctx_reply(ctx, "無效的 -cs 值，請使用 on/off")
                     return
                 tkwargs["case_sensitive"] = cs
             if "enable" in options:
                 enabled_t = _parse_bool(options["enable"])
                 if enabled_t is None:
-                    await ctx.reply("無效的 -enable 值，請使用 on/off")
+                    await self._ctx_reply(ctx, "無效的 -enable 值，請使用 on/off")
                     return
                 tkwargs["enabled"] = enabled_t
             if response_text:
                 tkwargs["response"] = response_text
 
             if not tkwargs:
-                await ctx.reply("請提供要修改的內容，如 -cd=N / -enable=on / 新回覆文字")
+                await self._ctx_reply(ctx, "請提供要修改的內容，如 -cd=N / -enable=on / 新回覆文字")
                 return
 
             # Only pass fields being changed; None → COALESCE keeps existing DB value
@@ -382,7 +392,7 @@ class CommandManagerComponent(commands.Component):
                 val = _parse_bool(options["enable"])
                 changes.append("啟用" if val else "停用")
 
-            await ctx.reply(f"已更新觸發 {pattern} — {' | '.join(changes)}")
+            await self._ctx_reply(ctx, f"已更新觸發 {pattern} — {' | '.join(changes)}")
             LOGGER.info(f"Trigger edited: '{pattern}' by {ctx.chatter.name}")
 
     @cmd.command(name="d", aliases=["delete"])
@@ -391,7 +401,7 @@ class CommandManagerComponent(commands.Component):
         if not ctx.chatter.moderator:  # type: ignore[attr-defined]
             return
         if not args or not args.strip():
-            await ctx.reply("用法: !cmd d !指令名 / !cmd d 觸發詞")
+            await self._ctx_reply(ctx, "用法: !cmd d !指令名 / !cmd d 觸發詞")
             return
 
         target = args.strip()
@@ -401,23 +411,23 @@ class CommandManagerComponent(commands.Component):
             trigger_name = _sanitize_trigger_name(target)
             deleted = await self.bot.message_trigger_configs.delete(channel_id, trigger_name)
             if deleted:
-                await ctx.reply(f"已刪除觸發：{target}")
+                await self._ctx_reply(ctx, f"已刪除觸發：{target}")
                 LOGGER.info(f"Trigger deleted: '{target}' by {ctx.chatter.name}")
             else:
-                await ctx.reply(f"找不到觸發詞：{target}")
+                await self._ctx_reply(ctx, f"找不到觸發詞：{target}")
             return
 
         cmd_name = target.lstrip("!").lower()
         if not cmd_name:
-            await ctx.reply("用法: !cmd d !指令名")
+            await self._ctx_reply(ctx, "用法: !cmd d !指令名")
             return
         deleted = await self.cmd_repo.delete_config(channel_id, cmd_name)
 
         if deleted:
-            await ctx.reply(f"已刪除 !{cmd_name}")
+            await self._ctx_reply(ctx, f"已刪除 !{cmd_name}")
             LOGGER.info(f"Command deleted: !{cmd_name} by {ctx.chatter.name}")
         else:
-            await ctx.reply(f"找不到自訂指令 !{cmd_name}，僅能刪除自訂指令")
+            await self._ctx_reply(ctx, f"找不到自訂指令 !{cmd_name}，僅能刪除自訂指令")
 
 
 async def setup(bot: commands.Bot) -> None:

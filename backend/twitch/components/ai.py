@@ -16,6 +16,7 @@ from openai.types.chat import ChatCompletionMessageParam
 from pypinyin import lazy_pinyin
 from twitchio.ext import commands
 
+from core.component import BotComponent
 from core.config import DATA_DIR, get_settings
 from core.guards import check_command
 from shared.repositories.command_config import CommandConfigRepository
@@ -126,7 +127,7 @@ _SYSTEM_PROMPT = (
 )
 
 
-class AIComponent(commands.Component):
+class AIComponent(BotComponent):
     COMMANDS: list[dict] = [
         {"command_name": "ai", "cooldown": 15, "aliases": "問"},
     ]
@@ -174,7 +175,7 @@ class AIComponent(commands.Component):
             return
 
         if not message or not message.strip():
-            await ctx.reply("用法: !ai <問題>")
+            await self._ctx_reply(ctx, "用法: !ai <問題>")
             return
 
         try:
@@ -249,9 +250,11 @@ class AIComponent(commands.Component):
                     LOGGER.warning(
                         f"[{ctx.channel.name}] AI response blocked — flagged substring: {flagged!r}"
                     )
-                    await ctx.reply("訊號不穩，剛才那句話被宇宙射線干擾掉了，換個問題試試？")
+                    await self._ctx_reply(
+                        ctx, "訊號不穩，剛才那句話被宇宙射線干擾掉了，換個問題試試？"
+                    )
                     return
-                await ctx.reply(response)
+                await self._ctx_reply(ctx, response)
                 try:
                     await self.cmd_repo.increment_usage_count(ctx.channel.id, "ai")
                 except Exception:
@@ -260,21 +263,21 @@ class AIComponent(commands.Component):
                 raise last_error
             else:
                 LOGGER.warning("Empty content after all models")
-                await ctx.reply("AI 回應為空，請重試")
+                await self._ctx_reply(ctx, "AI 回應為空，請重試")
         except RateLimitError as e:
-            await ctx.reply("AI 功能目前使用人數過多，請稍後再試")
+            await self._ctx_reply(ctx, "AI 功能目前使用人數過多，請稍後再試")
             LOGGER.warning(f"[{ctx.channel.name}] AI rate limit: {e}")
         except PermissionDeniedError as e:
-            await ctx.reply("AI 服務暫時無法使用，請聯絡管理員")
+            await self._ctx_reply(ctx, "AI 服務暫時無法使用，請聯絡管理員")
             LOGGER.error(f"[{ctx.channel.name}] AI permission denied: {e}")
         except AuthenticationError as e:
-            await ctx.reply("AI 服務設定異常，請聯絡管理員")
+            await self._ctx_reply(ctx, "AI 服務設定異常，請聯絡管理員")
             LOGGER.error(f"[{ctx.channel.name}] AI authentication error: {e}")
         except APITimeoutError as e:
-            await ctx.reply("AI 回應逾時，請稍後再試")
+            await self._ctx_reply(ctx, "AI 回應逾時，請稍後再試")
             LOGGER.warning(f"[{ctx.channel.name}] AI timeout: {e}")
         except Exception as e:
-            await ctx.reply("AI 服務暫時無法使用，請稍後再試")
+            await self._ctx_reply(ctx, "AI 服務暫時無法使用，請稍後再試")
             LOGGER.error(f"[{ctx.channel.name}] AI unexpected error ({type(e).__name__}): {e}")
 
 

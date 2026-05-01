@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from twitchio.ext import commands
 
+from core.component import BotComponent
 from core.config import DATA_DIR
 from core.guards import check_command
 from shared.repositories.command_config import CommandConfigRepository
@@ -21,7 +22,7 @@ _CATEGORY_ALIASES: dict[str, list[str]] = {
 CATEGORY_MAP = {alias: cat for cat, aliases in _CATEGORY_ALIASES.items() for alias in aliases}
 
 
-class TarotComponent(commands.Component):
+class TarotComponent(BotComponent):
     COMMANDS: list[dict] = [
         {"command_name": "tarot", "cooldown": 5, "aliases": "塔羅"},
     ]
@@ -72,7 +73,9 @@ class TarotComponent(commands.Component):
         meaning = info["meanings"].get(category, info["meanings"]["general"])
         full_meaning = meaning.replace("\n", "")
 
-        await ctx.reply(f"🃏 {card['name']}（{orientation}）| {keywords} — {full_meaning}")
+        await self._ctx_reply(
+            ctx, f"🃏 {card['name']}（{orientation}）| {keywords} — {full_meaning}"
+        )
         try:
             await self.cmd_repo.increment_usage_count(ctx.channel.id, "tarot")
         except Exception:

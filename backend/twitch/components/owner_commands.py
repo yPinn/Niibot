@@ -2,6 +2,8 @@ from typing import TYPE_CHECKING
 
 from twitchio.ext import commands
 
+from core.component import BotComponent
+
 if TYPE_CHECKING:
     from core.bot import Bot
 else:
@@ -14,7 +16,7 @@ class NotOwnerError(commands.GuardFailure):
     ...
 
 
-class OwnerCommandsComponent(commands.Component):
+class OwnerCommandsComponent(BotComponent):
     """Owner-only commands for bot management.
 
     Usage:
@@ -33,7 +35,7 @@ class OwnerCommandsComponent(commands.Component):
         error = payload.exception
         if isinstance(error, NotOwnerError):
             ctx = payload.context
-            await ctx.reply("Only the owner can use this command!")
+            await self._ctx_reply(ctx, "Only the owner can use this command!")
             return False
         return None
 
@@ -51,9 +53,9 @@ class OwnerCommandsComponent(commands.Component):
             modules = list(self.bot.modules.keys())
             if modules:
                 modules_str = ", ".join(modules)
-                await ctx.reply(f"Loaded ({len(modules)}): {modules_str}")
+                await self._ctx_reply(ctx, f"Loaded ({len(modules)}): {modules_str}")
             else:
-                await ctx.reply("No modules loaded.")
+                await self._ctx_reply(ctx, "No modules loaded.")
 
     @comp.command(name="l")
     async def comp_load(self, ctx: commands.Context[Bot], module: str) -> None:
@@ -64,9 +66,9 @@ class OwnerCommandsComponent(commands.Component):
         """
         try:
             await self.bot.load_module(module)
-            await ctx.reply(f"Loaded: {module}")
+            await self._ctx_reply(ctx, f"Loaded: {module}")
         except Exception as e:
-            await ctx.reply(f"Failed to load {module}: {str(e)}")
+            await self._ctx_reply(ctx, f"Failed to load {module}: {str(e)}")
 
     @comp.command(name="u")
     async def comp_unload(self, ctx: commands.Context[Bot], module: str) -> None:
@@ -76,14 +78,14 @@ class OwnerCommandsComponent(commands.Component):
         Example: !comp u components.general_commands
         """
         if module == "components.owner_commands":
-            await ctx.reply("Cannot unload owner_commands (would lose bot control)")
+            await self._ctx_reply(ctx, "Cannot unload owner_commands (would lose bot control)")
             return
 
         try:
             await self.bot.unload_module(module)
-            await ctx.reply(f"Unloaded: {module}")
+            await self._ctx_reply(ctx, f"Unloaded: {module}")
         except Exception as e:
-            await ctx.reply(f"Failed to unload {module}: {str(e)}")
+            await self._ctx_reply(ctx, f"Failed to unload {module}: {str(e)}")
 
     @comp.command(name="r")
     async def comp_reload(self, ctx: commands.Context[Bot], module: str) -> None:
@@ -94,9 +96,9 @@ class OwnerCommandsComponent(commands.Component):
         """
         try:
             await self.bot.reload_module(module)
-            await ctx.reply(f"Reloaded: {module}")
+            await self._ctx_reply(ctx, f"Reloaded: {module}")
         except Exception as e:
-            await ctx.reply(f"Failed to reload {module}: {str(e)}")
+            await self._ctx_reply(ctx, f"Failed to reload {module}: {str(e)}")
 
     @comp.command(name="off")
     async def comp_off(self, ctx: commands.Context[Bot]) -> None:
@@ -104,7 +106,7 @@ class OwnerCommandsComponent(commands.Component):
 
         Usage: !comp off
         """
-        await ctx.reply("Shutting down bot...")
+        await self._ctx_reply(ctx, "Shutting down bot...")
         await self.bot.close()
 
 

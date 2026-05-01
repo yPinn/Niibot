@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 import twitchio
 from twitchio.ext import commands
 
+from core.component import BotComponent
 from core.config import get_settings
 from core.guards import check_command
 from shared.repositories.command_config import CommandConfigRepository
@@ -19,7 +20,7 @@ if TYPE_CHECKING:
     from core.bot import Bot
 
 
-class GeneralCommandsComponent(commands.Component):
+class GeneralCommandsComponent(BotComponent):
     """General user commands for the bot."""
 
     def __init__(self, bot: commands.Bot) -> None:
@@ -70,9 +71,9 @@ class GeneralCommandsComponent(commands.Component):
             response = substitute_variables(
                 config.custom_response, ctx.chatter, ctx.channel.name, ""
             )
-            await ctx.reply(response)
+            await self._ctx_reply(ctx, response)
         else:
-            await ctx.reply(f"你好，{ctx.chatter.display_name}！")
+            await self._ctx_reply(ctx, f"你好，{ctx.chatter.display_name}！")
         await self._record_command(ctx, "hi")
 
     @commands.command(aliases=["commands", "指令"])
@@ -88,7 +89,7 @@ class GeneralCommandsComponent(commands.Component):
             return
 
         channel_name = ctx.channel.name
-        await ctx.reply(f"此頻道的指令列表： {FRONTEND_URL}/{channel_name}/commands")
+        await self._ctx_reply(ctx, f"此頻道的指令列表： {FRONTEND_URL}/{channel_name}/commands")
         await self._record_command(ctx, "help")
 
     @commands.command(aliases=["開播時間"])
@@ -113,9 +114,9 @@ class GeneralCommandsComponent(commands.Component):
             uptime = now - stream.started_at
             hours, remainder = divmod(int(uptime.total_seconds()), 3600)
             minutes, seconds = divmod(remainder, 60)
-            await ctx.reply(f"已開播 {hours} 小時 {minutes} 分 {seconds} 秒")
+            await self._ctx_reply(ctx, f"已開播 {hours} 小時 {minutes} 分 {seconds} 秒")
         else:
-            await ctx.reply("目前未開播")
+            await self._ctx_reply(ctx, "目前未開播")
 
         await self._record_command(ctx, "uptime")
 
