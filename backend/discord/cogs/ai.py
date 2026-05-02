@@ -1,48 +1,22 @@
-"""AI chat commands using OpenRouter API"""
+"""AI chat commands using multi-provider LLM routing."""
 
-import json
 import logging
-import re
-import time
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 from openai import (
     APITimeoutError,
-    AsyncOpenAI,
     AuthenticationError,
-    NotFoundError,
     PermissionDeniedError,
     RateLimitError,
 )
 from openai.types.chat import ChatCompletionMessageParam
 
 from core import DATA_DIR, EmbedFactory, get_settings, load_json
+from shared.ai_provider import ProviderEntry, build_provider_chain, call_provider_chain
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
-
-_THINK_CLOSED = re.compile(r"<think>[\s\S]*?</think>")
-_THINK_OPEN = re.compile(r"<think>[\s\S]*$")
-
-_FREE_MODELS_PATH = DATA_DIR / "free_models.json"
-_MAX_FALLBACKS = 3
-
-
-def _load_fallback_models(primary: str) -> list[str]:
-    models: list[str] = []
-    try:
-        with open(_FREE_MODELS_PATH) as f:
-            data = json.load(f)
-        candidates = [m["id"] for m in data.get("models", []) if m.get("enabled", False)]
-        models = [m for m in candidates if m != primary][:_MAX_FALLBACKS]
-        LOGGER.info(f"Loaded {len(models)} fallback models from {_FREE_MODELS_PATH.name}")
-    except FileNotFoundError:
-        LOGGER.warning(f"{_FREE_MODELS_PATH.name} not found, no fallback models available")
-    except Exception as e:
-        LOGGER.warning(f"Failed to load free_models.json: {e}, no fallback models available")
-    return models
-
 
 _SYSTEM_PROMPT = (
     "你是 Discord 聊天機器人，回應會公開顯示於伺服器頻道，須符合 Discord 服務條款。\n\n"
@@ -64,26 +38,21 @@ class AICog(commands.Cog):
         self.bot = bot
 
         s = get_settings()
-        api_key = s.openrouter_api_key
-        model = s.openrouter_model
-
-        if not api_key or api_key.strip() == "":
-            raise ValueError("OPENROUTER_API_KEY is required but not set in .env file")
-
-        if not model or model.strip() == "":
-            raise ValueError("OPENROUTER_MODEL is required but not set in .env file")
-
-        self.client = AsyncOpenAI(
-            base_url="https://openrouter.ai/api/v1",
-            api_key=api_key,
+        self.provider_chain: list[ProviderEntry] = build_provider_chain(
+            groq_api_key=s.groq_api_key,
+            groq_model=s.groq_model,
+            gemini_api_key=s.gemini_api_key,
+            gemini_model=s.gemini_model,
+            openrouter_api_key=s.openrouter_api_key,
+            openrouter_model=s.openrouter_model,
+            data_dir=DATA_DIR,
             timeout=40.0,
+            provider_order=("gemini", "groq", "openrouter"),  # quality-first for rich responses
         )
-        self.models = [model] + _load_fallback_models(model)
-
         self._embed = EmbedFactory(load_json(DATA_DIR / "embed.json"))
 
     async def cog_load(self) -> None:
-        LOGGER.info(f"AI ready: primary={self.models[0]}, fallbacks={len(self.models) - 1}")
+        LOGGER.info(f"AI ready: {len(self.provider_chain)} provider entries")
 
     @app_commands.command(name="ai", description="AI 問答")
     @app_commands.describe(question="你的問題")
@@ -102,50 +71,9 @@ class AICog(commands.Cog):
                 {"role": "user", "content": question},
             ]
 
-            response = ""
-            last_error: Exception | None = None
-            t_start = time.monotonic()
-
-            for model in self.models:
-                try:
-                    completion = await self.client.chat.completions.create(
-                        model=model,
-                        max_tokens=800,
-                        messages=messages,
-                        # Prevent reasoning models (e.g. DeepSeek R1) from
-                        # consuming the max_tokens budget on <think> content.
-                        extra_body={"include_reasoning": False},
-                    )
-
-                    if not completion.choices:
-                        LOGGER.warning(f"AI [{model}]: no choices, trying next model")
-                        continue
-
-                    raw = completion.choices[0].message.content or ""
-                    response = _THINK_CLOSED.sub("", raw)
-                    response = _THINK_OPEN.sub("", response)
-                    response = response.strip()
-
-                    elapsed = time.monotonic() - t_start
-                    LOGGER.info(
-                        f"AI [{model}]: {elapsed:.1f}s, raw={len(raw)}, clean={len(response)}"
-                    )
-                    if response:
-                        break
-                except RateLimitError as e:
-                    LOGGER.warning(f"AI rate limit on {model}, trying next model")
-                    last_error = e
-                    continue
-                except APITimeoutError:
-                    LOGGER.warning(f"AI [{model}] timed out, trying next model")
-                    continue
-                except NotFoundError:
-                    LOGGER.warning(f"AI [{model}] not found (404), trying next model")
-                    continue
-                except Exception as e:
-                    LOGGER.warning(f"AI [{model}] error ({type(e).__name__}), trying next model")
-                    last_error = e
-                    continue
+            response, last_error = await call_provider_chain(
+                self.provider_chain, messages, max_tokens=800
+            )
 
             if response:
                 embed = self._embed.build(

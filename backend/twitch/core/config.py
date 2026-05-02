@@ -38,6 +38,12 @@ class TwitchBotSettings(BaseServiceSettings):
     owner_id: str = Field(..., description="Owner User ID")
     conduit_id: str = Field(default="", description="Twitch EventSub Conduit ID")
     frontend_url: str = Field(default="http://localhost:3000", description="Frontend URL for OAuth")
+    groq_api_key: str = Field(default="", description="Groq API key (free tier, no billing)")
+    groq_model: str = Field(default="", description="Groq model (default: llama-3.3-70b-versatile)")
+    gemini_api_key: str = Field(
+        default="", description="Gemini AI Studio API key (free, no billing)"
+    )
+    gemini_model: str = Field(default="", description="Gemini model (default: gemini-1.5-flash)")
     openrouter_api_key: str = Field(default="", description="OpenRouter API key")
     openrouter_model: str = Field(default="", description="OpenRouter model")
     youtube_api_key: str = Field(default="", description="YouTube Data API v3 key")

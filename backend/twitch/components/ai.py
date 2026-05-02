@@ -1,14 +1,10 @@
 import json
 import logging
-import re
-import time
 from typing import TYPE_CHECKING
 
 from openai import (
     APITimeoutError,
-    AsyncOpenAI,
     AuthenticationError,
-    NotFoundError,
     PermissionDeniedError,
     RateLimitError,
 )
@@ -19,6 +15,7 @@ from twitchio.ext import commands
 from core.component import BotComponent
 from core.config import DATA_DIR, get_settings
 from core.guards import check_command
+from shared.ai_provider import ProviderEntry, build_provider_chain, call_provider_chain
 from shared.repositories.command_config import CommandConfigRepository
 
 if TYPE_CHECKING:
@@ -28,28 +25,6 @@ else:
 
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
-
-_THINK_CLOSED = re.compile(r"<think>[\s\S]*?</think>")
-_THINK_OPEN = re.compile(r"<think>[\s\S]*$")
-
-_FREE_MODELS_PATH = DATA_DIR / "free_models.json"
-_MAX_FALLBACKS = 3
-
-
-def _load_fallback_models(primary: str) -> list[str]:
-    models: list[str] = []
-    try:
-        with open(_FREE_MODELS_PATH) as f:
-            data = json.load(f)
-        candidates = [m["id"] for m in data.get("models", []) if m.get("enabled", False)]
-        models = [m for m in candidates if m != primary][:_MAX_FALLBACKS]
-        LOGGER.info(f"Loaded {len(models)} fallback models from {_FREE_MODELS_PATH.name}")
-    except FileNotFoundError:
-        LOGGER.warning(f"{_FREE_MODELS_PATH.name} not found, no fallback models available")
-    except Exception as e:
-        LOGGER.warning(f"Failed to load free_models.json: {e}, no fallback models available")
-    return models
-
 
 _CHAT_FILTER_PATH = DATA_DIR / "chat_filter.json"
 
@@ -138,23 +113,18 @@ class AIComponent(BotComponent):
         self.channel_repo = self.bot.channels  # type: ignore[attr-defined]
 
         settings = get_settings()
-        api_key = settings.openrouter_api_key
-        model = settings.openrouter_model
-
-        if not api_key or api_key.strip() == "":
-            raise ValueError("OPENROUTER_API_KEY is required but not set in .env file")
-
-        if not model or model.strip() == "":
-            raise ValueError("OPENROUTER_MODEL is required but not set in .env file")
-
-        self.client = AsyncOpenAI(
-            base_url="https://openrouter.ai/api/v1",
-            api_key=api_key,
+        self.provider_chain: list[ProviderEntry] = build_provider_chain(
+            groq_api_key=settings.groq_api_key,
+            groq_model=settings.groq_model,
+            gemini_api_key=settings.gemini_api_key,
+            gemini_model=settings.gemini_model,
+            openrouter_api_key=settings.openrouter_api_key,
+            openrouter_model=settings.openrouter_model,
+            data_dir=DATA_DIR,
             timeout=20.0,
+            provider_order=("groq", "gemini", "openrouter"),  # speed-first for live chat
         )
-        self.models = [model] + _load_fallback_models(model)
-
-        LOGGER.info(f"AIComponent initialized: primary={model}, fallbacks={len(self.models) - 1}")
+        LOGGER.info(f"AIComponent initialized: {len(self.provider_chain)} provider entries")
 
     def refresh_pool(self, pool) -> None:
         self.cmd_repo.pool = pool
@@ -188,50 +158,9 @@ class AIComponent(BotComponent):
                 {"role": "user", "content": message},
             ]
 
-            response = ""
-            last_error: Exception | None = None
-            t_start = time.monotonic()
-
-            for model in self.models:
-                try:
-                    completion = await self.client.chat.completions.create(
-                        model=model,
-                        max_tokens=250,
-                        messages=messages,
-                        # Prevent reasoning models (e.g. DeepSeek R1) from
-                        # consuming the max_tokens budget on <think> content.
-                        extra_body={"include_reasoning": False},
-                    )
-
-                    if not completion.choices:
-                        LOGGER.warning(f"AI [{model}]: no choices, trying next model")
-                        continue
-
-                    raw = completion.choices[0].message.content or ""
-                    response = _THINK_CLOSED.sub("", raw)
-                    response = _THINK_OPEN.sub("", response)
-                    response = response.strip()
-
-                    elapsed = time.monotonic() - t_start
-                    LOGGER.info(
-                        f"AI [{model}]: {elapsed:.1f}s, raw={len(raw)}, clean={len(response)}"
-                    )
-                    if response:
-                        break
-                except RateLimitError as e:
-                    LOGGER.warning(f"AI rate limit on {model}, trying next model")
-                    last_error = e
-                    continue
-                except APITimeoutError:
-                    LOGGER.warning(f"AI [{model}] timed out, trying next model")
-                    continue
-                except NotFoundError:
-                    LOGGER.warning(f"AI [{model}] not found (404), trying next model")
-                    continue
-                except Exception as e:
-                    LOGGER.warning(f"AI [{model}] error ({type(e).__name__}), trying next model")
-                    last_error = e
-                    continue
+            response, last_error = await call_provider_chain(
+                self.provider_chain, messages, max_tokens=250
+            )
 
             # Twitch message limit is 500 characters — truncate at sentence boundary
             if len(response) > 500:
