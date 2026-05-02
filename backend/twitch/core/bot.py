@@ -307,6 +307,13 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
                     LOGGER.info("Bot token has 'user:bot' scope — bot badge enabled.")
                 continue  # bot account does not need a channels row
 
+            if "channel:bot" not in user_info.scopes:
+                LOGGER.warning(
+                    f"Channel token for {user_info.login or tok.user_id} is missing "
+                    "'channel:bot' scope — bot badge will NOT appear in that channel. "
+                    "Broadcaster must re-login via the dashboard."
+                )
+
             try:
                 await self.add_channel_to_db(tok.user_id, user_info.login or "unknown")
             except Exception as e:
