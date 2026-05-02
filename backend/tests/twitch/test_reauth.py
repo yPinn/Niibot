@@ -14,6 +14,8 @@ os.environ.setdefault("FRONTEND_URL", "https://niibot.tv")
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
 
+import pytest
+
 from utils.reauth import ReauthNotifier, is_scope_error
 
 # ---------------------------------------------------------------------------
@@ -101,6 +103,8 @@ class TestIsScopeError:
 
 
 class TestReauthNotifier:
+    pytestmark = pytest.mark.asyncio
+
     def _notifier(self) -> ReauthNotifier:
         return ReauthNotifier()
 

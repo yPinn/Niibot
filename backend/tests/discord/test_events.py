@@ -153,6 +153,8 @@ def _make_audit_entry(author_id: int, channel_id: int, user=None, age_seconds: f
 
 
 class TestFindDeleter:
+    pytestmark = pytest.mark.asyncio
+
     async def test_returns_user_from_matching_audit_entry(self):
         deleter = MagicMock(spec=discord.Member)
         entry = _make_audit_entry(author_id=42, channel_id=10, user=deleter)
@@ -223,6 +225,8 @@ class TestGetLogChannel:
 
 
 class TestOnMessage:
+    pytestmark = pytest.mark.asyncio
+
     async def test_caches_non_bot_guild_message(self, cog):
         msg = _make_message()
         await cog.on_message(msg)
@@ -248,6 +252,7 @@ class TestOnMessageDelete:
         cog.skip_delete_log(999)
         assert 999 in cog._log_skip_ids
 
+    @pytest.mark.asyncio
     async def test_skips_registered_id_and_clears_it(self, cog):
         msg = _make_message(msg_id=123)
         cog.skip_delete_log(123)
@@ -255,17 +260,20 @@ class TestOnMessageDelete:
         cog._send_log.assert_not_called()
         assert 123 not in cog._log_skip_ids
 
+    @pytest.mark.asyncio
     async def test_skips_bot_message(self, cog):
         msg = _make_message(is_bot=True)
         await cog.on_message_delete(msg)
         cog._send_log.assert_not_called()
 
+    @pytest.mark.asyncio
     async def test_skips_when_no_log_channel(self, cog):
         msg = _make_message()
         cog.log_channels.clear()
         await cog.on_message_delete(msg)
         cog._send_log.assert_not_called()
 
+    @pytest.mark.asyncio
     async def test_sends_embed_without_image_when_content_unavailable(self, cog):
         guild = _make_guild(guild_id=1)
         log_ch = MagicMock(spec=discord.TextChannel)
@@ -285,6 +293,7 @@ class TestOnMessageDelete:
         _, kwargs = cog._send_log.call_args
         assert kwargs.get("image_bytes") is None or len(cog._send_log.call_args.args) == 2
 
+    @pytest.mark.asyncio
     async def test_renders_image_for_cached_message_with_content(self, cog):
         guild = _make_guild(guild_id=1)
         log_ch = MagicMock(spec=discord.TextChannel)
@@ -314,6 +323,8 @@ class TestOnMessageDelete:
 
 
 class TestOnMessageEdit:
+    pytestmark = pytest.mark.asyncio
+
     async def test_skips_when_content_unchanged(self, cog):
         msg = _make_message(content="same")
         await cog.on_message_edit(msg, msg)
@@ -341,6 +352,8 @@ class TestOnMessageEdit:
 
 
 class TestOnMemberUpdate:
+    pytestmark = pytest.mark.asyncio
+
     async def test_skips_when_no_changes(self, cog):
         guild = _make_guild(guild_id=1)
         log_ch = MagicMock(spec=discord.TextChannel)
@@ -394,6 +407,8 @@ class TestOnMemberUpdate:
 
 
 class TestOnMemberRemove:
+    pytestmark = pytest.mark.asyncio
+
     async def test_logs_voluntary_leave(self, cog):
         guild = _make_guild(guild_id=1)
         log_ch = MagicMock(spec=discord.TextChannel)
@@ -450,6 +465,8 @@ class TestOnMemberRemove:
 
 
 class TestOnBulkMessageDelete:
+    pytestmark = pytest.mark.asyncio
+
     async def test_clears_cached_messages_and_sends_log(self, cog):
         guild = _make_guild(guild_id=1)
         log_ch = MagicMock(spec=discord.TextChannel)

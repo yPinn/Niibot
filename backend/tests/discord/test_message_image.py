@@ -124,6 +124,8 @@ class TestRenderSync:
 
 
 class TestRenderMessageImage:
+    pytestmark = pytest.mark.asyncio
+
     async def test_returns_valid_png_no_avatar(self):
         # avatar_url=None → _fetch_bytes returns None immediately (no HTTP)
         result = await render_message_image(
