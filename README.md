@@ -2,50 +2,6 @@
 
 多平台直播整合系統，包含 Twitch Bot、Discord Bot 與 Web Dashboard。
 
-## 目錄
-
-- [功能概覽](#功能概覽)
-- [架構](#架構)
-- [快速開始](#快速開始)
-- [環境變數](#環境變數)
-- [外部服務](#外部服務)
-- [測試](#測試)
-
----
-
-## 功能概覽
-
-### Twitch Bot
-
-- **指令系統** — 自訂指令（`!cmd`）、別名、冷卻、權限分級
-- **訊息觸發** — 關鍵字自動回應（contains / startswith / exact / regex，含 ReDoS 防護）
-- **計時器** — 排程廣播訊息
-- **Channel Points** — 自訂兌換獎勵處理
-- **Events** — EventSub 事件回應（上線、訂閱、Raid 等）
-- **遊戲隊列** — 排隊管理（GameQueue / VideoQueue）
-- **占卜娛樂** — 每日運勢、塔羅牌
-- **TFT 戰棋** — 玩家段位查詢與排行榜門檻
-- **AI 對話** — 整合 OpenRouter API
-
-### Discord Bot
-
-- **社群預覽** — Instagram、Bilibili、TikTok、Threads、Twitch Clip / 頻道連結自動展開嵌入
-- **生日追蹤** — 記錄、提醒、訂閱通知
-- **抽獎系統** — Giveaway 管理
-- **吃什麼** — 隨機餐點推薦與分類瀏覽
-- **占卜娛樂** — 每日運勢、塔羅牌
-- **TFT 戰棋** — 玩家段位查詢與排行榜門檻
-- **伺服器日誌** — 成員進出事件記錄
-- **工具指令** — 通用、遊戲、管理、審核
-- **AI 對話** — 整合 OpenRouter API
-
-### Web Dashboard
-
-- 指令與觸發詞的 CRUD 管理
-- 計時器、VideoQueue、GameQueue 設定
-- EventSub 事件設定
-- 系統狀態監控
-
 ## 架構
 
 ```text
@@ -69,19 +25,12 @@ Niibot/
 | Database    | PostgreSQL 16     | Docker           |
 | Frontend    | React 19 + Vite   | Cloudflare Pages |
 
-後端透過 **Cloudflare Tunnel** 對外，前端部署在 **Cloudflare Pages**，CF Pages Functions 將 `/api/*` 代理至後端，瀏覽器只與 CF Pages 域名通訊。
+後端透過 **Cloudflare Tunnel** 對外；前端部署在 **Cloudflare Pages**，`/api/*` 由 CF Pages Functions 代理至後端。
 
 ## 快速開始
 
-### 環境需求
-
-- Python 3.11+、[uv](https://docs.astral.sh/uv/)
-- Node.js 22+
-- Docker & Docker Compose
-
-### 設定環境變數
-
 ```bash
+# 複製所有 .env 範本
 cp .env.example .env
 cp backend/shared.env.example backend/shared.env
 cp backend/api/.env.example backend/api/.env
@@ -90,53 +39,43 @@ cp backend/discord/.env.example backend/discord/.env
 cp backend/scrapling/.env.example backend/scrapling/.env
 ```
 
-> 本機開發時可建立 `backend/shared.env.local`（gitignored），用於覆蓋 `shared.env` 中的值（如 DB URL），不需修改 `shared.env` 本身。
-
-### 本機開發
+> 本機開發可建立 `backend/shared.env.local`（gitignored）覆蓋 `shared.env` 中的值。
 
 ```bash
-# Backend
-cd backend
-uv sync --group dev
-uv run python api/main.py      # API Server
+# 本機開發
+cd backend && uv sync --group dev
+uv run python api/main.py      # API :8000
 uv run python twitch/main.py   # Twitch Bot
 uv run python discord/bot.py   # Discord Bot
 
-# Frontend
-cd frontend
-npm install
-npm run dev
+cd frontend && npm install && npm run dev
+
+# 生產部署
+docker compose build && docker compose up -d
 ```
 
-### 生產部署（Docker Compose）
+啟動時 `migrate` 容器自動執行 DB Migration。
+
+CI/CD 密鑰（GitHub Actions 部署前執行一次）：
 
 ```bash
-docker compose build
-docker compose up -d
-```
-
-啟動時 `migrate` 容器會自動執行 DB Migration，成功後其他服務才會啟動。
-
-CI/CD 密鑰上傳（GitHub Actions 部署前執行一次）：
-
-```bash
-cp secrets.env.example secrets.env    # 填入所有 GitHub Secrets
-cp variables.env.example variables.env # 填入所有 GitHub Variables
+cp secrets.env.example secrets.env
+cp variables.env.example variables.env
 bash scripts/push-secrets.sh
 ```
 
 ## 環境變數
 
-| 檔案                     | 內容                                                               |
-| ------------------------ | ------------------------------------------------------------------ |
-| `.env`                   | PostgreSQL 帳號、Cloudflare Tunnel Token                           |
-| `backend/shared.env`     | DB URL、Frontend URL、Twitch App 金鑰、OpenRouter、YouTube API Key |
-| `backend/api/.env`       | JWT Secret、API URL                                                |
-| `backend/twitch/.env`    | Bot ID、Owner ID                                                   |
-| `backend/discord/.env`   | Discord Bot Token、Presence 設定                                   |
-| `backend/scrapling/.env` | Threads 與 Instagram session cookie                                |
+| 檔案                     | 內容                                                                   |
+| ------------------------ | ---------------------------------------------------------------------- |
+| `.env`                   | PostgreSQL 帳號、Cloudflare Tunnel Token                               |
+| `backend/shared.env`     | DB URL、Frontend URL、Twitch App 金鑰、Groq / Gemini / OpenRouter、YouTube API Key |
+| `backend/api/.env`       | JWT Secret、API URL                                                    |
+| `backend/twitch/.env`    | Bot ID、Owner ID                                                       |
+| `backend/discord/.env`   | Discord Bot Token、Presence 設定                                       |
+| `backend/scrapling/.env` | Threads / Instagram session cookie                                     |
 
-Cloudflare Pages 專案需設定環境變數 `API_BACKEND`（後端位址）。
+Cloudflare Pages 需設定環境變數 `API_BACKEND`（後端位址）。
 
 ## 外部服務
 
@@ -151,13 +90,8 @@ Cloudflare Pages 專案需設定環境變數 `API_BACKEND`（後端位址）。
 ## 測試
 
 ```bash
-# Backend
-cd backend
-uv run pytest tests/ -v
-
-# Frontend
-cd frontend
-npm run test:coverage
+cd backend && uv run pytest tests/ -v
+cd frontend && npm run test:coverage
 ```
 
 ## License

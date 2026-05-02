@@ -63,7 +63,7 @@ src/
 ├── config/         # navigation.ts — Twitch 與 Discord sidebar 導覽設定
 ├── hooks/          # usePolling、useSortState、useBreadcrumbs、useDocumentTitle…
 ├── lib/
-│   ├── apiCache.ts # 記憶體內 TTL 快取 + 請求合併（deduplication）
+│   ├── apiCache.ts # 記憶體內 TTL 快取（上限 200 條）+ 請求合併（deduplication）
 │   └── sort.ts     # 通用排序工具
 ├── pages/
 │   ├── dashboard/  # Twitch Bot（Commands、Events、Overview、SystemStatus）
