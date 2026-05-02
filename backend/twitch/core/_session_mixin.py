@@ -11,11 +11,21 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import UTC, datetime
+import re
+from datetime import UTC, datetime, timedelta
 
 import httpx
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
+
+
+def _parse_twitch_duration(duration: str) -> timedelta:
+    """Parse Twitch VOD duration string (e.g. '3h21m15s') into a timedelta."""
+    m = re.fullmatch(r"(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?", duration.strip())
+    if not m:
+        return timedelta()
+    h, mi, s = (int(x) if x else 0 for x in m.groups())
+    return timedelta(hours=h, minutes=mi, seconds=s)
 
 
 class _SessionMixin:
@@ -352,7 +362,10 @@ class _SessionMixin:
                             continue
 
                         duration = video.duration
-                        ended_at = started_at + duration if duration else started_at  # type: ignore[operator]
+                        if duration:
+                            ended_at = started_at + _parse_twitch_duration(duration)
+                        else:
+                            ended_at = started_at
 
                         session_id = await self.analytics.sync_session_from_vod(  # type: ignore[attr-defined]
                             channel_id=channel_id,
