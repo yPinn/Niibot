@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import logging
 
+from twitchio.http import Route
+
 from core.subscriptions import get_channel_subscriptions
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -64,6 +66,7 @@ class _ChannelMixin:
 
             self._subscribed_channels.add(broadcaster_user_id)  # type: ignore[attr-defined]
             LOGGER.info(f"Subscribed to events for channel: {broadcaster_user_id}")
+            await self._join_channel_as_bot(broadcaster_user_id)
 
         except Exception as e:
             LOGGER.exception(f"Failed to subscribe channel {broadcaster_user_id}: {e}")
@@ -92,6 +95,52 @@ class _ChannelMixin:
 
             self._subscribed_channels.discard(broadcaster_user_id)  # type: ignore[attr-defined]
             LOGGER.info(f"Unsubscribed from events for channel: {broadcaster_user_id}")
+            await self._leave_channel_as_bot(broadcaster_user_id)
 
         except Exception as e:
             LOGGER.exception(f"Failed to unsubscribe channel {broadcaster_user_id}: {e}")
+
+    # ------------------------------------------------------------------
+    # Bot presence (channels/bots API — required for bot badge)
+    # ------------------------------------------------------------------
+
+    async def _join_channel_as_bot(self, broadcaster_user_id: str) -> None:
+        """Register bot in broadcaster's channel via POST /helix/channels/bots.
+
+        This is separate from EventSub subscriptions and is required for the
+        bot badge to appear in Twitch chat.  Silently ignores 409 (already joined).
+        """
+        try:
+            route = Route(
+                "POST",
+                "channels/bots",
+                params={"broadcaster_id": broadcaster_user_id},
+                token_for=self._bot_id,  # type: ignore[attr-defined]
+            )
+            await self._http.request(route)  # type: ignore[attr-defined]
+            LOGGER.info(f"Bot registered in channel {broadcaster_user_id} (channels/bots)")
+        except Exception as e:
+            if "409" in str(e):
+                LOGGER.debug(f"Bot already registered in channel {broadcaster_user_id}")
+            else:
+                LOGGER.warning(f"channels/bots join failed for {broadcaster_user_id}: {e}")
+
+    async def _leave_channel_as_bot(self, broadcaster_user_id: str) -> None:
+        """Deregister bot from broadcaster's channel via DELETE /helix/channels/bots."""
+        try:
+            route = Route(
+                "DELETE",
+                "channels/bots",
+                params={
+                    "broadcaster_id": broadcaster_user_id,
+                    "bot_id": self._bot_id,  # type: ignore[attr-defined]
+                },
+                token_for=self._bot_id,  # type: ignore[attr-defined]
+            )
+            await self._http.request(route)  # type: ignore[attr-defined]
+            LOGGER.info(f"Bot deregistered from channel {broadcaster_user_id} (channels/bots)")
+        except Exception as e:
+            if "404" in str(e):
+                LOGGER.debug(f"Bot was not registered in channel {broadcaster_user_id}")
+            else:
+                LOGGER.warning(f"channels/bots leave failed for {broadcaster_user_id}: {e}")
