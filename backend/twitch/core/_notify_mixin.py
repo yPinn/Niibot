@@ -76,7 +76,6 @@ class _NotifyMixin:
             await users[0].send_message(
                 message="Niibot 已上線，準備就緒。",
                 sender=self._bot_id,  # type: ignore[attr-defined]
-                token_for=self._bot_id,  # type: ignore[attr-defined]
             )
             LOGGER.info(f"[NOTIFY] Welcome message sent to channel {channel_id}")
         except Exception as e:

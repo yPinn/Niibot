@@ -61,7 +61,6 @@ class ChannelPointsComponent(commands.Component):
         await broadcaster.send_message(
             message=message,
             sender=self.bot.bot_id,
-            token_for=self.bot.bot_id,
         )
 
     @commands.Component.listener()

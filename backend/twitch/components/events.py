@@ -118,7 +118,6 @@ class EventComponent(commands.Component):
             await payload.broadcaster.send_message(
                 message=message,
                 sender=self.bot.bot_id,
-                token_for=self.bot.bot_id,
             )
             LOGGER.info(f"[{broadcaster_name}] Follow: {user_name}")
 
@@ -167,7 +166,6 @@ class EventComponent(commands.Component):
             await payload.broadcaster.send_message(
                 message=message,
                 sender=self.bot.bot_id,
-                token_for=self.bot.bot_id,
             )
             LOGGER.info(f"[{broadcaster_name}] {sub_type}: {user_name} ({tier_name})")
 
@@ -222,7 +220,6 @@ class EventComponent(commands.Component):
             await payload.broadcaster.send_message(
                 message=message,
                 sender=self.bot.bot_id,
-                token_for=self.bot.bot_id,
             )
             LOGGER.info(f"[{broadcaster_name}] Cheer: {user_name} {bits_amount} bits")
 
@@ -274,7 +271,6 @@ class EventComponent(commands.Component):
                 await payload.to_broadcaster.send_message(
                     message=message,
                     sender=self.bot.bot_id,
-                    token_for=self.bot.bot_id,
                 )
 
             shoutout_sent = False
@@ -295,7 +291,6 @@ class EventComponent(commands.Component):
                             send_fn=lambda msg: payload.to_broadcaster.send_message(
                                 message=msg,
                                 sender=self.bot.bot_id,
-                                token_for=self.bot.bot_id,
                             ),
                         )
                     else:

@@ -11,7 +11,6 @@ Usage in a component:
             send_fn=lambda msg: channel.send_message(
                 message=msg,
                 sender=self.bot.bot_id,
-                token_for=self.bot.bot_id,
             ),
         )
         return

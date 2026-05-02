@@ -73,7 +73,6 @@ class _MessageRouterMixin:
                 await payload.broadcaster.send_message(
                     message=response,
                     sender=self.bot_id,  # type: ignore[attr-defined]
-                    token_for=self.bot_id,  # type: ignore[attr-defined]
                     reply_to_message_id=str(payload.id),
                 )
                 LOGGER.info(
@@ -160,7 +159,6 @@ class _MessageRouterMixin:
                 await payload.broadcaster.send_message(
                     message=response,
                     sender=self.bot_id,  # type: ignore[attr-defined]
-                    token_for=self.bot_id,  # type: ignore[attr-defined]
                     reply_to_message_id=str(payload.id),
                 )
                 LOGGER.info(f"[CMD] !{cmd_name} -> text response")

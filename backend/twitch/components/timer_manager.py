@@ -163,7 +163,6 @@ class TimerManagerComponent(commands.Component):
                             send_fn=lambda msg: users[0].send_message(
                                 message=msg,
                                 sender=self.bot.bot_id,
-                                token_for=self.bot.bot_id,
                             ),
                         )
                         return
@@ -172,7 +171,6 @@ class TimerManagerComponent(commands.Component):
                 await users[0].send_message(
                     message=message,
                     sender=self.bot.bot_id,
-                    token_for=self.bot.bot_id,
                 )
             self._timer_last_fire[timer.id] = now
             self._timer_last_fire_lines[timer.id] = current_lines
