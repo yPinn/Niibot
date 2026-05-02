@@ -132,21 +132,25 @@ def gen_url(client_id: str, redirect_uri: str, scopes: list[str]) -> str:
 # ---------------------------------------------------------------------------
 
 
-async def save_token(database_url: str, user_id: str, token: str, refresh: str) -> None:
+async def save_token(
+    database_url: str, user_id: str, token: str, refresh: str, scopes: list[str]
+) -> None:
     conn = await asyncpg.connect(database_url, ssl="prefer")
     try:
         await conn.execute(
             """
-            INSERT INTO tokens (user_id, token, refresh)
-            VALUES ($1, $2, $3)
+            INSERT INTO tokens (user_id, token, refresh, scopes)
+            VALUES ($1, $2, $3, $4)
             ON CONFLICT (user_id) DO UPDATE SET
                 token      = EXCLUDED.token,
                 refresh    = EXCLUDED.refresh,
+                scopes     = EXCLUDED.scopes,
                 updated_at = NOW()
             """,
             user_id,
             token,
             refresh,
+            " ".join(scopes) if scopes else None,
         )
     finally:
         await conn.close()
@@ -349,7 +353,7 @@ def main() -> None:
     step(4, total_steps, "寫入資料庫")
 
     try:
-        asyncio.run(save_token(database_url, user_id, access_token, refresh_token))  # type: ignore[arg-type]
+        asyncio.run(save_token(database_url, user_id, access_token, refresh_token, granted_scopes))  # type: ignore[arg-type]
     except Exception as e:
         fail(f"資料庫寫入失敗: {e}")
 
