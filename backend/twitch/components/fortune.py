@@ -1,7 +1,7 @@
 import json
 import logging
 import random
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from twitchio.ext import commands
@@ -45,7 +45,7 @@ class FortuneComponent(BotComponent):
         return str(result)
 
     def _get_date_bonus(self) -> tuple[str | None, float]:
-        today = datetime.now()
+        today = datetime.now(UTC)
         date_key = f"{today.month}-{today.day}"
 
         special_dates = self.fortune_data.get("special_dates", {})

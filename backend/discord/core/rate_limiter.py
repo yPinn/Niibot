@@ -8,7 +8,7 @@ import logging
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, cast
 
 import discord
@@ -94,7 +94,7 @@ class RateLimitMonitor:
         self.stats.rate_limited_count += 1
 
         error_info = {
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "bucket": getattr(payload, "bucket", "global"),
             "retry_after": getattr(payload, "retry_after", 0.0),
             "scope": getattr(payload, "scope", "unknown"),

@@ -4,7 +4,7 @@ import asyncio
 import json
 import logging
 import random
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, cast
 
 import discord
@@ -101,7 +101,7 @@ class EatCog(commands.Cog):
         settings = self.data.get("settings", {}).get("time_based", {})
         if not settings.get("enabled", False):
             return None
-        now = datetime.now().strftime("%H:%M")
+        now = datetime.now(UTC).strftime("%H:%M")
         mapping: dict[str, str] = settings.get("mapping", {})
         for time_range, category in mapping.items():
             try:

@@ -1,6 +1,6 @@
 import logging
 import random
-from datetime import datetime
+from datetime import UTC, datetime
 from hashlib import md5
 
 import discord
@@ -33,7 +33,7 @@ class TarotCog(commands.Cog):
         return "\n".join([f"> {line.strip()}" for line in lines if line.strip()])
 
     def _get_daily_card(self, user_id: int) -> tuple[str, bool]:
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
         seed_string = f"{user_id}-{today}"
         seed = int(md5(seed_string.encode()).hexdigest(), 16)
 

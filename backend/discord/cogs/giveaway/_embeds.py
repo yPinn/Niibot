@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 import discord
 
@@ -55,7 +55,7 @@ def create_giveaway_embed(
         title="【抽獎】",
         description=desc_text,
         color=discord.Color.from_str(config["colors"]["active"]),
-        timestamp=datetime.now(),
+        timestamp=datetime.now(UTC),
     )
 
     _apply_embed_chrome(
@@ -96,7 +96,7 @@ def create_result_embed(
         title="【抽獎結果】",
         description=f"恭喜以下 **{len(winner_ids)}** 位得獎者！",
         color=discord.Color.from_str(config["colors"]["ended"]),
-        timestamp=datetime.now(),
+        timestamp=datetime.now(UTC),
     )
 
     _apply_embed_chrome(

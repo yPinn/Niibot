@@ -2,7 +2,7 @@
 
 import logging
 import random
-from datetime import datetime
+from datetime import UTC, datetime
 
 import discord
 from discord import app_commands
@@ -41,7 +41,7 @@ class FortuneCog(commands.Cog):
         return str(result)
 
     def _get_date_bonus(self) -> tuple[str | None, float]:
-        today = datetime.now()
+        today = datetime.now(UTC)
         date_key = f"{today.month}-{today.day}"
 
         special_dates = self.fortune_data.get("special_dates", {})
