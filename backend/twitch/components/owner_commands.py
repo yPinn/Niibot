@@ -28,7 +28,7 @@ class OwnerCommandsComponent(BotComponent):
     """
 
     def __init__(self, bot: commands.Bot) -> None:
-        self.bot = bot
+        self.bot: Bot = bot  # type: ignore[assignment]
 
     async def component_command_error(self, payload: commands.CommandErrorPayload) -> bool | None:
         """Handle component-specific errors."""

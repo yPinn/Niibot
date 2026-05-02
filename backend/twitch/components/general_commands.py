@@ -69,7 +69,7 @@ class GeneralCommandsComponent(BotComponent):
 
         if config.custom_response:
             response = substitute_variables(
-                config.custom_response, ctx.chatter, ctx.channel.name, ""
+                config.custom_response, ctx.chatter, ctx.channel.name or "", ""
             )
             await self._ctx_reply(ctx, response)
         else:

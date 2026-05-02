@@ -280,13 +280,13 @@ class EventComponent(commands.Component):
                         broadcaster_id=broadcaster_id,
                         to_broadcaster_id=raider_id,
                         moderator_id=self.bot.bot_id,
-                        token_for=broadcaster_id,
+                        token_for=self.bot.bot_id,
                     )
                     shoutout_sent = True
                 except Exception as shoutout_err:
                     if is_scope_error(shoutout_err):
                         await reauth_notifier.notify(
-                            broadcaster_login=broadcaster_name,
+                            broadcaster_login=broadcaster_name or "",
                             channel_id=broadcaster_id,
                             send_fn=lambda msg: payload.to_broadcaster.send_message(
                                 message=msg,

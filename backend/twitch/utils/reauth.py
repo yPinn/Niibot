@@ -72,7 +72,7 @@ class ReauthNotifier:
         self,
         broadcaster_login: str,
         channel_id: str,
-        send_fn: Callable[[str], Awaitable[None]],
+        send_fn: Callable[[str], Awaitable[object]],
     ) -> bool:
         """Send a reauth notification if cooldown permits. Returns True if sent."""
         if not self._can_notify(channel_id):

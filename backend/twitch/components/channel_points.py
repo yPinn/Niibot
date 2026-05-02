@@ -135,7 +135,7 @@ class ChannelPointsComponent(commands.Component):
         except Exception as e:
             if is_scope_error(e):
                 await reauth_notifier.notify(
-                    broadcaster_login=channel_name,
+                    broadcaster_login=channel_name or "",
                     channel_id=str(broadcaster.id),
                     send_fn=lambda msg: self._reply(broadcaster, msg),
                 )
@@ -219,7 +219,7 @@ class ChannelPointsComponent(commands.Component):
                 LOGGER.error(f"[{channel_name}] Niibot auth: failed to send whisper: {e}")
                 if is_scope_error(e):
                     await reauth_notifier.notify(
-                        broadcaster_login=channel_name,
+                        broadcaster_login=channel_name or "",
                         channel_id=str(broadcaster.id),
                         send_fn=lambda msg: self._reply(broadcaster, msg),
                     )
@@ -277,7 +277,7 @@ class ChannelPointsComponent(commands.Component):
         except Exception as e:
             if is_scope_error(e):
                 await reauth_notifier.notify(
-                    broadcaster_login=broadcaster.name,
+                    broadcaster_login=broadcaster.name or "",
                     channel_id=str(broadcaster.id),
                     send_fn=lambda msg: self._reply(broadcaster, msg),
                 )
@@ -396,7 +396,7 @@ class ChannelPointsComponent(commands.Component):
         except Exception as e:
             if is_scope_error(e):
                 await reauth_notifier.notify(
-                    broadcaster_login=broadcaster.name,
+                    broadcaster_login=broadcaster.name or "",
                     channel_id=str(broadcaster.id),
                     send_fn=lambda msg: self._reply(broadcaster, msg),
                 )
