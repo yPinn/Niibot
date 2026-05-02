@@ -88,7 +88,7 @@ async def find_or_create_user(
 def _hmac_sign(data: dict, secret: str) -> str:
     """Return HMAC-SHA256 hex signature over the sorted-key JSON of *data*."""
     payload = json.dumps(data, sort_keys=True, separators=(",", ":")).encode()
-    return hmac.new(secret.encode(), payload, hashlib.sha256).hexdigest()
+    return hmac.digest(secret.encode(), payload, hashlib.sha256).hex()
 
 
 def encode_oauth_state(mode: str, user_id: str | None = None, *, secret: str = "") -> str:

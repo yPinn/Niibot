@@ -275,6 +275,9 @@ async def checkout(
     # NewebPay: AES-encrypted TradeInfo form
     # ------------------------------------------------------------------
     if body.platform == "newebpay":
+        if not config.hash_key or not config.hash_iv:
+            raise HTTPException(status_code=500, detail="Payment gateway not configured")
+
         youtube_video_id_nb = _extract_video_id(body.youtube_url, config.media_share_enabled)
 
         trade_no = generate_trade_no()
@@ -298,8 +301,6 @@ async def checkout(
             return_url=body.return_url,
             message=body.message,
         )
-        if not config.hash_key or not config.hash_iv:
-            raise HTTPException(status_code=500, detail="Payment gateway not configured")
         trade_info_hex = _newebpay_aes_encrypt(trade_info_str, config.hash_key, config.hash_iv)
         trade_sha = _newebpay_sha256(trade_info_hex, config.hash_key, config.hash_iv)
 

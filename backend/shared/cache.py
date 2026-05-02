@@ -55,6 +55,9 @@ class AsyncTTLCache:
 
     # --- primary (fresh) operations ---
 
+    def __contains__(self, key: str) -> bool:
+        return key in self._cache
+
     def get(self, key: str) -> Any:
         """Return fresh value or ``_MISSING``."""
         return self._cache.get(key, _MISSING)

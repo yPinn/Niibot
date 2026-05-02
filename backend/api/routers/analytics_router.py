@@ -158,7 +158,7 @@ async def get_analytics_summary(
         summary_data = await service.get_summary(channel_id, days)
 
         response.headers["Cache-Control"] = "private, max-age=300"
-        LOGGER.info(f"Channel {channel_id} requested analytics summary (days={days})")
+        LOGGER.debug(f"Channel {channel_id} requested analytics summary (days={days})")
         return AnalyticsSummary(**summary_data)
 
     except Exception:
@@ -430,7 +430,7 @@ async def get_top_commands(
     try:
         commands = await service.get_top_commands(channel_id, days, limit)
 
-        LOGGER.info(f"Channel {channel_id} requested top commands (days={days}, limit={limit})")
+        LOGGER.debug(f"Channel {channel_id} requested top commands (days={days}, limit={limit})")
         return [CommandStat(**cmd) for cmd in commands]
 
     except Exception:

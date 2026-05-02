@@ -528,6 +528,7 @@ class _AnalyticsQueryMixin:
                     WHERE c.channel_id = $1
                       AND c.session_id IN (SELECT id FROM session_scope)
                       AND c.user_id != $1
+                      AND lower(c.username) != ALL($4::text[])
                     GROUP BY c.user_id
                 ),
                 latest_name AS (
@@ -537,6 +538,7 @@ class _AnalyticsQueryMixin:
                     WHERE c.channel_id = $1
                       AND c.session_id IN (SELECT id FROM session_scope)
                       AND c.user_id != $1
+                      AND lower(c.username) != ALL($4::text[])
                     ORDER BY c.user_id, c.last_message_at DESC
                 ),
                 cheer_totals AS (
@@ -566,6 +568,7 @@ class _AnalyticsQueryMixin:
                 channel_id,
                 since_date,
                 limit,
+                list(_KNOWN_BOTS),
             )
             return [
                 {
@@ -579,7 +582,6 @@ class _AnalyticsQueryMixin:
                     "total_bits": int(r["total_bits"]),
                 }
                 for r in rows
-                if r["username"].lower() not in _KNOWN_BOTS
             ]
 
     async def get_viewer_profile(

@@ -149,7 +149,7 @@ class AIComponent(BotComponent):
             return
 
         try:
-            LOGGER.info(
+            LOGGER.debug(
                 f"AI request: channel={ctx.channel.name}, user={ctx.chatter.name}, message={message[:100]}"
             )
 

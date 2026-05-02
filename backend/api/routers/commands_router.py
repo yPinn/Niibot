@@ -13,6 +13,11 @@ from core.dependencies import (
     get_twitch_api,
 )
 from services import CommandConfigService, TwitchAPIClient
+from shared.cache import AsyncTTLCache
+from shared.repositories.command_config import _UNSET
+
+# Cache username → user_info for 60 s to avoid a Twitch API call on every page load
+_user_lookup_cache: AsyncTTLCache = AsyncTTLCache(maxsize=256, ttl=60.0)
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -112,7 +117,7 @@ async def update_command_config(
             command_name,
             enabled=body.enabled,
             custom_response=body.custom_response,
-            cooldown=body.cooldown,
+            cooldown=body.cooldown if "cooldown" in body.model_fields_set else _UNSET,
             min_role=body.min_role,
             aliases=body.aliases,
         )
@@ -200,7 +205,13 @@ async def get_public_commands(
     No dependency on channels.channel_name.
     """
     try:
-        user_info = await twitch_api.get_user_by_login(username)
+        cache_key = f"user_by_login:{username.lower()}"
+        if cache_key in _user_lookup_cache:
+            user_info = _user_lookup_cache.get(cache_key)
+        else:
+            user_info = await twitch_api.get_user_by_login(username)
+            if user_info:
+                _user_lookup_cache.set(cache_key, user_info)
         if not user_info:
             raise HTTPException(status_code=404, detail="Channel not found")
 

@@ -69,7 +69,7 @@ async def get_channel_stats(
         ]
 
         response.headers["Cache-Control"] = "private, max-age=300"
-        LOGGER.info(f"Channel {channel_id} requested channel stats (days={days})")
+        LOGGER.debug(f"Channel {channel_id} requested channel stats (days={days})")
         return ChannelStats(
             top_commands=top_commands,
             top_chatters=top_chatters,

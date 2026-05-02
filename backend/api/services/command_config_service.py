@@ -6,7 +6,12 @@ from dataclasses import asdict
 import asyncpg
 
 from shared.builtin_commands import BUILTIN_DESCRIPTIONS, PUBLIC_DESCRIPTIONS
-from shared.repositories.command_config import CommandConfigRepository, RedemptionConfigRepository
+from shared.repositories.command_config import (
+    _UNSET,
+    CommandConfigRepository,
+    RedemptionConfigRepository,
+    UnsetType,
+)
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -41,7 +46,7 @@ class CommandConfigService:
         *,
         enabled: bool | None = None,
         custom_response: str | None = None,
-        cooldown: int | None = None,
+        cooldown: int | None | UnsetType = _UNSET,
         min_role: str | None = None,
         aliases: str | None = None,
     ) -> dict:
