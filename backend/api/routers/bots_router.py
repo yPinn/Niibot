@@ -38,6 +38,8 @@ class BotStatusResponse(BaseModel):
     guilds: int | None = None
     cogs: int | None = None
     ws_latency_ms: int | None = None
+    # AI
+    ai_model: str | None = None
 
 
 async def check_bot_health(bot_url: str, bot_name: str) -> BotStatusResponse:
@@ -62,6 +64,7 @@ async def check_bot_health(bot_url: str, bot_name: str) -> BotStatusResponse:
                 guilds=data.get("guilds"),
                 cogs=data.get("cogs"),
                 ws_latency_ms=data.get("ws_latency_ms"),
+                ai_model=data.get("ai_model"),
             )
         else:
             LOGGER.warning(f"{bot_name} bot health check returned status {response.status_code}")
