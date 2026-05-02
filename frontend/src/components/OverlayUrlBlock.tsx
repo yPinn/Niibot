@@ -27,7 +27,8 @@ export function OverlayUrlBlock({ url }: OverlayUrlBlockProps) {
   return (
     <div className="flex items-center gap-2">
       {/* URL display area — click to copy */}
-      <div
+      <button
+        type="button"
         className="flex h-9 min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md border bg-background px-3 transition-colors hover:bg-accent"
         onClick={copy}
       >
@@ -65,7 +66,7 @@ export function OverlayUrlBlock({ url }: OverlayUrlBlockProps) {
             className="text-xs"
           />
         </button>
-      </div>
+      </button>
 
       {/* Open in new tab */}
       <Button variant="outline" size="sm" title="在新分頁開啟" asChild>

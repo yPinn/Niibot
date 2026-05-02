@@ -71,6 +71,12 @@ import { nameSort } from '@/lib/sort'
 
 type TimerSortKey = 'name' | 'interval' | 'enabled'
 
+const TIMER_VARS = [
+  { var: '$(channel)', desc: '頻道名稱' },
+  { var: '$(random 1,100)', desc: '隨機數字' },
+  { var: '$(pick a,b,c)', desc: '隨機選擇' },
+]
+
 function formatInterval(seconds: number): string {
   if (seconds < 60) return `${seconds}s`
   const h = Math.floor(seconds / 3600)
@@ -496,14 +502,7 @@ export default function Timers() {
                 className="font-mono text-sub"
                 autoFocus={editing?.mode === 'edit'}
               />
-              <VariableInserter
-                variables={[
-                  { var: '$(channel)', desc: '頻道名稱' },
-                  { var: '$(random 1,100)', desc: '隨機數字' },
-                  { var: '$(pick a,b,c)', desc: '隨機選擇' },
-                ]}
-                onInsert={insertVariable}
-              />
+              <VariableInserter variables={TIMER_VARS} onInsert={insertVariable} />
             </div>
 
             <div className="flex flex-col gap-2">

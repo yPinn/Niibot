@@ -59,44 +59,42 @@ export function OnlineDropdown() {
   if (!user) return null
 
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <div>
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              className="flex items-center gap-2 px-4 py-2 rounded-md border bg-card hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              disabled={loading || !botStatus.online}
-            >
-              <div
-                className={`size-2 rounded-full ${
-                  !botStatus.online
-                    ? 'bg-destructive'
-                    : myChannelSubscribed
-                      ? 'bg-status-online'
-                      : 'bg-status-loading'
-                }`}
-              />
-              <span className="text-sub font-semibold mx-1 mr-2">Niibot</span>
-              <Icon icon="fa-solid fa-chevron-down" wrapperClassName="size-2" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-(--radix-dropdown-menu-trigger-width)">
-              <DropdownMenuItem
-                onClick={toggleMyChannelSubscription}
-                disabled={loading || !botStatus.online}
-              >
-                <Icon
-                  icon={myChannelSubscribed ? 'fa-solid fa-pause' : 'fa-solid fa-play'}
-                  wrapperClassName="mr-2 size-4"
-                />
-                <span>{myChannelSubscribed ? '停用訂閱' : '啟用訂閱'}</span>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </TooltipTrigger>
-      <TooltipContent side="left">
-        {!botStatus.online ? 'Bot 離線' : myChannelSubscribed ? '追蹤中' : '沒有追蹤'}
-      </TooltipContent>
-    </Tooltip>
+    <DropdownMenu>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DropdownMenuTrigger
+            className="flex items-center gap-2 px-4 py-2 rounded-md border bg-card hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={loading || !botStatus.online}
+          >
+            <div
+              className={`size-2 rounded-full ${
+                !botStatus.online
+                  ? 'bg-destructive'
+                  : myChannelSubscribed
+                    ? 'bg-status-online'
+                    : 'bg-status-loading'
+              }`}
+            />
+            <span className="text-sub font-semibold mx-1 mr-2">Niibot</span>
+            <Icon icon="fa-solid fa-chevron-down" wrapperClassName="size-2" />
+          </DropdownMenuTrigger>
+        </TooltipTrigger>
+        <TooltipContent side="left">
+          {!botStatus.online ? 'Bot 離線' : myChannelSubscribed ? '追蹤中' : '沒有追蹤'}
+        </TooltipContent>
+      </Tooltip>
+      <DropdownMenuContent align="end" className="w-(--radix-dropdown-menu-trigger-width)">
+        <DropdownMenuItem
+          onClick={toggleMyChannelSubscription}
+          disabled={loading || !botStatus.online}
+        >
+          <Icon
+            icon={myChannelSubscribed ? 'fa-solid fa-pause' : 'fa-solid fa-play'}
+            wrapperClassName="mr-2 size-4"
+          />
+          <span>{myChannelSubscribed ? '停用訂閱' : '啟用訂閱'}</span>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }

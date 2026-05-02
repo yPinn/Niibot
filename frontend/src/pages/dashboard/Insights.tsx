@@ -534,7 +534,7 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
             {profile.events.length > 0 && (
               <SheetSection title="互動紀錄" className="flex-1">
                 <div className="space-y-1.5">
-                  {profile.events.map((ev, i) => {
+                  {profile.events.map(ev => {
                     const meta = EVENT_META[ev.event_type] ?? {
                       icon: 'fa-solid fa-circle-info',
                       label: ev.event_type,
@@ -561,7 +561,10 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
                     const rowColor = isGift ? 'text-status-special' : meta.color
                     const rowLabel = isGift ? '贈禮訂閱' : meta.label
                     return (
-                      <div key={i} className="flex items-center gap-3 py-1.5">
+                      <div
+                        key={`${ev.occurred_at}-${ev.event_type}`}
+                        className="flex items-center gap-3 py-1.5"
+                      >
                         <Icon icon={rowIcon} size="sm" wrapperClassName={`${rowColor} shrink-0`} />
                         <span className="text-sub flex-1 flex items-center gap-1.5">
                           {rowLabel}
@@ -704,33 +707,35 @@ export default function Insights() {
     }
   }
 
-  const filtered = viewers
-    .filter(v => {
-      if (!search.trim()) return true
-      const q = search.toLowerCase()
-      return (
-        (v.display_name ?? '').toLowerCase().includes(q) || v.username.toLowerCase().includes(q)
-      )
-    })
-    .sort((a, b) => {
-      const dir = sortDir === 'desc' ? 1 : -1
-      switch (sort) {
-        case 'messages':
-          return dir * (b.total_messages - a.total_messages)
-        case 'watch':
-          return dir * (b.watch_seconds - a.watch_seconds)
-        case 'bits':
-          return dir * (b.total_bits - a.total_bits)
-        case 'sessions':
-          return dir * (b.sessions_attended - a.sessions_attended)
-        case 'last_seen': {
-          if (!a.last_seen && !b.last_seen) return 0
-          if (!a.last_seen) return 1
-          if (!b.last_seen) return -1
-          return dir * b.last_seen.localeCompare(a.last_seen)
+  const filtered = React.useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return viewers
+      .filter(v => {
+        if (!q) return true
+        return (
+          (v.display_name ?? '').toLowerCase().includes(q) || v.username.toLowerCase().includes(q)
+        )
+      })
+      .sort((a, b) => {
+        const dir = sortDir === 'desc' ? 1 : -1
+        switch (sort) {
+          case 'messages':
+            return dir * (b.total_messages - a.total_messages)
+          case 'watch':
+            return dir * (b.watch_seconds - a.watch_seconds)
+          case 'bits':
+            return dir * (b.total_bits - a.total_bits)
+          case 'sessions':
+            return dir * (b.sessions_attended - a.sessions_attended)
+          case 'last_seen': {
+            if (!a.last_seen && !b.last_seen) return 0
+            if (!a.last_seen) return 1
+            if (!b.last_seen) return -1
+            return dir * b.last_seen.localeCompare(a.last_seen)
+          }
         }
-      }
-    })
+      })
+  }, [viewers, search, sort, sortDir])
 
   return (
     <PageMain>

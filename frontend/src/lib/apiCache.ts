@@ -6,6 +6,8 @@ interface CacheEntry<T> {
   timestamp: number
 }
 
+const MAX_SIZE = 200
+
 class ApiCache {
   private cache: Map<string, CacheEntry<unknown>> = new Map()
   private defaultTTL = 5 * 60 * 1000
@@ -27,6 +29,10 @@ class ApiCache {
   }
 
   set<T>(key: string, data: T): void {
+    if (this.cache.size >= MAX_SIZE && !this.cache.has(key)) {
+      // Evict the oldest entry (Map insertion order = LRU approximation)
+      this.cache.delete(this.cache.keys().next().value!)
+    }
     this.cache.set(key, {
       data,
       timestamp: Date.now(),

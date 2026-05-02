@@ -33,7 +33,7 @@ export default function SidebarLayout() {
               <Breadcrumb>
                 <BreadcrumbList>
                   {breadcrumbs.map((item, index) => (
-                    <div key={index} className="flex items-center gap-2">
+                    <div key={item.href ?? item.label} className="flex items-center gap-2">
                       {index > 0 && <BreadcrumbSeparator className="hidden md:block" />}
                       <BreadcrumbItem className={index === 0 ? 'hidden md:block' : ''}>
                         {index === breadcrumbs.length - 1 ? (

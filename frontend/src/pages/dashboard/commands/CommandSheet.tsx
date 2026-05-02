@@ -121,6 +121,14 @@ function sanitizeTriggerName(pattern: string): string {
   )
 }
 
+const COMMAND_VARS = [
+  { var: '$(user)', desc: '使用者名稱' },
+  { var: '$(query)', desc: '使用者輸入' },
+  { var: '$(channel)', desc: '頻道名稱' },
+  { var: '$(random 1,100)', desc: '隨機數字' },
+  { var: '$(pick a,b,c)', desc: '隨機選擇' },
+]
+
 export interface CommandSheetProps {
   open: boolean
   editing: EditingState | null
@@ -194,15 +202,12 @@ export function CommandSheet({
     (editing?.mode === 'edit-command' && editing.command.command_type === 'custom') ||
     editing?.mode === 'edit-trigger'
 
-  const sheetTitle = !editing
-    ? ''
-    : editing.mode === 'create'
-      ? formIsCommand
-        ? '新增自訂指令'
-        : '新增自動回應'
-      : editing.mode === 'edit-command'
-        ? `編輯 !${editing.command.command_name}`
-        : `編輯 ${editing.trigger.trigger_name}`
+  let sheetTitle = ''
+  if (editing) {
+    if (editing.mode === 'create') sheetTitle = formIsCommand ? '新增自訂指令' : '新增自動回應'
+    else if (editing.mode === 'edit-command') sheetTitle = `編輯 !${editing.command.command_name}`
+    else sheetTitle = `編輯 ${editing.trigger.trigger_name}`
+  }
 
   const handleSave = async () => {
     if (!editing) return
@@ -303,14 +308,6 @@ export function CommandSheet({
     }
   }
 
-  const commandVars = [
-    { var: '$(user)', desc: '使用者名稱' },
-    { var: '$(query)', desc: '使用者輸入' },
-    { var: '$(channel)', desc: '頻道名稱' },
-    { var: '$(random 1,100)', desc: '隨機數字' },
-    { var: '$(pick a,b,c)', desc: '隨機選擇' },
-  ]
-
   const showResponseField =
     editing?.mode === 'create' ||
     (isEditingCommand &&
@@ -394,7 +391,7 @@ export function CommandSheet({
                 placeholder={showTriggerFields ? '$(user) GG！' : '$(user) 你好！'}
                 className="font-mono text-sub"
               />
-              <VariableInserter variables={commandVars} onInsert={insertText} />
+              <VariableInserter variables={COMMAND_VARS} onInsert={insertText} />
             </div>
           )}
 

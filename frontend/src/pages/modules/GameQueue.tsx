@@ -11,6 +11,7 @@ import {
   removePlayer,
   updateQueueSettings,
 } from '@/api/gameQueue'
+import { AffiliateLockOverlay } from '@/components/AffiliateLockOverlay'
 import { OverlayUrlBlock } from '@/components/OverlayUrlBlock'
 import { PageHeader } from '@/components/PageHeader'
 import { PageMain } from '@/components/PageMain'
@@ -277,18 +278,8 @@ export default function GameQueue() {
     <PageMain className="relative">
       <PageHeader title="Game Queue" description="管理遊戲排隊系統" />
 
-      {/* Inline overlay for non-affiliates — blurs preview, blocks interaction */}
       {!isAffiliate && (
-        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-background/80 backdrop-blur-sm">
-          <Icon
-            icon="fa-solid fa-lock"
-            className="text-5xl text-muted-foreground"
-            wrapperClassName="size-16"
-          />
-          <span className="text-sub text-muted-foreground">
-            成為 Twitch 聯盟夥伴或合作夥伴後即可使用遊戲排隊功能
-          </span>
-        </div>
+        <AffiliateLockOverlay message="成為 Twitch 聯盟夥伴或合作夥伴後即可使用遊戲排隊功能" />
       )}
 
       {/* Row 1: Full Queue (col-8) + sidebar (col-4) */}

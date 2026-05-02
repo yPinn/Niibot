@@ -12,6 +12,7 @@ import {
   updateEventConfig,
   updateRedemptionConfig,
 } from '@/api/events'
+import { AffiliateLockOverlay } from '@/components/AffiliateLockOverlay'
 import { PageHeader } from '@/components/PageHeader'
 import { PageMain } from '@/components/PageMain'
 import { SortableHead } from '@/components/SortableHead'
@@ -405,16 +406,10 @@ export default function Events() {
       <SlideUp inView delay={0.1}>
         <Card className="relative overflow-hidden">
           {!isAffiliate && (
-            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-background/80 backdrop-blur-sm rounded-[inherit]">
-              <Icon
-                icon="fa-solid fa-lock"
-                className="text-5xl text-muted-foreground"
-                wrapperClassName="size-16"
-              />
-              <span className="text-sm text-muted-foreground">
-                成為 Twitch 聯盟夥伴或合作夥伴後即可設定忠誠點數獎勵
-              </span>
-            </div>
+            <AffiliateLockOverlay
+              message="成為 Twitch 聯盟夥伴或合作夥伴後即可設定忠誠點數獎勵"
+              className="rounded-[inherit]"
+            />
           )}
           <CardHeader>
             <CardTitle>忠誠點數兌換</CardTitle>

@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
 
 export interface UseOptimisticToggleOptions<T extends { enabled: boolean }> {
@@ -34,31 +34,33 @@ export function useOptimisticToggle<T extends { enabled: boolean }>(
 ): { toggle: (item: T) => Promise<void> } {
   const { setState, getId, toggleFn, messages } = options
   const pendingRef = useRef(new Set<string | number>())
+  const messagesRef = useRef(messages)
+  useEffect(() => {
+    messagesRef.current = messages
+  })
 
   const toggle = useCallback(
     async (item: T) => {
       const id = getId(item)
       const newEnabled = !item.enabled
 
-      // Double-click guard: skip if this item's toggle is already in-flight
       if (pendingRef.current.has(id)) return
       pendingRef.current.add(id)
 
-      // Optimistic update
       setState(prev => prev.map(x => (getId(x) === id ? { ...x, enabled: newEnabled } : x)))
 
       try {
         await toggleFn(item, newEnabled)
-        toast.success(newEnabled ? (messages?.on ?? '已啟用') : (messages?.off ?? '已停用'))
+        const msgs = messagesRef.current
+        toast.success(newEnabled ? (msgs?.on ?? '已啟用') : (msgs?.off ?? '已停用'))
       } catch {
-        // Revert
         setState(prev => prev.map(x => (getId(x) === id ? { ...x, enabled: item.enabled } : x)))
-        toast.error(messages?.error ?? '切換失敗')
+        toast.error(messagesRef.current?.error ?? '切換失敗')
       } finally {
         pendingRef.current.delete(id)
       }
     },
-    [setState, getId, toggleFn, messages]
+    [setState, getId, toggleFn]
   )
 
   return { toggle }

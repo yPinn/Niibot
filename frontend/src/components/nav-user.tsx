@@ -26,8 +26,6 @@ export function NavUser({ user }: { user: User }) {
   const { logout } = useAuth()
   const navigate = useNavigate()
 
-  const handleLogout = () => logout()
-
   const getInitials = () => {
     const name = user.display_name || user.name || '??'
     return name.substring(0, 2).toUpperCase()
@@ -102,7 +100,7 @@ export function NavUser({ user }: { user: User }) {
               {resolvedTheme === 'dark' ? 'Light Mode' : 'Dark Mode'}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={handleLogout}>
+            <DropdownMenuItem onClick={logout}>
               <Icon icon="fa-solid fa-arrow-right-from-bracket" wrapperClassName="" />
               Log out
             </DropdownMenuItem>

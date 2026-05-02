@@ -46,9 +46,9 @@ export default function StatsCard({
           </div>
         ) : items.length > 0 ? (
           <div className="space-y-1 h-full overflow-y-auto">
-            {items.map((item, index) => (
+            {items.map(item => (
               <div
-                key={index}
+                key={item.label}
                 className="flex items-center justify-between rounded-md border bg-card p-2.5 hover:bg-accent transition-colors"
               >
                 <span className="text-sm font-medium truncate flex-1 mr-2">{item.label}</span>

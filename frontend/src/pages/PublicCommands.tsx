@@ -83,13 +83,23 @@ export default function PublicCommands() {
 
   useEffect(() => {
     if (!username) return
+    let cancelled = false
     getPublicCommands(username)
       .then(data => {
-        setChannel(data.channel)
-        setCommands(data.commands)
+        if (!cancelled) {
+          setChannel(data.channel)
+          setCommands(data.commands)
+        }
       })
-      .catch(() => setError('找不到該頻道或無法載入指令'))
-      .finally(() => setLoading(false))
+      .catch(() => {
+        if (!cancelled) setError('找不到該頻道或無法載入指令')
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
   }, [username])
 
   const displayName = channel?.display_name ?? username ?? ''

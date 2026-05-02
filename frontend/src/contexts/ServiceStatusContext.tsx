@@ -112,7 +112,7 @@ export function ServiceStatusProvider({ children }: { children: React.ReactNode 
     } else if (api.db_connected === true && prev === false) {
       toast.success('服務已恢復正常', { id: 'db-status', duration: 4000, description: '' })
     }
-  }, [api])
+  }, [api.online, api.db_connected])
 
   const contextValue = useMemo(
     () => ({ twitch, discord, api, lastUpdate, initialLoading, refresh }),

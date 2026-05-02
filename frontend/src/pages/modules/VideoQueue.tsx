@@ -15,6 +15,7 @@ import {
   type VideoQueueEntry,
   type VideoQueueSettings,
 } from '@/api/videoQueue'
+import { AffiliateLockOverlay } from '@/components/AffiliateLockOverlay'
 import { OverlayUrlBlock } from '@/components/OverlayUrlBlock'
 import { PageHeader } from '@/components/PageHeader'
 import { PageMain } from '@/components/PageMain'
@@ -586,18 +587,8 @@ export default function VideoQueue() {
         </SheetContent>
       </Sheet>
 
-      {/* Inline overlay for non-affiliates — blurs preview, blocks interaction */}
       {!isAffiliate && (
-        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-background/80 backdrop-blur-sm">
-          <Icon
-            icon="fa-solid fa-lock"
-            className="text-5xl text-muted-foreground"
-            wrapperClassName="size-16"
-          />
-          <span className="text-sub text-muted-foreground">
-            成為 Twitch 聯盟夥伴或合作夥伴後即可使用影片佇列功能
-          </span>
-        </div>
+        <AffiliateLockOverlay message="成為 Twitch 聯盟夥伴或合作夥伴後即可使用影片佇列功能" />
       )}
 
       {/* Row 1: Queue (col-8) always matches right column height */}
