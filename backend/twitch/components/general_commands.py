@@ -132,9 +132,10 @@ class GeneralCommandsComponent(BotComponent):
         if not config:
             return
 
-        await ctx.send(
+        await self._ctx_reply(
+            ctx,
             "本頻道實況主不認可並嚴厲斥責聊天室與斗內的任何惡意言論，"
-            "包含且不限於種族歧視、性騷擾、色情暴力、涉及親屬等不當內容。"
+            "包含且不限於種族歧視、性騷擾、色情暴力、涉及親屬等不當內容。",
         )
         await self._record_command(ctx, "condemn")
 
