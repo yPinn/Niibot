@@ -15,8 +15,10 @@ name: Deploy
 #
 # Optional secrets (leave unset to disable the feature):
 #   YOUTUBE_API_KEY        — YouTube Data API v3
+#   GROQ_API_KEY           — Groq AI (free tier, console.groq.com)
+#   GEMINI_API_KEY         — Gemini AI Studio (free tier, aistudio.google.com)
 #   OPENROUTER_API_KEY     — OpenRouter AI
-#   OPENROUTER_MODEL       — OpenRouter model name
+#   OPENROUTER_MODEL       — OpenRouter primary model name
 #   INSTAGRAM_SESSION_ID   — Instagram session cookie (~90-day expiry)
 #   THREADS_SESSION_ID     — Threads session cookie (~90-day expiry)
 #   CONDUIT_ID             — Twitch EventSub conduit ID
@@ -72,6 +74,8 @@ jobs:
           OWNER_ID: ${{ secrets.OWNER_ID }}
           # Optional secrets
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENROUTER_MODEL: ${{ secrets.OPENROUTER_MODEL }}
           INSTAGRAM_SESSION_ID: ${{ secrets.INSTAGRAM_SESSION_ID }}
@@ -123,6 +127,8 @@ jobs:
             echo "BOT_ID=${BOT_ID}"
             echo "LOG_LEVEL=${LOG_LEVEL}"
             [ -n "${YOUTUBE_API_KEY}" ]    && echo "YOUTUBE_API_KEY=${YOUTUBE_API_KEY}"
+            [ -n "${GROQ_API_KEY}" ]       && echo "GROQ_API_KEY=${GROQ_API_KEY}"
+            [ -n "${GEMINI_API_KEY}" ]     && echo "GEMINI_API_KEY=${GEMINI_API_KEY}"
             [ -n "${OPENROUTER_API_KEY}" ] && echo "OPENROUTER_API_KEY=${OPENROUTER_API_KEY}"
             [ -n "${OPENROUTER_MODEL}" ]   && echo "OPENROUTER_MODEL=${OPENROUTER_MODEL}"
             [ -n "${ERROR_WEBHOOK_URL}" ]  && echo "ERROR_WEBHOOK_URL=${ERROR_WEBHOOK_URL}"
