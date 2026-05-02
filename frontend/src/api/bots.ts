@@ -16,6 +16,8 @@ export interface BotStatus {
   guilds?: number
   cogs?: number
   ws_latency_ms?: number
+  // AI
+  ai_model?: string
 }
 
 export interface ApiServerStatus {

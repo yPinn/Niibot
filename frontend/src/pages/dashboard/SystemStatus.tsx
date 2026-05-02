@@ -156,6 +156,7 @@ export default function SystemStatus() {
           { label: 'bot id', value: twitch.bot_id ?? '—' },
           { label: 'channels', value: twitch.connected_channels ?? '—' },
           { label: 'features', value: twitch.components ?? '—' },
+          { label: 'ai model', value: twitch.ai_model ?? '—' },
         ],
       },
       {
@@ -174,6 +175,7 @@ export default function SystemStatus() {
           { label: 'bot id', value: discord.bot_id ?? '—' },
           { label: 'guilds', value: discord.guilds ?? '—' },
           { label: 'features', value: discord.cogs ?? '—' },
+          { label: 'ai model', value: discord.ai_model ?? '—' },
           ...(discord.ws_latency_ms !== undefined
             ? [{ label: 'ws latency', value: `${discord.ws_latency_ms}ms` }]
             : []),
