@@ -137,6 +137,7 @@ export interface ViewerSummary {
   last_seen: string | null
   watch_seconds: number
   total_bits: number
+  engagement_score: number
 }
 
 export interface ViewerEvent {

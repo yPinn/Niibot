@@ -103,11 +103,11 @@ function SummaryTile({
 
 // ─── Viewer List ─────────────────────────────────────────────────────────────
 
-// Mobile:  rank | name | bits | messages            (2 data cols)
-// sm+:     +sessions +watch                          (4 data cols)
-// lg+:     +last_seen                               (5 data cols)
+// Mobile:  rank | name | score | messages            (2 data cols)
+// sm+:     +bits +sessions +watch                    (5 data cols)
+// lg+:     +last_seen                               (6 data cols)
 const ROW_GRID =
-  'grid-cols-[1.25rem_minmax(0,1fr)_6rem_6rem] sm:grid-cols-[1.25rem_minmax(0,1fr)_repeat(4,6rem)] lg:grid-cols-[1.25rem_minmax(0,1fr)_repeat(5,6rem)]'
+  'grid-cols-[1.25rem_minmax(0,1fr)_5.5rem_5.5rem] sm:grid-cols-[1.25rem_minmax(0,1fr)_repeat(5,5.5rem)] lg:grid-cols-[1.25rem_minmax(0,1fr)_repeat(6,5.5rem)]'
 
 interface ViewerRowProps {
   viewer: ViewerSummary
@@ -130,11 +130,17 @@ function ViewerRow({ viewer, rank, onClick }: ViewerRowProps) {
         <p className="text-label text-muted-foreground truncate">@{viewer.username}</p>
       </div>
       <Col
+        value={viewer.engagement_score.toFixed(1)}
+        label="活躍度"
+        valueClassName="text-primary"
+      />
+      <Col value={viewer.total_messages.toLocaleString()} label="留言" />
+      <Col
         value={viewer.total_bits > 0 ? viewer.total_bits.toLocaleString() : '—'}
         label="小奇點"
         valueClassName={viewer.total_bits > 0 ? 'text-primary' : 'text-muted-foreground'}
+        className="hidden sm:block"
       />
-      <Col value={viewer.total_messages.toLocaleString()} label="留言" />
       <Col value={String(viewer.sessions_attended)} label="場次" className="hidden sm:block" />
       <Col value={formatDuration(viewer.watch_seconds)} label="時長" className="hidden sm:block" />
       <span className="text-label text-muted-foreground text-right hidden lg:block">
@@ -607,6 +613,41 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
   )
 }
 
+const SORT_COLS = [
+  { key: 'score', label: '活躍度', icon: 'fa-solid fa-fire', natural: 'desc', show: '' },
+  { key: 'messages', label: '留言次數', icon: 'fa-solid fa-comment', natural: 'desc', show: '' },
+  {
+    key: 'bits',
+    label: '小奇點',
+    icon: 'fa-solid fa-diamond-half-stroke',
+    natural: 'desc',
+    show: 'hidden sm:flex',
+  },
+  {
+    key: 'sessions',
+    label: '出現場次',
+    icon: 'fa-solid fa-calendar-days',
+    natural: 'desc',
+    show: 'hidden sm:flex',
+  },
+  {
+    key: 'watch',
+    label: '觀看時長',
+    icon: 'fa-solid fa-clock',
+    natural: 'desc',
+    show: 'hidden sm:flex',
+  },
+  {
+    key: 'last_seen',
+    label: '最後出現',
+    icon: 'fa-solid fa-hourglass-end',
+    natural: 'desc',
+    show: 'hidden lg:flex',
+  },
+] as const
+
+type SortKey = (typeof SORT_COLS)[number]['key']
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function Insights() {
@@ -615,7 +656,7 @@ export default function Insights() {
 
   const [period, setPeriod] = useState('30')
   const [search, setSearch] = useState('')
-  const [sort, setSort] = useState<'messages' | 'watch' | 'bits' | 'sessions' | 'last_seen'>('bits')
+  const [sort, setSort] = useState<SortKey>('score')
   const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc')
   const [initialized, setInitialized] = useState(false)
   const [viewers, setViewers] = useState<ViewerSummary[]>([])
@@ -668,38 +709,6 @@ export default function Insights() {
     setPeriod(value)
   }
 
-  const SORT_COLS = [
-    {
-      key: 'bits',
-      label: '小奇點',
-      icon: 'fa-solid fa-diamond-half-stroke',
-      natural: 'desc',
-      show: '',
-    },
-    { key: 'messages', label: '留言次數', icon: 'fa-solid fa-comment', natural: 'desc', show: '' },
-    {
-      key: 'sessions',
-      label: '出現場次',
-      icon: 'fa-solid fa-calendar-days',
-      natural: 'desc',
-      show: 'hidden sm:flex',
-    },
-    {
-      key: 'watch',
-      label: '觀看時長',
-      icon: 'fa-solid fa-clock',
-      natural: 'desc',
-      show: 'hidden sm:flex',
-    },
-    {
-      key: 'last_seen',
-      label: '最後出現',
-      icon: 'fa-solid fa-hourglass-end',
-      natural: 'desc',
-      show: 'hidden lg:flex',
-    },
-  ] as const
-
   const handleSort = (key: typeof sort) => {
     if (sort === key) {
       setSortDir(d => (d === 'desc' ? 'asc' : 'desc'))
@@ -722,6 +731,8 @@ export default function Insights() {
       .sort((a, b) => {
         const dir = sortDir === 'desc' ? 1 : -1
         switch (sort) {
+          case 'score':
+            return dir * (b.engagement_score - a.engagement_score)
           case 'messages':
             return dir * (b.total_messages - a.total_messages)
           case 'watch':
