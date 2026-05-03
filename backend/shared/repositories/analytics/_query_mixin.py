@@ -67,6 +67,16 @@ _SCORE_SQL: str = """ROUND((
          THEN 0.5 ELSE 1.0 END
 , 2)::float"""
 
+_STREAK_CTE: str = """streak_data AS (
+    SELECT user_id, streak_count
+    FROM viewer_attendance_streaks
+    WHERE channel_id = $1
+)"""
+
+_STREAK_CTE_EMPTY: str = (
+    "streak_data AS (SELECT NULL::text AS user_id, 0::int AS streak_count WHERE FALSE)"
+)
+
 
 class _AnalyticsQueryMixin:
     pool: asyncpg.Pool  # type: ignore[assignment]
@@ -520,9 +530,9 @@ class _AnalyticsQueryMixin:
     async def list_viewers(self, channel_id: str, days: int = 30, limit: int = 50) -> list[dict]:
         """Top chatters with enriched stats for the Insights viewers list."""
         since_date = datetime.now(UTC) - timedelta(days=days)
-        async with self.pool.acquire() as conn:
-            rows = await conn.fetch(
-                f"""
+
+        def _q(streak_cte: str) -> str:
+            return f"""
                 WITH session_scope AS MATERIALIZED (
                     SELECT id FROM stream_sessions
                     WHERE channel_id = $1 AND started_at >= $2
@@ -567,11 +577,7 @@ class _AnalyticsQueryMixin:
                       AND session_id IN (SELECT id FROM session_scope)
                     GROUP BY user_id
                 ),
-                streak_data AS (
-                    SELECT user_id, streak_count
-                    FROM viewer_attendance_streaks
-                    WHERE channel_id = $1
-                )
+                {streak_cte}
                 SELECT
                     n.user_id,
                     n.username,
@@ -588,26 +594,30 @@ class _AnalyticsQueryMixin:
                 LEFT JOIN streak_data sk ON sk.user_id = t.user_id
                 ORDER BY engagement_score DESC
                 LIMIT $3
-                """,
-                channel_id,
-                since_date,
-                limit,
-                list(_KNOWN_BOTS),
-            )
-            return [
-                {
-                    "user_id": r["user_id"],
-                    "username": r["username"],
-                    "display_name": r["display_name"],
-                    "total_messages": int(r["total_messages"]),
-                    "sessions_attended": int(r["sessions_attended"]),
-                    "last_seen": r["last_seen"],
-                    "watch_seconds": int(r["watch_seconds"]),
-                    "total_bits": int(r["total_bits"]),
-                    "engagement_score": float(r["engagement_score"]),
-                }
-                for r in rows
-            ]
+                """
+
+        args = (channel_id, since_date, limit, list(_KNOWN_BOTS))
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(_q(_STREAK_CTE), *args)
+        except asyncpg.exceptions.UndefinedTableError:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(_q(_STREAK_CTE_EMPTY), *args)
+
+        return [
+            {
+                "user_id": r["user_id"],
+                "username": r["username"],
+                "display_name": r["display_name"],
+                "total_messages": int(r["total_messages"]),
+                "sessions_attended": int(r["sessions_attended"]),
+                "last_seen": r["last_seen"],
+                "watch_seconds": int(r["watch_seconds"]),
+                "total_bits": int(r["total_bits"]),
+                "engagement_score": float(r["engagement_score"]),
+            }
+            for r in rows
+        ]
 
     async def get_viewer_profile(
         self, channel_id: str, user_id: str, days: int = 30
@@ -726,9 +736,8 @@ class _AnalyticsQueryMixin:
         now = datetime.now(UTC)
         month_start = datetime(now.year, now.month, 1, tzinfo=UTC)
 
-        async with self.pool.acquire() as conn:
-            row = await conn.fetchrow(
-                f"""
+        def _q(streak_cte: str) -> str:
+            return f"""
                 WITH session_scope AS MATERIALIZED (
                     SELECT id FROM stream_sessions
                     WHERE channel_id = $1 AND started_at >= $3
@@ -763,11 +772,7 @@ class _AnalyticsQueryMixin:
                       AND session_id IN (SELECT id FROM session_scope)
                     GROUP BY user_id
                 ),
-                streak_data AS (
-                    SELECT user_id, streak_count
-                    FROM viewer_attendance_streaks
-                    WHERE channel_id = $1
-                ),
+                {streak_cte},
                 scores AS (
                     SELECT
                         t.user_id,
@@ -787,12 +792,15 @@ class _AnalyticsQueryMixin:
                     FROM scores
                 )
                 SELECT * FROM ranked WHERE user_id = $2
-                """,
-                channel_id,
-                user_id,
-                month_start,
-                list(_KNOWN_BOTS),
-            )
+                """
+
+        args = (channel_id, user_id, month_start, list(_KNOWN_BOTS))
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(_q(_STREAK_CTE), *args)
+        except asyncpg.exceptions.UndefinedTableError:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(_q(_STREAK_CTE_EMPTY), *args)
 
         if not row:
             return None
