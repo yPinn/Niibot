@@ -6,12 +6,15 @@ Depends on attributes defined in AnalyticsRepository.__init__:
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 
 import asyncpg
 
 from shared.cache import cached
 from shared.repositories.analytics._caches import _session_cache, _summary_cache
+
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 class _AnalyticsSessionMixin:
@@ -63,15 +66,72 @@ class _AnalyticsSessionMixin:
             )
             return dict(row) if row else None
 
-    async def end_session(self, session_id: int, ended_at: datetime) -> None:
-        """Mark a session as ended."""
+    async def update_attendance_streaks(self, channel_id: str, session_id: int) -> None:
+        """Upsert attendance streaks for all viewers who attended a session.
+
+        Increments streak if the viewer also attended the previous session,
+        otherwise resets to 1.
+        """
         async with self.pool.acquire() as conn:
             await conn.execute(
-                "UPDATE stream_sessions SET ended_at = $1 WHERE id = $2",
+                """
+                WITH prev_session AS (
+                    SELECT id FROM stream_sessions
+                    WHERE channel_id = $1 AND id < $2
+                    ORDER BY started_at DESC LIMIT 1
+                ),
+                current_attendees AS (
+                    SELECT user_id FROM chatter_stats
+                    WHERE session_id = $2 AND channel_id = $1
+                ),
+                prev_attendees AS (
+                    SELECT user_id FROM chatter_stats
+                    WHERE channel_id = $1
+                      AND session_id = (SELECT id FROM prev_session)
+                ),
+                existing_streaks AS (
+                    SELECT user_id, streak_count
+                    FROM viewer_attendance_streaks
+                    WHERE channel_id = $1
+                ),
+                new_streaks AS (
+                    SELECT
+                        ca.user_id,
+                        CASE WHEN pa.user_id IS NOT NULL
+                            THEN COALESCE(es.streak_count, 0) + 1
+                            ELSE 1
+                        END AS streak_count
+                    FROM current_attendees ca
+                    LEFT JOIN prev_attendees  pa ON pa.user_id = ca.user_id
+                    LEFT JOIN existing_streaks es ON es.user_id = ca.user_id
+                )
+                INSERT INTO viewer_attendance_streaks
+                    (channel_id, user_id, streak_count, last_session_id, updated_at)
+                SELECT $1, ns.user_id, ns.streak_count, $2, NOW()
+                FROM new_streaks ns
+                ON CONFLICT (channel_id, user_id) DO UPDATE SET
+                    streak_count    = EXCLUDED.streak_count,
+                    last_session_id = EXCLUDED.last_session_id,
+                    updated_at      = EXCLUDED.updated_at
+                """,
+                channel_id,
+                session_id,
+            )
+
+    async def end_session(self, session_id: int, ended_at: datetime) -> None:
+        """Mark a session as ended and update viewer attendance streaks."""
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "UPDATE stream_sessions SET ended_at = $1 WHERE id = $2 RETURNING channel_id",
                 ended_at,
                 session_id,
             )
         _session_cache.clear()
+        if row:
+            try:
+                await self.update_attendance_streaks(row["channel_id"], session_id)
+            except Exception as e:
+                LOGGER.warning(f"Failed to update attendance streaks for session {session_id}: {e}")
 
     async def close_stale_sessions(self, max_hours: int = 12) -> int:
         """Close sessions running longer than max_hours without ended_at.

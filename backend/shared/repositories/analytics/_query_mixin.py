@@ -57,6 +57,16 @@ _KNOWN_BOTS: frozenset[str] = frozenset(
     }
 )
 
+_SCORE_SQL: str = """ROUND((
+    (t.watch_seconds::float / 3600.0)
+    + (1.5 * LOG(t.total_messages::float + 1.0))
+    + COALESCE(eb.sub_tier_bonus, 0.0)
+    + (COALESCE(eb.total_bits, 0)::float / 100.0 * 0.5)
+) * (1.0 + COALESCE(sk.streak_count, 0) * 0.05)
+  * CASE WHEN t.last_seen < NOW() - INTERVAL '30 days'
+         THEN 0.5 ELSE 1.0 END
+, 2)::float"""
+
 
 class _AnalyticsQueryMixin:
     pool: asyncpg.Pool  # type: ignore[assignment]
@@ -512,18 +522,18 @@ class _AnalyticsQueryMixin:
         since_date = datetime.now(UTC) - timedelta(days=days)
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
-                """
-                WITH session_scope AS (
+                f"""
+                WITH session_scope AS MATERIALIZED (
                     SELECT id FROM stream_sessions
                     WHERE channel_id = $1 AND started_at >= $2
                 ),
                 chatter_totals AS (
                     SELECT
                         c.user_id,
-                        SUM(c.message_count)        AS total_messages,
+                        SUM(c.message_count)         AS total_messages,
                         COUNT(DISTINCT c.session_id) AS sessions_attended,
-                        MAX(c.last_message_at)       AS last_seen,
-                        SUM(c.watch_seconds)         AS watch_seconds
+                        MAX(c.last_message_at)        AS last_seen,
+                        SUM(c.watch_seconds)          AS watch_seconds
                     FROM chatter_stats c
                     WHERE c.channel_id = $1
                       AND c.session_id IN (SELECT id FROM session_scope)
@@ -541,14 +551,26 @@ class _AnalyticsQueryMixin:
                       AND lower(c.username) != ALL($4::text[])
                     ORDER BY c.user_id, c.last_message_at DESC
                 ),
-                cheer_totals AS (
-                    SELECT user_id, SUM((metadata->>'bits')::int) AS total_bits
+                event_bonuses AS (
+                    SELECT user_id,
+                        SUM(CASE WHEN event_type = 'cheer' THEN (metadata->>'bits')::int ELSE 0 END) AS total_bits,
+                        MAX(CASE
+                            WHEN event_type = 'subscribe' AND (metadata->>'tier') = '3000' THEN 15.0
+                            WHEN event_type = 'subscribe' AND (metadata->>'tier') = '2000' THEN 10.0
+                            WHEN event_type = 'subscribe' THEN 5.0
+                            ELSE 0.0
+                        END) AS sub_tier_bonus
                     FROM stream_events
                     WHERE channel_id = $1
-                      AND event_type = 'cheer'
+                      AND event_type IN ('cheer', 'subscribe')
                       AND user_id IS NOT NULL
                       AND session_id IN (SELECT id FROM session_scope)
                     GROUP BY user_id
+                ),
+                streak_data AS (
+                    SELECT user_id, streak_count
+                    FROM viewer_attendance_streaks
+                    WHERE channel_id = $1
                 )
                 SELECT
                     n.user_id,
@@ -558,11 +580,13 @@ class _AnalyticsQueryMixin:
                     t.sessions_attended,
                     t.last_seen,
                     t.watch_seconds,
-                    COALESCE(ch.total_bits, 0) AS total_bits
+                    COALESCE(eb.total_bits, 0) AS total_bits,
+                    {_SCORE_SQL} AS engagement_score
                 FROM chatter_totals t
                 JOIN latest_name n ON n.user_id = t.user_id
-                LEFT JOIN cheer_totals ch ON ch.user_id = t.user_id
-                ORDER BY t.total_messages DESC
+                LEFT JOIN event_bonuses eb ON eb.user_id = t.user_id
+                LEFT JOIN streak_data sk ON sk.user_id = t.user_id
+                ORDER BY engagement_score DESC
                 LIMIT $3
                 """,
                 channel_id,
@@ -580,6 +604,7 @@ class _AnalyticsQueryMixin:
                     "last_seen": r["last_seen"],
                     "watch_seconds": int(r["watch_seconds"]),
                     "total_bits": int(r["total_bits"]),
+                    "engagement_score": float(r["engagement_score"]),
                 }
                 for r in rows
             ]
@@ -690,4 +715,94 @@ class _AnalyticsQueryMixin:
             "total_bits": total_bits,
             "follow_since": follow_since,
             "events": events,
+        }
+
+    async def get_viewer_rank(self, channel_id: str, user_id: str) -> dict | None:
+        """Monthly engagement rank for a specific viewer.
+
+        Returns rank, total_viewers, score, and key stats for the current
+        calendar month (UTC). Returns None if the viewer has no data this month.
+        """
+        now = datetime.now(UTC)
+        month_start = datetime(now.year, now.month, 1, tzinfo=UTC)
+
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                WITH session_scope AS MATERIALIZED (
+                    SELECT id FROM stream_sessions
+                    WHERE channel_id = $1 AND started_at >= $3
+                ),
+                chatter_totals AS (
+                    SELECT
+                        c.user_id,
+                        SUM(c.message_count)         AS total_messages,
+                        COUNT(DISTINCT c.session_id) AS sessions_attended,
+                        MAX(c.last_message_at)        AS last_seen,
+                        SUM(c.watch_seconds)          AS watch_seconds
+                    FROM chatter_stats c
+                    WHERE c.channel_id = $1
+                      AND c.session_id IN (SELECT id FROM session_scope)
+                      AND c.user_id != $1
+                      AND lower(c.username) != ALL($4::text[])
+                    GROUP BY c.user_id
+                ),
+                event_bonuses AS (
+                    SELECT user_id,
+                        SUM(CASE WHEN event_type = 'cheer' THEN (metadata->>'bits')::int ELSE 0 END) AS total_bits,
+                        MAX(CASE
+                            WHEN event_type = 'subscribe' AND (metadata->>'tier') = '3000' THEN 15.0
+                            WHEN event_type = 'subscribe' AND (metadata->>'tier') = '2000' THEN 10.0
+                            WHEN event_type = 'subscribe' THEN 5.0
+                            ELSE 0.0
+                        END) AS sub_tier_bonus
+                    FROM stream_events
+                    WHERE channel_id = $1
+                      AND event_type IN ('cheer', 'subscribe')
+                      AND user_id IS NOT NULL
+                      AND session_id IN (SELECT id FROM session_scope)
+                    GROUP BY user_id
+                ),
+                streak_data AS (
+                    SELECT user_id, streak_count
+                    FROM viewer_attendance_streaks
+                    WHERE channel_id = $1
+                ),
+                scores AS (
+                    SELECT
+                        t.user_id,
+                        t.total_messages,
+                        t.sessions_attended,
+                        t.watch_seconds,
+                        COALESCE(sk.streak_count, 0) AS streak_count,
+                        {_SCORE_SQL} AS engagement_score
+                    FROM chatter_totals t
+                    LEFT JOIN event_bonuses eb ON eb.user_id = t.user_id
+                    LEFT JOIN streak_data sk ON sk.user_id = t.user_id
+                ),
+                ranked AS (
+                    SELECT *,
+                        RANK() OVER (ORDER BY engagement_score DESC)::int AS rank,
+                        COUNT(*) OVER ()::int AS total_viewers
+                    FROM scores
+                )
+                SELECT * FROM ranked WHERE user_id = $2
+                """,
+                channel_id,
+                user_id,
+                month_start,
+                list(_KNOWN_BOTS),
+            )
+
+        if not row:
+            return None
+
+        return {
+            "rank": int(row["rank"]),
+            "total_viewers": int(row["total_viewers"]),
+            "engagement_score": float(row["engagement_score"]),
+            "total_messages": int(row["total_messages"]),
+            "watch_seconds": int(row["watch_seconds"]),
+            "sessions_attended": int(row["sessions_attended"]),
+            "streak_count": int(row["streak_count"]),
         }

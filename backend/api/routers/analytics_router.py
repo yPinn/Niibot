@@ -103,6 +103,7 @@ class ViewerSummary(BaseModel):
     last_seen: datetime | None
     watch_seconds: int
     total_bits: int
+    engagement_score: float
 
 
 class ViewerEvent(BaseModel):
