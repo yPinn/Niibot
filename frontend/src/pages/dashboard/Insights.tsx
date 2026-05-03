@@ -659,6 +659,7 @@ export default function Insights() {
   const [sort, setSort] = useState<SortKey>('score')
   const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc')
   const [initialized, setInitialized] = useState(false)
+  const [viewersError, setViewersError] = useState(false)
   const [viewers, setViewers] = useState<ViewerSummary[]>([])
   const [insights, setInsights] = useState<ChannelInsights | null>(null)
   const [insightsLoading, setInsightsLoading] = useState(true)
@@ -669,9 +670,11 @@ export default function Insights() {
     async (days: number) => {
       if (!user) return
       try {
+        setViewersError(false)
         setViewers(await listViewers(days))
       } catch {
         setViewers([])
+        setViewersError(true)
       } finally {
         setInitialized(true)
       }
@@ -706,6 +709,8 @@ export default function Insights() {
   const handlePeriodChange = (value: string) => {
     if (value === period) return
     loadedForRef.current = null
+    setInitialized(false)
+    setViewersError(false)
     setPeriod(value)
   }
 
@@ -821,6 +826,20 @@ export default function Insights() {
               <Skeleton key={i} className="h-12 w-full rounded-md" />
             ))}
           </div>
+        ) : viewersError ? (
+          <Empty className="border-none py-16">
+            <EmptyHeader>
+              <EmptyMedia>
+                <Icon
+                  icon="fa-solid fa-triangle-exclamation"
+                  wrapperClassName="size-20 opacity-25"
+                  className="text-[5rem]"
+                />
+              </EmptyMedia>
+              <EmptyTitle>載入觀眾資料失敗</EmptyTitle>
+              <EmptyDescription>請重新整理頁面，若問題持續請檢查伺服器狀態</EmptyDescription>
+            </EmptyHeader>
+          </Empty>
         ) : filtered.length === 0 ? (
           <Empty className="border-none py-16">
             <EmptyHeader>
@@ -832,7 +851,11 @@ export default function Insights() {
                 />
               </EmptyMedia>
               <EmptyTitle>{search ? '找不到符合的觀眾' : '尚無觀眾資料'}</EmptyTitle>
-              {!search && <EmptyDescription>直播結束後才會更新觀眾資料</EmptyDescription>}
+              {!search && (
+                <EmptyDescription>
+                  每場直播結束後會累積觀眾資料，歷史紀錄可在此查閱
+                </EmptyDescription>
+              )}
             </EmptyHeader>
           </Empty>
         ) : (
