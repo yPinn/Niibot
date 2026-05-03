@@ -28,6 +28,11 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
   Icon,
   Input,
   Label,
@@ -514,7 +519,7 @@ export default function VideoQueue() {
                     '確認獎勵已啟用',
                   ].map(item => (
                     <li key={item} className="flex items-start gap-1.5">
-                      <span className="mt-[5px] size-1 shrink-0 rounded-full bg-muted-foreground/50" />
+                      <span className="mt-1.25 size-1 shrink-0 rounded-full bg-muted-foreground/50" />
                       <span className="text-label text-muted-foreground">{item}</span>
                     </li>
                   ))}
@@ -544,7 +549,7 @@ export default function VideoQueue() {
                     '確認狀態開關已開啟',
                   ].map(item => (
                     <li key={item} className="flex items-start gap-1.5">
-                      <span className="mt-[5px] size-1 shrink-0 rounded-full bg-muted-foreground/50" />
+                      <span className="mt-1.25 size-1 shrink-0 rounded-full bg-muted-foreground/50" />
                       <span className="text-label text-muted-foreground">{item}</span>
                     </li>
                   ))}
@@ -576,7 +581,7 @@ export default function VideoQueue() {
                     '混音器開啟「監聽並輸出」（預設靜音）',
                   ].map(item => (
                     <li key={item} className="flex items-start gap-1.5">
-                      <span className="mt-[5px] size-1 shrink-0 rounded-full bg-muted-foreground/50" />
+                      <span className="mt-1.25 size-1 shrink-0 rounded-full bg-muted-foreground/50" />
                       <span className="text-label text-muted-foreground">{item}</span>
                     </li>
                   ))}
@@ -653,17 +658,19 @@ export default function VideoQueue() {
                 onPlayNow={handlePlayNow}
               />
               {!current && queue.length === 0 && (
-                <div className="flex flex-1 flex-col items-center justify-center gap-section text-muted-foreground">
-                  <Icon
-                    icon="fa-solid fa-circle-play"
-                    wrapperClassName="size-20 opacity-25"
-                    className="text-[5rem]"
-                  />
-                  <div className="flex flex-col items-center gap-1">
-                    <span className="text-sub font-medium">佇列為空</span>
-                    <span className="text-label">貼上連結後按 Enter 或點擊「新增」</span>
-                  </div>
-                </div>
+                <Empty className="border-none">
+                  <EmptyHeader>
+                    <EmptyMedia>
+                      <Icon
+                        icon="fa-solid fa-circle-play"
+                        wrapperClassName="size-20 opacity-25"
+                        className="text-[5rem]"
+                      />
+                    </EmptyMedia>
+                    <EmptyTitle>佇列為空</EmptyTitle>
+                    <EmptyDescription>貼上連結後按 Enter 或點擊「新增」</EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
               )}
             </CardContent>
           </Card>
@@ -673,7 +680,7 @@ export default function VideoQueue() {
         <div className="flex flex-col gap-section lg:col-span-4">
           {/* Overlay preview iframe */}
           {overlayUrl && (
-            <div className="aspect-[16/10] overflow-hidden rounded-lg border bg-black">
+            <div className="aspect-16/10 overflow-hidden rounded-lg border bg-black">
               <iframe
                 src={`${overlayUrl}?preview=1`}
                 className="block h-full w-full"

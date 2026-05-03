@@ -3,6 +3,11 @@ import { SortableHead } from '@/components/SortableHead'
 import {
   Badge,
   Button,
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
   Icon,
   Switch,
   Table,
@@ -97,8 +102,20 @@ export function CustomTab({ customRows, sortState, defaults, onToggle, onEdit }:
         <TableBody>
           {customRows.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={8} className="text-center text-muted-foreground">
-                尚無自訂指令或自動回應
+              <TableCell colSpan={8}>
+                <Empty className="border-none">
+                  <EmptyHeader>
+                    <EmptyMedia>
+                      <Icon
+                        icon="fa-solid fa-terminal"
+                        wrapperClassName="size-20 opacity-25"
+                        className="text-[5rem]"
+                      />
+                    </EmptyMedia>
+                    <EmptyTitle>尚無自訂指令或自動回應</EmptyTitle>
+                    <EmptyDescription>點擊「新增」開始建立指令</EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
               </TableCell>
             </TableRow>
           ) : (

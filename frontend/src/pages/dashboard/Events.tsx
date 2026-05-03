@@ -30,6 +30,7 @@ import {
   EmptyDescription,
   EmptyHeader,
   EmptyMedia,
+  EmptyTitle,
   Icon,
   Input,
   Label,
@@ -468,8 +469,22 @@ export default function Events() {
                   <TableBody>
                     {sortedRedemptions.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={3} className="text-center text-muted-foreground">
-                          尚無兌換設定
+                        <TableCell colSpan={3}>
+                          <Empty className="border-none">
+                            <EmptyHeader>
+                              <EmptyMedia>
+                                <Icon
+                                  icon="fa-solid fa-coins"
+                                  wrapperClassName="size-20 opacity-25"
+                                  className="text-[5rem]"
+                                />
+                              </EmptyMedia>
+                              <EmptyTitle>尚無兌換設定</EmptyTitle>
+                              <EmptyDescription>
+                                在 Twitch 上建立頻道點數獎勵後即會顯示於此
+                              </EmptyDescription>
+                            </EmptyHeader>
+                          </Empty>
                         </TableCell>
                       </TableRow>
                     ) : (
