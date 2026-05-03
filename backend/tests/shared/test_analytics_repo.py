@@ -173,13 +173,13 @@ class TestGetActiveSession:
 @pytest.mark.asyncio
 class TestEndSession:
     async def test_calls_update_with_correct_args(self):
-        pool, conn = _make_pool(execute="UPDATE 1")
+        pool, conn = _make_pool(fetchrow={"channel_id": "ch123"})
         repo = AnalyticsRepository(pool)
 
         await repo.end_session(10, _LATER)
 
-        conn.execute.assert_called_once()
-        args = conn.execute.call_args[0]
+        conn.fetchrow.assert_called_once()
+        args = conn.fetchrow.call_args[0]
         assert _LATER in args
         assert 10 in args
 
