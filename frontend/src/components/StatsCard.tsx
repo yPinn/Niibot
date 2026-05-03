@@ -4,7 +4,7 @@ import {
   CardHeader,
   CardTitle,
   Empty,
-  EmptyDescription,
+  EmptyTitle,
   Icon,
   Skeleton,
 } from '@/components/ui'
@@ -58,7 +58,7 @@ export default function StatsCard({
           </div>
         ) : (
           <Empty className="border-none p-4">
-            <EmptyDescription>No data available</EmptyDescription>
+            <EmptyTitle className="text-sm font-normal text-muted-foreground">暫無資料</EmptyTitle>
           </Empty>
         )}
       </CardContent>

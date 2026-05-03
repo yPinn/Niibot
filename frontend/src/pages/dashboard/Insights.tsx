@@ -13,6 +13,9 @@ import { PageMain } from '@/components/PageMain'
 import {
   Empty,
   EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
   Icon,
   Input,
   Sheet,
@@ -317,7 +320,7 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
                 alt=""
                 className="w-full h-24 object-cover object-center"
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent" />
+              <div className="absolute inset-0 bg-linear-to-t from-background via-background/60 to-transparent" />
             </div>
             <div className="relative z-10 flex items-end gap-3 px-page pb-3 pr-12 -mt-8">
               <div className="shrink-0 relative z-10">
@@ -809,9 +812,17 @@ export default function Insights() {
           </div>
         ) : filtered.length === 0 ? (
           <Empty className="border-none py-16">
-            <EmptyDescription>
-              {search ? '找不到符合的觀眾' : '直播結束後才會更新觀眾資料'}
-            </EmptyDescription>
+            <EmptyHeader>
+              <EmptyMedia>
+                <Icon
+                  icon={search ? 'fa-solid fa-magnifying-glass' : 'fa-solid fa-users'}
+                  wrapperClassName="size-20 opacity-25"
+                  className="text-[5rem]"
+                />
+              </EmptyMedia>
+              <EmptyTitle>{search ? '找不到符合的觀眾' : '尚無觀眾資料'}</EmptyTitle>
+              {!search && <EmptyDescription>直播結束後才會更新觀眾資料</EmptyDescription>}
+            </EmptyHeader>
           </Empty>
         ) : (
           <div className="space-y-1">

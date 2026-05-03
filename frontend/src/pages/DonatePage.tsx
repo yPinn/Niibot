@@ -11,7 +11,18 @@ import {
   type PublicDonateInfo,
   type PublicPlatformInfo,
 } from '@/api/donation'
-import { Button, Card, CardContent, Icon, Input, Spinner } from '@/components/ui'
+import {
+  Button,
+  Card,
+  CardContent,
+  Empty,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+  Icon,
+  Input,
+  Spinner,
+} from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
 // ============================================================
@@ -195,19 +206,35 @@ export default function DonatePage() {
 
   if (notFound || !info) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-2 text-muted-foreground">
-        <Icon icon="fa-solid fa-circle-xmark" className="h-10 w-10" wrapperClassName="" />
-        <p className="text-lg font-medium">找不到這位實況主</p>
-      </div>
+      <Empty className="border-none min-h-screen">
+        <EmptyHeader>
+          <EmptyMedia>
+            <Icon
+              icon="fa-solid fa-circle-xmark"
+              wrapperClassName="size-20 opacity-25"
+              className="text-[5rem]"
+            />
+          </EmptyMedia>
+          <EmptyTitle>找不到這位實況主</EmptyTitle>
+        </EmptyHeader>
+      </Empty>
     )
   }
 
   if (info.platforms.length === 0) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-2 text-muted-foreground">
-        <Icon icon="fa-solid fa-ban" className="h-10 w-10" wrapperClassName="" />
-        <p className="text-lg font-medium">{info.username} 尚未開啟斗內功能</p>
-      </div>
+      <Empty className="border-none min-h-screen">
+        <EmptyHeader>
+          <EmptyMedia>
+            <Icon
+              icon="fa-solid fa-ban"
+              wrapperClassName="size-20 opacity-25"
+              className="text-[5rem]"
+            />
+          </EmptyMedia>
+          <EmptyTitle>{info.username} 尚未開啟斗內功能</EmptyTitle>
+        </EmptyHeader>
+      </Empty>
     )
   }
 
