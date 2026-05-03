@@ -112,11 +112,13 @@ const ROW_GRID =
 interface ViewerRowProps {
   viewer: ViewerSummary
   rank: number
+  maxScore: number
   onClick: () => void
 }
 
-function ViewerRow({ viewer, rank, onClick }: ViewerRowProps) {
+function ViewerRow({ viewer, rank, maxScore, onClick }: ViewerRowProps) {
   const name = viewer.display_name || viewer.username
+  const pct = maxScore > 0 ? Math.round((viewer.engagement_score / maxScore) * 100) : 0
   return (
     <button
       onClick={onClick}
@@ -129,11 +131,7 @@ function ViewerRow({ viewer, rank, onClick }: ViewerRowProps) {
         <p className="text-sub font-medium truncate">{name}</p>
         <p className="text-label text-muted-foreground truncate">@{viewer.username}</p>
       </div>
-      <Col
-        value={viewer.engagement_score.toFixed(1)}
-        label="活躍度"
-        valueClassName="text-primary"
-      />
+      <Col value={`${pct}%`} label="活躍度" valueClassName="text-primary" />
       <Col value={viewer.total_messages.toLocaleString()} label="留言" />
       <Col
         value={viewer.total_bits > 0 ? viewer.total_bits.toLocaleString() : '—'}
@@ -724,6 +722,8 @@ export default function Insights() {
     }
   }
 
+  const maxScore = viewers.length > 0 ? viewers[0].engagement_score : 1
+
   const filtered = React.useMemo(() => {
     const q = search.trim().toLowerCase()
     return viewers
@@ -899,6 +899,7 @@ export default function Insights() {
                 key={v.user_id}
                 viewer={v}
                 rank={i + 1}
+                maxScore={maxScore}
                 onClick={() => setSelectedUserId(v.user_id)}
               />
             ))}

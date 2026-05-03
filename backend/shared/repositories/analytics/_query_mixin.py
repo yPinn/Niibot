@@ -8,9 +8,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
+import time
 from datetime import UTC, datetime, timedelta
 
 import asyncpg
+import httpx
 
 from shared.cache import cached
 from shared.repositories.analytics._caches import (
@@ -18,6 +21,8 @@ from shared.repositories.analytics._caches import (
     _top_chatters_cache,
     _top_commands_cache,
 )
+
+LOGGER = logging.getLogger(__name__)
 
 _KNOWN_BOTS: frozenset[str] = frozenset(
     {
@@ -54,8 +59,33 @@ _KNOWN_BOTS: frozenset[str] = frozenset(
         "marbiebot",
         "dixpermit",
         "playwithviewers",
+        "niibot_",
+        "chiwabots",
     }
 )
+
+_bot_cache: frozenset[str] = frozenset()
+_bot_cache_ts: float = 0.0
+_BOT_CACHE_TTL: float = 86400.0  # 24 hours
+
+
+async def _get_bot_list() -> list[str]:
+    """Return merged bot list: manual _KNOWN_BOTS + TwitchInsights (cached 24h)."""
+    global _bot_cache, _bot_cache_ts
+    if _bot_cache and time.monotonic() - _bot_cache_ts < _BOT_CACHE_TTL:
+        return list(_KNOWN_BOTS | _bot_cache)
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get("https://api.twitchinsights.net/v1/bots/all")
+            resp.raise_for_status()
+            data = resp.json()
+            _bot_cache = frozenset(entry[0].lower() for entry in data.get("bots", []))
+            _bot_cache_ts = time.monotonic()
+            LOGGER.info("Fetched %d bots from TwitchInsights", len(_bot_cache))
+    except Exception as exc:
+        LOGGER.warning("TwitchInsights bot list fetch failed (%s), using local list", exc)
+    return list(_KNOWN_BOTS | _bot_cache)
+
 
 _SCORE_SQL: str = """ROUND((
     (t.watch_seconds::numeric / 3600.0)
@@ -400,6 +430,7 @@ class _AnalyticsQueryMixin:
         Three queries run in parallel via separate pool connections.
         """
         since_date = datetime.now(UTC) - timedelta(days=days)
+        bots = await _get_bot_list()
 
         async def _summary() -> dict:
             async with self.pool.acquire() as conn:
@@ -449,7 +480,7 @@ class _AnalyticsQueryMixin:
                     """,
                     channel_id,
                     since_date,
-                    list(_KNOWN_BOTS),
+                    bots,
                 )
                 return {
                     "total_messages": int(row["total_messages"]),
@@ -491,7 +522,7 @@ class _AnalyticsQueryMixin:
                     """,
                     channel_id,
                     since_date,
-                    list(_KNOWN_BOTS),
+                    bots,
                 )
                 return [
                     {
@@ -596,7 +627,7 @@ class _AnalyticsQueryMixin:
                 LIMIT $3
                 """
 
-        args = (channel_id, since_date, limit, list(_KNOWN_BOTS))
+        args = (channel_id, since_date, limit, await _get_bot_list())
         try:
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(_q(_STREAK_CTE), *args)
@@ -794,7 +825,7 @@ class _AnalyticsQueryMixin:
                 SELECT * FROM ranked WHERE user_id = $2
                 """
 
-        args = (channel_id, user_id, month_start, list(_KNOWN_BOTS))
+        args = (channel_id, user_id, month_start, await _get_bot_list())
         try:
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(_q(_STREAK_CTE), *args)
