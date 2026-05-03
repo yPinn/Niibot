@@ -58,10 +58,10 @@ _KNOWN_BOTS: frozenset[str] = frozenset(
 )
 
 _SCORE_SQL: str = """ROUND((
-    (t.watch_seconds::float / 3600.0)
-    + (1.5 * LOG(t.total_messages::float + 1.0))
+    (t.watch_seconds::numeric / 3600.0)
+    + (1.5 * LOG(t.total_messages::numeric + 1.0))
     + COALESCE(eb.sub_tier_bonus, 0.0)
-    + (COALESCE(eb.total_bits, 0)::float / 100.0 * 0.5)
+    + (COALESCE(eb.total_bits, 0)::numeric / 100.0 * 0.5)
 ) * (1.0 + COALESCE(sk.streak_count, 0) * 0.05)
   * CASE WHEN t.last_seen < NOW() - INTERVAL '30 days'
          THEN 0.5 ELSE 1.0 END
