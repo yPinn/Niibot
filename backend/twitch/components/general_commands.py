@@ -139,6 +139,51 @@ class GeneralCommandsComponent(BotComponent):
         )
         await self._record_command(ctx, "condemn")
 
+    @commands.command(aliases=["排名"])
+    async def rank(self, ctx: commands.Context) -> None:
+        """查詢本月個人活躍度排名。
+
+        Usage: !rank, !排名
+        """
+        config = await check_command(
+            self.cmd_repo, ctx, channel_repo=self.channel_repo, command_name="rank"
+        )
+        if not config:
+            return
+
+        if not self._has_analytics:
+            await self._ctx_reply(ctx, "目前無法查詢排名資料")
+            return
+
+        user_id = ctx.chatter.id
+        channel_id = ctx.channel.id
+
+        try:
+            data = await self.bot.analytics.get_viewer_rank(channel_id, user_id)
+        except Exception as e:
+            LOGGER.error(f"Failed to get viewer rank for {user_id}: {e}")
+            await self._ctx_reply(ctx, "查詢排名時發生錯誤，請稍後再試")
+            return
+
+        if data is None:
+            await self._ctx_reply(ctx, f"@{ctx.chatter.display_name} 本月尚無活躍紀錄")
+            await self._record_command(ctx, "rank")
+            return
+
+        hours, mins = divmod(data["watch_seconds"] // 60, 60)
+        watch_str = f"{hours:02d}:{mins:02d}"
+        streak_str = f"{data['streak_count']} 場" if data["streak_count"] > 0 else "—"
+
+        await self._ctx_reply(
+            ctx,
+            f"@{ctx.chatter.display_name} 本月活躍排名：第 {data['rank']} 名 / {data['total_viewers']} 人"
+            f" | 分數 {data['engagement_score']}"
+            f" | 留言 {data['total_messages']}"
+            f" | 觀看 {watch_str}"
+            f" | 連續 {streak_str}",
+        )
+        await self._record_command(ctx, "rank")
+
     @commands.Component.listener()
     async def event_stream_online(self, payload: twitchio.StreamOnline) -> None:
         LOGGER.info(f"Stream online: {payload.broadcaster.name}")
