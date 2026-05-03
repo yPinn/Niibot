@@ -62,9 +62,9 @@ function formatDuration(seconds: number): string {
   const d = Math.floor(seconds / 86400)
   const h = Math.floor((seconds % 86400) / 3600)
   const m = Math.floor((seconds % 3600) / 60)
-  const hh = String(h).padStart(2, '0')
-  const mm = String(m).padStart(2, '0')
-  return d > 0 ? `${d}/${hh}:${mm}` : `${hh}:${mm}`
+  if (d > 0) return `${d}d ${h}h`
+  if (h > 0) return m > 0 ? `${h}h ${m}m` : `${h}h`
+  return `${m}m`
 }
 
 function formatCompact(n: number): string {
@@ -131,16 +131,15 @@ function ViewerRow({ viewer, rank, maxScore, onClick }: ViewerRowProps) {
         <p className="text-sub font-medium truncate">{name}</p>
         <p className="text-label text-muted-foreground truncate">@{viewer.username}</p>
       </div>
-      <Col value={`${pct}%`} label="活躍度" valueClassName="text-primary" />
-      <Col value={viewer.total_messages.toLocaleString()} label="留言" />
+      <Col value={`${pct}%`} valueClassName="text-primary" />
+      <Col value={viewer.total_messages.toLocaleString()} />
       <Col
         value={viewer.total_bits > 0 ? viewer.total_bits.toLocaleString() : '—'}
-        label="小奇點"
         valueClassName={viewer.total_bits > 0 ? 'text-primary' : 'text-muted-foreground'}
         className="hidden sm:block"
       />
-      <Col value={String(viewer.sessions_attended)} label="場次" className="hidden sm:block" />
-      <Col value={formatDuration(viewer.watch_seconds)} label="時長" className="hidden sm:block" />
+      <Col value={String(viewer.sessions_attended)} className="hidden sm:block" />
+      <Col value={formatDuration(viewer.watch_seconds)} className="hidden sm:block" />
       <span className="text-label text-muted-foreground text-right hidden lg:block">
         {formatDate(viewer.last_seen)}
       </span>
@@ -150,19 +149,16 @@ function ViewerRow({ viewer, rank, maxScore, onClick }: ViewerRowProps) {
 
 function Col({
   value,
-  label,
   valueClassName,
   className,
 }: {
   value: string
-  label: string
   valueClassName?: string
   className?: string
 }) {
   return (
     <div className={`text-right ${className ?? ''}`}>
       <p className={`text-sub font-bold tabular-nums ${valueClassName ?? ''}`}>{value}</p>
-      <p className="text-label text-muted-foreground">{label}</p>
     </div>
   )
 }
