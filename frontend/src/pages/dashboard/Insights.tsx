@@ -103,11 +103,7 @@ function SummaryTile({
 
 // ─── Viewer List ─────────────────────────────────────────────────────────────
 
-// Mobile:  rank | name | score | messages            (2 data cols)
-// sm+:     +bits +sessions +watch                    (5 data cols)
-// lg+:     +last_seen                               (6 data cols)
-const ROW_GRID =
-  'grid-cols-[1.25rem_minmax(0,1fr)_5.5rem_5.5rem] sm:grid-cols-[1.25rem_minmax(0,1fr)_repeat(5,5.5rem)] lg:grid-cols-[1.25rem_minmax(0,1fr)_repeat(6,5.5rem)]'
+const ROW_GRID = 'grid-cols-[1.25rem_minmax(0,1fr)_5.5rem_5.5rem_5.5rem]'
 
 interface ViewerRowProps {
   viewer: ViewerSummary
@@ -131,18 +127,9 @@ function ViewerRow({ viewer, rank, maxScore, onClick }: ViewerRowProps) {
         <p className="text-sub font-medium truncate">{name}</p>
         <p className="text-label text-muted-foreground truncate">@{viewer.username}</p>
       </div>
-      <Col value={`${pct}%`} valueClassName="text-primary" />
       <Col value={viewer.total_messages.toLocaleString()} />
-      <Col
-        value={viewer.total_bits > 0 ? viewer.total_bits.toLocaleString() : '—'}
-        valueClassName={viewer.total_bits > 0 ? 'text-primary' : 'text-muted-foreground'}
-        className="hidden sm:block"
-      />
-      <Col value={String(viewer.sessions_attended)} className="hidden sm:block" />
-      <Col value={formatDuration(viewer.watch_seconds)} className="hidden sm:block" />
-      <span className="text-label text-muted-foreground text-right hidden lg:block">
-        {formatDate(viewer.last_seen)}
-      </span>
+      <Col value={formatDuration(viewer.watch_seconds)} />
+      <Col value={`${pct}%`} valueClassName="text-primary" />
     </button>
   )
 }
@@ -169,6 +156,7 @@ const EVENT_META: Record<string, { icon: string; label: string; color: string }>
   follow: { icon: 'fa-solid fa-heart', label: '追隨', color: 'text-rose-400' },
   subscribe: { icon: 'fa-solid fa-star', label: '訂閱', color: 'text-status-special' },
   cheer: { icon: 'fa-solid fa-diamond-half-stroke', label: '小奇點', color: 'text-primary' },
+  raid: { icon: 'fa-solid fa-parachute-box', label: '揪團', color: 'text-status-info' },
 }
 
 const SUB_TIER_LABEL: Record<string, string> = {
@@ -547,6 +535,10 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
                       ev.event_type === 'cheer'
                         ? (ev.metadata as { bits?: number })?.bits
                         : undefined
+                    const raidViewers =
+                      ev.event_type === 'raid'
+                        ? (ev.metadata as { viewers?: number; from_broadcaster_name?: string })
+                        : undefined
                     const subMeta =
                       ev.event_type === 'subscribe'
                         ? (ev.metadata as {
@@ -586,6 +578,16 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
                               <span>{bits.toLocaleString()}</span>
                             </>
                           )}
+                          {raidViewers?.from_broadcaster_name && (
+                            <span className="text-muted-foreground">
+                              from @{raidViewers.from_broadcaster_name}
+                            </span>
+                          )}
+                          {raidViewers?.viewers != null && (
+                            <span className="text-muted-foreground">
+                              · {raidViewers.viewers.toLocaleString()} 人
+                            </span>
+                          )}
                         </span>
                         <span className="text-label text-muted-foreground shrink-0">
                           {formatDate(ev.occurred_at)}
@@ -608,36 +610,9 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
 }
 
 const SORT_COLS = [
+  { key: 'messages', label: '留言', icon: 'fa-solid fa-comment', natural: 'desc', show: '' },
+  { key: 'watch', label: '時長', icon: 'fa-solid fa-clock', natural: 'desc', show: '' },
   { key: 'score', label: '活躍度', icon: 'fa-solid fa-fire', natural: 'desc', show: '' },
-  { key: 'messages', label: '留言次數', icon: 'fa-solid fa-comment', natural: 'desc', show: '' },
-  {
-    key: 'bits',
-    label: '小奇點',
-    icon: 'fa-solid fa-diamond-half-stroke',
-    natural: 'desc',
-    show: 'hidden sm:flex',
-  },
-  {
-    key: 'sessions',
-    label: '出現場次',
-    icon: 'fa-solid fa-calendar-days',
-    natural: 'desc',
-    show: 'hidden sm:flex',
-  },
-  {
-    key: 'watch',
-    label: '觀看時長',
-    icon: 'fa-solid fa-clock',
-    natural: 'desc',
-    show: 'hidden sm:flex',
-  },
-  {
-    key: 'last_seen',
-    label: '最後出現',
-    icon: 'fa-solid fa-hourglass-end',
-    natural: 'desc',
-    show: 'hidden lg:flex',
-  },
 ] as const
 
 type SortKey = (typeof SORT_COLS)[number]['key']
@@ -732,22 +707,12 @@ export default function Insights() {
       .sort((a, b) => {
         const dir = sortDir === 'desc' ? 1 : -1
         switch (sort) {
-          case 'score':
-            return dir * (b.engagement_score - a.engagement_score)
           case 'messages':
             return dir * (b.total_messages - a.total_messages)
           case 'watch':
             return dir * (b.watch_seconds - a.watch_seconds)
-          case 'bits':
-            return dir * (b.total_bits - a.total_bits)
-          case 'sessions':
-            return dir * (b.sessions_attended - a.sessions_attended)
-          case 'last_seen': {
-            if (!a.last_seen && !b.last_seen) return 0
-            if (!a.last_seen) return 1
-            if (!b.last_seen) return -1
-            return dir * b.last_seen.localeCompare(a.last_seen)
-          }
+          case 'score':
+            return dir * (b.engagement_score - a.engagement_score)
         }
       })
   }, [viewers, search, sort, sortDir])

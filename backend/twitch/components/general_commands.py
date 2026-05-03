@@ -158,6 +158,13 @@ class GeneralCommandsComponent(BotComponent):
         user_id = ctx.chatter.id
         channel_id = ctx.channel.id
 
+        if user_id == channel_id:
+            await self._ctx_reply(
+                ctx, f"@{ctx.chatter.display_name} 你才是這裡的主人，哪有排名可言 👑"
+            )
+            await self._record_command(ctx, "rank")
+            return
+
         try:
             data = await self.bot.analytics.get_viewer_rank(channel_id, user_id)
         except Exception as e:
