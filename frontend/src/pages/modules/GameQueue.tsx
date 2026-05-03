@@ -251,7 +251,7 @@ export default function GameQueue() {
         <PageHeader title="Game Queue" description="管理遊戲排隊系統" />
         <div className="grid grid-cols-1 gap-section lg:grid-cols-12 lg:items-stretch">
           <div className="lg:col-span-8">
-            <Card className="h-full min-h-[360px] lg:min-h-130">
+            <Card className="h-full min-h-90 lg:min-h-130">
               <CardHeader>
                 <Skeleton className="h-5 w-24" />
               </CardHeader>
@@ -286,7 +286,7 @@ export default function GameQueue() {
       <SlideUp inView className="grid grid-cols-1 gap-section lg:grid-cols-12 lg:items-stretch">
         {/* Full Queue card — fills full column height */}
         <div className="lg:col-span-8">
-          <Card className="h-full min-h-[360px] lg:min-h-[520px]">
+          <Card className="h-full min-h-90 lg:min-h-130">
             <CardHeader>
               <CardTitle>
                 等待佇列
