@@ -116,7 +116,7 @@ class _NotifyMixin:
                         LOGGER.warning(f"[NOTIFY] Failed to warm cache for {user_id}: {e}")
 
                     try:
-                        streams = await self.fetch_streams(user_ids=[user_id])  # type: ignore[attr-defined]
+                        streams = [s async for s in self.fetch_streams(user_ids=[user_id])]  # type: ignore[attr-defined]
                         if streams:
                             stream = streams[0]
                             session_id = await self.analytics.create_session(  # type: ignore[attr-defined]

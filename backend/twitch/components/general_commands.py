@@ -18,14 +18,11 @@ LOGGER: logging.Logger = logging.getLogger(__name__)
 FRONTEND_URL = get_settings().frontend_url.rstrip("/")
 
 _RANK_TEMPLATES = [
-    "哇又見面了！{total} 人裡衝到【第 {rank} 名】，這 {watch} 加上說了 {messages} 句話，老面孔就是你耶！",
-    "天啊重度成癮吧？{total} 人中拿【第 {rank} 名】，待了 {watch} 還發了 {messages} 則訊息，真的住這裡喔！",
-    "想像一下，{total} 人裡你排到【第 {rank} 名】呢！這 {watch} 跟這 {messages} 則留言，想低調都難吧！",
-    "這可能嗎？從 {total} 人殺出【第 {rank} 名】，坐了 {watch}、聊了 {messages} 句，你是機器人吧！",
-    "如果只是路過就算了，你竟然在 {total} 人裡衝到【第 {rank} 名】！待了 {watch}、留了 {messages} 則，算你有心啦！",
-    "太棒了！面對 {total} 人還能卡位【第 {rank} 名】，這 {watch} 加上 {messages} 句話，沒你真的不行耶！",
-    "每當點名你都在！{total} 人裡的【第 {rank} 名】，看了 {watch}、發了 {messages} 則，這就是真愛喔！",
-    "試試看能不能更瘋？{total} 人裡殺出【第 {rank} 名】，{watch} 沒走還聊了 {messages} 句，停不下來吧你！",
+    "何意味？在 {total} 人中才排【第 {rank} 名】喔？才看 {watch} 加上這 {messages} 則留言，就繼續愛看不看吧，我沒關係啦真的😍",
+    "這是真的嗎？從 {total} 人中殺出重圍奪下【第 {rank} 名】，坐了 {watch}、聊了 {messages} 句，你其實是機器人吧 MrDestructoid ",
+    "不是吧，這也能卷？在 {total} 人中你硬是衝到【第 {rank} 名】！待了 {watch}、說了 {messages} 句話，我就問，你不用睡覺嗎？",
+    "666 還有高手！你在 {total} 人中位居【第 {rank} 名】呢！累計待了 {watch}、貢獻 {messages} 則訊息，這數據想低調都難 MingLee",
+    "每當點名你都在！能在 {total} 人中排到【第 {rank} 名】，這 {watch} 的陪伴加上 {messages} 則留言，絕對是真愛 GivePLZ ",
 ]
 
 if TYPE_CHECKING:
@@ -234,11 +231,14 @@ class GeneralCommandsComponent(BotComponent):
             title = stream.title if stream else None
             game_name = stream.game_name if stream else None
             game_id = str(stream.game_id) if stream and stream.game_id else None
+            started_at = (
+                stream.started_at if stream and stream.started_at else None
+            ) or datetime.now(UTC)
 
             analytics = self.bot.analytics
             session_id = await analytics.create_session(
                 channel_id=channel_id,
-                started_at=datetime.now(UTC),
+                started_at=started_at,
                 title=title,
                 game_name=game_name,
                 game_id=game_id,

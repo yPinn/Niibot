@@ -84,7 +84,7 @@ class _SessionMixin:
 
             LOGGER.info(f"Checking for active streams on {len(channel_ids)} channels...")
 
-            streams = await self.fetch_streams(user_ids=channel_ids)  # type: ignore[attr-defined, arg-type]
+            streams = [s async for s in self.fetch_streams(user_ids=channel_ids)]  # type: ignore[attr-defined, arg-type]
             if not streams:
                 LOGGER.info("No active streams found during startup recovery")
                 return
@@ -153,7 +153,7 @@ class _SessionMixin:
                     await asyncio.sleep(180)
                     continue
 
-                streams = await self.fetch_streams(user_ids=all_ids)  # type: ignore[attr-defined, arg-type]
+                streams = [s async for s in self.fetch_streams(user_ids=all_ids)]  # type: ignore[attr-defined, arg-type]
                 live_map: dict = {}
                 if streams:
                     for s in streams:
@@ -182,9 +182,8 @@ class _SessionMixin:
                 for cid in list(self._active_sessions):  # type: ignore[attr-defined]
                     if cid in live_map:
                         continue
-                    sid = self._active_sessions.pop(cid)  # type: ignore[attr-defined]
-                    chatter_data = self._chatter_buffers.pop(cid, {})  # type: ignore[attr-defined]
-                    self._channel_line_counts.pop(cid, None)  # type: ignore[attr-defined]
+                    sid = self._active_sessions.get(cid)  # type: ignore[attr-defined]
+                    chatter_data = dict(self._chatter_buffers.get(cid, {}))  # type: ignore[attr-defined]
                     if sid:
                         if chatter_data:
                             try:
@@ -203,6 +202,9 @@ class _SessionMixin:
                             LOGGER.info(f"Session {sid} ended for channel {cid} (poll)")
                         except Exception as e:
                             LOGGER.warning(f"Failed to end session {sid}: {e}")
+                    self._active_sessions.pop(cid, None)  # type: ignore[attr-defined]
+                    self._chatter_buffers.pop(cid, None)  # type: ignore[attr-defined]
+                    self._channel_line_counts.pop(cid, None)  # type: ignore[attr-defined]
 
                 closed = await self.analytics.close_stale_sessions(max_hours=12)  # type: ignore[attr-defined]
                 if closed:

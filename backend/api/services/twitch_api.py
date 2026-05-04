@@ -500,7 +500,7 @@ class TwitchAPIClient:
         """Grant moderator status. Returns the raw Helix response for caller inspection."""
         return await self._http.post(
             f"{HELIX_BASE}/moderation/moderators",
-            json={"broadcaster_id": broadcaster_id, "user_id": moderator_user_id},
+            params={"broadcaster_id": broadcaster_id, "user_id": moderator_user_id},
             headers=self._app_headers(access_token),
         )
 

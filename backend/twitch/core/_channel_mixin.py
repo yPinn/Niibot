@@ -46,6 +46,7 @@ class _ChannelMixin:
         try:
             subs = get_channel_subscriptions(broadcaster_user_id, self._bot_id)  # type: ignore[attr-defined]
             resp = await self.multi_subscribe(subs)  # type: ignore[attr-defined]
+            non_conflict: list = []
             if resp.errors:
                 non_conflict = [
                     e for e in resp.errors if "409" not in str(e) and "already exists" not in str(e)
@@ -62,8 +63,15 @@ class _ChannelMixin:
             if subscription_ids:
                 self._subscription_ids[broadcaster_user_id] = subscription_ids  # type: ignore[attr-defined]
 
-            self._subscribed_channels.add(broadcaster_user_id)  # type: ignore[attr-defined]
-            LOGGER.info(f"Subscribed to events for channel: {broadcaster_user_id}")
+            # Mark as subscribed unless real (non-409) errors occurred with no successes.
+            # All-409 errors mean subscriptions already exist (e.g. after restart) — still subscribed.
+            if subscription_ids or not non_conflict:
+                self._subscribed_channels.add(broadcaster_user_id)  # type: ignore[attr-defined]
+                LOGGER.info(f"Subscribed to events for channel: {broadcaster_user_id}")
+            else:
+                LOGGER.warning(
+                    f"Subscription failed for channel {broadcaster_user_id}: {non_conflict}"
+                )
 
         except Exception as e:
             LOGGER.exception(f"Failed to subscribe channel {broadcaster_user_id}: {e}")
