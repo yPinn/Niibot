@@ -139,4 +139,5 @@ export {
   TableRow,
 } from './table'
 export { Tabs, TabsContent, TabsList, tabsListVariants, TabsTrigger } from './tabs'
+export { Textarea } from './textarea'
 export { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './tooltip'

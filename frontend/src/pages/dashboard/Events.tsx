@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 
 import {
@@ -557,7 +557,7 @@ export default function Events() {
               <Label htmlFor="event-template">訊息模板</Label>
               <Input
                 id="event-template"
-                ref={templateInputRef}
+                ref={templateInputRef as React.RefObject<HTMLInputElement>}
                 value={editTemplate}
                 onChange={e => setEditTemplate(e.target.value)}
                 placeholder="輸入回應訊息..."

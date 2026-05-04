@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useState } from 'react'
+import React, { useEffect, useReducer, useState } from 'react'
 import { toast } from 'sonner'
 
 import { type ChannelDefaults } from '@/api/channels'
@@ -36,6 +36,7 @@ import {
   SheetHeader,
   SheetTitle,
   Switch,
+  Textarea,
 } from '@/components/ui'
 import { VariableInserter } from '@/components/VariableInserter'
 import { useInputInsert } from '@/hooks/useInputInsert'
@@ -383,9 +384,9 @@ export function CommandSheet({
           {showResponseField && (
             <div className="flex flex-col gap-2">
               <Label htmlFor="cmd-response">回應內容</Label>
-              <Input
+              <Textarea
                 id="cmd-response"
-                ref={inputRef}
+                ref={inputRef as React.RefObject<HTMLTextAreaElement>}
                 value={form.response}
                 onChange={e => dispatch({ type: 'SET', field: 'response', value: e.target.value })}
                 placeholder={showTriggerFields ? '$(user) GG！' : '$(user) 你好！'}

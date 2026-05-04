@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useReducer, useState } from 'react'
 import { toast } from 'sonner'
 
 import {
@@ -58,6 +58,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  Textarea,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -323,19 +324,21 @@ export default function Timers() {
               <div className="overflow-x-auto rounded-md border">
                 <div className="divide-y divide-border">
                   <div className="flex items-center gap-4 px-4 py-3 bg-muted/50">
-                    <Skeleton className="h-4 w-[24%]" />
+                    <Skeleton className="h-4 w-[20%]" />
+                    <Skeleton className="h-4 w-[6%]" />
                     <Skeleton className="h-4 flex-1" />
-                    <Skeleton className="h-4 w-[12%]" />
                     <Skeleton className="h-4 w-[10%]" />
-                    <Skeleton className="h-4 w-[10%]" />
+                    <Skeleton className="h-4 w-[8%]" />
+                    <Skeleton className="h-4 w-[8%]" />
                   </div>
                   {Array.from({ length: 5 }).map((_, i) => (
                     <div key={i} className="flex items-center gap-4 px-4 py-3">
-                      <Skeleton className="h-4 w-[24%]" />
+                      <Skeleton className="h-4 w-[20%]" />
+                      <Skeleton className="h-4 w-[6%]" />
                       <Skeleton className="h-4 flex-1" />
-                      <Skeleton className="h-4 w-[12%]" />
-                      <Skeleton className="h-8 w-[10%]" />
-                      <Skeleton className="h-8 w-[10%]" />
+                      <Skeleton className="h-4 w-[10%]" />
+                      <Skeleton className="h-8 w-[8%]" />
+                      <Skeleton className="h-8 w-[8%]" />
                     </div>
                   ))}
                 </div>
@@ -350,7 +353,7 @@ export default function Timers() {
                   <TableHeader>
                     <TableRow>
                       <SortableHead
-                        className="w-[24%]"
+                        className="w-[20%]"
                         sortKey="name"
                         currentKey={sortKey}
                         dir={sortDir}
@@ -358,9 +361,10 @@ export default function Timers() {
                       >
                         名稱
                       </SortableHead>
-                      <TableHead className="hidden md:table-cell">訊息內容</TableHead>
+                      <TableHead className="w-[6%]" />
+                      <TableHead className="hidden md:table-cell">說明</TableHead>
                       <SortableHead
-                        className="hidden md:table-cell w-[12%]"
+                        className="hidden md:table-cell w-[10%]"
                         sortKey="interval"
                         currentKey={sortKey}
                         dir={sortDir}
@@ -369,7 +373,7 @@ export default function Timers() {
                         間隔
                       </SortableHead>
                       <SortableHead
-                        className="w-[10%] text-center"
+                        className="w-[8%] text-center"
                         sortKey="enabled"
                         currentKey={sortKey}
                         dir={sortDir}
@@ -377,13 +381,13 @@ export default function Timers() {
                       >
                         狀態
                       </SortableHead>
-                      <TableHead className="w-[10%] text-right">操作</TableHead>
+                      <TableHead className="w-[8%] text-right">操作</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {sorted.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={5}>
+                        <TableCell colSpan={6}>
                           <Empty className="border-none">
                             <EmptyHeader>
                               <EmptyMedia>
@@ -407,11 +411,6 @@ export default function Timers() {
                             <TableCell className="font-mono font-medium">
                               <div className="flex items-center gap-1.5">
                                 <span>{timer.timer_name}</span>
-                                {isBuiltin && (
-                                  <Badge variant="secondary" className="text-label font-normal">
-                                    內建
-                                  </Badge>
-                                )}
                                 {timer.announce && (
                                   <Tooltip>
                                     <TooltipTrigger asChild>
@@ -439,6 +438,13 @@ export default function Timers() {
                                   </Tooltip>
                                 )}
                               </div>
+                            </TableCell>
+                            <TableCell>
+                              {isBuiltin && (
+                                <Badge variant="secondary" className="text-label font-normal">
+                                  內建
+                                </Badge>
+                              )}
                             </TableCell>
                             <TableCell className="hidden md:table-cell max-w-0 truncate text-sub text-muted-foreground">
                               {timer.message_template}
@@ -507,9 +513,9 @@ export default function Timers() {
 
             <div className="flex flex-col gap-2">
               <Label htmlFor="timer-template">訊息內容</Label>
-              <Input
+              <Textarea
                 id="timer-template"
-                ref={templateInputRef}
+                ref={templateInputRef as React.RefObject<HTMLTextAreaElement>}
                 value={form.template}
                 onChange={e => dispatch({ type: 'SET', field: 'template', value: e.target.value })}
                 placeholder="記得追蹤 $(channel)！"

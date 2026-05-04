@@ -1,8 +1,8 @@
 import { useEffect, useRef } from 'react'
 
 export interface UseInputInsertReturn {
-  /** Attach this ref to the <Input> or <textarea> element. */
-  inputRef: React.RefObject<HTMLInputElement | null>
+  /** Attach this ref to the <Input> or <Textarea> element. */
+  inputRef: React.RefObject<HTMLInputElement | HTMLTextAreaElement | null>
   /** Inserts `text` at the current cursor position (or appends if no ref). */
   insertText: (text: string) => void
 }
@@ -19,7 +19,7 @@ export function useInputInsert(
   value: string,
   onChange: (newValue: string) => void
 ): UseInputInsertReturn {
-  const inputRef = useRef<HTMLInputElement | null>(null)
+  const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null)
 
   // Keep latest value + onChange in refs so insertText never captures a stale closure.
   const valueRef = useRef(value)
