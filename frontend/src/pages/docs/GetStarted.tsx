@@ -70,7 +70,7 @@ function ChatBadgeIcon({ badge }: { badge: ChatBadge }) {
   if (badge === 'mod') {
     return (
       <span style={{ ...base, background: '#00ad03' }}>
-        <i className="fa-solid fa-gavel text-white" style={{ fontSize: '11px' }} />
+        <i className="fa-solid fa-sword text-white" style={{ fontSize: '11px' }} />
       </span>
     )
   }
