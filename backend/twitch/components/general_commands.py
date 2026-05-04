@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import random
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -15,6 +16,17 @@ from utils.substitution import substitute_variables
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 FRONTEND_URL = get_settings().frontend_url.rstrip("/")
+
+_RANK_TEMPLATES = [
+    "哇又見面了！{total} 人裡衝到【第 {rank} 名】，這 {watch} 加上說了 {messages} 句話，老面孔就是你耶！",
+    "天啊重度成癮吧？{total} 人中拿【第 {rank} 名】，待了 {watch} 還發了 {messages} 則訊息，真的住這裡喔！",
+    "想像一下，{total} 人裡你排到【第 {rank} 名】呢！這 {watch} 跟這 {messages} 則留言，想低調都難吧！",
+    "這可能嗎？從 {total} 人殺出【第 {rank} 名】，坐了 {watch}、聊了 {messages} 句，你是機器人吧！",
+    "如果只是路過就算了，你竟然在 {total} 人裡衝到【第 {rank} 名】！待了 {watch}、留了 {messages} 則，算你有心啦！",
+    "太棒了！面對 {total} 人還能卡位【第 {rank} 名】，這 {watch} 加上 {messages} 句話，沒你真的不行耶！",
+    "每當點名你都在！{total} 人裡的【第 {rank} 名】，看了 {watch}、發了 {messages} 則，這就是真愛喔！",
+    "試試看能不能更瘋？{total} 人裡殺出【第 {rank} 名】，{watch} 沒走還聊了 {messages} 句，停不下來吧你！",
+]
 
 if TYPE_CHECKING:
     from core.bot import Bot
@@ -159,9 +171,7 @@ class GeneralCommandsComponent(BotComponent):
         channel_id = ctx.channel.id
 
         if user_id == channel_id:
-            await self._ctx_reply(
-                ctx, f"@{ctx.chatter.display_name} 你才是這裡的主人，哪有排名可言 👑"
-            )
+            await self._ctx_reply(ctx, "你才是這裡的主人，哪有排名可言 👑")
             await self._record_command(ctx, "rank")
             return
 
@@ -173,21 +183,28 @@ class GeneralCommandsComponent(BotComponent):
             return
 
         if data is None:
-            await self._ctx_reply(ctx, f"@{ctx.chatter.display_name} 本月尚無活躍紀錄")
+            await self._ctx_reply(ctx, "本月尚無活躍紀錄")
             await self._record_command(ctx, "rank")
             return
 
-        hours, mins = divmod(data["watch_seconds"] // 60, 60)
-        watch_str = f"{hours:02d}:{mins:02d}"
-        streak_str = f"{data['streak_count']} 場" if data["streak_count"] > 0 else "—"
+        total_mins = data["watch_seconds"] // 60
+        hours, mins = divmod(total_mins, 60)
+        days, hours = divmod(hours, 24)
+        if days > 0:
+            watch_str = f"{days}天{hours}時"
+        elif hours > 0:
+            watch_str = f"{hours}時{mins}分" if mins > 0 else f"{hours}時"
+        else:
+            watch_str = f"{mins}分"
 
         await self._ctx_reply(
             ctx,
-            f"@{ctx.chatter.display_name} 本月活躍排名：第 {data['rank']} 名 / {data['total_viewers']} 人"
-            f" | 分數 {data['engagement_score']}"
-            f" | 留言 {data['total_messages']}"
-            f" | 觀看 {watch_str}"
-            f" | 連續 {streak_str}",
+            random.choice(_RANK_TEMPLATES).format(
+                rank=data["rank"],
+                total=data["total_viewers"],
+                messages=data["total_messages"],
+                watch=watch_str,
+            ),
         )
         await self._record_command(ctx, "rank")
 
