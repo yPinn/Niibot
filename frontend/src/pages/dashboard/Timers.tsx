@@ -361,7 +361,7 @@ export default function Timers() {
                       >
                         名稱
                       </SortableHead>
-                      <TableHead className="w-[6%]" />
+                      <TableHead className="w-[6%]">類型</TableHead>
                       <TableHead className="hidden md:table-cell">說明</TableHead>
                       <SortableHead
                         className="hidden md:table-cell w-[10%]"
