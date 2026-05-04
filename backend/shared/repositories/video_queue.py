@@ -376,6 +376,23 @@ class VideoQueueRepository:
                 entry_id,
             )
 
+    async def kickstart_if_idle(self, channel_id: str) -> None:
+        """Atomically promote the next queued entry to playing only if nothing is currently playing."""
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE video_queue "
+                "SET status = 'playing', started_at = NOW() "
+                "WHERE id = ("
+                "    SELECT id FROM video_queue "
+                "    WHERE channel_id = $1 AND status = 'queued' "
+                "    AND NOT EXISTS ("
+                "        SELECT 1 FROM video_queue WHERE channel_id = $1 AND status = 'playing'"
+                "    ) "
+                "    ORDER BY priority DESC, created_at ASC LIMIT 1"
+                ")",
+                channel_id,
+            )
+
     async def update_duration(self, entry_id: int, duration_seconds: int, channel_id: str) -> None:
         """Update duration_seconds (overlay fallback report after load). Scoped to channel."""
         async with self.pool.acquire() as conn:

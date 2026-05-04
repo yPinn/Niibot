@@ -519,6 +519,57 @@ class TestSkipCurrentAtomic:
 
 
 # ---------------------------------------------------------------------------
+# VideoQueueRepository — kickstart_if_idle (atomic promote-if-idle)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestKickstartIfIdle:
+    async def test_executes_single_update(self):
+        pool, conn = _make_pool(execute="UPDATE 1")
+        repo = VideoQueueRepository(pool)
+
+        await repo.kickstart_if_idle("ch1")
+
+        conn.execute.assert_called_once()
+
+    async def test_sql_promotes_to_playing(self):
+        pool, conn = _make_pool(execute="UPDATE 1")
+        repo = VideoQueueRepository(pool)
+
+        await repo.kickstart_if_idle("ch1")
+
+        sql: str = conn.execute.call_args[0][0]
+        assert "playing" in sql
+        assert "queued" in sql
+
+    async def test_sql_has_not_exists_guard(self):
+        pool, conn = _make_pool(execute="UPDATE 1")
+        repo = VideoQueueRepository(pool)
+
+        await repo.kickstart_if_idle("ch1")
+
+        sql: str = conn.execute.call_args[0][0]
+        assert "NOT EXISTS" in sql.upper()
+
+    async def test_channel_id_passed_as_parameter(self):
+        pool, conn = _make_pool(execute="UPDATE 1")
+        repo = VideoQueueRepository(pool)
+
+        await repo.kickstart_if_idle("ch_target")
+
+        assert "ch_target" in conn.execute.call_args[0]
+
+    async def test_no_op_when_nothing_queued(self):
+        pool, conn = _make_pool(execute="UPDATE 0")
+        repo = VideoQueueRepository(pool)
+
+        await repo.kickstart_if_idle("ch_empty")
+
+        conn.execute.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
 # fetch_yt_info — error paths must return 4-tuple (title, duration, views, is_vertical)
 # ---------------------------------------------------------------------------
 

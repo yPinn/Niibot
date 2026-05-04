@@ -196,12 +196,8 @@ async def advance_queue(
             # between mark_done and set_playing.
             await repo.advance_queue(channel_id, body.done_id)
         else:
-            # Kickstart: no video finished, just promote if nothing is playing
-            current = await repo.get_current(channel_id)
-            if current is None:
-                queued = await repo.get_queued(channel_id)
-                if queued:
-                    await repo.set_playing(queued[0].id)
+            # Kickstart: atomically promote next queued entry if nothing is playing
+            await repo.kickstart_if_idle(channel_id)
 
         return await _build_public_state(channel_id, repo, settings_repo)
     except HTTPException:
