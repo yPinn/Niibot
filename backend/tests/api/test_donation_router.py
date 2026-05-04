@@ -3,6 +3,7 @@
 Covers:
 - return_url open-redirect fix (scheme+netloc exact match)
 - _build_check_mac_value algorithm (pure function, no DB)
+- _handle_payment_webhook amount validation
 """
 
 from __future__ import annotations
@@ -24,7 +25,11 @@ from fastapi.testclient import TestClient
 
 from core.config import get_settings
 from core.dependencies import get_db_pool
-from routers.donation_router import _build_check_mac_value, _verify_webhook_mac
+from routers.donation_router import (
+    _build_check_mac_value,
+    _handle_payment_webhook,
+    _verify_webhook_mac,
+)
 from routers.donation_router import router as _donation_router
 
 
@@ -241,3 +246,84 @@ class TestVerifyWebhookMac:
         correct_mac = _build_check_mac_value(params, self._KEY, self._IV)
         form = {**params, "CheckMacValue": correct_mac}
         assert _verify_webhook_mac(form, "wrong_key", self._IV) is False
+
+
+# ---------------------------------------------------------------------------
+# _handle_payment_webhook — amount validation
+# ---------------------------------------------------------------------------
+
+
+def _make_order(amount: int = 200):
+    order = AsyncMock()
+    order.merchant_trade_no = "T001"
+    order.user_id = "user1"
+    order.amount = amount
+    order.youtube_video_id = None
+    order.channel_id = None
+    order.message = None
+    return order
+
+
+def _make_config(key: str = "testkey", iv: str = "testiv"):
+    cfg = AsyncMock()
+    cfg.hash_key = key
+    cfg.hash_iv = iv
+    cfg.media_share_enabled = False
+    return cfg
+
+
+@pytest.mark.asyncio
+class TestWebhookAmountValidation:
+    """_handle_payment_webhook must reject TradeAmt that doesn't match the stored order amount."""
+
+    _BASE_FORM = {
+        "MerchantTradeNo": "T001",
+        "RtnCode": "1",
+    }
+
+    async def _call(self, form_data: dict, order_amount: int = 200) -> str:
+        pool = AsyncMock()
+        with (
+            patch(
+                "routers.donation_router.DonationRepository.get_order_by_trade_no",
+                new=AsyncMock(return_value=_make_order(order_amount)),
+            ),
+            patch(
+                "routers.donation_router.DonationRepository.get_config",
+                new=AsyncMock(return_value=_make_config()),
+            ),
+            patch(
+                "routers.donation_router._verify_webhook_mac",
+                return_value=True,
+            ),
+            patch(
+                "routers.donation_router.DonationRepository.mark_paid",
+                new=AsyncMock(return_value=None),
+            ),
+        ):
+            return await _handle_payment_webhook("ecpay", form_data, pool)
+
+    async def test_matching_amount_returns_ok(self):
+        form = {**self._BASE_FORM, "TradeAmt": "200"}
+        result = await self._call(form, order_amount=200)
+        assert result == "1|OK"
+
+    async def test_mismatched_amount_returns_error(self):
+        form = {**self._BASE_FORM, "TradeAmt": "999"}
+        result = await self._call(form, order_amount=200)
+        assert result == "0|Error"
+
+    async def test_missing_trade_amt_returns_error(self):
+        form = {**self._BASE_FORM}
+        result = await self._call(form, order_amount=200)
+        assert result == "0|Error"
+
+    async def test_non_integer_trade_amt_returns_error(self):
+        form = {**self._BASE_FORM, "TradeAmt": "abc"}
+        result = await self._call(form, order_amount=200)
+        assert result == "0|Error"
+
+    async def test_float_string_trade_amt_returns_error(self):
+        form = {**self._BASE_FORM, "TradeAmt": "200.50"}
+        result = await self._call(form, order_amount=200)
+        assert result == "0|Error"

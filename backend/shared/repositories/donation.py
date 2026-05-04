@@ -221,10 +221,10 @@ class DonationRepository:
             return DonationOrder(**dict(row)) if row else None
 
     async def mark_failed(self, merchant_trade_no: str) -> None:
-        """Mark an order as failed."""
+        """Mark a pending order as failed. No-op if already paid or failed."""
         async with self.pool.acquire() as conn:
             await conn.execute(
                 "UPDATE donation_orders SET status = 'failed', updated_at = NOW() "
-                "WHERE merchant_trade_no = $1",
+                "WHERE merchant_trade_no = $1 AND status = 'pending'",
                 merchant_trade_no,
             )

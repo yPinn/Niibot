@@ -406,6 +406,18 @@ async def _handle_payment_webhook(
         await repo.mark_failed(trade_no)
         return "1|OK"
 
+    trade_amt = form_data.get("TradeAmt")
+    try:
+        webhook_amount = int(trade_amt) if trade_amt is not None else None
+    except ValueError:
+        webhook_amount = None
+    if webhook_amount is None or webhook_amount != int(order.amount):
+        LOGGER.warning(
+            f"[{platform} webhook] Amount mismatch for {trade_no}: "
+            f"expected {order.amount}, got {trade_amt}"
+        )
+        return "0|Error"
+
     # Mark order as paid
     paid_order = await repo.mark_paid(trade_no)
     if paid_order is None:
