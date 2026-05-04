@@ -7,6 +7,7 @@ from dataclasses import asdict
 
 import asyncpg
 
+from shared.builtin_timers import BUILTIN_TIMERS
 from shared.repositories.timer import TimerConfigRepository
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -19,7 +20,28 @@ class TimerService:
 
     async def list_timers(self, channel_id: str) -> list[dict]:
         configs = await self.repo.list_all(channel_id)
-        return [asdict(cfg) for cfg in configs]
+        result = [asdict(cfg) for cfg in configs]
+
+        db_names = {cfg.timer_name for cfg in configs}
+        for i, bt in enumerate(BUILTIN_TIMERS):
+            if bt.timer_name not in db_names:
+                result.append(
+                    {
+                        "id": -(i + 1),
+                        "channel_id": channel_id,
+                        "timer_name": bt.timer_name,
+                        "interval_seconds": bt.interval_seconds,
+                        "min_lines": bt.min_lines,
+                        "message_template": bt.message_template,
+                        "enabled": True,
+                        "announce": bt.announce,
+                        "command_alias": None,
+                        "created_at": None,
+                        "updated_at": None,
+                    }
+                )
+
+        return result
 
     async def create_timer(
         self,

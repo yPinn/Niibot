@@ -174,7 +174,10 @@ export default function Timers() {
   const { toggle: handleToggle } = useOptimisticToggle<TimerConfig>({
     setState: setTimers,
     getId: t => t.timer_name,
-    toggleFn: (t, enabled) => toggleTimer(t.timer_name, enabled).then(() => {}),
+    toggleFn: async (t, enabled) => {
+      await toggleTimer(t.timer_name, enabled)
+      if (t.id < 0) fetchData()
+    },
     messages: { on: '計時器已啟用', off: '計時器已停用', error: '切換計時器狀態失敗' },
   })
 
@@ -397,62 +400,73 @@ export default function Timers() {
                         </TableCell>
                       </TableRow>
                     ) : (
-                      sorted.map(timer => (
-                        <TableRow key={timer.timer_name}>
-                          <TableCell className="font-mono font-medium">
-                            <div className="flex items-center gap-1.5">
-                              <span>{timer.timer_name}</span>
-                              {timer.announce && (
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <span className="cursor-default text-muted-foreground">
-                                      <Icon icon="fa-solid fa-bullhorn" wrapperClassName="size-3" />
-                                    </span>
-                                  </TooltipTrigger>
-                                  <TooltipContent>以公告方式發送</TooltipContent>
-                                </Tooltip>
-                              )}
-                              {timer.command_alias && (
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <span className="cursor-default text-muted-foreground">
-                                      <Icon icon="fa-solid fa-bolt" wrapperClassName="size-3" />
-                                    </span>
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    <span className="font-mono">!{timer.command_alias}</span>
-                                    <span className="ml-1 text-muted-foreground">可手動觸發</span>
-                                  </TooltipContent>
-                                </Tooltip>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell className="hidden md:table-cell max-w-0 truncate text-sub text-muted-foreground">
-                            {timer.message_template}
-                          </TableCell>
-                          <TableCell className="hidden md:table-cell text-sub text-muted-foreground">
-                            {formatInterval(timer.interval_seconds)}
-                          </TableCell>
-                          <TableCell className="text-center">
-                            <div className="flex justify-center">
-                              <Switch
-                                checked={timer.enabled}
-                                onCheckedChange={() => handleToggle(timer)}
-                              />
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="size-8"
-                              onClick={() => openEditor(timer)}
-                            >
-                              <Icon icon="fa-solid fa-pen" wrapperClassName="size-3.5" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))
+                      sorted.map(timer => {
+                        const isBuiltin = timer.id < 0
+                        return (
+                          <TableRow key={timer.timer_name}>
+                            <TableCell className="font-mono font-medium">
+                              <div className="flex items-center gap-1.5">
+                                <span>{timer.timer_name}</span>
+                                {isBuiltin && (
+                                  <Badge variant="secondary" className="text-label font-normal">
+                                    內建
+                                  </Badge>
+                                )}
+                                {timer.announce && (
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <span className="cursor-default text-muted-foreground">
+                                        <Icon
+                                          icon="fa-solid fa-bullhorn"
+                                          wrapperClassName="size-3"
+                                        />
+                                      </span>
+                                    </TooltipTrigger>
+                                    <TooltipContent>以公告方式發送</TooltipContent>
+                                  </Tooltip>
+                                )}
+                                {timer.command_alias && (
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <span className="cursor-default text-muted-foreground">
+                                        <Icon icon="fa-solid fa-bolt" wrapperClassName="size-3" />
+                                      </span>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      <span className="font-mono">!{timer.command_alias}</span>
+                                      <span className="ml-1 text-muted-foreground">可手動觸發</span>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell className="hidden md:table-cell max-w-0 truncate text-sub text-muted-foreground">
+                              {timer.message_template}
+                            </TableCell>
+                            <TableCell className="hidden md:table-cell text-sub text-muted-foreground">
+                              {formatInterval(timer.interval_seconds)}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <div className="flex justify-center">
+                                <Switch
+                                  checked={timer.enabled}
+                                  onCheckedChange={() => handleToggle(timer)}
+                                />
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="size-8"
+                                onClick={() => openEditor(timer)}
+                              >
+                                <Icon icon="fa-solid fa-pen" wrapperClassName="size-3.5" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        )
+                      })
                     )}
                   </TableBody>
                 </Table>
@@ -612,7 +626,7 @@ export default function Timers() {
           </div>
 
           <SheetFooter className="shrink-0 flex-row gap-2">
-            {editing?.mode === 'edit' && editing.timer && (
+            {editing?.mode === 'edit' && editing.timer && editing.timer.id > 0 && (
               <Button variant="destructive" onClick={() => setConfirmDelete(true)}>
                 <Icon icon="fa-solid fa-trash" wrapperClassName="mr-1.5 size-3" />
                 刪除
