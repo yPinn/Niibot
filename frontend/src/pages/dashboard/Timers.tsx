@@ -361,10 +361,10 @@ export default function Timers() {
                       >
                         名稱
                       </SortableHead>
-                      <TableHead className="w-[6%]">類型</TableHead>
-                      <TableHead className="hidden md:table-cell">說明</TableHead>
+                      <TableHead className="w-[8%]">類型</TableHead>
+                      <TableHead className="hidden md:table-cell w-[36%]">說明</TableHead>
                       <SortableHead
-                        className="hidden md:table-cell w-[10%]"
+                        className="hidden md:table-cell w-[14%]"
                         sortKey="interval"
                         currentKey={sortKey}
                         dir={sortDir}
@@ -373,7 +373,7 @@ export default function Timers() {
                         間隔
                       </SortableHead>
                       <SortableHead
-                        className="w-[8%] text-center"
+                        className="w-[12%] text-center"
                         sortKey="enabled"
                         currentKey={sortKey}
                         dir={sortDir}
@@ -381,7 +381,7 @@ export default function Timers() {
                       >
                         狀態
                       </SortableHead>
-                      <TableHead className="w-[8%] text-right">操作</TableHead>
+                      <TableHead className="w-[10%] text-right">操作</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
