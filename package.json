@@ -1,6 +1,6 @@
 {
   "name": "niibot",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "多平台直播整合 Bot - 支援 Twitch 和 Discord。",
   "main": "index.js",
   "directories": {
