@@ -62,9 +62,9 @@ function formatDuration(seconds: number): string {
   const d = Math.floor(seconds / 86400)
   const h = Math.floor((seconds % 86400) / 3600)
   const m = Math.floor((seconds % 3600) / 60)
-  if (d > 0) return `${d}d ${h}h`
-  if (h > 0) return m > 0 ? `${h}h ${m}m` : `${h}h`
-  return `${m}m`
+  if (d > 0) return `${d}天${h}時`
+  if (h > 0) return m > 0 ? `${h}時${m}分` : `${h}時`
+  return `${m}分`
 }
 
 function formatCompact(n: number): string {
@@ -108,13 +108,11 @@ const ROW_GRID = 'grid-cols-[1.25rem_minmax(0,1fr)_5.5rem_5.5rem_5.5rem]'
 interface ViewerRowProps {
   viewer: ViewerSummary
   rank: number
-  maxScore: number
   onClick: () => void
 }
 
-function ViewerRow({ viewer, rank, maxScore, onClick }: ViewerRowProps) {
+function ViewerRow({ viewer, rank, onClick }: ViewerRowProps) {
   const name = viewer.display_name || viewer.username
-  const pct = maxScore > 0 ? Math.round((viewer.engagement_score / maxScore) * 100) : 0
   return (
     <button
       onClick={onClick}
@@ -129,7 +127,7 @@ function ViewerRow({ viewer, rank, maxScore, onClick }: ViewerRowProps) {
       </div>
       <Col value={viewer.total_messages.toLocaleString()} />
       <Col value={formatDuration(viewer.watch_seconds)} />
-      <Col value={`${pct}%`} valueClassName="text-primary" />
+      <Col value={viewer.engagement_score.toFixed(1)} valueClassName="text-primary" />
     </button>
   )
 }
@@ -693,8 +691,6 @@ export default function Insights() {
     }
   }
 
-  const maxScore = viewers.length > 0 ? viewers[0].engagement_score : 1
-
   const filtered = React.useMemo(() => {
     const q = search.trim().toLowerCase()
     return viewers
@@ -860,7 +856,6 @@ export default function Insights() {
                 key={v.user_id}
                 viewer={v}
                 rank={i + 1}
-                maxScore={maxScore}
                 onClick={() => setSelectedUserId(v.user_id)}
               />
             ))}
