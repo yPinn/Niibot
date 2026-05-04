@@ -62,9 +62,9 @@ function formatDuration(seconds: number): string {
   const d = Math.floor(seconds / 86400)
   const h = Math.floor((seconds % 86400) / 3600)
   const m = Math.floor((seconds % 3600) / 60)
-  if (d > 0) return `${d}天${h}時`
-  if (h > 0) return m > 0 ? `${h}時${m}分` : `${h}時`
-  return `${m}分`
+  if (d > 0) return `${d}d ${h}h`
+  if (h > 0) return m > 0 ? `${h}h ${m}m` : `${h}h`
+  return `${m}m`
 }
 
 function formatCompact(n: number): string {
@@ -207,15 +207,22 @@ function StatTile({
   value,
   label,
   tooltip,
+  badge,
 }: {
   icon: string
   value: string
   label: string
   tooltip?: string
+  badge?: string
 }) {
   const inner = (
     <div className="rounded-md border bg-card p-3 flex flex-col gap-1.5">
-      <p className="text-label text-muted-foreground">{label}</p>
+      <div className="flex items-center justify-between">
+        <p className="text-label text-muted-foreground">{label}</p>
+        {badge != null && (
+          <span className="text-label text-muted-foreground tabular-nums">{badge}</span>
+        )}
+      </div>
       <div className="flex items-end justify-between">
         <p className="text-card-title font-bold tabular-nums leading-none">{value}</p>
         <Icon icon={icon} size="sm" wrapperClassName="text-primary/70" />
@@ -485,15 +492,26 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
                       : undefined
                   }
                 />
-                <StatTile
-                  icon="fa-solid fa-calendar-days"
-                  value={formatCompact(profile.sessions_attended)}
-                  label="出現場次"
-                />
+                {(() => {
+                  const totalGifts = profile.events.reduce((sum, ev) => {
+                    if (ev.event_type !== 'subscribe') return sum
+                    const meta = ev.metadata as { is_gift?: boolean; gift_count?: number } | null
+                    if (!meta?.is_gift) return sum
+                    return sum + (meta.gift_count ?? 1)
+                  }, 0)
+                  return (
+                    <StatTile
+                      icon="fa-solid fa-gift"
+                      value={totalGifts > 0 ? totalGifts.toLocaleString() : '—'}
+                      label="贈禮訂閱"
+                    />
+                  )
+                })()}
                 <StatTile
                   icon="fa-solid fa-clock"
                   value={profile.watch_seconds > 0 ? formatDuration(profile.watch_seconds) : '—'}
                   label="觀看時長"
+                  badge={`${profile.sessions_attended} 場`}
                   tooltip={
                     profile.watch_seconds >= 3600
                       ? `${Math.floor(profile.watch_seconds / 60).toLocaleString()} 分鐘`
@@ -576,14 +594,9 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
                               <span>{bits.toLocaleString()}</span>
                             </>
                           )}
-                          {raidViewers?.from_broadcaster_name && (
-                            <span className="text-muted-foreground">
-                              from @{raidViewers.from_broadcaster_name}
-                            </span>
-                          )}
                           {raidViewers?.viewers != null && (
                             <span className="text-muted-foreground">
-                              · {raidViewers.viewers.toLocaleString()} 人
+                              ({raidViewers.viewers.toLocaleString()} 人)
                             </span>
                           )}
                         </span>
