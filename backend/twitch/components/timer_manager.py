@@ -10,7 +10,6 @@ import twitchio
 from twitchio.ext import commands, routines
 
 from shared.builtin_timers import BUILTIN_TIMERS, BuiltinTimerDef
-from utils.reauth import is_scope_error, reauth_notifier
 from utils.substitution import substitute_variables
 
 if TYPE_CHECKING:
@@ -170,29 +169,10 @@ class TimerManagerComponent(commands.Component):
                 )
                 return
 
-            if timer.announce:
-                try:
-                    await users[0].send_announcement(
-                        moderator=self.bot.bot_id,
-                        message=message,
-                    )
-                except Exception as announce_err:
-                    if is_scope_error(announce_err):
-                        await reauth_notifier.notify(
-                            broadcaster_login=channel_name,
-                            channel_id=channel_id,
-                            send_fn=lambda msg: users[0].send_message(
-                                message=msg,
-                                sender=self.bot.bot_id,
-                            ),
-                        )
-                        return
-                    raise
-            else:
-                await users[0].send_message(
-                    message=message,
-                    sender=self.bot.bot_id,
-                )
+            await users[0].send_message(
+                message=f"/announce {message}" if timer.announce else message,
+                sender=self.bot.bot_id,
+            )
             self._timer_last_fire[timer.id] = now
             self._timer_last_fire_lines[timer.id] = current_lines
             LOGGER.info(
@@ -229,29 +209,10 @@ class TimerManagerComponent(commands.Component):
                 )
                 return
 
-            if bt.announce:
-                try:
-                    await users[0].send_announcement(
-                        moderator=self.bot.bot_id,
-                        message=message,
-                    )
-                except Exception as announce_err:
-                    if is_scope_error(announce_err):
-                        await reauth_notifier.notify(
-                            broadcaster_login=channel_name,
-                            channel_id=channel_id,
-                            send_fn=lambda msg: users[0].send_message(
-                                message=msg,
-                                sender=self.bot.bot_id,
-                            ),
-                        )
-                        return
-                    raise
-            else:
-                await users[0].send_message(
-                    message=message,
-                    sender=self.bot.bot_id,
-                )
+            await users[0].send_message(
+                message=f"/announce {message}" if bt.announce else message,
+                sender=self.bot.bot_id,
+            )
 
             self._builtin_last_fire[bkey] = now
             self._builtin_last_fire_lines[bkey] = current_lines
