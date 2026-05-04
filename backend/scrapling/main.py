@@ -22,6 +22,7 @@ GET /health → 200 {"status": "ok"}
 """
 
 import asyncio
+import json
 import logging
 import os
 import re
@@ -36,14 +37,23 @@ from scrapling.fetchers import AsyncDynamicSession
 
 PORT = int(os.getenv("PORT", "3001"))
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+_ERROR_WEBHOOK_URL = os.getenv("ERROR_WEBHOOK_URL", "")
 
 logging.basicConfig(
     level=LOG_LEVEL,
     format="%(asctime)s %(levelname)-8s %(name)s | %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
+if _ERROR_WEBHOOK_URL:
+    from discord_webhook_handler import DiscordWebhookHandler
+
+    logging.getLogger().addHandler(
+        DiscordWebhookHandler(_ERROR_WEBHOOK_URL, service_name="scrapling")
+    )
+
 LOGGER: logging.Logger = logging.getLogger(__name__)
 _THREADS_SESSION_ID = unquote(os.getenv("THREADS_SESSION_ID", ""))
+_COOKIES_PATH = os.getenv("COOKIES_PATH", "/app/cookies.json")
 _STEALTH_JS_PATH = os.path.join(os.path.dirname(__file__), "stealth.js")
 
 _THREADS_POST_RE = re.compile(
@@ -76,6 +86,19 @@ def _clean_span(raw: str) -> str:
 
 
 async def _inject_cookie(page) -> None:  # type: ignore[no-untyped-def]
+    """Inject auth cookies: prefer persisted cookie file, fall back to env var."""
+    if _COOKIES_PATH and os.path.exists(_COOKIES_PATH):
+        try:
+            with open(_COOKIES_PATH) as f:
+                cookies = json.load(f)
+            await page.context.add_cookies(cookies)
+            LOGGER.debug("scrapling: loaded %d cookies from %s", len(cookies), _COOKIES_PATH)
+            return
+        except Exception as exc:
+            LOGGER.warning(
+                "scrapling: failed to load cookie file (%s), falling back to env var", exc
+            )
+
     if _THREADS_SESSION_ID:
         await page.context.add_cookies(
             [
@@ -89,6 +112,19 @@ async def _inject_cookie(page) -> None:  # type: ignore[no-untyped-def]
                 }
             ]
         )
+
+
+async def _persist_cookies(page) -> None:  # type: ignore[no-untyped-def]
+    """Save the current browser context cookies to disk so session stays alive."""
+    if not _COOKIES_PATH:
+        return
+    try:
+        cookies = await page.context.cookies()
+        with open(_COOKIES_PATH, "w") as f:
+            json.dump(cookies, f)
+        LOGGER.debug("scrapling: persisted %d cookies to %s", len(cookies), _COOKIES_PATH)
+    except Exception as exc:
+        LOGGER.debug("scrapling: failed to persist cookies: %s", exc)
 
 
 @asynccontextmanager
@@ -130,7 +166,11 @@ async def _get_post_data(post_url: str) -> dict[str, Any]:
     _post_id = urlparse(post_url).path.rstrip("/").rsplit("/", 1)[-1]
 
     async def _extract_after_load(page):  # type: ignore[no-untyped-def]
-        if _LOGIN_URL_RE.search(page.url):
+        def _is_auth_wall(url: str) -> bool:
+            parsed = urlparse(url)
+            return bool(_LOGIN_URL_RE.search(url)) or parsed.path in ("", "/")
+
+        if _is_auth_wall(page.url):
             LOGGER.warning(
                 "scrapling: login redirect detected (%s) — THREADS_SESSION_ID may have expired",
                 page.url,
@@ -143,7 +183,7 @@ async def _get_post_data(post_url: str) -> dict[str, Any]:
         while time.monotonic() < deadline:
             # Guard: Threads is a SPA — old page DOM may still be present right after
             # navigation. Skip extraction until the URL contains the target post ID.
-            if _post_id not in urlparse(page.url).path:
+            if _is_auth_wall(page.url) or _post_id not in urlparse(page.url).path:
                 LOGGER.debug(
                     "scrapling: URL not yet updated (expected post_id=%s in %s), waiting…",
                     _post_id,
@@ -301,6 +341,7 @@ async def _get_post_data(post_url: str) -> dict[str, Any]:
                             "video_urls": video_urls,
                         }
                     )
+                    await _persist_cookies(page)
                     return
             except Exception as exc:
                 LOGGER.debug("scrapling: page_action eval error: %s", exc)
@@ -350,7 +391,11 @@ async def _get_profile_data(profile_url: str) -> dict[str, Any]:
     result_holder: list[dict[str, Any]] = []
 
     async def _extract_profile(page):  # type: ignore[no-untyped-def]
-        if _LOGIN_URL_RE.search(page.url):
+        def _is_auth_wall(url: str) -> bool:
+            parsed = urlparse(url)
+            return bool(_LOGIN_URL_RE.search(url)) or parsed.path in ("", "/")
+
+        if _is_auth_wall(page.url):
             LOGGER.warning(
                 "scrapling: login redirect detected (%s) — THREADS_SESSION_ID may have expired",
                 page.url,
@@ -393,6 +438,7 @@ async def _get_profile_data(profile_url: str) -> dict[str, Any]:
                 LOGGER.debug("scrapling: profile result=%s", result)
                 if result is not None:
                     result_holder.append(result)
+                    await _persist_cookies(page)
                     return
             except Exception as exc:
                 LOGGER.debug("scrapling: profile eval error: %s", exc)

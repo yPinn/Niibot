@@ -162,6 +162,7 @@ jobs:
             echo "PORT=${SCRAPLING_PORT:-3001}"
             echo "LOG_LEVEL=${LOG_LEVEL}"
             [ -n "${THREADS_SESSION_ID}" ] && echo "THREADS_SESSION_ID=${THREADS_SESSION_ID}"
+            [ -n "${ERROR_WEBHOOK_URL}" ]  && echo "ERROR_WEBHOOK_URL=${ERROR_WEBHOOK_URL}"
           } > "$PROJECT_DIR/backend/scrapling/.env"
 
           echo "Env files written."

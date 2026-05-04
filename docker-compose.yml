@@ -72,6 +72,9 @@ services:
       - ./backend/scrapling/.env
     environment:
       PORT: ${SCRAPLING_PORT:-3001}
+      COOKIES_PATH: /app/cookies/session.json
+    volumes:
+      - scrapling-cookies:/app/cookies
     networks:
       - niibot-network
     healthcheck:
@@ -192,6 +195,9 @@ services:
           "-c",
           "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()",
         ]
+
+volumes:
+  scrapling-cookies:
 
 networks:
   niibot-network:
