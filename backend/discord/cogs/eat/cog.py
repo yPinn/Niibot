@@ -3,7 +3,9 @@
 import asyncio
 import json
 import logging
+import os
 import random
+import tempfile
 from datetime import UTC, datetime
 from typing import Any, cast
 
@@ -62,8 +64,14 @@ class EatCog(commands.Cog):
     async def save_data(self) -> None:
         try:
             async with self._lock:
-                with open(self.data_file, "w", encoding="utf-8") as f:
-                    json.dump(self.data, f, ensure_ascii=False, indent=2)
+                payload = json.dumps(self.data, ensure_ascii=False, indent=2)
+                dir_ = self.data_file.parent
+                with tempfile.NamedTemporaryFile(
+                    "w", dir=dir_, encoding="utf-8", delete=False, suffix=".tmp"
+                ) as tmp:
+                    tmp.write(payload)
+                    tmp_path = tmp.name
+                os.replace(tmp_path, self.data_file)
                 self._dirty = False
         except Exception as e:
             LOGGER.error(f"Eat: save failed: {e}")

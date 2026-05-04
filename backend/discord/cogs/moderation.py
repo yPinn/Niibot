@@ -15,6 +15,7 @@ def _check_hierarchy(issuer: discord.Member, target: discord.Member) -> bool:
     return issuer.top_role > target.top_role
 
 
+@app_commands.guild_only()
 class ModerationCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot

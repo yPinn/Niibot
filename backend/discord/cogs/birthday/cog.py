@@ -29,7 +29,8 @@ class BirthdayCog(commands.Cog):
 
     async def cog_load(self) -> None:
         LOGGER.info("Birthday ready (DB connecting in background...)")
-        asyncio.create_task(self._connect_db_with_retry())
+        task = asyncio.create_task(self._connect_db_with_retry())
+        task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
 
     async def _connect_db_with_retry(self, max_retries: int = 5, delay: int = 10) -> None:
         """嘗試連接資料庫，失敗時重試"""

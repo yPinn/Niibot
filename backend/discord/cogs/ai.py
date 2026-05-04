@@ -64,7 +64,7 @@ class AICog(commands.Cog):
         await interaction.response.defer()
 
         try:
-            LOGGER.info(f"AI request: user={interaction.user.name}, question={question[:100]}")
+            LOGGER.info(f"AI request: user={interaction.user.name}, length={len(question)}")
 
             messages: list[ChatCompletionMessageParam] = [
                 {"role": "system", "content": _SYSTEM_PROMPT},

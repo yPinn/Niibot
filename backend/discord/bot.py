@@ -123,6 +123,26 @@ class NiibotClient(commands.Bot):
         if failed:
             LOGGER.error(f"Failed to load cogs: {', '.join(failed)}")
 
+        @self.tree.error
+        async def on_app_command_error(
+            interaction: discord.Interaction,
+            error: discord.app_commands.AppCommandError,
+        ) -> None:
+            if isinstance(error, discord.app_commands.MissingPermissions):
+                msg = "你沒有使用此指令的權限"
+            elif isinstance(error, discord.app_commands.CheckFailure):
+                msg = "權限不足"
+            else:
+                LOGGER.error("Unhandled app command error", exc_info=error)
+                msg = "指令執行時發生錯誤"
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(msg, ephemeral=True)
+                else:
+                    await interaction.followup.send(msg, ephemeral=True)
+            except Exception:
+                pass
+
         guild_id = os.getenv("DISCORD_GUILD_ID")
         if guild_id:
             self._sync_guild_id = guild_id

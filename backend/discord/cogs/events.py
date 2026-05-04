@@ -6,6 +6,8 @@ import asyncio
 import io
 import json
 import logging
+import os
+import tempfile
 from datetime import UTC, datetime
 
 import discord
@@ -30,8 +32,14 @@ def _load_log_channels() -> dict[int, int]:
 
 
 def _save_log_channels(data: dict[int, int]) -> None:
-    with open(_LOG_CHANNELS_FILE, "w", encoding="utf-8") as f:
-        json.dump({str(k): v for k, v in data.items()}, f, ensure_ascii=False, indent=2)
+    payload = json.dumps({str(k): v for k, v in data.items()}, ensure_ascii=False, indent=2)
+    dir_ = _LOG_CHANNELS_FILE.parent
+    with tempfile.NamedTemporaryFile(
+        "w", dir=dir_, encoding="utf-8", delete=False, suffix=".tmp"
+    ) as tmp:
+        tmp.write(payload)
+        tmp_path = tmp.name
+    os.replace(tmp_path, _LOG_CHANNELS_FILE)
 
 
 def _top_role_color(member: discord.Member) -> tuple[int, int, int] | None:

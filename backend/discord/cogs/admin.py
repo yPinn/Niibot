@@ -1,7 +1,6 @@
 """Bot administration commands"""
 
 import logging
-import os
 from pathlib import Path
 
 import discord
@@ -71,7 +70,7 @@ class AdminCog(commands.Cog):
         try:
             await self.bot.reload_extension(cog_path)
 
-            guild_id = os.getenv("DISCORD_GUILD_ID")
+            guild_id = getattr(self.bot, "_sync_guild_id", None)
             if guild_id:
                 guild = discord.Object(id=int(guild_id))
                 self.bot.tree.copy_global_to(guild=guild)

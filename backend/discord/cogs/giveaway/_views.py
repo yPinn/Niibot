@@ -83,6 +83,9 @@ class GiveawayModal(ui.Modal, title="建立抽獎"):
             if count < 1:
                 await interaction.response.send_message("獎品數量必須至少為 1", ephemeral=True)
                 return
+            if count > 100:
+                await interaction.response.send_message("獎品數量最多 100 個", ephemeral=True)
+                return
         except ValueError:
             await interaction.response.send_message("獎品數量必須是有效的數字", ephemeral=True)
             return
@@ -259,7 +262,10 @@ class GiveawayView(ui.View):
             await self._cancel_giveaway(interaction)
 
     async def _cancel_giveaway(self, interaction: discord.Interaction) -> None:
-        self.is_ended = True
+        async with self._lock:
+            if self.is_ended:
+                return
+            self.is_ended = True
 
         cancel_embed = self.giveaway_cog._embed.build(
             title="【抽獎已取消】",
@@ -289,7 +295,13 @@ class GiveawayView(ui.View):
         )
 
     async def _end_giveaway(self, interaction: discord.Interaction) -> None:
-        self.is_ended = True
+        async with self._lock:
+            if self.is_ended:
+                await interaction.response.send_message(
+                    self.giveaway_cog.config["messages"]["giveaway_ended"], ephemeral=True
+                )
+                return
+            self.is_ended = True
 
         if len(self.participants) == 0:
             await interaction.response.send_message(
