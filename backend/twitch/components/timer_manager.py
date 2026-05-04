@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 import twitchio
 from twitchio.ext import commands, routines
 
+from shared.builtin_timers import BUILTIN_TIMERS, BuiltinTimerDef
 from utils.reauth import is_scope_error, reauth_notifier
 from utils.substitution import substitute_variables
 
@@ -36,10 +37,14 @@ class TimerManagerComponent(commands.Component):
 
     def __init__(self, bot: Bot) -> None:
         self.bot = bot
-        # timer_id → datetime of last fire
+        # timer_id → datetime of last fire (DB timers)
         self._timer_last_fire: dict[int, datetime] = {}
-        # timer_id → channel line count snapshot at last fire
+        # timer_id → channel line count snapshot at last fire (DB timers)
         self._timer_last_fire_lines: dict[int, int] = {}
+        # (channel_id, timer_name) → datetime of last fire (builtin timers)
+        self._builtin_last_fire: dict[tuple[str, str], datetime] = {}
+        # (channel_id, timer_name) → line count snapshot at last fire (builtin timers)
+        self._builtin_last_fire_lines: dict[tuple[str, str], int] = {}
 
     async def component_load(self) -> None:
         self._timer_poll_loop.start()
@@ -98,6 +103,22 @@ class TimerManagerComponent(commands.Component):
                     continue
 
                 await self._fire_timer(channel_id, timer, current_lines, now)
+
+            # --- Builtin timers (skipped if DB has a timer with the same name) ---
+            db_timer_names = {t.timer_name for t in timers}
+            for bt in BUILTIN_TIMERS:
+                if bt.timer_name in db_timer_names:
+                    continue
+                bkey = (channel_id, bt.timer_name)
+                last_fire = self._builtin_last_fire.get(bkey)
+                if last_fire is not None:
+                    elapsed = (now - last_fire).total_seconds()
+                    if elapsed < bt.interval_seconds:
+                        continue
+                lines_at_last = self._builtin_last_fire_lines.get(bkey, 0)
+                if current_lines - lines_at_last < bt.min_lines:
+                    continue
+                await self._fire_builtin_timer(channel_id, bt, current_lines, now, bkey)
 
     @commands.Component.listener()
     async def event_message(self, message: twitchio.ChatMessage) -> None:
@@ -180,6 +201,66 @@ class TimerManagerComponent(commands.Component):
 
         except Exception as e:
             LOGGER.error(f"Timer '{timer.timer_name}' fire failed: {e}")
+
+    async def _fire_builtin_timer(
+        self,
+        channel_id: str,
+        bt: BuiltinTimerDef,
+        current_lines: int,
+        now: datetime,
+        bkey: tuple[str, str],
+    ) -> None:
+        """Send a builtin timer message and record the fire time/line snapshot."""
+        try:
+            channel_record = await self.bot.channels.get_channel(channel_id)
+            channel_name = channel_record.channel_name if channel_record else None
+            if not channel_name:
+                LOGGER.warning(
+                    f"Builtin timer '{bt.timer_name}': could not resolve channel name for {channel_id}"
+                )
+                return
+
+            message = substitute_variables(bt.message_template, _NoChatter(), channel_name, "")
+
+            users = await self.bot.fetch_users(ids=[channel_id])
+            if not users:
+                LOGGER.warning(
+                    f"Builtin timer '{bt.timer_name}': could not fetch broadcaster for {channel_id}"
+                )
+                return
+
+            if bt.announce:
+                try:
+                    await users[0].send_announcement(
+                        moderator=self.bot.bot_id,
+                        message=message,
+                    )
+                except Exception as announce_err:
+                    if is_scope_error(announce_err):
+                        await reauth_notifier.notify(
+                            broadcaster_login=channel_name,
+                            channel_id=channel_id,
+                            send_fn=lambda msg: users[0].send_message(
+                                message=msg,
+                                sender=self.bot.bot_id,
+                            ),
+                        )
+                        return
+                    raise
+            else:
+                await users[0].send_message(
+                    message=message,
+                    sender=self.bot.bot_id,
+                )
+
+            self._builtin_last_fire[bkey] = now
+            self._builtin_last_fire_lines[bkey] = current_lines
+            LOGGER.info(
+                f"Builtin timer '{bt.timer_name}' fired in #{channel_name} (announce={bt.announce})"
+            )
+
+        except Exception as e:
+            LOGGER.error(f"Builtin timer '{bt.timer_name}' fire failed: {e}")
 
 
 async def setup(bot: commands.Bot) -> None:
