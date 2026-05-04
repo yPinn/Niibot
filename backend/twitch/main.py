@@ -89,8 +89,8 @@ def main() -> None:
             if subs:
                 LOGGER.info(f"Starting bot with {len(subs)} initial subscriptions")
             else:
-                LOGGER.warning(
-                    "Starting bot without initial subscriptions — background task will retry"
+                LOGGER.error(
+                    "Starting bot without initial subscriptions — bot is deaf to all channel events until background retry succeeds"
                 )
 
             # 5. Start bot with auto-retry on rate limit

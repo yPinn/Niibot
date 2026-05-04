@@ -90,7 +90,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await asyncio.wait_for(db_manager.connect(), timeout=30)
         LOGGER.info("Database connected")
     except TimeoutError:
-        LOGGER.warning("DB connection timed out during startup, retrying in background")
+        LOGGER.error(
+            "DB connection timed out during startup, all DB endpoints unavailable — retrying in background"
+        )
         _db_retry_task = asyncio.create_task(_db_retry_loop(db_manager))
     except Exception as e:
         LOGGER.error(
