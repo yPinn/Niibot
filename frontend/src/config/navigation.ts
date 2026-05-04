@@ -74,7 +74,7 @@ export const navigationData = {
   navSecondary: [
     {
       title: 'Discord',
-      url: 'https://discord.gg/zhtUKMuzpY',
+      url: import.meta.env.VITE_DISCORD_INVITE_URL,
       icon: 'fa-brands fa-discord',
     },
   ],
@@ -114,7 +114,7 @@ export const discordNavigationData = {
   navSecondary: [
     {
       title: 'Discord',
-      url: 'https://discord.gg/zhtUKMuzpY',
+      url: import.meta.env.VITE_DISCORD_INVITE_URL,
       icon: 'fa-brands fa-discord',
     },
   ],

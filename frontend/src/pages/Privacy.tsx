@@ -4,7 +4,7 @@ import { Button, Icon } from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
 const EFFECTIVE_DATE = '2026 年 4 月 23 日'
-const CONTACT_DISCORD = 'https://discord.gg/zhtUKMuzpY'
+const CONTACT_DISCORD = import.meta.env.VITE_DISCORD_INVITE_URL
 
 function Section({
   id,

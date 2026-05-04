@@ -376,7 +376,7 @@ export default function GetStarted() {
           <span className="ml-1 text-muted-foreground">
             加入{' '}
             <a
-              href="https://discord.gg/zhtUKMuzpY"
+              href={import.meta.env.VITE_DISCORD_INVITE_URL}
               target="_blank"
               rel="noreferrer"
               className="text-primary underline-offset-4 hover:underline"

@@ -66,7 +66,7 @@ const COMMANDS = [
   { cmd: '/kick /ban /mute', desc: '踢出、封鎖或禁言成員（需管理員）' },
 ]
 
-const INVITE_URL = import.meta.env.VITE_DISCORD_INVITE_URL as string | undefined
+const INVITE_URL = import.meta.env.VITE_DISCORD_INVITE_URL
 
 export default function DiscordDashboard() {
   useDocumentTitle('Discord Bot — Niibot')
@@ -183,7 +183,7 @@ export default function DiscordDashboard() {
             <span className="ml-1 text-muted-foreground">
               加入{' '}
               <a
-                href="https://discord.gg/zhtUKMuzpY"
+                href={INVITE_URL}
                 target="_blank"
                 rel="noreferrer"
                 className="text-primary underline-offset-4 hover:underline"
