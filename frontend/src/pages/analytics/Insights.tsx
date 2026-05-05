@@ -392,7 +392,7 @@ function ViewerScatterChart({
             tick={({ x, y, payload }: AxisTick) => (
               <text
                 x={x}
-                y={y + 10}
+                y={Number(y) + 10}
                 textAnchor="middle"
                 className="fill-muted-foreground"
                 style={{ fontSize: 10 }}
@@ -413,7 +413,7 @@ function ViewerScatterChart({
             domain={[0, 'auto']}
             tick={({ x, y, payload }: AxisTick) => (
               <text
-                x={x - 2}
+                x={Number(x) - 2}
                 y={y}
                 textAnchor="end"
                 dominantBaseline="middle"
