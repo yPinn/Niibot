@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 
 import {
@@ -155,8 +155,8 @@ export default function Events() {
       const [configs, rewards] = await Promise.all([configsPromise, rewardsPromise])
       setRedemptions(configs)
       setTwitchRewards([...rewards].sort((a, b) => a.cost - b.cost))
-    } catch {
-      // Silently fail — configs may not be available
+    } catch (err) {
+      if (import.meta.env.DEV) console.error('Failed to load redemptions:', err)
     } finally {
       setRedemptionLoading(false)
     }
@@ -232,10 +232,8 @@ export default function Events() {
     messages: { on: '兌換已啟用', off: '兌換已停用', error: '切換兌換狀態失敗' },
   })
 
-  const { inputRef: templateInputRef, insertText: insertVariable } = useInputInsert(
-    editTemplate,
-    setEditTemplate
-  )
+  const { inputRef: templateInputRef, insertText: insertVariable } =
+    useInputInsert<HTMLInputElement>(editTemplate, setEditTemplate)
 
   const openEditor = (event: EventConfig) => {
     setEditingEvent(event)
@@ -375,13 +373,11 @@ export default function Events() {
                             {event.trigger_count}
                           </TableCell>
                           <TableCell className="text-center">
-                            <div className="flex justify-center">
-                              <Switch
-                                checked={event.enabled}
-                                onCheckedChange={() => handleToggle(event)}
-                                disabled={locked}
-                              />
-                            </div>
+                            <Switch
+                              checked={event.enabled}
+                              onCheckedChange={() => handleToggle(event)}
+                              disabled={locked}
+                            />
                           </TableCell>
                           <TableCell className="text-right">
                             <Button
@@ -522,12 +518,10 @@ export default function Events() {
                             )}
                           </TableCell>
                           <TableCell className="text-center">
-                            <div className="flex justify-center">
-                              <Switch
-                                checked={red.enabled}
-                                onCheckedChange={() => handleRedemptionToggle(red)}
-                              />
-                            </div>
+                            <Switch
+                              checked={red.enabled}
+                              onCheckedChange={() => handleRedemptionToggle(red)}
+                            />
                           </TableCell>
                         </TableRow>
                       ))
@@ -557,7 +551,7 @@ export default function Events() {
               <Label htmlFor="event-template">訊息模板</Label>
               <Input
                 id="event-template"
-                ref={templateInputRef as React.RefObject<HTMLInputElement>}
+                ref={templateInputRef}
                 value={editTemplate}
                 onChange={e => setEditTemplate(e.target.value)}
                 placeholder="輸入回應訊息..."

@@ -187,9 +187,7 @@ export function CustomTab({ customRows, sortState, defaults, onToggle, onEdit }:
                     {row.data.usage_count}
                   </TableCell>
                   <TableCell className="text-center">
-                    <div className="flex justify-center">
-                      <Switch checked={row.data.enabled} onCheckedChange={() => onToggle(row)} />
-                    </div>
+                    <Switch checked={row.data.enabled} onCheckedChange={() => onToggle(row)} />
                   </TableCell>
                   <TableCell className="text-right">
                     <Button

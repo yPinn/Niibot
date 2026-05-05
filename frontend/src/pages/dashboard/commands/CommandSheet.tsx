@@ -1,4 +1,4 @@
-import React, { useEffect, useReducer, useState } from 'react'
+import { useEffect, useReducer, useState } from 'react'
 import { toast } from 'sonner'
 
 import { type ChannelDefaults } from '@/api/channels'
@@ -35,6 +35,7 @@ import {
   SheetFooter,
   SheetHeader,
   SheetTitle,
+  Spinner,
   Switch,
   Textarea,
 } from '@/components/ui'
@@ -189,7 +190,7 @@ export function CommandSheet({
     }
   }, [editing])
 
-  const { inputRef, insertText } = useInputInsert(form.response, newVal =>
+  const { inputRef, insertText } = useInputInsert<HTMLTextAreaElement>(form.response, newVal =>
     dispatch({ type: 'SET', field: 'response', value: newVal })
   )
 
@@ -386,7 +387,7 @@ export function CommandSheet({
               <Label htmlFor="cmd-response">回應內容</Label>
               <Textarea
                 id="cmd-response"
-                ref={inputRef as React.RefObject<HTMLTextAreaElement>}
+                ref={inputRef}
                 value={form.response}
                 onChange={e => dispatch({ type: 'SET', field: 'response', value: e.target.value })}
                 placeholder={showTriggerFields ? '$(user) GG！' : '$(user) 你好！'}
@@ -411,10 +412,10 @@ export function CommandSheet({
             </div>
           )}
 
-          {/* ── Advanced toggle ── */}
-          <button
-            type="button"
-            className="flex cursor-pointer items-center gap-2 text-sub text-muted-foreground transition-colors hover:text-foreground"
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-fit px-0 text-muted-foreground hover:text-foreground hover:bg-transparent"
             onClick={() =>
               dispatch({ type: 'SET', field: 'showAdvanced', value: !form.showAdvanced })
             }
@@ -424,7 +425,7 @@ export function CommandSheet({
               wrapperClassName="size-3"
             />
             {form.showAdvanced ? '隱藏進階設定' : '顯示進階設定'}
-          </button>
+          </Button>
 
           {form.showAdvanced && (
             <div className="flex flex-col gap-card border-l-2 border-muted pl-page">
@@ -564,7 +565,8 @@ export function CommandSheet({
             <Button variant="outline">取消</Button>
           </SheetClose>
           <Button onClick={handleSave} disabled={form.saving}>
-            {form.saving ? '儲存中...' : '儲存'}
+            {form.saving && <Spinner className="mr-1.5" />}
+            儲存
           </Button>
         </SheetFooter>
       </SheetContent>

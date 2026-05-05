@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useReducer, useState } from 'react'
+import { useCallback, useEffect, useMemo, useReducer, useState } from 'react'
 import { toast } from 'sonner'
 
 import {
@@ -175,10 +175,7 @@ export default function Timers() {
   const { toggle: handleToggle } = useOptimisticToggle<TimerConfig>({
     setState: setTimers,
     getId: t => t.timer_name,
-    toggleFn: async (t, enabled) => {
-      await toggleTimer(t.timer_name, enabled)
-      if (t.id < 0) fetchData()
-    },
+    toggleFn: (t, enabled) => toggleTimer(t.timer_name, enabled).then(() => {}),
     messages: { on: '計時器已啟用', off: '計時器已停用', error: '切換計時器狀態失敗' },
   })
 
@@ -222,10 +219,10 @@ export default function Timers() {
     })
   }
 
-  const { inputRef: templateInputRef, insertText: insertVariable } = useInputInsert(
-    form.template,
-    (val: string) => dispatch({ type: 'SET', field: 'template', value: val })
-  )
+  const { inputRef: templateInputRef, insertText: insertVariable } =
+    useInputInsert<HTMLTextAreaElement>(form.template, (val: string) =>
+      dispatch({ type: 'SET', field: 'template', value: val })
+    )
 
   const handleSave = async () => {
     if (!editing) return
@@ -453,12 +450,10 @@ export default function Timers() {
                               {formatInterval(timer.interval_seconds)}
                             </TableCell>
                             <TableCell className="text-center">
-                              <div className="flex justify-center">
-                                <Switch
-                                  checked={timer.enabled}
-                                  onCheckedChange={() => handleToggle(timer)}
-                                />
-                              </div>
+                              <Switch
+                                checked={timer.enabled}
+                                onCheckedChange={() => handleToggle(timer)}
+                              />
                             </TableCell>
                             <TableCell className="text-right">
                               <Button
@@ -515,7 +510,7 @@ export default function Timers() {
               <Label htmlFor="timer-template">訊息內容</Label>
               <Textarea
                 id="timer-template"
-                ref={templateInputRef as React.RefObject<HTMLTextAreaElement>}
+                ref={templateInputRef}
                 value={form.template}
                 onChange={e => dispatch({ type: 'SET', field: 'template', value: e.target.value })}
                 placeholder="記得追蹤 $(channel)！"

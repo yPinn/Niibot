@@ -1,25 +1,18 @@
 import { useEffect, useRef } from 'react'
 
-export interface UseInputInsertReturn {
+export interface UseInputInsertReturn<
+  T extends HTMLInputElement | HTMLTextAreaElement = HTMLInputElement | HTMLTextAreaElement,
+> {
   /** Attach this ref to the <Input> or <Textarea> element. */
-  inputRef: React.RefObject<HTMLInputElement | HTMLTextAreaElement | null>
+  inputRef: React.RefObject<T | null>
   /** Inserts `text` at the current cursor position (or appends if no ref). */
   insertText: (text: string) => void
 }
 
-/**
- * Manages cursor-aware text insertion for template variable buttons.
- *
- * Usage:
- *   const { inputRef, insertText } = useInputInsert(formValue, setFormValue)
- *   <Input ref={inputRef} value={formValue} onChange={e => setFormValue(e.target.value)} />
- *   <VariableInserter onInsert={insertText} ... />
- */
-export function useInputInsert(
-  value: string,
-  onChange: (newValue: string) => void
-): UseInputInsertReturn {
-  const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null)
+export function useInputInsert<
+  T extends HTMLInputElement | HTMLTextAreaElement = HTMLInputElement | HTMLTextAreaElement,
+>(value: string, onChange: (newValue: string) => void): UseInputInsertReturn<T> {
+  const inputRef = useRef<T>(null)
 
   // Keep latest value + onChange in refs so insertText never captures a stale closure.
   const valueRef = useRef(value)

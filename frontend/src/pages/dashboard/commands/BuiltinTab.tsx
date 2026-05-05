@@ -148,9 +148,7 @@ export function BuiltinTab({ commands, sortState, defaults, onToggle, onEdit }: 
               </TableCell>
               <TableCell className="hidden md:table-cell text-right">{cmd.usage_count}</TableCell>
               <TableCell className="text-center">
-                <div className="flex justify-center">
-                  <Switch checked={cmd.enabled} onCheckedChange={() => onToggle(cmd)} />
-                </div>
+                <Switch checked={cmd.enabled} onCheckedChange={() => onToggle(cmd)} />
               </TableCell>
               <TableCell className="text-right">
                 <Button
