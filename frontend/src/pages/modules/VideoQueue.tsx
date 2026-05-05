@@ -489,7 +489,7 @@ export default function VideoQueue() {
       </div>
 
       <Sheet open={helpOpen} onOpenChange={setHelpOpen}>
-        <SheetContent side="right" className="w-80 sm:w-96">
+        <SheetContent side="right">
           <SheetHeader>
             <SheetTitle>Video Queue 使用說明</SheetTitle>
             <SheetDescription>如何在 Twitch 設定點播獎勵並使用 Video Queue</SheetDescription>
@@ -745,10 +745,10 @@ export default function VideoQueue() {
             <CardDescription>設定各來源的投稿限制條件</CardDescription>
             <CardAction>
               <div className="flex items-center gap-2 sm:gap-section">
-                <div className="min-w-0 flex-1">
+                <div className="hidden sm:block min-w-0 flex-1">
                   <OverlayUrlBlock url={overlayUrl} />
                 </div>
-                <Separator orientation="vertical" className="h-6" />
+                <Separator orientation="vertical" className="hidden sm:block h-6" />
                 <div className="flex shrink-0 items-center gap-element">
                   <Switch
                     id="vq-enabled"
@@ -764,6 +764,9 @@ export default function VideoQueue() {
           </CardHeader>
 
           <CardContent className="flex flex-col gap-section">
+            <div className="sm:hidden">
+              <OverlayUrlBlock url={overlayUrl} />
+            </div>
             {/* Global limits — apply to all sources */}
             <div className="flex flex-col gap-3">
               <p className="text-sub text-muted-foreground">全域限制</p>
