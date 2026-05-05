@@ -286,7 +286,7 @@ export default function Settings() {
 
                               {/* HashKey + HashIV (2 cols) */}
                               {needsHash && (
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-element">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-element">
                                   <div className="flex flex-col gap-1">
                                     <Label
                                       className="text-label text-muted-foreground"
