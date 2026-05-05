@@ -96,6 +96,12 @@ export default function Settings() {
     newebpay: false,
     paypal: false,
   })
+  const [openPlatforms, setOpenPlatforms] = useState<Record<DonationPlatform, boolean>>({
+    ecpay: false,
+    opay: false,
+    newebpay: false,
+    paypal: false,
+  })
 
   const locked = !isAffiliate && user?.platform === 'twitch'
 
@@ -188,7 +194,15 @@ export default function Settings() {
             <CardTitle>斗內金流設定</CardTitle>
             <CardDescription>
               設定收款帳號以啟用斗內功能，觀眾可透過{' '}
-              <code className="text-foreground">/donate/{user?.name}</code> 贊助
+              <a
+                href={`/donate/${user?.name}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-mono text-foreground underline-offset-2 hover:underline"
+              >
+                /donate/{user?.name}
+              </a>{' '}
+              贊助
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-section">
@@ -207,10 +221,17 @@ export default function Settings() {
                   const isSaving = paymentSaving === platform
                   const isDeleting = paymentDeleting === platform
 
+                  const isOpen = openPlatforms[platform]
+
                   return (
                     <StaggerItem key={platform}>
                       <Card>
-                        <CardHeader>
+                        <CardHeader
+                          className="cursor-pointer select-none"
+                          onClick={() =>
+                            setOpenPlatforms(prev => ({ ...prev, [platform]: !prev[platform] }))
+                          }
+                        >
                           <div className="flex items-center gap-element">
                             <CardTitle className="text-sub">{label}</CardTitle>
                             {existing && (
@@ -225,7 +246,10 @@ export default function Settings() {
                                 <Button
                                   size="icon"
                                   variant="ghost"
-                                  onClick={() => setPendingDeletePlatform(platform)}
+                                  onClick={e => {
+                                    e.stopPropagation()
+                                    setPendingDeletePlatform(platform)
+                                  }}
                                   disabled={isSaving || isDeleting || locked}
                                   className="text-muted-foreground hover:text-destructive"
                                   aria-label={`刪除 ${label} 設定`}
@@ -242,18 +266,27 @@ export default function Settings() {
                                 aria-label="啟用"
                                 checked={form.enabled}
                                 disabled={locked}
-                                onCheckedChange={checked =>
+                                onCheckedChange={checked => {
                                   setPaymentForms(prev => ({
                                     ...prev,
                                     [platform]: { ...prev[platform], enabled: checked },
                                   }))
-                                }
+                                  if (checked) {
+                                    setOpenPlatforms(prev => ({ ...prev, [platform]: true }))
+                                  }
+                                }}
+                                onClick={e => e.stopPropagation()}
+                              />
+                              <Icon
+                                icon="fa-solid fa-chevron-down"
+                                wrapperClassName="size-3.5"
+                                className={`text-muted-foreground transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
                               />
                             </div>
                           </CardAction>
                         </CardHeader>
 
-                        <Collapsible open={form.enabled}>
+                        <Collapsible open={isOpen}>
                           <CollapsibleContent>
                             <CardContent className="flex flex-col gap-3 pt-0">
                               {/* MerchantID (full width) */}
