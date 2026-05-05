@@ -301,7 +301,7 @@ type DotData = {
   user_id: string
   dotFill: string
 }
-type AxisTick = { x: number; y: number; payload: { value: number } }
+type AxisTick = { x: string | number; y: string | number; payload: { value: number } }
 
 function ScatterTooltip({
   active,
@@ -354,8 +354,8 @@ function ViewerScatterChart({
   })
 
   const shape = useCallback(
-    ({ cx, cy, payload }: { cx?: number; cy?: number; payload: DotData }) => {
-      if (cx == null || cy == null) return null
+    ({ cx, cy, payload }: { cx?: number; cy?: number; payload?: DotData }) => {
+      if (cx == null || cy == null || !payload) return null
       const isHovered = hoveredUserId != null && payload.user_id === hoveredUserId
       const isDimmed = hoveredUserId != null && payload.user_id !== hoveredUserId
       return (
