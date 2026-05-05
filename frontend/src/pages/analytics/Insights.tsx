@@ -1,4 +1,13 @@
 import React, { useCallback, useEffect, useReducer, useRef, useState } from 'react'
+import {
+  CartesianGrid,
+  ResponsiveContainer,
+  Scatter,
+  ScatterChart,
+  Tooltip as RechartsTooltip,
+  XAxis,
+  YAxis,
+} from 'recharts'
 
 import {
   type ChannelInsights,
@@ -8,7 +17,6 @@ import {
   type ViewerProfile,
   type ViewerSummary,
 } from '@/api/analytics'
-import { PageHeader } from '@/components/PageHeader'
 import { PageMain } from '@/components/PageMain'
 import {
   Empty,
@@ -18,6 +26,7 @@ import {
   EmptyTitle,
   Icon,
   Input,
+  Separator,
   Sheet,
   SheetContent,
   SheetDescription,
@@ -26,6 +35,9 @@ import {
   SheetTitle,
   Skeleton,
   SlideUp,
+  SlideUpSm,
+  Stagger,
+  StaggerItem,
   Tabs,
   TabsList,
   TabsTrigger,
@@ -36,6 +48,7 @@ import {
 } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
+import { cn } from '@/lib/utils'
 
 const PERIODS = [
   { label: '7 天', value: '7' },
@@ -87,7 +100,7 @@ function SummaryTile({
   iconClassName?: string
 }) {
   return (
-    <div className="rounded-md border bg-card px-3 py-2.5">
+    <div className="rounded-md border px-3 py-2.5">
       <div className="flex items-center justify-between mb-1">
         <p className="text-label text-muted-foreground">{label}</p>
         <Icon
@@ -105,22 +118,59 @@ function SummaryTile({
 
 const ROW_GRID = 'grid-cols-[1.25rem_minmax(0,1fr)_5.5rem_5.5rem_5.5rem]'
 
+const RANK_STYLES = {
+  1: {
+    gradient: 'bg-gradient-to-r from-amber-400/15',
+    border: 'border-amber-400/30',
+    icon: 'fa-solid fa-trophy',
+    color: 'text-amber-400',
+  },
+  2: {
+    gradient: 'bg-gradient-to-r from-slate-400/15',
+    border: 'border-slate-400/30',
+    icon: 'fa-solid fa-medal',
+    color: 'text-slate-400',
+  },
+  3: {
+    gradient: 'bg-gradient-to-r from-orange-400/15',
+    border: 'border-orange-400/30',
+    icon: 'fa-solid fa-medal',
+    color: 'text-orange-400',
+  },
+} as const
+
 interface ViewerRowProps {
   viewer: ViewerSummary
   rank: number
+  isHovered: boolean
   onClick: () => void
+  onHover: (id: string | null) => void
 }
 
-function ViewerRow({ viewer, rank, onClick }: ViewerRowProps) {
+function ViewerRow({ viewer, rank, isHovered, onClick, onHover }: ViewerRowProps) {
   const name = viewer.display_name || viewer.username
+  const top = rank <= 3 ? RANK_STYLES[rank as 1 | 2 | 3] : null
   return (
     <button
       onClick={onClick}
-      className={`w-full grid items-center gap-3 rounded-md border bg-card px-3 py-2.5 hover:bg-accent transition-colors text-left ${ROW_GRID}`}
+      onMouseEnter={() => onHover(viewer.user_id)}
+      onMouseLeave={() => onHover(null)}
+      className={cn(
+        'w-full grid items-center gap-3 rounded-md border px-3 py-2.5 hover:bg-accent transition-colors text-left',
+        ROW_GRID,
+        top && `${top.gradient} ${top.border}`,
+        isHovered && 'ring-1 ring-inset ring-primary/40'
+      )}
     >
-      <span className="text-sub font-mono font-semibold text-muted-foreground text-right">
-        {rank}
-      </span>
+      {top ? (
+        <span className={`flex justify-center ${top.color}`}>
+          <i className={`${top.icon} text-[11px]`} />
+        </span>
+      ) : (
+        <span className="text-sub font-mono font-semibold text-muted-foreground text-right">
+          {rank}
+        </span>
+      )}
       <div className="min-w-0">
         <p className="text-sub font-medium truncate">{name}</p>
         <p className="text-label text-muted-foreground truncate">@{viewer.username}</p>
@@ -144,6 +194,246 @@ function Col({
   return (
     <div className={`text-right ${className ?? ''}`}>
       <p className={`text-sub font-bold tabular-nums ${valueClassName ?? ''}`}>{value}</p>
+    </div>
+  )
+}
+
+// ─── Viewer List Component ───────────────────────────────────────────────────
+
+interface ViewerListProps {
+  filtered: ViewerSummary[]
+  sort: SortKey
+  sortDir: 'desc' | 'asc'
+  search: string
+  hoveredUserId: string | null
+  onSort: (key: SortKey) => void
+  onSelect: (id: string) => void
+  onHover: (id: string | null) => void
+}
+
+function ViewerList({
+  filtered,
+  sort,
+  sortDir,
+  search,
+  hoveredUserId,
+  onSort,
+  onSelect,
+  onHover,
+}: ViewerListProps) {
+  if (filtered.length === 0) {
+    return (
+      <Empty className="border-none py-16">
+        <EmptyHeader>
+          <EmptyMedia>
+            <Icon
+              icon={search ? 'fa-solid fa-magnifying-glass' : 'fa-solid fa-users'}
+              wrapperClassName="size-20 opacity-25"
+              className="text-[5rem]"
+            />
+          </EmptyMedia>
+          <EmptyTitle>{search ? '找不到符合的觀眾' : '尚無觀眾資料'}</EmptyTitle>
+          {!search && (
+            <EmptyDescription>每場直播結束後會累積觀眾資料，歷史紀錄可在此查閱</EmptyDescription>
+          )}
+        </EmptyHeader>
+      </Empty>
+    )
+  }
+  return (
+    <div className="flex flex-col">
+      <div
+        className={`grid items-center gap-3 px-3 pb-1 border border-transparent text-label text-muted-foreground shrink-0 ${ROW_GRID}`}
+      >
+        <span />
+        <span>觀眾</span>
+        {SORT_COLS.map(col => {
+          const active = sort === col.key
+          return (
+            <button
+              key={col.key}
+              type="button"
+              onClick={() => onSort(col.key)}
+              className={cn(
+                'flex items-center justify-end gap-1 rounded pl-1 pr-0 py-0.5 transition-colors',
+                active ? 'text-foreground font-medium' : 'hover:text-foreground'
+              )}
+            >
+              <i className={`${col.icon} text-[10px]`} />
+              {col.label}
+              <i
+                className={[
+                  'fa-solid text-[9px] transition-opacity',
+                  active
+                    ? sortDir === 'desc'
+                      ? 'fa-arrow-down opacity-100'
+                      : 'fa-arrow-up opacity-100'
+                    : 'fa-sort opacity-30',
+                ].join(' ')}
+              />
+            </button>
+          )
+        })}
+      </div>
+      <div className="max-h-[646px] overflow-y-auto scrollbar space-y-1 pr-0.5">
+        {filtered.map((v, i) => (
+          <ViewerRow
+            key={v.user_id}
+            viewer={v}
+            rank={i + 1}
+            isHovered={hoveredUserId === v.user_id}
+            onClick={() => onSelect(v.user_id)}
+            onHover={onHover}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ─── Viewer Scatter Chart ─────────────────────────────────────────────────────
+
+type DotData = {
+  x: number
+  y: number
+  score: number
+  name: string
+  user_id: string
+  dotFill: string
+}
+type AxisTick = { x: number; y: number; payload: { value: number } }
+
+function ScatterTooltip({
+  active,
+  payload,
+}: {
+  active?: boolean
+  payload?: { payload: DotData }[]
+}) {
+  if (!active || !payload?.length) return null
+  const d = payload[0]?.payload
+  if (!d) return null
+  const mins = d.x
+  const watchLabel = mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`
+  return (
+    <div className="rounded-md border bg-popover px-3 py-2 text-popover-foreground shadow-sm space-y-0.5">
+      <p className="text-sub font-medium">{d.name}</p>
+      <p className="text-label text-muted-foreground">
+        留言 {d.y.toLocaleString()} · {watchLabel}
+      </p>
+      <p className="text-label text-primary">活躍度 {d.score.toFixed(1)}</p>
+    </div>
+  )
+}
+
+function ViewerScatterChart({
+  viewers,
+  hoveredUserId,
+  onHover,
+}: {
+  viewers: ViewerSummary[]
+  hoveredUserId: string | null
+  onHover: (id: string | null) => void
+}) {
+  const data = viewers.map(v => {
+    const score = v.engagement_score
+    const dotFill =
+      score >= 60
+        ? 'var(--chart-1)' // theme purple
+        : score >= 20
+          ? 'var(--chart-5)' // theme blue
+          : 'var(--muted-foreground)' // theme muted
+    return {
+      x: Math.round(v.watch_seconds / 60),
+      y: v.total_messages,
+      score,
+      name: v.display_name || v.username,
+      user_id: v.user_id,
+      dotFill,
+    }
+  })
+
+  const shape = useCallback(
+    ({ cx, cy, payload }: { cx?: number; cy?: number; payload: DotData }) => {
+      if (cx == null || cy == null) return null
+      const isHovered = hoveredUserId != null && payload.user_id === hoveredUserId
+      const isDimmed = hoveredUserId != null && payload.user_id !== hoveredUserId
+      return (
+        <circle
+          cx={cx}
+          cy={cy}
+          r={isHovered ? 9 : 6}
+          style={{
+            fill: payload.dotFill,
+            opacity: isDimmed ? 0.2 : 1,
+            transition: 'opacity 0.15s ease',
+          }}
+          onMouseEnter={() => onHover(payload.user_id)}
+          onMouseLeave={() => onHover(null)}
+        />
+      )
+    },
+    [hoveredUserId, onHover]
+  )
+
+  return (
+    <div className="flex flex-col gap-element">
+      <div className="flex items-center justify-between">
+        <p className="text-label text-muted-foreground">觀眾分佈</p>
+        <p className="text-label text-muted-foreground/60">觀看時長 × 留言數</p>
+      </div>
+      <ResponsiveContainer width="100%" height={280}>
+        <ScatterChart margin={{ top: 4, right: 8, bottom: 8, left: 4 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="rgba(128,128,128,0.15)" />
+          <XAxis
+            dataKey="x"
+            type="number"
+            domain={[0, 'auto']}
+            tick={({ x, y, payload }: AxisTick) => (
+              <text
+                x={x}
+                y={y + 10}
+                textAnchor="middle"
+                className="fill-muted-foreground"
+                style={{ fontSize: 10 }}
+              >
+                {payload.value === 0
+                  ? '0'
+                  : payload.value >= 60
+                    ? `${Math.floor(payload.value / 60)}h`
+                    : `${payload.value}m`}
+              </text>
+            )}
+            tickLine={false}
+            axisLine={false}
+          />
+          <YAxis
+            dataKey="y"
+            type="number"
+            domain={[0, 'auto']}
+            tick={({ x, y, payload }: AxisTick) => (
+              <text
+                x={x - 2}
+                y={y}
+                textAnchor="end"
+                dominantBaseline="middle"
+                className="fill-muted-foreground"
+                style={{ fontSize: 10 }}
+              >
+                {formatCompact(payload.value)}
+              </text>
+            )}
+            tickLine={false}
+            axisLine={false}
+            width={44}
+          />
+          <RechartsTooltip
+            content={<ScatterTooltip />}
+            cursor={{ strokeDasharray: '3 3', stroke: 'rgba(128,128,128,0.3)' }}
+          />
+          <Scatter data={data} shape={shape} />
+        </ScatterChart>
+      </ResponsiveContainer>
     </div>
   )
 }
@@ -288,7 +578,7 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full sm:max-w-90 p-0 overflow-y-auto flex flex-col select-none">
+      <SheetContent className="w-full sm:max-w-sm p-0 overflow-y-auto flex flex-col select-none">
         {/* Header */}
         {loading ? (
           <SheetHeader className="pr-10 shrink-0">
@@ -400,12 +690,12 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
               <Skeleton className="h-4 w-48" />
               <Skeleton className="h-4 w-40" />
             </div>
-            <div className="grid grid-cols-3 gap-3">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <Skeleton key={i} className="h-16 rounded-md" />
+            <div className="grid grid-cols-2 gap-3">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton key={i} className="h-[73px] rounded-md" />
               ))}
             </div>
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               {Array.from({ length: 3 }).map((_, i) => (
                 <Skeleton key={i} className="h-9 rounded-md" />
               ))}
@@ -623,9 +913,9 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
 }
 
 const SORT_COLS = [
-  { key: 'messages', label: '留言', icon: 'fa-solid fa-comment', natural: 'desc', show: '' },
-  { key: 'watch', label: '時長', icon: 'fa-solid fa-clock', natural: 'desc', show: '' },
-  { key: 'score', label: '活躍度', icon: 'fa-solid fa-fire', natural: 'desc', show: '' },
+  { key: 'messages', label: '留言', icon: 'fa-solid fa-comment', natural: 'desc' },
+  { key: 'watch', label: '時長', icon: 'fa-solid fa-clock', natural: 'desc' },
+  { key: 'score', label: '活躍度', icon: 'fa-solid fa-fire', natural: 'desc' },
 ] as const
 
 type SortKey = (typeof SORT_COLS)[number]['key']
@@ -646,6 +936,7 @@ export default function Insights() {
   const [insights, setInsights] = useState<ChannelInsights | null>(null)
   const [insightsLoading, setInsightsLoading] = useState(true)
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
+  const [hoveredUserId, setHoveredUserId] = useState<string | null>(null)
   const loadedForRef = useRef<string | null>(null)
 
   const fetchViewers = useCallback(
@@ -730,152 +1021,148 @@ export default function Insights() {
 
   return (
     <PageMain>
-      <PageHeader title="Insights" description="觀眾互動與活躍度數據" />
+      {/* Header: title left, period tabs right */}
+      <SlideUpSm inView>
+        <h1 className="text-page-title font-bold">Insights</h1>
+        <p className="text-sub text-muted-foreground mt-0.5">觀眾互動與活躍度數據</p>
+      </SlideUpSm>
 
-      <SlideUp inView>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {insightsLoading ? (
-            Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-16 rounded-md" />
-            ))
-          ) : (
-            <>
-              <SummaryTile
-                icon="fa-solid fa-comments"
-                value={insights?.total_messages.toLocaleString() ?? '—'}
-                label="聊天訊息"
-                iconClassName="text-status-info/80"
+      {/* Main 2-col layout */}
+      <SlideUp
+        inView
+        delay={0.05}
+        className="grid grid-cols-1 lg:grid-cols-2 lg:items-start gap-section"
+      >
+        {/* Left: sticky – chart + summary cards */}
+        <div className="rounded-lg border bg-card p-4 lg:sticky lg:top-page-lg flex flex-col gap-section">
+          {!initialized ? (
+            <Skeleton className="hidden lg:block h-[330px] rounded-md" />
+          ) : viewers.length > 0 ? (
+            <div className="hidden lg:block rounded-md bg-muted/20 p-3 [&_*]:outline-none">
+              <ViewerScatterChart
+                viewers={viewers}
+                hoveredUserId={hoveredUserId}
+                onHover={setHoveredUserId}
               />
-              <SummaryTile
-                icon="fa-solid fa-heart"
-                value={insights?.total_follows.toLocaleString() ?? '—'}
-                label="新追隨"
-                iconClassName="text-rose-400/80"
-              />
-              <SummaryTile
-                icon="fa-solid fa-star"
-                value={insights?.total_subs.toLocaleString() ?? '—'}
-                label="新訂閱"
-                iconClassName="text-primary/80"
-              />
-              <SummaryTile
-                icon="fa-solid fa-diamond-half-stroke"
-                value={
-                  insights && insights.total_bits > 0 ? insights.total_bits.toLocaleString() : '—'
-                }
-                label="小奇點"
-                iconClassName="text-primary/80"
-              />
-            </>
-          )}
+            </div>
+          ) : null}
+          {(!initialized || viewers.length > 0) && <Separator className="hidden lg:block" />}
+          <Stagger key={insightsLoading ? 'l' : 'd'} className="grid grid-cols-2 gap-section">
+            {insightsLoading ? (
+              Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton key={i} className="h-[69px] rounded-md" />
+              ))
+            ) : (
+              <>
+                <StaggerItem>
+                  <SummaryTile
+                    icon="fa-solid fa-diamond-half-stroke"
+                    value={
+                      insights && insights.total_bits > 0
+                        ? insights.total_bits.toLocaleString()
+                        : '—'
+                    }
+                    label="小奇點"
+                    iconClassName="text-primary/80"
+                  />
+                </StaggerItem>
+                <StaggerItem>
+                  <SummaryTile
+                    icon="fa-solid fa-star"
+                    value={insights?.total_subs.toLocaleString() ?? '—'}
+                    label="新訂閱"
+                    iconClassName="text-primary/80"
+                  />
+                </StaggerItem>
+                <StaggerItem>
+                  <SummaryTile
+                    icon="fa-solid fa-heart"
+                    value={insights?.total_follows.toLocaleString() ?? '—'}
+                    label="新追隨"
+                    iconClassName="text-rose-400/80"
+                  />
+                </StaggerItem>
+                <StaggerItem>
+                  <SummaryTile
+                    icon="fa-solid fa-comments"
+                    value={insights?.total_messages.toLocaleString() ?? '—'}
+                    label="聊天訊息"
+                    iconClassName="text-status-info/80"
+                  />
+                </StaggerItem>
+              </>
+            )}
+          </Stagger>
         </div>
-      </SlideUp>
 
-      <SlideUp inView>
-        <div className="flex items-center gap-3 flex-wrap">
-          <Tabs value={period} onValueChange={handlePeriodChange}>
-            <TabsList>
-              {PERIODS.map(p => (
-                <TabsTrigger key={p.value} value={p.value}>
-                  {p.label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
-          <Input
-            placeholder="搜尋觀眾..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="w-44 h-9"
-          />
-        </div>
-      </SlideUp>
-
-      <SlideUp inView>
-        {!initialized ? (
-          <div className="space-y-1.5">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <Skeleton key={i} className="h-12 w-full rounded-md" />
-            ))}
+        {/* Right: search + viewer list (~10 rows) */}
+        <div className="rounded-lg border bg-card p-4 flex flex-col gap-section">
+          <div className="flex items-center gap-element self-end shrink-0">
+            <Input
+              placeholder="搜尋觀眾..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="h-9 w-44"
+            />
+            <Tabs value={period} onValueChange={handlePeriodChange}>
+              <TabsList>
+                {PERIODS.map(p => (
+                  <TabsTrigger key={p.value} value={p.value}>
+                    {p.label}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
           </div>
-        ) : viewersError ? (
-          <Empty className="border-none py-16">
-            <EmptyHeader>
-              <EmptyMedia>
-                <Icon
-                  icon="fa-solid fa-triangle-exclamation"
-                  wrapperClassName="size-20 opacity-25"
-                  className="text-[5rem]"
-                />
-              </EmptyMedia>
-              <EmptyTitle>載入觀眾資料失敗</EmptyTitle>
-              <EmptyDescription>請重新整理頁面，若問題持續請檢查伺服器狀態</EmptyDescription>
-            </EmptyHeader>
-          </Empty>
-        ) : filtered.length === 0 ? (
-          <Empty className="border-none py-16">
-            <EmptyHeader>
-              <EmptyMedia>
-                <Icon
-                  icon={search ? 'fa-solid fa-magnifying-glass' : 'fa-solid fa-users'}
-                  wrapperClassName="size-20 opacity-25"
-                  className="text-[5rem]"
-                />
-              </EmptyMedia>
-              <EmptyTitle>{search ? '找不到符合的觀眾' : '尚無觀眾資料'}</EmptyTitle>
-              {!search && (
+          {!initialized ? (
+            <div className="space-y-1">
+              {Array.from({ length: 10 }).map((_, i) => (
+                <Skeleton key={i} className="h-[61px] w-full rounded-md" />
+              ))}
+            </div>
+          ) : viewersError ? (
+            <Empty className="border-none py-empty">
+              <EmptyHeader>
+                <EmptyMedia>
+                  <Icon
+                    icon="fa-solid fa-triangle-exclamation"
+                    wrapperClassName="size-20 opacity-25"
+                    className="text-[5rem]"
+                  />
+                </EmptyMedia>
+                <EmptyTitle>載入觀眾資料失敗</EmptyTitle>
+                <EmptyDescription>請重新整理頁面，若問題持續請檢查伺服器狀態</EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          ) : viewers.length === 0 ? (
+            <Empty className="border-none py-empty">
+              <EmptyHeader>
+                <EmptyMedia>
+                  <Icon
+                    icon="fa-solid fa-users"
+                    wrapperClassName="size-20 opacity-25"
+                    className="text-[5rem]"
+                  />
+                </EmptyMedia>
+                <EmptyTitle>尚無觀眾資料</EmptyTitle>
                 <EmptyDescription>
                   每場直播結束後會累積觀眾資料，歷史紀錄可在此查閱
                 </EmptyDescription>
-              )}
-            </EmptyHeader>
-          </Empty>
-        ) : (
-          <div className="space-y-1">
-            <div
-              className={`grid items-center gap-3 px-3 pb-1 border border-transparent text-label text-muted-foreground ${ROW_GRID}`}
-            >
-              <span />
-              <span>觀眾</span>
-              {SORT_COLS.map(col => {
-                const active = sort === col.key
-                return (
-                  <button
-                    key={col.key}
-                    type="button"
-                    onClick={() => handleSort(col.key)}
-                    className={[
-                      'items-center justify-end gap-1 rounded pl-1 pr-0 py-0.5 transition-colors',
-                      col.show || 'flex',
-                      active ? 'text-foreground font-medium' : 'hover:text-foreground',
-                    ].join(' ')}
-                  >
-                    <i className={`${col.icon} text-[10px]`} />
-                    {col.label}
-                    <i
-                      className={[
-                        'fa-solid text-[9px] transition-opacity',
-                        active
-                          ? sortDir === 'desc'
-                            ? 'fa-arrow-down opacity-100'
-                            : 'fa-arrow-up opacity-100'
-                          : 'fa-sort opacity-30',
-                      ].join(' ')}
-                    />
-                  </button>
-                )
-              })}
-            </div>
-            {filtered.map((v, i) => (
-              <ViewerRow
-                key={v.user_id}
-                viewer={v}
-                rank={i + 1}
-                onClick={() => setSelectedUserId(v.user_id)}
-              />
-            ))}
-          </div>
-        )}
+              </EmptyHeader>
+            </Empty>
+          ) : (
+            <ViewerList
+              filtered={filtered}
+              sort={sort}
+              sortDir={sortDir}
+              search={search}
+              hoveredUserId={hoveredUserId}
+              onSort={handleSort}
+              onSelect={setSelectedUserId}
+              onHover={setHoveredUserId}
+            />
+          )}
+        </div>
       </SlideUp>
 
       <ViewerSheet
