@@ -36,6 +36,7 @@ class GeneralCommandsComponent(BotComponent):
         self.bot: Bot = bot  # type: ignore[assignment]
         self.cmd_repo = CommandConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.channel_repo = self.bot.channels  # type: ignore[attr-defined]
+        self._last_rank_template: dict[str, str] = {}
 
     def refresh_pool(self, pool) -> None:
         self.cmd_repo.pool = pool
@@ -188,15 +189,21 @@ class GeneralCommandsComponent(BotComponent):
         hours, mins = divmod(total_mins, 60)
         days, hours = divmod(hours, 24)
         if days > 0:
-            watch_str = f"{days}天{hours}時"
+            watch_str = f"{days}天{hours}小時{mins}分鐘"
         elif hours > 0:
-            watch_str = f"{hours}時{mins}分" if mins > 0 else f"{hours}時"
+            watch_str = f"{hours}小時{mins}分鐘"
         else:
-            watch_str = f"{mins}分"
+            watch_str = f"{mins}分鐘"
+
+        channel_id = ctx.channel.id
+        last = self._last_rank_template.get(channel_id)
+        pool = [t for t in _RANK_TEMPLATES if t != last] or _RANK_TEMPLATES
+        template = random.choice(pool)
+        self._last_rank_template[channel_id] = template
 
         await self._ctx_reply(
             ctx,
-            random.choice(_RANK_TEMPLATES).format(
+            template.format(
                 rank=data["rank"],
                 total=data["total_viewers"],
                 messages=data["total_messages"],
@@ -208,20 +215,6 @@ class GeneralCommandsComponent(BotComponent):
     @commands.Component.listener()
     async def event_stream_online(self, payload: twitchio.StreamOnline) -> None:
         LOGGER.info(f"Stream online: {payload.broadcaster.name}")
-
-        channel_id = payload.broadcaster.id
-        if channel_id in self.bot._needs_reauth:
-            self.bot._needs_reauth.discard(channel_id)
-            from utils.reauth import reauth_notifier
-
-            await reauth_notifier.notify(
-                broadcaster_login=payload.broadcaster.name,
-                channel_id=channel_id,
-                send_fn=lambda msg: payload.broadcaster.send_message(
-                    message=msg,
-                    sender=self.bot.bot_id,
-                ),
-            )
 
         try:
             if not self._has_analytics:
