@@ -4,7 +4,18 @@ import { Link } from 'react-router-dom'
 import { DiscordHelpBanner } from '@/components/DiscordHelpBanner'
 import { PageHeader } from '@/components/PageHeader'
 import { PageMain } from '@/components/PageMain'
-import { Badge, Card, CardContent, CardHeader, CardTitle, Icon } from '@/components/ui'
+import {
+  Badge,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  Icon,
+  SlideUp,
+  SlideUpSm,
+  Stagger,
+  StaggerItem,
+} from '@/components/ui'
 import { WarningBanner } from '@/components/WarningBanner'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
@@ -196,79 +207,89 @@ export default function GetStarted() {
         description="授予機器人管理員身份，Niibot 就能在你的頻道正常運作。"
       />
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-3 text-card-title">
-            <Icon
-              icon="fa-solid fa-shield-halved"
-              size="md"
-              wrapperClassName="text-status-warning"
-            />
-            讓機器人成為聊天室管理員
-          </CardTitle>
-          <p className="text-sub text-muted-foreground">
-            機器人需要 Mod 才能在你的頻道發言。透過右上角 <strong>Niibot</strong>{' '}
-            選單一鍵授予，或使用下列方式手動設定。
-          </p>
-        </CardHeader>
+      <SlideUp inView>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-3 text-card-title">
+              <Icon
+                icon="fa-solid fa-shield-halved"
+                size="md"
+                wrapperClassName="text-status-warning"
+              />
+              讓機器人成為聊天室管理員
+            </CardTitle>
+            <p className="text-sub text-muted-foreground">
+              機器人需要 Mod 才能在你的頻道發言。透過右上角 <strong>Niibot</strong>{' '}
+              選單一鍵授予，或使用下列方式手動設定。
+            </p>
+          </CardHeader>
 
-        <CardContent>
-          <div className="grid items-start gap-card lg:grid-cols-2">
-            {/* Left: methods + notice */}
-            <div className="flex flex-col gap-card">
-              <div className="grid gap-element sm:grid-cols-2 lg:grid-cols-1">
-                {MOD_METHODS.map(method => (
-                  <div key={method.title} className="flex gap-3 rounded-lg border bg-card p-page">
-                    <Icon
-                      icon={method.icon}
-                      size="md"
-                      wrapperClassName="mt-0.5 text-muted-foreground"
-                    />
-                    <div className="flex flex-col gap-element">
-                      <p className="text-label font-medium">{method.title}</p>
-                      <p className="text-label leading-relaxed text-muted-foreground">
-                        {method.desc}
-                      </p>
+          <CardContent>
+            <div className="grid items-start gap-card lg:grid-cols-2">
+              {/* Left: methods + notice */}
+              <div className="flex flex-col gap-card">
+                <div className="grid gap-element sm:grid-cols-2 lg:grid-cols-1">
+                  {MOD_METHODS.map(method => (
+                    <div key={method.title} className="flex gap-3 rounded-lg border bg-card p-page">
+                      <Icon
+                        icon={method.icon}
+                        size="md"
+                        wrapperClassName="mt-0.5 text-muted-foreground"
+                      />
+                      <div className="flex flex-col gap-element">
+                        <p className="text-label font-medium">{method.title}</p>
+                        <p className="text-label leading-relaxed text-muted-foreground">
+                          {method.desc}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
+
+                <WarningBanner>
+                  /mod 指令需由頻道主（Broadcaster）或頻道內的主要 Mod 執行。
+                </WarningBanner>
               </div>
 
-              <WarningBanner>
-                /mod 指令需由頻道主（Broadcaster）或頻道內的主要 Mod 執行。
-              </WarningBanner>
+              <TwitchChatMockup
+                channel="你的頻道"
+                lines={MOD_CHAT_PREVIEW}
+                command="/mod niibot_"
+              />
             </div>
-
-            <TwitchChatMockup channel="你的頻道" lines={MOD_CHAT_PREVIEW} command="/mod niibot_" />
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      </SlideUp>
 
       <section className="flex flex-col gap-section">
-        <h2 className="text-section-title font-semibold">設定完成後，接著做什麼？</h2>
+        <SlideUpSm inView delay={0.05}>
+          <h2 className="text-section-title font-semibold">設定完成後，接著做什麼？</h2>
+        </SlideUpSm>
 
-        <div className="grid gap-section sm:grid-cols-2 lg:grid-cols-3">
+        <Stagger inView className="grid gap-section sm:grid-cols-2 lg:grid-cols-3">
           {NEXT_STEPS.map(item => (
-            <Link key={item.title} to={item.href} className="group">
-              <Card className="h-full py-section transition-colors hover:border-primary/50 hover:bg-accent/30">
-                <CardContent className="flex flex-col gap-element">
-                  <div className="flex items-center gap-2">
-                    <Icon icon={item.icon} size="md" wrapperClassName="text-primary" />
-                    <span className="text-sub font-semibold group-hover:text-primary">
-                      {item.title}
-                    </span>
-                    {item.badge && (
-                      <Badge variant="secondary" className="ml-auto text-label">
-                        {item.badge}
-                      </Badge>
-                    )}
-                  </div>
-                  <p className="text-label leading-relaxed text-muted-foreground">{item.desc}</p>
-                </CardContent>
-              </Card>
-            </Link>
+            <StaggerItem key={item.title}>
+              <Link to={item.href} className="group">
+                <Card className="h-full py-section transition-colors hover:border-primary/50 hover:bg-accent/30">
+                  <CardContent className="flex flex-col gap-element">
+                    <div className="flex items-center gap-2">
+                      <Icon icon={item.icon} size="md" wrapperClassName="text-primary" />
+                      <span className="text-sub font-semibold group-hover:text-primary">
+                        {item.title}
+                      </span>
+                      {item.badge && (
+                        <Badge variant="secondary" className="ml-auto text-label">
+                          {item.badge}
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="text-label leading-relaxed text-muted-foreground">{item.desc}</p>
+                  </CardContent>
+                </Card>
+              </Link>
+            </StaggerItem>
           ))}
-        </div>
+        </Stagger>
       </section>
 
       <DiscordHelpBanner />

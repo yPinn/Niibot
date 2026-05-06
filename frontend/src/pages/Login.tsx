@@ -1,6 +1,6 @@
 import { LoginForm } from '@/components/login-form'
 import { useTheme } from '@/components/theme-provider'
-import { Button, Icon } from '@/components/ui'
+import { Button, FadeIn, Icon } from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
 export default function LoginPage() {
@@ -20,9 +20,9 @@ export default function LoginPage() {
           wrapperClassName=""
         />
       </Button>
-      <div className="w-full max-w-sm sm:max-w-md md:max-w-4xl">
+      <FadeIn className="w-full max-w-sm sm:max-w-md md:max-w-4xl">
         <LoginForm />
-      </div>
+      </FadeIn>
     </div>
   )
 }

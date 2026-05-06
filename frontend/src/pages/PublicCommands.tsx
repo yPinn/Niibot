@@ -19,6 +19,7 @@ import {
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
+  FadeIn,
   Icon,
   Skeleton,
   Table,
@@ -143,223 +144,225 @@ export default function PublicCommands() {
         ) : error ? (
           <div className="flex items-center justify-center py-empty text-destructive">{error}</div>
         ) : (
-          <Card className="rounded-2xl border shadow-xl">
-            <CardHeader>
-              <div className="flex flex-col items-center">
-                <a
-                  href={`https://twitch.tv/${username}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="group relative mb-4"
-                >
-                  <Avatar className="h-24 w-24 border-4 border-primary shadow-lg">
-                    <AvatarImage
-                      src={channel?.profile_image_url ?? undefined}
-                      alt={`${displayName} avatar`}
-                    />
-                    <AvatarFallback>
-                      <img src={avatarFallback} alt="預設頭像" className="h-full w-full" />
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
-                    <Icon
-                      icon="fa-brands fa-twitch"
-                      className="text-white"
-                      wrapperClassName="size-8"
-                    />
-                  </div>
-                </a>
-                <CardTitle className="text-center text-page-title">
-                  {displayName}'s Commands
-                </CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {commands.length === 0 ? (
-                <Empty className="border-none">
-                  <EmptyHeader>
-                    <EmptyMedia>
-                      <Icon
-                        icon="fa-solid fa-terminal"
-                        wrapperClassName="size-20 opacity-25"
-                        className="text-[5rem]"
+          <FadeIn>
+            <Card className="rounded-2xl border shadow-xl">
+              <CardHeader>
+                <div className="flex flex-col items-center">
+                  <a
+                    href={`https://twitch.tv/${username}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="group relative mb-4"
+                  >
+                    <Avatar className="h-24 w-24 border-4 border-primary shadow-lg">
+                      <AvatarImage
+                        src={channel?.profile_image_url ?? undefined}
+                        alt={`${displayName} avatar`}
                       />
-                    </EmptyMedia>
-                    <EmptyTitle>尚無指令</EmptyTitle>
-                  </EmptyHeader>
-                </Empty>
-              ) : (
-                <Tabs defaultValue="builtin">
-                  <TabsList>
-                    <TabsTrigger value="builtin">
-                      內建
-                      <Badge variant="secondary" className="ml-1.5 px-1.5 text-label">
-                        {commands.filter(c => c.command_type === 'builtin').length}
-                      </Badge>
-                    </TabsTrigger>
-                    <TabsTrigger value="custom">
-                      自訂
-                      <Badge variant="secondary" className="ml-1.5 px-1.5 text-label">
-                        {
-                          commands.filter(
-                            c => c.command_type === 'custom' || c.command_type === 'trigger'
-                          ).length
-                        }
-                      </Badge>
-                    </TabsTrigger>
-                  </TabsList>
+                      <AvatarFallback>
+                        <img src={avatarFallback} alt="預設頭像" className="h-full w-full" />
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
+                      <Icon
+                        icon="fa-brands fa-twitch"
+                        className="text-white"
+                        wrapperClassName="size-8"
+                      />
+                    </div>
+                  </a>
+                  <CardTitle className="text-center text-page-title">
+                    {displayName}'s Commands
+                  </CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {commands.length === 0 ? (
+                  <Empty className="border-none">
+                    <EmptyHeader>
+                      <EmptyMedia>
+                        <Icon
+                          icon="fa-solid fa-terminal"
+                          wrapperClassName="size-20 opacity-25"
+                          className="text-[5rem]"
+                        />
+                      </EmptyMedia>
+                      <EmptyTitle>尚無指令</EmptyTitle>
+                    </EmptyHeader>
+                  </Empty>
+                ) : (
+                  <Tabs defaultValue="builtin">
+                    <TabsList>
+                      <TabsTrigger value="builtin">
+                        內建
+                        <Badge variant="secondary" className="ml-1.5 px-1.5 text-label">
+                          {commands.filter(c => c.command_type === 'builtin').length}
+                        </Badge>
+                      </TabsTrigger>
+                      <TabsTrigger value="custom">
+                        自訂
+                        <Badge variant="secondary" className="ml-1.5 px-1.5 text-label">
+                          {
+                            commands.filter(
+                              c => c.command_type === 'custom' || c.command_type === 'trigger'
+                            ).length
+                          }
+                        </Badge>
+                      </TabsTrigger>
+                    </TabsList>
 
-                  {/* ── Builtin Tab ── */}
-                  <TabsContent value="builtin">
-                    {builtinRows.length === 0 ? (
-                      <Empty className="border-none">
-                        <EmptyHeader>
-                          <EmptyMedia>
-                            <Icon
-                              icon="fa-solid fa-terminal"
-                              wrapperClassName="size-20 opacity-25"
-                              className="text-[5rem]"
-                            />
-                          </EmptyMedia>
-                          <EmptyTitle>尚無內建指令</EmptyTitle>
-                        </EmptyHeader>
-                      </Empty>
-                    ) : (
-                      <div className="overflow-x-auto rounded-md border">
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <SortableHead
-                                className="w-[25%]"
-                                sortKey="name"
-                                currentKey={builtinSort.sortKey}
-                                dir={builtinSort.sortDir}
-                                onSort={builtinSort.toggleSort}
-                              >
-                                指令
-                              </SortableHead>
-                              <TableHead className="hidden md:table-cell">說明</TableHead>
-                              <SortableHead
-                                className="w-[15%] text-center"
-                                sortKey="min_role"
-                                currentKey={builtinSort.sortKey}
-                                dir={builtinSort.sortDir}
-                                onSort={builtinSort.toggleSort}
-                              >
-                                權限
-                              </SortableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {builtinRows.map(cmd => {
-                              const role = ROLE_LABELS[cmd.min_role] ?? ROLE_LABELS.everyone
-                              return (
-                                <TableRow key={cmd.name}>
-                                  <TableCell className="font-mono font-medium">
-                                    {cmd.name}
-                                  </TableCell>
-                                  <TableCell className="hidden md:table-cell text-muted-foreground">
-                                    {cmd.description}
-                                  </TableCell>
-                                  <TableCell className="text-center">
-                                    <Badge variant={role.variant} className="text-label">
-                                      {role.label}
-                                    </Badge>
-                                  </TableCell>
-                                </TableRow>
-                              )
-                            })}
-                          </TableBody>
-                        </Table>
-                      </div>
-                    )}
-                  </TabsContent>
+                    {/* ── Builtin Tab ── */}
+                    <TabsContent value="builtin">
+                      {builtinRows.length === 0 ? (
+                        <Empty className="border-none">
+                          <EmptyHeader>
+                            <EmptyMedia>
+                              <Icon
+                                icon="fa-solid fa-terminal"
+                                wrapperClassName="size-20 opacity-25"
+                                className="text-[5rem]"
+                              />
+                            </EmptyMedia>
+                            <EmptyTitle>尚無內建指令</EmptyTitle>
+                          </EmptyHeader>
+                        </Empty>
+                      ) : (
+                        <div className="overflow-x-auto rounded-md border">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <SortableHead
+                                  className="w-[25%]"
+                                  sortKey="name"
+                                  currentKey={builtinSort.sortKey}
+                                  dir={builtinSort.sortDir}
+                                  onSort={builtinSort.toggleSort}
+                                >
+                                  指令
+                                </SortableHead>
+                                <TableHead className="hidden md:table-cell">說明</TableHead>
+                                <SortableHead
+                                  className="w-[15%] text-center"
+                                  sortKey="min_role"
+                                  currentKey={builtinSort.sortKey}
+                                  dir={builtinSort.sortDir}
+                                  onSort={builtinSort.toggleSort}
+                                >
+                                  權限
+                                </SortableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {builtinRows.map(cmd => {
+                                const role = ROLE_LABELS[cmd.min_role] ?? ROLE_LABELS.everyone
+                                return (
+                                  <TableRow key={cmd.name}>
+                                    <TableCell className="font-mono font-medium">
+                                      {cmd.name}
+                                    </TableCell>
+                                    <TableCell className="hidden md:table-cell text-muted-foreground">
+                                      {cmd.description}
+                                    </TableCell>
+                                    <TableCell className="text-center">
+                                      <Badge variant={role.variant} className="text-label">
+                                        {role.label}
+                                      </Badge>
+                                    </TableCell>
+                                  </TableRow>
+                                )
+                              })}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      )}
+                    </TabsContent>
 
-                  {/* ── Custom Tab (commands + triggers mixed) ── */}
-                  <TabsContent value="custom">
-                    {customRows.length === 0 ? (
-                      <Empty className="border-none">
-                        <EmptyHeader>
-                          <EmptyMedia>
-                            <Icon
-                              icon="fa-solid fa-terminal"
-                              wrapperClassName="size-20 opacity-25"
-                              className="text-[5rem]"
-                            />
-                          </EmptyMedia>
-                          <EmptyTitle>尚無自訂指令或自動回應</EmptyTitle>
-                        </EmptyHeader>
-                      </Empty>
-                    ) : (
-                      <div className="overflow-x-auto rounded-md border">
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <SortableHead
-                                className="w-[25%]"
-                                sortKey="name"
-                                currentKey={customSort.sortKey}
-                                dir={customSort.sortDir}
-                                onSort={customSort.toggleSort}
-                              >
-                                名稱
-                              </SortableHead>
-                              <SortableHead
-                                className="w-[12%]"
-                                sortKey="kind"
-                                currentKey={customSort.sortKey}
-                                dir={customSort.sortDir}
-                                onSort={customSort.toggleSort}
-                              >
-                                類型
-                              </SortableHead>
-                              <TableHead className="hidden md:table-cell">說明</TableHead>
-                              <SortableHead
-                                className="w-[15%] text-center"
-                                sortKey="min_role"
-                                currentKey={customSort.sortKey}
-                                dir={customSort.sortDir}
-                                onSort={customSort.toggleSort}
-                              >
-                                權限
-                              </SortableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {customRows.map(cmd => {
-                              const role = ROLE_LABELS[cmd.min_role] ?? ROLE_LABELS.everyone
-                              return (
-                                <TableRow key={cmd.name}>
-                                  <TableCell className="font-mono font-medium">
-                                    {cmd.name}
-                                  </TableCell>
-                                  <TableCell>
-                                    {cmd.command_type === 'custom' ? (
-                                      <Badge variant="default">指令</Badge>
-                                    ) : (
-                                      <Badge variant="secondary">觸發</Badge>
-                                    )}
-                                  </TableCell>
-                                  <TableCell className="hidden md:table-cell text-muted-foreground">
-                                    {cmd.description}
-                                  </TableCell>
-                                  <TableCell className="text-center">
-                                    <Badge variant={role.variant} className="text-label">
-                                      {role.label}
-                                    </Badge>
-                                  </TableCell>
-                                </TableRow>
-                              )
-                            })}
-                          </TableBody>
-                        </Table>
-                      </div>
-                    )}
-                  </TabsContent>
-                </Tabs>
-              )}
-            </CardContent>
-          </Card>
+                    {/* ── Custom Tab (commands + triggers mixed) ── */}
+                    <TabsContent value="custom">
+                      {customRows.length === 0 ? (
+                        <Empty className="border-none">
+                          <EmptyHeader>
+                            <EmptyMedia>
+                              <Icon
+                                icon="fa-solid fa-terminal"
+                                wrapperClassName="size-20 opacity-25"
+                                className="text-[5rem]"
+                              />
+                            </EmptyMedia>
+                            <EmptyTitle>尚無自訂指令或自動回應</EmptyTitle>
+                          </EmptyHeader>
+                        </Empty>
+                      ) : (
+                        <div className="overflow-x-auto rounded-md border">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <SortableHead
+                                  className="w-[25%]"
+                                  sortKey="name"
+                                  currentKey={customSort.sortKey}
+                                  dir={customSort.sortDir}
+                                  onSort={customSort.toggleSort}
+                                >
+                                  名稱
+                                </SortableHead>
+                                <SortableHead
+                                  className="w-[12%]"
+                                  sortKey="kind"
+                                  currentKey={customSort.sortKey}
+                                  dir={customSort.sortDir}
+                                  onSort={customSort.toggleSort}
+                                >
+                                  類型
+                                </SortableHead>
+                                <TableHead className="hidden md:table-cell">說明</TableHead>
+                                <SortableHead
+                                  className="w-[15%] text-center"
+                                  sortKey="min_role"
+                                  currentKey={customSort.sortKey}
+                                  dir={customSort.sortDir}
+                                  onSort={customSort.toggleSort}
+                                >
+                                  權限
+                                </SortableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {customRows.map(cmd => {
+                                const role = ROLE_LABELS[cmd.min_role] ?? ROLE_LABELS.everyone
+                                return (
+                                  <TableRow key={cmd.name}>
+                                    <TableCell className="font-mono font-medium">
+                                      {cmd.name}
+                                    </TableCell>
+                                    <TableCell>
+                                      {cmd.command_type === 'custom' ? (
+                                        <Badge variant="default">指令</Badge>
+                                      ) : (
+                                        <Badge variant="secondary">觸發</Badge>
+                                      )}
+                                    </TableCell>
+                                    <TableCell className="hidden md:table-cell text-muted-foreground">
+                                      {cmd.description}
+                                    </TableCell>
+                                    <TableCell className="text-center">
+                                      <Badge variant={role.variant} className="text-label">
+                                        {role.label}
+                                      </Badge>
+                                    </TableCell>
+                                  </TableRow>
+                                )
+                              })}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      )}
+                    </TabsContent>
+                  </Tabs>
+                )}
+              </CardContent>
+            </Card>
+          </FadeIn>
         )}
       </div>
     </div>

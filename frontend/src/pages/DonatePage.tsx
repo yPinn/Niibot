@@ -21,7 +21,11 @@ import {
   EmptyTitle,
   Icon,
   Input,
+  SlideUp,
+  SlideUpSm,
   Spinner,
+  Stagger,
+  StaggerItem,
 } from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
@@ -242,25 +246,29 @@ export default function DonatePage() {
     <div className="min-h-screen bg-background flex flex-col items-center py-10 px-4">
       <div className="w-full max-w-md space-y-6">
         {/* Header */}
-        <div className="text-center space-y-1">
+        <SlideUpSm className="text-center space-y-1">
           <h1 className="text-2xl font-bold">支持 {info.display_name ?? info.username}</h1>
           <p className="text-sm text-muted-foreground">選擇付款方式完成斗內</p>
-        </div>
+        </SlideUpSm>
 
         {/* Platform cards */}
-        <div className="space-y-4">
+        <Stagger delayChildren={0.1} className="space-y-4">
           {info.platforms.map(p => (
-            <PlatformCard key={p.platform} platform={p} username={info.username} />
+            <StaggerItem key={p.platform}>
+              <PlatformCard platform={p} username={info.username} />
+            </StaggerItem>
           ))}
-        </div>
+        </Stagger>
 
-        <p className="text-xs text-center text-muted-foreground">
-          付款由{' '}
-          {info.platforms
-            .map(p => PLATFORM_LABELS[p.platform as DonationPlatform] ?? p.platform)
-            .join(' / ')}{' '}
-          處理，Niibot 不儲存信用卡資訊。
-        </p>
+        <SlideUp delay={0.2}>
+          <p className="text-xs text-center text-muted-foreground">
+            付款由{' '}
+            {info.platforms
+              .map(p => PLATFORM_LABELS[p.platform as DonationPlatform] ?? p.platform)
+              .join(' / ')}{' '}
+            處理，Niibot 不儲存信用卡資訊。
+          </p>
+        </SlideUp>
       </div>
     </div>
   )
