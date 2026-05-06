@@ -7,25 +7,29 @@
 ```text
 Niibot/
 ├── backend/
-│   ├── api/        # FastAPI — JWT 認證、Dashboard API
-│   ├── twitch/     # TwitchIO 3 Bot
-│   ├── discord/    # discord.py 2 Bot
-│   ├── shared/     # 共用 DB、Cache、Repositories、Migrations
+│   ├── api/        # FastAPI — JWT 認證、Dashboard API（13 個 Routers）
+│   ├── twitch/     # TwitchIO 3 Bot + EventSub + pg_notify 即時設定重載
+│   ├── discord/    # discord.py 2 Bot（Cogs 模組架構）
+│   ├── scrapling/  # Instagram / Threads 媒體抓取服務
+│   ├── shared/     # 共用 DB、Cache、Repositories、Migrations（43 個）
 │   └── scripts/    # DB 管理工具
 ├── frontend/       # React 19 + Vite + Tailwind CSS v4
 │   └── functions/  # Cloudflare Pages Functions（API 反向代理）
 └── data/           # 靜態資料（運勢、塔羅、遊戲等 JSON）
 ```
 
-| 服務        | 技術              | 部署             |
-| ----------- | ----------------- | ---------------- |
-| API         | FastAPI + asyncpg | Docker           |
-| Twitch Bot  | TwitchIO 3        | Docker           |
-| Discord Bot | discord.py 2      | Docker           |
-| Database    | PostgreSQL 16     | Docker           |
-| Frontend    | React 19 + Vite   | Cloudflare Pages |
+| 服務        | 技術                    | 部署             |
+| ----------- | ----------------------- | ---------------- |
+| API         | FastAPI 0.129 + asyncpg | Docker           |
+| Twitch Bot  | TwitchIO 3              | Docker           |
+| Discord Bot | discord.py 2            | Docker           |
+| Scrapling   | Python + scrapling      | Docker           |
+| Database    | PostgreSQL 16           | Docker           |
+| Frontend    | React 19 + Vite 7       | Cloudflare Pages |
 
 後端透過 **Cloudflare Tunnel** 對外；前端部署在 **Cloudflare Pages**，`/api/*` 由 CF Pages Functions 代理至後端。
+
+各子系統詳細說明：[backend/README.md](backend/README.md) · [frontend/README.md](frontend/README.md)
 
 ## 快速開始
 
@@ -66,14 +70,14 @@ bash scripts/push-secrets.sh
 
 ## 環境變數
 
-| 檔案                     | 內容                                                                   |
-| ------------------------ | ---------------------------------------------------------------------- |
-| `.env`                   | PostgreSQL 帳號、Cloudflare Tunnel Token                               |
+| 檔案                     | 內容                                                                               |
+| ------------------------ | ---------------------------------------------------------------------------------- |
+| `.env`                   | PostgreSQL 帳號、Cloudflare Tunnel Token                                           |
 | `backend/shared.env`     | DB URL、Frontend URL、Twitch App 金鑰、Groq / Gemini / OpenRouter、YouTube API Key |
-| `backend/api/.env`       | JWT Secret、API URL                                                    |
-| `backend/twitch/.env`    | Bot ID、Owner ID                                                       |
-| `backend/discord/.env`   | Discord Bot Token、Presence 設定                                       |
-| `backend/scrapling/.env` | Threads / Instagram session cookie                                     |
+| `backend/api/.env`       | JWT Secret、API URL                                                                |
+| `backend/twitch/.env`    | Bot ID、Owner ID                                                                   |
+| `backend/discord/.env`   | Discord Bot Token、Presence 設定                                                   |
+| `backend/scrapling/.env` | Threads / Instagram session cookie                                                 |
 
 Cloudflare Pages 需設定環境變數 `API_BACKEND`（後端位址）。
 

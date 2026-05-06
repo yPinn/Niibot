@@ -66,8 +66,9 @@ src/
 │   ├── apiCache.ts # 記憶體內 TTL 快取（上限 200 條）+ 請求合併（deduplication）
 │   └── sort.ts     # 通用排序工具
 ├── pages/
-│   ├── dashboard/  # Twitch Bot（Commands、Events、Overview、SystemStatus）
-│   ├── modules/    # Timers、GameQueue、VideoQueue
+│   ├── dashboard/  # Twitch Bot（Commands、Events、Overview）
+│   ├── modules/    # Timers、GameQueue、VideoQueue（YouTube / Bilibili）
+│   ├── analytics/  # Insights、SystemStatus
 │   ├── discord/    # Discord Dashboard
 │   ├── docs/       # GetStarted、Terms、Privacy
 │   └── ...         # Landing、Login、PublicCommands、Overlays、Settings
@@ -86,6 +87,7 @@ functions/          # CF Pages Functions — /api/*、/health、/status 反向�
 /login                                → PublicOnlyRoute（已登入者重導）
 /docs                                 → ProtectedRoute → GetStarted
 /discord/dashboard                    → ProtectedRoute → Discord Bot
+/analytics, /analytics/insights       → ProtectedRoute → Analytics（Insights / SystemStatus）
 /dashboard, /commands…                → ProtectedRoute → SidebarLayout
 ```
 

@@ -11,7 +11,6 @@ backend/
 ├── discord/    # Discord Bot — Slash Commands、生日提醒、社群預覽、AI
 ├── shared/     # 共用模組（詳見下方）
 ├── scripts/    # DB 管理、OAuth token 工具
-├── data/       # 靜態 JSON（運勢、塔羅、遊戲清單等）
 ├── tests/      # pytest
 ├── pyproject.toml
 └── uv.lock
@@ -30,7 +29,7 @@ backend/
 | `ai_provider.py`        | 多 AI Provider 鏈（Groq / Gemini / OpenRouter），自動 fallback |
 | `models/`               | Pydantic 資料模型                                              |
 | `repositories/`         | 資料庫存取層（per-domain）                                     |
-| `migrations/`           | 自製 migration runner；版本腳本在 `versions/`（目前 v040）     |
+| `migrations/`           | 自製 migration runner；版本腳本在 `versions/`（目前 v043）     |
 
 ## 服務架構
 
