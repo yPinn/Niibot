@@ -142,6 +142,13 @@
   --leading-body: 1.5;
   --leading-tight: 1.15;
 
+  /* ── Layout Heights ── */
+  --h-topbar: 4rem; /* SidebarLayout 頂部導覽列 (h-16) */
+  --h-page-header: calc(
+    var(--text-page-title) * var(--leading-heading) + var(--text-sub) * var(--leading-body) +
+      0.125rem
+  ); /* 標準頁面標題列：h1 + p.mt-0.5 */
+
   /* ── Status Colors ── */
   --status-online: oklch(0.72 0.19 155); /* green */
   --status-offline: oklch(0.63 0.24 25); /* red */

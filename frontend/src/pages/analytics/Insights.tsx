@@ -1301,7 +1301,7 @@ export default function Insights() {
         </div>
 
         {/* Right: viewer list */}
-        <div className="rounded-lg border bg-card p-section flex flex-col gap-section lg:max-h-[calc(100vh-3rem)]">
+        <div className="rounded-lg border bg-card p-section flex flex-col gap-section lg:max-h-[calc(100svh-var(--h-topbar)-2*var(--spacing-page-lg)-var(--spacing-section)-var(--h-page-header))]">
           <Input
             placeholder="搜尋觀眾..."
             value={search}
