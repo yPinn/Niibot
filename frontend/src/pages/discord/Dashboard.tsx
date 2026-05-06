@@ -1,3 +1,4 @@
+import { DiscordHelpBanner } from '@/components/DiscordHelpBanner'
 import { PageHeader } from '@/components/PageHeader'
 import { PageMain } from '@/components/PageMain'
 import {
@@ -12,6 +13,7 @@ import {
   Stagger,
   StaggerItem,
 } from '@/components/ui'
+import { WarningBanner } from '@/components/WarningBanner'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
 const FEATURES = [
@@ -80,10 +82,10 @@ export default function DiscordDashboard() {
 
       {/* Invite CTA */}
       <SlideUp>
-        <div className="flex flex-col gap-4 rounded-2xl border border-[#5865F2]/20 bg-[#5865F2]/5 p-6 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-4 rounded-2xl border border-discord/20 bg-discord/5 p-6 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-start gap-4">
-            <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-[#5865F2]/10">
-              <Icon icon="fa-brands fa-discord" size="xl" wrapperClassName="text-[#5865F2]" />
+            <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-discord/10">
+              <Icon icon="fa-brands fa-discord" size="xl" wrapperClassName="text-discord" />
             </div>
             <div>
               <p className="text-card-title font-semibold">邀請 Bot 至您的伺服器</p>
@@ -93,14 +95,14 @@ export default function DiscordDashboard() {
             </div>
           </div>
           {INVITE_URL ? (
-            <Button asChild className="shrink-0 bg-[#5865F2] hover:bg-[#5865F2]/90">
+            <Button asChild className="shrink-0 bg-discord hover:bg-discord/90">
               <a href={INVITE_URL} target="_blank" rel="noreferrer">
                 <Icon icon="fa-solid fa-plus" size="sm" />
                 邀請 Bot
               </a>
             </Button>
           ) : (
-            <span className="shrink-0 rounded-lg border border-dashed border-[#5865F2]/40 px-page py-2.5 text-sub text-muted-foreground">
+            <span className="shrink-0 rounded-lg border border-dashed border-discord/40 px-page py-2.5 text-sub text-muted-foreground">
               邀請連結設定中
             </span>
           )}
@@ -116,7 +118,7 @@ export default function DiscordDashboard() {
               <Card className="h-full py-section">
                 <CardHeader className="px-section pb-element">
                   <CardTitle className="flex items-center gap-element text-card-title">
-                    <Icon icon={f.icon} size="md" wrapperClassName="text-[#5865F2]" />
+                    <Icon icon={f.icon} size="md" wrapperClassName="text-discord" />
                     {f.title}
                   </CardTitle>
                 </CardHeader>
@@ -161,39 +163,16 @@ export default function DiscordDashboard() {
 
       {/* Setup note */}
       <SlideUp inView delay={0.1}>
-        <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-page py-3 dark:border-amber-900/50 dark:bg-amber-950/30">
-          <Icon
-            icon="fa-solid fa-triangle-exclamation"
-            wrapperClassName="size-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-500"
-          />
-          <p className="text-sub leading-relaxed text-amber-800 dark:text-amber-400">
-            <strong>伺服器事件日誌</strong>需要管理員先在頻道內執行一次{' '}
-            <code className="font-mono font-semibold">/setlog</code>{' '}
-            指定要記錄的頻道，之後就全自動。其他功能 Bot 加入後即可直接使用。
-          </p>
-        </div>
+        <WarningBanner>
+          <strong>伺服器事件日誌</strong>需要管理員先在頻道內執行一次{' '}
+          <code className="font-mono font-semibold">/setlog</code>{' '}
+          指定要記錄的頻道，之後就全自動。其他功能 Bot 加入後即可直接使用。
+        </WarningBanner>
       </SlideUp>
 
       {/* Help */}
       <SlideUp inView delay={0.1}>
-        <div className="flex items-center gap-3 rounded-xl border bg-muted/30 px-page py-3">
-          <Icon icon="fa-brands fa-discord" size="lg" wrapperClassName="text-[#5865F2]" />
-          <p className="text-sub">
-            <span className="font-medium">遇到問題？</span>
-            <span className="ml-1 text-muted-foreground">
-              加入{' '}
-              <a
-                href={INVITE_URL}
-                target="_blank"
-                rel="noreferrer"
-                className="text-primary underline-offset-4 hover:underline"
-              >
-                Discord 社群
-              </a>{' '}
-              回報問題或提出建議。
-            </span>
-          </p>
-        </div>
+        <DiscordHelpBanner />
       </SlideUp>
     </PageMain>
   )

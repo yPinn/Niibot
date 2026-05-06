@@ -1,45 +1,12 @@
-import type { CSSProperties } from 'react'
-import { useCallback, useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { toast } from 'sonner'
 
-import { getBotModStatus, grantBotMod } from '@/api/channels'
+import { DiscordHelpBanner } from '@/components/DiscordHelpBanner'
 import { PageHeader } from '@/components/PageHeader'
 import { PageMain } from '@/components/PageMain'
-import {
-  Badge,
-  Button,
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  Icon,
-  Skeleton,
-} from '@/components/ui'
+import { Badge, Card, CardContent, CardHeader, CardTitle, Icon } from '@/components/ui'
+import { WarningBanner } from '@/components/WarningBanner'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
-
-function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false)
-
-  function handleCopy() {
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
-    })
-  }
-
-  return (
-    <button
-      onClick={handleCopy}
-      className="ml-auto shrink-0 rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
-      title="複製"
-    >
-      <i
-        className={`text-label ${copied ? 'fa-solid fa-check text-green-500' : 'fa-regular fa-copy'}`}
-      />
-    </button>
-  )
-}
 
 type ChatBadge = 'broadcaster' | 'mod' | null
 
@@ -47,81 +14,103 @@ type ChatLine =
   | { type: 'message'; badge: ChatBadge; username: string; color: string; message: string }
   | { type: 'system'; message: string }
 
-// iOS inline badge: 20pt container, ~55% fill icon (11pt)
 function ChatBadgeIcon({ badge }: { badge: ChatBadge }) {
-  const base: CSSProperties = {
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '20px',
-    height: '20px',
-    borderRadius: '4px',
-    marginRight: '4px',
-    flexShrink: 0,
-    verticalAlign: 'middle',
-  }
+  const base = 'inline-flex shrink-0 items-center justify-center size-5 rounded mr-1'
   if (badge === 'broadcaster') {
     return (
-      <span style={{ ...base, background: '#e91916' }}>
-        <i className="fa-solid fa-video text-white" style={{ fontSize: '11px' }} />
+      <span className={`${base} bg-status-live`}>
+        <i className="fa-solid fa-video text-xs text-white" />
       </span>
     )
   }
   if (badge === 'mod') {
     return (
-      <span style={{ ...base, background: '#00ad03' }}>
-        <i className="fa-solid fa-sword text-white" style={{ fontSize: '11px' }} />
+      <span className={`${base} bg-status-online`}>
+        <i className="fa-solid fa-sword text-xs text-white" />
       </span>
     )
   }
   return null
 }
 
-function TwitchChatMockup({ channel, lines }: { channel: string; lines: ChatLine[] }) {
+function TwitchChatMockup({
+  channel,
+  lines,
+  command,
+}: {
+  channel: string
+  lines: ChatLine[]
+  command?: string
+}) {
+  const [copied, setCopied] = useState(false)
+
+  function handleCopy() {
+    if (!command) return
+    navigator.clipboard.writeText(command).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    })
+  }
+
   return (
-    <div className="overflow-hidden rounded-lg border border-zinc-700 bg-[#18181b] text-white">
-      {/* Header — nav bar icon: 22pt (iOS HIG) */}
-      <div className="flex items-center gap-2 border-b border-zinc-700 bg-[#0e0e10] px-4 py-2.5">
-        <i className="fa-brands fa-twitch text-purple-400" style={{ fontSize: '22px' }} />
-        <span className="font-semibold text-zinc-200" style={{ fontSize: '15px' }}>
-          {channel}
-        </span>
-        <span className="ml-auto text-zinc-500" style={{ fontSize: '13px' }}>
-          聊天室
-        </span>
+    <div className="overflow-hidden rounded-lg border border-border bg-card text-foreground">
+      {/* Header */}
+      <div className="flex items-center gap-2 border-b border-border bg-background px-4 py-2.5">
+        <i className="fa-brands fa-twitch text-xl text-primary" />
+        <span className="text-sub font-semibold text-foreground">{channel}</span>
+        <span className="ml-auto text-label text-muted-foreground">聊天室</span>
       </div>
 
-      {/* Messages — body 15pt, footnote 13pt (iOS HIG) */}
-      <div className="flex flex-col px-3 py-3" style={{ gap: '8px' }}>
+      {/* Messages */}
+      <div className="flex flex-col gap-2 px-3 py-3">
         {lines.map((line, i) => {
           if (line.type === 'system') {
             return (
-              <p key={i} style={{ fontSize: '13px', color: '#adadb8' }}>
+              <p key={i} className="text-label text-muted-foreground">
                 {line.message}
               </p>
             )
           }
           return (
-            <div key={i} className="flex items-center flex-wrap" style={{ gap: '2px' }}>
+            <div key={i} className="flex flex-wrap items-center gap-0.5">
               <ChatBadgeIcon badge={line.badge} />
-              <span className="font-bold" style={{ fontSize: '15px', color: line.color }}>
+              <span className="text-sub font-bold" style={{ color: line.color }}>
                 {line.username}
               </span>
-              <span style={{ fontSize: '15px', color: '#adadb8', margin: '0 3px' }}>:</span>
-              <span style={{ fontSize: '15px', color: '#efeff1' }}>{line.message}</span>
+              <span className="mx-1 text-sub text-muted-foreground">:</span>
+              <span className="text-sub text-foreground">{line.message}</span>
             </div>
           )
         })}
       </div>
 
-      {/* Input — toolbar icons: 22pt (iOS HIG) */}
-      <div className="border-t border-zinc-700 px-3 py-2.5">
-        <div className="flex items-center gap-3 rounded bg-zinc-800 px-3 py-2">
-          <i className="fa-regular fa-face-smile text-zinc-500" style={{ fontSize: '22px' }} />
-          <span className="flex-1 text-zinc-500" style={{ fontSize: '13px' }}>
-            在 {channel} 的聊天室發言…
-          </span>
-          <i className="fa-regular fa-paper-plane text-zinc-500" style={{ fontSize: '22px' }} />
+      {/* Input */}
+      <div className="border-t border-border px-3 py-2.5">
+        <div className="flex items-center gap-3 rounded bg-muted px-3 py-2">
+          <i className="fa-regular fa-face-smile text-xl text-muted-foreground" />
+          {command ? (
+            <>
+              <code className="flex-1 select-text font-mono text-label text-foreground">
+                {command}
+              </code>
+              <button
+                onClick={handleCopy}
+                className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
+                title="複製"
+              >
+                <i
+                  className={`text-lg ${copied ? 'fa-solid fa-check text-status-success' : 'fa-regular fa-copy'}`}
+                />
+              </button>
+            </>
+          ) : (
+            <>
+              <span className="flex-1 text-label text-muted-foreground">
+                在 {channel} 的聊天室發言…
+              </span>
+              <i className="fa-regular fa-paper-plane text-xl text-muted-foreground" />
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -146,7 +135,7 @@ const MOD_CHAT_PREVIEW: ChatLine[] = [
   },
 ]
 
-const ALT_MOD_METHODS = [
+const MOD_METHODS = [
   {
     icon: 'fa-solid fa-user',
     title: '從觀眾名單設定',
@@ -200,37 +189,6 @@ const NEXT_STEPS = [
 export default function GetStarted() {
   useDocumentTitle('Get Started')
 
-  const [isMod, setIsMod] = useState<boolean | null>(null)
-  const [granting, setGranting] = useState(false)
-
-  useEffect(() => {
-    getBotModStatus().then(res => {
-      if (res.ok) {
-        setIsMod(res.data.is_moderator)
-      } else if (res.status === 503) {
-        toast.warning('機器人服務暫時無法使用，請稍後再試')
-      }
-    })
-  }, [])
-
-  const handleGrantMod = useCallback(async () => {
-    setGranting(true)
-    try {
-      const res = await grantBotMod()
-      if (res.already_mod) {
-        setIsMod(true)
-        toast.info('Niibot 已經是管理員了')
-      } else if (res.granted) {
-        setIsMod(true)
-        toast.success('管理員授予成功')
-      }
-    } catch {
-      toast.error('授予失敗，請稍後再試')
-    } finally {
-      setGranting(false)
-    }
-  }, [])
-
   return (
     <PageMain className="select-none">
       <PageHeader
@@ -241,68 +199,25 @@ export default function GetStarted() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-3 text-card-title">
-            <Icon icon="fa-solid fa-shield-halved" size="md" wrapperClassName="text-amber-500" />
+            <Icon
+              icon="fa-solid fa-shield-halved"
+              size="md"
+              wrapperClassName="text-status-warning"
+            />
             讓機器人成為聊天室管理員
           </CardTitle>
           <p className="text-sub text-muted-foreground">
-            Mod 是 Twitch 頻道的管理員身份，機器人需要此身份才能在你的頻道正常發言與執行指令。
+            機器人需要 Mod 才能在你的頻道發言。透過右上角 <strong>Niibot</strong>{' '}
+            選單一鍵授予，或使用下列方式手動設定。
           </p>
         </CardHeader>
 
         <CardContent>
           <div className="grid items-start gap-card lg:grid-cols-2">
-            {/* Left: primary CTA + manual fallback */}
+            {/* Left: methods + notice */}
             <div className="flex flex-col gap-card">
-              {isMod === null ? (
-                <Skeleton className="h-9 w-full" />
-              ) : (
-                <Button
-                  type="button"
-                  variant={isMod === true ? 'outline' : 'default'}
-                  size="default"
-                  onClick={handleGrantMod}
-                  disabled={granting || isMod === true}
-                  className="w-full"
-                >
-                  {granting ? (
-                    <>
-                      <Icon icon="fa-solid fa-spinner fa-spin" size="sm" />
-                      授予中…
-                    </>
-                  ) : isMod === true ? (
-                    <>
-                      <Icon icon="fa-solid fa-check" size="sm" wrapperClassName="text-green-500" />
-                      已是管理員
-                    </>
-                  ) : (
-                    <>
-                      <Icon icon="fa-solid fa-user-shield" size="sm" />
-                      一鍵授予管理員
-                    </>
-                  )}
-                </Button>
-              )}
-
-              <div className="flex items-center gap-3">
-                <div className="flex-1 border-t" />
-                <span className="text-label shrink-0 text-muted-foreground">或手動授予</span>
-                <div className="flex-1 border-t" />
-              </div>
-
-              <div className="flex items-center gap-3 rounded-lg border bg-muted/50 px-page py-3">
-                <Icon
-                  icon="fa-solid fa-terminal"
-                  size="md"
-                  wrapperClassName="text-muted-foreground"
-                />
-                <code className="font-mono text-content font-semibold tracking-wide select-text">
-                  /mod niibot_
-                </code>
-                <CopyButton text="/mod niibot_" />
-              </div>
-
               <div className="grid gap-element sm:grid-cols-2 lg:grid-cols-1">
-                {ALT_MOD_METHODS.map(method => (
+                {MOD_METHODS.map(method => (
                   <div key={method.title} className="flex gap-3 rounded-lg border bg-card p-page">
                     <Icon
                       icon={method.icon}
@@ -318,32 +233,19 @@ export default function GetStarted() {
                   </div>
                 ))}
               </div>
+
+              <WarningBanner>
+                /mod 指令需由頻道主（Broadcaster）或頻道內的主要 Mod 執行。
+              </WarningBanner>
             </div>
 
-            {/* Right: mockup + notice */}
-            <div className="flex flex-col gap-card">
-              <TwitchChatMockup channel="你的頻道" lines={MOD_CHAT_PREVIEW} />
-
-              <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-page py-3 dark:border-amber-900/50 dark:bg-amber-950/30">
-                <Icon
-                  icon="fa-solid fa-triangle-exclamation"
-                  size="md"
-                  wrapperClassName="mt-0.5 text-amber-600 dark:text-amber-500"
-                />
-                <p className="text-label leading-relaxed text-amber-800 dark:text-amber-400">
-                  /mod 指令需由頻道主（Broadcaster）或頻道內的主要 Mod 執行。
-                </p>
-              </div>
-            </div>
+            <TwitchChatMockup channel="你的頻道" lines={MOD_CHAT_PREVIEW} command="/mod niibot_" />
           </div>
         </CardContent>
       </Card>
 
       <section className="flex flex-col gap-section">
-        <div className="flex flex-col gap-element">
-          <h2 className="text-section-title font-semibold">設定完成後，接著做什麼？</h2>
-          <p className="text-sub text-muted-foreground">從這些功能開始，讓 Niibot 發揮最大價值。</p>
-        </div>
+        <h2 className="text-section-title font-semibold">設定完成後，接著做什麼？</h2>
 
         <div className="grid gap-section sm:grid-cols-2 lg:grid-cols-3">
           {NEXT_STEPS.map(item => (
@@ -369,24 +271,7 @@ export default function GetStarted() {
         </div>
       </section>
 
-      <div className="flex items-center gap-3 rounded-xl border bg-muted/30 px-page py-3">
-        <Icon icon="fa-brands fa-discord" size="lg" wrapperClassName="text-blue-500" />
-        <p className="text-sub">
-          <span className="font-medium">遇到問題？</span>
-          <span className="ml-1 text-muted-foreground">
-            加入{' '}
-            <a
-              href={import.meta.env.VITE_DISCORD_INVITE_URL}
-              target="_blank"
-              rel="noreferrer"
-              className="text-primary underline-offset-4 hover:underline"
-            >
-              Discord 社群
-            </a>{' '}
-            回報問題或提出建議。
-          </span>
-        </p>
-      </div>
+      <DiscordHelpBanner />
     </PageMain>
   )
 }

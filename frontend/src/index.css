@@ -68,6 +68,12 @@
   --color-status-info: var(--status-info);
   --color-status-success: var(--status-success);
   --color-status-special: var(--status-special);
+  --color-status-warning: var(--status-warning);
+  --color-status-follow: var(--status-follow);
+  --color-discord: oklch(0.55 0.22 275); /* Discord brand #5865F2 — fixed, not theme-adaptive */
+  --color-rank-gold: oklch(0.828 0.189 86);
+  --color-rank-silver: oklch(0.704 0.04 257);
+  --color-rank-bronze: oklch(0.75 0.183 56);
 
   /* ── Semantic Font Size Utilities ── */
   --text-page-title: var(--text-page-title);
@@ -144,6 +150,8 @@
   --status-success: oklch(0.72 0.19 155); /* green (alias) */
   --status-special: oklch(0.62 0.24 295); /* purple — 訂閱等特殊事件 */
   --status-live: oklch(0.65 0.26 27); /* red — live/broadcasting indicator */
+  --status-warning: oklch(0.62 0.18 50); /* amber — caution notices */
+  --status-follow: oklch(0.65 0.22 10); /* rose — follow / heart events */
 
   --radius: 0.625rem;
 
@@ -225,6 +233,8 @@
   --status-success: oklch(0.78 0.16 155);
   --status-special: oklch(0.7 0.2 295);
   --status-live: oklch(0.72 0.24 27); /* red — live/broadcasting indicator */
+  --status-warning: oklch(0.75 0.15 55); /* amber — caution notices (dark) */
+  --status-follow: oklch(0.72 0.19 10); /* rose — follow / heart events (dark) */
 }
 
 @layer base {
