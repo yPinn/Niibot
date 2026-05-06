@@ -19,8 +19,10 @@ from shared.repositories.video_queue import (
     SOURCE_PRIORITY,
     VideoQueueRepository,
     VideoQueueSettingsRepository,
+    extract_bilibili_bvid,
     extract_twitch_clip_slug,
     extract_youtube_info,
+    fetch_bilibili_info,
     fetch_twitch_clip_info,
     fetch_yt_info,
 )
@@ -409,13 +411,16 @@ async def add_video_entry(
     app_settings: Settings = Depends(get_settings),
 ) -> PublicVideoQueueState:
     """Broadcaster directly adds a video to the queue from the dashboard."""
-    # Detect URL type: try YouTube first, then Twitch clip
+    # Detect URL type: try YouTube first, then Twitch clip, then Bilibili
     video_id, is_vertical = extract_youtube_info(body.url)
     clip_slug: str | None = None
+    bvid: str | None = None
     if not video_id:
         clip_slug = extract_twitch_clip_slug(body.url)
-        if not clip_slug:
-            raise HTTPException(status_code=422, detail="Invalid YouTube or Twitch clip URL")
+    if not video_id and not clip_slug:
+        bvid = extract_bilibili_bvid(body.url)
+    if not video_id and not clip_slug and not bvid:
+        raise HTTPException(status_code=422, detail="Invalid YouTube, Twitch clip, or Bilibili URL")
 
     try:
         repo = VideoQueueRepository(pool)
@@ -426,8 +431,8 @@ async def add_video_entry(
         if not settings.enabled:
             raise HTTPException(status_code=403, detail="Video queue is disabled")
 
-        # Exactly one of clip_slug or video_id is non-None here (the 422 raise above ensures this).
-        active_id: str = clip_slug if clip_slug else video_id  # type: ignore[assignment]
+        # Exactly one of clip_slug / bvid / video_id is non-None here (the 422 raise above ensures this).
+        active_id: str = clip_slug or bvid or video_id  # type: ignore[assignment]
         if await repo.video_is_active(channel_id, active_id):
             raise HTTPException(status_code=409, detail="Video already in queue")
 
@@ -439,6 +444,10 @@ async def add_video_entry(
             video_id = clip_slug
             is_vertical = False
             video_type = "twitch_clip"
+        elif bvid:
+            title, duration_seconds, _, is_vertical = await fetch_bilibili_info(bvid)
+            video_id = bvid
+            video_type = "bilibili"
         else:
             if video_id is None:
                 raise HTTPException(status_code=422, detail="No valid video source")

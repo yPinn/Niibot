@@ -14,7 +14,11 @@ from shared.repositories.video_queue import (
     SOURCE_PRIORITY,
     VideoQueueRepository,
     VideoQueueSettingsRepository,
+    extract_bilibili_bvid,
+    extract_twitch_clip_slug,
     extract_youtube_info,
+    fetch_bilibili_info,
+    fetch_twitch_clip_info,
     fetch_yt_info,
 )
 from utils.reauth import is_scope_error, reauth_notifier
@@ -302,11 +306,22 @@ class ChannelPointsComponent(commands.Component):
                 return
 
             video_id, is_vertical = extract_youtube_info(user_input)
+            clip_slug: str | None = None
+            bvid: str | None = None
             if not video_id:
-                await self._reply(broadcaster, f"@{user_name} 請在兌換時輸入有效的 YouTube 連結")
+                clip_slug = extract_twitch_clip_slug(user_input)
+            if not video_id and not clip_slug:
+                bvid = extract_bilibili_bvid(user_input)
+            if not video_id and not clip_slug and not bvid:
+                await self._reply(
+                    broadcaster,
+                    f"@{user_name} 請在兌換時輸入有效的 YouTube、Twitch Clip 或 Bilibili 連結",
+                )
                 return
 
-            if await self.vq_repo.video_is_active(channel_id, video_id):
+            active_id: str = clip_slug or bvid or video_id  # type: ignore[assignment]
+
+            if await self.vq_repo.video_is_active(channel_id, active_id):
                 await self._reply(broadcaster, f"@{user_name} 該影片已在佇列中")
                 return
 
@@ -340,9 +355,31 @@ class ChannelPointsComponent(commands.Component):
                         )
                         return
 
-            title, duration_seconds, view_count, _ = await fetch_yt_info(
-                video_id, self.settings.youtube_api_key, self._session
-            )
+            if clip_slug:
+                title, duration_seconds, view_count = await fetch_twitch_clip_info(
+                    clip_slug,
+                    self.settings.twitch_client_id,
+                    self.settings.twitch_client_secret,
+                    self._session,
+                )
+                video_id = clip_slug
+                is_vertical = False
+                video_type = "twitch_clip"
+            elif bvid:
+                title, duration_seconds, view_count, is_vertical = await fetch_bilibili_info(
+                    bvid, self._session
+                )
+                video_id = bvid
+                video_type = "bilibili"
+            else:
+                assert video_id is not None
+                title, duration_seconds, view_count, is_vertical_from_api = await fetch_yt_info(
+                    video_id,
+                    self.settings.youtube_api_key,
+                    self._session,
+                )
+                is_vertical = is_vertical or is_vertical_from_api
+                video_type = "youtube"
 
             # View count check — if threshold is set and API failed to return view_count,
             # reject rather than silently bypassing the filter.
@@ -371,12 +408,13 @@ class ChannelPointsComponent(commands.Component):
 
             await self.vq_repo.add(
                 channel_id=channel_id,
-                video_id=video_id,
+                video_id=video_id,  # type: ignore[arg-type]
                 requested_by=user_name,
                 source="redemption",
                 title=title,
                 duration_seconds=duration_seconds,
                 is_vertical=is_vertical,
+                video_type=video_type,
                 priority=SOURCE_PRIORITY["redemption"],
                 requested_by_id=user_id,
             )

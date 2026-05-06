@@ -16,7 +16,7 @@ class VideoQueueEntry:
     requested_by: str
     source: str  # 'chat' | 'redemption' | 'donation' | 'dashboard'
     status: str  # 'queued' | 'playing' | 'done' | 'skipped'
-    video_type: str = "youtube"  # 'youtube' | 'twitch_clip'
+    video_type: str = "youtube"  # 'youtube' | 'twitch_clip' | 'bilibili'
     priority: int = 0
     title: str | None = None
     duration_seconds: int | None = None

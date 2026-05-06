@@ -5,6 +5,8 @@ Also contains shared utilities:
   - fetch_yt_info(): YouTube Data API v3 call, used by bot and channel_points
   - extract_twitch_clip_slug(): pure string parsing for Twitch clip URLs
   - fetch_twitch_clip_info(): Twitch Helix API call for clip metadata
+  - extract_bilibili_bvid(): pure string parsing for Bilibili BV URLs
+  - fetch_bilibili_info(): Bilibili public API call for video metadata
 """
 
 from __future__ import annotations
@@ -117,6 +119,69 @@ async def fetch_yt_info(
             return title, duration_seconds or None, view_count, is_vertical
     except Exception as exc:
         LOGGER.warning(f"[YouTube API] fetch_yt_info failed for {video_id}: {type(exc).__name__}")
+        return None, None, None, False
+    finally:
+        if _own_session:
+            await _session.close()
+
+
+# ---------------------------------------------------------------------------
+# Bilibili utilities
+# ---------------------------------------------------------------------------
+
+_BILIBILI_BV_RE = re.compile(r"(?:https?://)?(?:www\.)?bilibili\.com/video/(BV[A-Za-z0-9]{10})")
+
+
+def extract_bilibili_bvid(text: str) -> str | None:
+    """Extract Bilibili BV ID from URL. Returns None if not found."""
+    m = _BILIBILI_BV_RE.search(text)
+    return m.group(1) if m else None
+
+
+async def fetch_bilibili_info(
+    bvid: str,
+    session: aiohttp.ClientSession | None = None,
+) -> tuple[str | None, int | None, int | None, bool]:
+    """Fetch video title, duration, view count, and orientation via Bilibili public API.
+
+    Returns (title, duration_seconds, view_count, is_vertical).
+    All values are None/False on any failure.
+    """
+    _own_session = session is None
+    _session: aiohttp.ClientSession = session or aiohttp.ClientSession()
+    try:
+        async with _session.get(
+            "https://api.bilibili.com/x/web-interface/view",
+            params={"bvid": bvid},
+            headers={
+                "Referer": "https://www.bilibili.com",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            },
+            timeout=aiohttp.ClientTimeout(total=5),
+        ) as resp:
+            if resp.status != 200:
+                LOGGER.warning(f"[Bilibili API] Unexpected status {resp.status} for {bvid}")
+                return None, None, None, False
+            data = await resp.json(content_type=None)
+            if data.get("code") != 0:
+                LOGGER.warning(
+                    f"[Bilibili API] Error {data.get('code')} for {bvid}: {data.get('message')}"
+                )
+                return None, None, None, False
+            video_data = data.get("data", {})
+            title: str | None = video_data.get("title")
+            duration_seconds: int | None = video_data.get("duration")
+            view_count_raw = video_data.get("stat", {}).get("view")
+            view_count: int | None = int(view_count_raw) if view_count_raw is not None else None
+            dimension = video_data.get("dimension", {})
+            width = dimension.get("width") or 0
+            height = dimension.get("height") or 0
+            is_vertical = height > width if width > 0 and height > 0 else False
+            return title, duration_seconds, view_count, is_vertical
+    except Exception as exc:
+        LOGGER.warning(
+            f"[Bilibili API] fetch_bilibili_info failed for {bvid}: {type(exc).__name__}"
+        )
         return None, None, None, False
     finally:
         if _own_session:

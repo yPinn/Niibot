@@ -26,8 +26,10 @@ from shared.repositories.video_queue import (
     SOURCE_PRIORITY,
     VideoQueueRepository,
     VideoQueueSettingsRepository,
+    extract_bilibili_bvid,
     extract_twitch_clip_slug,
     extract_youtube_info,
+    fetch_bilibili_info,
     fetch_twitch_clip_info,
     fetch_yt_info,
 )
@@ -87,17 +89,20 @@ class VideoQueueComponent(BotComponent):
         user_name = ctx.chatter.display_name or ctx.chatter.name or ""
         user_id: str | None = ctx.chatter.id or None
 
-        # Detect URL type: try YouTube first, then Twitch clip
+        # Detect URL type: try YouTube first, then Twitch clip, then Bilibili
         video_id, is_vertical = extract_youtube_info(url_str)
         clip_slug: str | None = None
+        bvid: str | None = None
         if not video_id:
             clip_slug = extract_twitch_clip_slug(url_str)
-            if not clip_slug:
-                await self._ctx_reply(ctx, "請提供有效的 YouTube 或 Twitch Clip 連結")
-                return
+        if not video_id and not clip_slug:
+            bvid = extract_bilibili_bvid(url_str)
+        if not video_id and not clip_slug and not bvid:
+            await self._ctx_reply(ctx, "請提供有效的 YouTube、Twitch Clip 或 Bilibili 連結")
+            return
 
-        # Exactly one of clip_slug or video_id is non-None here (the early return above ensures this).
-        active_id: str = clip_slug if clip_slug else video_id  # type: ignore[assignment]
+        # Exactly one of video_id / clip_slug / bvid is non-None here.
+        active_id: str = clip_slug or bvid or video_id  # type: ignore[assignment]
 
         # Duplicate check
         if await self.vq_repo.video_is_active(channel_id, active_id):
@@ -132,7 +137,6 @@ class VideoQueueComponent(BotComponent):
                     return
 
         if clip_slug:
-            # Fetch Twitch clip metadata
             title, duration_seconds, view_count = await fetch_twitch_clip_info(
                 clip_slug,
                 self._settings.twitch_client_id,
@@ -142,10 +146,15 @@ class VideoQueueComponent(BotComponent):
             video_id = clip_slug
             is_vertical = False
             video_type = "twitch_clip"
+        elif bvid:
+            title, duration_seconds, view_count, is_vertical = await fetch_bilibili_info(
+                bvid, self._session
+            )
+            video_id = bvid
+            video_type = "bilibili"
         else:
             if video_id is None:
-                raise RuntimeError("video_id is None but clip_slug is also None")
-            # Fetch info from YouTube Data API (graceful fallback on failure)
+                raise RuntimeError("video_id is None but clip_slug and bvid are also None")
             title, duration_seconds, view_count, is_vertical_from_api = await fetch_yt_info(
                 video_id, self._settings.youtube_api_key, self._session
             )

@@ -8,7 +8,7 @@ export interface VideoQueueEntry {
   is_vertical: boolean
   requested_by: string
   source: string
-  video_type: 'youtube' | 'twitch_clip'
+  video_type: 'youtube' | 'twitch_clip' | 'bilibili'
   started_at: string | null
 }
 
@@ -155,7 +155,7 @@ export async function addVideoToQueue(url: string): Promise<PublicVideoQueueStat
     else if (detail === 'Queue is full') throw new Error('隊列已滿')
     else throw new Error(detail || '新增失敗，請稍後再試')
   }
-  if (response.status === 422) throw new Error('無效的 YouTube 或 Twitch Clip 連結')
+  if (response.status === 422) throw new Error('無效的 YouTube、Twitch Clip 或 Bilibili 連結')
   if (!response.ok) throw new Error('新增失敗，請稍後再試')
   return response.json()
 }

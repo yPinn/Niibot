@@ -310,9 +310,10 @@ export default function VideoQueueOverlay() {
 
     if (newId === currentIdRef.current) return // same video, nothing to do
 
-    // YouTube requires the IFrame API to be loaded; Twitch clips need the Twitch Embed API
+    // YouTube requires the IFrame API to be loaded; Twitch clips need the Twitch Embed API;
+    // Bilibili uses a plain iframe — no external API to wait for.
     if (current?.video_type === 'twitch_clip' && !twitchReady) return
-    if (current?.video_type !== 'twitch_clip' && !ytReady) return
+    if (current?.video_type === 'youtube' && !ytReady) return
 
     destroyAllPlayers(
       [playerRef, leftPlayerRef, rightPlayerRef],
@@ -385,6 +386,35 @@ export default function VideoQueueOverlay() {
         clipTimerRef.current = setTimeout(() => handleVideoEnd(currentId), remaining * 1000 + 500)
       }
       return // skip YouTube player creation below
+    }
+
+    // ── Bilibili player ─────────────────────────────────────────────────
+    if (current.video_type === 'bilibili') {
+      if (current.duration_seconds && joinElapsed >= current.duration_seconds - 0.5) {
+        handleVideoEnd(currentId)
+        return
+      }
+
+      setElapsed(joinElapsed)
+      progressRef.current = setInterval(() => {
+        setElapsed(prev => prev + 1)
+      }, 1000)
+
+      if (!containerRef.current) return
+      containerRef.current.innerHTML = ''
+      const iframe = document.createElement('iframe')
+      const startSeconds = Math.floor(joinElapsed)
+      iframe.src = `https://player.bilibili.com/player.html?bvid=${current.video_id}&autoplay=1&danmaku=0&high_quality=1&t=${startSeconds}`
+      iframe.style.cssText = 'width:100%;height:100%;border:none'
+      iframe.allow = 'autoplay; fullscreen'
+      iframe.scrolling = 'no'
+      containerRef.current.appendChild(iframe)
+
+      if (current.duration_seconds) {
+        const remaining = Math.max(0, current.duration_seconds - joinElapsed)
+        clipTimerRef.current = setTimeout(() => handleVideoEnd(currentId), remaining * 1000 + 500)
+      }
+      return
     }
 
     // ── YouTube player ──────────────────────────────────────────────────
