@@ -169,10 +169,17 @@ class TimerManagerComponent(commands.Component):
                 )
                 return
 
-            await users[0].send_message(
-                message=f"/announce {message}" if timer.announce else message,
-                sender=self.bot.bot_id,
-            )
+            if timer.announce:
+                await users[0].send_announcement(
+                    message=message,
+                    moderator=self.bot.bot_id,
+                    color="primary",
+                )
+            else:
+                await users[0].send_message(
+                    message=message,
+                    sender=self.bot.bot_id,
+                )
             self._timer_last_fire[timer.id] = now
             self._timer_last_fire_lines[timer.id] = current_lines
             LOGGER.info(
@@ -209,10 +216,17 @@ class TimerManagerComponent(commands.Component):
                 )
                 return
 
-            await users[0].send_message(
-                message=f"/announce {message}" if bt.announce else message,
-                sender=self.bot.bot_id,
-            )
+            if bt.announce:
+                await users[0].send_announcement(
+                    message=message,
+                    moderator=self.bot.bot_id,
+                    color="primary",
+                )
+            else:
+                await users[0].send_message(
+                    message=message,
+                    sender=self.bot.bot_id,
+                )
 
             self._builtin_last_fire[bkey] = now
             self._builtin_last_fire_lines[bkey] = current_lines
