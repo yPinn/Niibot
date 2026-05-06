@@ -87,20 +87,20 @@ function snapToOption(options: readonly { value: number }[], value: number): num
   ).value
 }
 
-// Source badge — label and Tailwind colour classes per source type
+// Source badge — label and semantic colour classes per source type
 const SOURCE_CONFIG: Record<string, { label: string; className: string }> = {
   chat: { label: '聊天', className: 'text-muted-foreground' },
   redemption: {
     label: '兌換',
-    className: 'border-violet-300 text-violet-600 dark:border-violet-700 dark:text-violet-400',
+    className: 'border-status-special/50 text-status-special',
   },
   donation: {
     label: '斗內',
-    className: 'border-amber-300 text-amber-600 dark:border-amber-700 dark:text-amber-400',
+    className: 'border-status-warning/50 text-status-warning',
   },
   dashboard: {
     label: '主播',
-    className: 'border-blue-300 text-blue-600 dark:border-blue-700 dark:text-blue-400',
+    className: 'border-status-info/50 text-status-info',
   },
 }
 
@@ -108,7 +108,7 @@ function ClipBadge() {
   return (
     <Badge
       variant="outline"
-      className="shrink-0 text-[10px] px-1 py-0 text-purple-500 border-purple-400"
+      className="shrink-0 text-label px-1 py-0 text-status-special border-status-special/60"
     >
       Clip
     </Badge>
@@ -483,7 +483,7 @@ export default function VideoQueue() {
           <Icon
             icon="fa-regular fa-circle-question"
             wrapperClassName="size-5"
-            className="text-[18px]"
+            className="text-lg"
           />
         </Button>
       </div>

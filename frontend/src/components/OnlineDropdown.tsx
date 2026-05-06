@@ -1,11 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
-import { getTwitchChannelStatus, toggleTwitchChannel } from '@/api/channels'
+import {
+  getBotModStatus,
+  getTwitchChannelStatus,
+  grantBotMod,
+  toggleTwitchChannel,
+} from '@/api/channels'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
   Icon,
   Tooltip,
@@ -20,17 +26,28 @@ export function OnlineDropdown() {
   const { twitch: botStatus } = useServiceStatus()
   const [myChannelSubscribed, setMyChannelSubscribed] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [isMod, setIsMod] = useState<boolean | null>(null)
+  const [grantingMod, setGrantingMod] = useState(false)
   const hasLoadedRef = useRef(false)
+
+  const fetchChannelStatus = useCallback(async () => {
+    if (!user) return
+    try {
+      const data = await getTwitchChannelStatus()
+      if (data) setMyChannelSubscribed(data.subscribed)
+    } catch (error) {
+      if (import.meta.env.DEV) console.error('Failed to fetch channel status:', error)
+    }
+  }, [user])
 
   const fetchMyStatus = useCallback(async () => {
     if (!user) return
     try {
-      const data = await getTwitchChannelStatus()
-      if (data) {
-        setMyChannelSubscribed(data.subscribed)
-      }
+      const [channelData, modRes] = await Promise.all([getTwitchChannelStatus(), getBotModStatus()])
+      if (channelData) setMyChannelSubscribed(channelData.subscribed)
+      if (modRes.ok) setIsMod(modRes.data.is_moderator)
     } catch (error) {
-      if (import.meta.env.DEV) console.error('Failed to fetch my channel status:', error)
+      if (import.meta.env.DEV) console.error('Failed to fetch status:', error)
     }
   }, [user])
 
@@ -45,7 +62,7 @@ export function OnlineDropdown() {
     setLoading(true)
     try {
       await toggleTwitchChannel(user.id, !myChannelSubscribed)
-      await fetchMyStatus()
+      await fetchChannelStatus()
     } catch (error) {
       if (import.meta.env.DEV) console.error('Error toggling subscription:', error)
       toast.error('無法切換訂閱狀態', {
@@ -53,6 +70,24 @@ export function OnlineDropdown() {
       })
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleGrantMod = async () => {
+    setGrantingMod(true)
+    try {
+      const res = await grantBotMod()
+      if (res.already_mod) {
+        setIsMod(true)
+        toast.info('Niibot 已經是管理員了')
+      } else if (res.granted) {
+        setIsMod(true)
+        toast.success('管理員授予成功')
+      }
+    } catch {
+      toast.error('授予失敗，請稍後再試')
+    } finally {
+      setGrantingMod(false)
     }
   }
 
@@ -85,14 +120,22 @@ export function OnlineDropdown() {
       </Tooltip>
       <DropdownMenuContent align="end" className="w-(--radix-dropdown-menu-trigger-width)">
         <DropdownMenuItem
+          onClick={handleGrantMod}
+          disabled={grantingMod || isMod === true || !botStatus.online}
+        >
+          <Icon
+            icon={grantingMod ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-sword'}
+            wrapperClassName={isMod ? 'text-status-success' : ''}
+          />
+          {grantingMod ? '授予中…' : isMod ? '已是管理員' : '授予 Mod'}
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
           onClick={toggleMyChannelSubscription}
           disabled={loading || !botStatus.online}
         >
-          <Icon
-            icon={myChannelSubscribed ? 'fa-solid fa-pause' : 'fa-solid fa-play'}
-            wrapperClassName="mr-2 size-4"
-          />
-          <span>{myChannelSubscribed ? '停用訂閱' : '啟用訂閱'}</span>
+          <Icon icon={myChannelSubscribed ? 'fa-solid fa-pause' : 'fa-solid fa-play'} />
+          {myChannelSubscribed ? '停用訂閱' : '啟用訂閱'}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

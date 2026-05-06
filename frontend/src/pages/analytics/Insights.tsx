@@ -120,22 +120,22 @@ const ROW_GRID = 'grid-cols-[1.25rem_minmax(0,1fr)_5.5rem_5.5rem_5.5rem]'
 
 const RANK_STYLES = {
   1: {
-    gradient: 'bg-gradient-to-r from-amber-400/15',
-    border: 'border-amber-400/30',
+    gradient: 'bg-gradient-to-r from-rank-gold/15',
+    border: 'border-rank-gold/30',
     icon: 'fa-solid fa-trophy',
-    color: 'text-amber-400',
+    color: 'text-rank-gold',
   },
   2: {
-    gradient: 'bg-gradient-to-r from-slate-400/15',
-    border: 'border-slate-400/30',
+    gradient: 'bg-gradient-to-r from-rank-silver/15',
+    border: 'border-rank-silver/30',
     icon: 'fa-solid fa-medal',
-    color: 'text-slate-400',
+    color: 'text-rank-silver',
   },
   3: {
-    gradient: 'bg-gradient-to-r from-orange-400/15',
-    border: 'border-orange-400/30',
+    gradient: 'bg-gradient-to-r from-rank-bronze/15',
+    border: 'border-rank-bronze/30',
     icon: 'fa-solid fa-medal',
-    color: 'text-orange-400',
+    color: 'text-rank-bronze',
   },
 } as const
 
@@ -143,20 +143,26 @@ interface ViewerRowProps {
   viewer: ViewerSummary
   rank: number
   isHovered: boolean
-  onClick: () => void
+  onSelect: (id: string) => void
   onHover: (id: string | null) => void
 }
 
-function ViewerRow({ viewer, rank, isHovered, onClick, onHover }: ViewerRowProps) {
+const ViewerRow = React.memo(function ViewerRow({
+  viewer,
+  rank,
+  isHovered,
+  onSelect,
+  onHover,
+}: ViewerRowProps) {
   const name = viewer.display_name || viewer.username
   const top = rank <= 3 ? RANK_STYLES[rank as 1 | 2 | 3] : null
   return (
     <button
-      onClick={onClick}
+      onClick={() => onSelect(viewer.user_id)}
       onMouseEnter={() => onHover(viewer.user_id)}
       onMouseLeave={() => onHover(null)}
       className={cn(
-        'w-full grid items-center gap-3 rounded-md border px-3 py-2.5 hover:bg-accent transition-colors text-left',
+        'w-full grid items-center gap-3 rounded-md border px-3 py-2 hover:bg-accent transition-colors text-left',
         ROW_GRID,
         top && `${top.gradient} ${top.border}`,
         isHovered && 'ring-1 ring-inset ring-primary/40'
@@ -164,7 +170,7 @@ function ViewerRow({ viewer, rank, isHovered, onClick, onHover }: ViewerRowProps
     >
       {top ? (
         <span className={`flex justify-center ${top.color}`}>
-          <i className={`${top.icon} text-[11px]`} />
+          <i className={`${top.icon} text-xs`} />
         </span>
       ) : (
         <span className="text-sub font-mono font-semibold text-muted-foreground text-right">
@@ -180,7 +186,7 @@ function ViewerRow({ viewer, rank, isHovered, onClick, onHover }: ViewerRowProps
       <Col value={viewer.engagement_score.toFixed(1)} valueClassName="text-primary" />
     </button>
   )
-}
+})
 
 function Col({
   value,
@@ -202,6 +208,7 @@ function Col({
 
 interface ViewerListProps {
   filtered: ViewerSummary[]
+  rankMap: Map<string, number>
   sort: SortKey
   sortDir: 'desc' | 'asc'
   search: string
@@ -213,6 +220,7 @@ interface ViewerListProps {
 
 function ViewerList({
   filtered,
+  rankMap,
   sort,
   sortDir,
   search,
@@ -223,7 +231,7 @@ function ViewerList({
 }: ViewerListProps) {
   if (filtered.length === 0) {
     return (
-      <Empty className="border-none py-16">
+      <Empty className="border-none py-16 lg:flex-1">
         <EmptyHeader>
           <EmptyMedia>
             <Icon
@@ -241,19 +249,19 @@ function ViewerList({
     )
   }
   return (
-    <div className="flex flex-col">
+    <div className="flex flex-col lg:flex-1 lg:min-h-0">
       <div
-        className={`grid items-center gap-3 px-3 pb-1 border border-transparent text-label text-muted-foreground shrink-0 ${ROW_GRID}`}
+        className={`grid items-center gap-3 px-3 py-3 border border-transparent text-label text-muted-foreground shrink-0 ${ROW_GRID}`}
       >
         <span />
         <span>觀眾</span>
         {SORT_COLS.map(col => {
           const active = sort === col.key
-          return (
+          const btn = (
             <button
-              key={col.key}
               type="button"
               onClick={() => onSort(col.key)}
+              aria-sort={active ? (sortDir === 'desc' ? 'descending' : 'ascending') : 'none'}
               className={cn(
                 'flex items-center justify-end gap-1 rounded pl-1 pr-0 py-0.5 transition-colors',
                 active ? 'text-foreground font-medium' : 'hover:text-foreground'
@@ -273,19 +281,46 @@ function ViewerList({
               />
             </button>
           )
+          if (col.key !== 'score') return <React.Fragment key={col.key}>{btn}</React.Fragment>
+          return (
+            <TooltipProvider key={col.key} delayDuration={300}>
+              <Tooltip>
+                <TooltipTrigger asChild>{btn}</TooltipTrigger>
+                <TooltipContent className="max-w-52 text-center">
+                  觀看時長＋留言活躍度＋訂閱／小奇點加成，連續出席享乘數加成
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )
         })}
       </div>
-      <div className="max-h-[646px] overflow-y-auto scrollbar space-y-1 pr-0.5">
-        {filtered.map((v, i) => (
-          <ViewerRow
-            key={v.user_id}
-            viewer={v}
-            rank={i + 1}
-            isHovered={hoveredUserId === v.user_id}
-            onClick={() => onSelect(v.user_id)}
-            onHover={onHover}
-          />
-        ))}
+      <div className="lg:flex-1 flex flex-col gap-1 overflow-y-auto">
+        {filtered.map((v, i) => {
+          const rank = rankMap.get(v.user_id) ?? filtered.length + 1
+          const showLowDivider =
+            sort === 'score' &&
+            sortDir === 'desc' &&
+            v.engagement_score < 10 &&
+            (i === 0 || filtered[i - 1].engagement_score >= 10)
+          return (
+            <React.Fragment key={v.user_id}>
+              {showLowDivider && (
+                <div className="flex items-center gap-2 px-1 py-1.5">
+                  <div className="flex-1 h-px bg-border" />
+                  <span className="text-label text-muted-foreground/50 shrink-0">低活躍</span>
+                  <div className="flex-1 h-px bg-border" />
+                </div>
+              )}
+              <ViewerRow
+                viewer={v}
+                rank={rank}
+                isHovered={hoveredUserId === v.user_id}
+                onSelect={onSelect}
+                onHover={onHover}
+              />
+            </React.Fragment>
+          )
+        })}
       </div>
     </div>
   )
@@ -335,23 +370,27 @@ function ViewerScatterChart({
   hoveredUserId: string | null
   onHover: (id: string | null) => void
 }) {
-  const data = viewers.map(v => {
-    const score = v.engagement_score
-    const dotFill =
-      score >= 60
-        ? 'var(--chart-1)' // theme purple
-        : score >= 20
-          ? 'var(--chart-5)' // theme blue
-          : 'var(--muted-foreground)' // theme muted
-    return {
-      x: Math.round(v.watch_seconds / 60),
-      y: v.total_messages,
-      score,
-      name: v.display_name || v.username,
-      user_id: v.user_id,
-      dotFill,
-    }
-  })
+  const data = React.useMemo(
+    () =>
+      viewers.map(v => {
+        const score = v.engagement_score
+        const dotFill =
+          score >= 35
+            ? 'var(--chart-1)'
+            : score >= 10
+              ? 'var(--chart-5)'
+              : 'var(--muted-foreground)'
+        return {
+          x: Math.round(v.watch_seconds / 60),
+          y: v.total_messages,
+          score,
+          name: v.display_name || v.username,
+          user_id: v.user_id,
+          dotFill,
+        }
+      }),
+    [viewers]
+  )
 
   const shape = useCallback(
     ({ cx, cy, payload }: { cx?: number; cy?: number; payload?: DotData }) => {
@@ -384,7 +423,7 @@ function ViewerScatterChart({
       </div>
       <ResponsiveContainer width="100%" height={280}>
         <ScatterChart margin={{ top: 4, right: 8, bottom: 8, left: 4 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="rgba(128,128,128,0.15)" />
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
           <XAxis
             dataKey="x"
             type="number"
@@ -429,7 +468,7 @@ function ViewerScatterChart({
           />
           <RechartsTooltip
             content={<ScatterTooltip />}
-            cursor={{ strokeDasharray: '3 3', stroke: 'rgba(128,128,128,0.3)' }}
+            cursor={{ strokeDasharray: '3 3', stroke: 'var(--muted-foreground)' }}
           />
           <Scatter data={data} shape={shape} />
         </ScatterChart>
@@ -441,7 +480,7 @@ function ViewerScatterChart({
 // ─── Viewer Sheet ─────────────────────────────────────────────────────────────
 
 const EVENT_META: Record<string, { icon: string; label: string; color: string }> = {
-  follow: { icon: 'fa-solid fa-heart', label: '追隨', color: 'text-rose-400' },
+  follow: { icon: 'fa-solid fa-heart', label: '追隨', color: 'text-status-follow' },
   subscribe: { icon: 'fa-solid fa-star', label: '訂閱', color: 'text-status-special' },
   cheer: { icon: 'fa-solid fa-diamond-half-stroke', label: '小奇點', color: 'text-primary' },
   raid: { icon: 'fa-solid fa-parachute-box', label: '揪團', color: 'text-status-info' },
@@ -458,6 +497,41 @@ interface ViewerSheetProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   days: number
+}
+
+function ProfileAvatar({
+  src,
+  name,
+  size,
+}: {
+  src?: string | null
+  name: string
+  size: 'lg' | 'sm'
+}) {
+  const cls = size === 'lg' ? 'h-16 w-16 ring-2 ring-background' : 'h-11 w-11 shrink-0'
+  return src ? (
+    <img src={src} alt={name} className={`${cls} rounded-full object-cover`} />
+  ) : (
+    <div
+      className={`${cls} rounded-full bg-muted flex items-center justify-center text-sub font-bold text-muted-foreground select-none`}
+    >
+      {name.charAt(0).toUpperCase()}
+    </div>
+  )
+}
+
+function UsernameLink({ username }: { username: string | undefined }) {
+  if (!username) return <span>觀眾資料</span>
+  return (
+    <a
+      href={`https://twitch.tv/${username}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="select-text hover:text-foreground hover:underline transition-colors"
+    >
+      @{username}
+    </a>
+  )
 }
 
 function PartnerBadge() {
@@ -573,8 +647,14 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
   const name = profile?.display_name || profile?.username || userId || '—'
   const username = profile?.username
   const twitch = profile?.twitch
-
   const isPartner = profile?.broadcaster_type === 'partner'
+  const totalGifts =
+    profile?.events.reduce((sum, ev) => {
+      if (ev.event_type !== 'subscribe') return sum
+      const meta = ev.metadata as { is_gift?: boolean; gift_count?: number } | null
+      if (!meta?.is_gift) return sum
+      return sum + (meta.gift_count ?? 1)
+    }, 0) ?? 0
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -609,38 +689,17 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
             </div>
             <div className="relative z-10 flex items-end gap-3 px-page pb-3 pr-12 -mt-8">
               <div className="shrink-0 relative z-10">
-                {profile.profile_image_url ? (
-                  <img
-                    src={profile.profile_image_url}
-                    alt={name}
-                    className="h-16 w-16 rounded-full object-cover ring-2 ring-background"
-                  />
-                ) : (
-                  <div className="h-16 w-16 rounded-full bg-muted ring-2 ring-background flex items-center justify-center text-sub font-bold text-muted-foreground select-none">
-                    {name.charAt(0).toUpperCase()}
-                  </div>
-                )}
+                <ProfileAvatar src={profile.profile_image_url} name={name} size="lg" />
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="text-base font-semibold leading-snug truncate select-text">
+                  <span className="text-content font-semibold leading-snug truncate select-text">
                     {name}
                   </span>
                   {isPartner && <PartnerBadge />}
                 </div>
                 <p className="text-label text-muted-foreground mt-0.5">
-                  {username ? (
-                    <a
-                      href={`https://twitch.tv/${username}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="select-text hover:text-foreground hover:underline transition-colors"
-                    >
-                      @{username}
-                    </a>
-                  ) : (
-                    '觀眾資料'
-                  )}
+                  <UsernameLink username={username} />
                 </p>
               </div>
             </div>
@@ -649,35 +708,14 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
           /* ── No banner mode ── */
           <SheetHeader className="pr-10 shrink-0">
             <div className="flex items-center gap-3">
-              {profile?.profile_image_url ? (
-                <img
-                  src={profile.profile_image_url}
-                  alt={name}
-                  className="h-11 w-11 rounded-full shrink-0 object-cover"
-                />
-              ) : (
-                <div className="h-11 w-11 rounded-full shrink-0 bg-muted flex items-center justify-center text-sub font-bold text-muted-foreground select-none">
-                  {name.charAt(0).toUpperCase()}
-                </div>
-              )}
+              <ProfileAvatar src={profile?.profile_image_url} name={name} size="sm" />
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <SheetTitle className="text-base leading-snug select-text">{name}</SheetTitle>
+                  <SheetTitle className="text-content leading-snug select-text">{name}</SheetTitle>
                   {isPartner && <PartnerBadge />}
                 </div>
                 <SheetDescription className="text-label mt-0.5">
-                  {username ? (
-                    <a
-                      href={`https://twitch.tv/${username}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="select-text hover:text-foreground hover:underline transition-colors"
-                    >
-                      @{username}
-                    </a>
-                  ) : (
-                    '觀眾資料'
-                  )}
+                  <UsernameLink username={username} />
                 </SheetDescription>
               </div>
             </div>
@@ -705,7 +743,7 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
           <>
             {/* Follow / Sub / Role / Ban status */}
             <SheetSection className="space-y-3">
-              <StatusRow icon="fa-solid fa-heart" iconClass="text-rose-400">
+              <StatusRow icon="fa-solid fa-heart" iconClass="text-status-follow">
                 {profile.follow_since ? (
                   <span>
                     自 <span className="font-medium">{formatDateFull(profile.follow_since)}</span>{' '}
@@ -737,7 +775,7 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
                 </StatusRow>
               )}
               {twitch?.is_vip && (
-                <StatusRow icon="fa-solid fa-gem" iconClass="text-[#e005b9]">
+                <StatusRow icon="fa-solid fa-gem" iconClass="text-status-special">
                   <span className="font-medium">VIP</span>
                 </StatusRow>
               )}
@@ -784,21 +822,11 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
                       : undefined
                   }
                 />
-                {(() => {
-                  const totalGifts = profile.events.reduce((sum, ev) => {
-                    if (ev.event_type !== 'subscribe') return sum
-                    const meta = ev.metadata as { is_gift?: boolean; gift_count?: number } | null
-                    if (!meta?.is_gift) return sum
-                    return sum + (meta.gift_count ?? 1)
-                  }, 0)
-                  return (
-                    <StatTile
-                      icon="fa-solid fa-gift"
-                      value={totalGifts > 0 ? totalGifts.toLocaleString() : '—'}
-                      label="贈禮訂閱"
-                    />
-                  )
-                })()}
+                <StatTile
+                  icon="fa-solid fa-gift"
+                  value={totalGifts > 0 ? totalGifts.toLocaleString() : '—'}
+                  label="贈禮訂閱"
+                />
                 <StatTile
                   icon="fa-solid fa-clock"
                   value={profile.watch_seconds > 0 ? formatDuration(profile.watch_seconds) : '—'}
@@ -975,14 +1003,14 @@ export default function Insights() {
     if (loadedForRef.current === key) return
     loadedForRef.current = key
     const days = Number(period)
-    fetchViewers(days)
-    fetchInsights(days)
+    void Promise.all([fetchViewers(days), fetchInsights(days)])
   }, [isInitialized, user, period, fetchViewers, fetchInsights])
 
   const handlePeriodChange = (value: string) => {
     if (value === period) return
     loadedForRef.current = null
     setInitialized(false)
+    setInsightsLoading(true)
     setViewersError(false)
     setPeriod(value)
   }
@@ -997,44 +1025,56 @@ export default function Insights() {
     }
   }
 
-  const filtered = React.useMemo(() => {
+  const { filtered, rankMap } = React.useMemo(() => {
+    const sorted = [...viewers].sort((a, b) => {
+      const dir = sortDir === 'desc' ? 1 : -1
+      switch (sort) {
+        case 'messages':
+          return dir * (b.total_messages - a.total_messages)
+        case 'watch':
+          return dir * (b.watch_seconds - a.watch_seconds)
+        case 'score':
+          return dir * (b.engagement_score - a.engagement_score)
+      }
+    })
+    const rankMap = new Map(sorted.map((v, i) => [v.user_id, i + 1]))
     const q = search.trim().toLowerCase()
-    return viewers
-      .filter(v => {
-        if (!q) return true
-        return (
-          (v.display_name ?? '').toLowerCase().includes(q) || v.username.toLowerCase().includes(q)
+    const filtered = q
+      ? sorted.filter(
+          v =>
+            (v.display_name ?? '').toLowerCase().includes(q) || v.username.toLowerCase().includes(q)
         )
-      })
-      .sort((a, b) => {
-        const dir = sortDir === 'desc' ? 1 : -1
-        switch (sort) {
-          case 'messages':
-            return dir * (b.total_messages - a.total_messages)
-          case 'watch':
-            return dir * (b.watch_seconds - a.watch_seconds)
-          case 'score':
-            return dir * (b.engagement_score - a.engagement_score)
-        }
-      })
+      : sorted
+    return { filtered, rankMap }
   }, [viewers, search, sort, sortDir])
 
   return (
-    <PageMain>
-      {/* Header: title left, period tabs right */}
-      <SlideUpSm inView>
-        <h1 className="text-page-title font-bold">Insights</h1>
-        <p className="text-sub text-muted-foreground mt-0.5">觀眾互動與活躍度數據</p>
+    <PageMain className="lg:h-full lg:overflow-hidden">
+      {/* Header + controls */}
+      <SlideUpSm inView className="flex items-end justify-between gap-element">
+        <div>
+          <h1 className="text-page-title font-bold">Insights</h1>
+          <p className="text-sub text-muted-foreground mt-0.5">觀眾互動與活躍度數據</p>
+        </div>
+        <Tabs value={period} onValueChange={handlePeriodChange}>
+          <TabsList>
+            {PERIODS.map(p => (
+              <TabsTrigger key={p.value} value={p.value}>
+                {p.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
       </SlideUpSm>
 
       {/* Main 2-col layout */}
       <SlideUp
         inView
         delay={0.05}
-        className="grid grid-cols-1 lg:grid-cols-2 lg:items-start gap-section"
+        className="grid grid-cols-1 lg:grid-cols-2 gap-section lg:flex-1 lg:min-h-0"
       >
         {/* Left: sticky – chart + summary cards */}
-        <div className="rounded-lg border bg-card p-4 lg:sticky lg:top-page-lg flex flex-col gap-section">
+        <div className="rounded-lg border bg-card p-4 lg:self-start flex flex-col gap-section">
           {!initialized ? (
             <Skeleton className="hidden lg:block h-[330px] rounded-md" />
           ) : viewers.length > 0 ? (
@@ -1049,11 +1089,31 @@ export default function Insights() {
           {(!initialized || viewers.length > 0) && <Separator className="hidden lg:block" />}
           <Stagger key={insightsLoading ? 'l' : 'd'} className="grid grid-cols-2 gap-section">
             {insightsLoading ? (
-              Array.from({ length: 4 }).map((_, i) => (
+              Array.from({ length: 6 }).map((_, i) => (
                 <Skeleton key={i} className="h-[69px] rounded-md" />
               ))
             ) : (
               <>
+                <StaggerItem>
+                  <SummaryTile
+                    icon="fa-solid fa-tower-broadcast"
+                    value={insights?.total_sessions?.toLocaleString() ?? '—'}
+                    label="串流場數"
+                    iconClassName="text-muted-foreground/60"
+                  />
+                </StaggerItem>
+                <StaggerItem>
+                  <SummaryTile
+                    icon="fa-solid fa-hourglass-half"
+                    value={
+                      insights?.total_stream_seconds != null && insights.total_stream_seconds > 0
+                        ? formatDuration(insights.total_stream_seconds)
+                        : '—'
+                    }
+                    label="累計直播"
+                    iconClassName="text-muted-foreground/60"
+                  />
+                </StaggerItem>
                 <StaggerItem>
                   <SummaryTile
                     icon="fa-solid fa-diamond-half-stroke"
@@ -1079,7 +1139,7 @@ export default function Insights() {
                     icon="fa-solid fa-heart"
                     value={insights?.total_follows.toLocaleString() ?? '—'}
                     label="新追隨"
-                    iconClassName="text-rose-400/80"
+                    iconClassName="text-status-follow/80"
                   />
                 </StaggerItem>
                 <StaggerItem>
@@ -1095,29 +1155,18 @@ export default function Insights() {
           </Stagger>
         </div>
 
-        {/* Right: search + viewer list (~10 rows) */}
-        <div className="rounded-lg border bg-card p-4 flex flex-col gap-section">
-          <div className="flex items-center gap-element self-end shrink-0">
-            <Input
-              placeholder="搜尋觀眾..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="h-9 w-44"
-            />
-            <Tabs value={period} onValueChange={handlePeriodChange}>
-              <TabsList>
-                {PERIODS.map(p => (
-                  <TabsTrigger key={p.value} value={p.value}>
-                    {p.label}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-            </Tabs>
-          </div>
+        {/* Right: viewer list */}
+        <div className="rounded-lg border bg-card p-4 flex flex-col gap-section lg:min-h-0 lg:overflow-hidden">
+          <Input
+            placeholder="搜尋觀眾..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="h-10 w-44 self-end shrink-0"
+          />
           {!initialized ? (
-            <div className="space-y-1">
+            <div className="space-y-1 lg:flex-1">
               {Array.from({ length: 10 }).map((_, i) => (
-                <Skeleton key={i} className="h-[61px] w-full rounded-md" />
+                <Skeleton key={i} className="h-[57px] w-full rounded-md" />
               ))}
             </div>
           ) : viewersError ? (
@@ -1153,6 +1202,7 @@ export default function Insights() {
           ) : (
             <ViewerList
               filtered={filtered}
+              rankMap={rankMap}
               sort={sort}
               sortDir={sortDir}
               search={search}
