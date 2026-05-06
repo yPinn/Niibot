@@ -161,14 +161,24 @@ export interface ViewerTwitchStatus {
   bits_rank: number | null
 }
 
+export interface ViewerSessionAttendance {
+  session_id: number
+  started_at: string
+  stream_duration_seconds: number
+  viewer_watch_seconds: number
+  attended: boolean
+}
+
 export interface ViewerProfile extends ViewerSummary {
   profile_image_url: string | null
   offline_image_url: string | null
   account_created_at: string | null
   broadcaster_type: string | null
   follow_since: string | null
+  streak_count: number
   twitch: ViewerTwitchStatus | null
   events: ViewerEvent[]
+  session_attendance: ViewerSessionAttendance[]
 }
 
 export async function listViewers(days: number = 30): Promise<ViewerSummary[]> {

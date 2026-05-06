@@ -15,6 +15,7 @@ import {
   getViewerProfile,
   listViewers,
   type ViewerProfile,
+  type ViewerSessionAttendance,
   type ViewerSummary,
 } from '@/api/analytics'
 import { PageMain } from '@/components/PageMain'
@@ -477,6 +478,127 @@ function ViewerScatterChart({
   )
 }
 
+// ─── Viewer Heatmap ───────────────────────────────────────────────────────────
+
+type HeatmapFields = Pick<
+  ViewerSessionAttendance,
+  'attended' | 'stream_duration_seconds' | 'viewer_watch_seconds'
+>
+
+function watchPercent(s: HeatmapFields): number {
+  if (!s.attended || !s.stream_duration_seconds || !s.viewer_watch_seconds) return 0
+  return Math.min(100, Math.round((s.viewer_watch_seconds / s.stream_duration_seconds) * 100))
+}
+
+function heatmapOpacity(attended: boolean, pct: number): number {
+  if (!attended) return 0.2
+  if (pct === 0) return 0.25
+  if (pct <= 25) return 0.42
+  if (pct <= 50) return 0.6
+  if (pct <= 75) return 0.8
+  return 1
+}
+
+const COLS = 10
+
+const LEGEND_DOTS: HeatmapFields[] = [
+  { attended: false, stream_duration_seconds: 0, viewer_watch_seconds: 0 },
+  { attended: true, stream_duration_seconds: 100, viewer_watch_seconds: 0 },
+  { attended: true, stream_duration_seconds: 100, viewer_watch_seconds: 30 },
+  { attended: true, stream_duration_seconds: 100, viewer_watch_seconds: 60 },
+  { attended: true, stream_duration_seconds: 100, viewer_watch_seconds: 100 },
+]
+
+function HeatmapCell({ s }: { s: ViewerSessionAttendance }) {
+  const pct = watchPercent(s)
+  const watchLabel = formatDuration(s.viewer_watch_seconds)
+  const dateLabel = formatDate(s.started_at)
+  const ariaLabel = !s.attended
+    ? `${dateLabel} 未出席`
+    : pct > 0
+      ? `${dateLabel} 觀看 ${watchLabel} (${pct}%)`
+      : `${dateLabel} 出席`
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div
+          role="img"
+          aria-label={ariaLabel}
+          className="rounded-sm cursor-default hover:scale-125 transition-transform"
+          style={{
+            aspectRatio: '1',
+            background: s.attended ? 'var(--primary)' : 'var(--muted-foreground)',
+            opacity: heatmapOpacity(s.attended, pct),
+          }}
+        />
+      </TooltipTrigger>
+      <TooltipContent side="top">
+        <p className="font-medium">{dateLabel}</p>
+        {!s.attended ? (
+          <p className="opacity-70">未出席</p>
+        ) : pct > 0 ? (
+          <p className="opacity-70">
+            觀看 {watchLabel}
+            <span className="ml-1 text-primary">({pct}%)</span>
+          </p>
+        ) : (
+          <p className="opacity-70">出席（無觀看紀錄）</p>
+        )}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
+function ViewerHeatmap({ sessions }: { sessions: ViewerSessionAttendance[] }) {
+  const attended = React.useMemo(() => sessions.filter(s => s.attended).length, [sessions])
+
+  if (sessions.length === 0) return null
+
+  return (
+    <TooltipProvider delayDuration={100}>
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center justify-between">
+          <p className="text-label text-muted-foreground">出席紀錄</p>
+          <p className="text-label text-muted-foreground/60">
+            {attended} / {sessions.length} 場
+          </p>
+        </div>
+
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: `repeat(${COLS}, 1fr)`,
+            gap: 3,
+          }}
+        >
+          {sessions.map(s => (
+            <HeatmapCell key={s.session_id} s={s} />
+          ))}
+        </div>
+
+        {/* Legend */}
+        <div className="flex items-center gap-2 self-end">
+          <span className="text-label text-muted-foreground/50">未出席</span>
+          <div className="flex gap-0.5">
+            {LEGEND_DOTS.map((d, i) => (
+              <div
+                key={i}
+                className="w-2.5 h-2.5 rounded-sm"
+                style={{
+                  background: d.attended ? 'var(--primary)' : 'var(--muted-foreground)',
+                  opacity: heatmapOpacity(d.attended, watchPercent(d)),
+                }}
+              />
+            ))}
+          </div>
+          <span className="text-label text-muted-foreground/50">100%</span>
+        </div>
+      </div>
+    </TooltipProvider>
+  )
+}
+
 // ─── Viewer Sheet ─────────────────────────────────────────────────────────────
 
 const EVENT_META: Record<string, { icon: string; label: string; color: string }> = {
@@ -685,7 +807,7 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
                 alt=""
                 className="w-full h-24 object-cover object-center"
               />
-              <div className="absolute inset-0 bg-linear-to-t from-background via-background/60 to-transparent" />
+              <div className="absolute inset-x-0 bottom-0 h-3/4 bg-linear-to-t from-background via-background/50 to-transparent" />
             </div>
             <div className="relative z-10 flex items-end gap-3 px-page pb-3 pr-12 -mt-8">
               <div className="shrink-0 relative z-10">
@@ -727,6 +849,17 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
             <div className="space-y-3">
               <Skeleton className="h-4 w-48" />
               <Skeleton className="h-4 w-40" />
+            </div>
+            <div className="flex flex-col gap-2">
+              <div className="flex justify-between">
+                <Skeleton className="h-3.5 w-16" />
+                <Skeleton className="h-3.5 w-12" />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: `repeat(${COLS}, 1fr)`, gap: 3 }}>
+                {Array.from({ length: 20 }).map((_, i) => (
+                  <Skeleton key={i} className="rounded-sm" style={{ aspectRatio: '1' }} />
+                ))}
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               {Array.from({ length: 4 }).map((_, i) => (
@@ -800,6 +933,21 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
                 </StatusRow>
               )}
             </SheetSection>
+
+            {/* Attendance heatmap */}
+            {profile.session_attendance.length > 0 && (
+              <SheetSection>
+                <ViewerHeatmap sessions={profile.session_attendance} />
+                {profile.streak_count > 1 && (
+                  <div className="flex justify-end mt-2">
+                    <span className="inline-flex items-center gap-1.5 text-label border rounded-sm px-2 py-0.5 text-primary border-primary/30 bg-primary/5">
+                      <i className="fa-solid fa-fire text-[10px]" />
+                      連續 {profile.streak_count} 場
+                    </span>
+                  </div>
+                )}
+              </SheetSection>
+            )}
 
             {/* Stats */}
             <SheetSection>
@@ -964,6 +1112,7 @@ export default function Insights() {
   const [insights, setInsights] = useState<ChannelInsights | null>(null)
   const [insightsLoading, setInsightsLoading] = useState(true)
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
+  const [sheetOpen, setSheetOpen] = useState(false)
   const [hoveredUserId, setHoveredUserId] = useState<string | null>(null)
   const loadedForRef = useRef<string | null>(null)
 
@@ -1208,7 +1357,10 @@ export default function Insights() {
               search={search}
               hoveredUserId={hoveredUserId}
               onSort={handleSort}
-              onSelect={setSelectedUserId}
+              onSelect={id => {
+                setSelectedUserId(id)
+                setSheetOpen(true)
+              }}
               onHover={setHoveredUserId}
             />
           )}
@@ -1216,11 +1368,11 @@ export default function Insights() {
       </SlideUp>
 
       <ViewerSheet
-        key={`${selectedUserId}-${period}`}
+        key={`${selectedUserId ?? 'none'}-${period}`}
         userId={selectedUserId}
-        open={selectedUserId !== null}
+        open={sheetOpen}
         onOpenChange={open => {
-          if (!open) setSelectedUserId(null)
+          if (!open) setSheetOpen(false)
         }}
         days={Number(period)}
       />

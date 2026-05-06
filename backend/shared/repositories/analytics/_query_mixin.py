@@ -754,7 +754,24 @@ class _AnalyticsQueryMixin:
                 )
                 return row["occurred_at"] if row else None
 
-        stats, events, follow_since = await asyncio.gather(_stats(), _events(), _follow_since())
+        async def _streak() -> int:
+            try:
+                async with self.pool.acquire() as conn:
+                    row = await conn.fetchrow(
+                        """
+                        SELECT streak_count FROM viewer_attendance_streaks
+                        WHERE channel_id = $1 AND user_id = $2
+                        """,
+                        channel_id,
+                        user_id,
+                    )
+                    return int(row["streak_count"]) if row else 0
+            except asyncpg.exceptions.UndefinedTableError:
+                return 0
+
+        stats, events, follow_since, streak_count = await asyncio.gather(
+            _stats(), _events(), _follow_since(), _streak()
+        )
         if stats is None:
             return None
 
@@ -767,8 +784,51 @@ class _AnalyticsQueryMixin:
             **stats,
             "total_bits": total_bits,
             "follow_since": follow_since,
+            "streak_count": streak_count,
             "events": events,
         }
+
+    async def get_viewer_session_attendance(
+        self, channel_id: str, user_id: str, days: int = 30
+    ) -> list[dict]:
+        """Per-session attendance for a viewer within the given window.
+
+        Returns ALL sessions in the period (including unattended ones with viewer_watch_seconds=0)
+        so the heatmap can show gaps.
+        """
+        since_date = datetime.now(UTC) - timedelta(days=days)
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT
+                    s.id AS session_id,
+                    s.started_at,
+                    EXTRACT(EPOCH FROM (COALESCE(s.ended_at, NOW()) - s.started_at))::int
+                        AS stream_duration_seconds,
+                    COALESCE(c.watch_seconds, 0) AS viewer_watch_seconds,
+                    (c.user_id IS NOT NULL) AS attended
+                FROM stream_sessions s
+                LEFT JOIN chatter_stats c
+                    ON c.session_id = s.id
+                    AND c.channel_id = $1
+                    AND c.user_id = $3
+                WHERE s.channel_id = $1 AND s.started_at >= $2
+                ORDER BY s.started_at ASC
+                """,
+                channel_id,
+                since_date,
+                user_id,
+            )
+        return [
+            {
+                "session_id": r["session_id"],
+                "started_at": r["started_at"],
+                "stream_duration_seconds": int(r["stream_duration_seconds"]),
+                "viewer_watch_seconds": int(r["viewer_watch_seconds"]),
+                "attended": bool(r["attended"]),
+            }
+            for r in rows
+        ]
 
     async def get_viewer_rank(self, channel_id: str, user_id: str) -> dict | None:
         """Monthly engagement rank for a specific viewer.

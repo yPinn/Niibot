@@ -50,3 +50,9 @@ class AnalyticsService:
     ) -> dict | None:
         """Get detailed profile for a single viewer."""
         return await self.repo.get_viewer_profile(channel_id, user_id, days)
+
+    async def get_viewer_session_attendance(
+        self, channel_id: str, user_id: str, days: int = 30
+    ) -> list[dict]:
+        """Get per-session attendance data for a viewer."""
+        return await self.repo.get_viewer_session_attendance(channel_id, user_id, days)

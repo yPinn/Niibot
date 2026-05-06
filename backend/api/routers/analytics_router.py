@@ -132,6 +132,14 @@ class ViewerTwitchStatus(BaseModel):
     bits_rank: int | None = None
 
 
+class ViewerSessionAttendance(BaseModel):
+    session_id: int
+    started_at: datetime
+    stream_duration_seconds: int
+    viewer_watch_seconds: int
+    attended: bool
+
+
 class ViewerProfile(BaseModel):
     user_id: str
     username: str
@@ -146,8 +154,10 @@ class ViewerProfile(BaseModel):
     watch_seconds: int
     total_bits: int
     follow_since: datetime | None = None
+    streak_count: int = 0
     twitch: ViewerTwitchStatus | None = None
     events: list[ViewerEvent]
+    session_attendance: list[ViewerSessionAttendance] = []
 
 
 @router.get("/summary", response_model=AnalyticsSummary)
@@ -345,6 +355,9 @@ async def get_viewer_profile(
                 return None
             return await twitch_api.get_bits_rank(user_id, token)
 
+        async def _fetch_attendance() -> list[dict]:
+            return await service.get_viewer_session_attendance(channel_id, user_id, days)
+
         _gathered = await asyncio.gather(
             _fetch_sub(),
             _fetch_follow(),
@@ -353,6 +366,7 @@ async def get_viewer_profile(
             _fetch_vip(),
             _fetch_ban(),
             _fetch_bits_rank(),
+            _fetch_attendance(),
         )
         sub_result = cast(tuple[bool, str | None, bool | None, str | None], _gathered[0])
         follow_api = cast(datetime | None | _Unchecked, _gathered[1])
@@ -361,6 +375,7 @@ async def get_viewer_profile(
         is_vip = cast(bool, _gathered[4])
         ban_info = cast(dict[str, Any] | None, _gathered[5])
         bits_rank = cast(int | None, _gathered[6])
+        attendance_rows = cast(list[dict], _gathered[7])
 
         # Follow date: use API result; fall back to DB only when API call failed
         follow_since = profile.get("follow_since") if follow_api is _UNCHECKED else follow_api
@@ -407,6 +422,8 @@ async def get_viewer_profile(
             bits_rank=bits_rank,
         )
 
+        session_attendance = [ViewerSessionAttendance(**r) for r in attendance_rows]
+
         response.headers["Cache-Control"] = "private, max-age=300"
         return ViewerProfile(
             twitch=twitch_status,
@@ -414,6 +431,7 @@ async def get_viewer_profile(
             offline_image_url=offline_image_url,
             account_created_at=account_created_at,
             broadcaster_type=broadcaster_type,
+            session_attendance=session_attendance,
             **profile,
         )
     except HTTPException:
