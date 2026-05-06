@@ -1301,7 +1301,7 @@ export default function Insights() {
         </div>
 
         {/* Right: viewer list */}
-        <div className="rounded-lg border bg-card p-section flex flex-col gap-section">
+        <div className="rounded-lg border bg-card p-section flex flex-col gap-section lg:self-start">
           <Input
             placeholder="搜尋觀眾..."
             value={search}
