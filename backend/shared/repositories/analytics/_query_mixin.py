@@ -89,7 +89,7 @@ async def _get_bot_list() -> list[str]:
 
 _SCORE_SQL: str = """ROUND((
     (t.watch_seconds::numeric / 3600.0)
-    + (1.5 * LOG(t.total_messages::numeric + 1.0))
+    + (2.0 * LN(t.total_messages::numeric + 1.0))
     + COALESCE(eb.sub_tier_bonus, 0.0)
     + (COALESCE(eb.total_bits, 0)::numeric / 100.0 * 0.5)
 ) * (1.0 + COALESCE(sk.streak_count, 0) * 0.05)
@@ -436,9 +436,17 @@ class _AnalyticsQueryMixin:
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(
                     """
-                    WITH session_scope AS (
-                        SELECT id FROM stream_sessions
+                    WITH session_scope AS MATERIALIZED (
+                        SELECT id,
+                            EXTRACT(EPOCH FROM (COALESCE(ended_at, NOW()) - started_at)) AS duration_seconds
+                        FROM stream_sessions
                         WHERE channel_id = $1 AND started_at >= $2
+                    ),
+                    session_stats AS (
+                        SELECT
+                            COUNT(*) AS total_sessions,
+                            COALESCE(SUM(duration_seconds), 0) AS total_stream_seconds
+                        FROM session_scope
                     ),
                     msg_totals AS (
                         SELECT COALESCE(SUM(c.message_count), 0) AS total_messages
@@ -469,6 +477,8 @@ class _AnalyticsQueryMixin:
                           AND session_id IN (SELECT id FROM session_scope)
                     )
                     SELECT
+                        ss.total_sessions,
+                        ss.total_stream_seconds,
                         m.total_messages,
                         c.total_commands,
                         e.total_follows,
@@ -476,13 +486,15 @@ class _AnalyticsQueryMixin:
                         e.total_raids,
                         e.total_cheers,
                         e.total_bits
-                    FROM msg_totals m, cmd_totals c, event_totals e
+                    FROM session_stats ss, msg_totals m, cmd_totals c, event_totals e
                     """,
                     channel_id,
                     since_date,
                     bots,
                 )
                 return {
+                    "total_sessions": int(row["total_sessions"]),
+                    "total_stream_seconds": int(row["total_stream_seconds"]),
                     "total_messages": int(row["total_messages"]),
                     "total_commands": int(row["total_commands"]),
                     "total_follows": int(row["total_follows"]),
@@ -596,8 +608,8 @@ class _AnalyticsQueryMixin:
                     SELECT user_id,
                         SUM(CASE WHEN event_type = 'cheer' THEN (metadata->>'bits')::int ELSE 0 END) AS total_bits,
                         MAX(CASE
-                            WHEN event_type = 'subscribe' AND (metadata->>'tier') = '3000' THEN 15.0
-                            WHEN event_type = 'subscribe' AND (metadata->>'tier') = '2000' THEN 10.0
+                            WHEN event_type = 'subscribe' AND (metadata->>'tier') = '3000' THEN 10.0
+                            WHEN event_type = 'subscribe' AND (metadata->>'tier') = '2000' THEN 7.0
                             WHEN event_type = 'subscribe' THEN 5.0
                             ELSE 0.0
                         END) AS sub_tier_bonus
@@ -791,8 +803,8 @@ class _AnalyticsQueryMixin:
                     SELECT user_id,
                         SUM(CASE WHEN event_type = 'cheer' THEN (metadata->>'bits')::int ELSE 0 END) AS total_bits,
                         MAX(CASE
-                            WHEN event_type = 'subscribe' AND (metadata->>'tier') = '3000' THEN 15.0
-                            WHEN event_type = 'subscribe' AND (metadata->>'tier') = '2000' THEN 10.0
+                            WHEN event_type = 'subscribe' AND (metadata->>'tier') = '3000' THEN 10.0
+                            WHEN event_type = 'subscribe' AND (metadata->>'tier') = '2000' THEN 7.0
                             WHEN event_type = 'subscribe' THEN 5.0
                             ELSE 0.0
                         END) AS sub_tier_bonus

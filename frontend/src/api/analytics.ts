@@ -103,6 +103,8 @@ export interface InsightsCommandStat {
 }
 
 export interface ChannelInsights {
+  total_sessions: number
+  total_stream_seconds: number
   total_messages: number
   total_commands: number
   total_follows: number

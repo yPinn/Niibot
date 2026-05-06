@@ -83,6 +83,8 @@ class InsightsCommandStat(BaseModel):
 
 
 class ChannelInsights(BaseModel):
+    total_sessions: int
+    total_stream_seconds: int
     total_messages: int
     total_commands: int
     total_follows: int

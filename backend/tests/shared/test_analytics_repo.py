@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -702,3 +702,184 @@ class TestGetSummary:
         result = await repo.get_summary("ch123")
 
         assert result["recent_sessions"] is decoded
+
+
+# ---------------------------------------------------------------------------
+# Query mixin — list_viewers
+# ---------------------------------------------------------------------------
+
+_BOT_LIST_PATCH = "shared.repositories.analytics._query_mixin._get_bot_list"
+
+
+def _make_viewer_row(
+    *,
+    user_id: str = "u1",
+    username: str = "alice",
+    display_name: str | None = "Alice",
+    total_messages: int = 50,
+    sessions_attended: int = 4,
+    last_seen: datetime = _NOW,
+    watch_seconds: int = 7200,
+    total_bits: int = 0,
+    engagement_score: float = 12.5,
+) -> dict:
+    return {
+        "user_id": user_id,
+        "username": username,
+        "display_name": display_name,
+        "total_messages": total_messages,
+        "sessions_attended": sessions_attended,
+        "last_seen": last_seen,
+        "watch_seconds": watch_seconds,
+        "total_bits": total_bits,
+        "engagement_score": engagement_score,
+    }
+
+
+@pytest.mark.asyncio
+class TestListViewers:
+    async def test_returns_empty_list_when_no_viewers(self):
+        pool, _ = _make_pool(fetch=[])
+        repo = AnalyticsRepository(pool)
+
+        with patch(_BOT_LIST_PATCH, AsyncMock(return_value=[])):
+            result = await repo.list_viewers("ch123")
+
+        assert result == []
+
+    async def test_returns_mapped_viewer_list(self):
+        pool, _ = _make_pool(fetch=[_make_viewer_row()])
+        repo = AnalyticsRepository(pool)
+
+        with patch(_BOT_LIST_PATCH, AsyncMock(return_value=[])):
+            result = await repo.list_viewers("ch123")
+
+        assert len(result) == 1
+        v = result[0]
+        assert v["user_id"] == "u1"
+        assert v["username"] == "alice"
+        assert v["display_name"] == "Alice"
+        assert v["total_messages"] == 50
+        assert v["sessions_attended"] == 4
+        assert v["last_seen"] == _NOW
+        assert v["watch_seconds"] == 7200
+        assert v["total_bits"] == 0
+        assert v["engagement_score"] == 12.5
+
+    async def test_engagement_score_is_float(self):
+        pool, _ = _make_pool(fetch=[_make_viewer_row(engagement_score=8)])
+        repo = AnalyticsRepository(pool)
+
+        with patch(_BOT_LIST_PATCH, AsyncMock(return_value=[])):
+            result = await repo.list_viewers("ch123")
+
+        assert isinstance(result[0]["engagement_score"], float)
+
+    async def test_multiple_viewers_all_mapped(self):
+        rows = [
+            _make_viewer_row(user_id="u1", username="alice", engagement_score=25.0),
+            _make_viewer_row(user_id="u2", username="bob", engagement_score=8.5),
+        ]
+        pool, _ = _make_pool(fetch=rows)
+        repo = AnalyticsRepository(pool)
+
+        with patch(_BOT_LIST_PATCH, AsyncMock(return_value=[])):
+            result = await repo.list_viewers("ch123")
+
+        assert len(result) == 2
+        assert result[0]["username"] == "alice"
+        assert result[1]["username"] == "bob"
+
+    async def test_falls_back_to_empty_streak_cte_on_undefined_table(self):
+        import asyncpg
+
+        row = _make_viewer_row()
+        pool, conn = _make_pool()
+        conn.fetch.side_effect = [asyncpg.exceptions.UndefinedTableError, [row]]
+        repo = AnalyticsRepository(pool)
+
+        with patch(_BOT_LIST_PATCH, AsyncMock(return_value=[])):
+            result = await repo.list_viewers("ch123")
+
+        assert len(result) == 1
+        assert conn.fetch.call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# Query mixin — get_viewer_rank
+# ---------------------------------------------------------------------------
+
+
+def _make_rank_row(
+    *,
+    user_id: str = "u1",
+    rank: int = 3,
+    total_viewers: int = 20,
+    engagement_score: float = 18.5,
+    total_messages: int = 80,
+    watch_seconds: int = 14400,
+    sessions_attended: int = 6,
+    streak_count: int = 2,
+) -> dict:
+    return {
+        "user_id": user_id,
+        "rank": rank,
+        "total_viewers": total_viewers,
+        "engagement_score": engagement_score,
+        "total_messages": total_messages,
+        "watch_seconds": watch_seconds,
+        "sessions_attended": sessions_attended,
+        "streak_count": streak_count,
+    }
+
+
+@pytest.mark.asyncio
+class TestGetViewerRank:
+    async def test_returns_none_when_viewer_not_found(self):
+        pool, _ = _make_pool(fetchrow=None)
+        repo = AnalyticsRepository(pool)
+
+        with patch(_BOT_LIST_PATCH, AsyncMock(return_value=[])):
+            result = await repo.get_viewer_rank("ch123", "u_unknown")
+
+        assert result is None
+
+    async def test_returns_rank_dict_with_correct_fields(self):
+        pool, _ = _make_pool(fetchrow=_make_rank_row())
+        repo = AnalyticsRepository(pool)
+
+        with patch(_BOT_LIST_PATCH, AsyncMock(return_value=[])):
+            result = await repo.get_viewer_rank("ch123", "u1")
+
+        assert result is not None
+        assert result["rank"] == 3
+        assert result["total_viewers"] == 20
+        assert result["engagement_score"] == 18.5
+        assert result["total_messages"] == 80
+        assert result["watch_seconds"] == 14400
+        assert result["sessions_attended"] == 6
+        assert result["streak_count"] == 2
+
+    async def test_engagement_score_is_float(self):
+        pool, _ = _make_pool(fetchrow=_make_rank_row(engagement_score=5))
+        repo = AnalyticsRepository(pool)
+
+        with patch(_BOT_LIST_PATCH, AsyncMock(return_value=[])):
+            result = await repo.get_viewer_rank("ch123", "u1")
+
+        assert isinstance(result["engagement_score"], float)  # type: ignore[index]
+
+    async def test_falls_back_to_empty_streak_cte_on_undefined_table(self):
+        import asyncpg
+
+        row = _make_rank_row()
+        pool, conn = _make_pool()
+        conn.fetchrow.side_effect = [asyncpg.exceptions.UndefinedTableError, row]
+        repo = AnalyticsRepository(pool)
+
+        with patch(_BOT_LIST_PATCH, AsyncMock(return_value=[])):
+            result = await repo.get_viewer_rank("ch123", "u1")
+
+        assert result is not None
+        assert result["rank"] == 3
+        assert conn.fetchrow.call_count == 2
