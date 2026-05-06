@@ -250,7 +250,7 @@ function ViewerList({
     )
   }
   return (
-    <div className="flex flex-col">
+    <div className="flex flex-col flex-1 min-h-0">
       <div
         className={`grid items-center gap-3 px-3 py-3 border border-transparent text-label text-muted-foreground shrink-0 ${ROW_GRID}`}
       >
@@ -295,7 +295,7 @@ function ViewerList({
           )
         })}
       </div>
-      <div className="flex flex-col gap-1 overflow-y-auto max-h-120 scrollbar">
+      <div className="flex flex-col gap-1 overflow-y-auto flex-1 min-h-0 scrollbar">
         {filtered.map((v, i) => {
           const rank = rankMap.get(v.user_id) ?? filtered.length + 1
           const showLowDivider =
@@ -1301,7 +1301,7 @@ export default function Insights() {
         </div>
 
         {/* Right: viewer list */}
-        <div className="rounded-lg border bg-card p-section flex flex-col gap-section lg:self-start">
+        <div className="rounded-lg border bg-card p-section flex flex-col gap-section lg:max-h-[calc(100vh-3rem)]">
           <Input
             placeholder="搜尋觀眾..."
             value={search}
@@ -1345,20 +1345,22 @@ export default function Insights() {
               </EmptyHeader>
             </Empty>
           ) : (
-            <ViewerList
-              filtered={filtered}
-              rankMap={rankMap}
-              sort={sort}
-              sortDir={sortDir}
-              search={search}
-              hoveredUserId={hoveredUserId}
-              onSort={handleSort}
-              onSelect={id => {
-                setSelectedUserId(id)
-                setSheetOpen(true)
-              }}
-              onHover={setHoveredUserId}
-            />
+            <div className="flex-1 min-h-0 flex flex-col">
+              <ViewerList
+                filtered={filtered}
+                rankMap={rankMap}
+                sort={sort}
+                sortDir={sortDir}
+                search={search}
+                hoveredUserId={hoveredUserId}
+                onSort={handleSort}
+                onSelect={id => {
+                  setSelectedUserId(id)
+                  setSheetOpen(true)
+                }}
+                onHover={setHoveredUserId}
+              />
+            </div>
           )}
         </div>
       </SlideUp>
