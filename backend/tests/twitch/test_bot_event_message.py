@@ -63,6 +63,7 @@ def bot():
         b._active_sessions = {}
         b._chatter_buffers = {}
         b._channel_line_counts = {}
+        b._needs_reauth = set()
         b._handle_custom_command = AsyncMock(return_value=False)
         b._handle_message_trigger = AsyncMock(return_value=False)
         b._background_tasks = set()
