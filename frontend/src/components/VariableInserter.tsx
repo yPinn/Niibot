@@ -21,14 +21,14 @@ export function VariableInserter({
 }: VariableInserterProps) {
   return (
     <div className="flex flex-col gap-1.5">
-      <span className="text-label text-muted-foreground">{label}</span>
+      <span className="text-label text-muted-foreground select-none">{label}</span>
       <div className="flex flex-wrap gap-1.5">
         {variables.map(({ var: v, desc }) => (
           <button
             key={v}
             type="button"
             onClick={() => onInsert(v)}
-            className="inline-flex cursor-pointer items-center gap-1 rounded-md border px-2 py-0.5 font-mono text-label transition-colors hover:bg-accent"
+            className="inline-flex cursor-pointer items-center gap-1 rounded-md border px-2 py-0.5 font-mono text-label transition-colors hover:bg-accent select-none"
           >
             <span className="text-primary">{v.split(' ')[0]}</span>
             <span className="text-muted-foreground">— {desc}</span>

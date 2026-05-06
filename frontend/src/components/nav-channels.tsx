@@ -59,7 +59,7 @@ export function NavChannels({ channels }: { channels: Channel[] }) {
         <SidebarGroupLabel>Channels</SidebarGroupLabel>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button className="flex h-7 w-7 mr-0.5 items-center justify-center rounded-md hover:bg-sidebar-accent">
+            <button className="flex h-7 w-7 mr-0.5 items-center justify-center rounded-md hover:bg-sidebar-accent select-none">
               <Icon
                 icon="fa-solid fa-arrow-up-arrow-down"
                 wrapperClassName="size-3"
