@@ -250,7 +250,7 @@ function ViewerList({
     )
   }
   return (
-    <div className="flex flex-col lg:flex-1 lg:min-h-0">
+    <div className="flex flex-col">
       <div
         className={`grid items-center gap-3 px-3 py-3 border border-transparent text-label text-muted-foreground shrink-0 ${ROW_GRID}`}
       >
@@ -295,7 +295,7 @@ function ViewerList({
           )
         })}
       </div>
-      <div className="lg:flex-1 flex flex-col gap-1 overflow-y-auto">
+      <div className="flex flex-col gap-1 overflow-y-auto max-h-120 scrollbar">
         {filtered.map((v, i) => {
           const rank = rankMap.get(v.user_id) ?? filtered.length + 1
           const showLowDivider =
@@ -863,7 +863,7 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
             </div>
             <div className="grid grid-cols-2 gap-3">
               {Array.from({ length: 4 }).map((_, i) => (
-                <Skeleton key={i} className="h-[73px] rounded-md" />
+                <Skeleton key={i} className="h-18.25 rounded-md" />
               ))}
             </div>
             <div className="space-y-1.5">
@@ -1198,7 +1198,7 @@ export default function Insights() {
   }, [viewers, search, sort, sortDir])
 
   return (
-    <PageMain className="lg:h-full lg:overflow-hidden">
+    <PageMain>
       {/* Header + controls */}
       <SlideUpSm inView className="flex items-end justify-between gap-element">
         <div>
@@ -1217,17 +1217,13 @@ export default function Insights() {
       </SlideUpSm>
 
       {/* Main 2-col layout */}
-      <SlideUp
-        inView
-        delay={0.05}
-        className="grid grid-cols-1 lg:grid-cols-2 gap-section lg:flex-1 lg:min-h-0"
-      >
+      <SlideUp inView delay={0.05} className="grid grid-cols-1 lg:grid-cols-2 gap-section">
         {/* Left: sticky – chart + summary cards */}
-        <div className="rounded-lg border bg-card p-4 lg:self-start flex flex-col gap-section">
+        <div className="rounded-lg border bg-card p-section lg:self-start flex flex-col gap-section">
           {!initialized ? (
-            <Skeleton className="hidden lg:block h-[330px] rounded-md" />
+            <Skeleton className="hidden lg:block h-82.5 rounded-md" />
           ) : viewers.length > 0 ? (
-            <div className="hidden lg:block rounded-md bg-muted/20 p-3 [&_*]:outline-none">
+            <div className="hidden lg:block rounded-md bg-muted/20 p-3 **:outline-none">
               <ViewerScatterChart
                 viewers={viewers}
                 hoveredUserId={hoveredUserId}
@@ -1239,7 +1235,7 @@ export default function Insights() {
           <Stagger key={insightsLoading ? 'l' : 'd'} className="grid grid-cols-2 gap-section">
             {insightsLoading ? (
               Array.from({ length: 6 }).map((_, i) => (
-                <Skeleton key={i} className="h-[69px] rounded-md" />
+                <Skeleton key={i} className="h-17.25 rounded-md" />
               ))
             ) : (
               <>
@@ -1305,7 +1301,7 @@ export default function Insights() {
         </div>
 
         {/* Right: viewer list */}
-        <div className="rounded-lg border bg-card p-4 flex flex-col gap-section lg:min-h-0 lg:overflow-hidden">
+        <div className="rounded-lg border bg-card p-section flex flex-col gap-section">
           <Input
             placeholder="搜尋觀眾..."
             value={search}
@@ -1313,9 +1309,9 @@ export default function Insights() {
             className="h-10 w-44 self-end shrink-0"
           />
           {!initialized ? (
-            <div className="space-y-1 lg:flex-1">
+            <div className="space-y-1">
               {Array.from({ length: 10 }).map((_, i) => (
-                <Skeleton key={i} className="h-[57px] w-full rounded-md" />
+                <Skeleton key={i} className="h-14.25 w-full rounded-md" />
               ))}
             </div>
           ) : viewersError ? (
