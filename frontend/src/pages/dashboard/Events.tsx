@@ -133,6 +133,7 @@ export default function Events() {
   const [redemptions, setRedemptions] = useState<RedemptionConfig[]>([])
   const [twitchRewards, setTwitchRewards] = useState<TwitchReward[]>([])
   const [redemptionLoading, setRedemptionLoading] = useState(true)
+  const [rewardsLoading, setRewardsLoading] = useState(true)
 
   const fetchEvents = useCallback(async () => {
     try {
@@ -147,18 +148,27 @@ export default function Events() {
   }, [])
 
   const fetchRedemptions = useCallback(async () => {
+    // Kick off both requests in parallel
+    const configsPromise = getRedemptionConfigs()
+    const rewardsPromise = isAffiliate
+      ? getTwitchRewards().catch(() => [] as TwitchReward[])
+      : Promise.resolve([] as TwitchReward[])
+
+    // Configs (own DB) — settle first, reveal table rows immediately
     try {
-      const configsPromise = getRedemptionConfigs()
-      const rewardsPromise = isAffiliate
-        ? getTwitchRewards().catch(() => [] as TwitchReward[])
-        : Promise.resolve([] as TwitchReward[])
-      const [configs, rewards] = await Promise.all([configsPromise, rewardsPromise])
-      setRedemptions(configs)
-      setTwitchRewards([...rewards].sort((a, b) => a.cost - b.cost))
+      setRedemptions(await configsPromise)
     } catch (err) {
       if (import.meta.env.DEV) console.error('Failed to load redemptions:', err)
     } finally {
       setRedemptionLoading(false)
+    }
+
+    // Rewards (Twitch API) — settle independently, only affects dropdown cell
+    try {
+      const rewards = await rewardsPromise
+      setTwitchRewards([...rewards].sort((a, b) => a.cost - b.cost))
+    } finally {
+      setRewardsLoading(false)
     }
   }, [isAffiliate])
 
@@ -432,10 +442,11 @@ export default function Events() {
               </Empty>
             ) : (
               <div className="overflow-x-auto rounded-md border">
-                <Table>
+                <Table className="table-fixed">
                   <TableHeader>
                     <TableRow>
                       <SortableHead
+                        className="w-[30%]"
                         sortKey="action_type"
                         currentKey={redSort.sortKey}
                         dir={redSort.sortDir}
@@ -452,7 +463,7 @@ export default function Events() {
                         獎勵名稱
                       </SortableHead>
                       <SortableHead
-                        className="text-center"
+                        className="w-24 text-center"
                         sortKey="enabled"
                         currentKey={redSort.sortKey}
                         dir={redSort.sortDir}
@@ -490,7 +501,9 @@ export default function Events() {
                             {ACTION_TYPE_LABELS[red.action_type] || red.action_type}
                           </TableCell>
                           <TableCell>
-                            {twitchRewards.length === 0 ? (
+                            {rewardsLoading ? (
+                              <Skeleton className="h-8 w-full md:max-w-56" />
+                            ) : twitchRewards.length === 0 ? (
                               <span className="text-sub text-muted-foreground">
                                 請先在 Twitch 建立自訂獎勵
                               </span>
