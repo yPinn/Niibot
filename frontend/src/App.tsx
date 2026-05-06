@@ -82,15 +82,15 @@ function App() {
                       <Route path="/dashboard" element={<Overview />} />
                       <Route path="/commands" element={<Commands />} />
                       <Route path="/events" element={<Events />} />
-                      <Route path="/insights" element={<Insights />} />
-                      <Route path="/system" element={<SystemStatus />} />
+                      <Route path="/analytics/insights" element={<Insights />} />
+                      <Route path="/analytics/system-status" element={<SystemStatus />} />
                       <Route path="/settings" element={<Settings />} />
                       {/* Module Routes */}
                       <Route path="/timers" element={<Timers />} />
                       <Route path="/modules/game-queue" element={<GameQueue />} />
                       <Route path="/modules/video-queue" element={<VideoQueue />} />
                       {/* Discord Bot Routes */}
-                      <Route path="/docs" element={<GetStarted />} />
+                      <Route path="/docs/get-started" element={<GetStarted />} />
                       <Route path="/discord/dashboard" element={<DiscordDashboard />} />
                     </Route>
                   </Route>

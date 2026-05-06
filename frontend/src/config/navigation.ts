@@ -47,11 +47,11 @@ export const navigationData = {
       items: [
         {
           title: 'Insights',
-          url: '/insights',
+          url: '/analytics/insights',
         },
         {
           title: 'System Status',
-          url: '/system',
+          url: '/analytics/system-status',
         },
       ],
     },
@@ -62,7 +62,7 @@ export const navigationData = {
       items: [
         {
           title: 'Get Started',
-          url: '/docs',
+          url: '/docs/get-started',
         },
         {
           title: 'Discord Bot',
@@ -95,7 +95,7 @@ export const discordNavigationData = {
         },
         {
           title: 'System Status',
-          url: '/system',
+          url: '/analytics/system-status',
         },
       ],
     },
@@ -106,7 +106,7 @@ export const discordNavigationData = {
       items: [
         {
           title: 'Get Started',
-          url: '/docs',
+          url: '/docs/get-started',
         },
       ],
     },
