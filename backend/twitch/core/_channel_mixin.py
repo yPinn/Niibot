@@ -47,12 +47,25 @@ class _ChannelMixin:
             subs = get_channel_subscriptions(broadcaster_user_id, self._bot_id)  # type: ignore[attr-defined]
             resp = await self.multi_subscribe(subs)  # type: ignore[attr-defined]
             non_conflict: list = []
+            follow_auth_errors: list = []
             if resp.errors:
-                non_conflict = [
-                    e for e in resp.errors if "409" not in str(e) and "already exists" not in str(e)
-                ]
+                for e in resp.errors:
+                    e_str = str(e)
+                    if "409" in e_str or "already exists" in e_str:
+                        continue
+                    elif "403" in e_str and "ChannelFollow" in e_str:
+                        # broadcaster missing moderator:read:followers scope
+                        follow_auth_errors.append(e)
+                    else:
+                        non_conflict.append(e)
                 if non_conflict:
                     LOGGER.warning(f"Subscription errors: {non_conflict}")
+                if follow_auth_errors:
+                    LOGGER.warning(
+                        f"channel.follow auth failed for {broadcaster_user_id}"
+                        " — broadcaster needs to reauth with moderator:read:followers"
+                    )
+                    self._needs_reauth.add(broadcaster_user_id)  # type: ignore[attr-defined]
 
             subscription_ids: list[str] = []
             for success_item in resp.success:
@@ -63,8 +76,9 @@ class _ChannelMixin:
             if subscription_ids:
                 self._subscription_ids[broadcaster_user_id] = subscription_ids  # type: ignore[attr-defined]
 
-            # Mark as subscribed unless real (non-409) errors occurred with no successes.
-            # All-409 errors mean subscriptions already exist (e.g. after restart) — still subscribed.
+            # Mark as subscribed unless there are real (non-409, non-follow-403) errors with no
+            # successes. follow_auth_errors only means channel.follow is unavailable until reauth —
+            # the other subscriptions still exist on the Conduit from the previous session.
             if subscription_ids or not non_conflict:
                 self._subscribed_channels.add(broadcaster_user_id)  # type: ignore[attr-defined]
                 LOGGER.info(f"Subscribed to events for channel: {broadcaster_user_id}")
