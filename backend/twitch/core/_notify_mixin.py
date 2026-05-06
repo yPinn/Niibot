@@ -100,6 +100,15 @@ class _NotifyMixin:
                 user_info = await self.add_token(token_obj.token, token_obj.refresh)  # type: ignore[attr-defined]
                 LOGGER.info(f"[NOTIFY] Loaded token for new user: {user_info.login} ({user_id})")
 
+                from utils.reauth import missing_broadcaster_scopes
+
+                missing = missing_broadcaster_scopes(user_info.scopes)
+                if missing:
+                    LOGGER.warning(f"[NOTIFY] {user_info.login} missing scopes: {missing}")
+                    self._needs_reauth.add(user_id)  # type: ignore[attr-defined]
+                else:
+                    self._needs_reauth.discard(user_id)  # type: ignore[attr-defined]
+
                 await self.add_channel_to_db(user_id, user_info.login or "unknown")  # type: ignore[attr-defined]
 
                 if user_id not in self._subscribed_channels:  # type: ignore[attr-defined]

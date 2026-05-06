@@ -73,6 +73,8 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
         # User-token messages are automatically source-only (Twitch API design),
         # so this set is for awareness/logging rather than routing decisions.
         self._shared_chat_channels: set[str] = set()
+        # Channels missing one or more BROADCASTER_SCOPES — notified on next stream online
+        self._needs_reauth: set[str] = set()
 
         init_kwargs: dict = dict(
             client_id=client_id,
@@ -307,12 +309,15 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
                     LOGGER.info("Bot token has 'user:bot' scope — bot badge enabled.")
                 continue  # bot account does not need a channels row
 
-            if "channel:bot" not in user_info.scopes:
+            from utils.reauth import missing_broadcaster_scopes
+
+            missing = missing_broadcaster_scopes(user_info.scopes)
+            if missing:
                 LOGGER.warning(
-                    f"Channel token for {user_info.login or tok.user_id} is missing "
-                    "'channel:bot' scope — bot badge will NOT appear in that channel. "
-                    "Broadcaster must re-login via the dashboard."
+                    f"Channel {user_info.login or tok.user_id} missing scopes {missing} "
+                    "— will notify on next stream online."
                 )
+                self._needs_reauth.add(tok.user_id)
 
             try:
                 await self.add_channel_to_db(tok.user_id, user_info.login or "unknown")
