@@ -40,7 +40,7 @@ export function LoadingSpinner({
   const spinner = (
     <div className="flex flex-col items-center justify-center gap-2">
       <Spinner className={`${sizeClasses[size]} text-primary`} />
-      {text && <p className="text-sm text-muted-foreground">{text}</p>}
+      {text && <p className="text-sub text-muted-foreground">{text}</p>}
     </div>
   )
 

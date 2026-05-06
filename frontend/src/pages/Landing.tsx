@@ -155,14 +155,14 @@ export default function Home() {
               >
                 <div className="flex items-center gap-3">
                   <Icon icon={item.icon} wrapperClassName="size-5 text-primary shrink-0" />
-                  <span className="text-base font-semibold text-foreground">{item.title}</span>
+                  <span className="text-content font-semibold text-foreground">{item.title}</span>
                   {item.badge && (
-                    <Badge variant="secondary" className="ml-auto text-xs">
+                    <Badge variant="secondary" className="ml-auto text-label">
                       {item.badge}
                     </Badge>
                   )}
                 </div>
-                <p className="text-sm leading-relaxed text-muted-foreground">{item.desc}</p>
+                <p className="text-sub leading-relaxed text-muted-foreground">{item.desc}</p>
               </StaggerItem>
             ))}
           </Stagger>
@@ -190,8 +190,10 @@ export default function Home() {
                   key={cmd.name}
                   className="flex flex-col gap-1.5 rounded-xl border bg-card px-4 py-3"
                 >
-                  <span className="font-mono text-sm font-semibold text-primary">{cmd.name}</span>
-                  <span className="text-xs leading-relaxed text-muted-foreground">{cmd.desc}</span>
+                  <span className="font-mono text-sub font-semibold text-primary">{cmd.name}</span>
+                  <span className="text-label leading-relaxed text-muted-foreground">
+                    {cmd.desc}
+                  </span>
                 </StaggerItem>
               ))}
             </Stagger>
@@ -207,7 +209,7 @@ export default function Home() {
               Discord 也顧到了
             </SlideUpSm>
             <FadeIn inView delay={0.1}>
-              <Icon icon="fa-brands fa-discord" wrapperClassName="size-6 text-[#5865F2]" />
+              <Icon icon="fa-brands fa-discord" wrapperClassName="size-6 text-discord" />
             </FadeIn>
           </div>
           <FadeIn inView delay={0.15} className="mb-10 text-lg text-muted-foreground">
@@ -221,10 +223,10 @@ export default function Home() {
                 className="flex flex-col gap-3 rounded-xl border bg-card p-4 shadow-sm sm:p-6"
               >
                 <div className="flex items-center gap-3">
-                  <Icon icon={item.icon} wrapperClassName="size-5 text-[#5865F2] shrink-0" />
-                  <span className="text-base font-semibold text-foreground">{item.title}</span>
+                  <Icon icon={item.icon} wrapperClassName="size-5 text-discord shrink-0" />
+                  <span className="text-content font-semibold text-foreground">{item.title}</span>
                 </div>
-                <p className="text-sm leading-relaxed text-muted-foreground">{item.desc}</p>
+                <p className="text-sub leading-relaxed text-muted-foreground">{item.desc}</p>
               </StaggerItem>
             ))}
           </Stagger>
@@ -232,7 +234,7 @@ export default function Home() {
 
         {/* Footer */}
         <div className="border-t border-border px-6 py-4 sm:px-10 sm:py-6 lg:px-16">
-          <div className="flex flex-wrap items-center justify-between gap-4 text-xs text-muted-foreground">
+          <div className="flex flex-wrap items-center justify-between gap-4 text-label text-muted-foreground">
             <span>© {new Date().getFullYear()} Niibot</span>
             <div className="flex gap-4">
               <Link to="/terms" className="hover:text-foreground hover:underline">

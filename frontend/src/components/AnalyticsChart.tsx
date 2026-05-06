@@ -144,11 +144,11 @@ const ChartTooltip = ({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Icon icon="fa-solid fa-calendar" wrapperClassName="size-3.5 text-primary" />
-            <span className="text-sm font-semibold text-popover-foreground">
+            <span className="text-sub font-semibold text-popover-foreground">
               {DATE_FORMATTER.format(new Date(firstSession.started_at))}
             </span>
           </div>
-          <span className="text-xs text-muted-foreground">{data.session_count} 場直播</span>
+          <span className="text-label text-muted-foreground">{data.session_count} 場直播</span>
         </div>
       </div>
 
@@ -177,14 +177,14 @@ const ChartTooltip = ({
                 )}
               </div>
               <div className="flex-1 px-3 py-2 flex flex-col justify-evenly">
-                <div className="font-semibold text-sm text-popover-foreground line-clamp-2 leading-tight">
+                <div className="font-semibold text-sub text-popover-foreground line-clamp-2 leading-tight">
                   {session.title || '未設定標題'}
                 </div>
-                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                <div className="flex items-center gap-1 text-label text-muted-foreground">
                   <Icon icon="fa-solid fa-tag" wrapperClassName="size-2.5 shrink-0" />
                   <span className="truncate">{session.game_name || '未分類'}</span>
                 </div>
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <div className="flex items-center gap-1.5 text-label text-muted-foreground">
                   <Icon icon="fa-solid fa-clock" wrapperClassName="size-2.5 shrink-0" />
                   <span>
                     {TIME_FORMATTER.format(new Date(session.started_at))} ·{' '}
@@ -199,12 +199,12 @@ const ChartTooltip = ({
 
       <div className="px-3 py-2 bg-muted/30 border-t border-border shrink-0">
         <div className="flex items-baseline gap-1.5">
-          <span className="text-xs text-muted-foreground">當日{chartConfig.label}</span>
+          <span className="text-label text-muted-foreground">當日{chartConfig.label}</span>
           <div className="flex items-baseline gap-1">
             <span className="text-xl font-bold text-primary tabular-nums leading-none">
               {typeof value === 'number' ? value.toFixed(1) : value}
             </span>
-            <span className="text-xs font-medium text-primary/70">{chartConfig.unit}</span>
+            <span className="text-label font-medium text-primary/70">{chartConfig.unit}</span>
           </div>
         </div>
       </div>
@@ -366,7 +366,7 @@ export default function AnalyticsChart({
                   >
                     <div className="flex items-center justify-between mb-1">
                       <span
-                        className={`text-xs font-medium ${chartMode === stat.mode ? 'text-primary' : 'text-foreground/80'}`}
+                        className={`text-label font-medium ${chartMode === stat.mode ? 'text-primary' : 'text-foreground/80'}`}
                       >
                         {stat.label}
                       </span>
@@ -377,12 +377,14 @@ export default function AnalyticsChart({
                     </div>
                     <div className="flex items-baseline gap-1">
                       <span
-                        className={`text-lg font-bold tabular-nums ${chartMode === stat.mode ? 'text-primary' : 'text-foreground'}`}
+                        className={`text-card-title font-bold tabular-nums ${chartMode === stat.mode ? 'text-primary' : 'text-foreground'}`}
                       >
                         {stat.value}
                       </span>
                       {stat.unit && (
-                        <span className="text-xs font-medium text-foreground/70">{stat.unit}</span>
+                        <span className="text-label font-medium text-foreground/70">
+                          {stat.unit}
+                        </span>
                       )}
                     </div>
                     <div className="text-label text-muted-foreground">{stat.subtitle}</div>

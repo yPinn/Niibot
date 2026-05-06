@@ -51,8 +51,8 @@ export default function StatsCard({
                 key={item.label}
                 className="flex items-center justify-between rounded-md border bg-card p-2.5 hover:bg-accent transition-colors"
               >
-                <span className="text-sm font-medium truncate flex-1 mr-2">{item.label}</span>
-                <span className="text-sm font-bold text-primary tabular-nums">{item.value}</span>
+                <span className="text-sub font-medium truncate flex-1 mr-2">{item.label}</span>
+                <span className="text-sub font-bold text-primary tabular-nums">{item.value}</span>
               </div>
             ))}
           </div>
