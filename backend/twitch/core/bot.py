@@ -202,6 +202,18 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
             if chatter_id == self.bot_id:
                 return
 
+            if channel_id in self._needs_reauth:
+                from utils.reauth import reauth_notifier
+
+                await reauth_notifier.notify(
+                    broadcaster_login=payload.broadcaster.name,
+                    channel_id=channel_id,
+                    send_fn=lambda msg: payload.broadcaster.send_message(
+                        message=msg,
+                        sender=self.bot_id,
+                    ),
+                )
+
             if channel_id in self._active_sessions:
                 buf = self._chatter_buffers.setdefault(channel_id, {})
                 if chatter_id in buf:
