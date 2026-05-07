@@ -186,17 +186,21 @@ export interface ViewerProfile extends ViewerSummary {
   session_attendance: ViewerSessionAttendance[]
 }
 
-export async function listViewers(days: number = 30): Promise<ViewerSummary[]> {
+export async function listViewers(
+  days: number = 30,
+  forceRefresh = false
+): Promise<ViewerSummary[]> {
   return apiCache.fetch(
     CACHE_KEYS.ANALYTICS_VIEWERS(days),
     async () => {
       const response = await apiFetch(`${API_ENDPOINTS.analytics.viewers}?days=${days}`, {
         credentials: 'include',
+        ...(forceRefresh && { cache: 'no-store' as RequestCache }),
       })
       if (!response.ok) throw new Error(`Failed to fetch viewers: ${response.statusText}`)
       return response.json() as Promise<ViewerSummary[]>
     },
-    { ttl: 5 * 60 * 1000 }
+    { ttl: 5 * 60 * 1000, forceRefresh }
   )
 }
 

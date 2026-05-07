@@ -61,7 +61,6 @@ import {
 } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
-import { apiCache, CACHE_KEYS } from '@/lib/apiCache'
 import { cn } from '@/lib/utils'
 
 // Descending — find() returns first tier ≤ total
@@ -1414,11 +1413,11 @@ export default function Insights() {
   const loadedForRef = useRef<string | null>(null)
 
   const fetchViewers = useCallback(
-    async (days: number) => {
+    async (days: number, force = false) => {
       if (!user) return
       try {
         setViewersError(false)
-        setViewers(await listViewers(days))
+        setViewers(await listViewers(days, force))
       } catch {
         setViewers([])
         setViewersError(true)
@@ -1466,9 +1465,7 @@ export default function Insights() {
     try {
       const result = await syncChannelRoles()
       setSyncResult(result)
-      apiCache.delete(CACHE_KEYS.ANALYTICS_VIEWERS(Number(period)))
-      loadedForRef.current = null
-      void fetchViewers(Number(period))
+      void fetchViewers(Number(period), true)
     } catch {
       // silent — button returns to idle state
     } finally {
