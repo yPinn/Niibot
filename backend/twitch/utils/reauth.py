@@ -76,6 +76,9 @@ class ReauthNotifier:
         send_fn: Callable[[str], Awaitable[object]],
     ) -> bool:
         """Send a reauth notification if cooldown permits. Returns True if sent."""
+        if get_settings().is_development:
+            LOGGER.debug(f"[{broadcaster_login}] Reauth notification skipped (dev)")
+            return False
         if not self._can_notify(channel_id):
             return False
         self._last_notified[channel_id] = datetime.now(UTC)

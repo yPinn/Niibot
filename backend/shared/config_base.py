@@ -23,8 +23,19 @@ class BaseServiceSettings(BaseSettings):
     # Logging
     log_level: str = Field(default="INFO", description="Logging level")
 
+    # Environment
+    environment: str = Field(default="development", description="Runtime environment name")
+
     # Error reporting
     error_webhook_url: str = Field(default="", description="Discord webhook URL for error alerts")
+
+    @property
+    def is_development(self) -> bool:
+        return self.environment.lower() == "development"
+
+    @property
+    def is_production(self) -> bool:
+        return self.environment.lower() == "production"
 
     @field_validator("database_url")
     @classmethod

@@ -46,7 +46,6 @@ class Settings(BaseServiceSettings):
     bot_id: str = Field(default="", description="Twitch bot user ID")
 
     youtube_api_key: str = Field(default="", description="YouTube Data API v3 key")
-    environment: str = Field(default="development", description="Environment name")
     host: str = Field(default="0.0.0.0", description="Server host")
     port: int = Field(default=8000, description="Server port")
 
@@ -66,14 +65,6 @@ class Settings(BaseServiceSettings):
     @property
     def cors_origins(self) -> list[str]:
         return [self.frontend_url]
-
-    @property
-    def is_production(self) -> bool:
-        return self.environment.lower() == "production"
-
-    @property
-    def is_development(self) -> bool:
-        return self.environment.lower() == "development"
 
 
 @lru_cache

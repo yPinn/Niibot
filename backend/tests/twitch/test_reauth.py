@@ -10,9 +10,10 @@ os.environ.setdefault("BOT_ID", "999")
 os.environ.setdefault("OWNER_ID", "111")
 os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost/test")
 os.environ.setdefault("FRONTEND_URL", "https://niibot.tv")
+os.environ.setdefault("ENVIRONMENT", "production")
 
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -180,3 +181,13 @@ class TestReauthNotifier:
         await notifier.notify("alice", "ch1", send_fn)
         # The timestamp must have been recorded (cooldown enforced even on failure)
         assert "ch1" in notifier._last_notified
+
+    async def test_notify_skips_in_development(self):
+        """No chat message sent in dev environment — returns False immediately."""
+        notifier = self._notifier()
+        send_fn = AsyncMock()
+        with patch("utils.reauth.get_settings") as mock_settings:
+            mock_settings.return_value.is_development = True
+            result = await notifier.notify("alice", "ch1", send_fn)
+        assert result is False
+        send_fn.assert_not_awaited()
