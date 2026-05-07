@@ -172,6 +172,26 @@ class ViewerProfile(BaseModel):
     session_attendance: list[ViewerSessionAttendance] = []
 
 
+class BadgeVersion(BaseModel):
+    id: str
+    title: str
+    image_url_1x: str | None = None
+    image_url_2x: str | None = None
+    image_url_4x: str | None = None
+
+
+class ChannelBadgeSets(BaseModel):
+    subscriber: list[BadgeVersion] = []
+    founder: list[BadgeVersion] = []
+    bits: list[BadgeVersion] = []
+
+
+class ChannelBadgesResponse(BaseModel):
+    subscriber_1m: str | None = None
+    founder: str | None = None
+    sets: ChannelBadgeSets = ChannelBadgeSets()
+
+
 @router.get("/summary", response_model=AnalyticsSummary)
 async def get_analytics_summary(
     response: Response,
@@ -364,10 +384,10 @@ async def get_channel_badges(
     response: Response,
     channel_id: str = Depends(get_current_channel_id),
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
-) -> dict[str, str | None]:
+) -> ChannelBadgesResponse:
     badges = await twitch_api.get_channel_badges(channel_id)
     response.headers["Cache-Control"] = "private, max-age=3600"
-    return badges
+    return ChannelBadgesResponse(**badges)
 
 
 @router.get("/channel/badges/global")
