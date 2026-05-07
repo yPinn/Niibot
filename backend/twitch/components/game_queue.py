@@ -125,7 +125,7 @@ class GameQueueComponent(BotComponent):
         if remaining:
             next_batch = remaining[:pull_size]
             next_names = ", ".join(e.user_name for e in next_batch)
-            await self._ctx_reply(ctx, f"已結算 | 下一場: {next_names}")
+            await self._ctx_reply(ctx, f"已結算 | 下一場：{next_names}")
         else:
             await self._ctx_reply(ctx, "已結算 | 隊列清空")
 
@@ -193,12 +193,12 @@ class GameQueueComponent(BotComponent):
 
         if not args or not args.strip().isdigit():
             settings = await self.gq_settings_repo.get_or_create(channel_id)
-            await self._ctx_reply(ctx, f"!gq size <人數> | 目前: {settings.group_size}人/場")
+            await self._ctx_reply(ctx, f"!gq size <人數> | 目前：{settings.group_size} 人/場")
             return
 
         size = int(args.strip())
         if size < 1 or size > 20:
-            await self._ctx_reply(ctx, "範圍: 1-20")
+            await self._ctx_reply(ctx, "範圍：1–20")
             return
 
         await self.gq_settings_repo.update_settings(channel_id, group_size=size)

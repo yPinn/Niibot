@@ -211,7 +211,7 @@ class ChannelPointsComponent(commands.Component):
             except Exception as e:
                 LOGGER.warning(f"[{channel_name}] Niibot auth: failed to send public message: {e}")
 
-            whisper_message = f"請點擊以下連結，授權 Niibot 存取你的頻道：{oauth_url}"
+            whisper_message = f"請點擊以下連結，授權 Niibot 存取你的頻道： {oauth_url}"
             try:
                 bot_user = self.bot.create_partialuser(user_id=self.bot.bot_id)
                 await bot_user.send_whisper(

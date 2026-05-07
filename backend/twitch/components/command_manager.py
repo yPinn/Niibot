@@ -116,7 +116,7 @@ class CommandManagerComponent(BotComponent):
         """Command management group. Moderator+ only."""
         if ctx.invoked_subcommand is None:
             await self._ctx_reply(
-                ctx, "用法: !cmd a/e/d !指令名 — 新增｜編輯｜刪除 (選項: -cd -role -alias -enable)"
+                ctx, "用法：!cmd a/e/d !指令名 — 新增｜編輯｜刪除 (選項: -cd -role -alias -enable)"
             )
 
     @cmd.command(name="a", aliases=["add"])
@@ -125,7 +125,7 @@ class CommandManagerComponent(BotComponent):
         if not ctx.chatter.moderator:  # type: ignore[attr-defined]
             return
         if not args or not args.strip():
-            await self._ctx_reply(ctx, "用法: !cmd a !指令名 回覆 / !cmd a 觸發詞 回覆")
+            await self._ctx_reply(ctx, "用法：!cmd a !指令名 回覆 / !cmd a 觸發詞 回覆")
             return
 
         parts = args.strip().split(maxsplit=1)
@@ -152,13 +152,13 @@ class CommandManagerComponent(BotComponent):
         min_role = ROLE_ALIASES.get(role_input.lower(), "everyone")
         enabled = _parse_bool(options["enable"]) if "enable" in options else True
         if enabled is None:
-            await self._ctx_reply(ctx, "無效的 -enable 值，請使用 on/off")
+            await self._ctx_reply(ctx, "-enable 值無效，請用 on/off")
             return
 
         if is_command:
             cmd_name = first.lstrip("!").lower()
             if not cmd_name:
-                await self._ctx_reply(ctx, "用法: !cmd a !指令名 回覆文字")
+                await self._ctx_reply(ctx, "用法：!cmd a !指令名 回覆文字")
                 return
             existing = await self.cmd_repo.get_config(channel_id, cmd_name)
             if existing:
@@ -178,7 +178,7 @@ class CommandManagerComponent(BotComponent):
             preview = response_text[:30] + ("…" if len(response_text) > 30 else "")
             reply = f"已新增 !{cmd_name} → {preview}"
             if config.aliases:
-                reply += f" | 別名: {config.aliases}"
+                reply += f" | 別名：{config.aliases}"
             if not enabled:
                 reply += " | 已停用"
             await self._ctx_reply(ctx, reply)
@@ -187,18 +187,18 @@ class CommandManagerComponent(BotComponent):
             pattern = first
             match_type = options.get("match", "contains")
             if match_type not in _MATCH_TYPES:
-                await self._ctx_reply(ctx, f"無效的 -match 值，請使用: {', '.join(_MATCH_TYPES)}")
+                await self._ctx_reply(ctx, f"-match 值無效，可用：{', '.join(_MATCH_TYPES)}")
                 return
             case_sensitive_raw = _parse_bool(options.get("cs", "off"))
             if case_sensitive_raw is None:
-                await self._ctx_reply(ctx, "無效的 -cs 值，請使用 on/off")
+                await self._ctx_reply(ctx, "-cs 值無效，請用 on/off")
                 return
             case_sensitive = case_sensitive_raw
             if match_type == "regex":
                 _rl_key = f"regex_create:{channel_id}"
                 _last = _regex_create_tracker.get(_rl_key)
                 if _last and (datetime.now(UTC) - _last) < _REGEX_CREATE_COOLDOWN:
-                    await self._ctx_reply(ctx, "Regex 觸發建立冷卻中（30 秒），請稍後再試")
+                    await self._ctx_reply(ctx, "Regex 建立冷卻中（30 秒），請稍後再試")
                     return
                 is_safe = await asyncio.get_running_loop().run_in_executor(
                     None, validate_regex_pattern, pattern
@@ -246,7 +246,7 @@ class CommandManagerComponent(BotComponent):
             return
         if not args or not args.strip():
             await self._ctx_reply(
-                ctx, "用法: !cmd e !指令名 [選項] / !cmd e 觸發詞 [選項] [新回覆文字]"
+                ctx, "用法：!cmd e !指令名 [選項] / !cmd e 觸發詞 [選項] [新回覆文字]"
             )
             return
 
@@ -260,12 +260,12 @@ class CommandManagerComponent(BotComponent):
         if is_command:
             cmd_name = first.lstrip("!").lower()
             if not cmd_name:
-                await self._ctx_reply(ctx, "用法: !cmd e !指令名 [選項] [新回覆文字]")
+                await self._ctx_reply(ctx, "用法：!cmd e !指令名 [選項] [新回覆文字]")
                 return
 
             existing = await self.cmd_repo.get_config(channel_id, cmd_name)
             if not existing or existing.command_type != "custom":
-                await self._ctx_reply(ctx, f"找不到自訂指令 !{cmd_name}，僅能編輯自訂指令")
+                await self._ctx_reply(ctx, f"找不到自訂指令 !{cmd_name}")
                 return
 
             kwargs: dict = {}
@@ -282,14 +282,14 @@ class CommandManagerComponent(BotComponent):
             if "enable" in options:
                 enabled = _parse_bool(options["enable"])
                 if enabled is None:
-                    await self._ctx_reply(ctx, "無效的 -enable 值，請使用 on/off")
+                    await self._ctx_reply(ctx, "-enable 值無效，請用 on/off")
                     return
                 kwargs["enabled"] = enabled
             if response_text:
                 kwargs["custom_response"] = response_text
 
             if not kwargs:
-                await self._ctx_reply(ctx, "請提供要修改的內容，如 -cd=N / -enable=on / 新回覆文字")
+                await self._ctx_reply(ctx, "請提供修改內容（-cd=N / -enable=on / 回覆文字）")
                 return
 
             config = await self.cmd_repo.upsert_config(
@@ -299,13 +299,13 @@ class CommandManagerComponent(BotComponent):
             changes = []
             if response_text:
                 preview = response_text[:25] + ("…" if len(response_text) > 25 else "")
-                changes.append(f"回覆: {preview}")
+                changes.append(f"回覆：{preview}")
             if "cd" in options:
-                changes.append(f"冷卻: {config.cooldown}s")
+                changes.append(f"冷卻：{config.cooldown}s")
             if "role" in options:
-                changes.append(f"權限: {config.min_role}")
+                changes.append(f"權限：{config.min_role}")
             if "alias" in options:
-                changes.append(f"別名: {config.aliases}")
+                changes.append(f"別名：{config.aliases}")
             if "enable" in options:
                 changes.append("啟用" if config.enabled else "停用")
 
@@ -333,9 +333,7 @@ class CommandManagerComponent(BotComponent):
                 tkwargs["min_role"] = ROLE_ALIASES.get(options["role"].lower(), "everyone")
             if "match" in options:
                 if options["match"] not in _MATCH_TYPES:
-                    await self._ctx_reply(
-                        ctx, f"無效的 -match 值，請使用: {', '.join(_MATCH_TYPES)}"
-                    )
+                    await self._ctx_reply(ctx, f"-match 值無效，可用：{', '.join(_MATCH_TYPES)}")
                     return
                 tkwargs["match_type"] = options["match"]
                 if options["match"] == "regex":
@@ -350,20 +348,20 @@ class CommandManagerComponent(BotComponent):
             if "cs" in options:
                 cs = _parse_bool(options["cs"])
                 if cs is None:
-                    await self._ctx_reply(ctx, "無效的 -cs 值，請使用 on/off")
+                    await self._ctx_reply(ctx, "-cs 值無效，請用 on/off")
                     return
                 tkwargs["case_sensitive"] = cs
             if "enable" in options:
                 enabled_t = _parse_bool(options["enable"])
                 if enabled_t is None:
-                    await self._ctx_reply(ctx, "無效的 -enable 值，請使用 on/off")
+                    await self._ctx_reply(ctx, "-enable 值無效，請用 on/off")
                     return
                 tkwargs["enabled"] = enabled_t
             if response_text:
                 tkwargs["response"] = response_text
 
             if not tkwargs:
-                await self._ctx_reply(ctx, "請提供要修改的內容，如 -cd=N / -enable=on / 新回覆文字")
+                await self._ctx_reply(ctx, "請提供修改內容（-cd=N / -enable=on / 回覆文字）")
                 return
 
             # Only pass fields being changed; None → COALESCE keeps existing DB value
@@ -381,13 +379,13 @@ class CommandManagerComponent(BotComponent):
             changes = []
             if response_text:
                 preview = response_text[:25] + ("…" if len(response_text) > 25 else "")
-                changes.append(f"回覆: {preview}")
+                changes.append(f"回覆：{preview}")
             if "cd" in options:
-                changes.append(f"冷卻: {options['cd']}s")
+                changes.append(f"冷卻：{options['cd']}s")
             if "role" in options:
-                changes.append(f"權限: {options['role']}")
+                changes.append(f"權限：{options['role']}")
             if "match" in options:
-                changes.append(f"比對: {options['match']}")
+                changes.append(f"比對：{options['match']}")
             if "enable" in options:
                 val = _parse_bool(options["enable"])
                 changes.append("啟用" if val else "停用")
@@ -401,7 +399,7 @@ class CommandManagerComponent(BotComponent):
         if not ctx.chatter.moderator:  # type: ignore[attr-defined]
             return
         if not args or not args.strip():
-            await self._ctx_reply(ctx, "用法: !cmd d !指令名 / !cmd d 觸發詞")
+            await self._ctx_reply(ctx, "用法：!cmd d !指令名 / !cmd d 觸發詞")
             return
 
         target = args.strip()
@@ -419,7 +417,7 @@ class CommandManagerComponent(BotComponent):
 
         cmd_name = target.lstrip("!").lower()
         if not cmd_name:
-            await self._ctx_reply(ctx, "用法: !cmd d !指令名")
+            await self._ctx_reply(ctx, "用法：!cmd d !指令名")
             return
         deleted = await self.cmd_repo.delete_config(channel_id, cmd_name)
 
@@ -427,7 +425,7 @@ class CommandManagerComponent(BotComponent):
             await self._ctx_reply(ctx, f"已刪除 !{cmd_name}")
             LOGGER.info(f"Command deleted: !{cmd_name} by {ctx.chatter.name}")
         else:
-            await self._ctx_reply(ctx, f"找不到自訂指令 !{cmd_name}，僅能刪除自訂指令")
+            await self._ctx_reply(ctx, f"找不到自訂指令 !{cmd_name}")
 
 
 async def setup(bot: commands.Bot) -> None:

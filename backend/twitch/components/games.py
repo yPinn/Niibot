@@ -77,7 +77,7 @@ class GamesComponent(BotComponent):
             return
 
         if not args or not args.strip():
-            await self._ctx_reply(ctx, "用法: !choose 選項1 選項2 ...")
+            await self._ctx_reply(ctx, "用法：!choose 選項1 選項2 ...")
             return
 
         options = [o for o in args.split() if o]

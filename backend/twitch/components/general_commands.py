@@ -99,7 +99,7 @@ class GeneralCommandsComponent(BotComponent):
             return
 
         channel_name = ctx.channel.name
-        await self._ctx_reply(ctx, f"此頻道的指令列表： {FRONTEND_URL}/{channel_name}/commands")
+        await self._ctx_reply(ctx, f"指令列表： {FRONTEND_URL}/{channel_name}/commands")
         await self._record_command(ctx, "help")
 
     @commands.command(aliases=["開播時間"])
@@ -162,7 +162,7 @@ class GeneralCommandsComponent(BotComponent):
             return
 
         if not self._has_analytics:
-            await self._ctx_reply(ctx, "目前無法查詢排名資料")
+            await self._ctx_reply(ctx, "排名資料暫時無法取得")
             return
 
         user_id = ctx.chatter.id
@@ -177,7 +177,7 @@ class GeneralCommandsComponent(BotComponent):
             data = await self.bot.analytics.get_viewer_rank(channel_id, user_id)
         except Exception as e:
             LOGGER.error(f"Failed to get viewer rank for {user_id}: {e}")
-            await self._ctx_reply(ctx, "查詢排名時發生錯誤，請稍後再試")
+            await self._ctx_reply(ctx, "排名查詢失敗，請稍後再試")
             return
 
         if data is None:

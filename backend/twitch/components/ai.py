@@ -145,7 +145,7 @@ class AIComponent(BotComponent):
             return
 
         if not message or not message.strip():
-            await self._ctx_reply(ctx, "用法: !ai <問題>")
+            await self._ctx_reply(ctx, "用法：!ai <問題>")
             return
 
         try:
@@ -194,19 +194,19 @@ class AIComponent(BotComponent):
                 LOGGER.warning("Empty content after all models")
                 await self._ctx_reply(ctx, "AI 回應為空，請重試")
         except RateLimitError as e:
-            await self._ctx_reply(ctx, "AI 功能目前使用人數過多，請稍後再試")
+            await self._ctx_reply(ctx, "服務繁忙，請稍後再試")
             LOGGER.warning(f"[{ctx.channel.name}] AI rate limit: {e}")
         except PermissionDeniedError as e:
-            await self._ctx_reply(ctx, "AI 服務暫時無法使用，請聯絡管理員")
+            await self._ctx_reply(ctx, "服務異常，請聯絡管理員")
             LOGGER.error(f"[{ctx.channel.name}] AI permission denied: {e}")
         except AuthenticationError as e:
-            await self._ctx_reply(ctx, "AI 服務設定異常，請聯絡管理員")
+            await self._ctx_reply(ctx, "設定異常，請聯絡管理員")
             LOGGER.error(f"[{ctx.channel.name}] AI authentication error: {e}")
         except APITimeoutError as e:
-            await self._ctx_reply(ctx, "AI 回應逾時，請稍後再試")
+            await self._ctx_reply(ctx, "回應逾時，請稍後再試")
             LOGGER.warning(f"[{ctx.channel.name}] AI timeout: {e}")
         except Exception as e:
-            await self._ctx_reply(ctx, "AI 服務暫時無法使用，請稍後再試")
+            await self._ctx_reply(ctx, "服務暫時異常，請稍後再試")
             LOGGER.error(f"[{ctx.channel.name}] AI unexpected error ({type(e).__name__}): {e}")
 
 

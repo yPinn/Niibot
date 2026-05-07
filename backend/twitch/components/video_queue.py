@@ -79,7 +79,7 @@ class VideoQueueComponent(BotComponent):
         settings = await self.vq_settings_repo.get_or_create(channel_id)
 
         if not settings.enabled:
-            await self._ctx_reply(ctx, "影片佇列目前已關閉")
+            await self._ctx_reply(ctx, "影片佇列已停用")
             return
 
         # CLI add is restricted to moderators and broadcaster
@@ -98,7 +98,7 @@ class VideoQueueComponent(BotComponent):
         if not video_id and not clip_slug:
             bvid = extract_bilibili_bvid(url_str)
         if not video_id and not clip_slug and not bvid:
-            await self._ctx_reply(ctx, "請提供有效的 YouTube、Twitch Clip 或 Bilibili 連結")
+            await self._ctx_reply(ctx, "連結無效，支援 YouTube / Twitch Clip / Bilibili")
             return
 
         # Exactly one of video_id / clip_slug / bvid is non-None here.
@@ -119,9 +119,7 @@ class VideoQueueComponent(BotComponent):
         if settings.max_per_user > 0:
             active = await self.vq_repo.count_active_by_user(channel_id, user_name, user_id)
             if active >= settings.max_per_user:
-                await self._ctx_reply(
-                    ctx, f"每人上限 {settings.max_per_user} 首，請等待您的影片播放後再點歌"
-                )
+                await self._ctx_reply(ctx, f"已達點歌上限（{settings.max_per_user} 首）")
                 return
 
         # User cooldown
@@ -133,7 +131,7 @@ class VideoQueueComponent(BotComponent):
                     remaining = int(settings.user_cooldown_seconds - elapsed)
                     m, s = divmod(remaining, 60)
                     time_str = f"{m}:{s:02d}" if m > 0 else f"{s} 秒"
-                    await self._ctx_reply(ctx, f"點歌冷卻中，請等待 {time_str}")
+                    await self._ctx_reply(ctx, f"冷卻中，剩餘 {time_str}")
                     return
 
         if clip_slug:
@@ -164,7 +162,7 @@ class VideoQueueComponent(BotComponent):
         # Minimum view count filter
         if settings.min_view_count > 0:
             if view_count is None:
-                await self._ctx_reply(ctx, "無法驗證影片資訊，請稍後再試")
+                await self._ctx_reply(ctx, "無法取得影片資訊，請稍後再試")
                 return
             if view_count < settings.min_view_count:
                 await self._ctx_reply(
@@ -205,7 +203,7 @@ class VideoQueueComponent(BotComponent):
         channel_id = ctx.channel.id
         current = await self.vq_repo.get_current(channel_id)
         if not current:
-            await self._ctx_reply(ctx, "目前沒有正在播放的影片")
+            await self._ctx_reply(ctx, "目前無播放中的影片")
             return
 
         url = (
@@ -233,7 +231,7 @@ class VideoQueueComponent(BotComponent):
                 queue_str = f" | 待播 {len(queued)} 部"
 
         await self._ctx_reply(
-            ctx, f"▶ {title_part}{url}{remaining_str}{queue_str} | 投遞者: {current.requested_by}"
+            ctx, f"▶ {title_part}{url}{remaining_str}{queue_str} | 投遞者：{current.requested_by}"
         )
 
     # ------------------------------------------------------------------
@@ -250,7 +248,7 @@ class VideoQueueComponent(BotComponent):
             await self._handle_add(ctx, args[1].strip())
         else:
             await self._ctx_reply(
-                ctx, "用法: !vq <URL> 投遞影片 | !vq list 顯示佇列 | !vq remove 移除請求"
+                ctx, "用法：!vq <URL> 投遞影片 | !vq list 顯示佇列 | !vq remove 移除請求"
             )
 
     @vq.command(name="skip")
@@ -262,7 +260,7 @@ class VideoQueueComponent(BotComponent):
         channel_id = ctx.channel.id
         current = await self.vq_repo.get_current(channel_id)
         if not current:
-            await self._ctx_reply(ctx, "目前沒有正在播放的影片")
+            await self._ctx_reply(ctx, "目前無播放中的影片")
             return
 
         # Fetch next before atomic skip so we can include title in reply
@@ -292,7 +290,7 @@ class VideoQueueComponent(BotComponent):
         queued = await self.vq_repo.get_queued(channel_id)
 
         if not current and not queued:
-            await self._ctx_reply(ctx, "佇列目前是空的")
+            await self._ctx_reply(ctx, "佇列為空")
             return
 
         parts: list[str] = []
@@ -312,7 +310,7 @@ class VideoQueueComponent(BotComponent):
         user_id: str | None = ctx.chatter.id or None
         entry = await self.vq_repo.find_last_queued_by_user(channel_id, user_name, user_id)
         if not entry:
-            await self._ctx_reply(ctx, "沒有可移除的請求")
+            await self._ctx_reply(ctx, "無待播中的請求")
             return
         await self.vq_repo.mark_skipped(entry.id, channel_id)
         await self._ctx_reply(ctx, f"已移除「{entry.title or entry.video_id}」")
