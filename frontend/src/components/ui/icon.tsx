@@ -19,6 +19,7 @@ const SIZES = {
   '2xs': { box: 'size-3', font: 'text-xs' },
   sm: { box: 'size-3.5', font: 'text-sm' },
   md: { box: 'size-4', font: 'text-base' },
+  badge: { box: 'size-[18px]', font: 'text-[18px]' } /* Twitch badge minimum */,
   lg: { box: 'size-5', font: 'text-xl' },
   xl: { box: 'size-6', font: 'text-2xl' },
   '2xl': { box: 'size-8', font: 'text-[32px]' },

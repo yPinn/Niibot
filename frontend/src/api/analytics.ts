@@ -139,7 +139,13 @@ export interface ViewerSummary {
   last_seen: string | null
   watch_seconds: number
   total_bits: number
+  total_gifts: number
   engagement_score: number
+  is_subscribed: boolean
+  sub_tier: string | null
+  is_mod: boolean
+  is_vip: boolean
+  follow_since: string | null
 }
 
 export interface ViewerEvent {
@@ -158,7 +164,6 @@ export interface ViewerTwitchStatus {
   is_banned: boolean
   ban_expires_at: string | null
   ban_reason: string | null
-  bits_rank: number | null
 }
 
 export interface ViewerSessionAttendance {
@@ -207,6 +212,56 @@ export async function getViewerProfile(userId: string, days: number = 30): Promi
       return response.json() as Promise<ViewerProfile>
     },
     { ttl: 5 * 60 * 1000 }
+  )
+}
+
+export interface TwitchBadgeVersion {
+  id: string
+  title: string
+  image_url_1x: string | null
+  image_url_2x: string | null
+  image_url_4x: string | null
+}
+
+export interface ChannelBadges {
+  /** 1x URL for backward compatibility */
+  subscriber_1m: string | null
+  /** 1x URL for backward compatibility */
+  founder: string | null
+  sets: {
+    subscriber: TwitchBadgeVersion[]
+    founder: TwitchBadgeVersion[]
+    bits: TwitchBadgeVersion[]
+  }
+}
+
+export async function getChannelBadges(): Promise<ChannelBadges> {
+  return apiCache.fetch(
+    CACHE_KEYS.ANALYTICS_CHANNEL_BADGES,
+    async () => {
+      const response = await apiFetch(API_ENDPOINTS.analytics.channelBadges, {
+        credentials: 'include',
+      })
+      if (!response.ok) throw new Error(`Failed to fetch channel badges: ${response.statusText}`)
+      return response.json() as Promise<ChannelBadges>
+    },
+    { ttl: 60 * 60 * 1000 }
+  )
+}
+
+export type GlobalBadgeSets = Record<string, TwitchBadgeVersion[]>
+
+export async function getGlobalBadges(): Promise<GlobalBadgeSets> {
+  return apiCache.fetch(
+    CACHE_KEYS.ANALYTICS_GLOBAL_BADGES,
+    async () => {
+      const response = await apiFetch(API_ENDPOINTS.analytics.globalBadges, {
+        credentials: 'include',
+      })
+      if (!response.ok) throw new Error(`Failed to fetch global badges: ${response.statusText}`)
+      return response.json() as Promise<GlobalBadgeSets>
+    },
+    { ttl: 24 * 60 * 60 * 1000 }
   )
 }
 

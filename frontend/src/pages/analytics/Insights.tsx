@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import {
   CartesianGrid,
+  ReferenceArea,
+  ReferenceLine,
   ResponsiveContainer,
   Scatter,
   ScatterChart,
@@ -10,7 +12,9 @@ import {
 } from 'recharts'
 
 import {
+  type ChannelBadges,
   type ChannelInsights,
+  getChannelBadges,
   getInsights,
   getViewerProfile,
   listViewers,
@@ -20,6 +24,7 @@ import {
 } from '@/api/analytics'
 import { PageMain } from '@/components/PageMain'
 import {
+  Badge,
   Empty,
   EmptyDescription,
   EmptyHeader,
@@ -39,6 +44,7 @@ import {
   SlideUpSm,
   Stagger,
   StaggerItem,
+  Switch,
   Tabs,
   TabsList,
   TabsTrigger,
@@ -46,10 +52,47 @@ import {
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
+  TwitchBadgeGroup,
+  type TwitchRole,
+  TwitchRoleBadge,
 } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { cn } from '@/lib/utils'
+
+// Descending — find() returns first tier ≤ total
+const BITS_TIERS = [
+  5000000, 4500000, 4000000, 3500000, 3000000, 2500000, 2000000, 1750000, 1500000, 1250000, 1000000,
+  900000, 800000, 700000, 600000, 500000, 400000, 300000, 200000, 100000, 75000, 50000, 25000,
+  10000, 5000, 1000, 100, 1,
+]
+const SUB_GIFTER_TIERS = [
+  5000, 4000, 3000, 2000, 1000, 950, 900, 850, 800, 750, 700, 650, 600, 550, 500, 450, 400, 350,
+  300, 250, 200, 150, 100, 50, 25, 10, 5, 1,
+]
+function getBitsTier(n: number): string | null {
+  if (n <= 0) return null
+  const t = BITS_TIERS.find(v => n >= v)
+  return t != null ? String(t) : null
+}
+function getSubGifterTier(n: number): string | null {
+  if (n <= 0) return null
+  const t = SUB_GIFTER_TIERS.find(v => n >= v)
+  return t != null ? String(t) : null
+}
+function subGifterBadge(totalGifts: number): { role: TwitchRole; version: string }[] {
+  const tier = getSubGifterTier(totalGifts)
+  return tier ? [{ role: 'sub_gifter' as TwitchRole, version: tier }] : []
+}
+function bitsBadge(
+  totalBits: number,
+  bits?: ChannelBadges['sets']['bits'] | null
+): { role: TwitchRole; version: string; src: string | null }[] {
+  const tier = getBitsTier(totalBits)
+  if (!tier) return []
+  const src = bits?.find(v => v.id === tier)?.image_url_1x ?? null
+  return [{ role: 'bits' as TwitchRole, version: tier, src }]
+}
 
 const PERIODS = [
   { label: '7 天', value: '7' },
@@ -146,6 +189,7 @@ interface ViewerRowProps {
   isHovered: boolean
   onSelect: (id: string) => void
   onHover: (id: string | null) => void
+  channelBadges: ChannelBadges | null
 }
 
 const ViewerRow = React.memo(function ViewerRow({
@@ -154,6 +198,7 @@ const ViewerRow = React.memo(function ViewerRow({
   isHovered,
   onSelect,
   onHover,
+  channelBadges,
 }: ViewerRowProps) {
   const name = viewer.display_name || viewer.username
   const top = rank <= 3 ? RANK_STYLES[rank as 1 | 2 | 3] : null
@@ -179,7 +224,20 @@ const ViewerRow = React.memo(function ViewerRow({
         </span>
       )}
       <div className="min-w-0">
-        <p className="text-sub font-medium truncate">{name}</p>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <TwitchBadgeGroup
+            badges={[
+              ...(viewer.is_mod ? [{ role: 'moderator' as TwitchRole }] : []),
+              ...(viewer.is_vip ? [{ role: 'vip' as TwitchRole }] : []),
+              ...(viewer.is_subscribed
+                ? [{ role: 'subscriber' as TwitchRole, src: channelBadges?.subscriber_1m }]
+                : []),
+              ...subGifterBadge(viewer.total_gifts),
+              ...bitsBadge(viewer.total_bits, channelBadges?.sets?.bits),
+            ]}
+          />
+          <p className="text-content font-medium truncate">{name}</p>
+        </div>
         <p className="text-label text-muted-foreground truncate">@{viewer.username}</p>
       </div>
       <Col value={viewer.total_messages.toLocaleString()} />
@@ -214,6 +272,7 @@ interface ViewerListProps {
   sortDir: 'desc' | 'asc'
   search: string
   hoveredUserId: string | null
+  channelBadges: ChannelBadges | null
   onSort: (key: SortKey) => void
   onSelect: (id: string) => void
   onHover: (id: string | null) => void
@@ -226,13 +285,14 @@ function ViewerList({
   sortDir,
   search,
   hoveredUserId,
+  channelBadges,
   onSort,
   onSelect,
   onHover,
 }: ViewerListProps) {
   if (filtered.length === 0) {
     return (
-      <Empty className="border-none py-16 lg:flex-1">
+      <Empty className="border-none py-empty lg:flex-1">
         <EmptyHeader>
           <EmptyMedia>
             <Icon
@@ -284,7 +344,7 @@ function ViewerList({
           )
           if (col.key !== 'score') return <React.Fragment key={col.key}>{btn}</React.Fragment>
           return (
-            <TooltipProvider key={col.key} delayDuration={300}>
+            <TooltipProvider key={col.key} delayDuration={200}>
               <Tooltip>
                 <TooltipTrigger asChild>{btn}</TooltipTrigger>
                 <TooltipContent className="max-w-52 text-center">
@@ -318,6 +378,7 @@ function ViewerList({
                 isHovered={hoveredUserId === v.user_id}
                 onSelect={onSelect}
                 onHover={onHover}
+                channelBadges={channelBadges}
               />
             </React.Fragment>
           )
@@ -335,29 +396,55 @@ type DotData = {
   score: number
   name: string
   user_id: string
-  dotFill: string
+  is_subscribed: boolean
+  is_mod: boolean
+  is_vip: boolean
+  total_bits: number
+  total_gifts: number
 }
 type AxisTick = { x: string | number; y: string | number; payload: { value: number } }
 
 function ScatterTooltip({
   active,
   payload,
+  channelBadges,
 }: {
   active?: boolean
   payload?: { payload: DotData }[]
+  channelBadges: ChannelBadges | null
 }) {
   if (!active || !payload?.length) return null
   const d = payload[0]?.payload
   if (!d) return null
   const mins = d.x
   const watchLabel = mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`
+
+  const badges = [
+    ...(d.is_mod ? [{ role: 'moderator' as TwitchRole }] : []),
+    ...(d.is_vip ? [{ role: 'vip' as TwitchRole }] : []),
+    ...(d.is_subscribed
+      ? [{ role: 'subscriber' as TwitchRole, src: channelBadges?.subscriber_1m }]
+      : []),
+    ...subGifterBadge(d.total_gifts),
+    ...bitsBadge(d.total_bits, channelBadges?.sets?.bits),
+  ]
+
   return (
-    <div className="rounded-md border bg-popover px-3 py-2 text-popover-foreground shadow-sm space-y-0.5">
-      <p className="text-sub font-medium">{d.name}</p>
+    <div className="rounded-md border bg-popover px-3 py-2 text-popover-foreground shadow-sm space-y-1">
+      <div className="flex items-center gap-1.5">
+        {badges.length > 0 && <TwitchBadgeGroup badges={badges} />}
+        <p className="text-sub font-medium">{d.name}</p>
+      </div>
       <p className="text-label text-muted-foreground">
         留言 {d.y.toLocaleString()} · {watchLabel}
       </p>
       <p className="text-label text-primary">活躍度 {d.score.toFixed(1)}</p>
+      {d.total_bits > 0 && (
+        <p className="text-label text-muted-foreground">Cheer {d.total_bits.toLocaleString()}</p>
+      )}
+      {d.total_gifts > 0 && (
+        <p className="text-label text-muted-foreground">贈禮 {d.total_gifts.toLocaleString()} 份</p>
+      )}
     </div>
   )
 }
@@ -366,64 +453,150 @@ function ViewerScatterChart({
   viewers,
   hoveredUserId,
   onHover,
+  channelBadges,
 }: {
   viewers: ViewerSummary[]
   hoveredUserId: string | null
   onHover: (id: string | null) => void
+  channelBadges: ChannelBadges | null
 }) {
+  const [colorMode, setColorMode] = useState<'score' | 'sub'>('score')
+
   const data = React.useMemo(
     () =>
-      viewers.map(v => {
-        const score = v.engagement_score
-        const dotFill =
-          score >= 35
-            ? 'var(--chart-1)'
-            : score >= 10
-              ? 'var(--chart-5)'
-              : 'var(--muted-foreground)'
-        return {
-          x: Math.round(v.watch_seconds / 60),
-          y: v.total_messages,
-          score,
-          name: v.display_name || v.username,
-          user_id: v.user_id,
-          dotFill,
-        }
-      }),
+      viewers.map(v => ({
+        x: Math.round(v.watch_seconds / 60),
+        y: v.total_messages,
+        score: v.engagement_score,
+        name: v.display_name || v.username,
+        user_id: v.user_id,
+        is_subscribed: v.is_subscribed,
+        is_mod: v.is_mod,
+        is_vip: v.is_vip,
+        total_bits: v.total_bits,
+        total_gifts: v.total_gifts,
+      })),
     [viewers]
   )
+
+  const { midX, midY } = React.useMemo(() => {
+    if (data.length < 2) return { midX: 0, midY: 0 }
+    const xs = [...data].map(d => d.x).sort((a, b) => a - b)
+    const ys = [...data].map(d => d.y).sort((a, b) => a - b)
+    return {
+      midX: xs[Math.floor(xs.length / 2)],
+      midY: ys[Math.floor(ys.length / 2)],
+    }
+  }, [data])
 
   const shape = useCallback(
     ({ cx, cy, payload }: { cx?: number; cy?: number; payload?: DotData }) => {
       if (cx == null || cy == null || !payload) return null
       const isHovered = hoveredUserId != null && payload.user_id === hoveredUserId
       const isDimmed = hoveredUserId != null && payload.user_id !== hoveredUserId
+      const fill =
+        colorMode === 'sub'
+          ? payload.is_subscribed
+            ? 'var(--status-special)'
+            : 'var(--muted-foreground)'
+          : payload.score >= 25
+            ? 'var(--chart-3)'
+            : payload.score >= 8
+              ? 'var(--chart-5)'
+              : 'var(--muted-foreground)'
+      const baseOpacity = colorMode === 'score' && payload.score < 8 ? 0.5 : 1
       return (
         <circle
           cx={cx}
           cy={cy}
           r={isHovered ? 9 : 6}
           style={{
-            fill: payload.dotFill,
-            opacity: isDimmed ? 0.2 : 1,
+            fill,
+            opacity: isDimmed ? 0.15 : baseOpacity,
             transition: 'opacity 0.15s ease',
           }}
-          onMouseEnter={() => onHover(payload.user_id)}
-          onMouseLeave={() => onHover(null)}
         />
       )
     },
-    [hoveredUserId, onHover]
+    [hoveredUserId, colorMode]
   )
+
+  const QUADRANTS = [
+    { color: 'var(--status-success)', label: '核心粉絲', desc: '高觀看・高互動' },
+    { color: 'var(--chart-4)', label: '留言常客', desc: '低觀看・高互動' },
+    { color: 'var(--chart-2)', label: '靜默觀看', desc: '高觀看・低互動' },
+    { color: 'var(--muted-foreground)', label: '偶爾過路', desc: '低觀看・低互動' },
+  ]
 
   return (
     <div className="flex flex-col gap-element">
       <div className="flex items-center justify-between">
-        <p className="text-label text-muted-foreground">觀眾分佈</p>
-        <p className="text-label text-muted-foreground/60">觀看時長 × 留言數</p>
+        <div className="flex items-center gap-1.5">
+          <p className="text-label text-muted-foreground">觀眾分佈</p>
+          <TooltipProvider delayDuration={200}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button type="button" className="flex items-center">
+                  <Icon
+                    icon="fa-regular fa-circle-question"
+                    size="xs"
+                    wrapperClassName="text-muted-foreground/40 hover:text-muted-foreground/70 transition-colors"
+                  />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right" className="p-2.5">
+                <div className="grid grid-cols-[auto_auto_1fr] items-center gap-x-2 gap-y-1.5">
+                  {QUADRANTS.map(q => (
+                    <React.Fragment key={q.label}>
+                      <div
+                        className="w-2.5 h-2.5 rounded-sm shrink-0"
+                        style={{ background: q.color, opacity: 0.8 }}
+                      />
+                      <span className="font-medium text-label whitespace-nowrap">{q.label}</span>
+                      <span className="text-label text-muted-foreground whitespace-nowrap">
+                        · {q.desc}
+                      </span>
+                    </React.Fragment>
+                  ))}
+                </div>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span
+            className={cn(
+              'text-label transition-colors',
+              colorMode === 'score' ? 'text-foreground' : 'text-muted-foreground/50'
+            )}
+          >
+            活躍度
+          </span>
+          <Switch
+            checked={colorMode === 'sub'}
+            onCheckedChange={checked => setColorMode(checked ? 'sub' : 'score')}
+          />
+          <span
+            className={cn(
+              'text-label transition-colors',
+              colorMode === 'sub' ? 'text-foreground' : 'text-muted-foreground/50'
+            )}
+          >
+            訂閱
+          </span>
+        </div>
       </div>
-      <ResponsiveContainer width="100%" height={280}>
-        <ScatterChart margin={{ top: 4, right: 8, bottom: 8, left: 4 }}>
+      <p className="text-label text-muted-foreground/60">觀看時長 × 留言數</p>
+      <ResponsiveContainer width="100%" height={320}>
+        <ScatterChart
+          margin={{ top: 4, right: 8, bottom: 8, left: 4 }}
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          onMouseMove={(state: any) => {
+            const point = state?.activePayload?.[0]?.payload as DotData | undefined
+            onHover(point?.user_id ?? null)
+          }}
+          onMouseLeave={() => onHover(null)}
+        >
           <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
           <XAxis
             dataKey="x"
@@ -434,8 +607,7 @@ function ViewerScatterChart({
                 x={x}
                 y={Number(y) + 10}
                 textAnchor="middle"
-                className="fill-muted-foreground"
-                style={{ fontSize: 10 }}
+                className="fill-muted-foreground text-label"
               >
                 {payload.value === 0
                   ? '0'
@@ -458,7 +630,7 @@ function ViewerScatterChart({
                 textAnchor="end"
                 dominantBaseline="middle"
                 className="fill-muted-foreground"
-                style={{ fontSize: 10 }}
+                style={{ fontSize: 11 }}
               >
                 {formatCompact(payload.value)}
               </text>
@@ -467,13 +639,103 @@ function ViewerScatterChart({
             axisLine={false}
             width={44}
           />
+          {midX > 0 && midY > 0 && (
+            <>
+              {/* 底左：偶爾過路 */}
+              <ReferenceArea
+                x1={0}
+                x2={midX}
+                y1={0}
+                y2={midY}
+                fill="var(--muted-foreground)"
+                fillOpacity={0.06}
+                ifOverflow="hidden"
+              />
+              {/* 頂左：留言常客 */}
+              <ReferenceArea
+                x1={0}
+                x2={midX}
+                y1={midY}
+                y2={999999}
+                fill="var(--chart-4)"
+                fillOpacity={0.12}
+                ifOverflow="hidden"
+              />
+              {/* 底右：靜默觀看 */}
+              <ReferenceArea
+                x1={midX}
+                x2={999999}
+                y1={0}
+                y2={midY}
+                fill="var(--chart-2)"
+                fillOpacity={0.12}
+                ifOverflow="hidden"
+              />
+              {/* 頂右：核心粉絲 */}
+              <ReferenceArea
+                x1={midX}
+                x2={999999}
+                y1={midY}
+                y2={999999}
+                fill="var(--status-success)"
+                fillOpacity={0.1}
+                ifOverflow="hidden"
+              />
+              <ReferenceLine
+                x={midX}
+                stroke="var(--border)"
+                strokeWidth={1.5}
+                strokeDasharray="4 3"
+                ifOverflow="hidden"
+              />
+              <ReferenceLine
+                y={midY}
+                stroke="var(--border)"
+                strokeWidth={1.5}
+                strokeDasharray="4 3"
+                ifOverflow="hidden"
+              />
+            </>
+          )}
           <RechartsTooltip
-            content={<ScatterTooltip />}
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            content={(props: any) => <ScatterTooltip {...props} channelBadges={channelBadges} />}
             cursor={{ strokeDasharray: '3 3', stroke: 'var(--muted-foreground)' }}
           />
           <Scatter data={data} shape={shape} />
         </ScatterChart>
       </ResponsiveContainer>
+      {colorMode === 'score' ? (
+        <div className="flex items-center gap-2 self-end">
+          <span className="text-label text-muted-foreground/50">低活躍</span>
+          <div className="flex items-center gap-1">
+            <div
+              className="w-2.5 h-2.5 rounded-full"
+              style={{ background: 'var(--muted-foreground)', opacity: 0.5 }}
+            />
+            <div className="w-2.5 h-2.5 rounded-full" style={{ background: 'var(--chart-5)' }} />
+            <div className="w-2.5 h-2.5 rounded-full" style={{ background: 'var(--chart-3)' }} />
+          </div>
+          <span className="text-label text-muted-foreground/50">高活躍</span>
+        </div>
+      ) : (
+        <div className="flex items-center gap-3 self-end">
+          <div className="flex items-center gap-1.5">
+            <div
+              className="w-2.5 h-2.5 rounded-full"
+              style={{ background: 'var(--muted-foreground)', opacity: 0.5 }}
+            />
+            <span className="text-label text-muted-foreground/50">未訂閱</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div
+              className="w-2.5 h-2.5 rounded-full"
+              style={{ background: 'var(--status-special)' }}
+            />
+            <span className="text-label text-muted-foreground/50">訂閱中</span>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -534,35 +796,52 @@ function HeatmapCell({ s }: { s: ViewerSessionAttendance }) {
         />
       </TooltipTrigger>
       <TooltipContent side="top">
-        <p className="font-medium">{dateLabel}</p>
+        <p className="text-sub font-medium">{dateLabel}</p>
         {!s.attended ? (
-          <p className="opacity-70">未出席</p>
+          <p className="text-label opacity-70">未出席</p>
         ) : pct > 0 ? (
-          <p className="opacity-70">
+          <p className="text-label opacity-70">
             觀看 {watchLabel}
             <span className="ml-1 text-primary">({pct}%)</span>
           </p>
         ) : (
-          <p className="opacity-70">出席（無觀看紀錄）</p>
+          <p className="text-label opacity-70">出席（無觀看紀錄）</p>
         )}
       </TooltipContent>
     </Tooltip>
   )
 }
 
-function ViewerHeatmap({ sessions }: { sessions: ViewerSessionAttendance[] }) {
+function ViewerHeatmap({
+  sessions,
+  streakCount,
+}: {
+  sessions: ViewerSessionAttendance[]
+  streakCount?: number
+}) {
   const attended = React.useMemo(() => sessions.filter(s => s.attended).length, [sessions])
 
   if (sessions.length === 0) return null
 
   return (
-    <TooltipProvider delayDuration={100}>
+    <TooltipProvider delayDuration={150}>
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
           <p className="text-label text-muted-foreground">出席紀錄</p>
-          <p className="text-label text-muted-foreground/60">
-            {attended} / {sessions.length} 場
-          </p>
+          <div className="flex items-center gap-2">
+            {streakCount != null && streakCount > 1 && (
+              <Badge
+                variant="outline"
+                className="rounded-sm text-primary border-primary/30 bg-primary/5 font-normal"
+              >
+                <i className="fa-solid fa-fire" />
+                連續 {streakCount} 場
+              </Badge>
+            )}
+            <p className="text-label text-muted-foreground/60">
+              {attended} / {sessions.length} 場
+            </p>
+          </div>
         </div>
 
         <div
@@ -610,8 +889,11 @@ const EVENT_META: Record<string, { icon: string; label: string; color: string }>
 
 const SUB_TIER_LABEL: Record<string, string> = {
   '1': '層級 1',
+  T1: '層級 1',
   '2': '層級 2',
+  T2: '層級 2',
   '3': '層級 3',
+  T3: '層級 3',
 }
 
 interface ViewerSheetProps {
@@ -619,6 +901,7 @@ interface ViewerSheetProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   days: number
+  channelBadges: ChannelBadges | null
 }
 
 function ProfileAvatar({
@@ -658,7 +941,7 @@ function UsernameLink({ username }: { username: string | undefined }) {
 
 function PartnerBadge() {
   return (
-    <TooltipProvider delayDuration={300}>
+    <TooltipProvider delayDuration={200}>
       <Tooltip>
         <TooltipTrigger asChild>
           <span className="shrink-0 inline-flex">
@@ -673,16 +956,24 @@ function PartnerBadge() {
 
 function StatusRow({
   icon,
+  role,
+  badgeSrc,
   iconClass,
   children,
 }: {
-  icon: string
-  iconClass: string
+  icon?: string
+  role?: TwitchRole
+  badgeSrc?: string | null
+  iconClass?: string
   children: React.ReactNode
 }) {
   return (
     <div className="flex items-center gap-3">
-      <Icon icon={icon} size="sm" wrapperClassName={`shrink-0 ${iconClass}`} />
+      {role ? (
+        <TwitchRoleBadge role={role} src={badgeSrc ?? null} size={18} />
+      ) : (
+        <Icon icon={icon!} size="badge" wrapperClassName={cn('shrink-0', iconClass)} />
+      )}
       <span className="text-sub text-foreground">{children}</span>
     </div>
   )
@@ -706,12 +997,15 @@ function StatTile({
       <div className="flex items-center justify-between">
         <p className="text-label text-muted-foreground">{label}</p>
         {badge != null && (
-          <span className="text-label text-muted-foreground tabular-nums border rounded-sm px-1.5 py-0.5 leading-none">
+          <Badge
+            variant="outline"
+            className="rounded-sm text-muted-foreground tabular-nums font-normal"
+          >
             {badge}
-          </span>
+          </Badge>
         )}
       </div>
-      <div className="flex items-end justify-between">
+      <div className="flex items-center justify-between">
         <p className="text-card-title font-bold tabular-nums leading-none">{value}</p>
         <Icon icon={icon} size="sm" wrapperClassName="text-primary/70" />
       </div>
@@ -721,7 +1015,7 @@ function StatTile({
   if (!tooltip) return inner
 
   return (
-    <TooltipProvider delayDuration={300}>
+    <TooltipProvider delayDuration={200}>
       <Tooltip>
         <TooltipTrigger asChild>{inner}</TooltipTrigger>
         <TooltipContent>{tooltip}</TooltipContent>
@@ -742,7 +1036,7 @@ function viewerSheetReducer(_: ViewerSheetState, action: ViewerSheetAction): Vie
   return { profile: null, loading: false }
 }
 
-function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
+function ViewerSheet({ userId, open, onOpenChange, days, channelBadges }: ViewerSheetProps) {
   const [{ profile, loading }, dispatch] = useReducer(viewerSheetReducer, {
     profile: null,
     loading: true,
@@ -845,33 +1139,41 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
         )}
 
         {loading ? (
-          <SheetSection className="space-y-4 flex-1">
-            <div className="space-y-3">
+          <>
+            <SheetSection className="space-y-3">
               <Skeleton className="h-4 w-48" />
               <Skeleton className="h-4 w-40" />
-            </div>
-            <div className="flex flex-col gap-2">
-              <div className="flex justify-between">
-                <Skeleton className="h-3.5 w-16" />
-                <Skeleton className="h-3.5 w-12" />
+            </SheetSection>
+            <SheetSection>
+              <div className="flex flex-col gap-2">
+                <div className="flex justify-between">
+                  <Skeleton className="h-3.5 w-16" />
+                  <Skeleton className="h-3.5 w-12" />
+                </div>
+                <div
+                  style={{ display: 'grid', gridTemplateColumns: `repeat(${COLS}, 1fr)`, gap: 3 }}
+                >
+                  {Array.from({ length: 20 }).map((_, i) => (
+                    <Skeleton key={i} className="rounded-sm" style={{ aspectRatio: '1' }} />
+                  ))}
+                </div>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: `repeat(${COLS}, 1fr)`, gap: 3 }}>
-                {Array.from({ length: 20 }).map((_, i) => (
-                  <Skeleton key={i} className="rounded-sm" style={{ aspectRatio: '1' }} />
+            </SheetSection>
+            <SheetSection>
+              <div className="grid grid-cols-2 gap-3">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <Skeleton key={i} className="h-[73px] rounded-md" />
                 ))}
               </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <Skeleton key={i} className="h-18.25 rounded-md" />
-              ))}
-            </div>
-            <div className="space-y-1.5">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <Skeleton key={i} className="h-9 rounded-md" />
-              ))}
-            </div>
-          </SheetSection>
+            </SheetSection>
+            <SheetSection className="flex-1">
+              <div className="space-y-1.5">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <Skeleton key={i} className="h-9 rounded-md" />
+                ))}
+              </div>
+            </SheetSection>
+          </>
         ) : profile ? (
           <>
             {/* Follow / Sub / Role / Ban status */}
@@ -887,7 +1189,12 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
                 )}
               </StatusRow>
               {twitch?.is_subscribed ? (
-                <StatusRow icon="fa-solid fa-star" iconClass="text-status-special">
+                <StatusRow
+                  role={channelBadges?.subscriber_1m ? 'subscriber' : undefined}
+                  badgeSrc={channelBadges?.subscriber_1m ?? null}
+                  icon="fa-solid fa-star"
+                  iconClass="text-status-special"
+                >
                   <span className="font-medium">
                     {SUB_TIER_LABEL[twitch.sub_tier ?? ''] ?? '訂閱中'}
                   </span>
@@ -903,12 +1210,12 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
                 </StatusRow>
               )}
               {twitch?.is_mod && (
-                <StatusRow icon="fa-solid fa-sword" iconClass="text-status-success">
+                <StatusRow role="moderator">
                   <span className="font-medium">頻道管理員</span>
                 </StatusRow>
               )}
               {twitch?.is_vip && (
-                <StatusRow icon="fa-solid fa-gem" iconClass="text-status-special">
+                <StatusRow role="vip">
                   <span className="font-medium">VIP</span>
                 </StatusRow>
               )}
@@ -937,15 +1244,10 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
             {/* Attendance heatmap */}
             {profile.session_attendance.length > 0 && (
               <SheetSection>
-                <ViewerHeatmap sessions={profile.session_attendance} />
-                {profile.streak_count > 1 && (
-                  <div className="flex justify-end mt-2">
-                    <span className="inline-flex items-center gap-1.5 text-label border rounded-sm px-2 py-0.5 text-primary border-primary/30 bg-primary/5">
-                      <i className="fa-solid fa-fire text-[10px]" />
-                      連續 {profile.streak_count} 場
-                    </span>
-                  </div>
-                )}
+                <ViewerHeatmap
+                  sessions={profile.session_attendance}
+                  streakCount={profile.streak_count}
+                />
               </SheetSection>
             )}
 
@@ -979,7 +1281,6 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
                   icon="fa-solid fa-clock"
                   value={profile.watch_seconds > 0 ? formatDuration(profile.watch_seconds) : '—'}
                   label="觀看時長"
-                  badge={`${profile.sessions_attended} 場`}
                   tooltip={
                     profile.watch_seconds >= 3600
                       ? `${Math.floor(profile.watch_seconds / 60).toLocaleString()} 分鐘`
@@ -994,12 +1295,6 @@ function ViewerSheet({ userId, open, onOpenChange, days }: ViewerSheetProps) {
                 {profile.account_created_at && (
                   <p className="text-label text-muted-foreground">
                     帳號建立：{formatDateFull(profile.account_created_at)}
-                  </p>
-                )}
-                {twitch?.bits_rank != null && (
-                  <p className="text-label text-muted-foreground">
-                    小奇點排名：
-                    <span className="font-medium text-foreground">#{twitch.bits_rank}</span>
                   </p>
                 )}
               </div>
@@ -1114,6 +1409,7 @@ export default function Insights() {
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
   const [sheetOpen, setSheetOpen] = useState(false)
   const [hoveredUserId, setHoveredUserId] = useState<string | null>(null)
+  const [channelBadges, setChannelBadges] = useState<ChannelBadges | null>(null)
   const loadedForRef = useRef<string | null>(null)
 
   const fetchViewers = useCallback(
@@ -1155,6 +1451,13 @@ export default function Insights() {
     void Promise.all([fetchViewers(days), fetchInsights(days)])
   }, [isInitialized, user, period, fetchViewers, fetchInsights])
 
+  useEffect(() => {
+    if (!isInitialized || !user) return
+    getChannelBadges()
+      .then(setChannelBadges)
+      .catch(() => null)
+  }, [isInitialized, user])
+
   const handlePeriodChange = (value: string) => {
     if (value === period) return
     loadedForRef.current = null
@@ -1189,16 +1492,20 @@ export default function Insights() {
     const rankMap = new Map(sorted.map((v, i) => [v.user_id, i + 1]))
     const q = search.trim().toLowerCase()
     const filtered = q
-      ? sorted.filter(
-          v =>
+      ? sorted.filter(v => {
+          if (q === 'mod' || q === '管理員' || q === '管理') return v.is_mod
+          if (q === 'vip') return v.is_vip
+          if (q === 'sub' || q === '訂閱') return v.is_subscribed
+          return (
             (v.display_name ?? '').toLowerCase().includes(q) || v.username.toLowerCase().includes(q)
-        )
+          )
+        })
       : sorted
     return { filtered, rankMap }
   }, [viewers, search, sort, sortDir])
 
   return (
-    <PageMain>
+    <PageMain className="h-full overflow-hidden">
       {/* Header + controls */}
       <SlideUpSm inView className="flex items-end justify-between gap-element">
         <div>
@@ -1217,17 +1524,22 @@ export default function Insights() {
       </SlideUpSm>
 
       {/* Main 2-col layout */}
-      <SlideUp inView delay={0.05} className="grid grid-cols-1 lg:grid-cols-2 gap-section">
+      <SlideUp
+        inView
+        delay={0.05}
+        className="grid grid-cols-1 lg:grid-cols-2 gap-section flex-1 min-h-0 overflow-y-auto lg:overflow-hidden lg:grid-rows-1"
+      >
         {/* Left: sticky – chart + summary cards */}
         <div className="rounded-lg border bg-card p-section lg:self-start flex flex-col gap-section">
           {!initialized ? (
-            <Skeleton className="hidden lg:block h-82.5 rounded-md" />
+            <Skeleton className="hidden lg:block h-[370px] rounded-md" />
           ) : viewers.length > 0 ? (
             <div className="hidden lg:block rounded-md bg-muted/20 p-3 **:outline-none">
               <ViewerScatterChart
                 viewers={viewers}
                 hoveredUserId={hoveredUserId}
                 onHover={setHoveredUserId}
+                channelBadges={channelBadges}
               />
             </div>
           ) : null}
@@ -1353,6 +1665,7 @@ export default function Insights() {
                 sortDir={sortDir}
                 search={search}
                 hoveredUserId={hoveredUserId}
+                channelBadges={channelBadges}
                 onSort={handleSort}
                 onSelect={id => {
                   setSelectedUserId(id)
@@ -1373,6 +1686,7 @@ export default function Insights() {
           if (!open) setSheetOpen(false)
         }}
         days={Number(period)}
+        channelBadges={channelBadges}
       />
     </PageMain>
   )

@@ -141,3 +141,13 @@ export {
 export { Tabs, TabsContent, TabsList, tabsListVariants, TabsTrigger } from './tabs'
 export { Textarea } from './textarea'
 export { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './tooltip'
+export {
+  type BadgeEntry,
+  TwitchBadge,
+  TwitchBadgeGroup,
+  TwitchBadgePreview,
+  type TwitchRole,
+  TwitchRoleBadge,
+  TwitchRoleBadgeLabel,
+  TwitchRoleBadgePreview,
+} from './twitch-badge'
