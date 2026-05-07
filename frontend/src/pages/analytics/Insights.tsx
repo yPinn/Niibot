@@ -61,6 +61,7 @@ import {
 } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
+import { apiCache, CACHE_KEYS } from '@/lib/apiCache'
 import { cn } from '@/lib/utils'
 
 // Descending — find() returns first tier ≤ total
@@ -1465,6 +1466,7 @@ export default function Insights() {
     try {
       const result = await syncChannelRoles()
       setSyncResult(result)
+      apiCache.delete(CACHE_KEYS.ANALYTICS_VIEWERS(Number(period)))
       loadedForRef.current = null
       void fetchViewers(Number(period))
     } catch {
