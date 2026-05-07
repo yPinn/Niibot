@@ -25,6 +25,7 @@ import {
 import { PageMain } from '@/components/PageMain'
 import {
   Badge,
+  type BadgeEntry,
   Empty,
   EmptyDescription,
   EmptyHeader,
@@ -92,6 +93,25 @@ function bitsBadge(
   if (!tier) return []
   const src = bits?.find(v => v.id === tier)?.image_url_1x ?? null
   return [{ role: 'bits' as TwitchRole, version: tier, src }]
+}
+
+const AXIS_MAX = 999_999
+
+type BadgeSource = Pick<
+  ViewerSummary,
+  'is_mod' | 'is_vip' | 'is_subscribed' | 'total_gifts' | 'total_bits'
+>
+
+function buildViewerBadges(v: BadgeSource, channelBadges: ChannelBadges | null): BadgeEntry[] {
+  return [
+    ...(v.is_mod ? [{ role: 'moderator' as TwitchRole }] : []),
+    ...(v.is_vip ? [{ role: 'vip' as TwitchRole }] : []),
+    ...(v.is_subscribed && channelBadges?.subscriber_1m
+      ? [{ role: 'subscriber' as TwitchRole, src: channelBadges.subscriber_1m }]
+      : []),
+    ...subGifterBadge(v.total_gifts),
+    ...bitsBadge(v.total_bits, channelBadges?.sets?.bits),
+  ]
 }
 
 const PERIODS = [
@@ -225,17 +245,7 @@ const ViewerRow = React.memo(function ViewerRow({
       )}
       <div className="min-w-0">
         <div className="flex items-center gap-1.5 min-w-0">
-          <TwitchBadgeGroup
-            badges={[
-              ...(viewer.is_mod ? [{ role: 'moderator' as TwitchRole }] : []),
-              ...(viewer.is_vip ? [{ role: 'vip' as TwitchRole }] : []),
-              ...(viewer.is_subscribed
-                ? [{ role: 'subscriber' as TwitchRole, src: channelBadges?.subscriber_1m }]
-                : []),
-              ...subGifterBadge(viewer.total_gifts),
-              ...bitsBadge(viewer.total_bits, channelBadges?.sets?.bits),
-            ]}
-          />
+          <TwitchBadgeGroup badges={buildViewerBadges(viewer, channelBadges)} />
           <p className="text-content font-medium truncate">{name}</p>
         </div>
         <p className="text-label text-muted-foreground truncate">@{viewer.username}</p>
@@ -419,15 +429,7 @@ function ScatterTooltip({
   const mins = d.x
   const watchLabel = mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`
 
-  const badges = [
-    ...(d.is_mod ? [{ role: 'moderator' as TwitchRole }] : []),
-    ...(d.is_vip ? [{ role: 'vip' as TwitchRole }] : []),
-    ...(d.is_subscribed
-      ? [{ role: 'subscriber' as TwitchRole, src: channelBadges?.subscriber_1m }]
-      : []),
-    ...subGifterBadge(d.total_gifts),
-    ...bitsBadge(d.total_bits, channelBadges?.sets?.bits),
-  ]
+  const badges = buildViewerBadges(d, channelBadges)
 
   return (
     <div className="rounded-md border bg-popover px-3 py-2 text-popover-foreground shadow-sm space-y-1">
@@ -656,7 +658,7 @@ function ViewerScatterChart({
                 x1={0}
                 x2={midX}
                 y1={midY}
-                y2={999999}
+                y2={AXIS_MAX}
                 fill="var(--chart-4)"
                 fillOpacity={0.12}
                 ifOverflow="hidden"
@@ -664,7 +666,7 @@ function ViewerScatterChart({
               {/* 底右：靜默觀看 */}
               <ReferenceArea
                 x1={midX}
-                x2={999999}
+                x2={AXIS_MAX}
                 y1={0}
                 y2={midY}
                 fill="var(--chart-2)"
@@ -674,9 +676,9 @@ function ViewerScatterChart({
               {/* 頂右：核心粉絲 */}
               <ReferenceArea
                 x1={midX}
-                x2={999999}
+                x2={AXIS_MAX}
                 y1={midY}
-                y2={999999}
+                y2={AXIS_MAX}
                 fill="var(--status-success)"
                 fillOpacity={0.1}
                 ifOverflow="hidden"
@@ -1064,13 +1066,7 @@ function ViewerSheet({ userId, open, onOpenChange, days, channelBadges }: Viewer
   const username = profile?.username
   const twitch = profile?.twitch
   const isPartner = profile?.broadcaster_type === 'partner'
-  const totalGifts =
-    profile?.events.reduce((sum, ev) => {
-      if (ev.event_type !== 'subscribe') return sum
-      const meta = ev.metadata as { is_gift?: boolean; gift_count?: number } | null
-      if (!meta?.is_gift) return sum
-      return sum + (meta.gift_count ?? 1)
-    }, 0) ?? 0
+  const totalGifts = profile?.total_gifts ?? 0
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -1304,7 +1300,7 @@ function ViewerSheet({ userId, open, onOpenChange, days, channelBadges }: Viewer
             {profile.events.length > 0 && (
               <SheetSection title="互動紀錄" className="flex-1">
                 <div className="space-y-1.5">
-                  {profile.events.map(ev => {
+                  {profile.events.map((ev, i) => {
                     const meta = EVENT_META[ev.event_type] ?? {
                       icon: 'fa-solid fa-circle-info',
                       label: ev.event_type,
@@ -1336,7 +1332,7 @@ function ViewerSheet({ userId, open, onOpenChange, days, channelBadges }: Viewer
                     const rowLabel = isGift ? '贈禮訂閱' : meta.label
                     return (
                       <div
-                        key={`${ev.occurred_at}-${ev.event_type}`}
+                        key={`${i}-${ev.occurred_at}-${ev.event_type}`}
                         className="flex items-center gap-3 py-1.5"
                       >
                         <Icon icon={rowIcon} size="sm" wrapperClassName={`${rowColor} shrink-0`} />

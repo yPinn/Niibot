@@ -544,13 +544,12 @@ export default function ChatOverlayModule() {
   const { user } = useAuth()
   const [settings, setSettings] = useState<ChatCssSettings>(loadSettings)
 
-  const patch = (partial: Partial<ChatCssSettings>) => {
-    setSettings(prev => {
-      const next = { ...prev, ...partial }
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
-      return next
-    })
-  }
+  const patch = (partial: Partial<ChatCssSettings>) =>
+    setSettings(prev => ({ ...prev, ...partial }))
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings))
+  }, [settings])
 
   const css = generateCss(settings)
 
