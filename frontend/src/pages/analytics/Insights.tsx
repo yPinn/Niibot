@@ -106,8 +106,8 @@ function buildViewerBadges(v: BadgeSource, channelBadges: ChannelBadges | null):
   return [
     ...(v.is_mod ? [{ role: 'moderator' as TwitchRole }] : []),
     ...(v.is_vip ? [{ role: 'vip' as TwitchRole }] : []),
-    ...(v.is_subscribed && channelBadges?.subscriber_1m
-      ? [{ role: 'subscriber' as TwitchRole, src: channelBadges.subscriber_1m }]
+    ...(v.is_subscribed
+      ? [{ role: 'subscriber' as TwitchRole, src: channelBadges?.subscriber_1m ?? undefined }]
       : []),
     ...subGifterBadge(v.total_gifts),
     ...bitsBadge(v.total_bits, channelBadges?.sets?.bits),
