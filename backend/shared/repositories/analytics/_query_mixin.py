@@ -675,8 +675,14 @@ class _AnalyticsQueryMixin:
                 async with self.pool.acquire() as conn:
                     rows = await conn.fetch(_q(_STREAK_CTE_EMPTY), *args)
             except asyncpg.exceptions.UndefinedTableError:
-                async with self.pool.acquire() as conn:
-                    rows = await conn.fetch(_q(_STREAK_CTE_EMPTY, include_status=False), *args)
+                try:
+                    async with self.pool.acquire() as conn:
+                        rows = await conn.fetch(_q(_STREAK_CTE_EMPTY, include_status=False), *args)
+                except Exception:
+                    LOGGER.exception(
+                        "list_viewers: all fallbacks failed for channel %s", channel_id
+                    )
+                    return []
 
         return [
             {
@@ -810,15 +816,13 @@ class _AnalyticsQueryMixin:
             except asyncpg.exceptions.UndefinedTableError:
                 return 0
 
-        stats, events, status, streak_count = await asyncio.gather(
-            _stats(), _events(), _status(), _streak()
+        stats, events, status, streak_count, follow_since_fallback = await asyncio.gather(
+            _stats(), _events(), _status(), _streak(), _follow_since_fallback()
         )
         if stats is None:
             return None
 
-        follow_since: datetime | None = (status or {}).get("follow_since")
-        if follow_since is None:
-            follow_since = await _follow_since_fallback()
+        follow_since: datetime | None = (status or {}).get("follow_since") or follow_since_fallback
 
         total_bits = sum(
             int((e["metadata"] or {}).get("bits", 0)) for e in events if e["event_type"] == "cheer"

@@ -242,7 +242,9 @@ class _AnalyticsEventsMixin:
             async with self.pool.acquire() as conn:
                 await conn.execute(sql, *args)
         except UndefinedTableError:
-            pass
+            LOGGER.warning(
+                "viewer_channel_status table missing — upsert skipped. Run migration 049."
+            )
 
     async def upsert_viewer_gift_count(
         self,
@@ -307,7 +309,11 @@ class _AnalyticsEventsMixin:
         sub_tier: str | None,
         sub_gifted: bool,
     ) -> None:
-        """Mark viewer as currently subscribed."""
+        """Mark viewer as currently subscribed.
+
+        sub_gifter is not set here; it is populated only by upsert_viewer_gift_count
+        via a separate channel.subscription.gift event.
+        """
         await self._execute_upsert(
             """
             INSERT INTO viewer_channel_status
@@ -484,7 +490,11 @@ class _AnalyticsEventsMixin:
         account_created_at: datetime | None,
         broadcaster_type: str | None,
     ) -> None:
-        """Cache Twitch profile fields after a get_user_info call."""
+        """Cache Twitch profile fields after a get_user_info call.
+
+        account_created_at uses COALESCE(existing, new) — written once and never
+        overwritten, since it is immutable on Twitch's side.
+        """
         await self._execute_upsert(
             """
             INSERT INTO viewer_channel_status

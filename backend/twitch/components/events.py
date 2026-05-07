@@ -229,7 +229,7 @@ class EventComponent(commands.Component):
         channel_id = payload.broadcaster.id
         broadcaster_name = payload.broadcaster.name
         cumulative = getattr(payload, "cumulative_total", None)
-        if not cumulative:
+        if cumulative is None:
             return
 
         if hasattr(self.bot, "analytics"):

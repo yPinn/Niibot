@@ -19,6 +19,13 @@ from services import AnalyticsService, TwitchAPIClient
 LOGGER: logging.Logger = logging.getLogger(__name__)
 _background_tasks: set[asyncio.Task] = set()
 
+
+def _on_background_task_done(task: asyncio.Task) -> None:
+    _background_tasks.discard(task)
+    if not task.cancelled() and (exc := task.exception()):
+        LOGGER.warning("Background profile cache upsert failed: %s", exc)
+
+
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 
 
@@ -105,6 +112,7 @@ class ViewerSummary(BaseModel):
     last_seen: datetime | None
     watch_seconds: int
     total_bits: int
+    total_gifts: int = 0
     engagement_score: float
     is_subscribed: bool = False
     sub_tier: str | None = None
@@ -279,7 +287,8 @@ async def get_viewer_profile(
         if profile is None:
             raise HTTPException(status_code=404, detail="Viewer not found")
 
-        status: dict[str, Any] = profile.pop("channel_status") or {}
+        status: dict[str, Any] = profile.get("channel_status") or {}
+        profile = {k: v for k, v in profile.items() if k != "channel_status"}
 
         # Profile image cache: use DB value; fetch from Twitch only when missing
         profile_image_url: str | None = status.get("profile_image_url")
@@ -315,7 +324,7 @@ async def get_viewer_profile(
                         )
                     )
                     _background_tasks.add(task)
-                    task.add_done_callback(_background_tasks.discard)
+                    task.add_done_callback(_on_background_task_done)
             except Exception:
                 LOGGER.warning("user_info fetch failed for %s", user_id, exc_info=True)
 
