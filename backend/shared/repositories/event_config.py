@@ -21,8 +21,10 @@ _seeded_events: set[str] = set()
 DEFAULT_TEMPLATES: dict[str, str] = {
     "follow": "感謝 $(user) 的追隨！",
     "subscribe": "感謝 $(user) 的訂閱！",
+    "resub": "感謝 $(user) 連續訂閱 $(months) 個月！",
+    "gift_sub": "感謝 $(user) 贈送了 $(total) 個訂閱！",
     "raid": "$(user) 帶了 $(count) 個新朋友降落！",
-    "bits": "感謝 $(user) 投擲了 $(amount) 個 Bits！",
+    "bits": "感謝 $(user) 投出了 $(amount) 小奇點！",
 }
 
 # Default options per event type (only event types with options need entries)

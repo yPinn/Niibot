@@ -217,32 +217,104 @@ class EventComponent(commands.Component):
         self,
         payload: twitchio.ChannelSubscriptionGift,
     ) -> None:
-        """贈禮訂閱事件 — 更新贈禮者累計數量。
+        """贈禮訂閱事件
 
-        cumulative_total 是 Twitch 提供的該用戶在此頻道的歷史累計贈禮數，
-        與單次批次數量無關，直接 upsert 即可保持最新值。
-        Anonymous gifts carry no user, so we skip them.
+        Sends a configurable chat message and updates the gifter's cumulative count.
+        Anonymous gifts are handled gracefully (shown as 匿名用戶 in message).
         """
-        if payload.anonymous or not payload.user:
-            return
-
         channel_id = payload.broadcaster.id
         broadcaster_name = payload.broadcaster.name
-        cumulative = getattr(payload, "cumulative_total", None)
-        if cumulative is None:
-            return
 
-        if hasattr(self.bot, "analytics"):
-            try:
-                await self.bot.analytics.upsert_viewer_gift_count(
-                    channel_id=channel_id,
-                    user_id=payload.user.id,
-                    username=payload.user.name or "",
-                    display_name=payload.user.display_name,
-                    total_gifts_given=int(cumulative),
+        if payload.anonymous or not payload.user:
+            user_name = "匿名用戶"
+        else:
+            user_name = payload.user.display_name or payload.user.name or ""
+
+        tier_name = _TIER_MAP.get(payload.tier, payload.tier)
+        total = payload.total
+        cumulative = getattr(payload, "cumulative_total", None)
+        cumulative_str = str(cumulative) if cumulative is not None else "?"
+
+        try:
+            message = await self._get_message(
+                channel_id,
+                "gift_sub",
+                {
+                    "user": user_name,
+                    "tier": tier_name,
+                    "total": str(total),
+                    "cumulative": cumulative_str,
+                },
+            )
+            if message is not None:
+                await payload.broadcaster.send_message(
+                    message=message,
+                    sender=self.bot.bot_id,
                 )
-            except Exception as e:
-                LOGGER.warning(f"[{broadcaster_name}] Gift upsert failed: {e}")
+                LOGGER.info(f"[{broadcaster_name}] GiftSub: {user_name} x{total} ({tier_name})")
+            else:
+                LOGGER.info(
+                    f"[{broadcaster_name}] GiftSub: {user_name} x{total} ({tier_name}) (disabled)"
+                )
+        except Exception as e:
+            LOGGER.error(f"[{broadcaster_name}] GiftSub: {user_name} (error: {e})")
+
+        # Analytics — only update cumulative count when gifter is known
+        if not payload.anonymous and payload.user and cumulative is not None:
+            if hasattr(self.bot, "analytics"):
+                try:
+                    await self.bot.analytics.upsert_viewer_gift_count(
+                        channel_id=channel_id,
+                        user_id=payload.user.id,
+                        username=payload.user.name or "",
+                        display_name=payload.user.display_name,
+                        total_gifts_given=int(cumulative),
+                    )
+                except Exception as e:
+                    LOGGER.warning(f"[{broadcaster_name}] Gift upsert failed: {e}")
+
+    @commands.Component.listener()
+    async def event_subscription_message(
+        self,
+        payload: twitchio.ChannelSubscriptionMessage,
+    ) -> None:
+        """重新訂閱事件（含訂閱留言）
+
+        NOTE: always-on — fires via EventSub regardless of streaming state.
+        """
+        user_name = payload.user.display_name or payload.user.name or ""
+        broadcaster_name = payload.broadcaster.name
+        channel_id = payload.broadcaster.id
+        tier_name = _TIER_MAP.get(payload.tier, payload.tier)
+        months = payload.months
+        streak = payload.streak_months if payload.streak_months is not None else 0
+        resub_text = getattr(payload, "text", "") or ""
+
+        try:
+            message = await self._get_message(
+                channel_id,
+                "resub",
+                {
+                    "user": user_name,
+                    "tier": tier_name,
+                    "months": str(months),
+                    "streak": str(streak),
+                    "message": resub_text,
+                },
+            )
+            if message is None:
+                LOGGER.info(
+                    f"[{broadcaster_name}] Resub: {user_name} ({tier_name} ×{months}) (disabled)"
+                )
+                return
+
+            await payload.broadcaster.send_message(
+                message=message,
+                sender=self.bot.bot_id,
+            )
+            LOGGER.info(f"[{broadcaster_name}] Resub: {user_name} ({tier_name} ×{months})")
+        except Exception as e:
+            LOGGER.error(f"[{broadcaster_name}] Resub: {user_name} (error: {e})")
 
     @commands.Component.listener()
     async def event_cheer(
@@ -264,10 +336,13 @@ class EventComponent(commands.Component):
         broadcaster_name = payload.broadcaster.name
         channel_id = payload.broadcaster.id
         bits_amount = payload.bits
+        cheer_message = payload.message or ""
 
         try:
             message = await self._get_message(
-                channel_id, "bits", {"user": user_name, "amount": str(bits_amount)}
+                channel_id,
+                "bits",
+                {"user": user_name, "amount": str(bits_amount), "message": cheer_message},
             )
             if message is None:
                 LOGGER.info(
