@@ -598,6 +598,87 @@ class TwitchAPIClient:
         data = response.json().get("data", [])
         return data[0] if data else None
 
+    async def get_channel_badges(self, broadcaster_id: str) -> dict:
+        """Fetch channel badge data for subscriber and founder badges.
+
+        Returns ``subscriber_1m`` / ``founder`` (1x URL) for backward compatibility,
+        plus ``sets`` containing all versions with all three image sizes.
+        """
+        _empty: dict = {
+            "subscriber_1m": None,
+            "founder": None,
+            "sets": {"subscriber": [], "founder": [], "bits": []},
+        }
+        try:
+            response = await self._helix_get("chat/badges", {"broadcaster_id": broadcaster_id})
+            if not response or response.status_code != 200:
+                return _empty
+
+            result: dict = {**_empty, "sets": {k: [] for k in _empty["sets"]}}
+            for badge_set in response.json().get("data", []):
+                set_id = badge_set.get("set_id")
+                versions: list[dict] = badge_set.get("versions", [])
+                if not versions or set_id not in ("subscriber", "founder", "bits"):
+                    continue
+
+                rich = [
+                    {
+                        "id": v.get("id", ""),
+                        "title": v.get("title", ""),
+                        "image_url_1x": v.get("image_url_1x"),
+                        "image_url_2x": v.get("image_url_2x"),
+                        "image_url_4x": v.get("image_url_4x"),
+                    }
+                    for v in versions
+                ]
+                result["sets"][set_id] = rich
+
+                if set_id == "subscriber":
+                    # Version "1" is 1-month; fall back to "0" or first
+                    v = next((v for v in versions if v.get("id") == "1"), None)
+                    if v is None:
+                        v = next((v for v in versions if v.get("id") == "0"), versions[0])
+                    result["subscriber_1m"] = v.get("image_url_1x")
+                elif set_id == "founder":
+                    result["founder"] = versions[0].get("image_url_1x")
+
+            return result
+        except Exception:
+            LOGGER.exception("Error fetching channel badges")
+            return _empty
+
+    async def get_global_badges(self) -> dict[str, list[dict]]:
+        """Fetch Twitch global badge sets (moderator, broadcaster, vip, etc.).
+
+        Returns a dict keyed by set_id, each value is a list of versions
+        with id, title, and all three image sizes.
+        """
+        try:
+            response = await self._helix_get("chat/badges/global")
+            if not response or response.status_code != 200:
+                return {}
+
+            result: dict[str, list[dict]] = {}
+            for badge_set in response.json().get("data", []):
+                set_id = badge_set.get("set_id")
+                versions: list[dict] = badge_set.get("versions", [])
+                if not set_id or not versions:
+                    continue
+                result[set_id] = [
+                    {
+                        "id": v.get("id", ""),
+                        "title": v.get("title", ""),
+                        "image_url_1x": v.get("image_url_1x"),
+                        "image_url_2x": v.get("image_url_2x"),
+                        "image_url_4x": v.get("image_url_4x"),
+                    }
+                    for v in versions
+                ]
+            return result
+        except Exception:
+            LOGGER.exception("Error fetching global badges")
+            return {}
+
     @staticmethod
     def parse_duration(duration_str: str) -> float:
         """Parse Twitch duration string (e.g. '3h2m1s') to hours."""
