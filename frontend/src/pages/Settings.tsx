@@ -207,12 +207,12 @@ export default function Settings() {
           </CardHeader>
           <CardContent className="flex flex-col gap-section">
             {paymentLoading ? (
-              <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-section">
                 <Skeleton className="h-32 w-full" />
                 <Skeleton className="h-32 w-full" />
               </div>
             ) : (
-              <Stagger inView className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
+              <Stagger inView className="grid grid-cols-1 sm:grid-cols-2 gap-section items-start">
                 {ALL_PLATFORMS.map(platform => {
                   const form = paymentForms[platform]
                   const existing = paymentConfigs.find(c => c.platform === platform)

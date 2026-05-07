@@ -592,7 +592,7 @@ export default function ChatOverlayModule() {
   const twitchUrl = user?.name ? `https://www.twitch.tv/popout/${user.name}/chat?popout=` : ''
 
   return (
-    <PageMain className="h-full overflow-hidden">
+    <PageMain>
       <SlideUpSm inView className="flex items-end justify-between gap-element shrink-0">
         <div>
           <h1 className="text-page-title font-bold">Chat Overlay</h1>
@@ -684,7 +684,7 @@ export default function ChatOverlayModule() {
               </div>
 
               {/* Toggles */}
-              <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-section">
                 {(
                   [
                     { key: 'hideHeader', label: '隱藏標題列', desc: '移除聊天室頂部標題' },
@@ -697,7 +697,7 @@ export default function ChatOverlayModule() {
                   <div key={key} className="flex items-center justify-between">
                     <div>
                       <Label htmlFor={key}>{label}</Label>
-                      <p className="text-muted-foreground mt-0.5 text-xs">{desc}</p>
+                      <p className="text-muted-foreground mt-0.5 text-label">{desc}</p>
                     </div>
                     <Switch
                       id={key}
@@ -716,7 +716,7 @@ export default function ChatOverlayModule() {
               <CardTitle>產生的 CSS</CardTitle>
               <CardDescription>複製後貼入 OBS Browser Source → Custom CSS</CardDescription>
             </CardHeader>
-            <CardContent className="flex flex-col gap-3">
+            <CardContent className="flex flex-col gap-section">
               <pre className="bg-muted text-muted-foreground max-h-64 overflow-auto rounded-md p-4 text-xs leading-relaxed">
                 {css}
               </pre>

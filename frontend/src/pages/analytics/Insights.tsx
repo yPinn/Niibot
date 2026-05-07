@@ -1164,7 +1164,7 @@ function ViewerSheet({ userId, open, onOpenChange, days, channelBadges }: Viewer
             <SheetSection>
               <div className="grid grid-cols-2 gap-3">
                 {Array.from({ length: 4 }).map((_, i) => (
-                  <Skeleton key={i} className="h-[73px] rounded-md" />
+                  <Skeleton key={i} className="h-18.25 rounded-md" />
                 ))}
               </div>
             </SheetSection>
@@ -1521,9 +1521,9 @@ export default function Insights() {
   }, [viewers, search, sort, sortDir])
 
   return (
-    <PageMain className="h-full overflow-hidden">
+    <PageMain>
       {/* Header + controls */}
-      <SlideUpSm inView className="flex items-end justify-between gap-element">
+      <SlideUpSm inView className="flex items-end justify-between gap-element shrink-0">
         <div>
           <h1 className="text-page-title font-bold">Insights</h1>
           <p className="text-sub text-muted-foreground mt-0.5">觀眾互動與活躍度數據</p>
@@ -1548,7 +1548,7 @@ export default function Insights() {
         {/* Left: sticky – chart + summary cards */}
         <div className="rounded-lg border bg-card p-section lg:self-start flex flex-col gap-section">
           {!initialized ? (
-            <Skeleton className="hidden lg:block h-[370px] rounded-md" />
+            <Skeleton className="hidden lg:block h-92.5 rounded-md" />
           ) : viewers.length > 0 ? (
             <div className="hidden lg:block rounded-md bg-muted/20 p-3 **:outline-none">
               <ViewerScatterChart
@@ -1629,7 +1629,7 @@ export default function Insights() {
         </div>
 
         {/* Right: viewer list */}
-        <div className="rounded-lg border bg-card p-section flex flex-col gap-section lg:h-[calc(100svh-var(--h-topbar)-2*var(--spacing-page-lg)-var(--spacing-section)-var(--h-page-header))]">
+        <div className="rounded-lg border bg-card p-section flex flex-col gap-section min-h-0">
           <div className="flex items-center gap-2 self-end shrink-0">
             <Tooltip>
               <TooltipTrigger asChild>
