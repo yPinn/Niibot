@@ -4,20 +4,20 @@ import asyncio
 import json
 import logging
 from datetime import datetime
-from typing import Annotated, Any, cast
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, field_validator
 
 from core.dependencies import (
     get_analytics_service,
-    get_channel_service,
     get_current_channel_id,
     get_twitch_api,
 )
-from services import AnalyticsService, ChannelService, TwitchAPIClient
+from services import AnalyticsService, TwitchAPIClient
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
+_background_tasks: set[asyncio.Task] = set()
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 
@@ -106,6 +106,11 @@ class ViewerSummary(BaseModel):
     watch_seconds: int
     total_bits: int
     engagement_score: float
+    is_subscribed: bool = False
+    sub_tier: str | None = None
+    is_mod: bool = False
+    is_vip: bool = False
+    follow_since: datetime | None = None
 
 
 class ViewerEvent(BaseModel):
@@ -129,7 +134,6 @@ class ViewerTwitchStatus(BaseModel):
     is_banned: bool = False
     ban_expires_at: datetime | None = None
     ban_reason: str | None = None
-    bits_rank: int | None = None
 
 
 class ViewerSessionAttendance(BaseModel):
@@ -258,17 +262,6 @@ async def list_viewers(
         raise HTTPException(status_code=500, detail="Failed to fetch viewers") from None
 
 
-_SUB_TIER_LABELS = {"1000": "1", "2000": "2", "3000": "3"}
-
-
-# Sentinel: Twitch API call failed — fall back to DB value
-class _Unchecked:
-    pass
-
-
-_UNCHECKED = _Unchecked()
-
-
 @router.get("/viewers/{user_id}", response_model=ViewerProfile)
 async def get_viewer_profile(
     user_id: str,
@@ -276,150 +269,66 @@ async def get_viewer_profile(
     days: Annotated[int, Query(ge=1, le=365)] = 30,
     channel_id: str = Depends(get_current_channel_id),
     service: AnalyticsService = Depends(get_analytics_service),
-    channel_service: ChannelService = Depends(get_channel_service),
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
 ) -> ViewerProfile:
     try:
-        profile = await service.get_viewer_profile(channel_id, user_id, days)
+        profile, attendance_rows = await asyncio.gather(
+            service.get_viewer_profile(channel_id, user_id, days),
+            service.get_viewer_session_attendance(channel_id, user_id, days),
+        )
         if profile is None:
             raise HTTPException(status_code=404, detail="Viewer not found")
 
-        # Get broadcaster token once; shared by sub + follow checks
-        token: str | None = None
-        try:
-            token = await channel_service.get_token_with_refresh(channel_id, twitch_api)
-        except Exception:
-            LOGGER.warning("Token fetch failed for viewer profile")
+        status: dict[str, Any] = profile.pop("channel_status") or {}
 
-        async def _fetch_sub() -> tuple[bool, str | None, bool | None, str | None]:
-            """Returns (is_subscribed, sub_tier, sub_gifted, sub_gifter)."""
-            if not token:
-                return False, None, None, None
+        # Profile image cache: use DB value; fetch from Twitch only when missing
+        profile_image_url: str | None = status.get("profile_image_url")
+        offline_image_url: str | None = status.get("offline_image_url")
+        account_created_at: datetime | None = status.get("account_created_at")
+        broadcaster_type: str | None = status.get("broadcaster_type")
+
+        if profile_image_url is None:
             try:
-                sub_data = await twitch_api.get_sub_status(channel_id, user_id, token)
-                if sub_data:
-                    raw_tier = sub_data.get("tier", "")
-                    is_gift = sub_data.get("is_gift", False)
-                    gifter = sub_data.get("gifter_login") or None if is_gift else None
-                    return (
-                        True,
-                        _SUB_TIER_LABELS.get(raw_tier, raw_tier) or None,
-                        is_gift,
-                        gifter,
+                user_info = await twitch_api.get_user_info(user_id)
+                if user_info:
+                    profile_image_url = user_info.get("avatar") or None
+                    offline_image_url = user_info.get("offline_image_url") or None
+                    broadcaster_type = user_info.get("broadcaster_type") or None
+                    raw_created = user_info.get("account_created_at", "")
+                    if raw_created:
+                        try:
+                            account_created_at = datetime.fromisoformat(
+                                raw_created.replace("Z", "+00:00")
+                            )
+                        except ValueError:
+                            pass
+                    task = asyncio.create_task(
+                        service.upsert_viewer_profile_cache(
+                            channel_id=channel_id,
+                            user_id=user_id,
+                            username=profile["username"],
+                            display_name=profile.get("display_name"),
+                            profile_image_url=profile_image_url,
+                            offline_image_url=offline_image_url,
+                            account_created_at=account_created_at,
+                            broadcaster_type=broadcaster_type,
+                        )
                     )
-                return False, None, None, None
+                    _background_tasks.add(task)
+                    task.add_done_callback(_background_tasks.discard)
             except Exception:
-                LOGGER.warning(f"Sub status fetch failed for viewer {user_id}")
-                return False, None, None, None
+                LOGGER.warning("user_info fetch failed for %s", user_id, exc_info=True)
 
-        async def _fetch_follow() -> datetime | None | _Unchecked:
-            """Returns datetime | None (confirmed), or _UNCHECKED (API failed)."""
-            if not token:
-                return _UNCHECKED
-            try:
-                follow_data = await twitch_api.get_follow_status(channel_id, user_id, token)
-                if follow_data:
-                    raw = follow_data.get("followed_at", "")
-                    try:
-                        return datetime.fromisoformat(raw.replace("Z", "+00:00")) if raw else None
-                    except ValueError:
-                        return None
-                return None
-            except Exception:
-                LOGGER.warning(f"Follow status fetch failed for viewer {user_id}")
-                return _UNCHECKED
-
-        async def _fetch_user_info() -> dict | None:
-            try:
-                return await twitch_api.get_user_info(user_id)
-            except Exception:
-                return None
-
-        async def _fetch_mod() -> bool:
-            if not token:
-                return False
-            return await twitch_api.get_mod_status(channel_id, user_id, token)
-
-        async def _fetch_vip() -> bool:
-            if not token:
-                return False
-            return await twitch_api.get_vip_status(channel_id, user_id, token)
-
-        async def _fetch_ban() -> dict | None:
-            if not token:
-                return None
-            return await twitch_api.get_ban_status(channel_id, user_id, token)
-
-        async def _fetch_bits_rank() -> int | None:
-            if not token:
-                return None
-            return await twitch_api.get_bits_rank(user_id, token)
-
-        async def _fetch_attendance() -> list[dict]:
-            return await service.get_viewer_session_attendance(channel_id, user_id, days)
-
-        _gathered = await asyncio.gather(
-            _fetch_sub(),
-            _fetch_follow(),
-            _fetch_user_info(),
-            _fetch_mod(),
-            _fetch_vip(),
-            _fetch_ban(),
-            _fetch_bits_rank(),
-            _fetch_attendance(),
-        )
-        sub_result = cast(tuple[bool, str | None, bool | None, str | None], _gathered[0])
-        follow_api = cast(datetime | None | _Unchecked, _gathered[1])
-        user_info = cast(dict[str, Any] | None, _gathered[2])
-        is_mod = cast(bool, _gathered[3])
-        is_vip = cast(bool, _gathered[4])
-        ban_info = cast(dict[str, Any] | None, _gathered[5])
-        bits_rank = cast(int | None, _gathered[6])
-        attendance_rows = cast(list[dict], _gathered[7])
-
-        # Follow date: use API result; fall back to DB only when API call failed
-        follow_since = profile.get("follow_since") if follow_api is _UNCHECKED else follow_api
-        profile["follow_since"] = follow_since
-
-        # User info fields
-        profile_image_url: str | None = user_info.get("avatar") if user_info else None
-        offline_image_url: str | None = (
-            (user_info.get("offline_image_url") or None) if user_info else None
-        )
-        broadcaster_type: str | None = (
-            (user_info.get("broadcaster_type") or None) if user_info else None
-        )
-        account_created_at: datetime | None = None
-        if user_info and user_info.get("account_created_at"):
-            try:
-                account_created_at = datetime.fromisoformat(
-                    user_info["account_created_at"].replace("Z", "+00:00")
-                )
-            except ValueError:
-                pass
-
-        # Ban date parsing
-        ban_expires_at: datetime | None = None
-        if ban_info and ban_info.get("expires_at"):
-            try:
-                ban_expires_at = datetime.fromisoformat(
-                    ban_info["expires_at"].replace("Z", "+00:00")
-                )
-            except ValueError:
-                pass
-
-        is_subscribed, sub_tier, sub_gifted, sub_gifter = sub_result
         twitch_status = ViewerTwitchStatus(
-            is_subscribed=is_subscribed,
-            sub_tier=sub_tier,
-            sub_gifted=sub_gifted,
-            sub_gifter=sub_gifter,
-            is_mod=is_mod,
-            is_vip=is_vip,
-            is_banned=bool(ban_info),
-            ban_expires_at=ban_expires_at,
-            ban_reason=ban_info.get("reason") if ban_info else None,
-            bits_rank=bits_rank,
+            is_subscribed=bool(status.get("is_subscribed", False)),
+            sub_tier=status.get("sub_tier"),
+            sub_gifted=status.get("sub_gifted"),
+            sub_gifter=status.get("sub_gifter"),
+            is_mod=bool(status.get("is_mod", False)),
+            is_vip=bool(status.get("is_vip", False)),
+            is_banned=bool(status.get("is_banned", False)),
+            ban_expires_at=status.get("ban_expires_at"),
+            ban_reason=status.get("ban_reason"),
         )
 
         session_attendance = [ViewerSessionAttendance(**r) for r in attendance_rows]
@@ -439,6 +348,27 @@ async def get_viewer_profile(
     except Exception:
         LOGGER.exception("Failed to get viewer profile")
         raise HTTPException(status_code=500, detail="Failed to fetch viewer") from None
+
+
+@router.get("/channel/badges")
+async def get_channel_badges(
+    response: Response,
+    channel_id: str = Depends(get_current_channel_id),
+    twitch_api: TwitchAPIClient = Depends(get_twitch_api),
+) -> dict[str, str | None]:
+    badges = await twitch_api.get_channel_badges(channel_id)
+    response.headers["Cache-Control"] = "private, max-age=3600"
+    return badges
+
+
+@router.get("/channel/badges/global")
+async def get_global_badges(
+    response: Response,
+    twitch_api: TwitchAPIClient = Depends(get_twitch_api),
+) -> dict[str, list]:
+    badges = await twitch_api.get_global_badges()
+    response.headers["Cache-Control"] = "public, max-age=86400"
+    return badges
 
 
 @router.get("/top-commands", response_model=list[CommandStat])
