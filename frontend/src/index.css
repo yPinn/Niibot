@@ -98,39 +98,21 @@
 }
 
 :root {
-  /* ── Layer 1: Typography Scale (Tailwind v4 defaults) ── */
-  --text-xs: 0.75rem; /* 12px */
-  --text-sm: 0.875rem; /* 14px */
-  --text-base: 1rem; /* 16px */
-  --text-lg: 1.125rem; /* 18px */
-  --text-xl: 1.25rem; /* 20px */
-  --text-2xl: 1.5rem; /* 24px */
-  --text-3xl: 1.875rem; /* 30px */
+  /* ── Semantic Typography (Tailwind v4 內建 --text-* 直接引用，無需重定義) ── */
+  --text-page-title: var(--text-2xl); /* h1: 24px */
+  --text-section-title: var(--text-xl); /* h2: 20px */
+  --text-card-title: var(--text-lg); /* h3: 18px */
+  --text-content: var(--text-base); /* body: 16px */
+  --text-sub: var(--text-sm); /* secondary: 14px */
+  --text-label: var(--text-xs); /* badge/timestamp: 12px */
 
-  /* ── Layer 2: Semantic Typography (change here → all pages follow) ── */
-  --text-page-title: var(--text-2xl); /* 頁面主標題 h1 */
-  --text-section-title: var(--text-xl); /* 區塊標題 h2 */
-  --text-card-title: var(--text-lg); /* Card 內標題 h3 */
-  --text-content: var(--text-base); /* 正文內容 */
-  --text-sub: var(--text-sm); /* 次要說明 */
-  --text-label: var(--text-xs); /* 標籤、badge、timestamp */
-
-  /* ── Layer 1: Spacing Scale ── */
-  --space-1: 0.25rem; /* 4px */
-  --space-2: 0.5rem; /* 8px */
-  --space-3: 0.75rem; /* 12px */
-  --space-4: 1rem; /* 16px */
-  --space-6: 1.5rem; /* 24px */
-  --space-8: 2rem; /* 32px */
-  --space-12: 3rem; /* 48px */
-
-  /* ── Layer 2: Semantic Spacing (change here → all pages follow) ── */
-  --space-page: var(--space-4); /* 頁面內距 (mobile) */
-  --space-page-lg: var(--space-6); /* 頁面內距 (desktop) */
-  --space-section: var(--space-4); /* 區塊間距 (Cards 之間) */
-  --space-card: var(--space-6); /* Card/表單內部間距 */
-  --space-element: var(--space-2); /* 元素間距 (label-input) */
-  --space-empty: var(--space-8); /* 空狀態內距 */
+  /* ── Semantic Spacing ── */
+  --space-page: 1rem; /* 16px — mobile page padding */
+  --space-page-lg: 1.5rem; /* 24px — desktop page padding */
+  --space-section: 1rem; /* 16px — between cards */
+  --space-card: 1.5rem; /* 24px — inside card/form */
+  --space-element: 0.5rem; /* 8px  — label-input gap */
+  --space-empty: 2rem; /* 32px — empty state padding */
 
   /* ── Layer 2: Semantic Font Weight ── */
   --font-weight-heading: 600;
@@ -345,6 +327,17 @@
   table {
     border-collapse: collapse;
   }
+}
+
+/* ── Recharts Typography ── */
+/* SVG <text> doesn't inherit body font-family; force the app stack */
+.recharts-wrapper text {
+  font-family:
+    'Fira Code',
+    'Gen Sen Rounded',
+    system-ui,
+    -apple-system,
+    sans-serif;
 }
 
 /* ── Scrollbar Utility ── */

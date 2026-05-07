@@ -99,4 +99,6 @@ export const CACHE_KEYS = {
   ANALYTICS_VIEWERS: (days: number) => `analytics:viewers:${days}`,
   ANALYTICS_VIEWER_PROFILE: (userId: string, days: number) =>
     `analytics:viewer-profile:${userId}:${days}`,
+  ANALYTICS_CHANNEL_BADGES: 'analytics:channel-badges',
+  ANALYTICS_GLOBAL_BADGES: 'analytics:global-badges',
 } as const
