@@ -97,6 +97,7 @@ function bitsBadge(
 }
 
 const AXIS_MAX = 999_999
+const SCATTER_TOOLTIP_THRESHOLD = 60
 
 type BadgeSource = Pick<
   ViewerSummary,
@@ -359,7 +360,7 @@ function ViewerList({
               <Tooltip>
                 <TooltipTrigger asChild>{btn}</TooltipTrigger>
                 <TooltipContent className="max-w-52 text-center">
-                  觀看時長＋留言活躍度＋訂閱／小奇點加成，連續出席享乘數加成
+                  觀看時長＋留言活躍度＋訂閱／Cheer 小奇點加成，連續出席享乘數加成
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -443,7 +444,9 @@ function ScatterTooltip({
       </p>
       <p className="text-label text-primary">活躍度 {d.score.toFixed(1)}</p>
       {d.total_bits > 0 && (
-        <p className="text-label text-muted-foreground">Cheer {d.total_bits.toLocaleString()}</p>
+        <p className="text-label text-muted-foreground">
+          Cheer {d.total_bits.toLocaleString()} 小奇點
+        </p>
       )}
       {d.total_gifts > 0 && (
         <p className="text-label text-muted-foreground">贈禮 {d.total_gifts.toLocaleString()} 份</p>
@@ -700,11 +703,13 @@ function ViewerScatterChart({
               />
             </>
           )}
-          <RechartsTooltip
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            content={(props: any) => <ScatterTooltip {...props} channelBadges={channelBadges} />}
-            cursor={{ strokeDasharray: '3 3', stroke: 'var(--muted-foreground)' }}
-          />
+          {viewers.length < SCATTER_TOOLTIP_THRESHOLD && (
+            <RechartsTooltip
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              content={(props: any) => <ScatterTooltip {...props} channelBadges={channelBadges} />}
+              cursor={{ strokeDasharray: '3 3', stroke: 'var(--muted-foreground)' }}
+            />
+          )}
           <Scatter data={data} shape={shape} />
         </ScatterChart>
       </ResponsiveContainer>
@@ -886,7 +891,7 @@ function ViewerHeatmap({
 const EVENT_META: Record<string, { icon: string; label: string; color: string }> = {
   follow: { icon: 'fa-solid fa-heart', label: '追隨', color: 'text-status-follow' },
   subscribe: { icon: 'fa-solid fa-star', label: '訂閱', color: 'text-status-special' },
-  cheer: { icon: 'fa-solid fa-diamond-half-stroke', label: '小奇點', color: 'text-primary' },
+  cheer: { icon: 'fa-solid fa-diamond-half-stroke', label: 'Cheer', color: 'text-primary' },
   raid: { icon: 'fa-solid fa-parachute-box', label: '揪團', color: 'text-status-info' },
 }
 
@@ -1351,7 +1356,7 @@ function ViewerSheet({ userId, open, onOpenChange, days, channelBadges }: Viewer
                           {bits !== undefined && (
                             <>
                               <span className="text-muted-foreground">×</span>
-                              <span>{bits.toLocaleString()}</span>
+                              <span>{bits.toLocaleString()} 小奇點</span>
                             </>
                           )}
                           {raidViewers?.viewers != null && (
@@ -1624,7 +1629,7 @@ export default function Insights() {
         </div>
 
         {/* Right: viewer list */}
-        <div className="rounded-lg border bg-card p-section flex flex-col gap-section lg:max-h-[calc(100svh-var(--h-topbar)-2*var(--spacing-page-lg)-var(--spacing-section)-var(--h-page-header))]">
+        <div className="rounded-lg border bg-card p-section flex flex-col gap-section lg:h-[calc(100svh-var(--h-topbar)-2*var(--spacing-page-lg)-var(--spacing-section)-var(--h-page-header))]">
           <div className="flex items-center gap-2 self-end shrink-0">
             <Tooltip>
               <TooltipTrigger asChild>

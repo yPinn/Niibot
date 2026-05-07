@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math as _math
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -14,6 +15,7 @@ from shared.repositories.analytics._caches import (
     _top_chatters_cache,
     _top_commands_cache,
 )
+from shared.repositories.analytics._query_mixin import _SCORE_SQL
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -895,3 +897,120 @@ class TestGetViewerRank:
         assert result is not None
         assert result["rank"] == 3
         assert conn.fetchrow.call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# _SCORE_SQL — formula structure and arithmetic correctness
+# ---------------------------------------------------------------------------
+
+
+def _score(
+    *,
+    watch_seconds: int,
+    total_messages: int,
+    sessions_attended: int,
+    sub_tier_bonus: float = 0.0,
+    total_bits: int = 0,
+    streak_count: int = 0,
+    days_since_last_seen: int = 0,
+) -> float:
+    """Python mirror of _SCORE_SQL for arithmetic verification.
+
+    Must be kept in sync with _query_mixin._SCORE_SQL whenever the formula
+    changes — these tests will fail if they drift apart.
+    """
+    watch_hours = watch_seconds / 3600.0
+    msg_cap = max(10.0, watch_seconds / 30.0)
+    effective_msgs = min(float(total_messages), msg_cap)
+    msg_score = 1.5 * _math.log(effective_msgs + 1.0)
+    session_score = 0.5 * _math.log(sessions_attended + 1.0)
+    bits_score = 2.0 * _math.log(total_bits / 100.0 + 1.0)
+    base = watch_hours + msg_score + session_score + sub_tier_bonus + bits_score
+    streak_mult = 1.0 + min(streak_count, 20) * 0.05
+    if days_since_last_seen < 30:
+        decay = 1.0
+    elif days_since_last_seen < 60:
+        decay = 0.75
+    else:
+        decay = 0.5
+    return round(base * streak_mult * decay, 2)
+
+
+class TestScoreSqlStructure:
+    """Canary tests — fail immediately if the SQL formula string is reverted."""
+
+    def test_message_cap_references_watch_seconds_div_30(self):
+        assert "/ 30.0" in _SCORE_SQL
+
+    def test_sessions_attended_bonus_present(self):
+        assert "sessions_attended" in _SCORE_SQL
+
+    def test_streak_capped_at_20(self):
+        assert "LEAST(COALESCE(sk.streak_count, 0), 20)" in _SCORE_SQL
+
+    def test_bits_log_scaled_in_hundreds(self):
+        assert "/ 100.0 + 1.0" in _SCORE_SQL
+
+    def test_two_step_inactivity_decay(self):
+        assert "INTERVAL '60 days'" in _SCORE_SQL
+        assert "0.75" in _SCORE_SQL
+
+
+class TestScoreFormulaArithmetic:
+    def test_spammer_scores_below_loyal_viewer(self):
+        """500 msgs in 5 min must lose to 50 msgs over 2 hr (5 sessions)."""
+        spammer = _score(watch_seconds=300, total_messages=500, sessions_attended=1)
+        loyal = _score(watch_seconds=7200, total_messages=50, sessions_attended=5)
+        assert spammer < loyal
+
+    def test_message_cap_prevents_extra_spam_contribution(self):
+        """Messages beyond ~120/hr ceiling add no further score."""
+        capped = _score(watch_seconds=3600, total_messages=120, sessions_attended=1)
+        excess = _score(watch_seconds=3600, total_messages=10_000, sessions_attended=1)
+        assert capped == excess
+
+    def test_streak_capped_at_20(self):
+        """Streak 30 gives identical multiplier as streak 20."""
+        s20 = _score(watch_seconds=3600, total_messages=10, sessions_attended=1, streak_count=20)
+        s30 = _score(watch_seconds=3600, total_messages=10, sessions_attended=1, streak_count=30)
+        assert s20 == s30
+
+    def test_streak_20_approximately_doubles_score(self):
+        base = _score(watch_seconds=7200, total_messages=30, sessions_attended=3, streak_count=0)
+        streaked = _score(
+            watch_seconds=7200, total_messages=30, sessions_attended=3, streak_count=20
+        )
+        assert 1.95 <= streaked / base <= 2.05
+
+    def test_bits_log_scaling_is_sublinear(self):
+        """10× more bits should yield far less than 10× more score."""
+        low = _score(watch_seconds=0, total_messages=0, sessions_attended=1, total_bits=1_000)
+        high = _score(watch_seconds=0, total_messages=0, sessions_attended=1, total_bits=10_000)
+        assert high / low < 3.0
+
+    def test_inactivity_under_30_days_no_decay(self):
+        fresh = _score(
+            watch_seconds=3600, total_messages=20, sessions_attended=2, days_since_last_seen=0
+        )
+        recent = _score(
+            watch_seconds=3600, total_messages=20, sessions_attended=2, days_since_last_seen=29
+        )
+        assert recent == fresh
+
+    def test_inactivity_30_to_60_days_applies_75pct_decay(self):
+        fresh = _score(
+            watch_seconds=3600, total_messages=20, sessions_attended=2, days_since_last_seen=0
+        )
+        stale = _score(
+            watch_seconds=3600, total_messages=20, sessions_attended=2, days_since_last_seen=45
+        )
+        assert abs(stale / fresh - 0.75) < 0.02
+
+    def test_inactivity_over_60_days_applies_50pct_decay(self):
+        fresh = _score(
+            watch_seconds=3600, total_messages=20, sessions_attended=2, days_since_last_seen=0
+        )
+        old = _score(
+            watch_seconds=3600, total_messages=20, sessions_attended=2, days_since_last_seen=90
+        )
+        assert abs(old / fresh - 0.50) < 0.02

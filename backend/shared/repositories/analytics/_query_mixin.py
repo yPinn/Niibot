@@ -90,12 +90,21 @@ async def _get_bot_list() -> list[str]:
 
 _SCORE_SQL: str = """ROUND((
     (t.watch_seconds::numeric / 3600.0)
-    + (2.0 * LN(t.total_messages::numeric + 1.0))
+    + (1.5 * LN(
+        LEAST(
+            t.total_messages::numeric,
+            GREATEST(10.0, t.watch_seconds::numeric / 30.0)
+        ) + 1.0
+      ))
+    + (0.5 * LN(t.sessions_attended::numeric + 1.0))
     + COALESCE(eb.sub_tier_bonus, 0.0)
-    + (COALESCE(eb.total_bits, 0)::numeric / 100.0 * 0.5)
-) * (1.0 + COALESCE(sk.streak_count, 0) * 0.05)
-  * CASE WHEN t.last_seen < NOW() - INTERVAL '30 days'
-         THEN 0.5 ELSE 1.0 END
+    + (2.0 * LN(COALESCE(eb.total_bits, 0)::numeric / 100.0 + 1.0))
+) * (1.0 + LEAST(COALESCE(sk.streak_count, 0), 20) * 0.05)
+  * CASE
+      WHEN t.last_seen >= NOW() - INTERVAL '30 days' THEN 1.0
+      WHEN t.last_seen >= NOW() - INTERVAL '60 days' THEN 0.75
+      ELSE 0.5
+    END
 , 2)::float"""
 
 _STREAK_CTE: str = """streak_data AS (
