@@ -10,6 +10,7 @@ import logging
 from datetime import datetime
 
 import asyncpg
+from asyncpg.exceptions import UndefinedTableError
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -235,3 +236,277 @@ class _AnalyticsEventsMixin:
                 """,
                 rows,
             )
+
+    async def _execute_upsert(self, sql: str, *args: object) -> None:
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(sql, *args)
+        except UndefinedTableError:
+            pass
+
+    async def upsert_viewer_gift_count(
+        self,
+        channel_id: str,
+        user_id: str,
+        username: str,
+        display_name: str | None,
+        total_gifts_given: int,
+    ) -> None:
+        """Upsert cumulative gift sub count from channel.subscription.gift cumulative_total."""
+        await self._execute_upsert(
+            """
+            INSERT INTO viewer_channel_status
+                (channel_id, user_id, username, display_name, total_gifts_given, updated_at)
+            VALUES ($1, $2, $3, $4, $5, NOW())
+            ON CONFLICT (channel_id, user_id) DO UPDATE SET
+                username          = EXCLUDED.username,
+                display_name      = COALESCE(EXCLUDED.display_name, viewer_channel_status.display_name),
+                total_gifts_given = GREATEST(viewer_channel_status.total_gifts_given, EXCLUDED.total_gifts_given),
+                updated_at        = NOW()
+            """,
+            channel_id,
+            user_id,
+            username,
+            display_name,
+            total_gifts_given,
+        )
+
+    async def upsert_viewer_follow_status(
+        self,
+        channel_id: str,
+        user_id: str,
+        username: str,
+        display_name: str | None,
+        follow_since: datetime,
+    ) -> None:
+        """Set follow_since on first follow; never overwrites an existing value."""
+        await self._execute_upsert(
+            """
+            INSERT INTO viewer_channel_status
+                (channel_id, user_id, username, display_name, follow_since, updated_at)
+            VALUES ($1, $2, $3, $4, $5, NOW())
+            ON CONFLICT (channel_id, user_id) DO UPDATE SET
+                username     = EXCLUDED.username,
+                display_name = COALESCE(EXCLUDED.display_name, viewer_channel_status.display_name),
+                follow_since = COALESCE(viewer_channel_status.follow_since, EXCLUDED.follow_since),
+                updated_at   = NOW()
+            """,
+            channel_id,
+            user_id,
+            username,
+            display_name,
+            follow_since,
+        )
+
+    async def upsert_viewer_subscription(
+        self,
+        channel_id: str,
+        user_id: str,
+        username: str,
+        display_name: str | None,
+        sub_tier: str | None,
+        sub_gifted: bool,
+    ) -> None:
+        """Mark viewer as currently subscribed."""
+        await self._execute_upsert(
+            """
+            INSERT INTO viewer_channel_status
+                (channel_id, user_id, username, display_name,
+                 is_subscribed, sub_tier, sub_gifted, updated_at)
+            VALUES ($1, $2, $3, $4, TRUE, $5, $6, NOW())
+            ON CONFLICT (channel_id, user_id) DO UPDATE SET
+                username      = EXCLUDED.username,
+                display_name  = COALESCE(EXCLUDED.display_name, viewer_channel_status.display_name),
+                is_subscribed = TRUE,
+                sub_tier      = EXCLUDED.sub_tier,
+                sub_gifted    = EXCLUDED.sub_gifted,
+                updated_at    = NOW()
+            """,
+            channel_id,
+            user_id,
+            username,
+            display_name,
+            sub_tier,
+            sub_gifted,
+        )
+
+    async def upsert_viewer_subscription_end(
+        self,
+        channel_id: str,
+        user_id: str,
+        username: str,
+        display_name: str | None,
+    ) -> None:
+        """Mark viewer's subscription as ended."""
+        await self._execute_upsert(
+            """
+            INSERT INTO viewer_channel_status
+                (channel_id, user_id, username, display_name,
+                 is_subscribed, sub_tier, sub_gifted, sub_gifter, updated_at)
+            VALUES ($1, $2, $3, $4, FALSE, NULL, NULL, NULL, NOW())
+            ON CONFLICT (channel_id, user_id) DO UPDATE SET
+                username      = EXCLUDED.username,
+                display_name  = COALESCE(EXCLUDED.display_name, viewer_channel_status.display_name),
+                is_subscribed = FALSE,
+                sub_tier      = NULL,
+                sub_gifted    = NULL,
+                sub_gifter    = NULL,
+                updated_at    = NOW()
+            """,
+            channel_id,
+            user_id,
+            username,
+            display_name,
+        )
+
+    async def upsert_viewer_mod_status(
+        self,
+        channel_id: str,
+        user_id: str,
+        username: str,
+        display_name: str | None,
+        is_mod: bool,
+    ) -> None:
+        """Set or clear moderator status."""
+        await self._execute_upsert(
+            """
+            INSERT INTO viewer_channel_status
+                (channel_id, user_id, username, display_name, is_mod, updated_at)
+            VALUES ($1, $2, $3, $4, $5, NOW())
+            ON CONFLICT (channel_id, user_id) DO UPDATE SET
+                username     = EXCLUDED.username,
+                display_name = COALESCE(EXCLUDED.display_name, viewer_channel_status.display_name),
+                is_mod       = EXCLUDED.is_mod,
+                updated_at   = NOW()
+            """,
+            channel_id,
+            user_id,
+            username,
+            display_name,
+            is_mod,
+        )
+
+    async def upsert_viewer_vip_status(
+        self,
+        channel_id: str,
+        user_id: str,
+        username: str,
+        display_name: str | None,
+        is_vip: bool,
+    ) -> None:
+        """Set or clear VIP status."""
+        await self._execute_upsert(
+            """
+            INSERT INTO viewer_channel_status
+                (channel_id, user_id, username, display_name, is_vip, updated_at)
+            VALUES ($1, $2, $3, $4, $5, NOW())
+            ON CONFLICT (channel_id, user_id) DO UPDATE SET
+                username     = EXCLUDED.username,
+                display_name = COALESCE(EXCLUDED.display_name, viewer_channel_status.display_name),
+                is_vip       = EXCLUDED.is_vip,
+                updated_at   = NOW()
+            """,
+            channel_id,
+            user_id,
+            username,
+            display_name,
+            is_vip,
+        )
+
+    async def upsert_viewer_ban(
+        self,
+        channel_id: str,
+        user_id: str,
+        username: str,
+        display_name: str | None,
+        ban_expires_at: datetime | None,
+        ban_reason: str | None,
+    ) -> None:
+        """Record a ban event."""
+        await self._execute_upsert(
+            """
+            INSERT INTO viewer_channel_status
+                (channel_id, user_id, username, display_name,
+                 is_banned, ban_expires_at, ban_reason, updated_at)
+            VALUES ($1, $2, $3, $4, TRUE, $5, $6, NOW())
+            ON CONFLICT (channel_id, user_id) DO UPDATE SET
+                username       = EXCLUDED.username,
+                display_name   = COALESCE(EXCLUDED.display_name, viewer_channel_status.display_name),
+                is_banned      = TRUE,
+                ban_expires_at = EXCLUDED.ban_expires_at,
+                ban_reason     = EXCLUDED.ban_reason,
+                updated_at     = NOW()
+            """,
+            channel_id,
+            user_id,
+            username,
+            display_name,
+            ban_expires_at,
+            ban_reason,
+        )
+
+    async def upsert_viewer_unban(
+        self,
+        channel_id: str,
+        user_id: str,
+        username: str,
+        display_name: str | None,
+    ) -> None:
+        """Clear ban status on unban."""
+        await self._execute_upsert(
+            """
+            INSERT INTO viewer_channel_status
+                (channel_id, user_id, username, display_name,
+                 is_banned, ban_expires_at, ban_reason, updated_at)
+            VALUES ($1, $2, $3, $4, FALSE, NULL, NULL, NOW())
+            ON CONFLICT (channel_id, user_id) DO UPDATE SET
+                username       = EXCLUDED.username,
+                display_name   = COALESCE(EXCLUDED.display_name, viewer_channel_status.display_name),
+                is_banned      = FALSE,
+                ban_expires_at = NULL,
+                ban_reason     = NULL,
+                updated_at     = NOW()
+            """,
+            channel_id,
+            user_id,
+            username,
+            display_name,
+        )
+
+    async def upsert_viewer_profile_cache(
+        self,
+        channel_id: str,
+        user_id: str,
+        username: str,
+        display_name: str | None,
+        profile_image_url: str | None,
+        offline_image_url: str | None,
+        account_created_at: datetime | None,
+        broadcaster_type: str | None,
+    ) -> None:
+        """Cache Twitch profile fields after a get_user_info call."""
+        await self._execute_upsert(
+            """
+            INSERT INTO viewer_channel_status
+                (channel_id, user_id, username, display_name,
+                 profile_image_url, offline_image_url,
+                 account_created_at, broadcaster_type, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+            ON CONFLICT (channel_id, user_id) DO UPDATE SET
+                username           = EXCLUDED.username,
+                display_name       = COALESCE(EXCLUDED.display_name, viewer_channel_status.display_name),
+                profile_image_url  = EXCLUDED.profile_image_url,
+                offline_image_url  = EXCLUDED.offline_image_url,
+                account_created_at = COALESCE(viewer_channel_status.account_created_at, EXCLUDED.account_created_at),
+                broadcaster_type   = EXCLUDED.broadcaster_type,
+                updated_at         = NOW()
+            """,
+            channel_id,
+            user_id,
+            username,
+            display_name,
+            profile_image_url,
+            offline_image_url,
+            account_created_at,
+            broadcaster_type,
+        )

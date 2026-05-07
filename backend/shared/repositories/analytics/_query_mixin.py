@@ -14,6 +14,7 @@ from datetime import UTC, datetime, timedelta
 
 import asyncpg
 import httpx
+from asyncpg.exceptions import UndefinedTableError
 
 from shared.cache import cached
 from shared.repositories.analytics._caches import (
@@ -574,7 +575,31 @@ class _AnalyticsQueryMixin:
         """Top chatters with enriched stats for the Insights viewers list."""
         since_date = datetime.now(UTC) - timedelta(days=days)
 
-        def _q(streak_cte: str) -> str:
+        def _q(streak_cte: str, include_status: bool = True) -> str:
+            status_select = (
+                """
+                    COALESCE(vcs.is_subscribed, FALSE)      AS is_subscribed,
+                    vcs.sub_tier,
+                    COALESCE(vcs.is_mod, FALSE)             AS is_mod,
+                    COALESCE(vcs.is_vip, FALSE)             AS is_vip,
+                    vcs.follow_since,
+                    COALESCE(vcs.total_gifts_given, 0)      AS total_gifts_given"""
+                if include_status
+                else """
+                    FALSE       AS is_subscribed,
+                    NULL::text  AS sub_tier,
+                    FALSE       AS is_mod,
+                    FALSE       AS is_vip,
+                    NULL::timestamptz AS follow_since,
+                    0           AS total_gifts_given"""
+            )
+            status_join = (
+                """
+                LEFT JOIN viewer_channel_status vcs
+                    ON vcs.channel_id = $1 AND vcs.user_id = t.user_id"""
+                if include_status
+                else ""
+            )
             return f"""
                 WITH session_scope AS MATERIALIZED (
                     SELECT id FROM stream_sessions
@@ -629,12 +654,14 @@ class _AnalyticsQueryMixin:
                     t.sessions_attended,
                     t.last_seen,
                     t.watch_seconds,
-                    COALESCE(eb.total_bits, 0) AS total_bits,
-                    {_SCORE_SQL} AS engagement_score
+                    COALESCE(eb.total_bits, 0)  AS total_bits,
+                    {_SCORE_SQL}                AS engagement_score,
+                    {status_select}
                 FROM chatter_totals t
                 JOIN latest_name n ON n.user_id = t.user_id
                 LEFT JOIN event_bonuses eb ON eb.user_id = t.user_id
                 LEFT JOIN streak_data sk ON sk.user_id = t.user_id
+                {status_join}
                 ORDER BY engagement_score DESC
                 LIMIT $3
                 """
@@ -644,8 +671,12 @@ class _AnalyticsQueryMixin:
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(_q(_STREAK_CTE), *args)
         except asyncpg.exceptions.UndefinedTableError:
-            async with self.pool.acquire() as conn:
-                rows = await conn.fetch(_q(_STREAK_CTE_EMPTY), *args)
+            try:
+                async with self.pool.acquire() as conn:
+                    rows = await conn.fetch(_q(_STREAK_CTE_EMPTY), *args)
+            except asyncpg.exceptions.UndefinedTableError:
+                async with self.pool.acquire() as conn:
+                    rows = await conn.fetch(_q(_STREAK_CTE_EMPTY, include_status=False), *args)
 
         return [
             {
@@ -657,7 +688,13 @@ class _AnalyticsQueryMixin:
                 "last_seen": r["last_seen"],
                 "watch_seconds": int(r["watch_seconds"]),
                 "total_bits": int(r["total_bits"]),
+                "total_gifts": int(r["total_gifts_given"]),
                 "engagement_score": float(r["engagement_score"]),
+                "is_subscribed": bool(r["is_subscribed"]),
+                "sub_tier": r["sub_tier"],
+                "is_mod": bool(r["is_mod"]),
+                "is_vip": bool(r["is_vip"]),
+                "follow_since": r["follow_since"],
             }
             for r in rows
         ]
@@ -740,7 +777,11 @@ class _AnalyticsQueryMixin:
                     for r in rows
                 ]
 
-        async def _follow_since() -> datetime | None:
+        async def _status() -> dict | None:
+            return await self.get_viewer_channel_status(channel_id, user_id)
+
+        async def _follow_since_fallback() -> datetime | None:
+            """Fallback: derive follow_since from stream_events for historical data."""
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(
                     """
@@ -769,11 +810,15 @@ class _AnalyticsQueryMixin:
             except asyncpg.exceptions.UndefinedTableError:
                 return 0
 
-        stats, events, follow_since, streak_count = await asyncio.gather(
-            _stats(), _events(), _follow_since(), _streak()
+        stats, events, status, streak_count = await asyncio.gather(
+            _stats(), _events(), _status(), _streak()
         )
         if stats is None:
             return None
+
+        follow_since: datetime | None = (status or {}).get("follow_since")
+        if follow_since is None:
+            follow_since = await _follow_since_fallback()
 
         total_bits = sum(
             int((e["metadata"] or {}).get("bits", 0)) for e in events if e["event_type"] == "cheer"
@@ -786,6 +831,7 @@ class _AnalyticsQueryMixin:
             "follow_since": follow_since,
             "streak_count": streak_count,
             "events": events,
+            "channel_status": status,
         }
 
     async def get_viewer_session_attendance(
@@ -917,3 +963,26 @@ class _AnalyticsQueryMixin:
             "sessions_attended": int(row["sessions_attended"]),
             "streak_count": int(row["streak_count"]),
         }
+
+    async def get_viewer_channel_status(self, channel_id: str, user_id: str) -> dict | None:
+        """Read all cached status fields for a single viewer."""
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    """
+                    SELECT
+                        is_subscribed, sub_tier, sub_gifted, sub_gifter,
+                        is_mod, is_vip,
+                        is_banned, ban_expires_at, ban_reason,
+                        follow_since,
+                        profile_image_url, offline_image_url,
+                        account_created_at, broadcaster_type
+                    FROM viewer_channel_status
+                    WHERE channel_id = $1 AND user_id = $2
+                    """,
+                    channel_id,
+                    user_id,
+                )
+                return dict(row) if row else None
+        except UndefinedTableError:
+            return None

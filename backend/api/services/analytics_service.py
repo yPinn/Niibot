@@ -4,6 +4,7 @@ All SQL operations are delegated to ``AnalyticsRepository``.
 """
 
 import logging
+from datetime import datetime
 
 import asyncpg
 
@@ -56,3 +57,30 @@ class AnalyticsService:
     ) -> list[dict]:
         """Get per-session attendance data for a viewer."""
         return await self.repo.get_viewer_session_attendance(channel_id, user_id, days)
+
+    async def get_viewer_channel_status(self, channel_id: str, user_id: str) -> dict | None:
+        """Get cached EventSub status for a viewer."""
+        return await self.repo.get_viewer_channel_status(channel_id, user_id)
+
+    async def upsert_viewer_profile_cache(
+        self,
+        channel_id: str,
+        user_id: str,
+        username: str,
+        display_name: str | None,
+        profile_image_url: str | None,
+        offline_image_url: str | None,
+        account_created_at: datetime | None,
+        broadcaster_type: str | None,
+    ) -> None:
+        """Cache Twitch profile fields after a get_user_info call."""
+        await self.repo.upsert_viewer_profile_cache(
+            channel_id=channel_id,
+            user_id=user_id,
+            username=username,
+            display_name=display_name,
+            profile_image_url=profile_image_url,
+            offline_image_url=offline_image_url,
+            account_created_at=account_created_at,
+            broadcaster_type=broadcaster_type,
+        )

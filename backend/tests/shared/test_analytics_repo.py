@@ -722,6 +722,12 @@ def _make_viewer_row(
     watch_seconds: int = 7200,
     total_bits: int = 0,
     engagement_score: float = 12.5,
+    total_gifts_given: int = 0,
+    is_subscribed: bool = False,
+    sub_tier: str | None = None,
+    is_mod: bool = False,
+    is_vip: bool = False,
+    follow_since: datetime | None = None,
 ) -> dict:
     return {
         "user_id": user_id,
@@ -733,6 +739,12 @@ def _make_viewer_row(
         "watch_seconds": watch_seconds,
         "total_bits": total_bits,
         "engagement_score": engagement_score,
+        "total_gifts_given": total_gifts_given,
+        "is_subscribed": is_subscribed,
+        "sub_tier": sub_tier,
+        "is_mod": is_mod,
+        "is_vip": is_vip,
+        "follow_since": follow_since,
     }
 
 

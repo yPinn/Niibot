@@ -105,6 +105,20 @@ class EventComponent(commands.Component):
         broadcaster_name = payload.broadcaster.name
         channel_id = payload.broadcaster.id
 
+        # Always persist follow_since (idempotent COALESCE upsert)
+        if hasattr(self.bot, "analytics"):
+            try:
+                followed_at = getattr(payload, "followed_at", None) or datetime.now(UTC)
+                await self.bot.analytics.upsert_viewer_follow_status(
+                    channel_id=channel_id,
+                    user_id=user_id,
+                    username=payload.user.name or user_name,
+                    display_name=payload.user.display_name,
+                    follow_since=followed_at,
+                )
+            except Exception as e:
+                LOGGER.warning(f"[{broadcaster_name}] Follow status upsert failed: {e}")
+
         if not self._should_notify(user_id):
             LOGGER.info(f"[{broadcaster_name}] Follow: {user_name} (cooldown)")
             return
@@ -124,8 +138,7 @@ class EventComponent(commands.Component):
             if hasattr(self.bot, "_active_sessions") and hasattr(self.bot, "analytics"):
                 session_id = self.bot._active_sessions.get(channel_id)
                 if session_id:
-                    analytics = self.bot.analytics
-                    await analytics.record_follow_event(
+                    await self.bot.analytics.record_follow_event(
                         session_id=session_id,
                         channel_id=channel_id,
                         user_id=user_id,
@@ -153,6 +166,20 @@ class EventComponent(commands.Component):
 
         sub_type = "Gift" if payload.gift else "Sub"
 
+        # Always persist subscription status regardless of notification config
+        if hasattr(self.bot, "analytics"):
+            try:
+                await self.bot.analytics.upsert_viewer_subscription(
+                    channel_id=channel_id,
+                    user_id=payload.user.id,
+                    username=payload.user.name or user_name,
+                    display_name=payload.user.display_name,
+                    sub_tier=tier_name,
+                    sub_gifted=bool(payload.gift),
+                )
+            except Exception as e:
+                LOGGER.warning(f"[{broadcaster_name}] Subscription status upsert failed: {e}")
+
         try:
             message = await self._get_message(
                 channel_id, "subscribe", {"user": user_name, "tier": tier_name}
@@ -172,8 +199,7 @@ class EventComponent(commands.Component):
             if hasattr(self.bot, "_active_sessions") and hasattr(self.bot, "analytics"):
                 session_id = self.bot._active_sessions.get(channel_id)
                 if session_id:
-                    analytics = self.bot.analytics
-                    await analytics.record_subscribe_event(
+                    await self.bot.analytics.record_subscribe_event(
                         session_id=session_id,
                         channel_id=channel_id,
                         user_id=payload.user.id,
@@ -185,6 +211,38 @@ class EventComponent(commands.Component):
                     )
         except Exception as e:
             LOGGER.error(f"[{broadcaster_name}] {sub_type}: {user_name} ({tier_name}) (error: {e})")
+
+    @commands.Component.listener()
+    async def event_subscription_gift(
+        self,
+        payload: twitchio.ChannelSubscriptionGift,
+    ) -> None:
+        """贈禮訂閱事件 — 更新贈禮者累計數量。
+
+        cumulative_total 是 Twitch 提供的該用戶在此頻道的歷史累計贈禮數，
+        與單次批次數量無關，直接 upsert 即可保持最新值。
+        Anonymous gifts carry no user, so we skip them.
+        """
+        if payload.anonymous or not payload.user:
+            return
+
+        channel_id = payload.broadcaster.id
+        broadcaster_name = payload.broadcaster.name
+        cumulative = getattr(payload, "cumulative_total", None)
+        if not cumulative:
+            return
+
+        if hasattr(self.bot, "analytics"):
+            try:
+                await self.bot.analytics.upsert_viewer_gift_count(
+                    channel_id=channel_id,
+                    user_id=payload.user.id,
+                    username=payload.user.name or "",
+                    display_name=payload.user.display_name,
+                    total_gifts_given=int(cumulative),
+                )
+            except Exception as e:
+                LOGGER.warning(f"[{broadcaster_name}] Gift upsert failed: {e}")
 
     @commands.Component.listener()
     async def event_cheer(
@@ -315,6 +373,155 @@ class EventComponent(commands.Component):
 
         except Exception as e:
             LOGGER.error(f"[{broadcaster_name}] Raid: {raider_name} (error: {e})")
+
+    @commands.Component.listener()
+    async def event_subscription_end(
+        self,
+        payload: twitchio.ChannelSubscriptionEnd,
+    ) -> None:
+        """訂閱到期事件"""
+        channel_id = payload.broadcaster.id
+        broadcaster_name = payload.broadcaster.name
+        user_name = payload.user.display_name or payload.user.name or ""
+        try:
+            if hasattr(self.bot, "analytics"):
+                await self.bot.analytics.upsert_viewer_subscription_end(
+                    channel_id=channel_id,
+                    user_id=payload.user.id,
+                    username=payload.user.name or user_name,
+                    display_name=payload.user.display_name,
+                )
+            LOGGER.info(f"[{broadcaster_name}] SubEnd: {user_name}")
+        except Exception as e:
+            LOGGER.error(f"[{broadcaster_name}] SubEnd: {user_name} (error: {e})")
+
+    @commands.Component.listener()
+    async def event_moderator_add(
+        self,
+        payload: twitchio.ChannelModeratorAdd,
+    ) -> None:
+        """頻道新增管理員"""
+        channel_id = payload.broadcaster.id
+        user_name = payload.user.display_name or payload.user.name or ""
+        try:
+            if hasattr(self.bot, "analytics"):
+                await self.bot.analytics.upsert_viewer_mod_status(
+                    channel_id=channel_id,
+                    user_id=payload.user.id,
+                    username=payload.user.name or user_name,
+                    display_name=payload.user.display_name,
+                    is_mod=True,
+                )
+            LOGGER.info(f"[{payload.broadcaster.name}] ModAdd: {user_name}")
+        except Exception as e:
+            LOGGER.error(f"[{payload.broadcaster.name}] ModAdd: {user_name} (error: {e})")
+
+    @commands.Component.listener()
+    async def event_moderator_remove(
+        self,
+        payload: twitchio.ChannelModeratorRemove,
+    ) -> None:
+        """頻道移除管理員"""
+        channel_id = payload.broadcaster.id
+        user_name = payload.user.display_name or payload.user.name or ""
+        try:
+            if hasattr(self.bot, "analytics"):
+                await self.bot.analytics.upsert_viewer_mod_status(
+                    channel_id=channel_id,
+                    user_id=payload.user.id,
+                    username=payload.user.name or user_name,
+                    display_name=payload.user.display_name,
+                    is_mod=False,
+                )
+            LOGGER.info(f"[{payload.broadcaster.name}] ModRemove: {user_name}")
+        except Exception as e:
+            LOGGER.error(f"[{payload.broadcaster.name}] ModRemove: {user_name} (error: {e})")
+
+    @commands.Component.listener()
+    async def event_vip_add(
+        self,
+        payload: twitchio.ChannelVIPAdd,
+    ) -> None:
+        """頻道新增 VIP"""
+        channel_id = payload.broadcaster.id
+        user_name = payload.user.display_name or payload.user.name or ""
+        try:
+            if hasattr(self.bot, "analytics"):
+                await self.bot.analytics.upsert_viewer_vip_status(
+                    channel_id=channel_id,
+                    user_id=payload.user.id,
+                    username=payload.user.name or user_name,
+                    display_name=payload.user.display_name,
+                    is_vip=True,
+                )
+            LOGGER.info(f"[{payload.broadcaster.name}] VIPAdd: {user_name}")
+        except Exception as e:
+            LOGGER.error(f"[{payload.broadcaster.name}] VIPAdd: {user_name} (error: {e})")
+
+    @commands.Component.listener()
+    async def event_vip_remove(
+        self,
+        payload: twitchio.ChannelVIPRemove,
+    ) -> None:
+        """頻道移除 VIP"""
+        channel_id = payload.broadcaster.id
+        user_name = payload.user.display_name or payload.user.name or ""
+        try:
+            if hasattr(self.bot, "analytics"):
+                await self.bot.analytics.upsert_viewer_vip_status(
+                    channel_id=channel_id,
+                    user_id=payload.user.id,
+                    username=payload.user.name or user_name,
+                    display_name=payload.user.display_name,
+                    is_vip=False,
+                )
+            LOGGER.info(f"[{payload.broadcaster.name}] VIPRemove: {user_name}")
+        except Exception as e:
+            LOGGER.error(f"[{payload.broadcaster.name}] VIPRemove: {user_name} (error: {e})")
+
+    @commands.Component.listener()
+    async def event_ban(
+        self,
+        payload: twitchio.ChannelBan,
+    ) -> None:
+        """封禁事件"""
+        channel_id = payload.broadcaster.id
+        user_name = payload.user.display_name or payload.user.name or ""
+        try:
+            if hasattr(self.bot, "analytics"):
+                ends_at: datetime | None = getattr(payload, "ends_at", None)
+                reason: str | None = getattr(payload, "reason", None) or None
+                await self.bot.analytics.upsert_viewer_ban(
+                    channel_id=channel_id,
+                    user_id=payload.user.id,
+                    username=payload.user.name or user_name,
+                    display_name=payload.user.display_name,
+                    ban_expires_at=ends_at,
+                    ban_reason=reason,
+                )
+            LOGGER.info(f"[{payload.broadcaster.name}] Ban: {user_name}")
+        except Exception as e:
+            LOGGER.error(f"[{payload.broadcaster.name}] Ban: {user_name} (error: {e})")
+
+    @commands.Component.listener()
+    async def event_unban(
+        self,
+        payload: twitchio.ChannelUnban,
+    ) -> None:
+        """解除封禁事件"""
+        channel_id = payload.broadcaster.id
+        user_name = payload.user.display_name or payload.user.name or ""
+        try:
+            if hasattr(self.bot, "analytics"):
+                await self.bot.analytics.upsert_viewer_unban(
+                    channel_id=channel_id,
+                    user_id=payload.user.id,
+                    username=payload.user.name or user_name,
+                    display_name=payload.user.display_name,
+                )
+            LOGGER.info(f"[{payload.broadcaster.name}] Unban: {user_name}")
+        except Exception as e:
+            LOGGER.error(f"[{payload.broadcaster.name}] Unban: {user_name} (error: {e})")
 
 
 async def setup(bot: commands.Bot) -> None:
