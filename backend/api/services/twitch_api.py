@@ -399,6 +399,59 @@ class TwitchAPIClient:
     # Moderation
     # ------------------------------------------------------------------
 
+    async def _fetch_paginated(self, path: str, params: dict, *, token: str) -> list[dict]:
+        """Fetch all pages from a cursor-paginated Helix endpoint."""
+        results: list[dict] = []
+        cursor: str | None = None
+        while True:
+            p = {**params, "first": 100}
+            if cursor:
+                p["after"] = cursor
+            response = await self._helix_get(path, p, token=token)
+            if not response or response.status_code != 200:
+                LOGGER.warning(
+                    "Paginated fetch of %s stopped: status=%s",
+                    path,
+                    response.status_code if response else "no_response",
+                )
+                break
+            body = response.json()
+            results.extend(body.get("data", []))
+            cursor = body.get("pagination", {}).get("cursor")
+            if not cursor:
+                break
+        return results
+
+    async def fetch_all_moderators(self, broadcaster_id: str, token: str) -> list[dict]:
+        """Return all moderators for a channel (requires moderation:read scope)."""
+        try:
+            return await self._fetch_paginated(
+                "moderation/moderators", {"broadcaster_id": broadcaster_id}, token=token
+            )
+        except Exception:
+            LOGGER.exception("Error fetching all moderators for %s", broadcaster_id)
+            return []
+
+    async def fetch_all_vips(self, broadcaster_id: str, token: str) -> list[dict]:
+        """Return all VIPs for a channel (requires channel:read:vips scope)."""
+        try:
+            return await self._fetch_paginated(
+                "channels/vips", {"broadcaster_id": broadcaster_id}, token=token
+            )
+        except Exception:
+            LOGGER.exception("Error fetching all VIPs for %s", broadcaster_id)
+            return []
+
+    async def fetch_all_subscribers(self, broadcaster_id: str, token: str) -> list[dict]:
+        """Return all subscribers for a channel (requires channel:read:subscriptions scope)."""
+        try:
+            return await self._fetch_paginated(
+                "subscriptions", {"broadcaster_id": broadcaster_id}, token=token
+            )
+        except Exception:
+            LOGGER.exception("Error fetching all subscribers for %s", broadcaster_id)
+            return []
+
     async def check_bot_is_moderator(
         self, broadcaster_id: str, bot_id: str, access_token: str
     ) -> bool:

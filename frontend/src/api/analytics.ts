@@ -265,6 +265,21 @@ export async function getGlobalBadges(): Promise<GlobalBadgeSets> {
   )
 }
 
+export interface RoleSyncResult {
+  mods_synced: number
+  vips_synced: number
+  subs_synced: number
+}
+
+export async function syncChannelRoles(): Promise<RoleSyncResult> {
+  const response = await apiFetch(API_ENDPOINTS.analytics.syncRoles, {
+    method: 'POST',
+    credentials: 'include',
+  })
+  if (!response.ok) throw new Error(`Role sync failed: ${response.statusText}`)
+  return response.json() as Promise<RoleSyncResult>
+}
+
 export async function getSessionEvents(session_id: number): Promise<StreamEvent[]> {
   return apiCache.fetch(
     CACHE_KEYS.ANALYTICS_SESSION_EVENTS(session_id),

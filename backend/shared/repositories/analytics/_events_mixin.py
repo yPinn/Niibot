@@ -479,6 +479,99 @@ class _AnalyticsEventsMixin:
             display_name,
         )
 
+    _TIER_MAP: dict[str, str] = {"1000": "T1", "2000": "T2", "3000": "T3"}
+
+    async def bulk_upsert_mod_status(self, channel_id: str, mods: list[dict]) -> int:
+        """Set is_mod=TRUE for every user in *mods*. Returns the count upserted."""
+        if not mods:
+            return 0
+        rows = [(channel_id, m["user_id"], m["user_login"], m.get("user_name")) for m in mods]
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.executemany(
+                    """
+                    INSERT INTO viewer_channel_status
+                        (channel_id, user_id, username, display_name, is_mod, updated_at)
+                    VALUES ($1, $2, $3, $4, TRUE, NOW())
+                    ON CONFLICT (channel_id, user_id) DO UPDATE SET
+                        username     = EXCLUDED.username,
+                        display_name = COALESCE(EXCLUDED.display_name,
+                                                viewer_channel_status.display_name),
+                        is_mod       = TRUE,
+                        updated_at   = NOW()
+                    """,
+                    rows,
+                )
+        except UndefinedTableError:
+            LOGGER.warning("viewer_channel_status table missing — bulk mod upsert skipped.")
+            return 0
+        return len(rows)
+
+    async def bulk_upsert_vip_status(self, channel_id: str, vips: list[dict]) -> int:
+        """Set is_vip=TRUE for every user in *vips*. Returns the count upserted."""
+        if not vips:
+            return 0
+        rows = [(channel_id, v["user_id"], v["user_login"], v.get("user_name")) for v in vips]
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.executemany(
+                    """
+                    INSERT INTO viewer_channel_status
+                        (channel_id, user_id, username, display_name, is_vip, updated_at)
+                    VALUES ($1, $2, $3, $4, TRUE, NOW())
+                    ON CONFLICT (channel_id, user_id) DO UPDATE SET
+                        username     = EXCLUDED.username,
+                        display_name = COALESCE(EXCLUDED.display_name,
+                                                viewer_channel_status.display_name),
+                        is_vip       = TRUE,
+                        updated_at   = NOW()
+                    """,
+                    rows,
+                )
+        except UndefinedTableError:
+            LOGGER.warning("viewer_channel_status table missing — bulk VIP upsert skipped.")
+            return 0
+        return len(rows)
+
+    async def bulk_upsert_subscribers(self, channel_id: str, subs: list[dict]) -> int:
+        """Set is_subscribed=TRUE for every user in *subs*. Returns the count upserted."""
+        if not subs:
+            return 0
+        rows = [
+            (
+                channel_id,
+                s["user_id"],
+                s["user_login"],
+                s.get("user_name"),
+                self._TIER_MAP.get(s.get("tier", ""), s.get("tier")),
+                bool(s.get("is_gift", False)),
+            )
+            for s in subs
+        ]
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.executemany(
+                    """
+                    INSERT INTO viewer_channel_status
+                        (channel_id, user_id, username, display_name,
+                         is_subscribed, sub_tier, sub_gifted, updated_at)
+                    VALUES ($1, $2, $3, $4, TRUE, $5, $6, NOW())
+                    ON CONFLICT (channel_id, user_id) DO UPDATE SET
+                        username      = EXCLUDED.username,
+                        display_name  = COALESCE(EXCLUDED.display_name,
+                                                 viewer_channel_status.display_name),
+                        is_subscribed = TRUE,
+                        sub_tier      = EXCLUDED.sub_tier,
+                        sub_gifted    = EXCLUDED.sub_gifted,
+                        updated_at    = NOW()
+                    """,
+                    rows,
+                )
+        except UndefinedTableError:
+            LOGGER.warning("viewer_channel_status table missing — bulk subscriber upsert skipped.")
+            return 0
+        return len(rows)
+
     async def upsert_viewer_profile_cache(
         self,
         channel_id: str,

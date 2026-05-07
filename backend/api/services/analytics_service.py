@@ -62,6 +62,15 @@ class AnalyticsService:
         """Get cached EventSub status for a viewer."""
         return await self.repo.get_viewer_channel_status(channel_id, user_id)
 
+    async def bulk_upsert_mod_status(self, channel_id: str, mods: list[dict]) -> int:
+        return await self.repo.bulk_upsert_mod_status(channel_id, mods)
+
+    async def bulk_upsert_vip_status(self, channel_id: str, vips: list[dict]) -> int:
+        return await self.repo.bulk_upsert_vip_status(channel_id, vips)
+
+    async def bulk_upsert_subscribers(self, channel_id: str, subs: list[dict]) -> int:
+        return await self.repo.bulk_upsert_subscribers(channel_id, subs)
+
     async def upsert_viewer_profile_cache(
         self,
         channel_id: str,

@@ -46,6 +46,7 @@ export const API_ENDPOINTS = {
     sessionEvents: (session_id: number) => join(`/api/analytics/sessions/${session_id}/events`),
     channelBadges: join('/api/analytics/channel/badges'),
     globalBadges: join('/api/analytics/channel/badges/global'),
+    syncRoles: join('/api/analytics/sync-roles'),
   },
   stats: {
     channel: join('/api/stats/channel'),

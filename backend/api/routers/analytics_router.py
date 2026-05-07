@@ -6,12 +6,14 @@ import logging
 from datetime import datetime
 from typing import Annotated, Any
 
+import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, field_validator
 
 from core.dependencies import (
     get_analytics_service,
     get_current_channel_id,
+    get_db_pool,
     get_twitch_api,
 )
 from services import AnalyticsService, TwitchAPIClient
@@ -398,6 +400,47 @@ async def get_global_badges(
     badges = await twitch_api.get_global_badges()
     response.headers["Cache-Control"] = "public, max-age=86400"
     return badges
+
+
+class RoleSyncResult(BaseModel):
+    mods_synced: int
+    vips_synced: int
+    subs_synced: int
+
+
+@router.post("/sync-roles", response_model=RoleSyncResult)
+async def sync_channel_roles(
+    channel_id: str = Depends(get_current_channel_id),
+    service: AnalyticsService = Depends(get_analytics_service),
+    twitch_api: TwitchAPIClient = Depends(get_twitch_api),
+    pool: asyncpg.Pool = Depends(get_db_pool),
+) -> RoleSyncResult:
+    """Bulk-sync current mods, VIPs, and subscribers from Twitch into viewer_channel_status."""
+    from shared.repositories.channel import ChannelRepository
+
+    token_row = await ChannelRepository(pool).get_token(channel_id)
+    if not token_row:
+        raise HTTPException(status_code=400, detail="No broadcaster token stored for this channel")
+
+    token = token_row.token
+    mods, vips, subs = await asyncio.gather(
+        twitch_api.fetch_all_moderators(channel_id, token),
+        twitch_api.fetch_all_vips(channel_id, token),
+        twitch_api.fetch_all_subscribers(channel_id, token),
+    )
+    LOGGER.info(
+        "sync-roles: channel=%s mods=%d vips=%d subs=%d",
+        channel_id,
+        len(mods),
+        len(vips),
+        len(subs),
+    )
+    mod_count, vip_count, sub_count = await asyncio.gather(
+        service.bulk_upsert_mod_status(channel_id, mods),
+        service.bulk_upsert_vip_status(channel_id, vips),
+        service.bulk_upsert_subscribers(channel_id, subs),
+    )
+    return RoleSyncResult(mods_synced=mod_count, vips_synced=vip_count, subs_synced=sub_count)
 
 
 @router.get("/top-commands", response_model=list[CommandStat])

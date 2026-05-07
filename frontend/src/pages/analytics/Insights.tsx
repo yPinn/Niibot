@@ -18,6 +18,8 @@ import {
   getInsights,
   getViewerProfile,
   listViewers,
+  type RoleSyncResult,
+  syncChannelRoles,
   type ViewerProfile,
   type ViewerSessionAttendance,
   type ViewerSummary,
@@ -1406,6 +1408,8 @@ export default function Insights() {
   const [sheetOpen, setSheetOpen] = useState(false)
   const [hoveredUserId, setHoveredUserId] = useState<string | null>(null)
   const [channelBadges, setChannelBadges] = useState<ChannelBadges | null>(null)
+  const [isSyncing, setIsSyncing] = useState(false)
+  const [syncResult, setSyncResult] = useState<RoleSyncResult | null>(null)
   const loadedForRef = useRef<string | null>(null)
 
   const fetchViewers = useCallback(
@@ -1453,6 +1457,22 @@ export default function Insights() {
       .then(setChannelBadges)
       .catch(() => null)
   }, [isInitialized, user])
+
+  const handleSyncRoles = useCallback(async () => {
+    if (isSyncing) return
+    setIsSyncing(true)
+    setSyncResult(null)
+    try {
+      const result = await syncChannelRoles()
+      setSyncResult(result)
+      loadedForRef.current = null
+      void fetchViewers(Number(period))
+    } catch {
+      // silent — button returns to idle state
+    } finally {
+      setIsSyncing(false)
+    }
+  }, [isSyncing, period, fetchViewers])
 
   const handlePeriodChange = (value: string) => {
     if (value === period) return
@@ -1610,12 +1630,32 @@ export default function Insights() {
 
         {/* Right: viewer list */}
         <div className="rounded-lg border bg-card p-section flex flex-col gap-section lg:max-h-[calc(100svh-var(--h-topbar)-2*var(--spacing-page-lg)-var(--spacing-section)-var(--h-page-header))]">
-          <Input
-            placeholder="搜尋觀眾..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="h-10 w-44 self-end shrink-0"
-          />
+          <div className="flex items-center gap-2 self-end shrink-0">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={handleSyncRoles}
+                  disabled={isSyncing}
+                  className="flex items-center gap-1.5 h-10 px-3 rounded-md border bg-background text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  <Icon
+                    icon={isSyncing ? 'fa-solid fa-spinner' : 'fa-solid fa-rotate'}
+                    className={cn('text-sm', isSyncing && 'animate-spin')}
+                  />
+                  {syncResult
+                    ? `${syncResult.mods_synced}M · ${syncResult.vips_synced}V · ${syncResult.subs_synced}S`
+                    : '同步身分'}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>從 Twitch 同步管理員、VIP 和訂閱者身分標籤</TooltipContent>
+            </Tooltip>
+            <Input
+              placeholder="搜尋觀眾..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="h-10 w-44"
+            />
+          </div>
           {!initialized ? (
             <div className="space-y-1">
               {Array.from({ length: 10 }).map((_, i) => (
