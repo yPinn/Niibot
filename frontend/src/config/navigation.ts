@@ -31,6 +31,10 @@ export const navigationData = {
       icon: 'fa-solid fa-puzzle-piece',
       items: [
         {
+          title: 'Chat Overlay',
+          url: '/modules/chat-overlay',
+        },
+        {
           title: 'Game Queue',
           url: '/modules/game-queue',
         },
