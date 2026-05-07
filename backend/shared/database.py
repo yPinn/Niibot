@@ -41,7 +41,7 @@ class PoolConfig:
     _SERVICE_PRESETS: ClassVar[dict[str, dict]] = {
         "api": {"min_size": 1, "max_size": 3},
         "discord": {"min_size": 1, "max_size": 2},
-        "twitch": {"min_size": 1, "max_size": 3},
+        "twitch": {"min_size": 1, "max_size": 5},
     }
 
     @classmethod

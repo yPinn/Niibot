@@ -269,34 +269,41 @@ class _SessionMixin:
         return viewers
 
     async def _watch_time_loop(self) -> None:
-        """Increment watch_seconds for all chatroom viewers every 5 minutes."""
-        _interval = 300
+        """Increment watch_seconds for all chatroom viewers every 60 seconds."""
+        _interval = 60
+        _sem = asyncio.Semaphore(5)
         await asyncio.sleep(_interval)
+
+        async def _process_channel(channel_id: str, session_id: int) -> None:
+            token_obj = await self.channels.get_token(channel_id)  # type: ignore[attr-defined]
+            if not token_obj:
+                return
+            viewers = await self._fetch_chatters(channel_id, token_obj.token)
+            if not viewers:
+                return
+            async with _sem:
+                await self.analytics.increment_watch_seconds(  # type: ignore[attr-defined]
+                    session_id=session_id,
+                    channel_id=channel_id,
+                    viewers=viewers,
+                    seconds=_interval,
+                )
+            LOGGER.debug(
+                f"Watch time: +{_interval}s for {len(viewers)} viewers in channel {channel_id}"
+            )
 
         while True:
             try:
-                for channel_id, session_id in list(self._active_sessions.items()):  # type: ignore[attr-defined]
-                    try:
-                        token_obj = await self.channels.get_token(channel_id)  # type: ignore[attr-defined]
-                        if not token_obj:
-                            continue
-
-                        viewers = await self._fetch_chatters(channel_id, token_obj.token)
-                        if not viewers:
-                            continue
-
-                        await self.analytics.increment_watch_seconds(  # type: ignore[attr-defined]
-                            session_id=session_id,
-                            channel_id=channel_id,
-                            viewers=viewers,
-                            seconds=_interval,
-                        )
-                        LOGGER.debug(
-                            f"Watch time: +{_interval}s for {len(viewers)} viewers "
-                            f"in channel {channel_id}"
-                        )
-                    except Exception as e:
-                        LOGGER.warning(f"Watch time error for channel {channel_id}: {e}")
+                channels = list(self._active_sessions.items())  # type: ignore[attr-defined]
+                results = await asyncio.gather(
+                    *[_process_channel(cid, sid) for cid, sid in channels],
+                    return_exceptions=True,
+                )
+                for (cid, _), exc in zip(channels, results, strict=True):
+                    if isinstance(exc, asyncio.CancelledError):
+                        raise exc
+                    if isinstance(exc, Exception):
+                        LOGGER.warning(f"Watch time error for channel {cid}: {exc}")
             except asyncio.CancelledError:
                 break
             except Exception as e:
