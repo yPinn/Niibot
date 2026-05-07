@@ -52,7 +52,7 @@ export default function SidebarLayout() {
           </div>
           {user && <OnlineDropdown />}
         </header>
-        <div className="flex-1 min-h-0 overflow-auto">
+        <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
           <Outlet />
         </div>
       </SidebarInset>
