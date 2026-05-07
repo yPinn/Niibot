@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { motion } from 'motion/react'
 import { toast } from 'sonner'
 
@@ -341,15 +341,44 @@ function ChatPreview({ s }: { s: ChatCssSettings }) {
 
   function badges(msg: DemoMsg) {
     if (s.hideBadges) return null
-    return (
-      <>
-        {msg.is_mod && <span style={{ marginRight: 3, fontSize: '0.85em' }}>🗡️</span>}
-        {msg.is_vip && <span style={{ marginRight: 3, fontSize: '0.85em' }}>💎</span>}
-        {msg.is_sub && !msg.is_mod && !msg.is_vip && (
-          <span style={{ marginRight: 3, fontSize: '0.85em' }}>⭐</span>
-        )}
-      </>
-    )
+    const items: React.ReactNode[] = []
+    if (msg.is_mod)
+      items.push(
+        <img
+          key="mod"
+          src="/twitch-badges/moderator/1x.png"
+          alt="mod"
+          width={18}
+          height={18}
+          style={{ marginRight: 3, verticalAlign: 'middle' }}
+          draggable={false}
+        />
+      )
+    if (msg.is_vip)
+      items.push(
+        <img
+          key="vip"
+          src="/twitch-badges/vip/1x.png"
+          alt="vip"
+          width={18}
+          height={18}
+          style={{ marginRight: 3, verticalAlign: 'middle' }}
+          draggable={false}
+        />
+      )
+    if (msg.is_sub && !msg.is_mod && !msg.is_vip)
+      items.push(
+        <img
+          key="sub"
+          src="/twitch-badges/subscriber/1x.png"
+          alt="sub"
+          width={18}
+          height={18}
+          style={{ marginRight: 3, verticalAlign: 'middle' }}
+          draggable={false}
+        />
+      )
+    return items.length > 0 ? <>{items}</> : null
   }
 
   function renderMsg(msg: DemoMsg): React.ReactNode {
