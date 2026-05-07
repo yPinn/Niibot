@@ -18,7 +18,6 @@ import {
   getInsights,
   getViewerProfile,
   listViewers,
-  type RoleSyncResult,
   syncChannelRoles,
   type ViewerProfile,
   type ViewerSessionAttendance,
@@ -1409,7 +1408,6 @@ export default function Insights() {
   const [hoveredUserId, setHoveredUserId] = useState<string | null>(null)
   const [channelBadges, setChannelBadges] = useState<ChannelBadges | null>(null)
   const [isSyncing, setIsSyncing] = useState(false)
-  const [syncResult, setSyncResult] = useState<RoleSyncResult | null>(null)
   const loadedForRef = useRef<string | null>(null)
 
   const fetchViewers = useCallback(
@@ -1461,10 +1459,8 @@ export default function Insights() {
   const handleSyncRoles = useCallback(async () => {
     if (isSyncing) return
     setIsSyncing(true)
-    setSyncResult(null)
     try {
-      const result = await syncChannelRoles()
-      setSyncResult(result)
+      await syncChannelRoles()
       void fetchViewers(Number(period), true)
     } catch {
       // silent — button returns to idle state
@@ -1635,15 +1631,12 @@ export default function Insights() {
                 <button
                   onClick={handleSyncRoles}
                   disabled={isSyncing}
-                  className="flex items-center gap-1.5 h-10 px-3 rounded-md border bg-background text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="flex items-center justify-center size-10 rounded-md border bg-background text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   <Icon
                     icon={isSyncing ? 'fa-solid fa-spinner' : 'fa-solid fa-rotate'}
                     className={cn('text-sm', isSyncing && 'animate-spin')}
                   />
-                  {syncResult
-                    ? `${syncResult.mods_synced}M · ${syncResult.vips_synced}V · ${syncResult.subs_synced}S`
-                    : '同步身分'}
                 </button>
               </TooltipTrigger>
               <TooltipContent>從 Twitch 同步管理員、VIP 和訂閱者身分標籤</TooltipContent>
