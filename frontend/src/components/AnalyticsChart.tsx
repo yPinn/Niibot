@@ -344,22 +344,22 @@ export default function AnalyticsChart({
     <Card className={`flex flex-col ${className}`}>
       <CardContent className="px-4 py-1 flex-1 min-h-0 flex flex-col">
         <div className="flex flex-col flex-1 min-h-0 gap-3">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-5 shrink-0 mb-2">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-5 shrink-0 mb-1 sm:mb-2">
             {loading
               ? Array.from({ length: 4 }).map((_, i) => (
-                  <Skeleton key={i} className="h-18 rounded-lg" />
+                  <Skeleton key={i} className="h-14 sm:h-18 rounded-lg" />
                 ))
               : stats.map(stat => (
                   <button
                     key={stat.mode}
                     onClick={() => setChartMode(stat.mode)}
-                    className={`rounded-lg border px-3 py-2 transition-all text-left ${
+                    className={`rounded-lg border px-2 py-1.5 sm:px-3 sm:py-2 transition-all text-left ${
                       chartMode === stat.mode
                         ? 'bg-primary/10 border-primary shadow-sm'
                         : 'bg-muted/30 hover:bg-muted/50'
                     }`}
                   >
-                    <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center justify-between mb-0.5 sm:mb-1">
                       <span
                         className={`text-label font-medium ${chartMode === stat.mode ? 'text-primary' : 'text-foreground/80'}`}
                       >
@@ -372,7 +372,7 @@ export default function AnalyticsChart({
                     </div>
                     <div className="flex items-baseline gap-1">
                       <span
-                        className={`text-card-title font-bold tabular-nums ${chartMode === stat.mode ? 'text-primary' : 'text-foreground'}`}
+                        className={`text-sub sm:text-card-title font-bold tabular-nums ${chartMode === stat.mode ? 'text-primary' : 'text-foreground'}`}
                       >
                         {stat.value}
                       </span>
@@ -388,7 +388,7 @@ export default function AnalyticsChart({
           </div>
 
           <div
-            className="flex-1 min-h-0 h-48 sm:h-72.5 relative select-none **:outline-none"
+            className="h-48 sm:h-64 lg:h-80 relative select-none **:outline-none"
             onMouseDown={e => e.preventDefault()}
           >
             {isEmpty && (

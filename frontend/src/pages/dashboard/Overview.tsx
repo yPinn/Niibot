@@ -76,14 +76,9 @@ export default function Dashboard() {
   }, [channels, fetchStats, fetchAnalytics])
 
   return (
-    <main className="grid grid-rows-[auto_auto] gap-section p-page lg:p-page-lg flex-1 min-h-0 overflow-y-auto lg:grid-rows-[1fr_auto] lg:overflow-hidden transition-all duration-slow ease-default">
-      <SlideUp inView className="min-h-0 lg:flex lg:flex-col">
-        <AnalyticsChart
-          data={analytics}
-          loading={analyticsLoading}
-          days={30}
-          className="h-105 lg:flex-1 lg:min-h-0"
-        />
+    <main className="flex flex-col flex-1 min-h-0 gap-section p-page overflow-y-auto lg:p-page-lg transition-all duration-slow ease-default">
+      <SlideUp inView>
+        <AnalyticsChart data={analytics} loading={analyticsLoading} days={30} />
       </SlideUp>
 
       <Stagger inView className="grid grid-cols-1 lg:grid-cols-3 gap-section">
