@@ -474,8 +474,13 @@ class _AnalyticsQueryMixin:
                     ),
                     event_totals AS (
                         SELECT
-                            COALESCE(SUM(CASE WHEN event_type = 'follow'    THEN 1 END), 0) AS total_follows,
-                            COALESCE(SUM(CASE WHEN event_type = 'subscribe' THEN 1 END), 0) AS total_subs,
+                            COALESCE(SUM(CASE WHEN event_type = 'follow' THEN 1 END), 0) AS total_follows,
+                            COALESCE(SUM(CASE WHEN event_type = 'subscribe'
+                                              AND NOT COALESCE((metadata->>'is_gift')::bool, false)
+                                         THEN 1 END), 0) AS total_organic_subs,
+                            COALESCE(SUM(CASE WHEN event_type = 'subscribe'
+                                              AND COALESCE((metadata->>'is_gift')::bool, false)
+                                         THEN 1 END), 0) AS total_gift_subs,
                             COALESCE(SUM(CASE WHEN event_type = 'raid'      THEN 1 END), 0) AS total_raids,
                             COALESCE(SUM(CASE WHEN event_type = 'cheer'     THEN 1 END), 0) AS total_cheers,
                             COALESCE(SUM(
@@ -492,7 +497,8 @@ class _AnalyticsQueryMixin:
                         m.total_messages,
                         c.total_commands,
                         e.total_follows,
-                        e.total_subs,
+                        e.total_organic_subs,
+                        e.total_gift_subs,
                         e.total_raids,
                         e.total_cheers,
                         e.total_bits
@@ -508,7 +514,8 @@ class _AnalyticsQueryMixin:
                     "total_messages": int(row["total_messages"]),
                     "total_commands": int(row["total_commands"]),
                     "total_follows": int(row["total_follows"]),
-                    "total_subs": int(row["total_subs"]),
+                    "total_organic_subs": int(row["total_organic_subs"]),
+                    "total_gift_subs": int(row["total_gift_subs"]),
                     "total_raids": int(row["total_raids"]),
                     "total_cheers": int(row["total_cheers"]),
                     "total_bits": int(row["total_bits"]),
@@ -810,22 +817,39 @@ class _AnalyticsQueryMixin:
                 )
                 return row["occurred_at"] if row else None
 
-        async def _streak() -> int:
+        async def _streak() -> tuple[int, int]:
             try:
                 async with self.pool.acquire() as conn:
                     row = await conn.fetchrow(
                         """
-                        SELECT streak_count FROM viewer_attendance_streaks
+                        SELECT streak_count, best_streak FROM viewer_attendance_streaks
                         WHERE channel_id = $1 AND user_id = $2
                         """,
                         channel_id,
                         user_id,
                     )
-                    return int(row["streak_count"]) if row else 0
+                    if not row:
+                        return 0, 0
+                    return int(row["streak_count"]), int(row["best_streak"])
             except asyncpg.exceptions.UndefinedTableError:
-                return 0
+                return 0, 0
+            except asyncpg.exceptions.UndefinedColumnError:
+                async with self.pool.acquire() as conn:
+                    row = await conn.fetchrow(
+                        "SELECT streak_count FROM viewer_attendance_streaks "
+                        "WHERE channel_id = $1 AND user_id = $2",
+                        channel_id,
+                        user_id,
+                    )
+                    return (int(row["streak_count"]) if row else 0), 0
 
-        stats, events, status, streak_count, follow_since_fallback = await asyncio.gather(
+        (
+            stats,
+            events,
+            status,
+            (streak_count, best_streak),
+            follow_since_fallback,
+        ) = await asyncio.gather(
             _stats(), _events(), _status(), _streak(), _follow_since_fallback()
         )
         if stats is None:
@@ -836,13 +860,16 @@ class _AnalyticsQueryMixin:
         total_bits = sum(
             int((e["metadata"] or {}).get("bits", 0)) for e in events if e["event_type"] == "cheer"
         )
+        total_gifts = int((status or {}).get("total_gifts_given", 0))
 
         return {
             "user_id": user_id,
             **stats,
             "total_bits": total_bits,
+            "total_gifts": total_gifts,
             "follow_since": follow_since,
             "streak_count": streak_count,
+            "best_streak": best_streak,
             "events": events,
             "channel_status": status,
         }
@@ -989,7 +1016,8 @@ class _AnalyticsQueryMixin:
                         is_banned, ban_expires_at, ban_reason,
                         follow_since,
                         profile_image_url, offline_image_url,
-                        account_created_at, broadcaster_type
+                        account_created_at, broadcaster_type,
+                        total_gifts_given
                     FROM viewer_channel_status
                     WHERE channel_id = $1 AND user_id = $2
                     """,

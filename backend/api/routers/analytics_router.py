@@ -97,7 +97,8 @@ class ChannelInsights(BaseModel):
     total_messages: int
     total_commands: int
     total_follows: int
-    total_subs: int
+    total_organic_subs: int
+    total_gift_subs: int
     total_raids: int
     total_cheers: int
     total_bits: int
@@ -167,8 +168,10 @@ class ViewerProfile(BaseModel):
     last_seen: datetime | None
     watch_seconds: int
     total_bits: int
+    total_gifts: int = 0
     follow_since: datetime | None = None
     streak_count: int = 0
+    best_streak: int = 0
     twitch: ViewerTwitchStatus | None = None
     events: list[ViewerEvent]
     session_attendance: list[ViewerSessionAttendance] = []
@@ -406,6 +409,7 @@ class RoleSyncResult(BaseModel):
     mods_synced: int
     vips_synced: int
     subs_synced: int
+    follows_synced: int = 0
 
 
 @router.post("/sync-roles", response_model=RoleSyncResult)
@@ -415,7 +419,7 @@ async def sync_channel_roles(
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
     pool: asyncpg.Pool = Depends(get_db_pool),
 ) -> RoleSyncResult:
-    """Bulk-sync current mods, VIPs, and subscribers from Twitch into viewer_channel_status."""
+    """Bulk-sync roles and follow dates from Twitch into viewer_channel_status."""
     from shared.repositories.channel import ChannelRepository
 
     token_row = await ChannelRepository(pool).get_token(channel_id)
@@ -423,24 +427,32 @@ async def sync_channel_roles(
         raise HTTPException(status_code=400, detail="No broadcaster token stored for this channel")
 
     token = token_row.token
-    mods, vips, subs = await asyncio.gather(
+    mods, vips, subs, followers = await asyncio.gather(
         twitch_api.fetch_all_moderators(channel_id, token),
         twitch_api.fetch_all_vips(channel_id, token),
         twitch_api.fetch_all_subscribers(channel_id, token),
+        twitch_api.fetch_all_followers(channel_id, token),
     )
     LOGGER.info(
-        "sync-roles: channel=%s mods=%d vips=%d subs=%d",
+        "sync-roles: channel=%s mods=%d vips=%d subs=%d follows=%d",
         channel_id,
         len(mods),
         len(vips),
         len(subs),
+        len(followers),
     )
-    mod_count, vip_count, sub_count = await asyncio.gather(
+    mod_count, vip_count, sub_count, follow_count = await asyncio.gather(
         service.bulk_upsert_mod_status(channel_id, mods),
         service.bulk_upsert_vip_status(channel_id, vips),
         service.bulk_upsert_subscribers(channel_id, subs),
+        service.bulk_upsert_follow_dates(channel_id, followers),
     )
-    return RoleSyncResult(mods_synced=mod_count, vips_synced=vip_count, subs_synced=sub_count)
+    return RoleSyncResult(
+        mods_synced=mod_count,
+        vips_synced=vip_count,
+        subs_synced=sub_count,
+        follows_synced=follow_count,
+    )
 
 
 @router.get("/top-commands", response_model=list[CommandStat])

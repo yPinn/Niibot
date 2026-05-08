@@ -533,6 +533,53 @@ class _AnalyticsEventsMixin:
             return 0
         return len(rows)
 
+    async def bulk_upsert_follow_dates(self, channel_id: str, followers: list[dict]) -> int:
+        """Write follow_since for all followers, preserving any value already in DB.
+
+        followers: list of {"user_id", "user_login", "user_name", "followed_at" (ISO 8601)}
+        Uses COALESCE so existing follow_since is never overwritten.
+        """
+        if not followers:
+            return 0
+        rows: list[tuple] = []
+        for f in followers:
+            try:
+                followed_at = datetime.fromisoformat(f["followed_at"].replace("Z", "+00:00"))
+            except (ValueError, KeyError):
+                continue
+            rows.append(
+                (
+                    channel_id,
+                    f["user_id"],
+                    f.get("user_login") or "",
+                    f.get("user_name"),
+                    followed_at,
+                )
+            )
+        if not rows:
+            return 0
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.executemany(
+                    """
+                    INSERT INTO viewer_channel_status
+                        (channel_id, user_id, username, display_name, follow_since, updated_at)
+                    VALUES ($1, $2, $3, $4, $5, NOW())
+                    ON CONFLICT (channel_id, user_id) DO UPDATE SET
+                        username     = EXCLUDED.username,
+                        display_name = COALESCE(EXCLUDED.display_name,
+                                                viewer_channel_status.display_name),
+                        follow_since = COALESCE(viewer_channel_status.follow_since,
+                                                EXCLUDED.follow_since),
+                        updated_at   = NOW()
+                    """,
+                    rows,
+                )
+        except UndefinedTableError:
+            LOGGER.warning("viewer_channel_status table missing — follow date upsert skipped.")
+            return 0
+        return len(rows)
+
     async def bulk_upsert_subscribers(self, channel_id: str, subs: list[dict]) -> int:
         """Set is_subscribed=TRUE for every user in *subs*. Returns the count upserted."""
         if not subs:

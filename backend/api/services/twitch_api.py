@@ -409,10 +409,17 @@ class TwitchAPIClient:
                 p["after"] = cursor
             response = await self._helix_get(path, p, token=token)
             if not response or response.status_code != 200:
+                body_hint = ""
+                if response is not None:
+                    try:
+                        body_hint = response.json().get("message", "") or response.text[:200]
+                    except Exception:
+                        body_hint = response.text[:200]
                 LOGGER.warning(
-                    "Paginated fetch of %s stopped: status=%s",
+                    "Paginated fetch of %s stopped: status=%s%s",
                     path,
                     response.status_code if response else "no_response",
+                    f" — {body_hint}" if body_hint else "",
                 )
                 break
             body = response.json()
@@ -450,6 +457,30 @@ class TwitchAPIClient:
             )
         except Exception:
             LOGGER.exception("Error fetching all subscribers for %s", broadcaster_id)
+            return []
+
+    async def fetch_all_followers(self, broadcaster_id: str, token: str) -> list[dict]:
+        """Return all followers for a channel (requires moderator:read:followers scope).
+
+        Each dict contains user_id, user_login, user_name, followed_at.
+        Returns empty list on error or missing scope.
+        """
+        try:
+            results = await self._fetch_paginated(
+                "channels/followers", {"broadcaster_id": broadcaster_id}, token=token
+            )
+            return [
+                {
+                    "user_id": r["user_id"],
+                    "user_login": r.get("user_login", ""),
+                    "user_name": r.get("user_name"),
+                    "followed_at": r["followed_at"],
+                }
+                for r in results
+                if r.get("user_id") and r.get("followed_at")
+            ]
+        except Exception:
+            LOGGER.exception("Error fetching all followers for %s", broadcaster_id)
             return []
 
     async def check_bot_is_moderator(

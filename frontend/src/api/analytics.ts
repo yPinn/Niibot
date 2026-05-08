@@ -108,7 +108,8 @@ export interface ChannelInsights {
   total_messages: number
   total_commands: number
   total_follows: number
-  total_subs: number
+  total_organic_subs: number
+  total_gift_subs: number
   total_raids: number
   total_cheers: number
   total_bits: number
@@ -126,7 +127,7 @@ export async function getInsights(days: number = 30): Promise<ChannelInsights> {
       if (!response.ok) throw new Error(`Failed to fetch insights: ${response.statusText}`)
       return response.json() as Promise<ChannelInsights>
     },
-    { ttl: 5 * 60 * 1000 }
+    { ttl: ANALYTICS_TTL }
   )
 }
 
@@ -181,6 +182,7 @@ export interface ViewerProfile extends ViewerSummary {
   broadcaster_type: string | null
   follow_since: string | null
   streak_count: number
+  best_streak: number
   twitch: ViewerTwitchStatus | null
   events: ViewerEvent[]
   session_attendance: ViewerSessionAttendance[]
@@ -200,7 +202,7 @@ export async function listViewers(
       if (!response.ok) throw new Error(`Failed to fetch viewers: ${response.statusText}`)
       return response.json() as Promise<ViewerSummary[]>
     },
-    { ttl: 5 * 60 * 1000, forceRefresh }
+    { ttl: ANALYTICS_TTL, forceRefresh }
   )
 }
 
@@ -215,7 +217,7 @@ export async function getViewerProfile(userId: string, days: number = 30): Promi
       if (!response.ok) throw new Error(`Failed to fetch viewer profile: ${response.statusText}`)
       return response.json() as Promise<ViewerProfile>
     },
-    { ttl: 5 * 60 * 1000 }
+    { ttl: ANALYTICS_TTL }
   )
 }
 
@@ -273,6 +275,7 @@ export interface RoleSyncResult {
   mods_synced: number
   vips_synced: number
   subs_synced: number
+  follows_synced: number
 }
 
 export async function syncChannelRoles(): Promise<RoleSyncResult> {

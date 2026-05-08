@@ -69,8 +69,10 @@ class _AnalyticsSessionMixin:
     async def update_attendance_streaks(self, channel_id: str, session_id: int) -> None:
         """Upsert attendance streaks for all viewers who attended a session.
 
-        Increments streak if the viewer also attended the previous session,
-        otherwise resets to 1.
+        Increments streak_count if the viewer also attended the previous session,
+        otherwise resets to 1. Tracks best_streak as the all-time high water mark.
+        Viewers who attended the previous session but missed this one have their
+        streak_count reset to 0.
         """
         async with self.pool.acquire() as conn:
             await conn.execute(
@@ -106,13 +108,34 @@ class _AnalyticsSessionMixin:
                     LEFT JOIN existing_streaks es ON es.user_id = ca.user_id
                 )
                 INSERT INTO viewer_attendance_streaks
-                    (channel_id, user_id, streak_count, last_session_id, updated_at)
-                SELECT $1, ns.user_id, ns.streak_count, $2, NOW()
+                    (channel_id, user_id, streak_count, best_streak, last_session_id, updated_at)
+                SELECT $1, ns.user_id, ns.streak_count, ns.streak_count, $2, NOW()
                 FROM new_streaks ns
                 ON CONFLICT (channel_id, user_id) DO UPDATE SET
                     streak_count    = EXCLUDED.streak_count,
+                    best_streak     = GREATEST(viewer_attendance_streaks.best_streak,
+                                               EXCLUDED.streak_count),
                     last_session_id = EXCLUDED.last_session_id,
                     updated_at      = EXCLUDED.updated_at
+                """,
+                channel_id,
+                session_id,
+            )
+            # Reset streak for viewers who attended the previous session but missed this one
+            await conn.execute(
+                """
+                UPDATE viewer_attendance_streaks
+                SET streak_count = 0, updated_at = NOW()
+                WHERE channel_id = $1
+                  AND last_session_id = (
+                      SELECT id FROM stream_sessions
+                      WHERE channel_id = $1 AND id < $2
+                      ORDER BY started_at DESC LIMIT 1
+                  )
+                  AND user_id NOT IN (
+                      SELECT user_id FROM chatter_stats
+                      WHERE session_id = $2 AND channel_id = $1
+                  )
                 """,
                 channel_id,
                 session_id,
