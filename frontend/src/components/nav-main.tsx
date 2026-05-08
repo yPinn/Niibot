@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 
 import {
@@ -14,6 +14,7 @@ import {
   SidebarMenuSub,
   SidebarMenuSubButton,
   SidebarMenuSubItem,
+  useSidebar,
 } from '@/components/ui'
 
 export function NavMain({
@@ -31,58 +32,21 @@ export function NavMain({
   }[]
 }) {
   const location = useLocation()
-  const [manuallyOpenedItems, setManuallyOpenedItems] = useState<Set<string>>(new Set())
-  const [manuallyClosedItems, setManuallyClosedItems] = useState<Set<string>>(new Set())
+  const { state: sidebarState, toggleSidebar } = useSidebar()
 
-  const isItemActive = useCallback(
-    (item: (typeof items)[0]) => {
-      return item.items?.some(subItem => location.pathname === subItem.url) ?? false
-    },
-    [location.pathname]
+  // 將 pathname 一起存入，換頁時自動回退至 active route，無需 useEffect
+  const [openItem, setOpenItem] = useState<{ title: string; pathname: string } | null>(null)
+
+  const activeTitle = useMemo(
+    () => items.find(item => item.items?.some(sub => location.pathname === sub.url))?.title ?? null,
+    [items, location.pathname]
   )
 
-  const openItems = useMemo(() => {
-    const open = new Set<string>()
-    items.forEach(item => {
-      const active = isItemActive(item)
-      const manuallyOpened = manuallyOpenedItems.has(item.title)
-      const manuallyClosed = manuallyClosedItems.has(item.title)
-
-      if (manuallyOpened) {
-        open.add(item.title)
-      } else if (manuallyClosed) {
-        // closed
-      } else if (active) {
-        open.add(item.title)
-      }
-    })
-    return open
-  }, [items, isItemActive, manuallyOpenedItems, manuallyClosedItems])
-
-  const toggleItem = (title: string, isOpen: boolean) => {
-    if (isOpen) {
-      setManuallyOpenedItems(prev => {
-        const next = new Set(prev)
-        next.add(title)
-        return next
-      })
-      setManuallyClosedItems(prev => {
-        const next = new Set(prev)
-        next.delete(title)
-        return next
-      })
-    } else {
-      setManuallyClosedItems(prev => {
-        const next = new Set(prev)
-        next.add(title)
-        return next
-      })
-      setManuallyOpenedItems(prev => {
-        const next = new Set(prev)
-        next.delete(title)
-        return next
-      })
+  const isOpen = (title: string) => {
+    if (openItem !== null && openItem.pathname === location.pathname) {
+      return openItem.title === title
     }
+    return activeTitle === title
   }
 
   return (
@@ -93,8 +57,17 @@ export function NavMain({
           <Collapsible
             key={item.title}
             asChild
-            open={openItems.has(item.title)}
-            onOpenChange={isOpen => toggleItem(item.title, isOpen)}
+            open={isOpen(item.title)}
+            onOpenChange={shouldOpen => {
+              if (sidebarState === 'collapsed') {
+                // icon mode：展開 sidebar 並指定要打開的選單
+                toggleSidebar()
+                setOpenItem({ title: item.title, pathname: location.pathname })
+              } else {
+                // accordion：同時只能開一項
+                setOpenItem(shouldOpen ? { title: item.title, pathname: location.pathname } : null)
+              }
+            }}
           >
             <SidebarMenuItem className="group/collapsible">
               <CollapsibleTrigger asChild>
