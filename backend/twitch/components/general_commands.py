@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import random
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -17,12 +16,13 @@ LOGGER: logging.Logger = logging.getLogger(__name__)
 
 FRONTEND_URL = get_settings().frontend_url.rstrip("/")
 
+# 依語氣由輕到重排列，slot = min(int(rank / total * 5), 4)
 _RANK_TEMPLATES = [
-    "何意味？在 {total} 人中才排【第 {rank} 名】喔？才看 {watch} 加上這 {messages} 則留言，就繼續愛看不看吧，我沒關係啦真的😍",
-    "這是真的嗎？從 {total} 人中殺出重圍奪下【第 {rank} 名】，坐了 {watch}、聊了 {messages} 句，你其實是機器人吧 MrDestructoid ",
-    "不是吧，這也能卷？在 {total} 人中你硬是衝到【第 {rank} 名】！待了 {watch}、說了 {messages} 句話，我就問，你不用睡覺嗎？",
-    "666 還有高手！你在 {total} 人中位居【第 {rank} 名】呢！累計待了 {watch}、貢獻 {messages} 則訊息，這數據想低調都難 MingLee",
-    "每當點名你都在！能在 {total} 人中排到【第 {rank} 名】，這 {watch} 的陪伴加上 {messages} 則留言，絕對是真愛 GivePLZ ",
+    "每當點名你都在！能在 {total} 人中排到【第 {rank} 名】，這 {watch} 的陪伴加上 {messages} 則留言，絕對是真愛 GivePLZ ",  # 前 20%
+    "不是吧，這也能卷？在 {total} 人中你硬是衝到【第 {rank} 名】！待了 {watch}、說了 {messages} 句話，我就問，你不用睡覺嗎？",  # 20–40%
+    "這是真的嗎？從 {total} 人中殺出重圍奪下【第 {rank} 名】，坐了 {watch}、聊了 {messages} 句，你其實是機器人吧 MrDestructoid ",  # 40–60%
+    "何意味？在 {total} 人中才排【第 {rank} 名】喔？才看 {watch} 加上這 {messages} 則留言，就繼續愛看不看吧，我沒關係啦真的😍",  # 60–80%
+    "666 還有高手！你在 {total} 人中位居【第 {rank} 名】呢！累計待了 {watch}、貢獻 {messages} 則訊息，這數據想低調都難 MingLee",  # 後 20%
 ]
 
 if TYPE_CHECKING:
@@ -36,7 +36,6 @@ class GeneralCommandsComponent(BotComponent):
         self.bot: Bot = bot  # type: ignore[assignment]
         self.cmd_repo = CommandConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.channel_repo = self.bot.channels  # type: ignore[attr-defined]
-        self._last_rank_template: dict[str, str] = {}
 
     def refresh_pool(self, pool) -> None:
         self.cmd_repo.pool = pool
@@ -195,11 +194,9 @@ class GeneralCommandsComponent(BotComponent):
         else:
             watch_str = f"{mins}分鐘"
 
-        channel_id = ctx.channel.id
-        last = self._last_rank_template.get(channel_id)
-        pool = [t for t in _RANK_TEMPLATES if t != last] or _RANK_TEMPLATES
-        template = random.choice(pool)
-        self._last_rank_template[channel_id] = template
+        total = data["total_viewers"]
+        slot = min(int(data["rank"] / total * 5), 4) if total > 0 else 2
+        template = _RANK_TEMPLATES[slot]
 
         await self._ctx_reply(
             ctx,
