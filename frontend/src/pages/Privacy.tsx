@@ -20,7 +20,7 @@ function Section({
       <h2 className="border-l-2 border-primary pl-3 text-xl font-semibold text-foreground">
         {title}
       </h2>
-      <div className="flex flex-col gap-3 text-sm leading-relaxed text-muted-foreground">
+      <div className="flex flex-col gap-3 text-sub leading-relaxed text-muted-foreground">
         {children}
       </div>
     </section>
@@ -44,8 +44,8 @@ export default function Privacy() {
         {/* Header */}
         <div className="mb-10 flex flex-col gap-2">
           <h1 className="text-3xl font-bold">隱私權政策</h1>
-          <p className="text-xs text-muted-foreground">生效日期：{EFFECTIVE_DATE}</p>
-          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+          <p className="text-label text-muted-foreground">生效日期：{EFFECTIVE_DATE}</p>
+          <p className="mt-2 text-sub leading-relaxed text-muted-foreground">
             本政策說明 Niibot 如何蒐集、使用及保護您的個人資料。使用本服務即表示您同意本政策。
           </p>
         </div>

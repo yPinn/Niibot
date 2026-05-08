@@ -200,7 +200,7 @@ export default function Commands() {
                 </div>
               </div>
             ) : error ? (
-              <div className="flex items-center justify-center py-empty text-destructive">
+              <div className="flex items-center justify-center py-empty text-sub text-destructive">
                 {error}
               </div>
             ) : (

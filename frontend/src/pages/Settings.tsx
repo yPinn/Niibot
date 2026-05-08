@@ -10,6 +10,7 @@ import {
   PLATFORM_LABELS,
   upsertPaymentConfig,
 } from '@/api'
+import { AffiliateLockOverlay } from '@/components/AffiliateLockOverlay'
 import { PageHeader } from '@/components/PageHeader'
 import { PageMain } from '@/components/PageMain'
 import {
@@ -179,16 +180,10 @@ export default function Settings() {
       <SlideUp inView>
         <Card className="relative overflow-hidden">
           {locked && (
-            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-background/80 backdrop-blur-sm rounded-[inherit]">
-              <Icon
-                icon="fa-solid fa-lock"
-                className="text-5xl text-muted-foreground"
-                wrapperClassName="size-16"
-              />
-              <span className="text-sm text-muted-foreground">
-                成為 Twitch 聯盟夥伴或合作夥伴後即可設定金流
-              </span>
-            </div>
+            <AffiliateLockOverlay
+              message="成為 Twitch 聯盟夥伴或合作夥伴後即可設定金流"
+              className="rounded-[inherit]"
+            />
           )}
           <CardHeader>
             <CardTitle>斗內金流設定</CardTitle>
@@ -280,7 +275,7 @@ export default function Settings() {
                               <Icon
                                 icon="fa-solid fa-chevron-down"
                                 wrapperClassName="size-3.5"
-                                className={`text-muted-foreground transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
+                                className={`text-muted-foreground transition-transform duration-slow ease-default ${isOpen ? 'rotate-180' : ''}`}
                               />
                             </div>
                           </CardAction>

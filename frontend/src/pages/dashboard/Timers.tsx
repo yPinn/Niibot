@@ -541,7 +541,7 @@ export default function Timers() {
             {editing?.mode === 'edit' && (
               <div className="flex items-center justify-between">
                 <div className="flex flex-col gap-0.5">
-                  <span className="text-sm font-medium leading-none">啟用</span>
+                  <span className="text-sub font-medium leading-none">啟用</span>
                   <span className="text-label text-muted-foreground">關閉後不會觸發</span>
                 </div>
                 <Switch
@@ -604,7 +604,7 @@ export default function Timers() {
 
                 <div className="flex items-center justify-between">
                   <div className="flex flex-col gap-0.5">
-                    <span className="flex items-center gap-1.5 text-sm font-medium leading-none">
+                    <span className="flex items-center gap-1.5 text-sub font-medium leading-none">
                       公告模式
                       <Badge variant="secondary" className="text-label">
                         需要管理員

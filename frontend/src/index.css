@@ -22,6 +22,8 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* `inline` is critical: without it, Tailwind would inject these into :root,
+   turning same-name var() references into true circular loops. */
 @theme inline {
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -84,12 +86,27 @@
   --text-label: var(--text-label);
 
   /* ── Semantic Spacing Utilities ── */
-  --spacing-page: var(--space-page);
-  --spacing-page-lg: var(--space-page-lg);
-  --spacing-section: var(--space-section);
-  --spacing-card: var(--space-card);
-  --spacing-element: var(--space-element);
-  --spacing-empty: var(--space-empty);
+  --spacing-page: var(--spacing-page);
+  --spacing-page-lg: var(--spacing-page-lg);
+  --spacing-section: var(--spacing-section);
+  --spacing-card: var(--spacing-card);
+  --spacing-element: var(--spacing-element);
+  --spacing-empty: var(--spacing-empty);
+
+  /* ── Font Family ── */
+  --font-mono: var(--font-mono);
+
+  /* ── Animation ── */
+  --duration-fast: var(--duration-fast);
+  --duration-base: var(--duration-base);
+  --duration-slow: var(--duration-slow);
+  --ease-default: var(--ease-default);
+  --ease-spring: var(--ease-spring);
+
+  /* ── Z-Index ── */
+  --z-raised: var(--z-raised);
+  --z-sticky: var(--z-sticky);
+  --z-modal: var(--z-modal);
 
   /* ── Shadow / Elevation ── */
   --shadow-sm: 0 1px 2px 0 oklch(0 0 0 / 5%);
@@ -98,7 +115,17 @@
 }
 
 :root {
-  /* ── Semantic Typography (Tailwind v4 內建 --text-* 直接引用，無需重定義) ── */
+  color-scheme: light;
+
+  /* ── Font Family ── */
+  --font-mono: 'Fira Code', 'Gen Sen Rounded', ui-monospace, monospace;
+
+  /* ── Z-Index ── */
+  --z-raised: 10; /* card overlay, relative context */
+  --z-sticky: 20; /* sidebar handle, sticky bar */
+  --z-modal: 50; /* dialog, sheet, tooltip, spinner */
+
+  /* ── Semantic Typography ── */
   --text-page-title: var(--text-2xl); /* h1: 24px */
   --text-section-title: var(--text-xl); /* h2: 20px */
   --text-card-title: var(--text-lg); /* h3: 18px */
@@ -106,37 +133,37 @@
   --text-sub: var(--text-sm); /* secondary: 14px */
   --text-label: var(--text-xs); /* badge/timestamp: 12px */
 
+  /* ── Semantic Text Colors ── */
+  --text-color-heading: var(--foreground); /* page / section / card titles */
+  --text-color-body: var(--foreground); /* main content text */
+  --text-color-sub: var(--muted-foreground); /* secondary / supporting text */
+  --text-color-label: color-mix(
+    in oklch,
+    var(--muted-foreground) 85%,
+    var(--foreground)
+  ); /* badges, timestamps — slightly deeper than sub to compensate 12px size */
+
   /* ── Semantic Spacing ── */
-  --space-page: 1rem; /* 16px — mobile page padding */
-  --space-page-lg: 1.5rem; /* 24px — desktop page padding */
-  --space-section: 1rem; /* 16px — between cards */
-  --space-card: 1.5rem; /* 24px — inside card/form */
-  --space-element: 0.5rem; /* 8px  — label-input gap */
-  --space-empty: 2rem; /* 32px — empty state padding */
+  --spacing-page: 1rem; /* 16px — mobile page padding */
+  --spacing-page-lg: 1.5rem; /* 24px — desktop page padding */
+  --spacing-section: 1rem; /* 16px — between cards */
+  --spacing-card: 1.5rem; /* 24px — inside card/form */
+  --spacing-element: 0.5rem; /* 8px  — label-input gap */
+  --spacing-empty: 2rem; /* 32px — empty state padding */
 
-  /* ── Layer 2: Semantic Font Weight ── */
-  --font-weight-heading: 600;
-  --font-weight-body: 400;
-  --font-weight-bold: 700;
-
-  /* ── Layer 2: Semantic Line Height ── */
-  --leading-heading: 1.25;
-  --leading-body: 1.5;
-  --leading-tight: 1.15;
-
-  /* ── Layout Heights ── */
-  --h-topbar: 4rem; /* SidebarLayout 頂部導覽列 (h-16) */
-  --h-page-header: calc(
-    var(--text-page-title) * var(--leading-heading) + var(--text-sub) * var(--leading-body) +
-      0.125rem
-  ); /* 標準頁面標題列：h1 + p.mt-0.5 */
+  /* ── Animation ── */
+  --duration-fast: 150ms; /* tooltip movement, micro-interactions */
+  --duration-base: 200ms; /* standard interactive element */
+  --duration-slow: 250ms; /* panel open, collapsible */
+  --ease-default: cubic-bezier(0.4, 0, 0.2, 1); /* smooth in-out for state changes */
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1); /* hover scale, playful bounce */
 
   /* ── Status Colors ── */
-  --status-online: oklch(0.72 0.19 155); /* green */
+  --status-online: oklch(0.67 0.2 155); /* green */
   --status-offline: oklch(0.63 0.24 25); /* red */
   --status-loading: oklch(0.8 0.18 84); /* yellow */
   --status-info: oklch(0.62 0.2 260); /* blue */
-  --status-success: oklch(0.72 0.19 155); /* green (alias) */
+  --status-success: oklch(0.67 0.2 155); /* green (alias) */
   --status-special: oklch(0.62 0.24 295); /* purple — 訂閱等特殊事件 */
   --status-live: oklch(0.65 0.26 27); /* red — live/broadcasting indicator */
   --status-warning: oklch(0.62 0.18 50); /* amber — caution notices */
@@ -156,7 +183,7 @@
   --secondary: oklch(0.95 0.01 293); /* 淡紫灰 */
   --secondary-foreground: oklch(0.25 0.01 293);
   --muted: oklch(0.95 0.008 290); /* 柔紫灰 */
-  --muted-foreground: oklch(0.5 0.02 290);
+  --muted-foreground: oklch(0.46 0.025 290);
   --accent: oklch(0.93 0.02 293); /* 紫調 hover */
   --accent-foreground: oklch(0.25 0.01 293);
   --destructive: oklch(0.577 0.245 27.325);
@@ -180,14 +207,16 @@
 }
 
 .dark {
+  color-scheme: dark;
+
   /* ── Dark Theme (Twitch-inspired: #0E0E10 / #18181B / #1F1F23) ── */
   --background: oklch(0.145 0.005 290); /* Twitch dark bg */
   --foreground: oklch(0.93 0.005 290); /* #DEDEE3 淡紫白 */
-  --card: oklch(0.2 0.008 290); /* #18181B 紫調表面 */
+  --card: oklch(0.22 0.01 290); /* #18181B 紫調表面 */
   --card-foreground: oklch(0.93 0.005 290);
   --popover: oklch(0.2 0.008 290);
   --popover-foreground: oklch(0.93 0.005 290);
-  --primary: oklch(0.62 0.24 293); /* 加亮紫色，深色底需更高明度 */
+  --primary: oklch(0.63 0.26 293); /* 加亮紫色，深色底需更高明度 */
   --primary-foreground: oklch(0.985 0 0);
   --secondary: oklch(0.25 0.015 290);
   --secondary-foreground: oklch(0.93 0.005 290);
@@ -199,7 +228,7 @@
   --destructive-foreground: oklch(0.985 0 0);
   --border: oklch(1 0.01 290 / 10%); /* 微紫半透明邊框 */
   --input: oklch(1 0.01 290 / 15%);
-  --ring: oklch(0.62 0.24 293); /* 紫色 focus ring */
+  --ring: oklch(0.63 0.26 293); /* 紫色 focus ring */
   --chart-1: oklch(0.65 0.25 293); /* purple */
   --chart-2: oklch(0.7 0.15 185); /* teal */
   --chart-3: oklch(0.75 0.17 55); /* orange */
@@ -207,12 +236,12 @@
   --chart-5: oklch(0.65 0.2 255); /* blue */
   --sidebar: oklch(0.18 0.01 290); /* #1F1F23 Twitch sidebar */
   --sidebar-foreground: oklch(0.93 0.005 290);
-  --sidebar-primary: oklch(0.62 0.24 293); /* active = 亮紫色 */
+  --sidebar-primary: oklch(0.63 0.26 293); /* active = 亮紫色 */
   --sidebar-primary-foreground: oklch(0.985 0 0);
   --sidebar-accent: oklch(0.3 0.03 293);
   --sidebar-accent-foreground: oklch(0.93 0.005 290);
   --sidebar-border: oklch(1 0.01 290 / 10%);
-  --sidebar-ring: oklch(0.62 0.24 293);
+  --sidebar-ring: oklch(0.63 0.26 293);
 
   /* ── Status Colors (dark — 降低彩度/提高明度以適應深色背景) ── */
   --status-online: oklch(0.78 0.16 155);
@@ -264,12 +293,7 @@
 
   body {
     @apply bg-background text-foreground;
-    font-family:
-      'Fira Code',
-      'Gen Sen Rounded',
-      system-ui,
-      -apple-system,
-      sans-serif;
+    font-family: var(--font-mono);
     font-size: 0.875rem; /* 14px base for dashboard UI */
     line-height: 1.5;
   }
@@ -289,14 +313,16 @@
   h6 {
     overflow-wrap: break-word;
     text-wrap: balance;
-    font-weight: var(--font-weight-heading);
-    line-height: var(--leading-heading);
+    font-weight: 600;
+    line-height: 1.25;
+    color: var(--text-color-heading);
   }
 
   p {
     overflow-wrap: break-word;
     text-wrap: pretty;
-    line-height: var(--leading-body);
+    line-height: 1.5;
+    color: var(--text-color-body);
   }
 
   /* ── Media ── */
@@ -332,12 +358,18 @@
 /* ── Recharts Typography ── */
 /* SVG <text> doesn't inherit body font-family; force the app stack */
 .recharts-wrapper text {
-  font-family:
-    'Fira Code',
-    'Gen Sen Rounded',
-    system-ui,
-    -apple-system,
-    sans-serif;
+  font-family: var(--font-mono);
+}
+
+/* ── Reduced Motion (a11y) ── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }
 
 /* ── Scrollbar Utility ── */

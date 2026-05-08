@@ -76,7 +76,7 @@ export default function Dashboard() {
   }, [channels, fetchStats, fetchAnalytics])
 
   return (
-    <main className="grid grid-rows-[auto_auto] gap-section p-page lg:p-page-lg flex-1 min-h-0 overflow-y-auto lg:grid-rows-[1fr_auto] lg:overflow-hidden transition-all duration-200">
+    <main className="grid grid-rows-[auto_auto] gap-section p-page lg:p-page-lg flex-1 min-h-0 overflow-y-auto lg:grid-rows-[1fr_auto] lg:overflow-hidden transition-all duration-slow ease-default">
       <SlideUp inView className="min-h-0 lg:flex lg:flex-col">
         <AnalyticsChart
           data={analytics}

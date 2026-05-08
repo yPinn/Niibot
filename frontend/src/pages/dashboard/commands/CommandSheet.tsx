@@ -401,7 +401,7 @@ export function CommandSheet({
           {editing?.mode !== 'create' && (
             <div className="flex items-center justify-between">
               <div className="flex flex-col gap-0.5">
-                <span className="text-sm font-medium leading-none">啟用</span>
+                <span className="text-sub font-medium leading-none">啟用</span>
                 <span className="text-label text-muted-foreground">關閉後不會回應</span>
               </div>
               <Switch
@@ -471,7 +471,7 @@ export function CommandSheet({
               {showTriggerFields && form.matchType !== 'regex' && (
                 <div className="flex items-center justify-between">
                   <div className="flex flex-col gap-0.5">
-                    <span className="text-sm font-medium leading-none">區分大小寫</span>
+                    <span className="text-sub font-medium leading-none">區分大小寫</span>
                     <span className="text-label text-muted-foreground">
                       開啟後 GG 與 gg 視為不同
                     </span>

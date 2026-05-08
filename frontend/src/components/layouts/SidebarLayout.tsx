@@ -1,3 +1,4 @@
+import { Fragment } from 'react'
 import { Outlet } from 'react-router-dom'
 
 import { AppSidebar } from '@/components/app-sidebar'
@@ -33,7 +34,7 @@ export default function SidebarLayout() {
               <Breadcrumb>
                 <BreadcrumbList>
                   {breadcrumbs.map((item, index) => (
-                    <div key={item.href ?? item.label} className="flex items-center gap-2">
+                    <Fragment key={item.href ?? item.label}>
                       {index > 0 && <BreadcrumbSeparator className="hidden md:block" />}
                       <BreadcrumbItem
                         className={index < breadcrumbs.length - 1 ? 'hidden md:block' : ''}
@@ -44,7 +45,7 @@ export default function SidebarLayout() {
                           <BreadcrumbLink href={item.href}>{item.label}</BreadcrumbLink>
                         )}
                       </BreadcrumbItem>
-                    </div>
+                    </Fragment>
                   ))}
                 </BreadcrumbList>
               </Breadcrumb>

@@ -102,7 +102,7 @@ export function NavMain({
                   <Icon icon={item.icon} />
                   <span>{item.title}</span>
                   {item.items?.length ? (
-                    <div className="ml-auto size-4 transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90">
+                    <div className="ml-auto size-4 transition-transform duration-slow ease-default group-data-[state=open]/collapsible:rotate-90">
                       <Icon icon="fa-solid fa-chevron-right" wrapperClassName="size-4" />
                     </div>
                   ) : null}

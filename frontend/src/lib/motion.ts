@@ -11,10 +11,12 @@
 import { type Variants } from 'motion/react'
 
 // ── Duration Tokens (seconds) ──────────────────────────────────────────────
+// Aligned with CSS tokens: fast=150ms, slow=250ms.
+// `enter` is intentionally longer (450ms) for dramatic hero-level entrances.
 export const duration = {
-  fast: 0.15,
-  normal: 0.25,
-  slow: 0.45,
+  fast: 0.15, // --duration-fast: 150ms
+  slow: 0.25, // --duration-slow: 250ms
+  enter: 0.45, // no CSS equivalent — hero zoom, full-page transitions
 } as const
 
 // ── Easing Tokens ─────────────────────────────────────────────────────────
@@ -40,7 +42,7 @@ export const fadeIn: Variants = {
   hidden: { opacity: 0 },
   visible: {
     opacity: 1,
-    transition: { duration: duration.normal, ease: ease.smooth },
+    transition: { duration: duration.slow, ease: ease.smooth },
   },
 }
 
@@ -50,7 +52,7 @@ export const fadeInZoom: Variants = {
   visible: {
     opacity: 1,
     scale: 1,
-    transition: { duration: duration.slow, ease: ease.smooth },
+    transition: { duration: duration.enter, ease: ease.smooth },
   },
 }
 
@@ -60,7 +62,7 @@ export const slideUp: Variants = {
   visible: {
     opacity: 1,
     y: 0,
-    transition: { duration: duration.normal, ease: ease.out },
+    transition: { duration: duration.slow, ease: ease.out },
   },
 }
 
@@ -80,7 +82,7 @@ export const slideInLeft: Variants = {
   visible: {
     opacity: 1,
     x: 0,
-    transition: { duration: duration.normal, ease: ease.out },
+    transition: { duration: duration.slow, ease: ease.out },
   },
 }
 
@@ -90,7 +92,7 @@ export const slideInRight: Variants = {
   visible: {
     opacity: 1,
     x: 0,
-    transition: { duration: duration.normal, ease: ease.out },
+    transition: { duration: duration.slow, ease: ease.out },
   },
 }
 
@@ -118,7 +120,7 @@ export const staggerItem: Variants = {
   visible: {
     opacity: 1,
     y: 0,
-    transition: { duration: duration.normal, ease: ease.out },
+    transition: { duration: duration.slow, ease: ease.out },
   },
 }
 

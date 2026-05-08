@@ -21,7 +21,7 @@ function Section({
       <h2 className="border-l-2 border-primary pl-3 text-xl font-semibold text-foreground">
         {title}
       </h2>
-      <div className="flex flex-col gap-3 text-sm leading-relaxed text-muted-foreground">
+      <div className="flex flex-col gap-3 text-sub leading-relaxed text-muted-foreground">
         {children}
       </div>
     </section>
@@ -45,8 +45,8 @@ export default function Terms() {
         {/* Header */}
         <div className="mb-10 flex flex-col gap-2">
           <h1 className="text-3xl font-bold">服務條款</h1>
-          <p className="text-xs text-muted-foreground">生效日期：{EFFECTIVE_DATE}</p>
-          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+          <p className="text-label text-muted-foreground">生效日期：{EFFECTIVE_DATE}</p>
+          <p className="mt-2 text-sub leading-relaxed text-muted-foreground">
             使用 {SERVICE_NAME} 前，請詳細閱讀以下條款。繼續使用即表示您同意本條款的所有內容。
           </p>
         </div>

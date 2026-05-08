@@ -1,4 +1,4 @@
-import { type ReactElement, useMemo, useRef, useState } from 'react'
+import { type ReactElement, useId, useMemo, useRef, useState } from 'react'
 import {
   Area,
   AreaChart,
@@ -13,20 +13,8 @@ import {
   type YAxisTickContentProps,
 } from 'recharts'
 
+import { type SessionSummary } from '@/api/analytics'
 import { Card, CardContent, Icon, Skeleton } from '@/components/ui'
-
-interface SessionSummary {
-  session_id: number
-  started_at: string
-  ended_at: string | null
-  duration_hours: number
-  total_commands: number
-  new_follows: number
-  new_subs: number
-  title: string | null
-  game_name: string | null
-  game_id: string | null
-}
 
 interface AnalyticsData {
   total_stream_hours: number
@@ -96,7 +84,14 @@ const ChartBackground = ({
 const CustomTick = ({ x, y, payload }: XAxisTickContentProps): ReactElement => (
   <g transform={`translate(${Number(x) || 0},${Number(y) || 0})`}>
     {payload && (
-      <text x={0} y={0} dy={16} textAnchor="middle" fontSize="12" fill="currentColor" opacity={0.7}>
+      <text
+        x={0}
+        y={0}
+        dy={16}
+        textAnchor="middle"
+        style={{ fontSize: 'var(--text-label)' }}
+        fill="var(--muted-foreground)"
+      >
         {payload.value}
       </text>
     )}
@@ -112,9 +107,8 @@ const CustomYAxisTick = ({ x, y, payload }: YAxisTickContentProps): ReactElement
         dx={-8}
         dy={4}
         textAnchor="end"
-        fontSize="12"
-        fill="currentColor"
-        opacity={0.7}
+        style={{ fontSize: 'var(--text-label)' }}
+        fill="var(--muted-foreground)"
       >
         {payload.value}
       </text>
@@ -220,6 +214,7 @@ export default function AnalyticsChart({
 }: AnalyticsChartProps) {
   const [chartMode, setChartMode] = useState<ChartMode>('stream_hours')
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | undefined>(undefined)
+  const gradientId = useId()
   // Track the last active data-point index so we only re-render when the snap target changes,
   // not on every pixel of cursor movement.
   const activeIdxRef = useRef<number | undefined>(undefined)
@@ -397,7 +392,7 @@ export default function AnalyticsChart({
             onMouseDown={e => e.preventDefault()}
           >
             {isEmpty && (
-              <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
+              <div className="absolute inset-0 z-raised flex items-center justify-center pointer-events-none">
                 <span className="text-sm text-muted-foreground/60">尚無直播數據</span>
               </div>
             )}
@@ -406,18 +401,18 @@ export default function AnalyticsChart({
                 data={chartData}
                 margin={{ top: 5, right: 10, left: 0, bottom: 5 }}
                 tabIndex={-1}
-                style={{ outline: 'none' }}
+                className="outline-none"
                 onMouseMove={handleChartMouseMove}
                 onMouseLeave={handleChartMouseLeave}
               >
                 <Customized component={ChartBackground} />
                 <defs>
-                  <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
+                  <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.5} />
                     <stop offset="95%" stopColor="var(--primary)" stopOpacity={0.05} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-border" opacity={0.5} />
+                <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
                 <XAxis dataKey="date" tick={CustomTick} tickLine={false} />
                 <YAxis width={35} tick={CustomYAxisTick} tickLine={false} />
                 {!isEmpty && (
@@ -425,8 +420,7 @@ export default function AnalyticsChart({
                     isAnimationActive={false}
                     position={tooltipPos}
                     wrapperStyle={{
-                      transition:
-                        'transform 180ms ease-out, left 180ms ease-out, top 180ms ease-out',
+                      transition: `transform var(--duration-fast) var(--ease-default), left var(--duration-fast) var(--ease-default), top var(--duration-fast) var(--ease-default)`,
                       pointerEvents: 'none',
                     }}
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -440,8 +434,13 @@ export default function AnalyticsChart({
                   stroke="var(--primary)"
                   strokeWidth={2.5}
                   fillOpacity={1}
-                  fill="url(#colorValue)"
-                  activeDot={{ r: 6, fill: 'var(--primary)', strokeWidth: 2 }}
+                  fill={`url(#${gradientId})`}
+                  activeDot={{
+                    r: 6,
+                    fill: 'var(--primary)',
+                    stroke: 'var(--card)',
+                    strokeWidth: 2,
+                  }}
                 />
               </AreaChart>
             </ResponsiveContainer>

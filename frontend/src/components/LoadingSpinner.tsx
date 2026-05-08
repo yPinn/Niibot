@@ -46,7 +46,7 @@ export function LoadingSpinner({
 
   if (fullScreen) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="fixed inset-0 z-modal flex items-center justify-center bg-background/80 backdrop-blur-sm animate-in fade-in duration-base ease-default">
         {spinner}
       </div>
     )

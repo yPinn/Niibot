@@ -58,7 +58,7 @@ export default function StatsCard({
           </div>
         ) : (
           <Empty className="border-none p-4">
-            <EmptyTitle className="text-sm font-normal text-muted-foreground">暫無資料</EmptyTitle>
+            <EmptyTitle className="text-sub font-normal text-muted-foreground">暫無資料</EmptyTitle>
           </Empty>
         )}
       </CardContent>

@@ -10,7 +10,7 @@ export function AffiliateLockOverlay({ message, className }: AffiliateLockOverla
   return (
     <div
       className={cn(
-        'absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-background/80 backdrop-blur-sm',
+        'absolute inset-0 z-raised flex flex-col items-center justify-center gap-4 bg-background/80 backdrop-blur-sm',
         className
       )}
     >

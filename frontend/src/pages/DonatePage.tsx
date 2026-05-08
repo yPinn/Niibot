@@ -121,9 +121,9 @@ function PlatformCard({ platform, username }: PlatformCardProps) {
         {needsHash ? (
           <>
             <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground w-14 shrink-0">金額</span>
+              <span className="text-sub text-muted-foreground w-14 shrink-0">金額</span>
               <div className="relative flex-1">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sub">
                   NT$
                 </span>
                 <Input
@@ -138,7 +138,7 @@ function PlatformCard({ platform, username }: PlatformCardProps) {
             </div>
 
             <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground w-14 shrink-0">留言</span>
+              <span className="text-sub text-muted-foreground w-14 shrink-0">留言</span>
               <Input
                 value={message}
                 onChange={e => setMessage(e.target.value.slice(0, 50))}
@@ -149,7 +149,7 @@ function PlatformCard({ platform, username }: PlatformCardProps) {
 
             {platform.media_share_enabled && (
               <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground w-14 shrink-0">點播</span>
+                <span className="text-sub text-muted-foreground w-14 shrink-0">點播</span>
                 <Input
                   value={youtubeUrl}
                   onChange={e => setYoutubeUrl(e.target.value)}
@@ -159,10 +159,10 @@ function PlatformCard({ platform, username }: PlatformCardProps) {
             )}
           </>
         ) : (
-          <p className="text-sm text-muted-foreground">點擊前往 PayPal 付款頁面</p>
+          <p className="text-sub text-muted-foreground">點擊前往 PayPal 付款頁面</p>
         )}
 
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        {error && <p className="text-sub text-destructive">{error}</p>}
 
         <Button className="w-full" onClick={handleDonate} disabled={loading}>
           {loading ? <Spinner className="mr-2 h-4 w-4" /> : null}
@@ -248,7 +248,7 @@ export default function DonatePage() {
         {/* Header */}
         <SlideUpSm className="text-center space-y-1">
           <h1 className="text-2xl font-bold">支持 {info.display_name ?? info.username}</h1>
-          <p className="text-sm text-muted-foreground">選擇付款方式完成斗內</p>
+          <p className="text-sub text-muted-foreground">選擇付款方式完成斗內</p>
         </SlideUpSm>
 
         {/* Platform cards */}

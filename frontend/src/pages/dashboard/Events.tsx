@@ -607,7 +607,7 @@ export default function Events() {
             {editingEvent?.event_type === 'raid' && (
               <div className="flex items-center justify-between">
                 <div className="flex flex-col gap-0.5">
-                  <span className="flex items-center gap-1.5 text-sm font-medium leading-none">
+                  <span className="flex items-center gap-1.5 text-sub font-medium leading-none">
                     自動推薦
                     <Badge variant="secondary" className="text-label">
                       需要管理員
@@ -627,7 +627,7 @@ export default function Events() {
 
             <div className="flex items-center justify-between">
               <div className="flex flex-col gap-0.5">
-                <span className="text-sm font-medium leading-none">啟用</span>
+                <span className="text-sub font-medium leading-none">啟用</span>
                 <span className="text-label text-muted-foreground">
                   關閉後事件觸發時不會發送訊息
                 </span>

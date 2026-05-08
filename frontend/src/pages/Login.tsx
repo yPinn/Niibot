@@ -12,7 +12,7 @@ export default function LoginPage() {
       <Button
         variant="ghost"
         size="icon"
-        className="fixed right-4 top-4 z-10"
+        className="fixed right-4 top-4 z-raised"
         onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
       >
         <Icon
