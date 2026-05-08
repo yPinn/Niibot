@@ -17,6 +17,20 @@ x-healthcheck: &default-healthcheck
   retries: 3
   start_period: 30s
 
+# ---------------------------------------------------------------------------
+# Profiles guide:
+#   --profile api      → API + DB
+#   --profile twitch   → Twitch bot + DB
+#   --profile discord  → Discord bot + DB + Instafix + Scrapling
+#   --profile bots     → All bots + DB + Instafix + Scrapling
+#   --profile full     → Everything
+#
+# No profile / postgres only:
+#   docker compose up postgres   → DB only (useful when running backend locally)
+#
+# Note: frontend is deployed on Cloudflare Pages, not via Docker.
+# ---------------------------------------------------------------------------
+
 services:
   postgres:
     image: postgres:16
@@ -58,6 +72,7 @@ services:
     image: ghcr.io/wikidepia/instafix:main
     container_name: niibot-instafix
     restart: unless-stopped
+    profiles: [discord, bots, full]
     networks:
       - niibot-network
 
@@ -68,6 +83,7 @@ services:
       dockerfile: scrapling/Dockerfile
     container_name: niibot-scrapling
     restart: unless-stopped
+    profiles: [discord, bots, full]
     env_file:
       - ./backend/scrapling/.env
     environment:
@@ -97,6 +113,7 @@ services:
         GIT_COMMIT: ${GIT_COMMIT:-unknown}
     container_name: niibot-twitch
     restart: unless-stopped
+    profiles: [twitch, bots, full]
     env_file:
       - ./backend/shared.env
       - ./backend/twitch/.env
@@ -131,6 +148,7 @@ services:
         GIT_COMMIT: ${GIT_COMMIT:-unknown}
     container_name: niibot-discord
     restart: unless-stopped
+    profiles: [discord, bots, full]
     env_file:
       - ./backend/shared.env
       - ./backend/discord/.env
@@ -170,6 +188,7 @@ services:
         GIT_COMMIT: ${GIT_COMMIT:-unknown}
     container_name: niibot-api
     restart: unless-stopped
+    profiles: [api, full]
     ports:
       - "8000:8000"
     env_file:

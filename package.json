@@ -10,7 +10,18 @@
     "prepare": "husky install",
     "lint-all": "npm run lint --prefix frontend && ruff check backend",
     "format-all": "npm run format --prefix frontend && ruff format backend",
-    "test": "npm run lint-all"
+    "test": "npm run lint-all",
+    "build:all": "docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile full build",
+    "build:api": "docker compose -f docker-compose.yml -f docker-compose.dev.yml build api",
+    "dev:api": "docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile api up",
+    "dev:twitch": "docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile twitch up",
+    "dev:discord": "docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile discord up",
+    "dev:bots": "docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile bots up",
+    "dev:full": "docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile full up",
+    "dev:frontend": "npm run dev --prefix frontend",
+    "docker:db": "docker compose -f docker-compose.yml -f docker-compose.dev.yml up postgres",
+    "docker:down": "docker compose down",
+    "docker:ps": "docker compose ps"
   },
   "repository": {
     "type": "git",
