@@ -27,10 +27,12 @@ export function OverlayUrlBlock({ url }: OverlayUrlBlockProps) {
   return (
     <div className="flex items-center gap-2">
       {/* URL display area — click to copy */}
-      <button
-        type="button"
-        className="flex h-9 min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md border bg-background px-3 transition-colors hover:bg-accent"
+      <div
+        role="button"
+        tabIndex={0}
+        className="flex h-9 min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md border bg-background px-3 transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         onClick={copy}
+        onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && copy()}
       >
         <span className="flex shrink-0 items-center gap-1.5 text-muted-foreground">
           <Icon icon="fa-solid fa-tower-broadcast" className="text-xs" />
@@ -66,7 +68,7 @@ export function OverlayUrlBlock({ url }: OverlayUrlBlockProps) {
             className="text-xs"
           />
         </button>
-      </button>
+      </div>
 
       {/* Open in new tab */}
       <Button variant="outline" size="sm" title="在新分頁開啟" asChild>
