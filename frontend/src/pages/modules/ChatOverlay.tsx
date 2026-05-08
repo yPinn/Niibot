@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { OverlayUrlBlock } from '@/components/OverlayUrlBlock'
 import { PageMain } from '@/components/PageMain'
 import {
+  type BadgeEntry,
   Button,
   Card,
   CardContent,
@@ -16,6 +17,7 @@ import {
   SlideUp,
   SlideUpSm,
   Switch,
+  TwitchBadgeGroup,
 } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
@@ -24,28 +26,39 @@ import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
 type BgOption = 'transparent' | 'dark' | 'light'
 type FontSizeOption = 'small' | 'medium' | 'large'
+type SpacingOption = 'compact' | 'normal' | 'loose'
 type MsgBgOption = 'none' | 'dark' | 'rounded'
+type AlignOption = 'left' | 'right'
+type AnimDirOption = 'left' | 'right'
 
 interface ChatCssSettings {
   background: BgOption
   fontSize: FontSizeOption
+  spacing: SpacingOption
   messageBg: MsgBgOption
+  align: AlignOption
   hideHeader: boolean
   hideInput: boolean
+  hideTimestamp: boolean
   hideBadges: boolean
   textShadow: boolean
   animation: boolean
+  animDir: AnimDirOption
 }
 
 const DEFAULT_SETTINGS: ChatCssSettings = {
   background: 'transparent',
   fontSize: 'medium',
+  spacing: 'normal',
   messageBg: 'dark',
+  align: 'left',
   hideHeader: true,
   hideInput: true,
+  hideTimestamp: true,
   hideBadges: false,
   textShadow: false,
   animation: true,
+  animDir: 'left',
 }
 
 const STORAGE_KEY = 'niibot:chat-overlay-css'
@@ -66,7 +79,6 @@ function generateCss(s: ChatCssSettings): string {
   const parts: string[] = []
 
   parts.push('/* Twitch Chat Override — 貼入 OBS Browser Source > Custom CSS */')
-  parts.push('')
 
   const bg =
     s.background === 'dark'
@@ -90,6 +102,7 @@ function generateCss(s: ChatCssSettings): string {
   }
 
   const fontSize = { small: '13px', medium: '15px', large: '18px' }[s.fontSize]
+  const marginY = { compact: '1px', normal: '2px', loose: '5px' }[s.spacing]
   const [msgBg, msgPad, msgRadius] =
     s.messageBg === 'dark'
       ? ['rgba(0, 0, 0, 0.60)', '4px 8px', '4px']
@@ -98,8 +111,12 @@ function generateCss(s: ChatCssSettings): string {
         : ['transparent', '2px 4px', '0']
 
   parts.push(
-    `.chat-line__message {\n  font-size: ${fontSize} !important;\n  background: ${msgBg} !important;\n  padding: ${msgPad} !important;\n  border-radius: ${msgRadius} !important;\n  margin: 2px 0 !important;\n}`
+    `.chat-line__message {\n  font-size: ${fontSize} !important;\n  background: ${msgBg} !important;\n  padding: ${msgPad} !important;\n  border-radius: ${msgRadius} !important;\n  margin: ${marginY} 0 !important;\n}`
   )
+
+  if (s.hideTimestamp) {
+    parts.push(`.chat-line__timestamp {\n  display: none !important;\n}`)
+  }
 
   if (s.textShadow) {
     parts.push(
@@ -107,9 +124,16 @@ function generateCss(s: ChatCssSettings): string {
     )
   }
 
-  if (s.animation) {
+  if (s.align === 'right') {
     parts.push(
-      `@keyframes niiChatIn {\n  from { opacity: 0; transform: translateY(4px); }\n  to   { opacity: 1; transform: translateY(0); }\n}\n\n.chat-line__message {\n  animation: niiChatIn 0.15s ease-out !important;\n}`
+      `.chat-list,\n.chat-list--default {\n  align-items: flex-end !important;\n}\n\n.chat-line__message {\n  text-align: right !important;\n}`
+    )
+  }
+
+  if (s.animation) {
+    const fromX = s.animDir === 'left' ? '-10px' : '10px'
+    parts.push(
+      `@keyframes niiChatIn {\n  from { opacity: 0; transform: translateX(${fromX}); }\n  to   { opacity: 1; transform: translateX(0); }\n}\n\n.chat-line__message {\n  animation: niiChatIn 0.2s ease-out !important;\n}`
     )
   }
 
@@ -285,6 +309,15 @@ const LOOP_MS = Math.max(...SEQUENCE.map(m => m.delay)) + 2500
 
 // ---- Chat preview ----
 
+function ChatBadges({ msg, hidden }: { msg: DemoMsg; hidden: boolean }) {
+  if (hidden) return null
+  const badges: BadgeEntry[] = []
+  if (msg.is_mod) badges.push({ role: 'moderator' })
+  if (msg.is_vip) badges.push({ role: 'vip' })
+  if (msg.is_sub && !msg.is_mod && !msg.is_vip) badges.push({ role: 'subscriber' })
+  return <TwitchBadgeGroup badges={badges} className="mr-1" />
+}
+
 function ChatPreview({ s }: { s: ChatCssSettings }) {
   const [{ loopKey, visibleIds }, setLoop] = useState<{
     loopKey: number
@@ -317,7 +350,17 @@ function ChatPreview({ s }: { s: ChatCssSettings }) {
       return
     }
     setLoop(prev => ({ loopKey: prev.loopKey + 1, visibleIds: new Set() }))
-  }, [s.background, s.fontSize, s.messageBg, s.hideBadges, s.textShadow, s.animation])
+  }, [
+    s.background,
+    s.fontSize,
+    s.spacing,
+    s.messageBg,
+    s.align,
+    s.hideBadges,
+    s.textShadow,
+    s.animation,
+    s.animDir,
+  ])
 
   // Styles derived from current settings
   const textColor = s.background === 'light' ? '#111' : '#fff'
@@ -339,56 +382,22 @@ function ChatPreview({ s }: { s: ChatCssSettings }) {
     color: textColor,
   }
 
-  function badges(msg: DemoMsg) {
-    if (s.hideBadges) return null
-    const items: React.ReactNode[] = []
-    if (msg.is_mod)
-      items.push(
-        <img
-          key="mod"
-          src="/twitch-badges/moderator/1x.png"
-          alt="mod"
-          width={18}
-          height={18}
-          style={{ marginRight: 3, verticalAlign: 'middle' }}
-          draggable={false}
-        />
-      )
-    if (msg.is_vip)
-      items.push(
-        <img
-          key="vip"
-          src="/twitch-badges/vip/1x.png"
-          alt="vip"
-          width={18}
-          height={18}
-          style={{ marginRight: 3, verticalAlign: 'middle' }}
-          draggable={false}
-        />
-      )
-    if (msg.is_sub && !msg.is_mod && !msg.is_vip)
-      items.push(
-        <img
-          key="sub"
-          src="/twitch-badges/subscriber/1x.png"
-          alt="sub"
-          width={18}
-          height={18}
-          style={{ marginRight: 3, verticalAlign: 'middle' }}
-          draggable={false}
-        />
-      )
-    return items.length > 0 ? <>{items}</> : null
-  }
-
   function renderMsg(msg: DemoMsg): React.ReactNode {
     switch (msg.type) {
       case 'chat':
         return (
-          <div style={{ ...msgBase, ...chatBg }}>
-            {badges(msg)}
+          <div
+            style={{
+              ...msgBase,
+              ...chatBg,
+              display: 'flex',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+            }}
+          >
+            <ChatBadges msg={msg} hidden={s.hideBadges} />
             <span style={{ fontWeight: 700, color: msg.color }}>{msg.username}</span>
-            <span style={{ opacity: 0.55 }}>: </span>
+            <span style={{ opacity: 0.55 }}>:{' '}</span>
             <span style={{ textShadow: shadow }}>{msg.text}</span>
           </div>
         )
@@ -398,10 +407,10 @@ function ChatPreview({ s }: { s: ChatCssSettings }) {
             <div style={{ fontSize: '0.78em', opacity: 0.4, marginBottom: 2 }}>
               ↩ @{msg.replyTo}
             </div>
-            <div>
-              {badges(msg)}
+            <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
+              <ChatBadges msg={msg} hidden={s.hideBadges} />
               <span style={{ fontWeight: 700, color: msg.color }}>{msg.username}</span>
-              <span style={{ opacity: 0.55 }}>: </span>
+              <span style={{ opacity: 0.55 }}>:{' '}</span>
               <span style={{ textShadow: shadow }}>{msg.text}</span>
             </div>
           </div>
@@ -486,7 +495,7 @@ function ChatPreview({ s }: { s: ChatCssSettings }) {
               {msg.detail}
             </span>
             <span style={{ fontWeight: 700, color: msg.color }}>{msg.username}</span>
-            <span style={{ opacity: 0.55 }}>: </span>
+            <span style={{ opacity: 0.55 }}>:{' '}</span>
             <span style={{ textShadow: shadow }}>{msg.text}</span>
           </div>
         )
@@ -526,23 +535,179 @@ function ChatPreview({ s }: { s: ChatCssSettings }) {
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'flex-end',
+        alignItems: s.align === 'right' ? 'flex-end' : 'flex-start',
         padding: '10px',
         boxSizing: 'border-box',
-        gap: '4px',
+        gap: { compact: '2px', normal: '4px', loose: '8px' }[s.spacing],
         overflow: 'hidden',
       }}
     >
       {visible.map(msg => (
         <motion.div
           key={`${msg.id}-${loopKey}`}
-          initial={{ opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.25, ease: 'easeOut' }}
-          style={{ flexShrink: 0 }}
+          initial={s.animation ? { opacity: 0, x: s.animDir === 'left' ? -10 : 10 } : false}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.2, ease: 'easeOut' }}
+          style={{ flexShrink: 0, maxWidth: '100%' }}
         >
           {renderMsg(msg)}
         </motion.div>
       ))}
+    </div>
+  )
+}
+
+// ---- CSS Syntax Highlighter ----
+
+const C = {
+  comment: 'hsl(220 10% 52%)',
+  atRule: 'hsl(270 65% 72%)',
+  selector: 'hsl(200 75% 62%)',
+  property: 'hsl(175 55% 58%)',
+  value: 'hsl(40 10% 82%)',
+  important: 'hsl(30 85% 62%)',
+  punctuation: 'hsl(220 10% 50%)',
+}
+
+function HLine({ line }: { line: string }) {
+  const trimmed = line.trimStart()
+  const indent = line.slice(0, line.length - trimmed.length)
+
+  if (!trimmed) return <>{line}</>
+
+  // Comment
+  if (trimmed.startsWith('/*')) {
+    return <span style={{ color: C.comment, fontStyle: 'italic' }}>{line}</span>
+  }
+
+  // Closing brace
+  if (trimmed === '}') {
+    return (
+      <>
+        <span>{indent}</span>
+        <span style={{ color: C.punctuation }}>{'}'}</span>
+      </>
+    )
+  }
+
+  // At-rule keyword (@keyframes name {)
+  if (trimmed.startsWith('@')) {
+    const m = line.match(/^(\s*)(@[\w-]+)([^{]*)(\{?)$/)
+    if (m)
+      return (
+        <>
+          {m[1]}
+          <span style={{ color: C.atRule }}>{m[2]}</span>
+          <span style={{ color: C.value }}>{m[3]}</span>
+          {m[4] && <span style={{ color: C.punctuation }}>{m[4]}</span>}
+        </>
+      )
+  }
+
+  // from / to lines (inside @keyframes)
+  if (/^\s*(from|to)\s*\{/.test(line)) {
+    const m = line.match(/^(\s*)(from|to)(\s*)(\{)(.*)(\})/)
+    if (m)
+      return (
+        <>
+          {m[1]}
+          <span style={{ color: C.atRule }}>{m[2]}</span>
+          {m[3]}
+          <span style={{ color: C.punctuation }}>{m[4]}</span>
+          <span style={{ color: C.value }}>{m[5]}</span>
+          <span style={{ color: C.punctuation }}>{m[6]}</span>
+        </>
+      )
+  }
+
+  // Selector line — ends with { or ,
+  if (trimmed.endsWith('{') || trimmed.endsWith(',')) {
+    const m = line.match(/^(.*?)([{,])\s*$/)
+    if (m)
+      return (
+        <>
+          <span style={{ color: C.selector }}>{m[1]}</span>
+          <span style={{ color: C.punctuation }}>{m[2]}</span>
+        </>
+      )
+  }
+
+  // Property: value !important;
+  const propM = line.match(/^(\s*)([\w-]+)(\s*:\s*)(.*?)(\s*!important)?(;)(\s*)$/)
+  if (propM) {
+    const [, ind, prop, colon, val, imp, semi] = propM
+    return (
+      <>
+        {ind}
+        <span style={{ color: C.property }}>{prop}</span>
+        <span style={{ color: C.punctuation }}>{colon}</span>
+        <span style={{ color: C.value }}>{val}</span>
+        {imp && <span style={{ color: C.important }}>{imp}</span>}
+        <span style={{ color: C.punctuation }}>{semi}</span>
+      </>
+    )
+  }
+
+  return <>{line}</>
+}
+
+function CssHighlight({ code }: { code: string }) {
+  const lines = code.split('\n')
+  return (
+    <pre className="text-xs leading-relaxed whitespace-pre">
+      {lines.map((line, i) => (
+        <React.Fragment key={i}>
+          <HLine line={line} />
+          {i < lines.length - 1 && '\n'}
+        </React.Fragment>
+      ))}
+    </pre>
+  )
+}
+
+// ---- Option button group ----
+
+function OptionButtonGroup<T extends string>({
+  label,
+  options,
+  value,
+  onChange,
+  className,
+  labelClassName,
+}: {
+  label: string
+  options: { value: T; label: string; desc?: string }[]
+  value: T
+  onChange: (v: T) => void
+  className?: string
+  labelClassName?: string
+}) {
+  return (
+    <div className={`flex flex-col gap-2${className ? ` ${className}` : ''}`}>
+      <Label className={labelClassName}>{label}</Label>
+      <div className="flex flex-wrap gap-2">
+        {options.map(opt => (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => onChange(opt.value)}
+            className={`rounded-md border text-sm font-medium transition-colors ${
+              opt.desc ? 'flex flex-col px-4 py-2 text-left' : 'px-3 py-1.5'
+            } ${
+              value === opt.value ? 'border-primary bg-primary/10 text-primary' : 'hover:bg-accent'
+            }`}
+          >
+            {opt.desc ? (
+              <>
+                <span className="font-medium">{opt.label}</span>
+                <span className="text-muted-foreground text-xs">{opt.desc}</span>
+              </>
+            ) : (
+              opt.label
+            )}
+          </button>
+        ))}
+      </div>
     </div>
   )
 }
@@ -561,10 +726,26 @@ const FONT_SIZE_OPTIONS: { value: FontSizeOption; label: string }[] = [
   { value: 'large', label: '大 18px' },
 ]
 
+const SPACING_OPTIONS: { value: SpacingOption; label: string }[] = [
+  { value: 'compact', label: '緊湊' },
+  { value: 'normal', label: '標準' },
+  { value: 'loose', label: '寬鬆' },
+]
+
 const MSG_BG_OPTIONS: { value: MsgBgOption; label: string }[] = [
   { value: 'none', label: '無' },
   { value: 'dark', label: '深色方框' },
   { value: 'rounded', label: '深色圓框' },
+]
+
+const ALIGN_OPTIONS: { value: AlignOption; label: string }[] = [
+  { value: 'left', label: '靠左' },
+  { value: 'right', label: '靠右' },
+]
+
+const ANIM_DIR_OPTIONS: { value: AnimDirOption; label: string }[] = [
+  { value: 'left', label: '從左滑入' },
+  { value: 'right', label: '從右滑入' },
 ]
 
 export default function ChatOverlayModule() {
@@ -572,6 +753,7 @@ export default function ChatOverlayModule() {
 
   const { user } = useAuth()
   const [settings, setSettings] = useState<ChatCssSettings>(loadSettings)
+  const [rightPanel, setRightPanel] = useState<'preview' | 'css'>('preview')
 
   const patch = (partial: Partial<ChatCssSettings>) =>
     setSettings(prev => ({ ...prev, ...partial }))
@@ -593,143 +775,176 @@ export default function ChatOverlayModule() {
 
   return (
     <PageMain>
-      <SlideUpSm inView className="flex items-end justify-between gap-element shrink-0">
-        <div>
-          <h1 className="text-page-title font-bold">Chat Overlay</h1>
-          <p className="text-sub text-muted-foreground mt-0.5">
-            自訂 Twitch 聊天室樣式，貼入 OBS Browser Source
-          </p>
-        </div>
-        <Button onClick={copyCss} size="sm">
-          <Icon icon="fa-regular fa-copy" className="mr-1.5 text-xs" />
-          複製 CSS
-        </Button>
+      <SlideUpSm inView className="shrink-0">
+        <h1 className="text-page-title font-bold">Chat Overlay</h1>
+        <p className="text-sub text-muted-foreground mt-0.5">
+          自訂 Twitch 聊天室樣式，貼入 OBS Browser Source
+        </p>
       </SlideUpSm>
 
       <SlideUp
         inView
         delay={0.05}
-        className="grid grid-cols-1 lg:grid-cols-12 gap-section flex-1 min-h-0 overflow-y-auto lg:overflow-hidden lg:grid-rows-1"
+        className="grid grid-cols-1 lg:grid-cols-12 gap-section items-start"
       >
-        {/* Settings + CSS output */}
-        <div className="lg:col-span-7 flex flex-col gap-section lg:overflow-y-auto">
+        {/* Left: switchable Preview / CSS */}
+        <div className="lg:col-span-6 flex flex-col gap-element h-105 min-w-0 overflow-hidden">
+          {/* Tab bar */}
+          <div className="flex shrink-0 items-center justify-between">
+            <div className="flex gap-1 rounded-lg border p-1">
+              {(['preview', 'css'] as const).map(panel => (
+                <button
+                  key={panel}
+                  type="button"
+                  onClick={() => setRightPanel(panel)}
+                  className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                    rightPanel === panel
+                      ? 'bg-card text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <Icon
+                    icon={panel === 'preview' ? 'fa-solid fa-eye' : 'fa-solid fa-code'}
+                    className="text-xs"
+                  />
+                  {panel === 'preview' ? '預覽' : 'CSS'}
+                </button>
+              ))}
+            </div>
+            {rightPanel === 'css' && (
+              <Button onClick={copyCss} size="sm">
+                <Icon icon="fa-regular fa-copy" className="mr-1.5 text-xs" />
+                複製 CSS
+              </Button>
+            )}
+          </div>
+
+          {/* Panel content */}
+          {rightPanel === 'preview' ? (
+            <>
+              <div className="flex-1 min-h-0 overflow-hidden rounded-lg border">
+                <ChatPreview s={settings} />
+              </div>
+              {twitchUrl && <OverlayUrlBlock url={twitchUrl} />}
+            </>
+          ) : (
+            <div className="flex-1 min-h-0 overflow-auto rounded-lg border bg-muted p-4">
+              <CssHighlight code={css} />
+            </div>
+          )}
+        </div>
+
+        {/* Right: Settings */}
+        <div className="lg:col-span-6 flex flex-col gap-section">
           <Card>
             <CardHeader>
               <CardTitle>樣式設定</CardTitle>
               <CardDescription>調整後自動產生 CSS，無需儲存</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-section">
-              {/* Background */}
-              <div className="flex flex-col gap-2">
-                <Label>背景</Label>
-                <div className="flex flex-wrap gap-2">
-                  {BG_OPTIONS.map(opt => (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() => patch({ background: opt.value })}
-                      className={`flex flex-col rounded-md border px-4 py-2 text-left transition-colors ${
-                        settings.background === opt.value
-                          ? 'border-primary bg-primary/10 text-primary'
-                          : 'hover:bg-accent'
-                      }`}
-                    >
-                      <span className="text-sm font-medium">{opt.label}</span>
-                      <span className="text-muted-foreground text-xs">{opt.desc}</span>
-                    </button>
-                  ))}
-                </div>
+              {/* 背景 */}
+              <OptionButtonGroup
+                label="背景"
+                options={BG_OPTIONS}
+                value={settings.background}
+                onChange={v => patch({ background: v })}
+              />
+
+              {/* 字型大小 + 訊息間距 */}
+              <div className="grid grid-cols-2 gap-section">
+                <OptionButtonGroup
+                  label="字型大小"
+                  options={FONT_SIZE_OPTIONS}
+                  value={settings.fontSize}
+                  onChange={v => patch({ fontSize: v })}
+                />
+                <OptionButtonGroup
+                  label="訊息間距"
+                  options={SPACING_OPTIONS}
+                  value={settings.spacing}
+                  onChange={v => patch({ spacing: v })}
+                />
               </div>
 
-              {/* Font size */}
-              <div className="flex flex-col gap-2">
-                <Label>字型大小</Label>
-                <div className="flex flex-wrap gap-2">
-                  {FONT_SIZE_OPTIONS.map(opt => (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() => patch({ fontSize: opt.value })}
-                      className={`rounded-md border px-4 py-1.5 text-sm font-medium transition-colors ${
-                        settings.fontSize === opt.value
-                          ? 'border-primary bg-primary/10 text-primary'
-                          : 'hover:bg-accent'
-                      }`}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
+              {/* 訊息背景 + 對齊 */}
+              <div className="grid grid-cols-2 gap-section">
+                <OptionButtonGroup
+                  label="訊息背景"
+                  options={MSG_BG_OPTIONS}
+                  value={settings.messageBg}
+                  onChange={v => patch({ messageBg: v })}
+                />
+                <OptionButtonGroup
+                  label="訊息對齊"
+                  options={ALIGN_OPTIONS}
+                  value={settings.align}
+                  onChange={v => patch({ align: v })}
+                />
               </div>
 
-              {/* Message background */}
+              {/* 隱藏元素 */}
               <div className="flex flex-col gap-2">
-                <Label>訊息背景</Label>
-                <div className="flex flex-wrap gap-2">
-                  {MSG_BG_OPTIONS.map(opt => (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() => patch({ messageBg: opt.value })}
-                      className={`rounded-md border px-4 py-1.5 text-sm font-medium transition-colors ${
-                        settings.messageBg === opt.value
-                          ? 'border-primary bg-primary/10 text-primary'
-                          : 'hover:bg-accent'
-                      }`}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Toggles */}
-              <div className="flex flex-col gap-section">
-                {(
-                  [
-                    { key: 'hideHeader', label: '隱藏標題列', desc: '移除聊天室頂部標題' },
-                    { key: 'hideInput', label: '隱藏輸入框', desc: '移除底部聊天輸入區' },
-                    { key: 'hideBadges', label: '隱藏徽章', desc: 'MOD、訂閱者圖標' },
-                    { key: 'textShadow', label: '文字陰影', desc: '透明背景時提高可讀性' },
-                    { key: 'animation', label: '進場動畫', desc: '新訊息淡入滑入效果' },
-                  ] as const
-                ).map(({ key, label, desc }) => (
-                  <div key={key} className="flex items-center justify-between">
-                    <div>
-                      <Label htmlFor={key}>{label}</Label>
-                      <p className="text-muted-foreground mt-0.5 text-label">{desc}</p>
+                <p className="text-label font-medium text-muted-foreground">隱藏元素</p>
+                <div className="flex flex-col gap-element">
+                  {(
+                    [
+                      { key: 'hideHeader', label: '標題列', desc: '移除聊天室頂部標題' },
+                      { key: 'hideInput', label: '輸入框', desc: '移除底部聊天輸入區' },
+                      { key: 'hideTimestamp', label: '時間戳記', desc: '移除訊息旁的時間顯示' },
+                      { key: 'hideBadges', label: '徽章', desc: 'MOD、VIP、訂閱者圖標' },
+                    ] as const
+                  ).map(({ key, label, desc }) => (
+                    <div key={key} className="flex items-center justify-between">
+                      <div>
+                        <Label htmlFor={key}>{label}</Label>
+                        <p className="text-muted-foreground mt-0.5 text-label">{desc}</p>
+                      </div>
+                      <Switch
+                        id={key}
+                        checked={settings[key]}
+                        onCheckedChange={v => patch({ [key]: v })}
+                      />
                     </div>
-                    <Switch
-                      id={key}
-                      checked={settings[key]}
-                      onCheckedChange={v => patch({ [key]: v })}
+                  ))}
+                </div>
+              </div>
+
+              {/* 視覺效果 */}
+              <div className="flex flex-col gap-2">
+                <p className="text-label font-medium text-muted-foreground">視覺效果</p>
+                <div className="flex flex-col gap-element">
+                  {(
+                    [
+                      { key: 'textShadow', label: '文字陰影', desc: '透明背景時提高可讀性' },
+                      { key: 'animation', label: '進場動畫', desc: '新訊息滑入淡出效果' },
+                    ] as const
+                  ).map(({ key, label, desc }) => (
+                    <div key={key} className="flex items-center justify-between">
+                      <div>
+                        <Label htmlFor={key}>{label}</Label>
+                        <p className="text-muted-foreground mt-0.5 text-label">{desc}</p>
+                      </div>
+                      <Switch
+                        id={key}
+                        checked={settings[key]}
+                        onCheckedChange={v => patch({ [key]: v })}
+                      />
+                    </div>
+                  ))}
+                  {settings.animation && (
+                    <OptionButtonGroup
+                      label="滑入方向"
+                      options={ANIM_DIR_OPTIONS}
+                      value={settings.animDir}
+                      onChange={v => patch({ animDir: v })}
+                      className="pl-1"
+                      labelClassName="text-muted-foreground"
                     />
-                  </div>
-                ))}
+                  )}
+                </div>
               </div>
             </CardContent>
           </Card>
-
-          {/* Generated CSS */}
-          <Card>
-            <CardHeader>
-              <CardTitle>產生的 CSS</CardTitle>
-              <CardDescription>複製後貼入 OBS Browser Source → Custom CSS</CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-section">
-              <pre className="bg-muted text-muted-foreground max-h-64 overflow-auto rounded-md p-4 text-xs leading-relaxed">
-                {css}
-              </pre>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Preview + URL */}
-        <div className="lg:col-span-5 flex flex-col gap-section min-h-0">
-          <div className="flex-1 min-h-[200px] max-h-[420px] overflow-hidden rounded-lg border">
-            <ChatPreview s={settings} />
-          </div>
-          {twitchUrl && <OverlayUrlBlock url={twitchUrl} />}
         </div>
       </SlideUp>
     </PageMain>
