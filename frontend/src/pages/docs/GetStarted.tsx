@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { motion } from 'motion/react'
 
 import { DiscordHelpBanner } from '@/components/DiscordHelpBanner'
 import { PageHeader } from '@/components/PageHeader'
@@ -15,34 +16,31 @@ import {
   SlideUpSm,
   Stagger,
   StaggerItem,
+  TwitchBadgeGroup,
+  type TwitchRole,
 } from '@/components/ui'
 import { WarningBanner } from '@/components/WarningBanner'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
-type ChatBadge = 'broadcaster' | 'mod' | null
-
 type ChatLine =
-  | { type: 'message'; badge: ChatBadge; username: string; color: string; message: string }
+  | { type: 'message'; roles: TwitchRole[]; username: string; message: string }
   | { type: 'system'; message: string }
 
-function ChatBadgeIcon({ badge }: { badge: ChatBadge }) {
-  const base = 'inline-flex shrink-0 items-center justify-center size-5 rounded mr-1'
-  if (badge === 'broadcaster') {
-    return (
-      <span className={`${base} bg-status-live`}>
-        <i className="fa-solid fa-video text-xs text-white" />
-      </span>
-    )
-  }
-  if (badge === 'mod') {
-    return (
-      <span className={`${base} bg-status-online`}>
-        <i className="fa-solid fa-sword text-xs text-white" />
-      </span>
-    )
-  }
-  return null
+const ROLE_COLOR: Partial<Record<TwitchRole, string>> = {
+  broadcaster: '#ff4500',
+  moderator: '#00e676',
+  vip: '#e005b9',
 }
+
+const ROLE_PRIORITY: TwitchRole[] = ['broadcaster', 'moderator', 'vip']
+
+function getRoleColor(roles: TwitchRole[]): string {
+  const dominant = ROLE_PRIORITY.find(r => roles.includes(r))
+  return dominant ? (ROLE_COLOR[dominant] ?? '#a0a0a0') : '#a0a0a0'
+}
+
+const LINE_DELAYS: [number, number, number] = [0, 600, 1100]
+const LOOP_DURATION = 3800
 
 function TwitchChatMockup({
   channel,
@@ -54,6 +52,21 @@ function TwitchChatMockup({
   command?: string
 }) {
   const [copied, setCopied] = useState(false)
+  const [{ visibleCount, loopKey }, setAnim] = useState({ visibleCount: 0, loopKey: 0 })
+
+  useEffect(() => {
+    const timers = lines.map((_, i) =>
+      setTimeout(() => setAnim(prev => ({ ...prev, visibleCount: i + 1 })), LINE_DELAYS[i] ?? 0)
+    )
+    const reset = setTimeout(
+      () => setAnim(prev => ({ loopKey: prev.loopKey + 1, visibleCount: 0 })),
+      LOOP_DURATION
+    )
+    return () => {
+      timers.forEach(clearTimeout)
+      clearTimeout(reset)
+    }
+  }, [loopKey, lines])
 
   function handleCopy() {
     if (!command) return
@@ -73,24 +86,32 @@ function TwitchChatMockup({
       </div>
 
       {/* Messages */}
-      <div className="flex flex-col gap-2 px-3 py-3">
-        {lines.map((line, i) => {
-          if (line.type === 'system') {
-            return (
-              <p key={i} className="text-label text-muted-foreground">
-                {line.message}
-              </p>
+      <div className="flex h-28 flex-col justify-end gap-2 overflow-hidden px-3 py-3">
+        {lines.slice(0, visibleCount).map((line, i) => {
+          const content =
+            line.type === 'system' ? (
+              <p className="text-label text-muted-foreground">{line.message}</p>
+            ) : (
+              <div className="flex flex-wrap items-center">
+                {line.roles.length > 0 && (
+                  <TwitchBadgeGroup badges={line.roles.map(role => ({ role }))} className="mr-1" />
+                )}
+                <span className="text-sub font-bold" style={{ color: getRoleColor(line.roles) }}>
+                  {line.username}
+                </span>
+                <span className="text-sub text-muted-foreground opacity-55">{': '}</span>
+                <span className="text-sub text-foreground">{line.message}</span>
+              </div>
             )
-          }
           return (
-            <div key={i} className="flex flex-wrap items-center gap-0.5">
-              <ChatBadgeIcon badge={line.badge} />
-              <span className="text-sub font-bold" style={{ color: line.color }}>
-                {line.username}
-              </span>
-              <span className="mx-1 text-sub text-muted-foreground">:</span>
-              <span className="text-sub text-foreground">{line.message}</span>
-            </div>
+            <motion.div
+              key={`${loopKey}-${i}`}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.25, ease: 'easeOut' }}
+            >
+              {content}
+            </motion.div>
           )
         })}
       </div>
@@ -129,19 +150,12 @@ function TwitchChatMockup({
 }
 
 const MOD_CHAT_PREVIEW: ChatLine[] = [
-  {
-    type: 'message',
-    badge: 'broadcaster',
-    username: '你的頻道',
-    color: '#ff4500',
-    message: '/mod niibot_',
-  },
+  { type: 'message', roles: ['broadcaster'], username: '你的頻道', message: '/mod niibot_' },
   { type: 'system', message: '你的頻道 已賦予 niibot_ 的 Mod 優先權。' },
   {
     type: 'message',
-    badge: 'mod',
+    roles: ['moderator', 'bot'],
     username: 'niibot_',
-    color: '#00e676',
     message: '帽子叔叔正在巡邏...',
   },
 ]
