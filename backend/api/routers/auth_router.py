@@ -1,13 +1,15 @@
 """Authentication API routes"""
 
 import logging
+import time
+from collections import defaultdict
 from typing import Literal
 from urllib.parse import quote as _url_quote
 
 from asyncpg import Pool
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Response
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from core.config import Settings, get_settings
 from core.database import get_database_manager
@@ -25,8 +27,33 @@ from services.oauth_service import (
     encode_oauth_state,
     find_or_create_user,
 )
+from shared.repositories.activation_code import ActivationCodeRepository
+from shared.repositories.activation_request import ActivationRequestRepository
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
+
+
+class _OTPRateLimiter:
+    """Per-user OTP attempt limiter: max 5 attempts per 10-minute window (in-process)."""
+
+    _MAX_ATTEMPTS = 5
+    _WINDOW = 600.0  # seconds
+
+    def __init__(self) -> None:
+        self._attempts: dict[str, list[float]] = defaultdict(list)
+
+    def check_and_record(self, user_id: str) -> bool:
+        """Returns True if the attempt is allowed, False if rate-limited."""
+        now = time.monotonic()
+        cutoff = now - self._WINDOW
+        self._attempts[user_id] = [t for t in self._attempts[user_id] if t > cutoff]
+        if len(self._attempts[user_id]) >= self._MAX_ATTEMPTS:
+            return False
+        self._attempts[user_id].append(now)
+        return True
+
+
+_otp_rate_limiter = _OTPRateLimiter()
 
 router = APIRouter(prefix="/api", tags=["authentication"])
 
@@ -44,6 +71,16 @@ class UserInfoResponse(BaseModel):
     platform: str
     theme: str
     broadcaster_type: str = ""
+    is_activated: bool = False
+    is_owner: bool = False
+
+
+class ActivateRequest(BaseModel):
+    code: str = Field(min_length=6, max_length=6)
+
+
+class ActivationRequestCreate(BaseModel):
+    note: str = Field(default="", max_length=300)
 
 
 class LogoutResponse(BaseModel):
@@ -173,18 +210,25 @@ async def get_current_user(
     platform_user_id = str(payload["platform_user_id"])
 
     theme = "system"
+    is_activated = False
     try:
-        user_row = await pool.fetchrow("SELECT theme FROM users WHERE id = $1::uuid", user_id)
+        user_row = await pool.fetchrow(
+            "SELECT theme, is_activated FROM users WHERE id = $1::uuid", user_id
+        )
         if user_row:
             theme = user_row["theme"]
+            is_activated = user_row["is_activated"]
     except Exception as e:
-        LOGGER.warning(f"DB error fetching theme for user {user_id}: {type(e).__name__}: {e}")
+        LOGGER.warning(f"DB error fetching user row for {user_id}: {type(e).__name__}: {e}")
 
     user_info = await twitch_api.get_user_info(platform_user_id)
     if not user_info:
         raise HTTPException(status_code=404, detail="User not found")
 
-    return UserInfoResponse(**user_info, platform="twitch", theme=theme)
+    is_owner = platform_user_id == str(get_settings().owner_id)
+    return UserInfoResponse(
+        **user_info, platform="twitch", theme=theme, is_activated=is_activated, is_owner=is_owner
+    )
 
 
 @router.post("/auth/logout", response_model=LogoutResponse)
@@ -209,6 +253,85 @@ async def logout(
     )
     LOGGER.info(f"User logged out: {username} (twitch:{platform_user_id})")
     return LogoutResponse(message="Logged out successfully")
+
+
+@router.post("/auth/activate")
+async def activate_account(
+    body: ActivateRequest,
+    auth_token: str | None = Cookie(None),
+    pool: Pool = Depends(get_db_pool),
+) -> dict:
+    """Activate account using an OTP code from the niibot_auth redemption."""
+    payload = get_token_payload(auth_token)
+    user_id = str(payload["sub"])
+    platform = str(payload["platform"])
+    platform_user_id = str(payload["platform_user_id"])
+
+    already_activated = await pool.fetchval(
+        "SELECT is_activated FROM users WHERE id = $1::uuid", user_id
+    )
+    if already_activated:
+        return {"activated": True}
+
+    if not _otp_rate_limiter.check_and_record(user_id):
+        raise HTTPException(status_code=429, detail="too_many_attempts")
+
+    repo = ActivationCodeRepository(pool)
+    success = await repo.redeem(
+        code=body.code.strip(),
+        platform=platform,
+        platform_user_id=platform_user_id,
+        user_id=user_id,
+    )
+
+    if not success:
+        raise HTTPException(status_code=400, detail="invalid_or_expired_code")
+
+    LOGGER.info(f"Account activated: user {user_id} ({platform}:{platform_user_id})")
+    return {"activated": True}
+
+
+@router.post("/auth/request-activation")
+async def request_activation(
+    body: ActivationRequestCreate,
+    auth_token: str | None = Cookie(None),
+    pool: Pool = Depends(get_db_pool),
+) -> dict:
+    """Submit a manual activation request for owner review."""
+    payload = get_token_payload(auth_token)
+    user_id = str(payload["sub"])
+    platform = str(payload["platform"])
+    platform_user_id = str(payload["platform_user_id"])
+
+    already_activated = await pool.fetchval(
+        "SELECT is_activated FROM users WHERE id = $1::uuid", user_id
+    )
+    if already_activated:
+        return {"status": "already_activated"}
+
+    repo = ActivationRequestRepository(pool)
+    await repo.create(user_id, platform, platform_user_id, body.note.strip())
+    LOGGER.info(f"Activation request submitted: user {user_id} ({platform}:{platform_user_id})")
+    return {"status": "pending"}
+
+
+@router.get("/auth/activation-request")
+async def get_activation_request_status(
+    auth_token: str | None = Cookie(None),
+    pool: Pool = Depends(get_db_pool),
+) -> dict:
+    """Return the most recent activation request status for the current user."""
+    payload = get_token_payload(auth_token)
+    user_id = str(payload["sub"])
+
+    repo = ActivationRequestRepository(pool)
+    request = await repo.get_for_user(user_id)
+    if not request:
+        return {"status": None}
+    return {
+        "status": request["status"],
+        "created_at": request["created_at"].isoformat(),
+    }
 
 
 @router.patch("/user/preferences")

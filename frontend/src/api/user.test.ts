@@ -5,7 +5,13 @@ import { apiCache, CACHE_KEYS } from '@/lib/apiCache'
 // Mock apiFetch so we never hit the network.
 vi.mock('@/api/config', () => ({
   API_ENDPOINTS: {
-    auth: { user: '/api/auth/user', logout: '/api/auth/logout' },
+    auth: {
+      user: '/api/auth/user',
+      logout: '/api/auth/logout',
+      activate: '/api/auth/activate',
+      requestActivation: '/api/auth/request-activation',
+      activationRequest: '/api/auth/activation-request',
+    },
     user: { preferences: '/api/user/preferences' },
   },
   apiFetch: vi.fn(),
@@ -13,7 +19,14 @@ vi.mock('@/api/config', () => ({
 
 // Imported AFTER vi.mock so they receive the mocked version.
 import { apiFetch } from '@/api/config'
-import { getCurrentUser, logout, updateUserPreferences } from '@/api/user'
+import {
+  activateAccount,
+  getActivationRequestStatus,
+  getCurrentUser,
+  logout,
+  requestActivation,
+  updateUserPreferences,
+} from '@/api/user'
 
 const mockApiFetch = apiFetch as ReturnType<typeof vi.fn>
 
@@ -172,5 +185,118 @@ describe('logout', () => {
     }
     // Cache should still be intact since logout() throws before clearing
     expect(apiCache.get(CACHE_KEYS.CURRENT_USER)).toEqual(MOCK_USER)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// activateAccount
+// ---------------------------------------------------------------------------
+
+describe('activateAccount', () => {
+  beforeEach(() => {
+    apiCache.clear()
+    vi.clearAllMocks()
+  })
+
+  it('resolves without error on a 200 response', async () => {
+    mockApiFetch.mockResolvedValue(new Response('{}', { status: 200 }))
+    await expect(activateAccount('CODE123')).resolves.toBeUndefined()
+  })
+
+  it('sends a POST with the activation code in the body', async () => {
+    mockApiFetch.mockResolvedValue(new Response('{}', { status: 200 }))
+    await activateAccount('ABC')
+    expect(mockApiFetch).toHaveBeenCalledWith(
+      '/api/auth/activate',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ code: 'ABC' }),
+      })
+    )
+  })
+
+  it('patches the cached user is_activated to true on success', async () => {
+    apiCache.set(CACHE_KEYS.CURRENT_USER, { ...MOCK_USER, is_activated: false })
+    mockApiFetch.mockResolvedValue(new Response('{}', { status: 200 }))
+    await activateAccount('CODE')
+    expect(
+      (apiCache.get(CACHE_KEYS.CURRENT_USER) as typeof MOCK_USER & { is_activated: boolean })
+        ?.is_activated
+    ).toBe(true)
+  })
+
+  it('throws with the server detail message on a non-ok response with JSON body', async () => {
+    mockApiFetch.mockResolvedValue(
+      new Response(JSON.stringify({ detail: 'invalid_code' }), { status: 400 })
+    )
+    await expect(activateAccount('BAD')).rejects.toThrow('invalid_code')
+  })
+
+  it('throws the default message when the error body has no detail field', async () => {
+    mockApiFetch.mockResolvedValue(new Response('{}', { status: 400 }))
+    await expect(activateAccount('BAD')).rejects.toThrow('activation_failed')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// requestActivation
+// ---------------------------------------------------------------------------
+
+describe('requestActivation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('resolves without error on a 200 response', async () => {
+    mockApiFetch.mockResolvedValue(new Response('{}', { status: 200 }))
+    await expect(requestActivation('please let me in')).resolves.toBeUndefined()
+  })
+
+  it('sends a POST with the note in the body', async () => {
+    mockApiFetch.mockResolvedValue(new Response('{}', { status: 200 }))
+    await requestActivation('my note')
+    expect(mockApiFetch).toHaveBeenCalledWith(
+      '/api/auth/request-activation',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ note: 'my note' }),
+      })
+    )
+  })
+
+  it('throws with the server detail on a non-ok response', async () => {
+    mockApiFetch.mockResolvedValue(
+      new Response(JSON.stringify({ detail: 'already_requested' }), { status: 409 })
+    )
+    await expect(requestActivation('note')).rejects.toThrow('already_requested')
+  })
+
+  it('throws the default message when the error body has no detail field', async () => {
+    mockApiFetch.mockResolvedValue(new Response('{}', { status: 500 }))
+    await expect(requestActivation('note')).rejects.toThrow('request_failed')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// getActivationRequestStatus
+// ---------------------------------------------------------------------------
+
+describe('getActivationRequestStatus', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('returns the status from a 200 response', async () => {
+    mockApiFetch.mockResolvedValue(
+      new Response(JSON.stringify({ status: 'pending', created_at: '2026-01-01' }), { status: 200 })
+    )
+    const result = await getActivationRequestStatus()
+    expect(result).toEqual({ status: 'pending', created_at: '2026-01-01' })
+  })
+
+  it('returns { status: null } when the response is not ok', async () => {
+    mockApiFetch.mockResolvedValue(new Response('', { status: 404 }))
+    const result = await getActivationRequestStatus()
+    expect(result).toEqual({ status: null })
   })
 })

@@ -12,6 +12,8 @@ export interface User {
   platform: 'twitch' | 'discord'
   theme: Theme
   broadcaster_type: string // "affiliate", "partner", or "" (non-affiliate / discord)
+  is_activated: boolean
+  is_owner: boolean
 }
 
 async function fetchCurrentUser(): Promise<User | null> {
@@ -48,6 +50,44 @@ export async function updateUserPreferences(prefs: { theme: Theme }): Promise<vo
 
   // Sync cache so refreshUser() won't return stale theme
   apiCache.patch<User>(CACHE_KEYS.CURRENT_USER, user => ({ ...user, ...prefs }))
+}
+
+export async function activateAccount(code: string): Promise<void> {
+  const response = await apiFetch(API_ENDPOINTS.auth.activate, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ code }),
+  })
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}))
+    throw new Error((data as { detail?: string }).detail ?? 'activation_failed')
+  }
+  apiCache.patch<User>(CACHE_KEYS.CURRENT_USER, user => ({ ...user, is_activated: true }))
+}
+
+export async function requestActivation(note: string): Promise<void> {
+  const response = await apiFetch(API_ENDPOINTS.auth.requestActivation, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ note }),
+  })
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}))
+    throw new Error((data as { detail?: string }).detail ?? 'request_failed')
+  }
+}
+
+export async function getActivationRequestStatus(): Promise<{
+  status: 'pending' | 'approved' | 'rejected' | null
+  created_at?: string
+}> {
+  const response = await apiFetch(API_ENDPOINTS.auth.activationRequest, {
+    credentials: 'include',
+  })
+  if (!response.ok) return { status: null }
+  return response.json()
 }
 
 export async function logout(): Promise<void> {

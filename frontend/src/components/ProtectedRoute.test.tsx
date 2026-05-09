@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, type MockedFunction, vi } from 'vitest'
 
 import type { User } from '@/api/user'
-import { ProtectedRoute, PublicOnlyRoute } from '@/components/ProtectedRoute'
+import { OwnerRoute, ProtectedRoute, PublicOnlyRoute } from '@/components/ProtectedRoute'
 import { useAuth } from '@/contexts/AuthContext'
 
 vi.mock('@/contexts/AuthContext')
@@ -20,6 +20,9 @@ const TWITCH_USER: User = {
   avatar: '',
   platform: 'twitch',
   theme: 'dark',
+  broadcaster_type: 'affiliate',
+  is_activated: true,
+  is_owner: false,
 }
 
 const DISCORD_USER: User = { ...TWITCH_USER, platform: 'discord' }
@@ -52,6 +55,21 @@ function renderProtected(
           <Route path="/dashboard" element={<div>Protected Content</div>} />
         </Route>
         <Route path="/login" element={<div>Login Page</div>} />
+        <Route path="/activate" element={<div>Activate Page</div>} />
+      </Routes>
+    </MemoryRouter>
+  )
+}
+
+function renderOwner(authOverrides: Partial<ReturnType<typeof useAuth>>, startAt = '/admin') {
+  mockUseAuth.mockReturnValue(makeAuthValue(authOverrides))
+  return render(
+    <MemoryRouter initialEntries={[startAt]}>
+      <Routes>
+        <Route element={<OwnerRoute />}>
+          <Route path="/admin" element={<div>Owner Content</div>} />
+        </Route>
+        <Route path="/dashboard" element={<div>Dashboard</div>} />
       </Routes>
     </MemoryRouter>
   )
@@ -109,6 +127,48 @@ describe('ProtectedRoute', () => {
     renderProtected({ isInitialized: true, isInitError: true, retryInit })
     screen.getByRole('button', { name: /重試/ }).click()
     expect(retryInit).toHaveBeenCalledTimes(1)
+  })
+
+  it('redirects authenticated but unactivated users to /activate', () => {
+    renderProtected({
+      isInitialized: true,
+      isAuthenticated: true,
+      user: { ...TWITCH_USER, is_activated: false },
+    })
+    expect(screen.getByText('Activate Page')).toBeInTheDocument()
+    expect(screen.queryByText('Protected Content')).not.toBeInTheDocument()
+  })
+})
+
+describe('OwnerRoute', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('shows loading spinner when not yet initialized', () => {
+    renderOwner({ isInitialized: false })
+    expect(screen.getByTestId('loading-spinner')).toBeInTheDocument()
+  })
+
+  it('redirects unauthenticated users to /dashboard', () => {
+    renderOwner({ isInitialized: true, isAuthenticated: false })
+    expect(screen.getByText('Dashboard')).toBeInTheDocument()
+    expect(screen.queryByText('Owner Content')).not.toBeInTheDocument()
+  })
+
+  it('redirects authenticated non-owner users to /dashboard', () => {
+    renderOwner({ isInitialized: true, isAuthenticated: true, user: TWITCH_USER })
+    expect(screen.getByText('Dashboard')).toBeInTheDocument()
+    expect(screen.queryByText('Owner Content')).not.toBeInTheDocument()
+  })
+
+  it('renders child content for owner users', () => {
+    renderOwner({
+      isInitialized: true,
+      isAuthenticated: true,
+      user: { ...TWITCH_USER, is_owner: true },
+    })
+    expect(screen.getByText('Owner Content')).toBeInTheDocument()
   })
 })
 

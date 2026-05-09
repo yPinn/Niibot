@@ -680,3 +680,60 @@ describe('useAuth', () => {
     expect(() => renderHook(() => useAuth())).toThrow('useAuth must be used within an AuthProvider')
   })
 })
+
+// ---------------------------------------------------------------------------
+// channels polling — cancelled + error path (line 169: !cancelled branch false)
+// ---------------------------------------------------------------------------
+
+describe('channels polling — cancelled=true error path', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.stubGlobal('location', { pathname: '/dashboard', href: 'http://localhost/dashboard' })
+    mockGetCurrentUser.mockResolvedValue(TWITCH_USER)
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+    vi.useRealTimers()
+  })
+
+  it('does not throw and silently drops the error when a poll rejects after unmount', async () => {
+    let rejectPoll!: (e: Error) => void
+    mockGetChannels
+      .mockResolvedValueOnce([]) // initial load
+      .mockReturnValueOnce(
+        new Promise<never>((_, reject) => {
+          rejectPoll = reject
+        })
+      )
+
+    vi.useFakeTimers()
+    const { unmount } = renderHook(() => useAuth(), { wrapper: AuthProvider })
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+
+    // Trigger the poll
+    act(() => {
+      vi.advanceTimersByTime(5 * 60_000)
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    // Unmount while poll is in-flight (cancelled=true)
+    unmount()
+
+    // Rejecting the stalled poll must not throw — cancelled guard skips failures++
+    await expect(
+      act(async () => {
+        rejectPoll(new Error('network timeout'))
+      })
+    ).resolves.toBeUndefined()
+
+    expect(mockGetChannels).toHaveBeenCalledTimes(2)
+  })
+})

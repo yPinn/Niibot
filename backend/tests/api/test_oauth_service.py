@@ -185,10 +185,12 @@ class TestFindOrCreateUser:
         winner_row.__getitem__ = lambda self, k: winner_id if k == "user_id" else None
 
         # fast path → None; INSERT users → some row; fallback SELECT → winner
+        # execute[0]: INSERT user_linked_accounts → race loser raises UniqueViolationError
+        # execute[1]: UPDATE is_activated in fallback path → succeeds
         user_row = MagicMock()
         user_row.__getitem__ = lambda self, k: uuid.uuid4() if k == "id" else None
         conn.fetchrow.side_effect = [None, user_row, winner_row]
-        conn.execute.side_effect = UniqueViolationError("unique constraint violation")
+        conn.execute.side_effect = [UniqueViolationError("unique constraint violation"), None]
         conn.transaction = MagicMock(return_value=_make_tx_cm())
 
         pool = _make_pool_with_conn(conn)

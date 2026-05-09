@@ -7,7 +7,7 @@ import { useAuth } from '@/contexts/AuthContext'
  * Protected route - requires authentication
  */
 export function ProtectedRoute() {
-  const { isAuthenticated, isInitialized, isInitError, retryInit } = useAuth()
+  const { user, isAuthenticated, isInitialized, isInitError, retryInit } = useAuth()
   const location = useLocation()
 
   if (!isInitialized) {
@@ -30,6 +30,27 @@ export function ProtectedRoute() {
 
   if (!isAuthenticated) {
     return <Navigate to="/login" state={{ from: location }} replace />
+  }
+
+  if (!user?.is_activated) {
+    return <Navigate to="/activate" replace />
+  }
+
+  return <Outlet />
+}
+
+/**
+ * Owner-only route - requires is_owner flag
+ */
+export function OwnerRoute() {
+  const { user, isAuthenticated, isInitialized } = useAuth()
+
+  if (!isInitialized) {
+    return <LoadingSpinner fullScreen text="Loading..." />
+  }
+
+  if (!isAuthenticated || !user?.is_owner) {
+    return <Navigate to="/dashboard" replace />
   }
 
   return <Outlet />

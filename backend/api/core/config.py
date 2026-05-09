@@ -42,8 +42,9 @@ class Settings(BaseServiceSettings):
         default="http://localhost:8080", description="Discord Bot Health Server URL"
     )
 
-    # Bot identity (shared with twitch bot via shared.env)
+    # Bot/owner identity (shared with twitch bot via shared.env)
     bot_id: str = Field(default="", description="Twitch bot user ID")
+    owner_id: str = Field(default="", description="Owner Twitch user ID")
 
     youtube_api_key: str = Field(default="", description="YouTube Data API v3 key")
     host: str = Field(default="0.0.0.0", description="Server host")

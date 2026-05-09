@@ -36,6 +36,11 @@ async def find_or_create_user(
             platform_user_id,
         )
         if row:
+            # Existing OAuth account — activate in case the column was added after signup.
+            await conn.execute(
+                "UPDATE users SET is_activated = TRUE WHERE id = $1 AND is_activated = FALSE",
+                row["user_id"],
+            )
             return str(row["user_id"])
 
         # Slow path: create new user + linked account inside a transaction.
@@ -74,6 +79,10 @@ async def find_or_create_user(
                     f"Concurrent OAuth race for {platform}:{platform_user_id} — "
                     "winner's account disappeared before fallback SELECT"
                 ) from None
+            await conn.execute(
+                "UPDATE users SET is_activated = TRUE WHERE id = $1 AND is_activated = FALSE",
+                row["user_id"],
+            )
             return str(row["user_id"])
 
     LOGGER.info(f"Created user {user_id} for {platform}:{platform_user_id} ({username})")
