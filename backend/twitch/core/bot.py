@@ -65,6 +65,9 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
         self.timer_configs = TimerConfigRepository(token_database)
         self.message_trigger_configs = MessageTriggerRepository(token_database)
         self._active_sessions: dict[str, int] = {}
+        # Channels currently mid-way through session creation — prevents double-create
+        # between event_stream_online and _session_verify_loop running concurrently.
+        self._session_creating: set[str] = set()
         # In-memory chatter buffers: {channel_id: {user_id: {"username": str, "count": int, "last_at": datetime}}}
         self._chatter_buffers: dict[str, dict[str, dict]] = {}
         # Per-channel cumulative message count during active sessions (for timer min_lines gate)

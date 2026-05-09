@@ -243,11 +243,19 @@ class _AnalyticsSessionMixin:
         """
         async with self.pool.acquire() as conn:
             existing = await conn.fetchrow(
-                "SELECT id FROM stream_sessions WHERE channel_id = $1 AND started_at = $2",
+                "SELECT id, title FROM stream_sessions WHERE channel_id = $1 AND started_at = $2",
                 channel_id,
                 started_at,
             )
             if existing:
+                if existing["title"] is None and title:
+                    await conn.execute(
+                        "UPDATE stream_sessions SET title = $1 WHERE id = $2",
+                        title,
+                        existing["id"],
+                    )
+                    _session_cache.clear()
+                    _summary_cache.clear()
                 return None
 
             session_id = await conn.fetchval(

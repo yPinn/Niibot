@@ -109,30 +109,37 @@ class _SessionMixin:
                     LOGGER.debug(f"Session already active for channel {channel_id}, skipping")
                     continue
 
-                existing_session = await self.analytics.get_active_session(channel_id)  # type: ignore[attr-defined]
-                if existing_session:
-                    self._active_sessions[channel_id] = existing_session["id"]  # type: ignore[attr-defined]
-                    LOGGER.info(
-                        f"Resumed existing session {existing_session['id']} "
-                        f"for channel {channel_id}"
-                    )
+                if channel_id in self._session_creating:  # type: ignore[attr-defined]
+                    LOGGER.debug(f"Session creation in-flight for {channel_id}, skipping")
                     continue
+                self._session_creating.add(channel_id)  # type: ignore[attr-defined]
+                try:
+                    existing_session = await self.analytics.get_active_session(channel_id)  # type: ignore[attr-defined]
+                    if existing_session:
+                        self._active_sessions[channel_id] = existing_session["id"]  # type: ignore[attr-defined]
+                        LOGGER.info(
+                            f"Resumed existing session {existing_session['id']} "
+                            f"for channel {channel_id}"
+                        )
+                        continue
 
-                started_at = stream.started_at or datetime.now(UTC)
-                game_id = str(stream.game_id) if stream.game_id else None
+                    started_at = stream.started_at or datetime.now(UTC)
+                    game_id = str(stream.game_id) if stream.game_id else None
 
-                session_id = await self.analytics.create_session(  # type: ignore[attr-defined]
-                    channel_id=channel_id,
-                    started_at=started_at,
-                    title=stream.title,
-                    game_name=stream.game_name,
-                    game_id=game_id,
-                )
-                self._active_sessions[channel_id] = session_id  # type: ignore[attr-defined]
-                LOGGER.info(
-                    f"Created recovery session {session_id} for live channel {channel_id} "
-                    f"(started: {started_at})"
-                )
+                    session_id = await self.analytics.create_session(  # type: ignore[attr-defined]
+                        channel_id=channel_id,
+                        started_at=started_at,
+                        title=stream.title,
+                        game_name=stream.game_name,
+                        game_id=game_id,
+                    )
+                    self._active_sessions[channel_id] = session_id  # type: ignore[attr-defined]
+                    LOGGER.info(
+                        f"Created recovery session {session_id} for live channel {channel_id} "
+                        f"(started: {started_at})"
+                    )
+                finally:
+                    self._session_creating.discard(channel_id)  # type: ignore[attr-defined]
 
             LOGGER.info("Session recovery complete")
             await self._sync_vods_for_channels(channel_ids)  # type: ignore[attr-defined]
@@ -172,27 +179,35 @@ class _SessionMixin:
                 for cid, stream in live_map.items():
                     if cid in self._active_sessions:  # type: ignore[attr-defined]
                         continue
-                    existing = await self.analytics.get_active_session(cid)  # type: ignore[attr-defined]
-                    if existing:
-                        self._active_sessions[cid] = existing["id"]  # type: ignore[attr-defined]
+                    if cid in self._session_creating:  # type: ignore[attr-defined]
                         continue
-                    started_at = stream.started_at or datetime.now(UTC)
-                    game_id = str(stream.game_id) if stream.game_id else None
-                    sid = await self.analytics.create_session(  # type: ignore[attr-defined]
-                        channel_id=cid,
-                        started_at=started_at,
-                        title=stream.title,
-                        game_name=stream.game_name,
-                        game_id=game_id,
-                    )
-                    self._active_sessions[cid] = sid  # type: ignore[attr-defined]
-                    LOGGER.info(f"Session {sid} created for channel {cid} (poll)")
+                    self._session_creating.add(cid)  # type: ignore[attr-defined]
+                    try:
+                        existing = await self.analytics.get_active_session(cid)  # type: ignore[attr-defined]
+                        if existing:
+                            self._active_sessions[cid] = existing["id"]  # type: ignore[attr-defined]
+                            continue
+                        started_at = stream.started_at or datetime.now(UTC)
+                        game_id = str(stream.game_id) if stream.game_id else None
+                        sid = await self.analytics.create_session(  # type: ignore[attr-defined]
+                            channel_id=cid,
+                            started_at=started_at,
+                            title=stream.title,
+                            game_name=stream.game_name,
+                            game_id=game_id,
+                        )
+                        self._active_sessions[cid] = sid  # type: ignore[attr-defined]
+                        LOGGER.info(f"Session {sid} created for channel {cid} (poll)")
+                    finally:
+                        self._session_creating.discard(cid)  # type: ignore[attr-defined]
 
                 for cid in list(self._active_sessions):  # type: ignore[attr-defined]
                     if cid in live_map:
                         continue
                     sid = self._active_sessions.get(cid)  # type: ignore[attr-defined]
-                    chatter_data = dict(self._chatter_buffers.get(cid, {}))  # type: ignore[attr-defined]
+                    # Pop the buffer atomically so a concurrent event_stream_offline flush
+                    # gets an empty dict rather than the same data (prevents double-flush).
+                    chatter_data = self._chatter_buffers.pop(cid, {})  # type: ignore[attr-defined]
                     if sid:
                         if chatter_data:
                             try:
@@ -212,7 +227,6 @@ class _SessionMixin:
                         except Exception as e:
                             LOGGER.warning(f"Failed to end session {sid}: {e}")
                     self._active_sessions.pop(cid, None)  # type: ignore[attr-defined]
-                    self._chatter_buffers.pop(cid, None)  # type: ignore[attr-defined]
                     self._channel_line_counts.pop(cid, None)  # type: ignore[attr-defined]
 
                 closed = await self.analytics.close_stale_sessions(max_hours=12)  # type: ignore[attr-defined]

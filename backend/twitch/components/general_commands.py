@@ -227,30 +227,42 @@ class GeneralCommandsComponent(BotComponent):
                 )
                 return
 
-            stream = None
-            async for s in self.bot.fetch_streams(user_ids=[channel_id]):
-                stream = s
-                break
+            if channel_id in self.bot._session_creating:
+                LOGGER.debug(f"Session creation in-flight for {payload.broadcaster.name}, skipping")
+                return
+            self.bot._session_creating.add(channel_id)
+            try:
+                stream = None
+                for attempt in range(4):
+                    async for s in self.bot.fetch_streams(user_ids=[channel_id]):
+                        stream = s
+                        break
+                    if stream is not None:
+                        break
+                    if attempt < 3:
+                        await asyncio.sleep(3)
 
-            title = stream.title if stream else None
-            game_name = stream.game_name if stream else None
-            game_id = str(stream.game_id) if stream and stream.game_id else None
-            started_at = (
-                stream.started_at if stream and stream.started_at else None
-            ) or datetime.now(UTC)
+                title = stream.title if stream else None
+                game_name = stream.game_name if stream else None
+                game_id = str(stream.game_id) if stream and stream.game_id else None
+                started_at = (
+                    stream.started_at if stream and stream.started_at else None
+                ) or datetime.now(UTC)
 
-            analytics = self.bot.analytics
-            session_id = await analytics.create_session(
-                channel_id=channel_id,
-                started_at=started_at,
-                title=title,
-                game_name=game_name,
-                game_id=game_id,
-            )
-            active_sessions[channel_id] = session_id
-            LOGGER.info(
-                f"Created analytics session {session_id} for channel {payload.broadcaster.name}"
-            )
+                analytics = self.bot.analytics
+                session_id = await analytics.create_session(
+                    channel_id=channel_id,
+                    started_at=started_at,
+                    title=title,
+                    game_name=game_name,
+                    game_id=game_id,
+                )
+                active_sessions[channel_id] = session_id
+                LOGGER.info(
+                    f"Created analytics session {session_id} for channel {payload.broadcaster.name}"
+                )
+            finally:
+                self.bot._session_creating.discard(channel_id)
         except Exception as e:
             LOGGER.error(f"Failed to create analytics session: {e}")
 
