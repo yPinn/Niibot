@@ -64,6 +64,8 @@ def bot():
         b._chatter_buffers = {}
         b._channel_line_counts = {}
         b._needs_reauth = set()
+        b._bot_is_mod = {"123"}
+        b._bot_login = "niibot_test"
         b._handle_custom_command = AsyncMock(return_value=False)
         b._handle_message_trigger = AsyncMock(return_value=False)
         b._background_tasks = set()
@@ -123,3 +125,39 @@ async def test_bot_own_message_is_ignored(bot):
 
     bot._handle_custom_command.assert_not_called()
     super_mock.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Tests — mod guard
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_message_blocked_when_bot_not_mod(bot):
+    """All command routing is skipped and mod_guard_notifier fires when bot lacks mod."""
+    bot._bot_is_mod = set()  # bot has no mod in any channel
+    payload = _make_payload(source_broadcaster=None, text="!hello")
+
+    with (
+        patch("twitch.core.bot.commands.AutoBot.event_message", new=AsyncMock()) as super_mock,
+        patch("twitch.core.bot.mod_guard_notifier") as mock_notifier,
+    ):
+        mock_notifier.notify = AsyncMock(return_value=True)
+        await bot.event_message(payload)
+
+    mock_notifier.notify.assert_awaited_once()
+    bot._handle_custom_command.assert_not_called()
+    super_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_message_passes_when_bot_has_mod(bot):
+    """Command routing runs normally when bot has confirmed mod in the channel."""
+    assert "123" in bot._bot_is_mod  # fixture default
+    payload = _make_payload(source_broadcaster=None, text="!hello")
+
+    with patch("twitch.core.bot.commands.AutoBot.event_message", new=AsyncMock()) as super_mock:
+        await bot.event_message(payload)
+
+    bot._handle_custom_command.assert_called_once_with(payload)
+    super_mock.assert_called_once_with(payload)

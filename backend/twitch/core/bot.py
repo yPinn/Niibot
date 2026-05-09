@@ -7,6 +7,7 @@ import logging
 from datetime import UTC, datetime
 
 import asyncpg
+import httpx
 import twitchio
 from twitchio import eventsub
 from twitchio.ext import commands
@@ -28,6 +29,7 @@ from shared.repositories.command_config import (
 )
 from shared.repositories.message_trigger import MessageTriggerRepository
 from shared.repositories.timer import TimerConfigRepository
+from utils.mod_guard import mod_guard_notifier
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -75,6 +77,10 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
         self._shared_chat_channels: set[str] = set()
         # Channels missing one or more BROADCASTER_SCOPES — notified on next stream online
         self._needs_reauth: set[str] = set()
+        # Channel IDs where bot has confirmed moderator status
+        self._bot_is_mod: set[str] = set()
+        # Bot's own login name (set during load_tokens)
+        self._bot_login: str = ""
 
         init_kwargs: dict = dict(
             client_id=client_id,
@@ -164,6 +170,8 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
         else:
             LOGGER.debug(f"Channel {payload.user_id} already subscribed, skipping")
 
+        await self._check_bot_mod_status(payload.user_id)
+
     async def event_token_refreshed(self, payload: _TokenRefreshedPayload) -> None:
         if not payload.user_id:
             return
@@ -231,6 +239,19 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
                 self._channel_line_counts[channel_id] = (
                     self._channel_line_counts.get(channel_id, 0) + 1
                 )
+
+            # Mod guard: block all functionality until bot has mod in this channel
+            if channel_id not in self._bot_is_mod:
+                await mod_guard_notifier.notify(
+                    broadcaster_login=payload.broadcaster.name or "",
+                    channel_id=channel_id,
+                    bot_login=self._bot_login,
+                    send_fn=lambda msg: payload.broadcaster.send_message(
+                        message=msg,
+                        sender=self.bot_id,
+                    ),
+                )
+                return
 
             if payload.text and payload.text.startswith("!"):
                 parts = payload.text.split(maxsplit=1)
@@ -312,6 +333,7 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
                 continue
 
             if tok.user_id == self._bot_id:
+                self._bot_login = user_info.login or ""
                 if "user:bot" not in user_info.scopes:
                     LOGGER.warning(
                         "Bot token is missing 'user:bot' scope — bot badge will NOT appear "
@@ -339,6 +361,45 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
     # ------------------------------------------------------------------
     # Utility
     # ------------------------------------------------------------------
+
+    async def _check_bot_mod_status(self, channel_id: str) -> None:
+        """Check via Helix API if the bot is a moderator in the channel.
+
+        Populates _bot_is_mod on success. Logs a warning if the check fails
+        (missing scope, token error, etc.) and leaves the channel out of _bot_is_mod.
+        """
+        try:
+            token_obj = await self.channels.get_token(channel_id)
+            if not token_obj:
+                LOGGER.debug(f"No token for channel {channel_id}, cannot verify mod status")
+                return
+
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(
+                    "https://api.twitch.tv/helix/moderation/moderators",
+                    headers={
+                        "Client-Id": self._client_id,
+                        "Authorization": f"Bearer {token_obj.token}",
+                    },
+                    params={"broadcaster_id": channel_id, "user_id": self._bot_id},
+                )
+
+            if resp.status_code == 200:
+                data = resp.json().get("data", [])
+                if data:
+                    self._bot_is_mod.add(channel_id)
+                    LOGGER.info(f"Bot confirmed mod in channel {channel_id}")
+                else:
+                    LOGGER.info(
+                        f"Bot is NOT mod in channel {channel_id} — "
+                        "chat features blocked until /mod is granted"
+                    )
+            else:
+                LOGGER.warning(
+                    f"Mod status check failed for {channel_id}: {resp.status_code} {resp.text[:80]}"
+                )
+        except Exception as e:
+            LOGGER.warning(f"Mod status check error for {channel_id}: {type(e).__name__}: {e}")
 
     def _refresh_pool_refs(self) -> None:
         """Update all pool references after a reconnect."""

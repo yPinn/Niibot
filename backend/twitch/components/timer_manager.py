@@ -67,6 +67,9 @@ class TimerManagerComponent(commands.Component):
             if channel_id not in self.bot._active_sessions:
                 continue  # Only during live streams
 
+            if channel_id not in self.bot._bot_is_mod:  # type: ignore[attr-defined]
+                continue  # Bot must be mod to send timer messages
+
             try:
                 timers = await self.bot.timer_configs.list_enabled(channel_id)
             except Exception as e:
@@ -132,8 +135,13 @@ class TimerManagerComponent(commands.Component):
         if not cmd_name:
             return
 
+        if not message.broadcaster:
+            return
         channel_id = message.broadcaster.id
         if not channel_id:
+            return
+
+        if channel_id not in self.bot._bot_is_mod:  # type: ignore[attr-defined]
             return
 
         try:

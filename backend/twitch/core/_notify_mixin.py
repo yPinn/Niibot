@@ -44,6 +44,7 @@ class _NotifyMixin:
             if enabled:
                 if channel_id not in self._subscribed_channels:  # type: ignore[attr-defined]
                     await self.subscribe_channel_events(channel_id)  # type: ignore[attr-defined]
+                    await self._check_bot_mod_status(channel_id)  # type: ignore[attr-defined]
                     try:
                         await self.redemption_configs.ensure_defaults(  # type: ignore[attr-defined]
                             channel_id,
@@ -60,6 +61,7 @@ class _NotifyMixin:
             else:
                 if channel_id in self._subscribed_channels:  # type: ignore[attr-defined]
                     await self.unsubscribe_channel_events(channel_id)  # type: ignore[attr-defined]
+                    self._bot_is_mod.discard(channel_id)  # type: ignore[attr-defined]
                     LOGGER.info(f"[NOTIFY] Instantly unsubscribed from channel: {channel_id}")
                 else:
                     LOGGER.info(f"[NOTIFY] Channel {channel_id} not subscribed, skipping")
@@ -113,6 +115,7 @@ class _NotifyMixin:
 
                 if user_id not in self._subscribed_channels:  # type: ignore[attr-defined]
                     await self.subscribe_channel_events(user_id)  # type: ignore[attr-defined]
+                    await self._check_bot_mod_status(user_id)  # type: ignore[attr-defined]
 
                     try:
                         await self.redemption_configs.ensure_defaults(  # type: ignore[attr-defined]

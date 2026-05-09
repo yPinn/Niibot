@@ -45,6 +45,9 @@ class EventComponent(commands.Component):
         if expired_keys:
             LOGGER.debug(f"Cleaned up {len(expired_keys)} expired cache entries")
 
+    def _bot_has_mod(self, channel_id: str) -> bool:
+        return channel_id in self.bot._bot_is_mod  # type: ignore[attr-defined]
+
     def _should_notify(self, user_id: str) -> bool:
         """檢查是否應該發送通知（防刷機制，僅用於追隨事件）"""
         self._event_counter += 1
@@ -123,6 +126,10 @@ class EventComponent(commands.Component):
             LOGGER.info(f"[{broadcaster_name}] Follow: {user_name} (cooldown)")
             return
 
+        if not self._bot_has_mod(channel_id):
+            LOGGER.debug(f"[{broadcaster_name}] Follow: {user_name} (bot not mod, skipped)")
+            return
+
         try:
             message = await self._get_message(channel_id, "follow", {"user": user_name})
             if message is None:
@@ -180,6 +187,12 @@ class EventComponent(commands.Component):
             except Exception as e:
                 LOGGER.warning(f"[{broadcaster_name}] Subscription status upsert failed: {e}")
 
+        if not self._bot_has_mod(channel_id):
+            LOGGER.debug(
+                f"[{broadcaster_name}] {sub_type}: {user_name} ({tier_name}) (bot not mod, skipped)"
+            )
+            return
+
         try:
             message = await self._get_message(
                 channel_id, "subscribe", {"user": user_name, "tier": tier_name}
@@ -235,6 +248,24 @@ class EventComponent(commands.Component):
         cumulative = getattr(payload, "cumulative_total", None)
         cumulative_str = str(cumulative) if cumulative is not None else "?"
 
+        # Analytics — always write regardless of mod status (before mod guard)
+        if not payload.anonymous and payload.user and cumulative is not None:
+            if hasattr(self.bot, "analytics"):
+                try:
+                    await self.bot.analytics.upsert_viewer_gift_count(
+                        channel_id=channel_id,
+                        user_id=payload.user.id,
+                        username=payload.user.name or "",
+                        display_name=payload.user.display_name,
+                        total_gifts_given=int(cumulative),
+                    )
+                except Exception as e:
+                    LOGGER.warning(f"[{broadcaster_name}] Gift upsert failed: {e}")
+
+        if not self._bot_has_mod(channel_id):
+            LOGGER.debug(f"[{broadcaster_name}] GiftSub: bot not mod, skipped")
+            return
+
         try:
             message = await self._get_message(
                 channel_id,
@@ -259,20 +290,6 @@ class EventComponent(commands.Component):
         except Exception as e:
             LOGGER.error(f"[{broadcaster_name}] GiftSub: {user_name} (error: {e})")
 
-        # Analytics — only update cumulative count when gifter is known
-        if not payload.anonymous and payload.user and cumulative is not None:
-            if hasattr(self.bot, "analytics"):
-                try:
-                    await self.bot.analytics.upsert_viewer_gift_count(
-                        channel_id=channel_id,
-                        user_id=payload.user.id,
-                        username=payload.user.name or "",
-                        display_name=payload.user.display_name,
-                        total_gifts_given=int(cumulative),
-                    )
-                except Exception as e:
-                    LOGGER.warning(f"[{broadcaster_name}] Gift upsert failed: {e}")
-
     @commands.Component.listener()
     async def event_subscription_message(
         self,
@@ -285,6 +302,10 @@ class EventComponent(commands.Component):
         user_name = payload.user.display_name or payload.user.name or ""
         broadcaster_name = payload.broadcaster.name
         channel_id = payload.broadcaster.id
+
+        if not self._bot_has_mod(channel_id):
+            LOGGER.debug(f"[{broadcaster_name}] Resub: {user_name} (bot not mod, skipped)")
+            return
         tier_name = _TIER_MAP.get(payload.tier, payload.tier)
         months = payload.months
         streak = payload.streak_months if payload.streak_months is not None else 0
@@ -335,6 +356,10 @@ class EventComponent(commands.Component):
             )
         broadcaster_name = payload.broadcaster.name
         channel_id = payload.broadcaster.id
+
+        if not self._bot_has_mod(channel_id):
+            LOGGER.debug(f"[{broadcaster_name}] Cheer: {user_name} (bot not mod, skipped)")
+            return
         bits_amount = payload.bits
         cheer_message = payload.message or ""
 
@@ -390,6 +415,10 @@ class EventComponent(commands.Component):
         broadcaster_name = payload.to_broadcaster.name
         broadcaster_id = payload.to_broadcaster.id
         viewer_count = payload.viewer_count
+
+        if not self._bot_has_mod(broadcaster_id):
+            LOGGER.debug(f"[{broadcaster_name}] Raid: {raider_name} (bot not mod, skipped)")
+            return
 
         try:
             config = await self.event_configs.get_config(broadcaster_id, "raid")
@@ -478,6 +507,12 @@ class EventComponent(commands.Component):
         """頻道新增管理員"""
         channel_id = payload.broadcaster.id
         user_name = payload.user.display_name or payload.user.name or ""
+
+        # Track when bot itself gets mod — unlocks all features
+        if payload.user.id == self.bot.bot_id:
+            self.bot._bot_is_mod.add(channel_id)  # type: ignore[attr-defined]
+            LOGGER.info(f"[{payload.broadcaster.name}] Bot was granted mod — all features enabled")
+
         try:
             if hasattr(self.bot, "analytics"):
                 await self.bot.analytics.upsert_viewer_mod_status(
@@ -499,6 +534,12 @@ class EventComponent(commands.Component):
         """頻道移除管理員"""
         channel_id = payload.broadcaster.id
         user_name = payload.user.display_name or payload.user.name or ""
+
+        # Track when bot itself loses mod — blocks all features
+        if payload.user.id == self.bot.bot_id:
+            self.bot._bot_is_mod.discard(channel_id)  # type: ignore[attr-defined]
+            LOGGER.warning(f"[{payload.broadcaster.name}] Bot lost mod — all features blocked")
+
         try:
             if hasattr(self.bot, "analytics"):
                 await self.bot.analytics.upsert_viewer_mod_status(

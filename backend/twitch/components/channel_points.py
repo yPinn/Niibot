@@ -8,6 +8,7 @@ import twitchio
 from twitchio.ext import commands
 
 from core.config import get_settings
+from shared.repositories.activation_code import ActivationCodeRepository
 from shared.repositories.command_config import RedemptionConfigRepository
 from shared.repositories.game_queue import GameQueueRepository, GameQueueSettingsRepository
 from shared.repositories.video_queue import (
@@ -21,6 +22,7 @@ from shared.repositories.video_queue import (
     fetch_twitch_clip_info,
     fetch_yt_info,
 )
+from utils.mod_guard import mod_guard_notifier
 from utils.reauth import is_scope_error, reauth_notifier
 
 if TYPE_CHECKING:
@@ -39,6 +41,7 @@ class ChannelPointsComponent(commands.Component):
         self.bot: Bot = bot  # type: ignore[assignment]
         self.settings = get_settings()
         self.redemption_repo = RedemptionConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
+        self.activation_repo = ActivationCodeRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.gq_repo = GameQueueRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.gq_settings_repo = GameQueueSettingsRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.vq_repo = VideoQueueRepository(self.bot.token_database)  # type: ignore[attr-defined]
@@ -47,6 +50,7 @@ class ChannelPointsComponent(commands.Component):
 
     def refresh_pool(self, pool) -> None:
         self.redemption_repo.pool = pool
+        self.activation_repo.pool = pool
         self.gq_repo.pool = pool
         self.gq_settings_repo.pool = pool
         self.vq_repo.pool = pool
@@ -76,6 +80,7 @@ class ChannelPointsComponent(commands.Component):
         LOGGER.debug(f"event_custom_redemption_add triggered: {type(payload).__name__}")
 
         channel_name = payload.broadcaster.name
+        channel_id = payload.broadcaster.id
         user_name = payload.user.display_name or payload.user.name
         reward_title = payload.reward.title
         reward_cost = payload.reward.cost
@@ -84,6 +89,17 @@ class ChannelPointsComponent(commands.Component):
         LOGGER.info(f"[{channel_name}] {user_name} redeemed '{reward_title}' ({reward_cost} pts)")
         if user_input:
             LOGGER.debug(f"[{channel_name}] User input: {user_input}")
+
+        if channel_id not in self.bot._bot_is_mod:  # type: ignore[attr-defined]
+            LOGGER.debug(f"[{channel_name}] Redemption skipped: bot not mod")
+            bot_login: str = getattr(self.bot, "_bot_login", "niibot")
+            await mod_guard_notifier.notify(
+                broadcaster_login=channel_name or "",
+                channel_id=channel_id,
+                bot_login=bot_login,
+                send_fn=lambda msg: self._reply(payload.broadcaster, msg),
+            )
+            return
 
         await self._handle_redemption(payload)
 
@@ -200,48 +216,55 @@ class ChannelPointsComponent(commands.Component):
         payload: twitchio.ChannelPointsRedemptionAdd,
         user_name: str,
     ) -> None:
-        """處理 Niibot 獎勵兌換"""
+        """處理 Niibot 獎勵兌換：生成啟用碼並透過私訊發送"""
         channel_name = payload.broadcaster.name
         broadcaster = payload.broadcaster
+        platform_user_id = str(payload.user.id)
+
         try:
-            oauth_url = self.settings.frontend_url
-            try:
-                await self._reply(broadcaster, f"@{user_name} 已將授權連結發送至你的 Twitch 私訊！")
-                LOGGER.info(f"[{channel_name}] Niibot auth: confirmation sent to {user_name}")
-            except Exception as e:
-                LOGGER.warning(f"[{channel_name}] Niibot auth: failed to send public message: {e}")
-
-            whisper_message = f"請點擊以下連結，授權 Niibot 存取你的頻道： {oauth_url}"
-            try:
-                bot_user = self.bot.create_partialuser(user_id=self.bot.bot_id)
-                await bot_user.send_whisper(
-                    to_user=payload.user,
-                    message=whisper_message,
-                )
-                LOGGER.info(f"[{channel_name}] Niibot auth: whisper sent to {user_name}")
-            except Exception as e:
-                LOGGER.error(f"[{channel_name}] Niibot auth: failed to send whisper: {e}")
-                if is_scope_error(e):
-                    await reauth_notifier.notify(
-                        broadcaster_login=channel_name or "",
-                        channel_id=str(broadcaster.id),
-                        send_fn=lambda msg: self._reply(broadcaster, msg),
-                    )
-                try:
-                    await self._reply(
-                        broadcaster,
-                        f"@{user_name} 私訊發送失敗，請聯繫 @llazypilot 獲取授權連結！",
-                    )
-                    LOGGER.error(
-                        f"[{channel_name}] Niibot auth: whisper failed, fell back to chat message"
-                    )
-                except Exception as fallback_error:
-                    LOGGER.error(
-                        f"[{channel_name}] Niibot auth: fallback also failed: {fallback_error}"
-                    )
-
+            code = await self.activation_repo.create("twitch", platform_user_id)
         except Exception as e:
-            LOGGER.error(f"[{channel_name}] Niibot auth error: {e}")
+            LOGGER.error(f"[{channel_name}] Niibot auth: failed to generate activation code: {e}")
+            try:
+                await self._reply(broadcaster, f"@{user_name} 啟用碼生成失敗，請稍後再試！")
+            except Exception:
+                pass
+            return
+
+        try:
+            await self._reply(broadcaster, f"@{user_name} 已將啟用碼發送至你的 Twitch 私訊！")
+            LOGGER.info(f"[{channel_name}] Niibot auth: confirmation sent to {user_name}")
+        except Exception as e:
+            LOGGER.warning(f"[{channel_name}] Niibot auth: failed to send public message: {e}")
+
+        frontend_url = self.settings.frontend_url
+        whisper_message = (
+            f"請前往 {frontend_url} 登入後，於啟用頁面輸入以下啟用碼： {code}（72 小時內有效）"
+        )
+        try:
+            bot_user = self.bot.create_partialuser(user_id=self.bot.bot_id)
+            await bot_user.send_whisper(
+                to_user=payload.user,
+                message=whisper_message,
+            )
+            LOGGER.info(f"[{channel_name}] Niibot auth: whisper sent to {user_name}")
+        except Exception as e:
+            LOGGER.error(f"[{channel_name}] Niibot auth: failed to send whisper: {e}")
+            if is_scope_error(e):
+                await reauth_notifier.notify(
+                    broadcaster_login=channel_name or "",
+                    channel_id=str(broadcaster.id),
+                    send_fn=lambda msg: self._reply(broadcaster, msg),
+                )
+            try:
+                await self._reply(
+                    broadcaster,
+                    f"@{user_name} 私訊發送失敗，請聯繫 @llazypilot 獲取啟用碼！",
+                )
+            except Exception as fallback_error:
+                LOGGER.error(
+                    f"[{channel_name}] Niibot auth: fallback also failed: {fallback_error}"
+                )
 
     async def _handle_game_queue_redemption(
         self,

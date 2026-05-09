@@ -44,11 +44,20 @@ class _SessionMixin:
             warmed_channels = self.channels.warm_channel_cache(enabled_channels)  # type: ignore[attr-defined]
             LOGGER.info(f"Warmed channel cache: {warmed_channels} channels")
 
-            total_warmed = 0
-            for ch in enabled_channels:
-                if ch.channel_id == self._bot_id:  # type: ignore[attr-defined]
-                    continue
+            non_bot = [ch for ch in enabled_channels if ch.channel_id != self._bot_id]  # type: ignore[attr-defined]
+
+            # Subscribe events sequentially (order matters for dedup checks inside subscribe_channel_events)
+            for ch in non_bot:
                 await self.subscribe_channel_events(ch.channel_id)  # type: ignore[attr-defined]
+
+            # Mod status checks are independent HTTP calls — run concurrently
+            await asyncio.gather(
+                *(self._check_bot_mod_status(ch.channel_id) for ch in non_bot),  # type: ignore[attr-defined]
+                return_exceptions=True,
+            )
+
+            total_warmed = 0
+            for ch in non_bot:
                 try:
                     await self.redemption_configs.ensure_defaults(  # type: ignore[attr-defined]
                         ch.channel_id,
