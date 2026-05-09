@@ -275,7 +275,7 @@ export default function GameQueue() {
   }
 
   return (
-    <PageMain className="relative">
+    <PageMain>
       <PageHeader title="Game Queue" description="管理遊戲排隊系統" />
 
       {!isAffiliate && (

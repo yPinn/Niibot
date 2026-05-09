@@ -470,7 +470,7 @@ export default function VideoQueue() {
   const totalQueuedDuration = state?.total_queued_duration ?? null
 
   return (
-    <PageMain className="relative">
+    <PageMain>
       <div className="flex items-start justify-between gap-2">
         <PageHeader title="Video Queue" description="管理 YouTube 影片佇列" />
         <Button
