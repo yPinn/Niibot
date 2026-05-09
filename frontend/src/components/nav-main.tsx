@@ -25,6 +25,7 @@ export function NavMain({
     url: string
     icon: string
     isActive?: boolean
+    ownerOnly?: boolean
     items?: {
       title: string
       url: string
@@ -65,7 +66,11 @@ export function NavMain({
                 setOpenItem({ title: item.title, pathname: location.pathname })
               } else {
                 // accordion：同時只能開一項
-                setOpenItem(shouldOpen ? { title: item.title, pathname: location.pathname } : null)
+                setOpenItem(
+                  shouldOpen
+                    ? { title: item.title, pathname: location.pathname }
+                    : { title: '', pathname: location.pathname }
+                )
               }
             }}
           >

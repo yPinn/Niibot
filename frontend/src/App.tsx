@@ -4,7 +4,7 @@ import { Route, Routes } from 'react-router-dom'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import SidebarLayout from '@/components/layouts/SidebarLayout'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
-import { ProtectedRoute, PublicOnlyRoute } from '@/components/ProtectedRoute'
+import { OwnerRoute, ProtectedRoute, PublicOnlyRoute } from '@/components/ProtectedRoute'
 import { ThemeProvider } from '@/components/theme-provider'
 import { Toaster } from '@/components/ui'
 import { AuthProvider } from '@/contexts/AuthContext'
@@ -17,14 +17,18 @@ const Commands = lazy(() => import('@/pages/dashboard/commands'))
 const Events = lazy(() => import('@/pages/dashboard/Events'))
 const Overview = lazy(() => import('@/pages/dashboard/Overview'))
 const Timers = lazy(() => import('@/pages/dashboard/Timers'))
+const AdminPage = lazy(() => import('@/pages/admin'))
+const AdminSystemStatus = lazy(() => import('@/pages/admin/SystemStatus'))
+const AdminActivationCodes = lazy(() => import('@/pages/admin/ActivationCodes'))
 const Insights = lazy(() => import('@/pages/analytics/Insights'))
-const SystemStatus = lazy(() => import('@/pages/analytics/SystemStatus'))
 const DiscordDashboard = lazy(() => import('@/pages/discord/Dashboard'))
 const GameQueueOverlay = lazy(() => import('@/pages/GameQueueOverlay'))
 const LoginPage = lazy(() => import('@/pages/Login'))
 const ChatOverlayModule = lazy(() => import('@/pages/modules/ChatOverlay'))
 const GameQueue = lazy(() => import('@/pages/modules/GameQueue'))
 const VideoQueue = lazy(() => import('@/pages/modules/VideoQueue'))
+const CrosshairModule = lazy(() => import('@/pages/modules/crosshairs'))
+const CrosshairRepo = lazy(() => import('@/pages/crosshairs'))
 const PublicCommands = lazy(() => import('@/pages/PublicCommands'))
 const DonatePage = lazy(() => import('@/pages/DonatePage'))
 const GetStarted = lazy(() => import('@/pages/docs/GetStarted'))
@@ -32,6 +36,7 @@ const Terms = lazy(() => import('@/pages/Terms'))
 const Privacy = lazy(() => import('@/pages/Privacy'))
 const Settings = lazy(() => import('@/pages/Settings'))
 const VideoQueueOverlay = lazy(() => import('@/pages/VideoQueueOverlay'))
+const ActivatePage = lazy(() => import('@/pages/activate'))
 
 // Dev-only: excluded from production bundle via dead-code elimination
 const TypographyDemo = import.meta.env.DEV ? lazy(() => import('@/pages/TypographyDemo')) : null
@@ -54,6 +59,7 @@ function App() {
                   <Route path="/terms" element={<Terms />} />
                   <Route path="/privacy" element={<Privacy />} />
                   <Route path="/:username/commands" element={<PublicCommands />} />
+                  <Route path="/:username/crosshairs" element={<CrosshairRepo />} />
                   <Route path="/donate/:username" element={<DonatePage />} />
                   <Route
                     path="/:username/game-queue/overlay"
@@ -77,6 +83,7 @@ function App() {
                   <Route element={<PublicOnlyRoute />}>
                     <Route path="/login" element={<LoginPage />} />
                   </Route>
+                  <Route path="/activate" element={<ActivatePage />} />
                   <Route element={<ProtectedRoute />}>
                     <Route element={<SidebarLayout />}>
                       {/* Twitch Bot Routes */}
@@ -84,16 +91,22 @@ function App() {
                       <Route path="/commands" element={<Commands />} />
                       <Route path="/events" element={<Events />} />
                       <Route path="/analytics/insights" element={<Insights />} />
-                      <Route path="/analytics/system-status" element={<SystemStatus />} />
                       <Route path="/settings" element={<Settings />} />
                       {/* Module Routes */}
                       <Route path="/timers" element={<Timers />} />
                       <Route path="/modules/chat-overlay" element={<ChatOverlayModule />} />
                       <Route path="/modules/game-queue" element={<GameQueue />} />
                       <Route path="/modules/video-queue" element={<VideoQueue />} />
+                      <Route path="/modules/crosshairs" element={<CrosshairModule />} />
                       {/* Discord Bot Routes */}
                       <Route path="/docs/get-started" element={<GetStarted />} />
                       <Route path="/discord/dashboard" element={<DiscordDashboard />} />
+                      {/* Owner-only Routes */}
+                      <Route element={<OwnerRoute />}>
+                        <Route path="/admin" element={<AdminPage />} />
+                        <Route path="/admin/status" element={<AdminSystemStatus />} />
+                        <Route path="/admin/codes" element={<AdminActivationCodes />} />
+                      </Route>
                     </Route>
                   </Route>
                   <Route path="*" element={<NotFound />} />

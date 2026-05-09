@@ -17,11 +17,13 @@ from core.database import get_database_manager, init_database_manager
 from core.dependencies import close_twitch_api
 from core.logging import setup_logging
 from routers import (
+    admin_router,
     analytics_router,
     auth_router,
     bots_router,
     channels_router,
     commands_router,
+    crosshairs_router,
     donation_router,
     events_router,
     game_queue_router,
@@ -160,6 +162,7 @@ def create_app() -> FastAPI:
         return response
 
     # Register routers
+    app.include_router(admin_router.router)
     app.include_router(auth_router.router)
     app.include_router(channels_router.router)
     app.include_router(analytics_router.router)
@@ -172,6 +175,7 @@ def create_app() -> FastAPI:
     app.include_router(message_triggers_router.router)
     app.include_router(payment_config_router.router)
     app.include_router(donation_router.router)
+    app.include_router(crosshairs_router.router)
     app.include_router(bots_router.router)
 
     # Root endpoint

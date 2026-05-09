@@ -23,6 +23,17 @@ describe('get / set', () => {
     apiCache.set(KEY, 'second')
     expect(apiCache.get(KEY)).toBe('second')
   })
+
+  it('evicts the oldest entry when the cache reaches MAX_SIZE (200)', () => {
+    for (let i = 0; i < 200; i++) {
+      apiCache.set(`evict-key-${i}`, `value-${i}`)
+    }
+    // Adding one more triggers eviction of the first inserted entry
+    apiCache.set('evict-key-new', 'new-value')
+    expect(apiCache.get('evict-key-0')).toBeNull()
+    expect(apiCache.get('evict-key-1')).toBe('value-1')
+    expect(apiCache.get('evict-key-new')).toBe('new-value')
+  })
 })
 
 describe('TTL', () => {
@@ -103,6 +114,20 @@ describe('CACHE_KEYS', () => {
 
   it('ANALYTICS_SESSION_EVENTS returns keyed string', () => {
     expect(CACHE_KEYS.ANALYTICS_SESSION_EVENTS(42)).toBe('analytics:session-events:42')
+  })
+
+  it('ANALYTICS_INSIGHTS returns keyed string', () => {
+    expect(CACHE_KEYS.ANALYTICS_INSIGHTS(7)).toBe('analytics:insights:7')
+  })
+
+  it('ANALYTICS_VIEWERS returns keyed string', () => {
+    expect(CACHE_KEYS.ANALYTICS_VIEWERS(30)).toBe('analytics:viewers:30')
+  })
+
+  it('ANALYTICS_VIEWER_PROFILE returns keyed string', () => {
+    expect(CACHE_KEYS.ANALYTICS_VIEWER_PROFILE('user123', 7)).toBe(
+      'analytics:viewer-profile:user123:7'
+    )
   })
 })
 

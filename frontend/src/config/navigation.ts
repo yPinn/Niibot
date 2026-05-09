@@ -1,5 +1,30 @@
+export interface NavSubItem {
+  title: string
+  url: string
+}
+
+export interface NavGroup {
+  title: string
+  url: string
+  icon: string
+  isActive?: boolean
+  ownerOnly?: boolean
+  items?: NavSubItem[]
+}
+
+export interface NavSecondaryItem {
+  title: string
+  url: string
+  icon: string
+}
+
+export interface NavigationData {
+  navMain: NavGroup[]
+  navSecondary: NavSecondaryItem[]
+}
+
 // Twitch Bot 導航
-export const navigationData = {
+export const navigationData: NavigationData = {
   navMain: [
     {
       title: 'Dashboard',
@@ -31,16 +56,20 @@ export const navigationData = {
       icon: 'fa-solid fa-puzzle-piece',
       items: [
         {
-          title: 'Chat Overlay',
-          url: '/modules/chat-overlay',
-        },
-        {
           title: 'Game Queue',
           url: '/modules/game-queue',
         },
         {
           title: 'Video Queue',
           url: '/modules/video-queue',
+        },
+        {
+          title: 'Chat Overlay',
+          url: '/modules/chat-overlay',
+        },
+        {
+          title: 'Crosshair Repo',
+          url: '/modules/crosshairs',
         },
       ],
     },
@@ -52,10 +81,6 @@ export const navigationData = {
         {
           title: 'Insights',
           url: '/analytics/insights',
-        },
-        {
-          title: 'System Status',
-          url: '/analytics/system-status',
         },
       ],
     },
@@ -74,6 +99,17 @@ export const navigationData = {
         },
       ],
     },
+    {
+      title: 'Admin',
+      url: '#',
+      icon: 'fa-solid fa-shield-halved',
+      ownerOnly: true,
+      items: [
+        { title: 'Overview', url: '/admin' },
+        { title: 'System Status', url: '/admin/status' },
+        { title: 'Activation Codes', url: '/admin/codes' },
+      ],
+    },
   ],
   navSecondary: [
     {
@@ -85,7 +121,7 @@ export const navigationData = {
 }
 
 // Discord Bot 導航
-export const discordNavigationData = {
+export const discordNavigationData: NavigationData = {
   navMain: [
     {
       title: 'Dashboard',
@@ -96,10 +132,6 @@ export const discordNavigationData = {
         {
           title: 'Overview',
           url: '/discord/dashboard',
-        },
-        {
-          title: 'System Status',
-          url: '/analytics/system-status',
         },
       ],
     },
@@ -112,6 +144,17 @@ export const discordNavigationData = {
           title: 'Get Started',
           url: '/docs/get-started',
         },
+      ],
+    },
+    {
+      title: 'Admin',
+      url: '#',
+      icon: 'fa-solid fa-shield-halved',
+      ownerOnly: true,
+      items: [
+        { title: 'Overview', url: '/admin' },
+        { title: 'System Status', url: '/admin/status' },
+        { title: 'Activation Codes', url: '/admin/codes' },
       ],
     },
   ],

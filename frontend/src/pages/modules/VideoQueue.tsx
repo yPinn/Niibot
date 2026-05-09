@@ -576,8 +576,8 @@ export default function VideoQueue() {
                 <ul className="flex flex-col gap-1">
                   {[
                     '「佇列設定」右上角複製 Overlay URL',
-                    'OBS 新增瀏覽器來源，貼上 URL（1920×1080）',
-                    '來源屬性勾選「控制音訊（透過 OBS）」',
+                    'OBS 新增瀏覽器來源，貼上 URL（建議 640×400）',
+                    '來源屬性勾選「使用 OBS 控制音訊」',
                     '混音器開啟「監聽並輸出」（預設靜音）',
                   ].map(item => (
                     <li key={item} className="flex items-start gap-1.5">

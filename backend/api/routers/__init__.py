@@ -1,11 +1,13 @@
 """API Routers"""
 
 from . import (
+    admin_router,
     analytics_router,
     auth_router,
     bots_router,
     channels_router,
     commands_router,
+    crosshairs_router,
     donation_router,
     events_router,
     game_queue_router,
@@ -17,10 +19,12 @@ from . import (
 )
 
 __all__ = [
+    "admin_router",
     "auth_router",
     "channels_router",
     "analytics_router",
     "commands_router",
+    "crosshairs_router",
     "donation_router",
     "events_router",
     "game_queue_router",

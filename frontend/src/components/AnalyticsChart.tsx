@@ -388,7 +388,7 @@ export default function AnalyticsChart({
           </div>
 
           <div
-            className="h-48 sm:h-64 lg:h-80 relative select-none **:outline-none"
+            className="flex-1 min-h-0 relative select-none **:outline-none"
             onMouseDown={e => e.preventDefault()}
           >
             {isEmpty && (

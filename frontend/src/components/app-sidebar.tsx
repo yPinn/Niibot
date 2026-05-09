@@ -15,8 +15,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { user, channels } = useAuth()
   const { activeBot } = useBot()
 
-  // 根據當前選擇的 Bot 顯示不同的導航
   const currentNavData = activeBot === 'discord' ? discordNavigationData : navigationData
+
+  const navMain = currentNavData.navMain.filter(item => !item.ownerOnly || user?.is_owner)
 
   return (
     <Sidebar variant="inset" collapsible="icon" {...props}>
@@ -25,7 +26,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       </SidebarHeader>
       <SidebarContent className="overflow-hidden">
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-          <NavMain items={currentNavData.navMain} />
+          <NavMain items={navMain} />
           {activeBot === 'twitch' && <NavChannels channels={channels} />}
         </div>
         <NavSecondary items={currentNavData.navSecondary} />

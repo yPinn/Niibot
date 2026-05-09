@@ -228,23 +228,25 @@ export default function Events() {
 
   const { sortKey: redSortKey, sortDir: redSortDir } = redSort
   const sortedRedemptions = useMemo(() => {
-    return [...redemptions].sort((a, b) => {
-      let cmp = 0
-      switch (redSortKey) {
-        case 'action_type':
-          cmp = (ACTION_TYPE_LABELS[a.action_type] || a.action_type).localeCompare(
-            ACTION_TYPE_LABELS[b.action_type] || b.action_type
-          )
-          break
-        case 'reward_name':
-          cmp = a.reward_name.localeCompare(b.reward_name)
-          break
-        case 'enabled':
-          cmp = Number(a.enabled) - Number(b.enabled)
-          break
-      }
-      return redSortDir === 'desc' ? -cmp : cmp
-    })
+    return [...redemptions]
+      .filter(r => r.action_type !== 'niibot_auth')
+      .sort((a, b) => {
+        let cmp = 0
+        switch (redSortKey) {
+          case 'action_type':
+            cmp = (ACTION_TYPE_LABELS[a.action_type] || a.action_type).localeCompare(
+              ACTION_TYPE_LABELS[b.action_type] || b.action_type
+            )
+            break
+          case 'reward_name':
+            cmp = a.reward_name.localeCompare(b.reward_name)
+            break
+          case 'enabled':
+            cmp = Number(a.enabled) - Number(b.enabled)
+            break
+        }
+        return redSortDir === 'desc' ? -cmp : cmp
+      })
   }, [redemptions, redSortKey, redSortDir])
 
   const { toggle: handleToggle } = useOptimisticToggle<EventConfig>({

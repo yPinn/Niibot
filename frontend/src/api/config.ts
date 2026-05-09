@@ -22,6 +22,9 @@ export const API_ENDPOINTS = {
     twitchCallback: join('/api/auth/twitch/callback'),
     user: join('/api/auth/user'),
     logout: join('/api/auth/logout'),
+    activate: join('/api/auth/activate'),
+    requestActivation: join('/api/auth/request-activation'),
+    activationRequest: join('/api/auth/activation-request'),
   },
   user: {
     preferences: join('/api/user/preferences'),
@@ -108,6 +111,14 @@ export const API_ENDPOINTS = {
     upsert: (platform: string) => join(`/api/payment-configs/${platform}`),
     delete: (platform: string) => join(`/api/payment-configs/${platform}`),
   },
+  crosshairs: {
+    allPublic: join('/api/crosshairs/public'),
+    public: (username: string) => join(`/api/crosshairs/public/${username}`),
+    list: join('/api/crosshairs'),
+    create: join('/api/crosshairs'),
+    update: (id: string) => join(`/api/crosshairs/${id}`),
+    delete: (id: string) => join(`/api/crosshairs/${id}`),
+  },
   donate: {
     public: (username: string) => join(`/api/donate/public/${username}`),
     checkout: (username: string) => join(`/api/donate/${username}/checkout`),
@@ -121,6 +132,13 @@ export const API_ENDPOINTS = {
       status: join('/api/bots/discord/status'),
       health: join('/api/bots/discord/health'),
     },
+  },
+  admin: {
+    channels: join('/api/admin/channels'),
+    activationCodes: join('/api/admin/activation-codes'),
+    activationRequests: join('/api/admin/activation-requests'),
+    approveRequest: (id: number) => join(`/api/admin/activation-requests/${id}/approve`),
+    rejectRequest: (id: number) => join(`/api/admin/activation-requests/${id}/reject`),
   },
   health: join('/health'),
   status: join('/status'),

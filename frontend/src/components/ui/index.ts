@@ -42,6 +42,17 @@ export {
 } from './chart'
 export { Collapsible, CollapsibleContent, CollapsibleTrigger } from './collapsible'
 export {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogPortal,
+  DialogTitle,
+  DialogTrigger,
+} from './dialog'
+export {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
@@ -61,6 +72,7 @@ export {
 export { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from './empty'
 export { Icon } from './icon'
 export { Input } from './input'
+export { InputOTP, InputOTPGroup, InputOTPSeparator, InputOTPSlot } from './input-otp'
 export { Label } from './label'
 export {
   AnimatePresence,

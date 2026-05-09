@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { type AnalyticsSummary, getAnalyticsSummary } from '@/api/analytics'
+import { getBotModStatus } from '@/api/channels'
 import { type ChannelStats, getChannelStats } from '@/api/stats'
 import AnalyticsChart from '@/components/AnalyticsChart'
+import { MOD_SETUP_SESSION_KEY, ModSetupDialog } from '@/components/ModSetupDialog'
 import StatsCard from '@/components/StatsCard'
 import TwitchPlayer from '@/components/TwitchPlayer'
 import { Skeleton, SlideUp, Stagger, StaggerItem } from '@/components/ui'
@@ -24,6 +26,17 @@ export default function Dashboard() {
   const [stats, setStats] = useState<ChannelStats | null>(null)
   const [analytics, setAnalytics] = useState<AnalyticsSummary | null>(null)
   const loadedForUserRef = useRef<string | null>(null)
+  const [showModDialog, setShowModDialog] = useState(false)
+
+  useEffect(() => {
+    if (!isInitialized || !user) return
+    if (sessionStorage.getItem(MOD_SETUP_SESSION_KEY)) return
+    getBotModStatus()
+      .then(res => {
+        if (res.ok && !res.data.is_moderator) setShowModDialog(true)
+      })
+      .catch(() => {})
+  }, [isInitialized, user])
 
   const fetchStats = useCallback(async () => {
     if (!user) return
@@ -77,8 +90,10 @@ export default function Dashboard() {
 
   return (
     <main className="flex flex-col flex-1 min-h-0 gap-section p-page overflow-y-auto lg:p-page-lg transition-all duration-slow ease-default">
-      <SlideUp inView>
-        <AnalyticsChart data={analytics} loading={analyticsLoading} days={30} />
+      <ModSetupDialog open={showModDialog} onOpenChange={setShowModDialog} />
+
+      <SlideUp inView className="flex-1 min-h-0">
+        <AnalyticsChart data={analytics} loading={analyticsLoading} days={30} className="h-full" />
       </SlideUp>
 
       <Stagger inView className="grid grid-cols-1 lg:grid-cols-3 gap-section">
