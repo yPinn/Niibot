@@ -242,7 +242,7 @@ class TestSyncSessionFromVod:
     async def test_returns_none_when_session_already_exists(self):
         _clear_all_caches()
         pool, conn = _make_pool()
-        conn.fetchrow.return_value = {"id": 5}
+        conn.fetchrow.return_value = {"id": 5, "title": None}
         repo = AnalyticsRepository(pool)
 
         result = await repo.sync_session_from_vod("ch123", _NOW, _LATER)
