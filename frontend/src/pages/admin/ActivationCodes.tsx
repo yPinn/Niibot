@@ -1,14 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import {
-  type ActivationRequest,
-  approveActivationRequest,
-  getActivationRequests,
-  getPendingActivationCodes,
-  type PendingCode,
-  rejectActivationRequest,
-  revokeActivationCode,
-} from '@/api/admin'
+import { getPendingActivationCodes, type PendingCode, revokeActivationCode } from '@/api/admin'
 import { PageHeader } from '@/components/PageHeader'
 import { PageMain } from '@/components/PageMain'
 import {
@@ -33,10 +25,6 @@ export default function AdminActivationCodes() {
   const [revoking, setRevoking] = useState<string | null>(null)
   const [nowMs, setNowMs] = useState(0)
 
-  const [requests, setRequests] = useState<ActivationRequest[]>([])
-  const [loadingRequests, setLoadingRequests] = useState(true)
-  const [actioning, setActioning] = useState<number | null>(null)
-
   const fetchCodes = useCallback(async () => {
     setLoadingCodes(true)
     try {
@@ -50,23 +38,15 @@ export default function AdminActivationCodes() {
     }
   }, [])
 
-  const fetchRequests = useCallback(async () => {
-    setLoadingRequests(true)
-    try {
-      setRequests(await getActivationRequests())
-    } catch {
-      setRequests([])
-    } finally {
-      setLoadingRequests(false)
-    }
-  }, [])
-
   useEffect(() => {
-    const load = async () => {
-      await Promise.all([fetchCodes(), fetchRequests()])
-    }
-    void load()
-  }, [fetchCodes, fetchRequests])
+    getPendingActivationCodes()
+      .then(data => {
+        setCodes(data)
+        setNowMs(Date.now())
+      })
+      .catch(() => setCodes([]))
+      .finally(() => setLoadingCodes(false))
+  }, [])
 
   const handleRevoke = useCallback(async (platformUserId: string) => {
     setRevoking(platformUserId)
@@ -75,26 +55,6 @@ export default function AdminActivationCodes() {
       setCodes(prev => prev.filter(c => c.platform_user_id !== platformUserId))
     } finally {
       setRevoking(null)
-    }
-  }, [])
-
-  const handleApprove = useCallback(async (id: number) => {
-    setActioning(id)
-    try {
-      await approveActivationRequest(id)
-      setRequests(prev => prev.filter(r => r.id !== id))
-    } finally {
-      setActioning(null)
-    }
-  }, [])
-
-  const handleReject = useCallback(async (id: number) => {
-    setActioning(id)
-    try {
-      await rejectActivationRequest(id)
-      setRequests(prev => prev.filter(r => r.id !== id))
-    } finally {
-      setActioning(null)
     }
   }, [])
 
@@ -194,94 +154,6 @@ export default function AdminActivationCodes() {
                             icon={isRevoking ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-ban'}
                             wrapperClassName="text-muted-foreground"
                           />
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                )
-              })
-            )}
-          </CardContent>
-        </Card>
-      </SlideUp>
-
-      <SlideUp>
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <Icon
-                icon="fa-solid fa-user-clock"
-                size="sm"
-                wrapperClassName="text-muted-foreground"
-              />
-              <CardTitle className="text-card-title">授權申請</CardTitle>
-            </div>
-            <CardAction>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => void fetchRequests()}
-                aria-label="Refresh"
-              >
-                <Icon icon="fa-solid fa-rotate" wrapperClassName="text-muted-foreground" />
-              </Button>
-            </CardAction>
-          </CardHeader>
-          <CardContent>
-            {loadingRequests ? (
-              <div className="space-y-3">
-                {Array.from({ length: 2 }).map((_, i) => (
-                  <Skeleton key={i} className="h-10 w-full" />
-                ))}
-              </div>
-            ) : requests.length === 0 ? (
-              <p className="text-sub text-muted-foreground py-2">目前沒有待審核的申請。</p>
-            ) : (
-              requests.map((req, idx) => {
-                const label = req.display_name ?? req.username ?? req.platform_user_id
-                const isActioning = actioning === req.id
-                return (
-                  <div key={req.id}>
-                    {idx > 0 && <Separator className="opacity-40" />}
-                    <div className="flex items-center gap-3 py-2">
-                      {req.avatar ? (
-                        <img
-                          src={req.avatar}
-                          alt={label}
-                          className="size-7 rounded-full shrink-0 object-cover"
-                        />
-                      ) : (
-                        <div className="size-7 rounded-full bg-muted shrink-0" />
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sub font-medium truncate">{label}</p>
-                        <p className="text-label text-muted-foreground font-mono truncate">
-                          {req.platform_user_id}
-                        </p>
-                        {req.note && (
-                          <p className="text-sub text-muted-foreground truncate mt-0.5">
-                            {req.note}
-                          </p>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          disabled={isActioning}
-                          onClick={() => void handleApprove(req.id)}
-                          aria-label="核准"
-                        >
-                          <Icon icon="fa-solid fa-check" wrapperClassName="text-status-online" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          disabled={isActioning}
-                          onClick={() => void handleReject(req.id)}
-                          aria-label="拒絕"
-                        >
-                          <Icon icon="fa-solid fa-xmark" wrapperClassName="text-status-offline" />
                         </Button>
                       </div>
                     </div>

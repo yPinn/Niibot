@@ -224,7 +224,7 @@ export default function AdminPage() {
 
   return (
     <PageMain className="lg:gap-card">
-      <PageHeader title="Admin" />
+      <PageHeader title="Admin" description="審核授權申請、管理頻道點數兌換與監控頻道。" />
 
       {/* Activation requests */}
       <SlideUp>
