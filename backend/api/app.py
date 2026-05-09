@@ -82,6 +82,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     LOGGER.info("Starting Niibot API server")
     LOGGER.info(f"Environment: {settings.environment}")
     LOGGER.info(f"Frontend URL: {settings.frontend_url}")
+    LOGGER.info(f"Bot ID: {settings.bot_id or '(not set)'}")
+    LOGGER.info(f"Owner ID: {settings.owner_id or '(not set)'}")
 
     # Initialize and connect database — wait up to 30s before accepting requests.
     # This prevents the "pool is closed" race where requests arrive before

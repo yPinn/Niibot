@@ -225,7 +225,12 @@ async def get_current_user(
     if not user_info:
         raise HTTPException(status_code=404, detail="User not found")
 
-    is_owner = platform_user_id == str(get_settings().owner_id)
+    owner_id_cfg = str(get_settings().owner_id)
+    is_owner = platform_user_id == owner_id_cfg
+    if not is_owner:
+        LOGGER.debug(
+            f"is_owner=False: platform_user_id={platform_user_id!r} owner_id={owner_id_cfg!r}"
+        )
     return UserInfoResponse(
         **user_info, platform="twitch", theme=theme, is_activated=is_activated, is_owner=is_owner
     )
