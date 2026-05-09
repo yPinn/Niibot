@@ -500,6 +500,29 @@ class TwitchAPIClient:
             LOGGER.exception(f"Error checking moderator status: {e}")
             return False
 
+    async def get_bot_mod_status(self, broadcaster_id: str, bot_id: str, access_token: str) -> str:
+        """Detailed mod check: returns 'mod', 'no_mod', 'scope_error', or 'token_error'.
+
+        scope_error means the token is valid but lacks moderation:read — the channel
+        owner must re-authorize to grant the scope added after their initial auth.
+        """
+        try:
+            response = await self._helix_get(
+                "moderation/moderators",
+                {"broadcaster_id": broadcaster_id, "user_id": bot_id},
+                token=access_token,
+            )
+            if response is None:
+                return "token_error"
+            if response.status_code == 401:
+                return "scope_error"
+            if response.status_code != 200:
+                return "token_error"
+            return "mod" if len(response.json().get("data", [])) > 0 else "no_mod"
+        except Exception as e:
+            LOGGER.exception(f"Error checking detailed moderator status: {e}")
+            return "token_error"
+
     async def get_mod_status(self, broadcaster_id: str, user_id: str, token: str) -> bool:
         """Return True if user_id is currently a moderator in broadcaster_id's channel."""
         try:
