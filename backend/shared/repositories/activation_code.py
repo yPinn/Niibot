@@ -88,3 +88,14 @@ class ActivationCodeRepository:
                 )
 
         return True
+
+    async def invalidate(self, platform: str, platform_user_id: str) -> bool:
+        """Delete the unused code for a user. Returns True if a row was deleted."""
+        async with self.pool.acquire() as conn:
+            result = await conn.execute(
+                "DELETE FROM activation_codes"
+                " WHERE platform = $1 AND platform_user_id = $2 AND used_at IS NULL",
+                platform,
+                platform_user_id,
+            )
+        return result != "DELETE 0"

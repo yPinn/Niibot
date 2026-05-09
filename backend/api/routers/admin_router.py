@@ -16,6 +16,7 @@ from core.dependencies import (
     get_twitch_api,
 )
 from services import ChannelService, TwitchAPIClient
+from shared.repositories.activation_code import ActivationCodeRepository
 from shared.repositories.activation_request import ActivationRequestRepository
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -132,6 +133,20 @@ async def get_pending_activation_codes(
         """
     )
     return [PendingCodeInfo(**dict(r)) for r in rows]
+
+
+@router.delete("/activation-codes/{platform_user_id}")
+async def revoke_activation_code(
+    platform_user_id: str,
+    _: str = Depends(require_owner),
+    pool: Pool = Depends(get_db_pool),
+) -> dict:
+    """Invalidate an unused activation code for a user. Owner-only."""
+    repo = ActivationCodeRepository(pool)
+    if not await repo.invalidate("twitch", platform_user_id):
+        raise HTTPException(status_code=404, detail="No active code found for this user")
+    LOGGER.info(f"Activation code revoked for {platform_user_id}")
+    return {"revoked": True}
 
 
 @router.get("/activation-requests", response_model=list[ActivationRequestInfo])

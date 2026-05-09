@@ -41,6 +41,14 @@ export async function getPendingActivationCodes(): Promise<PendingCode[]> {
   return response.json()
 }
 
+export async function revokeActivationCode(platformUserId: string): Promise<void> {
+  const response = await apiFetch(API_ENDPOINTS.admin.revokeActivationCode(platformUserId), {
+    method: 'DELETE',
+    credentials: 'include',
+  })
+  if (!response.ok) throw new Error('Failed to revoke code')
+}
+
 export async function getActivationRequests(): Promise<ActivationRequest[]> {
   const response = await apiFetch(API_ENDPOINTS.admin.activationRequests, {
     credentials: 'include',

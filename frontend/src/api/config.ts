@@ -136,6 +136,8 @@ export const API_ENDPOINTS = {
   admin: {
     channels: join('/api/admin/channels'),
     activationCodes: join('/api/admin/activation-codes'),
+    revokeActivationCode: (platformUserId: string) =>
+      join(`/api/admin/activation-codes/${platformUserId}`),
     activationRequests: join('/api/admin/activation-requests'),
     approveRequest: (id: number) => join(`/api/admin/activation-requests/${id}/approve`),
     rejectRequest: (id: number) => join(`/api/admin/activation-requests/${id}/reject`),
