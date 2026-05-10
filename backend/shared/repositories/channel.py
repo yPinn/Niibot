@@ -81,6 +81,7 @@ class ChannelRepository:
         refresh: str,
         channel_name: str = "",
         scopes: str | None = None,
+        display_name: str | None = None,
     ) -> None:
         """Insert or update an OAuth token and ensure a channels row exists.
 
@@ -105,14 +106,16 @@ class ChannelRepository:
                 )
                 await conn.execute(
                     """
-                    INSERT INTO channels (channel_id, channel_name, enabled)
-                    VALUES ($1, $2, TRUE)
+                    INSERT INTO channels (channel_id, channel_name, display_name, enabled)
+                    VALUES ($1, $2, $3, TRUE)
                     ON CONFLICT (channel_id) DO UPDATE SET
                         channel_name = EXCLUDED.channel_name,
+                        display_name = COALESCE(EXCLUDED.display_name, channels.display_name),
                         updated_at   = NOW()
                     """,
                     user_id,
                     channel_name,
+                    display_name,
                 )
 
         _token_cache.invalidate(f"token:{user_id}")

@@ -137,11 +137,17 @@ class ChannelService:
         refresh_token: str,
         username: str = "",
         scopes: str | None = None,
+        display_name: str | None = None,
     ) -> bool:
         """Save or update a user's OAuth token (+ ensure channel row)."""
         try:
             await self.repo.upsert_token(
-                user_id, access_token, refresh_token, username, scopes=scopes
+                user_id,
+                access_token,
+                refresh_token,
+                username,
+                scopes=scopes,
+                display_name=display_name,
             )
             LOGGER.info(f"Successfully synced token and channel for: {username} ({user_id})")
             return True

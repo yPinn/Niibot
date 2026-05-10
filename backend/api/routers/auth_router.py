@@ -160,6 +160,7 @@ async def twitch_oauth_callback(
             refresh_token=refresh_token,
             username=username,
             scopes=scopes,
+            display_name=user_info.get("display_name"),
         )
 
         if not save_success:
