@@ -183,7 +183,7 @@ export default function DonatePage() {
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
 
-  useDocumentTitle(info ? `斗內 ${info.username}` : '斗內')
+  useDocumentTitle(info ? `Donate — ${info.username}` : 'Donate')
 
   useEffect(() => {
     if (!username) return

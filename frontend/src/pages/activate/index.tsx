@@ -22,7 +22,7 @@ import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 type RequestStatus = 'idle' | 'pending' | 'approved' | 'rejected'
 
 export default function ActivatePage() {
-  useDocumentTitle('啟用帳號')
+  useDocumentTitle('Activate Account')
   const { user, isInitialized, isAuthenticated, refreshUser, logout } = useAuth()
   const navigate = useNavigate()
 

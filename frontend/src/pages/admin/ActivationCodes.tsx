@@ -19,7 +19,7 @@ import {
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
 export default function AdminActivationCodes() {
-  useDocumentTitle('啟用碼')
+  useDocumentTitle('Activation Codes')
   const [codes, setCodes] = useState<PendingCode[]>([])
   const [loadingCodes, setLoadingCodes] = useState(true)
   const [revoking, setRevoking] = useState<string | null>(null)

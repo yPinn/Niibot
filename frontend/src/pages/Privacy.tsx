@@ -28,7 +28,7 @@ function Section({
 }
 
 export default function Privacy() {
-  useDocumentTitle('隱私權政策 — Niibot')
+  useDocumentTitle('Privacy Policy')
 
   return (
     <div className="min-h-screen bg-background text-foreground">

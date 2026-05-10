@@ -29,7 +29,7 @@ function Section({
 }
 
 export default function Terms() {
-  useDocumentTitle('服務條款 — Niibot')
+  useDocumentTitle('Terms of Service')
 
   return (
     <div className="min-h-screen bg-background text-foreground">

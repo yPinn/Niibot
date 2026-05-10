@@ -71,7 +71,7 @@ const COMMANDS = [
 const INVITE_URL = import.meta.env.VITE_DISCORD_INVITE_URL
 
 export default function DiscordDashboard() {
-  useDocumentTitle('Discord Bot — Niibot')
+  useDocumentTitle('Discord Bot')
 
   return (
     <PageMain className="select-none">
