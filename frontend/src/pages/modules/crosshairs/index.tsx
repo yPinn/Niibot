@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { memo, useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 
 import {
@@ -12,6 +12,7 @@ import {
   getAllPublicCrosshairs,
   getCrosshairs,
   getPublicCrosshairs,
+  recordCrosshairCopy,
   updateCrosshair,
 } from '@/api/crosshairs'
 import { PageHeader } from '@/components/PageHeader'
@@ -49,9 +50,15 @@ import {
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { copyToClipboard } from '@/lib/clipboard'
 
-import { CrosshairPreview } from './CrosshairPreview'
+import { CrosshairCardBase } from './CrosshairCardBase'
+import { CrosshairDetailPreview, CrosshairPreview } from './CrosshairPreview'
 
 const GAME_LABELS = CROSSHAIR_GAME_LABELS
+
+function copyCode(code: string, id?: string) {
+  copyToClipboard(code, '已複製準星代碼')
+  if (id) recordCrosshairCopy(id)
+}
 
 interface FormState {
   game: CrosshairGame
@@ -117,11 +124,11 @@ export default function CrosshairModule() {
     setSheetOpen(true)
   }
 
-  function openEdit(c: Crosshair) {
+  const openEdit = useCallback((c: Crosshair) => {
     setEditingId(c.id)
     setForm({ game: c.game, name: c.name, code: c.code, description: c.description ?? '' })
     setSheetOpen(true)
-  }
+  }, [])
 
   async function handleSave() {
     if (!form.name.trim() || !form.code.trim()) {
@@ -192,21 +199,16 @@ export default function CrosshairModule() {
     }
   }
 
-  function copyCode(code: string) {
-    copyToClipboard(code, '已複製準星代碼')
-  }
-
   return (
     <>
       <PageMain>
-        <PageHeader title="Crosshair Repo" description="管理你的準星代碼，或瀏覽其他實況主的收藏" />
+        <PageHeader title="Crosshair Repo" description="管理你的準星代碼，或查看公開的準星收藏" />
         <Tabs defaultValue="mine">
           <TabsList>
-            <TabsTrigger value="mine">我的準星</TabsTrigger>
-            <TabsTrigger value="browse">瀏覽他人</TabsTrigger>
+            <TabsTrigger value="mine">我的</TabsTrigger>
+            <TabsTrigger value="browse">公開</TabsTrigger>
           </TabsList>
 
-          {/* ── 我的準星 ── */}
           <TabsContent value="mine" className="mt-4">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
@@ -218,9 +220,9 @@ export default function CrosshairModule() {
               </CardHeader>
               <CardContent>
                 {loadingMine ? (
-                  <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-                    {Array.from({ length: 4 }).map((_, i) => (
-                      <Skeleton key={i} className="h-48 rounded-xl" />
+                  <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-5">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <Skeleton key={i} className="aspect-square rounded-xl" />
                     ))}
                   </div>
                 ) : crosshairs.length === 0 ? (
@@ -228,15 +230,15 @@ export default function CrosshairModule() {
                     還沒有準星，點擊「新增準星」開始收藏
                   </p>
                 ) : (
-                  <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+                  <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-5">
                     {crosshairs.map(c => (
                       <MyCrosshairCard
                         key={c.id}
                         crosshair={c}
                         isDeleting={deletingId === c.id}
-                        onEdit={() => openEdit(c)}
-                        onDelete={() => setDeleteTarget(c)}
-                        onCopy={() => copyCode(c.code)}
+                        onEdit={openEdit}
+                        onDelete={setDeleteTarget}
+                        onCopy={copyCode}
                       />
                     ))}
                   </div>
@@ -245,14 +247,13 @@ export default function CrosshairModule() {
             </Card>
           </TabsContent>
 
-          {/* ── 瀏覽他人 ── */}
           <TabsContent value="browse" className="mt-4">
             <Card>
               <CardHeader>
-                <CardTitle>瀏覽他人的準星</CardTitle>
+                <CardTitle>公開準星</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <form onSubmit={handleBrowse} className="flex gap-2">
+                <form onSubmit={handleBrowse} className="flex gap-element">
                   <Input
                     placeholder="輸入 Twitch 帳號篩選..."
                     value={browseInput}
@@ -270,9 +271,9 @@ export default function CrosshairModule() {
                   const displayed = browseResults ?? allPublic
                   if (allPublicLoading && browseResults === null) {
                     return (
-                      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+                      <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-5">
                         {Array.from({ length: 8 }).map((_, i) => (
-                          <Skeleton key={i} className="h-48 rounded-xl" />
+                          <Skeleton key={i} className="aspect-square rounded-xl" />
                         ))}
                       </div>
                     )
@@ -291,13 +292,12 @@ export default function CrosshairModule() {
                           ? `${browseResults[0]?.channel_name ?? browseInput} 的準星收藏（${browseResults.length} 個）`
                           : `最新收藏（共 ${displayed.length} 個）`}
                       </p>
-                      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+                      <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-5">
                         {displayed.map(c => (
                           <BrowseCrosshairCard
                             key={c.id}
                             crosshair={c}
-                            onCopy={() => copyCode(c.code)}
-                            onClick={() => setDetailTarget(c)}
+                            onSelect={setDetailTarget}
                           />
                         ))}
                       </div>
@@ -310,7 +310,6 @@ export default function CrosshairModule() {
         </Tabs>
       </PageMain>
 
-      {/* ── Add / Edit Sheet ── */}
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
         <SheetContent side="right" className="sm:max-w-md">
           <SheetHeader>
@@ -318,7 +317,7 @@ export default function CrosshairModule() {
           </SheetHeader>
 
           <SheetSection>
-            <div className="flex justify-center py-2">
+            <div className="flex justify-center py-element">
               <CrosshairPreview
                 game={form.game}
                 code={form.code || '0;P;0l;4;0o;2;0t;2'}
@@ -364,30 +363,31 @@ export default function CrosshairModule() {
         </SheetContent>
       </Sheet>
 
-      {/* ── Browse detail Sheet ── */}
       <Sheet open={!!detailTarget} onOpenChange={open => !open && setDetailTarget(null)}>
         <SheetContent side="right" className="sm:max-w-md">
           {detailTarget && (
             <>
               <SheetHeader>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-element">
                   <Badge variant="secondary">{GAME_LABELS[detailTarget.game]}</Badge>
                 </div>
                 <SheetTitle className="mt-1">{detailTarget.name}</SheetTitle>
               </SheetHeader>
 
               <SheetSection>
-                <div className="flex justify-center py-4">
-                  <CrosshairPreview game={detailTarget.game} code={detailTarget.code} size="lg" />
-                </div>
+                <CrosshairDetailPreview game={detailTarget.game} code={detailTarget.code} />
               </SheetSection>
 
               <SheetSection title="準星代碼">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-element">
                   <code className="flex-1 break-all rounded bg-muted px-3 py-2 font-mono text-sm">
                     {detailTarget.code}
                   </code>
-                  <Button variant="outline" size="icon" onClick={() => copyCode(detailTarget.code)}>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => copyCode(detailTarget.code, detailTarget.id)}
+                  >
                     <Icon icon="fa-solid fa-copy" wrapperClassName="size-4" />
                   </Button>
                 </div>
@@ -403,7 +403,6 @@ export default function CrosshairModule() {
         </SheetContent>
       </Sheet>
 
-      {/* ── Delete confirm ── */}
       <AlertDialog open={!!deleteTarget} onOpenChange={open => !open && setDeleteTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -427,9 +426,7 @@ export default function CrosshairModule() {
   )
 }
 
-// ── Sub-components ──
-
-function MyCrosshairCard({
+const MyCrosshairCard = memo(function MyCrosshairCard({
   crosshair,
   isDeleting,
   onEdit,
@@ -438,87 +435,49 @@ function MyCrosshairCard({
 }: {
   crosshair: Crosshair
   isDeleting: boolean
-  onEdit: () => void
-  onDelete: () => void
-  onCopy: () => void
+  onEdit: (c: Crosshair) => void
+  onDelete: (c: Crosshair) => void
+  onCopy: (code: string) => void
 }) {
   return (
-    <Card className="overflow-hidden">
-      <CardContent className="flex flex-col items-center gap-2 p-3">
-        <CrosshairPreview game={crosshair.game} code={crosshair.code} size="sm" />
-        <div className="w-full text-center">
-          <p className="truncate text-sm font-medium">{crosshair.name}</p>
-          <Badge variant="secondary" className="mt-0.5 text-xs">
-            {GAME_LABELS[crosshair.game] ?? crosshair.game}
-          </Badge>
-        </div>
-        <div className="flex w-full items-center gap-1">
-          <code className="min-w-0 flex-1 truncate rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
-            {crosshair.code}
-          </code>
-          <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={onCopy}>
-            <Icon icon="fa-solid fa-copy" wrapperClassName="size-3" />
-          </Button>
-        </div>
-        <div className="flex w-full gap-1.5">
-          <Button variant="outline" size="sm" className="h-7 flex-1 text-xs" onClick={onEdit}>
-            編輯
+    <CrosshairCardBase
+      crosshair={crosshair}
+      onCopy={onCopy}
+      footer={
+        <div className="flex justify-end pr-element pb-element">
+          <Button variant="ghost" size="icon-sm" onClick={() => onEdit(crosshair)} title="編輯">
+            <Icon icon="fa-solid fa-pen" />
           </Button>
           <Button
-            variant="outline"
-            size="sm"
-            className="h-7 flex-1 text-xs text-destructive hover:text-destructive"
+            variant="ghost"
+            size="icon-sm"
+            className="text-destructive hover:text-destructive"
             disabled={isDeleting}
-            onClick={onDelete}
+            onClick={() => onDelete(crosshair)}
+            title="刪除"
           >
-            刪除
+            <Icon icon="fa-solid fa-trash" />
           </Button>
         </div>
-      </CardContent>
-    </Card>
+      }
+    />
   )
-}
+})
 
-function BrowseCrosshairCard({
+const BrowseCrosshairCard = memo(function BrowseCrosshairCard({
   crosshair,
-  onCopy,
-  onClick,
+  onSelect,
 }: {
   crosshair: CrosshairWithChannel
-  onCopy: () => void
-  onClick: () => void
+  onSelect: (c: CrosshairWithChannel) => void
 }) {
   return (
-    <Card
-      className="cursor-pointer overflow-hidden transition-shadow hover:shadow-md"
-      onClick={onClick}
-    >
-      <CardContent className="flex flex-col items-center gap-2 p-3">
-        <CrosshairPreview game={crosshair.game} code={crosshair.code} size="sm" />
-        <div className="w-full text-center">
-          <p className="truncate text-sm font-medium">{crosshair.name}</p>
-          <p className="truncate text-xs text-muted-foreground">{crosshair.channel_name}</p>
-          <Badge variant="secondary" className="mt-0.5 text-xs">
-            {GAME_LABELS[crosshair.game] ?? crosshair.game}
-          </Badge>
-        </div>
-        <div
-          className="flex w-full items-center gap-1"
-          onClick={e => {
-            e.stopPropagation()
-            onCopy()
-          }}
-        >
-          <code className="min-w-0 flex-1 truncate rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
-            {crosshair.code}
-          </code>
-          <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" asChild>
-            <span>
-              <Icon icon="fa-solid fa-copy" wrapperClassName="size-3" />
-            </span>
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
+    <CrosshairCardBase
+      crosshair={crosshair}
+      onCopy={code => copyCode(code, crosshair.id)}
+      onCardClick={() => onSelect(crosshair)}
+      channelName={crosshair.channel_name}
+      copyCount={crosshair.copy_count}
+    />
   )
-}
+})

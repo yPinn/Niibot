@@ -14,6 +14,7 @@ export interface Crosshair {
   code: string
   description: string | null
   display_order: number
+  copy_count: number
   created_at: string
   updated_at: string
 }
@@ -97,6 +98,10 @@ export async function updateCrosshair(id: string, data: CrosshairUpdate): Promis
   })
   if (!res.ok) throw new Error(`Failed to update crosshair: ${res.statusText}`)
   return res.json()
+}
+
+export async function recordCrosshairCopy(id: string): Promise<void> {
+  await apiFetch(API_ENDPOINTS.crosshairs.copy(id), { method: 'POST' }).catch(() => {})
 }
 
 export async function deleteCrosshair(id: string): Promise<void> {

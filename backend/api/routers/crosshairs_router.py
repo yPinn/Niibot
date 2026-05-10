@@ -28,6 +28,7 @@ class CrosshairResponse(BaseModel):
     code: str
     description: str | None = None
     display_order: int
+    copy_count: int = 0
     created_at: datetime
     updated_at: datetime
 
@@ -110,6 +111,19 @@ async def get_public_crosshairs(
     except Exception:
         LOGGER.exception("Failed to get public crosshairs")
         raise HTTPException(status_code=500, detail="Failed to fetch crosshairs") from None
+
+
+@router.post("/public/{crosshair_id}/copy", status_code=204)
+async def record_crosshair_copy(
+    crosshair_id: UUID,
+    pool: asyncpg.Pool = Depends(get_db_pool),
+) -> None:
+    """Increment copy_count for a crosshair (public, fire-and-forget)."""
+    try:
+        repo = CrosshairRepository(pool)
+        await repo.increment_copy(str(crosshair_id))
+    except Exception:
+        LOGGER.exception("Failed to increment copy count for crosshair %s", crosshair_id)
 
 
 @router.get("", response_model=list[CrosshairResponse])
