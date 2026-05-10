@@ -92,8 +92,13 @@ export default function Dashboard() {
     <main className="flex flex-col flex-1 min-h-0 gap-section p-page overflow-y-auto lg:p-page-lg transition-all duration-slow ease-default">
       <ModSetupDialog open={showModDialog} onOpenChange={setShowModDialog} />
 
-      <SlideUp inView className="flex-1 min-h-0">
-        <AnalyticsChart data={analytics} loading={analyticsLoading} days={30} className="h-full" />
+      <SlideUp inView className="lg:flex-1 lg:min-h-0">
+        <AnalyticsChart
+          data={analytics}
+          loading={analyticsLoading}
+          days={30}
+          className="lg:h-full"
+        />
       </SlideUp>
 
       <Stagger inView className="grid grid-cols-1 lg:grid-cols-3 gap-section">

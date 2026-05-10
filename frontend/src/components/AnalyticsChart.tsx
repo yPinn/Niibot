@@ -14,7 +14,15 @@ import {
 } from 'recharts'
 
 import { type SessionSummary } from '@/api/analytics'
-import { Card, CardContent, Icon, Skeleton } from '@/components/ui'
+import {
+  Card,
+  CardContent,
+  Icon,
+  Skeleton,
+  Tooltip as InfoTooltip,
+  TooltipContent as InfoTooltipContent,
+  TooltipTrigger as InfoTooltipTrigger,
+} from '@/components/ui'
 
 interface AnalyticsData {
   total_stream_hours: number
@@ -344,6 +352,20 @@ export default function AnalyticsChart({
     <Card className={`flex flex-col ${className}`}>
       <CardContent className="px-4 py-1 flex-1 min-h-0 flex flex-col">
         <div className="flex flex-col flex-1 min-h-0 gap-3">
+          <div className="flex justify-end shrink-0 -mb-1">
+            <InfoTooltip>
+              <InfoTooltipTrigger asChild>
+                <button className="flex items-center justify-center size-5 rounded-full text-muted-foreground hover:text-foreground transition-colors">
+                  <Icon icon="fa-solid fa-circle-question" size="sm" />
+                </button>
+              </InfoTooltipTrigger>
+              <InfoTooltipContent side="left" className="max-w-60">
+                若直播紀錄顯示「未設定標題」，請至 Twitch 創作者後台開啟{' '}
+                <strong>影片存檔（VOD）</strong>。 Bot 重啟後將自動補齊歷史標題。
+              </InfoTooltipContent>
+            </InfoTooltip>
+          </div>
+
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-5 shrink-0 mb-1 sm:mb-2">
             {loading
               ? Array.from({ length: 4 }).map((_, i) => (
@@ -388,7 +410,7 @@ export default function AnalyticsChart({
           </div>
 
           <div
-            className="flex-1 min-h-0 relative select-none **:outline-none"
+            className="h-48 sm:h-64 lg:flex-1 lg:min-h-0 relative select-none **:outline-none"
             onMouseDown={e => e.preventDefault()}
           >
             {isEmpty && (
