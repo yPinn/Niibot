@@ -56,8 +56,8 @@ export const CrosshairCardBase = memo(function CrosshairCardBase({
             {channelName !== undefined && channelName !== '' ? `@${channelName}` : ''}
           </span>
           {copyCount !== undefined && (
-            <span className="flex shrink-0 items-center gap-1 text-label text-muted-foreground">
-              <Icon icon="fa-solid fa-copy" wrapperClassName="size-2.5" />
+            <span className="flex w-8 shrink-0 items-center justify-center gap-1 text-label text-muted-foreground">
+              <Icon icon="fa-solid fa-copy" size="xs" />
               {copyCount}
             </span>
           )}
