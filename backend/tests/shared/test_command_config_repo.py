@@ -28,13 +28,13 @@ _NOW = datetime(2024, 1, 1, tzinfo=UTC)
 _BUILTIN_OVERRIDE_ROW: dict[str, Any] = {
     "id": 1,
     "channel_id": "ch1",
-    "command_name": "hi",  # canonical builtin name
+    "command_name": "ping",  # canonical builtin name
     "command_type": "builtin",
     "enabled": False,  # user disabled it
     "custom_response": None,
     "cooldown": 10,
     "min_role": "everyone",
-    "aliases": "hello,hey",
+    "aliases": "alive",
     "usage_count": 5,
     "created_at": _NOW,
     "updated_at": _NOW,
@@ -142,10 +142,10 @@ class TestGetConfig:
         conn.fetchrow.return_value = None
         repo = CommandConfigRepository(pool)
 
-        result = await repo.get_config("ch1", "hi")
+        result = await repo.get_config("ch1", "ping")
 
         assert result is not None
-        assert result.command_name == "hi"
+        assert result.command_name == "ping"
         assert result.id is None
         assert result.enabled is True
         assert result.command_type == "builtin"
@@ -156,10 +156,10 @@ class TestGetConfig:
         pool, _ = _make_pool(fetchrow=_BUILTIN_OVERRIDE_ROW)
         repo = CommandConfigRepository(pool)
 
-        result = await repo.get_config("ch1", "hi")
+        result = await repo.get_config("ch1", "ping")
 
         assert result is not None
-        assert result.command_name == "hi"
+        assert result.command_name == "ping"
         assert result.id == 1
         assert result.enabled is False  # DB override respected
 
@@ -208,11 +208,11 @@ class TestFindByNameOrAlias:
         conn.fetchrow.return_value = None
         repo = CommandConfigRepository(pool)
 
-        # "hello" is a registered alias for builtin "hi"
-        result = await repo.find_by_name_or_alias("ch1", "hello")
+        # "alive" is a registered alias for builtin "ping"
+        result = await repo.find_by_name_or_alias("ch1", "alive")
 
         assert result is not None
-        assert result.command_name == "hi"
+        assert result.command_name == "ping"
         assert result.id is None  # virtual
 
     async def test_returns_none_when_neither_found(self):
@@ -248,9 +248,9 @@ class TestListConfigs:
 
         result = await repo.list_configs("ch1")
 
-        hi = next(r for r in result if r.command_name == "hi")
-        assert hi.id == 1  # came from DB
-        assert hi.enabled is False  # override respected
+        ping = next(r for r in result if r.command_name == "ping")
+        assert ping.id == 1  # came from DB
+        assert ping.enabled is False  # override respected
         assert len(result) == len(BUILTIN_DEFS)  # still the same total count
 
     async def test_custom_commands_appended_after_builtins(self):
@@ -315,18 +315,16 @@ class TestUpsertConfig:
 
     async def test_invalidates_builtin_default_aliases_on_builtin_update(self):
         """Toggling a builtin also invalidates its default alias cache entries."""
-        _cmd_cache.set("cmd_alias:ch1:hello", "cached_value")
-        _cmd_cache.set("cmd_alias:ch1:hey", "cached_value")
+        _cmd_cache.set("cmd_alias:ch1:alive", "cached_value")
         pool, _ = _make_pool(fetchrow=_BUILTIN_OVERRIDE_ROW)
         repo = CommandConfigRepository(pool)
 
-        await repo.upsert_config("ch1", "hi", enabled=False)
+        await repo.upsert_config("ch1", "ping", enabled=False)
 
         from shared.cache import _MISSING
 
-        # "hello" and "hey" are default aliases for "hi" → should be invalidated
-        assert _cmd_cache.get("cmd_alias:ch1:hello") is _MISSING
-        assert _cmd_cache.get("cmd_alias:ch1:hey") is _MISSING
+        # "alive" is the default alias for "ping" → should be invalidated
+        assert _cmd_cache.get("cmd_alias:ch1:alive") is _MISSING
 
 
 @pytest.mark.asyncio
@@ -392,8 +390,8 @@ class TestWarmCache:
 
         await repo.warm_cache("ch1")
 
-        # "hi" is in BUILTIN_DEFS → should be cached as virtual
-        assert _cmd_cache.get("cmd_config:ch1:hi") is not None
+        # "ping" is in BUILTIN_DEFS → should be cached as virtual
+        assert _cmd_cache.get("cmd_config:ch1:ping") is not None
 
     async def test_populates_alias_keys(self):
         _clear_caches()
@@ -402,9 +400,8 @@ class TestWarmCache:
 
         await repo.warm_cache("ch1")
 
-        # "hi" override row has aliases "hello,hey"
-        assert _cmd_cache.get("cmd_alias:ch1:hello") is not None
-        assert _cmd_cache.get("cmd_alias:ch1:hey") is not None
+        # "ping" override row has alias "alive"
+        assert _cmd_cache.get("cmd_alias:ch1:alive") is not None
 
 
 # ---------------------------------------------------------------------------
