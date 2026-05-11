@@ -1,19 +1,29 @@
-/*
-  # 'sha256-BFYo...' is the Vite modulePreload polyfill injected by older builds (kept for CDN cache
-  # rollover). Cloudflare sends all matching rules simultaneously; the browser enforces all of them,
-  # so any script allowed only in the overlay-specific rule is still blocked by this global rule.
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-BFYoPoqqEce9Xn1iR84eJv0srIQYK8o0bOd6a5It8Ng=' https://www.youtube.com https://player.twitch.tv https://embed.twitch.tv https://static.cloudflareinsights.com; frame-src 'self' https://www.youtube.com https://player.twitch.tv https://clips.twitch.tv; img-src 'self' https://static-cdn.jtvnw.net https://cdn.discordapp.com data:; connect-src 'self' https://niibot-api.llazypilot.com https://cloudflareinsights.com; style-src 'self' 'unsafe-inline'; font-src 'self'; object-src 'none'; base-uri 'self'
-  Referrer-Policy: strict-origin-when-cross-origin
-  Permissions-Policy: camera=(), microphone=(), geolocation=()
-  X-Content-Type-Options: nosniff
-  X-Frame-Options: SAMEORIGIN
+/\*
+
+# 'sha256-BFYo...' is the Vite modulePreload polyfill injected by older builds (kept for CDN cache
+
+# rollover). Cloudflare sends all matching rules simultaneously; the browser enforces all of them,
+
+# so any script allowed only in the overlay-specific rule is still blocked by this global rule.
+
+Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-BFYoPoqqEce9Xn1iR84eJv0srIQYK8o0bOd6a5It8Ng=' https://www.youtube.com https://player.twitch.tv https://embed.twitch.tv https://static.cloudflareinsights.com; frame-src 'self' https://www.youtube.com https://player.twitch.tv https://clips.twitch.tv; img-src 'self' https://static-cdn.jtvnw.net https://cdn.discordapp.com data:; connect-src 'self' https://niibot-api.llazypilot.com https://cloudflareinsights.com; style-src 'self' 'unsafe-inline'; font-src 'self'; object-src 'none'; base-uri 'self'
+Referrer-Policy: strict-origin-when-cross-origin
+Permissions-Policy: camera=(), microphone=(), geolocation=()
+X-Content-Type-Options: nosniff
+X-Frame-Options: SAMEORIGIN
 
 /:username/video-queue/overlay
-  # Overlay pages must be embeddable in OBS Browser Source and the dashboard preview iframe.
-  # frame-ancestors * overrides the inherited X-Frame-Options: SAMEORIGIN from the global rule.
-  # X-Frame-Options is intentionally omitted here; frame-ancestors takes precedence in modern browsers.
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://www.youtube.com https://player.twitch.tv https://embed.twitch.tv https://static.cloudflareinsights.com; frame-src https://www.youtube.com https://player.twitch.tv https://clips.twitch.tv; frame-ancestors *; img-src 'self' https://static-cdn.jtvnw.net https://cdn.discordapp.com data:; connect-src 'self' https://niibot-api.llazypilot.com https://cloudflareinsights.com; style-src 'self' 'unsafe-inline'; font-src 'self'; object-src 'none'; base-uri 'self'
+
+# Overlay pages must be embeddable in OBS Browser Source and the dashboard preview iframe.
+
+# frame-ancestors \* overrides the inherited X-Frame-Options: SAMEORIGIN from the global rule.
+
+# X-Frame-Options is intentionally omitted here; frame-ancestors takes precedence in modern browsers.
+
+Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://www.youtube.com https://player.twitch.tv https://embed.twitch.tv https://static.cloudflareinsights.com; frame-src https://www.youtube.com https://player.twitch.tv https://clips.twitch.tv; frame-ancestors \*; img-src 'self' https://static-cdn.jtvnw.net https://cdn.discordapp.com data:; connect-src 'self' https://niibot-api.llazypilot.com https://cloudflareinsights.com; style-src 'self' 'unsafe-inline'; font-src 'self'; object-src 'none'; base-uri 'self'
 
 /:username/game-queue/overlay
-  # Same embedding policy as video-queue overlay — see comment above.
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://www.youtube.com https://player.twitch.tv https://embed.twitch.tv https://static.cloudflareinsights.com; frame-src https://www.youtube.com https://player.twitch.tv https://clips.twitch.tv; frame-ancestors *; img-src 'self' https://static-cdn.jtvnw.net https://cdn.discordapp.com data:; connect-src 'self' https://niibot-api.llazypilot.com https://cloudflareinsights.com; style-src 'self' 'unsafe-inline'; font-src 'self'; object-src 'none'; base-uri 'self'
+
+# Same embedding policy as video-queue overlay — see comment above.
+
+Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://www.youtube.com https://player.twitch.tv https://embed.twitch.tv https://static.cloudflareinsights.com; frame-src https://www.youtube.com https://player.twitch.tv https://clips.twitch.tv; frame-ancestors \*; img-src 'self' https://static-cdn.jtvnw.net https://cdn.discordapp.com data:; connect-src 'self' https://niibot-api.llazypilot.com https://cloudflareinsights.com; style-src 'self' 'unsafe-inline'; font-src 'self'; object-src 'none'; base-uri 'self'
