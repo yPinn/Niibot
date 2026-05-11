@@ -62,7 +62,7 @@ const CrosshairRect = memo(function CrosshairRect({
 
 // Separating decode from render lets CrosshairDetailPreview decode once and reuse
 // the same params object for both lg and actual sizes.
-const CrosshairSVG = memo(function CrosshairSVG({
+export const CrosshairSVG = memo(function CrosshairSVG({
   p,
   size = 'sm',
 }: {
@@ -105,7 +105,7 @@ const CrosshairSVG = memo(function CrosshairSVG({
 
   const dotSide = Math.max(1, p.dotThickness * scale)
 
-  const sw = p.outlines ? Math.max(0.5, p.outlineThickness * scale * 0.25) : 0
+  const sw = p.outlines ? Math.max(0.5, p.outlineThickness * scale) : 0
   const oa = p.outlineOpacity
   const c = p.color
 
@@ -261,13 +261,9 @@ export const CrosshairDetailPreview = memo(function CrosshairDetailPreview({
 }) {
   const p = useMemo(() => resolveParams(game, code), [game, code])
   return (
-    <div className="flex items-end justify-center gap-empty py-page">
+    <div className="flex justify-center py-page">
       <div className="flex flex-col items-center gap-element">
-        <CrosshairSVG p={p} size="lg" />
-        <span className="text-label text-muted-foreground">預覽</span>
-      </div>
-      <div className="flex flex-col items-center gap-element">
-        <div className="flex size-20 items-center justify-center rounded bg-muted">
+        <div className="rounded bg-zinc-500 p-2">
           <CrosshairSVG p={p} size="actual" />
         </div>
         <span className="text-label text-muted-foreground">實際大小 (1080p)</span>
