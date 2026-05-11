@@ -4,10 +4,8 @@ import { Link, useParams } from 'react-router-dom'
 import {
   type Crosshair,
   CROSSHAIR_GAME_LABELS,
-  type CrosshairGame,
   getPublicCrosshairs,
   type PublicChannelProfile,
-  recordCrosshairCopy,
 } from '@/api/crosshairs'
 import avatarFallback from '@/assets/images/Avatar.png'
 import { useTheme } from '@/components/theme-provider'
@@ -17,6 +15,14 @@ import {
   AvatarImage,
   Badge,
   Button,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  Empty,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
   FadeIn,
   Icon,
   Sheet,
@@ -25,25 +31,15 @@ import {
   SheetSection,
   SheetTitle,
   Skeleton,
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
 } from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
-import { copyToClipboard } from '@/lib/clipboard'
 
 import { CrosshairCardBase } from '../modules/crosshairs/CrosshairCardBase'
 import { CrosshairDetailPreview } from '../modules/crosshairs/CrosshairPreview'
+import { SortDropdown } from '../modules/crosshairs/SortDropdown'
+import { copyCode } from '../modules/crosshairs/utils'
 
-const GAME_LABELS: Record<string, string> = { all: 'All', ...CROSSHAIR_GAME_LABELS }
-
-const GAME_TABS = ['all', 'valorant'] as const
-
-function copyCode(code: string, id?: string) {
-  copyToClipboard(code, '已複製準星代碼')
-  if (id) recordCrosshairCopy(id)
-}
+type SortKey = 'default' | 'copies'
 
 export default function CrosshairRepo() {
   const { username } = useParams<{ username: string }>()
@@ -53,8 +49,8 @@ export default function CrosshairRepo() {
   const [channel, setChannel] = useState<PublicChannelProfile | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<string>('all')
   const [selected, setSelected] = useState<Crosshair | null>(null)
+  const [sort, setSort] = useState<SortKey>('copies')
 
   const displayName = channel?.display_name ?? username ?? ''
   useDocumentTitle(channel ? `${displayName}'s Crosshairs` : 'Crosshairs')
@@ -80,20 +76,13 @@ export default function CrosshairRepo() {
     }
   }, [username])
 
-  const filtered = useMemo(
-    () => (activeTab === 'all' ? crosshairs : crosshairs.filter(c => c.game === activeTab)),
-    [crosshairs, activeTab]
-  )
-
-  // Only show tabs that have entries (or 'all')
-  const activeTabs = useMemo(() => {
-    const games = new Set(crosshairs.map(c => c.game))
-    return GAME_TABS.filter(t => t === 'all' || games.has(t as CrosshairGame))
-  }, [crosshairs])
+  const sorted = useMemo(() => {
+    if (sort === 'copies') return [...crosshairs].sort((a, b) => b.copy_count - a.copy_count)
+    return [...crosshairs].sort((a, b) => a.display_order - b.display_order)
+  }, [crosshairs, sort])
 
   return (
-    <div className="relative flex min-h-screen flex-col items-center bg-background px-page py-12">
-      {/* Nav buttons */}
+    <div className="relative flex min-h-screen flex-col items-center justify-center bg-background px-page py-12">
       <Button variant="ghost" size="icon" className="absolute left-4 top-4" asChild>
         <Link to="/">
           <Icon icon="fa-solid fa-house" wrapperClassName="" />
@@ -111,83 +100,113 @@ export default function CrosshairRepo() {
         />
       </Button>
 
-      <div className="w-full max-w-4xl">
+      <div className="w-full max-w-2xl">
         {loading ? (
-          <div className="space-y-card">
-            <div className="flex flex-col items-center gap-3">
-              <Skeleton className="h-24 w-24 rounded-full" />
-              <Skeleton className="h-6 w-40" />
-            </div>
-            <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-5">
-              {Array.from({ length: 8 }).map((_, i) => (
-                <Skeleton key={i} className="aspect-square rounded-xl" />
-              ))}
-            </div>
-          </div>
+          <Card className="rounded-2xl border shadow-xl">
+            <CardHeader>
+              <div className="flex flex-col items-center gap-3">
+                <Skeleton className="h-24 w-24 rounded-full" />
+                <Skeleton className="h-6 w-44" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-between px-1 mb-card">
+                <Skeleton className="h-4 w-20" />
+                <Skeleton className="h-7 w-7 rounded-md" />
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                {Array.from({ length: 9 }).map((_, i) => (
+                  <Skeleton key={i} className="aspect-square rounded-xl" />
+                ))}
+              </div>
+            </CardContent>
+          </Card>
         ) : error ? (
           <div className="flex items-center justify-center py-24 text-destructive">{error}</div>
         ) : (
           <FadeIn>
-            {/* Channel header */}
-            <div className="mb-empty flex flex-col items-center gap-3">
-              <a
-                href={`https://twitch.tv/${username}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="group relative"
-              >
-                <Avatar className="h-24 w-24 border-4 border-primary shadow-lg">
-                  <AvatarImage src={channel?.profile_image_url ?? undefined} />
-                  <AvatarFallback>
-                    <img src={avatarFallback} alt="avatar" />
-                  </AvatarFallback>
-                </Avatar>
-              </a>
-              <div className="text-center">
-                <h1 className="text-2xl font-bold">{displayName}</h1>
-                <p className="text-sm text-muted-foreground">準星收藏庫</p>
-              </div>
-            </div>
+            <Card className="rounded-2xl border shadow-xl">
+              <CardHeader>
+                <div className="flex flex-col items-center">
+                  <a
+                    href={`https://twitch.tv/${username}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="group relative mb-4 select-none"
+                  >
+                    <Avatar className="h-24 w-24 border-4 border-primary shadow-lg">
+                      <AvatarImage
+                        src={channel?.profile_image_url ?? undefined}
+                        alt={`${displayName} avatar`}
+                      />
+                      <AvatarFallback>
+                        <img src={avatarFallback} alt="預設頭像" className="h-full w-full" />
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
+                      <Icon
+                        icon="fa-brands fa-twitch"
+                        className="text-white"
+                        wrapperClassName="size-8"
+                      />
+                    </div>
+                  </a>
+                  <CardTitle className="text-center text-page-title select-none">
+                    {displayName}'s Crosshairs
+                  </CardTitle>
+                </div>
+              </CardHeader>
 
-            {crosshairs.length === 0 ? (
-              <p className="py-16 text-center text-muted-foreground">目前沒有任何準星</p>
-            ) : (
-              <Tabs value={activeTab} onValueChange={setActiveTab}>
-                <TabsList className="mb-card">
-                  {activeTabs.map(tab => (
-                    <TabsTrigger key={tab} value={tab}>
-                      {GAME_LABELS[tab]}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-
-                {activeTabs.map(tab => (
-                  <TabsContent key={tab} value={tab}>
-                    {filtered.length === 0 ? (
-                      <p className="py-12 text-center text-muted-foreground">此遊戲尚無準星</p>
-                    ) : (
-                      <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-5">
-                        {filtered.map(c => (
-                          <CrosshairCard key={c.id} crosshair={c} onSelect={setSelected} />
-                        ))}
-                      </div>
-                    )}
-                  </TabsContent>
-                ))}
-              </Tabs>
-            )}
+              <CardContent>
+                {crosshairs.length === 0 ? (
+                  <Empty className="border-none">
+                    <EmptyHeader>
+                      <EmptyMedia>
+                        <Icon
+                          icon="fa-solid fa-crosshairs"
+                          wrapperClassName="size-20 opacity-25"
+                          className="text-[5rem]"
+                        />
+                      </EmptyMedia>
+                      <EmptyTitle>尚無準星</EmptyTitle>
+                    </EmptyHeader>
+                  </Empty>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between px-1 mb-card">
+                      <p className="flex items-center gap-2 text-sub text-muted-foreground select-none">
+                        <Icon icon="fa-solid fa-crosshairs" wrapperClassName="size-3" />
+                        {crosshairs.length} 個準星
+                      </p>
+                      <SortDropdown
+                        value={sort}
+                        onChange={setSort}
+                        options={[
+                          { value: 'copies', label: '複製次數', icon: 'fa-solid fa-copy' },
+                          { value: 'default', label: '預設排序', icon: 'fa-solid fa-list' },
+                        ]}
+                      />
+                    </div>
+                    <div className="grid grid-cols-3 gap-4">
+                      {sorted.map(c => (
+                        <CrosshairCard key={c.id} crosshair={c} onSelect={setSelected} />
+                      ))}
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
           </FadeIn>
         )}
       </div>
 
-      {/* Detail sheet */}
       <Sheet open={!!selected} onOpenChange={open => !open && setSelected(null)}>
         <SheetContent side="right" className="sm:max-w-md">
           {selected && (
             <>
               <SheetHeader>
                 <div className="flex items-center gap-element">
-                  <Badge variant="secondary">{GAME_LABELS[selected.game]}</Badge>
+                  <Badge variant="secondary">{CROSSHAIR_GAME_LABELS[selected.game]}</Badge>
                 </div>
                 <SheetTitle className="mt-1">{selected.name}</SheetTitle>
               </SheetHeader>
@@ -237,6 +256,7 @@ const CrosshairCard = memo(function CrosshairCard({
       crosshair={crosshair}
       onCopy={code => copyCode(code, crosshair.id)}
       onCardClick={() => onSelect(crosshair)}
+      copyCount={crosshair.copy_count}
     />
   )
 })

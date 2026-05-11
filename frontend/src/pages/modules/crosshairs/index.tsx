@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
 import {
@@ -12,7 +12,6 @@ import {
   getAllPublicCrosshairs,
   getCrosshairs,
   getPublicCrosshairs,
-  recordCrosshairCopy,
   updateCrosshair,
 } from '@/api/crosshairs'
 import { PageHeader } from '@/components/PageHeader'
@@ -48,17 +47,13 @@ import {
   Textarea,
 } from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
-import { copyToClipboard } from '@/lib/clipboard'
 
 import { CrosshairAdjustSheet } from './CrosshairAdjustSheet'
 import { CrosshairCardBase } from './CrosshairCardBase'
 import { CrosshairDetailPreview, CrosshairPreview } from './CrosshairPreview'
 import { ShootingRange } from './ShootingRange'
-
-function copyCode(code: string, id?: string) {
-  copyToClipboard(code, '已複製準星代碼')
-  if (id) recordCrosshairCopy(id)
-}
+import { SortDropdown } from './SortDropdown'
+import { copyCode } from './utils'
 
 interface FormState {
   game: CrosshairGame
@@ -72,7 +67,6 @@ const DEFAULT_FORM: FormState = { game: 'valorant', name: '', code: '', descript
 export default function CrosshairModule() {
   useDocumentTitle('Crosshair Repo')
 
-  // My crosshairs state
   const [crosshairs, setCrosshairs] = useState<Crosshair[]>([])
   const crosshairsRef = useRef(crosshairs)
   useEffect(() => {
@@ -83,12 +77,10 @@ export default function CrosshairModule() {
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Crosshair | null>(null)
 
-  // Sheet state
   const [sheetOpen, setSheetOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState<FormState>(DEFAULT_FORM)
 
-  // Browse state
   const [allPublic, setAllPublic] = useState<CrosshairWithChannel[]>([])
   const [allPublicLoading, setAllPublicLoading] = useState(true)
   const [browseInput, setBrowseInput] = useState('')
@@ -96,10 +88,27 @@ export default function CrosshairModule() {
   const [browseLoading, setBrowseLoading] = useState(false)
   const [browseError, setBrowseError] = useState<string | null>(null)
 
-  // Adjust sheet
-  const [adjustTarget, setAdjustTarget] = useState<Crosshair | null>(null)
+  const [mineSort, setMineSort] = useState<'time' | 'copies'>('time')
+  const [mineSortDir, setMineSortDir] = useState<'asc' | 'desc'>('desc')
+  const [browseSort, setBrowseSort] = useState<'default' | 'copies'>('copies')
 
-  // Detail sheet (browse)
+  const sortedMine = useMemo(() => {
+    const mul = mineSortDir === 'asc' ? 1 : -1
+    if (mineSort === 'copies')
+      return [...crosshairs].sort((a, b) => mul * (a.copy_count - b.copy_count))
+    return [...crosshairs].sort(
+      (a, b) => mul * (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0)
+    )
+  }, [crosshairs, mineSort, mineSortDir])
+
+  const sortedBrowse = useMemo(() => {
+    const list = browseResults ?? allPublic
+    if (browseSort === 'default')
+      return [...list].sort((a, b) => (b.created_at > a.created_at ? 1 : -1))
+    return [...list].sort((a, b) => b.copy_count - a.copy_count)
+  }, [allPublic, browseResults, browseSort])
+
+  const [adjustTarget, setAdjustTarget] = useState<Crosshair | null>(null)
   const [detailTarget, setDetailTarget] = useState<CrosshairWithChannel | null>(null)
 
   useEffect(() => {
@@ -253,10 +262,22 @@ export default function CrosshairModule() {
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle>我的準星</CardTitle>
-                <Button size="sm" onClick={openAdd}>
-                  <Icon icon="fa-solid fa-plus" wrapperClassName="mr-1 size-3.5" />
-                  新增準星
-                </Button>
+                <div className="flex items-center gap-2">
+                  <SortDropdown
+                    value={mineSort}
+                    onChange={setMineSort}
+                    dir={mineSortDir}
+                    onDirChange={setMineSortDir}
+                    options={[
+                      { value: 'time', label: '加入時間', icon: 'fa-solid fa-clock' },
+                      { value: 'copies', label: '複製次數', icon: 'fa-solid fa-copy' },
+                    ]}
+                  />
+                  <Button size="sm" onClick={openAdd}>
+                    <Icon icon="fa-solid fa-plus" wrapperClassName="mr-1 size-3.5" />
+                    新增準星
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
                 {loadingMine ? (
@@ -271,7 +292,7 @@ export default function CrosshairModule() {
                   </p>
                 ) : (
                   <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-5">
-                    {crosshairs.map(c => (
+                    {sortedMine.map(c => (
                       <MyCrosshairCard
                         key={c.id}
                         crosshair={c}
@@ -290,8 +311,16 @@ export default function CrosshairModule() {
 
           <TabsContent value="browse" className="mt-section overflow-y-auto">
             <Card>
-              <CardHeader>
+              <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle>公開準星</CardTitle>
+                <SortDropdown
+                  value={browseSort}
+                  onChange={setBrowseSort}
+                  options={[
+                    { value: 'copies', label: '複製次數', icon: 'fa-solid fa-copy' },
+                    { value: 'default', label: '最新', icon: 'fa-solid fa-clock' },
+                  ]}
+                />
               </CardHeader>
               <CardContent className="space-y-4">
                 <form onSubmit={handleBrowse} className="flex gap-element">
@@ -309,7 +338,6 @@ export default function CrosshairModule() {
                 {browseError && <p className="text-sm text-destructive">{browseError}</p>}
 
                 {(() => {
-                  const displayed = browseResults ?? allPublic
                   if (allPublicLoading && browseResults === null) {
                     return (
                       <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-5">
@@ -319,7 +347,7 @@ export default function CrosshairModule() {
                       </div>
                     )
                   }
-                  if (displayed.length === 0) {
+                  if (sortedBrowse.length === 0) {
                     return (
                       <p className="py-12 text-center text-muted-foreground">
                         {browseResults !== null ? '此使用者尚無準星' : '目前尚無任何準星'}
@@ -331,10 +359,10 @@ export default function CrosshairModule() {
                       <p className="text-sm text-muted-foreground">
                         {browseResults !== null
                           ? `${browseResults[0]?.channel_name ?? browseInput} 的準星收藏（${browseResults.length} 個）`
-                          : `最新收藏（共 ${displayed.length} 個）`}
+                          : `共 ${sortedBrowse.length} 個`}
                       </p>
                       <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-5">
-                        {displayed.map(c => (
+                        {sortedBrowse.map(c => (
                           <BrowseCrosshairCard
                             key={c.id}
                             crosshair={c}
@@ -494,12 +522,13 @@ const MyCrosshairCard = memo(function MyCrosshairCard({
   onEdit: (c: Crosshair) => void
   onAdjust: (c: Crosshair) => void
   onDelete: (c: Crosshair) => void
-  onCopy: (code: string) => void
+  onCopy: (code: string, id?: string) => void
 }) {
   return (
     <CrosshairCardBase
       crosshair={crosshair}
-      onCopy={onCopy}
+      onCopy={code => onCopy(code, crosshair.id)}
+      copyCount={crosshair.copy_count}
       footer={
         <div className="flex justify-end pr-element pb-element">
           <Button
