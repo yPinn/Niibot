@@ -186,6 +186,7 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
         )
         LOGGER.info(f"Token refreshed and persisted for user: {payload.user_id}")
         if payload.user_id != self._bot_id and payload.user_id not in self._bot_is_mod:
+            LOGGER.debug(f"Re-checking mod status for {payload.user_id} after token refresh")
             await self._check_bot_mod_status(payload.user_id)
 
     async def event_message(self, payload: twitchio.ChatMessage) -> None:
@@ -251,6 +252,9 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
             # Skip notification while the status check is still in-flight.
             if channel_id not in self._bot_is_mod:
                 if channel_id in self._mod_check_pending:
+                    LOGGER.debug(
+                        f"[{payload.broadcaster.name}] Mod check in-flight, deferring guard"
+                    )
                     return
                 await mod_guard_notifier.notify(
                     broadcaster_login=payload.broadcaster.name or "",
@@ -381,6 +385,7 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
         _mod_check_pending gates that suppression.
         """
         self._mod_check_pending.add(channel_id)
+        LOGGER.debug(f"Checking mod status for channel {channel_id}")
         try:
             token_obj = await self.channels.get_token(channel_id)
             if not token_obj:
