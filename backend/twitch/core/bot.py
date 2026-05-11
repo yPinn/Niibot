@@ -82,6 +82,8 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
         self._needs_reauth: set[str] = set()
         # Channel IDs where bot has confirmed moderator status
         self._bot_is_mod: set[str] = set()
+        # Channel IDs where mod status check is in-flight (suppress guard notifications)
+        self._mod_check_pending: set[str] = set()
         # Bot's own login name (set during load_tokens)
         self._bot_login: str = ""
 
@@ -183,6 +185,8 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
             payload.user_id, payload.token, payload.refresh_token, scopes=scopes_str
         )
         LOGGER.info(f"Token refreshed and persisted for user: {payload.user_id}")
+        if payload.user_id != self._bot_id and payload.user_id not in self._bot_is_mod:
+            await self._check_bot_mod_status(payload.user_id)
 
     async def event_message(self, payload: twitchio.ChatMessage) -> None:
         if payload.broadcaster:
@@ -243,8 +247,11 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
                     self._channel_line_counts.get(channel_id, 0) + 1
                 )
 
-            # Mod guard: block all functionality until bot has mod in this channel
+            # Mod guard: block all functionality until bot has mod in this channel.
+            # Skip notification while the status check is still in-flight.
             if channel_id not in self._bot_is_mod:
+                if channel_id in self._mod_check_pending:
+                    return
                 await mod_guard_notifier.notify(
                     broadcaster_login=payload.broadcaster.name or "",
                     channel_id=channel_id,
@@ -370,7 +377,10 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
 
         Populates _bot_is_mod on success. Logs a warning if the check fails
         (missing scope, token error, etc.) and leaves the channel out of _bot_is_mod.
+        Callers must not send mod-guard notifications while this is in-flight;
+        _mod_check_pending gates that suppression.
         """
+        self._mod_check_pending.add(channel_id)
         try:
             token_obj = await self.channels.get_token(channel_id)
             if not token_obj:
@@ -403,6 +413,8 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
                 )
         except Exception as e:
             LOGGER.warning(f"Mod status check error for {channel_id}: {type(e).__name__}: {e}")
+        finally:
+            self._mod_check_pending.discard(channel_id)
 
     def _refresh_pool_refs(self) -> None:
         """Update all pool references after a reconnect."""

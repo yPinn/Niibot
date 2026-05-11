@@ -18,4 +18,6 @@ def get_channel_subscriptions(
         eventsub.ChannelRaidSubscription(to_broadcaster_user_id=broadcaster_user_id),
         eventsub.SharedChatSessionBeginSubscription(broadcaster_user_id=broadcaster_user_id),
         eventsub.SharedChatSessionEndSubscription(broadcaster_user_id=broadcaster_user_id),
+        eventsub.ChannelModeratorAddSubscription(broadcaster_user_id=broadcaster_user_id),
+        eventsub.ChannelModeratorRemoveSubscription(broadcaster_user_id=broadcaster_user_id),
     ]
