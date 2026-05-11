@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useState } from 'react'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
 import {
@@ -50,10 +50,10 @@ import {
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { copyToClipboard } from '@/lib/clipboard'
 
+import { CrosshairAdjustSheet } from './CrosshairAdjustSheet'
 import { CrosshairCardBase } from './CrosshairCardBase'
 import { CrosshairDetailPreview, CrosshairPreview } from './CrosshairPreview'
-
-const GAME_LABELS = CROSSHAIR_GAME_LABELS
+import { ShootingRange } from './ShootingRange'
 
 function copyCode(code: string, id?: string) {
   copyToClipboard(code, '已複製準星代碼')
@@ -74,6 +74,10 @@ export default function CrosshairModule() {
 
   // My crosshairs state
   const [crosshairs, setCrosshairs] = useState<Crosshair[]>([])
+  const crosshairsRef = useRef(crosshairs)
+  useEffect(() => {
+    crosshairsRef.current = crosshairs
+  }, [crosshairs])
   const [loadingMine, setLoadingMine] = useState(true)
   const [saving, setSaving] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -91,6 +95,9 @@ export default function CrosshairModule() {
   const [browseResults, setBrowseResults] = useState<CrosshairWithChannel[] | null>(null)
   const [browseLoading, setBrowseLoading] = useState(false)
   const [browseError, setBrowseError] = useState<string | null>(null)
+
+  // Adjust sheet
+  const [adjustTarget, setAdjustTarget] = useState<Crosshair | null>(null)
 
   // Detail sheet (browse)
   const [detailTarget, setDetailTarget] = useState<CrosshairWithChannel | null>(null)
@@ -123,6 +130,38 @@ export default function CrosshairModule() {
     setForm(DEFAULT_FORM)
     setSheetOpen(true)
   }
+
+  const openAdjust = useCallback((c: Crosshair) => setAdjustTarget(c), [])
+
+  const saveCrosshairCode = useCallback(async (target: Crosshair, code: string) => {
+    try {
+      const updated = await updateCrosshair(target.id, {
+        game: target.game,
+        name: target.name,
+        code,
+        description: target.description ?? null,
+      })
+      setCrosshairs(cs => cs.map(c => (c.id === target.id ? updated : c)))
+      toast.success('已更新準星')
+    } catch {
+      toast.error('儲存失敗')
+    }
+  }, [])
+
+  const handleAdjustSave = useCallback(
+    (code: string) => {
+      if (adjustTarget) saveCrosshairCode(adjustTarget, code)
+    },
+    [adjustTarget, saveCrosshairCode]
+  )
+
+  const handleRangeSave = useCallback(
+    (id: string, code: string) => {
+      const target = crosshairsRef.current.find(c => c.id === id)
+      if (target) saveCrosshairCode(target, code)
+    },
+    [saveCrosshairCode]
+  )
 
   const openEdit = useCallback((c: Crosshair) => {
     setEditingId(c.id)
@@ -203,13 +242,14 @@ export default function CrosshairModule() {
     <>
       <PageMain>
         <PageHeader title="Crosshair Repo" description="管理你的準星代碼，或查看公開的準星收藏" />
-        <Tabs defaultValue="mine">
+        <Tabs defaultValue="mine" className="flex-1 min-h-0">
           <TabsList>
             <TabsTrigger value="mine">我的</TabsTrigger>
             <TabsTrigger value="browse">公開</TabsTrigger>
+            <TabsTrigger value="range">靶場</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="mine" className="mt-4">
+          <TabsContent value="mine" className="mt-section overflow-y-auto">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle>我的準星</CardTitle>
@@ -237,6 +277,7 @@ export default function CrosshairModule() {
                         crosshair={c}
                         isDeleting={deletingId === c.id}
                         onEdit={openEdit}
+                        onAdjust={openAdjust}
                         onDelete={setDeleteTarget}
                         onCopy={copyCode}
                       />
@@ -247,7 +288,7 @@ export default function CrosshairModule() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="browse" className="mt-4">
+          <TabsContent value="browse" className="mt-section overflow-y-auto">
             <Card>
               <CardHeader>
                 <CardTitle>公開準星</CardTitle>
@@ -307,8 +348,20 @@ export default function CrosshairModule() {
               </CardContent>
             </Card>
           </TabsContent>
+
+          <TabsContent value="range" className="mt-section flex flex-col min-h-0">
+            <ShootingRange crosshairs={crosshairs} onSave={handleRangeSave} />
+          </TabsContent>
         </Tabs>
       </PageMain>
+
+      <CrosshairAdjustSheet
+        key={adjustTarget?.id ?? ''}
+        open={!!adjustTarget}
+        onOpenChange={open => !open && setAdjustTarget(null)}
+        initialCode={adjustTarget?.code ?? ''}
+        onSave={handleAdjustSave}
+      />
 
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
         <SheetContent side="right" className="sm:max-w-md">
@@ -318,11 +371,13 @@ export default function CrosshairModule() {
 
           <SheetSection>
             <div className="flex justify-center py-element">
-              <CrosshairPreview
-                game={form.game}
-                code={form.code || '0;P;0l;4;0o;2;0t;2'}
-                size="lg"
-              />
+              <div className="flex items-center justify-center rounded-2xl bg-zinc-500 p-3">
+                <CrosshairPreview
+                  game={form.game}
+                  code={form.code || '0;P;0l;4;0o;2;0t;2'}
+                  size="lg"
+                />
+              </div>
             </div>
           </SheetSection>
 
@@ -369,7 +424,7 @@ export default function CrosshairModule() {
             <>
               <SheetHeader>
                 <div className="flex items-center gap-element">
-                  <Badge variant="secondary">{GAME_LABELS[detailTarget.game]}</Badge>
+                  <Badge variant="secondary">{CROSSHAIR_GAME_LABELS[detailTarget.game]}</Badge>
                 </div>
                 <SheetTitle className="mt-1">{detailTarget.name}</SheetTitle>
               </SheetHeader>
@@ -430,12 +485,14 @@ const MyCrosshairCard = memo(function MyCrosshairCard({
   crosshair,
   isDeleting,
   onEdit,
+  onAdjust,
   onDelete,
   onCopy,
 }: {
   crosshair: Crosshair
   isDeleting: boolean
   onEdit: (c: Crosshair) => void
+  onAdjust: (c: Crosshair) => void
   onDelete: (c: Crosshair) => void
   onCopy: (code: string) => void
 }) {
@@ -445,6 +502,14 @@ const MyCrosshairCard = memo(function MyCrosshairCard({
       onCopy={onCopy}
       footer={
         <div className="flex justify-end pr-element pb-element">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => onAdjust(crosshair)}
+            title="調整準星"
+          >
+            <Icon icon="fa-solid fa-sliders" />
+          </Button>
           <Button variant="ghost" size="icon-sm" onClick={() => onEdit(crosshair)} title="編輯">
             <Icon icon="fa-solid fa-pen" />
           </Button>
