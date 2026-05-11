@@ -150,7 +150,7 @@ class CrosshairCommandsComponent(BotComponent):
         if not ctx.chatter.moderator and not ctx.chatter.broadcaster:  # type: ignore[attr-defined]
             return
         if not args:
-            await self._ctx_reply(ctx, "用法：!xhc a <準星名稱> <準星代碼>")
+            await self._ctx_reply(ctx, "用法：!xhc a <準星名稱> <準星代碼> [-desc=備註]")
             return
 
         opts, remaining = _parse_opts(args)
@@ -190,7 +190,7 @@ class CrosshairCommandsComponent(BotComponent):
         if not ctx.chatter.moderator and not ctx.chatter.broadcaster:  # type: ignore[attr-defined]
             return
         if not args:
-            await self._ctx_reply(ctx, "用法：!xhc e <準星名稱> <新準星代碼>")
+            await self._ctx_reply(ctx, "用法：!xhc e <準星名稱> <新準星代碼> [-desc=備註]")
             return
 
         opts, remaining = _parse_opts(args)
