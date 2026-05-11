@@ -64,14 +64,14 @@ class GeneralCommandsComponent(BotComponent):
         except Exception as e:
             LOGGER.error(f"Failed to record command usage: {e}")
 
-    @commands.command(aliases=["hello", "hey"])
-    async def hi(self, ctx: commands.Context) -> None:
-        """Greet the user.
+    @commands.command(aliases=["alive"])
+    async def ping(self, ctx: commands.Context) -> None:
+        """Confirm the bot is alive.
 
-        Usage: !hi, !hello, !hey
+        Usage: !ping, !alive
         """
         config = await check_command(
-            self.cmd_repo, ctx, channel_repo=self.channel_repo, command_name="hi"
+            self.cmd_repo, ctx, channel_repo=self.channel_repo, command_name="ping"
         )
         if not config:
             return
@@ -82,8 +82,8 @@ class GeneralCommandsComponent(BotComponent):
             )
             await self._ctx_reply(ctx, response)
         else:
-            await self._ctx_reply(ctx, f"你好，{ctx.chatter.display_name}！")
-        await self._record_command(ctx, "hi")
+            await self._ctx_reply(ctx, f"Pong! @{ctx.chatter.display_name}")
+        await self._record_command(ctx, "ping")
 
     @commands.command(aliases=["commands", "指令"])
     async def help(self, ctx: commands.Context) -> None:
@@ -208,6 +208,22 @@ class GeneralCommandsComponent(BotComponent):
             ),
         )
         await self._record_command(ctx, "rank")
+
+    @commands.command(name="crosshairs", aliases=["準星"])
+    async def crosshairs(self, ctx: commands.Context) -> None:
+        """顯示頻道準星收藏頁面連結。
+
+        Usage: !crosshairs, !準星
+        """
+        config = await check_command(
+            self.cmd_repo, ctx, channel_repo=self.channel_repo, command_name="crosshairs"
+        )
+        if not config:
+            return
+
+        channel_name = ctx.channel.name
+        await self._ctx_reply(ctx, f"準星收藏： {FRONTEND_URL}/{channel_name}/crosshairs")
+        await self._record_command(ctx, "crosshairs")
 
     @commands.Component.listener()
     async def event_stream_online(self, payload: twitchio.StreamOnline) -> None:

@@ -66,7 +66,7 @@ def _make_virtual(channel_id: str, defn: dict) -> CommandConfig:
         channel_id=channel_id,
         command_name=defn["command_name"],
         command_type="builtin",
-        enabled=True,
+        enabled=defn.get("enabled", True),
         custom_response=defn.get("custom_response"),
         cooldown=defn.get("cooldown"),
         min_role="everyone",

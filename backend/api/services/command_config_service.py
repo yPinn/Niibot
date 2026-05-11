@@ -103,7 +103,7 @@ class CommandConfigService:
             {
                 "name": f"!{cfg.command_name}",
                 "description": (
-                    PUBLIC_DESCRIPTIONS.get(cfg.command_name, cfg.custom_response or "")
+                    PUBLIC_DESCRIPTIONS[cfg.command_name]
                     if cfg.command_type == "builtin"
                     else cfg.custom_response or ""
                 ),
@@ -112,6 +112,7 @@ class CommandConfigService:
             }
             for cfg in configs
             if cfg.enabled
+            and (cfg.command_type == "custom" or cfg.command_name in PUBLIC_DESCRIPTIONS)
         ]
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(

@@ -10,22 +10,27 @@ automatically appear for every channel on the next API or bot call.
 """
 
 BUILTIN_DEFS: list[dict] = [
+    # ── 通用互動 ──────────────────────────────────────────────────────────────
     {
-        "command_name": "hi",
+        "command_name": "ping",
         "cooldown": 5,
-        "aliases": "hello,hey",
-        "custom_response": "你好,$(user)!",
+        "aliases": "alive",
+        "custom_response": "Pong! @$(user)",
     },
     {"command_name": "help", "cooldown": 5, "aliases": "commands,指令"},
-    {"command_name": "uptime", "cooldown": 5, "aliases": "開播時間"},
-    {"command_name": "condemn", "cooldown": 10, "aliases": "斥責"},
+    {"command_name": "condemn", "cooldown": 5, "aliases": "斥責"},
+    # ── 資訊 ──────────────────────────────────────────────────────────────────
+    {"command_name": "uptime", "cooldown": 10, "aliases": "開播時間"},
+    {"command_name": "rank", "cooldown": 15, "aliases": "排名"},
+    # ── 娛樂 ──────────────────────────────────────────────────────────────────
     {"command_name": "fortune", "cooldown": 5, "aliases": "運勢"},
     {"command_name": "tarot", "cooldown": 5, "aliases": "塔羅"},
-    {"command_name": "ai", "cooldown": 15, "aliases": "問"},
-    {"command_name": "tft", "cooldown": 5, "aliases": "戰棋"},
-    {"command_name": "roll", "cooldown": 3, "aliases": "骰子"},
-    {"command_name": "choose", "cooldown": 3, "aliases": "選擇"},
-    {"command_name": "rank", "cooldown": 30, "aliases": "排名"},
+    {"command_name": "roll", "cooldown": 5, "aliases": "骰子"},
+    {"command_name": "choose", "cooldown": 5, "aliases": "選擇"},
+    # ── 功能型（預設關閉，需手動啟用）────────────────────────────────────────
+    {"command_name": "ai", "cooldown": 30, "aliases": "問", "enabled": False},
+    {"command_name": "tft", "cooldown": 15, "aliases": "戰棋", "enabled": False},
+    {"command_name": "crosshairs", "cooldown": 5, "aliases": "準星", "enabled": False},
 ]
 
 # O(1) lookup by canonical command name
@@ -43,7 +48,7 @@ for _d in BUILTIN_DEFS:
 # ── Descriptions (used by the API service layer) ──────────────────────────────
 
 BUILTIN_DESCRIPTIONS: dict[str, str] = {
-    "hi": "向聊天室打招呼",
+    "ping": "確認機器人是否在線",
     "help": "顯示所有可用指令列表",
     "uptime": "查看目前已開播多久",
     "ai": "向 AI 提問",
@@ -54,12 +59,12 @@ BUILTIN_DESCRIPTIONS: dict[str, str] = {
     "roll": "擲骰子（預設 d6，可指定面數）",
     "choose": "從選項中隨機挑選一個",
     "rank": "查詢本月個人活躍度排名",
+    "crosshairs": "顯示頻道準星收藏頁面連結",
 }
 
 # Public /commands page — includes usage examples
 
 PUBLIC_DESCRIPTIONS: dict[str, str] = {
-    "hi": "向聊天室打招呼",
     "help": "顯示所有可用指令列表",
     "uptime": "查看目前已開播多久",
     "ai": "向 AI 提問，用法：!問 <問題>",
@@ -70,4 +75,5 @@ PUBLIC_DESCRIPTIONS: dict[str, str] = {
     "roll": "擲骰子，用法：!roll [面數]（預設 d6）",
     "choose": "隨機選擇，用法：!choose 選項1 選項2 ...",
     "rank": "查詢本月個人活躍度排名",
+    "crosshairs": "顯示頻道準星收藏頁面連結，用法：!crosshairs",
 }

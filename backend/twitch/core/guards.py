@@ -27,6 +27,8 @@ _EVICT_INTERVAL = 500
 
 ROLE_HIERARCHY = ["everyone", "subscriber", "vip", "moderator", "broadcaster"]
 
+MIN_COOLDOWN = 5  # seconds — system-wide floor, cannot be overridden per-channel
+
 
 def has_role(chatter, min_role: str) -> bool:
     """Check if chatter meets the minimum role requirement."""
@@ -57,13 +59,14 @@ def is_on_cooldown(
 
     Uses command-level override if set, otherwise falls back to channel default.
     """
-    effective_cd = (
+    raw_cd = (
         config.cooldown
         if config.cooldown is not None
         else (channel.default_cooldown if channel else 0)
     )
-    if effective_cd <= 0:
+    if raw_cd <= 0:
         return False
+    effective_cd = max(MIN_COOLDOWN, raw_cd)
 
     key = f"{channel_id}:{command_name}"
     last = _cooldown_tracker.get(key)
