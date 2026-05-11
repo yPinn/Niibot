@@ -97,7 +97,7 @@ class CrosshairCommandsComponent(BotComponent):
 
     # ── !xhc ──────────────────────────────────────────────────────────────────
 
-    @commands.group(name="xhc")
+    @commands.group(name="xhc", aliases=["crosshairs", "準星"], invoke_fallback=True)
     async def xhc(self, ctx: commands.Context) -> None:
         """Show crosshairs page link, or look up a crosshair by name."""
         if ctx.invoked_subcommand is not None:

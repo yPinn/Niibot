@@ -209,22 +209,6 @@ class GeneralCommandsComponent(BotComponent):
         )
         await self._record_command(ctx, "rank")
 
-    @commands.command(name="crosshairs", aliases=["準星"])
-    async def crosshairs(self, ctx: commands.Context) -> None:
-        """顯示頻道準星收藏頁面連結。
-
-        Usage: !crosshairs, !準星
-        """
-        config = await check_command(
-            self.cmd_repo, ctx, channel_repo=self.channel_repo, command_name="crosshairs"
-        )
-        if not config:
-            return
-
-        channel_name = ctx.channel.name
-        await self._ctx_reply(ctx, f"準星收藏： {FRONTEND_URL}/{channel_name}/crosshairs")
-        await self._record_command(ctx, "crosshairs")
-
     @commands.Component.listener()
     async def event_stream_online(self, payload: twitchio.StreamOnline) -> None:
         LOGGER.info(f"Stream online: {payload.broadcaster.name}")
