@@ -131,14 +131,12 @@ class CrosshairCommandsComponent(BotComponent):
             self._share_cd = {k: v for k, v in self._share_cd.items() if v > cutoff}
 
         channel_id = str(ctx.channel.id)
-        crosshair = await self.xhair_repo.get_by_name(channel_id, name)
+        crosshair = await self.xhair_repo.search_by_name(channel_id, name)
         if not crosshair:
             await self._ctx_reply(ctx, f"找不到準星「{name}」")
             return
 
-        code = crosshair["code"]
-        preview = code[:40] + ("…" if len(code) > 40 else "")
-        await self._ctx_reply(ctx, f"【{crosshair['name']}】{preview}")
+        await self._ctx_reply(ctx, f"【{crosshair['name']}】{crosshair['code']}")
         await self._record_command(ctx, "crosshairs")
 
     # ── !xhc a <名稱> <代碼> ─────────────────────────────────────────────────
@@ -172,8 +170,7 @@ class CrosshairCommandsComponent(BotComponent):
             await self.xhair_repo.create(
                 channel_id, game="valorant", name=name, code=code, description=desc
             )
-            preview = code[:25] + ("…" if len(code) > 25 else "")
-            reply = f"已新增準星「{name}」→ {preview}"
+            reply = f"已新增準星「{name}」→ {code}"
             if desc:
                 reply += f" | {desc}"
             await self._ctx_reply(ctx, reply)
@@ -215,8 +212,7 @@ class CrosshairCommandsComponent(BotComponent):
 
         try:
             await self.xhair_repo.update(existing["id"], channel_id, fields=fields)
-            preview = code[:25] + ("…" if len(code) > 25 else "")
-            reply = f"已更新準星「{name}」→ {preview}"
+            reply = f"已更新準星「{name}」→ {code}"
             if "desc" in opts:
                 reply += f" | {opts['desc']}"
             await self._ctx_reply(ctx, reply)

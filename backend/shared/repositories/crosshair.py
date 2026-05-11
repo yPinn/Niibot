@@ -128,6 +128,27 @@ class CrosshairRepository:
             )
             return dict(row) if row else None
 
+    async def search_by_name(self, channel_id: str, name: str) -> dict | None:
+        """Case-insensitive lookup with prefix then contains fallback."""
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"SELECT {_COLUMNS} FROM crosshairs "
+                "WHERE channel_id = $1 AND ("
+                "  lower(name) = lower($2)"
+                "  OR lower(name) LIKE lower($2) || '%'"
+                "  OR lower(name) LIKE '%' || lower($2) || '%'"
+                ") "
+                "ORDER BY "
+                "  CASE WHEN lower(name) = lower($2) THEN 0 "
+                "       WHEN lower(name) LIKE lower($2) || '%' THEN 1 "
+                "       ELSE 2 END, "
+                "  display_order, created_at "
+                "LIMIT 1",
+                channel_id,
+                name,
+            )
+            return dict(row) if row else None
+
     async def increment_copy(self, crosshair_id: str) -> None:
         async with self.pool.acquire() as conn:
             await conn.execute(
