@@ -118,6 +118,16 @@ class CrosshairRepository:
             )
             return dict(row) if row else None
 
+    async def get_by_name(self, channel_id: str, name: str) -> dict | None:
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"SELECT {_COLUMNS} FROM crosshairs "
+                "WHERE channel_id = $1 AND lower(name) = lower($2)",
+                channel_id,
+                name,
+            )
+            return dict(row) if row else None
+
     async def increment_copy(self, crosshair_id: str) -> None:
         async with self.pool.acquire() as conn:
             await conn.execute(
