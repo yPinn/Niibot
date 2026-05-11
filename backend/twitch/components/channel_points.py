@@ -91,6 +91,8 @@ class ChannelPointsComponent(commands.Component):
             LOGGER.debug(f"[{channel_name}] User input: {user_input}")
 
         if channel_id not in self.bot._bot_is_mod:  # type: ignore[attr-defined]
+            if channel_id in self.bot._mod_check_pending:  # type: ignore[attr-defined]
+                return
             LOGGER.debug(f"[{channel_name}] Redemption skipped: bot not mod")
             bot_login: str = getattr(self.bot, "_bot_login", "niibot")
             await mod_guard_notifier.notify(
