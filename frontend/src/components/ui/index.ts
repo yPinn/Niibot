@@ -137,6 +137,7 @@ export {
   useSidebar,
 } from './sidebar'
 export { Skeleton } from './skeleton'
+export { Slider } from './slider'
 export { Toaster } from './sonner'
 export { Spinner } from './spinner'
 export { Switch } from './switch'
