@@ -181,8 +181,13 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
         if not payload.user_id:
             return
         scopes_str = " ".join(list(payload.scopes)) if payload.scopes else None
+        token_type = "bot" if payload.user_id == self._bot_id else "broadcaster"
         await self.channels.upsert_token_only(
-            payload.user_id, payload.token, payload.refresh_token, scopes=scopes_str
+            payload.user_id,
+            payload.token,
+            payload.refresh_token,
+            scopes=scopes_str,
+            token_type=token_type,
         )
         LOGGER.info(f"Token refreshed and persisted for user: {payload.user_id}")
         if payload.user_id != self._bot_id and payload.user_id not in self._bot_is_mod:
@@ -318,9 +323,12 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
         resp: twitchio.authentication.ValidateTokenPayload = await super().add_token(token, refresh)
 
         if resp.user_id:
+            token_type = "bot" if resp.user_id == self._bot_id else "broadcaster"
             for attempt in range(1, 4):
                 try:
-                    await self.channels.upsert_token_only(resp.user_id, token, refresh)
+                    await self.channels.upsert_token_only(
+                        resp.user_id, token, refresh, token_type=token_type
+                    )
                     break
                 except Exception as e:
                     if attempt < 3:
@@ -337,6 +345,12 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
         tokens = await self.channels.list_tokens()
 
         for tok in tokens:
+            # Load the correct token type per account:
+            # bot account → only 'bot' token; all others → only 'broadcaster' token.
+            expected_type = "bot" if tok.user_id == self._bot_id else "broadcaster"
+            if tok.token_type != expected_type:
+                continue
+
             try:
                 user_info = await self.add_token(tok.token, tok.refresh)
             except twitchio.exceptions.InvalidTokenException as e:
