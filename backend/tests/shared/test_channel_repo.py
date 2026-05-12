@@ -26,6 +26,7 @@ _TOKEN_ROW = {
     "user_id": "u1",
     "token": "tok",
     "refresh": "ref",
+    "token_type": "broadcaster",
     "scopes": "channel:bot channel:read:redemptions",
     "created_at": _NOW,
     "updated_at": _NOW,
@@ -126,7 +127,7 @@ class TestGetToken:
 @pytest.mark.asyncio
 class TestUpsertTokenOnly:
     async def test_invalidates_token_cache(self):
-        _token_cache.set("token:u1", _TOKEN_ROW)
+        _token_cache.set("token:u1:broadcaster", _TOKEN_ROW)
         pool, _ = _make_pool(execute="INSERT 0 1")
         repo = ChannelRepository(pool)
 
@@ -134,7 +135,7 @@ class TestUpsertTokenOnly:
 
         from shared.cache import _MISSING
 
-        assert _token_cache.get("token:u1") is _MISSING
+        assert _token_cache.get("token:u1:broadcaster") is _MISSING
 
     async def test_executes_upsert(self):
         pool, conn = _make_pool(execute="INSERT 0 1")

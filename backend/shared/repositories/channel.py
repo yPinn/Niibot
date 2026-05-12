@@ -27,14 +27,18 @@ class ChannelRepository:
 
     # ==================== Token Operations ====================
 
-    @cached(cache=_token_cache, key_func=lambda self, user_id: f"token:{user_id}")
-    async def get_token(self, user_id: str) -> Token | None:
-        """Get a user's OAuth token."""
+    @cached(
+        cache=_token_cache,
+        key_func=lambda self, user_id, token_type="broadcaster": f"token:{user_id}:{token_type}",
+    )
+    async def get_token(self, user_id: str, token_type: str = "broadcaster") -> Token | None:
+        """Get a user's OAuth token by type ('broadcaster' or 'bot')."""
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT user_id, token, refresh, scopes, created_at, updated_at "
-                "FROM tokens WHERE user_id = $1",
+                "SELECT user_id, token, refresh, token_type, scopes, created_at, updated_at "
+                "FROM tokens WHERE user_id = $1 AND token_type = $2",
                 user_id,
+                token_type,
             )
             if not row:
                 return None
@@ -46,14 +50,15 @@ class ChannelRepository:
         token: str,
         refresh: str,
         scopes: str | None = None,
+        token_type: str = "broadcaster",
     ) -> None:
         """Insert or update an OAuth token (without touching the channels table)."""
         async with self.pool.acquire() as conn:
             await conn.execute(
                 """
-                INSERT INTO tokens (user_id, token, refresh, scopes)
-                VALUES ($1, $2, $3, $4)
-                ON CONFLICT (user_id) DO UPDATE SET
+                INSERT INTO tokens (user_id, token, refresh, scopes, token_type)
+                VALUES ($1, $2, $3, $4, $5)
+                ON CONFLICT (user_id, token_type) DO UPDATE SET
                     token      = EXCLUDED.token,
                     refresh    = EXCLUDED.refresh,
                     scopes     = COALESCE(EXCLUDED.scopes, tokens.scopes),
@@ -63,14 +68,16 @@ class ChannelRepository:
                 token,
                 refresh,
                 scopes,
+                token_type,
             )
-        _token_cache.invalidate(f"token:{user_id}")
+        _token_cache.invalidate(f"token:{user_id}:{token_type}")
 
     async def list_tokens(self) -> list[Token]:
-        """Return all tokens."""
+        """Return all tokens (both types)."""
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
-                "SELECT user_id, token, refresh, scopes, created_at, updated_at FROM tokens"
+                "SELECT user_id, token, refresh, token_type, scopes, created_at, updated_at "
+                "FROM tokens"
             )
             return [Token(**dict(r)) for r in rows]
 
@@ -82,6 +89,7 @@ class ChannelRepository:
         channel_name: str = "",
         scopes: str | None = None,
         display_name: str | None = None,
+        token_type: str = "broadcaster",
     ) -> None:
         """Insert or update an OAuth token and ensure a channels row exists.
 
@@ -91,9 +99,9 @@ class ChannelRepository:
             async with conn.transaction():
                 await conn.execute(
                     """
-                    INSERT INTO tokens (user_id, token, refresh, scopes)
-                    VALUES ($1, $2, $3, $4)
-                    ON CONFLICT (user_id) DO UPDATE SET
+                    INSERT INTO tokens (user_id, token, refresh, scopes, token_type)
+                    VALUES ($1, $2, $3, $4, $5)
+                    ON CONFLICT (user_id, token_type) DO UPDATE SET
                         token      = EXCLUDED.token,
                         refresh    = EXCLUDED.refresh,
                         scopes     = COALESCE(EXCLUDED.scopes, tokens.scopes),
@@ -103,6 +111,7 @@ class ChannelRepository:
                     token,
                     refresh,
                     scopes,
+                    token_type,
                 )
                 await conn.execute(
                     """
@@ -118,7 +127,7 @@ class ChannelRepository:
                     display_name,
                 )
 
-        _token_cache.invalidate(f"token:{user_id}")
+        _token_cache.invalidate(f"token:{user_id}:{token_type}")
         _channel_cache.invalidate(f"channel:{user_id}")
         _enabled_channels_cache.clear()
 
