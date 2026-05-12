@@ -184,7 +184,7 @@ class TestListTokens:
 @pytest.mark.asyncio
 class TestUpsertToken:
     async def test_invalidates_token_channel_and_enabled_caches(self):
-        _token_cache.set("token:u1", _TOKEN_ROW)
+        _token_cache.set("token:u1:broadcaster", _TOKEN_ROW)
         _channel_cache.set("channel:u1", _CHANNEL_ROW)
         _enabled_channels_cache.set("enabled_channels", [_CHANNEL_ROW])
         pool, _ = _make_pool(execute="INSERT 0 1")
@@ -194,7 +194,7 @@ class TestUpsertToken:
 
         from shared.cache import _MISSING
 
-        assert _token_cache.get("token:u1") is _MISSING
+        assert _token_cache.get("token:u1:broadcaster") is _MISSING
         assert _channel_cache.get("channel:u1") is _MISSING
         assert _enabled_channels_cache.get("enabled_channels") is _MISSING
 

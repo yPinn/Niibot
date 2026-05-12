@@ -83,7 +83,11 @@ class TestEventTokenRefreshed:
         await bot.event_token_refreshed(payload)
 
         bot.channels.upsert_token_only.assert_awaited_once_with(
-            "u1", "new_tok", "new_ref", scopes="channel:bot channel:read:redemptions"
+            "u1",
+            "new_tok",
+            "new_ref",
+            scopes="channel:bot channel:read:redemptions",
+            token_type="broadcaster",
         )
 
     async def test_skips_when_no_user_id(self, bot):
@@ -100,7 +104,9 @@ class TestEventTokenRefreshed:
 
         await bot.event_token_refreshed(payload)
 
-        bot.channels.upsert_token_only.assert_awaited_once_with("u1", "tok", "ref", scopes=None)
+        bot.channels.upsert_token_only.assert_awaited_once_with(
+            "u1", "tok", "ref", scopes=None, token_type="broadcaster"
+        )
 
     async def test_persists_multiple_scopes_space_separated(self, bot):
         payload = _make_token_refreshed_payload(
