@@ -29,6 +29,13 @@ const DEFAULT_CONTAINERS: LogContainer[] = [
   { name: 'niibot-instafix', label: 'Instafix', running: false },
 ]
 
+// eslint-disable-next-line no-control-regex
+const ANSI_RE = /\x1b\[[\d;]*[A-Za-z]/g
+
+function stripAnsi(s: string): string {
+  return s.replace(ANSI_RE, '')
+}
+
 function parseDockerTs(raw: string): { ts: string; msg: string } {
   // Docker timestamp format: 2024-01-15T10:30:45.123456789Z <message>
   const m = raw.match(/^(\d{4}-\d{2}-\d{2}T(\d{2}:\d{2}:\d{2}))\.\S+Z?\s*(.*)$/)
@@ -45,10 +52,11 @@ function lineColor(msg: string, stream: string): string {
 }
 
 function LogLineRow({ line, index }: { line: LogLine; index: number }) {
-  const { ts, msg } = parseDockerTs(line.text)
-  const color = lineColor(msg || line.text, line.stream)
+  const clean = stripAnsi(line.text)
+  const { ts, msg } = parseDockerTs(clean)
+  const color = lineColor(msg || clean, line.stream)
   return (
-    <div className="flex gap-2 min-w-0 hover:bg-white/[0.02] px-3 py-px group">
+    <div className="flex gap-2 min-w-0 hover:bg-white/2 px-3 py-px group">
       <span className="text-zinc-700 shrink-0 select-none w-8 text-right tabular-nums group-hover:text-zinc-600">
         {index + 1}
       </span>
