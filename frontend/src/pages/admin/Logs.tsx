@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 
 import { getContainerLogs, getLogContainers, type LogContainer, type LogLine } from '@/api/admin'
 import { PageMain } from '@/components/PageMain'
@@ -28,6 +28,23 @@ const DEFAULT_CONTAINERS: LogContainer[] = [
   { name: 'niibot-scrapling', label: 'Scrapling', running: false },
   { name: 'niibot-instafix', label: 'Instafix', running: false },
 ]
+
+type FetchState = { loading: boolean; lines: LogLine[]; error: string | null }
+type FetchAction =
+  | { type: 'start' }
+  | { type: 'done'; lines: LogLine[] }
+  | { type: 'fail'; error: string }
+
+function fetchReducer(state: FetchState, action: FetchAction): FetchState {
+  switch (action.type) {
+    case 'start':
+      return { ...state, loading: true, error: null }
+    case 'done':
+      return { loading: false, lines: action.lines, error: null }
+    case 'fail':
+      return { ...state, loading: false, error: action.error }
+  }
+}
 
 // eslint-disable-next-line no-control-regex
 const ANSI_RE = /\x1b\[[\d;]*[A-Za-z]/g
@@ -74,9 +91,11 @@ export default function AdminLogs() {
   const [selected, setSelected] = useState('niibot-api')
   const [tail, setTail] = useState(200)
   const [follow, setFollow] = useState(false)
-  const [lines, setLines] = useState<LogLine[]>([])
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [{ loading, lines, error }, dispatch] = useReducer(fetchReducer, {
+    loading: false,
+    lines: [],
+    error: null,
+  })
   const termRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -88,17 +107,14 @@ export default function AdminLogs() {
   // Initial + container/tail-change fetch
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
-    setError(null)
+    dispatch({ type: 'start' })
     getContainerLogs(selected, tail)
       .then(data => {
-        if (!cancelled) setLines(data.lines)
+        if (!cancelled) dispatch({ type: 'done', lines: data.lines })
       })
       .catch(e => {
-        if (!cancelled) setError(e instanceof Error ? e.message : String(e))
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
+        if (!cancelled)
+          dispatch({ type: 'fail', error: e instanceof Error ? e.message : String(e) })
       })
     return () => {
       cancelled = true
@@ -109,7 +125,7 @@ export default function AdminLogs() {
   const pollFetch = useCallback(async () => {
     try {
       const data = await getContainerLogs(selected, tail)
-      setLines(data.lines)
+      dispatch({ type: 'done', lines: data.lines })
     } catch {
       // silent — don't disrupt the view on transient poll failure
     }
@@ -127,12 +143,10 @@ export default function AdminLogs() {
   const currentContainer = containers.find(c => c.name === selected)
 
   const handleRefresh = () => {
-    setLoading(true)
-    setError(null)
+    dispatch({ type: 'start' })
     getContainerLogs(selected, tail)
-      .then(data => setLines(data.lines))
-      .catch(e => setError(e instanceof Error ? e.message : String(e)))
-      .finally(() => setLoading(false))
+      .then(data => dispatch({ type: 'done', lines: data.lines }))
+      .catch(e => dispatch({ type: 'fail', error: e instanceof Error ? e.message : String(e) }))
   }
 
   return (

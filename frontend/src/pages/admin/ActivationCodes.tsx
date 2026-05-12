@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import { getPendingActivationCodes, type PendingCode, revokeActivationCode } from '@/api/admin'
+import {
+  type ActivationRequest,
+  approveActivationRequest,
+  getActivationRequests,
+  getPendingActivationCodes,
+  type PendingCode,
+  rejectActivationRequest,
+  revokeActivationCode,
+} from '@/api/admin'
 import { PageHeader } from '@/components/PageHeader'
 import { PageMain } from '@/components/PageMain'
 import {
@@ -25,6 +33,10 @@ export default function AdminActivationCodes() {
   const [revoking, setRevoking] = useState<string | null>(null)
   const [nowMs, setNowMs] = useState(0)
 
+  const [requests, setRequests] = useState<ActivationRequest[]>([])
+  const [loadingRequests, setLoadingRequests] = useState(true)
+  const [processingRequest, setProcessingRequest] = useState<number | null>(null)
+
   const fetchCodes = useCallback(async () => {
     setLoadingCodes(true)
     try {
@@ -38,6 +50,18 @@ export default function AdminActivationCodes() {
     }
   }, [])
 
+  const fetchRequests = useCallback(async () => {
+    setLoadingRequests(true)
+    try {
+      const data = await getActivationRequests()
+      setRequests(data)
+    } catch {
+      setRequests([])
+    } finally {
+      setLoadingRequests(false)
+    }
+  }, [])
+
   useEffect(() => {
     getPendingActivationCodes()
       .then(data => {
@@ -46,6 +70,10 @@ export default function AdminActivationCodes() {
       })
       .catch(() => setCodes([]))
       .finally(() => setLoadingCodes(false))
+    getActivationRequests()
+      .then(data => setRequests(data))
+      .catch(() => setRequests([]))
+      .finally(() => setLoadingRequests(false))
   }, [])
 
   const handleRevoke = useCallback(async (platformUserId: string) => {
@@ -55,6 +83,26 @@ export default function AdminActivationCodes() {
       setCodes(prev => prev.filter(c => c.platform_user_id !== platformUserId))
     } finally {
       setRevoking(null)
+    }
+  }, [])
+
+  const handleApprove = useCallback(async (id: number) => {
+    setProcessingRequest(id)
+    try {
+      await approveActivationRequest(id)
+      setRequests(prev => prev.filter(r => r.id !== id))
+    } finally {
+      setProcessingRequest(null)
+    }
+  }, [])
+
+  const handleReject = useCallback(async (id: number) => {
+    setProcessingRequest(id)
+    try {
+      await rejectActivationRequest(id)
+      setRequests(prev => prev.filter(r => r.id !== id))
+    } finally {
+      setProcessingRequest(null)
     }
   }, [])
 
@@ -158,6 +206,109 @@ export default function AdminActivationCodes() {
                           <Icon
                             icon={isRevoking ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-ban'}
                             wrapperClassName="text-muted-foreground"
+                          />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })
+            )}
+          </CardContent>
+        </Card>
+      </SlideUp>
+
+      <SlideUp>
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Icon
+                icon="fa-solid fa-user-clock"
+                size="sm"
+                wrapperClassName="text-muted-foreground"
+              />
+              <CardTitle className="text-card-title">待審核啟用申請</CardTitle>
+            </div>
+            <CardAction>
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className="font-mono text-label">
+                  {loadingRequests ? '…' : requests.length}
+                </Badge>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => void fetchRequests()}
+                  aria-label="Refresh"
+                >
+                  <Icon icon="fa-solid fa-rotate" wrapperClassName="text-muted-foreground" />
+                </Button>
+              </div>
+            </CardAction>
+          </CardHeader>
+          <CardContent>
+            {loadingRequests ? (
+              <div className="space-y-3">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <Skeleton key={i} className="h-10 w-full" />
+                ))}
+              </div>
+            ) : requests.length === 0 ? (
+              <p className="text-sub text-muted-foreground py-2">目前沒有待審核的申請。</p>
+            ) : (
+              requests.map((req, idx) => {
+                const label = req.display_name ?? req.username ?? req.platform_user_id
+                const isProcessing = processingRequest === req.id
+                return (
+                  <div key={req.id}>
+                    {idx > 0 && <Separator className="opacity-40" />}
+                    <div className="flex items-start gap-3 py-2">
+                      {req.avatar ? (
+                        <img
+                          src={req.avatar}
+                          alt={label}
+                          className="size-7 rounded-full shrink-0 object-cover mt-0.5"
+                        />
+                      ) : (
+                        <div className="size-7 rounded-full bg-muted shrink-0 mt-0.5" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sub font-medium truncate">{label}</p>
+                        <p className="text-label text-muted-foreground font-mono truncate">
+                          {req.platform_user_id}
+                        </p>
+                        {req.note && (
+                          <p className="text-label text-muted-foreground mt-0.5 break-words">
+                            {req.note}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          disabled={isProcessing}
+                          onClick={() => void handleApprove(req.id)}
+                          aria-label="通過申請"
+                        >
+                          <Icon
+                            icon={
+                              isProcessing ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-check'
+                            }
+                            wrapperClassName="text-status-online"
+                          />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          disabled={isProcessing}
+                          onClick={() => void handleReject(req.id)}
+                          aria-label="拒絕申請"
+                        >
+                          <Icon
+                            icon={
+                              isProcessing ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-xmark'
+                            }
+                            wrapperClassName="text-destructive"
                           />
                         </Button>
                       </div>
