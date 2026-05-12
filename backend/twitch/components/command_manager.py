@@ -182,7 +182,7 @@ class CommandManagerComponent(BotComponent):
             if not enabled:
                 reply += " | 已停用"
             await self._ctx_reply(ctx, reply)
-            LOGGER.info(f"Command added: !{cmd_name} by {ctx.chatter.name}")
+            LOGGER.info(f"[{ctx.channel.name}] Command added: !{cmd_name} by {ctx.chatter.name}")
         else:
             pattern = first
             match_type = options.get("match", "contains")
@@ -237,7 +237,7 @@ class CommandManagerComponent(BotComponent):
             )
             preview = response_text[:30] + ("…" if len(response_text) > 30 else "")
             await self._ctx_reply(ctx, f"已新增觸發 {pattern} → {preview}")
-            LOGGER.info(f"Trigger added: '{pattern}' by {ctx.chatter.name}")
+            LOGGER.info(f"[{ctx.channel.name}] Trigger added: '{pattern}' by {ctx.chatter.name}")
 
     @cmd.command(name="e", aliases=["edit"])
     async def cmd_edit(self, ctx: commands.Context["Bot"], *, args: str | None = None) -> None:
@@ -310,7 +310,7 @@ class CommandManagerComponent(BotComponent):
                 changes.append("啟用" if config.enabled else "停用")
 
             await self._ctx_reply(ctx, f"已更新 !{cmd_name} — {' | '.join(changes)}")
-            LOGGER.info(f"Command edited: !{cmd_name} by {ctx.chatter.name}")
+            LOGGER.info(f"[{ctx.channel.name}] Command edited: !{cmd_name} by {ctx.chatter.name}")
 
         else:
             pattern = first
@@ -391,7 +391,7 @@ class CommandManagerComponent(BotComponent):
                 changes.append("啟用" if val else "停用")
 
             await self._ctx_reply(ctx, f"已更新觸發 {pattern} — {' | '.join(changes)}")
-            LOGGER.info(f"Trigger edited: '{pattern}' by {ctx.chatter.name}")
+            LOGGER.info(f"[{ctx.channel.name}] Trigger edited: '{pattern}' by {ctx.chatter.name}")
 
     @cmd.command(name="d", aliases=["delete"])
     async def cmd_delete(self, ctx: commands.Context["Bot"], *, args: str | None = None) -> None:
@@ -410,7 +410,9 @@ class CommandManagerComponent(BotComponent):
             deleted = await self.bot.message_trigger_configs.delete(channel_id, trigger_name)
             if deleted:
                 await self._ctx_reply(ctx, f"已刪除觸發：{target}")
-                LOGGER.info(f"Trigger deleted: '{target}' by {ctx.chatter.name}")
+                LOGGER.info(
+                    f"[{ctx.channel.name}] Trigger deleted: '{target}' by {ctx.chatter.name}"
+                )
             else:
                 await self._ctx_reply(ctx, f"找不到觸發詞：{target}")
             return
@@ -423,7 +425,7 @@ class CommandManagerComponent(BotComponent):
 
         if deleted:
             await self._ctx_reply(ctx, f"已刪除 !{cmd_name}")
-            LOGGER.info(f"Command deleted: !{cmd_name} by {ctx.chatter.name}")
+            LOGGER.info(f"[{ctx.channel.name}] Command deleted: !{cmd_name} by {ctx.chatter.name}")
         else:
             await self._ctx_reply(ctx, f"找不到自訂指令 !{cmd_name}")
 

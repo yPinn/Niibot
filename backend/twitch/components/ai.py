@@ -186,8 +186,8 @@ class AIComponent(BotComponent):
                 await self._ctx_reply(ctx, response)
                 try:
                     await self.cmd_repo.increment_usage_count(ctx.channel.id, "ai")
-                except Exception:
-                    pass
+                except Exception as e:
+                    LOGGER.debug(f"[{ctx.channel.name}] Failed to record AI usage count: {e}")
             elif last_error:
                 raise last_error
             else:

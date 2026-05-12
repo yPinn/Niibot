@@ -58,11 +58,13 @@ class ChannelPointsComponent(commands.Component):
 
     async def component_load(self) -> None:
         self._session = aiohttp.ClientSession()
+        LOGGER.info("ChannelPoints component loaded")
 
     async def component_teardown(self) -> None:
         if self._session:
             await self._session.close()
             self._session = None
+        LOGGER.info("ChannelPoints component unloaded")
 
     async def _reply(self, broadcaster: twitchio.PartialUser, message: str) -> None:
         """Send a bot message to a channel."""
@@ -455,6 +457,9 @@ class ChannelPointsComponent(commands.Component):
             await self._reply(
                 broadcaster,
                 f"@{user_name} {info + ' ' if info else ''}已加入影片佇列！({position}/{settings.max_queue_size})",
+            )
+            LOGGER.info(
+                f"[{broadcaster.name}] VideoQueue: {user_name} added '{title or video_id}' (position {position})"
             )
 
         except Exception as e:

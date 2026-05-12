@@ -42,7 +42,7 @@ async def pg_listen(
         try:
             connection = await asyncpg.connect(dsn, ssl="prefer")
             await connection.add_listener(channel, handler)
-            LOGGER.info(f"PostgreSQL LISTEN active on '{channel}' channel")
+            LOGGER.info(f"PostgreSQL LISTEN active on '{channel}'")
 
             try:
                 while True:

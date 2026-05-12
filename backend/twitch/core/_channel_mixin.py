@@ -40,7 +40,7 @@ class _ChannelMixin:
 
     async def subscribe_channel_events(self, broadcaster_user_id: str) -> None:
         if broadcaster_user_id in self._subscribed_channels:  # type: ignore[attr-defined]
-            LOGGER.debug(f"Already subscribed: {broadcaster_user_id}")
+            LOGGER.debug(f"[{broadcaster_user_id}] Already subscribed, skipping")
             return
 
         try:
@@ -59,10 +59,10 @@ class _ChannelMixin:
                     else:
                         non_conflict.append(e)
                 if non_conflict:
-                    LOGGER.warning(f"Subscription errors: {non_conflict}")
+                    LOGGER.warning(f"[{broadcaster_user_id}] Subscription errors: {non_conflict}")
                 if follow_auth_errors:
                     LOGGER.warning(
-                        f"channel.follow auth failed for {broadcaster_user_id}"
+                        f"[{broadcaster_user_id}] channel.follow auth failed"
                         " — broadcaster needs to reauth with moderator:read:followers"
                     )
                     self._needs_reauth.add(broadcaster_user_id)  # type: ignore[attr-defined]
@@ -81,18 +81,16 @@ class _ChannelMixin:
             # the other subscriptions still exist on the Conduit from the previous session.
             if subscription_ids or not non_conflict:
                 self._subscribed_channels.add(broadcaster_user_id)  # type: ignore[attr-defined]
-                LOGGER.info(f"Subscribed to events for channel: {broadcaster_user_id}")
+                LOGGER.info(f"[{broadcaster_user_id}] Subscribed to events")
             else:
-                LOGGER.warning(
-                    f"Subscription failed for channel {broadcaster_user_id}: {non_conflict}"
-                )
+                LOGGER.warning(f"[{broadcaster_user_id}] Subscription failed: {non_conflict}")
 
         except Exception as e:
-            LOGGER.exception(f"Failed to subscribe channel {broadcaster_user_id}: {e}")
+            LOGGER.exception(f"[{broadcaster_user_id}] Failed to subscribe: {e}")
 
     async def unsubscribe_channel_events(self, broadcaster_user_id: str) -> None:
         if broadcaster_user_id not in self._subscribed_channels:  # type: ignore[attr-defined]
-            LOGGER.debug(f"Not subscribed to channel: {broadcaster_user_id}")
+            LOGGER.debug(f"[{broadcaster_user_id}] Not subscribed, skipping")
             return
 
         try:
@@ -102,18 +100,18 @@ class _ChannelMixin:
                 for sub_id in subscription_ids:
                     try:
                         await self.delete_eventsub_subscription(sub_id)  # type: ignore[attr-defined]
-                        LOGGER.debug(
-                            f"Deleted subscription {sub_id} for channel {broadcaster_user_id}"
-                        )
+                        LOGGER.debug(f"[{broadcaster_user_id}] Deleted subscription {sub_id}")
                     except Exception as e:
-                        LOGGER.warning(f"Failed to delete subscription {sub_id}: {e}")
+                        LOGGER.warning(
+                            f"[{broadcaster_user_id}] Failed to delete subscription {sub_id}: {e}"
+                        )
 
                 del self._subscription_ids[broadcaster_user_id]  # type: ignore[attr-defined]
             else:
-                LOGGER.warning(f"No subscription IDs found for channel {broadcaster_user_id}")
+                LOGGER.warning(f"[{broadcaster_user_id}] No subscription IDs found")
 
             self._subscribed_channels.discard(broadcaster_user_id)  # type: ignore[attr-defined]
-            LOGGER.info(f"Unsubscribed from events for channel: {broadcaster_user_id}")
+            LOGGER.info(f"[{broadcaster_user_id}] Unsubscribed from events")
 
         except Exception as e:
-            LOGGER.exception(f"Failed to unsubscribe channel {broadcaster_user_id}: {e}")
+            LOGGER.exception(f"[{broadcaster_user_id}] Failed to unsubscribe: {e}")

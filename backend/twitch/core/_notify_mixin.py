@@ -26,7 +26,7 @@ class _NotifyMixin:
 
     async def _handle_channel_toggle(self, connection, pid, channel, payload) -> None:
         try:
-            LOGGER.info(f"[NOTIFY] Received raw notification on channel '{channel}': {payload}")
+            LOGGER.debug(f"[NOTIFY] Notification on '{channel}': {payload}")
 
             data = json.loads(payload)
             channel_id = data["channel_id"]

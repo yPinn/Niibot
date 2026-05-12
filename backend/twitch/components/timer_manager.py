@@ -47,10 +47,11 @@ class TimerManagerComponent(commands.Component):
 
     async def component_load(self) -> None:
         self._timer_poll_loop.start()
-        LOGGER.info("TimerManagerComponent loaded, poll loop started")
+        LOGGER.info("TimerManager component loaded")
 
     async def component_teardown(self) -> None:
         self._timer_poll_loop.stop()
+        LOGGER.info("TimerManager component unloaded")
 
     @routines.routine(delta=timedelta(seconds=60), wait_first=True)
     async def _timer_poll_loop(self) -> None:

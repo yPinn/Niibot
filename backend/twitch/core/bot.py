@@ -295,16 +295,15 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
         channel_id = str(payload.broadcaster.id)
         self._shared_chat_channels.add(channel_id)
         LOGGER.info(
-            f"[{payload.broadcaster.name}] Shared Chat session started "
-            f"(session={payload.session_id}, host={payload.host.name}). "
-            f"Bot replies use user token → source-only by default."
+            f"[{payload.broadcaster.name}] Shared Chat started "
+            f"(session={payload.session_id}, host={payload.host.name})"
         )
 
     async def event_shared_chat_end(self, payload: twitchio.SharedChatSessionEnd) -> None:
         channel_id = str(payload.broadcaster.id)
         self._shared_chat_channels.discard(channel_id)
         LOGGER.info(
-            f"[{payload.broadcaster.name}] Shared Chat session ended (session={payload.session_id})."
+            f"[{payload.broadcaster.name}] Shared Chat ended (session={payload.session_id})"
         )
 
     async def event_command_error(self, payload: commands.CommandErrorPayload) -> None:
@@ -399,11 +398,11 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
         _mod_check_pending gates that suppression.
         """
         self._mod_check_pending.add(channel_id)
-        LOGGER.debug(f"Checking mod status for channel {channel_id}")
+        LOGGER.debug(f"[{channel_id}] Checking mod status")
         try:
             token_obj = await self.channels.get_token(channel_id)
             if not token_obj:
-                LOGGER.debug(f"No token for channel {channel_id}, cannot verify mod status")
+                LOGGER.debug(f"[{channel_id}] No token, cannot verify mod status")
                 return
 
             async with httpx.AsyncClient(timeout=10.0) as client:
@@ -420,18 +419,17 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
                 data = resp.json().get("data", [])
                 if data:
                     self._bot_is_mod.add(channel_id)
-                    LOGGER.info(f"Bot confirmed mod in channel {channel_id}")
+                    LOGGER.info(f"[{channel_id}] Bot confirmed mod")
                 else:
                     LOGGER.info(
-                        f"Bot is NOT mod in channel {channel_id} — "
-                        "chat features blocked until /mod is granted"
+                        f"[{channel_id}] Bot is NOT mod — chat features blocked until /mod is granted"
                     )
             else:
                 LOGGER.warning(
-                    f"Mod status check failed for {channel_id}: {resp.status_code} {resp.text[:80]}"
+                    f"[{channel_id}] Mod status check failed: {resp.status_code} {resp.text[:80]}"
                 )
         except Exception as e:
-            LOGGER.warning(f"Mod status check error for {channel_id}: {type(e).__name__}: {e}")
+            LOGGER.warning(f"[{channel_id}] Mod status check error: {type(e).__name__}: {e}")
         finally:
             self._mod_check_pending.discard(channel_id)
 

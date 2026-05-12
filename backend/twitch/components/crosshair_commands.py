@@ -93,7 +93,7 @@ class CrosshairCommandsComponent(BotComponent):
                         command_name=f"!{command_name}",
                     )
         except Exception as e:
-            LOGGER.error("Failed to record command usage: %s", e)
+            LOGGER.error(f"Failed to record command usage: {e}")
 
     # ── !xhc ──────────────────────────────────────────────────────────────────
 
@@ -174,7 +174,7 @@ class CrosshairCommandsComponent(BotComponent):
             if desc:
                 reply += f" | {desc}"
             await self._ctx_reply(ctx, reply)
-            LOGGER.info("Crosshair added by %s: %s", ctx.chatter.name, name)
+            LOGGER.info(f"[{ctx.channel.name}] Crosshair added: '{name}' by {ctx.chatter.name}")
         except Exception:
             LOGGER.exception("Failed to add crosshair via !xhc a")
             await self._ctx_reply(ctx, "新增失敗，請稍後再試")
@@ -216,7 +216,7 @@ class CrosshairCommandsComponent(BotComponent):
             if "desc" in opts:
                 reply += f" | {opts['desc']}"
             await self._ctx_reply(ctx, reply)
-            LOGGER.info("Crosshair edited by %s: %s", ctx.chatter.name, name)
+            LOGGER.info(f"[{ctx.channel.name}] Crosshair edited: '{name}' by {ctx.chatter.name}")
         except Exception:
             LOGGER.exception("Failed to edit crosshair via !xhc e")
             await self._ctx_reply(ctx, "編輯失敗，請稍後再試")
@@ -245,7 +245,7 @@ class CrosshairCommandsComponent(BotComponent):
         try:
             await self.xhair_repo.delete(existing["id"], channel_id)
             await self._ctx_reply(ctx, f"已刪除準星「{name}」")
-            LOGGER.info("Crosshair deleted by %s: %s", ctx.chatter.name, name)
+            LOGGER.info(f"[{ctx.channel.name}] Crosshair deleted: '{name}' by {ctx.chatter.name}")
         except Exception:
             LOGGER.exception("Failed to delete crosshair via !xhc d")
             await self._ctx_reply(ctx, "刪除失敗，請稍後再試")

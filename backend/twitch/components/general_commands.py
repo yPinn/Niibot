@@ -211,7 +211,7 @@ class GeneralCommandsComponent(BotComponent):
 
     @commands.Component.listener()
     async def event_stream_online(self, payload: twitchio.StreamOnline) -> None:
-        LOGGER.info(f"Stream online: {payload.broadcaster.name}")
+        LOGGER.info(f"[{payload.broadcaster.name}] Stream online")
 
         try:
             if not self._has_analytics:
@@ -222,13 +222,13 @@ class GeneralCommandsComponent(BotComponent):
 
             existing_session = active_sessions.get(channel_id)
             if existing_session:
-                LOGGER.warning(
-                    f"Channel {payload.broadcaster.name} already has active session {existing_session}, skipping"
+                LOGGER.debug(
+                    f"[{payload.broadcaster.name}] Stream online: session {existing_session} already active, skipping"
                 )
                 return
 
             if channel_id in self.bot._session_creating:
-                LOGGER.debug(f"Session creation in-flight for {payload.broadcaster.name}, skipping")
+                LOGGER.debug(f"[{payload.broadcaster.name}] Session creation in-flight, skipping")
                 return
             self.bot._session_creating.add(channel_id)
             try:
@@ -258,17 +258,15 @@ class GeneralCommandsComponent(BotComponent):
                     game_id=game_id,
                 )
                 active_sessions[channel_id] = session_id
-                LOGGER.info(
-                    f"Created analytics session {session_id} for channel {payload.broadcaster.name}"
-                )
+                LOGGER.info(f"[{payload.broadcaster.name}] Session {session_id} created")
             finally:
                 self.bot._session_creating.discard(channel_id)
         except Exception as e:
-            LOGGER.error(f"Failed to create analytics session: {e}")
+            LOGGER.error(f"[{payload.broadcaster.name}] Failed to create analytics session: {e}")
 
     @commands.Component.listener()
     async def event_stream_offline(self, payload: twitchio.StreamOffline) -> None:
-        LOGGER.info(f"Stream offline: {payload.broadcaster.name}")
+        LOGGER.info(f"[{payload.broadcaster.name}] Stream offline")
 
         try:
             if not self._has_analytics:
@@ -294,10 +292,12 @@ class GeneralCommandsComponent(BotComponent):
                                 chatters=chatter_data,
                             )
                             LOGGER.info(
-                                f"Flushed {len(chatter_data)} chatters for session {session_id}"
+                                f"[{payload.broadcaster.name}] Flushed {len(chatter_data)} chatters for session {session_id}"
                             )
                         except Exception as e:
-                            LOGGER.error(f"Failed to flush chatter stats: {e}")
+                            LOGGER.error(
+                                f"[{payload.broadcaster.name}] Failed to flush chatter stats: {e}"
+                            )
 
                 ended_at = datetime.now(UTC)
                 for attempt in range(3):
@@ -305,22 +305,21 @@ class GeneralCommandsComponent(BotComponent):
                         await analytics.end_session(session_id, ended_at)
                         break
                     except Exception as e:
-                        LOGGER.warning(f"end_session attempt {attempt + 1}/3 failed: {e}")
+                        LOGGER.warning(
+                            f"[{payload.broadcaster.name}] end_session attempt {attempt + 1}/3 failed: {e}"
+                        )
                         if attempt < 2:
                             await asyncio.sleep(2)
                 else:
                     LOGGER.error(
-                        f"Failed to end session {session_id} after 3 attempts, "
-                        "stale session cleanup will handle it"
+                        f"[{payload.broadcaster.name}] Failed to end session {session_id} after 3 attempts"
                     )
                 del active_sessions[channel_id]
-                LOGGER.info(
-                    f"Ended analytics session {session_id} for channel {payload.broadcaster.name}"
-                )
+                LOGGER.info(f"[{payload.broadcaster.name}] Session {session_id} ended")
             else:
-                LOGGER.warning(f"No active session found for channel {payload.broadcaster.name}")
+                LOGGER.warning(f"[{payload.broadcaster.name}] Stream offline: no active session")
         except Exception as e:
-            LOGGER.error(f"Failed to end analytics session: {e}")
+            LOGGER.error(f"[{payload.broadcaster.name}] Failed to end analytics session: {e}")
 
 
 async def setup(bot: commands.Bot) -> None:

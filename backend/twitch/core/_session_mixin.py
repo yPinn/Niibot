@@ -197,7 +197,7 @@ class _SessionMixin:
                             game_id=game_id,
                         )
                         self._active_sessions[cid] = sid  # type: ignore[attr-defined]
-                        LOGGER.info(f"Session {sid} created for channel {cid} (poll)")
+                        LOGGER.info(f"[{cid}] Session {sid} created (poll)")
                     finally:
                         self._session_creating.discard(cid)  # type: ignore[attr-defined]
 
@@ -217,15 +217,17 @@ class _SessionMixin:
                                     chatters=chatter_data,
                                 )
                                 LOGGER.info(
-                                    f"Flushed {len(chatter_data)} chatters for session {sid} (poll)"
+                                    f"[{cid}] Flushed {len(chatter_data)} chatters for session {sid} (poll)"
                                 )
                             except Exception as e:
-                                LOGGER.warning(f"Failed to flush chatter stats for {sid}: {e}")
+                                LOGGER.warning(
+                                    f"[{cid}] Failed to flush chatter stats for session {sid}: {e}"
+                                )
                         try:
                             await self.analytics.end_session(sid, datetime.now(UTC))  # type: ignore[attr-defined]
-                            LOGGER.info(f"Session {sid} ended for channel {cid} (poll)")
+                            LOGGER.info(f"[{cid}] Session {sid} ended (poll)")
                         except Exception as e:
-                            LOGGER.warning(f"Failed to end session {sid}: {e}")
+                            LOGGER.warning(f"[{cid}] Failed to end session {sid}: {e}")
                     self._active_sessions.pop(cid, None)  # type: ignore[attr-defined]
                     self._channel_line_counts.pop(cid, None)  # type: ignore[attr-defined]
 
@@ -300,6 +302,7 @@ class _SessionMixin:
         async def _process_channel(channel_id: str, session_id: int) -> None:
             token_obj = await self.channels.get_token(channel_id)  # type: ignore[attr-defined]
             if not token_obj:
+                LOGGER.debug(f"No token for channel {channel_id}, skipping watch time")
                 return
             viewers = await self._fetch_chatters(channel_id, token_obj.token)
             if not viewers:
