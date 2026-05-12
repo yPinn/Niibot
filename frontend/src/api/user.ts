@@ -66,12 +66,10 @@ export async function activateAccount(code: string): Promise<void> {
   apiCache.patch<User>(CACHE_KEYS.CURRENT_USER, user => ({ ...user, is_activated: true }))
 }
 
-export async function requestActivation(note: string): Promise<void> {
+export async function requestActivation(): Promise<void> {
   const response = await apiFetch(API_ENDPOINTS.auth.requestActivation, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    body: JSON.stringify({ note }),
   })
   if (!response.ok) {
     const data = await response.json().catch(() => ({}))

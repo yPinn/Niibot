@@ -19,12 +19,11 @@ import {
   InputOTPSlot,
   Separator,
   Spinner,
-  Textarea,
 } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
-type RequestStatus = 'idle' | 'pending' | 'approved' | 'rejected'
+type RequestStatus = 'pending' | 'rejected'
 
 export default function ActivatePage() {
   useDocumentTitle('Activate Account')
@@ -37,18 +36,25 @@ export default function ActivatePage() {
   const [pendingCode, setPendingCode] = useState<string | null>(null)
   const [pendingCodeLoading, setPendingCodeLoading] = useState(false)
 
-  const [requestStatus, setRequestStatus] = useState<RequestStatus>('idle')
-  const [note, setNote] = useState('')
-  const [requestLoading, setRequestLoading] = useState(false)
+  const [requestStatus, setRequestStatus] = useState<RequestStatus>('pending')
+  const [reapplyLoading, setReapplyLoading] = useState(false)
   const [statusLoading, setStatusLoading] = useState(true)
 
   useEffect(() => {
     if (!isInitialized || !isAuthenticated) return
     getActivationRequestStatus()
-      .then(res => {
-        if (res.status === 'pending' || res.status === 'rejected') {
-          setRequestStatus(res.status)
+      .then(async res => {
+        if (res.status === 'rejected') {
+          setRequestStatus('rejected')
+        } else if (!res.status) {
+          // No request yet (edge case) — auto-create one
+          try {
+            await requestActivation()
+          } catch {
+            // best-effort — page still shows pending state regardless
+          }
         }
+        // pending or auto-created → default state is already 'pending'
       })
       .catch(() => {})
       .finally(() => setStatusLoading(false))
@@ -80,15 +86,15 @@ export default function ActivatePage() {
     }
   }
 
-  const handleRequestSubmit = async () => {
-    setRequestLoading(true)
+  const handleReapply = async () => {
+    setReapplyLoading(true)
     try {
-      await requestActivation(note)
+      await requestActivation()
       setRequestStatus('pending')
     } catch {
       toast.error('送出申請失敗，請稍後再試')
     } finally {
-      setRequestLoading(false)
+      setReapplyLoading(false)
     }
   }
 
@@ -140,7 +146,7 @@ export default function ActivatePage() {
             {pendingCode ? (
               <div className="flex flex-col items-center gap-1 w-full">
                 <p className="text-label text-muted-foreground">你的啟用碼</p>
-                <p className="font-mono text-2xl font-bold tracking-widest">{pendingCode}</p>
+                <p className="font-mono text-page-title font-bold tracking-widest">{pendingCode}</p>
               </div>
             ) : (
               <Button
@@ -187,8 +193,29 @@ export default function ActivatePage() {
               <Separator className="flex-1" />
             </div>
 
-            {/* ── Request section ── */}
-            {requestStatus === 'pending' ? (
+            {/* ── Request status section ── */}
+            {requestStatus === 'rejected' ? (
+              <div className="flex flex-col items-center gap-3 text-center w-full">
+                <div className="flex items-center justify-center size-10 rounded-full bg-destructive/10">
+                  <Icon icon="fa-solid fa-circle-xmark" wrapperClassName="text-destructive" />
+                </div>
+                <div>
+                  <p className="font-medium text-sub">申請未通過</p>
+                  <p className="text-label text-muted-foreground mt-0.5">
+                    你可以重新送出申請，或使用啟用碼。
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleReapply}
+                  disabled={reapplyLoading}
+                >
+                  {reapplyLoading ? <Spinner className="mr-1.5" /> : null}
+                  重新申請
+                </Button>
+              </div>
+            ) : (
               <div className="flex flex-col items-center gap-3 text-center w-full">
                 <div className="flex items-center justify-center size-10 rounded-full bg-status-loading/10">
                   <Icon icon="fa-solid fa-clock" wrapperClassName="text-status-loading" />
@@ -201,48 +228,6 @@ export default function ActivatePage() {
                 </div>
                 <Button variant="outline" size="sm" onClick={handleCheckApproval}>
                   確認審核狀態
-                </Button>
-              </div>
-            ) : requestStatus === 'rejected' ? (
-              <div className="flex flex-col items-center gap-3 text-center w-full">
-                <div className="flex items-center justify-center size-10 rounded-full bg-destructive/10">
-                  <Icon icon="fa-solid fa-circle-xmark" wrapperClassName="text-destructive" />
-                </div>
-                <div>
-                  <p className="font-medium text-sub">申請未通過</p>
-                  <p className="text-label text-muted-foreground mt-0.5">
-                    你可以重新送出申請，或使用啟用碼。
-                  </p>
-                </div>
-                <Button variant="outline" size="sm" onClick={() => setRequestStatus('idle')}>
-                  重新申請
-                </Button>
-              </div>
-            ) : (
-              <div className="flex flex-col gap-3 w-full">
-                <div className="text-center">
-                  <p className="font-medium text-sub">申請授權</p>
-                  <p className="text-label text-muted-foreground mt-0.5">
-                    尚未取得啟用碼？送出申請等待手動審核。
-                  </p>
-                </div>
-                <Textarea
-                  placeholder="備註（選填）"
-                  value={note}
-                  onChange={e => setNote(e.target.value)}
-                  maxLength={300}
-                  rows={2}
-                  className="text-sub resize-none"
-                  disabled={requestLoading}
-                />
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  onClick={handleRequestSubmit}
-                  disabled={requestLoading}
-                >
-                  {requestLoading ? <Spinner className="mr-1.5" /> : null}
-                  送出申請
                 </Button>
               </div>
             )}

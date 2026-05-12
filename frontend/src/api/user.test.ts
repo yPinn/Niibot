@@ -249,18 +249,19 @@ describe('requestActivation', () => {
 
   it('resolves without error on a 200 response', async () => {
     mockApiFetch.mockResolvedValue(new Response('{}', { status: 200 }))
-    await expect(requestActivation('please let me in')).resolves.toBeUndefined()
+    await expect(requestActivation()).resolves.toBeUndefined()
   })
 
-  it('sends a POST with the note in the body', async () => {
+  it('sends a POST with no body', async () => {
     mockApiFetch.mockResolvedValue(new Response('{}', { status: 200 }))
-    await requestActivation('my note')
+    await requestActivation()
     expect(mockApiFetch).toHaveBeenCalledWith(
       '/api/auth/request-activation',
-      expect.objectContaining({
-        method: 'POST',
-        body: JSON.stringify({ note: 'my note' }),
-      })
+      expect.objectContaining({ method: 'POST' })
+    )
+    expect(mockApiFetch).toHaveBeenCalledWith(
+      '/api/auth/request-activation',
+      expect.not.objectContaining({ body: expect.anything() })
     )
   })
 
@@ -268,12 +269,12 @@ describe('requestActivation', () => {
     mockApiFetch.mockResolvedValue(
       new Response(JSON.stringify({ detail: 'already_requested' }), { status: 409 })
     )
-    await expect(requestActivation('note')).rejects.toThrow('already_requested')
+    await expect(requestActivation()).rejects.toThrow('already_requested')
   })
 
   it('throws the default message when the error body has no detail field', async () => {
     mockApiFetch.mockResolvedValue(new Response('{}', { status: 500 }))
-    await expect(requestActivation('note')).rejects.toThrow('request_failed')
+    await expect(requestActivation()).rejects.toThrow('request_failed')
   })
 })
 

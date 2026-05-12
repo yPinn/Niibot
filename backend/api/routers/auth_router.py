@@ -79,10 +79,6 @@ class ActivateRequest(BaseModel):
     code: str = Field(min_length=6, max_length=6)
 
 
-class ActivationRequestCreate(BaseModel):
-    note: str = Field(default="", max_length=300)
-
-
 class LogoutResponse(BaseModel):
     message: str
 
@@ -314,11 +310,10 @@ async def activate_account(
 
 @router.post("/auth/request-activation")
 async def request_activation(
-    body: ActivationRequestCreate,
     auth_token: str | None = Cookie(None),
     pool: Pool = Depends(get_db_pool),
 ) -> dict:
-    """Submit a manual activation request for owner review."""
+    """Re-submit activation request after rejection."""
     payload = get_token_payload(auth_token)
     user_id = str(payload["sub"])
     platform = str(payload["platform"])
@@ -331,8 +326,12 @@ async def request_activation(
         return {"status": "already_activated"}
 
     repo = ActivationRequestRepository(pool)
-    await repo.create(user_id, platform, platform_user_id, body.note.strip())
-    LOGGER.info(f"Activation request submitted: user {user_id} ({platform}:{platform_user_id})")
+    existing = await repo.get_for_user(user_id)
+    if existing and existing["status"] == "pending":
+        return {"status": "pending"}
+
+    await repo.create(user_id, platform, platform_user_id, "")
+    LOGGER.info(f"Activation re-request submitted: user {user_id} ({platform}:{platform_user_id})")
     return {"status": "pending"}
 
 
