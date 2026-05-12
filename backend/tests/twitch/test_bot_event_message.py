@@ -65,6 +65,7 @@ def bot():
         b._channel_line_counts = {}
         b._needs_reauth = set()
         b._bot_is_mod = {"123"}
+        b._mod_check_pending = set()
         b._bot_login = "niibot_test"
         b._handle_custom_command = AsyncMock(return_value=False)
         b._handle_message_trigger = AsyncMock(return_value=False)
