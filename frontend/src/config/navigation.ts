@@ -85,7 +85,7 @@ export const navigationData: NavigationData = {
       ],
     },
     {
-      title: 'Documentations',
+      title: 'Docs',
       url: '#',
       icon: 'fa-solid fa-book',
       items: [
@@ -95,7 +95,7 @@ export const navigationData: NavigationData = {
         },
         {
           title: 'Discord Bot',
-          url: '/discord/dashboard',
+          url: '/discord',
         },
       ],
     },
@@ -106,9 +106,8 @@ export const navigationData: NavigationData = {
       ownerOnly: true,
       items: [
         { title: 'Overview', url: '/admin' },
-        { title: 'System Status', url: '/admin/status' },
+        { title: 'Monitor', url: '/admin/monitor' },
         { title: 'Activation', url: '/admin/codes' },
-        { title: 'Logs', url: '/admin/logs' },
       ],
     },
   ],
@@ -132,12 +131,12 @@ export const discordNavigationData: NavigationData = {
       items: [
         {
           title: 'Overview',
-          url: '/discord/dashboard',
+          url: '/discord',
         },
       ],
     },
     {
-      title: 'Documentations',
+      title: 'Docs',
       url: '#',
       icon: 'fa-solid fa-book',
       items: [
@@ -154,9 +153,8 @@ export const discordNavigationData: NavigationData = {
       ownerOnly: true,
       items: [
         { title: 'Overview', url: '/admin' },
-        { title: 'System Status', url: '/admin/status' },
+        { title: 'Monitor', url: '/admin/monitor' },
         { title: 'Activation', url: '/admin/codes' },
-        { title: 'Logs', url: '/admin/logs' },
       ],
     },
   ],

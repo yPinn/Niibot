@@ -18,9 +18,8 @@ const Events = lazy(() => import('@/pages/dashboard/Events'))
 const Overview = lazy(() => import('@/pages/dashboard/Overview'))
 const Timers = lazy(() => import('@/pages/dashboard/Timers'))
 const AdminPage = lazy(() => import('@/pages/admin'))
-const AdminSystemStatus = lazy(() => import('@/pages/admin/SystemStatus'))
 const AdminActivationCodes = lazy(() => import('@/pages/admin/ActivationCodes'))
-const AdminLogs = lazy(() => import('@/pages/admin/Logs'))
+const AdminMonitor = lazy(() => import('@/pages/admin/Monitor'))
 const Insights = lazy(() => import('@/pages/analytics/Insights'))
 const DiscordDashboard = lazy(() => import('@/pages/discord/Dashboard'))
 const GameQueueOverlay = lazy(() => import('@/pages/GameQueueOverlay'))
@@ -101,13 +100,12 @@ function App() {
                       <Route path="/modules/crosshairs" element={<CrosshairModule />} />
                       {/* Discord Bot Routes */}
                       <Route path="/docs/get-started" element={<GetStarted />} />
-                      <Route path="/discord/dashboard" element={<DiscordDashboard />} />
+                      <Route path="/discord" element={<DiscordDashboard />} />
                       {/* Owner-only Routes */}
                       <Route element={<OwnerRoute />}>
                         <Route path="/admin" element={<AdminPage />} />
-                        <Route path="/admin/status" element={<AdminSystemStatus />} />
                         <Route path="/admin/codes" element={<AdminActivationCodes />} />
-                        <Route path="/admin/logs" element={<AdminLogs />} />
+                        <Route path="/admin/monitor" element={<AdminMonitor />} />
                       </Route>
                     </Route>
                   </Route>

@@ -68,7 +68,7 @@ export function PublicOnlyRoute() {
   }
 
   if (isAuthenticated) {
-    const defaultDashboard = user?.platform === 'discord' ? '/discord/dashboard' : '/dashboard'
+    const defaultDashboard = user?.platform === 'discord' ? '/discord' : '/dashboard'
     const raw = (location.state as { from?: { pathname: string } })?.from?.pathname
     // Ensure redirect target is a relative path (prevents open redirect to //evil.com)
     const from = raw?.startsWith('/') && !raw.startsWith('//') ? raw : defaultDashboard

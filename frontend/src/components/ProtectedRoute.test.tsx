@@ -87,7 +87,7 @@ function renderPublicOnly(
           <Route path="/login" element={<div>Login Page</div>} />
         </Route>
         <Route path="/dashboard" element={<div>Dashboard</div>} />
-        <Route path="/discord/dashboard" element={<div>Discord Dashboard</div>} />
+        <Route path="/discord" element={<div>Discord Dashboard</div>} />
       </Routes>
     </MemoryRouter>
   )
@@ -188,7 +188,7 @@ describe('PublicOnlyRoute', () => {
     expect(screen.queryByText('Login Page')).not.toBeInTheDocument()
   })
 
-  it('redirects authenticated Discord user to /discord/dashboard', () => {
+  it('redirects authenticated Discord user to /discord', () => {
     renderPublicOnly({ isInitialized: true, isAuthenticated: true, user: DISCORD_USER })
     expect(screen.getByText('Discord Dashboard')).toBeInTheDocument()
   })
