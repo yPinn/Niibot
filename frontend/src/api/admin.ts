@@ -17,6 +17,7 @@ export interface PendingCode {
   username: string | null
   avatar: string | null
   expires_at: string
+  code_plain: string | null
 }
 
 export interface ActivationRequest {

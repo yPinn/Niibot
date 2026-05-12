@@ -130,6 +130,11 @@ export default function AdminActivationCodes() {
                         </p>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
+                        {code.code_plain && (
+                          <p className="font-mono text-sub font-bold tracking-widest">
+                            {code.code_plain}
+                          </p>
+                        )}
                         <div className="text-right">
                           <Badge
                             variant="outline"

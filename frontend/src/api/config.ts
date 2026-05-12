@@ -23,6 +23,7 @@ export const API_ENDPOINTS = {
     user: join('/api/auth/user'),
     logout: join('/api/auth/logout'),
     activate: join('/api/auth/activate'),
+    pendingCode: join('/api/auth/pending-code'),
     requestActivation: join('/api/auth/request-activation'),
     activationRequest: join('/api/auth/activation-request'),
   },

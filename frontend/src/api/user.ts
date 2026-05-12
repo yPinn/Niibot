@@ -79,6 +79,15 @@ export async function requestActivation(note: string): Promise<void> {
   }
 }
 
+export async function getPendingActivationCode(): Promise<string | null> {
+  const response = await apiFetch(API_ENDPOINTS.auth.pendingCode, {
+    credentials: 'include',
+  })
+  if (!response.ok) return null
+  const data = await response.json()
+  return (data as { code: string | null }).code
+}
+
 export async function getActivationRequestStatus(): Promise<{
   status: 'pending' | 'approved' | 'rejected' | null
   created_at?: string

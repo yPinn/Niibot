@@ -2,7 +2,12 @@ import { useEffect, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 
-import { activateAccount, getActivationRequestStatus, requestActivation } from '@/api/user'
+import {
+  activateAccount,
+  getActivationRequestStatus,
+  getPendingActivationCode,
+  requestActivation,
+} from '@/api/user'
 import {
   Button,
   Card,
@@ -28,6 +33,9 @@ export default function ActivatePage() {
 
   const [code, setCode] = useState('')
   const [otpLoading, setOtpLoading] = useState(false)
+
+  const [pendingCode, setPendingCode] = useState<string | null>(null)
+  const [pendingCodeLoading, setPendingCodeLoading] = useState(false)
 
   const [requestStatus, setRequestStatus] = useState<RequestStatus>('idle')
   const [note, setNote] = useState('')
@@ -84,6 +92,23 @@ export default function ActivatePage() {
     }
   }
 
+  const handleViewCode = async () => {
+    setPendingCodeLoading(true)
+    try {
+      const fetched = await getPendingActivationCode()
+      if (fetched) {
+        setPendingCode(fetched)
+        setCode(fetched)
+      } else {
+        toast.info('目前沒有待用的啟用碼，請先兌換頻道點數！')
+      }
+    } catch {
+      toast.error('無法取得啟用碼，請稍後再試')
+    } finally {
+      setPendingCodeLoading(false)
+    }
+  }
+
   const handleCheckApproval = async () => {
     try {
       await refreshUser()
@@ -108,9 +133,27 @@ export default function ActivatePage() {
             <div className="flex flex-col items-center gap-2 text-center w-full">
               <h1 className="text-page-title font-bold">輸入啟用碼</h1>
               <p className="text-muted-foreground text-balance text-sub">
-                請輸入透過 Twitch 私訊收到的 6 位數啟用碼
+                請輸入透過 Twitch 頻道點數兌換後取得的 6 位數啟用碼
               </p>
             </div>
+
+            {pendingCode ? (
+              <div className="flex flex-col items-center gap-1 w-full">
+                <p className="text-label text-muted-foreground">你的啟用碼</p>
+                <p className="font-mono text-2xl font-bold tracking-widest">{pendingCode}</p>
+              </div>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={handleViewCode}
+                disabled={pendingCodeLoading}
+              >
+                {pendingCodeLoading ? <Spinner className="mr-1.5" /> : null}
+                查看我的啟用碼
+              </Button>
+            )}
 
             <InputOTP
               maxLength={6}
