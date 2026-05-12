@@ -60,6 +60,8 @@ def bot():
         b._background_tasks = set()
         b._bot_id = "bot-001"
         b._client_id = "test-client-id"
+        b._bot_is_mod = set()
+        b._mod_check_pending = set()
         return b
 
 

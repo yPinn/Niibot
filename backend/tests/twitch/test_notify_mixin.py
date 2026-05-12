@@ -169,6 +169,7 @@ def mod_bot():
         b._bot_id = "bot-001"
         b._client_id = "test-client-id"
         b._bot_is_mod = set()
+        b._mod_check_pending = set()
         b.channels = MagicMock()
         return b
 
