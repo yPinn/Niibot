@@ -1,15 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 
-import {
-  type ActivationRequest,
-  type AdminChannel,
-  approveActivationRequest,
-  getActivationRequests,
-  getAdminChannels,
-  type ModStatus,
-  rejectActivationRequest,
-} from '@/api/admin'
+import { type AdminChannel, getAdminChannels, type ModStatus } from '@/api/admin'
 import {
   getRedemptionConfigs,
   getTwitchRewards,
@@ -20,16 +12,7 @@ import {
 import { PageHeader } from '@/components/PageHeader'
 import { PageMain } from '@/components/PageMain'
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
   Badge,
-  Button,
   Card,
   CardAction,
   CardContent,
@@ -42,10 +25,8 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-  Separator,
   Skeleton,
   SlideUp,
-  Spinner,
   Switch,
 } from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
@@ -85,27 +66,20 @@ function ModStatusBadge({ status }: { status: ModStatus }) {
   )
 }
 
-function ChannelRow({ ch }: { ch: AdminChannel }) {
+function ChannelCard({ ch }: { ch: AdminChannel }) {
   return (
-    <div className="flex items-center gap-3 py-2">
-      <img
-        src={ch.avatar}
-        alt={ch.display_name}
-        className="size-7 rounded-full shrink-0 object-cover"
-      />
-      <div className="flex-1 min-w-0">
+    <div className="flex flex-col items-center gap-2 rounded-lg border border-border bg-card p-3 text-center">
+      <div className="relative">
+        <img src={ch.avatar} alt={ch.display_name} className="size-10 rounded-full object-cover" />
+        {ch.is_live && (
+          <span className="absolute -bottom-0.5 -right-0.5 size-3 rounded-full border-2 border-card bg-status-live" />
+        )}
+      </div>
+      <div className="w-full min-w-0">
         <p className="text-sub font-medium truncate">{ch.display_name}</p>
         <p className="text-label text-muted-foreground font-mono truncate">{ch.name}</p>
       </div>
-      <div className="flex items-center gap-2 shrink-0">
-        {ch.is_live && (
-          <Badge className="border-status-live/20 bg-status-live/10 text-status-live gap-1 text-label">
-            <Icon icon="fa-solid fa-circle" size="xs" />
-            LIVE
-          </Badge>
-        )}
-        <ModStatusBadge status={ch.mod_status} />
-      </div>
+      <ModStatusBadge status={ch.mod_status} />
     </div>
   )
 }
@@ -115,21 +89,13 @@ function ChannelRow({ ch }: { ch: AdminChannel }) {
 export default function AdminPage() {
   useDocumentTitle('Admin')
 
-  // ── Channels ──
   const [channels, setChannels] = useState<AdminChannel[]>([])
   const [channelsLoading, setChannelsLoading] = useState(true)
 
-  // ── Niibot auth redemption ──
   const [niibotAuth, setNiibotAuth] = useState<RedemptionConfig | null>(null)
   const [twitchRewards, setTwitchRewards] = useState<TwitchReward[]>([])
   const [redemptionLoading, setRedemptionLoading] = useState(true)
   const [rewardsLoading, setRewardsLoading] = useState(true)
-
-  // ── Activation requests ──
-  const [requests, setRequests] = useState<ActivationRequest[]>([])
-  const [requestsLoading, setRequestsLoading] = useState(true)
-  const [actioningId, setActioningId] = useState<number | null>(null)
-  const [confirmReject, setConfirmReject] = useState<ActivationRequest | null>(null)
 
   useEffect(() => {
     getAdminChannels()
@@ -146,51 +112,7 @@ export default function AdminPage() {
       .then(rewards => setTwitchRewards([...rewards].sort((a, b) => a.cost - b.cost)))
       .catch(() => setTwitchRewards([]))
       .finally(() => setRewardsLoading(false))
-
-    getActivationRequests()
-      .then(data => setRequests(data))
-      .catch(() => setRequests([]))
-      .finally(() => setRequestsLoading(false))
   }, [])
-
-  const fetchRequests = useCallback(async () => {
-    setRequestsLoading(true)
-    try {
-      const data = await getActivationRequests()
-      setRequests(data)
-    } catch {
-      setRequests([])
-    } finally {
-      setRequestsLoading(false)
-    }
-  }, [])
-
-  const handleApprove = async (req: ActivationRequest) => {
-    setActioningId(req.id)
-    try {
-      await approveActivationRequest(req.id)
-      setRequests(prev => prev.filter(r => r.id !== req.id))
-      toast.success(`${req.display_name ?? req.username ?? req.platform_user_id} 已通過審核`)
-    } catch {
-      toast.error('審核失敗')
-    } finally {
-      setActioningId(null)
-    }
-  }
-
-  const handleReject = async (req: ActivationRequest) => {
-    setActioningId(req.id)
-    setConfirmReject(null)
-    try {
-      await rejectActivationRequest(req.id)
-      setRequests(prev => prev.filter(r => r.id !== req.id))
-      toast.success('申請已拒絕')
-    } catch {
-      toast.error('操作失敗')
-    } finally {
-      setActioningId(null)
-    }
-  }
 
   const handleRewardSelect = async (rewardTitle: string) => {
     if (!niibotAuth) return
@@ -224,115 +146,7 @@ export default function AdminPage() {
 
   return (
     <PageMain className="lg:gap-card">
-      <PageHeader title="Admin" description="審核授權申請、管理頻道點數兌換與監控頻道。" />
-
-      {/* Activation requests */}
-      <SlideUp>
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <Icon
-                icon="fa-solid fa-user-check"
-                size="sm"
-                wrapperClassName="text-muted-foreground"
-              />
-              <CardTitle className="text-card-title">授權申請</CardTitle>
-            </div>
-            <CardAction>
-              <div className="flex items-center gap-2">
-                {requests.length > 0 && (
-                  <Badge className="border-status-loading/20 bg-status-loading/10 text-status-loading font-mono text-label">
-                    {requests.length} 待審
-                  </Badge>
-                )}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => {
-                    setRequestsLoading(true)
-                    void fetchRequests()
-                  }}
-                  aria-label="Refresh"
-                >
-                  <Icon icon="fa-solid fa-rotate" wrapperClassName="text-muted-foreground" />
-                </Button>
-              </div>
-            </CardAction>
-          </CardHeader>
-          <CardContent>
-            {requestsLoading ? (
-              <div className="space-y-3">
-                {Array.from({ length: 2 }).map((_, i) => (
-                  <Skeleton key={i} className="h-16 w-full" />
-                ))}
-              </div>
-            ) : requests.length === 0 ? (
-              <p className="text-sub text-muted-foreground py-2">目前沒有待審核的申請。</p>
-            ) : (
-              requests.map((req, idx) => {
-                const label = req.display_name ?? req.username ?? req.platform_user_id
-                const isActioning = actioningId === req.id
-                return (
-                  <div key={req.id}>
-                    {idx > 0 && <Separator className="opacity-40" />}
-                    <div className="flex items-start gap-3 py-3">
-                      {req.avatar ? (
-                        <img
-                          src={req.avatar}
-                          alt={label}
-                          className="size-8 rounded-full shrink-0 object-cover mt-0.5"
-                        />
-                      ) : (
-                        <div className="size-8 rounded-full bg-muted shrink-0 mt-0.5" />
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-baseline gap-2">
-                          <p className="text-sub font-medium truncate">{label}</p>
-                          <p className="text-label text-muted-foreground font-mono shrink-0">
-                            {new Date(req.created_at).toLocaleString('zh-TW', {
-                              month: '2-digit',
-                              day: '2-digit',
-                              hour: '2-digit',
-                              minute: '2-digit',
-                              hour12: false,
-                            })}
-                          </p>
-                        </div>
-                        {req.note && (
-                          <p className="text-label text-muted-foreground mt-0.5 wrap-break-word">
-                            {req.note}
-                          </p>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="text-status-online border-status-online/30 hover:bg-status-online/10"
-                          onClick={() => handleApprove(req)}
-                          disabled={isActioning}
-                        >
-                          {isActioning ? <Spinner /> : <Icon icon="fa-solid fa-check" size="xs" />}
-                          通過
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="text-destructive border-destructive/30 hover:bg-destructive/10"
-                          onClick={() => setConfirmReject(req)}
-                          disabled={isActioning}
-                        >
-                          拒絕
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                )
-              })
-            )}
-          </CardContent>
-        </Card>
-      </SlideUp>
+      <PageHeader title="Admin" description="管理頻道點數兌換與監控頻道。" />
 
       {/* Niibot auth redemption */}
       <SlideUp>
@@ -401,51 +215,23 @@ export default function AdminPage() {
           </CardHeader>
           <CardContent>
             {channelsLoading ? (
-              <div className="space-y-3">
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <Skeleton key={i} className="h-10 w-full" />
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <Skeleton key={i} className="h-28 w-full rounded-lg" />
                 ))}
               </div>
             ) : channels.length === 0 ? (
               <p className="text-sub text-muted-foreground py-2">No monitored channels.</p>
             ) : (
-              channels.map((ch, idx) => (
-                <div key={ch.id}>
-                  {idx > 0 && <Separator className="opacity-40" />}
-                  <ChannelRow ch={ch} />
-                </div>
-              ))
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+                {channels.map(ch => (
+                  <ChannelCard key={ch.id} ch={ch} />
+                ))}
+              </div>
             )}
           </CardContent>
         </Card>
       </SlideUp>
-
-      {/* Reject confirmation dialog */}
-      <AlertDialog open={!!confirmReject} onOpenChange={open => !open && setConfirmReject(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>確定拒絕申請？</AlertDialogTitle>
-            <AlertDialogDescription>
-              將拒絕{' '}
-              <span className="font-medium text-foreground">
-                {confirmReject?.display_name ??
-                  confirmReject?.username ??
-                  confirmReject?.platform_user_id}
-              </span>{' '}
-              的授權申請。對方可以重新送出申請。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => confirmReject && handleReject(confirmReject)}
-            >
-              拒絕
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </PageMain>
   )
 }

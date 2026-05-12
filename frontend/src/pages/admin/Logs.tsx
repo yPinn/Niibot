@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
+import AnsiToHtml from 'ansi-to-html'
 
 import { getContainerLogs, getLogContainers, type LogContainer, type LogLine } from '@/api/admin'
 import { PageMain } from '@/components/PageMain'
@@ -11,6 +12,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  SlideUp,
   Spinner,
   Switch,
   Tabs,
@@ -46,40 +48,72 @@ function fetchReducer(state: FetchState, action: FetchAction): FetchState {
   }
 }
 
+const ansiConverter = new AnsiToHtml({
+  fg: 'rgba(255,255,255,0.75)',
+  bg: 'transparent',
+  newline: false,
+  escapeXML: true,
+  stream: false,
+})
+
+// Non-global for test() to avoid lastIndex state bug; global for replace()
 // eslint-disable-next-line no-control-regex
-const ANSI_RE = /\x1b\[[\d;]*[A-Za-z]/g
+const ANSI_TEST_RE = /\x1b\[[\d;]*[A-Za-z]/
+// eslint-disable-next-line no-control-regex
+const ANSI_STRIP_RE = /\x1b\[[\d;]*[A-Za-z]/g
+
+function hasAnsi(s: string): boolean {
+  return ANSI_TEST_RE.test(s)
+}
 
 function stripAnsi(s: string): string {
-  return s.replace(ANSI_RE, '')
+  return s.replace(ANSI_STRIP_RE, '')
 }
 
 function parseDockerTs(raw: string): { ts: string; msg: string } {
-  // Docker timestamp format: 2024-01-15T10:30:45.123456789Z <message>
   const m = raw.match(/^(\d{4}-\d{2}-\d{2}T(\d{2}:\d{2}:\d{2}))\.\S+Z?\s*(.*)$/)
   if (m) return { ts: m[2], msg: m[3] }
   return { ts: '', msg: raw }
 }
 
-// Terminal bg is always dark (bg-zinc-950), so content uses white-relative opacity.
 function lineColor(msg: string, stream: string): string {
   if (/\b(ERROR|CRITICAL|FATAL|EXCEPTION|TRACEBACK)\b/i.test(msg)) return 'text-red-400'
   if (/\bwarn(ing)?\b/i.test(msg)) return 'text-amber-400'
   if (/\bdebug\b/i.test(msg)) return 'text-white/40'
   if (stream === 'stderr') return 'text-orange-300/80'
-  return 'text-white/75'
+  return ''
 }
 
 function LogLineRow({ line, index }: { line: LogLine; index: number }) {
-  const clean = stripAnsi(line.text)
-  const { ts, msg } = parseDockerTs(clean)
-  const color = lineColor(msg || clean, line.stream)
+  const { ts, msg } = parseDockerTs(line.text)
+  const content = msg || line.text
+
+  const colored = useMemo(() => {
+    if (hasAnsi(content)) {
+      return ansiConverter.toHtml(content)
+    }
+    return null
+  }, [content])
+
+  const fallbackColor = colored ? '' : lineColor(stripAnsi(content), line.stream)
+
   return (
     <div className="flex gap-2 min-w-0 hover:bg-white/2 px-3 py-px group">
-      <span className="text-white/20 shrink-0 select-none w-8 text-right tabular-nums group-hover:text-white/35">
+      <span className="text-white/20 shrink-0 select-none w-10 text-right tabular-nums group-hover:text-white/35">
         {index + 1}
       </span>
-      {ts && <span className="text-white/35 shrink-0 tabular-nums">{ts}</span>}
-      <span className={`${color} break-all whitespace-pre-wrap`}>{msg || line.text}</span>
+      {/* Fixed-width column keeps message content aligned regardless of timestamp presence */}
+      <span className="text-white/30 shrink-0 tabular-nums w-[5.5rem]">{ts}</span>
+      {colored ? (
+        <span
+          className="break-all whitespace-pre-wrap min-w-0"
+          dangerouslySetInnerHTML={{ __html: colored }}
+        />
+      ) : (
+        <span className={`${fallbackColor} break-all whitespace-pre-wrap min-w-0`}>
+          {stripAnsi(content)}
+        </span>
+      )}
     </div>
   )
 }
@@ -153,15 +187,14 @@ export default function AdminLogs() {
     <PageMain className="gap-0 p-0 lg:p-0 overflow-hidden">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 px-page py-3 lg:px-page-lg border-b border-border/50 shrink-0">
-        <div className="flex items-center gap-2">
-          <Icon icon="fa-solid fa-file-lines" size="sm" wrapperClassName="text-muted-foreground" />
-          <h1 className="text-card-title font-bold">Service Logs</h1>
+        <SlideUp className="flex items-center gap-2.5">
+          <h1 className="text-page-title font-bold">Service Logs</h1>
           {currentContainer && (
             <Badge
               className={
                 currentContainer.running
-                  ? 'border-status-online/20 bg-status-online/10 text-status-online gap-1'
-                  : 'border-status-offline/20 bg-status-offline/10 text-status-offline gap-1'
+                  ? 'border-status-online/20 bg-status-online/10 text-status-online gap-1.5'
+                  : 'border-status-offline/20 bg-status-offline/10 text-status-offline gap-1.5'
               }
             >
               <Icon
@@ -171,7 +204,7 @@ export default function AdminLogs() {
               {currentContainer.running ? 'running' : 'stopped'}
             </Badge>
           )}
-        </div>
+        </SlideUp>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
             <span className="text-label text-muted-foreground">Follow</span>
@@ -248,7 +281,7 @@ export default function AdminLogs() {
 
       {/* Status bar */}
       <div className="flex items-center justify-between px-page lg:px-page-lg py-1.5 border-t border-border/20 bg-zinc-950 shrink-0">
-        <span className="font-mono text-label text-muted-foreground/70">
+        <span className="font-mono text-label text-white/30">
           {lines.length > 0 ? `${lines.length} lines · ${selected}` : selected}
         </span>
         {follow && (
