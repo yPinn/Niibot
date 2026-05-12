@@ -43,12 +43,13 @@ function parseDockerTs(raw: string): { ts: string; msg: string } {
   return { ts: '', msg: raw }
 }
 
+// Terminal bg is always dark (bg-zinc-950), so content uses white-relative opacity.
 function lineColor(msg: string, stream: string): string {
   if (/\b(ERROR|CRITICAL|FATAL|EXCEPTION|TRACEBACK)\b/i.test(msg)) return 'text-red-400'
   if (/\bwarn(ing)?\b/i.test(msg)) return 'text-amber-400'
-  if (/\bdebug\b/i.test(msg)) return 'text-zinc-500'
+  if (/\bdebug\b/i.test(msg)) return 'text-white/40'
   if (stream === 'stderr') return 'text-orange-300/80'
-  return 'text-zinc-300'
+  return 'text-white/75'
 }
 
 function LogLineRow({ line, index }: { line: LogLine; index: number }) {
@@ -57,10 +58,10 @@ function LogLineRow({ line, index }: { line: LogLine; index: number }) {
   const color = lineColor(msg || clean, line.stream)
   return (
     <div className="flex gap-2 min-w-0 hover:bg-white/2 px-3 py-px group">
-      <span className="text-zinc-700 shrink-0 select-none w-8 text-right tabular-nums group-hover:text-zinc-600">
+      <span className="text-white/20 shrink-0 select-none w-8 text-right tabular-nums group-hover:text-white/35">
         {index + 1}
       </span>
-      {ts && <span className="text-zinc-600 shrink-0 tabular-nums">{ts}</span>}
+      {ts && <span className="text-white/35 shrink-0 tabular-nums">{ts}</span>}
       <span className={`${color} break-all whitespace-pre-wrap`}>{msg || line.text}</span>
     </div>
   )
@@ -203,7 +204,7 @@ export default function AdminLogs() {
             {containers.map(c => (
               <TabsTrigger key={c.name} value={c.name} className="gap-1.5 text-label px-3">
                 <span
-                  className={`size-1.5 rounded-full shrink-0 ${c.running ? 'bg-status-online' : 'bg-zinc-600'}`}
+                  className={`size-1.5 rounded-full shrink-0 ${c.running ? 'bg-status-online' : 'bg-muted-foreground/50'}`}
                 />
                 {c.label}
               </TabsTrigger>
@@ -215,25 +216,25 @@ export default function AdminLogs() {
       {/* Terminal */}
       <div
         ref={termRef}
-        className="flex-1 min-h-0 overflow-auto bg-zinc-950 font-mono text-xs leading-5 py-2"
+        className="flex-1 min-h-0 overflow-auto bg-zinc-950 font-mono text-label leading-5 py-2"
       >
         {loading && lines.length === 0 ? (
-          <div className="flex items-center gap-2 px-4 py-3 text-zinc-500">
+          <div className="flex items-center gap-2 px-4 py-3 text-white/40">
             <Spinner className="size-3" />
             <span>Loading logs…</span>
           </div>
         ) : error ? (
           <div className="px-4 py-3 text-red-400">{error}</div>
         ) : lines.length === 0 ? (
-          <div className="px-4 py-3 text-zinc-600">No log output.</div>
+          <div className="px-4 py-3 text-white/35">No log output.</div>
         ) : (
           lines.map((line, i) => <LogLineRow key={i} line={line} index={i} />)
         )}
       </div>
 
       {/* Status bar */}
-      <div className="flex items-center justify-between px-page lg:px-page-lg py-1.5 border-t border-zinc-800 bg-zinc-950 shrink-0">
-        <span className="font-mono text-label text-zinc-600">
+      <div className="flex items-center justify-between px-page lg:px-page-lg py-1.5 border-t border-border/20 bg-zinc-950 shrink-0">
+        <span className="font-mono text-label text-muted-foreground/70">
           {lines.length > 0 ? `${lines.length} lines · ${selected}` : selected}
         </span>
         {follow && (
