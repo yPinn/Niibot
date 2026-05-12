@@ -198,6 +198,7 @@ services:
       <<: [*docker-db-env, *docker-api-svc-urls]
     volumes:
       - ./backend/data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
       - niibot-network
     depends_on:

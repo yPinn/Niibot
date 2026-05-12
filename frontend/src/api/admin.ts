@@ -72,3 +72,38 @@ export async function rejectActivationRequest(id: number): Promise<void> {
   })
   if (!response.ok) throw new Error('Failed to reject request')
 }
+
+export interface LogContainer {
+  name: string
+  label: string
+  running: boolean
+}
+
+export interface LogLine {
+  stream: 'stdout' | 'stderr'
+  text: string
+}
+
+export interface ContainerLogs {
+  container: string
+  lines: LogLine[]
+}
+
+export async function getLogContainers(): Promise<LogContainer[]> {
+  const response = await apiFetch(API_ENDPOINTS.admin.logContainers, { credentials: 'include' })
+  if (!response.ok) throw new Error('Failed to fetch containers')
+  return response.json()
+}
+
+export async function getContainerLogs(
+  container: string,
+  tail = 200,
+  since?: number
+): Promise<ContainerLogs> {
+  const params = new URLSearchParams({ tail: String(tail) })
+  if (since !== undefined) params.set('since', String(since))
+  const url = `${API_ENDPOINTS.admin.containerLogs(container)}?${params}`
+  const response = await apiFetch(url, { credentials: 'include' })
+  if (!response.ok) throw new Error(`Failed to fetch logs for ${container}`)
+  return response.json()
+}

@@ -142,6 +142,8 @@ export const API_ENDPOINTS = {
     activationRequests: join('/api/admin/activation-requests'),
     approveRequest: (id: number) => join(`/api/admin/activation-requests/${id}/approve`),
     rejectRequest: (id: number) => join(`/api/admin/activation-requests/${id}/reject`),
+    logContainers: join('/api/admin/logs/containers'),
+    containerLogs: (name: string) => join(`/api/admin/logs/${name}`),
   },
   health: join('/health'),
   status: join('/status'),

@@ -20,6 +20,7 @@ const Timers = lazy(() => import('@/pages/dashboard/Timers'))
 const AdminPage = lazy(() => import('@/pages/admin'))
 const AdminSystemStatus = lazy(() => import('@/pages/admin/SystemStatus'))
 const AdminActivationCodes = lazy(() => import('@/pages/admin/ActivationCodes'))
+const AdminLogs = lazy(() => import('@/pages/admin/Logs'))
 const Insights = lazy(() => import('@/pages/analytics/Insights'))
 const DiscordDashboard = lazy(() => import('@/pages/discord/Dashboard'))
 const GameQueueOverlay = lazy(() => import('@/pages/GameQueueOverlay'))
@@ -106,6 +107,7 @@ function App() {
                         <Route path="/admin" element={<AdminPage />} />
                         <Route path="/admin/status" element={<AdminSystemStatus />} />
                         <Route path="/admin/codes" element={<AdminActivationCodes />} />
+                        <Route path="/admin/logs" element={<AdminLogs />} />
                       </Route>
                     </Route>
                   </Route>
