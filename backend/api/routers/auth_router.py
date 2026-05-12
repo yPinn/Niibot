@@ -261,6 +261,21 @@ async def logout(
     return LogoutResponse(message="Logged out successfully")
 
 
+@router.get("/auth/pending-code")
+async def get_pending_code(
+    auth_token: str | None = Cookie(None),
+    pool: Pool = Depends(get_db_pool),
+) -> dict:
+    """Return the pending activation code for the current user, if one exists."""
+    payload = get_token_payload(auth_token)
+    platform = str(payload["platform"])
+    platform_user_id = str(payload["platform_user_id"])
+
+    repo = ActivationCodeRepository(pool)
+    code = await repo.get_plain_code(platform, platform_user_id)
+    return {"code": code}
+
+
 @router.post("/auth/activate")
 async def activate_account(
     body: ActivateRequest,

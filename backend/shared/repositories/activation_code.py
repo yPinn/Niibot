@@ -39,15 +39,30 @@ class ActivationCodeRepository:
                     platform_user_id,
                 )
                 await conn.execute(
-                    "INSERT INTO activation_codes (code_hash, platform, platform_user_id, expires_at)"
-                    " VALUES ($1, $2, $3, $4)",
+                    "INSERT INTO activation_codes"
+                    " (code_hash, code_plain, platform, platform_user_id, expires_at)"
+                    " VALUES ($1, $2, $3, $4, $5)",
                     code_hash,
+                    code,
                     platform,
                     platform_user_id,
                     expires_at,
                 )
 
         return code
+
+    async def get_plain_code(self, platform: str, platform_user_id: str) -> str | None:
+        """Return the pending plain-text code for a user, or None if no valid code exists."""
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT code_plain FROM activation_codes"
+                " WHERE platform = $1 AND platform_user_id = $2"
+                "   AND used_at IS NULL AND expires_at > NOW()"
+                " ORDER BY expires_at DESC LIMIT 1",
+                platform,
+                platform_user_id,
+            )
+        return row["code_plain"] if row else None
 
     async def redeem(
         self,

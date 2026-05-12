@@ -104,6 +104,7 @@ class PendingCodeInfo(BaseModel):
     username: str | None
     avatar: str | None
     expires_at: datetime
+    code_plain: str | None
 
 
 class ActivationRequestInfo(BaseModel):
@@ -124,7 +125,7 @@ async def get_pending_activation_codes(
     """List unused, non-expired OTP activation codes. Owner-only."""
     rows = await pool.fetch(
         """
-        SELECT ac.platform_user_id, ac.expires_at,
+        SELECT ac.platform_user_id, ac.expires_at, ac.code_plain,
                u.display_name, u.avatar, ula.username
         FROM activation_codes ac
         LEFT JOIN user_linked_accounts ula
