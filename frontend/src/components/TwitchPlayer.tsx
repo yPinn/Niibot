@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
+import { Skeleton } from '@/components/ui'
+
 interface TwitchPlayerProps {
   channel: string
   width?: string | number
@@ -24,6 +26,7 @@ export default function TwitchPlayer({
   const containerRef = useRef<HTMLDivElement>(null)
   const playerRef = useRef<TwitchPlayerInstance | null>(null)
   const [loadError, setLoadError] = useState(false)
+  const [loaded, setLoaded] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -50,6 +53,7 @@ export default function TwitchPlayer({
           autoplay,
           parent: [window.location.hostname],
         })
+        if (!cancelled) setLoaded(true)
       } catch (error) {
         if (import.meta.env.DEV) console.error('Error initializing Twitch player:', error)
       }
@@ -110,5 +114,10 @@ export default function TwitchPlayer({
     )
   }
 
-  return <div ref={containerRef} className={className} />
+  return (
+    <div className={`relative ${className}`}>
+      {!loaded && <Skeleton className="absolute inset-0 rounded-none" />}
+      <div ref={containerRef} className="w-full h-full" />
+    </div>
+  )
 }

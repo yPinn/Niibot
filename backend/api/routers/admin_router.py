@@ -1,9 +1,13 @@
 """Admin-only API routes — accessible only to the bot owner."""
 
 import asyncio
+import decimal
 import logging
+import re
 import struct
-from datetime import datetime
+import time
+import uuid
+from datetime import date, datetime
 
 import aiohttp
 from asyncpg import Pool
@@ -288,6 +292,81 @@ async def get_container_logs(
         raise HTTPException(status_code=503, detail="Docker socket unavailable") from e
 
     return ContainerLogsResponse(container=container, lines=_parse_docker_stream(raw))
+
+
+_SELECT_RE = re.compile(
+    r"^\s*(?:--[^\n]*\n\s*|/\*.*?\*/\s*)*(SELECT|WITH)\b",
+    re.IGNORECASE | re.DOTALL,
+)
+_LIMIT_RE = re.compile(r"\bLIMIT\s+\d+", re.IGNORECASE)
+_DB_ROW_CAP = 500
+_DB_TIMEOUT = 5.0
+
+
+def _json_safe(val: object) -> object:
+    if val is None or isinstance(val, (bool, int, float, str)):
+        return val
+    if isinstance(val, (datetime, date)):
+        return val.isoformat()
+    if isinstance(val, decimal.Decimal):
+        return float(val)
+    if isinstance(val, uuid.UUID):
+        return str(val)
+    return str(val)
+
+
+class DbQueryRequest(BaseModel):
+    sql: str
+
+
+class DbQueryResponse(BaseModel):
+    columns: list[str]
+    rows: list[list]
+    row_count: int
+    duration_ms: float
+
+
+@router.post("/db/query", response_model=DbQueryResponse)
+async def run_db_query(
+    body: DbQueryRequest,
+    _: str = Depends(require_owner),
+    pool: Pool = Depends(get_db_pool),
+) -> DbQueryResponse:
+    """Execute a read-only SELECT query against the database. Owner-only."""
+    sql = body.sql.strip()
+    if not _SELECT_RE.match(sql):
+        raise HTTPException(
+            status_code=400, detail="Only SELECT (or WITH … SELECT) queries are allowed"
+        )
+
+    if not _LIMIT_RE.search(sql):
+        sql = f"{sql} LIMIT {_DB_ROW_CAP}"
+
+    t0 = time.monotonic()
+    try:
+        async with pool.acquire() as conn:
+            async with conn.transaction(readonly=True):
+                rows = await asyncio.wait_for(conn.fetch(sql), timeout=_DB_TIMEOUT)
+    except TimeoutError:
+        raise HTTPException(
+            status_code=408, detail=f"Query timed out ({_DB_TIMEOUT:.0f}s limit)"
+        ) from None
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    duration_ms = (time.monotonic() - t0) * 1000
+
+    if not rows:
+        return DbQueryResponse(columns=[], rows=[], row_count=0, duration_ms=duration_ms)
+
+    columns = list(rows[0].keys())
+    result_rows = [[_json_safe(v) for v in row] for row in rows]
+    return DbQueryResponse(
+        columns=columns,
+        rows=result_rows,
+        row_count=len(result_rows),
+        duration_ms=duration_ms,
+    )
 
 
 @router.post("/activation-requests/{request_id}/reject")

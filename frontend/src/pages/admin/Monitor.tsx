@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import AnsiToHtml from 'ansi-to-html'
 
-import { getContainerLogs, getLogContainers, type LogContainer, type LogLine } from '@/api/admin'
+import {
+  type DbQueryResult,
+  getContainerLogs,
+  getLogContainers,
+  type LogContainer,
+  type LogLine,
+  runDbQuery,
+} from '@/api/admin'
 import { PageMain } from '@/components/PageMain'
 import {
   Badge,
@@ -22,9 +29,16 @@ import {
   SlideUp,
   Spinner,
   Switch,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
   Tabs,
   TabsList,
   TabsTrigger,
+  Textarea,
 } from '@/components/ui'
 import { useServiceStatus } from '@/contexts/ServiceStatusContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
@@ -59,7 +73,7 @@ function fetchReducer(state: FetchState, action: FetchAction): FetchState {
 }
 
 const ansiConverter = new AnsiToHtml({
-  fg: 'rgba(255,255,255,0.75)',
+  fg: '#d4d4d8',
   bg: 'transparent',
   newline: false,
   escapeXML: true,
@@ -88,10 +102,10 @@ function parseDockerTs(raw: string): { ts: string; msg: string } {
 
 function lineColor(msg: string, stream: string): string {
   if (/\b(ERROR|CRITICAL|FATAL|EXCEPTION|TRACEBACK)\b/i.test(msg)) return 'text-red-400'
-  if (/\bwarn(ing)?\b/i.test(msg)) return 'text-amber-400'
-  if (/\bdebug\b/i.test(msg)) return 'text-white/40'
-  if (stream === 'stderr') return 'text-orange-300/80'
-  return ''
+  if (/\bwarn(ing)?\b/i.test(msg)) return 'text-amber-300'
+  if (/\bdebug\b/i.test(msg)) return 'text-muted-foreground'
+  if (stream === 'stderr') return 'text-orange-300'
+  return 'text-foreground/80'
 }
 
 function LogLineRow({ line, index }: { line: LogLine; index: number }) {
@@ -106,11 +120,11 @@ function LogLineRow({ line, index }: { line: LogLine; index: number }) {
   const fallbackColor = colored ? '' : lineColor(stripAnsi(content), line.stream)
 
   return (
-    <div className="flex gap-2 min-w-0 hover:bg-white/2 px-3 py-px group">
-      <span className="text-white/20 shrink-0 select-none w-10 text-right tabular-nums group-hover:text-white/35">
+    <div className="flex gap-2 min-w-0 hover:bg-white/5 px-3 py-px group">
+      <span className="text-muted-foreground/50 shrink-0 select-none w-10 text-right tabular-nums group-hover:text-muted-foreground/70">
         {index + 1}
       </span>
-      <span className="text-white/30 shrink-0 tabular-nums w-22">{ts}</span>
+      <span className="text-muted-foreground/70 shrink-0 tabular-nums w-22">{ts}</span>
       {colored ? (
         <span
           className="break-all whitespace-pre-wrap min-w-0"
@@ -121,6 +135,317 @@ function LogLineRow({ line, index }: { line: LogLine; index: number }) {
           {stripAnsi(content)}
         </span>
       )}
+    </div>
+  )
+}
+
+// ── DB Console ────────────────────────────────────────────────────────────────
+
+interface DbPreset {
+  label: string
+  sql: string
+}
+
+interface DbPresetGroup {
+  group: string
+  items: DbPreset[]
+}
+
+const DB_PRESETS: DbPresetGroup[] = [
+  {
+    group: 'Core',
+    items: [
+      {
+        label: 'Channels',
+        sql: 'SELECT channel_id, channel_name, display_name, enabled, created_at\nFROM channels\nORDER BY enabled DESC, channel_name\nLIMIT 100;',
+      },
+      {
+        label: 'Tokens',
+        sql: 'SELECT user_id, token_type, scopes, created_at, updated_at\nFROM tokens\nORDER BY updated_at DESC\nLIMIT 50;',
+      },
+      {
+        label: 'Users',
+        sql: 'SELECT id, display_name, avatar, created_at\nFROM users\nORDER BY created_at DESC\nLIMIT 50;',
+      },
+      {
+        label: 'Linked Accounts',
+        sql: 'SELECT platform, platform_user_id, username, created_at\nFROM user_linked_accounts\nORDER BY created_at DESC\nLIMIT 50;',
+      },
+    ],
+  },
+  {
+    group: 'Bot Config',
+    items: [
+      {
+        label: 'Commands',
+        sql: 'SELECT channel_id, command_name, command_type, enabled,\n       custom_response, min_role, usage_count\nFROM command_configs\nORDER BY channel_id, command_name\nLIMIT 200;',
+      },
+      {
+        label: 'Cmd Aliases',
+        sql: 'SELECT channel_id, alias, target_command, created_at\nFROM command_aliases\nORDER BY channel_id, alias\nLIMIT 100;',
+      },
+      {
+        label: 'Cmd Stats',
+        sql: 'SELECT channel_id, command_name, SUM(usage_count) AS total_uses\nFROM command_stats\nGROUP BY channel_id, command_name\nORDER BY total_uses DESC\nLIMIT 100;',
+      },
+      {
+        label: 'Redemptions',
+        sql: 'SELECT channel_id, action_type, reward_name, enabled\nFROM redemption_configs\nORDER BY channel_id\nLIMIT 100;',
+      },
+      {
+        label: 'Event Configs',
+        sql: 'SELECT channel_id, event_type, enabled\nFROM event_configs\nORDER BY channel_id, event_type\nLIMIT 100;',
+      },
+      {
+        label: 'Timers',
+        sql: 'SELECT channel_id, name, enabled, interval_seconds, message_template\nFROM timers\nORDER BY channel_id\nLIMIT 100;',
+      },
+      {
+        label: 'Triggers',
+        sql: 'SELECT channel_id, name, enabled, pattern, response, usage_count\nFROM message_triggers\nORDER BY channel_id\nLIMIT 100;',
+      },
+    ],
+  },
+  {
+    group: 'Analytics',
+    items: [
+      {
+        label: 'Sessions',
+        sql: 'SELECT * FROM v_session_summary\nORDER BY session_id DESC\nLIMIT 50;',
+      },
+      {
+        label: 'Stream Events',
+        sql: 'SELECT session_id, channel_id, event_type, username, display_name, occurred_at\nFROM stream_events\nORDER BY occurred_at DESC\nLIMIT 100;',
+      },
+      {
+        label: 'Chatters',
+        sql: 'SELECT channel_id, username, display_name, message_count, watch_seconds, last_message_at\nFROM chatter_stats\nORDER BY message_count DESC\nLIMIT 100;',
+      },
+      {
+        label: 'Viewer Status',
+        sql: 'SELECT channel_id, username, display_name,\n       is_subscribed, sub_tier, is_mod, is_vip, is_banned, follow_since\nFROM viewer_channel_status\nORDER BY channel_id\nLIMIT 100;',
+      },
+      {
+        label: 'Attend. Streaks',
+        sql: 'SELECT channel_id, user_id, streak_count, updated_at\nFROM viewer_attendance_streaks\nORDER BY streak_count DESC\nLIMIT 50;',
+      },
+    ],
+  },
+  {
+    group: 'Features',
+    items: [
+      {
+        label: 'Game Queue',
+        sql: 'SELECT e.*,\n       s.enabled AS queue_open, s.max_size\nFROM game_queue_entries e\nLEFT JOIN game_queue_settings s ON e.channel_id = s.channel_id\nORDER BY e.channel_id, e.position\nLIMIT 100;',
+      },
+      {
+        label: 'Video Queue',
+        sql: 'SELECT q.id, q.channel_id, q.video_type, q.video_id, q.title,\n       q.requested_by, q.status, q.created_at,\n       s.enabled AS queue_open, s.max_duration_seconds, s.max_queue_size\nFROM video_queue q\nLEFT JOIN video_queue_settings s ON q.channel_id = s.channel_id\nORDER BY q.created_at DESC\nLIMIT 50;',
+      },
+      {
+        label: 'Crosshairs',
+        sql: 'SELECT id, channel_id, username, name, copy_count, created_at\nFROM crosshairs\nORDER BY copy_count DESC\nLIMIT 100;',
+      },
+    ],
+  },
+  {
+    group: 'Activation',
+    items: [
+      {
+        label: 'Codes',
+        sql: 'SELECT platform_user_id, platform, expires_at, used_at, created_at\nFROM activation_codes\nORDER BY created_at DESC\nLIMIT 50;',
+      },
+      {
+        label: 'Requests',
+        sql: 'SELECT id, platform_user_id, display_name, status, note, created_at\nFROM activation_requests\nORDER BY created_at DESC\nLIMIT 50;',
+      },
+    ],
+  },
+  {
+    group: 'Payments',
+    items: [
+      {
+        label: 'Donations',
+        sql: 'SELECT id, channel_id, amount, platform, status, message, created_at\nFROM donation_orders\nORDER BY created_at DESC\nLIMIT 50;',
+      },
+      {
+        label: 'Pay Configs',
+        sql: 'SELECT * FROM user_payment_configs\nLIMIT 50;',
+      },
+    ],
+  },
+  {
+    group: 'Discord',
+    items: [
+      {
+        label: 'Discord Users',
+        sql: 'SELECT user_id, username, display_name, created_at\nFROM discord_users\nORDER BY created_at DESC\nLIMIT 50;',
+      },
+      {
+        label: 'Birthdays',
+        sql: 'SELECT user_id, month, day, year\nFROM birthdays\nORDER BY month, day\nLIMIT 100;',
+      },
+      {
+        label: 'BD Settings',
+        sql: 'SELECT * FROM birthday_settings\nLIMIT 50;',
+      },
+    ],
+  },
+]
+
+function DbConsole() {
+  const [sql, setSql] = useState(DB_PRESETS[0].items[0].sql)
+  const [activePreset, setActivePreset] = useState<string>('Channels')
+  const [result, setResult] = useState<DbQueryResult | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  const runQuery = async (q: string) => {
+    setLoading(true)
+    setError(null)
+    setResult(null)
+    try {
+      setResult(await runDbQuery(q))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handlePreset = (preset: DbPreset) => {
+    setSql(preset.sql)
+    setActivePreset(preset.label)
+    runQuery(preset.sql)
+  }
+
+  const handleRun = () => runQuery(sql)
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault()
+      handleRun()
+    }
+  }
+
+  const statusText = error
+    ? error
+    : result
+      ? `${result.row_count} ${result.row_count === 1 ? 'row' : 'rows'} · ${result.duration_ms.toFixed(1)}ms`
+      : 'SELECT only · 500 row cap · 5s timeout'
+
+  const statusColor = error
+    ? 'text-destructive'
+    : result
+      ? 'text-muted-foreground'
+      : 'text-muted-foreground/50'
+
+  return (
+    <div className="flex flex-1 min-h-0 overflow-hidden bg-background">
+      {/* ── Preset sidebar ── */}
+      <div className="w-44 shrink-0 border-r border-border/30 overflow-y-auto flex flex-col gap-0 py-1">
+        {DB_PRESETS.map(group => (
+          <div key={group.group}>
+            <div className="px-3 pt-3 pb-1 text-muted-foreground/60 font-medium uppercase tracking-wide text-label select-none">
+              {group.group}
+            </div>
+            {group.items.map(item => (
+              <button
+                key={item.label}
+                onClick={() => handlePreset(item)}
+                className={`w-full text-left px-3 py-1 text-label truncate transition-colors ${
+                  activePreset === item.label
+                    ? 'bg-accent text-accent-foreground'
+                    : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        ))}
+      </div>
+
+      {/* ── Main area ── */}
+      <div className="flex flex-col flex-1 min-h-0 min-w-0">
+        {/* SQL input */}
+        <div className="flex gap-2 p-3 border-b border-border/30 shrink-0">
+          <Textarea
+            value={sql}
+            onChange={e => {
+              setSql(e.target.value)
+              setActivePreset('')
+            }}
+            onKeyDown={handleKeyDown}
+            rows={5}
+            className="flex-1 font-mono text-label text-foreground bg-muted border-border resize-y min-h-[80px] max-h-48 focus-visible:ring-1 focus-visible:ring-ring"
+            placeholder="SELECT ..."
+            spellCheck={false}
+          />
+          <Button
+            size="sm"
+            onClick={handleRun}
+            disabled={loading || !sql.trim()}
+            className="self-end shrink-0"
+          >
+            {loading ? <Spinner className="size-3" /> : <Icon icon="fa-solid fa-play" size="xs" />}
+          </Button>
+        </div>
+
+        {/* Results */}
+        <div className="flex-1 min-h-0 overflow-auto">
+          {result && result.row_count > 0 && (
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent border-border">
+                  {result.columns.map(col => (
+                    <TableHead
+                      key={col}
+                      className="text-muted-foreground bg-muted/80 whitespace-nowrap font-medium"
+                    >
+                      {col}
+                    </TableHead>
+                  ))}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {result.rows.map((row, i) => (
+                  <TableRow
+                    key={i}
+                    className="hover:bg-white/5 border-border/50 font-mono text-label"
+                  >
+                    {row.map((cell, j) => (
+                      <TableCell
+                        key={j}
+                        className={`whitespace-nowrap py-1 ${cell === null ? 'text-muted-foreground/60 italic' : 'text-foreground/80'}`}
+                      >
+                        {cell === null ? 'NULL' : String(cell)}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+          {result && result.row_count === 0 && !error && (
+            <div className="flex flex-col items-center justify-center h-full gap-2 text-muted-foreground">
+              <Icon icon="fa-solid fa-inbox" size="lg" />
+              <span className="font-mono text-label">No rows returned.</span>
+            </div>
+          )}
+          {!result && !error && !loading && (
+            <div className="flex flex-col items-center justify-center h-full gap-2 text-muted-foreground/60">
+              <Icon icon="fa-solid fa-terminal" size="lg" />
+              <span className="font-mono text-label">Select a preset or run a query.</span>
+            </div>
+          )}
+        </div>
+
+        {/* Status bar */}
+        <div className="flex items-center px-3 py-1.5 border-t border-border/20 bg-background shrink-0">
+          <span className={`font-mono text-label truncate ${statusColor}`}>{statusText}</span>
+        </div>
+      </div>
     </div>
   )
 }
@@ -239,6 +564,7 @@ export default function AdminMonitor() {
   }, [])
 
   useEffect(() => {
+    if (selected === '__db__') return
     let cancelled = false
     dispatch({ type: 'start' })
     getContainerLogs(selected, tail)
@@ -255,6 +581,7 @@ export default function AdminMonitor() {
   }, [selected, tail])
 
   const pollFetch = useCallback(async () => {
+    if (selected === '__db__') return
     try {
       const data = await getContainerLogs(selected, tail)
       dispatch({ type: 'done', lines: data.lines })
@@ -271,7 +598,7 @@ export default function AdminMonitor() {
     }
   }, [lines, follow])
 
-  const currentContainer = containers.find(c => c.name === selected)
+  const isDbMode = selected === '__db__'
 
   const handleRefresh = () => {
     dispatch({ type: 'start' })
@@ -367,64 +694,49 @@ export default function AdminMonitor() {
   return (
     <PageMain className="gap-0 p-0 lg:p-0 overflow-hidden">
       <div className="flex flex-1 min-h-0 overflow-hidden">
-        {/* ── Left: Logs panel ───────────────────────────────────────────────── */}
+        {/* ── Left: Logs / DB panel ──────────────────────────────────────────── */}
         <div className="flex flex-col flex-1 min-h-0 min-w-0 overflow-hidden">
           {/* Header */}
           <div className="flex items-center justify-between gap-3 px-page h-14 lg:px-page-lg border-b border-border/50 shrink-0">
-            <SlideUp className="flex items-center gap-2.5">
-              <h1 className="text-page-title font-bold">Service Logs</h1>
-              {currentContainer && (
-                <Badge
-                  className={
-                    currentContainer.running
-                      ? 'border-status-online/20 bg-status-online/10 text-status-online gap-1.5'
-                      : 'border-status-offline/20 bg-status-offline/10 text-status-offline gap-1.5'
-                  }
-                >
-                  <Icon
-                    icon={
-                      currentContainer.running ? 'fa-solid fa-circle' : 'fa-solid fa-circle-xmark'
-                    }
-                    size="xs"
-                  />
-                  {currentContainer.running ? 'running' : 'stopped'}
-                </Badge>
-              )}
+            <SlideUp>
+              <h1 className="text-page-title font-bold">Monitor</h1>
             </SlideUp>
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2">
-                <span className="text-label text-muted-foreground">Follow</span>
-                <Switch checked={follow} onCheckedChange={setFollow} />
+            {!isDbMode && (
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-label text-muted-foreground">Follow</span>
+                  <Switch checked={follow} onCheckedChange={setFollow} />
+                </div>
+                <Select value={String(tail)} onValueChange={v => setTail(Number(v))}>
+                  <SelectTrigger size="sm" className="w-28">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="50">50 lines</SelectItem>
+                    <SelectItem value="100">100 lines</SelectItem>
+                    <SelectItem value="200">200 lines</SelectItem>
+                    <SelectItem value="500">500 lines</SelectItem>
+                    <SelectItem value="1000">1000 lines</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleRefresh}
+                  disabled={loading}
+                  aria-label="Refresh"
+                >
+                  {loading ? (
+                    <Spinner />
+                  ) : (
+                    <Icon icon="fa-solid fa-rotate" wrapperClassName="text-muted-foreground" />
+                  )}
+                </Button>
               </div>
-              <Select value={String(tail)} onValueChange={v => setTail(Number(v))}>
-                <SelectTrigger size="sm" className="w-28">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="50">50 lines</SelectItem>
-                  <SelectItem value="100">100 lines</SelectItem>
-                  <SelectItem value="200">200 lines</SelectItem>
-                  <SelectItem value="500">500 lines</SelectItem>
-                  <SelectItem value="1000">1000 lines</SelectItem>
-                </SelectContent>
-              </Select>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={handleRefresh}
-                disabled={loading}
-                aria-label="Refresh"
-              >
-                {loading ? (
-                  <Spinner />
-                ) : (
-                  <Icon icon="fa-solid fa-rotate" wrapperClassName="text-muted-foreground" />
-                )}
-              </Button>
-            </div>
+            )}
           </div>
 
-          {/* Container tabs */}
+          {/* Tabs */}
           <div className="px-page lg:px-page-lg border-b border-border/50 overflow-x-auto shrink-0">
             <Tabs
               value={selected}
@@ -442,46 +754,59 @@ export default function AdminMonitor() {
                     {c.label}
                   </TabsTrigger>
                 ))}
+                <TabsTrigger value="__db__" className="gap-1.5 text-label px-3">
+                  <Icon
+                    icon="fa-solid fa-database"
+                    size="xs"
+                    wrapperClassName="text-muted-foreground"
+                  />
+                  DB
+                </TabsTrigger>
               </TabsList>
             </Tabs>
           </div>
 
-          {/* Terminal */}
-          <div
-            ref={termRef}
-            className="flex-1 min-h-0 overflow-auto bg-zinc-900 font-mono text-label leading-5 py-2"
-          >
-            {loading && lines.length === 0 ? (
-              <div className="flex items-center gap-2 px-4 py-3 text-white/40">
-                <Spinner className="size-3" />
-                <span>Loading logs…</span>
+          {/* Content */}
+          {isDbMode ? (
+            <DbConsole />
+          ) : (
+            <>
+              <div
+                ref={termRef}
+                className="flex-1 min-h-0 overflow-auto bg-background text-foreground/80 font-mono text-label leading-5 py-2"
+              >
+                {loading && lines.length === 0 ? (
+                  <div className="flex items-center gap-2 px-4 py-3 text-muted-foreground">
+                    <Spinner className="size-3" />
+                    <span>Loading logs…</span>
+                  </div>
+                ) : error ? (
+                  <div className="px-4 py-3 text-destructive">{error}</div>
+                ) : lines.length === 0 ? (
+                  <div className="px-4 py-3 text-muted-foreground">No log output.</div>
+                ) : (
+                  lines.map((line, i) => <LogLineRow key={i} line={line} index={i} />)
+                )}
               </div>
-            ) : error ? (
-              <div className="px-4 py-3 text-red-400">{error}</div>
-            ) : lines.length === 0 ? (
-              <div className="px-4 py-3 text-white/35">No log output.</div>
-            ) : (
-              lines.map((line, i) => <LogLineRow key={i} line={line} index={i} />)
-            )}
-          </div>
 
-          {/* Status bar */}
-          <div className="flex items-center justify-between px-page lg:px-page-lg py-1.5 border-t border-border/20 bg-zinc-900 shrink-0">
-            <span className="font-mono text-label text-white/30">
-              {lines.length > 0 ? `${lines.length} lines · ${selected}` : selected}
-            </span>
-            {follow && (
-              <span className="font-mono text-label text-status-online flex items-center gap-1.5">
-                <Icon icon="fa-solid fa-circle" size="xs" />
-                following
-              </span>
-            )}
-          </div>
+              {/* Status bar */}
+              <div className="flex items-center justify-between px-page lg:px-page-lg py-1.5 border-t border-border/20 bg-background shrink-0">
+                <span className="font-mono text-label text-muted-foreground">
+                  {lines.length > 0 ? `${lines.length} lines` : '—'}
+                </span>
+                {follow && (
+                  <span className="font-mono text-label text-status-online flex items-center gap-1.5">
+                    <Icon icon="fa-solid fa-circle" size="xs" />
+                    following
+                  </span>
+                )}
+              </div>
+            </>
+          )}
         </div>
 
         {/* ── Right: Status cards ─────────────────────────────────────────────── */}
         <div className="hidden lg:flex flex-col w-85 xl:w-95 shrink-0 border-l border-border/50 overflow-y-auto">
-          {/* Panel header */}
           <div className="flex items-center justify-between px-page h-14 border-b border-border/50 shrink-0">
             <h2 className="text-page-title font-bold">System Status</h2>
             <div className="flex items-center gap-2">
@@ -499,7 +824,6 @@ export default function AdminMonitor() {
             </div>
           </div>
 
-          {/* Cards */}
           <div className="flex flex-col gap-section p-page">
             {services.map(service => (
               <Card key={service.key}>

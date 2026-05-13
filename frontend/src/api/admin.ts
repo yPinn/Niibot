@@ -96,6 +96,27 @@ export async function getLogContainers(): Promise<LogContainer[]> {
   return response.json()
 }
 
+export interface DbQueryResult {
+  columns: string[]
+  rows: (string | number | boolean | null)[][]
+  row_count: number
+  duration_ms: number
+}
+
+export async function runDbQuery(sql: string): Promise<DbQueryResult> {
+  const response = await apiFetch(API_ENDPOINTS.admin.dbQuery, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sql }),
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ detail: 'Request failed' }))
+    throw new Error(err.detail ?? 'Query failed')
+  }
+  return response.json()
+}
+
 export async function getContainerLogs(
   container: string,
   tail = 200,
