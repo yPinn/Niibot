@@ -56,6 +56,7 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
         self._database_url = database_url
         self._subscribed_channels: set[str] = set()
         self._subscription_ids: dict[str, list[str]] = {}
+        self._channel_names: dict[str, str] = {}  # channel_id → login_name for log enrichment
         self._bot_id = bot_id
 
         self.channels = ChannelRepository(token_database)

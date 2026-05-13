@@ -20,6 +20,10 @@ LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 class _NotifyMixin:
+    def _ch(self, channel_id: str) -> str:
+        """Provided by _ChannelMixin at runtime; falls back to bare id."""
+        return channel_id
+
     # ------------------------------------------------------------------
     # PG NOTIFY handlers
     # ------------------------------------------------------------------
@@ -38,7 +42,7 @@ class _NotifyMixin:
 
             LOGGER.info(
                 f"[NOTIFY] Processing channel toggle: "
-                f"{channel_id} -> {'ENABLE' if enabled else 'DISABLE'}"
+                f"{self._ch(channel_id)} -> {'ENABLE' if enabled else 'DISABLE'}"  # type: ignore[attr-defined]
             )
 
             if enabled:
@@ -51,20 +55,28 @@ class _NotifyMixin:
                             owner_id=self.owner_id,  # type: ignore[attr-defined]
                         )
                         count = await self.command_configs.warm_cache(channel_id)  # type: ignore[attr-defined]
-                        LOGGER.info(f"[NOTIFY] Warmed cache: {count} configs for {channel_id}")
+                        LOGGER.info(
+                            f"[NOTIFY] Warmed cache: {count} configs for {self._ch(channel_id)}"
+                        )  # type: ignore[attr-defined]
                     except Exception as e:
-                        LOGGER.warning(f"[NOTIFY] Failed to warm cache for {channel_id}: {e}")
+                        LOGGER.warning(
+                            f"[NOTIFY] Failed to warm cache for {self._ch(channel_id)}: {e}"
+                        )  # type: ignore[attr-defined]
                     await self._send_welcome_message(channel_id)  # type: ignore[attr-defined]
-                    LOGGER.info(f"[NOTIFY] Instantly subscribed to channel: {channel_id}")
+                    LOGGER.info(f"[NOTIFY] Instantly subscribed to channel: {self._ch(channel_id)}")  # type: ignore[attr-defined]
                 else:
-                    LOGGER.info(f"[NOTIFY] Channel {channel_id} already subscribed, skipping")
+                    LOGGER.info(
+                        f"[NOTIFY] Channel {self._ch(channel_id)} already subscribed, skipping"
+                    )  # type: ignore[attr-defined]
             else:
                 if channel_id in self._subscribed_channels:  # type: ignore[attr-defined]
                     await self.unsubscribe_channel_events(channel_id)  # type: ignore[attr-defined]
                     self._bot_is_mod.discard(channel_id)  # type: ignore[attr-defined]
-                    LOGGER.info(f"[NOTIFY] Instantly unsubscribed from channel: {channel_id}")
+                    LOGGER.info(
+                        f"[NOTIFY] Instantly unsubscribed from channel: {self._ch(channel_id)}"
+                    )  # type: ignore[attr-defined]
                 else:
-                    LOGGER.info(f"[NOTIFY] Channel {channel_id} not subscribed, skipping")
+                    LOGGER.info(f"[NOTIFY] Channel {self._ch(channel_id)} not subscribed, skipping")  # type: ignore[attr-defined]
 
         except Exception as e:
             LOGGER.exception(f"[NOTIFY] Error handling channel toggle notification: {e}")
@@ -79,15 +91,19 @@ class _NotifyMixin:
                 message="Niibot 已上線，準備就緒。",
                 sender=self._bot_id,  # type: ignore[attr-defined]
             )
-            LOGGER.info(f"[NOTIFY] Welcome message sent to channel {channel_id}")
+            LOGGER.info(f"[NOTIFY] Welcome message sent to channel {self._ch(channel_id)}")  # type: ignore[attr-defined]
         except Exception as e:
-            LOGGER.warning(f"[NOTIFY] Failed to send welcome message to {channel_id}: {e}")
+            LOGGER.warning(
+                f"[NOTIFY] Failed to send welcome message to {self._ch(channel_id)}: {e}"
+            )  # type: ignore[attr-defined]
 
     async def _handle_new_token(self, connection, pid, channel, payload) -> None:
         try:
             data = json.loads(payload)
             user_id = data["user_id"]
-            LOGGER.info(f"[NOTIFY] Received new token notification for user_id: {user_id}")
+            LOGGER.info(
+                f"[NOTIFY] Received new token notification for user_id: {self._ch(user_id)}"
+            )  # type: ignore[attr-defined]
 
             if user_id == self._bot_id:  # type: ignore[attr-defined]
                 LOGGER.debug(f"[NOTIFY] Ignoring new token for bot's own account: {user_id}")
@@ -95,7 +111,7 @@ class _NotifyMixin:
 
             token_obj = await self.channels.get_token(user_id)  # type: ignore[attr-defined]
             if not token_obj:
-                LOGGER.warning(f"[NOTIFY] Token not found for user_id: {user_id}")
+                LOGGER.warning(f"[NOTIFY] Token not found for user_id: {self._ch(user_id)}")  # type: ignore[attr-defined]
                 return
 
             try:
@@ -123,9 +139,13 @@ class _NotifyMixin:
                             owner_id=self.owner_id,  # type: ignore[attr-defined]
                         )
                         count = await self.command_configs.warm_cache(user_id)  # type: ignore[attr-defined]
-                        LOGGER.info(f"[NOTIFY] Warmed cache: {count} configs for {user_id}")
+                        LOGGER.info(
+                            f"[NOTIFY] Warmed cache: {count} configs for {self._ch(user_id)}"
+                        )  # type: ignore[attr-defined]
                     except Exception as e:
-                        LOGGER.warning(f"[NOTIFY] Failed to warm cache for {user_id}: {e}")
+                        LOGGER.warning(
+                            f"[NOTIFY] Failed to warm cache for {self._ch(user_id)}: {e}"
+                        )  # type: ignore[attr-defined]
 
                     try:
                         streams = [s async for s in self.fetch_streams(user_ids=[user_id])]  # type: ignore[attr-defined]
@@ -163,7 +183,9 @@ class _NotifyMixin:
             if not channel_id or channel_id not in self._subscribed_channels:  # type: ignore[attr-defined]
                 return
 
-            LOGGER.info(f"[NOTIFY] Config change on {table} for {channel_id}, refreshing cache")
+            LOGGER.info(
+                f"[NOTIFY] Config change on {table} for {self._ch(channel_id)}, refreshing cache"
+            )  # type: ignore[attr-defined]
             await self._refresh_channel_cache(channel_id)  # type: ignore[attr-defined]
         except Exception as e:
             LOGGER.warning(f"[NOTIFY] Error handling config_change: {e}")

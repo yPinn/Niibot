@@ -41,6 +41,10 @@ class _SessionMixin:
             enabled_channels = await self.channels.list_enabled_channels()  # type: ignore[attr-defined]
             LOGGER.info(f"Subscribing to {len(enabled_channels)} enabled channels...")
 
+            for ch in enabled_channels:
+                if ch.channel_name:
+                    self._channel_names[ch.channel_id] = ch.channel_name  # type: ignore[attr-defined]
+
             warmed_channels = self.channels.warm_channel_cache(enabled_channels)  # type: ignore[attr-defined]
             LOGGER.info(f"Warmed channel cache: {warmed_channels} channels")
 

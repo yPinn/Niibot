@@ -3,7 +3,7 @@
 Extracted from Bot to keep bot.py under 300 lines.
 Depends on attributes defined in Bot.__init__:
     self._bot_id, self._subscribed_channels, self._subscription_ids
-    self.channels, self.command_configs, self.redemption_configs, self.owner_id
+    self._channel_names, self.channels, self.command_configs, self.redemption_configs, self.owner_id
 """
 
 from __future__ import annotations
@@ -16,6 +16,15 @@ LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 class _ChannelMixin:
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _ch(self, channel_id: str) -> str:
+        """Return 'login(id)' when name is known, otherwise just 'id'."""
+        name = self._channel_names.get(channel_id)  # type: ignore[attr-defined]
+        return f"{name}({channel_id})" if name else channel_id
+
     # ------------------------------------------------------------------
     # Channel management
     # ------------------------------------------------------------------
@@ -32,6 +41,7 @@ class _ChannelMixin:
             return
 
         await self.channels.upsert_channel(channel_id, channel_name.lower(), enabled=True)  # type: ignore[attr-defined]
+        self._channel_names[channel_id] = channel_name.lower()  # type: ignore[attr-defined]
         LOGGER.info(f"Added channel {channel_name} (ID: {channel_id}) to database")
 
     async def remove_channel_from_db(self, channel_name: str) -> None:
@@ -40,7 +50,7 @@ class _ChannelMixin:
 
     async def subscribe_channel_events(self, broadcaster_user_id: str) -> None:
         if broadcaster_user_id in self._subscribed_channels:  # type: ignore[attr-defined]
-            LOGGER.debug(f"[{broadcaster_user_id}] Already subscribed, skipping")
+            LOGGER.debug(f"[{self._ch(broadcaster_user_id)}] Already subscribed, skipping")
             return
 
         try:
@@ -59,10 +69,12 @@ class _ChannelMixin:
                     else:
                         non_conflict.append(e)
                 if non_conflict:
-                    LOGGER.warning(f"[{broadcaster_user_id}] Subscription errors: {non_conflict}")
+                    LOGGER.warning(
+                        f"[{self._ch(broadcaster_user_id)}] Subscription errors: {non_conflict}"
+                    )
                 if follow_auth_errors:
                     LOGGER.warning(
-                        f"[{broadcaster_user_id}] channel.follow auth failed"
+                        f"[{self._ch(broadcaster_user_id)}] channel.follow auth failed"
                         " — broadcaster needs to reauth with moderator:read:followers"
                     )
                     self._needs_reauth.add(broadcaster_user_id)  # type: ignore[attr-defined]
@@ -81,16 +93,18 @@ class _ChannelMixin:
             # the other subscriptions still exist on the Conduit from the previous session.
             if subscription_ids or not non_conflict:
                 self._subscribed_channels.add(broadcaster_user_id)  # type: ignore[attr-defined]
-                LOGGER.info(f"[{broadcaster_user_id}] Subscribed to events")
+                LOGGER.info(f"[{self._ch(broadcaster_user_id)}] Subscribed to events")
             else:
-                LOGGER.warning(f"[{broadcaster_user_id}] Subscription failed: {non_conflict}")
+                LOGGER.warning(
+                    f"[{self._ch(broadcaster_user_id)}] Subscription failed: {non_conflict}"
+                )
 
         except Exception as e:
-            LOGGER.exception(f"[{broadcaster_user_id}] Failed to subscribe: {e}")
+            LOGGER.exception(f"[{self._ch(broadcaster_user_id)}] Failed to subscribe: {e}")
 
     async def unsubscribe_channel_events(self, broadcaster_user_id: str) -> None:
         if broadcaster_user_id not in self._subscribed_channels:  # type: ignore[attr-defined]
-            LOGGER.debug(f"[{broadcaster_user_id}] Not subscribed, skipping")
+            LOGGER.debug(f"[{self._ch(broadcaster_user_id)}] Not subscribed, skipping")
             return
 
         try:
@@ -100,18 +114,20 @@ class _ChannelMixin:
                 for sub_id in subscription_ids:
                     try:
                         await self.delete_eventsub_subscription(sub_id)  # type: ignore[attr-defined]
-                        LOGGER.debug(f"[{broadcaster_user_id}] Deleted subscription {sub_id}")
+                        LOGGER.debug(
+                            f"[{self._ch(broadcaster_user_id)}] Deleted subscription {sub_id}"
+                        )
                     except Exception as e:
                         LOGGER.warning(
-                            f"[{broadcaster_user_id}] Failed to delete subscription {sub_id}: {e}"
+                            f"[{self._ch(broadcaster_user_id)}] Failed to delete subscription {sub_id}: {e}"
                         )
 
                 del self._subscription_ids[broadcaster_user_id]  # type: ignore[attr-defined]
             else:
-                LOGGER.warning(f"[{broadcaster_user_id}] No subscription IDs found")
+                LOGGER.warning(f"[{self._ch(broadcaster_user_id)}] No subscription IDs found")
 
             self._subscribed_channels.discard(broadcaster_user_id)  # type: ignore[attr-defined]
-            LOGGER.info(f"[{broadcaster_user_id}] Unsubscribed from events")
+            LOGGER.info(f"[{self._ch(broadcaster_user_id)}] Unsubscribed from events")
 
         except Exception as e:
-            LOGGER.exception(f"[{broadcaster_user_id}] Failed to unsubscribe: {e}")
+            LOGGER.exception(f"[{self._ch(broadcaster_user_id)}] Failed to unsubscribe: {e}")
