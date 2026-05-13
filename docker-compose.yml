@@ -191,6 +191,9 @@ services:
     profiles: [api, full]
     ports:
       - "8000:8000"
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     env_file:
       - ./backend/shared.env
       - ./backend/api/.env
