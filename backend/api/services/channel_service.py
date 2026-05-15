@@ -40,8 +40,8 @@ class ChannelService:
                 "channel_id": user_id,
                 "channel_name": channel.channel_name if channel else "",
             }
-        except Exception as e:
-            LOGGER.exception(f"Error getting channel status for user {user_id}: {e}")
+        except Exception:
+            LOGGER.exception("Error getting channel status for user %s", user_id)
             return {
                 "subscribed": False,
                 "channel_id": user_id,
@@ -52,11 +52,9 @@ class ChannelService:
         """Enable or disable a channel."""
         try:
             await self.repo.update_channel_enabled(channel_id, enabled)
-            action = "enabled" if enabled else "disabled"
-            LOGGER.debug(f"Channel {channel_id} {action}")
             return True
-        except Exception as e:
-            LOGGER.exception(f"Error toggling channel {channel_id}: {e}")
+        except Exception:
+            LOGGER.exception("Error toggling channel %s", channel_id)
             return False
 
     async def get_enabled_channels(self) -> list[dict]:
@@ -66,8 +64,8 @@ class ChannelService:
             return [
                 {"channel_id": ch.channel_id, "channel_name": ch.channel_name} for ch in channels
             ]
-        except Exception as e:
-            LOGGER.exception(f"Error getting enabled channels: {e}")
+        except Exception:
+            LOGGER.exception("Error getting enabled channels")
             return []
 
     # ==================== Token ====================
@@ -77,8 +75,8 @@ class ChannelService:
         try:
             token_obj = await self.repo.get_token(user_id)
             return token_obj.token if token_obj else None
-        except Exception as e:
-            LOGGER.exception(f"Error getting token for user {user_id}: {e}")
+        except Exception:
+            LOGGER.exception("Error getting token for user %s", user_id)
             return None
 
     async def get_token_with_refresh(self, user_id: str, twitch_api: TwitchAPIClient) -> str | None:
@@ -126,8 +124,8 @@ class ChannelService:
             LOGGER.info(f"Token refreshed successfully for user: {user_id}")
             return result.access_token
 
-        except Exception as e:
-            LOGGER.exception(f"Error getting token with refresh for user {user_id}: {e}")
+        except Exception:
+            LOGGER.exception("Error getting token with refresh for user %s", user_id)
             return None
 
     async def save_token(
@@ -151,8 +149,8 @@ class ChannelService:
             )
             LOGGER.info(f"Successfully synced token and channel for: {username} ({user_id})")
             return True
-        except Exception as e:
-            LOGGER.exception(f"Error in save_token transaction: {e}")
+        except Exception:
+            LOGGER.exception("Error in save_token for user %s", user_id)
             return False
 
     # ==================== Business Logic ====================
@@ -185,5 +183,5 @@ class ChannelService:
                     LOGGER.error(f"Failed to fetch info for channel {ch.channel_id}: {api_err}")
                     continue
 
-        except Exception as e:
-            LOGGER.exception(f"Error during sync_empty_names: {e}")
+        except Exception:
+            LOGGER.exception("Error during sync_empty_names")

@@ -16,10 +16,14 @@ from core.dependencies import (
     get_db_pool,
     get_twitch_api,
 )
+from core.rate_limit import RateLimiter
 from services import AnalyticsService, TwitchAPIClient
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 _background_tasks: set[asyncio.Task] = set()
+
+# Sync-roles fetches up to 4 full Twitch lists — limit to once per 2 min per channel
+_sync_roles_limiter = RateLimiter(max_calls=1, period=120.0)
 
 
 def _on_background_task_done(task: asyncio.Task) -> None:
@@ -420,6 +424,8 @@ async def sync_channel_roles(
     pool: asyncpg.Pool = Depends(get_db_pool),
 ) -> RoleSyncResult:
     """Bulk-sync roles and follow dates from Twitch into viewer_channel_status."""
+    _sync_roles_limiter.require(channel_id)
+
     from shared.repositories.channel import ChannelRepository
 
     token_row = await ChannelRepository(pool).get_token(channel_id)

@@ -136,6 +136,7 @@ def decode_oauth_state(state: str | None, *, secret: str = "") -> dict:
     try:
         decoded: dict = json.loads(base64.urlsafe_b64decode(state.encode()).decode())
     except (ValueError, binascii.Error, UnicodeDecodeError, json.JSONDecodeError):
+        LOGGER.warning("OAuth state decode failed — malformed or tampered payload")
         return {}
 
     if not isinstance(decoded, dict):

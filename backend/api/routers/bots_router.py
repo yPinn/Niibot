@@ -95,6 +95,7 @@ async def _proxy_health(url: str) -> dict:
             return response.json()
         return {"status": "unhealthy", "bot_offline": True}
     except Exception:
+        LOGGER.debug("Health proxy unavailable: %s", url)
         return {"status": "unhealthy", "bot_offline": True}
 
 

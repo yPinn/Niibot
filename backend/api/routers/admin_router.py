@@ -81,7 +81,9 @@ async def get_admin_channels(
     )
     mod_map: dict[str, str] = {}
     for r in mod_results:
-        if not isinstance(r, Exception):
+        if isinstance(r, Exception):
+            LOGGER.warning("mod status check failed for a channel: %s", r)
+        else:
             cid, status = r  # type: ignore[misc]
             mod_map[cid] = status
 

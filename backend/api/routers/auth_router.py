@@ -1,8 +1,6 @@
 """Authentication API routes"""
 
 import logging
-import time
-from collections import defaultdict
 from typing import Literal
 from urllib.parse import quote as _url_quote
 
@@ -21,6 +19,7 @@ from core.dependencies import (
     get_token_payload,
     get_twitch_api,
 )
+from core.rate_limit import RateLimiter
 from services import AuthService, TwitchAPIClient
 from services.oauth_service import (
     decode_oauth_state,
@@ -33,27 +32,8 @@ from shared.repositories.activation_request import ActivationRequestRepository
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-class _OTPRateLimiter:
-    """Per-user OTP attempt limiter: max 5 attempts per 10-minute window (in-process)."""
-
-    _MAX_ATTEMPTS = 5
-    _WINDOW = 600.0  # seconds
-
-    def __init__(self) -> None:
-        self._attempts: dict[str, list[float]] = defaultdict(list)
-
-    def check_and_record(self, user_id: str) -> bool:
-        """Returns True if the attempt is allowed, False if rate-limited."""
-        now = time.monotonic()
-        cutoff = now - self._WINDOW
-        self._attempts[user_id] = [t for t in self._attempts[user_id] if t > cutoff]
-        if len(self._attempts[user_id]) >= self._MAX_ATTEMPTS:
-            return False
-        self._attempts[user_id].append(now)
-        return True
-
-
-_otp_rate_limiter = _OTPRateLimiter()
+# 5 OTP attempts per 10-minute window per user
+_otp_rate_limiter = RateLimiter(max_calls=5, period=600.0)
 
 router = APIRouter(prefix="/api", tags=["authentication"])
 
@@ -224,10 +204,6 @@ async def get_current_user(
 
     owner_id_cfg = str(get_settings().owner_id)
     is_owner = platform_user_id == owner_id_cfg
-    if not is_owner:
-        LOGGER.debug(
-            f"is_owner=False: platform_user_id={platform_user_id!r} owner_id={owner_id_cfg!r}"
-        )
     return UserInfoResponse(
         **user_info, platform="twitch", theme=theme, is_activated=is_activated, is_owner=is_owner
     )
@@ -290,7 +266,7 @@ async def activate_account(
     if already_activated:
         return {"activated": True}
 
-    if not _otp_rate_limiter.check_and_record(user_id):
+    if not _otp_rate_limiter.allow(user_id):
         raise HTTPException(status_code=429, detail="too_many_attempts")
 
     repo = ActivationCodeRepository(pool)

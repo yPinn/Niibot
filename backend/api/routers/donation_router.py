@@ -25,12 +25,16 @@ from pydantic import BaseModel, Field
 
 from core.config import Settings, get_settings
 from core.dependencies import get_db_pool
+from core.rate_limit import RateLimiter
 from shared.repositories.donation import DonationRepository, generate_trade_no
 from shared.repositories.video_queue import VideoQueueRepository, extract_youtube_info
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/donate", tags=["donation"])
+
+# 10 checkout attempts per minute per IP
+_checkout_limiter = RateLimiter(max_calls=10, period=60.0)
 
 
 def _extract_video_id(youtube_url: str | None, media_share_enabled: bool) -> str | None:
@@ -229,6 +233,7 @@ async def get_public_donate_info(
 async def checkout(
     username: str,
     body: CheckoutRequest,
+    request: Request,
     pool: Pool = Depends(get_db_pool),
     settings: Settings = Depends(get_settings),
 ) -> CheckoutResponse:
@@ -237,6 +242,8 @@ async def checkout(
     The frontend receives gateway_url + form_params and auto-submits a POST form.
     For PayPal, returns a simple redirect (no form signing needed).
     """
+    _checkout_limiter.require(request.client.host if request.client else "unknown")
+
     if body.platform not in _GATEWAYS and body.platform != "paypal":
         raise HTTPException(status_code=400, detail="Unsupported platform")
 

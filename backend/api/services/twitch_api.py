@@ -105,8 +105,8 @@ class TwitchAPIClient:
                 self._app_token_expires_at = now + max(expires_in - 300, 0)
                 return self._app_token
 
-            except Exception as e:
-                LOGGER.exception(f"Error getting app access token: {e}")
+            except Exception:
+                LOGGER.exception("Error getting app access token")
                 return None
 
     async def _helix_get(
@@ -127,8 +127,8 @@ class TwitchAPIClient:
                 params=params,
                 headers=self._app_headers(token),
             )
-        except Exception as e:
-            LOGGER.exception(f"Helix GET /{path} error: {e}")
+        except Exception:
+            LOGGER.exception("Helix GET /%s error", path)
             return None
 
     # ------------------------------------------------------------------
@@ -219,10 +219,10 @@ class TwitchAPIClient:
             )
 
         except httpx.TimeoutException:
-            LOGGER.error("Timeout while exchanging code for token")
+            LOGGER.error("Timeout exchanging OAuth code for token")
             return False, "timeout", None
-        except Exception as e:
-            LOGGER.exception(f"Unexpected error exchanging code: {e}")
+        except Exception:
+            LOGGER.exception("Unexpected error exchanging OAuth code")
             return False, "exchange_failed", None
 
     # ------------------------------------------------------------------
@@ -269,10 +269,10 @@ class TwitchAPIClient:
             )
 
         except httpx.TimeoutException:
-            LOGGER.error("Timeout while refreshing token")
+            LOGGER.error("Timeout refreshing user token")
             return TokenRefreshResult(success=False, error="timeout")
         except Exception as e:
-            LOGGER.exception(f"Unexpected error refreshing token: {e}")
+            LOGGER.exception("Unexpected error refreshing user token")
             return TokenRefreshResult(success=False, error=str(e))
 
     async def validate_token(self, access_token: str) -> bool:
@@ -323,8 +323,8 @@ class TwitchAPIClient:
                 "account_created_at": user.get("created_at"),
             }
 
-        except Exception as e:
-            LOGGER.exception(f"Error fetching user info: {e}")
+        except Exception:
+            LOGGER.exception("Error fetching user info: params=%s", params)
             return None
 
     async def get_users_by_ids(self, user_ids: list[str]) -> list[dict]:
@@ -337,8 +337,8 @@ class TwitchAPIClient:
 
             return cast(list[dict], response.json().get("data", []))
 
-        except Exception as e:
-            LOGGER.exception(f"Error getting users: {e}")
+        except Exception:
+            LOGGER.exception("Error getting users by ids (count=%d)", len(user_ids))
             return []
 
     # ------------------------------------------------------------------
@@ -355,8 +355,8 @@ class TwitchAPIClient:
 
             return cast(list[dict], response.json().get("data", []))
 
-        except Exception as e:
-            LOGGER.exception(f"Error getting streams: {e}")
+        except Exception:
+            LOGGER.exception("Error getting streams")
             return []
 
     # ------------------------------------------------------------------
@@ -375,8 +375,8 @@ class TwitchAPIClient:
 
             return cast(list[dict], response.json().get("data", []))
 
-        except Exception as e:
-            LOGGER.exception(f"Error getting games: {e}")
+        except Exception:
+            LOGGER.exception("Error getting games by ids")
             return []
 
     async def get_games_by_names(self, game_names: list[str]) -> list[dict]:
@@ -391,8 +391,8 @@ class TwitchAPIClient:
 
             return cast(list[dict], response.json().get("data", []))
 
-        except Exception as e:
-            LOGGER.exception(f"Error getting games by names: {e}")
+        except Exception:
+            LOGGER.exception("Error getting games by names")
             return []
 
     # ------------------------------------------------------------------
@@ -415,10 +415,11 @@ class TwitchAPIClient:
                         body_hint = response.json().get("message", "") or response.text[:200]
                     except Exception:
                         body_hint = response.text[:200]
+                status_str = response.status_code if response else "no_response"
                 LOGGER.warning(
                     "Paginated fetch of %s stopped: status=%s%s",
                     path,
-                    response.status_code if response else "no_response",
+                    status_str,
                     f" — {body_hint}" if body_hint else "",
                 )
                 break
@@ -496,8 +497,8 @@ class TwitchAPIClient:
             if not response or response.status_code != 200:
                 return False
             return len(response.json().get("data", [])) > 0
-        except Exception as e:
-            LOGGER.exception(f"Error checking moderator status: {e}")
+        except Exception:
+            LOGGER.exception("Error checking moderator status for broadcaster %s", broadcaster_id)
             return False
 
     async def get_bot_mod_status(self, broadcaster_id: str, bot_id: str, access_token: str) -> str:
@@ -519,8 +520,10 @@ class TwitchAPIClient:
             if response.status_code != 200:
                 return "token_error"
             return "mod" if len(response.json().get("data", [])) > 0 else "no_mod"
-        except Exception as e:
-            LOGGER.exception(f"Error checking detailed moderator status: {e}")
+        except Exception:
+            LOGGER.exception(
+                "Error checking detailed mod status for broadcaster %s", broadcaster_id
+            )
             return "token_error"
 
     async def get_mod_status(self, broadcaster_id: str, user_id: str, token: str) -> bool:
@@ -632,8 +635,8 @@ class TwitchAPIClient:
                 for r in response.json().get("data", [])
             ]
 
-        except Exception as e:
-            LOGGER.exception(f"Error getting custom rewards: {e}")
+        except Exception:
+            LOGGER.exception("Error getting custom rewards for broadcaster %s", broadcaster_id)
             return []
 
     # ------------------------------------------------------------------
@@ -658,8 +661,8 @@ class TwitchAPIClient:
 
             return cast(list[dict], response.json().get("data", []))
 
-        except Exception as e:
-            LOGGER.exception(f"Error getting videos: {e}")
+        except Exception:
+            LOGGER.exception("Error getting videos for user %s", user_id)
             return []
 
     # ------------------------------------------------------------------
@@ -682,8 +685,10 @@ class TwitchAPIClient:
                 return None
             data = response.json().get("data", [])
             return data[0] if data else None
-        except Exception as e:
-            LOGGER.exception(f"Error checking subscription status: {e}")
+        except Exception:
+            LOGGER.exception(
+                "Error checking subscription: broadcaster=%s user=%s", broadcaster_id, user_id
+            )
             return None
 
     async def get_follow_status(self, broadcaster_id: str, user_id: str, token: str) -> dict | None:
