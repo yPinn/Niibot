@@ -14,9 +14,12 @@ from shared.repositories.video_queue import (
     _get_twitch_app_token,
     _parse_iso8601_duration,
     _settings_cache,
+    extract_bilibili_bvid,
+    extract_twitch_clip_slug,
     extract_youtube_id,
     extract_youtube_info,
     fetch_yt_info,
+    resolve_bilibili_url,
 )
 
 # ---------------------------------------------------------------------------
@@ -143,6 +146,135 @@ class TestExtractYoutubeInfo:
         video_id, is_vertical = extract_youtube_info("https://www.twitch.tv/something")
         assert video_id is None
         assert is_vertical is False
+
+
+class TestExtractBilibilibvid:
+    def test_standard_url(self):
+        assert (
+            extract_bilibili_bvid("https://www.bilibili.com/video/BV1GJ411x7h7") == "BV1GJ411x7h7"
+        )
+
+    def test_url_without_scheme(self):
+        assert extract_bilibili_bvid("bilibili.com/video/BV1GJ411x7h7") == "BV1GJ411x7h7"
+
+    def test_url_with_trailing_params(self):
+        assert (
+            extract_bilibili_bvid("https://www.bilibili.com/video/BV1GJ411x7h7?p=1&t=30")
+            == "BV1GJ411x7h7"
+        )
+
+    def test_extracts_from_mid_sentence(self):
+        assert (
+            extract_bilibili_bvid("看這個 https://www.bilibili.com/video/BV1GJ411x7h7 謝謝")
+            == "BV1GJ411x7h7"
+        )
+
+    def test_returns_none_for_short_url(self):
+        assert extract_bilibili_bvid("https://b23.tv/Ab1Cd2E") is None
+
+    def test_returns_none_for_non_bilibili_url(self):
+        assert extract_bilibili_bvid("https://www.youtube.com/watch?v=dQw4w9WgXcQ") is None
+
+    def test_returns_none_for_plain_text(self):
+        assert extract_bilibili_bvid("no url here") is None
+
+
+@pytest.mark.asyncio
+class TestResolveBilibiliUrl:
+    async def test_full_url_resolved_without_http_call(self):
+        result = await resolve_bilibili_url("https://www.bilibili.com/video/BV1GJ411x7h7")
+        assert result == "BV1GJ411x7h7"
+
+    async def test_returns_none_for_non_bilibili_url(self):
+        result = await resolve_bilibili_url("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+        assert result is None
+
+    async def test_short_url_follows_redirect(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        mock_resp = MagicMock()
+        mock_resp.url = "https://www.bilibili.com/video/BV1GJ411x7h7"
+        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_resp.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = MagicMock()
+        mock_session.get.return_value = mock_resp
+        mock_session.close = AsyncMock(return_value=None)
+
+        with patch("aiohttp.ClientSession", return_value=mock_session):
+            result = await resolve_bilibili_url("https://b23.tv/Ab1Cd2E")
+
+        assert result == "BV1GJ411x7h7"
+        mock_session.get.assert_called_once()
+
+    async def test_short_url_network_error_returns_none(self):
+        from unittest.mock import patch
+
+        import aiohttp
+
+        with patch("aiohttp.ClientSession") as mock_cls:
+            mock_session = MagicMock()
+            mock_session.get.side_effect = aiohttp.ClientError("connection refused")
+            mock_session.close = AsyncMock(return_value=None)
+            mock_cls.return_value = mock_session
+
+            result = await resolve_bilibili_url("https://b23.tv/Ab1Cd2E")
+
+        assert result is None
+
+    async def test_short_url_redirect_to_non_bilibili_returns_none(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        mock_resp = MagicMock()
+        mock_resp.url = "https://some-other-site.com/page"
+        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_resp.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = MagicMock()
+        mock_session.get.return_value = mock_resp
+        mock_session.close = AsyncMock(return_value=None)
+
+        with patch("aiohttp.ClientSession", return_value=mock_session):
+            result = await resolve_bilibili_url("https://b23.tv/Ab1Cd2E")
+
+        assert result is None
+
+
+class TestExtractTwitchClipSlug:
+    def test_clips_domain(self):
+        assert (
+            extract_twitch_clip_slug("https://clips.twitch.tv/AwkwardHelplessSmoothiePogChamp")
+            == "AwkwardHelplessSmoothiePogChamp"
+        )
+
+    def test_channel_clip_url(self):
+        assert (
+            extract_twitch_clip_slug(
+                "https://www.twitch.tv/streamer/clip/AwkwardHelplessSmoothiePogChamp"
+            )
+            == "AwkwardHelplessSmoothiePogChamp"
+        )
+
+    def test_url_without_scheme(self):
+        assert (
+            extract_twitch_clip_slug("clips.twitch.tv/AwkwardHelplessSmoothiePogChamp")
+            == "AwkwardHelplessSmoothiePogChamp"
+        )
+
+    def test_slug_with_hyphens(self):
+        assert (
+            extract_twitch_clip_slug("https://clips.twitch.tv/Slug-With-Hyphens_123")
+            == "Slug-With-Hyphens_123"
+        )
+
+    def test_returns_none_for_non_clip_twitch_url(self):
+        assert extract_twitch_clip_slug("https://www.twitch.tv/streamer") is None
+
+    def test_returns_none_for_non_twitch_url(self):
+        assert extract_twitch_clip_slug("https://www.youtube.com/watch?v=dQw4w9WgXcQ") is None
+
+    def test_returns_none_for_plain_text(self):
+        assert extract_twitch_clip_slug("no url here") is None
 
 
 class TestParseIso8601Duration:
