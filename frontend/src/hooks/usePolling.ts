@@ -10,6 +10,12 @@ export interface UsePollingOptions {
    * Defaults to true.
    */
   enabled?: boolean
+  /**
+   * When true, skips the immediate call on mount and only runs on interval ticks.
+   * Use when a separate effect already handles the initial fetch.
+   * Defaults to false.
+   */
+  skipInitialCall?: boolean
 }
 
 /**
@@ -22,7 +28,12 @@ export interface UsePollingOptions {
  * Usage:
  *   usePolling({ fetchFn: fetchState, intervalMs: 5_000, enabled: !!username })
  */
-export function usePolling({ fetchFn, intervalMs, enabled = true }: UsePollingOptions): void {
+export function usePolling({
+  fetchFn,
+  intervalMs,
+  enabled = true,
+  skipInitialCall = false,
+}: UsePollingOptions): void {
   // Always hold the latest fetchFn without recreating the interval.
   const fetchRef = useRef(fetchFn)
   useEffect(() => {
@@ -33,8 +44,8 @@ export function usePolling({ fetchFn, intervalMs, enabled = true }: UsePollingOp
     if (!enabled) return
 
     const run = () => fetchRef.current()
-    run()
+    if (!skipInitialCall) run()
     const id = setInterval(run, intervalMs)
     return () => clearInterval(id)
-  }, [intervalMs, enabled])
+  }, [intervalMs, enabled, skipInitialCall])
 }

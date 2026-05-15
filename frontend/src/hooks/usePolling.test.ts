@@ -42,6 +42,16 @@ describe('usePolling', () => {
     expect(fetchFn).not.toHaveBeenCalled()
   })
 
+  it('skips the immediate call when skipInitialCall is true', () => {
+    const fetchFn = vi.fn().mockResolvedValue(undefined)
+    renderHook(() => usePolling({ fetchFn, intervalMs: 1_000, skipInitialCall: true }))
+    // no immediate call on mount
+    expect(fetchFn).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(3_000)
+    // only interval ticks, no leading call
+    expect(fetchFn).toHaveBeenCalledTimes(3)
+  })
+
   it('starts polling when enabled transitions from false to true', () => {
     const fetchFn = vi.fn().mockResolvedValue(undefined)
     const { rerender } = renderHook(

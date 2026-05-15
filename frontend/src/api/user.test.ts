@@ -9,6 +9,7 @@ vi.mock('@/api/config', () => ({
       user: '/api/auth/user',
       logout: '/api/auth/logout',
       activate: '/api/auth/activate',
+      pendingCode: '/api/auth/pending-code',
       requestActivation: '/api/auth/request-activation',
       activationRequest: '/api/auth/activation-request',
     },
@@ -23,6 +24,7 @@ import {
   activateAccount,
   getActivationRequestStatus,
   getCurrentUser,
+  getPendingActivationCode,
   logout,
   requestActivation,
   updateUserPreferences,
@@ -275,6 +277,36 @@ describe('requestActivation', () => {
   it('throws the default message when the error body has no detail field', async () => {
     mockApiFetch.mockResolvedValue(new Response('{}', { status: 500 }))
     await expect(requestActivation()).rejects.toThrow('request_failed')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// getPendingActivationCode
+// ---------------------------------------------------------------------------
+
+describe('getPendingActivationCode', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('returns the code string on a 200 response', async () => {
+    mockApiFetch.mockResolvedValue(
+      new Response(JSON.stringify({ code: 'ABC123' }), { status: 200 })
+    )
+    const result = await getPendingActivationCode()
+    expect(result).toBe('ABC123')
+  })
+
+  it('returns null when code is null in the response body', async () => {
+    mockApiFetch.mockResolvedValue(new Response(JSON.stringify({ code: null }), { status: 200 }))
+    const result = await getPendingActivationCode()
+    expect(result).toBeNull()
+  })
+
+  it('returns null when the response is not ok', async () => {
+    mockApiFetch.mockResolvedValue(new Response('', { status: 404 }))
+    const result = await getPendingActivationCode()
+    expect(result).toBeNull()
   })
 })
 
