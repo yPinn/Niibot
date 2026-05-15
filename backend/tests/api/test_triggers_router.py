@@ -334,3 +334,162 @@ class TestToggleTrigger:
         ):
             r = _make_client().patch("/api/triggers/configs/mytest/toggle", json={"enabled": True})
         assert r.status_code == 500
+
+
+# ---------------------------------------------------------------------------
+# GET /api/triggers/configs
+# ---------------------------------------------------------------------------
+
+
+class TestGetTriggerConfigs:
+    def test_returns_trigger_list(self):
+        import unittest.mock as um
+
+        import services.message_trigger_service as svc_mod
+
+        with um.patch.object(
+            svc_mod.MessageTriggerService,
+            "list_triggers",
+            um.AsyncMock(return_value=[_TRIGGER_ROW]),
+        ):
+            r = _make_client().get("/api/triggers/configs")
+        assert r.status_code == 200
+        assert len(r.json()) == 1
+        assert r.json()[0]["trigger_name"] == "mytest"
+
+    def test_returns_empty_list(self):
+        import unittest.mock as um
+
+        import services.message_trigger_service as svc_mod
+
+        with um.patch.object(
+            svc_mod.MessageTriggerService, "list_triggers", um.AsyncMock(return_value=[])
+        ):
+            r = _make_client().get("/api/triggers/configs")
+        assert r.status_code == 200
+        assert r.json() == []
+
+    def test_service_exception_returns_500(self):
+        import unittest.mock as um
+
+        import services.message_trigger_service as svc_mod
+
+        with um.patch.object(
+            svc_mod.MessageTriggerService, "list_triggers", um.AsyncMock(side_effect=RuntimeError)
+        ):
+            r = _make_client().get("/api/triggers/configs")
+        assert r.status_code == 500
+
+
+# ---------------------------------------------------------------------------
+# POST /api/triggers/configs — error branches
+# ---------------------------------------------------------------------------
+
+
+class TestCreateTriggerErrors:
+    def test_value_error_returns_400(self):
+        import unittest.mock as um
+
+        import services.message_trigger_service as svc_mod
+
+        with um.patch.object(
+            svc_mod.MessageTriggerService,
+            "create_trigger",
+            um.AsyncMock(side_effect=ValueError("duplicate trigger name")),
+        ):
+            r = _make_client().post(
+                "/api/triggers/configs",
+                json={"trigger_name": "dup", "pattern": "hi", "response": "ok"},
+            )
+        assert r.status_code == 400
+        assert "duplicate" in r.json()["detail"]
+
+    def test_generic_exception_returns_500(self):
+        import unittest.mock as um
+
+        import services.message_trigger_service as svc_mod
+
+        with um.patch.object(
+            svc_mod.MessageTriggerService,
+            "create_trigger",
+            um.AsyncMock(side_effect=RuntimeError),
+        ):
+            r = _make_client().post(
+                "/api/triggers/configs",
+                json={"trigger_name": "test", "pattern": "hi", "response": "ok"},
+            )
+        assert r.status_code == 500
+
+
+# ---------------------------------------------------------------------------
+# PUT /api/triggers/configs/{name} — error branches
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateTriggerErrors:
+    def test_value_error_returns_400(self):
+        import unittest.mock as um
+
+        import services.message_trigger_service as svc_mod
+
+        with um.patch.object(
+            svc_mod.MessageTriggerService,
+            "update_trigger",
+            um.AsyncMock(side_effect=ValueError("bad value")),
+        ):
+            r = _make_client().put("/api/triggers/configs/mytest", json={"enabled": True})
+        assert r.status_code == 400
+        assert "bad value" in r.json()["detail"]
+
+    def test_generic_exception_returns_500(self):
+        import unittest.mock as um
+
+        import services.message_trigger_service as svc_mod
+
+        with um.patch.object(
+            svc_mod.MessageTriggerService,
+            "update_trigger",
+            um.AsyncMock(side_effect=RuntimeError),
+        ):
+            r = _make_client().put("/api/triggers/configs/mytest", json={"enabled": True})
+        assert r.status_code == 500
+
+
+# ---------------------------------------------------------------------------
+# DELETE /api/triggers/configs/{name}
+# ---------------------------------------------------------------------------
+
+
+class TestDeleteTrigger:
+    def test_delete_success_returns_204(self):
+        import unittest.mock as um
+
+        import services.message_trigger_service as svc_mod
+
+        with um.patch.object(
+            svc_mod.MessageTriggerService, "delete_trigger", um.AsyncMock(return_value=True)
+        ):
+            r = _make_client().delete("/api/triggers/configs/mytest")
+        assert r.status_code == 204
+
+    def test_delete_not_found_returns_404(self):
+        import unittest.mock as um
+
+        import services.message_trigger_service as svc_mod
+
+        with um.patch.object(
+            svc_mod.MessageTriggerService, "delete_trigger", um.AsyncMock(return_value=False)
+        ):
+            r = _make_client().delete("/api/triggers/configs/missing")
+        assert r.status_code == 404
+
+    def test_delete_exception_returns_500(self):
+        import unittest.mock as um
+
+        import services.message_trigger_service as svc_mod
+
+        with um.patch.object(
+            svc_mod.MessageTriggerService, "delete_trigger", um.AsyncMock(side_effect=RuntimeError)
+        ):
+            r = _make_client().delete("/api/triggers/configs/mytest")
+        assert r.status_code == 500
