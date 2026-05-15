@@ -240,3 +240,17 @@ class TestGetTopCommands:
         ):
             r = _make_client().get("/api/analytics/top-commands")
         assert r.status_code == 500
+
+
+# ── POST /api/analytics/sync-roles — rate limit ──
+
+
+class TestSyncRolesRateLimit:
+    def test_rate_limit_exceeded_returns_429(self):
+        """_sync_roles_limiter.require() raising 429 must propagate from the endpoint."""
+        from routers.analytics_router import _sync_roles_limiter
+
+        with patch.object(_sync_roles_limiter, "allow", return_value=False):
+            r = _make_client().post("/api/analytics/sync-roles")
+
+        assert r.status_code == 429

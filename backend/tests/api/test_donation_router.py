@@ -327,3 +327,22 @@ class TestWebhookAmountValidation:
         form = {**self._BASE_FORM, "TradeAmt": "200.50"}
         result = await self._call(form, order_amount=200)
         assert result == "0|Error"
+
+
+# ---------------------------------------------------------------------------
+# POST /api/donate/{username}/checkout — checkout rate limit
+# ---------------------------------------------------------------------------
+
+
+class TestCheckoutRateLimit:
+    def test_rate_limit_exceeded_returns_429(self):
+        """_checkout_limiter.require() raising 429 must propagate from checkout."""
+        from routers.donation_router import _checkout_limiter
+
+        with patch.object(_checkout_limiter, "allow", return_value=False):
+            r = _make_client().post(
+                "/api/donate/testuser/checkout",
+                json={"platform": "ecpay", "amount": 100, "return_url": "https://niibot.tv/done"},
+            )
+
+        assert r.status_code == 429

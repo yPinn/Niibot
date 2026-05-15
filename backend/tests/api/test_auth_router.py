@@ -411,3 +411,24 @@ class TestUpdatePreferences:
         )
         assert r.status_code == 200
         assert r.json()["theme"] == theme
+
+
+# ---------------------------------------------------------------------------
+# POST /api/auth/activate — OTP rate limit
+# ---------------------------------------------------------------------------
+
+
+class TestActivateRateLimit:
+    def test_rate_limit_exceeded_returns_429(self):
+        """_otp_rate_limiter.allow() returning False must produce 429 too_many_attempts."""
+        from routers.auth_router import _otp_rate_limiter
+
+        pool = _make_pool(fetchval=None)  # fetchval=None → not yet activated
+        client = _make_client(pool=pool)
+        client.cookies.set("auth_token", _token())
+
+        with patch.object(_otp_rate_limiter, "allow", return_value=False):
+            r = client.post("/api/auth/activate", json={"code": "123456"})
+
+        assert r.status_code == 429
+        assert r.json()["detail"] == "too_many_attempts"
