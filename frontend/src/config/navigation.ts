@@ -51,6 +51,17 @@ export const navigationData: NavigationData = {
       ],
     },
     {
+      title: 'Analytics',
+      url: '#',
+      icon: 'fa-solid fa-chart-mixed',
+      items: [
+        {
+          title: 'Insights',
+          url: '/analytics/insights',
+        },
+      ],
+    },
+    {
       title: 'Modules',
       url: '#',
       icon: 'fa-solid fa-puzzle-piece',
@@ -70,17 +81,6 @@ export const navigationData: NavigationData = {
         {
           title: 'Crosshair Repo',
           url: '/modules/crosshairs',
-        },
-      ],
-    },
-    {
-      title: 'Analytics',
-      url: '#',
-      icon: 'fa-solid fa-chart-mixed',
-      items: [
-        {
-          title: 'Insights',
-          url: '/analytics/insights',
         },
       ],
     },
