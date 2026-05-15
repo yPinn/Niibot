@@ -24,22 +24,21 @@ import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
 // ---- Types ----
 
-type BgOption = 'transparent' | 'dark' | 'light'
-type FontSizeOption = 'small' | 'medium' | 'large'
+type BgOption = 'transparent' | 'color'
+type FontSizeOption = number
 type SpacingOption = 'compact' | 'normal' | 'loose'
-type MsgBgOption = 'none' | 'dark' | 'rounded'
+type MsgBgOption = 'none' | 'dark' | 'rounded' | 'bubble'
 type AlignOption = 'left' | 'right'
 type AnimDirOption = 'left' | 'right'
 
 interface ChatCssSettings {
   background: BgOption
+  bgColor: string
   fontSize: FontSizeOption
   spacing: SpacingOption
   messageBg: MsgBgOption
   align: AlignOption
   hideHeader: boolean
-  hideInput: boolean
-  hideTimestamp: boolean
   hideBadges: boolean
   textShadow: boolean
   animation: boolean
@@ -48,13 +47,12 @@ interface ChatCssSettings {
 
 const DEFAULT_SETTINGS: ChatCssSettings = {
   background: 'transparent',
-  fontSize: 'medium',
+  bgColor: '#0e0e0e',
+  fontSize: 14,
   spacing: 'normal',
-  messageBg: 'dark',
+  messageBg: 'bubble',
   align: 'left',
   hideHeader: true,
-  hideInput: true,
-  hideTimestamp: true,
   hideBadges: false,
   textShadow: false,
   animation: true,
@@ -66,7 +64,22 @@ const STORAGE_KEY = 'niibot:chat-overlay-css'
 function loadSettings(): ChatCssSettings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) }
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      // Migrate old 'dark'/'light' presets to 'color'
+      if (parsed.background === 'dark') {
+        parsed.background = 'color'
+        parsed.bgColor = '#0e0e0e'
+      }
+      if (parsed.background === 'light') {
+        parsed.background = 'color'
+        parsed.bgColor = '#f0f0f0'
+      }
+      if (parsed.fontSize === 'small') parsed.fontSize = 14
+      if (parsed.fontSize === 'medium') parsed.fontSize = 16
+      if (parsed.fontSize === 'large') parsed.fontSize = 18
+      return { ...DEFAULT_SETTINGS, ...parsed }
+    }
   } catch {
     // ignore JSON parse errors — fall back to defaults
   }
@@ -78,55 +91,81 @@ function loadSettings(): ChatCssSettings {
 function generateCss(s: ChatCssSettings): string {
   const parts: string[] = []
 
-  parts.push('/* Twitch Chat Override — 貼入 OBS Browser Source > Custom CSS */')
+  parts.push('/* Twitch Chat Override — paste into OBS Browser Source > Custom CSS */')
 
-  const bg =
-    s.background === 'dark'
-      ? 'rgba(14, 14, 14, 0.85)'
-      : s.background === 'light'
-        ? 'rgba(240, 240, 240, 0.90)'
-        : 'transparent'
+  const bg = s.background === 'color' ? s.bgColor : 'transparent'
 
-  parts.push(`body {\n  background-color: ${bg} !important;\n  overflow: hidden !important;\n}`)
+  // Set body background; always clear inner React containers so body colour shows through
+  parts.push(
+    `body {\n  background-color: ${bg} !important;\n  overflow: hidden !important;\n}\n\ndiv.twilight-minimal-root,\ndiv.popout-chat-page,\nsection.chat-room,\n.stream-chat,\n.chat-room,\n.chat-list,\n.scrollable-area {\n  background-color: transparent !important;\n}`
+  )
+
+  // Always suppress noise elements in an OBS overlay context
+  parts.push(
+    `.chat-line__status,\n[class*="leaderboard"],\n.community-highlight-stack__card,\n.new-chatter-ritual,\n.consent-banner,\n.paid-pinned-chat-message-list,\n.paid-pinned-chat-message-content-wrapper,\n.chat-author__intl-login,\nbutton[aria-label*="reply"],\nbutton[aria-label*="返信"] {\n  display: none !important;\n}`
+  )
 
   if (s.hideHeader) {
-    parts.push(`.chat-header,\n.stream-chat-header {\n  display: none !important;\n}`)
+    parts.push(`.stream-chat-header,\ndiv.rooms-header {\n  display: none !important;\n}`)
   }
 
-  if (s.hideInput) {
-    parts.push(`.chat-input-section {\n  display: none !important;\n}`)
-  }
+  // Input is always hidden — this overlay is display-only
+  parts.push(`.chat-input {\n  display: none !important;\n}`)
 
   if (s.hideBadges) {
     parts.push(`.chat-badge {\n  display: none !important;\n}`)
   }
 
-  const fontSize = { small: '13px', medium: '15px', large: '18px' }[s.fontSize]
-  const marginY = { compact: '1px', normal: '2px', loose: '5px' }[s.spacing]
-  const [msgBg, msgPad, msgRadius] =
-    s.messageBg === 'dark'
-      ? ['rgba(0, 0, 0, 0.60)', '4px 8px', '4px']
-      : s.messageBg === 'rounded'
-        ? ['rgba(0, 0, 0, 0.75)', '5px 10px', '6px']
-        : ['transparent', '2px 4px', '0']
+  const fontSize = `${s.fontSize}px`
+  const marginY = { compact: '2px', normal: '4px', loose: '8px' }[s.spacing]
 
-  parts.push(
-    `.chat-line__message {\n  font-size: ${fontSize} !important;\n  background: ${msgBg} !important;\n  padding: ${msgPad} !important;\n  border-radius: ${msgRadius} !important;\n  margin: ${marginY} 0 !important;\n}`
-  )
-
-  if (s.hideTimestamp) {
-    parts.push(`.chat-line__timestamp {\n  display: none !important;\n}`)
-  }
-
-  if (s.textShadow) {
+  if (s.messageBg === 'bubble') {
+    const bubbleRadius = s.align === 'right' ? '14px 3px 14px 14px' : '3px 14px 14px 14px'
     parts.push(
-      `.chat-line__message * {\n  text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.9) !important;\n}`
+      `.chat-line__message {\n  display: flex !important;\n  flex-direction: column !important;\n  align-items: ${s.align === 'right' ? 'flex-end' : 'flex-start'} !important;\n  font-size: ${fontSize} !important;\n  background: transparent !important;\n  padding: 0 !important;\n  margin: ${marginY} 0 !important;\n}`
+    )
+    parts.push(
+      `.chat-line__username-container {\n  display: flex !important;\n  align-items: center !important;\n  font-size: 0.78em !important;\n  margin-bottom: 3px !important;\n}`
+    )
+    // Username floats on background — always add shadow for legibility
+    parts.push(
+      `.chat-author__display-name {\n  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85), 0 1px 6px rgba(0, 0, 0, 0.6) !important;\n}`
+    )
+    // Hide the colon separator between username and message
+    parts.push(`.chat-line__username-container > span:last-child {\n  display: none !important;\n}`)
+    // Bubble: always dark bg + white text regardless of body background
+    parts.push(
+      `[data-a-target="chat-line-message-body"],\n[data-test-selector="chat-line-message-body"] {\n  font-size: ${fontSize} !important;\n  line-height: 1.5 !important;\n  background: rgba(0, 0, 0, 0.68) !important;\n  border-radius: ${bubbleRadius} !important;\n  padding: 8px 14px !important;\n  max-width: 85% !important;\n  color: #fff !important;\n  display: block !important;\n}`
+    )
+    // Broadcaster messages appear on the opposite side
+    const bcAlignItems = s.align === 'right' ? 'flex-start' : 'flex-end'
+    const bcRadius = s.align === 'right' ? '3px 14px 14px 14px' : '14px 3px 14px 14px'
+    parts.push(
+      `.chat-line__message:has(.chat-badge[alt="Broadcaster"]) {\n  align-items: ${bcAlignItems} !important;\n}\n.chat-line__message:has(.chat-badge[alt="Broadcaster"]) [data-a-target="chat-line-message-body"],\n.chat-line__message:has(.chat-badge[alt="Broadcaster"]) [data-test-selector="chat-line-message-body"] {\n  border-radius: ${bcRadius} !important;\n}`
+    )
+  } else {
+    const [msgBg, msgPad, msgRadius] =
+      s.messageBg === 'dark'
+        ? ['rgba(0, 0, 0, 0.52)', '4px 10px', '4px']
+        : s.messageBg === 'rounded'
+          ? ['rgba(0, 0, 0, 0.62)', '6px 12px', '12px']
+          : ['transparent', '2px 0', '0']
+    parts.push(
+      `.chat-line__message {\n  font-size: ${fontSize} !important;\n  background: ${msgBg} !important;\n  padding: ${msgPad} !important;\n  border-radius: ${msgRadius} !important;\n  margin: ${marginY} 0 !important;\n}`
     )
   }
 
-  if (s.align === 'right') {
+  if (s.textShadow) {
+    parts.push(`span.text-fragment {\n  text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.9) !important;\n}`)
+  }
+
+  if (s.align === 'right' && s.messageBg !== 'bubble') {
     parts.push(
-      `.chat-list,\n.chat-list--default {\n  align-items: flex-end !important;\n}\n\n.chat-line__message {\n  text-align: right !important;\n}`
+      `.chat-list,\n.chat-scrollable-area__message-container {\n  align-items: flex-end !important;\n}\n\n.chat-line__message {\n  text-align: right !important;\n}`
+    )
+  } else if (s.align === 'right' && s.messageBg === 'bubble') {
+    parts.push(
+      `.chat-list,\n.chat-scrollable-area__message-container {\n  align-items: flex-end !important;\n}`
     )
   }
 
@@ -142,24 +181,23 @@ function generateCss(s: ChatCssSettings): string {
 
 // ---- Demo sequence ----
 
-type DemoMsgType = 'chat' | 'reply' | 'sub' | 'resub' | 'gift-sub' | 'redemption' | 'raid'
+type DemoMsgType = 'chat' | 'reply'
 
 interface DemoMsg {
   id: string
   type: DemoMsgType
   username: string
   color: string
-  text?: string
+  text: string
   replyTo?: string
-  detail?: string
   is_mod?: boolean
   is_sub?: boolean
   is_vip?: boolean
+  is_broadcaster?: boolean
   delay: number
 }
 
 const SEQUENCE: DemoMsg[] = [
-  // — 開場閒聊 —
   {
     id: 'p1',
     type: 'chat',
@@ -170,13 +208,22 @@ const SEQUENCE: DemoMsg[] = [
     delay: 0,
   },
   {
+    id: 'b1',
+    type: 'chat',
+    username: 'Streamer',
+    color: '#a970ff',
+    is_broadcaster: true,
+    text: '今天打 FPS！',
+    delay: 160,
+  },
+  {
     id: 'p2',
     type: 'chat',
     username: 'Bob',
     color: '#ff9f43',
     is_mod: true,
     text: 'PogChamp 開始了',
-    delay: 280,
+    delay: 400,
   },
   {
     id: 'p3',
@@ -185,7 +232,7 @@ const SEQUENCE: DemoMsg[] = [
     color: '#c678dd',
     is_sub: true,
     text: '第 12 個月了還在這 Clap',
-    delay: 540,
+    delay: 660,
   },
   {
     id: 'p4',
@@ -195,113 +242,73 @@ const SEQUENCE: DemoMsg[] = [
     is_sub: true,
     replyTo: 'Alice',
     text: '他說打遊戲啦',
-    delay: 800,
+    delay: 920,
   },
-  // — 訂閱事件 —
+  {
+    id: 'b2',
+    type: 'chat',
+    username: 'Streamer',
+    color: '#a970ff',
+    is_broadcaster: true,
+    text: '準備好了嗎！',
+    delay: 1060,
+  },
   {
     id: 'p5',
-    type: 'sub',
-    username: 'NewSubscriber',
-    color: '#c678dd',
-    detail: 'Tier 1',
-    delay: 1500,
-  },
-  {
-    id: 'p6',
     type: 'chat',
     username: 'Bob',
     color: '#ff9f43',
     is_mod: true,
-    text: 'Clap Clap 歡迎訂閱！',
-    delay: 1800,
+    is_sub: true,
+    text: 'gg 開打！LUL',
+    delay: 1270,
   },
+  { id: 'p6', type: 'chat', username: 'Viewer7', color: '#00e5ff', text: '哈哈哈', delay: 1520 },
   {
     id: 'p7',
-    type: 'resub',
-    username: 'LoyalFan',
-    color: '#c678dd',
-    detail: '12 個月',
-    delay: 2300,
-  },
-  {
-    id: 'p8',
-    type: 'chat',
-    username: 'Alice',
-    color: '#6bcbff',
-    is_vip: true,
-    text: '哇 12 個月！感謝支持',
-    delay: 2600,
-  },
-  // — 贈訂與兌換 —
-  { id: 'p9', type: 'gift-sub', username: 'GiftKing', color: '#e5c07b', detail: '5', delay: 3200 },
-  {
-    id: 'p10',
-    type: 'redemption',
-    username: 'Fan99',
-    color: '#ff6b6b',
-    is_sub: true,
-    text: '一路向北',
-    detail: '點歌請求',
-    delay: 3850,
-  },
-  // — 頻繁聊天 —
-  {
-    id: 'p11',
-    type: 'chat',
-    username: 'Bob',
-    color: '#ff9f43',
-    is_mod: true,
-    is_sub: true,
-    text: '我的歌！ LUL',
-    delay: 4150,
-  },
-  {
-    id: 'p12',
-    type: 'chat',
-    username: 'Charlie',
-    color: '#b5ff6b',
-    is_sub: true,
-    text: 'LULW LULW',
-    delay: 4300,
-  },
-  { id: 'p13', type: 'chat', username: 'Viewer7', color: '#00e5ff', text: '哈哈哈', delay: 4450 },
-  {
-    id: 'p14',
     type: 'chat',
     username: 'VIPMember',
     color: '#f7c59f',
     is_vip: true,
     is_sub: true,
     text: '太猛了吧 KEKW',
-    delay: 4600,
-  },
-  // — 突襲 —
-  { id: 'p15', type: 'raid', username: 'RaidBoss', color: '#ff6b6b', detail: '50', delay: 5400 },
-  {
-    id: 'p16',
-    type: 'chat',
-    username: 'NewRaider',
-    color: '#98c379',
-    text: '嗨大家好！',
-    delay: 5750,
+    delay: 1770,
   },
   {
-    id: 'p17',
-    type: 'chat',
+    id: 'p8',
+    type: 'reply',
     username: 'Alice',
     color: '#6bcbff',
     is_vip: true,
-    text: '歡迎突襲！',
-    delay: 5980,
+    replyTo: 'Charlie',
+    text: '對啦打遊戲！',
+    delay: 2020,
   },
   {
-    id: 'p18',
+    id: 'p9',
+    type: 'chat',
+    username: 'NewViewer',
+    color: '#98c379',
+    text: '嗨大家好！',
+    delay: 2260,
+  },
+  {
+    id: 'b3',
+    type: 'chat',
+    username: 'Streamer',
+    color: '#a970ff',
+    is_broadcaster: true,
+    text: '歡迎！',
+    delay: 2380,
+  },
+  {
+    id: 'p10',
     type: 'chat',
     username: 'Bob',
     color: '#ff9f43',
     is_mod: true,
     text: '記得遵守聊天室規則喔',
-    delay: 6200,
+    delay: 2580,
   },
 ]
 
@@ -312,9 +319,11 @@ const LOOP_MS = Math.max(...SEQUENCE.map(m => m.delay)) + 2500
 function ChatBadges({ msg, hidden }: { msg: DemoMsg; hidden: boolean }) {
   if (hidden) return null
   const badges: BadgeEntry[] = []
+  if (msg.is_broadcaster) badges.push({ role: 'broadcaster' })
   if (msg.is_mod) badges.push({ role: 'moderator' })
   if (msg.is_vip) badges.push({ role: 'vip' })
-  if (msg.is_sub && !msg.is_mod && !msg.is_vip) badges.push({ role: 'subscriber' })
+  if (msg.is_sub && !msg.is_mod && !msg.is_vip && !msg.is_broadcaster)
+    badges.push({ role: 'subscriber' })
   return <TwitchBadgeGroup badges={badges} className="mr-1" />
 }
 
@@ -352,6 +361,7 @@ function ChatPreview({ s }: { s: ChatCssSettings }) {
     setLoop(prev => ({ loopKey: prev.loopKey + 1, visibleIds: new Set() }))
   }, [
     s.background,
+    s.bgColor,
     s.fontSize,
     s.spacing,
     s.messageBg,
@@ -362,166 +372,135 @@ function ChatPreview({ s }: { s: ChatCssSettings }) {
     s.animDir,
   ])
 
-  // Styles derived from current settings
-  const textColor = s.background === 'light' ? '#111' : '#fff'
-  const fontSize = { small: '11px', medium: '13px', large: '16px' }[s.fontSize]
+  // Determine if picked color is light (for text contrast)
+  const isLightBg =
+    s.background === 'color' &&
+    (() => {
+      const hex = s.bgColor.replace('#', '')
+      const r = parseInt(hex.slice(0, 2), 16)
+      const g = parseInt(hex.slice(2, 4), 16)
+      const b = parseInt(hex.slice(4, 6), 16)
+      return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.5
+    })()
+
+  const textColor = isLightBg ? '#111' : '#fff'
+  const previewBg = s.background === 'color' ? s.bgColor : '#5aab6e'
+  const fontSize = `${s.fontSize}px`
   const shadow = s.textShadow ? '1px 1px 3px rgba(0,0,0,0.9)' : undefined
 
   const chatBg: React.CSSProperties =
     s.messageBg === 'dark'
-      ? { background: 'rgba(0,0,0,0.60)', padding: '3px 8px', borderRadius: '4px' }
+      ? { background: 'rgba(0,0,0,0.52)', padding: '3px 10px', borderRadius: '4px' }
       : s.messageBg === 'rounded'
-        ? { background: 'rgba(0,0,0,0.75)', padding: '4px 10px', borderRadius: '6px' }
+        ? { background: 'rgba(0,0,0,0.62)', padding: '5px 12px', borderRadius: '12px' }
         : { padding: '1px 0' }
 
-  // Shared text style — block layout so each message is clearly one unit
   const msgBase: React.CSSProperties = {
     fontFamily: 'Tahoma, Arial, sans-serif',
     fontSize,
-    lineHeight: '1.4',
+    lineHeight: '1.5',
     color: textColor,
+    wordBreak: 'break-word',
+    overflowWrap: 'break-word',
   }
 
   function renderMsg(msg: DemoMsg): React.ReactNode {
-    switch (msg.type) {
-      case 'chat':
-        return (
+    if (s.messageBg === 'bubble') {
+      const isRight = msg.is_broadcaster ? s.align !== 'right' : s.align === 'right'
+      const bubbleRadius = isRight ? '14px 3px 14px 14px' : '3px 14px 14px 14px'
+      // Username floats on the background — always needs shadow for legibility
+      const usernameShadow = '0 1px 3px rgba(0,0,0,0.85), 0 1px 6px rgba(0,0,0,0.6)'
+      return (
+        <div
+          style={{
+            ...msgBase,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: isRight ? 'flex-end' : 'flex-start',
+          }}
+        >
+          {msg.type === 'reply' && (
+            <div
+              style={{
+                fontSize: '0.7em',
+                marginBottom: 2,
+                textShadow: usernameShadow,
+                opacity: 0.7,
+              }}
+            >
+              {'↩'} @{msg.replyTo}
+            </div>
+          )}
           <div
             style={{
-              ...msgBase,
-              ...chatBg,
               display: 'flex',
               alignItems: 'center',
-              flexWrap: 'wrap',
+              gap: 3,
+              fontSize: '0.78em',
+              marginBottom: 3,
             }}
           >
             <ChatBadges msg={msg} hidden={s.hideBadges} />
-            <span style={{ fontWeight: 700, color: msg.color }}>{msg.username}</span>
-            <span style={{ opacity: 0.55 }}>:{' '}</span>
-            <span style={{ textShadow: shadow }}>{msg.text}</span>
+            <span style={{ fontWeight: 700, color: msg.color, textShadow: usernameShadow }}>
+              {msg.username}
+            </span>
           </div>
-        )
-      case 'reply':
-        return (
-          <div style={{ ...msgBase, ...chatBg }}>
+          {/* Bubble always has dark bg — message text is always white */}
+          <div
+            style={{
+              background: 'rgba(0,0,0,0.68)',
+              borderRadius: bubbleRadius,
+              padding: '8px 14px',
+              maxWidth: '85%',
+              color: '#fff',
+              textShadow: shadow,
+            }}
+          >
+            {msg.text}
+          </div>
+        </div>
+      )
+    }
+
+    // Non-bubble: alignment wrapper so the message box hugs content while staying positioned
+    const alignWrap: React.CSSProperties = {
+      display: 'flex',
+      justifyContent: s.align === 'right' ? 'flex-end' : 'flex-start',
+    }
+
+    if (msg.type === 'reply') {
+      return (
+        <div style={alignWrap}>
+          <div style={{ ...msgBase, ...chatBg, maxWidth: '100%' }}>
             <div style={{ fontSize: '0.78em', opacity: 0.4, marginBottom: 2 }}>
-              ↩ @{msg.replyTo}
+              {'↩'} @{msg.replyTo}
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
-              <ChatBadges msg={msg} hidden={s.hideBadges} />
+            <div>
+              <span
+                style={{ display: 'inline-flex', alignItems: 'center', verticalAlign: 'middle' }}
+              >
+                <ChatBadges msg={msg} hidden={s.hideBadges} />
+              </span>
               <span style={{ fontWeight: 700, color: msg.color }}>{msg.username}</span>
-              <span style={{ opacity: 0.55 }}>:{' '}</span>
+              <span style={{ opacity: 0.55 }}>: </span>
               <span style={{ textShadow: shadow }}>{msg.text}</span>
             </div>
           </div>
-        )
-      case 'sub':
-        return (
-          <div
-            style={{
-              ...msgBase,
-              background: 'rgba(145,71,255,0.22)',
-              padding: '3px 8px',
-              borderRadius: '4px',
-              borderLeft: '3px solid rgba(145,71,255,0.65)',
-              color: '#ddc8ff',
-            }}
-          >
-            <span style={{ marginRight: 4 }}>⭐</span>
-            <span style={{ fontWeight: 700, color: '#c678dd' }}>{msg.username}</span>
-            {' 訂閱了！'}
-            <span style={{ opacity: 0.5, fontSize: '0.82em' }}> ({msg.detail})</span>
-          </div>
-        )
-      case 'resub':
-        return (
-          <div
-            style={{
-              ...msgBase,
-              background: 'rgba(145,71,255,0.15)',
-              padding: '3px 8px',
-              borderRadius: '4px',
-              borderLeft: '3px solid rgba(145,71,255,0.45)',
-              color: '#ddc8ff',
-            }}
-          >
-            <span style={{ marginRight: 4 }}>🔄</span>
-            <span style={{ fontWeight: 700, color: '#c678dd' }}>{msg.username}</span>
-            {' 連續訂閱 '}
-            <span style={{ fontWeight: 700 }}>{msg.detail}</span>
-            {'！'}
-          </div>
-        )
-      case 'gift-sub':
-        return (
-          <div
-            style={{
-              ...msgBase,
-              background: 'rgba(229,192,123,0.18)',
-              padding: '3px 8px',
-              borderRadius: '4px',
-              borderLeft: '3px solid rgba(229,192,123,0.65)',
-              color: '#f0d080',
-            }}
-          >
-            <span style={{ marginRight: 4 }}>🎁</span>
-            <span style={{ fontWeight: 700, color: '#e5c07b' }}>{msg.username}</span>
-            {' 贈送了 '}
-            <span style={{ fontWeight: 700 }}>{msg.detail}</span>
-            {' 個訂閱！'}
-          </div>
-        )
-      case 'redemption':
-        return (
-          <div
-            style={{
-              ...msgBase,
-              ...chatBg,
-              background: 'rgba(255,184,0,0.12)',
-              borderLeft: '3px solid rgba(255,184,0,0.55)',
-            }}
-          >
-            <span
-              style={{
-                fontSize: '0.78em',
-                fontWeight: 600,
-                background: 'rgba(255,184,0,0.28)',
-                color: '#ffd700',
-                padding: '0 4px',
-                borderRadius: 2,
-                marginRight: 5,
-              }}
-            >
-              {msg.detail}
-            </span>
-            <span style={{ fontWeight: 700, color: msg.color }}>{msg.username}</span>
-            <span style={{ opacity: 0.55 }}>:{' '}</span>
-            <span style={{ textShadow: shadow }}>{msg.text}</span>
-          </div>
-        )
-      case 'raid':
-        return (
-          <div
-            style={{
-              ...msgBase,
-              background: 'rgba(255,107,107,0.18)',
-              padding: '3px 8px',
-              borderRadius: '4px',
-              borderLeft: '3px solid rgba(255,107,107,0.65)',
-              color: '#ffcccc',
-              textAlign: 'center',
-            }}
-          >
-            <span style={{ marginRight: 4 }}>🚀</span>
-            <span style={{ fontWeight: 700, color: '#ff8080' }}>{msg.username}</span>
-            {' 帶著 '}
-            <span style={{ fontWeight: 700 }}>{msg.detail}</span>
-            {' 人突襲！'}
-          </div>
-        )
-      default:
-        return null
+        </div>
+      )
     }
+    return (
+      <div style={alignWrap}>
+        <div style={{ ...msgBase, ...chatBg, maxWidth: '100%' }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', verticalAlign: 'middle' }}>
+            <ChatBadges msg={msg} hidden={s.hideBadges} />
+          </span>
+          <span style={{ fontWeight: 700, color: msg.color }}>{msg.username}</span>
+          <span style={{ opacity: 0.55 }}>: </span>
+          <span style={{ textShadow: shadow }}>{msg.text}</span>
+        </div>
+      </div>
+    )
   }
 
   const visible = SEQUENCE.filter(m => visibleIds.has(m.id)).slice(-10)
@@ -529,16 +508,15 @@ function ChatPreview({ s }: { s: ChatCssSettings }) {
   return (
     <div
       style={{
-        background: 'rgba(10,10,20,0.9)',
+        background: previewBg,
         width: '100%',
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'flex-end',
-        alignItems: s.align === 'right' ? 'flex-end' : 'flex-start',
         padding: '10px',
         boxSizing: 'border-box',
-        gap: { compact: '2px', normal: '4px', loose: '8px' }[s.spacing],
+        gap: { compact: '4px', normal: '8px', loose: '16px' }[s.spacing],
         overflow: 'hidden',
       }}
     >
@@ -548,7 +526,7 @@ function ChatPreview({ s }: { s: ChatCssSettings }) {
           initial={s.animation ? { opacity: 0, x: s.animDir === 'left' ? -10 : 10 } : false}
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.2, ease: 'easeOut' }}
-          style={{ flexShrink: 0, maxWidth: '100%' }}
+          style={{ flexShrink: 0, minWidth: 0, width: '100%' }}
         >
           {renderMsg(msg)}
         </motion.div>
@@ -712,30 +690,87 @@ function OptionButtonGroup<T extends string>({
   )
 }
 
+// ---- Step Slider ----
+
+function StepSlider<T extends string | number>({
+  label,
+  steps,
+  value,
+  onChange,
+  unit,
+}: {
+  label: string
+  steps: { value: T; label: string }[]
+  value: T
+  onChange: (v: T) => void
+  unit?: string
+}) {
+  const idx = Math.max(
+    0,
+    steps.findIndex(s => s.value === value)
+  )
+  const current = steps[idx]
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center justify-between">
+        <Label>{label}</Label>
+        <span className="font-mono text-label text-muted-foreground">
+          {current.label}
+          {unit ? ` · ${current.value}${unit}` : ''}
+        </span>
+      </div>
+      <input
+        type="range"
+        min={0}
+        max={steps.length - 1}
+        step={1}
+        value={idx}
+        onChange={e => onChange(steps[+e.target.value].value)}
+        style={{ accentColor: 'var(--color-primary)' }}
+        className="w-full cursor-pointer"
+      />
+      <div className="flex justify-between">
+        {steps.map((s, i) => (
+          <span
+            key={i}
+            onClick={() => onChange(s.value)}
+            className={`cursor-pointer select-none text-[10px] leading-none transition-colors ${
+              i === idx
+                ? 'text-primary font-semibold'
+                : 'text-muted-foreground/50 hover:text-muted-foreground'
+            }`}
+          >
+            {s.label}
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ---- Page ----
 
-const BG_OPTIONS: { value: BgOption; label: string; desc: string }[] = [
-  { value: 'transparent', label: '透明', desc: '無背景' },
-  { value: 'dark', label: '深色', desc: '半透明黑底' },
-  { value: 'light', label: '淺色', desc: '半透明白底' },
+// Aligned to index.css semantic type scale: xs/sm/base/lg/xl/2xl
+const FONT_SIZE_STEPS: { value: number; label: string }[] = [
+  { value: 12, label: 'xs' },
+  { value: 14, label: 'sm' },
+  { value: 16, label: 'base' },
+  { value: 18, label: 'lg' },
+  { value: 20, label: 'xl' },
+  { value: 24, label: '2xl' },
 ]
 
-const FONT_SIZE_OPTIONS: { value: FontSizeOption; label: string }[] = [
-  { value: 'small', label: '小 13px' },
-  { value: 'medium', label: '中 15px' },
-  { value: 'large', label: '大 18px' },
-]
-
-const SPACING_OPTIONS: { value: SpacingOption; label: string }[] = [
+const SPACING_STEPS: { value: SpacingOption; label: string }[] = [
   { value: 'compact', label: '緊湊' },
   { value: 'normal', label: '標準' },
   { value: 'loose', label: '寬鬆' },
 ]
 
 const MSG_BG_OPTIONS: { value: MsgBgOption; label: string }[] = [
-  { value: 'none', label: '無' },
-  { value: 'dark', label: '深色方框' },
+  { value: 'bubble', label: '氣泡' },
   { value: 'rounded', label: '深色圓框' },
+  { value: 'dark', label: '深色方框' },
+  { value: 'none', label: '無' },
 ]
 
 const ALIGN_OPTIONS: { value: AlignOption; label: string }[] = [
@@ -744,8 +779,8 @@ const ALIGN_OPTIONS: { value: AlignOption; label: string }[] = [
 ]
 
 const ANIM_DIR_OPTIONS: { value: AnimDirOption; label: string }[] = [
-  { value: 'left', label: '從左滑入' },
-  { value: 'right', label: '從右滑入' },
+  { value: 'left', label: '從左' },
+  { value: 'right', label: '從右' },
 ]
 
 export default function ChatOverlayModule() {
@@ -756,7 +791,12 @@ export default function ChatOverlayModule() {
   const [rightPanel, setRightPanel] = useState<'preview' | 'css'>('preview')
 
   const patch = (partial: Partial<ChatCssSettings>) =>
-    setSettings(prev => ({ ...prev, ...partial }))
+    setSettings(prev => {
+      const next = { ...prev, ...partial }
+      // text shadow only applies to transparent backgrounds — reset when leaving transparent
+      if (partial.background && partial.background !== 'transparent') next.textShadow = false
+      return next
+    })
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(settings))
@@ -771,7 +811,7 @@ export default function ChatOverlayModule() {
     )
   }
 
-  const twitchUrl = user?.name ? `https://www.twitch.tv/popout/${user.name}/chat?popout=` : ''
+  const twitchUrl = user?.name ? `https://www.twitch.tv/popout/${user.name}/chat` : ''
 
   return (
     <PageMain>
@@ -788,7 +828,7 @@ export default function ChatOverlayModule() {
         className="grid grid-cols-1 lg:grid-cols-12 gap-section items-start"
       >
         {/* Left: switchable Preview / CSS */}
-        <div className="lg:col-span-6 flex flex-col gap-element h-105 min-w-0 overflow-hidden">
+        <div className="lg:col-span-6 flex flex-col gap-element min-w-0">
           {/* Tab bar */}
           <div className="flex shrink-0 items-center justify-between">
             <div className="flex gap-1 rounded-lg border p-1">
@@ -822,13 +862,19 @@ export default function ChatOverlayModule() {
           {/* Panel content */}
           {rightPanel === 'preview' ? (
             <>
-              <div className="flex-1 min-h-0 overflow-hidden rounded-lg border">
-                <ChatPreview s={settings} />
+              {/* 9:16 mobile aspect ratio preview */}
+              <div className="flex justify-center">
+                <div
+                  className="overflow-hidden rounded-lg border w-full max-w-[260px]"
+                  style={{ aspectRatio: '9/16' }}
+                >
+                  <ChatPreview s={settings} />
+                </div>
               </div>
               {twitchUrl && <OverlayUrlBlock url={twitchUrl} />}
             </>
           ) : (
-            <div className="flex-1 min-h-0 overflow-auto rounded-lg border bg-muted p-4">
+            <div className="h-[462px] overflow-auto rounded-lg border bg-muted p-4">
               <CssHighlight code={css} />
             </div>
           )}
@@ -842,87 +888,92 @@ export default function ChatOverlayModule() {
               <CardDescription>調整後自動產生 CSS，無需儲存</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-section">
-              {/* 背景 */}
-              <OptionButtonGroup
-                label="背景"
-                options={BG_OPTIONS}
-                value={settings.background}
-                onChange={v => patch({ background: v })}
-              />
-
-              {/* 字型大小 + 訊息間距 */}
-              <div className="grid grid-cols-2 gap-section">
-                <OptionButtonGroup
-                  label="字型大小"
-                  options={FONT_SIZE_OPTIONS}
-                  value={settings.fontSize}
-                  onChange={v => patch({ fontSize: v })}
-                />
-                <OptionButtonGroup
-                  label="訊息間距"
-                  options={SPACING_OPTIONS}
-                  value={settings.spacing}
-                  onChange={v => patch({ spacing: v })}
-                />
-              </div>
-
-              {/* 訊息背景 + 對齊 */}
-              <div className="grid grid-cols-2 gap-section">
-                <OptionButtonGroup
-                  label="訊息背景"
-                  options={MSG_BG_OPTIONS}
-                  value={settings.messageBg}
-                  onChange={v => patch({ messageBg: v })}
-                />
-                <OptionButtonGroup
-                  label="訊息對齊"
-                  options={ALIGN_OPTIONS}
-                  value={settings.align}
-                  onChange={v => patch({ align: v })}
-                />
-              </div>
-
-              {/* 隱藏元素 */}
-              <div className="flex flex-col gap-2">
-                <p className="text-label font-medium text-muted-foreground">隱藏元素</p>
-                <div className="flex flex-col gap-element">
-                  {(
-                    [
-                      { key: 'hideHeader', label: '標題列', desc: '移除聊天室頂部標題' },
-                      { key: 'hideInput', label: '輸入框', desc: '移除底部聊天輸入區' },
-                      { key: 'hideTimestamp', label: '時間戳記', desc: '移除訊息旁的時間顯示' },
-                      { key: 'hideBadges', label: '徽章', desc: 'MOD、VIP、訂閱者圖標' },
-                    ] as const
-                  ).map(({ key, label, desc }) => (
-                    <div key={key} className="flex items-center justify-between">
-                      <div>
-                        <Label htmlFor={key}>{label}</Label>
-                        <p className="text-muted-foreground mt-0.5 text-label">{desc}</p>
-                      </div>
-                      <Switch
-                        id={key}
-                        checked={settings[key]}
-                        onCheckedChange={v => patch({ [key]: v })}
-                      />
-                    </div>
-                  ))}
+              {/* ── 外觀 ── */}
+              <div className="flex flex-col gap-3">
+                <p className="text-label font-medium text-muted-foreground">外觀</p>
+                <div className="flex flex-col gap-2">
+                  <Label>背景</Label>
+                  <div className="flex items-center gap-2">
+                    {(['transparent', 'color'] as const).map(opt => (
+                      <button
+                        key={opt}
+                        type="button"
+                        onClick={() => patch({ background: opt })}
+                        className={`rounded-md border px-3 py-1.5 text-sm font-medium transition-colors ${
+                          settings.background === opt
+                            ? 'border-primary bg-primary/10 text-primary'
+                            : 'hover:bg-accent'
+                        }`}
+                      >
+                        {opt === 'transparent' ? '透明' : '顏色'}
+                      </button>
+                    ))}
+                    {settings.background === 'color' && (
+                      <label className="cursor-pointer" title="選擇背景顏色">
+                        <span
+                          className="block w-7 h-7 rounded-md border border-border transition-transform hover:scale-110"
+                          style={{ background: settings.bgColor }}
+                        />
+                        <input
+                          type="color"
+                          value={settings.bgColor}
+                          onChange={e => patch({ bgColor: e.target.value })}
+                          className="sr-only"
+                        />
+                      </label>
+                    )}
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-section">
+                  <OptionButtonGroup
+                    label="樣式"
+                    options={MSG_BG_OPTIONS}
+                    value={settings.messageBg}
+                    onChange={v => patch({ messageBg: v })}
+                  />
+                  <OptionButtonGroup
+                    label="對齊"
+                    options={ALIGN_OPTIONS}
+                    value={settings.align}
+                    onChange={v => patch({ align: v })}
+                  />
                 </div>
               </div>
 
-              {/* 視覺效果 */}
-              <div className="flex flex-col gap-2">
-                <p className="text-label font-medium text-muted-foreground">視覺效果</p>
+              {/* ── 文字 ── */}
+              <div className="flex flex-col gap-3">
+                <p className="text-label font-medium text-muted-foreground">文字</p>
+                <div className="grid grid-cols-2 gap-section">
+                  <StepSlider
+                    label="大小"
+                    steps={FONT_SIZE_STEPS}
+                    value={settings.fontSize}
+                    onChange={v => patch({ fontSize: v })}
+                    unit="px"
+                  />
+                  <StepSlider
+                    label="間距"
+                    steps={SPACING_STEPS}
+                    value={settings.spacing}
+                    onChange={v => patch({ spacing: v })}
+                  />
+                </div>
+              </div>
+
+              {/* ── 顯示 ── */}
+              <div className="flex flex-col gap-3">
+                <p className="text-label font-medium text-muted-foreground">顯示</p>
                 <div className="flex flex-col gap-element">
                   {(
                     [
-                      { key: 'textShadow', label: '文字陰影', desc: '透明背景時提高可讀性' },
-                      { key: 'animation', label: '進場動畫', desc: '新訊息滑入淡出效果' },
-                    ] as const
+                      { key: 'hideHeader', label: '隱藏標題列', desc: undefined },
+                      { key: 'hideBadges', label: '隱藏徽章', desc: 'MOD、VIP、訂閱者' },
+                    ] as { key: 'hideHeader' | 'hideBadges'; label: string; desc?: string }[]
                   ).map(({ key, label, desc }) => (
                     <div key={key} className="flex items-center justify-between">
                       <div>
                         <Label htmlFor={key}>{label}</Label>
-                        <p className="text-muted-foreground mt-0.5 text-label">{desc}</p>
+                        {desc && <p className="text-muted-foreground mt-0.5 text-label">{desc}</p>}
                       </div>
                       <Switch
                         id={key}
@@ -931,13 +982,40 @@ export default function ChatOverlayModule() {
                       />
                     </div>
                   ))}
+                  {settings.background === 'transparent' && (
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <Label htmlFor="textShadow">文字陰影</Label>
+                        <p className="text-muted-foreground mt-0.5 text-label">增強文字辨識度</p>
+                      </div>
+                      <Switch
+                        id="textShadow"
+                        checked={settings.textShadow}
+                        onCheckedChange={v => patch({ textShadow: v })}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* ── 動畫 ── */}
+              <div className="flex flex-col gap-3">
+                <p className="text-label font-medium text-muted-foreground">動畫</p>
+                <div className="flex flex-col gap-element">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="animation">進場動畫</Label>
+                    <Switch
+                      id="animation"
+                      checked={settings.animation}
+                      onCheckedChange={v => patch({ animation: v })}
+                    />
+                  </div>
                   {settings.animation && (
                     <OptionButtonGroup
-                      label="滑入方向"
+                      label="方向"
                       options={ANIM_DIR_OPTIONS}
                       value={settings.animDir}
                       onChange={v => patch({ animDir: v })}
-                      className="pl-1"
                       labelClassName="text-muted-foreground"
                     />
                   )}
