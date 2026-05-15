@@ -404,7 +404,7 @@ export default function VideoQueueOverlay() {
       containerRef.current.innerHTML = ''
       const iframe = document.createElement('iframe')
       const startSeconds = Math.floor(joinElapsed)
-      iframe.src = `https://player.bilibili.com/player.html?bvid=${current.video_id}&autoplay=1&danmaku=0&high_quality=1&t=${startSeconds}`
+      iframe.src = `https://www.bilibili.com/blackboard/html5mobileplayer.html?bvid=${current.video_id}&autoplay=1&danmaku=0&hideDanmakuButton=1&noFullScreenButton=1&hideCoverInfo=1&hasMuteButton=0&t=${startSeconds}`
       iframe.style.cssText = 'width:100%;height:100%;border:none'
       iframe.allow = 'autoplay; fullscreen'
       iframe.scrolling = 'no'
