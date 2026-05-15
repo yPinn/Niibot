@@ -66,12 +66,15 @@ src/
 │   ├── apiCache.ts # 記憶體內 TTL 快取（上限 200 條）+ 請求合併（deduplication）
 │   └── sort.ts     # 通用排序工具
 ├── pages/
-│   ├── dashboard/  # Twitch Bot（Commands、Events、Overview）
-│   ├── modules/    # Timers、GameQueue、VideoQueue（YouTube / Bilibili）
-│   ├── analytics/  # Insights、SystemStatus
+│   ├── dashboard/  # Twitch Bot（Commands、Events、Overview、Timers）
+│   ├── modules/    # ChatOverlay、GameQueue、VideoQueue、Crosshairs
+│   ├── analytics/  # Insights（觀眾分析）
 │   ├── discord/    # Discord Dashboard
-│   ├── docs/       # GetStarted、Terms、Privacy
-│   └── ...         # Landing、Login、PublicCommands、Overlays、Settings
+│   ├── crosshairs/ # 公開準星庫（/:username/crosshairs）
+│   ├── admin/      # 管理員頁面（OwnerRoute）
+│   ├── activate/   # 啟用碼頁面
+│   ├── docs/       # GetStarted
+│   └── ...         # Landing、Login、PublicCommands、Overlays、Settings、DonatePage
 └── test/           # Vitest 設定（setup.ts）
 functions/          # CF Pages Functions — /api/*、/health、/status 反向代理
 ```
@@ -79,16 +82,35 @@ functions/          # CF Pages Functions — /api/*、/health、/status 反向�
 ### 路由架構
 
 ```text
-/                                     → Landing（公開）
-/terms, /privacy                      → Terms / Privacy（公開）
-/:username/commands                   → PublicCommands（公開）
-/donate/:username                     → DonatePage（公開）
-/:username/{game,video}-queue/overlay → Overlay（OBS browser source）
-/login                                → PublicOnlyRoute（已登入者重導）
-/docs                                 → ProtectedRoute → GetStarted
-/discord/dashboard                    → ProtectedRoute → Discord Bot
-/analytics, /analytics/insights       → ProtectedRoute → Analytics（Insights / SystemStatus）
-/dashboard, /commands…                → ProtectedRoute → SidebarLayout
+公開路由
+  /                              Landing
+  /terms, /privacy               Terms / Privacy
+  /:username/commands            PublicCommands
+  /:username/crosshairs          CrosshairRepo（公開準星庫）
+  /donate/:username              DonatePage
+  /:username/game-queue/overlay  GameQueueOverlay（OBS browser source）
+  /:username/video-queue/overlay VideoQueueOverlay（OBS browser source）
+  /activate                      ActivatePage（啟用碼）
+  /login                         LoginPage（PublicOnlyRoute，已登入者重導）
+
+ProtectedRoute → SidebarLayout（需登入）
+  /dashboard                     Overview
+  /commands                      Commands（內建 / 自訂指令）
+  /events                        Events（EventSub / 點數兌換綁定）
+  /timers                        Timers
+  /analytics/insights            Insights（觀眾分析）
+  /settings                      Settings（斗內金流設定）
+  /modules/chat-overlay          ChatOverlay（OBS CSS 產生器）
+  /modules/game-queue            GameQueue（遊戲排隊管理）
+  /modules/video-queue           VideoQueue（YouTube 點播管理）
+  /modules/crosshairs            CrosshairModule（準星管理）
+  /docs/get-started              GetStarted
+  /discord                       DiscordDashboard
+
+OwnerRoute（限擁有者）
+  /admin                         AdminPage
+  /admin/codes                   AdminActivationCodes
+  /admin/monitor                 AdminMonitor
 ```
 
 ## 部署
