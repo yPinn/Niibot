@@ -19,12 +19,12 @@ from shared.repositories.video_queue import (
     SOURCE_PRIORITY,
     VideoQueueRepository,
     VideoQueueSettingsRepository,
-    extract_bilibili_bvid,
     extract_twitch_clip_slug,
     extract_youtube_info,
     fetch_bilibili_info,
     fetch_twitch_clip_info,
     fetch_yt_info,
+    resolve_bilibili_url,
 )
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -418,7 +418,7 @@ async def add_video_entry(
     if not video_id:
         clip_slug = extract_twitch_clip_slug(body.url)
     if not video_id and not clip_slug:
-        bvid = extract_bilibili_bvid(body.url)
+        bvid = await resolve_bilibili_url(body.url)
     if not video_id and not clip_slug and not bvid:
         raise HTTPException(status_code=422, detail="Invalid YouTube, Twitch clip, or Bilibili URL")
 

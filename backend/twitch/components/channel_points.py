@@ -15,12 +15,12 @@ from shared.repositories.video_queue import (
     SOURCE_PRIORITY,
     VideoQueueRepository,
     VideoQueueSettingsRepository,
-    extract_bilibili_bvid,
     extract_twitch_clip_slug,
     extract_youtube_info,
     fetch_bilibili_info,
     fetch_twitch_clip_info,
     fetch_yt_info,
+    resolve_bilibili_url,
 )
 from utils.mod_guard import mod_guard_notifier
 from utils.reauth import is_scope_error, reauth_notifier
@@ -339,7 +339,7 @@ class ChannelPointsComponent(commands.Component):
             if not video_id:
                 clip_slug = extract_twitch_clip_slug(user_input)
             if not video_id and not clip_slug:
-                bvid = extract_bilibili_bvid(user_input)
+                bvid = await resolve_bilibili_url(user_input)
             if not video_id and not clip_slug and not bvid:
                 await self._reply(
                     broadcaster,

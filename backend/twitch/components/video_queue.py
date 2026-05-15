@@ -26,12 +26,12 @@ from shared.repositories.video_queue import (
     SOURCE_PRIORITY,
     VideoQueueRepository,
     VideoQueueSettingsRepository,
-    extract_bilibili_bvid,
     extract_twitch_clip_slug,
     extract_youtube_info,
     fetch_bilibili_info,
     fetch_twitch_clip_info,
     fetch_yt_info,
+    resolve_bilibili_url,
 )
 
 if TYPE_CHECKING:
@@ -96,7 +96,7 @@ class VideoQueueComponent(BotComponent):
         if not video_id:
             clip_slug = extract_twitch_clip_slug(url_str)
         if not video_id and not clip_slug:
-            bvid = extract_bilibili_bvid(url_str)
+            bvid = await resolve_bilibili_url(url_str)
         if not video_id and not clip_slug and not bvid:
             await self._ctx_reply(ctx, "連結無效，支援 YouTube / Twitch Clip / Bilibili")
             return

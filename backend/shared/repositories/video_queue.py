@@ -5,7 +5,8 @@ Also contains shared utilities:
   - fetch_yt_info(): YouTube Data API v3 call, used by bot and channel_points
   - extract_twitch_clip_slug(): pure string parsing for Twitch clip URLs
   - fetch_twitch_clip_info(): Twitch Helix API call for clip metadata
-  - extract_bilibili_bvid(): pure string parsing for Bilibili BV URLs
+  - extract_bilibili_bvid(): pure string parsing for Bilibili BV URLs (full URLs only)
+  - resolve_bilibili_url(): async, resolves b23.tv short URLs then extracts BV ID
   - fetch_bilibili_info(): Bilibili public API call for video metadata
 """
 
@@ -130,12 +131,47 @@ async def fetch_yt_info(
 # ---------------------------------------------------------------------------
 
 _BILIBILI_BV_RE = re.compile(r"(?:https?://)?(?:www\.)?bilibili\.com/video/(BV[A-Za-z0-9]{10})")
+_BILIBILI_SHORT_RE = re.compile(r"(?:https?://)?b23\.tv/[A-Za-z0-9]+")
 
 
 def extract_bilibili_bvid(text: str) -> str | None:
-    """Extract Bilibili BV ID from URL. Returns None if not found."""
+    """Extract Bilibili BV ID from full bilibili.com URL. Returns None if not found."""
     m = _BILIBILI_BV_RE.search(text)
     return m.group(1) if m else None
+
+
+async def resolve_bilibili_url(
+    url: str,
+    session: aiohttp.ClientSession | None = None,
+) -> str | None:
+    """Extract BV ID from a Bilibili URL, following b23.tv short URL redirects.
+
+    Handles both full bilibili.com URLs and b23.tv short URLs.
+    """
+    bvid = extract_bilibili_bvid(url)
+    if bvid:
+        return bvid
+
+    if not _BILIBILI_SHORT_RE.search(url):
+        return None
+
+    full_url = url if url.startswith("http") else f"https://{url}"
+    _own_session = session is None
+    _session: aiohttp.ClientSession = session or aiohttp.ClientSession()
+    try:
+        async with _session.get(
+            full_url,
+            allow_redirects=True,
+            timeout=aiohttp.ClientTimeout(total=5),
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
+        ) as resp:
+            return extract_bilibili_bvid(str(resp.url))
+    except Exception as exc:
+        LOGGER.warning(f"[Bilibili] Failed to resolve short URL {url}: {type(exc).__name__}")
+        return None
+    finally:
+        if _own_session:
+            await _session.close()
 
 
 async def fetch_bilibili_info(
