@@ -95,6 +95,23 @@ function parseDockerTs(raw: string): { ts: string; msg: string } {
   return { ts: '', msg: raw }
 }
 
+// Matches PostgreSQL's own log prefix inside Docker's message payload:
+// "2026-05-15 01:39:23.531 UTC [28] LOG:  ..."
+const PG_PREFIX_RE = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+ UTC \[(\d+)\] ([A-Z]+):\s*/
+
+function parsePgPrefix(msg: string): { pid: string; level: string; body: string } | null {
+  const m = msg.match(PG_PREFIX_RE)
+  if (!m) return null
+  return { pid: m[1], level: m[2], body: msg.slice(m[0].length) }
+}
+
+function pgLevelColor(level: string): string {
+  if (/^(ERROR|FATAL|PANIC)$/.test(level)) return 'text-red-400'
+  if (level === 'WARNING') return 'text-amber-300'
+  if (level === 'DEBUG') return 'text-muted-foreground/60'
+  return 'text-muted-foreground/50'
+}
+
 function lineColor(msg: string, stream: string): string {
   if (/\b(ERROR|CRITICAL|FATAL|EXCEPTION|TRACEBACK)\b/i.test(msg)) return 'text-red-400'
   if (/\bwarn(ing)?\b/i.test(msg)) return 'text-amber-300'
@@ -105,12 +122,10 @@ function lineColor(msg: string, stream: string): string {
 
 function LogLineRow({ line, index }: { line: LogLine; index: number }) {
   const { ts, msg } = parseDockerTs(line.text)
-  const content = msg || line.text
+  const pg = parsePgPrefix(msg || line.text)
+  const content = pg ? pg.body : msg || line.text
 
-  const colored = useMemo(() => {
-    if (hasAnsi(content)) return ansiConverter.toHtml(content)
-    return null
-  }, [content])
+  const colored = hasAnsi(content) ? ansiConverter.toHtml(content) : null
 
   const fallbackColor = colored ? '' : lineColor(stripAnsi(content), line.stream)
 
@@ -120,6 +135,16 @@ function LogLineRow({ line, index }: { line: LogLine; index: number }) {
         {index + 1}
       </span>
       <span className="text-muted-foreground/70 shrink-0 tabular-nums w-22">{ts}</span>
+      {pg && (
+        <>
+          <span className="text-muted-foreground/35 shrink-0 tabular-nums select-none">
+            [{pg.pid}]
+          </span>
+          <span className={`shrink-0 font-semibold select-none ${pgLevelColor(pg.level)}`}>
+            {pg.level}
+          </span>
+        </>
+      )}
       {colored ? (
         <span
           className="break-all whitespace-pre-wrap min-w-0"
