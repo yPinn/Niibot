@@ -19,11 +19,6 @@ import {
   CardHeader,
   CardTitle,
   Icon,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
   Separator,
   Skeleton,
   SlideUp,
@@ -182,7 +177,7 @@ const DB_PRESETS: DbPresetGroup[] = [
       },
       {
         label: 'Cmd Aliases',
-        sql: 'SELECT channel_id, alias, target_command, created_at\nFROM command_aliases\nORDER BY channel_id, alias\nLIMIT 100;',
+        sql: 'SELECT cc.channel_id, ca.alias, cc.command_name AS target_command, cc.command_type\nFROM command_aliases ca\nJOIN command_configs cc ON ca.command_id = cc.id\nORDER BY cc.channel_id, ca.alias\nLIMIT 100;',
       },
       {
         label: 'Cmd Stats',
@@ -198,11 +193,11 @@ const DB_PRESETS: DbPresetGroup[] = [
       },
       {
         label: 'Timers',
-        sql: 'SELECT channel_id, name, enabled, interval_seconds, message_template\nFROM timers\nORDER BY channel_id\nLIMIT 100;',
+        sql: 'SELECT channel_id, timer_name AS name, enabled, interval_seconds, message_template\nFROM timers\nORDER BY channel_id\nLIMIT 100;',
       },
       {
         label: 'Triggers',
-        sql: 'SELECT channel_id, name, enabled, pattern, response, usage_count\nFROM message_triggers\nORDER BY channel_id\nLIMIT 100;',
+        sql: 'SELECT channel_id, trigger_name AS name, enabled, pattern, response, usage_count\nFROM message_triggers\nORDER BY channel_id\nLIMIT 100;',
       },
     ],
   },
@@ -236,15 +231,15 @@ const DB_PRESETS: DbPresetGroup[] = [
     items: [
       {
         label: 'Game Queue',
-        sql: 'SELECT e.*,\n       s.enabled AS queue_open, s.max_size\nFROM game_queue_entries e\nLEFT JOIN game_queue_settings s ON e.channel_id = s.channel_id\nORDER BY e.channel_id, e.position\nLIMIT 100;',
+        sql: 'SELECT e.*,\n       s.enabled AS queue_open, s.group_size\nFROM game_queue_entries e\nLEFT JOIN game_queue_settings s ON e.channel_id = s.channel_id\nORDER BY e.channel_id, e.redeemed_at\nLIMIT 100;',
       },
       {
         label: 'Video Queue',
-        sql: 'SELECT q.id, q.channel_id, q.video_type, q.video_id, q.title,\n       q.requested_by, q.status, q.created_at,\n       s.enabled AS queue_open, s.max_duration_seconds, s.max_queue_size\nFROM video_queue q\nLEFT JOIN video_queue_settings s ON q.channel_id = s.channel_id\nORDER BY q.created_at DESC\nLIMIT 50;',
+        sql: 'SELECT q.id, q.channel_id, q.video_type, q.video_id, q.title,\n       q.requested_by, q.status, q.created_at,\n       s.enabled AS queue_open, s.max_queue_size, s.max_duration_redemption\nFROM video_queue q\nLEFT JOIN video_queue_settings s ON q.channel_id = s.channel_id\nORDER BY q.created_at DESC\nLIMIT 50;',
       },
       {
         label: 'Crosshairs',
-        sql: 'SELECT id, channel_id, username, name, copy_count, created_at\nFROM crosshairs\nORDER BY copy_count DESC\nLIMIT 100;',
+        sql: 'SELECT id, channel_id, game, name, code, copy_count, created_at\nFROM crosshairs\nORDER BY copy_count DESC\nLIMIT 100;',
       },
     ],
   },
@@ -253,11 +248,11 @@ const DB_PRESETS: DbPresetGroup[] = [
     items: [
       {
         label: 'Codes',
-        sql: 'SELECT platform_user_id, platform, expires_at, used_at, created_at\nFROM activation_codes\nORDER BY created_at DESC\nLIMIT 50;',
+        sql: 'SELECT platform_user_id, platform, expires_at, used_at\nFROM activation_codes\nORDER BY expires_at DESC\nLIMIT 50;',
       },
       {
         label: 'Requests',
-        sql: 'SELECT id, platform_user_id, display_name, status, note, created_at\nFROM activation_requests\nORDER BY created_at DESC\nLIMIT 50;',
+        sql: 'SELECT ar.id, ar.platform, ar.platform_user_id, u.display_name,\n       ar.status, ar.note, ar.created_at\nFROM activation_requests ar\nLEFT JOIN users u ON ar.user_id = u.id\nORDER BY ar.created_at DESC\nLIMIT 50;',
       },
     ],
   },
@@ -283,11 +278,11 @@ const DB_PRESETS: DbPresetGroup[] = [
       },
       {
         label: 'Birthdays',
-        sql: 'SELECT user_id, month, day, year\nFROM birthdays\nORDER BY month, day\nLIMIT 100;',
+        sql: 'SELECT user_id, month, day, year\nFROM discord_birthdays\nORDER BY month, day\nLIMIT 100;',
       },
       {
         label: 'BD Settings',
-        sql: 'SELECT * FROM birthday_settings\nLIMIT 50;',
+        sql: 'SELECT * FROM discord_birthday_settings\nLIMIT 50;',
       },
     ],
   },
@@ -299,11 +294,42 @@ function DbConsole() {
   const [result, setResult] = useState<DbQueryResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [expandedCell, setExpandedCell] = useState<`${number}-${number}` | null>(null)
+  const [sortCol, setSortCol] = useState<number | null>(null)
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+
+  const sortedRows = useMemo(() => {
+    if (!result || sortCol === null) return result?.rows ?? []
+    return [...result.rows].sort((a, b) => {
+      const av = a[sortCol],
+        bv = b[sortCol]
+      if (av === null && bv === null) return 0
+      if (av === null) return 1
+      if (bv === null) return -1
+      const an = Number(av),
+        bn = Number(bv)
+      const cmp = !isNaN(an) && !isNaN(bn) ? an - bn : String(av).localeCompare(String(bv))
+      return sortDir === 'asc' ? cmp : -cmp
+    })
+  }, [result, sortCol, sortDir])
+
+  const handleSortClick = (colIdx: number) => {
+    setExpandedCell(null)
+    if (sortCol === colIdx) {
+      setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortCol(colIdx)
+      setSortDir('asc')
+    }
+  }
 
   const runQuery = async (q: string) => {
     setLoading(true)
     setError(null)
     setResult(null)
+    setExpandedCell(null)
+    setSortCol(null)
+    setSortDir('asc')
     try {
       setResult(await runDbQuery(q))
     } catch (e) {
@@ -377,8 +403,8 @@ function DbConsole() {
               setActivePreset('')
             }}
             onKeyDown={handleKeyDown}
-            rows={5}
-            className="flex-1 font-mono text-label text-foreground bg-muted border-border resize-y min-h-[80px] max-h-48 focus-visible:ring-1 focus-visible:ring-ring"
+            rows={4}
+            className="flex-1 font-mono text-label text-foreground bg-muted border-border resize-y min-h-[72px] max-h-48 focus-visible:ring-1 focus-visible:ring-ring"
             placeholder="SELECT ..."
             spellCheck={false}
           />
@@ -387,6 +413,7 @@ function DbConsole() {
             onClick={handleRun}
             disabled={loading || !sql.trim()}
             className="self-end shrink-0"
+            title="Run (Ctrl+Enter)"
           >
             {loading ? <Spinner className="size-3" /> : <Icon icon="fa-solid fa-play" size="xs" />}
           </Button>
@@ -398,30 +425,59 @@ function DbConsole() {
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent border-border">
-                  {result.columns.map(col => (
+                  <TableHead className="sticky top-0 bg-muted text-muted-foreground/50 font-medium w-10 text-right tabular-nums select-none">
+                    #
+                  </TableHead>
+                  {result.columns.map((col, j) => (
                     <TableHead
                       key={col}
-                      className="text-muted-foreground bg-muted/80 whitespace-nowrap font-medium"
+                      className="sticky top-0 bg-muted text-muted-foreground whitespace-nowrap font-medium cursor-pointer select-none hover:text-foreground transition-colors"
+                      onClick={() => handleSortClick(j)}
                     >
-                      {col}
+                      <div className="flex items-center gap-1.5">
+                        {col}
+                        {sortCol === j && (
+                          <Icon
+                            icon={`fa-solid fa-arrow-${sortDir === 'asc' ? 'up' : 'down'}`}
+                            size="xs"
+                          />
+                        )}
+                      </div>
                     </TableHead>
                   ))}
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {result.rows.map((row, i) => (
+                {sortedRows.map((row, i) => (
                   <TableRow
                     key={i}
-                    className="hover:bg-white/5 border-border/50 font-mono text-label"
+                    className="hover:bg-accent border-border/50 font-mono text-label"
                   >
-                    {row.map((cell, j) => (
-                      <TableCell
-                        key={j}
-                        className={`whitespace-nowrap py-1 ${cell === null ? 'text-muted-foreground/60 italic' : 'text-foreground/80'}`}
-                      >
-                        {cell === null ? 'NULL' : String(cell)}
-                      </TableCell>
-                    ))}
+                    <TableCell className="text-muted-foreground/40 text-right py-1 tabular-nums select-none">
+                      {i + 1}
+                    </TableCell>
+                    {row.map((cell, j) => {
+                      const key = `${i}-${j}` as const
+                      const expanded = expandedCell === key
+                      return (
+                        <TableCell
+                          key={j}
+                          className={`py-1 ${cell !== null ? 'cursor-pointer' : ''}`}
+                          onClick={() => cell !== null && setExpandedCell(expanded ? null : key)}
+                        >
+                          <div
+                            className={
+                              expanded
+                                ? 'max-h-48 overflow-y-auto whitespace-pre-wrap break-all text-foreground/90 max-w-[60ch] transition-all duration-150'
+                                : `max-h-6 overflow-hidden truncate max-w-[36ch] transition-all duration-150 ${cell === null ? 'text-muted-foreground/50 italic' : 'text-foreground/80'}`
+                            }
+                            title={!expanded && cell !== null ? String(cell) : undefined}
+                          >
+                            {cell === null ? 'NULL' : String(cell)}
+                          </div>
+                        </TableCell>
+                      )
+                    })}
                   </TableRow>
                 ))}
               </TableBody>
@@ -548,14 +604,29 @@ export default function AdminMonitor() {
   // ── Logs state ──────────────────────────────────────────────────────────────
   const [containers, setContainers] = useState<LogContainer[]>(DEFAULT_CONTAINERS)
   const [selected, setSelected] = useState('niibot-api')
-  const [tail, setTail] = useState(200)
-  const [follow, setFollow] = useState(false)
+  const tail = 200
+  const [follow, setFollow] = useState(true)
   const [{ loading, lines, error }, dispatch] = useReducer(fetchReducer, {
     loading: false,
     lines: [],
     error: null,
   })
   const termRef = useRef<HTMLDivElement>(null)
+  const [tabOrder, setTabOrder] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('monitor-tab-order')
+      if (saved) {
+        const parsed = JSON.parse(saved) as string[]
+        if (Array.isArray(parsed)) return parsed
+      }
+    } catch {
+      // ignore malformed localStorage value
+    }
+    return DEFAULT_CONTAINERS.map(c => c.name)
+  })
+  const dragItem = useRef<string | null>(null)
+  const dragOver = useRef<string | null>(null)
+  const [draggingTab, setDraggingTab] = useState<string | null>(null)
 
   useEffect(() => {
     getLogContainers()
@@ -564,7 +635,7 @@ export default function AdminMonitor() {
   }, [])
 
   useEffect(() => {
-    if (selected === '__db__') return
+    if (selected === '__db__' || selected === '__status__') return
     let cancelled = false
     dispatch({ type: 'start' })
     getContainerLogs(selected, tail)
@@ -581,7 +652,7 @@ export default function AdminMonitor() {
   }, [selected, tail])
 
   const pollFetch = useCallback(async () => {
-    if (selected === '__db__') return
+    if (selected === '__db__' || selected === '__status__') return
     try {
       const data = await getContainerLogs(selected, tail)
       dispatch({ type: 'done', lines: data.lines })
@@ -590,7 +661,7 @@ export default function AdminMonitor() {
     }
   }, [selected, tail])
 
-  usePolling({ fetchFn: pollFetch, intervalMs: 5_000, enabled: follow })
+  usePolling({ fetchFn: pollFetch, intervalMs: 5_000, enabled: follow, skipInitialCall: true })
 
   useEffect(() => {
     if (follow && termRef.current) {
@@ -599,6 +670,36 @@ export default function AdminMonitor() {
   }, [lines, follow])
 
   const isDbMode = selected === '__db__'
+  const isStatusMode = selected === '__status__'
+  const isLogMode = !isDbMode && !isStatusMode
+
+  const sortedContainers = useMemo(
+    () =>
+      [...containers].sort((a, b) => {
+        const ai = tabOrder.indexOf(a.name)
+        const bi = tabOrder.indexOf(b.name)
+        return (ai === -1 ? Infinity : ai) - (bi === -1 ? Infinity : bi)
+      }),
+    [containers, tabOrder]
+  )
+
+  const handleDragEnd = () => {
+    if (dragItem.current && dragOver.current && dragItem.current !== dragOver.current) {
+      setTabOrder(prev => {
+        const fromIdx = prev.indexOf(dragItem.current!)
+        const toIdx = prev.indexOf(dragOver.current!)
+        if (fromIdx === -1 || toIdx === -1) return prev
+        const next = [...prev]
+        next.splice(fromIdx, 1)
+        next.splice(toIdx, 0, dragItem.current!)
+        localStorage.setItem('monitor-tab-order', JSON.stringify(next))
+        return next
+      })
+    }
+    dragItem.current = null
+    dragOver.current = null
+    setDraggingTab(null)
+  }
 
   const handleRefresh = () => {
     dispatch({ type: 'start' })
@@ -693,32 +794,17 @@ export default function AdminMonitor() {
 
   return (
     <PageMain className="gap-0 p-0 lg:p-0 overflow-hidden">
-      <div className="flex flex-1 min-h-0 overflow-hidden">
-        {/* ── Left: Logs / DB panel ──────────────────────────────────────────── */}
-        <div className="flex flex-col flex-1 min-h-0 min-w-0 overflow-hidden">
-          {/* Header */}
-          <div className="flex items-center justify-between gap-3 px-page h-14 lg:px-page-lg border-b border-border/50 shrink-0">
-            <SlideUp>
-              <h1 className="text-page-title font-bold">Monitor</h1>
-            </SlideUp>
-            {!isDbMode && (
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-label text-muted-foreground">Follow</span>
-                  <Switch checked={follow} onCheckedChange={setFollow} />
-                </div>
-                <Select value={String(tail)} onValueChange={v => setTail(Number(v))}>
-                  <SelectTrigger size="sm" className="w-28">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="50">50 lines</SelectItem>
-                    <SelectItem value="100">100 lines</SelectItem>
-                    <SelectItem value="200">200 lines</SelectItem>
-                    <SelectItem value="500">500 lines</SelectItem>
-                    <SelectItem value="1000">1000 lines</SelectItem>
-                  </SelectContent>
-                </Select>
+      <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between gap-3 px-page h-14 lg:px-page-lg border-b border-border/50 shrink-0">
+          <SlideUp>
+            <h1 className="text-page-title font-bold">Monitor</h1>
+          </SlideUp>
+          {isLogMode && (
+            <div className="flex items-center gap-2">
+              <span className="text-label text-muted-foreground">Follow</span>
+              <Switch checked={follow} onCheckedChange={setFollow} />
+              {!follow && (
                 <Button
                   variant="ghost"
                   size="icon"
@@ -732,83 +818,10 @@ export default function AdminMonitor() {
                     <Icon icon="fa-solid fa-rotate" wrapperClassName="text-muted-foreground" />
                   )}
                 </Button>
-              </div>
-            )}
-          </div>
-
-          {/* Tabs */}
-          <div className="px-page lg:px-page-lg border-b border-border/50 overflow-x-auto shrink-0">
-            <Tabs
-              value={selected}
-              onValueChange={v => {
-                setSelected(v)
-                setFollow(false)
-              }}
-            >
-              <TabsList variant="line" className="h-10 bg-transparent gap-0">
-                {containers.map(c => (
-                  <TabsTrigger key={c.name} value={c.name} className="gap-1.5 text-label px-3">
-                    <span
-                      className={`size-1.5 rounded-full shrink-0 ${c.running ? 'bg-status-online' : 'bg-muted-foreground/50'}`}
-                    />
-                    {c.label}
-                  </TabsTrigger>
-                ))}
-                <TabsTrigger value="__db__" className="gap-1.5 text-label px-3">
-                  <Icon
-                    icon="fa-solid fa-database"
-                    size="xs"
-                    wrapperClassName="text-muted-foreground"
-                  />
-                  DB
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
-          </div>
-
-          {/* Content */}
-          {isDbMode ? (
-            <DbConsole />
-          ) : (
-            <>
-              <div
-                ref={termRef}
-                className="flex-1 min-h-0 overflow-auto bg-background text-foreground/80 font-mono text-label leading-5 py-2"
-              >
-                {loading && lines.length === 0 ? (
-                  <div className="flex items-center gap-2 px-4 py-3 text-muted-foreground">
-                    <Spinner className="size-3" />
-                    <span>Loading logs…</span>
-                  </div>
-                ) : error ? (
-                  <div className="px-4 py-3 text-destructive">{error}</div>
-                ) : lines.length === 0 ? (
-                  <div className="px-4 py-3 text-muted-foreground">No log output.</div>
-                ) : (
-                  lines.map((line, i) => <LogLineRow key={i} line={line} index={i} />)
-                )}
-              </div>
-
-              {/* Status bar */}
-              <div className="flex items-center justify-between px-page lg:px-page-lg py-1.5 border-t border-border/20 bg-background shrink-0">
-                <span className="font-mono text-label text-muted-foreground">
-                  {lines.length > 0 ? `${lines.length} lines` : '—'}
-                </span>
-                {follow && (
-                  <span className="font-mono text-label text-status-online flex items-center gap-1.5">
-                    <Icon icon="fa-solid fa-circle" size="xs" />
-                    following
-                  </span>
-                )}
-              </div>
-            </>
+              )}
+            </div>
           )}
-        </div>
-
-        {/* ── Right: Status cards ─────────────────────────────────────────────── */}
-        <div className="hidden lg:flex flex-col w-85 xl:w-95 shrink-0 border-l border-border/50 overflow-y-auto">
-          <div className="flex items-center justify-between px-page h-14 border-b border-border/50 shrink-0">
-            <h2 className="text-page-title font-bold">System Status</h2>
+          {isStatusMode && (
             <div className="flex items-center gap-2">
               <span className="text-label text-muted-foreground font-mono">
                 {lastUpdate.toLocaleTimeString('zh-TW', { hour12: false })}
@@ -822,41 +835,129 @@ export default function AdminMonitor() {
                 <Icon icon="fa-solid fa-rotate" wrapperClassName="text-muted-foreground" />
               </Button>
             </div>
-          </div>
-
-          <div className="flex flex-col gap-section p-page">
-            {services.map(service => (
-              <Card key={service.key}>
-                <CardHeader>
-                  <div className="flex items-center gap-2">
-                    <Icon icon={service.icon} size="sm" wrapperClassName="text-muted-foreground" />
-                    <CardTitle className="text-card-title">{service.name}</CardTitle>
-                  </div>
-                  <CardAction>
-                    {initialLoading ? (
-                      <Skeleton className="h-5 w-16 rounded-full" />
-                    ) : (
-                      <StatusBadge online={service.online} ready={service.ready} />
-                    )}
-                  </CardAction>
-                </CardHeader>
-                <CardContent>
-                  {service.fields.map((field, idx) => (
-                    <div key={field.label}>
-                      {idx > 0 && <Separator className="opacity-40" />}
-                      <FieldRow
-                        label={field.label}
-                        value={field.value}
-                        loading={initialLoading}
-                        offline={!service.online}
-                      />
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+          )}
         </div>
+
+        {/* Tabs */}
+        <div className="px-page lg:px-page-lg border-b border-border/50 overflow-x-auto shrink-0">
+          <Tabs
+            value={selected}
+            onValueChange={v => {
+              setSelected(v)
+              setFollow(false)
+            }}
+          >
+            <TabsList variant="line" className="h-10 bg-transparent gap-0">
+              <TabsTrigger value="__status__" className="text-label px-3">
+                <Icon icon="fa-solid fa-gauge" size="xs" />
+                Status
+              </TabsTrigger>
+              {sortedContainers.map(c => (
+                <TabsTrigger
+                  key={c.name}
+                  value={c.name}
+                  className={`text-label px-3 cursor-grab select-none${draggingTab === c.name ? ' opacity-40' : ''}`}
+                  draggable
+                  onDragStart={() => {
+                    dragItem.current = c.name
+                    setDraggingTab(c.name)
+                  }}
+                  onDragEnter={() => {
+                    dragOver.current = c.name
+                  }}
+                  onDragOver={e => e.preventDefault()}
+                  onDragEnd={handleDragEnd}
+                >
+                  <span
+                    className={`size-1.5 rounded-full shrink-0 ${c.running ? 'bg-status-online' : 'bg-muted-foreground/50'}`}
+                  />
+                  {c.label}
+                </TabsTrigger>
+              ))}
+              <TabsTrigger value="__db__" className="text-label px-3">
+                <Icon icon="fa-solid fa-database" size="xs" />
+                DB
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
+
+        {/* Content */}
+        {isStatusMode ? (
+          <div className="flex-1 min-h-0 overflow-y-auto">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-section p-page lg:p-page-lg">
+              {services.map(service => (
+                <Card key={service.key}>
+                  <CardHeader>
+                    <div className="flex items-center gap-2">
+                      <Icon
+                        icon={service.icon}
+                        size="sm"
+                        wrapperClassName="text-muted-foreground"
+                      />
+                      <CardTitle className="text-card-title">{service.name}</CardTitle>
+                    </div>
+                    <CardAction>
+                      {initialLoading ? (
+                        <Skeleton className="h-5 w-16 rounded-full" />
+                      ) : (
+                        <StatusBadge online={service.online} ready={service.ready} />
+                      )}
+                    </CardAction>
+                  </CardHeader>
+                  <CardContent>
+                    {service.fields.map((field, idx) => (
+                      <div key={field.label}>
+                        {idx > 0 && <Separator className="opacity-40" />}
+                        <FieldRow
+                          label={field.label}
+                          value={field.value}
+                          loading={initialLoading}
+                          offline={!service.online}
+                        />
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </div>
+        ) : isDbMode ? (
+          <DbConsole />
+        ) : (
+          <div className="dark flex flex-col flex-1 min-h-0">
+            <div
+              ref={termRef}
+              className="flex-1 min-h-0 overflow-auto bg-background font-mono text-label leading-5 py-2"
+            >
+              {loading && lines.length === 0 ? (
+                <div className="flex items-center gap-2 px-4 py-3 text-muted-foreground">
+                  <Spinner className="size-3" />
+                  <span>Loading logs…</span>
+                </div>
+              ) : error ? (
+                <div className="px-4 py-3 text-destructive">{error}</div>
+              ) : lines.length === 0 ? (
+                <div className="px-4 py-3 text-muted-foreground">No log output.</div>
+              ) : (
+                lines.map((line, i) => <LogLineRow key={i} line={line} index={i} />)
+              )}
+            </div>
+
+            {/* Status bar */}
+            <div className="flex items-center justify-between px-page lg:px-page-lg py-1.5 border-t border-border/20 bg-background shrink-0">
+              <span className="font-mono text-label text-muted-foreground">
+                {lines.length > 0 ? `${lines.length} lines` : '—'}
+              </span>
+              {follow && (
+                <span className="font-mono text-label text-status-online flex items-center gap-1.5">
+                  <span className="size-1.5 rounded-full bg-status-online animate-pulse" />
+                  live
+                </span>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </PageMain>
   )
