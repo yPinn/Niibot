@@ -1,5 +1,6 @@
 import json
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from openai import (
@@ -14,15 +15,19 @@ from twitchio.ext import commands
 
 from core.component import BotComponent
 from core.config import DATA_DIR, get_settings
-from core.guards import check_command
+from core.guards import has_role, is_on_cooldown, record_cooldown
 from shared.ai_provider import ProviderEntry, build_provider_chain, call_provider_chain
 from shared.repositories.ai_settings import AISettingsRepository, build_system_prompt
-from shared.repositories.command_config import CommandConfigRepository
 
 if TYPE_CHECKING:
     from core.bot import Bot
 else:
     from twitchio.ext.commands import Bot
+
+
+@dataclass
+class _Cooldown:
+    cooldown: int | None
 
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -89,14 +94,8 @@ def _scan_response(text: str) -> str | None:
 
 
 class AIComponent(BotComponent):
-    COMMANDS: list[dict] = [
-        {"command_name": "ai", "cooldown": 15, "aliases": "問"},
-    ]
-
     def __init__(self, bot: commands.Bot) -> None:
         self.bot: Bot = bot  # type: ignore[assignment]
-        self.cmd_repo = CommandConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
-        self.channel_repo = self.bot.channels  # type: ignore[attr-defined]
         self.ai_settings_repo = AISettingsRepository(self.bot.token_database)  # type: ignore[attr-defined]
 
         settings = get_settings()
@@ -114,7 +113,7 @@ class AIComponent(BotComponent):
         LOGGER.info(f"AIComponent initialized: {len(self.provider_chain)} provider entries")
 
     def refresh_pool(self, pool) -> None:
-        self.cmd_repo.pool = pool
+        self.ai_settings_repo.pool = pool
 
     @commands.command(aliases=["問"])
     async def ai(self, ctx: commands.Context[Bot], *, message: str | None = None) -> None:
@@ -127,9 +126,16 @@ class AIComponent(BotComponent):
             !ai 今天天氣如何？
             !ai 你好嗎？
         """
-        config = await check_command(self.cmd_repo, ctx, "ai", self.channel_repo)
-        if not config:
+        ai_settings = await self.ai_settings_repo.get(ctx.channel.id)
+        if not ai_settings.get("enabled", False):
             return
+        if not has_role(ctx.chatter, ai_settings.get("min_role", "everyone")):
+            return
+        if is_on_cooldown(
+            ctx.channel.id, "ai", _Cooldown(cooldown=ai_settings.get("cooldown", 15))
+        ):
+            return
+        record_cooldown(ctx.channel.id, "ai")
 
         if not message or not message.strip():
             await self._ctx_reply(ctx, "用法：!ai <問題>")
@@ -140,7 +146,6 @@ class AIComponent(BotComponent):
                 f"AI request: channel={ctx.channel.name}, user={ctx.chatter.name}, message={message[:100]}"
             )
 
-            ai_settings = await self.ai_settings_repo.get(ctx.channel.id)
             messages: list[ChatCompletionMessageParam] = [
                 {"role": "system", "content": build_system_prompt(ai_settings)},
                 {"role": "user", "content": message},
@@ -172,10 +177,6 @@ class AIComponent(BotComponent):
                     )
                     return
                 await self._ctx_reply(ctx, response)
-                try:
-                    await self.cmd_repo.increment_usage_count(ctx.channel.id, "ai")
-                except Exception as e:
-                    LOGGER.debug(f"[{ctx.channel.name}] Failed to record AI usage count: {e}")
             elif last_error:
                 raise last_error
             else:

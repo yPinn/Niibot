@@ -28,7 +28,6 @@ BUILTIN_DEFS: list[dict] = [
     {"command_name": "roll", "cooldown": 5, "aliases": "骰子"},
     {"command_name": "choose", "cooldown": 5, "aliases": "選擇"},
     # ── 功能型（預設關閉，需手動啟用）────────────────────────────────────────
-    {"command_name": "ai", "cooldown": 30, "aliases": "問", "enabled": False},
     {"command_name": "tft", "cooldown": 15, "aliases": "戰棋", "enabled": False},
     {"command_name": "crosshairs", "cooldown": 5, "aliases": "準星", "enabled": False},
 ]
@@ -51,7 +50,6 @@ BUILTIN_DESCRIPTIONS: dict[str, str] = {
     "ping": "確認機器人是否在線",
     "help": "顯示所有可用指令列表",
     "uptime": "查看目前已開播多久",
-    "ai": "向 AI 提問",
     "tft": "查詢聯盟戰棋排名",
     "fortune": "運勢占卜",
     "tarot": "塔羅牌占卜（可指定感情、事業、財運）",
@@ -67,7 +65,6 @@ BUILTIN_DESCRIPTIONS: dict[str, str] = {
 PUBLIC_DESCRIPTIONS: dict[str, str] = {
     "help": "顯示所有可用指令列表",
     "uptime": "查看目前已開播多久",
-    "ai": "向 AI 提問，用法：!問 <問題>",
     "tft": "查詢聯盟戰棋排名，用法：!tft <玩家名>#<tag>",
     "fortune": "運勢占卜",
     "tarot": "塔羅牌占卜，可指定分類：!塔羅 [感情/事業/財運]",

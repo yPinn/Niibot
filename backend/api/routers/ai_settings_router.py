@@ -28,6 +28,9 @@ class AISettingsResponse(BaseModel):
     refusal_style: str
     max_tokens: int
     enabled_emotes: list[str]
+    enabled: bool
+    cooldown: int
+    min_role: str
 
 
 class AISettingsPatch(BaseModel):
@@ -37,6 +40,9 @@ class AISettingsPatch(BaseModel):
     refusal_style: Literal["humorous", "polite"] | None = None
     max_tokens: int | None = Field(None, ge=50, le=500)
     enabled_emotes: list[str] | None = None
+    enabled: bool | None = None
+    cooldown: int | None = Field(None, ge=5, le=300)
+    min_role: Literal["everyone", "subscriber", "vip", "moderator", "broadcaster"] | None = None
 
 
 class EmoteItem(BaseModel):
@@ -148,7 +154,7 @@ async def get_ai_emotes(
                 return True
             return e["id"] in accessible if accessible is not None else False
 
-        return [
+        items = [
             EmoteItem(
                 id=e["id"],
                 name=e["name"],
@@ -156,14 +162,36 @@ async def get_ai_emotes(
                 emote_type=e.get("emote_type", ""),
                 tier=e.get("tier", ""),
                 available=is_available(e),
+                animated=e.get("animated", False),
             )
             for e in channel_raw
         ] + [
             EmoteItem(
-                id=e["id"], name=e["name"], url=e["url"], emote_type="globals", available=True
+                id=e["id"],
+                name=e["name"],
+                url=e["url"],
+                emote_type="globals",
+                available=True,
+                animated=e.get("animated", False),
             )
             for e in global_raw
         ]
+
+        # Sync available emote names → enabled_emotes in DB so the bot prompt stays current.
+        # Only write + notify when the list actually changes to avoid unnecessary cache churn.
+        available_names = sorted(e.name for e in items if e.available)
+        repo = AISettingsRepository(pool)
+        current = await repo.get(channel_id)
+        if sorted(current.get("enabled_emotes") or []) != available_names:
+            await repo.upsert(channel_id, enabled_emotes=available_names)
+            await _notify(pool, channel_id)
+            LOGGER.info(
+                "Channel %s: synced %d available emotes → enabled_emotes",
+                channel_id,
+                len(available_names),
+            )
+
+        return items
     except Exception:
         LOGGER.exception("Failed to fetch emotes for channel %s", channel_id)
         raise HTTPException(status_code=500, detail="Failed to fetch emotes") from None

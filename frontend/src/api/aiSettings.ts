@@ -7,15 +7,21 @@ export interface AISettings {
   refusal_style: 'humorous' | 'polite'
   max_tokens: number
   enabled_emotes: string[]
+  enabled: boolean
+  cooldown: number
+  min_role: 'everyone' | 'subscriber' | 'vip' | 'moderator' | 'broadcaster'
 }
 
 export const AI_SETTINGS_DEFAULT: AISettings = {
-  bot_name: 'Twitch 聊天室機器人',
+  bot_name: 'Niibot',
   persona: '',
   response_lang: 'zh-tw',
   refusal_style: 'humorous',
   max_tokens: 250,
   enabled_emotes: [],
+  enabled: false,
+  cooldown: 15,
+  min_role: 'everyone',
 }
 
 export interface EmoteItem {

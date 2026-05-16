@@ -11,12 +11,15 @@ _ai_settings_cache = AsyncTTLCache(maxsize=64, ttl=300)
 # ── Defaults ────────────────────────────────────────────────────────────────
 
 DEFAULT_AI_SETTINGS: dict = {
-    "bot_name": "Twitch 聊天室機器人",
+    "bot_name": "Niibot",
     "persona": "",
     "response_lang": "zh-tw",
     "refusal_style": "humorous",
     "max_tokens": 250,
     "enabled_emotes": [],
+    "enabled": False,
+    "cooldown": 15,
+    "min_role": "everyone",
 }
 
 _LANG_TEXT: dict[str, str] = {
@@ -64,8 +67,9 @@ def build_system_prompt(settings: dict) -> str:
 
     if emotes:
         parts.append(
-            f"\n\n貼圖：可在回覆中自然地插入以下 Twitch 貼圖名稱（直接輸入名稱即可，Twitch 自動渲染）："
-            f"{' '.join(emotes)}"
+            f"\n\n貼圖：可視情況在回覆的句首或句尾加入一個 Twitch 貼圖名稱，"
+            f"貼圖名稱前後各須保留一個半形空白（Twitch 才能正確渲染）；不適合時不要強迫使用。"
+            f"可用貼圖：{' '.join(emotes)}"
         )
 
     parts.append(
@@ -91,7 +95,7 @@ class AISettingsRepository:
         """Return ai_settings row for channel, or defaults if none exists."""
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT bot_name, persona, response_lang, refusal_style, max_tokens, enabled_emotes "
+                "SELECT bot_name, persona, response_lang, refusal_style, max_tokens, enabled_emotes, enabled, cooldown, min_role "
                 "FROM ai_settings WHERE channel_id = $1",
                 channel_id,
             )
@@ -114,6 +118,9 @@ class AISettingsRepository:
             "refusal_style",
             "max_tokens",
             "enabled_emotes",
+            "enabled",
+            "cooldown",
+            "min_role",
         }
         data = {k: v for k, v in fields.items() if k in allowed}
 
@@ -124,17 +131,20 @@ class AISettingsRepository:
             row = await conn.fetchrow(
                 """
                 INSERT INTO ai_settings
-                    (channel_id, bot_name, persona, response_lang, refusal_style, max_tokens, enabled_emotes, updated_at)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, now())
+                    (channel_id, bot_name, persona, response_lang, refusal_style, max_tokens, enabled_emotes, enabled, cooldown, min_role, updated_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now())
                 ON CONFLICT (channel_id) DO UPDATE SET
-                    bot_name      = EXCLUDED.bot_name,
-                    persona       = EXCLUDED.persona,
-                    response_lang = EXCLUDED.response_lang,
-                    refusal_style = EXCLUDED.refusal_style,
-                    max_tokens    = EXCLUDED.max_tokens,
+                    bot_name       = EXCLUDED.bot_name,
+                    persona        = EXCLUDED.persona,
+                    response_lang  = EXCLUDED.response_lang,
+                    refusal_style  = EXCLUDED.refusal_style,
+                    max_tokens     = EXCLUDED.max_tokens,
                     enabled_emotes = EXCLUDED.enabled_emotes,
-                    updated_at    = now()
-                RETURNING bot_name, persona, response_lang, refusal_style, max_tokens, enabled_emotes
+                    enabled        = EXCLUDED.enabled,
+                    cooldown       = EXCLUDED.cooldown,
+                    min_role       = EXCLUDED.min_role,
+                    updated_at     = now()
+                RETURNING bot_name, persona, response_lang, refusal_style, max_tokens, enabled_emotes, enabled, cooldown, min_role
                 """,
                 channel_id,
                 merged["bot_name"],
@@ -143,6 +153,9 @@ class AISettingsRepository:
                 merged["refusal_style"],
                 merged["max_tokens"],
                 list(merged.get("enabled_emotes") or []),
+                merged.get("enabled", False),
+                merged.get("cooldown", 15),
+                merged.get("min_role", "everyone"),
             )
         _ai_settings_cache.invalidate(f"ai_settings:{channel_id}")
         d = dict(row)
