@@ -10,6 +10,8 @@ from shared.logging_setup import setup_logging as _setup_logging
 if TYPE_CHECKING:
     from core.config import TwitchBotSettings
 
+_OWN_PREFIXES = ("core.", "components.", "utils.", "shared.")
+
 
 def _build_suppress(level: int) -> dict[str, int]:
     """Build per-level suppression dict for twitchio loggers."""
@@ -47,4 +49,5 @@ def setup_logging(settings: TwitchBotSettings) -> None:
         webhook_url=settings.error_webhook_url,
         service_name="twitch",
         suppress_loggers=_build_suppress(level),
+        own_prefixes=_OWN_PREFIXES,
     )

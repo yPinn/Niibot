@@ -11,6 +11,8 @@ _SUPPRESS: dict[str, int] = {
     "httpcore": logging.WARNING,
 }
 
+_OWN_PREFIXES = ("core.", "services.", "routers.", "shared.")
+
 
 def setup_logging(settings: Settings) -> None:
     _setup_logging(
@@ -18,5 +20,6 @@ def setup_logging(settings: Settings) -> None:
         webhook_url=settings.error_webhook_url or "",
         service_name="api",
         suppress_loggers=_SUPPRESS,
+        own_prefixes=_OWN_PREFIXES,
     )
     logging.getLogger(__name__).info(f"Logging: {settings.log_level} | Env: {settings.environment}")
