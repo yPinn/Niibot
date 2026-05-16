@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
+﻿import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import AnsiToHtml from 'ansi-to-html'
 
 import {
@@ -109,6 +109,26 @@ function sliceAfterPlainChars(s: string, n: number): string {
   return s.slice(i)
 }
 
+// Return the first `n` plain-character prefix of an ANSI string (ANSI codes preserved).
+// Companion to sliceAfterPlainChars — together they split an ANSI string at a plain-text boundary.
+function sliceBeforePlainChars(s: string, n: number): string {
+  // eslint-disable-next-line no-control-regex
+  const RE = /\x1b\[[\d;]*[A-Za-z]/g
+  let plain = 0
+  let i = 0
+  while (i < s.length && plain < n) {
+    RE.lastIndex = i
+    const m = RE.exec(s)
+    if (m !== null && m.index === i) {
+      i += m[0].length
+    } else {
+      i++
+      plain++
+    }
+  }
+  return s.slice(0, i)
+}
+
 // Trim Rich's column-alignment whitespace from the start of continuation lines.
 // Uses sliceAfterPlainChars so any ANSI colors in the body are preserved.
 function trimLeadingSpaces(s: string): string {
@@ -133,11 +153,20 @@ function parsePgPrefix(msg: string): { pid: string; level: string; body: string 
   return { pid: m[1], level: m[2], body: msg.slice(m[0].length) }
 }
 
+// Color for the pg level label (LOG, WARNING, ERROR…)
 function pgLevelColor(level: string): string {
   if (/^(ERROR|FATAL|PANIC)$/.test(level)) return 'text-status-offline'
   if (level === 'WARNING') return 'text-status-warning'
-  if (level === 'DEBUG') return 'text-muted-foreground/60'
-  return 'text-muted-foreground/50'
+  if (level === 'NOTICE') return 'text-status-info'
+  if (level === 'DEBUG') return 'text-log-dim'
+  return 'text-log-muted' // LOG
+}
+
+// Color for the pg message body (plain text, no ANSI)
+function pgContentColor(level: string): string {
+  if (/^(ERROR|FATAL|PANIC)$/.test(level)) return 'text-status-offline'
+  if (level === 'WARNING') return 'text-status-warning'
+  return 'text-log-base'
 }
 
 // Matches Python/Rich structured log prefix (applied to ANSI-stripped string):
@@ -153,39 +182,75 @@ function parsePyPrefix(msg: string): { level: string; body: string } | null {
   return { level: m[2], body: sliceAfterPlainChars(msg, m[0].length) }
 }
 
+// Split a Rich/Python log body ("module_tag │ message") produced by _ModuleFormatter.
+// isOwn: true when the module tag contains cyan ANSI (\x1b[36m) = first-party logger.
+function parsePyBody(body: string): { module: string; isOwn: boolean; message: string } | null {
+  const clean = stripAnsi(body)
+  const sepIdx = clean.indexOf(' │ ')
+  if (sepIdx === -1) return null
+  const moduleAnsi = sliceBeforePlainChars(body, sepIdx)
+  return {
+    module: clean.slice(0, sepIdx).trim(),
+    // eslint-disable-next-line no-control-regex
+    isOwn: /\x1b\[(?:\d+;)*36m/.test(moduleAnsi),
+    message: sliceAfterPlainChars(body, sepIdx + 3),
+  }
+}
+
+// Color for the py level label (INFO, WARNING, ERROR…)
 function pyLevelColor(level: string): string {
   if (/^(ERROR|CRITICAL|FATAL)$/.test(level)) return 'text-status-offline'
   if (level === 'WARNING') return 'text-status-warning'
-  if (level === 'DEBUG') return 'text-muted-foreground/60'
-  return 'text-muted-foreground/50'
+  if (level === 'DEBUG') return 'text-log-dim'
+  return 'text-status-info' // INFO
 }
 
-function lineColor(msg: string, stream: string): string {
+// Color for the py message body when no ANSI is present
+function pyContentColor(level: string): string {
+  if (/^(ERROR|CRITICAL|FATAL)$/.test(level)) return 'text-status-offline'
+  if (level === 'WARNING') return 'text-status-warning'
+  return 'text-log-base'
+}
+
+function lineColor(msg: string): string {
   if (/\b(ERROR|CRITICAL|FATAL|EXCEPTION|TRACEBACK)\b/i.test(msg)) return 'text-status-offline'
   if (/\bwarn(ing)?\b/i.test(msg)) return 'text-status-warning'
-  if (/\bdebug\b/i.test(msg)) return 'text-muted-foreground'
-  if (stream === 'stderr') return 'text-status-warning'
-  return 'text-foreground/80'
+  if (/\bdebug\b/i.test(msg)) return 'text-log-muted'
+  return 'text-log-base'
 }
 
-function LogLineRow({ line, index }: { line: LogLine; index: number }) {
+function LogLineRow({
+  line,
+  index,
+  isPgMode,
+}: {
+  line: LogLine
+  index: number
+  isPgMode: boolean
+}) {
   const { ts, msg } = parseDockerTs(line.text)
   const raw = msg || line.text
   const pg = parsePgPrefix(raw)
   const py = !pg ? parsePyPrefix(raw) : null
+  const pyBody = py ? parsePyBody(py.body) : null
+  const isOwn = pyBody?.isOwn ?? false
   // Continuation lines (no recognized prefix) carry Rich's column-alignment spaces — strip them.
-  const content = pg ? pg.body : py ? py.body : trimLeadingSpaces(raw)
+  const content = pg ? pg.body : py ? (pyBody?.message ?? py.body) : trimLeadingSpaces(raw)
 
   const colored = hasAnsi(content) ? ansiConverter.toHtml(content) : null
 
   // When a structured level is known (py/pg), prefer level-based color over keyword scanning.
+  // Use content color functions (not label colors) so body text has proper readable brightness.
+  // In pg mode, unstructured lines (docker metadata/timestamps) are dimmed to distinguish from pg LOG.
   const fallbackColor = colored
     ? ''
     : py
-      ? pyLevelColor(py.level)
+      ? pyContentColor(py.level)
       : pg
-        ? pgLevelColor(pg.level)
-        : lineColor(stripAnsi(content), line.stream)
+        ? pgContentColor(pg.level)
+        : isPgMode
+          ? 'text-log-dim'
+          : lineColor(stripAnsi(content))
 
   return (
     <div className="flex gap-2 min-w-0 hover:bg-white/5 px-3 py-px group">
@@ -195,7 +260,7 @@ function LogLineRow({ line, index }: { line: LogLine; index: number }) {
       <span className="text-muted-foreground/70 shrink-0 tabular-nums w-22">{ts}</span>
       {pg && (
         <>
-          <span className="text-muted-foreground/35 shrink-0 tabular-nums select-none">
+          <span className="text-muted-foreground/35 shrink-0 tabular-nums select-none w-10 text-right">
             [{pg.pid}]
           </span>
           <span className={`shrink-0 font-semibold select-none w-14 ${pgLevelColor(pg.level)}`}>
@@ -204,20 +269,42 @@ function LogLineRow({ line, index }: { line: LogLine; index: number }) {
         </>
       )}
       {py && (
-        <span className={`shrink-0 font-semibold select-none w-14 ${pyLevelColor(py.level)}`}>
-          {py.level}
-        </span>
+        <>
+          <span
+            className={`shrink-0 font-semibold select-none w-16 ${
+              isOwn || /^(ERROR|CRITICAL|FATAL|WARNING)$/.test(py.level)
+                ? pyLevelColor(py.level)
+                : 'text-muted-foreground/40'
+            }`}
+          >
+            {py.level}
+          </span>
+          <span className="shrink-0 w-28 overflow-hidden select-none font-mono">
+            {pyBody && (
+              <span className={isOwn ? 'text-cyan-400/80' : 'text-muted-foreground/35'}>
+                {pyBody.module}
+              </span>
+            )}
+          </span>
+        </>
       )}
-      {!pg && !py && <span className="w-14 shrink-0" />}
+      {!pg &&
+        !py &&
+        (isPgMode ? (
+          <>
+            <span className="w-10 shrink-0" />
+            <span className="w-14 shrink-0" />
+          </>
+        ) : (
+          <>
+            <span className="w-16 shrink-0" />
+            <span className="w-28 shrink-0" />
+          </>
+        ))}
       {colored ? (
-        <span
-          className="wrap-break-word whitespace-pre-wrap min-w-0"
-          dangerouslySetInnerHTML={{ __html: colored }}
-        />
+        <span className="whitespace-pre min-w-0" dangerouslySetInnerHTML={{ __html: colored }} />
       ) : (
-        <span className={`${fallbackColor} wrap-break-word whitespace-pre-wrap min-w-0`}>
-          {stripAnsi(content)}
-        </span>
+        <span className={`${fallbackColor} whitespace-pre min-w-0`}>{stripAnsi(content)}</span>
       )}
     </div>
   )
@@ -493,7 +580,7 @@ function DbConsole() {
             }}
             onKeyDown={handleKeyDown}
             rows={4}
-            className="flex-1 font-mono text-label text-foreground bg-muted border-border resize-y min-h-[72px] max-h-48 focus-visible:ring-1 focus-visible:ring-ring"
+            className="flex-1 font-mono text-label text-foreground bg-muted border-border resize-y min-h-18 max-h-48 focus-visible:ring-1 focus-visible:ring-ring"
             placeholder="SELECT ..."
             spellCheck={false}
           />
@@ -520,7 +607,7 @@ function DbConsole() {
                   {result.columns.map((col, j) => (
                     <TableHead
                       key={col}
-                      className="sticky top-0 bg-muted text-muted-foreground whitespace-nowrap font-medium cursor-pointer select-none hover:text-foreground transition-colors"
+                      className="sticky top-0 bg-muted text-muted-foreground whitespace-pre font-medium cursor-pointer select-none hover:text-foreground transition-colors"
                       onClick={() => handleSortClick(j)}
                     >
                       <div className="flex items-center gap-1.5">
@@ -1030,7 +1117,16 @@ export default function AdminMonitor() {
               ) : lines.length === 0 ? (
                 <div className="px-4 py-3 text-muted-foreground">No log output.</div>
               ) : (
-                lines.map((line, i) => <LogLineRow key={i} line={line} index={i} />)
+                <div className="min-w-max">
+                  {lines.map((line, i) => (
+                    <LogLineRow
+                      key={i}
+                      line={line}
+                      index={i}
+                      isPgMode={selected === 'niibot-postgres'}
+                    />
+                  ))}
+                </div>
               )}
             </div>
 

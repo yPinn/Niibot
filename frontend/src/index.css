@@ -62,6 +62,11 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 
+  /* ── Log Terminal Colors (always dark context — no light/dark variants needed) ── */
+  --color-log-dim: oklch(0.42 0.01 290); /* noise: docker metadata, very-secondary labels */
+  --color-log-muted: oklch(0.56 0.01 290); /* secondary: level labels (LOG/DEBUG), timestamps */
+  --color-log-base: oklch(0.82 0.005 290); /* standard content: readable against dark terminal bg */
+
   /* ── Status Colors ── */
   --color-status-online: var(--status-online);
   --color-status-offline: var(--status-offline);
