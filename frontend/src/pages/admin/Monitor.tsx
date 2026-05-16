@@ -80,6 +80,9 @@ const ansiConverter = new AnsiToHtml({
 const ANSI_TEST_RE = /\x1b\[[\d;]*[A-Za-z]/
 // eslint-disable-next-line no-control-regex
 const ANSI_STRIP_RE = /\x1b\[[\d;]*[A-Za-z]/g
+// Factory for per-call stateful regex (g flag carries lastIndex; must not be shared across calls)
+// eslint-disable-next-line no-control-regex
+const makeAnsiRe = () => /\x1b\[[\d;]*[A-Za-z]/g
 
 function hasAnsi(s: string): boolean {
   return ANSI_TEST_RE.test(s)
@@ -92,8 +95,7 @@ function stripAnsi(s: string): string {
 // Walk an ANSI string and return everything after the first `n` plain (non-ANSI) characters.
 // Used to split a known-length plain prefix from an ANSI-colored string without losing body colors.
 function sliceAfterPlainChars(s: string, n: number): string {
-  // eslint-disable-next-line no-control-regex
-  const RE = /\x1b\[[\d;]*[A-Za-z]/g
+  const RE = makeAnsiRe()
   let plain = 0
   let i = 0
   while (i < s.length && plain < n) {
@@ -112,8 +114,7 @@ function sliceAfterPlainChars(s: string, n: number): string {
 // Return the first `n` plain-character prefix of an ANSI string (ANSI codes preserved).
 // Companion to sliceAfterPlainChars — together they split an ANSI string at a plain-text boundary.
 function sliceBeforePlainChars(s: string, n: number): string {
-  // eslint-disable-next-line no-control-regex
-  const RE = /\x1b\[[\d;]*[A-Za-z]/g
+  const RE = makeAnsiRe()
   let plain = 0
   let i = 0
   while (i < s.length && plain < n) {
@@ -279,7 +280,7 @@ function LogLineRow({
           >
             {py.level}
           </span>
-          <span className="shrink-0 w-28 overflow-hidden select-none font-mono">
+          <span className="shrink-0 w-44 overflow-hidden select-none font-mono">
             {pyBody && (
               <span className={isOwn ? 'text-cyan-400/80' : 'text-muted-foreground/35'}>
                 {pyBody.module}
@@ -298,7 +299,7 @@ function LogLineRow({
         ) : (
           <>
             <span className="w-16 shrink-0" />
-            <span className="w-28 shrink-0" />
+            <span className="w-44 shrink-0" />
           </>
         ))}
       {colored ? (
@@ -543,19 +544,19 @@ function DbConsole() {
       : 'text-muted-foreground/50'
 
   return (
-    <div className="flex flex-1 min-h-0 overflow-hidden bg-background">
-      {/* ── Preset sidebar ── */}
-      <div className="w-44 shrink-0 border-r border-border/30 overflow-y-auto flex flex-col gap-0 py-1">
+    <div className="flex flex-col md:flex-row flex-1 min-h-0 overflow-hidden bg-background">
+      {/* ── Preset sidebar / mobile strip ── */}
+      <div className="flex flex-row overflow-x-auto shrink-0 border-b border-border/30 md:flex-col md:w-44 md:border-b-0 md:border-r md:overflow-x-hidden md:overflow-y-auto md:py-1">
         {DB_PRESETS.map(group => (
-          <div key={group.group}>
-            <div className="px-3 pt-3 pb-1 text-muted-foreground/60 font-medium uppercase tracking-wide text-label select-none">
+          <div key={group.group} className="flex flex-row md:flex-col">
+            <div className="hidden md:block px-3 pt-3 pb-1 text-muted-foreground/60 font-medium uppercase tracking-wide text-label select-none">
               {group.group}
             </div>
             {group.items.map(item => (
               <button
                 key={item.label}
                 onClick={() => handlePreset(item)}
-                className={`w-full text-left px-3 py-1 text-label truncate transition-colors ${
+                className={`whitespace-nowrap md:w-full text-left px-3 py-2 md:py-1 text-label truncate transition-colors ${
                   activePreset === item.label
                     ? 'bg-accent text-accent-foreground'
                     : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'

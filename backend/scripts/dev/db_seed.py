@@ -3,7 +3,7 @@
 import asyncio
 import random
 import sys
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any  # 移除 dict, list 的匯入
 
@@ -62,7 +62,7 @@ async def seed_test_sessions(channel_id: str | None = None):
 
         # 隨機生成 15-20 筆會話
         num_sessions = random.randint(15, 20)
-        now = datetime.now()
+        now = datetime.now(UTC)
 
         # 修正：直接使用內建 list 和 dict 標註類型
         sessions: list[dict[str, Any]] = []
