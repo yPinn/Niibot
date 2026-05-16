@@ -26,6 +26,7 @@ from shared.twitch_scopes import BROADCASTER_SCOPES
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 _COOLDOWN = timedelta(hours=1)
+CMD_COOLDOWN = timedelta(minutes=5)
 
 
 def is_scope_error(obj: object) -> bool:
@@ -56,14 +57,19 @@ def is_scope_error(obj: object) -> bool:
 
 
 class ReauthNotifier:
-    """Rate-limits reauth chat notifications to once per channel per hour."""
+    """Rate-limits reauth chat notifications per channel.
+
+    Default cooldown is 1 hour (passive events like stream-online).
+    Pass min_interval=CMD_COOLDOWN (5 min) for command-triggered paths
+    so viewers get timely feedback without 1-hour silence windows.
+    """
 
     def __init__(self) -> None:
         self._last_notified: dict[str, datetime] = {}
 
-    def _can_notify(self, channel_id: str) -> bool:
+    def _can_notify(self, channel_id: str, cooldown: timedelta) -> bool:
         last = self._last_notified.get(channel_id)
-        return last is None or datetime.now(UTC) - last >= _COOLDOWN
+        return last is None or datetime.now(UTC) - last >= cooldown
 
     def _build_message(self, broadcaster_login: str) -> str:
         url = get_settings().frontend_url.rstrip("/")
@@ -74,12 +80,20 @@ class ReauthNotifier:
         broadcaster_login: str,
         channel_id: str,
         send_fn: Callable[[str], Awaitable[object]],
+        *,
+        min_interval: timedelta | None = None,
     ) -> bool:
-        """Send a reauth notification if cooldown permits. Returns True if sent."""
+        """Send a reauth notification if cooldown permits. Returns True if sent.
+
+        min_interval overrides the default 1-hour cooldown. Use CMD_COOLDOWN
+        (5 min) when triggered by a viewer command so the broadcaster gets
+        timely feedback without being spammed every message.
+        """
         if get_settings().is_development:
             LOGGER.debug(f"[{broadcaster_login}] Reauth notification skipped (dev)")
             return False
-        if not self._can_notify(channel_id):
+        cooldown = min_interval if min_interval is not None else _COOLDOWN
+        if not self._can_notify(channel_id, cooldown):
             return False
         self._last_notified[channel_id] = datetime.now(UTC)
         try:

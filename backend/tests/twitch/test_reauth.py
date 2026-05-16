@@ -191,3 +191,28 @@ class TestReauthNotifier:
             result = await notifier.notify("alice", "ch1", send_fn)
         assert result is False
         send_fn.assert_not_awaited()
+
+    async def test_min_interval_allows_send_within_default_cooldown(self):
+        """min_interval=5min allows a second send before the 1hr default cooldown."""
+        notifier = self._notifier()
+        send_fn = AsyncMock()
+        # First send (stream-online path, default 1hr cooldown)
+        await notifier.notify("alice", "ch1", send_fn)
+        send_fn.reset_mock()
+        # Back-date by 6 minutes (past 5-min cmd cooldown, still within 1hr)
+        notifier._last_notified["ch1"] = datetime.now(UTC) - timedelta(minutes=6)
+
+        result = await notifier.notify("alice", "ch1", send_fn, min_interval=timedelta(minutes=5))
+        assert result is True
+        send_fn.assert_awaited_once()
+
+    async def test_min_interval_still_gates_within_short_cooldown(self):
+        """min_interval=5min blocks a second send within 5 minutes."""
+        notifier = self._notifier()
+        send_fn = AsyncMock()
+        await notifier.notify("alice", "ch1", send_fn, min_interval=timedelta(minutes=5))
+        send_fn.reset_mock()
+
+        result = await notifier.notify("alice", "ch1", send_fn, min_interval=timedelta(minutes=5))
+        assert result is False
+        send_fn.assert_not_awaited()

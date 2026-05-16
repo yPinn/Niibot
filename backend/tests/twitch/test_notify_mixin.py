@@ -184,6 +184,89 @@ class TestHandleChannelToggleEnable:
 
 
 # ---------------------------------------------------------------------------
+# _handle_new_token — reauth-restored message
+# ---------------------------------------------------------------------------
+
+
+def _new_token_payload(user_id: str) -> str:
+    return json.dumps({"user_id": user_id})
+
+
+def _make_user_info(login: str, scopes: list[str]):
+
+    info = MagicMock()
+    info.login = login
+    info.scopes = scopes
+    return info
+
+
+class TestHandleNewTokenReauthRestored:
+    pytestmark = pytest.mark.asyncio
+
+    async def test_sends_restored_message_when_reauth_cleared(self):
+        """When scopes are complete and channel was in _needs_reauth, restored msg is sent."""
+        from shared.twitch_scopes import BROADCASTER_SCOPES
+
+        mixin = _StubMixin()
+        mixin._needs_reauth = {"u1"}
+        mixin._send_reauth_restored_message = AsyncMock()
+        mixin.add_token = AsyncMock(return_value=_make_user_info("alice", BROADCASTER_SCOPES))
+        mixin.add_channel_to_db = AsyncMock()
+        mixin._subscribed_channels = {"u1"}  # already subscribed, skip subscribe branch
+
+        await mixin._handle_new_token(None, None, "new_token", _new_token_payload("u1"))
+
+        mixin._send_reauth_restored_message.assert_awaited_once_with("u1", "alice")
+        assert "u1" not in mixin._needs_reauth
+
+    async def test_no_restored_message_when_not_previously_in_reauth(self):
+        """No restored message when channel was never in _needs_reauth."""
+        from shared.twitch_scopes import BROADCASTER_SCOPES
+
+        mixin = _StubMixin()
+        mixin._needs_reauth = set()  # was NOT in reauth
+        mixin._send_reauth_restored_message = AsyncMock()
+        mixin.add_token = AsyncMock(return_value=_make_user_info("alice", BROADCASTER_SCOPES))
+        mixin.add_channel_to_db = AsyncMock()
+        mixin._subscribed_channels = {"u1"}
+
+        await mixin._handle_new_token(None, None, "new_token", _new_token_payload("u1"))
+
+        mixin._send_reauth_restored_message.assert_not_awaited()
+
+    async def test_no_restored_message_when_scopes_still_missing(self):
+        """No restored message when new token still has missing scopes."""
+        mixin = _StubMixin()
+        mixin._needs_reauth = {"u1"}
+        mixin._send_reauth_restored_message = AsyncMock()
+        mixin.add_token = AsyncMock(return_value=_make_user_info("alice", ["user:read:email"]))
+        mixin.add_channel_to_db = AsyncMock()
+        mixin._subscribed_channels = {"u1"}
+
+        await mixin._handle_new_token(None, None, "new_token", _new_token_payload("u1"))
+
+        mixin._send_reauth_restored_message.assert_not_awaited()
+        assert "u1" in mixin._needs_reauth
+
+    async def test_mod_status_rechecked_after_reauth_even_when_already_subscribed(self):
+        """After clearing _needs_reauth, _check_bot_mod_status is called for already-subscribed
+        channels so _bot_is_mod is populated (was empty if token expired at startup)."""
+        from shared.twitch_scopes import BROADCASTER_SCOPES
+
+        mixin = _StubMixin()
+        mixin._needs_reauth = {"u1"}
+        mixin._subscribed_channels = {"u1"}  # already subscribed — would normally skip mod check
+        mixin._send_reauth_restored_message = AsyncMock()
+        mixin._check_bot_mod_status = AsyncMock()
+        mixin.add_token = AsyncMock(return_value=_make_user_info("alice", BROADCASTER_SCOPES))
+        mixin.add_channel_to_db = AsyncMock()
+
+        await mixin._handle_new_token(None, None, "new_token", _new_token_payload("u1"))
+
+        mixin._check_bot_mod_status.assert_awaited_once_with("u1")
+
+
+# ---------------------------------------------------------------------------
 # Bot._check_bot_mod_status
 # ---------------------------------------------------------------------------
 

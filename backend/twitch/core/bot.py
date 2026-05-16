@@ -225,8 +225,9 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
                 return
 
             if channel_id in self._needs_reauth:
-                from utils.reauth import reauth_notifier
+                from utils.reauth import CMD_COOLDOWN, reauth_notifier
 
+                is_command = bool(payload.text and payload.text.startswith("!"))
                 await reauth_notifier.notify(
                     broadcaster_login=payload.broadcaster.name,
                     channel_id=channel_id,
@@ -234,6 +235,7 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
                         message=msg,
                         sender=self.bot_id,
                     ),
+                    min_interval=CMD_COOLDOWN if is_command else None,
                 )
                 return
 

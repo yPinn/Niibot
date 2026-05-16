@@ -113,6 +113,24 @@ class _NotifyMixin:
                 f"[NOTIFY] Failed to send welcome message to {self._ch(channel_id)}: {e}"
             )  # type: ignore[attr-defined]
 
+    async def _send_reauth_restored_message(self, channel_id: str, login: str) -> None:
+        """Notify chat that bot functionality has been restored after reauth."""
+        try:
+            users = await self.fetch_users(ids=[channel_id])  # type: ignore[attr-defined]
+            if not users:
+                return
+            await users[0].send_message(
+                message="✅ 授權已更新，Niibot 功能恢復正常！",
+                sender=self._bot_id,  # type: ignore[attr-defined]
+            )
+            LOGGER.info(
+                f"[NOTIFY] Reauth restored message sent to {login} ({self._ch(channel_id)})"
+            )  # type: ignore[attr-defined]
+        except Exception as e:
+            LOGGER.warning(
+                f"[NOTIFY] Failed to send reauth restored message to {self._ch(channel_id)}: {e}"
+            )  # type: ignore[attr-defined]
+
     async def _handle_new_token(self, connection, pid, channel, payload) -> None:
         try:
             data = json.loads(payload)
@@ -141,7 +159,13 @@ class _NotifyMixin:
                     LOGGER.warning(f"[NOTIFY] {user_info.login} missing scopes: {missing}")
                     self._needs_reauth.add(user_id)  # type: ignore[attr-defined]
                 else:
+                    was_reauth = user_id in self._needs_reauth  # type: ignore[attr-defined]
                     self._needs_reauth.discard(user_id)  # type: ignore[attr-defined]
+                    if was_reauth:
+                        await self._send_reauth_restored_message(user_id, user_info.login or "")  # type: ignore[attr-defined]
+                        # Re-verify mod status: _bot_is_mod may be empty if the token was
+                        # already expired at startup (mod check returned 401 before now).
+                        await self._check_bot_mod_status(user_id)  # type: ignore[attr-defined]
 
                 await self.add_channel_to_db(user_id, user_info.login or "unknown")  # type: ignore[attr-defined]
 
