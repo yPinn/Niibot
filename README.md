@@ -7,11 +7,11 @@
 ```text
 Niibot/
 ├── backend/
-│   ├── api/        # FastAPI — JWT 認證、Dashboard API（13 個 Routers）
+│   ├── api/        # FastAPI — JWT 認證、Dashboard API（16 個 Routers）
 │   ├── twitch/     # TwitchIO 3 Bot + EventSub + pg_notify 即時設定重載
 │   ├── discord/    # discord.py 2 Bot（Cogs 模組架構）
 │   ├── scrapling/  # Instagram / Threads 媒體抓取服務
-│   ├── shared/     # 共用 DB、Cache、Repositories、Migrations（43 個）
+│   ├── shared/     # 共用 DB、Cache、Repositories、Migrations（67 個）
 │   └── scripts/    # DB 管理工具
 ├── frontend/       # React 19 + Vite + Tailwind CSS v4
 │   └── functions/  # Cloudflare Pages Functions（API 反向代理）

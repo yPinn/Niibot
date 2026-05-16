@@ -55,7 +55,7 @@ src/
 ├── components/
 │   ├── ui/         # shadcn/ui 元件（Button、Card、Sidebar…）
 │   ├── layouts/    # SidebarLayout（Dashboard 頁面外框）
-│   └── ...         # 業務元件（AnalyticsChart、ProtectedRoute、ErrorBoundary…）
+│   └── ...         # 業務元件（PageHeader、AnalyticsChart、ProtectedRoute、ErrorBoundary…）
 ├── contexts/
 │   ├── AuthContext.tsx          # 認證狀態、user、channels、401 全域攔截
 │   ├── BotContext.tsx           # 目前活躍的 Bot 平台（twitch / discord）
@@ -67,7 +67,7 @@ src/
 │   └── sort.ts     # 通用排序工具
 ├── pages/
 │   ├── dashboard/  # Twitch Bot（Commands、Events、Overview、Timers）
-│   ├── modules/    # ChatOverlay、GameQueue、VideoQueue、Crosshairs
+│   ├── modules/    # AI、ChatOverlay、GameQueue、VideoQueue、Crosshairs
 │   ├── analytics/  # Insights（觀眾分析）
 │   ├── discord/    # Discord Dashboard
 │   ├── crosshairs/ # 公開準星庫（/:username/crosshairs）
@@ -100,6 +100,7 @@ ProtectedRoute → SidebarLayout（需登入）
   /timers                        Timers
   /analytics/insights            Insights（觀眾分析）
   /settings                      Settings（斗內金流設定）
+  /modules/ai                    AIModule（AI 助手設定）
   /modules/chat-overlay          ChatOverlay（OBS CSS 產生器）
   /modules/game-queue            GameQueue（遊戲排隊管理）
   /modules/video-queue           VideoQueue（YouTube 點播管理）

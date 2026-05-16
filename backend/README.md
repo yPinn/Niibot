@@ -29,7 +29,7 @@ backend/
 | `ai_provider.py`        | 多 AI Provider 鏈（Groq / Gemini / OpenRouter），自動 fallback |
 | `models/`               | Pydantic 資料模型                                              |
 | `repositories/`         | 資料庫存取層（per-domain）                                     |
-| `migrations/`           | 自製 migration runner；版本腳本在 `versions/`（目前 v043）     |
+| `migrations/`           | 自製 migration runner；版本腳本在 `versions/`（目前 v067）     |
 
 ## 服務架構
 
@@ -110,9 +110,12 @@ uv run python scripts/db_migrate.py
 | `/api/video-queue`     | 影片佇列                                              |
 | `/api/timers`          | 定時訊息 CRUD                                         |
 | `/api/triggers`        | 關鍵字觸發 CRUD                                       |
+| `/api/crosshairs`      | 準星管理、公開庫                                      |
+| `/api/ai`              | AI 助手設定（角色、enabled、cooldown、min_role、貼圖）|
 | `/api/donate`          | 贊助結帳（ECPay / OPay / NewebPay / PayPal）、webhook |
 | `/api/payment-configs` | 金流平台設定                                          |
 | `/api/bots`            | Bot 狀態查詢                                          |
+| `/api/admin`           | 管理員工具（限 Owner）                                |
 | `/health`, `/status`   | 服務健康檢查                                          |
 
 **安全機制：** JWT httponly cookie（HS256、30 天）/ HMAC-SHA256 OAuth CSRF state / 全域安全標頭（CSP、HSTS 等）/ 金流 webhook 驗簽（CheckMacValue SHA-256、NewebPay AES-256-CBC + TradeSha）
