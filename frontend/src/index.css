@@ -101,6 +101,7 @@
   --duration-base: var(--duration-base);
   --duration-slow: var(--duration-slow);
   --ease-default: var(--ease-default);
+  --ease-out: var(--ease-out);
   --ease-spring: var(--ease-spring);
 
   /* ── Z-Index ── */
@@ -156,6 +157,7 @@
   --duration-base: 200ms; /* standard interactive element */
   --duration-slow: 250ms; /* panel open, collapsible */
   --ease-default: cubic-bezier(0.4, 0, 0.2, 1); /* smooth in-out for state changes */
+  --ease-out: cubic-bezier(0, 0, 0.2, 1); /* deceleration — elements entering screen */
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1); /* hover scale, playful bounce */
 
   /* ── Status Colors ── */

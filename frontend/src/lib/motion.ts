@@ -11,10 +11,11 @@
 import { type Variants } from 'motion/react'
 
 // ── Duration Tokens (seconds) ──────────────────────────────────────────────
-// Aligned with CSS tokens: fast=150ms, slow=250ms.
+// Aligned with CSS tokens: fast=150ms, base=200ms, slow=250ms.
 // `enter` is intentionally longer (450ms) for dramatic hero-level entrances.
 export const duration = {
   fast: 0.15, // --duration-fast: 150ms
+  base: 0.2, // --duration-base: 200ms
   slow: 0.25, // --duration-slow: 250ms
   enter: 0.45, // no CSS equivalent — hero zoom, full-page transitions
 } as const
