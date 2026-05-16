@@ -235,6 +235,7 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
                         sender=self.bot_id,
                     ),
                 )
+                return
 
             if channel_id in self._active_sessions:
                 buf = self._chatter_buffers.setdefault(channel_id, {})

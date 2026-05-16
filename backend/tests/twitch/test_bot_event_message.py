@@ -162,3 +162,49 @@ async def test_message_passes_when_bot_has_mod(bot):
 
     bot._handle_custom_command.assert_called_once_with(payload)
     super_mock.assert_called_once_with(payload)
+
+
+# ---------------------------------------------------------------------------
+# Tests — reauth guard
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_reauth_notifier_fires_and_blocks_processing(bot):
+    """When channel needs reauth, only the reauth notifier fires; mod guard and commands are skipped."""
+    bot._needs_reauth = {"123"}
+    payload = _make_payload(source_broadcaster=None, text="!hello")
+
+    with (
+        patch("twitch.core.bot.commands.AutoBot.event_message", new=AsyncMock()) as super_mock,
+        patch("twitch.core.bot.mod_guard_notifier") as mock_mod_guard,
+        patch("utils.reauth.reauth_notifier") as mock_reauth,
+    ):
+        mock_reauth.notify = AsyncMock(return_value=True)
+        mock_mod_guard.notify = AsyncMock(return_value=True)
+        await bot.event_message(payload)
+
+    mock_reauth.notify.assert_awaited_once()
+    mock_mod_guard.notify.assert_not_called()
+    bot._handle_custom_command.assert_not_called()
+    super_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_reauth_takes_priority_over_mod_guard(bot):
+    """When channel needs reauth AND bot lacks mod, reauth fires — mod guard stays silent."""
+    bot._needs_reauth = {"123"}
+    bot._bot_is_mod = set()  # bot also not mod
+    payload = _make_payload(source_broadcaster=None, text="!hello")
+
+    with (
+        patch("twitch.core.bot.commands.AutoBot.event_message", new=AsyncMock()),
+        patch("twitch.core.bot.mod_guard_notifier") as mock_mod_guard,
+        patch("utils.reauth.reauth_notifier") as mock_reauth,
+    ):
+        mock_reauth.notify = AsyncMock(return_value=True)
+        mock_mod_guard.notify = AsyncMock(return_value=True)
+        await bot.event_message(payload)
+
+    mock_reauth.notify.assert_awaited_once()
+    mock_mod_guard.notify.assert_not_called()
