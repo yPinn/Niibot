@@ -12,6 +12,26 @@ LOGGER: logging.Logger = logging.getLogger(__name__)
 # Default directory for migration SQL files
 VERSIONS_DIR = Path(__file__).resolve().parent / "versions"
 
+# Mapping of old → new version stems resulting from renumbering (Mar 2026).
+# Applied as a preflight step so existing DBs stay in sync after file renames.
+_VERSION_RENAMES: dict[str, str] = {
+    "049_video_queue_add_bilibili": "050_video_queue_add_bilibili",
+    "050_backfill_viewer_attendance_streaks": "051_backfill_viewer_attendance_streaks",
+    "051_add_total_gifts_given": "052_add_total_gifts_given",
+    "052_add_resub_gift_sub_event_types": "053_add_resub_gift_sub_event_types",
+    "053_add_best_streak": "054_add_best_streak",
+    "054_add_crosshairs": "055_add_crosshairs",
+    "055_add_activation_codes": "056_add_activation_codes",
+    "056_add_activation_requests": "057_add_activation_requests",
+    "057_add_crosshair_copy_count": "058_add_crosshair_copy_count",
+    "058_add_channel_display_name": "059_add_channel_display_name",
+    "059_activation_codes_add_plain": "060_activation_codes_add_plain",
+    "060_add_ai_settings": "061_add_ai_settings",
+    "060_tokens_add_type": "062_tokens_add_type",
+    "061_alter_ai_settings": "063_alter_ai_settings",
+    "062_add_stream_events_channel_user_index": "064_add_stream_events_channel_user_index",
+}
+
 
 class MigrationRunner:
     """Execute and track database migrations.
@@ -30,6 +50,34 @@ class MigrationRunner:
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
+
+    async def apply_version_renames(self) -> None:
+        """Rename old version stems in the tracking table after file renames.
+
+        Safe to call on fresh DBs (no matching rows → no-op) and on DBs that
+        already applied the old names (rows are updated in place).
+        """
+        await self.ensure_table()
+        old_versions = list(_VERSION_RENAMES.keys())
+        new_versions = list(_VERSION_RENAMES.values())
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                f"""
+                UPDATE {self.TRACKING_TABLE} AS t
+                SET version = r.new_ver,
+                    name    = r.new_ver || '.sql'
+                FROM (
+                    SELECT unnest($1::text[]) AS old_ver,
+                           unnest($2::text[]) AS new_ver
+                ) AS r
+                WHERE t.version = r.old_ver
+                  AND NOT EXISTS (
+                      SELECT 1 FROM {self.TRACKING_TABLE} WHERE version = r.new_ver
+                  )
+                """,
+                old_versions,
+                new_versions,
+            )
 
     async def ensure_table(self) -> None:
         """Create the tracking table if it does not exist."""

@@ -40,8 +40,9 @@ async def main() -> None:
     try:
         runner = MigrationRunner(pool)
 
+        await runner.apply_version_renames()
+
         if "--dry" in sys.argv:
-            await runner.ensure_table()
             applied = await runner.get_applied()
             versions_dir = (
                 Path(__file__).resolve().parent.parent / "shared" / "migrations" / "versions"
