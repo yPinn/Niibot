@@ -89,6 +89,34 @@ function stripAnsi(s: string): string {
   return s.replace(ANSI_STRIP_RE, '')
 }
 
+// Walk an ANSI string and return everything after the first `n` plain (non-ANSI) characters.
+// Used to split a known-length plain prefix from an ANSI-colored string without losing body colors.
+function sliceAfterPlainChars(s: string, n: number): string {
+  // eslint-disable-next-line no-control-regex
+  const RE = /\x1b\[[\d;]*[A-Za-z]/g
+  let plain = 0
+  let i = 0
+  while (i < s.length && plain < n) {
+    RE.lastIndex = i
+    const m = RE.exec(s)
+    if (m !== null && m.index === i) {
+      i += m[0].length
+    } else {
+      i++
+      plain++
+    }
+  }
+  return s.slice(i)
+}
+
+// Trim Rich's column-alignment whitespace from the start of continuation lines.
+// Uses sliceAfterPlainChars so any ANSI colors in the body are preserved.
+function trimLeadingSpaces(s: string): string {
+  const clean = stripAnsi(s)
+  const n = clean.length - clean.trimStart().length
+  return n > 0 ? sliceAfterPlainChars(s, n) : s
+}
+
 function parseDockerTs(raw: string): { ts: string; msg: string } {
   const m = raw.match(/^(\d{4}-\d{2}-\d{2}T(\d{2}:\d{2}:\d{2}))\.\S+Z?\s*(.*)$/)
   if (m) return { ts: m[2], msg: m[3] }
@@ -106,28 +134,58 @@ function parsePgPrefix(msg: string): { pid: string; level: string; body: string 
 }
 
 function pgLevelColor(level: string): string {
-  if (/^(ERROR|FATAL|PANIC)$/.test(level)) return 'text-red-400'
-  if (level === 'WARNING') return 'text-amber-300'
+  if (/^(ERROR|FATAL|PANIC)$/.test(level)) return 'text-status-offline'
+  if (level === 'WARNING') return 'text-status-warning'
+  if (level === 'DEBUG') return 'text-muted-foreground/60'
+  return 'text-muted-foreground/50'
+}
+
+// Matches Python/Rich structured log prefix (applied to ANSI-stripped string):
+// "[2026-05-16 10:53:46] INFO  ..." — Rich renders timestamp + level with ANSI codes,
+// so we strip ANSI before matching, then use sliceAfterPlainChars to extract the body
+// from the original string (preserving any ANSI colors in the message body).
+const PY_PREFIX_RE = /^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]\s+([A-Z]+)\s+/
+
+function parsePyPrefix(msg: string): { level: string; body: string } | null {
+  const clean = stripAnsi(msg)
+  const m = clean.match(PY_PREFIX_RE)
+  if (!m) return null
+  return { level: m[2], body: sliceAfterPlainChars(msg, m[0].length) }
+}
+
+function pyLevelColor(level: string): string {
+  if (/^(ERROR|CRITICAL|FATAL)$/.test(level)) return 'text-status-offline'
+  if (level === 'WARNING') return 'text-status-warning'
   if (level === 'DEBUG') return 'text-muted-foreground/60'
   return 'text-muted-foreground/50'
 }
 
 function lineColor(msg: string, stream: string): string {
-  if (/\b(ERROR|CRITICAL|FATAL|EXCEPTION|TRACEBACK)\b/i.test(msg)) return 'text-red-400'
-  if (/\bwarn(ing)?\b/i.test(msg)) return 'text-amber-300'
+  if (/\b(ERROR|CRITICAL|FATAL|EXCEPTION|TRACEBACK)\b/i.test(msg)) return 'text-status-offline'
+  if (/\bwarn(ing)?\b/i.test(msg)) return 'text-status-warning'
   if (/\bdebug\b/i.test(msg)) return 'text-muted-foreground'
-  if (stream === 'stderr') return 'text-orange-300'
+  if (stream === 'stderr') return 'text-status-warning'
   return 'text-foreground/80'
 }
 
 function LogLineRow({ line, index }: { line: LogLine; index: number }) {
   const { ts, msg } = parseDockerTs(line.text)
-  const pg = parsePgPrefix(msg || line.text)
-  const content = pg ? pg.body : msg || line.text
+  const raw = msg || line.text
+  const pg = parsePgPrefix(raw)
+  const py = !pg ? parsePyPrefix(raw) : null
+  // Continuation lines (no recognized prefix) carry Rich's column-alignment spaces — strip them.
+  const content = pg ? pg.body : py ? py.body : trimLeadingSpaces(raw)
 
   const colored = hasAnsi(content) ? ansiConverter.toHtml(content) : null
 
-  const fallbackColor = colored ? '' : lineColor(stripAnsi(content), line.stream)
+  // When a structured level is known (py/pg), prefer level-based color over keyword scanning.
+  const fallbackColor = colored
+    ? ''
+    : py
+      ? pyLevelColor(py.level)
+      : pg
+        ? pgLevelColor(pg.level)
+        : lineColor(stripAnsi(content), line.stream)
 
   return (
     <div className="flex gap-2 min-w-0 hover:bg-white/5 px-3 py-px group">
@@ -140,18 +198,24 @@ function LogLineRow({ line, index }: { line: LogLine; index: number }) {
           <span className="text-muted-foreground/35 shrink-0 tabular-nums select-none">
             [{pg.pid}]
           </span>
-          <span className={`shrink-0 font-semibold select-none ${pgLevelColor(pg.level)}`}>
+          <span className={`shrink-0 font-semibold select-none w-14 ${pgLevelColor(pg.level)}`}>
             {pg.level}
           </span>
         </>
       )}
+      {py && (
+        <span className={`shrink-0 font-semibold select-none w-14 ${pyLevelColor(py.level)}`}>
+          {py.level}
+        </span>
+      )}
+      {!pg && !py && <span className="w-14 shrink-0" />}
       {colored ? (
         <span
-          className="break-all whitespace-pre-wrap min-w-0"
+          className="wrap-break-word whitespace-pre-wrap min-w-0"
           dangerouslySetInnerHTML={{ __html: colored }}
         />
       ) : (
-        <span className={`${fallbackColor} break-all whitespace-pre-wrap min-w-0`}>
+        <span className={`${fallbackColor} wrap-break-word whitespace-pre-wrap min-w-0`}>
           {stripAnsi(content)}
         </span>
       )}
@@ -870,6 +934,7 @@ export default function AdminMonitor() {
             onValueChange={v => {
               setSelected(v)
               setFollow(false)
+              if (v === '__status__') refreshStatus()
             }}
           >
             <TabsList variant="line" className="h-10 bg-transparent gap-0">
