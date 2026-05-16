@@ -1,9 +1,10 @@
-"""Unit tests for Bot.event_message — shared-chat filtering and normal routing."""
+"""Unit tests for Bot.event_message and _check_bot_mod_status."""
 
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
 # ---------------------------------------------------------------------------
@@ -208,3 +209,81 @@ async def test_reauth_takes_priority_over_mod_guard(bot):
 
     mock_reauth.notify.assert_awaited_once()
     mock_mod_guard.notify.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Tests — _check_bot_mod_status reauth detection
+# ---------------------------------------------------------------------------
+
+
+def _make_bot_for_mod_check():
+    """Minimal Bot instance for _check_bot_mod_status tests."""
+    with (
+        patch("twitch.core.bot._ChannelMixin.__init__", return_value=None),
+        patch("twitch.core.bot._MessageRouterMixin.__init__", return_value=None),
+        patch("twitch.core.bot._NotifyMixin.__init__", return_value=None),
+        patch("twitch.core.bot._SessionMixin.__init__", return_value=None),
+        patch("twitch.core.bot.commands.AutoBot.__init__", return_value=None),
+    ):
+        from twitch.core.bot import Bot
+
+        b = Bot.__new__(Bot)
+        b._bot_id = "bot-001"
+        b._client_id = "client-abc"
+        b._needs_reauth = set()
+        b._bot_is_mod = set()
+        b._mod_check_pending = set()
+        token = MagicMock()
+        token.token = "tok"
+        b.channels = MagicMock()
+        b.channels.get_token = AsyncMock(return_value=token)
+        return b
+
+
+@pytest.mark.asyncio
+async def test_mod_check_200_with_data_adds_to_bot_is_mod():
+    """200 response with data → channel added to _bot_is_mod."""
+    b = _make_bot_for_mod_check()
+    resp = MagicMock(spec=httpx.Response)
+    resp.status_code = 200
+    resp.json.return_value = {"data": [{"user_id": "bot-001"}]}
+
+    with patch("httpx.AsyncClient") as mock_client_cls:
+        mock_client_cls.return_value.__aenter__.return_value.get = AsyncMock(return_value=resp)
+        await b._check_bot_mod_status("123")
+
+    assert "123" in b._bot_is_mod
+    assert "123" not in b._needs_reauth
+
+
+@pytest.mark.asyncio
+async def test_mod_check_200_empty_data_leaves_not_mod():
+    """200 response with empty data → channel stays out of _bot_is_mod."""
+    b = _make_bot_for_mod_check()
+    resp = MagicMock(spec=httpx.Response)
+    resp.status_code = 200
+    resp.json.return_value = {"data": []}
+
+    with patch("httpx.AsyncClient") as mock_client_cls:
+        mock_client_cls.return_value.__aenter__.return_value.get = AsyncMock(return_value=resp)
+        await b._check_bot_mod_status("123")
+
+    assert "123" not in b._bot_is_mod
+    assert "123" not in b._needs_reauth
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status_code", [401, 403])
+async def test_mod_check_auth_failure_marks_needs_reauth(status_code):
+    """401 or 403 from Helix → channel added to _needs_reauth, NOT _bot_is_mod."""
+    b = _make_bot_for_mod_check()
+    resp = MagicMock(spec=httpx.Response)
+    resp.status_code = status_code
+    resp.text = "Unauthorized"
+
+    with patch("httpx.AsyncClient") as mock_client_cls:
+        mock_client_cls.return_value.__aenter__.return_value.get = AsyncMock(return_value=resp)
+        await b._check_bot_mod_status("123")
+
+    assert "123" in b._needs_reauth
+    assert "123" not in b._bot_is_mod

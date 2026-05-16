@@ -426,6 +426,13 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
                     LOGGER.info(
                         f"[{channel_id}] Bot is NOT mod — chat features blocked until /mod is granted"
                     )
+            elif resp.status_code in (401, 403):
+                # Token expired or missing scope — broadcaster needs to re-auth, not grant /mod.
+                self._needs_reauth.add(channel_id)
+                LOGGER.warning(
+                    f"[{channel_id}] Mod status check auth failure ({resp.status_code})"
+                    " — broadcaster token invalid or missing scope, marking for reauth"
+                )
             else:
                 LOGGER.warning(
                     f"[{channel_id}] Mod status check failed: {resp.status_code} {resp.text[:80]}"
