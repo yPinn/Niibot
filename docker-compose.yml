@@ -36,6 +36,10 @@ services:
     image: postgres:16
     container_name: niibot-postgres
     restart: unless-stopped
+    command: >
+      postgres
+        -c log_min_duration_statement=500
+        -c log_line_prefix='%m [%p] '
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER must be set in root .env}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in root .env}

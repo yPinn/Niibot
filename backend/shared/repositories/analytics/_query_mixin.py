@@ -328,24 +328,27 @@ class _AnalyticsQueryMixin:
 
             rows = await conn.fetch(
                 """
-                WITH recent AS (
-                    SELECT DISTINCT ON (c.user_id)
-                        c.user_id,
-                        c.username,
-                        c.display_name
+                WITH session_scope AS MATERIALIZED (
+                    SELECT id FROM stream_sessions
+                    WHERE channel_id = $1 AND started_at >= $2
+                ),
+                chatter_base AS MATERIALIZED (
+                    SELECT c.user_id, c.username, c.display_name,
+                           c.message_count, c.last_message_at
                     FROM chatter_stats c
-                    JOIN stream_sessions s ON s.id = c.session_id
-                    WHERE c.channel_id = $1 AND s.started_at >= $2
+                    WHERE c.channel_id = $1
+                      AND c.session_id IN (SELECT id FROM session_scope)
                       AND c.user_id != $1
-                    ORDER BY c.user_id, c.last_message_at DESC
+                ),
+                recent AS (
+                    SELECT DISTINCT ON (user_id) user_id, username, display_name
+                    FROM chatter_base
+                    ORDER BY user_id, last_message_at DESC
                 ),
                 totals AS (
-                    SELECT c.user_id, SUM(c.message_count) AS total_messages
-                    FROM chatter_stats c
-                    JOIN stream_sessions s ON s.id = c.session_id
-                    WHERE c.channel_id = $1 AND s.started_at >= $2
-                      AND c.user_id != $1
-                    GROUP BY c.user_id
+                    SELECT user_id, SUM(message_count) AS total_messages
+                    FROM chatter_base
+                    GROUP BY user_id
                 )
                 SELECT r.user_id, r.username, r.display_name, t.total_messages
                 FROM recent r
@@ -525,23 +528,28 @@ class _AnalyticsQueryMixin:
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(
                     """
-                    WITH totals AS (
-                        SELECT c.user_id, SUM(c.message_count) AS total
+                    WITH session_scope AS MATERIALIZED (
+                        SELECT id FROM stream_sessions
+                        WHERE channel_id = $1 AND started_at >= $2
+                    ),
+                    chatter_base AS MATERIALIZED (
+                        SELECT c.user_id, c.username, c.display_name,
+                               c.message_count, c.last_message_at
                         FROM chatter_stats c
-                        JOIN stream_sessions s ON s.id = c.session_id
-                        WHERE c.channel_id = $1 AND s.started_at >= $2
+                        WHERE c.channel_id = $1
+                          AND c.session_id IN (SELECT id FROM session_scope)
                           AND c.user_id != $1
                           AND lower(c.username) != ALL($3::text[])
-                        GROUP BY c.user_id
+                    ),
+                    totals AS (
+                        SELECT user_id, SUM(message_count) AS total
+                        FROM chatter_base
+                        GROUP BY user_id
                     ),
                     latest_name AS (
-                        SELECT DISTINCT ON (c.user_id) c.user_id, c.username, c.display_name
-                        FROM chatter_stats c
-                        JOIN stream_sessions s ON s.id = c.session_id
-                        WHERE c.channel_id = $1 AND s.started_at >= $2
-                          AND c.user_id != $1
-                          AND lower(c.username) != ALL($3::text[])
-                        ORDER BY c.user_id, c.last_message_at DESC
+                        SELECT DISTINCT ON (user_id) user_id, username, display_name
+                        FROM chatter_base
+                        ORDER BY user_id, last_message_at DESC
                     )
                     SELECT n.username, n.display_name, t.total AS message_count
                     FROM totals t
@@ -621,29 +629,31 @@ class _AnalyticsQueryMixin:
                     SELECT id FROM stream_sessions
                     WHERE channel_id = $1 AND started_at >= $2
                 ),
+                chatter_base AS MATERIALIZED (
+                    SELECT
+                        c.user_id, c.username, c.display_name,
+                        c.message_count, c.session_id, c.watch_seconds, c.last_message_at
+                    FROM chatter_stats c
+                    WHERE c.channel_id = $1
+                      AND c.session_id IN (SELECT id FROM session_scope)
+                      AND c.user_id != $1
+                      AND lower(c.username) != ALL($4::text[])
+                ),
                 chatter_totals AS (
                     SELECT
-                        c.user_id,
-                        SUM(c.message_count)         AS total_messages,
-                        COUNT(DISTINCT c.session_id) AS sessions_attended,
-                        MAX(c.last_message_at)        AS last_seen,
-                        SUM(c.watch_seconds)          AS watch_seconds
-                    FROM chatter_stats c
-                    WHERE c.channel_id = $1
-                      AND c.session_id IN (SELECT id FROM session_scope)
-                      AND c.user_id != $1
-                      AND lower(c.username) != ALL($4::text[])
-                    GROUP BY c.user_id
+                        user_id,
+                        SUM(message_count)         AS total_messages,
+                        COUNT(DISTINCT session_id) AS sessions_attended,
+                        MAX(last_message_at)        AS last_seen,
+                        SUM(watch_seconds)          AS watch_seconds
+                    FROM chatter_base
+                    GROUP BY user_id
                 ),
                 latest_name AS (
-                    SELECT DISTINCT ON (c.user_id)
-                        c.user_id, c.username, c.display_name
-                    FROM chatter_stats c
-                    WHERE c.channel_id = $1
-                      AND c.session_id IN (SELECT id FROM session_scope)
-                      AND c.user_id != $1
-                      AND lower(c.username) != ALL($4::text[])
-                    ORDER BY c.user_id, c.last_message_at DESC
+                    SELECT DISTINCT ON (user_id)
+                        user_id, username, display_name
+                    FROM chatter_base
+                    ORDER BY user_id, last_message_at DESC
                 ),
                 event_bonuses AS (
                     SELECT user_id,
