@@ -1,6 +1,5 @@
 {
   "name": "niibot",
-  "version": "1.8",
   "description": "多平台直播整合 Bot - 支援 Twitch 和 Discord。",
   "main": "index.js",
   "directories": {
@@ -8,20 +7,21 @@
   },
   "scripts": {
     "prepare": "husky install",
-    "lint-all": "npm run lint --prefix frontend && ruff check backend",
-    "format-all": "npm run format --prefix frontend && ruff format backend",
-    "test": "npm run lint-all",
-    "build:all": "docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile full build",
-    "build:api": "docker compose -f docker-compose.yml -f docker-compose.dev.yml build api",
-    "dev:api": "docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile api up",
-    "dev:twitch": "docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile twitch up",
-    "dev:discord": "docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile discord up",
-    "dev:bots": "docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile bots up",
-    "dev:full": "docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile full up",
-    "dev:frontend": "npm run dev --prefix frontend",
-    "docker:db": "docker compose -f docker-compose.yml -f docker-compose.dev.yml up postgres",
-    "docker:down": "docker compose down",
-    "docker:ps": "docker compose ps"
+    "_dc": "docker compose -f docker-compose.yml -f docker-compose.dev.yml",
+    "format": "npm run format --prefix frontend && uv run --project backend ruff format backend",
+    "lint": "npm run lint --prefix frontend && uv run --project backend ruff check backend",
+    "typecheck": "npm run typecheck --prefix frontend && uv run --project backend --directory backend mypy .",
+    "fix": "npm run format && npm run lint",
+    "test": "npm run lint && npm run typecheck",
+    "dev:fe": "npm run dev --prefix frontend",
+    "dev:api": "npm run _dc -- --profile api up --build --remove-orphans",
+    "dev:twitch": "npm run _dc -- --profile twitch up --build --remove-orphans",
+    "dev:discord": "npm run _dc -- --profile discord up --build --remove-orphans",
+    "dev:bots": "npm run _dc -- --profile bots up --build --remove-orphans",
+    "dev:full": "npm run _dc -- --profile full up --build --remove-orphans",
+    "build": "docker compose -f docker-compose.yml --profile full build",
+    "docker:db": "npm run _dc -- up postgres",
+    "docker:down": "npm run _dc -- down --remove-orphans"
   },
   "repository": {
     "type": "git",

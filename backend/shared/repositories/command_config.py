@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import logging
-from typing import TypeAlias
 
 import asyncpg
 
@@ -46,7 +45,7 @@ DEFAULT_REDEMPTIONS: list[dict] = [
     {"action_type": "video_queue", "reward_name": "video queue"},
 ]
 
-UnsetType: TypeAlias = object
+type UnsetType = object
 _UNSET: UnsetType = object()
 
 # Track channels that already have redemption defaults seeded (avoids redundant INSERTs)
