@@ -92,6 +92,16 @@ class ChannelPointsComponent(commands.Component):
         if user_input:
             LOGGER.debug(f"[{channel_name}] User input: {user_input}")
 
+        if channel_id in self.bot._needs_reauth:  # type: ignore[attr-defined]
+            from utils.reauth import reauth_notifier
+
+            await reauth_notifier.notify(
+                broadcaster_login=channel_name or "",
+                channel_id=channel_id,
+                send_fn=lambda msg: self._reply(payload.broadcaster, msg),
+            )
+            return
+
         if channel_id not in self.bot._bot_is_mod:  # type: ignore[attr-defined]
             if channel_id in self.bot._mod_check_pending:  # type: ignore[attr-defined]
                 LOGGER.debug(f"[{channel_name}] Redemption deferred: mod check in-flight")
