@@ -213,11 +213,25 @@ class GeneralCommandsComponent(BotComponent):
     async def event_stream_online(self, payload: twitchio.StreamOnline) -> None:
         LOGGER.info(f"[{payload.broadcaster.name}] Stream online")
 
+        channel_id = payload.broadcaster.id
+
+        # Proactively notify on go-live — don't wait for a chat message to surface the issue
+        if channel_id in self.bot._needs_reauth:
+            from utils.reauth import reauth_notifier
+
+            await reauth_notifier.notify(
+                broadcaster_login=payload.broadcaster.name,
+                channel_id=channel_id,
+                send_fn=lambda msg: payload.broadcaster.send_message(
+                    message=msg,
+                    sender=self.bot.bot_id,
+                ),
+            )
+
         try:
             if not self._has_analytics:
                 return
 
-            channel_id = payload.broadcaster.id
             active_sessions = self.bot._active_sessions
 
             existing_session = active_sessions.get(channel_id)
