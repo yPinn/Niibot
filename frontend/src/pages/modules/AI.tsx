@@ -73,14 +73,6 @@ function getBadgeOverlay(
       label: '訂閱限定',
     }
   }
-  if (emote.emote_type === 'bitstier') {
-    // Twitch API always returns tier="" for bitstier emotes; use first channel bits badge or default
-    const channelSrc = channelBadges?.sets?.bits?.[0]?.image_url_1x ?? null
-    return {
-      src: channelSrc ?? '/twitch-badges/bits/1x.png',
-      label: 'Bits 限定',
-    }
-  }
   return null
 }
 
@@ -156,6 +148,11 @@ function EmoteChip({
           {badgeOverlay && (
             <span className="absolute top-1 right-1 rounded-sm bg-black/60 p-0.5">
               <TwitchBadge src={badgeOverlay.src} alt="" size={18} />
+            </span>
+          )}
+          {emote.animated && (
+            <span className="absolute top-1 left-1 rounded-sm bg-black/60 px-0.5 text-[9px] font-bold leading-tight text-white">
+              GIF
             </span>
           )}
           <img
@@ -274,9 +271,14 @@ export default function AIModule() {
   const { followerEmotes, subscriptionEmotes, bitsEmotes, globalEmotes } = useMemo(() => {
     const q = emoteSearch.trim().toLowerCase()
     const match = (e: EmoteItem) => !q || e.name.toLowerCase().includes(q)
-    const byName = (arr: EmoteItem[]) => [...arr].sort((a, b) => a.name.localeCompare(b.name))
+    const animFirst = (a: EmoteItem, b: EmoteItem) =>
+      a.animated === b.animated ? 0 : a.animated ? 1 : -1
+    const byName = (arr: EmoteItem[]) =>
+      [...arr].sort((a, b) => animFirst(a, b) || a.name.localeCompare(b.name))
     const bySub = (arr: EmoteItem[]) =>
       [...arr].sort((a, b) => {
+        const anim = animFirst(a, b)
+        if (anim !== 0) return anim
         const t = (parseInt(a.tier) || 0) - (parseInt(b.tier) || 0)
         return t !== 0 ? t : a.name.localeCompare(b.name)
       })
@@ -488,13 +490,13 @@ export default function AIModule() {
                       channelBadges={channelBadges}
                     />
                     <EmoteSection
-                      label="訂閱"
+                      label="訂閱者"
                       emotes={subscriptionEmotes}
                       prefix={channelPrefix}
                       channelBadges={channelBadges}
                     />
                     <EmoteSection
-                      label="Bits"
+                      label="小奇點"
                       emotes={bitsEmotes}
                       prefix={channelPrefix}
                       channelBadges={channelBadges}

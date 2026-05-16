@@ -25,6 +25,7 @@ export interface EmoteItem {
   emote_type: string
   tier: string
   available: boolean
+  animated: boolean
 }
 
 export async function getAISettings(): Promise<AISettings> {

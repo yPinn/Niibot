@@ -46,6 +46,7 @@ class EmoteItem(BaseModel):
     emote_type: str = "globals"
     tier: str = ""
     available: bool = True
+    animated: bool = False
 
 
 async def _notify(pool: asyncpg.Pool, channel_id: str) -> None:
@@ -133,7 +134,7 @@ async def get_ai_emotes(
     try:
         coros: list = [twitch.get_global_emotes(), twitch.get_channel_emotes(channel_id)]
         if bot_token:
-            coros.append(twitch.get_user_emotes(channel_id, bot_token))
+            coros.append(twitch.get_user_emotes(channel_id, bot_token, settings.bot_id))
 
         results = await asyncio.gather(*coros)
         global_raw: list[dict] = results[0]

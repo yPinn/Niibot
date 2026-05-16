@@ -824,10 +824,15 @@ class TwitchAPIClient:
                 {
                     "id": e["id"],
                     "name": e["name"],
-                    "url": e.get("images", {}).get("url_2x")
-                    or e.get("images", {}).get("url_1x", ""),
+                    "url": (
+                        f"https://static-cdn.jtvnw.net/emoticons/v2/{e['id']}/animated/dark/2.0"
+                        if "animated" in e.get("format", [])
+                        else e.get("images", {}).get("url_2x")
+                        or e.get("images", {}).get("url_1x", "")
+                    ),
                     "emote_type": e.get("emote_type", ""),
                     "tier": e.get("tier", ""),
+                    "animated": "animated" in e.get("format", []),
                 }
                 for e in response.json().get("data", [])
             ]
@@ -835,7 +840,9 @@ class TwitchAPIClient:
             LOGGER.exception("Error fetching channel emotes for %s", broadcaster_id)
             return []
 
-    async def get_user_emotes(self, broadcaster_id: str, user_token: str) -> list[dict]:
+    async def get_user_emotes(
+        self, broadcaster_id: str, user_token: str, user_id: str
+    ) -> list[dict]:
         """Fetch all emotes the authenticated user (bot) can use in a specific channel.
 
         Requires the bot's user access token. Returns global emotes plus any channel
@@ -844,7 +851,7 @@ class TwitchAPIClient:
         try:
             response = await self._helix_get(
                 "chat/emotes/user",
-                {"broadcaster_id": broadcaster_id},
+                {"user_id": user_id, "broadcaster_id": broadcaster_id},
                 token=user_token,
             )
             if not response or response.status_code != 200:
