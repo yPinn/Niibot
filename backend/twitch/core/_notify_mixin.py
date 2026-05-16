@@ -236,6 +236,7 @@ class _NotifyMixin:
 
     async def _refresh_channel_cache(self, channel_id: str) -> None:
         """Reload all config caches for a single channel from DB."""
+        from shared.repositories.ai_settings import _ai_settings_cache
         from shared.repositories.channel import _channel_cache, _enabled_channels_cache
         from shared.repositories.command_config import _redemption_cache
         from shared.repositories.event_config import (
@@ -267,6 +268,7 @@ class _NotifyMixin:
             ),
             ("timers", lambda: self.timer_configs.invalidate_cache(channel_id)),  # type: ignore[attr-defined]
             ("triggers", lambda: self.message_trigger_configs.invalidate_cache(channel_id)),  # type: ignore[attr-defined]
+            ("ai_settings", lambda: _ai_settings_cache.invalidate(f"ai_settings:{channel_id}")),
         ]
         for name, op in ops:
             try:

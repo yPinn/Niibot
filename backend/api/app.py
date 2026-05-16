@@ -19,6 +19,7 @@ from core.dependencies import close_twitch_api
 from core.logging import setup_logging
 from routers import (
     admin_router,
+    ai_settings_router,
     analytics_router,
     auth_router,
     bots_router,
@@ -206,6 +207,7 @@ def create_app() -> FastAPI:
         )
 
     # Register routers
+    app.include_router(ai_settings_router.router)
     app.include_router(admin_router.router)
     app.include_router(auth_router.router)
     app.include_router(channels_router.router)

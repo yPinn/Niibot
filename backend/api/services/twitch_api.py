@@ -791,6 +791,88 @@ class TwitchAPIClient:
             LOGGER.exception("Error fetching global badges")
             return {}
 
+    # ------------------------------------------------------------------
+    # Emotes
+    # ------------------------------------------------------------------
+
+    async def get_global_emotes(self) -> list[dict]:
+        """Fetch Twitch global emotes (usable by everyone in any chat)."""
+        try:
+            response = await self._helix_get("chat/emotes/global")
+            if not response or response.status_code != 200:
+                return []
+            return [
+                {
+                    "id": e["id"],
+                    "name": e["name"],
+                    "url": e.get("images", {}).get("url_2x")
+                    or e.get("images", {}).get("url_1x", ""),
+                }
+                for e in response.json().get("data", [])
+            ]
+        except Exception:
+            LOGGER.exception("Error fetching global emotes")
+            return []
+
+    async def get_channel_emotes(self, broadcaster_id: str) -> list[dict]:
+        """Fetch emotes belonging to a channel (follower, subscriber, bits tiers)."""
+        try:
+            response = await self._helix_get("chat/emotes", {"broadcaster_id": broadcaster_id})
+            if not response or response.status_code != 200:
+                return []
+            return [
+                {
+                    "id": e["id"],
+                    "name": e["name"],
+                    "url": e.get("images", {}).get("url_2x")
+                    or e.get("images", {}).get("url_1x", ""),
+                    "emote_type": e.get("emote_type", ""),
+                    "tier": e.get("tier", ""),
+                }
+                for e in response.json().get("data", [])
+            ]
+        except Exception:
+            LOGGER.exception("Error fetching channel emotes for %s", broadcaster_id)
+            return []
+
+    async def get_user_emotes(self, broadcaster_id: str, user_token: str) -> list[dict]:
+        """Fetch all emotes the authenticated user (bot) can use in a specific channel.
+
+        Requires the bot's user access token. Returns global emotes plus any channel
+        emotes unlocked via the bot's subscriptions.
+        """
+        try:
+            response = await self._helix_get(
+                "chat/emotes/user",
+                {"broadcaster_id": broadcaster_id},
+                token=user_token,
+            )
+            if not response or response.status_code != 200:
+                status = response.status_code if response else "no_response"
+                try:
+                    body = response.json() if response else {}
+                except Exception:
+                    body = {}
+                LOGGER.warning(
+                    "get_user_emotes failed: status=%s message=%s",
+                    status,
+                    body.get("message", ""),
+                )
+                return []
+            return [
+                {
+                    "id": e["id"],
+                    "name": e["name"],
+                    "url": e.get("images", {}).get("url_2x")
+                    or e.get("images", {}).get("url_1x", ""),
+                    "emote_type": e.get("emote_type", "globals"),
+                }
+                for e in response.json().get("data", [])
+            ]
+        except Exception:
+            LOGGER.exception("Error fetching user emotes for broadcaster %s", broadcaster_id)
+            return []
+
     @staticmethod
     def parse_duration(duration_str: str) -> float:
         """Parse Twitch duration string (e.g. '3h2m1s') to hours."""

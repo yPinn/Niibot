@@ -28,6 +28,7 @@ const ChatOverlayModule = lazy(() => import('@/pages/modules/ChatOverlay'))
 const GameQueue = lazy(() => import('@/pages/modules/GameQueue'))
 const VideoQueue = lazy(() => import('@/pages/modules/VideoQueue'))
 const CrosshairModule = lazy(() => import('@/pages/modules/crosshairs'))
+const AIModule = lazy(() => import('@/pages/modules/AI'))
 const CrosshairRepo = lazy(() => import('@/pages/crosshairs'))
 const PublicCommands = lazy(() => import('@/pages/PublicCommands'))
 const DonatePage = lazy(() => import('@/pages/DonatePage'))
@@ -98,6 +99,7 @@ function App() {
                       <Route path="/modules/game-queue" element={<GameQueue />} />
                       <Route path="/modules/video-queue" element={<VideoQueue />} />
                       <Route path="/modules/crosshairs" element={<CrosshairModule />} />
+                      <Route path="/modules/ai" element={<AIModule />} />
                       {/* Discord Bot Routes */}
                       <Route path="/docs/get-started" element={<GetStarted />} />
                       <Route path="/discord" element={<DiscordDashboard />} />

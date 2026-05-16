@@ -121,6 +121,11 @@ export const API_ENDPOINTS = {
     delete: (id: string) => join(`/api/crosshairs/${id}`),
     copy: (id: string) => join(`/api/crosshairs/public/${id}/copy`),
   },
+  ai: {
+    settings: join('/api/ai/settings'),
+    reset: join('/api/ai/settings/reset'),
+    emotes: join('/api/ai/emotes'),
+  },
   donate: {
     public: (username: string) => join(`/api/donate/public/${username}`),
     checkout: (username: string) => join(`/api/donate/${username}/checkout`),

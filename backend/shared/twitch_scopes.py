@@ -8,6 +8,7 @@ BOT_SCOPES: list[str] = [
     "user:bot",
     "user:read:chat",
     "user:write:chat",
+    "user:read:emotes",
     "moderator:read:followers",
     "moderator:manage:announcements",
     "moderator:manage:shoutouts",

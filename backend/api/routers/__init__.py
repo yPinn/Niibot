@@ -2,6 +2,7 @@
 
 from . import (
     admin_router,
+    ai_settings_router,
     analytics_router,
     auth_router,
     bots_router,
@@ -20,6 +21,7 @@ from . import (
 
 __all__ = [
     "admin_router",
+    "ai_settings_router",
     "auth_router",
     "channels_router",
     "analytics_router",

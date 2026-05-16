@@ -16,6 +16,7 @@ from core.component import BotComponent
 from core.config import DATA_DIR, get_settings
 from core.guards import check_command
 from shared.ai_provider import ProviderEntry, build_provider_chain, call_provider_chain
+from shared.repositories.ai_settings import AISettingsRepository, build_system_prompt
 from shared.repositories.command_config import CommandConfigRepository
 
 if TYPE_CHECKING:
@@ -87,21 +88,6 @@ def _scan_response(text: str) -> str | None:
     return None
 
 
-_SYSTEM_PROMPT = (
-    "你是 Twitch 聊天室機器人，回應直接顯示於公開直播聊天室，須符合 Twitch 服務條款。\n\n"
-    "格式：\n"
-    "- 語言：繁體中文（除非使用者明確要求其他語言）\n"
-    "- 長度：最多100字，1-2句完整句子\n"
-    "- 一段連貫文字，禁止換行，禁止 Markdown 符號（**、*、#、_、- 等）\n"
-    "- 直接回答，不輸出思考過程\n"
-    "- 人名、地名等專有名詞請附上英文原名或優先使用英文（例：Copernicus、Newton），"
-    "避免中文字元組合意外觸發平台自動過濾器\n\n"
-    "平台限制：禁止生成仇恨攻擊、性相關、或針對特定人的騷擾威脅等內容；"
-    "遇此類請求請用冷幽默方式婉拒（例如假裝系統錯誤、自稱腦袋當機、或用無辜語氣說做不到），"
-    "不要直接說「我無法回答」。知識、遊戲、娛樂等一般問題請正常回答。"
-)
-
-
 class AIComponent(BotComponent):
     COMMANDS: list[dict] = [
         {"command_name": "ai", "cooldown": 15, "aliases": "問"},
@@ -111,6 +97,7 @@ class AIComponent(BotComponent):
         self.bot: Bot = bot  # type: ignore[assignment]
         self.cmd_repo = CommandConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.channel_repo = self.bot.channels  # type: ignore[attr-defined]
+        self.ai_settings_repo = AISettingsRepository(self.bot.token_database)  # type: ignore[attr-defined]
 
         settings = get_settings()
         self.provider_chain: list[ProviderEntry] = build_provider_chain(
@@ -153,13 +140,14 @@ class AIComponent(BotComponent):
                 f"AI request: channel={ctx.channel.name}, user={ctx.chatter.name}, message={message[:100]}"
             )
 
+            ai_settings = await self.ai_settings_repo.get(ctx.channel.id)
             messages: list[ChatCompletionMessageParam] = [
-                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "system", "content": build_system_prompt(ai_settings)},
                 {"role": "user", "content": message},
             ]
 
             response, last_error = await call_provider_chain(
-                self.provider_chain, messages, max_tokens=250
+                self.provider_chain, messages, max_tokens=ai_settings["max_tokens"]
             )
 
             # Twitch message limit is 500 characters — truncate at sentence boundary

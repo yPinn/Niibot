@@ -67,12 +67,8 @@ export const navigationData: NavigationData = {
       icon: 'fa-solid fa-puzzle-piece',
       items: [
         {
-          title: 'Game Queue',
-          url: '/modules/game-queue',
-        },
-        {
-          title: 'Video Queue',
-          url: '/modules/video-queue',
+          title: 'AI Assistant',
+          url: '/modules/ai',
         },
         {
           title: 'Chat Overlay',
@@ -81,6 +77,14 @@ export const navigationData: NavigationData = {
         {
           title: 'Crosshair Repo',
           url: '/modules/crosshairs',
+        },
+        {
+          title: 'Game Queue',
+          url: '/modules/game-queue',
+        },
+        {
+          title: 'Video Queue',
+          url: '/modules/video-queue',
         },
       ],
     },
