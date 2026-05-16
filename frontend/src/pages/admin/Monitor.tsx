@@ -628,7 +628,7 @@ export default function AdminMonitor() {
 
   // ── Logs state ──────────────────────────────────────────────────────────────
   const [containers, setContainers] = useState<LogContainer[]>(DEFAULT_CONTAINERS)
-  const [selected, setSelected] = useState('niibot-api')
+  const [selected, setSelected] = useState('__status__')
   const tail = 200
   const [follow, setFollow] = useState(true)
   const [{ loading, lines, error }, dispatch] = useReducer(fetchReducer, {
