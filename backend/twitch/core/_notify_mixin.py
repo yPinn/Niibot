@@ -104,7 +104,7 @@ class _NotifyMixin:
             if not users:
                 return
             await users[0].send_message(
-                message="Niibot 已上線，準備就緒。",
+                message="帽子叔叔正在巡邏...",
                 sender=self._bot_id,  # type: ignore[attr-defined]
             )
             LOGGER.info(f"[NOTIFY] Welcome message sent to channel {self._ch(channel_id)}")  # type: ignore[attr-defined]
@@ -120,7 +120,7 @@ class _NotifyMixin:
             if not users:
                 return
             await users[0].send_message(
-                message="✅ 授權已更新，Niibot 功能恢復正常！",
+                message="帽子叔叔回來上班了！",
                 sender=self._bot_id,  # type: ignore[attr-defined]
             )
             LOGGER.info(

@@ -38,8 +38,7 @@ class ModGuardNotifier:
             return False
         self._last_notified[channel_id] = datetime.now(UTC)
         msg = (
-            f"@{broadcaster_login} 請在聊天室輸入 /mod {bot_login} 授予管理員身分，"
-            "以啟用機器人所有功能！"
+            f"@{broadcaster_login} 好想要那把酷酷的大劍喔，可以 /mod {bot_login} 給我一把嗎 GoldPLZ"
         )
         try:
             await send_fn(msg)

@@ -73,7 +73,7 @@ class ReauthNotifier:
 
     def _build_message(self, broadcaster_login: str) -> str:
         url = get_settings().frontend_url.rstrip("/")
-        return f"@{broadcaster_login} 請重新登入以恢復功能： {url}"
+        return f"@{broadcaster_login} 授權過期了，麻煩重新登入 {url}"
 
     async def notify(
         self,
