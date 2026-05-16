@@ -49,6 +49,22 @@ class _NotifyMixin:
                 if channel_id not in self._subscribed_channels:  # type: ignore[attr-defined]
                     await self.subscribe_channel_events(channel_id)  # type: ignore[attr-defined]
                     await self._check_bot_mod_status(channel_id)  # type: ignore[attr-defined]
+
+                    # Scope check: mod check catches expired tokens (401/403) but a valid
+                    # token with missing scopes would pass mod check and never enter
+                    # _needs_reauth. Read stored scopes from DB as a safety net.
+                    if channel_id not in self._needs_reauth:  # type: ignore[attr-defined]
+                        token_obj = await self.channels.get_token(channel_id)  # type: ignore[attr-defined]
+                        if token_obj and token_obj.scopes:
+                            from utils.reauth import missing_broadcaster_scopes
+
+                            if missing_broadcaster_scopes(token_obj.scopes.split()):
+                                self._needs_reauth.add(channel_id)  # type: ignore[attr-defined]
+                                LOGGER.warning(
+                                    f"[NOTIFY] {self._ch(channel_id)} missing broadcaster scopes"  # type: ignore[attr-defined]
+                                    " after channel toggle — marking for reauth"
+                                )
+
                     try:
                         await self.redemption_configs.ensure_defaults(  # type: ignore[attr-defined]
                             channel_id,

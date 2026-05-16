@@ -30,6 +30,7 @@ class _StubMixin(_NotifyMixin):
         self._bot_id = "bot-001"
         self._subscribed_channels: set[str] = set()
         self._bot_is_mod: set[str] = set()
+        self._needs_reauth: set[str] = set()
         self.subscribe_channel_events = AsyncMock()
         self.unsubscribe_channel_events = AsyncMock()
         self._check_bot_mod_status = AsyncMock()
@@ -39,6 +40,10 @@ class _StubMixin(_NotifyMixin):
         self.command_configs = MagicMock()
         self.command_configs.warm_cache = AsyncMock(return_value=0)
         self.owner_id = "owner-001"
+        token = MagicMock()
+        token.scopes = None  # no missing scopes by default
+        self.channels = MagicMock()
+        self.channels.get_token = AsyncMock(return_value=token)
 
 
 def _payload(channel_id: str, *, enabled: bool) -> str:
@@ -130,6 +135,53 @@ class TestHandleChannelToggleEnable:
         mixin.subscribe_channel_events.assert_not_awaited()
         mixin._check_bot_mod_status.assert_not_awaited()
 
+    async def test_enable_sets_needs_reauth_when_scopes_missing(self):
+        """Valid token with missing scopes → _needs_reauth set after toggle enable."""
+        mixin = _StubMixin()
+        token = MagicMock()
+        # Provide a minimal scope string that is missing required broadcaster scopes
+        token.scopes = "user:read:email"
+        mixin.channels.get_token = AsyncMock(return_value=token)
+
+        await mixin._handle_channel_toggle(
+            None, None, "channel_toggle", _payload("ch3", enabled=True)
+        )
+
+        assert "ch3" in mixin._needs_reauth
+
+    async def test_enable_skips_scope_check_when_already_needs_reauth(self):
+        """If _check_bot_mod_status already set _needs_reauth (401/403), skip DB scope check."""
+        mixin = _StubMixin()
+
+        # Simulate mod check setting _needs_reauth (as it now does for 401/403)
+        async def _mod_check_sets_reauth(channel_id):
+            mixin._needs_reauth.add(channel_id)
+
+        mixin._check_bot_mod_status = AsyncMock(side_effect=_mod_check_sets_reauth)
+
+        await mixin._handle_channel_toggle(
+            None, None, "channel_toggle", _payload("ch3", enabled=True)
+        )
+
+        assert "ch3" in mixin._needs_reauth
+        # get_token not called for the scope check path
+        mixin.channels.get_token.assert_not_awaited()
+
+    async def test_enable_no_reauth_when_all_scopes_present(self):
+        """Token with all required broadcaster scopes → _needs_reauth stays empty."""
+        from shared.twitch_scopes import BROADCASTER_SCOPES
+
+        mixin = _StubMixin()
+        token = MagicMock()
+        token.scopes = " ".join(BROADCASTER_SCOPES)
+        mixin.channels.get_token = AsyncMock(return_value=token)
+
+        await mixin._handle_channel_toggle(
+            None, None, "channel_toggle", _payload("ch3", enabled=True)
+        )
+
+        assert "ch3" not in mixin._needs_reauth
+
 
 # ---------------------------------------------------------------------------
 # Bot._check_bot_mod_status
@@ -169,6 +221,7 @@ def mod_bot():
         b._bot_id = "bot-001"
         b._client_id = "test-client-id"
         b._bot_is_mod = set()
+        b._needs_reauth = set()
         b._mod_check_pending = set()
         b.channels = MagicMock()
         return b
@@ -197,15 +250,18 @@ class TestCheckBotModStatus:
 
         assert "ch1" not in mod_bot._bot_is_mod
 
-    async def test_does_not_add_on_401(self, mod_bot):
+    @pytest.mark.parametrize("status_code", [401, 403])
+    async def test_auth_failure_sets_needs_reauth(self, mod_bot, status_code):
+        """401 or 403 from Helix → _needs_reauth set, _bot_is_mod not set."""
         token_obj = MagicMock(token="tok")
         mod_bot.channels.get_token = AsyncMock(return_value=token_obj)
-        ctx = _make_httpx_ctx(401, text="Unauthorized")
+        ctx = _make_httpx_ctx(status_code, text="Unauthorized")
 
         with patch("twitch.core.bot.httpx.AsyncClient", return_value=ctx):
             await mod_bot._check_bot_mod_status("ch1")
 
         assert "ch1" not in mod_bot._bot_is_mod
+        assert "ch1" in mod_bot._needs_reauth
 
     async def test_no_token_returns_early_without_error(self, mod_bot):
         mod_bot.channels.get_token = AsyncMock(return_value=None)
