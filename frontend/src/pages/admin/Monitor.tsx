@@ -826,7 +826,7 @@ export default function AdminMonitor() {
     error: null,
   })
   const termRef = useRef<HTMLDivElement>(null)
-  const [levelFilter, setLevelFilter] = useState<LevelFilter>('ALL')
+  const [levelFilter, setLevelFilter] = useState<LevelFilter>('INFO')
   const [tabOrder, setTabOrder] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem('monitor-tab-order')
@@ -1035,8 +1035,9 @@ export default function AdminMonitor() {
             <h1 className="text-page-title font-bold">Monitor</h1>
           </SlideUp>
           {isLogMode && (
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-0.5">
+            <div className="flex items-center gap-2">
+              {/* Pills: lg+ only — on smaller screens they appear below the tab bar */}
+              <div className="hidden lg:flex items-center gap-0.5">
                 {LEVEL_FILTER_OPTS.map(lvl => (
                   <button
                     key={lvl}
@@ -1047,7 +1048,7 @@ export default function AdminMonitor() {
                   </button>
                 ))}
               </div>
-              <div className="w-px h-4 bg-border/50 shrink-0" />
+              <div className="hidden lg:block w-px h-4 bg-border/50 shrink-0" />
               <Button
                 variant="ghost"
                 size="icon"
@@ -1086,7 +1087,7 @@ export default function AdminMonitor() {
             value={selected}
             onValueChange={v => {
               setSelected(v)
-              setLevelFilter('ALL')
+              setLevelFilter('INFO')
               followRef.current = true
               setIsFollowing(true)
               if (v === '__status__') refreshStatus()
@@ -1126,6 +1127,21 @@ export default function AdminMonitor() {
             </TabsList>
           </Tabs>
         </div>
+
+        {/* Mobile filter row — only visible below lg when on a log tab */}
+        {isLogMode && (
+          <div className="lg:hidden flex items-center gap-0.5 px-page py-1.5 border-b border-border/30 overflow-x-auto shrink-0">
+            {LEVEL_FILTER_OPTS.map(lvl => (
+              <button
+                key={lvl}
+                onClick={() => setLevelFilter(lvl)}
+                className={`px-2 py-0.5 rounded text-label font-mono transition-colors select-none shrink-0 ${levelPillClass(lvl, levelFilter === lvl)}`}
+              >
+                {lvl === 'WARNING' ? 'WARN' : lvl}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Content */}
         {isStatusMode ? (
