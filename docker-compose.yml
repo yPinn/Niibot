@@ -17,6 +17,12 @@ x-healthcheck: &default-healthcheck
   retries: 3
   start_period: 30s
 
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
 # ---------------------------------------------------------------------------
 # Profiles guide:
 #   --profile api      → API + DB
@@ -36,6 +42,7 @@ services:
     image: postgres:16
     container_name: niibot-postgres
     restart: unless-stopped
+    logging: *default-logging
     command: >
       postgres
         -c log_min_duration_statement=500
@@ -82,6 +89,7 @@ services:
     image: ghcr.io/wikidepia/instafix:main
     container_name: niibot-instafix
     restart: unless-stopped
+    logging: *default-logging
     profiles: [discord, bots, full]
     networks:
       - niibot-network
@@ -93,6 +101,7 @@ services:
       dockerfile: scrapling/Dockerfile
     container_name: niibot-scrapling
     restart: unless-stopped
+    logging: *default-logging
     profiles: [discord, bots, full]
     env_file:
       - ./backend/scrapling/.env
@@ -123,6 +132,7 @@ services:
         GIT_COMMIT: ${GIT_COMMIT:-unknown}
     container_name: niibot-twitch
     restart: unless-stopped
+    logging: *default-logging
     profiles: [twitch, bots, full]
     env_file:
       - ./backend/shared.env
@@ -158,6 +168,7 @@ services:
         GIT_COMMIT: ${GIT_COMMIT:-unknown}
     container_name: niibot-discord
     restart: unless-stopped
+    logging: *default-logging
     profiles: [discord, bots, full]
     env_file:
       - ./backend/shared.env
@@ -198,6 +209,7 @@ services:
         GIT_COMMIT: ${GIT_COMMIT:-unknown}
     container_name: niibot-api
     restart: unless-stopped
+    logging: *default-logging
     profiles: [api, full]
     ports:
       - "8000:8000"
