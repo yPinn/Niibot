@@ -64,7 +64,7 @@ class _SessionMixin:
                     self._mod_check_pending.discard(ch.channel_id)  # type: ignore[attr-defined]
 
             await asyncio.gather(
-                *(self._check_bot_mod_status(cid) for cid in subscribed_ids),
+                *(self._check_bot_mod_status(cid) for cid in subscribed_ids),  # type: ignore[attr-defined]
                 return_exceptions=True,
             )
 
