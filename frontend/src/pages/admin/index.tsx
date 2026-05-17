@@ -158,40 +158,87 @@ function ScopeSection({
 
 // ── Mod status badge ──────────────────────────────────────────────────────────
 
-const MOD_STATUS_CONFIG: Record<ModStatus, { label: string; icon: string; className: string }> = {
+const MOD_STATUS_CONFIG: Record<
+  ModStatus,
+  { label: string; labelZh: string; icon: string; iconClass: string; className: string }
+> = {
   mod: {
     label: 'mod',
+    labelZh: '管理員',
     icon: 'fa-solid fa-shield-check',
+    iconClass: 'text-status-online',
     className: 'border-status-online/20 bg-status-online/10 text-status-online',
   },
   no_mod: {
     label: 'no mod',
+    labelZh: '非管理員',
     icon: 'fa-solid fa-shield-xmark',
+    iconClass: 'text-status-offline',
     className: 'border-status-offline/20 bg-status-offline/10 text-status-offline',
   },
   token_error: {
     label: 'token expired',
+    labelZh: 'Token 過期',
     icon: 'fa-solid fa-rotate-exclamation',
+    iconClass: 'text-status-warning',
     className: 'border-status-warning/20 bg-status-warning/10 text-status-warning',
   },
   scope_error: {
     label: 'scope outdated',
+    labelZh: '授權不足',
     icon: 'fa-solid fa-lock',
+    iconClass: 'text-status-info',
     className: 'border-status-info/20 bg-status-info/10 text-status-info',
+  },
+  broadcaster: {
+    label: 'broadcaster',
+    labelZh: '轉播者',
+    icon: '',
+    iconClass: 'text-muted-foreground',
+    className: 'border-border bg-muted/50 text-muted-foreground',
   },
 }
 
-function ModStatusBadge({ status, missingCount }: { status: ModStatus; missingCount?: number }) {
+function ModStatusBadge({
+  status,
+  missingCount,
+  bare,
+}: {
+  status: ModStatus
+  missingCount?: number
+  bare?: boolean
+}) {
   const cfg = MOD_STATUS_CONFIG[status] ?? MOD_STATUS_CONFIG.token_error
+
+  const icon =
+    status === 'mod' ? (
+      <TwitchRoleBadge role="moderator" size={18} />
+    ) : status === 'broadcaster' ? (
+      <TwitchRoleBadge role="broadcaster" size={18} />
+    ) : (
+      <Icon
+        icon={cfg.icon}
+        size={bare ? 'badge' : 'xs'}
+        wrapperClassName={bare ? `shrink-0 ${cfg.iconClass}` : undefined}
+      />
+    )
+
+  if (bare) {
+    const label =
+      status === 'scope_error' && missingCount != null ? `${missingCount} 個授權遺失` : cfg.labelZh
+    return (
+      <span className="inline-flex items-center gap-1.5 select-none">
+        {icon}
+        <span className="text-sub text-foreground">{label}</span>
+      </span>
+    )
+  }
+
   const label =
     status === 'scope_error' && missingCount != null ? `${missingCount} missing` : cfg.label
   return (
     <Badge className={`gap-1 text-label select-none ${cfg.className}`}>
-      {status === 'mod' ? (
-        <TwitchRoleBadge role="moderator" size={18} />
-      ) : (
-        <Icon icon={cfg.icon} size="xs" />
-      )}
+      {icon}
       {label}
     </Badge>
   )
@@ -223,9 +270,13 @@ function ScopeDetailDialog({
               <DialogDescription className="font-mono">{ch.name}</DialogDescription>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-element mt-1">
-            <ModStatusBadge status={ch.mod_status} missingCount={ch.missing_scopes.length} />
-            {ch.is_bot && <TwitchRoleBadgeLabel role="bot" />}
+          <div className="flex flex-col gap-2 mt-1">
+            <ModStatusBadge
+              status={ch.is_bot ? 'broadcaster' : ch.mod_status}
+              missingCount={ch.missing_scopes.length}
+              bare
+            />
+            <TwitchRoleBadgeLabel role="bot" />
           </div>
         </DialogHeader>
         <ScopeSection
@@ -249,7 +300,7 @@ function ChannelCard({ ch }: { ch: AdminChannel }) {
         onClick={() => setOpen(true)}
         className="relative flex flex-col items-center justify-center gap-element rounded-lg border border-border bg-card p-3 text-center w-full aspect-square hover:bg-accent transition-colors select-none"
       >
-        {ch.is_bot && <TwitchRoleBadge role="bot" size={18} className="absolute top-3 left-3" />}
+        <TwitchRoleBadge role="bot" size={18} className="absolute top-3 left-3" />
         <div className="relative">
           <img
             src={ch.avatar}
@@ -264,7 +315,10 @@ function ChannelCard({ ch }: { ch: AdminChannel }) {
           <p className="text-sub font-medium truncate">{ch.display_name}</p>
           <p className="text-label text-muted-foreground font-mono truncate">{ch.name}</p>
         </div>
-        <ModStatusBadge status={ch.mod_status} missingCount={ch.missing_scopes.length} />
+        <ModStatusBadge
+          status={ch.is_bot ? 'broadcaster' : ch.mod_status}
+          missingCount={ch.missing_scopes.length}
+        />
       </button>
       <ScopeDetailDialog ch={ch} open={open} onOpenChange={setOpen} />
     </>

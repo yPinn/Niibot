@@ -1,6 +1,6 @@
 import { API_ENDPOINTS, apiFetch } from './config'
 
-export type ModStatus = 'mod' | 'no_mod' | 'token_error' | 'scope_error'
+export type ModStatus = 'mod' | 'no_mod' | 'token_error' | 'scope_error' | 'broadcaster'
 export type BotTokenStatus = 'ok' | 'missing' | 'no_token'
 
 export interface AdminChannel {
