@@ -50,13 +50,21 @@ class _SessionMixin:
 
             non_bot = [ch for ch in enabled_channels if ch.channel_id != self._bot_id]  # type: ignore[attr-defined]
 
-            # Subscribe events sequentially (order matters for dedup checks inside subscribe_channel_events)
+            # Pre-add to _mod_check_pending before subscribing: asyncio.gather tasks haven't
+            # run their first line yet when the event loop yields, so a message arriving in
+            # that window would fire a spurious mod-guard notification.
+            subscribed_ids: list[str] = []
             for ch in non_bot:
-                await self.subscribe_channel_events(ch.channel_id)  # type: ignore[attr-defined]
+                self._mod_check_pending.add(ch.channel_id)  # type: ignore[attr-defined]
+                try:
+                    await self.subscribe_channel_events(ch.channel_id)  # type: ignore[attr-defined]
+                    subscribed_ids.append(ch.channel_id)
+                except Exception as e:
+                    LOGGER.error(f"Failed to subscribe channel {ch.channel_id}: {e}")
+                    self._mod_check_pending.discard(ch.channel_id)  # type: ignore[attr-defined]
 
-            # Mod status checks are independent HTTP calls — run concurrently
             await asyncio.gather(
-                *(self._check_bot_mod_status(ch.channel_id) for ch in non_bot),  # type: ignore[attr-defined]
+                *(self._check_bot_mod_status(cid) for cid in subscribed_ids),
                 return_exceptions=True,
             )
 
