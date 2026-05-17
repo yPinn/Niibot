@@ -23,7 +23,6 @@ import {
   Skeleton,
   SlideUp,
   Spinner,
-  Switch,
   Table,
   TableBody,
   TableCell,
@@ -139,8 +138,8 @@ function trimLeadingSpaces(s: string): string {
 }
 
 function parseDockerTs(raw: string): { ts: string; msg: string } {
-  const m = raw.match(/^(\d{4}-\d{2}-\d{2}T(\d{2}:\d{2}:\d{2}))\.\S+Z?\s*(.*)$/)
-  if (m) return { ts: m[2], msg: m[3] }
+  const m = raw.match(/^(\d{4})-(\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})\.\S+\s*(.*)$/)
+  if (m) return { ts: `${m[2]} ${m[3]}`, msg: m[4] }
   return { ts: '', msg: raw }
 }
 
@@ -220,6 +219,43 @@ function lineColor(msg: string): string {
   return 'text-log-base'
 }
 
+// ── Level filter ──────────────────────────────────────────────────────────────
+
+type LogLevel = 'DEBUG' | 'INFO' | 'WARNING' | 'ERROR'
+type LevelFilter = 'ALL' | LogLevel
+const LEVEL_FILTER_OPTS: LevelFilter[] = ['ALL', 'DEBUG', 'INFO', 'WARNING', 'ERROR']
+const LEVEL_ORDER: Record<LogLevel, number> = { DEBUG: 0, INFO: 1, WARNING: 2, ERROR: 3 }
+
+function getLineLevel(text: string): LogLevel | null {
+  const { msg } = parseDockerTs(text)
+  const raw = msg || text
+  const pg = parsePgPrefix(raw)
+  if (pg) {
+    if (/^(ERROR|FATAL|PANIC)$/.test(pg.level)) return 'ERROR'
+    if (pg.level === 'WARNING') return 'WARNING'
+    if (pg.level === 'DEBUG') return 'DEBUG'
+    return 'INFO'
+  }
+  const py = parsePyPrefix(raw)
+  if (py) {
+    if (/^(ERROR|CRITICAL|FATAL)$/.test(py.level)) return 'ERROR'
+    if (py.level === 'WARNING') return 'WARNING'
+    if (py.level === 'DEBUG') return 'DEBUG'
+    return 'INFO'
+  }
+  return null
+}
+
+function levelPillClass(lvl: LevelFilter, active: boolean): string {
+  if (active) {
+    if (lvl === 'ERROR') return 'bg-status-offline/15 text-status-offline'
+    if (lvl === 'WARNING') return 'bg-status-warning/15 text-status-warning'
+    if (lvl === 'DEBUG') return 'bg-muted-foreground/15 text-muted-foreground'
+    return 'bg-accent text-accent-foreground'
+  }
+  return 'text-muted-foreground/50 hover:text-muted-foreground hover:bg-accent/50'
+}
+
 function LogLineRow({
   line,
   index,
@@ -258,7 +294,7 @@ function LogLineRow({
       <span className="text-muted-foreground/50 shrink-0 select-none w-10 text-right tabular-nums group-hover:text-muted-foreground/70">
         {index + 1}
       </span>
-      <span className="text-muted-foreground/70 shrink-0 tabular-nums w-22">{ts}</span>
+      <span className="text-muted-foreground/70 shrink-0 tabular-nums w-36">{ts}</span>
       {pg && (
         <>
           <span className="text-muted-foreground/35 shrink-0 tabular-nums select-none w-10 text-right">
@@ -782,13 +818,15 @@ export default function AdminMonitor() {
   const [containers, setContainers] = useState<LogContainer[]>(DEFAULT_CONTAINERS)
   const [selected, setSelected] = useState('__status__')
   const tail = 200
-  const [follow, setFollow] = useState(true)
+  const followRef = useRef(true)
+  const [isFollowing, setIsFollowing] = useState(true)
   const [{ loading, lines, error }, dispatch] = useReducer(fetchReducer, {
     loading: false,
     lines: [],
     error: null,
   })
   const termRef = useRef<HTMLDivElement>(null)
+  const [levelFilter, setLevelFilter] = useState<LevelFilter>('ALL')
   const [tabOrder, setTabOrder] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem('monitor-tab-order')
@@ -838,17 +876,26 @@ export default function AdminMonitor() {
     }
   }, [selected, tail])
 
-  usePolling({ fetchFn: pollFetch, intervalMs: 5_000, enabled: follow, skipInitialCall: true })
-
-  useEffect(() => {
-    if (follow && termRef.current) {
-      termRef.current.scrollTop = termRef.current.scrollHeight
-    }
-  }, [lines, follow])
-
   const isDbMode = selected === '__db__'
   const isStatusMode = selected === '__status__'
   const isLogMode = !isDbMode && !isStatusMode
+
+  usePolling({ fetchFn: pollFetch, intervalMs: 5_000, enabled: isLogMode, skipInitialCall: true })
+
+  const filteredLines = useMemo(() => {
+    if (levelFilter === 'ALL') return lines
+    const threshold = LEVEL_ORDER[levelFilter]
+    return lines.filter(line => {
+      const lvl = getLineLevel(line.text)
+      return lvl === null || LEVEL_ORDER[lvl] >= threshold
+    })
+  }, [lines, levelFilter])
+
+  useEffect(() => {
+    if (isFollowing && termRef.current) {
+      termRef.current.scrollTop = termRef.current.scrollHeight
+    }
+  }, [filteredLines, isFollowing])
 
   const sortedContainers = useMemo(
     () =>
@@ -884,6 +931,16 @@ export default function AdminMonitor() {
       .then(data => dispatch({ type: 'done', lines: data.lines }))
       .catch(e => dispatch({ type: 'fail', error: e instanceof Error ? e.message : String(e) }))
   }
+
+  const handleScroll = useCallback(() => {
+    if (!termRef.current) return
+    const el = termRef.current
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 50
+    if (atBottom !== followRef.current) {
+      followRef.current = atBottom
+      setIsFollowing(atBottom)
+    }
+  }, [])
 
   // ── Status state ─────────────────────────────────────────────────────────
   const {
@@ -978,24 +1035,32 @@ export default function AdminMonitor() {
             <h1 className="text-page-title font-bold">Monitor</h1>
           </SlideUp>
           {isLogMode && (
-            <div className="flex items-center gap-2">
-              <span className="text-label text-muted-foreground">Follow</span>
-              <Switch checked={follow} onCheckedChange={setFollow} />
-              {!follow && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleRefresh}
-                  disabled={loading}
-                  aria-label="Refresh"
-                >
-                  {loading ? (
-                    <Spinner />
-                  ) : (
-                    <Icon icon="fa-solid fa-rotate" wrapperClassName="text-muted-foreground" />
-                  )}
-                </Button>
-              )}
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-0.5">
+                {LEVEL_FILTER_OPTS.map(lvl => (
+                  <button
+                    key={lvl}
+                    onClick={() => setLevelFilter(lvl)}
+                    className={`px-2 py-0.5 rounded text-label font-mono transition-colors select-none ${levelPillClass(lvl, levelFilter === lvl)}`}
+                  >
+                    {lvl === 'WARNING' ? 'WARN' : lvl}
+                  </button>
+                ))}
+              </div>
+              <div className="w-px h-4 bg-border/50 shrink-0" />
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleRefresh}
+                disabled={loading}
+                aria-label="Refresh"
+              >
+                {loading ? (
+                  <Spinner />
+                ) : (
+                  <Icon icon="fa-solid fa-rotate" wrapperClassName="text-muted-foreground" />
+                )}
+              </Button>
             </div>
           )}
           {isStatusMode && (
@@ -1021,7 +1086,9 @@ export default function AdminMonitor() {
             value={selected}
             onValueChange={v => {
               setSelected(v)
-              setFollow(false)
+              setLevelFilter('ALL')
+              followRef.current = true
+              setIsFollowing(true)
               if (v === '__status__') refreshStatus()
             }}
           >
@@ -1106,6 +1173,7 @@ export default function AdminMonitor() {
           <div className="dark flex flex-col flex-1 min-h-0">
             <div
               ref={termRef}
+              onScroll={handleScroll}
               className="flex-1 min-h-0 overflow-auto bg-background font-mono text-label leading-5 py-2"
             >
               {loading && lines.length === 0 ? (
@@ -1117,9 +1185,13 @@ export default function AdminMonitor() {
                 <div className="px-4 py-3 text-destructive">{error}</div>
               ) : lines.length === 0 ? (
                 <div className="px-4 py-3 text-muted-foreground">No log output.</div>
+              ) : filteredLines.length === 0 ? (
+                <div className="px-4 py-3 text-muted-foreground">
+                  No {levelFilter} lines in {lines.length} fetched.
+                </div>
               ) : (
                 <div className="min-w-max">
-                  {lines.map((line, i) => (
+                  {filteredLines.map((line, i) => (
                     <LogLineRow
                       key={i}
                       line={line}
@@ -1134,9 +1206,13 @@ export default function AdminMonitor() {
             {/* Status bar */}
             <div className="flex items-center justify-between px-page lg:px-page-lg py-1.5 border-t border-border/20 bg-background shrink-0">
               <span className="font-mono text-label text-muted-foreground">
-                {lines.length > 0 ? `${lines.length} lines` : '—'}
+                {lines.length === 0
+                  ? '—'
+                  : levelFilter === 'ALL'
+                    ? `${lines.length} lines`
+                    : `${filteredLines.length} / ${lines.length} lines`}
               </span>
-              {follow && (
+              {isFollowing && (
                 <span className="font-mono text-label text-status-online flex items-center gap-1.5">
                   <span className="size-1.5 rounded-full bg-status-online animate-pulse" />
                   live
