@@ -5,11 +5,12 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from typing import Literal
 
 import asyncpg
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from core.config import Settings, get_settings
 from core.dependencies import get_current_channel_id, get_db_pool, get_twitch_api
@@ -18,6 +19,39 @@ from shared.repositories.ai_settings import DEFAULT_AI_SETTINGS, AISettingsRepos
 from shared.repositories.channel import ChannelRepository
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
+
+# ── Persona bias detection ───────────────────────────────────────────────────
+# Catches obvious discriminatory framing in persona/catchphrase text.
+# Implicit bias that slips through is handled by _CHANNEL_POLICY in the prompt.
+
+_IDENTITY_TERMS = (
+    r"黑人|白人|亞裔|亞洲人|台灣人|中國人|日本人|韓國人|外國人|移民|難民"
+    r"|穆斯林|基督徒|猶太|佛教|印度教"
+    r"|同性戀|LGBT|跨性別|女人|男人|女性|男性"
+    r"|殘障|身障|精神病|精神障礙"
+    r"|窮人|低收入|有錢人|富人"
+)
+_NEGATIVE_ATTRS = r"笨|蠢|懶|髒|醜|壞|危險|低劣|劣等|下賤|噁心|骯髒|素質差|沒水準|賤"
+_ATTITUDE_VERBS = r"歧視|看不起|討厭|嫌棄|瞧不起|排斥|鄙視|仇恨|恨"
+
+_BIAS_PATTERNS: list[re.Pattern[str]] = [
+    # explicit negative attitude toward identity group
+    re.compile(rf"({_ATTITUDE_VERBS}).{{0,20}}({_IDENTITY_TERMS})", re.IGNORECASE),
+    re.compile(rf"({_IDENTITY_TERMS}).{{0,20}}({_ATTITUDE_VERBS})", re.IGNORECASE),
+    # group generalisation with negative attribute
+    re.compile(
+        rf"({_IDENTITY_TERMS}).{{0,15}}(都|通常|一般|本來就|天生).{{0,15}}({_NEGATIVE_ATTRS})",
+        re.IGNORECASE,
+    ),
+    # inferiority comparison
+    re.compile(rf"比.{{1,15}}(更|還)({_NEGATIVE_ATTRS})", re.IGNORECASE),
+]
+
+
+def _contains_bias(text: str) -> bool:
+    """Return True if text matches any obvious discriminatory pattern."""
+    return any(p.search(text) for p in _BIAS_PATTERNS)
+
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
@@ -48,6 +82,13 @@ class AISettingsPatch(BaseModel):
     enabled: bool | None = None
     cooldown: int | None = Field(None, ge=5, le=300)
     min_role: Literal["everyone", "subscriber", "vip", "moderator", "broadcaster"] | None = None
+
+    @field_validator("persona", "catchphrase", mode="before")
+    @classmethod
+    def reject_biased_text(cls, v: object) -> object:
+        if isinstance(v, str) and _contains_bias(v):
+            raise ValueError("內容含有歧視性或偏見性語句，請修改後重試")
+        return v
 
 
 class EmoteItem(BaseModel):
