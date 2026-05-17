@@ -89,9 +89,9 @@ def record_cooldown(channel_id: str, command_name: str) -> None:
 def _evict_cooldowns() -> None:
     """Remove entries older than 1 hour to prevent unbounded growth."""
     cutoff = datetime.now(UTC) - timedelta(hours=1)
-    stale = [k for k, v in _cooldown_tracker.items() if v < cutoff]
-    for k in stale:
-        del _cooldown_tracker[k]
+    for k in list(_cooldown_tracker):
+        if _cooldown_tracker[k] < cutoff:
+            del _cooldown_tracker[k]
 
 
 async def check_command(

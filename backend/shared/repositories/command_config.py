@@ -101,12 +101,15 @@ async def _retry_on_db_error(func, max_retries: int = 2):
             if attempt < max_retries:
                 delay = 0.5 * attempt
                 LOGGER.warning(
-                    f"DB operation attempt {attempt}/{max_retries} failed: {type(e).__name__}, "
-                    f"retrying in {delay}s..."
+                    "DB operation attempt %d/%d failed: %s, retrying in %.1fs...",
+                    attempt,
+                    max_retries,
+                    type(e).__name__,
+                    delay,
                 )
                 await asyncio.sleep(delay)
             else:
-                LOGGER.exception(f"DB operation failed after {max_retries} attempts")
+                LOGGER.exception("DB operation failed after %d attempts", max_retries)
                 raise
 
 

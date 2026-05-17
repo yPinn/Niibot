@@ -56,7 +56,7 @@ async def _db_retry_loop(db_manager) -> None:
     max_delay = 60
     while True:
         await asyncio.sleep(delay)
-        if db_manager._pool is not None:
+        if db_manager.is_connected:
             LOGGER.info("DB retry loop: pool already connected, stopping")
             return
         try:
@@ -235,7 +235,7 @@ def create_app() -> FastAPI:
     async def health():
         """Liveness check — no DB dependency"""
         try:
-            ready = get_database_manager()._pool is not None
+            ready = get_database_manager().is_connected
         except RuntimeError:
             ready = False
         return {
@@ -251,7 +251,7 @@ def create_app() -> FastAPI:
         db_ok = False
         try:
             db_manager = get_database_manager()
-            if db_manager._pool is not None:
+            if db_manager.is_connected:
                 db_ok = await db_manager.check_health()
         except RuntimeError:
             pass  # DB manager not yet initialized

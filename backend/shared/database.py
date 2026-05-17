@@ -144,16 +144,16 @@ class DatabaseManager:
         port = parsed.port or 5432
         user = parsed.username or "unknown"
 
-        LOGGER.info(f"[DB Diag] host={host}, port={port}, user={user}")
+        LOGGER.info("[DB Diag] host=%s, port=%s, user=%s", host, port, user)
 
         # 1. DNS resolution
         try:
             addrs = socket.getaddrinfo(host, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
             families = {a[0].name for a in addrs}
             ips = {a[4][0] for a in addrs}
-            LOGGER.info(f"[DB Diag] DNS OK: {ips} (families: {families})")
+            LOGGER.info("[DB Diag] DNS OK: %s (families: %s)", ips, families)
         except socket.gaierror as e:
-            LOGGER.error(f"[DB Diag] DNS FAILED: {e}")
+            LOGGER.error("[DB Diag] DNS FAILED: %s", e)
             return
 
         # 2. Raw TCP connection
@@ -164,21 +164,25 @@ class DatabaseManager:
                 sock.settimeout(5)
                 sock.connect(sockaddr)
                 ip, port_ = str(sockaddr[0]), str(sockaddr[1])
-                LOGGER.info(f"[DB Diag] TCP OK: {ip}:{port_} ({family.name})")
+                LOGGER.info("[DB Diag] TCP OK: %s:%s (%s)", ip, port_, family.name)
                 # 3. SSL handshake
                 try:
                     ctx = _ssl.create_default_context()
                     ctx.check_hostname = False
                     ctx.verify_mode = _ssl.CERT_NONE
                     ssock = ctx.wrap_socket(sock, server_hostname=host)
-                    LOGGER.info(f"[DB Diag] SSL OK: {ssock.version()}")
+                    LOGGER.info("[DB Diag] SSL OK: %s", ssock.version())
                     ssock.close()
                 except Exception as e:
-                    LOGGER.error(f"[DB Diag] SSL FAILED: {type(e).__name__}: {e}")
+                    LOGGER.error("[DB Diag] SSL FAILED: %s: %s", type(e).__name__, e)
                     sock.close()
             except Exception as e:
                 LOGGER.error(
-                    f"[DB Diag] TCP FAILED to {str(sockaddr[0])}:{str(sockaddr[1])}: {type(e).__name__}: {e}"
+                    "[DB Diag] TCP FAILED to %s:%s: %s: %s",
+                    sockaddr[0],
+                    sockaddr[1],
+                    type(e).__name__,
+                    e,
                 )
 
     # ── Lifecycle ────────────────────────────────────────────────────
@@ -195,7 +199,7 @@ class DatabaseManager:
             "transaction": self._transaction_pool_kwargs,
         }
         pool_kwargs = _builders[self._pooler_mode]()
-        LOGGER.info(f"Connecting with {self._pooler_mode} pooler mode")
+        LOGGER.info("Connecting with %s pooler mode", self._pooler_mode)
 
         cfg = self.config
         for attempt in range(1, cfg.max_retries + 1):
@@ -214,10 +218,11 @@ class DatabaseManager:
                 effective_min = pool_kwargs.get("min_size", 0)
                 effective_cache = pool_kwargs.get("statement_cache_size", 0)
                 LOGGER.info(
-                    f"Database pool created and verified "
-                    f"(mode={self._pooler_mode}, "
-                    f"size={effective_min}-{cfg.max_size}, "
-                    f"cache={effective_cache})"
+                    "Database pool created and verified (mode=%s, size=%d-%d, cache=%d)",
+                    self._pooler_mode,
+                    effective_min,
+                    cfg.max_size,
+                    effective_cache,
                 )
                 return
             except Exception as e:
@@ -229,8 +234,12 @@ class DatabaseManager:
                 if attempt < cfg.max_retries:
                     delay = cfg.retry_delay * (2 ** (attempt - 1))
                     LOGGER.warning(
-                        f"Database connection attempt {attempt}/{cfg.max_retries} failed: "
-                        f"{type(e).__name__}: {e or repr(e)}, retrying in {delay}s..."
+                        "Database connection attempt %d/%d failed: %s: %s, retrying in %.1fs...",
+                        attempt,
+                        cfg.max_retries,
+                        type(e).__name__,
+                        e or repr(e),
+                        delay,
                     )
                     # Run diagnostics on first failure
                     if attempt == 1:
@@ -241,8 +250,7 @@ class DatabaseManager:
                     await asyncio.sleep(delay)
                 else:
                     LOGGER.exception(
-                        f"Database connection failed after {cfg.max_retries} attempts: "
-                        f"{type(e).__name__}: {e or repr(e)}"
+                        "Database connection failed after %d attempts", cfg.max_retries
                     )
                     raise
 
@@ -278,8 +286,8 @@ class DatabaseManager:
             await self._pool.close()
             self._pool = None
             LOGGER.info("Database pool closed")
-        except Exception as e:
-            LOGGER.exception(f"Error closing database pool: {e}")
+        except Exception:
+            LOGGER.exception("Error closing database pool")
 
     async def check_health(self) -> bool:
         """Test if pool can actually execute a query."""
@@ -291,6 +299,11 @@ class DatabaseManager:
             return True
         except Exception:
             return False
+
+    @property
+    def is_connected(self) -> bool:
+        """Return True if the pool has been initialized and is ready."""
+        return self._pool is not None
 
     @property
     def pool(self) -> asyncpg.Pool:
@@ -317,12 +330,12 @@ async def pool_heartbeat_loop(db_manager: DatabaseManager) -> None:
     while True:
         await asyncio.sleep(interval)
         try:
-            if db_manager._pool is None:
+            if not db_manager.is_connected:
                 raise RuntimeError("Pool is None")
-            async with db_manager._pool.acquire(timeout=10.0) as conn:
+            async with db_manager.pool.acquire(timeout=10.0) as conn:
                 await conn.fetchval("SELECT 1")
             if fail_count > 0:
-                LOGGER.info(f"Pool heartbeat recovered after {fail_count} failures")
+                LOGGER.info("Pool heartbeat recovered after %d failures", fail_count)
             fail_count = 0
             interval = 60
         except asyncio.CancelledError:
@@ -330,7 +343,9 @@ async def pool_heartbeat_loop(db_manager: DatabaseManager) -> None:
         except Exception as e:
             fail_count += 1
             if fail_count <= 3:
-                LOGGER.warning(f"Pool heartbeat failed ({fail_count}): {type(e).__name__}: {e}")
+                LOGGER.warning(
+                    "Pool heartbeat failed (%d): %s: %s", fail_count, type(e).__name__, e
+                )
 
             if fail_count == 3:
                 LOGGER.warning("Pool appears dead, attempting reconnect...")
@@ -341,7 +356,7 @@ async def pool_heartbeat_loop(db_manager: DatabaseManager) -> None:
                     interval = 60
                     continue
                 except Exception as re_err:
-                    LOGGER.error(f"Pool reconnect failed: {type(re_err).__name__}: {re_err}")
+                    LOGGER.error("Pool reconnect failed: %s: %s", type(re_err).__name__, re_err)
                     fail_count = 0
                     interval = 120
                     continue

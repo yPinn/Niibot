@@ -95,8 +95,12 @@ class BaseHealthServer(ABC):
             uptime = int(time.time() - self._start_time)
             ready = await self.get_ready()
             metrics = await self.get_metrics()
-            LOGGER.info(
-                f"Heartbeat: service={self.SERVICE_NAME} uptime={uptime}s ready={ready} {metrics}"
+            LOGGER.debug(
+                "Heartbeat: service=%s uptime=%ds ready=%s %s",
+                self.SERVICE_NAME,
+                uptime,
+                ready,
+                metrics,
             )
 
     # ── Lifecycle ────────────────────────────────────────────────────────
@@ -109,7 +113,7 @@ class BaseHealthServer(ABC):
             site = web.TCPSite(self.runner, self.host, self.port)
             await site.start()
             self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
-            LOGGER.info(f"Health server started on {self.host}:{self.port}")
+            LOGGER.info("Health server started on %s:%d", self.host, self.port)
         except Exception:
             LOGGER.exception("Failed to start health server")
             raise

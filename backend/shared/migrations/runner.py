@@ -147,15 +147,19 @@ class MigrationRunner:
     async def _apply_one(self, version: str, name: str, sql: str) -> None:
         """Execute a single migration inside a transaction."""
         LOGGER.info("Applying migration: %s", version)
-        async with self.pool.acquire() as conn:
-            async with conn.transaction():
-                await conn.execute(sql)
-                await conn.execute(
-                    f"""
-                    INSERT INTO {self.TRACKING_TABLE} (version, name)
-                    VALUES ($1, $2)
-                    """,
-                    version,
-                    name,
-                )
+        try:
+            async with self.pool.acquire() as conn:
+                async with conn.transaction():
+                    await conn.execute(sql)
+                    await conn.execute(
+                        f"""
+                        INSERT INTO {self.TRACKING_TABLE} (version, name)
+                        VALUES ($1, $2)
+                        """,
+                        version,
+                        name,
+                    )
+        except Exception:
+            LOGGER.exception("Migration %s failed — transaction rolled back", version)
+            raise
         LOGGER.info("Migration %s applied successfully", version)

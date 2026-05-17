@@ -154,7 +154,9 @@ class _AnalyticsSessionMixin:
             try:
                 await self.update_attendance_streaks(row["channel_id"], session_id)
             except Exception as e:
-                LOGGER.warning(f"Failed to update attendance streaks for session {session_id}: {e}")
+                LOGGER.warning(
+                    "Failed to update attendance streaks for session %s: %s", session_id, e
+                )
 
     async def close_stale_sessions(self, max_hours: int = 12) -> int:
         """Close sessions running longer than max_hours without ended_at.

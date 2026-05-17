@@ -193,7 +193,7 @@ class _AnalyticsEventsMixin:
                 rows,
             )
 
-        LOGGER.info(f"Flushed chatter stats for session {session_id}: {len(rows)} chatters")
+        LOGGER.info("Flushed chatter stats for session %s: %d chatters", session_id, len(rows))
 
     async def increment_watch_seconds(
         self,

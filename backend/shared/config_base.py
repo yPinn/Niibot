@@ -50,6 +50,6 @@ class BaseServiceSettings(BaseSettings):
         valid_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
         v_upper = v.upper()
         if v_upper not in valid_levels:
-            LOGGER.warning(f"Invalid log level '{v}', defaulting to INFO")
+            LOGGER.warning("Invalid log level %r, defaulting to INFO", v)
             return "INFO"
         return v_upper

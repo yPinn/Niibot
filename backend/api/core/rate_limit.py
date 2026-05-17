@@ -1,7 +1,7 @@
 """In-process sliding-window rate limiter — zero external dependency."""
 
 import time
-from collections import defaultdict
+from collections import defaultdict, deque
 
 from fastapi import HTTPException
 
@@ -16,7 +16,7 @@ class RateLimiter:
     def __init__(self, max_calls: int, period: float) -> None:
         self._max = max_calls
         self._period = period
-        self._log: dict[str, list[float]] = defaultdict(list)
+        self._log: dict[str, deque[float]] = defaultdict(deque)
 
     def allow(self, key: str) -> bool:
         """Record attempt. Returns True if within limit, False if exceeded."""
@@ -24,7 +24,7 @@ class RateLimiter:
         cutoff = now - self._period
         log = self._log[key]
         while log and log[0] < cutoff:
-            log.pop(0)
+            log.popleft()
         if len(log) >= self._max:
             return False
         log.append(now)
