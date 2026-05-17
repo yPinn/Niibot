@@ -100,9 +100,14 @@ function generateCss(s: ChatCssSettings): string {
     `body {\n  background-color: ${bg} !important;\n  overflow: hidden !important;\n}\n\ndiv.twilight-minimal-root,\ndiv.popout-chat-page,\nsection.chat-room,\n.stream-chat,\n.chat-room,\n.chat-list,\n.scrollable-area {\n  background-color: transparent !important;\n}`
   )
 
+  // Hide all scrollbars — OBS uses Chromium (CEF) so ::-webkit-scrollbar is the main target
+  parts.push(
+    `::-webkit-scrollbar {\n  display: none !important;\n}\n\n* {\n  scrollbar-width: none !important;\n}`
+  )
+
   // Always suppress noise elements in an OBS overlay context
   parts.push(
-    `.chat-line__status,\n[class*="leaderboard"],\n.community-highlight-stack__card,\n.new-chatter-ritual,\n.consent-banner,\n.paid-pinned-chat-message-list,\n.paid-pinned-chat-message-content-wrapper,\n.chat-author__intl-login,\nbutton[aria-label*="reply"],\nbutton[aria-label*="返信"] {\n  display: none !important;\n}`
+    `.chat-line__status,\n[class*="leaderboard"],\n.community-highlight-stack,\n.community-highlight-stack__card,\n.new-chatter-ritual,\n.consent-banner,\n.paid-pinned-chat-message-list,\n.paid-pinned-chat-message-content-wrapper,\n.chat-author__intl-login,\n[class*="hype-train"],\n[class*="predictions"],\nbutton[aria-label*="reply"],\nbutton[aria-label*="返信"] {\n  display: none !important;\n}`
   )
 
   if (s.hideHeader) {
@@ -113,7 +118,7 @@ function generateCss(s: ChatCssSettings): string {
   parts.push(`.chat-input {\n  display: none !important;\n}`)
 
   if (s.hideBadges) {
-    parts.push(`.chat-badge {\n  display: none !important;\n}`)
+    parts.push(`.chat-badge,\n.seventv-badge {\n  display: none !important;\n}`)
   }
 
   const fontSize = `${s.fontSize}px`
@@ -128,20 +133,26 @@ function generateCss(s: ChatCssSettings): string {
       `.chat-line__username-container {\n  display: flex !important;\n  align-items: center !important;\n  font-size: 0.78em !important;\n  margin-bottom: 3px !important;\n}`
     )
     // Username floats on background — always add shadow for legibility
+    // Strip 7TV gradient paint (background-clip: text + color:transparent) so the
+    // Twitch per-user inline color is restored; [data-a-user] is a stable Twitch fallback
     parts.push(
-      `.chat-author__display-name {\n  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85), 0 1px 6px rgba(0, 0, 0, 0.6) !important;\n}`
+      `.chat-author__display-name,\n[data-a-user] {\n  background: none !important;\n  -webkit-background-clip: unset !important;\n  background-clip: unset !important;\n  -webkit-text-fill-color: unset !important;\n  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85), 0 1px 6px rgba(0, 0, 0, 0.6) !important;\n}`
     )
     // Hide the colon separator between username and message
-    parts.push(`.chat-line__username-container > span:last-child {\n  display: none !important;\n}`)
-    // Bubble: always dark bg + white text regardless of body background
+    // aria-hidden="true" is more stable than :last-child when 7TV injects extra elements
     parts.push(
-      `[data-a-target="chat-line-message-body"],\n[data-test-selector="chat-line-message-body"] {\n  font-size: ${fontSize} !important;\n  line-height: 1.5 !important;\n  background: rgba(0, 0, 0, 0.68) !important;\n  border-radius: ${bubbleRadius} !important;\n  padding: 8px 14px !important;\n  max-width: 85% !important;\n  color: #fff !important;\n  display: block !important;\n}`
+      `.chat-line__username-container > span[aria-hidden="true"] {\n  display: none !important;\n}`
+    )
+    // Bubble: always dark bg + white text regardless of body background
+    // seventv-chat-message covers lines rendered by the 7TV extension
+    parts.push(
+      `[data-a-target="chat-line-message-body"],\n[data-test-selector="chat-line-message-body"],\nseventv-chat-message {\n  font-size: ${fontSize} !important;\n  line-height: 1.5 !important;\n  background: rgba(0, 0, 0, 0.68) !important;\n  border-radius: ${bubbleRadius} !important;\n  padding: 8px 14px !important;\n  max-width: 85% !important;\n  color: #fff !important;\n  display: block !important;\n}`
     )
     // Broadcaster messages appear on the opposite side
     const bcAlignItems = s.align === 'right' ? 'flex-start' : 'flex-end'
     const bcRadius = s.align === 'right' ? '3px 14px 14px 14px' : '14px 3px 14px 14px'
     parts.push(
-      `.chat-line__message:has(.chat-badge[alt="Broadcaster"]) {\n  align-items: ${bcAlignItems} !important;\n}\n.chat-line__message:has(.chat-badge[alt="Broadcaster"]) [data-a-target="chat-line-message-body"],\n.chat-line__message:has(.chat-badge[alt="Broadcaster"]) [data-test-selector="chat-line-message-body"] {\n  border-radius: ${bcRadius} !important;\n}`
+      `.chat-line__message:has(.chat-badge[alt="Broadcaster"]) {\n  align-items: ${bcAlignItems} !important;\n}\n.chat-line__message:has(.chat-badge[alt="Broadcaster"]) [data-a-target="chat-line-message-body"],\n.chat-line__message:has(.chat-badge[alt="Broadcaster"]) [data-test-selector="chat-line-message-body"],\n.chat-line__message:has(.chat-badge[alt="Broadcaster"]) seventv-chat-message {\n  border-radius: ${bcRadius} !important;\n}`
     )
   } else {
     const [msgBg, msgPad, msgRadius] =
@@ -152,6 +163,10 @@ function generateCss(s: ChatCssSettings): string {
           : ['transparent', '2px 0', '0']
     parts.push(
       `.chat-line__message {\n  font-size: ${fontSize} !important;\n  background: ${msgBg} !important;\n  padding: ${msgPad} !important;\n  border-radius: ${msgRadius} !important;\n  margin: ${marginY} 0 !important;\n}`
+    )
+    // Strip 7TV gradient paint so Twitch inline username color is restored
+    parts.push(
+      `.chat-author__display-name,\n[data-a-user] {\n  background: none !important;\n  -webkit-background-clip: unset !important;\n  background-clip: unset !important;\n  -webkit-text-fill-color: unset !important;\n}`
     )
   }
 
