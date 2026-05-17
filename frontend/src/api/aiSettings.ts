@@ -3,6 +3,8 @@ import { API_ENDPOINTS, apiFetch } from './config'
 export interface AISettings {
   bot_name: string
   persona: string
+  self_pronoun: string
+  catchphrase: string
   response_lang: 'zh-tw' | 'en' | 'auto'
   refusal_style: 'humorous' | 'polite'
   max_tokens: number
@@ -15,6 +17,8 @@ export interface AISettings {
 export const AI_SETTINGS_DEFAULT: AISettings = {
   bot_name: 'Niibot',
   persona: '',
+  self_pronoun: '我',
+  catchphrase: '',
   response_lang: 'zh-tw',
   refusal_style: 'humorous',
   max_tokens: 250,

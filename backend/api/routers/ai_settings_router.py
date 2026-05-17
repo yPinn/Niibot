@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Literal
 
 import asyncpg
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from core.config import Settings, get_settings
@@ -24,6 +25,8 @@ router = APIRouter(prefix="/api/ai", tags=["ai"])
 class AISettingsResponse(BaseModel):
     bot_name: str
     persona: str
+    self_pronoun: str
+    catchphrase: str
     response_lang: str
     refusal_style: str
     max_tokens: int
@@ -36,6 +39,8 @@ class AISettingsResponse(BaseModel):
 class AISettingsPatch(BaseModel):
     bot_name: str | None = Field(None, min_length=1, max_length=50)
     persona: str | None = Field(None, max_length=300)
+    self_pronoun: str | None = Field(None, max_length=20)
+    catchphrase: str | None = Field(None, max_length=50)
     response_lang: Literal["zh-tw", "en", "auto"] | None = None
     refusal_style: Literal["humorous", "polite"] | None = None
     max_tokens: int | None = Field(None, ge=50, le=500)
@@ -59,6 +64,23 @@ async def _notify(pool: asyncpg.Pool, channel_id: str) -> None:
     payload = json.dumps({"channel_id": channel_id, "table": "ai_settings"})
     async with pool.acquire() as conn:
         await conn.execute("SELECT pg_notify('config_change', $1)", payload)
+
+
+async def _sync_emotes(pool: asyncpg.Pool, channel_id: str, available_names: list[str]) -> None:
+    """Background task: persist available emote names so the bot prompt stays current."""
+    try:
+        repo = AISettingsRepository(pool)
+        current = await repo.get(channel_id)
+        if set(current.get("enabled_emotes") or []) != set(available_names):
+            await repo.upsert(channel_id, enabled_emotes=available_names)
+            await _notify(pool, channel_id)
+            LOGGER.info(
+                "Channel %s: synced %d available emotes → enabled_emotes",
+                channel_id,
+                len(available_names),
+            )
+    except Exception:
+        LOGGER.exception("Background emote sync failed for channel %s", channel_id)
 
 
 @router.get("/settings", response_model=AISettingsResponse)
@@ -90,7 +112,7 @@ async def patch_ai_settings(
         result = await AISettingsRepository(pool).upsert(channel_id, **patch)
         await _notify(pool, channel_id)
 
-        LOGGER.info(f"Channel {channel_id} updated AI settings: {list(patch)}")
+        LOGGER.info("Channel %s updated AI settings: %s", channel_id, list(patch))
         return AISettingsResponse(**result)
     except HTTPException:
         raise
@@ -104,12 +126,17 @@ async def reset_ai_settings(
     channel_id: str = Depends(get_current_channel_id),
     pool: asyncpg.Pool = Depends(get_db_pool),
 ) -> AISettingsResponse:
-    """Reset all AI settings to factory defaults."""
+    """Reset user-configurable AI settings to factory defaults.
+
+    enabled_emotes is excluded — it is bot-managed and re-synced automatically
+    when the emotes page is visited; resetting it would cause a temporary gap.
+    """
     try:
-        result = await AISettingsRepository(pool).upsert(channel_id, **DEFAULT_AI_SETTINGS)
+        reset_data = {k: v for k, v in DEFAULT_AI_SETTINGS.items() if k != "enabled_emotes"}
+        result = await AISettingsRepository(pool).upsert(channel_id, **reset_data)
         await _notify(pool, channel_id)
 
-        LOGGER.info(f"Channel {channel_id} reset AI settings to defaults")
+        LOGGER.info("Channel %s reset AI settings to defaults", channel_id)
         return AISettingsResponse(**result)
     except Exception:
         LOGGER.exception("Failed to reset AI settings")
@@ -118,6 +145,7 @@ async def reset_ai_settings(
 
 @router.get("/emotes", response_model=list[EmoteItem])
 async def get_ai_emotes(
+    background_tasks: BackgroundTasks,
     channel_id: str = Depends(get_current_channel_id),
     pool: asyncpg.Pool = Depends(get_db_pool),
     twitch: TwitchAPIClient = Depends(get_twitch_api),
@@ -129,8 +157,6 @@ async def get_ai_emotes(
     (requires user:read:emotes scope). Falls back to unavailable for subscription/bits
     emotes if the bot token is missing or the scope is not yet granted.
     """
-    import asyncio
-
     bot_token: str | None = None
     if settings.bot_id:
         token_row = await ChannelRepository(pool).get_token(settings.bot_id, "bot")
@@ -177,20 +203,10 @@ async def get_ai_emotes(
             for e in global_raw
         ]
 
-        # Sync available emote names → enabled_emotes in DB so the bot prompt stays current.
-        # Only write + notify when the list actually changes to avoid unnecessary cache churn.
-        available_names = sorted(e.name for e in items if e.available)
-        repo = AISettingsRepository(pool)
-        current = await repo.get(channel_id)
-        if sorted(current.get("enabled_emotes") or []) != available_names:
-            await repo.upsert(channel_id, enabled_emotes=available_names)
-            await _notify(pool, channel_id)
-            LOGGER.info(
-                "Channel %s: synced %d available emotes → enabled_emotes",
-                channel_id,
-                len(available_names),
-            )
-
+        channel_names = [e.name for e in items if e.available and e.emote_type != "globals"]
+        global_names = [e.name for e in items if e.available and e.emote_type == "globals"]
+        available_names = channel_names + global_names
+        background_tasks.add_task(_sync_emotes, pool, channel_id, available_names)
         return items
     except Exception:
         LOGGER.exception("Failed to fetch emotes for channel %s", channel_id)

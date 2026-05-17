@@ -49,13 +49,13 @@ def _load_openrouter_fallbacks(data_dir: Path, primary: str) -> list[str]:
             data = json.load(f)
         candidates = [m["id"] for m in data.get("models", []) if m.get("enabled", False)]
         fallbacks = [m for m in candidates if m != primary][:_MAX_OR_FALLBACKS]
-        LOGGER.info(f"Loaded {len(fallbacks)} OpenRouter fallback models")
+        LOGGER.info("Loaded %d OpenRouter fallback models", len(fallbacks))
         return fallbacks
     except FileNotFoundError:
-        LOGGER.warning(f"{path.name} not found, no OpenRouter fallback models")
+        LOGGER.warning("%s not found, no OpenRouter fallback models", path.name)
         return []
     except Exception as e:
-        LOGGER.warning(f"Failed to load {path.name}: {e}")
+        LOGGER.warning("Failed to load %s: %s", path.name, e)
         return []
 
 
@@ -90,7 +90,7 @@ def build_provider_chain(
                 model=model,
             )
         ]
-        LOGGER.info(f"AI provider: Groq ({model})")
+        LOGGER.info("AI provider: Groq (%s)", model)
 
     if gemini_api_key.strip():
         model = gemini_model.strip() or "gemini-1.5-flash"
@@ -102,7 +102,7 @@ def build_provider_chain(
                 model=model,
             )
         ]
-        LOGGER.info(f"AI provider: Gemini ({model})")
+        LOGGER.info("AI provider: Gemini (%s)", model)
 
     if openrouter_api_key.strip():
         or_client = AsyncOpenAI(
@@ -119,7 +119,7 @@ def build_provider_chain(
         if or_entries:
             entries["openrouter"] = or_entries
         LOGGER.info(
-            f"AI provider: OpenRouter (primary={primary or 'none'}, fallbacks={len(fallbacks)})"
+            "AI provider: OpenRouter (primary=%s, fallbacks=%d)", primary or "none", len(fallbacks)
         )
 
     chain = [entry for name in provider_order for entry in entries.get(name, [])]
@@ -179,25 +179,27 @@ async def call_provider_chain(
                 **entry.extra_kwargs,
             )
             if not completion.choices:
-                LOGGER.warning(f"AI [{entry.model}]: no choices, trying next")
+                LOGGER.warning("AI [%s]: no choices, trying next", entry.model)
                 continue
             raw = completion.choices[0].message.content or ""
             cleaned = strip_think_tags(raw)
             elapsed = time.monotonic() - t_start
-            LOGGER.info(f"AI [{entry.model}]: {elapsed:.1f}s, raw={len(raw)}, clean={len(cleaned)}")
+            LOGGER.debug(
+                "AI [%s]: %.1fs, raw=%d, clean=%d", entry.model, elapsed, len(raw), len(cleaned)
+            )
             if cleaned:
                 return cleaned, None
         except RateLimitError as e:
-            LOGGER.warning(f"AI rate limit on {entry.model}, trying next")
+            LOGGER.warning("AI rate limit on %s, trying next", entry.model)
             last_error = e
         except APITimeoutError as e:
-            LOGGER.warning(f"AI [{entry.model}] timed out, trying next")
+            LOGGER.warning("AI [%s] timed out, trying next", entry.model)
             last_error = e
         except NotFoundError as e:
-            LOGGER.warning(f"AI [{entry.model}] not found (404), trying next")
+            LOGGER.warning("AI [%s] not found (404), trying next", entry.model)
             last_error = e
         except Exception as e:
-            LOGGER.warning(f"AI [{entry.model}] error ({type(e).__name__}), trying next")
+            LOGGER.warning("AI [%s] error (%s), trying next", entry.model, type(e).__name__)
             last_error = e
 
     return "", last_error
