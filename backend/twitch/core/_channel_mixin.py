@@ -63,8 +63,12 @@ class _ChannelMixin:
                     e_str = str(e)
                     if "409" in e_str or "already exists" in e_str:
                         continue
-                    elif "403" in e_str and "ChannelFollow" in e_str:
-                        # broadcaster missing moderator:read:followers scope
+                    elif "403" in e_str and (
+                        "ChannelFollow" in e_str or "ChannelModerator" in e_str
+                    ):
+                        # broadcaster missing required scope:
+                        #   ChannelFollow      → moderator:read:followers
+                        #   ChannelModerator   → moderation:read / channel:manage:moderators
                         follow_auth_errors.append(e)
                     else:
                         non_conflict.append(e)
@@ -74,8 +78,9 @@ class _ChannelMixin:
                     )
                 if follow_auth_errors:
                     LOGGER.warning(
-                        f"[{self._ch(broadcaster_user_id)}] channel.follow auth failed"
-                        " — broadcaster needs to reauth with moderator:read:followers"
+                        f"[{self._ch(broadcaster_user_id)}] Auth-scope subscription failures"
+                        " — broadcaster needs to reauth (moderator:read:followers,"
+                        " moderation:read / channel:manage:moderators)"
                     )
                     self._needs_reauth.add(broadcaster_user_id)  # type: ignore[attr-defined]
 
