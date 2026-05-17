@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { type AnalyticsSummary, getAnalyticsSummary } from '@/api/analytics'
 import { getBotModStatus } from '@/api/channels'
+import { BOT_USERNAME } from '@/api/config'
 import { type ChannelStats, getChannelStats } from '@/api/stats'
 import AnalyticsChart from '@/components/AnalyticsChart'
 import { MOD_SETUP_SESSION_KEY, ModSetupDialog } from '@/components/ModSetupDialog'
@@ -31,6 +32,7 @@ export default function Dashboard() {
   useEffect(() => {
     if (!isInitialized || !user) return
     if (sessionStorage.getItem(MOD_SETUP_SESSION_KEY)) return
+    if (user.name.toLowerCase() === BOT_USERNAME) return
     getBotModStatus()
       .then(res => {
         if (res.ok && !res.data.is_moderator) setShowModDialog(true)

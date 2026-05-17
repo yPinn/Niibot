@@ -14,6 +14,10 @@ const getBaseUrl = (): string => {
 
 export const API_BASE_URL = getBaseUrl()
 
+export const BOT_USERNAME = (
+  (import.meta.env.VITE_BOT_USERNAME as string | undefined) ?? 'niibot_'
+).toLowerCase()
+
 const join = (path: string) => `${API_BASE_URL}${path}`
 
 export const API_ENDPOINTS = {
