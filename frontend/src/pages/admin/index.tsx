@@ -1,7 +1,13 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 
-import { type AdminChannel, getAdminChannels, type ModStatus } from '@/api/admin'
+import {
+  type AdminChannel,
+  type BotTokenInfo,
+  getAdminBotStatus,
+  getAdminChannels,
+  type ModStatus,
+} from '@/api/admin'
 import {
   getRedemptionConfigs,
   getTwitchRewards,
@@ -16,22 +22,141 @@ import {
   Card,
   CardAction,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
   Icon,
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
+  Separator,
   Skeleton,
   SlideUp,
   Switch,
+  TwitchRoleBadge,
+  TwitchRoleBadgeLabel,
 } from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
-// ── Channels panel ────────────────────────────────────────────────────────────
+// ── Scope grouping ────────────────────────────────────────────────────────────
+
+const SCOPE_CATEGORIES: { label: string; scopes: string[] }[] = [
+  { label: 'Identity', scopes: ['user:bot', 'channel:bot'] },
+  { label: 'Chat', scopes: ['user:read:chat', 'user:write:chat'] },
+  { label: 'User', scopes: ['user:read:emotes', 'user:manage:whispers'] },
+  {
+    label: 'Channel',
+    scopes: [
+      'channel:read:redemptions',
+      'channel:read:subscriptions',
+      'channel:manage:moderators',
+      'channel:manage:vips',
+    ],
+  },
+  { label: 'Revenue', scopes: ['bits:read'] },
+  {
+    label: 'Moderation',
+    scopes: [
+      'moderation:read',
+      'moderator:read:followers',
+      'moderator:read:chatters',
+      'moderator:manage:announcements',
+      'moderator:manage:shoutouts',
+    ],
+  },
+]
+
+function buildScopeGroups(granted: string[], missing: string[]) {
+  const grantedSet = new Set(granted)
+  const allSet = new Set([...granted, ...missing])
+  const matched = new Set<string>()
+  const groups: { label: string; items: { scope: string; granted: boolean }[] }[] = []
+
+  for (const cat of SCOPE_CATEGORIES) {
+    const inCat = cat.scopes.filter(s => allSet.has(s))
+    if (inCat.length === 0) continue
+    inCat.forEach(s => matched.add(s))
+    groups.push({
+      label: cat.label,
+      items: [
+        ...inCat.filter(s => !grantedSet.has(s)).map(s => ({ scope: s, granted: false })),
+        ...inCat.filter(s => grantedSet.has(s)).map(s => ({ scope: s, granted: true })),
+      ],
+    })
+  }
+
+  const others = [...allSet].filter(s => !matched.has(s))
+  if (others.length > 0) {
+    groups.push({
+      label: 'Other',
+      items: others.map(s => ({ scope: s, granted: grantedSet.has(s) })),
+    })
+  }
+
+  return groups
+}
+
+// ── Scope display ─────────────────────────────────────────────────────────────
+
+function ScopeRow({ scope, granted }: { scope: string; granted: boolean }) {
+  return (
+    <div className="flex items-center gap-element py-0.5">
+      <Icon
+        icon={granted ? 'fa-solid fa-check' : 'fa-solid fa-xmark'}
+        size="xs"
+        className={granted ? 'text-status-online shrink-0' : 'text-status-offline shrink-0'}
+      />
+      <code className={`text-label font-mono ${granted ? 'text-muted-foreground' : ''}`}>
+        {scope}
+      </code>
+    </div>
+  )
+}
+
+function ScopeSection({
+  title,
+  granted,
+  missing,
+}: {
+  title?: string
+  granted: string[]
+  missing: string[]
+}) {
+  const groups = buildScopeGroups(granted, missing)
+  return (
+    <div className="space-y-element">
+      {title && (
+        <p className="text-label font-medium uppercase tracking-wide text-muted-foreground">
+          {title}
+        </p>
+      )}
+      <div className="rounded-md border border-border bg-muted p-3">
+        {groups.length === 0 ? (
+          <p className="text-label text-muted-foreground">No scope data stored</p>
+        ) : (
+          <div>
+            {groups.map((group, i) => (
+              <div key={group.label}>
+                {i > 0 && <div className="border-t border-border my-1.5" />}
+                {group.items.map(({ scope, granted: g }) => (
+                  <ScopeRow key={scope} scope={scope} granted={g} />
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Mod status badge ──────────────────────────────────────────────────────────
 
 const MOD_STATUS_CONFIG: Record<ModStatus, { label: string; icon: string; className: string }> = {
   mod: {
@@ -56,31 +181,229 @@ const MOD_STATUS_CONFIG: Record<ModStatus, { label: string; icon: string; classN
   },
 }
 
-function ModStatusBadge({ status }: { status: ModStatus }) {
+function ModStatusBadge({ status, missingCount }: { status: ModStatus; missingCount?: number }) {
   const cfg = MOD_STATUS_CONFIG[status] ?? MOD_STATUS_CONFIG.token_error
+  const label =
+    status === 'scope_error' && missingCount != null ? `${missingCount} missing` : cfg.label
   return (
-    <Badge className={`gap-1 text-label ${cfg.className}`}>
-      <Icon icon={cfg.icon} size="xs" />
-      {cfg.label}
+    <Badge className={`gap-1 text-label select-none ${cfg.className}`}>
+      {status === 'mod' ? (
+        <TwitchRoleBadge role="moderator" size={18} />
+      ) : (
+        <Icon icon={cfg.icon} size="xs" />
+      )}
+      {label}
     </Badge>
   )
 }
 
-function ChannelCard({ ch }: { ch: AdminChannel }) {
+// ── Scope detail dialog ───────────────────────────────────────────────────────
+
+function ScopeDetailDialog({
+  ch,
+  open,
+  onOpenChange,
+}: {
+  ch: AdminChannel
+  open: boolean
+  onOpenChange: (v: boolean) => void
+}) {
   return (
-    <div className="flex flex-col items-center gap-2 rounded-lg border border-border bg-card p-3 text-center">
-      <div className="relative">
-        <img src={ch.avatar} alt={ch.display_name} className="size-10 rounded-full object-cover" />
-        {ch.is_live && (
-          <span className="absolute -bottom-0.5 -right-0.5 size-3 rounded-full border-2 border-card bg-status-live" />
-        )}
-      </div>
-      <div className="w-full min-w-0">
-        <p className="text-sub font-medium truncate">{ch.display_name}</p>
-        <p className="text-label text-muted-foreground font-mono truncate">{ch.name}</p>
-      </div>
-      <ModStatusBadge status={ch.mod_status} />
-    </div>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <div className="flex items-center gap-element">
+            <img
+              src={ch.avatar}
+              alt={ch.display_name}
+              className="size-9 rounded-full object-cover shrink-0"
+            />
+            <div className="min-w-0">
+              <DialogTitle>{ch.display_name}</DialogTitle>
+              <DialogDescription className="font-mono">{ch.name}</DialogDescription>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-element mt-1">
+            <ModStatusBadge status={ch.mod_status} missingCount={ch.missing_scopes.length} />
+            {ch.is_bot && <TwitchRoleBadgeLabel role="bot" />}
+          </div>
+        </DialogHeader>
+        <ScopeSection
+          title="Broadcaster Scopes"
+          granted={ch.granted_scopes}
+          missing={ch.missing_scopes}
+        />
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// ── Channel card ──────────────────────────────────────────────────────────────
+
+function ChannelCard({ ch }: { ch: AdminChannel }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="relative flex flex-col items-center justify-center gap-element rounded-lg border border-border bg-card p-3 text-center w-full aspect-square hover:bg-accent transition-colors select-none"
+      >
+        {ch.is_bot && <TwitchRoleBadge role="bot" size={18} className="absolute top-3 left-3" />}
+        <div className="relative">
+          <img
+            src={ch.avatar}
+            alt={ch.display_name}
+            className="size-10 rounded-full object-cover"
+          />
+          {ch.is_live && (
+            <span className="absolute -bottom-0.5 -right-0.5 size-3 rounded-full border-2 border-card bg-status-live" />
+          )}
+        </div>
+        <div className="w-full min-w-0">
+          <p className="text-sub font-medium truncate">{ch.display_name}</p>
+          <p className="text-label text-muted-foreground font-mono truncate">{ch.name}</p>
+        </div>
+        <ModStatusBadge status={ch.mod_status} missingCount={ch.missing_scopes.length} />
+      </button>
+      <ScopeDetailDialog ch={ch} open={open} onOpenChange={setOpen} />
+    </>
+  )
+}
+
+// ── Bot status panel ──────────────────────────────────────────────────────────
+
+const BOT_STATUS_CONFIG = {
+  ok: {
+    label: 'All scopes granted',
+    icon: 'fa-solid fa-shield-check',
+    className: 'border-status-online/20 bg-status-online/10 text-status-online',
+  },
+  missing: {
+    label: 'scopes missing',
+    icon: 'fa-solid fa-lock',
+    className: 'border-status-info/20 bg-status-info/10 text-status-info',
+  },
+  no_token: {
+    label: 'No bot token',
+    icon: 'fa-solid fa-rotate-exclamation',
+    className: 'border-status-warning/20 bg-status-warning/10 text-status-warning',
+  },
+}
+
+function BotStatusPanel({
+  bot,
+  botLoading,
+  redemptionLoading,
+  rewardsLoading,
+  niibotAuth,
+  twitchRewards,
+  onRewardSelect,
+  onAuthToggle,
+}: {
+  bot: BotTokenInfo | null
+  botLoading: boolean
+  redemptionLoading: boolean
+  rewardsLoading: boolean
+  niibotAuth: RedemptionConfig | null
+  twitchRewards: TwitchReward[]
+  onRewardSelect: (value: string) => void
+  onAuthToggle: () => void
+}) {
+  const botCfg = bot ? BOT_STATUS_CONFIG[bot.status] : null
+  const botLabel =
+    bot && botCfg
+      ? bot.status === 'missing'
+        ? `${bot.missing_scopes.length} ${botCfg.label}`
+        : botCfg.label
+      : ''
+
+  return (
+    <Card className="h-full">
+      <CardHeader>
+        <div className="flex items-center gap-element">
+          <Icon icon="fa-solid fa-robot" size="sm" wrapperClassName="text-muted-foreground" />
+          <CardTitle className="text-card-title">Bot 設定</CardTitle>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-section">
+        {/* Identity + scopes */}
+        {botLoading ? (
+          <>
+            <div className="flex items-center gap-element">
+              <Skeleton className="size-8 rounded-full shrink-0" />
+              <div className="flex-1 space-y-1">
+                <Skeleton className="h-4 w-24" />
+                <Skeleton className="h-3 w-16" />
+              </div>
+              <Skeleton className="h-5 w-24 shrink-0" />
+            </div>
+            <Skeleton className="h-40 w-full rounded-md" />
+          </>
+        ) : bot && botCfg ? (
+          <>
+            <div className="flex items-center gap-element">
+              {bot.avatar && (
+                <img
+                  src={bot.avatar}
+                  alt={bot.display_name || bot.name}
+                  className="size-8 rounded-full object-cover shrink-0"
+                />
+              )}
+              <div className="min-w-0 flex-1">
+                <p className="text-sub font-medium truncate">{bot.display_name || bot.name}</p>
+                <p className="text-label text-muted-foreground font-mono truncate">{bot.name}</p>
+              </div>
+              <Badge className={`gap-1 text-label shrink-0 select-none ${botCfg.className}`}>
+                <Icon icon={botCfg.icon} size="xs" />
+                {botLabel}
+              </Badge>
+            </div>
+            <ScopeSection granted={bot.granted_scopes} missing={bot.missing_scopes} />
+          </>
+        ) : null}
+
+        <Separator />
+
+        {/* Redemption config */}
+        <div className="space-y-element">
+          <div className="flex items-center gap-element">
+            <Icon icon="fa-solid fa-coins" size="xs" wrapperClassName="text-muted-foreground" />
+            <p className="text-label font-medium text-muted-foreground select-none">授權兌換</p>
+          </div>
+          {redemptionLoading ? (
+            <Skeleton className="h-9 w-full" />
+          ) : !niibotAuth ? (
+            <p className="text-label text-muted-foreground">找不到 niibot_auth 兌換設定。</p>
+          ) : (
+            <div className="flex items-center justify-between gap-element">
+              {rewardsLoading ? (
+                <Skeleton className="h-9 flex-1" />
+              ) : twitchRewards.length === 0 ? (
+                <span className="text-label text-muted-foreground">請先在 Twitch 建立自訂獎勵</span>
+              ) : (
+                <Select value={niibotAuth.reward_name || '__none__'} onValueChange={onRewardSelect}>
+                  <SelectTrigger size="sm" className="flex-1 min-w-0">
+                    <SelectValue placeholder="選擇獎勵..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__" className="text-muted-foreground">
+                      未選擇
+                    </SelectItem>
+                    {twitchRewards.map(reward => (
+                      <SelectItem key={reward.id} value={reward.title}>
+                        {reward.title} ({reward.cost.toLocaleString()} 點)
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              <Switch checked={niibotAuth.enabled} onCheckedChange={onAuthToggle} />
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   )
 }
 
@@ -92,6 +415,9 @@ export default function AdminPage() {
   const [channels, setChannels] = useState<AdminChannel[]>([])
   const [channelsLoading, setChannelsLoading] = useState(true)
 
+  const [botStatus, setBotStatus] = useState<BotTokenInfo | null>(null)
+  const [botLoading, setBotLoading] = useState(true)
+
   const [niibotAuth, setNiibotAuth] = useState<RedemptionConfig | null>(null)
   const [twitchRewards, setTwitchRewards] = useState<TwitchReward[]>([])
   const [redemptionLoading, setRedemptionLoading] = useState(true)
@@ -102,6 +428,11 @@ export default function AdminPage() {
       .then(setChannels)
       .catch(() => setChannels([]))
       .finally(() => setChannelsLoading(false))
+
+    getAdminBotStatus()
+      .then(setBotStatus)
+      .catch(() => setBotStatus(null))
+      .finally(() => setBotLoading(false))
 
     getRedemptionConfigs()
       .then(configs => setNiibotAuth(configs.find(r => r.action_type === 'niibot_auth') ?? null))
@@ -148,90 +479,60 @@ export default function AdminPage() {
     <PageMain className="lg:gap-card">
       <PageHeader title="Admin" description="管理頻道點數兌換與監控頻道。" />
 
-      {/* Niibot auth redemption */}
-      <SlideUp>
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <Icon icon="fa-solid fa-coins" size="sm" wrapperClassName="text-muted-foreground" />
-              <CardTitle className="text-card-title">Niibot 授權兌換</CardTitle>
-            </div>
-            <CardDescription>指定觀眾兌換後取得 Niibot 啟用碼的頻道點數獎勵</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {redemptionLoading ? (
-              <Skeleton className="h-10 w-full" />
-            ) : !niibotAuth ? (
-              <p className="text-sub text-muted-foreground py-2">找不到 niibot_auth 兌換設定。</p>
-            ) : (
-              <div className="flex flex-wrap items-center gap-4">
-                {rewardsLoading ? (
-                  <Skeleton className="h-9 w-52" />
-                ) : twitchRewards.length === 0 ? (
-                  <span className="text-sub text-muted-foreground">請先在 Twitch 建立自訂獎勵</span>
-                ) : (
-                  <Select
-                    value={niibotAuth.reward_name || '__none__'}
-                    onValueChange={handleRewardSelect}
-                  >
-                    <SelectTrigger size="sm" className="w-52">
-                      <SelectValue placeholder="選擇獎勵..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__" className="text-muted-foreground">
-                        未選擇
-                      </SelectItem>
-                      {twitchRewards.map(reward => (
-                        <SelectItem key={reward.id} value={reward.title}>
-                          {reward.title} ({reward.cost.toLocaleString()} 點)
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-                <div className="flex items-center gap-2 ml-auto">
-                  <span className="text-sub text-muted-foreground">啟用</span>
-                  <Switch checked={niibotAuth.enabled} onCheckedChange={handleAuthToggle} />
+      {/* Monitored channels + Bot account — side by side on lg+ */}
+      <div className="grid grid-cols-1 gap-card items-start md:grid-cols-[3fr_1fr]">
+        {/* Left: Monitored channels */}
+        <SlideUp>
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-element">
+                <Icon
+                  icon="fa-brands fa-twitch"
+                  size="sm"
+                  wrapperClassName="text-muted-foreground"
+                />
+                <CardTitle className="text-card-title">監控頻道</CardTitle>
+              </div>
+              <CardAction>
+                <Badge variant="outline" className="font-mono text-label">
+                  {channelsLoading ? '…' : channels.length}
+                </Badge>
+              </CardAction>
+            </CardHeader>
+            <CardContent>
+              {channelsLoading ? (
+                <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(160px,1fr))]">
+                  {Array.from({ length: 7 }).map((_, i) => (
+                    <Skeleton key={i} className="aspect-square w-full rounded-lg" />
+                  ))}
                 </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </SlideUp>
+              ) : channels.length === 0 ? (
+                <p className="text-sub text-muted-foreground py-2">No monitored channels.</p>
+              ) : (
+                <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(160px,1fr))]">
+                  {channels.map(ch => (
+                    <ChannelCard key={ch.id} ch={ch} />
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </SlideUp>
 
-      {/* Channels */}
-      <SlideUp>
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <Icon icon="fa-brands fa-twitch" size="sm" wrapperClassName="text-muted-foreground" />
-              <CardTitle className="text-card-title">Monitored Channels</CardTitle>
-            </div>
-            <CardAction>
-              <Badge variant="outline" className="font-mono text-label">
-                {channelsLoading ? '…' : channels.length}
-              </Badge>
-            </CardAction>
-          </CardHeader>
-          <CardContent>
-            {channelsLoading ? (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <Skeleton key={i} className="h-28 w-full rounded-lg" />
-                ))}
-              </div>
-            ) : channels.length === 0 ? (
-              <p className="text-sub text-muted-foreground py-2">No monitored channels.</p>
-            ) : (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-                {channels.map(ch => (
-                  <ChannelCard key={ch.id} ch={ch} />
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </SlideUp>
+        {/* Right: Bot account + redemption */}
+        <SlideUp delay={0.1}>
+          <BotStatusPanel
+            bot={botStatus}
+            botLoading={botLoading}
+            redemptionLoading={redemptionLoading}
+            rewardsLoading={rewardsLoading}
+            niibotAuth={niibotAuth}
+            twitchRewards={twitchRewards}
+            onRewardSelect={handleRewardSelect}
+            onAuthToggle={handleAuthToggle}
+          />
+        </SlideUp>
+      </div>
     </PageMain>
   )
 }

@@ -24,6 +24,9 @@ from core.dependencies import (
 from services import ChannelService, TwitchAPIClient
 from shared.repositories.activation_code import ActivationCodeRepository
 from shared.repositories.activation_request import ActivationRequestRepository
+from shared.repositories.channel import ChannelRepository
+from shared.twitch_scopes import BOT_SCOPES
+from shared.twitch_scopes import BROADCASTER_SCOPES as _BROADCASTER_SCOPES
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -36,6 +39,14 @@ async def require_owner(channel_id: str = Depends(get_current_channel_id)) -> st
     return channel_id
 
 
+def _scope_diff(stored_str: str | None, required: list[str]) -> tuple[list[str], list[str]]:
+    """Returns (granted_scopes, missing_scopes) relative to the required list."""
+    stored = set(stored_str.split()) if stored_str else set()
+    granted = [s for s in required if s in stored]
+    missing = [s for s in required if s not in stored]
+    return granted, missing
+
+
 class AdminChannelInfo(BaseModel):
     id: str
     name: str
@@ -43,6 +54,60 @@ class AdminChannelInfo(BaseModel):
     avatar: str
     is_live: bool
     mod_status: str  # 'mod' | 'no_mod' | 'token_error' | 'scope_error'
+    is_bot: bool
+    granted_scopes: list[str]
+    missing_scopes: list[str]
+
+
+class BotTokenInfo(BaseModel):
+    id: str
+    name: str
+    display_name: str
+    avatar: str
+    status: str  # 'ok' | 'missing' | 'no_token'
+    granted_scopes: list[str]
+    missing_scopes: list[str]
+
+
+@router.get("/bot-status", response_model=BotTokenInfo)
+async def get_bot_status(
+    _: str = Depends(require_owner),
+    pool: Pool = Depends(get_db_pool),
+    twitch_api: TwitchAPIClient = Depends(get_twitch_api),
+) -> BotTokenInfo:
+    """Return bot account's own token scope status. Owner-only."""
+    bot_id = get_settings().bot_id or ""
+    if not bot_id:
+        raise HTTPException(status_code=404, detail="Bot ID not configured")
+
+    repo = ChannelRepository(pool)
+    token_obj, users = await asyncio.gather(
+        repo.get_token(bot_id, "bot"),
+        twitch_api.get_users_by_ids([bot_id]),
+    )
+    user = users[0] if users else {}
+
+    if not token_obj:
+        return BotTokenInfo(
+            id=bot_id,
+            name=user.get("login", ""),
+            display_name=user.get("display_name", ""),
+            avatar=user.get("profile_image_url", ""),
+            status="no_token",
+            granted_scopes=[],
+            missing_scopes=list(BOT_SCOPES),
+        )
+
+    granted, missing = _scope_diff(token_obj.scopes, BOT_SCOPES)
+    return BotTokenInfo(
+        id=bot_id,
+        name=user.get("login", ""),
+        display_name=user.get("display_name", ""),
+        avatar=user.get("profile_image_url", ""),
+        status="ok" if not missing else "missing",
+        granted_scopes=granted,
+        missing_scopes=missing,
+    )
 
 
 @router.get("/channels", response_model=list[AdminChannelInfo])
@@ -50,8 +115,9 @@ async def get_admin_channels(
     owner_id: str = Depends(require_owner),
     channel_service: ChannelService = Depends(get_channel_service),
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
+    pool: Pool = Depends(get_db_pool),
 ) -> list[AdminChannelInfo]:
-    """Return all monitored channels with mod status. Owner-only."""
+    """Return all monitored channels with mod status and scope breakdown. Owner-only."""
     enabled = await channel_service.get_enabled_channels()
     other = [ch for ch in enabled if ch["channel_id"] != owner_id]
     if not other:
@@ -59,6 +125,7 @@ async def get_admin_channels(
 
     channel_ids = [ch["channel_id"] for ch in other]
     bot_id = get_settings().bot_id or ""
+    repo = ChannelRepository(pool)
 
     users_data, streams_data = await asyncio.gather(
         twitch_api.get_users_by_ids(channel_ids),
@@ -67,25 +134,27 @@ async def get_admin_channels(
     live_ids = {s["user_id"] for s in streams_data}
     user_map = {u["id"]: u for u in users_data}
 
-    async def _check_mod(channel_id: str) -> tuple[str, str]:
+    async def _check_channel(channel_id: str) -> tuple[str, str, list[str], list[str]]:
         if not bot_id:
-            return channel_id, "token_error"
+            return channel_id, "token_error", [], list(_BROADCASTER_SCOPES)
         token = await channel_service.get_token_with_refresh(channel_id, twitch_api)
         if not token:
-            return channel_id, "token_error"
+            return channel_id, "token_error", [], list(_BROADCASTER_SCOPES)
+        token_obj = await repo.get_token(channel_id, "broadcaster")
+        granted, missing = _scope_diff(token_obj.scopes if token_obj else None, _BROADCASTER_SCOPES)
         status = await twitch_api.get_bot_mod_status(channel_id, bot_id, token)
-        return channel_id, status
+        return channel_id, status, granted, missing
 
-    mod_results = await asyncio.gather(
-        *[_check_mod(cid) for cid in channel_ids], return_exceptions=True
+    raw = await asyncio.gather(
+        *[_check_channel(cid) for cid in channel_ids], return_exceptions=True
     )
-    mod_map: dict[str, str] = {}
-    for r in mod_results:
+    channel_data: dict[str, tuple[str, list[str], list[str]]] = {}
+    for r in raw:
         if isinstance(r, Exception):
-            LOGGER.warning("mod status check failed for a channel: %s", r)
+            LOGGER.warning("channel check failed: %s", r)
         else:
-            cid, status = r  # type: ignore[misc]
-            mod_map[cid] = status
+            cid, status, granted, missing = r  # type: ignore[misc]
+            channel_data[cid] = (status, granted, missing)
 
     result = [
         AdminChannelInfo(
@@ -94,13 +163,27 @@ async def get_admin_channels(
             display_name=user_map.get(cid, {}).get("display_name", ""),
             avatar=user_map.get(cid, {}).get("profile_image_url", ""),
             is_live=cid in live_ids,
-            mod_status=mod_map.get(cid, "error"),
+            mod_status=channel_data.get(cid, ("error", [], []))[0],
+            is_bot=cid == bot_id,
+            granted_scopes=channel_data.get(cid, ("error", [], []))[1],
+            missing_scopes=channel_data.get(cid, ("error", [], []))[2],
         )
         for ch in other
         if (cid := ch["channel_id"]) and cid in user_map
     ]
 
-    result.sort(key=lambda x: (x.mod_status != "mod", x.name))
+    def _channel_tier(x: AdminChannelInfo) -> int:
+        if x.is_bot:
+            return 0
+        if x.mod_status == "mod":
+            return 1 if not x.missing_scopes else 2
+        if x.mod_status == "no_mod":
+            return 3
+        if x.mod_status == "scope_error":
+            return 4
+        return 5  # token_error
+
+    result.sort(key=lambda x: (_channel_tier(x), x.name))
     return result
 
 
@@ -296,11 +379,8 @@ async def get_container_logs(
     return ContainerLogsResponse(container=container, lines=_parse_docker_stream(raw))
 
 
-_SELECT_RE = re.compile(
-    r"^\s*(?:--[^\n]*\n\s*|/\*.*?\*/\s*)*(SELECT|WITH)\b",
-    re.IGNORECASE | re.DOTALL,
-)
 _LIMIT_RE = re.compile(r"\bLIMIT\s+\d+", re.IGNORECASE)
+_SELECT_RE = re.compile(r"^\s*(SELECT|WITH)\b", re.IGNORECASE)
 _DB_ROW_CAP = 500
 _DB_TIMEOUT = 5.0
 
@@ -337,10 +417,7 @@ async def run_db_query(
     """Execute a read-only SELECT query against the database. Owner-only."""
     sql = body.sql.strip()
     if not _SELECT_RE.match(sql):
-        raise HTTPException(
-            status_code=400, detail="Only SELECT (or WITH … SELECT) queries are allowed"
-        )
-
+        raise HTTPException(status_code=400, detail="Only SELECT queries are allowed")
     if not _LIMIT_RE.search(sql):
         sql = f"{sql} LIMIT {_DB_ROW_CAP}"
 

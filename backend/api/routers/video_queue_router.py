@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
 from datetime import datetime
 
 from asyncpg import Pool
@@ -14,6 +13,7 @@ from pydantic import BaseModel, Field
 from core.config import Settings, get_settings
 from core.dependencies import get_current_channel_id, get_db_pool, get_twitch_api
 from services import TwitchAPIClient
+from shared.cache import AsyncTTLCache
 from shared.repositories.channel import ChannelRepository
 from shared.repositories.video_queue import (
     SOURCE_PRIORITY,
@@ -85,19 +85,17 @@ class MetadataUpdate(BaseModel):
     duration_seconds: int = Field(..., ge=1)
 
 
-_CHANNEL_ID_CACHE: dict[str, tuple[str, float]] = {}
-_CHANNEL_ID_TTL = 300.0  # 5 minutes
+_channel_id_cache: AsyncTTLCache = AsyncTTLCache(maxsize=256, ttl=300.0)
 
 
 async def _resolve_channel_id(username: str, twitch_api: TwitchAPIClient) -> str:
-    cached = _CHANNEL_ID_CACHE.get(username)
-    if cached and time.monotonic() - cached[1] < _CHANNEL_ID_TTL:
-        return cached[0]
+    if username in _channel_id_cache:
+        return _channel_id_cache.get(username)
     user_info = await twitch_api.get_user_by_login(username)
     if not user_info:
         raise HTTPException(status_code=404, detail="Channel not found")
     channel_id = user_info["id"]
-    _CHANNEL_ID_CACHE[username] = (channel_id, time.monotonic())
+    _channel_id_cache.set(username, channel_id)
     return channel_id
 
 
@@ -192,7 +190,7 @@ async def advance_queue(
         repo = VideoQueueRepository(pool)
         settings_repo = VideoQueueSettingsRepository(pool)
 
-        if body.done_id:
+        if body.done_id is not None:
             # advance_queue atomically marks done_id as done and promotes the next
             # queued entry in a single transaction, eliminating the race condition
             # between mark_done and set_playing.
@@ -245,7 +243,7 @@ async def skip_current(
         repo = VideoQueueRepository(pool)
         settings_repo = VideoQueueSettingsRepository(pool)
         await repo.skip_current_atomic(channel_id)
-        LOGGER.info(f"Channel {channel_id} skipped video queue entry")
+        LOGGER.info("Channel %s skipped video queue entry", channel_id)
         return await _build_public_state(channel_id, repo, settings_repo)
     except Exception:
         LOGGER.exception("Failed to skip video")
@@ -261,11 +259,8 @@ async def clear_queue(
     try:
         repo = VideoQueueRepository(pool)
         settings_repo = VideoQueueSettingsRepository(pool)
-        current = await repo.get_current(channel_id)
-        if current:
-            await repo.mark_skipped(current.id, channel_id)
-        await repo.clear_queued(channel_id)
-        LOGGER.info(f"Channel {channel_id} cleared video queue")
+        await repo.clear_all_atomic(channel_id)
+        LOGGER.info("Channel %s cleared video queue", channel_id)
         return await _build_public_state(channel_id, repo, settings_repo)
     except Exception:
         LOGGER.exception("Failed to clear video queue")
@@ -328,7 +323,7 @@ async def update_video_queue_settings(
             user_cooldown_seconds=body.user_cooldown_seconds,
             max_per_user=body.max_per_user,
         )
-        LOGGER.info(f"Channel {channel_id} updated video queue settings")
+        LOGGER.info("Channel %s updated video queue settings", channel_id)
         return VideoQueueSettingsResponse(
             channel_id=s.channel_id,
             enabled=s.enabled,
@@ -372,7 +367,7 @@ async def set_entry_as_next(
         moved = await repo.set_as_next(entry_id, channel_id)
         if not moved:
             raise HTTPException(status_code=404, detail="Entry not found or not in queued state")
-        LOGGER.info(f"Channel {channel_id} set entry {entry_id} as next")
+        LOGGER.info("Channel %s set entry %s as next", channel_id, entry_id)
         return await _build_public_state(channel_id, repo, settings_repo)
     except HTTPException:
         raise
@@ -394,7 +389,7 @@ async def play_entry_now(
         promoted = await repo.play_immediately(entry_id, channel_id)
         if not promoted:
             raise HTTPException(status_code=404, detail="Entry not found or not in queued state")
-        LOGGER.info(f"Channel {channel_id} played entry {entry_id} immediately")
+        LOGGER.info("Channel %s played entry %s immediately", channel_id, entry_id)
         return await _build_public_state(channel_id, repo, settings_repo)
     except HTTPException:
         raise
@@ -474,7 +469,7 @@ async def add_video_entry(
             video_type=video_type,
             priority=SOURCE_PRIORITY["dashboard"],
         )
-        LOGGER.info(f"Channel {channel_id} added {video_type} {video_id} from dashboard")
+        LOGGER.info("Channel %s added %s %s from dashboard", channel_id, video_type, video_id)
         return await _build_public_state(channel_id, repo, settings_repo)
     except HTTPException:
         raise

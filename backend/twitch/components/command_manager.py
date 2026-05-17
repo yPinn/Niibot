@@ -196,10 +196,18 @@ class CommandManagerComponent(BotComponent):
             case_sensitive = case_sensitive_raw
             if match_type == "regex":
                 _rl_key = f"regex_create:{channel_id}"
+                now = datetime.now(UTC)
                 _last = _regex_create_tracker.get(_rl_key)
-                if _last and (datetime.now(UTC) - _last) < _REGEX_CREATE_COOLDOWN:
+                if _last and (now - _last) < _REGEX_CREATE_COOLDOWN:
                     await self._ctx_reply(ctx, "Regex 建立冷卻中（30 秒），請稍後再試")
                     return
+                # Evict expired entries to prevent unbounded growth across channels
+                for _k in [
+                    k
+                    for k, v in _regex_create_tracker.items()
+                    if (now - v) >= _REGEX_CREATE_COOLDOWN
+                ]:
+                    del _regex_create_tracker[_k]
                 is_safe = await asyncio.get_running_loop().run_in_executor(
                     None, validate_regex_pattern, pattern
                 )

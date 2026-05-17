@@ -142,6 +142,7 @@ export const API_ENDPOINTS = {
   },
   admin: {
     channels: join('/api/admin/channels'),
+    botStatus: join('/api/admin/bot-status'),
     activationCodes: join('/api/admin/activation-codes'),
     revokeActivationCode: (platformUserId: string) =>
       join(`/api/admin/activation-codes/${platformUserId}`),

@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import os
 import re
+import subprocess
+import sys
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -13,10 +17,28 @@ from core.dependencies import get_current_channel_id, get_trigger_service
 from services.message_trigger_service import MessageTriggerService
 
 _REGEX_MAX_LEN = 200
+_REDOS_CANARY = "a" * 30 + "b"
+_REDOS_TIMEOUT = 1.5
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/triggers", tags=["triggers"])
+
+
+def _redos_safe(pattern: str) -> bool:
+    """Run pattern against a canary in a subprocess. Returns True if safe (no timeout)."""
+    env = {**os.environ, "_NII_PATTERN": pattern, "_NII_CANARY": _REDOS_CANARY}
+    code = "import re, os; re.search(os.environ['_NII_PATTERN'], os.environ['_NII_CANARY'])"
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c", code],
+            env=env,
+            timeout=_REDOS_TIMEOUT,
+            capture_output=True,
+        )
+        return result.returncode == 0
+    except subprocess.TimeoutExpired:
+        return False
 
 
 class MessageTriggerResponse(BaseModel):
@@ -65,8 +87,8 @@ class TriggerToggle(BaseModel):
     enabled: bool
 
 
-def _validate_regex_pattern(pattern: str, match_type: str) -> None:
-    """Reject patterns that are too long or syntactically invalid."""
+async def _validate_regex_pattern(pattern: str, match_type: str) -> None:
+    """Reject patterns that are too long, syntactically invalid, or trigger ReDoS."""
     if match_type != "regex":
         return
     if len(pattern) > _REGEX_MAX_LEN:
@@ -78,6 +100,10 @@ def _validate_regex_pattern(pattern: str, match_type: str) -> None:
         re.compile(pattern)
     except re.error as exc:
         raise HTTPException(status_code=400, detail=f"Invalid regex pattern: {exc}") from exc
+    loop = asyncio.get_running_loop()
+    safe = await loop.run_in_executor(None, _redos_safe, pattern)
+    if not safe:
+        raise HTTPException(status_code=400, detail="Regex pattern is unsafe (potential ReDoS)")
 
 
 @router.get("/configs", response_model=list[MessageTriggerResponse])
@@ -101,7 +127,7 @@ async def create_trigger(
     service: MessageTriggerService = Depends(get_trigger_service),
 ) -> MessageTriggerResponse:
     """Create a new message trigger."""
-    _validate_regex_pattern(body.pattern, body.match_type)
+    await _validate_regex_pattern(body.pattern, body.match_type)
     try:
         trigger = await service.create_trigger(
             channel_id,
@@ -115,7 +141,7 @@ async def create_trigger(
             priority=body.priority,
             aliases=body.aliases or None,
         )
-        LOGGER.info(f"Channel {channel_id} created trigger: {body.trigger_name}")
+        LOGGER.info("Channel %s created trigger: %s", channel_id, body.trigger_name)
         return MessageTriggerResponse(**trigger)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
@@ -140,7 +166,7 @@ async def update_trigger(
                 effective_match_type = (
                     existing.get("match_type", "contains") if existing else "contains"
                 )
-            _validate_regex_pattern(body.pattern, effective_match_type)
+            await _validate_regex_pattern(body.pattern, effective_match_type)
         trigger = await service.update_trigger(
             channel_id,
             trigger_name,
@@ -156,7 +182,7 @@ async def update_trigger(
         )
         if trigger is None:
             raise HTTPException(status_code=404, detail="Trigger not found")
-        LOGGER.info(f"Channel {channel_id} updated trigger: {trigger_name}")
+        LOGGER.info("Channel %s updated trigger: %s", channel_id, trigger_name)
         return MessageTriggerResponse(**trigger)
     except HTTPException:
         raise
@@ -179,7 +205,7 @@ async def toggle_trigger(
         trigger = await service.toggle_trigger(channel_id, trigger_name, body.enabled)
         if trigger is None:
             raise HTTPException(status_code=404, detail="Trigger not found")
-        LOGGER.info(f"Channel {channel_id} toggled trigger: {trigger_name} -> {body.enabled}")
+        LOGGER.info("Channel %s toggled trigger: %s -> %s", channel_id, trigger_name, body.enabled)
         return MessageTriggerResponse(**trigger)
     except HTTPException:
         raise
@@ -199,7 +225,7 @@ async def delete_trigger(
         deleted = await service.delete_trigger(channel_id, trigger_name)
         if not deleted:
             raise HTTPException(status_code=404, detail="Trigger not found")
-        LOGGER.info(f"Channel {channel_id} deleted trigger: {trigger_name}")
+        LOGGER.info("Channel %s deleted trigger: %s", channel_id, trigger_name)
     except HTTPException:
         raise
     except Exception:

@@ -1,6 +1,7 @@
 import { API_ENDPOINTS, apiFetch } from './config'
 
 export type ModStatus = 'mod' | 'no_mod' | 'token_error' | 'scope_error'
+export type BotTokenStatus = 'ok' | 'missing' | 'no_token'
 
 export interface AdminChannel {
   id: string
@@ -9,6 +10,19 @@ export interface AdminChannel {
   avatar: string
   is_live: boolean
   mod_status: ModStatus
+  is_bot: boolean
+  granted_scopes: string[]
+  missing_scopes: string[]
+}
+
+export interface BotTokenInfo {
+  id: string
+  name: string
+  display_name: string
+  avatar: string
+  status: BotTokenStatus
+  granted_scopes: string[]
+  missing_scopes: string[]
 }
 
 export interface PendingCode {
@@ -33,6 +47,12 @@ export interface ActivationRequest {
 export async function getAdminChannels(): Promise<AdminChannel[]> {
   const response = await apiFetch(API_ENDPOINTS.admin.channels, { credentials: 'include' })
   if (!response.ok) throw new Error('Failed to fetch admin channels')
+  return response.json()
+}
+
+export async function getAdminBotStatus(): Promise<BotTokenInfo> {
+  const response = await apiFetch(API_ENDPOINTS.admin.botStatus, { credentials: 'include' })
+  if (!response.ok) throw new Error('Failed to fetch bot status')
   return response.json()
 }
 

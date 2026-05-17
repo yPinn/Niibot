@@ -100,7 +100,7 @@ async def fetch_yt_info(
     try:
         async with _session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=5)) as resp:
             if resp.status != 200:
-                LOGGER.warning(f"[YouTube API] Unexpected status {resp.status} for {video_id}")
+                LOGGER.info("[YouTube API] Unexpected status %s for %s", resp.status, video_id)
                 return None, None, None, False
             data = await resp.json()
             items = data.get("items", [])
@@ -119,7 +119,9 @@ async def fetch_yt_info(
             )
             return title, duration_seconds or None, view_count, is_vertical
     except Exception as exc:
-        LOGGER.warning(f"[YouTube API] fetch_yt_info failed for {video_id}: {type(exc).__name__}")
+        LOGGER.warning(
+            "[YouTube API] fetch_yt_info failed for %s: %s", video_id, type(exc).__name__
+        )
         return None, None, None, False
     finally:
         if _own_session:
@@ -167,7 +169,7 @@ async def resolve_bilibili_url(
         ) as resp:
             return extract_bilibili_bvid(str(resp.url))
     except Exception as exc:
-        LOGGER.warning(f"[Bilibili] Failed to resolve short URL {url}: {type(exc).__name__}")
+        LOGGER.warning("[Bilibili] Failed to resolve short URL %s: %s", url, type(exc).__name__)
         return None
     finally:
         if _own_session:
@@ -196,12 +198,15 @@ async def fetch_bilibili_info(
             timeout=aiohttp.ClientTimeout(total=5),
         ) as resp:
             if resp.status != 200:
-                LOGGER.warning(f"[Bilibili API] Unexpected status {resp.status} for {bvid}")
+                LOGGER.info("[Bilibili API] Unexpected status %s for %s", resp.status, bvid)
                 return None, None, None, False
             data = await resp.json(content_type=None)
             if data.get("code") != 0:
-                LOGGER.warning(
-                    f"[Bilibili API] Error {data.get('code')} for {bvid}: {data.get('message')}"
+                LOGGER.info(
+                    "[Bilibili API] Error %s for %s: %s",
+                    data.get("code"),
+                    bvid,
+                    data.get("message"),
                 )
                 return None, None, None, False
             video_data = data.get("data", {})
@@ -216,7 +221,7 @@ async def fetch_bilibili_info(
             return title, duration_seconds, view_count, is_vertical
     except Exception as exc:
         LOGGER.warning(
-            f"[Bilibili API] fetch_bilibili_info failed for {bvid}: {type(exc).__name__}"
+            "[Bilibili API] fetch_bilibili_info failed for %s: %s", bvid, type(exc).__name__
         )
         return None, None, None, False
     finally:
@@ -276,7 +281,7 @@ async def _get_twitch_app_token(
         timeout=aiohttp.ClientTimeout(total=5),
     ) as resp:
         if resp.status != 200:
-            LOGGER.warning(f"[Twitch API] Failed to get app token: {resp.status}")
+            LOGGER.warning("[Twitch API] Failed to get app token: %s", resp.status)
             return None
         token_data = await resp.json()
 
@@ -320,7 +325,7 @@ async def fetch_twitch_clip_info(
             timeout=aiohttp.ClientTimeout(total=5),
         ) as resp:
             if resp.status != 200:
-                LOGGER.warning(f"[Twitch API] Unexpected status {resp.status} for clip {slug}")
+                LOGGER.info("[Twitch API] Unexpected status %s for clip %s", resp.status, slug)
                 return None, None, None
             data = await resp.json()
             clips = data.get("data", [])
@@ -335,7 +340,7 @@ async def fetch_twitch_clip_info(
             return title, duration_seconds, view_count
     except Exception as exc:
         LOGGER.warning(
-            f"[Twitch API] fetch_twitch_clip_info failed for {slug}: {type(exc).__name__}"
+            "[Twitch API] fetch_twitch_clip_info failed for %s: %s", slug, type(exc).__name__
         )
         return None, None, None
     finally:
