@@ -44,6 +44,14 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)-8s %(name)s | %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
+
+
+class _HealthFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "GET /health" not in record.getMessage()
+
+
+logging.getLogger("uvicorn.access").addFilter(_HealthFilter())
 if _ERROR_WEBHOOK_URL:
     from discord_webhook_handler import DiscordWebhookHandler
 
