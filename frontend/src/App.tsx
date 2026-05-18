@@ -24,7 +24,6 @@ const Insights = lazy(() => import('@/pages/analytics/Insights'))
 const DiscordDashboard = lazy(() => import('@/pages/discord/Dashboard'))
 const GameQueueOverlay = lazy(() => import('@/pages/GameQueueOverlay'))
 const LoginPage = lazy(() => import('@/pages/Login'))
-const ChatOverlayModule = lazy(() => import('@/pages/modules/ChatOverlay'))
 const GameQueue = lazy(() => import('@/pages/modules/GameQueue'))
 const VideoQueue = lazy(() => import('@/pages/modules/VideoQueue'))
 const CrosshairModule = lazy(() => import('@/pages/modules/crosshairs'))
@@ -95,7 +94,6 @@ function App() {
                       <Route path="/settings" element={<Settings />} />
                       {/* Module Routes */}
                       <Route path="/timers" element={<Timers />} />
-                      <Route path="/modules/chat-overlay" element={<ChatOverlayModule />} />
                       <Route path="/modules/game-queue" element={<GameQueue />} />
                       <Route path="/modules/video-queue" element={<VideoQueue />} />
                       <Route path="/modules/crosshairs" element={<CrosshairModule />} />

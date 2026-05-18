@@ -71,10 +71,6 @@ export const navigationData: NavigationData = {
           url: '/modules/ai',
         },
         {
-          title: 'Chat Overlay',
-          url: '/modules/chat-overlay',
-        },
-        {
           title: 'Crosshair Repo',
           url: '/modules/crosshairs',
         },

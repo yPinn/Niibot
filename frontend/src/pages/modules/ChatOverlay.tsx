@@ -1,8 +1,9 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'motion/react'
 import { toast } from 'sonner'
 
 import { OverlayUrlBlock } from '@/components/OverlayUrlBlock'
+import { PageHeader } from '@/components/PageHeader'
 import { PageMain } from '@/components/PageMain'
 import {
   type BadgeEntry,
@@ -14,185 +15,30 @@ import {
   CardTitle,
   Icon,
   Label,
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetSection,
+  SheetTitle,
   SlideUp,
-  SlideUpSm,
   Switch,
   TwitchBadgeGroup,
 } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
-// ---- Types ----
-
-type BgOption = 'transparent' | 'color'
-type FontSizeOption = number
-type SpacingOption = 'compact' | 'normal' | 'loose'
-type MsgBgOption = 'none' | 'dark' | 'rounded' | 'bubble'
-type AlignOption = 'left' | 'right'
-type AnimDirOption = 'left' | 'right'
-
-interface ChatCssSettings {
-  background: BgOption
-  bgColor: string
-  fontSize: FontSizeOption
-  spacing: SpacingOption
-  messageBg: MsgBgOption
-  align: AlignOption
-  hideHeader: boolean
-  hideBadges: boolean
-  textShadow: boolean
-  animation: boolean
-  animDir: AnimDirOption
-}
-
-const DEFAULT_SETTINGS: ChatCssSettings = {
-  background: 'transparent',
-  bgColor: '#0e0e0e',
-  fontSize: 14,
-  spacing: 'normal',
-  messageBg: 'bubble',
-  align: 'left',
-  hideHeader: true,
-  hideBadges: false,
-  textShadow: false,
-  animation: true,
-  animDir: 'left',
-}
-
-const STORAGE_KEY = 'niibot:chat-overlay-css'
-
-function loadSettings(): ChatCssSettings {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) {
-      const parsed = JSON.parse(raw)
-      // Migrate old 'dark'/'light' presets to 'color'
-      if (parsed.background === 'dark') {
-        parsed.background = 'color'
-        parsed.bgColor = '#0e0e0e'
-      }
-      if (parsed.background === 'light') {
-        parsed.background = 'color'
-        parsed.bgColor = '#f0f0f0'
-      }
-      if (parsed.fontSize === 'small') parsed.fontSize = 14
-      if (parsed.fontSize === 'medium') parsed.fontSize = 16
-      if (parsed.fontSize === 'large') parsed.fontSize = 18
-      return { ...DEFAULT_SETTINGS, ...parsed }
-    }
-  } catch {
-    // ignore JSON parse errors — fall back to defaults
-  }
-  return DEFAULT_SETTINGS
-}
-
-// ---- CSS Generator ----
-
-function generateCss(s: ChatCssSettings): string {
-  const parts: string[] = []
-
-  parts.push('/* Twitch Chat Override — paste into OBS Browser Source > Custom CSS */')
-
-  const bg = s.background === 'color' ? s.bgColor : 'transparent'
-
-  // Set body background; always clear inner React containers so body colour shows through
-  parts.push(
-    `body {\n  background-color: ${bg} !important;\n  overflow: hidden !important;\n}\n\ndiv.twilight-minimal-root,\ndiv.popout-chat-page,\nsection.chat-room,\n.stream-chat,\n.chat-room,\n.chat-list,\n.scrollable-area {\n  background-color: transparent !important;\n}`
-  )
-
-  // Hide all scrollbars — OBS uses Chromium (CEF) so ::-webkit-scrollbar is the main target
-  parts.push(
-    `::-webkit-scrollbar {\n  display: none !important;\n}\n\n* {\n  scrollbar-width: none !important;\n}`
-  )
-
-  // Always suppress noise elements in an OBS overlay context
-  parts.push(
-    `.chat-line__status,\n[class*="leaderboard"],\n.community-highlight-stack,\n.community-highlight-stack__card,\n.new-chatter-ritual,\n.consent-banner,\n.paid-pinned-chat-message-list,\n.paid-pinned-chat-message-content-wrapper,\n.chat-author__intl-login,\n[class*="hype-train"],\n[class*="predictions"],\nbutton[aria-label*="reply"],\nbutton[aria-label*="返信"] {\n  display: none !important;\n}`
-  )
-
-  if (s.hideHeader) {
-    parts.push(`.stream-chat-header,\ndiv.rooms-header {\n  display: none !important;\n}`)
-  }
-
-  // Input is always hidden — this overlay is display-only
-  parts.push(`.chat-input {\n  display: none !important;\n}`)
-
-  if (s.hideBadges) {
-    parts.push(`.chat-badge,\n.seventv-badge {\n  display: none !important;\n}`)
-  }
-
-  const fontSize = `${s.fontSize}px`
-  const marginY = { compact: '2px', normal: '4px', loose: '8px' }[s.spacing]
-
-  if (s.messageBg === 'bubble') {
-    const bubbleRadius = s.align === 'right' ? '14px 3px 14px 14px' : '3px 14px 14px 14px'
-    parts.push(
-      `.chat-line__message {\n  display: flex !important;\n  flex-direction: column !important;\n  align-items: ${s.align === 'right' ? 'flex-end' : 'flex-start'} !important;\n  font-size: ${fontSize} !important;\n  background: transparent !important;\n  padding: 0 !important;\n  margin: ${marginY} 0 !important;\n}`
-    )
-    parts.push(
-      `.chat-line__username-container {\n  display: flex !important;\n  align-items: center !important;\n  font-size: 0.78em !important;\n  margin-bottom: 3px !important;\n}`
-    )
-    // Username floats on background — always add shadow for legibility
-    // Strip 7TV gradient paint (background-clip: text + color:transparent) so the
-    // Twitch per-user inline color is restored; [data-a-user] is a stable Twitch fallback
-    parts.push(
-      `.chat-author__display-name,\n[data-a-user] {\n  background: none !important;\n  -webkit-background-clip: unset !important;\n  background-clip: unset !important;\n  -webkit-text-fill-color: unset !important;\n  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85), 0 1px 6px rgba(0, 0, 0, 0.6) !important;\n}`
-    )
-    // Hide the colon separator between username and message
-    // aria-hidden="true" is more stable than :last-child when 7TV injects extra elements
-    parts.push(
-      `.chat-line__username-container > span[aria-hidden="true"] {\n  display: none !important;\n}`
-    )
-    // Bubble: always dark bg + white text regardless of body background
-    // seventv-chat-message covers lines rendered by the 7TV extension
-    parts.push(
-      `[data-a-target="chat-line-message-body"],\n[data-test-selector="chat-line-message-body"],\nseventv-chat-message {\n  font-size: ${fontSize} !important;\n  line-height: 1.5 !important;\n  background: rgba(0, 0, 0, 0.68) !important;\n  border-radius: ${bubbleRadius} !important;\n  padding: 8px 14px !important;\n  max-width: 85% !important;\n  color: #fff !important;\n  display: block !important;\n}`
-    )
-    // Broadcaster messages appear on the opposite side
-    const bcAlignItems = s.align === 'right' ? 'flex-start' : 'flex-end'
-    const bcRadius = s.align === 'right' ? '3px 14px 14px 14px' : '14px 3px 14px 14px'
-    parts.push(
-      `.chat-line__message:has(.chat-badge[alt="Broadcaster"]) {\n  align-items: ${bcAlignItems} !important;\n}\n.chat-line__message:has(.chat-badge[alt="Broadcaster"]) [data-a-target="chat-line-message-body"],\n.chat-line__message:has(.chat-badge[alt="Broadcaster"]) [data-test-selector="chat-line-message-body"],\n.chat-line__message:has(.chat-badge[alt="Broadcaster"]) seventv-chat-message {\n  border-radius: ${bcRadius} !important;\n}`
-    )
-  } else {
-    const [msgBg, msgPad, msgRadius] =
-      s.messageBg === 'dark'
-        ? ['rgba(0, 0, 0, 0.52)', '4px 10px', '4px']
-        : s.messageBg === 'rounded'
-          ? ['rgba(0, 0, 0, 0.62)', '6px 12px', '12px']
-          : ['transparent', '2px 0', '0']
-    parts.push(
-      `.chat-line__message {\n  font-size: ${fontSize} !important;\n  background: ${msgBg} !important;\n  padding: ${msgPad} !important;\n  border-radius: ${msgRadius} !important;\n  margin: ${marginY} 0 !important;\n}`
-    )
-    // Strip 7TV gradient paint so Twitch inline username color is restored
-    parts.push(
-      `.chat-author__display-name,\n[data-a-user] {\n  background: none !important;\n  -webkit-background-clip: unset !important;\n  background-clip: unset !important;\n  -webkit-text-fill-color: unset !important;\n}`
-    )
-  }
-
-  if (s.textShadow) {
-    parts.push(`span.text-fragment {\n  text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.9) !important;\n}`)
-  }
-
-  if (s.align === 'right' && s.messageBg !== 'bubble') {
-    parts.push(
-      `.chat-list,\n.chat-scrollable-area__message-container {\n  align-items: flex-end !important;\n}\n\n.chat-line__message {\n  text-align: right !important;\n}`
-    )
-  } else if (s.align === 'right' && s.messageBg === 'bubble') {
-    parts.push(
-      `.chat-list,\n.chat-scrollable-area__message-container {\n  align-items: flex-end !important;\n}`
-    )
-  }
-
-  if (s.animation) {
-    const fromX = s.animDir === 'left' ? '-10px' : '10px'
-    parts.push(
-      `@keyframes niiChatIn {\n  from { opacity: 0; transform: translateX(${fromX}); }\n  to   { opacity: 1; transform: translateX(0); }\n}\n\n.chat-line__message {\n  animation: niiChatIn 0.2s ease-out !important;\n}`
-    )
-  }
-
-  return parts.join('\n\n')
-}
+import {
+  type AlignOption,
+  type AnimDirOption,
+  type BadgeFilterOption,
+  type ChatCssSettings,
+  generateCss,
+  loadSettings,
+  type MsgBgOption,
+  saveSettings,
+  type SpacingOption,
+} from './chatOverlayCss'
 
 // ---- Demo sequence ----
 
@@ -331,8 +177,8 @@ const LOOP_MS = Math.max(...SEQUENCE.map(m => m.delay)) + 2500
 
 // ---- Chat preview ----
 
-function ChatBadges({ msg, hidden }: { msg: DemoMsg; hidden: boolean }) {
-  if (hidden) return null
+function ChatBadges({ msg, filter }: { msg: DemoMsg; filter: BadgeFilterOption }) {
+  if (filter === 'none') return null
   const badges: BadgeEntry[] = []
   if (msg.is_broadcaster) badges.push({ role: 'broadcaster' })
   if (msg.is_mod) badges.push({ role: 'moderator' })
@@ -381,10 +227,11 @@ function ChatPreview({ s }: { s: ChatCssSettings }) {
     s.spacing,
     s.messageBg,
     s.align,
-    s.hideBadges,
+    s.badgeFilter,
     s.textShadow,
     s.animation,
     s.animDir,
+    s.hideBot,
   ])
 
   // Determine if picked color is light (for text contrast)
@@ -450,23 +297,25 @@ function ChatPreview({ s }: { s: ChatCssSettings }) {
             style={{
               display: 'flex',
               alignItems: 'center',
+              flexWrap: 'nowrap',
+              overflow: 'hidden',
               gap: 3,
               fontSize: '0.78em',
+              maxWidth: '90%',
               marginBottom: 3,
             }}
           >
-            <ChatBadges msg={msg} hidden={s.hideBadges} />
+            <ChatBadges msg={msg} filter={s.badgeFilter} />
             <span style={{ fontWeight: 700, color: msg.color, textShadow: usernameShadow }}>
               {msg.username}
             </span>
           </div>
-          {/* Bubble always has dark bg — message text is always white */}
           <div
             style={{
               background: 'rgba(0,0,0,0.68)',
               borderRadius: bubbleRadius,
               padding: '8px 14px',
-              maxWidth: '85%',
+              maxWidth: '90%',
               color: '#fff',
               textShadow: shadow,
             }}
@@ -494,7 +343,7 @@ function ChatPreview({ s }: { s: ChatCssSettings }) {
               <span
                 style={{ display: 'inline-flex', alignItems: 'center', verticalAlign: 'middle' }}
               >
-                <ChatBadges msg={msg} hidden={s.hideBadges} />
+                <ChatBadges msg={msg} filter={s.badgeFilter} />
               </span>
               <span style={{ fontWeight: 700, color: msg.color }}>{msg.username}</span>
               <span style={{ opacity: 0.55 }}>: </span>
@@ -508,7 +357,7 @@ function ChatPreview({ s }: { s: ChatCssSettings }) {
       <div style={alignWrap}>
         <div style={{ ...msgBase, ...chatBg, maxWidth: '100%' }}>
           <span style={{ display: 'inline-flex', alignItems: 'center', verticalAlign: 'middle' }}>
-            <ChatBadges msg={msg} hidden={s.hideBadges} />
+            <ChatBadges msg={msg} filter={s.badgeFilter} />
           </span>
           <span style={{ fontWeight: 700, color: msg.color }}>{msg.username}</span>
           <span style={{ opacity: 0.55 }}>: </span>
@@ -798,12 +647,19 @@ const ANIM_DIR_OPTIONS: { value: AnimDirOption; label: string }[] = [
   { value: 'right', label: '從右' },
 ]
 
+const BADGE_FILTER_OPTIONS: { value: BadgeFilterOption; label: string; desc?: string }[] = [
+  { value: 'all', label: '全部' },
+  { value: 'role-sub', label: '角色+訂閱' },
+  { value: 'none', label: '隱藏' },
+]
+
 export default function ChatOverlayModule() {
   useDocumentTitle('Chat Overlay')
 
   const { user } = useAuth()
   const [settings, setSettings] = useState<ChatCssSettings>(loadSettings)
   const [rightPanel, setRightPanel] = useState<'preview' | 'css'>('preview')
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   const patch = (partial: Partial<ChatCssSettings>) =>
     setSettings(prev => {
@@ -814,10 +670,10 @@ export default function ChatOverlayModule() {
     })
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings))
+    saveSettings(settings)
   }, [settings])
 
-  const css = generateCss(settings)
+  const css = useMemo(() => generateCss(settings), [settings])
 
   const copyCss = () => {
     navigator.clipboard.writeText(css).then(
@@ -830,12 +686,126 @@ export default function ChatOverlayModule() {
 
   return (
     <PageMain>
-      <SlideUpSm inView className="shrink-0">
-        <h1 className="text-page-title font-bold">Chat Overlay</h1>
-        <p className="text-sub text-muted-foreground mt-0.5">
-          自訂 Twitch 聊天室樣式，貼入 OBS Browser Source
-        </p>
-      </SlideUpSm>
+      <PageHeader
+        title="Chat Overlay"
+        description="自訂 Twitch 聊天室樣式，貼入 OBS Browser Source"
+      >
+        <Button
+          variant="ghost"
+          size="icon"
+          className="mt-0.5 shrink-0 border border-primary/40 text-muted-foreground hover:border-primary hover:text-primary/80"
+          onClick={() => setSettingsOpen(true)}
+          title="使用說明"
+        >
+          <Icon
+            icon="fa-regular fa-circle-question"
+            wrapperClassName="size-5"
+            className="text-base"
+          />
+        </Button>
+      </PageHeader>
+
+      {/* Help sheet */}
+      <Sheet open={settingsOpen} onOpenChange={setSettingsOpen}>
+        <SheetContent side="right">
+          <SheetHeader>
+            <SheetTitle>Chat Overlay 使用說明</SheetTitle>
+            <SheetDescription>如何在 OBS 套用自訂聊天室樣式</SheetDescription>
+          </SheetHeader>
+          <SheetSection className="flex flex-col flex-1 overflow-y-auto">
+            {/* Step 1 — 調整樣式 */}
+            <div className="flex gap-3">
+              <div className="flex flex-col items-center">
+                <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10 ring-1 ring-primary/20">
+                  <Icon
+                    icon="fa-solid fa-palette"
+                    wrapperClassName="size-3.5"
+                    className="text-label text-primary"
+                  />
+                </div>
+                <div className="mt-1 w-px flex-1 bg-border" />
+              </div>
+              <div className="flex flex-col gap-element pb-6">
+                <p className="text-content font-semibold">調整樣式</p>
+                <p className="text-sub text-muted-foreground">
+                  在右側設定面板調整外觀，左側預覽即時更新。
+                </p>
+                <ul className="flex flex-col gap-1">
+                  {[
+                    '外觀：背景透明或自訂色、訊息樣式、對齊方向',
+                    '文字：字型大小與行間距',
+                    '顯示：隱藏標題列、徽章、文字陰影',
+                    '動畫：進場方向',
+                  ].map(item => (
+                    <li key={item} className="flex items-start gap-1.5">
+                      <span className="mt-1.25 size-1 shrink-0 rounded-full bg-muted-foreground/50" />
+                      <span className="text-label text-muted-foreground">{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+
+            {/* Step 2 — 複製 CSS */}
+            <div className="flex gap-3">
+              <div className="flex flex-col items-center">
+                <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10 ring-1 ring-primary/20">
+                  <Icon
+                    icon="fa-solid fa-code"
+                    wrapperClassName="size-3.5"
+                    className="text-label text-primary"
+                  />
+                </div>
+                <div className="mt-1 w-px flex-1 bg-border" />
+              </div>
+              <div className="flex flex-col gap-element pb-6">
+                <p className="text-content font-semibold">複製 CSS</p>
+                <p className="text-sub text-muted-foreground">取得產生的樣式表貼入 OBS。</p>
+                <ul className="flex flex-col gap-1">
+                  {['切換到「CSS」分頁', '點擊「複製 CSS」按鈕'].map(item => (
+                    <li key={item} className="flex items-start gap-1.5">
+                      <span className="mt-1.25 size-1 shrink-0 rounded-full bg-muted-foreground/50" />
+                      <span className="text-label text-muted-foreground">{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+
+            {/* Step 3 — OBS 設定 */}
+            <div className="flex gap-3">
+              <div className="flex flex-col items-center">
+                <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10 ring-1 ring-primary/20">
+                  <Icon
+                    icon="fa-solid fa-display"
+                    wrapperClassName="size-3.5"
+                    className="text-label text-primary"
+                  />
+                </div>
+              </div>
+              <div className="flex flex-col gap-element pb-2">
+                <p className="text-content font-semibold">OBS 加入 Browser Source</p>
+                <p className="text-sub text-muted-foreground">
+                  將聊天室以透明 overlay 疊加到畫面上。
+                </p>
+                <ul className="flex flex-col gap-1">
+                  {[
+                    'OBS 新增瀏覽器來源',
+                    'URL 填入下方 Twitch 聊天室連結',
+                    '將複製的 CSS 貼入「自訂 CSS」欄位',
+                    '建議尺寸 360 × 640 px',
+                  ].map(item => (
+                    <li key={item} className="flex items-start gap-1.5">
+                      <span className="mt-1.25 size-1 shrink-0 rounded-full bg-muted-foreground/50" />
+                      <span className="text-label text-muted-foreground">{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </SheetSection>
+        </SheetContent>
+      </Sheet>
 
       <SlideUp
         inView
@@ -845,7 +815,7 @@ export default function ChatOverlayModule() {
         {/* Left: switchable Preview / CSS */}
         <div className="lg:col-span-6 flex flex-col gap-element min-w-0">
           {/* Tab bar */}
-          <div className="flex shrink-0 items-center justify-between">
+          <div className="flex shrink-0 items-center">
             <div className="flex gap-1 rounded-lg border p-1">
               {(['preview', 'css'] as const).map(panel => (
                 <button
@@ -866,22 +836,15 @@ export default function ChatOverlayModule() {
                 </button>
               ))}
             </div>
-            {rightPanel === 'css' && (
-              <Button onClick={copyCss} size="sm">
-                <Icon icon="fa-regular fa-copy" className="mr-1.5 text-xs" />
-                複製 CSS
-              </Button>
-            )}
           </div>
 
           {/* Panel content */}
           {rightPanel === 'preview' ? (
             <>
-              {/* 9:16 mobile aspect ratio preview */}
               <div className="flex justify-center">
                 <div
-                  className="overflow-hidden rounded-lg border w-full max-w-[260px]"
-                  style={{ aspectRatio: '9/16' }}
+                  className="overflow-hidden rounded-lg border w-full max-w-[360px]"
+                  style={{ aspectRatio: '360/640' }}
                 >
                   <ChatPreview s={settings} />
                 </div>
@@ -898,9 +861,15 @@ export default function ChatOverlayModule() {
         {/* Right: Settings */}
         <div className="lg:col-span-6 flex flex-col gap-section">
           <Card>
-            <CardHeader>
-              <CardTitle>樣式設定</CardTitle>
-              <CardDescription>調整後自動產生 CSS，無需儲存</CardDescription>
+            <CardHeader className="flex flex-row items-start justify-between gap-2">
+              <div className="flex flex-col gap-1">
+                <CardTitle>樣式設定</CardTitle>
+                <CardDescription>調整後自動產生 CSS，無需儲存</CardDescription>
+              </div>
+              <Button onClick={copyCss} size="sm" className="shrink-0">
+                <Icon icon="fa-regular fa-copy" className="mr-1.5 text-xs" />
+                複製 CSS
+              </Button>
             </CardHeader>
             <CardContent className="flex flex-col gap-section">
               {/* ── 外觀 ── */}
@@ -979,24 +948,20 @@ export default function ChatOverlayModule() {
               <div className="flex flex-col gap-3">
                 <p className="text-label font-medium text-muted-foreground">顯示</p>
                 <div className="flex flex-col gap-element">
-                  {(
-                    [
-                      { key: 'hideHeader', label: '隱藏標題列', desc: undefined },
-                      { key: 'hideBadges', label: '隱藏徽章', desc: 'MOD、VIP、訂閱者' },
-                    ] as { key: 'hideHeader' | 'hideBadges'; label: string; desc?: string }[]
-                  ).map(({ key, label, desc }) => (
-                    <div key={key} className="flex items-center justify-between">
-                      <div>
-                        <Label htmlFor={key}>{label}</Label>
-                        {desc && <p className="text-muted-foreground mt-0.5 text-label">{desc}</p>}
-                      </div>
-                      <Switch
-                        id={key}
-                        checked={settings[key]}
-                        onCheckedChange={v => patch({ [key]: v })}
-                      />
-                    </div>
-                  ))}
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="hideHeader">隱藏標題列</Label>
+                    <Switch
+                      id="hideHeader"
+                      checked={settings.hideHeader}
+                      onCheckedChange={v => patch({ hideHeader: v })}
+                    />
+                  </div>
+                  <OptionButtonGroup
+                    label="徽章顯示"
+                    options={BADGE_FILTER_OPTIONS}
+                    value={settings.badgeFilter}
+                    onChange={v => patch({ badgeFilter: v })}
+                  />
                   {settings.background === 'transparent' && (
                     <div className="flex items-center justify-between">
                       <div>
@@ -1010,6 +975,17 @@ export default function ChatOverlayModule() {
                       />
                     </div>
                   )}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label htmlFor="hideBot">隱藏 Bot 訊息</Label>
+                      <p className="text-muted-foreground mt-0.5 text-label">依機器人徽章過濾</p>
+                    </div>
+                    <Switch
+                      id="hideBot"
+                      checked={settings.hideBot}
+                      onCheckedChange={v => patch({ hideBot: v })}
+                    />
+                  </div>
                 </div>
               </div>
 
