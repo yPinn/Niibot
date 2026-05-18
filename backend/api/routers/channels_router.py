@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from core.config import get_settings
+from core.config import Settings, get_settings
 from core.dependencies import (
     get_channel_service,
     get_current_channel_id,
@@ -79,7 +79,7 @@ async def get_monitored_channels(
     """
     try:
         enabled_channels = await channel_service.get_enabled_channels()
-        LOGGER.debug(f"Found {len(enabled_channels)} enabled channels")
+        LOGGER.debug("Found %d enabled channels", len(enabled_channels))
 
         if not enabled_channels:
             return []
@@ -119,7 +119,7 @@ async def get_monitored_channels(
         result = [ch for ch in channels_info.values() if ch.id != channel_id]
         result.sort(key=lambda x: (not x.is_live, x.display_name))
 
-        LOGGER.debug(f"Returning {len(result)} monitored channels for channel {channel_id}")
+        LOGGER.debug("Returning %d monitored channels for channel %s", len(result), channel_id)
         return result
 
     except Exception:
@@ -157,7 +157,7 @@ async def toggle_channel(
 
         if success:
             action = "enabled" if request.enabled else "disabled"
-            LOGGER.info(f"Channel {action}: {channel_id}")
+            LOGGER.info("Channel %s: %s", action, channel_id)
             return ToggleResponse(message=f"Channel {action} successfully")
         else:
             raise HTTPException(status_code=500, detail="Failed to update channel status")
@@ -174,6 +174,7 @@ async def get_bot_mod_status(
     channel_id: str = Depends(get_current_channel_id),
     channel_service: ChannelService = Depends(get_channel_service),
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
+    settings: Settings = Depends(get_settings),
 ) -> ModStatusResponse:
     """Check whether the bot currently holds moderator status in the caller's channel."""
     token = await channel_service.get_token_with_refresh(channel_id, twitch_api)
@@ -183,7 +184,7 @@ async def get_bot_mod_status(
             headers={"X-Reauth-Required": "true"},
             content={"detail": "Token unavailable or missing required scope"},
         )
-    bot_id = get_settings().bot_id
+    bot_id = settings.bot_id
     if not bot_id:
         raise HTTPException(status_code=503, detail="BOT_ID not configured")
     is_mod = await twitch_api.check_bot_is_moderator(channel_id, bot_id, token)
@@ -195,6 +196,7 @@ async def grant_bot_mod(
     channel_id: str = Depends(get_current_channel_id),
     channel_service: ChannelService = Depends(get_channel_service),
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
+    settings: Settings = Depends(get_settings),
 ) -> GrantModResponse:
     """Grant the bot moderator status in the caller's channel."""
     token = await channel_service.get_token_with_refresh(channel_id, twitch_api)
@@ -205,7 +207,7 @@ async def grant_bot_mod(
             content={"detail": "Token unavailable or missing required scope"},
         )
 
-    bot_id = get_settings().bot_id
+    bot_id = settings.bot_id
     if not bot_id:
         raise HTTPException(status_code=503, detail="BOT_ID not configured")
     try:
@@ -215,7 +217,7 @@ async def grant_bot_mod(
         raise HTTPException(status_code=500, detail="Failed to grant moderator status") from None
 
     if resp.status_code == 204:
-        LOGGER.info(f"Granted bot mod for channel {channel_id}")
+        LOGGER.info("Granted bot mod for channel %s", channel_id)
         return GrantModResponse(granted=True)
 
     if resp.status_code == 422:
@@ -228,7 +230,7 @@ async def grant_bot_mod(
             content={"detail": "Missing required Twitch scope"},
         )
 
-    LOGGER.error(f"Unexpected grant-mod response {resp.status_code}: {resp.text}")
+    LOGGER.error("Unexpected grant-mod response %d: %s", resp.status_code, resp.text)
     raise HTTPException(status_code=502, detail="Twitch API error")
 
 
@@ -266,7 +268,7 @@ async def update_channel_defaults(
         )
         if not channel:
             raise HTTPException(status_code=404, detail="Channel not found")
-        LOGGER.info(f"Channel {channel_id} updated channel defaults")
+        LOGGER.info("Channel %s updated channel defaults", channel_id)
         return ChannelDefaultsResponse(
             default_cooldown=channel.default_cooldown,
         )

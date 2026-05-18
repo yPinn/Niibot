@@ -1,20 +1,16 @@
 """Event config service — business-logic layer for event configurations."""
 
-import logging
 from dataclasses import asdict
 
 import asyncpg
 
 from shared.repositories.event_config import DEFAULT_TEMPLATES, EVENT_TYPES, EventConfigRepository
 
-LOGGER: logging.Logger = logging.getLogger(__name__)
-
 
 class EventConfigService:
     """API-facing event config operations."""
 
     def __init__(self, pool: asyncpg.Pool) -> None:
-        self.pool = pool
         self.repo = EventConfigRepository(pool)
 
     async def list_configs_with_counts(self, channel_id: str) -> list[dict]:
@@ -57,11 +53,4 @@ class EventConfigService:
         return {**asdict(cfg), "trigger_count": counts.get(cfg.event_type, 0)}
 
     async def _get_trigger_counts(self, channel_id: str) -> dict[str, int]:
-        """Count total events per type from stream_events table."""
-        async with self.pool.acquire() as conn:
-            rows = await conn.fetch(
-                "SELECT event_type, COUNT(*) as cnt "
-                "FROM stream_events WHERE channel_id = $1 GROUP BY event_type",
-                channel_id,
-            )
-            return {row["event_type"]: row["cnt"] for row in rows}
+        return await self.repo.get_stream_event_counts(channel_id)

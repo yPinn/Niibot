@@ -212,7 +212,7 @@ async def get_analytics_summary(
         summary_data = await service.get_summary(channel_id, days)
 
         response.headers["Cache-Control"] = "private, max-age=300"
-        LOGGER.debug(f"Channel {channel_id} requested analytics summary (days={days})")
+        LOGGER.debug("Channel %s requested analytics summary (days=%d)", channel_id, days)
         return AnalyticsSummary(**summary_data)
 
     except Exception:
@@ -299,6 +299,61 @@ async def list_viewers(
         raise HTTPException(status_code=500, detail="Failed to fetch viewers") from None
 
 
+def _build_twitch_status(status: dict) -> ViewerTwitchStatus:
+    return ViewerTwitchStatus(
+        is_subscribed=bool(status.get("is_subscribed", False)),
+        sub_tier=status.get("sub_tier"),
+        sub_gifted=status.get("sub_gifted"),
+        sub_gifter=status.get("sub_gifter"),
+        is_mod=bool(status.get("is_mod", False)),
+        is_vip=bool(status.get("is_vip", False)),
+        is_banned=bool(status.get("is_banned", False)),
+        ban_expires_at=status.get("ban_expires_at"),
+        ban_reason=status.get("ban_reason"),
+    )
+
+
+async def _enrich_profile_image(
+    user_id: str,
+    profile: dict,
+    channel_id: str,
+    twitch_api: TwitchAPIClient,
+    service: AnalyticsService,
+) -> tuple[str | None, str | None, datetime | None, str | None]:
+    """Fetch profile image from Twitch when missing from DB, then schedule cache upsert."""
+    profile_image_url = offline_image_url = broadcaster_type = None
+    account_created_at: datetime | None = None
+    try:
+        user_info = await twitch_api.get_user_info(user_id)
+        if user_info:
+            profile_image_url = user_info.get("avatar") or None
+            offline_image_url = user_info.get("offline_image_url") or None
+            broadcaster_type = user_info.get("broadcaster_type") or None
+            raw_created = user_info.get("account_created_at", "")
+            if raw_created:
+                try:
+                    account_created_at = datetime.fromisoformat(raw_created.replace("Z", "+00:00"))
+                except ValueError:
+                    pass
+            task = asyncio.create_task(
+                service.upsert_viewer_profile_cache(
+                    channel_id=channel_id,
+                    user_id=user_id,
+                    username=profile["username"],
+                    display_name=profile.get("display_name"),
+                    profile_image_url=profile_image_url,
+                    offline_image_url=offline_image_url,
+                    account_created_at=account_created_at,
+                    broadcaster_type=broadcaster_type,
+                )
+            )
+            _background_tasks.add(task)
+            task.add_done_callback(_on_background_task_done)
+    except Exception:
+        LOGGER.warning("user_info fetch failed for %s", user_id, exc_info=True)
+    return profile_image_url, offline_image_url, account_created_at, broadcaster_type
+
+
 @router.get("/viewers/{user_id}", response_model=ViewerProfile)
 async def get_viewer_profile(
     user_id: str,
@@ -319,66 +374,27 @@ async def get_viewer_profile(
         status: dict[str, Any] = profile.get("channel_status") or {}
         profile = {k: v for k, v in profile.items() if k != "channel_status"}
 
-        # Profile image cache: use DB value; fetch from Twitch only when missing
         profile_image_url: str | None = status.get("profile_image_url")
         offline_image_url: str | None = status.get("offline_image_url")
         account_created_at: datetime | None = status.get("account_created_at")
         broadcaster_type: str | None = status.get("broadcaster_type")
 
         if profile_image_url is None:
-            try:
-                user_info = await twitch_api.get_user_info(user_id)
-                if user_info:
-                    profile_image_url = user_info.get("avatar") or None
-                    offline_image_url = user_info.get("offline_image_url") or None
-                    broadcaster_type = user_info.get("broadcaster_type") or None
-                    raw_created = user_info.get("account_created_at", "")
-                    if raw_created:
-                        try:
-                            account_created_at = datetime.fromisoformat(
-                                raw_created.replace("Z", "+00:00")
-                            )
-                        except ValueError:
-                            pass
-                    task = asyncio.create_task(
-                        service.upsert_viewer_profile_cache(
-                            channel_id=channel_id,
-                            user_id=user_id,
-                            username=profile["username"],
-                            display_name=profile.get("display_name"),
-                            profile_image_url=profile_image_url,
-                            offline_image_url=offline_image_url,
-                            account_created_at=account_created_at,
-                            broadcaster_type=broadcaster_type,
-                        )
-                    )
-                    _background_tasks.add(task)
-                    task.add_done_callback(_on_background_task_done)
-            except Exception:
-                LOGGER.warning("user_info fetch failed for %s", user_id, exc_info=True)
-
-        twitch_status = ViewerTwitchStatus(
-            is_subscribed=bool(status.get("is_subscribed", False)),
-            sub_tier=status.get("sub_tier"),
-            sub_gifted=status.get("sub_gifted"),
-            sub_gifter=status.get("sub_gifter"),
-            is_mod=bool(status.get("is_mod", False)),
-            is_vip=bool(status.get("is_vip", False)),
-            is_banned=bool(status.get("is_banned", False)),
-            ban_expires_at=status.get("ban_expires_at"),
-            ban_reason=status.get("ban_reason"),
-        )
-
-        session_attendance = [ViewerSessionAttendance(**r) for r in attendance_rows]
+            (
+                profile_image_url,
+                offline_image_url,
+                account_created_at,
+                broadcaster_type,
+            ) = await _enrich_profile_image(user_id, profile, channel_id, twitch_api, service)
 
         response.headers["Cache-Control"] = "private, max-age=300"
         return ViewerProfile(
-            twitch=twitch_status,
+            twitch=_build_twitch_status(status),
             profile_image_url=profile_image_url,
             offline_image_url=offline_image_url,
             account_created_at=account_created_at,
             broadcaster_type=broadcaster_type,
-            session_attendance=session_attendance,
+            session_attendance=[ViewerSessionAttendance(**r) for r in attendance_rows],
             **profile,
         )
     except HTTPException:
@@ -471,7 +487,9 @@ async def get_top_commands(
     try:
         commands = await service.get_top_commands(channel_id, days, limit)
 
-        LOGGER.debug(f"Channel {channel_id} requested top commands (days={days}, limit={limit})")
+        LOGGER.debug(
+            "Channel %s requested top commands (days=%d, limit=%d)", channel_id, days, limit
+        )
         return [CommandStat(**cmd) for cmd in commands]
 
     except Exception:

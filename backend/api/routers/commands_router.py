@@ -14,7 +14,7 @@ from core.dependencies import (
 )
 from services import CommandConfigService, TwitchAPIClient
 from shared.cache import AsyncTTLCache
-from shared.repositories.command_config import _UNSET
+from shared.repositories.command_config import UNSET as _UNSET
 
 # Cache username → user_info for 60 s to avoid a Twitch API call on every page load
 _user_lookup_cache: AsyncTTLCache = AsyncTTLCache(maxsize=256, ttl=60.0)
@@ -94,7 +94,7 @@ async def create_custom_command(
             min_role=body.min_role,
             aliases=body.aliases,
         )
-        LOGGER.info(f"Channel {channel_id} created custom command: {body.command_name}")
+        LOGGER.info("Channel %s created custom command: %s", channel_id, body.command_name)
         return CommandConfigResponse(**cfg)
     except Exception:
         LOGGER.exception("Failed to create custom command")
@@ -123,7 +123,7 @@ async def update_command_config(
         )
         if cfg is None:
             raise HTTPException(status_code=404, detail="Command not found")
-        LOGGER.info(f"Channel {channel_id} updated command config: {command_name}")
+        LOGGER.info("Channel %s updated command config: %s", channel_id, command_name)
         return CommandConfigResponse(**cfg)
     except HTTPException:
         raise
@@ -144,7 +144,7 @@ async def toggle_command_config(
         cfg = await service.toggle_command(channel_id, command_name, body.enabled)
         if cfg is None:
             raise HTTPException(status_code=404, detail="Command not found")
-        LOGGER.info(f"Channel {channel_id} toggled command: {command_name} -> {body.enabled}")
+        LOGGER.info("Channel %s toggled command: %s -> %s", channel_id, command_name, body.enabled)
         return CommandConfigResponse(**cfg)
     except HTTPException:
         raise
@@ -167,7 +167,7 @@ async def delete_custom_command(
                 status_code=404,
                 detail="Custom command not found or cannot delete builtin commands",
             )
-        LOGGER.info(f"Channel {channel_id} deleted custom command: {command_name}")
+        LOGGER.info("Channel %s deleted custom command: %s", channel_id, command_name)
     except HTTPException:
         raise
     except Exception:

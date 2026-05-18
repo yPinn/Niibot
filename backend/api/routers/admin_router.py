@@ -47,6 +47,25 @@ def _scope_diff(stored_str: str | None, required: list[str]) -> tuple[list[str],
     return granted, missing
 
 
+async def _check_channel(
+    channel_id: str,
+    *,
+    bot_id: str,
+    channel_service: ChannelService,
+    twitch_api: TwitchAPIClient,
+    repo: ChannelRepository,
+) -> tuple[str, str, list[str], list[str]]:
+    if not bot_id:
+        return channel_id, "token_error", [], list(_BROADCASTER_SCOPES)
+    token = await channel_service.get_token_with_refresh(channel_id, twitch_api)
+    if not token:
+        return channel_id, "token_error", [], list(_BROADCASTER_SCOPES)
+    token_obj = await repo.get_token(channel_id, "broadcaster")
+    granted, missing = _scope_diff(token_obj.scopes if token_obj else None, _BROADCASTER_SCOPES)
+    status = await twitch_api.get_bot_mod_status(channel_id, bot_id, token)
+    return channel_id, status, granted, missing
+
+
 class AdminChannelInfo(BaseModel):
     id: str
     name: str
@@ -134,19 +153,18 @@ async def get_admin_channels(
     live_ids = {s["user_id"] for s in streams_data}
     user_map = {u["id"]: u for u in users_data}
 
-    async def _check_channel(channel_id: str) -> tuple[str, str, list[str], list[str]]:
-        if not bot_id:
-            return channel_id, "token_error", [], list(_BROADCASTER_SCOPES)
-        token = await channel_service.get_token_with_refresh(channel_id, twitch_api)
-        if not token:
-            return channel_id, "token_error", [], list(_BROADCASTER_SCOPES)
-        token_obj = await repo.get_token(channel_id, "broadcaster")
-        granted, missing = _scope_diff(token_obj.scopes if token_obj else None, _BROADCASTER_SCOPES)
-        status = await twitch_api.get_bot_mod_status(channel_id, bot_id, token)
-        return channel_id, status, granted, missing
-
     raw = await asyncio.gather(
-        *[_check_channel(cid) for cid in channel_ids], return_exceptions=True
+        *[
+            _check_channel(
+                cid,
+                bot_id=bot_id,
+                channel_service=channel_service,
+                twitch_api=twitch_api,
+                repo=repo,
+            )
+            for cid in channel_ids
+        ],
+        return_exceptions=True,
     )
     channel_data: dict[str, tuple[str, list[str], list[str]]] = {}
     for r in raw:
@@ -237,7 +255,7 @@ async def revoke_activation_code(
     repo = ActivationCodeRepository(pool)
     if not await repo.invalidate("twitch", platform_user_id):
         raise HTTPException(status_code=404, detail="No active code found for this user")
-    LOGGER.info(f"Activation code revoked for {platform_user_id}")
+    LOGGER.info("Activation code revoked for %s", platform_user_id)
     return {"revoked": True}
 
 
@@ -262,7 +280,7 @@ async def approve_activation_request(
     repo = ActivationRequestRepository(pool)
     if not await repo.approve(request_id):
         raise HTTPException(status_code=404, detail="Request not found or already reviewed")
-    LOGGER.info(f"Activation request {request_id} approved by owner")
+    LOGGER.info("Activation request %d approved by owner", request_id)
     return {"approved": True}
 
 
@@ -336,7 +354,7 @@ async def list_log_containers(
                     result.append(LogContainerInfo(**c, running=False))
             return result
     except Exception as e:
-        LOGGER.warning(f"Docker socket unavailable for container list: {e}")
+        LOGGER.warning("Docker socket unavailable for container list: %s", e)
         return [LogContainerInfo(**c, running=False) for c in _KNOWN_CONTAINERS]
 
 
@@ -373,7 +391,7 @@ async def get_container_logs(
     except HTTPException:
         raise
     except Exception as e:
-        LOGGER.warning(f"Docker socket unavailable for logs({container}): {e}")
+        LOGGER.warning("Docker socket unavailable for logs(%s): %s", container, e)
         raise HTTPException(status_code=503, detail="Docker socket unavailable") from e
 
     return ContainerLogsResponse(container=container, lines=_parse_docker_stream(raw))
@@ -431,7 +449,8 @@ async def run_db_query(
             status_code=408, detail=f"Query timed out ({_DB_TIMEOUT:.0f}s limit)"
         ) from None
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+        LOGGER.error("DB query failed: %s", e)
+        raise HTTPException(status_code=400, detail="Query failed") from e
 
     duration_ms = (time.monotonic() - t0) * 1000
 
@@ -458,5 +477,5 @@ async def reject_activation_request(
     repo = ActivationRequestRepository(pool)
     if not await repo.reject(request_id):
         raise HTTPException(status_code=404, detail="Request not found or already reviewed")
-    LOGGER.info(f"Activation request {request_id} rejected by owner")
+    LOGGER.info("Activation request %d rejected by owner", request_id)
     return {"rejected": True}

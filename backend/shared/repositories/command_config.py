@@ -47,6 +47,7 @@ DEFAULT_REDEMPTIONS: list[dict] = [
 
 type UnsetType = object
 _UNSET: UnsetType = object()
+UNSET: UnsetType = _UNSET  # Public alias — import this instead of _UNSET
 
 # Track channels that already have redemption defaults seeded (avoids redundant INSERTs)
 _seeded_redemptions: set[str] = set()

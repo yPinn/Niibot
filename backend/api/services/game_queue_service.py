@@ -21,19 +21,20 @@ class GameQueueService:
         self.settings_repo = GameQueueSettingsRepository(pool)
 
     @staticmethod
-    def _compute_batches(entries: list[dict], group_size: int) -> tuple[list[dict], list[dict]]:
-        """Slice entries into current and next batches with 1-indexed positions.
+    def _compute_batches(
+        entries: list[dict], group_size: int
+    ) -> tuple[list[dict], list[dict], list[dict]]:
+        """Return (all_annotated, current_batch, next_batch) with 1-indexed positions.
 
         group_size is the *total* team size including the broadcaster, so the
         queue contributes pull_size = max(1, group_size - 1) players per batch.
         """
         pull_size = max(1, group_size - 1)
-        for i, entry in enumerate(entries):
-            entry["position"] = i + 1
-            entry["batch"] = (i // pull_size) + 1
-        current = entries[:pull_size]
-        next_batch = entries[pull_size : pull_size * 2]
-        return current, next_batch
+        annotated = [
+            {**entry, "position": i + 1, "batch": (i // pull_size) + 1}
+            for i, entry in enumerate(entries)
+        ]
+        return annotated, annotated[:pull_size], annotated[pull_size : pull_size * 2]
 
     async def get_queue_state(self, channel_id: str) -> dict:
         """Get the full queue state including settings and batches."""
@@ -41,12 +42,12 @@ class GameQueueService:
         entries = await self.queue_repo.get_active_entries(channel_id)
         entry_dicts = [asdict(e) for e in entries]
 
-        current, next_batch = self._compute_batches(entry_dicts, settings.group_size)
+        annotated, current, next_batch = self._compute_batches(entry_dicts, settings.group_size)
 
         return {
             "current_batch": current,
             "next_batch": next_batch,
-            "full_queue": entry_dicts,
+            "full_queue": annotated,
             "group_size": settings.group_size,
             "enabled": settings.enabled,
             "total_active": len(entries),
@@ -58,7 +59,7 @@ class GameQueueService:
         entries = await self.queue_repo.get_active_entries(channel_id)
         entry_dicts = [asdict(e) for e in entries]
 
-        current, next_batch = self._compute_batches(entry_dicts, settings.group_size)
+        _, current, next_batch = self._compute_batches(entry_dicts, settings.group_size)
 
         return {
             "current_batch": current,

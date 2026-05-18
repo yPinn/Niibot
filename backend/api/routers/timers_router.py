@@ -17,7 +17,7 @@ router = APIRouter(prefix="/api/timers", tags=["timers"])
 
 
 class TimerConfigResponse(BaseModel):
-    id: int
+    id: int | None
     channel_id: str
     timer_name: str
     interval_seconds: int
@@ -26,6 +26,7 @@ class TimerConfigResponse(BaseModel):
     enabled: bool
     announce: bool = False
     command_alias: str | None = None
+    builtin: bool = False
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -84,7 +85,7 @@ async def create_timer(
             announce=body.announce,
             command_alias=body.command_alias,
         )
-        LOGGER.info(f"Channel {channel_id} created timer: {body.timer_name}")
+        LOGGER.info("Channel %s created timer: %s", channel_id, body.timer_name)
         return TimerConfigResponse(**timer)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
@@ -115,7 +116,7 @@ async def update_timer(
         )
         if timer is None:
             raise HTTPException(status_code=404, detail="Timer not found")
-        LOGGER.info(f"Channel {channel_id} updated timer: {timer_name}")
+        LOGGER.info("Channel %s updated timer: %s", channel_id, timer_name)
         return TimerConfigResponse(**timer)
     except HTTPException:
         raise
@@ -138,7 +139,7 @@ async def toggle_timer(
         timer = await service.toggle_timer(channel_id, timer_name, body.enabled)
         if timer is None:
             raise HTTPException(status_code=404, detail="Timer not found")
-        LOGGER.info(f"Channel {channel_id} toggled timer: {timer_name} -> {body.enabled}")
+        LOGGER.info("Channel %s toggled timer: %s -> %s", channel_id, timer_name, body.enabled)
         return TimerConfigResponse(**timer)
     except HTTPException:
         raise
@@ -158,7 +159,7 @@ async def delete_timer(
         deleted = await service.delete_timer(channel_id, timer_name)
         if not deleted:
             raise HTTPException(status_code=404, detail="Timer not found")
-        LOGGER.info(f"Channel {channel_id} deleted timer: {timer_name}")
+        LOGGER.info("Channel %s deleted timer: %s", channel_id, timer_name)
     except HTTPException:
         raise
     except Exception:

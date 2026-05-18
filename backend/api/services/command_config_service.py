@@ -7,11 +7,14 @@ import asyncpg
 
 from shared.builtin_commands import BUILTIN_DESCRIPTIONS, PUBLIC_DESCRIPTIONS
 from shared.repositories.command_config import (
-    _UNSET,
+    UNSET as _UNSET,
+)
+from shared.repositories.command_config import (
     CommandConfigRepository,
     RedemptionConfigRepository,
     UnsetType,
 )
+from shared.repositories.message_trigger import MessageTriggerRepository
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -114,20 +117,15 @@ class CommandConfigService:
             if cfg.enabled
             and (cfg.command_type == "custom" or cfg.command_name in PUBLIC_DESCRIPTIONS)
         ]
-        async with self.pool.acquire() as conn:
-            rows = await conn.fetch(
-                "SELECT pattern, response, min_role FROM message_triggers "
-                "WHERE channel_id = $1 AND enabled = TRUE ORDER BY pattern",
-                channel_id,
-            )
+        trigger_configs = await MessageTriggerRepository(self.pool).list_enabled(channel_id)
         triggers = [
             {
-                "name": row["pattern"],
-                "description": row["response"],
-                "min_role": row["min_role"],
+                "name": cfg.pattern,
+                "description": cfg.response,
+                "min_role": cfg.min_role,
                 "command_type": "trigger",
             }
-            for row in rows
+            for cfg in trigger_configs
         ]
         return commands + triggers
 

@@ -86,7 +86,7 @@ async def advance_batch(
     """Complete the current batch and advance to the next."""
     try:
         state = await service.advance_batch(channel_id)
-        LOGGER.info(f"Channel {channel_id} advanced game queue batch")
+        LOGGER.info("Channel %s advanced game queue batch", channel_id)
         return QueueStateResponse(**state)
     except Exception:
         LOGGER.exception("Failed to advance batch")
@@ -102,7 +102,7 @@ async def remove_player(
     """Remove a specific player from the queue."""
     try:
         state = await service.remove_player(channel_id, entry_id)
-        LOGGER.info(f"Channel {channel_id} removed queue entry {entry_id}")
+        LOGGER.info("Channel %s removed queue entry %d", channel_id, entry_id)
         return QueueStateResponse(**state)
     except Exception:
         LOGGER.exception("Failed to remove player")
@@ -120,7 +120,7 @@ async def promote_player(
         state = await service.promote_player(channel_id, entry_id)
         if state is None:
             raise HTTPException(status_code=404, detail="Entry not found or already removed")
-        LOGGER.info(f"Channel {channel_id} promoted queue entry {entry_id}")
+        LOGGER.info("Channel %s promoted queue entry %d", channel_id, entry_id)
         return QueueStateResponse(**state)
     except HTTPException:
         raise
@@ -137,7 +137,7 @@ async def clear_queue(
     """Clear entire queue."""
     try:
         state = await service.clear_queue(channel_id)
-        LOGGER.info(f"Channel {channel_id} cleared game queue")
+        LOGGER.info("Channel %s cleared game queue", channel_id)
         return ClearResponse(**state)
     except Exception:
         LOGGER.exception("Failed to clear queue")
@@ -171,7 +171,7 @@ async def update_settings(
         settings = await service.update_settings(
             channel_id, group_size=body.group_size, enabled=body.enabled
         )
-        LOGGER.info(f"Channel {channel_id} updated queue settings")
+        LOGGER.info("Channel %s updated queue settings", channel_id)
         return QueueSettingsResponse(**settings)
     except Exception:
         LOGGER.exception("Failed to update queue settings")

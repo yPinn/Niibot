@@ -14,6 +14,7 @@ from core.dependencies import (
     get_twitch_api,
 )
 from services import ChannelService, CommandConfigService, EventConfigService, TwitchAPIClient
+from shared.repositories.event_config import EVENT_TYPES as VALID_EVENT_TYPES
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -63,9 +64,6 @@ class RedemptionConfigUpdate(BaseModel):
     enabled: bool
 
 
-VALID_EVENT_TYPES = {"follow", "subscribe", "resub", "gift_sub", "raid", "bits"}
-
-
 @router.get("/configs", response_model=list[EventConfigResponse])
 async def get_event_configs(
     channel_id: str = Depends(get_current_channel_id),
@@ -96,7 +94,7 @@ async def update_event_config(
         )
         if cfg is None:
             raise HTTPException(status_code=404, detail="Event config not found")
-        LOGGER.info(f"Channel {channel_id} updated event config: {event_type}")
+        LOGGER.info("Channel %s updated event config: %s", channel_id, event_type)
         return EventConfigResponse(**cfg)
     except HTTPException:
         raise
@@ -119,7 +117,9 @@ async def toggle_event_config(
         cfg = await service.toggle_config(channel_id, event_type, body.enabled)
         if cfg is None:
             raise HTTPException(status_code=404, detail="Event config not found")
-        LOGGER.info(f"Channel {channel_id} toggled event config: {event_type} -> {body.enabled}")
+        LOGGER.info(
+            "Channel %s toggled event config: %s -> %s", channel_id, event_type, body.enabled
+        )
         return EventConfigResponse(**cfg)
     except HTTPException:
         raise
@@ -186,7 +186,7 @@ async def update_redemption_config(
         )
         if cfg is None:
             raise HTTPException(status_code=404, detail="Redemption config not found")
-        LOGGER.info(f"Channel {channel_id} updated redemption: {action_type}")
+        LOGGER.info("Channel %s updated redemption: %s", channel_id, action_type)
         return RedemptionConfigResponse(**cfg)
     except HTTPException:
         raise

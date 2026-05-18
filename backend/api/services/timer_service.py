@@ -23,11 +23,11 @@ class TimerService:
         result = [asdict(cfg) for cfg in configs]
 
         db_names = {cfg.timer_name for cfg in configs}
-        for i, bt in enumerate(BUILTIN_TIMERS):
+        for bt in BUILTIN_TIMERS:
             if bt.timer_name not in db_names:
                 result.append(
                     {
-                        "id": -(i + 1),
+                        "id": None,
                         "channel_id": channel_id,
                         "timer_name": bt.timer_name,
                         "interval_seconds": bt.interval_seconds,
@@ -36,6 +36,7 @@ class TimerService:
                         "enabled": True,
                         "announce": bt.announce,
                         "command_alias": None,
+                        "builtin": True,
                         "created_at": None,
                         "updated_at": None,
                     }

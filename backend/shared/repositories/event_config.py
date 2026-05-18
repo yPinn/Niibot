@@ -120,6 +120,16 @@ class EventConfigRepository:
             _config_list_cache.invalidate(f"event_list:{channel_id}")
             return result
 
+    async def get_stream_event_counts(self, channel_id: str) -> dict[str, int]:
+        """Count total stream_events per type for a channel."""
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT event_type, COUNT(*) AS cnt "
+                "FROM stream_events WHERE channel_id = $1 GROUP BY event_type",
+                channel_id,
+            )
+            return {row["event_type"]: row["cnt"] for row in rows}
+
     def invalidate_channel(self, channel_id: str) -> None:
         """Invalidate all cached event configs for a single channel."""
         for event_type in EVENT_TYPES:
