@@ -1,7 +1,7 @@
 import { API_ENDPOINTS, apiFetch } from './config'
 
 export interface TimerConfig {
-  id: number
+  id: number | null
   channel_id: string
   timer_name: string
   interval_seconds: number
@@ -10,6 +10,7 @@ export interface TimerConfig {
   enabled: boolean
   announce: boolean
   command_alias: string | null
+  builtin?: boolean
   created_at: string | null
   updated_at: string | null
 }

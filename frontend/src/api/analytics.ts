@@ -77,11 +77,11 @@ export async function getTopCommands(
   )
 }
 
-export async function getSessionCommands(session_id: number): Promise<AnalyticsCommandStat[]> {
+export async function getSessionCommands(sessionId: number): Promise<AnalyticsCommandStat[]> {
   return apiCache.fetch(
-    CACHE_KEYS.ANALYTICS_SESSION_COMMANDS(session_id),
+    CACHE_KEYS.ANALYTICS_SESSION_COMMANDS(sessionId),
     async () => {
-      const response = await apiFetch(API_ENDPOINTS.analytics.sessionCommands(session_id), {
+      const response = await apiFetch(API_ENDPOINTS.analytics.sessionCommands(sessionId), {
         credentials: 'include',
       })
       if (!response.ok) throw new Error(`Failed to fetch session commands: ${response.statusText}`)
@@ -287,11 +287,11 @@ export async function syncChannelRoles(): Promise<RoleSyncResult> {
   return response.json() as Promise<RoleSyncResult>
 }
 
-export async function getSessionEvents(session_id: number): Promise<StreamEvent[]> {
+export async function getSessionEvents(sessionId: number): Promise<StreamEvent[]> {
   return apiCache.fetch(
-    CACHE_KEYS.ANALYTICS_SESSION_EVENTS(session_id),
+    CACHE_KEYS.ANALYTICS_SESSION_EVENTS(sessionId),
     async () => {
-      const response = await apiFetch(API_ENDPOINTS.analytics.sessionEvents(session_id), {
+      const response = await apiFetch(API_ENDPOINTS.analytics.sessionEvents(sessionId), {
         credentials: 'include',
       })
       if (!response.ok) throw new Error(`Failed to fetch session events: ${response.statusText}`)

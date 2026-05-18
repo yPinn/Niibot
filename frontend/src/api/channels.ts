@@ -29,6 +29,8 @@ export interface ToggleChannelResponse {
 }
 
 async function fetchTwitchMonitoredChannels(): Promise<Channel[]> {
+  // Intentionally swallows errors: the monitored-channels widget is non-critical;
+  // callers treat an empty list as a valid "no channels" state.
   try {
     const response = await apiFetch(API_ENDPOINTS.channels.twitch.monitored, {
       credentials: 'include',
