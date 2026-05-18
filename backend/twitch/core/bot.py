@@ -120,6 +120,7 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
         for coro in (
             self._subscribe_initial_channels(),
             pg_listen(self._database_url, "new_token", self._handle_new_token),
+            pg_listen(self._database_url, "token_reauth", self._handle_token_reauth),
             pg_listen(self._database_url, "channel_toggle", self._handle_channel_toggle),
             pg_listen(self._database_url, "config_change", self._handle_config_change),
             self._recover_active_sessions(),

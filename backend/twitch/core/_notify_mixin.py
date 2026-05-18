@@ -214,6 +214,24 @@ class _NotifyMixin:
         except Exception as e:
             LOGGER.exception(f"[NOTIFY] Error handling new token notification: {e}")
 
+    async def _handle_token_reauth(self, connection, pid, channel, payload) -> None:
+        """Bust the in-process token cache after a broadcaster re-authorizes."""
+        try:
+            data = json.loads(payload)
+            user_id = data["user_id"]
+            if user_id == self._bot_id:  # type: ignore[attr-defined]
+                return
+
+            from shared.repositories.channel import _token_cache
+
+            _token_cache.invalidate(f"token:{user_id}:broadcaster")
+            LOGGER.info(
+                f"[NOTIFY] token_reauth for {self._ch(user_id)} — cache busted, re-checking"  # type: ignore[attr-defined]
+            )
+            await self._handle_new_token(connection, pid, channel, payload)
+        except Exception as e:
+            LOGGER.exception(f"[NOTIFY] Error handling token_reauth: {e}")
+
     async def _handle_config_change(self, connection, pid, channel, payload) -> None:
         """Reload in-memory cache for the affected channel on config writes."""
         try:

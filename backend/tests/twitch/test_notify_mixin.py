@@ -267,6 +267,55 @@ class TestHandleNewTokenReauthRestored:
 
 
 # ---------------------------------------------------------------------------
+# _handle_token_reauth — cache invalidation + delegation
+# ---------------------------------------------------------------------------
+
+
+class TestHandleTokenReauth:
+    pytestmark = pytest.mark.asyncio
+
+    async def test_invalidates_broadcaster_token_cache(self):
+        """Re-auth notification must bust the in-process token cache."""
+        mixin = _StubMixin()
+        mixin.add_token = AsyncMock(return_value=_make_user_info("alice", []))
+        mixin.add_channel_to_db = AsyncMock()
+        mixin._subscribed_channels = {"u1"}
+
+        with patch("shared.repositories.channel._token_cache") as mock_cache:
+            await mixin._handle_token_reauth(None, None, "token_reauth", _new_token_payload("u1"))
+            mock_cache.invalidate.assert_called_once_with("token:u1:broadcaster")
+
+    async def test_ignores_bot_own_id(self):
+        mixin = _StubMixin()
+        mixin.add_token = AsyncMock()
+
+        with patch("shared.repositories.channel._token_cache"):
+            await mixin._handle_token_reauth(
+                None, None, "token_reauth", _new_token_payload("bot-001")
+            )
+
+        mixin.add_token.assert_not_awaited()
+
+    async def test_delegates_to_handle_new_token(self):
+        """After cache bust, full _handle_new_token logic runs."""
+        from shared.twitch_scopes import BROADCASTER_SCOPES
+
+        mixin = _StubMixin()
+        mixin._needs_reauth = {"u1"}
+        mixin._send_reauth_restored_message = AsyncMock()
+        mixin.add_token = AsyncMock(return_value=_make_user_info("alice", BROADCASTER_SCOPES))
+        mixin.add_channel_to_db = AsyncMock()
+        mixin._subscribed_channels = {"u1"}
+
+        with patch("shared.repositories.channel._token_cache"):
+            await mixin._handle_token_reauth(None, None, "token_reauth", _new_token_payload("u1"))
+
+        # _handle_new_token cleared _needs_reauth and sent restored message
+        assert "u1" not in mixin._needs_reauth
+        mixin._send_reauth_restored_message.assert_awaited_once_with("u1", "alice")
+
+
+# ---------------------------------------------------------------------------
 # Bot._check_bot_mod_status
 # ---------------------------------------------------------------------------
 
