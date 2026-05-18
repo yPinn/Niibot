@@ -402,7 +402,7 @@ export default function Timers() {
                       </TableRow>
                     ) : (
                       sorted.map(timer => {
-                        const isBuiltin = timer.id < 0
+                        const isBuiltin = timer.id !== null && timer.id < 0
                         return (
                           <TableRow key={timer.timer_name}>
                             <TableCell className="font-mono font-medium">
@@ -627,12 +627,15 @@ export default function Timers() {
           </div>
 
           <SheetFooter className="shrink-0 flex-row gap-2">
-            {editing?.mode === 'edit' && editing.timer && editing.timer.id > 0 && (
-              <Button variant="destructive" onClick={() => setConfirmDelete(true)}>
-                <Icon icon="fa-solid fa-trash" wrapperClassName="mr-1.5 size-3" />
-                刪除
-              </Button>
-            )}
+            {editing?.mode === 'edit' &&
+              editing.timer &&
+              editing.timer.id !== null &&
+              editing.timer.id > 0 && (
+                <Button variant="destructive" onClick={() => setConfirmDelete(true)}>
+                  <Icon icon="fa-solid fa-trash" wrapperClassName="mr-1.5 size-3" />
+                  刪除
+                </Button>
+              )}
             <div className="flex-1" />
             <SheetClose asChild>
               <Button variant="outline">取消</Button>
