@@ -211,7 +211,7 @@ export function TwitchRoleBadgeLabel({ role, src, className }: TwitchRoleBadgeLa
   return (
     <span className={cn('inline-flex items-center gap-1.5', className)}>
       <TwitchRoleBadge role={role} src={src} size={18} />
-      <span className="text-label text-foreground">{ROLE_LABEL[role]}</span>
+      <span className="text-sub text-foreground">{ROLE_LABEL[role]}</span>
     </span>
   )
 }
