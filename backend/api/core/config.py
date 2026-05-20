@@ -47,6 +47,12 @@ class Settings(BaseServiceSettings):
     owner_id: str = Field(default="", description="Owner Twitch user ID")
 
     youtube_api_key: str = Field(default="", description="YouTube Data API v3 key")
+    releases_github_token: str = Field(
+        default="", description="GitHub PAT for reading private repo releases"
+    )
+    discord_public_key: str = Field(
+        default="", description="Discord application public key for webhook signature verification"
+    )
     host: str = Field(default="0.0.0.0", description="Server host")
     port: int = Field(default=8000, description="Server port")
 

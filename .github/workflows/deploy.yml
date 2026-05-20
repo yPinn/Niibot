@@ -23,6 +23,8 @@ name: Deploy
 #   THREADS_SESSION_ID     — Threads session cookie (~90-day expiry)
 #   CONDUIT_ID             — Twitch EventSub conduit ID
 #   ERROR_WEBHOOK_URL      — Discord webhook for ERROR/CRITICAL alerts
+#   RELEASES_GITHUB_TOKEN  — GitHub PAT (repo scope) for private repo releases API
+#   DISCORD_PUBLIC_KEY     — Discord application public key (discord.com/developers > General Information)
 #
 # GitHub Variables (Settings → Secrets and variables → Actions → Variables):
 #   API_URL                — Production API base URL (e.g. https://api.example.com)
@@ -82,6 +84,8 @@ jobs:
           THREADS_SESSION_ID: ${{ secrets.THREADS_SESSION_ID }}
           CONDUIT_ID: ${{ secrets.CONDUIT_ID }}
           ERROR_WEBHOOK_URL: ${{ secrets.ERROR_WEBHOOK_URL }}
+          RELEASES_GITHUB_TOKEN: ${{ secrets.RELEASES_GITHUB_TOKEN }}
+          DISCORD_PUBLIC_KEY: ${{ secrets.DISCORD_PUBLIC_KEY }}
           # Non-sensitive variables
           API_URL: ${{ vars.API_URL }}
           ENVIRONMENT: ${{ vars.ENVIRONMENT || 'production' }}
@@ -141,6 +145,8 @@ jobs:
             echo "JWT_SECRET_KEY=${JWT_SECRET_KEY}"
             echo "API_URL=${API_URL}"
             echo "ENVIRONMENT=${ENVIRONMENT}"
+            [ -n "${RELEASES_GITHUB_TOKEN}" ]  && echo "RELEASES_GITHUB_TOKEN=${RELEASES_GITHUB_TOKEN}"
+            [ -n "${DISCORD_PUBLIC_KEY}" ]     && echo "DISCORD_PUBLIC_KEY=${DISCORD_PUBLIC_KEY}"
           } > "$PROJECT_DIR/backend/api/.env"
 
           # --- Discord .env ---
