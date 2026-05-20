@@ -26,11 +26,13 @@ from routers import (
     channels_router,
     commands_router,
     crosshairs_router,
+    discord_webhook_router,
     donation_router,
     events_router,
     game_queue_router,
     message_triggers_router,
     payment_config_router,
+    releases_router,
     stats_router,
     timers_router,
     video_queue_router,
@@ -207,6 +209,7 @@ def create_app() -> FastAPI:
         )
 
     # Register routers
+    app.include_router(discord_webhook_router.router)
     app.include_router(ai_settings_router.router)
     app.include_router(admin_router.router)
     app.include_router(auth_router.router)
@@ -223,6 +226,7 @@ def create_app() -> FastAPI:
     app.include_router(donation_router.router)
     app.include_router(crosshairs_router.router)
     app.include_router(bots_router.router)
+    app.include_router(releases_router.router)
 
     # Root endpoint
     @app.get("/")
