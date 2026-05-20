@@ -372,12 +372,14 @@ export default function AdminActivationCodes() {
         title="Activation"
         description="審核授權申請，管理透過點數兌換產生的 OTP 啟用碼。"
       />
-      <SlideUp>
-        <RequestsCard />
-      </SlideUp>
-      <SlideUp>
-        <CodesCard />
-      </SlideUp>
+      <div className="grid grid-cols-1 gap-card items-start md:grid-cols-[3fr_2fr]">
+        <SlideUp>
+          <RequestsCard />
+        </SlideUp>
+        <SlideUp>
+          <CodesCard />
+        </SlideUp>
+      </div>
     </PageMain>
   )
 }
