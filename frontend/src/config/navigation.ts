@@ -94,6 +94,10 @@ export const navigationData: NavigationData = {
           url: '/docs/get-started',
         },
         {
+          title: 'Releases',
+          url: '/docs/releases',
+        },
+        {
           title: 'Discord Bot',
           url: '/discord',
         },
@@ -143,6 +147,10 @@ export const discordNavigationData: NavigationData = {
         {
           title: 'Get Started',
           url: '/docs/get-started',
+        },
+        {
+          title: 'Releases',
+          url: '/docs/releases',
         },
       ],
     },

@@ -32,6 +32,7 @@ const CrosshairRepo = lazy(() => import('@/pages/crosshairs'))
 const PublicCommands = lazy(() => import('@/pages/PublicCommands'))
 const DonatePage = lazy(() => import('@/pages/DonatePage'))
 const GetStarted = lazy(() => import('@/pages/docs/GetStarted'))
+const Releases = lazy(() => import('@/pages/docs/Releases'))
 const Terms = lazy(() => import('@/pages/Terms'))
 const Privacy = lazy(() => import('@/pages/Privacy'))
 const Settings = lazy(() => import('@/pages/Settings'))
@@ -100,6 +101,7 @@ function App() {
                       <Route path="/modules/ai" element={<AIModule />} />
                       {/* Discord Bot Routes */}
                       <Route path="/docs/get-started" element={<GetStarted />} />
+                      <Route path="/docs/releases" element={<Releases />} />
                       <Route path="/discord" element={<DiscordDashboard />} />
                       {/* Owner-only Routes */}
                       <Route element={<OwnerRoute />}>

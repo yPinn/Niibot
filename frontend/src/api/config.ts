@@ -157,6 +157,9 @@ export const API_ENDPOINTS = {
     containerLogs: (name: string) => join(`/api/admin/logs/${name}`),
     dbQuery: join('/api/admin/db/query'),
   },
+  releases: {
+    list: join('/api/releases'),
+  },
   health: join('/health'),
   status: join('/status'),
 } as const
