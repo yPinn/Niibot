@@ -360,6 +360,98 @@ class EventsCog(commands.Cog):
         await self._send_log(log_channel, embed)
 
     @commands.Cog.listener()
+    async def on_member_join(self, member: discord.Member) -> None:
+        log_channel = self.get_log_channel(member.guild)
+        if not log_channel:
+            return
+
+        joined = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
+        created = member.created_at.astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+        embed = self._embed.build(
+            title="成員加入",
+            description=f"{member.mention} (`{member}`)",
+            color=discord.Color.green(),
+            timestamp=datetime.now(UTC),
+        )
+        embed.add_field(name="帳號建立時間", value=created, inline=True)
+        embed.add_field(name="加入時間", value=joined, inline=True)
+        if member.display_avatar:
+            embed.set_thumbnail(url=member.display_avatar.url)
+
+        await self._send_log(log_channel, embed)
+
+    @commands.Cog.listener()
+    async def on_member_ban(self, guild: discord.Guild, user: discord.User) -> None:
+        log_channel = self.get_log_channel(guild)
+        if not log_channel:
+            return
+
+        banner: discord.Member | discord.User | None = None
+        await asyncio.sleep(1.0)
+        try:
+            async for entry in guild.audit_logs(limit=5, action=discord.AuditLogAction.ban):
+                if (
+                    entry.target
+                    and entry.target.id == user.id
+                    and (datetime.now(UTC) - entry.created_at).total_seconds() < 10
+                ):
+                    banner = entry.user
+                    reason = entry.reason or "無"
+                    break
+            else:
+                reason = "無"
+        except discord.Forbidden:
+            reason = "無"
+
+        embed = self._embed.build(
+            title="成員被封禁",
+            description=f"{user.mention} (`{user}`)",
+            color=discord.Color.dark_red(),
+            timestamp=datetime.now(UTC),
+        )
+        if banner:
+            embed.add_field(name="執行者", value=banner.mention, inline=True)
+        embed.add_field(name="原因", value=reason, inline=True)
+        if user.display_avatar:
+            embed.set_thumbnail(url=user.display_avatar.url)
+
+        await self._send_log(log_channel, embed)
+
+    @commands.Cog.listener()
+    async def on_member_unban(self, guild: discord.Guild, user: discord.User) -> None:
+        log_channel = self.get_log_channel(guild)
+        if not log_channel:
+            return
+
+        unbanner: discord.Member | discord.User | None = None
+        await asyncio.sleep(1.0)
+        try:
+            async for entry in guild.audit_logs(limit=5, action=discord.AuditLogAction.unban):
+                if (
+                    entry.target
+                    and entry.target.id == user.id
+                    and (datetime.now(UTC) - entry.created_at).total_seconds() < 10
+                ):
+                    unbanner = entry.user
+                    break
+        except discord.Forbidden:
+            pass
+
+        embed = self._embed.build(
+            title="成員解除封禁",
+            description=f"{user.mention} (`{user}`)",
+            color=discord.Color.teal(),
+            timestamp=datetime.now(UTC),
+        )
+        if unbanner:
+            embed.add_field(name="執行者", value=unbanner.mention, inline=True)
+        if user.display_avatar:
+            embed.set_thumbnail(url=user.display_avatar.url)
+
+        await self._send_log(log_channel, embed)
+
+    @commands.Cog.listener()
     async def on_member_remove(self, member: discord.Member) -> None:
         log_channel = self.get_log_channel(member.guild)
         if not log_channel:
