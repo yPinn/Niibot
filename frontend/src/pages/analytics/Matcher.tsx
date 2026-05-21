@@ -17,9 +17,6 @@ import {
   Skeleton,
   SlideUp,
   SlideUpSm,
-  Tabs,
-  TabsList,
-  TabsTrigger,
 } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
@@ -29,14 +26,10 @@ import { cn } from '@/lib/utils'
 import { ChannelCard } from './matcher/ChannelCard'
 import { ViewerTable } from './matcher/ViewerTable'
 
-const PERIODS = [
-  { label: '7 天', value: '7' },
-  { label: '30 天', value: '30' },
-  { label: '90 天', value: '90' },
-]
+const DAYS = 30
 
-function invalidateMatcherCache(days: number) {
-  apiCache.delete(`matcher:summaries:${days}`)
+function invalidateMatcherCache() {
+  apiCache.delete(`matcher:summaries:${DAYS}`)
 }
 
 function invalidateViewerCache(channelId: string) {
@@ -47,7 +40,6 @@ export default function Matcher() {
   useDocumentTitle('Matcher')
   const { user, isInitialized } = useAuth()
 
-  const [period, setPeriod] = useState('30')
   const [summaries, setSummaries] = useState<MatcherChannelSummary[]>([])
   const [summariesLoading, setSummariesLoading] = useState(true)
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null)
@@ -56,20 +48,17 @@ export default function Matcher() {
   const [isRefreshing, setIsRefreshing] = useState(false)
   const loadedForRef = useRef<string | null>(null)
 
-  const fetchSummaries = useCallback(
-    async (days: number) => {
-      if (!user) return
-      setSummariesLoading(true)
-      try {
-        setSummaries(await getMatcherSummaries(days))
-      } catch {
-        setSummaries([])
-      } finally {
-        setSummariesLoading(false)
-      }
-    },
-    [user]
-  )
+  const fetchSummaries = useCallback(async () => {
+    if (!user) return
+    setSummariesLoading(true)
+    try {
+      setSummaries(await getMatcherSummaries(DAYS))
+    } catch {
+      setSummaries([])
+    } finally {
+      setSummariesLoading(false)
+    }
+  }, [user])
 
   const fetchViewers = useCallback(async (channelId: string) => {
     setViewerLoading(true)
@@ -84,44 +73,33 @@ export default function Matcher() {
 
   useEffect(() => {
     if (!isInitialized || !user) return
-    const key = `${user.id}:${period}`
-    if (loadedForRef.current === key) return
-    loadedForRef.current = key
-    void fetchSummaries(Number(period))
-  }, [isInitialized, user, period, fetchSummaries])
+    if (loadedForRef.current === user.id) return
+    loadedForRef.current = user.id
+    void fetchSummaries()
+  }, [isInitialized, user, fetchSummaries])
 
   useEffect(() => {
     if (!selectedChannelId) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void fetchViewers(selectedChannelId)
   }, [selectedChannelId, fetchViewers])
-
-  const handlePeriodChange = useCallback(
-    (value: string) => {
-      if (value === period) return
-      loadedForRef.current = null
-      setSelectedChannelId(null)
-      setViewerData(null)
-      setPeriod(value)
-    },
-    [period]
-  )
 
   const handleRefresh = useCallback(async () => {
     if (isRefreshing) return
     setIsRefreshing(true)
     try {
       await refreshMatcher()
-      invalidateMatcherCache(Number(period))
+      invalidateMatcherCache()
       if (selectedChannelId) invalidateViewerCache(selectedChannelId)
       loadedForRef.current = null
-      await fetchSummaries(Number(period))
+      await fetchSummaries()
       if (selectedChannelId) await fetchViewers(selectedChannelId)
     } catch {
       // silent — button returns to idle state
     } finally {
       setIsRefreshing(false)
     }
-  }, [isRefreshing, period, selectedChannelId, fetchSummaries, fetchViewers])
+  }, [isRefreshing, selectedChannelId, fetchSummaries, fetchViewers])
 
   const selectedChannel = summaries.find(s => s.channel_id === selectedChannelId) ?? null
 
@@ -134,35 +112,24 @@ export default function Matcher() {
             探索各頻道觀眾重疊度，找出潛在可觸及的觀眾
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleRefresh}
-            disabled={isRefreshing}
-            className="flex items-center justify-center size-10 rounded-md border bg-background text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            <Icon
-              icon={isRefreshing ? 'fa-solid fa-spinner' : 'fa-solid fa-rotate'}
-              className={cn('text-sm', isRefreshing && 'animate-spin')}
-            />
-          </button>
-          <Tabs value={period} onValueChange={handlePeriodChange}>
-            <TabsList>
-              {PERIODS.map(p => (
-                <TabsTrigger key={p.value} value={p.value}>
-                  {p.label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
-        </div>
+        <button
+          onClick={handleRefresh}
+          disabled={isRefreshing}
+          className="flex items-center justify-center size-10 rounded-md border bg-background text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          <Icon
+            icon={isRefreshing ? 'fa-solid fa-spinner' : 'fa-solid fa-rotate'}
+            className={cn('text-sub', isRefreshing && 'animate-spin')}
+          />
+        </button>
       </SlideUpSm>
 
       <SlideUp
         inView
         delay={0.05}
-        className="grid grid-cols-1 md:grid-cols-3 gap-section flex-1 min-h-0 overflow-y-auto md:overflow-hidden md:grid-rows-1"
+        className="grid grid-cols-1 lg:grid-cols-3 gap-section flex-1 min-h-0 overflow-y-auto lg:overflow-hidden lg:grid-rows-1"
       >
-        <div className="rounded-lg border bg-card p-section flex flex-col gap-2 md:overflow-y-auto">
+        <div className="rounded-lg border bg-card p-section flex flex-col gap-card lg:overflow-y-auto">
           {summariesLoading ? (
             Array.from({ length: 6 }).map((_, i) => (
               <Skeleton key={i} className="h-20 w-full rounded-lg" />
@@ -181,7 +148,7 @@ export default function Matcher() {
           )}
         </div>
 
-        <div className="md:col-span-2 rounded-lg border bg-card p-section flex flex-col gap-section min-h-0 md:overflow-y-auto">
+        <div className="lg:col-span-2 rounded-lg border bg-card p-section flex flex-col gap-section min-h-0 lg:overflow-y-auto">
           {!selectedChannel ? (
             <div className="flex-1 flex items-center justify-center">
               <p className="text-sub text-muted-foreground">選擇左側頻道以查看詳細分析</p>
@@ -194,7 +161,7 @@ export default function Matcher() {
                     src={selectedChannel.profile_image_url ?? undefined}
                     alt={selectedChannel.display_name ?? selectedChannel.channel_id}
                   />
-                  <AvatarFallback className="text-sm">
+                  <AvatarFallback className="text-sub">
                     {(selectedChannel.display_name ?? selectedChannel.channel_id)
                       .slice(0, 2)
                       .toUpperCase()}
@@ -202,12 +169,12 @@ export default function Matcher() {
                 </Avatar>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-content font-semibold text-lg">
+                    <span className="text-card-title font-semibold">
                       {selectedChannel.display_name ?? selectedChannel.channel_id}
                     </span>
                     {selectedChannel.is_live && (
                       <div className="flex items-center gap-1.5">
-                        <span className="size-2 rounded-full bg-red-500 shrink-0" />
+                        <span className="size-2 rounded-full bg-status-live shrink-0" />
                         <span className="text-label text-muted-foreground">
                           {selectedChannel.viewer_count.toLocaleString()} 人觀看
                         </span>
@@ -225,23 +192,23 @@ export default function Matcher() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-3 flex-wrap shrink-0">
-                <div className="flex flex-col items-center rounded-lg border bg-muted/20 px-4 py-2 min-w-24">
-                  <span className="text-lg font-bold tabular-nums">
+              <div className="grid grid-cols-3 gap-card shrink-0">
+                <div className="flex flex-col items-center rounded-lg border bg-muted/20 px-4 py-2">
+                  <span className="text-card-title font-bold tabular-nums">
                     {selectedChannel.shared_chatters.toLocaleString()}
                   </span>
                   <span className="text-label text-muted-foreground">共同觀眾</span>
                 </div>
-                <div className="flex flex-col items-center rounded-lg border bg-muted/20 px-4 py-2 min-w-24">
-                  <span className="text-lg font-bold tabular-nums">
+                <div className="flex flex-col items-center rounded-lg border bg-muted/20 px-4 py-2">
+                  <span className="text-card-title font-bold tabular-nums">
                     {selectedChannel.exclusive_to_partner.toLocaleString()}
                   </span>
                   <span className="text-label text-muted-foreground">潛在觀眾</span>
                 </div>
-                <div className="flex flex-col items-center rounded-lg border bg-muted/20 px-4 py-2 min-w-24">
+                <div className="flex flex-col items-center rounded-lg border bg-muted/20 px-4 py-2">
                   <span
                     className={cn(
-                      'text-lg font-bold tabular-nums',
+                      'text-card-title font-bold tabular-nums',
                       selectedChannel.overlap_pct >= 30
                         ? 'text-green-500'
                         : selectedChannel.overlap_pct >= 10
@@ -253,6 +220,8 @@ export default function Matcher() {
                   </span>
                   <span className="text-label text-muted-foreground">重疊率</span>
                 </div>
+              </div>
+              <div className="shrink-0">
                 <Badge variant="outline" className="text-label">
                   共 {selectedChannel.monitored_chatters.toLocaleString()} 位監測觀眾
                 </Badge>
