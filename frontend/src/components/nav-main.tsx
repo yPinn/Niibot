@@ -33,7 +33,7 @@ export function NavMain({
   }[]
 }) {
   const location = useLocation()
-  const { state: sidebarState, toggleSidebar } = useSidebar()
+  const { state: sidebarState, toggleSidebar, isMobile, setOpenMobile } = useSidebar()
 
   // 將 pathname 一起存入，換頁時自動回退至 active route，無需 useEffect
   const [openItem, setOpenItem] = useState<{ title: string; pathname: string } | null>(null)
@@ -60,8 +60,8 @@ export function NavMain({
             asChild
             open={isOpen(item.title)}
             onOpenChange={shouldOpen => {
-              if (sidebarState === 'collapsed') {
-                // icon mode：展開 sidebar 並指定要打開的選單
+              if (!isMobile && sidebarState === 'collapsed') {
+                // icon mode（桌面摺疊）：展開 sidebar 並指定要打開的選單
                 toggleSidebar()
                 setOpenItem({ title: item.title, pathname: location.pathname })
               } else {
@@ -92,7 +92,7 @@ export function NavMain({
                     {item.items?.map(subItem => (
                       <SidebarMenuSubItem key={subItem.title}>
                         <SidebarMenuSubButton asChild isActive={location.pathname === subItem.url}>
-                          <Link to={subItem.url}>
+                          <Link to={subItem.url} onClick={() => isMobile && setOpenMobile(false)}>
                             <span>{subItem.title}</span>
                           </Link>
                         </SidebarMenuSubButton>

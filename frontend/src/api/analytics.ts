@@ -287,6 +287,97 @@ export async function syncChannelRoles(): Promise<RoleSyncResult> {
   return response.json() as Promise<RoleSyncResult>
 }
 
+export interface MatcherChannelSummary {
+  channel_id: string
+  display_name: string | null
+  profile_image_url: string | null
+  broadcaster_type: string | null
+  description: string | null
+  language: string | null
+  tags: string[]
+  is_live: boolean
+  viewer_count: number
+  stream_title: string | null
+  stream_game: string | null
+  stream_thumbnail_url: string | null
+  monitored_chatters: number
+  shared_chatters: number
+  exclusive_to_partner: number
+  overlap_pct: number
+  computed_at: string | null
+  top_games: string[]
+  peak_hours: number[]
+  session_count: number
+  avg_stream_hours: number
+}
+
+export interface PotentialViewer {
+  user_id: string
+  username: string
+  display_name: string | null
+  partner_sessions: number
+  partner_messages: number
+  partner_watch_sec: number
+  partner_last_seen: string | null
+  home_sessions: number
+  home_messages: number
+  potential_score: number
+}
+
+export interface MatcherViewersResponse {
+  partner_channel_id: string
+  total: number
+  viewers: PotentialViewer[]
+}
+
+export interface RefreshResult {
+  refreshed_channels: number
+}
+
+const MATCHER_TTL = 5 * 60 * 1000
+
+export async function getMatcherSummaries(days: number = 30): Promise<MatcherChannelSummary[]> {
+  return apiCache.fetch(
+    `matcher:summaries:${days}`,
+    async () => {
+      const response = await apiFetch(`/api/analytics/matcher?days=${days}`, {
+        credentials: 'include',
+      })
+      if (!response.ok) throw new Error(`Failed to fetch matcher summaries: ${response.statusText}`)
+      return response.json() as Promise<MatcherChannelSummary[]>
+    },
+    { ttl: MATCHER_TTL }
+  )
+}
+
+export async function getPotentialViewers(
+  partnerChannelId: string,
+  limit: number = 50,
+  offset: number = 0
+): Promise<MatcherViewersResponse> {
+  return apiCache.fetch(
+    `matcher:viewers:${partnerChannelId}:${limit}:${offset}`,
+    async () => {
+      const response = await apiFetch(
+        `/api/analytics/matcher/${partnerChannelId}/viewers?limit=${limit}&offset=${offset}`,
+        { credentials: 'include' }
+      )
+      if (!response.ok) throw new Error(`Failed to fetch potential viewers: ${response.statusText}`)
+      return response.json() as Promise<MatcherViewersResponse>
+    },
+    { ttl: MATCHER_TTL }
+  )
+}
+
+export async function refreshMatcher(): Promise<RefreshResult> {
+  const response = await apiFetch('/api/analytics/matcher/refresh', {
+    method: 'POST',
+    credentials: 'include',
+  })
+  if (!response.ok) throw new Error(`Failed to refresh matcher: ${response.statusText}`)
+  return response.json() as Promise<RefreshResult>
+}
+
 export async function getSessionEvents(sessionId: number): Promise<StreamEvent[]> {
   return apiCache.fetch(
     CACHE_KEYS.ANALYTICS_SESSION_EVENTS(sessionId),

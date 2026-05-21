@@ -59,6 +59,10 @@ export const navigationData: NavigationData = {
           title: 'Insights',
           url: '/analytics/insights',
         },
+        {
+          title: 'Matcher',
+          url: '/analytics/matcher',
+        },
       ],
     },
     {
