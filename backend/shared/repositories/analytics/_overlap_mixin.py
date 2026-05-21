@@ -82,14 +82,16 @@ class _AnalyticsOverlapMixin:
                 COALESCE(hc.sessions, 0)::SMALLINT AS home_sessions,
                 COALESCE(hc.messages, 0)           AS home_messages,
                 ROUND(
-                    (pc.sessions * 3.0
-                     + LN(GREATEST(pc.messages, 1)) * 1.5
-                     + (pc.watch_sec / 3600.0) * 0.5)
-                    * CASE
-                        WHEN hc.user_id IS NULL THEN 1.0
-                        WHEN hc.sessions < 3    THEN 0.5
-                        ELSE                         0.1
-                      END
+                    (
+                        (pc.sessions * 3.0
+                         + LN(GREATEST(pc.messages, 1)) * 1.5
+                         + (pc.watch_sec / 3600.0) * 0.5)
+                        * CASE
+                            WHEN hc.user_id IS NULL THEN 1.0
+                            WHEN hc.sessions < 3    THEN 0.5
+                            ELSE                         0.1
+                          END
+                    )::numeric
                 , 2) AS potential_score
             FROM partner_chatters pc
             LEFT JOIN home_chatters hc ON pc.user_id = hc.user_id

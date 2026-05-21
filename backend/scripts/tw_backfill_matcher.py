@@ -130,14 +130,16 @@ async def _compute_channel_overlap(
             COALESCE(hc.sessions, 0)::SMALLINT AS home_sessions,
             COALESCE(hc.messages, 0)           AS home_messages,
             ROUND(
-                (pc.sessions * 3.0
-                 + LN(GREATEST(pc.messages, 1)) * 1.5
-                 + (pc.watch_sec / 3600.0) * 0.5)
-                * CASE
-                    WHEN hc.user_id IS NULL THEN 1.0
-                    WHEN hc.sessions < 3    THEN 0.5
-                    ELSE                         0.1
-                  END
+                (
+                    (pc.sessions * 3.0
+                     + LN(GREATEST(pc.messages, 1)) * 1.5
+                     + (pc.watch_sec / 3600.0) * 0.5)
+                    * CASE
+                        WHEN hc.user_id IS NULL THEN 1.0
+                        WHEN hc.sessions < 3    THEN 0.5
+                        ELSE                         0.1
+                      END
+                )::numeric
             , 2) AS potential_score
         FROM partner_chatters pc
         LEFT JOIN home_chatters hc ON pc.user_id = hc.user_id
@@ -259,49 +261,67 @@ async def main(target_days: list[int], dry_run: bool) -> None:
             print("\n[X] 沒有啟用的頻道")
             return
 
+        all_channel_ids = {ch["channel_id"] for ch in channels}
+
         print("\n[啟用頻道]")
         for ch in channels:
             print(f"  {ch['channel_name']} ({ch['channel_id']})")
 
-        # For now assume single home channel (first enabled)
-        home = channels[0]
-        home_channel_id = home["channel_id"]
-        print(f"\n  使用 {home['channel_name']} 作為 home 頻道")
+        # All distinct channel_ids that have chatter data
+        chatter_channel_ids: set[str] = {
+            r["channel_id"]
+            for r in await conn.fetch("SELECT DISTINCT channel_id FROM chatter_stats")
+        }
 
-        # Show data summary
-        partner_ids = await show_chatter_stats_summary(conn, home_channel_id)
-        await show_existing_overlap(conn, home_channel_id)
-
-        if not partner_ids:
-            print("\n[X] 沒有 partner 頻道資料，無法回填")
+        # Home channels = enabled channels that also have chatter data
+        home_channels = [ch for ch in channels if ch["channel_id"] in chatter_channel_ids]
+        if not home_channels:
+            print("\n[X] 啟用頻道裡沒有任何 chatter 資料")
             return
 
+        print(f"\n  將對 {len(home_channels)} 個頻道各自計算 overlap")
+
         if dry_run:
+            for ch in home_channels:
+                partner_ids = [
+                    cid
+                    for cid in chatter_channel_ids
+                    if cid != ch["channel_id"] and cid in all_channel_ids
+                ]
+                print(f"\n  {ch['channel_name']}: {len(partner_ids)} 個 partner 可計算")
             print("\n[DRY-RUN] 結束，未寫入任何資料")
             return
 
-        # Run backfill for each window
-        print(f"\n[開始回填] windows: {target_days}")
-        total = 0
-        for days in target_days:
-            print(f"\n  --- {days}d 視窗 ---")
-            count = await backfill_overlap(conn, home_channel_id, partner_ids, days)
-            total += count
-            print(f"  [{days}d] 完成 {count}/{len(partner_ids)} 個 partner 頻道")
+        # Run backfill for every home channel
+        total_summary = 0
+        total_viewers = 0
+        for ch in home_channels:
+            home_channel_id = ch["channel_id"]
+            partner_ids = [
+                cid
+                for cid in chatter_channel_ids
+                if cid != home_channel_id and cid in all_channel_ids
+            ]
+            if not partner_ids:
+                print(f"\n  {ch['channel_name']}: 沒有 partner 資料，跳過")
+                continue
 
-        # Final summary
-        summary_count = await conn.fetchval(
-            "SELECT COUNT(*) FROM channel_overlap_summary WHERE home_channel_id = $1",
-            home_channel_id,
-        )
-        viewer_count = await conn.fetchval(
-            "SELECT COUNT(*) FROM channel_overlap_viewers WHERE home_channel_id = $1",
-            home_channel_id,
-        )
+            print(f"\n{'=' * 40}")
+            print(f"  home: {ch['channel_name']} ({home_channel_id})")
+            print(f"  partners: {len(partner_ids)} 個")
+            print(f"  windows: {target_days}")
+
+            for days in target_days:
+                print(f"\n  --- {days}d ---")
+                count = await backfill_overlap(conn, home_channel_id, partner_ids, days)
+                print(f"  [{days}d] 完成 {count}/{len(partner_ids)}")
+
+        total_summary = await conn.fetchval("SELECT COUNT(*) FROM channel_overlap_summary")
+        total_viewers = await conn.fetchval("SELECT COUNT(*) FROM channel_overlap_viewers")
         print("\n" + "=" * 60)
         print("[完成]")
-        print(f"  channel_overlap_summary : {summary_count} 筆")
-        print(f"  channel_overlap_viewers : {viewer_count} 筆")
+        print(f"  channel_overlap_summary : {total_summary} 筆")
+        print(f"  channel_overlap_viewers : {total_viewers} 筆")
         print("=" * 60)
 
     finally:
