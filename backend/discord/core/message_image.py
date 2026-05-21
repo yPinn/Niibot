@@ -96,13 +96,10 @@ _WIN_FONTS_BOLD = [
     "C:/Windows/Fonts/arial.ttf",
 ]
 
-_LINUX_FONTS_EMOJI = [
-    "/usr/share/fonts/truetype/noto/NotoEmoji-Regular.ttf",
-    "/usr/share/fonts/noto/NotoEmoji-Regular.ttf",
-]
-# Windows: Segoe UI Emoji is COLR (colour), Pillow can't render it — no emoji font on Windows.
+# NotoEmoji-Regular.ttf was removed upstream (replaced by variable font Pillow cannot load).
+# Emoji codepoints fall back to PIL's built-in bitmap font.
 
-_REGULAR_PATHS = _LINUX_FONTS + _WIN_FONTS + _LINUX_FONTS_EMOJI
+_REGULAR_PATHS = _LINUX_FONTS + _WIN_FONTS
 _MEDIUM_PATHS = _LINUX_FONTS_BOLD + _WIN_FONTS_BOLD
 
 # Emoji ranges absent from CJK/Latin fonts; _FontChain shortcuts to emoji font for these.

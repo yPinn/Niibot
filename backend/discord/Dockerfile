@@ -11,8 +11,11 @@ FROM python:3.12.12-slim-bookworm
 RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-noto-cjk \
     fonts-noto-core \
-    fonts-noto-extra \
-    fonts-noto-ui-core \
+    curl \
+    && curl -fsSL \
+       -o /usr/share/fonts/truetype/noto/NotoSansCanadianAboriginal-Regular.ttf \
+       "https://raw.githubusercontent.com/googlefonts/noto-fonts/main/hinted/ttf/NotoSansCanadianAboriginal/NotoSansCanadianAboriginal-Regular.ttf" \
+    && apt-get purge -y --auto-remove curl \
     && rm -rf /var/lib/apt/lists/*
 ARG APP_VERSION=dev
 ARG GIT_COMMIT=unknown
