@@ -28,6 +28,10 @@ import { ViewerTable } from './matcher/ViewerTable'
 
 const DAYS = 30
 
+function suitabilityScore(ch: MatcherChannelSummary): number {
+  return ch.overlap_pct * Math.log(ch.exclusive_to_partner + 1)
+}
+
 function invalidateMatcherCache() {
   apiCache.delete(`matcher:summaries:${DAYS}`)
 }
@@ -137,14 +141,16 @@ export default function Matcher() {
           ) : summaries.length === 0 ? (
             <p className="text-sub text-muted-foreground text-center py-8">尚無頻道資料</p>
           ) : (
-            summaries.map(channel => (
-              <ChannelCard
-                key={channel.channel_id}
-                channel={channel}
-                isSelected={selectedChannelId === channel.channel_id}
-                onClick={() => setSelectedChannelId(channel.channel_id)}
-              />
-            ))
+            [...summaries]
+              .sort((a, b) => suitabilityScore(b) - suitabilityScore(a))
+              .map(channel => (
+                <ChannelCard
+                  key={channel.channel_id}
+                  channel={channel}
+                  isSelected={selectedChannelId === channel.channel_id}
+                  onClick={() => setSelectedChannelId(channel.channel_id)}
+                />
+              ))
           )}
         </div>
 
