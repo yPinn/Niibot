@@ -341,6 +341,20 @@ class TwitchAPIClient:
             LOGGER.exception("Error getting users by ids (count=%d)", len(user_ids))
             return []
 
+    async def get_channels_info(self, broadcaster_ids: list[str]) -> list[dict]:
+        """Get channel info (language, tags) for multiple broadcasters via /helix/channels."""
+        if not broadcaster_ids:
+            return []
+        try:
+            response = await self._helix_get("channels", {"broadcaster_id": broadcaster_ids})
+            if not response or response.status_code != 200:
+                LOGGER.error("Failed to fetch channels info for %d ids", len(broadcaster_ids))
+                return []
+            return cast(list[dict], response.json().get("data", []))
+        except Exception:
+            LOGGER.exception("Error getting channels info (count=%d)", len(broadcaster_ids))
+            return []
+
     # ------------------------------------------------------------------
     # Streams
     # ------------------------------------------------------------------

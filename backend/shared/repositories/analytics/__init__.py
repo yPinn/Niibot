@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncpg
 
 from shared.repositories.analytics._events_mixin import _AnalyticsEventsMixin
+from shared.repositories.analytics._overlap_mixin import _AnalyticsOverlapMixin
 from shared.repositories.analytics._query_mixin import _AnalyticsQueryMixin
 from shared.repositories.analytics._session_mixin import _AnalyticsSessionMixin
 
@@ -23,6 +24,7 @@ class AnalyticsRepository(
     _AnalyticsSessionMixin,
     _AnalyticsEventsMixin,
     _AnalyticsQueryMixin,
+    _AnalyticsOverlapMixin,
 ):
     """Pure SQL operations for stream analytics tables."""
 

@@ -30,6 +30,7 @@ from routers import (
     donation_router,
     events_router,
     game_queue_router,
+    matcher_router,
     message_triggers_router,
     payment_config_router,
     releases_router,
@@ -215,6 +216,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_router.router)
     app.include_router(channels_router.router)
     app.include_router(analytics_router.router)
+    app.include_router(matcher_router.router)
     app.include_router(stats_router.router)
     app.include_router(commands_router.router)
     app.include_router(events_router.router)

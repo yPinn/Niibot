@@ -62,6 +62,22 @@ class AnalyticsService:
         """Get cached EventSub status for a viewer."""
         return await self.repo.get_viewer_channel_status(channel_id, user_id)
 
+    async def refresh_matcher(self, home_channel_id: str, days: int = 30) -> int:
+        return await self.repo.refresh_overlap(home_channel_id, days)
+
+    async def get_partner_session_stats(self, partner_channel_id: str, days: int = 90) -> dict:
+        return await self.repo.get_partner_session_stats(partner_channel_id, days)
+
+    async def get_matcher_summaries(self, home_channel_id: str, days: int = 30) -> list[dict]:
+        return await self.repo.get_matcher_summaries(home_channel_id, days)
+
+    async def get_potential_viewers(
+        self, home_channel_id: str, partner_channel_id: str, limit: int = 50, offset: int = 0
+    ) -> tuple[int, list[dict]]:
+        return await self.repo.get_potential_viewers(
+            home_channel_id, partner_channel_id, limit, offset
+        )
+
     async def bulk_upsert_follow_dates(self, channel_id: str, followers: list[dict]) -> int:
         return await self.repo.bulk_upsert_follow_dates(channel_id, followers)
 

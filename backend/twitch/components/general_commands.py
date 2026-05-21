@@ -330,6 +330,21 @@ class GeneralCommandsComponent(BotComponent):
                     )
                 del active_sessions[channel_id]
                 LOGGER.info(f"[{payload.broadcaster.name}] Session {session_id} ended")
+
+                # Fire-and-forget overlap refresh after session ends
+                if hasattr(analytics, "refresh_overlap"):
+                    task = asyncio.create_task(analytics.refresh_overlap(channel_id))
+                    task.add_done_callback(
+                        lambda t: (
+                            LOGGER.warning(
+                                "[%s] Overlap refresh failed: %s",
+                                payload.broadcaster.name,
+                                t.exception(),
+                            )
+                            if not t.cancelled() and t.exception()
+                            else None
+                        )
+                    )
             else:
                 LOGGER.warning(f"[{payload.broadcaster.name}] Stream offline: no active session")
         except Exception as e:
