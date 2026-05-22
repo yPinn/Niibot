@@ -58,7 +58,9 @@ function broadcasterBadgeDetail(type: string | null) {
 const DAYS = 30
 
 function suitabilityScore(ch: MatcherChannelSummary): number {
-  return ch.overlap_pct * Math.log(ch.exclusive_to_partner + 1)
+  if (ch.monitored_chatters < 10) return 0
+  const exclusive_pct = (ch.exclusive_to_partner / ch.monitored_chatters) * 100
+  return ch.overlap_pct * exclusive_pct
 }
 
 function invalidateMatcherCache() {
