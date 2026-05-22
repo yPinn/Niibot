@@ -62,6 +62,7 @@ class _AnalyticsOverlapMixin:
                   AND cs.user_id != $1
                   AND cs.user_id != $2
                   AND cs.user_id NOT IN (SELECT user_id FROM known_bots)
+                  AND cs.user_id NOT IN (SELECT channel_id FROM channels)
                 GROUP BY cs.user_id
             ),
             home_chatters AS (
@@ -75,6 +76,7 @@ class _AnalyticsOverlapMixin:
                   AND cs.user_id != $1
                   AND cs.user_id != $2
                   AND cs.user_id NOT IN (SELECT user_id FROM known_bots)
+                  AND cs.user_id NOT IN (SELECT channel_id FROM channels)
                 GROUP BY cs.user_id
             )
             SELECT
@@ -163,6 +165,7 @@ class _AnalyticsOverlapMixin:
               AND user_id != $1
               AND user_id != $3
               AND user_id NOT IN (SELECT user_id FROM known_bots)
+              AND user_id NOT IN (SELECT channel_id FROM channels)
             """,
             home_channel_id,
             days,
@@ -283,6 +286,7 @@ class _AnalyticsOverlapMixin:
                   AND user_id != $1
                   AND user_id != $2
                   AND user_id NOT IN (SELECT user_id FROM known_bots)
+                  AND user_id NOT IN (SELECT channel_id FROM channels)
                 """,
                 home_channel_id,
                 partner_channel_id,
@@ -298,6 +302,7 @@ class _AnalyticsOverlapMixin:
                   AND user_id != $1
                   AND user_id != $2
                   AND user_id NOT IN (SELECT user_id FROM known_bots)
+                  AND user_id NOT IN (SELECT channel_id FROM channels)
                 ORDER BY potential_score DESC
                 LIMIT $3 OFFSET $4
                 """,
