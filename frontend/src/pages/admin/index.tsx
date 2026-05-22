@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 
 import {
@@ -373,7 +373,7 @@ function BotStatusPanel({
       : ''
 
   return (
-    <Card className="h-full">
+    <Card className="lg:h-full">
       <CardHeader>
         <div className="flex items-center gap-element">
           <Icon icon="fa-solid fa-robot" size="sm" wrapperClassName="text-muted-foreground" />
@@ -469,6 +469,16 @@ export default function AdminPage() {
   const [channels, setChannels] = useState<AdminChannel[]>([])
   const [channelsLoading, setChannelsLoading] = useState(true)
 
+  const { healthyChannels, issueChannels } = useMemo(() => {
+    const healthy = channels.filter(
+      ch => ch.is_bot || (ch.mod_status === 'mod' && ch.missing_scopes.length === 0)
+    )
+    const issues = channels.filter(
+      ch => !ch.is_bot && (ch.mod_status !== 'mod' || ch.missing_scopes.length > 0)
+    )
+    return { healthyChannels: healthy, issueChannels: issues }
+  }, [channels])
+
   const [botStatus, setBotStatus] = useState<BotTokenInfo | null>(null)
   const [botLoading, setBotLoading] = useState(true)
 
@@ -534,7 +544,7 @@ export default function AdminPage() {
       <PageHeader title="Admin" description="管理頻道點數兌換與監控頻道。" />
 
       {/* Monitored channels + Bot account — side by side on lg+ */}
-      <div className="grid grid-cols-1 gap-card items-start md:grid-cols-[3fr_1fr]">
+      <div className="grid grid-cols-1 gap-card items-start lg:grid-cols-[1fr_300px]">
         {/* Left: Monitored channels */}
         <SlideUp>
           <Card>
@@ -555,7 +565,7 @@ export default function AdminPage() {
             </CardHeader>
             <CardContent>
               {channelsLoading ? (
-                <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(160px,1fr))]">
+                <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(140px,1fr))]">
                   {Array.from({ length: 7 }).map((_, i) => (
                     <Skeleton key={i} className="aspect-square w-full rounded-lg" />
                   ))}
@@ -563,10 +573,41 @@ export default function AdminPage() {
               ) : channels.length === 0 ? (
                 <p className="text-sub text-muted-foreground py-2">No monitored channels.</p>
               ) : (
-                <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(160px,1fr))]">
-                  {channels.map(ch => (
-                    <ChannelCard key={ch.id} ch={ch} />
-                  ))}
+                <div className="space-y-section">
+                  {issueChannels.length > 0 && (
+                    <div>
+                      <div className="flex items-center gap-element mb-section">
+                        <span className="text-label font-medium uppercase tracking-wide text-status-warning select-none">
+                          需注意
+                        </span>
+                        <Badge className="border-status-warning/20 bg-status-warning/10 text-status-warning font-mono text-label">
+                          {issueChannels.length}
+                        </Badge>
+                      </div>
+                      <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(140px,1fr))]">
+                        {issueChannels.map(ch => (
+                          <ChannelCard key={ch.id} ch={ch} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <div>
+                    {issueChannels.length > 0 && (
+                      <div className="flex items-center gap-element mb-section">
+                        <span className="text-label font-medium uppercase tracking-wide text-muted-foreground select-none">
+                          正常
+                        </span>
+                        <Badge variant="outline" className="font-mono text-label">
+                          {healthyChannels.length}
+                        </Badge>
+                      </div>
+                    )}
+                    <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(140px,1fr))]">
+                      {healthyChannels.map(ch => (
+                        <ChannelCard key={ch.id} ch={ch} />
+                      ))}
+                    </div>
+                  </div>
                 </div>
               )}
             </CardContent>
