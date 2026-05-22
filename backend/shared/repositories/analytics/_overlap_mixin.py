@@ -59,6 +59,9 @@ class _AnalyticsOverlapMixin:
                 FROM chatter_stats cs
                 WHERE cs.channel_id = $1
                   AND cs.last_message_at >= NOW() - ($3 * INTERVAL '1 day')
+                  AND cs.user_id != $1
+                  AND cs.user_id != $2
+                  AND cs.user_id NOT IN (SELECT user_id FROM known_bots)
                 GROUP BY cs.user_id
             ),
             home_chatters AS (
@@ -69,6 +72,9 @@ class _AnalyticsOverlapMixin:
                 FROM chatter_stats cs
                 WHERE cs.channel_id = $2
                   AND cs.last_message_at >= NOW() - ($3 * INTERVAL '1 day')
+                  AND cs.user_id != $1
+                  AND cs.user_id != $2
+                  AND cs.user_id NOT IN (SELECT user_id FROM known_bots)
                 GROUP BY cs.user_id
             )
             SELECT
@@ -154,9 +160,13 @@ class _AnalyticsOverlapMixin:
             FROM chatter_stats
             WHERE channel_id = $1
               AND last_message_at >= NOW() - ($2 * INTERVAL '1 day')
+              AND user_id != $1
+              AND user_id != $3
+              AND user_id NOT IN (SELECT user_id FROM known_bots)
             """,
             home_channel_id,
             days,
+            partner_channel_id,
         )
         home_total = int(home_total_row or 0)
         overlap_pct = round((shared / partner_total * 100), 2) if partner_total else 0.0
@@ -270,6 +280,9 @@ class _AnalyticsOverlapMixin:
                 SELECT COUNT(*)
                 FROM channel_overlap_viewers
                 WHERE home_channel_id = $1 AND partner_channel_id = $2
+                  AND user_id != $1
+                  AND user_id != $2
+                  AND user_id NOT IN (SELECT user_id FROM known_bots)
                 """,
                 home_channel_id,
                 partner_channel_id,
@@ -282,6 +295,9 @@ class _AnalyticsOverlapMixin:
                     home_sessions, home_messages, potential_score, computed_at
                 FROM channel_overlap_viewers
                 WHERE home_channel_id = $1 AND partner_channel_id = $2
+                  AND user_id != $1
+                  AND user_id != $2
+                  AND user_id NOT IN (SELECT user_id FROM known_bots)
                 ORDER BY potential_score DESC
                 LIMIT $3 OFFSET $4
                 """,
