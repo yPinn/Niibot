@@ -26,6 +26,35 @@ import { cn } from '@/lib/utils'
 import { ChannelCard } from './matcher/ChannelCard'
 import { ViewerTable } from './matcher/ViewerTable'
 
+function formatPeakHours(hours: number[]): string | null {
+  if (!hours.length) return null
+  const min = Math.min(...hours)
+  const max = Math.max(...hours)
+  return min === max ? `${min}:00` : `${min}:00–${max}:59`
+}
+
+function broadcasterBadgeDetail(type: string | null) {
+  if (type === 'partner')
+    return (
+      <Badge
+        variant="outline"
+        className="text-yellow-500 border-yellow-500/40 text-label py-0 shrink-0"
+      >
+        Partner
+      </Badge>
+    )
+  if (type === 'affiliate')
+    return (
+      <Badge
+        variant="outline"
+        className="text-purple-500 border-purple-500/40 text-label py-0 shrink-0"
+      >
+        Affiliate
+      </Badge>
+    )
+  return null
+}
+
 const DAYS = 30
 
 function suitabilityScore(ch: MatcherChannelSummary): number {
@@ -136,7 +165,21 @@ export default function Matcher() {
         <div className="rounded-lg border bg-card p-section flex flex-col gap-card lg:overflow-y-auto">
           {summariesLoading ? (
             Array.from({ length: 6 }).map((_, i) => (
-              <Skeleton key={i} className="h-20 w-full rounded-lg" />
+              <div key={i} className="flex flex-col gap-2 p-3 rounded-lg border">
+                <div className="flex items-center gap-2.5">
+                  <Skeleton className="size-9 rounded-full shrink-0" />
+                  <div className="flex items-center gap-1.5 flex-1">
+                    <Skeleton className="h-4 w-24 rounded" />
+                    <Skeleton className="h-4 w-14 rounded" />
+                    <Skeleton className="h-4 w-8 rounded" />
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Skeleton className="h-5 w-14 rounded" />
+                  <Skeleton className="h-5 w-14 rounded" />
+                  <Skeleton className="h-5 w-12 rounded" />
+                </div>
+              </div>
             ))
           ) : summaries.length === 0 ? (
             <p className="text-sub text-muted-foreground text-center py-8">尚無頻道資料</p>
@@ -161,6 +204,7 @@ export default function Matcher() {
             </div>
           ) : (
             <>
+              {/* Header */}
               <div className="flex items-start gap-3 shrink-0">
                 <Avatar className="size-12 shrink-0">
                   <AvatarImage
@@ -178,6 +222,15 @@ export default function Matcher() {
                     <span className="text-card-title font-semibold">
                       {selectedChannel.display_name ?? selectedChannel.channel_id}
                     </span>
+                    {broadcasterBadgeDetail(selectedChannel.broadcaster_type)}
+                    {selectedChannel.language && (
+                      <Badge
+                        variant="outline"
+                        className="text-label py-0 font-mono uppercase text-muted-foreground shrink-0"
+                      >
+                        {selectedChannel.language}
+                      </Badge>
+                    )}
                     {selectedChannel.is_live && (
                       <div className="flex items-center gap-1.5">
                         <span className="size-2 rounded-full bg-status-live shrink-0" />
@@ -198,7 +251,8 @@ export default function Matcher() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-card shrink-0">
+              {/* Stats */}
+              <div className="grid grid-cols-4 gap-card shrink-0">
                 <div className="flex flex-col items-center rounded-lg border bg-muted/20 px-4 py-2">
                   <span className="text-card-title font-bold tabular-nums">
                     {selectedChannel.shared_chatters.toLocaleString()}
@@ -226,11 +280,50 @@ export default function Matcher() {
                   </span>
                   <span className="text-label text-muted-foreground">重疊率</span>
                 </div>
+                <div className="flex flex-col items-center rounded-lg border bg-muted/20 px-4 py-2">
+                  <span className="text-card-title font-bold tabular-nums">
+                    {selectedChannel.monitored_chatters.toLocaleString()}
+                  </span>
+                  <span className="text-label text-muted-foreground">監測觀眾</span>
+                </div>
               </div>
-              <div className="shrink-0">
-                <Badge variant="outline" className="text-label">
-                  共 {selectedChannel.monitored_chatters.toLocaleString()} 位監測觀眾
-                </Badge>
+
+              {/* Metadata */}
+              <div className="flex flex-col gap-2 shrink-0">
+                {selectedChannel.tags.length > 0 && (
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {selectedChannel.tags.map(tag => (
+                      <Badge
+                        key={tag}
+                        variant="outline"
+                        className="text-label py-0 px-1.5 text-muted-foreground border-border/60"
+                      >
+                        {tag}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+                <div className="flex items-center gap-4 text-label text-muted-foreground flex-wrap">
+                  {formatPeakHours(selectedChannel.peak_hours) && (
+                    <span className="flex items-center gap-1">
+                      <Icon icon="fa-regular fa-clock" className="text-label" />
+                      {formatPeakHours(selectedChannel.peak_hours)}
+                    </span>
+                  )}
+                  {selectedChannel.session_count > 0 && (
+                    <span className="flex items-center gap-1">
+                      <Icon icon="fa-solid fa-video" className="text-label" />
+                      {selectedChannel.session_count} 場次
+                      {selectedChannel.avg_stream_hours > 0 &&
+                        ` · 均 ${selectedChannel.avg_stream_hours}h`}
+                    </span>
+                  )}
+                  {selectedChannel.top_games.slice(0, 3).map(game => (
+                    <Badge key={game} variant="secondary" className="text-label py-0 px-1.5">
+                      {game}
+                    </Badge>
+                  ))}
+                </div>
               </div>
 
               <div className="flex-1 min-h-0">

@@ -64,9 +64,24 @@ function TierBadge({ score }: { score: number }) {
 export function ViewerTable({ data, isLoading }: ViewerTableProps) {
   if (isLoading) {
     return (
-      <div className="space-y-1">
+      <div className="flex flex-col">
+        <div className="flex items-center gap-4 h-10 px-4 border-b">
+          <Skeleton className="h-3.5 w-20 rounded" />
+          <Skeleton className="h-3.5 w-14 rounded ml-auto" />
+          <Skeleton className="h-3.5 w-16 rounded" />
+          <Skeleton className="h-3.5 w-12 rounded" />
+        </div>
         {Array.from({ length: 8 }).map((_, i) => (
-          <Skeleton key={i} className="h-10 w-full rounded-md" />
+          <div key={i} className="flex items-center gap-4 h-10 px-4 border-b border-border/40">
+            <Skeleton className="h-3.5 flex-1 max-w-[140px] rounded" />
+            <div className="ml-auto flex gap-0.5">
+              <Skeleton className="size-2 rounded-full" />
+              <Skeleton className="size-2 rounded-full" />
+              <Skeleton className="size-2 rounded-full" />
+            </div>
+            <Skeleton className="h-3.5 w-8 rounded" />
+            <Skeleton className="h-5 w-8 rounded" />
+          </div>
         ))}
       </div>
     )

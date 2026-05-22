@@ -1,4 +1,4 @@
-import { Avatar, AvatarFallback, AvatarImage, Badge, Card, Icon } from '@/components/ui'
+import { Avatar, AvatarFallback, AvatarImage, Badge, Card } from '@/components/ui'
 import { cn } from '@/lib/utils'
 
 import type { MatcherChannelSummary } from './types'
@@ -37,13 +37,6 @@ function broadcasterBadge(type: string | null) {
   return null
 }
 
-function formatPeakHours(hours: number[]): string | null {
-  if (!hours.length) return null
-  const min = Math.min(...hours)
-  const max = Math.max(...hours)
-  return min === max ? `${min}:00` : `${min}:00–${max}:59`
-}
-
 function formatFreshness(computed_at: string | null): string | null {
   if (!computed_at) return null
   const diffMs = Date.now() - new Date(computed_at).getTime()
@@ -57,9 +50,6 @@ function formatFreshness(computed_at: string | null): string | null {
 export function ChannelCard({ channel, isSelected, onClick }: ChannelCardProps) {
   const name = channel.display_name ?? channel.channel_id
   const initials = name.slice(0, 2).toUpperCase()
-  const peakHours = formatPeakHours(channel.peak_hours)
-  const displayGames = channel.top_games.length > 0 ? channel.top_games : null
-  const displayTags = channel.tags.length > 0 ? channel.tags.slice(0, 3) : null
   const freshness = formatFreshness(channel.computed_at ? String(channel.computed_at) : null)
 
   return (
@@ -71,93 +61,36 @@ export function ChannelCard({ channel, isSelected, onClick }: ChannelCardProps) 
       )}
     >
       {/* Row 1: avatar + name + badges + live */}
-      <div className="flex items-start gap-2.5">
-        <Avatar className="size-10 shrink-0">
+      <div className="flex items-center gap-2.5">
+        <Avatar className="size-9 shrink-0">
           <AvatarImage src={channel.profile_image_url ?? undefined} alt={name} />
           <AvatarFallback className="text-label">{initials}</AvatarFallback>
         </Avatar>
-
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="text-content font-medium truncate">{name}</span>
-            {broadcasterBadge(channel.broadcaster_type)}
-            {channel.language && (
-              <Badge
-                variant="outline"
-                className="text-label py-0 shrink-0 font-mono uppercase text-muted-foreground"
-              >
-                {channel.language}
-              </Badge>
-            )}
-            {channel.is_live && (
-              <div className="flex items-center gap-1">
-                <span className="size-1.5 rounded-full bg-status-live shrink-0" />
-                <span className="text-label text-muted-foreground">
-                  {channel.viewer_count.toLocaleString()}
-                </span>
-              </div>
-            )}
-          </div>
-
-          {/* Tags from Twitch channel metadata */}
-          {displayTags && (
-            <div className="flex items-center gap-1 mt-1 flex-wrap">
-              {displayTags.map(tag => (
-                <Badge
-                  key={tag}
-                  variant="outline"
-                  className="text-label py-0 px-1.5 text-muted-foreground border-border/60"
-                >
-                  {tag}
-                </Badge>
-              ))}
-            </div>
+        <div className="flex items-center gap-1.5 flex-1 min-w-0 flex-wrap">
+          <span className="text-content font-medium truncate">{name}</span>
+          {broadcasterBadge(channel.broadcaster_type)}
+          {channel.language && (
+            <Badge
+              variant="outline"
+              className="text-label py-0 shrink-0 font-mono uppercase text-muted-foreground"
+            >
+              {channel.language}
+            </Badge>
           )}
-
-          {/* Top games (historical) — shown only if no tags or as supplement */}
-          {displayGames && !displayTags && (
-            <div className="flex items-center gap-1 mt-1 flex-wrap">
-              {displayGames.slice(0, 3).map(game => (
-                <Badge key={game} variant="secondary" className="text-label py-0 px-1.5">
-                  {game}
-                </Badge>
-              ))}
+          {channel.is_live && (
+            <div className="flex items-center gap-1">
+              <span className="size-1.5 rounded-full bg-status-live shrink-0" />
+              <span className="text-label text-muted-foreground">
+                {channel.viewer_count.toLocaleString()}
+              </span>
             </div>
           )}
         </div>
       </div>
 
-      {/* Row 2: streaming time + session stats + top games (if tags shown) */}
-      {(peakHours || channel.session_count > 0) && (
-        <div className="flex items-center gap-3 text-label text-muted-foreground flex-wrap">
-          {peakHours && (
-            <span className="flex items-center gap-1">
-              <Icon icon="fa-regular fa-clock" className="text-label" />
-              {peakHours}
-            </span>
-          )}
-          {channel.session_count > 0 && (
-            <span className="flex items-center gap-1">
-              <Icon icon="fa-solid fa-video" className="text-label" />
-              {channel.session_count} 場次
-              {channel.avg_stream_hours > 0 && ` · 均 ${channel.avg_stream_hours}h`}
-            </span>
-          )}
-          {displayGames && displayTags && (
-            <>
-              {displayGames.slice(0, 2).map(game => (
-                <Badge key={game} variant="secondary" className="text-label py-0 px-1.5">
-                  {game}
-                </Badge>
-              ))}
-            </>
-          )}
-        </div>
-      )}
-
-      {/* Row 3: overlap stats + freshness */}
+      {/* Row 2: overlap stats + freshness */}
       <div className="flex items-center justify-between gap-1.5">
-        <div className="flex items-center gap-1.5 flex-wrap">
+        <div className="flex items-center gap-1.5">
           <Badge variant="secondary" className="text-label py-0">
             {channel.shared_chatters.toLocaleString()} 共同
           </Badge>
