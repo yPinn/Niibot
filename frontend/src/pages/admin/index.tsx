@@ -298,20 +298,16 @@ function ChannelCard({ ch }: { ch: AdminChannel }) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="relative flex flex-col items-center justify-center gap-element rounded-lg border border-border bg-card p-3 text-center w-full aspect-square hover:bg-accent transition-colors select-none"
+        className="flex items-center gap-element rounded-lg border border-border bg-card px-3 py-2.5 text-left w-full hover:bg-accent transition-colors select-none"
       >
-        <TwitchRoleBadge role="bot" size={18} className="absolute top-3 left-3" />
-        <div className="relative">
-          <img
-            src={ch.avatar}
-            alt={ch.display_name}
-            className="size-10 rounded-full object-cover"
-          />
+        <TwitchRoleBadge role="bot" size={18} className="shrink-0 opacity-50" />
+        <div className="relative shrink-0">
+          <img src={ch.avatar} alt={ch.display_name} className="size-8 rounded-full object-cover" />
           {ch.is_live && (
-            <span className="absolute -bottom-0.5 -right-0.5 size-3 rounded-full border-2 border-card bg-status-live" />
+            <span className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full border-2 border-card bg-status-live" />
           )}
         </div>
-        <div className="w-full min-w-0">
+        <div className="flex-1 min-w-0">
           <p className="text-sub font-medium truncate">{ch.display_name}</p>
           <p className="text-label text-muted-foreground font-mono truncate">{ch.name}</p>
         </div>
@@ -405,13 +401,13 @@ function BotStatusPanel({
                 />
               )}
               <div className="min-w-0 flex-1">
-                <p className="text-sub font-medium truncate">{bot.display_name || bot.name}</p>
-                <p className="text-label text-muted-foreground font-mono truncate">{bot.name}</p>
+                <p className="text-sub font-medium">{bot.display_name || bot.name}</p>
+                <p className="text-label text-muted-foreground font-mono">{bot.name}</p>
+                <Badge className={`gap-1 text-label select-none mt-1 ${botCfg.className}`}>
+                  <Icon icon={botCfg.icon} size="xs" />
+                  {botLabel}
+                </Badge>
               </div>
-              <Badge className={`gap-1 text-label shrink-0 select-none ${botCfg.className}`}>
-                <Icon icon={botCfg.icon} size="xs" />
-                {botLabel}
-              </Badge>
             </div>
             <ScopeSection granted={bot.granted_scopes} missing={bot.missing_scopes} />
           </>
@@ -565,7 +561,7 @@ export default function AdminPage() {
             </CardHeader>
             <CardContent>
               {channelsLoading ? (
-                <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(140px,1fr))]">
+                <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
                   {Array.from({ length: 7 }).map((_, i) => (
                     <Skeleton key={i} className="aspect-square w-full rounded-lg" />
                   ))}
@@ -584,7 +580,7 @@ export default function AdminPage() {
                           {issueChannels.length}
                         </Badge>
                       </div>
-                      <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(140px,1fr))]">
+                      <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
                         {issueChannels.map(ch => (
                           <ChannelCard key={ch.id} ch={ch} />
                         ))}
@@ -602,7 +598,7 @@ export default function AdminPage() {
                         </Badge>
                       </div>
                     )}
-                    <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(140px,1fr))]">
+                    <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
                       {healthyChannels.map(ch => (
                         <ChannelCard key={ch.id} ch={ch} />
                       ))}
