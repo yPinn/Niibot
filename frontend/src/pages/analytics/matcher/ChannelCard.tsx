@@ -1,4 +1,4 @@
-import { Avatar, AvatarFallback, AvatarImage, Badge, Card } from '@/components/ui'
+import { Avatar, AvatarFallback, AvatarImage, Badge, Card, Icon } from '@/components/ui'
 import { cn } from '@/lib/utils'
 
 import type { MatcherChannelSummary } from './types'
@@ -37,76 +37,96 @@ function broadcasterBadge(type: string | null) {
   return null
 }
 
-function formatFreshness(computed_at: string | null): string | null {
-  if (!computed_at) return null
-  const diffMs = Date.now() - new Date(computed_at).getTime()
-  const hours = Math.floor(diffMs / (1000 * 60 * 60))
-  if (hours < 1) return '剛更新'
-  if (hours < 24) return `${hours}h 前`
-  const days = Math.floor(hours / 24)
-  return `${days}d 前`
-}
-
 export function ChannelCard({ channel, isSelected, onClick }: ChannelCardProps) {
   const name = channel.display_name ?? channel.channel_id
   const initials = name.slice(0, 2).toUpperCase()
-  const freshness = formatFreshness(channel.computed_at ? String(channel.computed_at) : null)
+  const recentGame = channel.is_live ? channel.stream_game : (channel.top_games[0] ?? null)
 
   return (
     <Card
       onClick={onClick}
       className={cn(
-        'flex flex-col gap-2 p-3 cursor-pointer transition-colors hover:bg-accent',
+        'flex gap-element p-section cursor-pointer select-none transition-colors hover:bg-accent',
         isSelected && 'ring-2 ring-primary'
       )}
     >
-      {/* Row 1: avatar + name + badges + live */}
-      <div className="flex items-center gap-2.5">
-        <Avatar className="size-9 shrink-0">
-          <AvatarImage src={channel.profile_image_url ?? undefined} alt={name} />
-          <AvatarFallback className="text-label">{initials}</AvatarFallback>
-        </Avatar>
-        <div className="flex items-center gap-1.5 flex-1 min-w-0 flex-wrap">
-          <span className="text-content font-medium truncate">{name}</span>
-          {broadcasterBadge(channel.broadcaster_type)}
-          {channel.language && (
-            <Badge
-              variant="outline"
-              className="text-label py-0 shrink-0 font-mono uppercase text-muted-foreground"
-            >
-              {channel.language}
-            </Badge>
-          )}
-          {channel.is_live && (
-            <div className="flex items-center gap-1">
-              <span className="size-1.5 rounded-full bg-status-live shrink-0" />
-              <span className="text-label text-muted-foreground">
-                {channel.viewer_count.toLocaleString()}
-              </span>
-            </div>
-          )}
-        </div>
-      </div>
+      <Avatar className="size-10 shrink-0 mt-0.5">
+        <AvatarImage src={channel.profile_image_url ?? undefined} alt={name} />
+        <AvatarFallback className="text-label">{initials}</AvatarFallback>
+      </Avatar>
 
-      {/* Row 2: overlap stats + freshness */}
-      <div className="flex items-center justify-between gap-1.5">
-        <div className="flex items-center gap-1.5">
+      <div className="flex flex-col gap-1 flex-1 min-w-0">
+        {/* Name row */}
+        <div className="flex items-start justify-between gap-element">
+          <div className="flex items-center gap-1 flex-wrap flex-1 min-w-0">
+            <span className="text-sub font-semibold truncate">{name}</span>
+            {broadcasterBadge(channel.broadcaster_type)}
+            {channel.is_live && (
+              <Badge className="bg-status-live/90 text-white text-label py-0 px-1.5 shrink-0">
+                LIVE
+              </Badge>
+            )}
+          </div>
+          <div className="flex items-center gap-1 shrink-0">
+            <span
+              className={cn(
+                'text-card-title font-bold tabular-nums',
+                overlapColor(channel.overlap_pct)
+              )}
+            >
+              {channel.overlap_pct.toFixed(1)}%
+            </span>
+            {channel.login && (
+              <a
+                href={`https://www.twitch.tv/${channel.login}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={e => e.stopPropagation()}
+                className="text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+              >
+                <Icon icon="fa-solid fa-arrow-up-right-from-square" className="text-label" />
+              </a>
+            )}
+          </div>
+        </div>
+
+        {/* Category + language + tags */}
+        {(recentGame || channel.language || channel.tags.length > 0) && (
+          <div className="flex items-center gap-1 flex-wrap">
+            {recentGame && (
+              <span className="text-label text-muted-foreground truncate max-w-30">
+                {recentGame}
+              </span>
+            )}
+            {channel.language && (
+              <Badge
+                variant="outline"
+                className="text-label py-0 px-1.5 font-mono uppercase text-muted-foreground shrink-0"
+              >
+                {channel.language}
+              </Badge>
+            )}
+            {channel.tags.slice(0, 3).map(tag => (
+              <Badge
+                key={tag}
+                variant="outline"
+                className="text-label py-0 px-1.5 text-muted-foreground border-border/60 shrink-0"
+              >
+                {tag}
+              </Badge>
+            ))}
+          </div>
+        )}
+
+        {/* Stats row */}
+        <div className="flex items-center gap-1 flex-wrap">
           <Badge variant="secondary" className="text-label py-0">
-            {channel.shared_chatters.toLocaleString()} 共同
+            {channel.shared_chatters.toLocaleString()} 共同觀眾
           </Badge>
           <Badge variant="secondary" className="text-label py-0">
-            {channel.exclusive_to_partner.toLocaleString()} 潛在
-          </Badge>
-          <Badge
-            variant="outline"
-            className={cn('text-label py-0', overlapColor(channel.overlap_pct))}
-          >
-            {channel.overlap_pct.toFixed(1)}%
+            {channel.exclusive_to_partner.toLocaleString()} 潛在觀眾
           </Badge>
         </div>
-        {freshness && (
-          <span className="text-label text-muted-foreground/60 shrink-0">{freshness}</span>
-        )}
       </div>
     </Card>
   )

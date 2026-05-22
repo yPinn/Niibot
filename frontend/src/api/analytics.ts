@@ -289,6 +289,7 @@ export async function syncChannelRoles(): Promise<RoleSyncResult> {
 
 export interface MatcherChannelSummary {
   channel_id: string
+  login: string | null
   display_name: string | null
   profile_image_url: string | null
   broadcaster_type: string | null

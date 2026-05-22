@@ -26,6 +26,7 @@ router = APIRouter(prefix="/api/analytics/matcher", tags=["matcher"])
 
 class MatcherChannelSummary(BaseModel):
     channel_id: str
+    login: str | None = None
     display_name: str | None = None
     profile_image_url: str | None = None
     broadcaster_type: str | None = None
@@ -120,6 +121,7 @@ async def get_matcher_summaries(
         result.append(
             MatcherChannelSummary(
                 channel_id=pid,
+                login=user.get("login"),
                 display_name=user.get("display_name"),
                 profile_image_url=user.get("profile_image_url"),
                 broadcaster_type=user.get("broadcaster_type"),
