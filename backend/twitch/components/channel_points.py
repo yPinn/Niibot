@@ -9,6 +9,7 @@ from twitchio.ext import commands
 
 from core.config import get_settings
 from shared.repositories.activation_code import ActivationCodeRepository
+from shared.repositories.activation_request import ActivationRequestRepository
 from shared.repositories.command_config import RedemptionConfigRepository
 from shared.repositories.game_queue import GameQueueRepository, GameQueueSettingsRepository
 from shared.repositories.video_queue import (
@@ -42,6 +43,7 @@ class ChannelPointsComponent(commands.Component):
         self.settings = get_settings()
         self.redemption_repo = RedemptionConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.activation_repo = ActivationCodeRepository(self.bot.token_database)  # type: ignore[attr-defined]
+        self.activation_request_repo = ActivationRequestRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.gq_repo = GameQueueRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.gq_settings_repo = GameQueueSettingsRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.vq_repo = VideoQueueRepository(self.bot.token_database)  # type: ignore[attr-defined]
@@ -51,6 +53,7 @@ class ChannelPointsComponent(commands.Component):
     def refresh_pool(self, pool) -> None:
         self.redemption_repo.pool = pool
         self.activation_repo.pool = pool
+        self.activation_request_repo.pool = pool
         self.gq_repo.pool = pool
         self.gq_settings_repo.pool = pool
         self.vq_repo.pool = pool
@@ -245,6 +248,28 @@ class ChannelPointsComponent(commands.Component):
             except Exception:
                 pass
             return
+
+        # Submit a manual-approval request in parallel — whichever path completes first activates the account.
+        # Best-effort: skip if user hasn't done OAuth login yet (no user row exists).
+        try:
+            row = await self.activation_repo.pool.fetchrow(
+                "SELECT u.id FROM users u"
+                " JOIN user_linked_accounts ula ON ula.user_id = u.id"
+                " WHERE ula.platform = 'twitch' AND ula.platform_user_id = $1"
+                "   AND u.is_activated = FALSE",
+                platform_user_id,
+            )
+            if row:
+                await self.activation_request_repo.create(
+                    str(row["id"]), "twitch", platform_user_id
+                )
+                LOGGER.info(
+                    f"[{channel_name}] Niibot auth: activation request submitted for {user_name}"
+                )
+        except Exception as e:
+            LOGGER.warning(
+                f"[{channel_name}] Niibot auth: could not submit activation request: {e}"
+            )
 
         try:
             await self._reply(broadcaster, f"@{user_name} 已將啟用碼發送至你的 Twitch 私訊！")
