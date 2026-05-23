@@ -45,6 +45,9 @@ import {
   TabsList,
   TabsTrigger,
   Textarea,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
 } from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
@@ -222,7 +225,7 @@ export default function CrosshairModule() {
     }
   }
 
-  async function handleBrowse(e: React.FormEvent) {
+  async function handleBrowse(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     const un = browseInput.trim()
     if (!un) {
@@ -335,7 +338,7 @@ export default function CrosshairModule() {
                   </Button>
                 </form>
 
-                {browseError && <p className="text-sm text-destructive">{browseError}</p>}
+                {browseError && <p className="text-sub text-destructive">{browseError}</p>}
 
                 {(() => {
                   if (allPublicLoading && browseResults === null) {
@@ -356,7 +359,7 @@ export default function CrosshairModule() {
                   }
                   return (
                     <>
-                      <p className="text-sm text-muted-foreground">
+                      <p className="text-sub text-muted-foreground">
                         {browseResults !== null
                           ? `${browseResults[0]?.channel_name ?? browseInput} 的準星收藏（${browseResults.length} 個）`
                           : `共 ${sortedBrowse.length} 個`}
@@ -463,7 +466,7 @@ export default function CrosshairModule() {
 
               <SheetSection title="準星代碼">
                 <div className="flex items-center gap-element">
-                  <code className="flex-1 break-all rounded bg-muted px-3 py-2 font-mono text-sm">
+                  <code className="flex-1 break-all rounded bg-muted px-3 py-2 font-mono text-sub">
                     {detailTarget.code}
                   </code>
                   <Button
@@ -478,7 +481,7 @@ export default function CrosshairModule() {
 
               {detailTarget.description && (
                 <SheetSection title="備註">
-                  <p className="text-sm text-muted-foreground">{detailTarget.description}</p>
+                  <p className="text-sub text-muted-foreground">{detailTarget.description}</p>
                 </SheetSection>
               )}
             </>
@@ -489,10 +492,8 @@ export default function CrosshairModule() {
       <AlertDialog open={!!deleteTarget} onOpenChange={open => !open && setDeleteTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>確定要刪除嗎？</AlertDialogTitle>
-            <AlertDialogDescription>
-              刪除「{deleteTarget?.name}」後無法復原。
-            </AlertDialogDescription>
+            <AlertDialogTitle>確定刪除「{deleteTarget?.name}」？</AlertDialogTitle>
+            <AlertDialogDescription>此操作無法復原。</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>取消</AlertDialogCancel>
@@ -531,27 +532,36 @@ const MyCrosshairCard = memo(function MyCrosshairCard({
       copyCount={crosshair.copy_count}
       footer={
         <div className="flex justify-end pr-element pb-element">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={() => onAdjust(crosshair)}
-            title="調整準星"
-          >
-            <Icon icon="fa-solid fa-sliders" />
-          </Button>
-          <Button variant="ghost" size="icon-sm" onClick={() => onEdit(crosshair)} title="編輯">
-            <Icon icon="fa-solid fa-pen" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="text-destructive hover:text-destructive"
-            disabled={isDeleting}
-            onClick={() => onDelete(crosshair)}
-            title="刪除"
-          >
-            <Icon icon="fa-solid fa-trash" />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon-sm" onClick={() => onAdjust(crosshair)}>
+                <Icon icon="fa-solid fa-sliders" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>調整準星</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon-sm" onClick={() => onEdit(crosshair)}>
+                <Icon icon="fa-solid fa-pen" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>編輯</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="text-destructive hover:text-destructive"
+                disabled={isDeleting}
+                onClick={() => onDelete(crosshair)}
+              >
+                <Icon icon="fa-solid fa-trash" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>刪除</TooltipContent>
+          </Tooltip>
         </div>
       }
     />

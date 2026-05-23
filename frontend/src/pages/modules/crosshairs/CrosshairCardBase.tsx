@@ -1,7 +1,7 @@
 import { memo } from 'react'
 
 import type { Crosshair } from '@/api/crosshairs'
-import { Button, Card, Icon } from '@/components/ui'
+import { Button, Card, Icon, Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui'
 import { cn } from '@/lib/utils'
 
 import { CrosshairPreview } from './CrosshairPreview'
@@ -35,17 +35,21 @@ export const CrosshairCardBase = memo(function CrosshairCardBase({
         <p className="min-w-0 flex-1 truncate px-element text-sub font-medium text-foreground">
           {crosshair.name}
         </p>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          title="複製代碼"
-          onClick={e => {
-            if (onCardClick) e.stopPropagation()
-            onCopy(crosshair.code)
-          }}
-        >
-          <Icon icon="fa-solid fa-copy" />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={e => {
+                if (onCardClick) e.stopPropagation()
+                onCopy(crosshair.code)
+              }}
+            >
+              <Icon icon="fa-solid fa-copy" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>複製代碼</TooltipContent>
+        </Tooltip>
       </div>
       <div className="flex justify-center py-element">
         <CrosshairPreview game={crosshair.game} code={crosshair.code} size="sm" />

@@ -3,7 +3,16 @@ import { type ReactNode, useCallback, useEffect, useState } from 'react'
 import { getReleases, type GithubRelease } from '@/api/releases'
 import { PageHeader } from '@/components/PageHeader'
 import { PageMain } from '@/components/PageMain'
-import { Badge, Card, CardContent, CardHeader, Icon, Stagger, StaggerItem } from '@/components/ui'
+import {
+  Badge,
+  Card,
+  CardContent,
+  CardHeader,
+  Icon,
+  Skeleton,
+  Stagger,
+  StaggerItem,
+} from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
 type MarkdownBlock =
@@ -169,19 +178,19 @@ function ReleaseCard({ release }: { release: GithubRelease }) {
 
 function ReleaseSkeleton() {
   return (
-    <Card className="animate-pulse">
+    <Card>
       <CardHeader>
         <div className="flex items-center gap-element">
-          <div className="size-5 rounded bg-muted" />
-          <div className="h-5 w-20 rounded bg-muted" />
-          <div className="ml-auto h-4 w-24 rounded bg-muted" />
+          <Skeleton className="size-5 rounded" />
+          <Skeleton className="h-5 w-20" />
+          <Skeleton className="ml-auto h-4 w-24" />
         </div>
       </CardHeader>
       <CardContent className="flex flex-col gap-element">
-        <div className="h-4 w-full rounded bg-muted" />
-        <div className="h-4 w-3/4 rounded bg-muted" />
-        <div className="h-4 w-5/6 rounded bg-muted" />
-        <div className="h-4 w-2/3 rounded bg-muted" />
+        <Skeleton className="h-4 w-full" />
+        <Skeleton className="h-4 w-3/4" />
+        <Skeleton className="h-4 w-5/6" />
+        <Skeleton className="h-4 w-2/3" />
       </CardContent>
     </Card>
   )

@@ -23,6 +23,9 @@ import {
   SheetTitle,
   SlideUp,
   Switch,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
   TwitchBadgeGroup,
 } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
@@ -496,7 +499,7 @@ function HLine({ line }: { line: string }) {
 function CssHighlight({ code }: { code: string }) {
   const lines = code.split('\n')
   return (
-    <pre className="text-xs leading-relaxed whitespace-pre">
+    <pre className="text-label leading-relaxed whitespace-pre">
       {lines.map((line, i) => (
         <React.Fragment key={i}>
           <HLine line={line} />
@@ -533,7 +536,7 @@ function OptionButtonGroup<T extends string>({
             key={opt.value}
             type="button"
             onClick={() => onChange(opt.value)}
-            className={`rounded-md border text-sm font-medium transition-colors ${
+            className={`rounded-md border text-sub font-medium transition-colors ${
               opt.desc ? 'flex flex-col px-4 py-2 text-left' : 'px-3 py-1.5'
             } ${
               value === opt.value ? 'border-primary bg-primary/10 text-primary' : 'hover:bg-accent'
@@ -542,7 +545,7 @@ function OptionButtonGroup<T extends string>({
             {opt.desc ? (
               <>
                 <span className="font-medium">{opt.label}</span>
-                <span className="text-muted-foreground text-xs">{opt.desc}</span>
+                <span className="text-muted-foreground text-label">{opt.desc}</span>
               </>
             ) : (
               opt.label
@@ -700,7 +703,7 @@ export default function ChatOverlayModule() {
           <Icon
             icon="fa-regular fa-circle-question"
             wrapperClassName="size-5"
-            className="text-base"
+            className="text-content"
           />
         </Button>
       </PageHeader>
@@ -822,7 +825,7 @@ export default function ChatOverlayModule() {
                   key={panel}
                   type="button"
                   onClick={() => setRightPanel(panel)}
-                  className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                  className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sub font-medium transition-colors ${
                     rightPanel === panel
                       ? 'bg-card text-foreground shadow-sm'
                       : 'text-muted-foreground hover:text-foreground'
@@ -830,7 +833,7 @@ export default function ChatOverlayModule() {
                 >
                   <Icon
                     icon={panel === 'preview' ? 'fa-solid fa-eye' : 'fa-solid fa-code'}
-                    className="text-xs"
+                    className="text-label"
                   />
                   {panel === 'preview' ? '預覽' : 'CSS'}
                 </button>
@@ -867,7 +870,7 @@ export default function ChatOverlayModule() {
                 <CardDescription>調整後自動產生 CSS，無需儲存</CardDescription>
               </div>
               <Button onClick={copyCss} size="sm" className="shrink-0">
-                <Icon icon="fa-regular fa-copy" className="mr-1.5 text-xs" />
+                <Icon icon="fa-regular fa-copy" className="mr-1.5 text-label" />
                 複製 CSS
               </Button>
             </CardHeader>
@@ -883,7 +886,7 @@ export default function ChatOverlayModule() {
                         key={opt}
                         type="button"
                         onClick={() => patch({ background: opt })}
-                        className={`rounded-md border px-3 py-1.5 text-sm font-medium transition-colors ${
+                        className={`select-none rounded-md border px-3 py-1.5 text-sub font-medium transition-colors ${
                           settings.background === opt
                             ? 'border-primary bg-primary/10 text-primary'
                             : 'hover:bg-accent'
@@ -893,18 +896,23 @@ export default function ChatOverlayModule() {
                       </button>
                     ))}
                     {settings.background === 'color' && (
-                      <label className="cursor-pointer" title="選擇背景顏色">
-                        <span
-                          className="block w-7 h-7 rounded-md border border-border transition-transform hover:scale-110"
-                          style={{ background: settings.bgColor }}
-                        />
-                        <input
-                          type="color"
-                          value={settings.bgColor}
-                          onChange={e => patch({ bgColor: e.target.value })}
-                          className="sr-only"
-                        />
-                      </label>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <label className="cursor-pointer select-none">
+                            <span
+                              className="block w-7 h-7 rounded-md border border-border transition-transform hover:scale-110"
+                              style={{ background: settings.bgColor }}
+                            />
+                            <input
+                              type="color"
+                              value={settings.bgColor}
+                              onChange={e => patch({ bgColor: e.target.value })}
+                              className="sr-only"
+                            />
+                          </label>
+                        </TooltipTrigger>
+                        <TooltipContent>選擇背景顏色</TooltipContent>
+                      </Tooltip>
                     )}
                   </div>
                 </div>

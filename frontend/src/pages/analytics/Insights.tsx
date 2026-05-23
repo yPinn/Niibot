@@ -10,6 +10,7 @@ import {
   syncChannelRoles,
   type ViewerSummary,
 } from '@/api/analytics'
+import { PageHeader } from '@/components/PageHeader'
 import { PageMain } from '@/components/PageMain'
 import {
   AnimatePresence,
@@ -24,7 +25,6 @@ import {
   Separator,
   Skeleton,
   SlideUp,
-  SlideUpSm,
   Stagger,
   StaggerItem,
   Tabs,
@@ -184,12 +184,11 @@ export default function Insights() {
 
   return (
     <PageMain>
-      {/* Header + controls */}
-      <SlideUpSm inView className="flex items-end justify-between gap-element shrink-0">
-        <div>
-          <h1 className="text-page-title font-bold">Insights</h1>
-          <p className="text-sub text-muted-foreground mt-0.5">觀眾互動與活躍度數據</p>
-        </div>
+      <PageHeader
+        title="Insights"
+        description="觀眾互動與活躍度數據"
+        className="items-end shrink-0"
+      >
         <Tabs value={period} onValueChange={handlePeriodChange}>
           <TabsList>
             {PERIODS.map(p => (
@@ -199,7 +198,7 @@ export default function Insights() {
             ))}
           </TabsList>
         </Tabs>
-      </SlideUpSm>
+      </PageHeader>
 
       {/* Main 2-col layout */}
       <SlideUp
@@ -329,7 +328,7 @@ export default function Insights() {
                 >
                   <Icon
                     icon={isSyncing ? 'fa-solid fa-spinner' : 'fa-solid fa-rotate'}
-                    className={cn('text-sm', isSyncing && 'animate-spin')}
+                    className={cn('text-sub', isSyncing && 'animate-spin')}
                   />
                 </button>
               </TooltipTrigger>

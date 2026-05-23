@@ -7,6 +7,7 @@ import {
   type MatcherViewersResponse,
   refreshMatcher,
 } from '@/api/analytics'
+import { PageHeader } from '@/components/PageHeader'
 import { PageMain } from '@/components/PageMain'
 import {
   Avatar,
@@ -16,7 +17,9 @@ import {
   Icon,
   Skeleton,
   SlideUp,
-  SlideUpSm,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
 } from '@/components/ui'
 import { WipLockOverlay } from '@/components/WipLockOverlay'
 import { useAuth } from '@/contexts/AuthContext'
@@ -138,24 +141,28 @@ export default function Matcher() {
 
   return (
     <PageMain>
-      <SlideUpSm inView className="flex items-end justify-between gap-element shrink-0">
-        <div>
-          <h1 className="text-page-title font-bold">Matcher</h1>
-          <p className="text-sub text-muted-foreground mt-0.5">
-            探索各頻道觀眾重疊度，找出潛在可觸及的觀眾
-          </p>
-        </div>
-        <button
-          onClick={handleRefresh}
-          disabled={isRefreshing}
-          className="flex items-center justify-center size-10 rounded-md border bg-background text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        >
-          <Icon
-            icon={isRefreshing ? 'fa-solid fa-spinner' : 'fa-solid fa-rotate'}
-            className={cn('text-sub', isRefreshing && 'animate-spin')}
-          />
-        </button>
-      </SlideUpSm>
+      <PageHeader
+        title="Matcher"
+        description="探索各頻道觀眾重疊度，找出潛在可觸及的觀眾"
+        className="items-end shrink-0"
+      >
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              className="flex select-none items-center justify-center size-10 rounded-md border bg-background text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              <Icon
+                icon={isRefreshing ? 'fa-solid fa-spinner' : 'fa-solid fa-rotate'}
+                className={cn('text-sub', isRefreshing && 'animate-spin')}
+              />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>重新整理資料</TooltipContent>
+        </Tooltip>
+      </PageHeader>
 
       <SlideUp
         inView

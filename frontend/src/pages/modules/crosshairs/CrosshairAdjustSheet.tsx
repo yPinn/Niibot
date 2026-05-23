@@ -9,6 +9,9 @@ import {
   SheetHeader,
   SheetTitle,
   Slider,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
 } from '@/components/ui'
 import { cn } from '@/lib/utils'
 
@@ -121,7 +124,7 @@ function SliderRow({
     >
       <div className="flex items-center justify-between">
         <span className="text-sub text-muted-foreground">{label}</span>
-        <span className="min-w-[2.5rem] text-right text-sub tabular-nums">
+        <span className="min-w-10 text-right text-sub tabular-nums">
           {display ? display(value) : value}
         </span>
       </div>
@@ -175,32 +178,39 @@ function ColorPicker({ value, onChange }: { value: string; onChange: (hex: strin
     <div className="flex flex-wrap items-center gap-element">
       {/* idx 2 (黃綠) and 3 (綠黃) omitted — absent from the in-game quick-picker */}
       {PRESET_COLORS.filter(p => p.idx !== 2 && p.idx !== 3).map(({ idx, hex, label }) => (
-        <button
-          key={idx}
-          title={label}
-          onClick={() => onChange(hex)}
-          className={cn(
-            'size-7 rounded border-2 transition-all',
-            value === hex
-              ? 'scale-110 border-primary'
-              : 'border-transparent hover:border-muted-foreground/40'
-          )}
-          style={{ background: hex === '#FFFFFF' ? '#e5e5e5' : hex }}
-        />
+        <Tooltip key={idx}>
+          <TooltipTrigger asChild>
+            <button
+              onClick={() => onChange(hex)}
+              className={cn(
+                'size-7 select-none rounded border-2 transition-all',
+                value === hex
+                  ? 'scale-110 border-primary'
+                  : 'border-transparent hover:border-muted-foreground/40'
+              )}
+              style={{ background: hex === '#FFFFFF' ? '#e5e5e5' : hex }}
+            />
+          </TooltipTrigger>
+          <TooltipContent>{label}</TooltipContent>
+        </Tooltip>
       ))}
 
       <div className="h-5 w-px shrink-0 bg-border" />
 
-      <button
-        type="button"
-        title="開啟調色盤"
-        onClick={() => colorInputRef.current?.click()}
-        className={cn(
-          'size-7 shrink-0 rounded border-2 transition-all hover:border-muted-foreground/60',
-          isCustom ? 'scale-110 border-primary' : 'border-muted-foreground/30'
-        )}
-        style={{ background: safeColor }}
-      />
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            onClick={() => colorInputRef.current?.click()}
+            className={cn(
+              'size-7 select-none shrink-0 rounded border-2 transition-all hover:border-muted-foreground/60',
+              isCustom ? 'scale-110 border-primary' : 'border-muted-foreground/30'
+            )}
+            style={{ background: safeColor }}
+          />
+        </TooltipTrigger>
+        <TooltipContent>開啟調色盤</TooltipContent>
+      </Tooltip>
       <input
         ref={colorInputRef}
         type="color"

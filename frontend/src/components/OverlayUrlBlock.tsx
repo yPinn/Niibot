@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
 
-import { Button, Icon } from '@/components/ui'
+import { Button, Icon, Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui'
 
 export interface OverlayUrlBlockProps {
   /** Full overlay URL. When falsy, renders nothing. */
@@ -54,28 +54,37 @@ export function OverlayUrlBlock({ url }: OverlayUrlBlockProps) {
         </div>
 
         {/* Eye toggle — stops propagation so it doesn't trigger copy */}
-        <button
-          type="button"
-          className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
-          title={revealed ? '隱藏網址' : '顯示網址'}
-          onClick={e => {
-            e.stopPropagation()
-            setRevealed(v => !v)
-          }}
-        >
-          <Icon
-            icon={revealed ? 'fa-regular fa-eye-slash' : 'fa-regular fa-eye'}
-            className="text-xs"
-          />
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              className="shrink-0 select-none text-muted-foreground transition-colors hover:text-foreground"
+              onClick={e => {
+                e.stopPropagation()
+                setRevealed(v => !v)
+              }}
+            >
+              <Icon
+                icon={revealed ? 'fa-regular fa-eye-slash' : 'fa-regular fa-eye'}
+                className="text-xs"
+              />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>{revealed ? '隱藏網址' : '顯示網址'}</TooltipContent>
+        </Tooltip>
       </div>
 
       {/* Open in new tab */}
-      <Button variant="outline" size="sm" title="在新分頁開啟" asChild>
-        <a href={url} target="_blank" rel="noopener noreferrer">
-          <Icon icon="fa-solid fa-arrow-up-right-from-square" className="text-xs" />
-        </a>
-      </Button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button variant="outline" size="sm" asChild>
+            <a href={url} target="_blank" rel="noopener noreferrer">
+              <Icon icon="fa-solid fa-arrow-up-right-from-square" className="text-xs" />
+            </a>
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>在新分頁開啟</TooltipContent>
+      </Tooltip>
     </div>
   )
 }
