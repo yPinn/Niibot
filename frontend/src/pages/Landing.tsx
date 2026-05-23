@@ -40,13 +40,13 @@ const FEATURES = [
   {
     icon: 'fa-solid fa-film',
     title: '影片排隊系統',
-    desc: '觀眾投票想看的 YouTube 影片，自動排隊依序播放。',
+    desc: '支援 YouTube、Bilibili、Twitch Clip，觀眾投稿後自動排隊依序播放。',
     badge: 'OBS',
   },
   {
     icon: 'fa-solid fa-chart-line',
     title: '數據分析',
-    desc: '30 天直播趨勢、聊天量、最活躍觀眾與最常用指令，掌握頻道成長一目了然。',
+    desc: '依時間區間查看聊天量趨勢與最活躍觀眾排名，掌握頻道互動概況。',
   },
 ]
 

@@ -10,8 +10,8 @@ interface ChannelCardProps {
 }
 
 function overlapColor(pct: number): string {
-  if (pct >= 30) return 'text-green-500'
-  if (pct >= 10) return 'text-blue-500'
+  if (pct >= 30) return 'text-status-online'
+  if (pct >= 10) return 'text-status-info'
   return 'text-muted-foreground'
 }
 
@@ -20,17 +20,14 @@ function broadcasterBadge(type: string | null) {
     return (
       <Badge
         variant="outline"
-        className="text-yellow-500 border-yellow-500/40 text-label py-0 shrink-0"
+        className="text-status-loading border-status-loading/40 text-label py-0 shrink-0"
       >
         Partner
       </Badge>
     )
   if (type === 'affiliate')
     return (
-      <Badge
-        variant="outline"
-        className="text-purple-500 border-purple-500/40 text-label py-0 shrink-0"
-      >
+      <Badge variant="outline" className="text-primary border-primary/40 text-label py-0 shrink-0">
         Affiliate
       </Badge>
     )
@@ -56,7 +53,6 @@ export function ChannelCard({ channel, isSelected, onClick }: ChannelCardProps) 
       </Avatar>
 
       <div className="flex flex-col gap-1 flex-1 min-w-0">
-        {/* Name row */}
         <div className="flex items-start justify-between gap-element">
           <div className="flex items-center gap-1 flex-wrap flex-1 min-w-0">
             <span className="text-sub font-semibold truncate">{name}</span>
@@ -90,7 +86,6 @@ export function ChannelCard({ channel, isSelected, onClick }: ChannelCardProps) 
           </div>
         </div>
 
-        {/* Category + language + tags */}
         {(recentGame || channel.language || channel.tags.length > 0) && (
           <div className="flex items-center gap-1 flex-wrap">
             {recentGame && (
@@ -118,7 +113,6 @@ export function ChannelCard({ channel, isSelected, onClick }: ChannelCardProps) 
           </div>
         )}
 
-        {/* Stats row */}
         <div className="flex items-center gap-1 flex-wrap">
           <Badge variant="secondary" className="text-label py-0">
             {channel.shared_chatters.toLocaleString()} 共同觀眾

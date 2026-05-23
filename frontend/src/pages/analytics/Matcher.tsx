@@ -18,6 +18,7 @@ import {
   SlideUp,
   SlideUpSm,
 } from '@/components/ui'
+import { WipLockOverlay } from '@/components/WipLockOverlay'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { apiCache } from '@/lib/apiCache'
@@ -38,17 +39,14 @@ function broadcasterBadgeDetail(type: string | null) {
     return (
       <Badge
         variant="outline"
-        className="text-yellow-500 border-yellow-500/40 text-label py-0 shrink-0"
+        className="text-status-loading border-status-loading/40 text-label py-0 shrink-0"
       >
         Partner
       </Badge>
     )
   if (type === 'affiliate')
     return (
-      <Badge
-        variant="outline"
-        className="text-purple-500 border-purple-500/40 text-label py-0 shrink-0"
-      >
+      <Badge variant="outline" className="text-primary border-primary/40 text-label py-0 shrink-0">
         Affiliate
       </Badge>
     )
@@ -184,7 +182,7 @@ export default function Matcher() {
               </div>
             ))
           ) : summaries.length === 0 ? (
-            <p className="text-sub text-muted-foreground text-center py-8">尚無頻道資料</p>
+            <p className="text-sub text-muted-foreground text-center py-empty">尚無頻道資料</p>
           ) : (
             [...summaries]
               .sort((a, b) => suitabilityScore(b) - suitabilityScore(a))
@@ -206,7 +204,6 @@ export default function Matcher() {
             </div>
           ) : (
             <>
-              {/* Header */}
               <div className="flex items-start gap-3 shrink-0">
                 <Avatar className="size-12 shrink-0">
                   <AvatarImage
@@ -253,7 +250,6 @@ export default function Matcher() {
                 </div>
               </div>
 
-              {/* Stats */}
               <div className="grid grid-cols-4 gap-card shrink-0">
                 <div className="flex flex-col items-center rounded-lg border bg-muted/20 px-4 py-2">
                   <span className="text-card-title font-bold tabular-nums">
@@ -272,9 +268,9 @@ export default function Matcher() {
                     className={cn(
                       'text-card-title font-bold tabular-nums',
                       selectedChannel.overlap_pct >= 30
-                        ? 'text-green-500'
+                        ? 'text-status-online'
                         : selectedChannel.overlap_pct >= 10
-                          ? 'text-blue-500'
+                          ? 'text-status-info'
                           : 'text-muted-foreground'
                     )}
                   >
@@ -290,7 +286,6 @@ export default function Matcher() {
                 </div>
               </div>
 
-              {/* Metadata */}
               <div className="flex flex-col gap-2 shrink-0">
                 {selectedChannel.tags.length > 0 && (
                   <div className="flex items-center gap-1.5 flex-wrap">
@@ -305,7 +300,7 @@ export default function Matcher() {
                     ))}
                   </div>
                 )}
-                <div className="flex items-center gap-4 text-label text-muted-foreground flex-wrap">
+                <div className="flex items-center gap-section text-label text-muted-foreground flex-wrap">
                   {formatPeakHours(selectedChannel.peak_hours) && (
                     <span className="flex items-center gap-1">
                       <Icon icon="fa-regular fa-clock" className="text-label" />
@@ -335,6 +330,7 @@ export default function Matcher() {
           )}
         </div>
       </SlideUp>
+      {import.meta.env.PROD && <WipLockOverlay />}
     </PageMain>
   )
 }

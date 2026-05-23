@@ -320,7 +320,7 @@ export default function Timers() {
             {loading ? (
               <div className="overflow-x-auto rounded-md border">
                 <div className="divide-y divide-border">
-                  <div className="flex items-center gap-4 px-4 py-3 bg-muted/50">
+                  <div className="flex items-center gap-section px-page py-3 bg-muted/50">
                     <Skeleton className="h-4 w-[20%]" />
                     <Skeleton className="h-4 w-[6%]" />
                     <Skeleton className="h-4 flex-1" />
@@ -329,7 +329,7 @@ export default function Timers() {
                     <Skeleton className="h-4 w-[8%]" />
                   </div>
                   {Array.from({ length: 5 }).map((_, i) => (
-                    <div key={i} className="flex items-center gap-4 px-4 py-3">
+                    <div key={i} className="flex items-center gap-section px-page py-3">
                       <Skeleton className="h-4 w-[20%]" />
                       <Skeleton className="h-4 w-[6%]" />
                       <Skeleton className="h-4 flex-1" />

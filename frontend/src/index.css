@@ -78,6 +78,16 @@
   --color-status-warning: var(--status-warning);
   --color-status-follow: var(--status-follow);
   --color-discord: oklch(0.55 0.22 275); /* Discord brand #5865F2 — fixed, not theme-adaptive */
+  --color-chat-broadcaster: var(--chat-role-broadcaster);
+  --color-chat-mod: var(--chat-role-mod);
+  --color-chat-vip: var(--chat-role-vip);
+  --color-chat-default: var(--chat-role-default);
+
+  /* ── Semantic Text Colors (text-heading / text-body / text-sub / text-label-muted) ── */
+  --color-text-heading: var(--text-color-heading);
+  --color-text-body: var(--text-color-body);
+  --color-text-sub: var(--text-color-sub);
+  --color-text-label-muted: var(--text-color-label);
   --color-rank-gold: oklch(0.828 0.189 86);
   --color-rank-silver: oklch(0.704 0.04 257);
   --color-rank-bronze: oklch(0.75 0.183 56);
@@ -163,7 +173,7 @@
   --duration-slow: 250ms; /* panel open, collapsible */
   --ease-default: cubic-bezier(0.4, 0, 0.2, 1); /* smooth in-out for state changes */
   --ease-out: cubic-bezier(0, 0, 0.2, 1); /* deceleration — elements entering screen */
-  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1); /* hover scale, playful bounce */
+  --ease-spring: cubic-bezier(0.16, 1, 0.3, 1); /* snappy expo-out — no overshoot */
 
   /* ── Status Colors ── */
   --status-online: oklch(0.67 0.2 155); /* green */
@@ -175,6 +185,12 @@
   --status-live: oklch(0.65 0.26 27); /* red — live/broadcasting indicator */
   --status-warning: oklch(0.62 0.18 50); /* amber — caution notices */
   --status-follow: oklch(0.65 0.22 10); /* rose — follow / heart events */
+
+  /* ── Twitch Chat Role Colors (light — contrast-safe against white/card) ── */
+  --chat-role-broadcaster: oklch(0.52 0.22 35); /* #ff4500-derived, deepened for light */
+  --chat-role-mod: oklch(0.48 0.18 155); /* green, deepened: ≥ 4.5:1 on white */
+  --chat-role-vip: oklch(0.44 0.22 330); /* magenta, deepened: ≥ 4.5:1 on white */
+  --chat-role-default: oklch(0.46 0.015 290); /* neutral muted, same as muted-foreground */
 
   --radius: 0.625rem;
 
@@ -260,6 +276,12 @@
   --status-live: oklch(0.72 0.24 27); /* red — live/broadcasting indicator */
   --status-warning: oklch(0.75 0.15 55); /* amber — caution notices (dark) */
   --status-follow: oklch(0.72 0.19 10); /* rose — follow / heart events (dark) */
+
+  /* ── Twitch Chat Role Colors (dark — Twitch authentic palette) ── */
+  --chat-role-broadcaster: oklch(0.65 0.22 35); /* #ff4500 equivalent */
+  --chat-role-mod: oklch(0.78 0.22 155); /* #00e676 — authentic on dark */
+  --chat-role-vip: oklch(0.62 0.28 330); /* #e005b9 — authentic on dark */
+  --chat-role-default: oklch(0.65 0.015 290); /* readable neutral on dark bg */
 }
 
 @layer base {

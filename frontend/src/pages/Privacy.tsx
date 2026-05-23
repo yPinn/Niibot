@@ -121,8 +121,8 @@ export default function Privacy() {
                 提供 Discord Bot 服務、伺服器指令與事件日誌功能
               </li>
               <li>
-                <strong className="text-foreground">YouTube：</strong>
-                影片排隊功能用於解析影片資訊
+                <strong className="text-foreground">YouTube、Bilibili、Twitch：</strong>
+                影片排隊功能用於向這些平台發送請求以解析影片資訊
               </li>
               <li>
                 <strong className="text-foreground">Instagram、Bilibili、TikTok、Threads：</strong>

@@ -14,8 +14,6 @@ import {
 } from '@/components/ui/dialog'
 import { Icon } from '@/components/ui/icon'
 
-const SESSION_KEY = 'mod-setup-dismissed'
-
 interface ModSetupDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -25,7 +23,6 @@ export function ModSetupDialog({ open, onOpenChange }: ModSetupDialogProps) {
   const [granting, setGranting] = useState(false)
 
   function dismiss() {
-    sessionStorage.setItem(SESSION_KEY, '1')
     onOpenChange(false)
   }
 
@@ -80,5 +77,3 @@ export function ModSetupDialog({ open, onOpenChange }: ModSetupDialogProps) {
     </Dialog>
   )
 }
-
-export { SESSION_KEY as MOD_SETUP_SESSION_KEY }

@@ -82,8 +82,8 @@ export default function DiscordDashboard() {
 
       {/* Invite CTA */}
       <SlideUp>
-        <div className="flex flex-col gap-4 rounded-2xl border border-discord/20 bg-discord/5 p-6 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-start gap-4">
+        <div className="flex flex-col gap-section rounded-2xl border border-discord/20 bg-discord/5 p-page-lg sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-section">
             <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-discord/10">
               <Icon icon="fa-brands fa-discord" size="xl" wrapperClassName="text-discord" />
             </div>
@@ -109,7 +109,6 @@ export default function DiscordDashboard() {
         </div>
       </SlideUp>
 
-      {/* Features */}
       <section className="flex flex-col gap-section">
         <h2 className="text-section-title font-semibold">功能介紹</h2>
         <Stagger inView className="grid gap-section sm:grid-cols-2 lg:grid-cols-3">
@@ -140,7 +139,6 @@ export default function DiscordDashboard() {
         </Stagger>
       </section>
 
-      {/* Commands */}
       <SlideUp inView delay={0.05}>
         <section className="flex flex-col gap-section">
           <h2 className="text-section-title font-semibold">常用指令</h2>
@@ -148,7 +146,7 @@ export default function DiscordDashboard() {
             <CardContent className="p-0">
               <div className="divide-y">
                 {COMMANDS.map(({ cmd, desc }) => (
-                  <div key={cmd} className="flex items-baseline gap-4 px-page py-2">
+                  <div key={cmd} className="flex items-baseline gap-section px-page py-2">
                     <code className="w-44 shrink-0 font-mono text-sub font-semibold text-primary select-text">
                       {cmd}
                     </code>
@@ -161,7 +159,6 @@ export default function DiscordDashboard() {
         </section>
       </SlideUp>
 
-      {/* Setup note */}
       <SlideUp inView delay={0.1}>
         <WarningBanner>
           <strong>伺服器事件日誌</strong>需要管理員先在頻道內執行一次{' '}
@@ -170,7 +167,6 @@ export default function DiscordDashboard() {
         </WarningBanner>
       </SlideUp>
 
-      {/* Help */}
       <SlideUp inView delay={0.1}>
         <DiscordHelpBanner />
       </SlideUp>

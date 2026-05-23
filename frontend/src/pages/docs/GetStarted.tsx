@@ -13,7 +13,6 @@ import {
   CardTitle,
   Icon,
   SlideUp,
-  SlideUpSm,
   Stagger,
   StaggerItem,
   TwitchBadgeGroup,
@@ -26,17 +25,19 @@ type ChatLine =
   | { type: 'message'; roles: TwitchRole[]; username: string; message: string }
   | { type: 'system'; message: string }
 
-const ROLE_COLOR: Partial<Record<TwitchRole, string>> = {
-  broadcaster: '#ff4500',
-  moderator: '#00e676',
-  vip: '#e005b9',
+const ROLE_CSS_VAR: Partial<Record<TwitchRole, string>> = {
+  broadcaster: 'var(--chat-role-broadcaster)',
+  moderator: 'var(--chat-role-mod)',
+  vip: 'var(--chat-role-vip)',
 }
 
 const ROLE_PRIORITY: TwitchRole[] = ['broadcaster', 'moderator', 'vip']
 
 function getRoleColor(roles: TwitchRole[]): string {
   const dominant = ROLE_PRIORITY.find(r => roles.includes(r))
-  return dominant ? (ROLE_COLOR[dominant] ?? '#a0a0a0') : '#a0a0a0'
+  return dominant
+    ? (ROLE_CSS_VAR[dominant] ?? 'var(--chat-role-default)')
+    : 'var(--chat-role-default)'
 }
 
 const LINE_DELAYS: [number, number, number] = [0, 600, 1100]
@@ -78,15 +79,13 @@ function TwitchChatMockup({
 
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card text-foreground">
-      {/* Header */}
-      <div className="flex items-center gap-2 border-b border-border bg-background px-4 py-2.5">
+      <div className="flex items-center gap-element border-b border-border bg-background px-page py-2.5">
         <i className="fa-brands fa-twitch text-xl text-primary" />
         <span className="text-sub font-semibold text-foreground">{channel}</span>
         <span className="ml-auto text-label text-muted-foreground">聊天室</span>
       </div>
 
-      {/* Messages */}
-      <div className="flex h-28 flex-col justify-end gap-2 overflow-hidden px-3 py-3">
+      <div className="flex h-28 flex-col justify-end gap-element overflow-hidden px-3 py-3">
         {lines.slice(0, visibleCount).map((line, i) => {
           const content =
             line.type === 'system' ? (
@@ -116,7 +115,6 @@ function TwitchChatMockup({
         })}
       </div>
 
-      {/* Input */}
       <div className="border-t border-border px-3 py-2.5">
         <div className="flex items-center gap-3 rounded bg-muted px-3 py-2">
           <i className="fa-regular fa-face-smile text-xl text-muted-foreground" />
@@ -164,50 +162,70 @@ const MOD_METHODS = [
   {
     icon: 'fa-solid fa-user',
     title: '從觀眾名單設定',
-    desc: '點擊聊天室中機器人帳號名稱 → 展開用戶卡片 → 點擊「給予 Mod」按鈕',
+    desc: '點擊機器人帳號 → 用戶卡片 → 給予 Mod',
   },
   {
     icon: 'fa-solid fa-gear',
     title: '從 Twitch 後台設定',
-    desc: '前往 Twitch 後台 → 社群 → 角色管理 → 搜尋「泥爸」→ 設定為管理員（Moderator）',
+    desc: 'Twitch 後台 → 社群 → 角色管理 → 搜尋帳號 → 設為 Moderator',
   },
 ]
 
-const NEXT_STEPS = [
+const CORE_FEATURES = [
   {
     icon: 'fa-solid fa-terminal',
-    title: '建立第一個指令',
-    desc: '新增觀眾可在聊天室呼叫的指令，可設定使用間隔與開放對象。',
+    title: '指令管理',
+    desc: '新增觀眾可呼叫的指令，可設冷卻時間與開放對象，支援內建與完全自訂。',
     href: '/commands',
-    badge: null,
   },
   {
     icon: 'fa-solid fa-bolt',
-    title: '設定事件自動回應',
-    desc: '有人追蹤、訂閱或突襲時，自動發出你設定好的訊息。',
+    title: '事件回應',
+    desc: '追蹤、訂閱、突襲或贈禮時，自動發出設定的訊息，互動不漏掉。',
     href: '/events',
-    badge: null,
   },
   {
     icon: 'fa-solid fa-clock',
-    title: '新增定時訊息',
-    desc: '定時廣播頻道資訊或活動公告，沒人聊天時不打擾。',
+    title: '定時訊息',
+    desc: '設定週期性廣播自動發送頻道公告，靜止時段不觸發。',
     href: '/timers',
-    badge: null,
+  },
+  {
+    icon: 'fa-solid fa-chart-mixed',
+    title: '數據分析',
+    desc: '查看觀眾互動紀錄與統計，並同步 Twitch 角色至觀眾資料庫。',
+    href: '/analytics/insights',
+  },
+]
+
+const MODULE_FEATURES = [
+  {
+    icon: 'fa-solid fa-film',
+    title: '影片排隊',
+    desc: '觀眾投稿影片連結排隊，支援 YouTube、Bilibili、Twitch Clip。',
+    href: '/modules/video-queue',
+    badge: 'OBS',
   },
   {
     icon: 'fa-solid fa-gamepad',
-    title: '啟用遊戲排隊系統',
-    desc: '管理觀眾排隊上下車，隊伍狀況同步顯示在直播畫面上。',
+    title: '遊戲排隊',
+    desc: '觀眾指令排隊，隊伍即時同步至 OBS 畫面。',
     href: '/modules/game-queue',
     badge: 'OBS',
   },
   {
-    icon: 'fa-solid fa-film',
-    title: '啟用影片排隊系統',
-    desc: '觀眾投票想看的 YouTube 影片，自動排隊依序播放。',
-    href: '/modules/video-queue',
-    badge: 'OBS',
+    icon: 'fa-solid fa-robot',
+    title: 'AI 助理',
+    desc: '串接 AI 讓機器人回答觀眾問題，可自訂人設。',
+    href: '/modules/ai',
+    badge: null,
+  },
+  {
+    icon: 'fa-solid fa-crosshairs',
+    title: '準星收藏',
+    desc: '收藏展示準星設定，觀眾一鍵複製套用。',
+    href: '/modules/crosshairs',
+    badge: null,
   },
 ]
 
@@ -221,92 +239,168 @@ export default function GetStarted() {
         description="授予機器人管理員身份，Niibot 就能在你的頻道正常運作。"
       />
 
-      <SlideUp inView>
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-3 text-card-title">
-              <Icon
-                icon="fa-solid fa-shield-halved"
-                size="md"
-                wrapperClassName="text-status-warning"
-              />
-              讓機器人成為聊天室管理員
-            </CardTitle>
-            <p className="text-sub text-muted-foreground">
-              機器人需要 Mod 才能在你的頻道發言。透過右上角 <strong>Niibot</strong>{' '}
-              選單一鍵授予，或使用下列方式手動設定。
-            </p>
-          </CardHeader>
-
-          <CardContent>
-            <div className="grid items-start gap-card lg:grid-cols-2">
-              {/* Left: methods + notice */}
-              <div className="flex flex-col gap-card">
-                <div className="grid gap-element sm:grid-cols-2 lg:grid-cols-1">
-                  {MOD_METHODS.map(method => (
-                    <div key={method.title} className="flex gap-3 rounded-lg border bg-card p-page">
-                      <Icon
-                        icon={method.icon}
-                        size="md"
-                        wrapperClassName="mt-0.5 text-muted-foreground"
-                      />
-                      <div className="flex flex-col gap-element">
-                        <p className="text-label font-medium">{method.title}</p>
-                        <p className="text-label leading-relaxed text-muted-foreground">
-                          {method.desc}
-                        </p>
-                      </div>
-                    </div>
+      <div className="grid gap-section lg:grid-cols-3 lg:items-start">
+        <div className="order-last lg:order-first lg:col-span-2 flex flex-col gap-section">
+          <SlideUp inView delay={0.05}>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-card-title">核心功能</CardTitle>
+                <p className="text-sub text-muted-foreground">
+                  授予 Mod 後，建議先熟悉這幾項核心功能。
+                </p>
+              </CardHeader>
+              <CardContent>
+                <Stagger inView className="flex flex-col divide-y divide-border">
+                  {CORE_FEATURES.map((item, idx) => (
+                    <StaggerItem key={item.title}>
+                      <Link
+                        to={item.href}
+                        className="group flex items-start gap-section py-page transition-colors hover:text-primary"
+                      >
+                        <span className="mt-0.5 shrink-0 w-5 text-label font-mono text-primary/40 group-hover:text-primary/80 transition-colors tabular-nums">
+                          {String(idx + 1).padStart(2, '0')}
+                        </span>
+                        <Icon
+                          icon={item.icon}
+                          size="md"
+                          wrapperClassName="mt-0.5 shrink-0 text-primary/70 group-hover:text-primary transition-colors"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sub font-semibold group-hover:text-primary transition-colors">
+                            {item.title}
+                          </p>
+                          <p className="text-label leading-relaxed text-muted-foreground mt-0.5">
+                            {item.desc}
+                          </p>
+                        </div>
+                        <Icon
+                          icon="fa-solid fa-arrow-right"
+                          className="mt-1 shrink-0 text-label text-muted-foreground/30 group-hover:text-primary/60 transition-colors"
+                        />
+                      </Link>
+                    </StaggerItem>
                   ))}
-                </div>
+                </Stagger>
+              </CardContent>
+            </Card>
+          </SlideUp>
 
-                <WarningBanner>
-                  /mod 指令需由頻道主（Broadcaster）或頻道內的主要 Mod 執行。
-                </WarningBanner>
-              </div>
+          <SlideUp inView delay={0.1}>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-card-title">模組功能</CardTitle>
+                <p className="text-sub text-muted-foreground">
+                  按需啟用的進階功能，OBS 標記的模組可直接整合至直播畫面。
+                </p>
+              </CardHeader>
+              <CardContent>
+                <Stagger inView className="grid gap-card grid-cols-2">
+                  {MODULE_FEATURES.map(item => {
+                    const isObs = !!item.badge
+                    return (
+                      <StaggerItem key={item.title}>
+                        <Link to={item.href} className="group block h-full">
+                          <div
+                            className={`flex flex-col gap-element rounded-lg border p-page h-full transition-colors ${isObs ? 'bg-primary/5 border-primary/20 hover:bg-primary/10 hover:border-primary/40' : 'bg-muted/20 hover:bg-accent/20'}`}
+                          >
+                            <div className="flex items-center justify-between gap-element">
+                              <div className="flex items-center gap-element">
+                                <Icon
+                                  icon={item.icon}
+                                  size="md"
+                                  wrapperClassName={
+                                    isObs
+                                      ? 'text-primary/70 group-hover:text-primary transition-colors'
+                                      : 'text-muted-foreground'
+                                  }
+                                />
+                                <p
+                                  className={`text-sub font-semibold ${isObs ? 'group-hover:text-primary' : 'group-hover:text-foreground'} transition-colors`}
+                                >
+                                  {item.title}
+                                </p>
+                              </div>
+                              {item.badge && (
+                                <Badge
+                                  variant="outline"
+                                  className="shrink-0 text-label border-primary/30 text-primary/70"
+                                >
+                                  {item.badge}
+                                </Badge>
+                              )}
+                            </div>
+                            <p className="text-label leading-relaxed text-muted-foreground">
+                              {item.desc}
+                            </p>
+                          </div>
+                        </Link>
+                      </StaggerItem>
+                    )
+                  })}
+                </Stagger>
+              </CardContent>
+            </Card>
+          </SlideUp>
 
-              <TwitchChatMockup
-                channel="你的頻道"
-                lines={MOD_CHAT_PREVIEW}
-                command="/mod niibot_"
-              />
-            </div>
-          </CardContent>
-        </Card>
-      </SlideUp>
+          <DiscordHelpBanner />
+        </div>
 
-      <section className="flex flex-col gap-section">
-        <SlideUpSm inView delay={0.05}>
-          <h2 className="text-section-title font-semibold">設定完成後，接著做什麼？</h2>
-        </SlideUpSm>
+        <div className="order-first lg:order-last">
+          <div className="lg:sticky lg:top-4">
+            <SlideUp inView>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-3 text-card-title">
+                    <Icon
+                      icon="fa-solid fa-shield-halved"
+                      size="md"
+                      wrapperClassName="text-status-warning"
+                    />
+                    讓機器人成為聊天室管理員
+                  </CardTitle>
+                  <p className="text-sub text-muted-foreground">
+                    機器人需要 Mod 才能發言。點選右上角 <strong>Niibot</strong>{' '}
+                    選單一鍵授予，或手動設定。
+                  </p>
+                </CardHeader>
 
-        <Stagger inView className="grid gap-section sm:grid-cols-2 lg:grid-cols-3">
-          {NEXT_STEPS.map(item => (
-            <StaggerItem key={item.title}>
-              <Link to={item.href} className="group">
-                <Card className="h-full py-section transition-colors hover:border-primary/50 hover:bg-accent/30">
-                  <CardContent className="flex flex-col gap-element">
-                    <div className="flex items-center gap-2">
-                      <Icon icon={item.icon} size="md" wrapperClassName="text-primary" />
-                      <span className="text-sub font-semibold group-hover:text-primary">
-                        {item.title}
-                      </span>
-                      {item.badge && (
-                        <Badge variant="secondary" className="ml-auto text-label">
-                          {item.badge}
-                        </Badge>
-                      )}
-                    </div>
-                    <p className="text-label leading-relaxed text-muted-foreground">{item.desc}</p>
-                  </CardContent>
-                </Card>
-              </Link>
-            </StaggerItem>
-          ))}
-        </Stagger>
-      </section>
+                <CardContent className="flex flex-col gap-card">
+                  <div className="flex flex-col gap-element">
+                    {MOD_METHODS.map(method => (
+                      <div
+                        key={method.title}
+                        className="flex gap-3 rounded-lg border bg-card p-page"
+                      >
+                        <Icon
+                          icon={method.icon}
+                          size="md"
+                          wrapperClassName="mt-0.5 text-muted-foreground"
+                        />
+                        <div className="flex flex-col gap-element">
+                          <p className="text-sub font-medium">{method.title}</p>
+                          <p className="text-label leading-relaxed text-muted-foreground">
+                            {method.desc}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
 
-      <DiscordHelpBanner />
+                  <TwitchChatMockup
+                    channel="你的頻道"
+                    lines={MOD_CHAT_PREVIEW}
+                    command="/mod niibot_"
+                  />
+
+                  <WarningBanner>
+                    /mod 指令需由頻道主（Broadcaster）或頻道內的主要 Mod 執行。
+                  </WarningBanner>
+                </CardContent>
+              </Card>
+            </SlideUp>
+          </div>
+        </div>
+      </div>
     </PageMain>
   )
 }
