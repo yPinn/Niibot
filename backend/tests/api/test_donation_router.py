@@ -346,3 +346,157 @@ class TestCheckoutRateLimit:
             )
 
         assert r.status_code == 429
+
+
+# ---------------------------------------------------------------------------
+# GET /api/donate/public/{username}
+# ---------------------------------------------------------------------------
+
+
+class TestGetPublicDonateInfo:
+    def test_returns_enabled_platforms(self):
+        cfg = AsyncMock()
+        cfg.platform = "ecpay"
+        cfg.min_amount = 50
+        cfg.media_share_enabled = False
+        cfg.enabled = True
+
+        with patch(
+            "routers.donation_router.DonationRepository.get_configs_by_username",
+            new=AsyncMock(return_value=("user1", "ch1", [cfg])),
+        ):
+            r = _make_client().get("/api/donate/public/testuser")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["username"] == "testuser"
+        assert len(data["platforms"]) == 1
+        assert data["platforms"][0]["platform"] == "ecpay"
+
+    def test_excludes_disabled_platforms(self):
+        enabled_cfg = AsyncMock()
+        enabled_cfg.platform = "ecpay"
+        enabled_cfg.min_amount = 50
+        enabled_cfg.media_share_enabled = False
+        enabled_cfg.enabled = True
+
+        disabled_cfg = AsyncMock()
+        disabled_cfg.platform = "opay"
+        disabled_cfg.enabled = False
+
+        with patch(
+            "routers.donation_router.DonationRepository.get_configs_by_username",
+            new=AsyncMock(return_value=("user1", "ch1", [enabled_cfg, disabled_cfg])),
+        ):
+            r = _make_client().get("/api/donate/public/testuser")
+        assert r.status_code == 200
+        platforms = [p["platform"] for p in r.json()["platforms"]]
+        assert "ecpay" in platforms
+        assert "opay" not in platforms
+
+    def test_streamer_not_found_returns_404(self):
+        with patch(
+            "routers.donation_router.DonationRepository.get_configs_by_username",
+            new=AsyncMock(return_value=None),
+        ):
+            r = _make_client().get("/api/donate/public/unknownuser")
+        assert r.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# _pkcs7_pad / _pkcs7_unpad — crypto primitives
+# ---------------------------------------------------------------------------
+
+
+class TestPkcs7:
+    def test_pad_short_input(self):
+        from routers.donation_router import _pkcs7_pad, _pkcs7_unpad
+
+        original = b"hello"
+        padded = _pkcs7_pad(original)
+        assert len(padded) % 16 == 0
+        assert _pkcs7_unpad(padded) == original
+
+    def test_pad_exact_block_size_adds_full_block(self):
+        from routers.donation_router import _pkcs7_pad, _pkcs7_unpad
+
+        original = b"A" * 16
+        padded = _pkcs7_pad(original)
+        assert len(padded) == 32
+        assert _pkcs7_unpad(padded) == original
+
+    def test_unpad_invalid_length_raises(self):
+        from routers.donation_router import _pkcs7_unpad
+
+        with pytest.raises(ValueError):
+            _pkcs7_unpad(b"\x00" * 16)  # pad byte 0 is invalid
+
+    def test_unpad_empty_raises(self):
+        from routers.donation_router import _pkcs7_unpad
+
+        with pytest.raises(ValueError):
+            _pkcs7_unpad(b"")
+
+    def test_unpad_wrong_padding_bytes_raises(self):
+        from routers.donation_router import _pkcs7_unpad
+
+        # Last byte says 3 but padding bytes are inconsistent
+        bad = b"hello world!!\x03\x03\x04"
+        with pytest.raises(ValueError):
+            _pkcs7_unpad(bad)
+
+
+# ---------------------------------------------------------------------------
+# _extract_video_id — YouTube URL extraction helper
+# ---------------------------------------------------------------------------
+
+
+class TestExtractVideoId:
+    def test_valid_youtube_url_returns_id(self):
+        from routers.donation_router import _extract_video_id
+
+        vid = _extract_video_id("https://youtube.com/watch?v=dQw4w9WgXcQ", True)
+        assert vid == "dQw4w9WgXcQ"
+
+    def test_media_share_disabled_returns_none(self):
+        from routers.donation_router import _extract_video_id
+
+        assert _extract_video_id("https://youtube.com/watch?v=dQw4w9WgXcQ", False) is None
+
+    def test_no_url_returns_none(self):
+        from routers.donation_router import _extract_video_id
+
+        assert _extract_video_id(None, True) is None
+
+    def test_invalid_url_raises_400(self):
+        from fastapi import HTTPException
+
+        from routers.donation_router import _extract_video_id
+
+        with pytest.raises(HTTPException) as exc_info:
+            _extract_video_id("https://example.com/not-yt", True)
+        assert exc_info.value.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# _newebpay_aes_encrypt / _newebpay_sha256 — NewebPay crypto
+# ---------------------------------------------------------------------------
+
+
+class TestNewebpayCrypto:
+    _KEY = "12345678901234567890123456789012"  # 32 bytes
+    _IV = "1234567890123456"  # 16 bytes
+
+    def test_encrypt_decrypt_roundtrip(self):
+        from routers.donation_router import _newebpay_aes_decrypt, _newebpay_aes_encrypt
+
+        plaintext = "MerchantID=abc&Amt=100"
+        encrypted = _newebpay_aes_encrypt(plaintext, self._KEY, self._IV)
+        decrypted = _newebpay_aes_decrypt(encrypted, self._KEY, self._IV)
+        assert decrypted == plaintext
+
+    def test_sha256_produces_uppercase_hex(self):
+        from routers.donation_router import _newebpay_sha256
+
+        result = _newebpay_sha256("somehex", self._KEY, self._IV)
+        assert result == result.upper()
+        assert len(result) == 64

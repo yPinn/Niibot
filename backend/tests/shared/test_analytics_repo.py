@@ -1014,3 +1014,257 @@ class TestScoreFormulaArithmetic:
             watch_seconds=3600, total_messages=20, sessions_attended=2, days_since_last_seen=90
         )
         assert abs(old / fresh - 0.50) < 0.02
+
+
+# ---------------------------------------------------------------------------
+# Overlap mixin — refresh_overlap
+# ---------------------------------------------------------------------------
+
+
+def _make_conn_multi(**kw) -> AsyncMock:
+    """Create a standalone async connection mock (not wrapped in a pool)."""
+    conn = AsyncMock()
+    for attr, val in kw.items():
+        setattr(conn, attr, AsyncMock(return_value=val))
+    return conn
+
+
+def _make_pool_with_conn(conn: AsyncMock) -> MagicMock:
+    pool = MagicMock()
+    pool.acquire.return_value.__aenter__ = AsyncMock(return_value=conn)
+    pool.acquire.return_value.__aexit__ = AsyncMock(return_value=None)
+    return pool
+
+
+_VIEWER_ROW = {
+    "user_id": "v1",
+    "username": "viewer1",
+    "display_name": "Viewer1",
+    "partner_sessions": 5,
+    "partner_messages": 20,
+    "partner_watch_sec": 3600,
+    "partner_last_seen": _NOW,
+    "home_sessions": 2,
+    "home_messages": 5,
+    "potential_score": 1.5,
+}
+
+
+@pytest.mark.asyncio
+class TestRefreshOverlap:
+    async def test_no_partners_returns_zero(self):
+        conn = _make_conn_multi()
+        conn.fetch.return_value = []
+        pool = _make_pool_with_conn(conn)
+
+        repo = AnalyticsRepository(pool)
+        count = await repo.refresh_overlap("home1", days=30)
+
+        assert count == 0
+
+    async def test_one_partner_returns_one(self):
+        conn = AsyncMock()
+        conn.fetch.side_effect = [
+            [{"channel_id": "partner1"}],  # partner list
+            [_VIEWER_ROW],  # viewer rows for partner1
+        ]
+        conn.fetchval.return_value = 100
+        pool = _make_pool_with_conn(conn)
+
+        repo = AnalyticsRepository(pool)
+        count = await repo.refresh_overlap("home1", days=30)
+
+        assert count == 1
+
+    async def test_failed_partner_is_skipped_others_counted(self):
+        """An exception on one partner must not abort the whole refresh."""
+
+        async def _fetch_side_effect(*args, **kw):
+            # First call: return partner list; subsequent calls raise
+            if not hasattr(_fetch_side_effect, "_called"):
+                _fetch_side_effect._called = True
+                return [{"channel_id": "p1"}, {"channel_id": "p2"}]
+            raise RuntimeError("compute error")
+
+        conn = AsyncMock()
+        conn.fetch.side_effect = _fetch_side_effect
+        pool = _make_pool_with_conn(conn)
+
+        repo = AnalyticsRepository(pool)
+        count = await repo.refresh_overlap("home1", days=30)
+
+        # Both partners failed (fetch raised), so count == 0
+        assert count == 0
+
+    async def test_empty_viewer_rows_skips_upsert(self):
+        """_compute_channel_overlap returns early if no viewers found."""
+        conn = AsyncMock()
+        conn.fetch.side_effect = [
+            [{"channel_id": "partner1"}],  # partner list
+            [],  # no viewers
+        ]
+        pool = _make_pool_with_conn(conn)
+
+        repo = AnalyticsRepository(pool)
+        count = await repo.refresh_overlap("home1", days=30)
+
+        assert count == 1
+        # executemany and execute should NOT be called when there are no viewers
+        conn.executemany.assert_not_called()
+        conn.execute.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Overlap mixin — get_matcher_summaries
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestGetMatcherSummaries:
+    async def test_returns_empty_list_when_no_summaries(self):
+        conn = _make_conn_multi(fetch=[])
+        pool = _make_pool_with_conn(conn)
+
+        repo = AnalyticsRepository(pool)
+        result = await repo.get_matcher_summaries("home1")
+
+        assert result == []
+
+    async def test_returns_summary_dicts(self):
+        row = {
+            "partner_channel_id": "p1",
+            "partner_unique_chatters": 100,
+            "home_unique_chatters": 80,
+            "shared_chatters": 40,
+            "exclusive_to_partner": 60,
+            "overlap_pct": 40.0,
+            "computed_at": _NOW,
+        }
+        conn = _make_conn_multi(fetch=[row])
+        pool = _make_pool_with_conn(conn)
+
+        repo = AnalyticsRepository(pool)
+        result = await repo.get_matcher_summaries("home1", days=30)
+
+        assert len(result) == 1
+        assert result[0]["partner_channel_id"] == "p1"
+        assert result[0]["overlap_pct"] == 40.0
+
+
+# ---------------------------------------------------------------------------
+# Overlap mixin — get_partner_session_stats
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestGetPartnerSessionStats:
+    async def test_empty_sessions_returns_zero_stats(self):
+        conn = _make_conn_multi(fetch=[])
+        pool = _make_pool_with_conn(conn)
+
+        repo = AnalyticsRepository(pool)
+        result = await repo.get_partner_session_stats("p1", days=90)
+
+        assert result["session_count"] == 0
+        assert result["top_games"] == []
+        assert result["peak_hours"] == []
+        assert result["avg_stream_hours"] == 0.0
+
+    async def test_returns_aggregated_stats(self):
+        rows = [
+            {"game_name": "Minecraft", "start_hour": 20, "duration_hours": 3.0},
+            {"game_name": "Minecraft", "start_hour": 21, "duration_hours": 2.5},
+            {"game_name": "Fortnite", "start_hour": 20, "duration_hours": 1.5},
+        ]
+        conn = _make_conn_multi(fetch=rows)
+        pool = _make_pool_with_conn(conn)
+
+        repo = AnalyticsRepository(pool)
+        result = await repo.get_partner_session_stats("p1", days=90)
+
+        assert result["session_count"] == 3
+        assert result["top_games"][0] == "Minecraft"
+        assert 20 in result["peak_hours"]
+        assert result["avg_stream_hours"] == round((3.0 + 2.5 + 1.5) / 3, 1)
+
+    async def test_top_games_capped_at_three(self):
+        rows = [{"game_name": f"Game{i}", "start_hour": i, "duration_hours": 1.0} for i in range(5)]
+        conn = _make_conn_multi(fetch=rows)
+        pool = _make_pool_with_conn(conn)
+
+        repo = AnalyticsRepository(pool)
+        result = await repo.get_partner_session_stats("p1", days=90)
+
+        assert len(result["top_games"]) <= 3
+
+    async def test_none_game_name_excluded_from_top_games(self):
+        rows = [
+            {"game_name": None, "start_hour": 18, "duration_hours": 1.0},
+            {"game_name": "Valorant", "start_hour": 19, "duration_hours": 2.0},
+        ]
+        conn = _make_conn_multi(fetch=rows)
+        pool = _make_pool_with_conn(conn)
+
+        repo = AnalyticsRepository(pool)
+        result = await repo.get_partner_session_stats("p1", days=90)
+
+        assert None not in result["top_games"]
+        assert "Valorant" in result["top_games"]
+
+
+# ---------------------------------------------------------------------------
+# Overlap mixin — get_potential_viewers
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestGetPotentialViewers:
+    async def test_returns_empty_when_no_viewers(self):
+        conn = AsyncMock()
+        conn.fetchval.return_value = 0
+        conn.fetch.return_value = []
+        pool = _make_pool_with_conn(conn)
+
+        repo = AnalyticsRepository(pool)
+        total, rows = await repo.get_potential_viewers("home1", "p1")
+
+        assert total == 0
+        assert rows == []
+
+    async def test_returns_count_and_rows(self):
+        viewer = {
+            "user_id": "v1",
+            "username": "viewer1",
+            "display_name": "Viewer1",
+            "partner_sessions": 5,
+            "partner_messages": 20,
+            "partner_watch_sec": 3600,
+            "partner_last_seen": _NOW,
+            "home_sessions": 0,
+            "home_messages": 0,
+            "potential_score": 2.5,
+            "computed_at": _NOW,
+        }
+        conn = AsyncMock()
+        conn.fetchval.return_value = 1
+        conn.fetch.return_value = [viewer]
+        pool = _make_pool_with_conn(conn)
+
+        repo = AnalyticsRepository(pool)
+        total, rows = await repo.get_potential_viewers("home1", "p1", limit=10, offset=0)
+
+        assert total == 1
+        assert len(rows) == 1
+        assert rows[0]["user_id"] == "v1"
+        assert rows[0]["potential_score"] == 2.5
+
+    async def test_total_fetchval_none_returns_zero(self):
+        conn = AsyncMock()
+        conn.fetchval.return_value = None
+        conn.fetch.return_value = []
+        pool = _make_pool_with_conn(conn)
+
+        repo = AnalyticsRepository(pool)
+        total, rows = await repo.get_potential_viewers("home1", "p1")
+
+        assert total == 0
