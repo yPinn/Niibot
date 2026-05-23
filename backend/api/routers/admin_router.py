@@ -71,6 +71,7 @@ class AdminChannelInfo(BaseModel):
     name: str
     display_name: str
     avatar: str
+    offline_image_url: str
     is_live: bool
     mod_status: str  # 'mod' | 'no_mod' | 'token_error' | 'scope_error'
     is_bot: bool
@@ -174,21 +175,27 @@ async def get_admin_channels(
             cid, status, granted, missing = r  # type: ignore[misc]
             channel_data[cid] = (status, granted, missing)
 
-    result = [
-        AdminChannelInfo(
-            id=cid,
-            name=user_map.get(cid, {}).get("login", ""),
-            display_name=user_map.get(cid, {}).get("display_name", ""),
-            avatar=user_map.get(cid, {}).get("profile_image_url", ""),
-            is_live=cid in live_ids,
-            mod_status=channel_data.get(cid, ("error", [], []))[0],
-            is_bot=cid == bot_id,
-            granted_scopes=channel_data.get(cid, ("error", [], []))[1],
-            missing_scopes=channel_data.get(cid, ("error", [], []))[2],
+    result = []
+    for ch in other:
+        cid = ch["channel_id"]
+        if cid not in user_map:
+            continue
+        u = user_map[cid]
+        status, granted, missing = channel_data.get(cid, ("error", [], []))
+        result.append(
+            AdminChannelInfo(
+                id=cid,
+                name=u.get("login", ""),
+                display_name=u.get("display_name", ""),
+                avatar=u.get("profile_image_url", ""),
+                offline_image_url=u.get("offline_image_url", ""),
+                is_live=cid in live_ids,
+                mod_status=status,
+                is_bot=cid == bot_id,
+                granted_scopes=granted,
+                missing_scopes=missing,
+            )
         )
-        for ch in other
-        if (cid := ch["channel_id"]) and cid in user_map
-    ]
 
     def _channel_tier(x: AdminChannelInfo) -> int:
         if x.is_bot:

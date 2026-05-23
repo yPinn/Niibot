@@ -18,7 +18,6 @@ const Events = lazy(() => import('@/pages/dashboard/Events'))
 const Overview = lazy(() => import('@/pages/dashboard/Overview'))
 const Timers = lazy(() => import('@/pages/dashboard/Timers'))
 const AdminPage = lazy(() => import('@/pages/admin'))
-const AdminActivationCodes = lazy(() => import('@/pages/admin/ActivationCodes'))
 const AdminMonitor = lazy(() => import('@/pages/admin/Monitor'))
 const Insights = lazy(() => import('@/pages/analytics/Insights'))
 const Matcher = lazy(() => import('@/pages/analytics/Matcher'))
@@ -108,7 +107,6 @@ function App() {
                       {/* Owner-only Routes */}
                       <Route element={<OwnerRoute />}>
                         <Route path="/admin" element={<AdminPage />} />
-                        <Route path="/admin/codes" element={<AdminActivationCodes />} />
                         <Route path="/admin/monitor" element={<AdminMonitor />} />
                       </Route>
                     </Route>
