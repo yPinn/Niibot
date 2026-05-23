@@ -82,7 +82,7 @@ class ChannelPointsComponent(commands.Component):
         payload: twitchio.ChannelPointsRedemptionAdd,
     ) -> None:
         """Channel Points 兌換事件"""
-        LOGGER.debug(f"event_custom_redemption_add triggered: {type(payload).__name__}")
+        LOGGER.debug("event_custom_redemption_add triggered: %s", type(payload).__name__)
 
         channel_name = payload.broadcaster.name
         channel_id = payload.broadcaster.id
@@ -91,9 +91,11 @@ class ChannelPointsComponent(commands.Component):
         reward_cost = payload.reward.cost
         user_input = payload.user_input or ""
 
-        LOGGER.info(f"[{channel_name}] {user_name} redeemed '{reward_title}' ({reward_cost} pts)")
+        LOGGER.info(
+            "[%s] %s redeemed '%s' (%s pts)", channel_name, user_name, reward_title, reward_cost
+        )
         if user_input:
-            LOGGER.debug(f"[{channel_name}] User input: {user_input}")
+            LOGGER.debug("[%s] User input: %s", channel_name, user_input)
 
         if channel_id in self.bot._needs_reauth:  # type: ignore[attr-defined]
             from utils.reauth import reauth_notifier
@@ -107,9 +109,9 @@ class ChannelPointsComponent(commands.Component):
 
         if channel_id not in self.bot._bot_is_mod:  # type: ignore[attr-defined]
             if channel_id in self.bot._mod_check_pending:  # type: ignore[attr-defined]
-                LOGGER.debug(f"[{channel_name}] Redemption deferred: mod check in-flight")
+                LOGGER.debug("[%s] Redemption deferred: mod check in-flight", channel_name)
                 return
-            LOGGER.debug(f"[{channel_name}] Redemption skipped: bot not mod")
+            LOGGER.debug("[%s] Redemption skipped: bot not mod", channel_name)
             bot_login: str = getattr(self.bot, "_bot_login", "niibot")
             await mod_guard_notifier.notify(
                 broadcaster_login=channel_name or "",
@@ -134,7 +136,7 @@ class ChannelPointsComponent(commands.Component):
 
         config = await self.redemption_repo.find_by_reward_name(channel_id, reward_title)
         if not config:
-            LOGGER.debug(f"[{channel_name}] No matching redemption config for: {reward_title}")
+            LOGGER.debug("[%s] No matching redemption config for: %s", channel_name, reward_title)
             return
 
         if config.action_type == "niibot_auth" and user_name:
@@ -143,7 +145,7 @@ class ChannelPointsComponent(commands.Component):
                 await self._handle_niibot_redemption(payload, user_name)
             else:
                 LOGGER.warning(
-                    f"[{channel_name}] {user_name} attempted niibot_auth on non-owner channel"
+                    "[%s] %s attempted niibot_auth on non-owner channel", channel_name, user_name
                 )
         elif config.action_type == "first" and user_name:
             await self._handle_first_redemption(payload, user_name)
@@ -166,9 +168,9 @@ class ChannelPointsComponent(commands.Component):
             await broadcaster.add_vip(user=payload.user)
             try:
                 await self._reply(broadcaster, f"@{user_name} 恭喜你成為尊榮的 VIP 大人！")
-                LOGGER.info(f"[{channel_name}] VIP granted to {user_name}")
+                LOGGER.info("[%s] VIP granted to %s", channel_name, user_name)
             except Exception as e:
-                LOGGER.warning(f"[{channel_name}] VIP granted but failed to send message: {e}")
+                LOGGER.warning("[%s] VIP granted but failed to send message: %s", channel_name, e)
 
         except Exception as e:
             if is_scope_error(e):
@@ -184,17 +186,17 @@ class ChannelPointsComponent(commands.Component):
             if status == 422:
                 if "moderator" in body:
                     LOGGER.warning(
-                        f"[{channel_name}] {user_name} is already a moderator, cannot grant VIP"
+                        "[%s] %s is already a moderator, cannot grant VIP", channel_name, user_name
                     )
                     error_message = f"@{user_name} 你已經是 Moderator 了！"
                 elif "already a vip" in body:
-                    LOGGER.info(f"[{channel_name}] {user_name} is already a VIP")
+                    LOGGER.info("[%s] %s is already a VIP", channel_name, user_name)
                     error_message = f"@{user_name} 你已經是 VIP 了！"
                 else:
-                    LOGGER.error(f"[{channel_name}] Failed to grant VIP (422): {e}")
+                    LOGGER.error("[%s] Failed to grant VIP (422): %s", channel_name, e)
                     error_message = f"@{user_name} VIP 授予失敗，請聯繫管理員！"
             else:
-                LOGGER.error(f"[{channel_name}] Failed to grant VIP: {e}")
+                LOGGER.error("[%s] Failed to grant VIP: %s", channel_name, e)
                 error_message = f"@{user_name} VIP 授予失敗，請聯繫管理員！"
 
             try:
@@ -217,17 +219,19 @@ class ChannelPointsComponent(commands.Component):
                     moderator=self.bot.bot_id,
                     color="primary",
                 )
-                LOGGER.info(f"[{channel_name}] First claimed by {user_name}")
+                LOGGER.info("[%s] First claimed by %s", channel_name, user_name)
             except Exception as e:
-                LOGGER.error(f"[{channel_name}] First announcement failed, falling back: {e}")
+                LOGGER.error("[%s] First announcement failed, falling back: %s", channel_name, e)
                 try:
                     await self._reply(broadcaster, f"@{user_name} 恭喜你搶到第一！")
-                    LOGGER.info(f"[{channel_name}] First fallback message sent to {user_name}")
+                    LOGGER.info("[%s] First fallback message sent to %s", channel_name, user_name)
                 except Exception as fallback_error:
-                    LOGGER.error(f"[{channel_name}] First fallback also failed: {fallback_error}")
+                    LOGGER.error(
+                        "[%s] First fallback also failed: %s", channel_name, fallback_error
+                    )
 
         except Exception as e:
-            LOGGER.error(f"[{channel_name}] First claim error: {e}")
+            LOGGER.error("[%s] First claim error: %s", channel_name, e)
 
     async def _handle_niibot_redemption(
         self,
@@ -242,15 +246,16 @@ class ChannelPointsComponent(commands.Component):
         try:
             code = await self.activation_repo.create("twitch", platform_user_id)
         except Exception as e:
-            LOGGER.error(f"[{channel_name}] Niibot auth: failed to generate activation code: {e}")
+            LOGGER.error(
+                "[%s] Niibot auth: failed to generate activation code: %s", channel_name, e
+            )
             try:
                 await self._reply(broadcaster, f"@{user_name} 啟用碼生成失敗，請稍後再試！")
             except Exception:
                 pass
             return
 
-        # Submit a manual-approval request in parallel — whichever path completes first activates the account.
-        # Best-effort: skip if user hasn't done OAuth login yet (no user row exists).
+        # Best-effort parallel path: first to complete activates the account. Skip if user hasn't OAuth'd yet.
         try:
             row = await self.activation_repo.pool.fetchrow(
                 "SELECT u.id FROM users u"
@@ -264,18 +269,18 @@ class ChannelPointsComponent(commands.Component):
                     str(row["id"]), "twitch", platform_user_id
                 )
                 LOGGER.info(
-                    f"[{channel_name}] Niibot auth: activation request submitted for {user_name}"
+                    "[%s] Niibot auth: activation request submitted for %s", channel_name, user_name
                 )
         except Exception as e:
             LOGGER.warning(
-                f"[{channel_name}] Niibot auth: could not submit activation request: {e}"
+                "[%s] Niibot auth: could not submit activation request: %s", channel_name, e
             )
 
         try:
             await self._reply(broadcaster, f"@{user_name} 已將啟用碼發送至你的 Twitch 私訊！")
-            LOGGER.info(f"[{channel_name}] Niibot auth: confirmation sent to {user_name}")
+            LOGGER.info("[%s] Niibot auth: confirmation sent to %s", channel_name, user_name)
         except Exception as e:
-            LOGGER.warning(f"[{channel_name}] Niibot auth: failed to send public message: {e}")
+            LOGGER.warning("[%s] Niibot auth: failed to send public message: %s", channel_name, e)
 
         frontend_url = self.settings.frontend_url
         whisper_message = (
@@ -287,9 +292,9 @@ class ChannelPointsComponent(commands.Component):
                 to_user=payload.user,
                 message=whisper_message,
             )
-            LOGGER.info(f"[{channel_name}] Niibot auth: whisper sent to {user_name}")
+            LOGGER.info("[%s] Niibot auth: whisper sent to %s", channel_name, user_name)
         except Exception as e:
-            LOGGER.error(f"[{channel_name}] Niibot auth: failed to send whisper: {e}")
+            LOGGER.error("[%s] Niibot auth: failed to send whisper: %s", channel_name, e)
             if is_scope_error(e):
                 await reauth_notifier.notify(
                     broadcaster_login=channel_name or "",
@@ -303,7 +308,7 @@ class ChannelPointsComponent(commands.Component):
                 )
             except Exception as fallback_error:
                 LOGGER.error(
-                    f"[{channel_name}] Niibot auth: fallback also failed: {fallback_error}"
+                    "[%s] Niibot auth: fallback also failed: %s", channel_name, fallback_error
                 )
 
     async def _handle_game_queue_redemption(
@@ -333,13 +338,15 @@ class ChannelPointsComponent(commands.Component):
                 await self.gq_repo.add_entry(channel_id, user_id, user_name)
             except asyncpg.UniqueViolationError:
                 LOGGER.debug(
-                    f"[{broadcaster.name}] GameQueue: duplicate entry race for {user_name}"
+                    "[%s] GameQueue: duplicate entry race for %s", broadcaster.name, user_name
                 )
                 return
 
             position = await self.gq_repo.count_active(channel_id)
             await self._reply(broadcaster, f"@{user_name} 已加入隊列，第{position}位")
-            LOGGER.info(f"[{broadcaster.name}] GameQueue: {user_name} joined (position {position})")
+            LOGGER.info(
+                "[%s] GameQueue: %s joined (position %s)", broadcaster.name, user_name, position
+            )
 
         except Exception as e:
             if is_scope_error(e):
@@ -349,7 +356,7 @@ class ChannelPointsComponent(commands.Component):
                     send_fn=lambda msg: self._reply(broadcaster, msg),
                 )
                 return
-            LOGGER.error(f"[{broadcaster.name}] GameQueue error: {e}")
+            LOGGER.error("[%s] GameQueue error: %s", broadcaster.name, e)
 
     async def _handle_video_queue_redemption(
         self,
@@ -460,14 +467,18 @@ class ChannelPointsComponent(commands.Component):
                     )
                     return
 
-            if duration_seconds and duration_seconds > settings.max_duration_redemption:
-                max_m, max_s = divmod(settings.max_duration_redemption, 60)
-                vid_m, vid_s = divmod(duration_seconds, 60)
-                await self._reply(
-                    broadcaster,
-                    f"@{user_name} 影片長度 {vid_m}:{vid_s:02d} 超過上限 {max_m}:{max_s:02d}",
-                )
-                return
+            if settings.max_duration_redemption > 0:
+                if duration_seconds is None:
+                    await self._reply(broadcaster, f"@{user_name} 無法驗證影片時長，請稍後再試")
+                    return
+                if duration_seconds > settings.max_duration_redemption:
+                    max_m, max_s = divmod(settings.max_duration_redemption, 60)
+                    vid_m, vid_s = divmod(duration_seconds, 60)
+                    await self._reply(
+                        broadcaster,
+                        f"@{user_name} 影片長度 {vid_m}:{vid_s:02d} 超過上限 {max_m}:{max_s:02d}",
+                    )
+                    return
 
             await self.vq_repo.add(
                 channel_id=channel_id,
@@ -494,7 +505,11 @@ class ChannelPointsComponent(commands.Component):
                 f"@{user_name} {info + ' ' if info else ''}已加入影片佇列！({position}/{settings.max_queue_size})",
             )
             LOGGER.info(
-                f"[{broadcaster.name}] VideoQueue: {user_name} added '{title or video_id}' (position {position})"
+                "[%s] VideoQueue: %s added '%s' (position %s)",
+                broadcaster.name,
+                user_name,
+                title or video_id,
+                position,
             )
 
         except Exception as e:
@@ -505,7 +520,7 @@ class ChannelPointsComponent(commands.Component):
                     send_fn=lambda msg: self._reply(broadcaster, msg),
                 )
                 return
-            LOGGER.error(f"[{broadcaster.name}] VideoQueue error: {e}")
+            LOGGER.error("[%s] VideoQueue error: %s", broadcaster.name, e)
 
 
 async def setup(bot: commands.Bot) -> None:

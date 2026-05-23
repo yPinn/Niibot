@@ -49,6 +49,9 @@ class _ModuleFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         record.module_tag = self._module_tag(record)  # type: ignore[attr-defined]
+        # Escape '[' so Rich (markup=True) does not consume [channel_name] prefixes as markup tags.
+        record.msg = record.getMessage().replace("[", "\\[")
+        record.args = None
         return super().format(record)
 
 

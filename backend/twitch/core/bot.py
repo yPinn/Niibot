@@ -115,7 +115,7 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
                 try:
                     await self.load_module(module_name)
                 except Exception as e:
-                    LOGGER.error(f"Failed to load component {module_name}: {e}")
+                    LOGGER.error("Failed to load component %s: %s", module_name, e)
 
         for coro in (
             self._subscribe_initial_channels(),
@@ -138,16 +138,16 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
     # ------------------------------------------------------------------
 
     async def event_ready(self) -> None:
-        LOGGER.info(f"Successfully logged in as: {self.bot_id}")
+        LOGGER.info("Successfully logged in as: %s", self.bot_id)
 
     async def event_eventsub_notification(self, payload) -> None:
-        LOGGER.debug(f"EventSub notification received: {type(payload).__name__}")
+        LOGGER.debug("EventSub notification received: %s", type(payload).__name__)
 
     async def event_eventsub_ready(self) -> None:
         LOGGER.info("EventSub is ready to receive notifications")
 
     async def event_eventsub_error(self, error: Exception) -> None:
-        LOGGER.error(f"EventSub error: {error}")
+        LOGGER.error("EventSub error: %s", error)
 
     async def event_oauth_authorized(
         self, payload: twitchio.authentication.UserTokenPayload
@@ -168,14 +168,14 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
                 await self.add_channel_to_db(user.id, user.name)
 
             if payload.user_id == self.owner_id:
-                LOGGER.info(f"Owner channel authorized and added: {user.name} (ID: {user.id})")
+                LOGGER.info("Owner channel authorized and added: %s (ID: %s)", user.name, user.id)
             else:
-                LOGGER.info(f"Channel authorized and added: {user.name} (ID: {user.id})")
+                LOGGER.info("Channel authorized and added: %s (ID: %s)", user.name, user.id)
 
         if payload.user_id not in self._subscribed_channels:
             await self.subscribe_channel_events(payload.user_id)
         else:
-            LOGGER.debug(f"Channel {payload.user_id} already subscribed, skipping")
+            LOGGER.debug("Channel %s already subscribed, skipping", payload.user_id)
 
         await self._check_bot_mod_status(payload.user_id)
 
@@ -191,18 +191,20 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
             scopes=scopes_str,
             token_type=token_type,
         )
-        LOGGER.info(f"Token refreshed and persisted for user: {payload.user_id}")
+        LOGGER.info("[%s] Token refreshed and persisted", payload.user_id)
         if payload.user_id != self._bot_id and payload.user_id not in self._bot_is_mod:
-            LOGGER.debug(f"Re-checking mod status for {payload.user_id} after token refresh")
+            LOGGER.debug("[%s] Re-checking mod status after token refresh", payload.user_id)
             await self._check_bot_mod_status(payload.user_id)
 
     async def event_message(self, payload: twitchio.ChatMessage) -> None:
         if payload.broadcaster:
-            LOGGER.debug(f"[{payload.chatter.name}#{payload.broadcaster.name}]: {payload.text}")
+            LOGGER.debug(
+                "[%s#%s]: %s", payload.chatter.name, payload.broadcaster.name, payload.text
+            )
 
             if payload.broadcaster.id not in self._subscribed_channels:
                 LOGGER.debug(
-                    f"Ignoring message from unsubscribed channel: {payload.broadcaster.name}"
+                    "Ignoring message from unsubscribed channel: %s", payload.broadcaster.name
                 )
                 return
 
@@ -213,8 +215,9 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
             # so processing there avoids duplicate command responses across channels.
             if payload.source_broadcaster is not None:
                 LOGGER.debug(
-                    f"Skipping shared-chat message from {payload.source_broadcaster.name}"
-                    f" seen in {payload.broadcaster.name}"
+                    "Skipping shared-chat message from %s seen in %s",
+                    payload.source_broadcaster.name,
+                    payload.broadcaster.name,
                 )
                 return
 
@@ -263,7 +266,7 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
             if channel_id not in self._bot_is_mod:
                 if channel_id in self._mod_check_pending:
                     LOGGER.debug(
-                        f"[{payload.broadcaster.name}] Mod check in-flight, deferring guard"
+                        "[%s] Mod check in-flight, deferring guard", payload.broadcaster.name
                     )
                     return
                 await mod_guard_notifier.notify(
@@ -292,7 +295,7 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
                 if triggered:
                     return
         else:
-            LOGGER.debug(f"[{payload.chatter.name}]: {payload.text}")
+            LOGGER.debug("[%s]: %s", payload.chatter.name, payload.text)
 
         await super().event_message(payload)
 
@@ -300,22 +303,24 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
         channel_id = str(payload.broadcaster.id)
         self._shared_chat_channels.add(channel_id)
         LOGGER.info(
-            f"[{payload.broadcaster.name}] Shared Chat started "
-            f"(session={payload.session_id}, host={payload.host.name})"
+            "[%s] Shared Chat started (session=%s, host=%s)",
+            payload.broadcaster.name,
+            payload.session_id,
+            payload.host.name,
         )
 
     async def event_shared_chat_end(self, payload: twitchio.SharedChatSessionEnd) -> None:
         channel_id = str(payload.broadcaster.id)
         self._shared_chat_channels.discard(channel_id)
         LOGGER.info(
-            f"[{payload.broadcaster.name}] Shared Chat ended (session={payload.session_id})"
+            "[%s] Shared Chat ended (session=%s)", payload.broadcaster.name, payload.session_id
         )
 
     async def event_command_error(self, payload: commands.CommandErrorPayload) -> None:
         """Suppress CommandNotFound to avoid log noise from unknown commands."""
         if isinstance(payload.exception, CommandNotFound):
             return
-        LOGGER.error(f"Command error: {payload.exception}")
+        LOGGER.error("Command error: %s", payload.exception)
 
     # ------------------------------------------------------------------
     # Token management
@@ -336,13 +341,13 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
                     break
                 except Exception as e:
                     if attempt < 3:
-                        LOGGER.warning(f"save_token attempt {attempt}/3 failed: {e}")
+                        LOGGER.warning("save_token attempt %s/3 failed: %s", attempt, e)
                         await asyncio.sleep(2)
                     else:
-                        LOGGER.error(f"save_token failed after 3 attempts: {e}")
+                        LOGGER.error("save_token failed after 3 attempts: %s", e)
 
         login = resp.login or "unknown"
-        LOGGER.info(f"Added token to database: {login} ({resp.user_id})")
+        LOGGER.info("[%s] Token added to database (%s)", login, resp.user_id)
         return resp
 
     async def load_tokens(self, path: str | None = None) -> None:
@@ -359,8 +364,9 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
                 user_info = await self.add_token(tok.token, tok.refresh)
             except twitchio.exceptions.InvalidTokenException as e:
                 LOGGER.warning(
-                    f"Invalid token for user_id {tok.user_id}, skipping. "
-                    f"User needs to re-authenticate: {e}"
+                    "Invalid token for user_id %s, skipping. User needs to re-authenticate: %s",
+                    tok.user_id,
+                    e,
                 )
                 continue
 
@@ -380,15 +386,16 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
             missing = missing_broadcaster_scopes(user_info.scopes)
             if missing:
                 LOGGER.warning(
-                    f"Channel {user_info.login or tok.user_id} missing scopes {missing} "
-                    "— will notify on next stream online."
+                    "Channel %s missing scopes %s — will notify on next stream online.",
+                    user_info.login or tok.user_id,
+                    missing,
                 )
                 self._needs_reauth.add(tok.user_id)
 
             try:
                 await self.add_channel_to_db(tok.user_id, user_info.login or "unknown")
             except Exception as e:
-                LOGGER.error(f"Failed to add channel for user_id {tok.user_id}: {e}")
+                LOGGER.error("Failed to add channel for user_id %s: %s", tok.user_id, e)
 
     # ------------------------------------------------------------------
     # Utility
@@ -403,11 +410,11 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
         _mod_check_pending gates that suppression.
         """
         self._mod_check_pending.add(channel_id)
-        LOGGER.debug(f"[{channel_id}] Checking mod status")
+        LOGGER.debug("[%s] Checking mod status", channel_id)
         try:
             token_obj = await self.channels.get_token(channel_id)
             if not token_obj:
-                LOGGER.debug(f"[{channel_id}] No token, cannot verify mod status")
+                LOGGER.debug("[%s] No token, cannot verify mod status", channel_id)
                 return
 
             async with httpx.AsyncClient(timeout=10.0) as client:
@@ -424,24 +431,30 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
                 data = resp.json().get("data", [])
                 if data:
                     self._bot_is_mod.add(channel_id)
-                    LOGGER.info(f"[{channel_id}] Bot confirmed mod")
+                    LOGGER.info("[%s] Bot confirmed mod", channel_id)
                 else:
                     LOGGER.info(
-                        f"[{channel_id}] Bot is NOT mod — chat features blocked until /mod is granted"
+                        "[%s] Bot is NOT mod — chat features blocked until /mod is granted",
+                        channel_id,
                     )
             elif resp.status_code in (401, 403):
                 # Token expired or missing scope — broadcaster needs to re-auth, not grant /mod.
                 self._needs_reauth.add(channel_id)
                 LOGGER.warning(
-                    f"[{channel_id}] Mod status check auth failure ({resp.status_code})"
-                    " — broadcaster token invalid or missing scope, marking for reauth"
+                    "[%s] Mod status check auth failure (%s)"
+                    " — broadcaster token invalid or missing scope, marking for reauth",
+                    channel_id,
+                    resp.status_code,
                 )
             else:
                 LOGGER.warning(
-                    f"[{channel_id}] Mod status check failed: {resp.status_code} {resp.text[:80]}"
+                    "[%s] Mod status check failed: %s %s",
+                    channel_id,
+                    resp.status_code,
+                    resp.text[:80],
                 )
         except Exception as e:
-            LOGGER.warning(f"[{channel_id}] Mod status check error: {type(e).__name__}: {e}")
+            LOGGER.warning("[%s] Mod status check error: %s: %s", channel_id, type(e).__name__, e)
         finally:
             self._mod_check_pending.discard(channel_id)
 
@@ -473,7 +486,7 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
                 async with self.token_database.acquire(timeout=10.0) as conn:
                     await conn.fetchval("SELECT 1")
                 if fail_count > 0:
-                    LOGGER.info(f"Pool heartbeat recovered after {fail_count} failures")
+                    LOGGER.info("Pool heartbeat recovered after %s failures", fail_count)
                 fail_count = 0
                 interval = 60
             except asyncio.CancelledError:
@@ -481,7 +494,9 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
             except Exception as e:
                 fail_count += 1
                 if fail_count <= 3:
-                    LOGGER.warning(f"Pool heartbeat failed ({fail_count}): {type(e).__name__}: {e}")
+                    LOGGER.warning(
+                        "Pool heartbeat failed (%s): %s: %s", fail_count, type(e).__name__, e
+                    )
 
                 if fail_count == 3:
                     LOGGER.warning("Pool appears dead, attempting reconnect...")
@@ -493,7 +508,7 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
                         interval = 60
                         continue
                     except Exception as re_err:
-                        LOGGER.error(f"Pool reconnect failed: {type(re_err).__name__}: {re_err}")
+                        LOGGER.error("Pool reconnect failed: %s: %s", type(re_err).__name__, re_err)
                         fail_count = 0
                         interval = 120
                         continue
