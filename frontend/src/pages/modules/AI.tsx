@@ -463,7 +463,7 @@ export default function AIModule() {
                   {saving ? (
                     <Spinner className="mr-1.5 h-3 w-3" />
                   ) : (
-                    <Icon icon="fa-solid fa-floppy-disk" className="mr-1.5 text-xs" />
+                    <Icon icon="fa-solid fa-floppy-disk" className="mr-1.5 text-label" />
                   )}
                   儲存
                 </Button>
@@ -599,7 +599,7 @@ export default function AIModule() {
                       {saving ? (
                         <Spinner className="mr-1.5 h-3 w-3" />
                       ) : (
-                        <Icon icon="fa-solid fa-rotate-left" className="mr-1.5 text-xs" />
+                        <Icon icon="fa-solid fa-rotate-left" className="mr-1.5 text-label" />
                       )}
                       重設預設值
                     </Button>
@@ -684,7 +684,7 @@ export default function AIModule() {
                     {saving ? (
                       <Spinner className="mr-1.5 h-3 w-3" />
                     ) : (
-                      <Icon icon="fa-solid fa-floppy-disk" className="mr-1.5 text-xs" />
+                      <Icon icon="fa-solid fa-floppy-disk" className="mr-1.5 text-label" />
                     )}
                     儲存
                   </Button>

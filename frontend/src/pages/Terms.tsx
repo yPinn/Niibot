@@ -18,7 +18,7 @@ function Section({
 }) {
   return (
     <section id={id} className="flex flex-col gap-3 scroll-mt-4">
-      <h2 className="border-l-2 border-primary pl-3 text-xl font-semibold text-foreground">
+      <h2 className="border-l-2 border-primary pl-3 text-section-title font-semibold text-foreground">
         {title}
       </h2>
       <div className="flex flex-col gap-3 text-sub leading-relaxed text-muted-foreground">
@@ -127,7 +127,7 @@ export default function Terms() {
         </div>
 
         {/* Footer */}
-        <div className="mt-12 flex gap-4 border-t border-border pt-6 text-xs text-muted-foreground">
+        <div className="mt-12 flex gap-4 border-t border-border pt-6 text-label text-muted-foreground">
           <Link to="/privacy" className="hover:text-foreground hover:underline">
             隱私權政策
           </Link>

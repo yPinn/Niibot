@@ -122,15 +122,17 @@ export default function Home() {
           {/* Text */}
           <SlideUp delay={0.15} className="flex flex-col items-center md:items-start">
             <h1 className="text-4xl font-bold tracking-tight sm:text-5xl lg:text-7xl">Niibot</h1>
-            <p className="mt-3 text-xl text-muted-foreground">Twitch 聊天機器人 | 泥爸</p>
-            <p className="mt-6 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg">
+            <p className="mt-3 text-section-title text-muted-foreground">
+              Twitch 聊天機器人 | 泥爸
+            </p>
+            <p className="mt-6 max-w-xl text-content leading-relaxed text-muted-foreground sm:text-lg">
               大家好，我是 Niibot，一名沒有勞基法保障的虛擬社畜。
             </p>
-            <p className="mt-2 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg">
+            <p className="mt-2 max-w-xl text-content leading-relaxed text-muted-foreground sm:text-lg">
               我沒有薪水，沒有休假，只有一個使命：
               <strong className="text-foreground">讓你的聊天室繼續活著。</strong>
             </p>
-            <Button className="mt-8 h-12 px-10 text-base" onClick={() => navigate('/login')}>
+            <Button className="mt-8 h-12 px-10 text-content" onClick={() => navigate('/login')}>
               開始使用
             </Button>
           </SlideUp>
@@ -140,10 +142,10 @@ export default function Home() {
 
         {/* Features */}
         <section className="px-6 py-10 sm:px-10 sm:py-16 lg:px-16">
-          <SlideUpSm inView className="mb-3 text-2xl font-semibold sm:text-3xl">
+          <SlideUpSm inView className="mb-3 text-page-title font-semibold sm:text-3xl">
             我能幫你做什麼
           </SlideUpSm>
-          <FadeIn inView delay={0.1} className="mb-10 text-lg text-muted-foreground">
+          <FadeIn inView delay={0.1} className="mb-10 text-card-title text-muted-foreground">
             讓你專心直播，雜事交給我。
           </FadeIn>
 
@@ -173,10 +175,10 @@ export default function Home() {
         {/* Commands + usage + CTA */}
         <section className="space-y-10 px-6 py-10 sm:px-10 sm:py-14 lg:px-16">
           <div>
-            <SlideUpSm inView className="mb-2 text-xl font-semibold sm:text-2xl">
+            <SlideUpSm inView className="mb-2 text-section-title font-semibold sm:text-2xl">
               內建指令
             </SlideUpSm>
-            <FadeIn inView delay={0.1} className="mb-6 text-base text-muted-foreground">
+            <FadeIn inView delay={0.1} className="mb-6 text-content text-muted-foreground">
               開箱即用，無需設定。
             </FadeIn>
 
@@ -205,14 +207,14 @@ export default function Home() {
         {/* Discord */}
         <section className="px-6 py-10 sm:px-10 sm:py-16 lg:px-16">
           <div className="mb-3 flex items-center gap-3">
-            <SlideUpSm inView className="text-2xl font-semibold sm:text-3xl">
+            <SlideUpSm inView className="text-page-title font-semibold sm:text-3xl">
               Discord 也顧到了
             </SlideUpSm>
             <FadeIn inView delay={0.1}>
               <Icon icon="fa-brands fa-discord" wrapperClassName="size-6 text-discord" />
             </FadeIn>
           </div>
-          <FadeIn inView delay={0.15} className="mb-10 text-lg text-muted-foreground">
+          <FadeIn inView delay={0.15} className="mb-10 text-card-title text-muted-foreground">
             同一套系統，同時服務你的 Discord 伺服器。
           </FadeIn>
 

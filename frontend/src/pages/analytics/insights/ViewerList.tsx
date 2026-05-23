@@ -103,7 +103,7 @@ const ViewerRow = React.memo(function ViewerRow({
       )}
     >
       {top ? (
-        <Icon icon={top.icon} className="text-xs" wrapperClassName={top.color} />
+        <Icon icon={top.icon} className="text-label" wrapperClassName={top.color} />
       ) : (
         <span className="text-sub font-mono font-semibold text-muted-foreground text-right">
           {rank}

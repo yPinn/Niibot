@@ -297,7 +297,7 @@ export default function GameQueue() {
               <CardAction>
                 <div className="flex items-center gap-2">
                   <Button size="sm" onClick={handleAdvance} disabled={!state?.current_batch.length}>
-                    <Icon icon="fa-solid fa-forward-step" className="mr-1.5 text-xs" />
+                    <Icon icon="fa-solid fa-forward-step" className="mr-1.5 text-label" />
                     下一批
                   </Button>
                   <Button
@@ -306,7 +306,7 @@ export default function GameQueue() {
                     onClick={handleClear}
                     disabled={!state?.total_active}
                   >
-                    <Icon icon="fa-solid fa-trash" className="mr-1.5 text-xs" />
+                    <Icon icon="fa-solid fa-trash" className="mr-1.5 text-label" />
                     清空
                   </Button>
                 </div>

@@ -522,7 +522,7 @@ export default function VideoQueue() {
           <Icon
             icon="fa-regular fa-circle-question"
             wrapperClassName="size-5"
-            className="text-lg"
+            className="text-card-title"
           />
         </Button>
       </div>
@@ -663,7 +663,7 @@ export default function VideoQueue() {
                 <div className="relative flex-1 sm:max-w-72">
                   <Icon
                     icon="fa-brands fa-youtube"
-                    className="text-sm text-muted-foreground"
+                    className="text-sub text-muted-foreground"
                     wrapperClassName="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2"
                   />
                   <Input

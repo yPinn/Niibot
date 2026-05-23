@@ -80,7 +80,7 @@ function TwitchChatMockup({
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card text-foreground">
       <div className="flex items-center gap-element border-b border-border bg-background px-page py-2.5">
-        <i className="fa-brands fa-twitch text-xl text-primary" />
+        <i className="fa-brands fa-twitch text-section-title text-primary" />
         <span className="text-sub font-semibold text-foreground">{channel}</span>
         <span className="ml-auto text-label text-muted-foreground">聊天室</span>
       </div>
@@ -117,7 +117,7 @@ function TwitchChatMockup({
 
       <div className="border-t border-border px-3 py-2.5">
         <div className="flex items-center gap-3 rounded bg-muted px-3 py-2">
-          <i className="fa-regular fa-face-smile text-xl text-muted-foreground" />
+          <i className="fa-regular fa-face-smile text-section-title text-muted-foreground" />
           {command ? (
             <>
               <code className="flex-1 select-text font-mono text-label text-foreground">
@@ -129,7 +129,7 @@ function TwitchChatMockup({
                 title="複製"
               >
                 <i
-                  className={`text-lg ${copied ? 'fa-solid fa-check text-status-success' : 'fa-regular fa-copy'}`}
+                  className={`text-card-title ${copied ? 'fa-solid fa-check text-status-success' : 'fa-regular fa-copy'}`}
                 />
               </button>
             </>
@@ -138,7 +138,7 @@ function TwitchChatMockup({
               <span className="flex-1 text-label text-muted-foreground">
                 在 {channel} 的聊天室發言…
               </span>
-              <i className="fa-regular fa-paper-plane text-xl text-muted-foreground" />
+              <i className="fa-regular fa-paper-plane text-section-title text-muted-foreground" />
             </>
           )}
         </div>

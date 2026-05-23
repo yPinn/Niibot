@@ -217,7 +217,7 @@ export default function CrosshairRepo() {
 
               <SheetSection title="準星代碼">
                 <div className="flex items-center gap-element">
-                  <code className="flex-1 break-all rounded bg-muted px-3 py-2 font-mono text-sm">
+                  <code className="flex-1 break-all rounded bg-muted px-3 py-2 font-mono text-sub">
                     {selected.code}
                   </code>
                   <Button
@@ -233,7 +233,7 @@ export default function CrosshairRepo() {
 
               {selected.description && (
                 <SheetSection title="備註">
-                  <p className="text-sm text-muted-foreground">{selected.description}</p>
+                  <p className="text-sub text-muted-foreground">{selected.description}</p>
                 </SheetSection>
               )}
             </>

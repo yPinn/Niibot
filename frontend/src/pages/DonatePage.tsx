@@ -115,7 +115,7 @@ function PlatformCard({ platform, username }: PlatformCardProps) {
     <Card>
       <CardContent className="pt-5 space-y-3">
         <div className="flex items-center gap-2">
-          <span className="font-semibold text-base">{platformLabel}</span>
+          <span className="font-semibold text-content">{platformLabel}</span>
         </div>
 
         {needsHash ? (
@@ -247,7 +247,7 @@ export default function DonatePage() {
       <div className="w-full max-w-md space-y-6">
         {/* Header */}
         <SlideUpSm className="text-center space-y-1">
-          <h1 className="text-2xl font-bold">支持 {info.display_name ?? info.username}</h1>
+          <h1 className="text-page-title font-bold">支持 {info.display_name ?? info.username}</h1>
           <p className="text-sub text-muted-foreground">選擇付款方式完成斗內</p>
         </SlideUpSm>
 
@@ -261,7 +261,7 @@ export default function DonatePage() {
         </Stagger>
 
         <SlideUp delay={0.2}>
-          <p className="text-xs text-center text-muted-foreground">
+          <p className="text-label text-center text-muted-foreground">
             付款由{' '}
             {info.platforms
               .map(p => PLATFORM_LABELS[p.platform as DonationPlatform] ?? p.platform)
