@@ -17,7 +17,6 @@ _config_cache = AsyncTTLCache(maxsize=64, ttl=3600)
 _config_list_cache = AsyncTTLCache(maxsize=16, ttl=3600)
 _seeded_events: set[str] = set()
 
-# Default templates per event type
 DEFAULT_TEMPLATES: dict[str, str] = {
     "follow": "感謝 $(user) 的追隨！",
     "subscribe": "感謝 $(user) 的訂閱！",
@@ -27,11 +26,25 @@ DEFAULT_TEMPLATES: dict[str, str] = {
     "bits": "感謝 $(user) 投出了 $(amount) 小奇點！",
 }
 
-# Default options per event type (only event types with options need entries)
+# Only event types with non-empty options need entries here.
 DEFAULT_OPTIONS: dict[str, dict] = {
     "raid": {"auto_shoutout": True},
     "bits": {"tiers": []},
 }
+
+# raid=True: all channels can receive raids. Others default False: require subscription eligibility or conflict with existing bots.
+DEFAULT_ENABLED: dict[str, bool] = {
+    "follow": False,
+    "subscribe": False,
+    "resub": False,
+    "gift_sub": False,
+    "raid": True,
+    "bits": False,
+}
+
+assert DEFAULT_ENABLED.keys() == DEFAULT_TEMPLATES.keys(), (
+    "DEFAULT_ENABLED and DEFAULT_TEMPLATES must have identical keys"
+)
 
 EVENT_TYPES = list(DEFAULT_TEMPLATES.keys())
 
@@ -142,15 +155,17 @@ class EventConfigRepository:
             async with self.pool.acquire() as conn:
                 for event_type, template in DEFAULT_TEMPLATES.items():
                     opts_json = json.dumps(DEFAULT_OPTIONS.get(event_type, {}))
+                    enabled = DEFAULT_ENABLED.get(event_type, False)
                     await conn.execute(
                         """
                         INSERT INTO event_configs (channel_id, event_type, message_template, enabled, options)
-                        VALUES ($1, $2, $3, TRUE, $4::jsonb)
+                        VALUES ($1, $2, $3, $4, $5::jsonb)
                         ON CONFLICT (channel_id, event_type) DO NOTHING
                         """,
                         channel_id,
                         event_type,
                         template,
+                        enabled,
                         opts_json,
                     )
             _seeded_events.add(channel_id)

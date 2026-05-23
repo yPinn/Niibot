@@ -25,14 +25,13 @@ BUILTIN_DEFS: list[dict] = [
     # ── 娛樂 ──────────────────────────────────────────────────────────────────
     {"command_name": "fortune", "cooldown": 5, "aliases": "運勢"},
     {"command_name": "tarot", "cooldown": 5, "aliases": "塔羅"},
-    {"command_name": "roll", "cooldown": 5, "aliases": "骰子"},
-    {"command_name": "choose", "cooldown": 5, "aliases": "選擇"},
     # ── 功能型（預設關閉，需手動啟用）────────────────────────────────────────
+    {"command_name": "roll", "cooldown": 5, "aliases": "骰子", "enabled": False},
+    {"command_name": "choose", "cooldown": 5, "aliases": "選擇", "enabled": False},
     {"command_name": "tft", "cooldown": 15, "aliases": "戰棋", "enabled": False},
     {"command_name": "crosshairs", "cooldown": 5, "aliases": "準星", "enabled": False},
 ]
 
-# O(1) lookup by canonical command name
 BUILTIN_MAP: dict[str, dict] = {d["command_name"]: d for d in BUILTIN_DEFS}
 BUILTIN_NAMES: frozenset[str] = frozenset(BUILTIN_MAP)
 
