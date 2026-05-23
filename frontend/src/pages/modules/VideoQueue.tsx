@@ -9,6 +9,7 @@ import {
   getVideoQueueState,
   playVideoNow,
   type PublicVideoQueueState,
+  removeQueueEntry,
   setVideoAsNext,
   skipCurrentVideo,
   updateVideoQueueSettings,
@@ -58,6 +59,9 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
 } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
@@ -87,7 +91,6 @@ function snapToOption(options: readonly { value: number }[], value: number): num
   ).value
 }
 
-// Source badge — label and semantic colour classes per source type
 const SOURCE_CONFIG: Record<string, { label: string; className: string }> = {
   chat: { label: '聊天', className: 'text-muted-foreground' },
   redemption: {
@@ -136,21 +139,22 @@ function clampValue(value: string, min: number, max: number): string {
   return String(Math.min(max, Math.max(min, n)))
 }
 
-// Combined table: playing entry (highlighted) + queued entries with source column
 function QueueTable({
   current,
   entries,
   onSkip,
   onSetNext,
   onPlayNow,
+  onRemove,
 }: {
   current?: VideoQueueEntry | null
   entries: VideoQueueEntry[]
   onSkip?: () => void
   onSetNext?: (id: number) => void
   onPlayNow?: (id: number) => void
+  onRemove?: (id: number) => void
 }) {
-  const hasActions = !!(onSetNext || onPlayNow)
+  const hasActions = !!(onSetNext || onPlayNow || onRemove)
   if (!current && entries.length === 0) return null
 
   return (
@@ -161,17 +165,15 @@ function QueueTable({
           <TableRow>
             <TableHead className="w-10" />
             <TableHead>影片</TableHead>
-            {/* 點播者 before 來源: logical "what + who" grouping, both can truncate independently */}
             <TableHead className="w-20 sm:w-28">點播者</TableHead>
             <TableHead className="hidden sm:table-cell w-20 text-center">來源</TableHead>
             <TableHead className="w-16 tabular-nums">長度</TableHead>
-            {(hasActions || onSkip) && <TableHead className="w-20" />}
+            {(hasActions || onSkip) && <TableHead className="w-28" />}
           </TableRow>
         </TableHeader>
         <TableBody>
-          {/* Currently playing row */}
           {current && (
-            <TableRow className="bg-primary/5">
+            <TableRow className="bg-primary/10">
               <TableCell>
                 <Icon
                   icon="fa-solid fa-play"
@@ -199,16 +201,20 @@ function QueueTable({
               {(hasActions || onSkip) && (
                 <TableCell className="text-right">
                   {onSkip && (
-                    <Button variant="ghost" size="sm" onClick={onSkip} title="跳過當前影片">
-                      <Icon icon="fa-solid fa-forward-step" className="size-3.5" />
-                    </Button>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant="ghost" size="icon-sm" onClick={onSkip}>
+                          <Icon icon="fa-solid fa-forward-step" className="size-3.5" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>跳過當前影片</TooltipContent>
+                    </Tooltip>
                   )}
                 </TableCell>
               )}
             </TableRow>
           )}
 
-          {/* Queued entries */}
           {entries.map((entry, idx) => (
             <TableRow key={entry.id}>
               <TableCell className="text-center">
@@ -235,24 +241,47 @@ function QueueTable({
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-1">
                     {onSetNext && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => onSetNext(entry.id)}
-                        title="排定為下一首"
-                      >
-                        <Icon icon="fa-solid fa-arrow-up-to-line" className="size-3.5" />
-                      </Button>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            onClick={() => onSetNext(entry.id)}
+                          >
+                            <Icon icon="fa-solid fa-arrow-up-to-line" className="size-3.5" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>排定為下一首</TooltipContent>
+                      </Tooltip>
                     )}
                     {onPlayNow && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => onPlayNow(entry.id)}
-                        title="直接插播"
-                      >
-                        <Icon icon="fa-solid fa-play" className="size-3.5" />
-                      </Button>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            onClick={() => onPlayNow(entry.id)}
+                          >
+                            <Icon icon="fa-solid fa-play" className="size-3.5" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>直接插播</TooltipContent>
+                      </Tooltip>
+                    )}
+                    {onRemove && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            onClick={() => onRemove(entry.id)}
+                            className="border border-destructive/30 text-muted-foreground hover:border-destructive/60 hover:text-destructive"
+                          >
+                            <Icon icon="fa-solid fa-xmark" className="size-3.5" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>移除</TooltipContent>
+                      </Tooltip>
                     )}
                   </div>
                 </TableCell>
@@ -411,6 +440,16 @@ export default function VideoQueue() {
     }
   }
 
+  const handleRemove = async (entryId: number) => {
+    try {
+      const newState = await removeQueueEntry(entryId)
+      setState(newState)
+      toast.success('已移除')
+    } catch {
+      toast.error('移除失敗')
+    }
+  }
+
   const handleAddVideo = async () => {
     if (!addUrlInput.trim()) return
     setAdding(true)
@@ -437,7 +476,7 @@ export default function VideoQueue() {
   if (loading) {
     return (
       <PageMain>
-        <PageHeader title="Video Queue" description="管理 YouTube 點播系統" />
+        <PageHeader title="Video Queue" description="管理影片播放佇列" />
         <div className="grid grid-cols-1 gap-section lg:grid-cols-12 lg:items-stretch">
           <div className="lg:col-span-8">
             <Card className="h-full">
@@ -472,7 +511,7 @@ export default function VideoQueue() {
   return (
     <PageMain>
       <div className="flex items-start justify-between gap-2">
-        <PageHeader title="Video Queue" description="管理 YouTube 影片佇列" />
+        <PageHeader title="Video Queue" description="管理影片播放佇列" />
         <Button
           variant="ghost"
           size="icon"
@@ -596,9 +635,7 @@ export default function VideoQueue() {
         <AffiliateLockOverlay message="成為 Twitch 聯盟夥伴或合作夥伴後即可使用影片佇列功能" />
       )}
 
-      {/* Row 1: Queue (col-8) always matches right column height */}
       <SlideUp inView className="grid grid-cols-1 gap-section lg:grid-cols-12 lg:items-stretch">
-        {/* Queue card — fills full column height */}
         <div className="lg:col-span-8">
           <Card className="h-full">
             <CardHeader>
@@ -656,6 +693,7 @@ export default function VideoQueue() {
                 onSkip={handleSkip}
                 onSetNext={handleSetNext}
                 onPlayNow={handlePlayNow}
+                onRemove={handleRemove}
               />
               {!current && queue.length === 0 && (
                 <Empty className="border-none">
@@ -676,9 +714,7 @@ export default function VideoQueue() {
           </Card>
         </div>
 
-        {/* Right sidebar: Preview + Now Playing + source toggles + overlay buttons */}
         <div className="flex flex-col gap-section lg:col-span-4">
-          {/* Overlay preview iframe */}
           {overlayUrl && (
             <div className="aspect-16/10 overflow-hidden rounded-lg border bg-black">
               <iframe
@@ -690,7 +726,6 @@ export default function VideoQueue() {
             </div>
           )}
 
-          {/* Now Playing + controls */}
           <Card className="flex-1">
             <CardHeader>
               {/* Title is always fixed — only description content changes */}
@@ -705,7 +740,6 @@ export default function VideoQueue() {
                 </Badge>
               </CardTitle>
               <CardDescription className="min-w-0">
-                {/* Line 1: video title when playing, status text when idle */}
                 <span className="block truncate" title={current?.title || current?.video_id}>
                   {current ? current.title || current.video_id : '目前沒有播放'}
                 </span>
@@ -737,7 +771,6 @@ export default function VideoQueue() {
         </div>
       </SlideUp>
 
-      {/* Row 2: Queue settings */}
       <SlideUp inView delay={0.1}>
         <Card>
           <CardHeader>
@@ -767,7 +800,6 @@ export default function VideoQueue() {
             <div className="sm:hidden">
               <OverlayUrlBlock url={overlayUrl} />
             </div>
-            {/* Global limits — apply to all sources */}
             <div className="flex flex-col gap-3">
               <p className="text-sub text-muted-foreground">全域限制</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-3 sm:gap-x-8 lg:grid-cols-4">
@@ -847,7 +879,6 @@ export default function VideoQueue() {
 
             <Separator />
 
-            {/* Redemption-specific settings */}
             <div className="flex flex-col gap-3">
               <p className="text-sub text-muted-foreground">忠誠點數兌換</p>
               <div className="flex items-center gap-element">

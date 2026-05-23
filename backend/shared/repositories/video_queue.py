@@ -547,15 +547,16 @@ class VideoQueueRepository:
                     channel_id,
                 )
 
-    async def mark_skipped(self, entry_id: int, channel_id: str) -> None:
-        """Transition entry to 'skipped'. Only applies to entries owned by the channel."""
+    async def mark_skipped(self, entry_id: int, channel_id: str) -> bool:
+        """Transition entry to 'skipped'. Returns True if a row was affected."""
         async with self.pool.acquire() as conn:
-            await conn.execute(
+            result = await conn.execute(
                 "UPDATE video_queue SET status = 'skipped', ended_at = NOW() "
                 "WHERE id = $1 AND channel_id = $2 AND status IN ('queued', 'playing')",
                 entry_id,
                 channel_id,
             )
+            return int(result.split()[-1]) > 0
 
     async def clear_queued(self, channel_id: str) -> int:
         """Mark all queued entries as skipped. Returns count of affected rows."""

@@ -95,6 +95,7 @@ export const API_ENDPOINTS = {
     settings: join('/api/video-queue/settings'),
     setNext: (id: number) => join(`/api/video-queue/entries/${id}/set-next`),
     playNow: (id: number) => join(`/api/video-queue/entries/${id}/play-now`),
+    removeEntry: (id: number) => join(`/api/video-queue/entries/${id}`),
     addEntry: join('/api/video-queue/entries'),
   },
   timers: {

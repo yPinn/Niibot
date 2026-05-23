@@ -175,28 +175,16 @@ async def advance_queue(
     pool: Pool = Depends(get_db_pool),
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
 ) -> PublicVideoQueueState:
-    """Called by the overlay when a video ends (or to kickstart an empty current slot).
-
-    If done_id is provided, marks that entry as done.
-    Then, if no entry is currently playing, promotes the next queued entry.
-
-    NOTE: This endpoint is intentionally unauthenticated. It is called directly by the
-    OBS browser source overlay, which has no mechanism to carry session cookies. The
-    accepted security trade-off: the only actions available are advancing the queue
-    and reading public queue state — no destructive or private operations are exposed.
-    """
+    """Unauthenticated — OBS overlay has no cookie mechanism. Only advances queue state; no destructive operations exposed."""
     try:
         channel_id = await _resolve_channel_id(username, twitch_api)
         repo = VideoQueueRepository(pool)
         settings_repo = VideoQueueSettingsRepository(pool)
 
         if body.done_id is not None:
-            # advance_queue atomically marks done_id as done and promotes the next
-            # queued entry in a single transaction, eliminating the race condition
-            # between mark_done and set_playing.
+            # Single transaction: mark done + promote next — eliminates mark_done/set_playing race.
             await repo.advance_queue(channel_id, body.done_id)
         else:
-            # Kickstart: atomically promote next queued entry if nothing is playing
             await repo.kickstart_if_idle(channel_id)
 
         return await _build_public_state(channel_id, repo, settings_repo)
@@ -215,13 +203,7 @@ async def update_entry_metadata(
     pool: Pool = Depends(get_db_pool),
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
 ) -> None:
-    """Overlay reports duration after the YouTube player loads (fallback for API misses).
-
-    NOTE: This endpoint is intentionally unauthenticated. It is called by the OBS
-    browser source overlay after the YouTube player reports its loaded duration. The
-    accepted security trade-off: the only writable field is duration_seconds, scoped
-    to a specific entry_id and channel — no sensitive data is accessible or mutable.
-    """
+    """Unauthenticated — OBS overlay fallback. Only duration_seconds is writable, scoped to entry + channel."""
     try:
         channel_id = await _resolve_channel_id(username, twitch_api)
         repo = VideoQueueRepository(pool)
@@ -398,6 +380,28 @@ async def play_entry_now(
         raise HTTPException(status_code=500, detail="Failed to play entry") from None
 
 
+@router.delete("/entries/{entry_id}", response_model=PublicVideoQueueState)
+async def remove_queue_entry(
+    entry_id: int,
+    channel_id: str = Depends(get_current_channel_id),
+    pool: Pool = Depends(get_db_pool),
+) -> PublicVideoQueueState:
+    """Remove a specific queued entry from the queue."""
+    try:
+        repo = VideoQueueRepository(pool)
+        settings_repo = VideoQueueSettingsRepository(pool)
+        removed = await repo.mark_skipped(entry_id, channel_id)
+        if not removed:
+            raise HTTPException(status_code=404, detail="Entry not found or not in removable state")
+        LOGGER.info("Channel %s removed entry %s from queue", channel_id, entry_id)
+        return await _build_public_state(channel_id, repo, settings_repo)
+    except HTTPException:
+        raise
+    except Exception:
+        LOGGER.exception("Failed to remove queue entry")
+        raise HTTPException(status_code=500, detail="Failed to remove entry") from None
+
+
 @router.post("/entries", response_model=PublicVideoQueueState, status_code=201)
 async def add_video_entry(
     body: AddVideoRequest,
@@ -406,7 +410,6 @@ async def add_video_entry(
     app_settings: Settings = Depends(get_settings),
 ) -> PublicVideoQueueState:
     """Broadcaster directly adds a video to the queue from the dashboard."""
-    # Detect URL type: try YouTube first, then Twitch clip, then Bilibili
     video_id, is_vertical = extract_youtube_info(body.url)
     clip_slug: str | None = None
     bvid: str | None = None
@@ -421,17 +424,16 @@ async def add_video_entry(
         repo = VideoQueueRepository(pool)
         settings_repo = VideoQueueSettingsRepository(pool)
 
-        # Module-level gate: dashboard adds respect the enabled toggle
         settings = await settings_repo.get_or_create(channel_id)
         if not settings.enabled:
             raise HTTPException(status_code=403, detail="Video queue is disabled")
 
-        # Exactly one of clip_slug / bvid / video_id is non-None here (the 422 raise above ensures this).
+        # 422 above ensures exactly one of these is non-None.
         active_id: str = clip_slug or bvid or video_id  # type: ignore[assignment]
         if await repo.video_is_active(channel_id, active_id):
             raise HTTPException(status_code=409, detail="Video already in queue")
 
-        # Dashboard adds bypass max_queue_size and min_view_count — broadcaster has full authority over their own queue
+        # Dashboard bypasses max_queue_size and min_view_count — broadcaster has full authority.
         if clip_slug:
             title, duration_seconds, _ = await fetch_twitch_clip_info(
                 clip_slug, app_settings.client_id, app_settings.client_secret
@@ -452,7 +454,6 @@ async def add_video_entry(
             is_vertical = is_vertical or is_vertical_from_api
             video_type = "youtube"
 
-        # Look up broadcaster display name for the requested_by field
         channel_repo = ChannelRepository(pool)
         requested_by: str = (
             await channel_repo.get_broadcaster_display_name(channel_id) or channel_id

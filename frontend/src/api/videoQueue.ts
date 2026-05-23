@@ -138,6 +138,15 @@ export async function playVideoNow(entryId: number): Promise<PublicVideoQueueSta
   return response.json()
 }
 
+export async function removeQueueEntry(entryId: number): Promise<PublicVideoQueueState> {
+  const response = await apiFetch(API_ENDPOINTS.videoQueue.removeEntry(entryId), {
+    method: 'DELETE',
+    credentials: 'include',
+  })
+  if (!response.ok) throw new Error(`Failed to remove entry: ${response.statusText}`)
+  return response.json()
+}
+
 export async function addVideoToQueue(url: string): Promise<PublicVideoQueueState> {
   const response = await apiFetch(API_ENDPOINTS.videoQueue.addEntry, {
     method: 'POST',
