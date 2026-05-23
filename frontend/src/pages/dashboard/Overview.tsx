@@ -5,7 +5,7 @@ import { getBotModStatus } from '@/api/channels'
 import { BOT_USERNAME } from '@/api/config'
 import { type ChannelStats, getChannelStats } from '@/api/stats'
 import AnalyticsChart from '@/components/AnalyticsChart'
-import { MOD_SETUP_SESSION_KEY, ModSetupDialog } from '@/components/ModSetupDialog'
+import { ModSetupDialog } from '@/components/ModSetupDialog'
 import StatsCard from '@/components/StatsCard'
 import TwitchPlayer from '@/components/TwitchPlayer'
 import { Skeleton, SlideUp, Stagger, StaggerItem } from '@/components/ui'
@@ -31,7 +31,6 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!isInitialized || !user) return
-    if (sessionStorage.getItem(MOD_SETUP_SESSION_KEY)) return
     if (user.name.toLowerCase() === BOT_USERNAME) return
     getBotModStatus()
       .then(res => {
