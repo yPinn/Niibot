@@ -12,6 +12,7 @@ Niibot 的網頁控制台，部署在 Cloudflare Pages。CF Pages Functions 將 
 | Vite 7（SWC）+ React Router 7 | 建置工具與頁面路由              |
 | Tailwind CSS 4                | 樣式系統                        |
 | shadcn/ui（基於 Radix UI）    | UI 元件庫（按鈕、卡片、側欄等） |
+| Motion 12                     | 動畫與轉場                      |
 | Recharts                      | 數據圖表                        |
 | Vitest + Testing Library      | 自動化測試                      |
 
@@ -26,24 +27,27 @@ npm install     # 安裝套件（第一次或更新後執行）
 npm run dev     # 啟動開發伺服器（localhost:3000）
 ```
 
-連接本機後端時，在 `frontend/` 建立 `.env`（預設代理至 `localhost:8000`）：
+連接本機後端時，在 `frontend/` 建立 `.env`（參考 `.env.example`）：
 
 ```env
-VITE_API_URL=http://localhost:8000
+VITE_API_URL=http://localhost:8000  # 後端代理目標（預設 localhost:8000）
+VITE_BOT_USERNAME=niibot_           # Bot 帳號名，抑制自身的「授予 Mod」提示
+VITE_DISCORD_INVITE_URL=            # Discord Bot 邀請連結
 ```
 
 ## 指令
 
-| 指令                    | 說明                          |
-| ----------------------- | ----------------------------- |
-| `npm run build`         | 打包正式版本（含型別檢查）    |
-| `npm run preview`       | 本機預覽打包結果              |
-| `npm run lint`          | 掃描程式碼問題                |
-| `npm run lint:fix`      | 自動修正程式碼問題            |
-| `npm run format`        | 修正排版格式                  |
-| `npm run format:check`  | 只檢查格式，不修改（CI 用）   |
-| `npm run test`          | 執行測試（存檔自動重跑）      |
-| `npm run test:coverage` | 測試＋覆蓋率報告（目標 80%+） |
+| 指令                   | 說明                          |
+| ---------------------- | ----------------------------- |
+| `npm run build`        | 打包正式版本（含型別檢查）    |
+| `npm run preview`      | 本機預覽打包結果              |
+| `npm run typecheck`    | 只執行型別檢查，不打包        |
+| `npm run lint`         | 掃描程式碼問題                |
+| `npm run lint:fix`     | 自動修正程式碼問題            |
+| `npm run format`       | 修正排版格式                  |
+| `npm run format:check` | 只檢查格式，不修改（CI 用）   |
+| `npm run test`         | 執行測試（存檔自動重跑）      |
+| `npm run test:cov`     | 測試＋覆蓋率報告（目標 80%+） |
 
 ## 結構
 
@@ -68,12 +72,12 @@ src/
 ├── pages/
 │   ├── dashboard/  # Twitch Bot（Commands、Events、Overview、Timers）
 │   ├── modules/    # AI、ChatOverlay、GameQueue、VideoQueue、Crosshairs
-│   ├── analytics/  # Insights（觀眾分析）
+│   ├── analytics/  # Insights（觀眾分析）、Matcher（頻道重疊分析）
 │   ├── discord/    # Discord Dashboard
 │   ├── crosshairs/ # 公開準星庫（/:username/crosshairs）
 │   ├── admin/      # 管理員頁面（OwnerRoute）
 │   ├── activate/   # 啟用碼頁面
-│   ├── docs/       # GetStarted
+│   ├── docs/       # GetStarted、Releases
 │   └── ...         # Landing、Login、PublicCommands、Overlays、Settings、DonatePage
 └── test/           # Vitest 設定（setup.ts）
 functions/          # CF Pages Functions — /api/*、/health、/status 反向代理
@@ -97,20 +101,20 @@ ProtectedRoute → SidebarLayout（需登入）
   /dashboard                     Overview
   /commands                      Commands（內建 / 自訂指令）
   /events                        Events（EventSub / 點數兌換綁定）
-  /timers                        Timers
   /analytics/insights            Insights（觀眾分析）
+  /analytics/matcher             Matcher（頻道觀眾重疊分析）
   /settings                      Settings（斗內金流設定）
-  /modules/ai                    AIModule（AI 助手設定）
-  /modules/chat-overlay          ChatOverlay（OBS CSS 產生器）
+  /timers                        Timers
   /modules/game-queue            GameQueue（遊戲排隊管理）
   /modules/video-queue           VideoQueue（YouTube 點播管理）
   /modules/crosshairs            CrosshairModule（準星管理）
-  /docs/get-started              GetStarted
+  /modules/ai                    AIModule（AI 助手設定）
   /discord                       DiscordDashboard
+  /docs/get-started              GetStarted
+  /docs/releases                 Releases（版本更新說明）
 
 OwnerRoute（限擁有者）
   /admin                         AdminPage
-  /admin/codes                   AdminActivationCodes
   /admin/monitor                 AdminMonitor
 ```
 
