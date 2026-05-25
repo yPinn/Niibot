@@ -18,9 +18,10 @@ DECLARE ch TEXT;
 BEGIN
 SELECT channel_id INTO ch
 FROM channels
-WHERE channel_name = 'llazypilot'
+WHERE enabled = true
+ORDER BY created_at
 LIMIT 1;
-IF ch IS NULL THEN RAISE EXCEPTION 'Channel llazypilot not found.'; END IF;
+IF ch IS NULL THEN RAISE EXCEPTION 'No enabled channels found in database.'; END IF;
 
 -- ── Summaries ─────────────────────────────────────────────────────────────
 -- Suitability = overlap_pct * LN(exclusive_to_partner + 1):

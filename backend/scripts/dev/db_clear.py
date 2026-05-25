@@ -1,8 +1,14 @@
-"""Clear all stream session data from database (dev / reset use only).
+"""Clear all analytics / session data from database (dev / reset use only).
 
-WARNING: Deletes stream_sessions, stream_events, and command_stats.
-         Do NOT run against production data unless intentionally resetting.
+WARNING: Deletes stream_sessions and every dependent table.
+         Do NOT run against production data.
          For production backfill, use scripts/tw_backfill_sessions.py instead.
+
+Tables cleared (FK-safe order):
+  stream_events, chatter_stats, command_stats,
+  viewer_attendance_streaks, stream_sessions,
+  viewer_channel_status,
+  channel_overlap_viewers, channel_overlap_summary
 """
 
 import asyncio
@@ -11,38 +17,43 @@ from pathlib import Path
 
 import asyncpg
 
-# Ensure backend/ is on sys.path
+# Force UTF-8 stdout/stderr so Unicode symbols print correctly on Windows.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from api.core.config import get_settings
 
 
-async def clear_test_data():
-    """Clear all test session data"""
+async def clear_test_data() -> None:
     settings = get_settings()
-    # Set statement_cache_size=0 for pgbouncer compatibility
     conn = await asyncpg.connect(settings.database_url, statement_cache_size=0)
 
     try:
-        # Delete all stream_events (foreign key constraint)
-        events_count = await conn.fetchval("SELECT COUNT(*) FROM stream_events")
-        await conn.execute("DELETE FROM stream_events")
-        print(f"✓ Deleted {events_count} stream events")
+        # Delete in FK-dependency order so no constraint violations occur.
+        steps: list[tuple[str, str]] = [
+            ("stream_events", "stream events"),
+            ("chatter_stats", "chatter stats"),
+            ("command_stats", "command stats"),
+            ("viewer_attendance_streaks", "attendance streaks"),
+            ("stream_sessions", "stream sessions"),
+            ("viewer_channel_status", "viewer channel status"),
+            ("channel_overlap_viewers", "overlap viewers"),
+            ("channel_overlap_summary", "overlap summary"),
+        ]
 
-        # Delete all command_stats (foreign key constraint)
-        commands_count = await conn.fetchval("SELECT COUNT(*) FROM command_stats")
-        await conn.execute("DELETE FROM command_stats")
-        print(f"✓ Deleted {commands_count} command stats")
+        for table, label in steps:
+            n = await conn.fetchval(f"SELECT COUNT(*) FROM {table}")  # noqa: S608
+            await conn.execute(f"DELETE FROM {table}")  # noqa: S608
+            print(f"  ✓ Deleted {n:>6} rows  ←  {label}")
 
-        # Delete all stream_sessions
-        sessions_count = await conn.fetchval("SELECT COUNT(*) FROM stream_sessions")
-        await conn.execute("DELETE FROM stream_sessions")
-        print(f"✓ Deleted {sessions_count} stream sessions")
-
-        print("\n✓ Successfully cleared all test data!")
+        print("\n✓ All analytics data cleared.")
 
     except Exception as e:
-        print(f"✗ Failed to clear data: {e}")
+        print(f"✗ Failed: {e}")
         raise
 
     finally:

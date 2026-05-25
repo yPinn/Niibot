@@ -1,6 +1,11 @@
+SET client_encoding = 'UTF8';
+INSERT INTO channels (channel_id, channel_name, enabled)
+VALUES ('120247692', 'llazypilot', true)
+ON CONFLICT (channel_id) DO UPDATE SET channel_name = 'llazypilot', enabled = true;
+
 -- ============================================================
 -- Matcher seed — 3 partner channels with pre-computed overlap data
--- Uses the first enabled channel as home_channel.
+-- Targets channel llazypilot (120247692) — owner account.
 -- Safe to re-run (ON CONFLICT DO UPDATE / DO NOTHING).
 --
 -- Partner profiles (real Twitch user IDs):

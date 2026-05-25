@@ -1,13 +1,19 @@
+SET client_encoding = 'UTF8';
+-- Ensure the owner channel (llazypilot) exists before seeding.
+INSERT INTO channels (channel_id, channel_name, enabled)
+VALUES ('120247692', 'llazypilot', true)
+ON CONFLICT (channel_id) DO UPDATE SET channel_name = 'llazypilot', enabled = true;
+
 -- ============================================================
--- Insights test seed v2 — 8 sessions · 20 users · expanded events
--- Uses the first enabled channel automatically.
+-- Insights test seed v3 — 12 sessions · 20 users · expanded events
+-- Targets channel llazypilot (120247692) — owner account.
 -- Safe to re-run (ON CONFLICT DO NOTHING on all detail tables).
 --
--- Session durations (for watch_seconds cap reference):
---   s1 60d  3h30m = 12600s    s5 18d  4h00m = 14400s
---   s2 45d  4h00m = 14400s    s6 12d  5h30m = 19800s
---   s3 35d  5h00m = 18000s    s7  3d  3h00m = 10800s
---   s4 25d  4h00m = 14400s    s8  1d  6h00m = 21600s
+-- Session layout — 9 within last 30 days for chart density:
+--   s1 60d  3h30m   s5 24d  4h00m   s9  20d  3h30m
+--   s2 45d  4h00m   s6 18d  5h30m   s10 14d  4h00m
+--   s3 35d  5h00m   s7  3d  3h00m   s11  7d  5h00m
+--   s4 28d  4h00m   s8  1d  6h00m   s12  5d  3h00m
 --
 -- Identity constraints enforced here:
 --   hsuyi1222  797358387 → MOD only  (API role; NOT VIP)
@@ -16,20 +22,15 @@
 -- ============================================================
 DO $$
 DECLARE ch TEXT;
-s1 INT;
-s2 INT;
-s3 INT;
-s4 INT;
-s5 INT;
-s6 INT;
-s7 INT;
-s8 INT;
+s1  INT; s2  INT; s3  INT; s4  INT;
+s5  INT; s6  INT; s7  INT; s8  INT;
+s9  INT; s10 INT; s11 INT; s12 INT;
 BEGIN
 SELECT channel_id INTO ch
 FROM channels
 WHERE channel_name = 'llazypilot'
 LIMIT 1;
-IF ch IS NULL THEN RAISE EXCEPTION 'Channel llazypilot not found.';
+IF ch IS NULL THEN RAISE EXCEPTION 'Channel llazypilot not found — check UPSERT above.';
 END IF;
 -- ── Sessions ──────────────────────────────────────────────────────────────
 INSERT INTO stream_sessions (
@@ -86,8 +87,8 @@ INSERT INTO stream_sessions (
     )
 VALUES (
         ch,
-        NOW() - INTERVAL '25 days',
-        NOW() - INTERVAL '25 days' + INTERVAL '4 hours',
+        NOW() - INTERVAL '28 days',
+        NOW() - INTERVAL '28 days' + INTERVAL '4 hours',
         'Late Night Gaming',
         'Stardew Valley'
     )
@@ -152,6 +153,22 @@ VALUES (
         'Just Chatting'
     )
 RETURNING id INTO s8;
+INSERT INTO stream_sessions (channel_id, started_at, ended_at, title, game_name)
+VALUES (ch, NOW() - INTERVAL '20 days', NOW() - INTERVAL '20 days' + INTERVAL '3 hours 30 minutes',
+        '排位衝分！', 'League of Legends')
+RETURNING id INTO s9;
+INSERT INTO stream_sessions (channel_id, started_at, ended_at, title, game_name)
+VALUES (ch, NOW() - INTERVAL '14 days', NOW() - INTERVAL '14 days' + INTERVAL '4 hours',
+        '觀眾互動場', 'Just Chatting')
+RETURNING id INTO s10;
+INSERT INTO stream_sessions (channel_id, started_at, ended_at, title, game_name)
+VALUES (ch, NOW() - INTERVAL '7 days',  NOW() - INTERVAL '7 days'  + INTERVAL '5 hours',
+        '週末連線', 'Minecraft')
+RETURNING id INTO s11;
+INSERT INTO stream_sessions (channel_id, started_at, ended_at, title, game_name)
+VALUES (ch, NOW() - INTERVAL '5 days',  NOW() - INTERVAL '5 days'  + INTERVAL '3 hours',
+        '純聊天場', 'Just Chatting')
+RETURNING id INTO s12;
 -- ── Chatter stats ─────────────────────────────────────────────────────────
 -- Real Twitch accounts:
 --   36128773   ola0323       高活躍，tier-2 訂閱，全勤
@@ -984,9 +1001,48 @@ VALUES -- ola0323 — 全勤 8 場
         'banned_user',
         '封禁示範',
         156,
-        NOW() - INTERVAL '25 days' + INTERVAL '3h 00m',
+        NOW() - INTERVAL '28 days' + INTERVAL '3h 00m',
         10800
-    ) ON CONFLICT (session_id, user_id) DO
+    ),
+    -- ── s9–s12 (20d / 14d / 7d / 5d) — core viewers ──────────────────────
+    -- ola0323
+    (s9,  ch, '36128773', 'ola0323', '歐拉今天不是很想練習', 220, NOW() - INTERVAL '20 days' + INTERVAL '3h 10m', 11800),
+    (s10, ch, '36128773', 'ola0323', '歐拉今天不是很想練習', 195, NOW() - INTERVAL '14 days' + INTERVAL '3h 50m', 13500),
+    (s11, ch, '36128773', 'ola0323', '歐拉今天不是很想練習', 258, NOW() - INTERVAL '7 days'  + INTERVAL '4h 50m', 17200),
+    (s12, ch, '36128773', 'ola0323', '歐拉今天不是很想練習', 187, NOW() - INTERVAL '5 days'  + INTERVAL '2h 50m',  9800),
+    -- power_chatter
+    (s9,  ch, '77777771', 'power_chatter', '超級聊天王', 345, NOW() - INTERVAL '20 days' + INTERVAL '3h 20m', 12100),
+    (s10, ch, '77777771', 'power_chatter', '超級聊天王', 312, NOW() - INTERVAL '14 days' + INTERVAL '3h 55m', 14000),
+    (s11, ch, '77777771', 'power_chatter', '超級聊天王', 398, NOW() - INTERVAL '7 days'  + INTERVAL '4h 55m', 17500),
+    (s12, ch, '77777771', 'power_chatter', '超級聊天王', 289, NOW() - INTERVAL '5 days'  + INTERVAL '2h 50m', 10500),
+    -- hsuyi1222 (MOD)
+    (s9,  ch, '797358387', 'hsuyi1222', '想睡覺_', 178, NOW() - INTERVAL '20 days' + INTERVAL '3h 00m', 12000),
+    (s10, ch, '797358387', 'hsuyi1222', '想睡覺_', 201, NOW() - INTERVAL '14 days' + INTERVAL '3h 50m', 13800),
+    (s12, ch, '797358387', 'hsuyi1222', '想睡覺_',  94, NOW() - INTERVAL '5 days'  + INTERVAL '2h 30m',  9600),
+    -- kariouo (VIP)
+    (s9,  ch, '794077634', 'kariouo', 'kariouo', 132, NOW() - INTERVAL '20 days' + INTERVAL '3h 10m', 11700),
+    (s11, ch, '794077634', 'kariouo', 'kariouo', 178, NOW() - INTERVAL '7 days'  + INTERVAL '4h 30m', 16200),
+    (s12, ch, '794077634', 'kariouo', 'kariouo', 115, NOW() - INTERVAL '5 days'  + INTERVAL '2h 40m',  9000),
+    -- after_moon
+    (s9,  ch, '193691668', 'after_moon', '午後的月亮', 192, NOW() - INTERVAL '20 days' + INTERVAL '3h 20m', 11900),
+    (s10, ch, '193691668', 'after_moon', '午後的月亮', 223, NOW() - INTERVAL '14 days' + INTERVAL '3h 40m', 13600),
+    (s11, ch, '193691668', 'after_moon', '午後的月亮', 241, NOW() - INTERVAL '7 days'  + INTERVAL '4h 50m', 17400),
+    -- lurk_master
+    (s9,  ch, '77777774', 'lurk_master', '靜默守望者',  6, NOW() - INTERVAL '20 days' + INTERVAL '3h 25m', 12300),
+    (s10, ch, '77777774', 'lurk_master', '靜默守望者',  9, NOW() - INTERVAL '14 days' + INTERVAL '3h 55m', 14100),
+    (s11, ch, '77777774', 'lurk_master', '靜默守望者',  4, NOW() - INTERVAL '7 days'  + INTERVAL '4h 55m', 17800),
+    (s12, ch, '77777774', 'lurk_master', '靜默守望者',  7, NOW() - INTERVAL '5 days'  + INTERVAL '2h 55m', 10600),
+    -- sub_loyal
+    (s9,  ch, '77777775', 'sub_loyal', '忠實訂閱者',  88, NOW() - INTERVAL '20 days' + INTERVAL '3h 10m', 11500),
+    (s10, ch, '77777775', 'sub_loyal', '忠實訂閱者',  95, NOW() - INTERVAL '14 days' + INTERVAL '3h 45m', 13500),
+    (s12, ch, '77777775', 'sub_loyal', '忠實訂閱者',  82, NOW() - INTERVAL '5 days'  + INTERVAL '2h 40m',  9600),
+    -- m950101
+    (s10, ch, '35760596', 'm950101', 'M950101',  78, NOW() - INTERVAL '14 days' + INTERVAL '3h 10m', 10800),
+    (s11, ch, '35760596', 'm950101', 'M950101',  91, NOW() - INTERVAL '7 days'  + INTERVAL '4h 30m', 15600),
+    -- rexyz2z
+    (s9,  ch, '117691767', 'rexyz2z', 'rexyz2z', 134, NOW() - INTERVAL '20 days' + INTERVAL '3h 00m', 10200),
+    (s11, ch, '117691767', 'rexyz2z', 'rexyz2z', 156, NOW() - INTERVAL '7 days'  + INTERVAL '4h 40m', 14400)
+    ON CONFLICT (session_id, user_id) DO
 UPDATE
 SET watch_seconds = EXCLUDED.watch_seconds;
 -- ── Stream events ─────────────────────────────────────────────────────────
@@ -1494,7 +1550,26 @@ VALUES -- Follows
         '封禁示範',
         '{"bits":200}'::jsonb,
         NOW() - INTERVAL '45 days' + INTERVAL '3h 00m'
-    ) ON CONFLICT DO NOTHING;
+    ),
+    -- s9–s12 events
+    (s9,  ch, 'follow',    '35760596',  'm950101',     'M950101',              NULL,                              NOW() - INTERVAL '20 days' + INTERVAL '15m'),
+    (s10, ch, 'follow',    '1075248331','capoo_xiang',  '_咖波波_',             NULL,                              NOW() - INTERVAL '14 days' + INTERVAL '30m'),
+    (s9,  ch, 'subscribe', '36128773',  'ola0323',      '歐拉今天不是很想練習', '{"tier":"2000","is_gift":false}'::jsonb, NOW() - INTERVAL '20 days' + INTERVAL '1h 20m'),
+    (s10, ch, 'subscribe', '77777775',  'sub_loyal',    '忠實訂閱者',           '{"tier":"1000","is_gift":false}'::jsonb, NOW() - INTERVAL '14 days' + INTERVAL '1h 30m'),
+    (s11, ch, 'subscribe', '117691767', 'rexyz2z',      'rexyz2z',              '{"tier":"1000","is_gift":false}'::jsonb, NOW() - INTERVAL '7 days'  + INTERVAL '1h 45m'),
+    (s11, ch, 'subscribe', '794077634', 'kariouo',      'kariouo',              '{"tier":"1000","is_gift":true,"gift_count":5}'::jsonb, NOW() - INTERVAL '7 days' + INTERVAL '3h 00m'),
+    (s12, ch, 'subscribe', '77777773',  'gift_whale',   '贈禮鯨魚',             '{"tier":"1000","is_gift":true,"gift_count":10}'::jsonb, NOW() - INTERVAL '5 days' + INTERVAL '2h 00m'),
+    (s9,  ch, 'cheer',     '109156102', 'san_mou',      '三毛毛毛',             '{"bits":1500}'::jsonb,            NOW() - INTERVAL '20 days' + INTERVAL '2h 30m'),
+    (s10, ch, 'cheer',     '77777772',  'bigbits_fan',  '小奇點大戶',           '{"bits":25000}'::jsonb,           NOW() - INTERVAL '14 days' + INTERVAL '1h 00m'),
+    (s11, ch, 'cheer',     '77777771',  'power_chatter','超級聊天王',           '{"bits":400}'::jsonb,             NOW() - INTERVAL '7 days'  + INTERVAL '3h 30m'),
+    (s12, ch, 'cheer',     '117691767', 'rexyz2z',      'rexyz2z',              '{"bits":150}'::jsonb,             NOW() - INTERVAL '5 days'  + INTERVAL '2h 15m'),
+    (s10, ch, 'raid',      '145045273', 'ranamase',     '天瀨らん',
+        '{"viewers":62,"from_broadcaster_id":"145045273","from_broadcaster_name":"ranamase"}'::jsonb,
+        NOW() - INTERVAL '14 days' + INTERVAL '3h 30m'),
+    (s12, ch, 'raid',      '193691668', 'after_moon',   '午後的月亮',
+        '{"viewers":18,"from_broadcaster_id":"193691668","from_broadcaster_name":"after_moon"}'::jsonb,
+        NOW() - INTERVAL '5 days'  + INTERVAL '2h 45m')
+    ON CONFLICT DO NOTHING;
 -- ── Viewer channel status ──────────────────────────────────────────────────
 -- Reflects current viewer roles / subscription state.
 -- is_subscribed = TRUE only when last self-sub event is within ~30 days.
@@ -1800,15 +1875,7 @@ ON CONFLICT (channel_id, user_id) DO UPDATE SET
     best_streak     = GREATEST(viewer_attendance_streaks.best_streak, EXCLUDED.best_streak),
     last_session_id = EXCLUDED.last_session_id,
     updated_at      = EXCLUDED.updated_at;
-RAISE NOTICE 'Seed OK — channel: %  sessions: s1=% s2=% s3=% s4=% s5=% s6=% s7=% s8=%',
-ch,
-s1,
-s2,
-s3,
-s4,
-s5,
-s6,
-s7,
-s8;
+RAISE NOTICE 'Seed OK — channel: %  sessions: s1=% s2=% s3=% s4=% s5=% s6=% s7=% s8=% s9=% s10=% s11=% s12=%',
+ch, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12;
 END;
 $$;
