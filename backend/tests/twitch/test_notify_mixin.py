@@ -352,6 +352,7 @@ def mod_bot():
         b = Bot.__new__(Bot)
         b._bot_id = "bot-001"
         b._client_id = "test-client-id"
+        b._channel_names = {}
         b._bot_is_mod = set()
         b._needs_reauth = set()
         b._mod_check_pending = set()

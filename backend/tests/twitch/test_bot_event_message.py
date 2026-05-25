@@ -230,6 +230,7 @@ def _make_bot_for_mod_check():
         b = Bot.__new__(Bot)
         b._bot_id = "bot-001"
         b._client_id = "client-abc"
+        b._channel_names = {}
         b._needs_reauth = set()
         b._bot_is_mod = set()
         b._mod_check_pending = set()

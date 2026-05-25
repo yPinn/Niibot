@@ -1,6 +1,7 @@
 """Discord bot health check server."""
 
 import logging
+import math
 from typing import TYPE_CHECKING, Any
 
 from shared.ai_provider import get_primary_model_label
@@ -30,7 +31,8 @@ class HealthCheckServer(BaseHealthServer):
 
     async def get_metrics(self) -> dict:
         ready = await self.get_ready()
-        ws_latency_ms = round(self.bot.latency * 1000) if ready else None
+        latency = self.bot.latency * 1000 if ready else float("nan")
+        ws_latency_ms = round(latency) if math.isfinite(latency) else None
         s = get_settings()
         return {
             "bot_id": str(self.bot.user.id) if ready and self.bot.user else None,

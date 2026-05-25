@@ -191,9 +191,11 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
             scopes=scopes_str,
             token_type=token_type,
         )
-        LOGGER.info("[%s] Token refreshed and persisted", payload.user_id)
+        LOGGER.info("[%s] Token refreshed and persisted", self._ch(payload.user_id))
         if payload.user_id != self._bot_id and payload.user_id not in self._bot_is_mod:
-            LOGGER.debug("[%s] Re-checking mod status after token refresh", payload.user_id)
+            LOGGER.debug(
+                "[%s] Re-checking mod status after token refresh", self._ch(payload.user_id)
+            )
             await self._check_bot_mod_status(payload.user_id)
 
     async def event_message(self, payload: twitchio.ChatMessage) -> None:
@@ -410,11 +412,11 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
         _mod_check_pending gates that suppression.
         """
         self._mod_check_pending.add(channel_id)
-        LOGGER.debug("[%s] Checking mod status", channel_id)
+        LOGGER.debug("[%s] Checking mod status", self._ch(channel_id))
         try:
             token_obj = await self.channels.get_token(channel_id)
             if not token_obj:
-                LOGGER.debug("[%s] No token, cannot verify mod status", channel_id)
+                LOGGER.debug("[%s] No token, cannot verify mod status", self._ch(channel_id))
                 return
 
             async with httpx.AsyncClient(timeout=10.0) as client:
@@ -431,11 +433,11 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
                 data = resp.json().get("data", [])
                 if data:
                     self._bot_is_mod.add(channel_id)
-                    LOGGER.info("[%s] Bot confirmed mod", channel_id)
+                    LOGGER.info("[%s] Bot confirmed mod", self._ch(channel_id))
                 else:
                     LOGGER.info(
                         "[%s] Bot is NOT mod — chat features blocked until /mod is granted",
-                        channel_id,
+                        self._ch(channel_id),
                     )
             elif resp.status_code in (401, 403):
                 # Token expired or missing scope — broadcaster needs to re-auth, not grant /mod.
@@ -443,18 +445,20 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
                 LOGGER.warning(
                     "[%s] Mod status check auth failure (%s)"
                     " — broadcaster token invalid or missing scope, marking for reauth",
-                    channel_id,
+                    self._ch(channel_id),
                     resp.status_code,
                 )
             else:
                 LOGGER.warning(
                     "[%s] Mod status check failed: %s %s",
-                    channel_id,
+                    self._ch(channel_id),
                     resp.status_code,
                     resp.text[:80],
                 )
         except Exception as e:
-            LOGGER.warning("[%s] Mod status check error: %s: %s", channel_id, type(e).__name__, e)
+            LOGGER.warning(
+                "[%s] Mod status check error: %s: %s", self._ch(channel_id), type(e).__name__, e
+            )
         finally:
             self._mod_check_pending.discard(channel_id)
 

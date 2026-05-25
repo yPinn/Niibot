@@ -60,7 +60,9 @@ class _SessionMixin:
                     await self.subscribe_channel_events(ch.channel_id)  # type: ignore[attr-defined]
                     subscribed_ids.append(ch.channel_id)
                 except Exception as e:
-                    LOGGER.error(f"Failed to subscribe channel {ch.channel_id}: {e}")
+                    LOGGER.error(
+                        f"Failed to subscribe channel {ch.channel_name or ch.channel_id}: {e}"
+                    )
                     self._mod_check_pending.discard(ch.channel_id)  # type: ignore[attr-defined]
 
             await asyncio.gather(
@@ -78,7 +80,9 @@ class _SessionMixin:
                     count = await self.command_configs.warm_cache(ch.channel_id)  # type: ignore[attr-defined]
                     total_warmed += count
                 except Exception as e:
-                    LOGGER.warning(f"Failed to ensure defaults for {ch.channel_id}: {e}")
+                    LOGGER.warning(
+                        f"Failed to ensure defaults for {ch.channel_name or ch.channel_id}: {e}"
+                    )
 
             LOGGER.info(
                 f"Initial channel subscription complete — warmed cache: {total_warmed} configs"
@@ -118,11 +122,13 @@ class _SessionMixin:
                     continue
 
                 if channel_id in self._active_sessions:  # type: ignore[attr-defined]
-                    LOGGER.debug(f"Session already active for channel {channel_id}, skipping")
+                    LOGGER.debug(
+                        f"Session already active for channel {self._ch(channel_id)}, skipping"  # type: ignore[attr-defined]
+                    )
                     continue
 
                 if channel_id in self._session_creating:  # type: ignore[attr-defined]
-                    LOGGER.debug(f"Session creation in-flight for {channel_id}, skipping")
+                    LOGGER.debug(f"Session creation in-flight for {self._ch(channel_id)}, skipping")  # type: ignore[attr-defined]
                     continue
                 self._session_creating.add(channel_id)  # type: ignore[attr-defined]
                 try:
@@ -131,7 +137,7 @@ class _SessionMixin:
                         self._active_sessions[channel_id] = existing_session["id"]  # type: ignore[attr-defined]
                         LOGGER.info(
                             f"Resumed existing session {existing_session['id']} "
-                            f"for channel {channel_id}"
+                            f"for channel {self._ch(channel_id)}"  # type: ignore[attr-defined]
                         )
                         continue
 
@@ -147,7 +153,7 @@ class _SessionMixin:
                     )
                     self._active_sessions[channel_id] = session_id  # type: ignore[attr-defined]
                     LOGGER.info(
-                        f"Created recovery session {session_id} for live channel {channel_id} "
+                        f"Created recovery session {session_id} for live channel {self._ch(channel_id)} "  # type: ignore[attr-defined]
                         f"(started: {started_at})"
                     )
                 finally:
@@ -209,7 +215,7 @@ class _SessionMixin:
                             game_id=game_id,
                         )
                         self._active_sessions[cid] = sid  # type: ignore[attr-defined]
-                        LOGGER.info(f"[{cid}] Session {sid} created (poll)")
+                        LOGGER.info(f"[{self._ch(cid)}] Session {sid} created (poll)")  # type: ignore[attr-defined]
                     finally:
                         self._session_creating.discard(cid)  # type: ignore[attr-defined]
 
@@ -229,17 +235,17 @@ class _SessionMixin:
                                     chatters=chatter_data,
                                 )
                                 LOGGER.info(
-                                    f"[{cid}] Flushed {len(chatter_data)} chatters for session {sid} (poll)"
+                                    f"[{self._ch(cid)}] Flushed {len(chatter_data)} chatters for session {sid} (poll)"  # type: ignore[attr-defined]
                                 )
                             except Exception as e:
                                 LOGGER.warning(
-                                    f"[{cid}] Failed to flush chatter stats for session {sid}: {e}"
+                                    f"[{self._ch(cid)}] Failed to flush chatter stats for session {sid}: {e}"  # type: ignore[attr-defined]
                                 )
                         try:
                             await self.analytics.end_session(sid, datetime.now(UTC))  # type: ignore[attr-defined]
-                            LOGGER.info(f"[{cid}] Session {sid} ended (poll)")
+                            LOGGER.info(f"[{self._ch(cid)}] Session {sid} ended (poll)")  # type: ignore[attr-defined]
                         except Exception as e:
-                            LOGGER.warning(f"[{cid}] Failed to end session {sid}: {e}")
+                            LOGGER.warning(f"[{self._ch(cid)}] Failed to end session {sid}: {e}")  # type: ignore[attr-defined]
                     self._active_sessions.pop(cid, None)  # type: ignore[attr-defined]
                     self._channel_line_counts.pop(cid, None)  # type: ignore[attr-defined]
 
@@ -292,7 +298,7 @@ class _SessionMixin:
 
                 if resp.status_code != 200:
                     LOGGER.warning(
-                        f"fetch_chatters failed for {channel_id}: "
+                        f"fetch_chatters failed for {self._ch(channel_id)}: "  # type: ignore[attr-defined]
                         f"{resp.status_code} {resp.text[:120]}"
                     )
                     break
@@ -314,7 +320,7 @@ class _SessionMixin:
         async def _process_channel(channel_id: str, session_id: int) -> None:
             token_obj = await self.channels.get_token(channel_id)  # type: ignore[attr-defined]
             if not token_obj:
-                LOGGER.debug(f"No token for channel {channel_id}, skipping watch time")
+                LOGGER.debug(f"No token for channel {self._ch(channel_id)}, skipping watch time")  # type: ignore[attr-defined]
                 return
             viewers = await self._fetch_chatters(channel_id, token_obj.token)
             if not viewers:
@@ -327,7 +333,7 @@ class _SessionMixin:
                     seconds=_interval,
                 )
             LOGGER.debug(
-                f"Watch time: +{_interval}s for {len(viewers)} viewers in channel {channel_id}"
+                f"Watch time: +{_interval}s for {len(viewers)} viewers in channel {self._ch(channel_id)}"  # type: ignore[attr-defined]
             )
 
         while True:
@@ -341,7 +347,7 @@ class _SessionMixin:
                     if isinstance(exc, asyncio.CancelledError):
                         raise exc
                     if isinstance(exc, Exception):
-                        LOGGER.warning(f"Watch time error for channel {cid}: {exc}")
+                        LOGGER.warning(f"Watch time error for channel {self._ch(cid)}: {exc}")  # type: ignore[attr-defined]
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -382,9 +388,13 @@ class _SessionMixin:
                         ch.channel_id, vods
                     )
                     if updated:
-                        LOGGER.info(f"Reconciled {updated} session(s) for channel {ch.channel_id}")
+                        LOGGER.info(
+                            f"Reconciled {updated} session(s) for channel {ch.channel_name or ch.channel_id}"
+                        )
                 except Exception as e:
-                    LOGGER.debug(f"VOD reconcile failed for {ch.channel_id}: {e}")
+                    LOGGER.debug(
+                        f"VOD reconcile failed for {ch.channel_name or ch.channel_id}: {e}"
+                    )
         except Exception as e:
             LOGGER.warning(f"Session reconciliation error: {e}")
 
@@ -426,10 +436,12 @@ class _SessionMixin:
                             total_synced += 1
 
                     if synced_count > 0:
-                        LOGGER.info(f"Synced {synced_count} VODs for channel {channel_id}")
+                        LOGGER.info(
+                            f"Synced {synced_count} VODs for channel {self._ch(channel_id)}"  # type: ignore[attr-defined]
+                        )
 
                 except Exception as e:
-                    LOGGER.warning(f"Failed to sync VODs for channel {channel_id}: {e}")
+                    LOGGER.warning(f"Failed to sync VODs for channel {self._ch(channel_id)}: {e}")  # type: ignore[attr-defined]
                     continue
 
             if total_synced > 0:
