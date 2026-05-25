@@ -102,6 +102,24 @@ export interface InsightsCommandStat {
   usage_count: number
 }
 
+export interface SessionChartPoint {
+  started_at: string
+  game_name: string | null
+  total_watch_hours: number
+}
+
+export interface InsightsGameStat {
+  game_name: string
+  session_count: number
+  total_hours: number
+}
+
+export interface LoyaltyTiers {
+  core: number
+  regular: number
+  newcomer: number
+}
+
 export interface ChannelInsights {
   total_sessions: number
   total_stream_seconds: number
@@ -115,6 +133,9 @@ export interface ChannelInsights {
   total_bits: number
   top_chatters: InsightsChatterStat[]
   top_commands: InsightsCommandStat[]
+  session_chart: SessionChartPoint[]
+  top_games: InsightsGameStat[]
+  loyalty_tiers: LoyaltyTiers
 }
 
 export async function getInsights(days: number = 30): Promise<ChannelInsights> {
@@ -307,9 +328,11 @@ export interface MatcherChannelSummary {
   overlap_pct: number
   computed_at: string | null
   top_games: string[]
+  top_games_stats: InsightsGameStat[]
   peak_hours: number[]
   session_count: number
   avg_stream_hours: number
+  channel_view_count: number | null
 }
 
 export interface PotentialViewer {

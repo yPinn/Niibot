@@ -38,6 +38,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { cn } from '@/lib/utils'
 
+import { LoyaltyDonut } from './insights/LoyaltyDonut'
 import { SummaryTile } from './insights/SummaryTile'
 import { SORT_COLS, type SortKey } from './insights/types'
 import { formatDuration } from './insights/utils'
@@ -50,6 +51,24 @@ const PERIODS = [
   { label: '30 天', value: '30' },
   { label: '90 天', value: '90' },
 ]
+
+const EMPTY_INSIGHTS: ChannelInsights = {
+  total_sessions: 0,
+  total_stream_seconds: 0,
+  total_messages: 0,
+  total_commands: 0,
+  total_follows: 0,
+  total_organic_subs: 0,
+  total_gift_subs: 0,
+  total_raids: 0,
+  total_cheers: 0,
+  total_bits: 0,
+  top_chatters: [],
+  top_commands: [],
+  session_chart: [],
+  top_games: [],
+  loyalty_tiers: { core: 0, regular: 0, newcomer: 0 },
+}
 
 export default function Insights() {
   useDocumentTitle('Insights')
@@ -69,6 +88,7 @@ export default function Insights() {
   const [hoveredUserId, setHoveredUserId] = useState<string | null>(null)
   const [channelBadges, setChannelBadges] = useState<ChannelBadges | null>(null)
   const [isSyncing, setIsSyncing] = useState(false)
+  const [showScatter, setShowScatter] = useState(true)
   const loadedForRef = useRef<string | null>(null)
 
   const fetchViewers = useCallback(
@@ -124,7 +144,7 @@ export default function Insights() {
       await syncChannelRoles()
       void fetchViewers(Number(period), true)
     } catch {
-      // silent — button returns to idle state
+      // silent
     } finally {
       setIsSyncing(false)
     }
@@ -182,6 +202,8 @@ export default function Insights() {
     return { filtered: result, rankMap: map }
   }, [viewers, search, sort, sortDir])
 
+  const ins = insights ?? EMPTY_INSIGHTS
+
   return (
     <PageMain>
       <PageHeader
@@ -200,44 +222,92 @@ export default function Insights() {
         </Tabs>
       </PageHeader>
 
-      {/* Main 2-col layout */}
       <SlideUp
         inView
         delay={0.05}
         className="grid grid-cols-1 lg:grid-cols-2 gap-section flex-1 min-h-0 overflow-y-auto lg:overflow-hidden lg:grid-rows-1"
       >
-        {/* Left: chart + summary tiles */}
-        <div className="rounded-lg border bg-card p-section lg:self-start lg:max-h-full lg:overflow-y-auto flex flex-col gap-section">
-          <AnimatePresence mode="wait">
-            {!initialized ? (
-              <motion.div
-                key="chart-skel"
-                className="hidden lg:block"
-                exit={{ opacity: 0, transition: { duration: 0.08 } }}
+        {/* ── Left: Chart + Summary tiles ──────────────────────────── */}
+        <div className="rounded-lg border bg-card p-section flex flex-col gap-section min-h-0">
+          {/* Chart header */}
+          <div className="flex items-center justify-between shrink-0">
+            <span className="text-sub font-semibold">
+              {showScatter ? '觀眾分佈' : '觀眾忠誠度'}
+            </span>
+            <div className="flex rounded-md border overflow-hidden text-label">
+              <button
+                type="button"
+                onClick={() => setShowScatter(true)}
+                className={cn(
+                  'px-2.5 py-0.5 transition-colors',
+                  showScatter
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+                )}
               >
-                <Skeleton className="h-92.5 rounded-md" />
-              </motion.div>
-            ) : viewers.length > 0 ? (
+                活躍圖
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowScatter(false)}
+                className={cn(
+                  'px-2.5 py-0.5 border-l transition-colors',
+                  !showScatter
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+                )}
+              >
+                忠誠度
+              </button>
+            </div>
+          </div>
+
+          <AnimatePresence mode="wait" initial={false}>
+            {showScatter ? (
               <FadeIn
-                key="chart"
-                exit={{ opacity: 0, transition: { duration: 0.08 } }}
-                className="hidden lg:block rounded-md bg-muted/20 p-3 **:outline-none"
+                key="scatter"
+                className="flex-1 min-h-0 rounded-md bg-muted/20 p-3 **:outline-none"
+                style={{ minHeight: 200 }}
               >
-                <ViewerScatterChart
-                  viewers={viewers}
-                  hoveredUserId={hoveredUserId}
-                  onHover={setHoveredUserId}
-                  channelBadges={channelBadges}
-                />
+                {initialized && viewers.length > 0 ? (
+                  <ViewerScatterChart
+                    viewers={viewers}
+                    hoveredUserId={hoveredUserId}
+                    onHover={setHoveredUserId}
+                    channelBadges={channelBadges}
+                  />
+                ) : (
+                  <div className="h-full flex items-center justify-center text-label text-muted-foreground">
+                    尚無觀眾資料
+                  </div>
+                )}
               </FadeIn>
-            ) : null}
+            ) : (
+              <motion.div
+                key="donut"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.12 }}
+                className="flex-1 min-h-0 **:outline-none"
+                style={{ minHeight: 200 }}
+              >
+                {insightsLoading ? (
+                  <Skeleton className="h-full rounded-md" />
+                ) : (
+                  <LoyaltyDonut tiers={ins.loyalty_tiers} />
+                )}
+              </motion.div>
+            )}
           </AnimatePresence>
-          {(!initialized || viewers.length > 0) && <Separator className="hidden lg:block" />}
+
+          <Separator />
+
           <AnimatePresence mode="wait">
             <Stagger
               key={insightsLoading ? 'l' : 'd'}
               exit={{ opacity: 0, transition: { duration: 0.08 } }}
-              className="grid grid-cols-4 gap-1.5"
+              className="grid grid-cols-4 gap-1.5 shrink-0"
             >
               {insightsLoading ? (
                 Array.from({ length: 7 }).map((_, i) => (
@@ -245,11 +315,10 @@ export default function Insights() {
                 ))
               ) : (
                 <>
-                  {/* 直播 */}
                   <StaggerItem>
                     <SummaryTile
                       icon="fa-solid fa-tower-broadcast"
-                      value={insights?.total_sessions?.toLocaleString() ?? '—'}
+                      value={ins.total_sessions.toLocaleString()}
                       label="串流場數"
                     />
                   </StaggerItem>
@@ -257,19 +326,18 @@ export default function Insights() {
                     <SummaryTile
                       icon="fa-solid fa-hourglass-half"
                       value={
-                        insights?.total_stream_seconds != null && insights.total_stream_seconds > 0
-                          ? formatDuration(insights.total_stream_seconds)
+                        ins.total_stream_seconds > 0
+                          ? formatDuration(ins.total_stream_seconds)
                           : '—'
                       }
                       label="累計直播"
                     />
                   </StaggerItem>
-                  {/* 訂閱 */}
                   <StaggerItem>
                     <SummaryTile
                       icon="fa-solid fa-star"
                       iconClassName="text-primary/80"
-                      value={insights?.total_organic_subs.toLocaleString() ?? '—'}
+                      value={ins.total_organic_subs.toLocaleString()}
                       label="自主訂閱"
                     />
                   </StaggerItem>
@@ -277,16 +345,15 @@ export default function Insights() {
                     <SummaryTile
                       icon="fa-solid fa-gift"
                       iconClassName="text-status-special/80"
-                      value={insights?.total_gift_subs.toLocaleString() ?? '—'}
+                      value={ins.total_gift_subs.toLocaleString()}
                       label="贈禮訂閱"
                     />
                   </StaggerItem>
-                  {/* 互動 */}
                   <StaggerItem>
                     <SummaryTile
                       icon="fa-solid fa-heart"
                       iconClassName="text-status-follow/80"
-                      value={insights?.total_follows.toLocaleString() ?? '—'}
+                      value={ins.total_follows.toLocaleString()}
                       label="新追隨"
                     />
                   </StaggerItem>
@@ -294,11 +361,7 @@ export default function Insights() {
                     <SummaryTile
                       icon="fa-solid fa-diamond-half-stroke"
                       iconClassName="text-primary/80"
-                      value={
-                        insights && insights.total_bits > 0
-                          ? insights.total_bits.toLocaleString()
-                          : '—'
-                      }
+                      value={ins.total_bits > 0 ? ins.total_bits.toLocaleString() : '—'}
                       label="小奇點"
                     />
                   </StaggerItem>
@@ -306,7 +369,7 @@ export default function Insights() {
                     <SummaryTile
                       icon="fa-solid fa-comments"
                       iconClassName="text-status-info/80"
-                      value={insights?.total_messages.toLocaleString() ?? '—'}
+                      value={ins.total_messages.toLocaleString()}
                       label="聊天訊息"
                     />
                   </StaggerItem>
@@ -316,7 +379,7 @@ export default function Insights() {
           </AnimatePresence>
         </div>
 
-        {/* Right: viewer list */}
+        {/* ── Right: Viewer list ────────────────────────────────────── */}
         <div className="rounded-lg border bg-card p-section flex flex-col gap-section min-h-0">
           <div className="flex items-center gap-2 self-end shrink-0">
             <Tooltip>
@@ -341,6 +404,7 @@ export default function Insights() {
               className="h-10 w-44"
             />
           </div>
+
           <AnimatePresence mode="wait" initial={false}>
             {!initialized ? (
               <motion.div
@@ -348,7 +412,7 @@ export default function Insights() {
                 className="space-y-1"
                 exit={{ opacity: 0, transition: { duration: 0.08 } }}
               >
-                {Array.from({ length: 10 }).map((_, i) => (
+                {Array.from({ length: 8 }).map((_, i) => (
                   <Skeleton key={i} className="h-14.25 w-full rounded-md" />
                 ))}
               </motion.div>

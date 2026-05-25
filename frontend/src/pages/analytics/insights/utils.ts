@@ -87,3 +87,19 @@ export function formatCompact(n: number): string {
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
   return n.toLocaleString()
 }
+
+export function formatWatchHours(sec: number): string {
+  if (sec < 60) return '<1分'
+  if (sec < 3600) return `${Math.floor(sec / 60)}分`
+  return `${(sec / 3600).toFixed(1)}h`
+}
+
+export function formatRelativeDays(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime()
+  const days = Math.floor(diff / 86_400_000)
+  if (days === 0) return '今天'
+  if (days === 1) return '昨天'
+  if (days < 7) return `${days} 天前`
+  if (days < 30) return `${Math.floor(days / 7)} 週前`
+  return `${Math.floor(days / 30)} 個月前`
+}

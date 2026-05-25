@@ -95,6 +95,24 @@ class InsightsCommandStat(BaseModel):
     usage_count: int
 
 
+class SessionChartPoint(BaseModel):
+    started_at: str
+    game_name: str | None
+    total_watch_hours: float
+
+
+class InsightsGameStat(BaseModel):
+    game_name: str
+    session_count: int
+    total_hours: float
+
+
+class LoyaltyTiers(BaseModel):
+    core: int
+    regular: int
+    newcomer: int
+
+
 class ChannelInsights(BaseModel):
     total_sessions: int
     total_stream_seconds: int
@@ -108,6 +126,9 @@ class ChannelInsights(BaseModel):
     total_bits: int
     top_chatters: list[InsightsChatterStat]
     top_commands: list[InsightsCommandStat]
+    session_chart: list[SessionChartPoint] = []
+    top_games: list[InsightsGameStat] = []
+    loyalty_tiers: LoyaltyTiers = LoyaltyTiers(core=0, regular=0, newcomer=0)
 
 
 class ViewerSummary(BaseModel):

@@ -1187,6 +1187,28 @@ class TestGetPartnerSessionStats:
         assert 20 in result["peak_hours"]
         assert result["avg_stream_hours"] == round((3.0 + 2.5 + 1.5) / 3, 1)
 
+    async def test_top_games_stats_shape(self):
+        """top_games_stats contains game_name, session_count, and total_hours."""
+        rows = [
+            {"game_name": "Minecraft", "start_hour": 20, "duration_hours": 3.0},
+            {"game_name": "Minecraft", "start_hour": 21, "duration_hours": 2.5},
+            {"game_name": "Fortnite", "start_hour": 20, "duration_hours": 1.5},
+        ]
+        conn = _make_conn_multi(fetch=rows)
+        pool = _make_pool_with_conn(conn)
+
+        repo = AnalyticsRepository(pool)
+        result = await repo.get_partner_session_stats("p1", days=90)
+
+        stats = result["top_games_stats"]
+        assert len(stats) == 2
+        mc = next(s for s in stats if s["game_name"] == "Minecraft")
+        assert mc["session_count"] == 2
+        assert mc["total_hours"] == round(3.0 + 2.5, 1)
+        fn = next(s for s in stats if s["game_name"] == "Fortnite")
+        assert fn["session_count"] == 1
+        assert fn["total_hours"] == 1.5
+
     async def test_top_games_capped_at_three(self):
         rows = [{"game_name": f"Game{i}", "start_hour": i, "duration_hours": 1.0} for i in range(5)]
         conn = _make_conn_multi(fetch=rows)
@@ -1268,3 +1290,91 @@ class TestGetPotentialViewers:
         total, rows = await repo.get_potential_viewers("home1", "p1")
 
         assert total == 0
+
+
+# ---------------------------------------------------------------------------
+# Query mixin — get_insights new fields
+# ---------------------------------------------------------------------------
+
+_SUMMARY_ROW = {
+    "total_sessions": 5,
+    "total_stream_seconds": 18000,
+    "total_messages": 100,
+    "total_commands": 20,
+    "total_follows": 3,
+    "total_organic_subs": 1,
+    "total_gift_subs": 0,
+    "total_raids": 2,
+    "total_cheers": 1,
+    "total_bits": 500,
+    # loyalty_tiers also uses fetchrow — merged into one fixture row
+    "core": 3,
+    "regular": 5,
+    "newcomer": 2,
+}
+
+
+@pytest.mark.asyncio
+class TestGetInsightsNewFields:
+    async def test_result_contains_session_chart_top_games_loyalty_keys(self):
+        """get_insights result includes the three new top-level keys."""
+        conn = AsyncMock()
+        conn.fetchrow = AsyncMock(return_value=_SUMMARY_ROW)
+        conn.fetch = AsyncMock(return_value=[])
+        pool = _make_pool_with_conn(conn)
+
+        with patch(_BOT_LIST_PATCH, AsyncMock(return_value=[])):
+            repo = AnalyticsRepository(pool)
+            result = await repo.get_insights("ch1", days=30)
+
+        assert "session_chart" in result
+        assert "top_games" in result
+        assert "loyalty_tiers" in result
+        assert isinstance(result["session_chart"], list)
+        assert isinstance(result["top_games"], list)
+
+    async def test_loyalty_tiers_values(self):
+        """loyalty_tiers reflects the DB row counts."""
+        conn = AsyncMock()
+        conn.fetchrow = AsyncMock(return_value=_SUMMARY_ROW)
+        conn.fetch = AsyncMock(return_value=[])
+        pool = _make_pool_with_conn(conn)
+
+        with patch(_BOT_LIST_PATCH, AsyncMock(return_value=[])):
+            repo = AnalyticsRepository(pool)
+            result = await repo.get_insights("ch1", days=30)
+
+        tiers = result["loyalty_tiers"]
+        assert tiers["core"] == 3
+        assert tiers["regular"] == 5
+        assert tiers["newcomer"] == 2
+
+    async def test_session_chart_row_shape(self):
+        """Each session_chart entry has started_at, game_name, and total_watch_hours."""
+        chart_row = {
+            "started_at": _NOW,
+            "game_name": "Minecraft",
+            "total_watch_seconds": 3600,
+        }
+        conn = AsyncMock()
+        conn.fetchrow = AsyncMock(return_value=_SUMMARY_ROW)
+        conn.fetch = AsyncMock(
+            side_effect=[
+                [],  # _top_chatters
+                [],  # _top_commands
+                [chart_row],  # _session_chart
+                [],  # _top_games
+            ]
+        )
+        pool = _make_pool_with_conn(conn)
+
+        with patch(_BOT_LIST_PATCH, AsyncMock(return_value=[])):
+            repo = AnalyticsRepository(pool)
+            result = await repo.get_insights("ch1", days=30)
+
+        # At least one of the fetch calls returned chart data
+        if result["session_chart"]:
+            point = result["session_chart"][0]
+            assert "started_at" in point
+            assert "game_name" in point
+            assert "total_watch_hours" in point

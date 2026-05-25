@@ -251,19 +251,32 @@ class _AnalyticsOverlapMixin:
                 }
 
             game_counts: dict[str, int] = {}
+            game_hours: dict[str, float] = {}
             hours: list[int] = []
             durations: list[float] = []
             for row in rows:
                 if row["game_name"]:
                     game_counts[row["game_name"]] = game_counts.get(row["game_name"], 0) + 1
+                    game_hours[row["game_name"]] = game_hours.get(row["game_name"], 0.0) + float(
+                        row["duration_hours"]
+                    )
                 hours.append(int(row["start_hour"]))
                 durations.append(float(row["duration_hours"]))
 
             top_games = sorted(game_counts, key=lambda g: game_counts[g], reverse=True)[:3]
+            top_games_stats = [
+                {
+                    "game_name": g,
+                    "session_count": game_counts[g],
+                    "total_hours": round(game_hours[g], 1),
+                }
+                for g in top_games
+            ]
             avg_hours = round(sum(durations) / len(durations), 1) if durations else 0.0
 
             return {
                 "top_games": top_games,
+                "top_games_stats": top_games_stats,
                 "peak_hours": sorted(set(hours)),
                 "session_count": len(rows),
                 "avg_stream_hours": avg_hours,
