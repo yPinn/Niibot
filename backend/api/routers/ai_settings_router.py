@@ -217,9 +217,11 @@ async def get_ai_emotes(
         accessible: set[str] | None = {e["id"] for e in user_raw} if bot_token else None
 
         def is_available(e: dict) -> bool:
-            if e.get("emote_type") in ("globals", "follower"):
+            if e.get("emote_type") == "globals":
                 return True
-            return e["id"] in accessible if accessible is not None else False
+            if accessible is not None:
+                return e["id"] in accessible
+            return e.get("emote_type") == "follower"
 
         items = [
             EmoteItem(
