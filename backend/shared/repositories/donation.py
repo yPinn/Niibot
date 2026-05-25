@@ -9,12 +9,21 @@ import time
 
 import asyncpg
 
-from shared.models.donation import DonationOrder, PaymentConfig
+from shared.crypto import decrypt_or_passthrough, encrypt_value
+from shared.models.donation import DonationOrder, PaymentConfig, PaymentConfigSummary
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
-_PAYMENT_CONFIG_COLS = (
+# Full columns — used when hash_key/hash_iv are needed (checkout, webhook, upsert).
+_FULL_PAYMENT_CONFIG_COLS = (
     "user_id, platform, merchant_id, hash_key, hash_iv, "
+    "min_amount, media_share_enabled, enabled, created_at, updated_at"
+)
+
+# Lightweight columns for list queries — never loads raw key material into memory.
+_LIST_PAYMENT_CONFIG_COLS = (
+    "user_id, platform, merchant_id, "
+    "(hash_key IS NOT NULL) AS has_hash, "
     "min_amount, media_share_enabled, enabled, created_at, updated_at"
 )
 
@@ -38,33 +47,47 @@ def generate_trade_no() -> str:
 class DonationRepository:
     """SQL operations for payment configs and donation orders."""
 
-    def __init__(self, pool: asyncpg.Pool) -> None:
+    def __init__(self, pool: asyncpg.Pool, encryption_key: str | None = None) -> None:
         self.pool = pool
+        self._key = encryption_key
+
+    def _encrypt(self, value: str | None) -> str | None:
+        if value is None or not self._key:
+            return value
+        return encrypt_value(value, self._key)
+
+    def _decrypt(self, value: str | None) -> str | None:
+        return decrypt_or_passthrough(value, self._key)
 
     # ============================================================
     # Payment Config Methods
     # ============================================================
 
-    async def list_configs(self, user_id: str) -> list[PaymentConfig]:
-        """List all payment platform configs for a streamer."""
+    async def list_configs(self, user_id: str) -> list[PaymentConfigSummary]:
+        """List payment configs for a streamer — no raw key material returned."""
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
-                f"SELECT {_PAYMENT_CONFIG_COLS} FROM user_payment_configs "
+                f"SELECT {_LIST_PAYMENT_CONFIG_COLS} FROM user_payment_configs "
                 "WHERE user_id = $1 ORDER BY platform",
                 user_id,
             )
-            return [PaymentConfig(**dict(r)) for r in rows]
+            return [PaymentConfigSummary(**dict(r)) for r in rows]
 
     async def get_config(self, user_id: str, platform: str) -> PaymentConfig | None:
-        """Get a single platform config for a streamer."""
+        """Get a single platform config with decrypted credentials."""
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
-                f"SELECT {_PAYMENT_CONFIG_COLS} FROM user_payment_configs "
+                f"SELECT {_FULL_PAYMENT_CONFIG_COLS} FROM user_payment_configs "
                 "WHERE user_id = $1 AND platform = $2",
                 user_id,
                 platform,
             )
-            return PaymentConfig(**dict(row)) if row else None
+            if not row:
+                return None
+            data = dict(row)
+            data["hash_key"] = self._decrypt(data["hash_key"])
+            data["hash_iv"] = self._decrypt(data["hash_iv"])
+            return PaymentConfig(**data)
 
     async def upsert_config(
         self,
@@ -77,7 +100,7 @@ class DonationRepository:
         media_share_enabled: bool = False,
         enabled: bool = True,
     ) -> PaymentConfig:
-        """Insert or update a payment platform config."""
+        """Insert or update a payment platform config, encrypting credentials."""
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 f"""
@@ -93,18 +116,21 @@ class DonationRepository:
                     media_share_enabled = EXCLUDED.media_share_enabled,
                     enabled             = EXCLUDED.enabled,
                     updated_at          = NOW()
-                RETURNING {_PAYMENT_CONFIG_COLS}
+                RETURNING {_FULL_PAYMENT_CONFIG_COLS}
                 """,
                 user_id,
                 platform,
                 merchant_id,
-                hash_key,
-                hash_iv,
+                self._encrypt(hash_key),
+                self._encrypt(hash_iv),
                 min_amount,
                 media_share_enabled,
                 enabled,
             )
-            return PaymentConfig(**dict(row))
+            data = dict(row)
+            data["hash_key"] = self._decrypt(data["hash_key"])
+            data["hash_iv"] = self._decrypt(data["hash_iv"])
+            return PaymentConfig(**data)
 
     async def delete_config(self, user_id: str, platform: str) -> bool:
         """Delete a payment platform config. Returns True if a row was deleted."""
@@ -141,27 +167,38 @@ class DonationRepository:
             channel_id = row["channel_id"]
 
             configs = await conn.fetch(
-                f"SELECT {_PAYMENT_CONFIG_COLS} FROM user_payment_configs "
+                f"SELECT {_FULL_PAYMENT_CONFIG_COLS} FROM user_payment_configs "
                 "WHERE user_id = $1 AND enabled = TRUE ORDER BY platform",
                 user_id,
             )
-            return user_id, channel_id, [PaymentConfig(**dict(r)) for r in configs]
+            decrypted = []
+            for r in configs:
+                data = dict(r)
+                data["hash_key"] = self._decrypt(data["hash_key"])
+                data["hash_iv"] = self._decrypt(data["hash_iv"])
+                decrypted.append(PaymentConfig(**data))
+            return user_id, channel_id, decrypted
 
     async def get_config_by_merchant_id(
         self, platform: str, merchant_id: str
     ) -> PaymentConfig | None:
-        """Look up a payment config by platform + merchant_id.
+        """Look up a payment config by platform + merchant_id with decrypted credentials.
 
         Used by NewebPay webhook to resolve credentials from the incoming MerchantID.
         """
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
-                f"SELECT {_PAYMENT_CONFIG_COLS} FROM user_payment_configs "
+                f"SELECT {_FULL_PAYMENT_CONFIG_COLS} FROM user_payment_configs "
                 "WHERE platform = $1 AND merchant_id = $2 LIMIT 1",
                 platform,
                 merchant_id,
             )
-            return PaymentConfig(**dict(row)) if row else None
+            if not row:
+                return None
+            data = dict(row)
+            data["hash_key"] = self._decrypt(data["hash_key"])
+            data["hash_iv"] = self._decrypt(data["hash_iv"])
+            return PaymentConfig(**data)
 
     # ============================================================
     # Donation Order Methods

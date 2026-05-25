@@ -31,7 +31,8 @@ def _config(platform: str = "ecpay", has_hash: bool = True) -> MagicMock:
     c = MagicMock()
     c.platform = platform
     c.merchant_id = "MERCHANT001"
-    c.hash_key = "key" if has_hash else None
+    c.has_hash = has_hash  # for list_configs (PaymentConfigSummary)
+    c.hash_key = "key" if has_hash else None  # for upsert/get_config (PaymentConfig)
     c.hash_iv = "iv" if has_hash else None
     c.min_amount = 30
     c.media_share_enabled = False
@@ -108,13 +109,32 @@ class TestUpsertPaymentConfig:
         assert r.status_code == 200
         assert r.json()["platform"] == "ecpay"
 
-    def test_ecpay_without_hash_returns_400(self):
-        r = _make_client().put(
-            "/api/payment-configs/ecpay",
-            json={"merchant_id": "M001", "min_amount": 30},
-        )
+    def test_ecpay_without_hash_no_existing_returns_400(self):
+        with patch("routers.payment_config_router.DonationRepository") as mock_repo:
+            mock_repo.return_value.get_config = AsyncMock(return_value=None)
+            r = _make_client().put(
+                "/api/payment-configs/ecpay",
+                json={"merchant_id": "M001", "min_amount": 30},
+            )
         assert r.status_code == 400
         assert "hash_key" in r.json()["detail"]
+
+    def test_ecpay_without_hash_keeps_existing(self):
+        """Omitting hash on update preserves the stored keys (keep-existing-hash)."""
+        with patch("routers.payment_config_router.DonationRepository") as mock_repo:
+            existing = _config("ecpay", has_hash=True)
+            mock_repo.return_value.get_config = AsyncMock(return_value=existing)
+            mock_repo.return_value.upsert_config = AsyncMock(return_value=_config("ecpay"))
+            r = _make_client().put(
+                "/api/payment-configs/ecpay",
+                json={"merchant_id": "M001", "min_amount": 50},
+            )
+        assert r.status_code == 200
+        # upsert_config must have been called with the preserved key values
+        call_kwargs = mock_repo.return_value.upsert_config.call_args.kwargs
+        assert call_kwargs["hash_key"] == "key"
+        assert call_kwargs["hash_iv"] == "iv"
+        assert call_kwargs["min_amount"] == 50
 
     def test_invalid_platform_returns_400(self):
         r = _make_client().put(

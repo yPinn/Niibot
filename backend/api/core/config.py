@@ -46,6 +46,13 @@ class Settings(BaseServiceSettings):
     bot_id: str = Field(default="", description="Twitch bot user ID")
     owner_id: str = Field(default="", description="Owner Twitch user ID")
 
+    payment_encryption_key: str = Field(
+        default="",
+        description=(
+            "Fernet key for encrypting payment gateway credentials (hash_key/hash_iv) at rest. "
+            'Generate: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"'
+        ),
+    )
     youtube_api_key: str = Field(default="", description="YouTube Data API v3 key")
     releases_github_token: str = Field(
         default="", description="GitHub PAT for reading private repo releases"

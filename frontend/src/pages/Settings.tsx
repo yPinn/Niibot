@@ -40,6 +40,7 @@ import {
   Switch,
 } from '@/components/ui'
 import { SlideUp, Stagger, StaggerItem } from '@/components/ui/motion'
+import { WipLockOverlay } from '@/components/WipLockOverlay'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
@@ -175,7 +176,7 @@ export default function Settings() {
 
   return (
     <PageMain>
-      <PageHeader title="Settings" description="金流設定" />
+      <PageHeader title="Settings" description="帳號、金流與系統設定" />
 
       <SlideUp inView>
         <Card className="relative overflow-hidden">
@@ -314,99 +315,111 @@ export default function Settings() {
 
                               {/* HashKey + HashIV (2 cols) */}
                               {needsHash && (
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-element">
-                                  <div className="flex flex-col gap-1">
-                                    <Label
-                                      className="text-label text-muted-foreground"
-                                      htmlFor={`${platform}-hashkey`}
-                                    >
-                                      HashKey{existing?.has_hash ? ' (留空不變)' : ''}
-                                    </Label>
-                                    <div className="relative">
-                                      <Input
-                                        id={`${platform}-hashkey`}
-                                        type={showHash[platform] ? 'text' : 'password'}
-                                        value={form.hash_key}
-                                        disabled={locked}
-                                        onChange={e =>
-                                          setPaymentForms(prev => ({
-                                            ...prev,
-                                            [platform]: {
-                                              ...prev[platform],
-                                              hash_key: e.target.value,
-                                            },
-                                          }))
-                                        }
-                                        placeholder={existing?.has_hash ? '••••••••' : 'HashKey'}
-                                        className="h-8 text-sub pr-8"
-                                      />
-                                      <button
-                                        type="button"
-                                        aria-label={showHash[platform] ? '隱藏金鑰' : '顯示金鑰'}
-                                        onClick={() =>
-                                          setShowHash(prev => ({
-                                            ...prev,
-                                            [platform]: !prev[platform],
-                                          }))
-                                        }
-                                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                                      >
-                                        <Icon
-                                          icon={
-                                            showHash[platform]
-                                              ? 'fa-solid fa-eye-slash'
-                                              : 'fa-solid fa-eye'
-                                          }
-                                          wrapperClassName="size-3.5"
-                                        />
-                                      </button>
+                                <div className="flex flex-col gap-2">
+                                  {existing?.has_hash && (
+                                    <div className="flex items-center gap-1.5 text-label text-muted-foreground">
+                                      <Icon icon="fa-solid fa-lock" wrapperClassName="size-3" />
+                                      <span>金鑰已加密儲存，留空則保留原設定</span>
                                     </div>
-                                  </div>
-                                  <div className="flex flex-col gap-1">
-                                    <Label
-                                      className="text-label text-muted-foreground"
-                                      htmlFor={`${platform}-hashiv`}
-                                    >
-                                      HashIV{existing?.has_hash ? ' (留空不變)' : ''}
-                                    </Label>
-                                    <div className="relative">
-                                      <Input
-                                        id={`${platform}-hashiv`}
-                                        type={showHash[platform] ? 'text' : 'password'}
-                                        value={form.hash_iv}
-                                        disabled={locked}
-                                        onChange={e =>
-                                          setPaymentForms(prev => ({
-                                            ...prev,
-                                            [platform]: {
-                                              ...prev[platform],
-                                              hash_iv: e.target.value,
-                                            },
-                                          }))
-                                        }
-                                        placeholder={existing?.has_hash ? '••••••••' : 'HashIV'}
-                                        className="h-8 text-sub pr-8"
-                                      />
-                                      <button
-                                        type="button"
-                                        aria-label={showHash[platform] ? '隱藏金鑰' : '顯示金鑰'}
-                                        onClick={() =>
-                                          setShowHash(prev => ({
-                                            ...prev,
-                                            [platform]: !prev[platform],
-                                          }))
-                                        }
-                                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                                  )}
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-element">
+                                    <div className="flex flex-col gap-1">
+                                      <Label
+                                        className="text-label text-muted-foreground"
+                                        htmlFor={`${platform}-hashkey`}
                                       >
-                                        <Icon
-                                          icon={
-                                            showHash[platform]
-                                              ? 'fa-solid fa-eye-slash'
-                                              : 'fa-solid fa-eye'
+                                        HashKey
+                                      </Label>
+                                      <div className="relative">
+                                        <Input
+                                          id={`${platform}-hashkey`}
+                                          type={showHash[platform] ? 'text' : 'password'}
+                                          value={form.hash_key}
+                                          disabled={locked}
+                                          onChange={e =>
+                                            setPaymentForms(prev => ({
+                                              ...prev,
+                                              [platform]: {
+                                                ...prev[platform],
+                                                hash_key: e.target.value,
+                                              },
+                                            }))
                                           }
-                                          wrapperClassName="size-3.5"
+                                          placeholder={
+                                            existing?.has_hash ? '留空保留原設定' : 'HashKey'
+                                          }
+                                          className="h-8 text-sub pr-8"
                                         />
-                                      </button>
+                                        <button
+                                          type="button"
+                                          aria-label={showHash[platform] ? '隱藏金鑰' : '顯示金鑰'}
+                                          onClick={() =>
+                                            setShowHash(prev => ({
+                                              ...prev,
+                                              [platform]: !prev[platform],
+                                            }))
+                                          }
+                                          className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                                        >
+                                          <Icon
+                                            icon={
+                                              showHash[platform]
+                                                ? 'fa-solid fa-eye-slash'
+                                                : 'fa-solid fa-eye'
+                                            }
+                                            wrapperClassName="size-3.5"
+                                          />
+                                        </button>
+                                      </div>
+                                    </div>
+                                    <div className="flex flex-col gap-1">
+                                      <Label
+                                        className="text-label text-muted-foreground"
+                                        htmlFor={`${platform}-hashiv`}
+                                      >
+                                        HashIV
+                                      </Label>
+                                      <div className="relative">
+                                        <Input
+                                          id={`${platform}-hashiv`}
+                                          type={showHash[platform] ? 'text' : 'password'}
+                                          value={form.hash_iv}
+                                          disabled={locked}
+                                          onChange={e =>
+                                            setPaymentForms(prev => ({
+                                              ...prev,
+                                              [platform]: {
+                                                ...prev[platform],
+                                                hash_iv: e.target.value,
+                                              },
+                                            }))
+                                          }
+                                          placeholder={
+                                            existing?.has_hash ? '留空保留原設定' : 'HashIV'
+                                          }
+                                          className="h-8 text-sub pr-8"
+                                        />
+                                        <button
+                                          type="button"
+                                          aria-label={showHash[platform] ? '隱藏金鑰' : '顯示金鑰'}
+                                          onClick={() =>
+                                            setShowHash(prev => ({
+                                              ...prev,
+                                              [platform]: !prev[platform],
+                                            }))
+                                          }
+                                          className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                                        >
+                                          <Icon
+                                            icon={
+                                              showHash[platform]
+                                                ? 'fa-solid fa-eye-slash'
+                                                : 'fa-solid fa-eye'
+                                            }
+                                            wrapperClassName="size-3.5"
+                                          />
+                                        </button>
+                                      </div>
                                     </div>
                                   </div>
                                 </div>
@@ -515,6 +528,7 @@ export default function Settings() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      {import.meta.env.PROD && <WipLockOverlay />}
     </PageMain>
   )
 }

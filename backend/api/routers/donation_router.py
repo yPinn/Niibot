@@ -207,9 +207,10 @@ class CheckoutResponse(BaseModel):
 async def get_public_donate_info(
     username: str,
     pool: Pool = Depends(get_db_pool),
+    settings: Settings = Depends(get_settings),
 ) -> PublicDonateInfo:
     """Return a streamer's enabled donation platforms (no secrets)."""
-    repo = DonationRepository(pool)
+    repo = DonationRepository(pool, settings.payment_encryption_key or None)
     result = await repo.get_configs_by_username(username)
     if result is None:
         raise HTTPException(status_code=404, detail="Streamer not found")
@@ -253,7 +254,7 @@ async def checkout(
         if _parsed.scheme != _allowed.scheme or _parsed.netloc != _allowed.netloc:
             raise HTTPException(status_code=400, detail="Invalid return_url")
 
-    repo = DonationRepository(pool)
+    repo = DonationRepository(pool, settings.payment_encryption_key or None)
     result = await repo.get_configs_by_username(username)
     if result is None:
         raise HTTPException(status_code=404, detail="Streamer not found")
@@ -374,6 +375,7 @@ async def _handle_payment_webhook(
     platform: str,
     form_data: dict[str, str],
     pool: Pool,
+    encryption_key: str | None = None,
 ) -> str:
     """Shared webhook handler for ECPay and OPay (identical protocol).
 
@@ -387,7 +389,7 @@ async def _handle_payment_webhook(
         LOGGER.warning(f"[{platform} webhook] Missing MerchantTradeNo")
         return "0|Error"
 
-    repo = DonationRepository(pool)
+    repo = DonationRepository(pool, encryption_key)
     order = await repo.get_order_by_trade_no(trade_no)
     if order is None:
         LOGGER.warning(f"[{platform} webhook] Unknown order: {trade_no}")
@@ -453,28 +455,35 @@ async def _handle_payment_webhook(
 async def webhook_ecpay(
     request: Request,
     pool: Pool = Depends(get_db_pool),
+    settings: Settings = Depends(get_settings),
 ) -> str:
     """ECPay payment notification webhook."""
     form = await request.form()
     form_data = {k: str(v) for k, v in form.items()}
-    return await _handle_payment_webhook("ecpay", form_data, pool)
+    return await _handle_payment_webhook(
+        "ecpay", form_data, pool, settings.payment_encryption_key or None
+    )
 
 
 @router.post("/webhook/opay", response_class=PlainTextResponse)
 async def webhook_opay(
     request: Request,
     pool: Pool = Depends(get_db_pool),
+    settings: Settings = Depends(get_settings),
 ) -> str:
     """OPay payment notification webhook."""
     form = await request.form()
     form_data = {k: str(v) for k, v in form.items()}
-    return await _handle_payment_webhook("opay", form_data, pool)
+    return await _handle_payment_webhook(
+        "opay", form_data, pool, settings.payment_encryption_key or None
+    )
 
 
 @router.post("/webhook/newebpay")
 async def webhook_newebpay(
     request: Request,
     pool: Pool = Depends(get_db_pool),
+    settings: Settings = Depends(get_settings),
 ) -> JSONResponse:
     """NewebPay payment notification webhook.
 
@@ -499,7 +508,7 @@ async def webhook_newebpay(
     # Resolve the merchant's credentials from MerchantID in the raw form
     # (we need to look up the user by merchant_id to get hash_key/hash_iv)
     merchant_id = str(form.get("MerchantID", ""))
-    repo = DonationRepository(pool)
+    repo = DonationRepository(pool, settings.payment_encryption_key or None)
     config_row = await repo.get_config_by_merchant_id("newebpay", merchant_id)
     if config_row is None:
         LOGGER.warning(f"[newebpay webhook] Unknown merchant_id: {merchant_id}")

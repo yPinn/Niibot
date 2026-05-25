@@ -7,6 +7,21 @@ from datetime import datetime
 
 
 @dataclass
+class PaymentConfigSummary:
+    """Lightweight list-query result — no raw key material loaded into memory."""
+
+    user_id: str
+    platform: str
+    merchant_id: str
+    has_hash: bool
+    min_amount: int
+    media_share_enabled: bool
+    enabled: bool
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+@dataclass
 class PaymentConfig:
     """Per-streamer, per-platform merchant configuration."""
 

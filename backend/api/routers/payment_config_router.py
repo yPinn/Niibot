@@ -11,6 +11,7 @@ from asyncpg import Pool
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from core.config import Settings, get_settings
 from core.dependencies import get_current_user_id, get_db_pool
 from shared.repositories.donation import DonationRepository
 
@@ -53,7 +54,7 @@ async def list_payment_configs(
             PaymentConfigResponse(
                 platform=c.platform,
                 merchant_id=c.merchant_id,
-                has_hash=bool(c.hash_key),
+                has_hash=c.has_hash,
                 min_amount=c.min_amount,
                 media_share_enabled=c.media_share_enabled,
                 enabled=c.enabled,
@@ -72,6 +73,7 @@ async def upsert_payment_config(
     body: PaymentConfigUpsert,
     user_id: str = Depends(get_current_user_id),
     pool: Pool = Depends(get_db_pool),
+    settings: Settings = Depends(get_settings),
 ) -> PaymentConfigResponse:
     """Create or update a payment platform config."""
     if platform not in _VALID_PLATFORMS:
@@ -80,18 +82,27 @@ async def upsert_payment_config(
             detail=f"Invalid platform. Must be one of: {', '.join(sorted(_VALID_PLATFORMS))}",
         )
 
-    # ECPay/OPay/NewebPay require hash_key and hash_iv
-    if platform in {"ecpay", "opay", "newebpay"} and not (body.hash_key and body.hash_iv):
-        raise HTTPException(status_code=400, detail=f"{platform} requires hash_key and hash_iv")
+    repo = DonationRepository(pool, settings.payment_encryption_key or None)
+
+    hash_key = body.hash_key
+    hash_iv = body.hash_iv
+
+    if platform in {"ecpay", "opay", "newebpay"} and not (hash_key and hash_iv):
+        # Allow omitting keys on update if they're already stored.
+        existing = await repo.get_config(user_id, platform)
+        if not existing or not existing.hash_key or not existing.hash_iv:
+            raise HTTPException(status_code=400, detail=f"{platform} requires hash_key and hash_iv")
+        # Preserve existing decrypted values — repo will re-encrypt on write.
+        hash_key = existing.hash_key
+        hash_iv = existing.hash_iv
 
     try:
-        repo = DonationRepository(pool)
         config = await repo.upsert_config(
             user_id=user_id,
             platform=platform,
             merchant_id=body.merchant_id,
-            hash_key=body.hash_key,
-            hash_iv=body.hash_iv,
+            hash_key=hash_key,
+            hash_iv=hash_iv,
             min_amount=body.min_amount,
             media_share_enabled=body.media_share_enabled,
             enabled=body.enabled,
