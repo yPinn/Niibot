@@ -67,6 +67,10 @@ class DiscordBotSettings(BaseServiceSettings):
     discord_activity_url: str = Field(
         default="", description="Streaming URL (twitch.tv only, required for streaming type)"
     )
+    discord_description: str = Field(
+        default="",
+        description="Bot description shown in profile (PATCH /applications/@me, max 400 chars)",
+    )
 
     # Rate Limit Monitor
     rate_limit_enabled: bool = Field(default=True, description="Enable rate limit monitoring")
@@ -127,7 +131,7 @@ class BotConfig:
         return status_map.get(get_settings().discord_status.lower(), discord.Status.online)
 
     @classmethod
-    def get_activity(cls) -> discord.Activity | discord.Streaming | None:
+    def get_activity(cls) -> discord.Activity | discord.Streaming | discord.CustomActivity | None:
         """Get bot activity from settings.
 
         Supports: playing, listening, watching, competing, streaming
@@ -160,6 +164,9 @@ class BotConfig:
                 )
 
             return discord.Streaming(name=s.discord_activity_name, url=s.discord_activity_url)
+
+        if activity_type_lower == "custom":
+            return discord.CustomActivity(name=s.discord_activity_name)
 
         activity_map = {
             "playing": discord.ActivityType.playing,

@@ -217,6 +217,20 @@ class NiibotClient(commands.Bot):
         except Exception as e:
             LOGGER.warning(f"Failed to set bot presence: {e}")
 
+        description = get_settings().discord_description
+        if description:
+            try:
+                await self.http.edit_application_info(
+                    reason=None, payload={"description": description[:400]}
+                )
+                LOGGER.info(
+                    f"Bot description set: {description[:40]}{'...' if len(description) > 40 else ''}"
+                )
+            except Exception as e:
+                LOGGER.warning(f"Failed to set bot description: {e}")
+        else:
+            LOGGER.debug("DISCORD_DESCRIPTION not set, skipping description update")
+
         if self.user is None:
             LOGGER.error("Bot user is None")
             return
