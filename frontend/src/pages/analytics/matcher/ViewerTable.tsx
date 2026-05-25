@@ -15,28 +15,13 @@ import {
 } from '@/components/ui'
 import { cn } from '@/lib/utils'
 
+import { formatRelativeDays, formatWatchHours } from '../insights/utils'
+
 import type { MatcherViewersResponse } from './types'
 
 interface ViewerTableProps {
   data: MatcherViewersResponse | null
   isLoading: boolean
-}
-
-function ActivityDots({ value, thresholds }: { value: number; thresholds: [number, number] }) {
-  const level = value >= thresholds[1] ? 3 : value >= thresholds[0] ? 2 : value > 0 ? 1 : 0
-  return (
-    <div className="flex gap-0.5 justify-end">
-      {[1, 2, 3].map(i => (
-        <span
-          key={i}
-          className={cn(
-            'size-2 rounded-full',
-            i <= level ? 'bg-foreground/70' : 'bg-muted-foreground/20'
-          )}
-        />
-      ))}
-    </div>
-  )
 }
 
 function HomeStatus({ sessions }: { sessions: number }) {
@@ -73,11 +58,13 @@ export function ViewerTable({ data, isLoading }: ViewerTableProps) {
         </div>
         {Array.from({ length: 8 }).map((_, i) => (
           <div key={i} className="flex items-center gap-4 h-10 px-4 border-b border-border/40">
-            <Skeleton className="h-3.5 flex-1 max-w-[140px] rounded" />
-            <div className="ml-auto flex gap-0.5">
-              <Skeleton className="size-2 rounded-full" />
-              <Skeleton className="size-2 rounded-full" />
-              <Skeleton className="size-2 rounded-full" />
+            <div className="flex flex-col gap-1 flex-1 max-w-[140px]">
+              <Skeleton className="h-3.5 w-full rounded" />
+              <Skeleton className="h-2.5 w-16 rounded" />
+            </div>
+            <div className="ml-auto flex flex-col items-end gap-1">
+              <Skeleton className="h-3.5 w-10 rounded" />
+              <Skeleton className="h-2.5 w-8 rounded" />
             </div>
             <Skeleton className="h-3.5 w-8 rounded" />
             <Skeleton className="h-5 w-8 rounded" />
@@ -109,7 +96,7 @@ export function ViewerTable({ data, isLoading }: ViewerTableProps) {
       <TableHeader>
         <TableRow>
           <TableHead>顯示名稱</TableHead>
-          <TableHead className="text-right">對方活躍度</TableHead>
+          <TableHead className="text-right">在對方頻道</TableHead>
           <TableHead className="text-right">在你的頻道</TableHead>
           <TableHead className="text-right">潛在等級</TableHead>
         </TableRow>
@@ -117,10 +104,25 @@ export function ViewerTable({ data, isLoading }: ViewerTableProps) {
       <TableBody>
         {data.viewers.map(viewer => (
           <TableRow key={viewer.user_id}>
-            <TableCell className="font-medium">{viewer.display_name ?? viewer.username}</TableCell>
+            <TableCell className="font-medium">
+              <div className="flex flex-col gap-0.5">
+                <span>{viewer.display_name ?? viewer.username}</span>
+                {viewer.partner_last_seen && (
+                  <span className="text-label text-muted-foreground">
+                    {formatRelativeDays(viewer.partner_last_seen)}
+                  </span>
+                )}
+              </div>
+            </TableCell>
             <TableCell className="text-right">
-              {/* partner_sessions: low ≥1, med ≥5, high ≥12 */}
-              <ActivityDots value={viewer.partner_sessions} thresholds={[5, 12]} />
+              <div className="flex flex-col items-end gap-0.5">
+                <span className="text-label font-medium tabular-nums">
+                  {formatWatchHours(viewer.partner_watch_sec)}
+                </span>
+                <span className="text-label text-muted-foreground tabular-nums">
+                  {viewer.partner_messages.toLocaleString()} 則
+                </span>
+              </div>
             </TableCell>
             <TableCell className="text-right">
               <HomeStatus sessions={viewer.home_sessions} />

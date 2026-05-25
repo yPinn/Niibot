@@ -86,7 +86,7 @@ export function ChannelCard({ channel, isSelected, onClick }: ChannelCardProps) 
           </div>
         </div>
 
-        {(recentGame || channel.language || channel.tags.length > 0) && (
+        {(recentGame || channel.language || (channel.tags?.length ?? 0) > 0) && (
           <div className="flex items-center gap-1 flex-wrap">
             {recentGame && (
               <span className="text-label text-muted-foreground truncate max-w-30">

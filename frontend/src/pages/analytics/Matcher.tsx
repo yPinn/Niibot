@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import {
   getMatcherSummaries,
@@ -27,6 +27,8 @@ import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { apiCache } from '@/lib/apiCache'
 import { cn } from '@/lib/utils'
 
+import { TopGamesChart } from './insights/TopGamesChart'
+import { formatCompact } from './insights/utils'
 import { ChannelCard } from './matcher/ChannelCard'
 import { ViewerTable } from './matcher/ViewerTable'
 
@@ -35,6 +37,16 @@ function formatPeakHours(hours: number[]): string | null {
   const min = Math.min(...hours)
   const max = Math.max(...hours)
   return min === max ? `${min}:00` : `${min}:00–${max}:59`
+}
+
+function formatComputedAt(iso: string | null): string | null {
+  if (!iso) return null
+  const diff = Date.now() - new Date(iso).getTime()
+  const hours = Math.floor(diff / 3_600_000)
+  if (hours < 1) return '剛剛更新'
+  if (hours < 24) return `${hours} 小時前更新`
+  const days = Math.floor(hours / 24)
+  return `${days} 天前更新`
 }
 
 function broadcasterBadgeDetail(type: string | null) {
@@ -138,6 +150,13 @@ export default function Matcher() {
   }, [isRefreshing, selectedChannelId, fetchSummaries, fetchViewers])
 
   const selectedChannel = summaries.find(s => s.channel_id === selectedChannelId) ?? null
+  const peakHoursLabel = selectedChannel ? formatPeakHours(selectedChannel.peak_hours ?? []) : null
+  const computedAtLabel = selectedChannel ? formatComputedAt(selectedChannel.computed_at) : null
+
+  const sortedSummaries = useMemo(
+    () => [...summaries].sort((a, b) => suitabilityScore(b) - suitabilityScore(a)),
+    [summaries]
+  )
 
   return (
     <PageMain>
@@ -191,16 +210,14 @@ export default function Matcher() {
           ) : summaries.length === 0 ? (
             <p className="text-sub text-muted-foreground text-center py-empty">尚無頻道資料</p>
           ) : (
-            [...summaries]
-              .sort((a, b) => suitabilityScore(b) - suitabilityScore(a))
-              .map(channel => (
-                <ChannelCard
-                  key={channel.channel_id}
-                  channel={channel}
-                  isSelected={selectedChannelId === channel.channel_id}
-                  onClick={() => setSelectedChannelId(channel.channel_id)}
-                />
-              ))
+            sortedSummaries.map(channel => (
+              <ChannelCard
+                key={channel.channel_id}
+                channel={channel}
+                isSelected={selectedChannelId === channel.channel_id}
+                onClick={() => setSelectedChannelId(channel.channel_id)}
+              />
+            ))
           )}
         </div>
 
@@ -254,10 +271,15 @@ export default function Matcher() {
                       {selectedChannel.stream_title}
                     </p>
                   )}
+                  {selectedChannel.description && (
+                    <p className="text-label text-muted-foreground line-clamp-2 mt-1">
+                      {selectedChannel.description}
+                    </p>
+                  )}
                 </div>
               </div>
 
-              <div className="grid grid-cols-4 gap-card shrink-0">
+              <div className="grid grid-cols-5 gap-card shrink-0">
                 <div className="flex flex-col items-center rounded-lg border bg-muted/20 px-4 py-2">
                   <span className="text-card-title font-bold tabular-nums">
                     {selectedChannel.shared_chatters.toLocaleString()}
@@ -291,10 +313,18 @@ export default function Matcher() {
                   </span>
                   <span className="text-label text-muted-foreground">監測觀眾</span>
                 </div>
+                <div className="flex flex-col items-center rounded-lg border bg-muted/20 px-4 py-2">
+                  <span className="text-card-title font-bold tabular-nums">
+                    {selectedChannel.channel_view_count != null
+                      ? formatCompact(selectedChannel.channel_view_count)
+                      : '—'}
+                  </span>
+                  <span className="text-label text-muted-foreground">累積觀看</span>
+                </div>
               </div>
 
               <div className="flex flex-col gap-2 shrink-0">
-                {selectedChannel.tags.length > 0 && (
+                {(selectedChannel.tags?.length ?? 0) > 0 && (
                   <div className="flex items-center gap-1.5 flex-wrap">
                     {selectedChannel.tags.map(tag => (
                       <Badge
@@ -308,10 +338,10 @@ export default function Matcher() {
                   </div>
                 )}
                 <div className="flex items-center gap-section text-label text-muted-foreground flex-wrap">
-                  {formatPeakHours(selectedChannel.peak_hours) && (
+                  {peakHoursLabel && (
                     <span className="flex items-center gap-1">
                       <Icon icon="fa-regular fa-clock" className="text-label" />
-                      {formatPeakHours(selectedChannel.peak_hours)}
+                      {peakHoursLabel}
                     </span>
                   )}
                   {selectedChannel.session_count > 0 && (
@@ -322,12 +352,22 @@ export default function Matcher() {
                         ` · 均 ${selectedChannel.avg_stream_hours}h`}
                     </span>
                   )}
-                  {selectedChannel.top_games.slice(0, 3).map(game => (
-                    <Badge key={game} variant="secondary" className="text-label py-0 px-1.5">
-                      {game}
-                    </Badge>
-                  ))}
+                  {computedAtLabel && (
+                    <span className="flex items-center gap-1 ml-auto shrink-0">
+                      <Icon icon="fa-regular fa-circle-check" className="text-label" />
+                      {computedAtLabel}
+                    </span>
+                  )}
                 </div>
+
+                {(selectedChannel.top_games_stats?.length ?? 0) > 0 && (
+                  <div className="flex flex-col gap-1">
+                    <span className="text-label text-muted-foreground">熱門遊戲分類</span>
+                    <div className="h-28">
+                      <TopGamesChart data={selectedChannel.top_games_stats ?? []} />
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="flex-1 min-h-0">

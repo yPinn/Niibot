@@ -14,6 +14,7 @@ from core.dependencies import (
     get_twitch_api,
 )
 from core.rate_limit import RateLimiter
+from routers.analytics_router import InsightsGameStat
 from services import AnalyticsService, TwitchAPIClient
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -44,9 +45,11 @@ class MatcherChannelSummary(BaseModel):
     overlap_pct: float
     computed_at: datetime | None = None
     top_games: list[str] = []
+    top_games_stats: list[InsightsGameStat] = []
     peak_hours: list[int] = []
     session_count: int = 0
     avg_stream_hours: float = 0.0
+    channel_view_count: int | None = None
 
 
 class PotentialViewer(BaseModel):
@@ -139,9 +142,11 @@ async def get_matcher_summaries(
                 overlap_pct=float(s["overlap_pct"]),
                 computed_at=s.get("computed_at"),
                 top_games=stats.get("top_games", []),
+                top_games_stats=[InsightsGameStat(**g) for g in stats.get("top_games_stats", [])],
                 peak_hours=stats.get("peak_hours", []),
                 session_count=stats.get("session_count", 0),
                 avg_stream_hours=stats.get("avg_stream_hours", 0.0),
+                channel_view_count=int(user["view_count"]) if user.get("view_count") else None,
             )
         )
 
