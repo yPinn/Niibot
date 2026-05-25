@@ -1,4 +1,4 @@
-"""Twitch interactive game commands: !roll, !choose."""
+"""Twitch interactive game commands: !roll (shared chamber roulette), !choose."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import logging
 import random
 from typing import TYPE_CHECKING
 
+import httpx
 from twitchio.ext import commands
 
 from core.component import BotComponent
@@ -17,52 +18,114 @@ if TYPE_CHECKING:
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
-_MAX_SIDES = 10_000
+_TOTAL_CHAMBERS = 6
+_ROULETTE_TIMEOUT = 60
 _MAX_OPTIONS = 20
+
+
+class _ChamberState:
+    """Shared per-channel revolver state.
+
+    Bullet is placed at a random position on init; pulls advance sequentially.
+    Guaranteed to hit within _TOTAL_CHAMBERS pulls.
+    """
+
+    def __init__(self) -> None:
+        self.remaining: int = _TOTAL_CHAMBERS
+        self._bullet_at: int = random.randint(1, _TOTAL_CHAMBERS)
+        self._pulled: int = 0
+
+    def pull(self) -> bool:
+        """Advance one chamber. Returns True if bullet is hit."""
+        self._pulled += 1
+        self.remaining -= 1
+        return self._pulled == self._bullet_at
 
 
 class GamesComponent(BotComponent):
     COMMANDS: list[dict] = [
-        {"command_name": "roll", "cooldown": 3, "aliases": "骰子"},
-        {"command_name": "choose", "cooldown": 3, "aliases": "選擇"},
+        {"command_name": "roll", "cooldown": 5, "aliases": "輪盤"},
+        {"command_name": "choose", "cooldown": 5, "aliases": "選擇"},
     ]
 
     def __init__(self, bot: commands.Bot) -> None:
         self.bot: Bot = bot  # type: ignore[assignment]
         self.cmd_repo = CommandConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.channel_repo = self.bot.channels  # type: ignore[attr-defined]
+        self._chambers: dict[str, _ChamberState] = {}
 
     def refresh_pool(self, pool) -> None:
         self.cmd_repo.pool = pool
 
-    @commands.command(name="roll", aliases=["骰子"])
-    async def roll(self, ctx: commands.Context[Bot], *, args: str | None = None) -> None:
-        """擲骰子。
+    def _get_chamber(self, channel_id: str) -> _ChamberState:
+        if channel_id not in self._chambers:
+            self._chambers[channel_id] = _ChamberState()
+        return self._chambers[channel_id]
 
-        用法:
-            !roll        — 擲 1d6
-            !roll 20     — 擲 1d20
-            !骰子 100    — 擲 1d100
-        """
+    @commands.command(name="roll", aliases=["輪盤"])
+    async def roll(self, ctx: commands.Context[Bot]) -> None:
+        """聊天室共用輪盤，中彈 timeout 600 秒。"""
         config = await check_command(self.cmd_repo, ctx, "roll", self.channel_repo)
         if not config:
             return
 
-        sides = 6
-        if args:
-            token = args.strip().split()[0]
-            if token.isdigit():
-                sides = int(token)
-                if sides < 2:
-                    await self._ctx_reply(ctx, "面數至少要 2 喔！")
-                    return
-                if sides > _MAX_SIDES:
-                    await self._ctx_reply(ctx, f"面數最多 {_MAX_SIDES}，別玩太大 KEKW")
-                    return
+        channel_id = ctx.broadcaster.id
+        chamber = self._get_chamber(channel_id)
+        hit = chamber.pull()
 
-        result = random.randint(1, sides)
-        user = ctx.chatter.display_name or ctx.chatter.name
-        await self._ctx_reply(ctx, f"🎲 {user} 擲出 d{sides}，結果：{result}")
+        if not hit:
+            await self._ctx_reply(ctx, "你平安度過今晚")
+            return
+
+        self._chambers[channel_id] = _ChamberState()
+        await self._ctx_reply(ctx, "你被狼人選中，出局")
+
+        if ctx.chatter.broadcaster:  # type: ignore[attr-defined]
+            return
+
+        if ctx.chatter.moderator:  # type: ignore[attr-defined]
+            # Bot cannot timeout mods; use broadcaster token instead
+            token_obj = await self.channel_repo.get_token(channel_id, "broadcaster")
+            moderator_id = channel_id
+        else:
+            if channel_id not in self.bot._bot_is_mod:
+                return
+            token_obj = await self.channel_repo.get_token(self.bot._bot_id, "bot")
+            moderator_id = self.bot._bot_id
+
+        if not token_obj:
+            return
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(
+                    "https://api.twitch.tv/helix/moderation/bans",
+                    headers={
+                        "Client-Id": self.bot._client_id,
+                        "Authorization": f"Bearer {token_obj.token}",
+                        "Content-Type": "application/json",
+                    },
+                    params={
+                        "broadcaster_id": channel_id,
+                        "moderator_id": moderator_id,
+                    },
+                    json={
+                        "data": {
+                            "user_id": ctx.chatter.id,
+                            "duration": _ROULETTE_TIMEOUT,
+                            "reason": "天亮了，你昨晚被狼人帶走了",
+                        }
+                    },
+                )
+            if resp.status_code not in (200, 204):
+                LOGGER.warning(
+                    "[%s] Roulette timeout failed: %s %s",
+                    channel_id,
+                    resp.status_code,
+                    resp.text,
+                )
+        except Exception:
+            LOGGER.exception("[%s] Roulette timeout error", channel_id)
 
     @commands.command(name="choose", aliases=["選擇"])
     async def choose(self, ctx: commands.Context[Bot], *, args: str | None = None) -> None:

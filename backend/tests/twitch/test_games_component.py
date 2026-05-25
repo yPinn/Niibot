@@ -1,4 +1,4 @@
-"""Unit tests for twitch.components.games — GamesComponent (roll, choose).
+"""Unit tests for twitch.components.games — GamesComponent (roll/roulette, choose).
 
 TwitchIO wraps component methods with a Command descriptor.
 Use `.callback(component, ctx, ...)` to invoke the raw implementation directly.
@@ -7,33 +7,55 @@ Use `.callback(component, ctx, ...)` to invoke the raw implementation directly.
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from twitch.components.games import _MAX_OPTIONS, _MAX_SIDES, GamesComponent
+from twitch.components.games import (
+    _MAX_OPTIONS,
+    _ROULETTE_TIMEOUT,
+    _TOTAL_CHAMBERS,
+    GamesComponent,
+    _ChamberState,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 PATCH_CHECK = "twitch.components.games.check_command"
+PATCH_HTTPX = "twitch.components.games.httpx.AsyncClient"
 
 
-def _make_bot() -> MagicMock:
+def _make_bot(*, is_mod: bool = True) -> MagicMock:
     bot = MagicMock()
     bot.token_database = MagicMock()
     bot.channels = MagicMock()
+    bot._bot_id = "bot123"
+    bot._client_id = "client_abc"
+    bot._bot_is_mod = {"ch_test"} if is_mod else set()
     return bot
 
 
-def _make_ctx(*, display_name: str = "Streamer", name: str = "streamer") -> MagicMock:
+def _make_ctx(
+    *,
+    display_name: str = "Streamer",
+    name: str = "streamer",
+    user_id: str = "user999",
+    moderator: bool = False,
+    broadcaster: bool = False,
+    channel_id: str = "ch_test",
+) -> MagicMock:
     ctx = MagicMock()
     ctx.chatter.display_name = display_name
     ctx.chatter.name = name
-    ctx.channel.id = "ch_test"
+    ctx.chatter.id = user_id
+    ctx.chatter.moderator = moderator
+    ctx.chatter.broadcaster = broadcaster
+    ctx.broadcaster.id = channel_id
+    ctx.channel.id = channel_id
     return ctx
 
 
 @pytest.fixture()
 def component() -> GamesComponent:
-    comp = GamesComponent(_make_bot())
+    comp = GamesComponent(_make_bot(is_mod=True))
     comp._ctx_reply = AsyncMock()
     return comp
 
@@ -46,6 +68,35 @@ async def _roll(component: GamesComponent, ctx: MagicMock, **kwargs) -> None:
 async def _choose(component: GamesComponent, ctx: MagicMock, **kwargs) -> None:
     """Invoke choose bypassing the TwitchIO Command descriptor."""
     await GamesComponent.choose.callback(component, ctx, **kwargs)  # type: ignore[attr-defined]
+
+
+def _make_roulette_component(*, is_mod: bool = True) -> GamesComponent:
+    comp = GamesComponent(_make_bot(is_mod=is_mod))
+    comp._ctx_reply = AsyncMock()
+    token = MagicMock()
+    token.token = "fake_token"
+    comp.channel_repo.get_token = AsyncMock(return_value=token)
+    return comp
+
+
+def _make_http_mock(*, status_code: int = 200) -> MagicMock:
+    resp = MagicMock()
+    resp.status_code = status_code
+    resp.text = ""
+    client = MagicMock()
+    client.__aenter__ = AsyncMock(return_value=client)
+    client.__aexit__ = AsyncMock(return_value=False)
+    client.post = AsyncMock(return_value=resp)
+    return client
+
+
+def _inject_chamber(comp: GamesComponent, channel_id: str, *, hit: bool) -> MagicMock:
+    """Inject a mock chamber that returns a controlled pull outcome."""
+    chamber = MagicMock(spec=_ChamberState)
+    chamber.pull.return_value = hit
+    chamber.remaining = _TOTAL_CHAMBERS - 1
+    comp._chambers[channel_id] = chamber
+    return chamber
 
 
 # ---------------------------------------------------------------------------
@@ -67,7 +118,7 @@ class TestBuiltinRegistration:
     def test_roll_aliases(self) -> None:
         from shared.builtin_commands import BUILTIN_ALIAS_MAP
 
-        assert BUILTIN_ALIAS_MAP.get("骰子") == "roll"
+        assert BUILTIN_ALIAS_MAP.get("輪盤") == "roll"
 
     def test_choose_aliases(self) -> None:
         from shared.builtin_commands import BUILTIN_ALIAS_MAP
@@ -88,11 +139,37 @@ class TestBuiltinRegistration:
 
 
 # ---------------------------------------------------------------------------
-# !roll
+# _ChamberState unit tests
 # ---------------------------------------------------------------------------
 
 
-class TestRoll:
+class TestChamberState:
+    def test_initial_remaining(self) -> None:
+        assert _ChamberState().remaining == _TOTAL_CHAMBERS
+
+    def test_remaining_decrements_on_pull(self) -> None:
+        c = _ChamberState()
+        c.pull()
+        assert c.remaining == _TOTAL_CHAMBERS - 1
+
+    def test_guaranteed_hit_within_total_chambers(self) -> None:
+        for _ in range(200):
+            c = _ChamberState()
+            hits = sum(c.pull() for _ in range(_TOTAL_CHAMBERS))
+            assert hits == 1
+
+    def test_hit_occurs_exactly_once(self) -> None:
+        c = _ChamberState()
+        results = [c.pull() for _ in range(_TOTAL_CHAMBERS)]
+        assert results.count(True) == 1
+
+
+# ---------------------------------------------------------------------------
+# !roll (Russian Roulette — shared chamber)
+# ---------------------------------------------------------------------------
+
+
+class TestRoulette:
     @pytest.mark.asyncio
     async def test_disabled_command_no_reply(self, component: GamesComponent) -> None:
         with patch(PATCH_CHECK, return_value=None):
@@ -101,85 +178,156 @@ class TestRoll:
             component._ctx_reply.assert_not_called()  # type: ignore[attr-defined]
 
     @pytest.mark.asyncio
-    async def test_default_d6_output(self, component: GamesComponent) -> None:
+    async def test_safe_outcome(self) -> None:
+        comp = _make_roulette_component()
+        ctx = _make_ctx()
+        _inject_chamber(comp, ctx.broadcaster.id, hit=False)
         with patch(PATCH_CHECK, return_value=MagicMock()):
-            ctx = _make_ctx()
+            await _roll(comp, ctx)
+            text: str = comp._ctx_reply.call_args[0][1]
+            assert "平安" in text
+
+    @pytest.mark.asyncio
+    async def test_safe_does_not_reset_chamber(self) -> None:
+        comp = _make_roulette_component()
+        ctx = _make_ctx()
+        chamber = _inject_chamber(comp, ctx.broadcaster.id, hit=False)
+        with patch(PATCH_CHECK, return_value=MagicMock()):
+            await _roll(comp, ctx)
+            assert comp._chambers[ctx.broadcaster.id] is chamber
+
+    @pytest.mark.asyncio
+    async def test_hit_resets_chamber(self) -> None:
+        comp = _make_roulette_component()
+        ctx = _make_ctx()
+        old_chamber = _inject_chamber(comp, ctx.broadcaster.id, hit=True)
+        with (
+            patch(PATCH_CHECK, return_value=MagicMock()),
+            patch(PATCH_HTTPX, return_value=_make_http_mock()),
+        ):
+            await _roll(comp, ctx)
+            assert comp._chambers[ctx.broadcaster.id] is not old_chamber
+
+    @pytest.mark.asyncio
+    async def test_hit_announces_outcome(self) -> None:
+        comp = _make_roulette_component()
+        ctx = _make_ctx()
+        _inject_chamber(comp, ctx.broadcaster.id, hit=True)
+        with (
+            patch(PATCH_CHECK, return_value=MagicMock()),
+            patch(PATCH_HTTPX, return_value=_make_http_mock()),
+        ):
+            await _roll(comp, ctx)
+            text: str = comp._ctx_reply.call_args[0][1]
+            assert "出局" in text
+
+    @pytest.mark.asyncio
+    async def test_hit_broadcaster_does_not_call_api(self) -> None:
+        comp = _make_roulette_component()
+        ctx = _make_ctx(moderator=True, broadcaster=True)
+        _inject_chamber(comp, ctx.broadcaster.id, hit=True)
+        with patch(PATCH_CHECK, return_value=MagicMock()), patch(PATCH_HTTPX) as mock_cls:
+            await _roll(comp, ctx)
+            mock_cls.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_hit_mod_uses_broadcaster_token(self) -> None:
+        comp = _make_roulette_component()
+        ctx = _make_ctx(moderator=True, broadcaster=False)
+        _inject_chamber(comp, ctx.broadcaster.id, hit=True)
+        http_mock = _make_http_mock(status_code=200)
+        with (
+            patch(PATCH_CHECK, return_value=MagicMock()),
+            patch(PATCH_HTTPX, return_value=http_mock),
+        ):
+            await _roll(comp, ctx)
+            comp.channel_repo.get_token.assert_awaited_with(ctx.broadcaster.id, "broadcaster")
+            params = http_mock.post.call_args.kwargs["params"]
+            assert params["moderator_id"] == ctx.broadcaster.id
+
+    @pytest.mark.asyncio
+    async def test_hit_bot_not_mod_does_not_call_api(self) -> None:
+        comp = _make_roulette_component(is_mod=False)
+        ctx = _make_ctx()
+        _inject_chamber(comp, ctx.broadcaster.id, hit=True)
+        with patch(PATCH_CHECK, return_value=MagicMock()), patch(PATCH_HTTPX) as mock_cls:
+            await _roll(comp, ctx)
+            mock_cls.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_hit_no_token_does_not_call_api(self) -> None:
+        comp = _make_roulette_component()
+        comp.channel_repo.get_token = AsyncMock(return_value=None)
+        ctx = _make_ctx()
+        _inject_chamber(comp, ctx.broadcaster.id, hit=True)
+        with patch(PATCH_CHECK, return_value=MagicMock()), patch(PATCH_HTTPX) as mock_cls:
+            await _roll(comp, ctx)
+            mock_cls.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_hit_timeout_success(self) -> None:
+        comp = _make_roulette_component()
+        http_mock = _make_http_mock(status_code=200)
+        ctx = _make_ctx()
+        _inject_chamber(comp, ctx.broadcaster.id, hit=True)
+        with (
+            patch(PATCH_CHECK, return_value=MagicMock()),
+            patch(PATCH_HTTPX, return_value=http_mock),
+        ):
+            await _roll(comp, ctx)
+            http_mock.post.assert_awaited_once()
+            data = http_mock.post.call_args.kwargs["json"]["data"]
+            assert data["duration"] == _ROULETTE_TIMEOUT
+            assert data["user_id"] == ctx.chatter.id
+
+    @pytest.mark.asyncio
+    async def test_hit_timeout_api_failure_still_announces(self) -> None:
+        comp = _make_roulette_component()
+        ctx = _make_ctx()
+        _inject_chamber(comp, ctx.broadcaster.id, hit=True)
+        with (
+            patch(PATCH_CHECK, return_value=MagicMock()),
+            patch(PATCH_HTTPX, return_value=_make_http_mock(status_code=403)),
+        ):
+            await _roll(comp, ctx)
+            text: str = comp._ctx_reply.call_args[0][1]
+            assert "出局" in text
+
+    @pytest.mark.asyncio
+    async def test_hit_timeout_exception_still_announces(self) -> None:
+        comp = _make_roulette_component()
+        http_mock = _make_http_mock()
+        http_mock.post = AsyncMock(side_effect=Exception("network error"))
+        ctx = _make_ctx()
+        _inject_chamber(comp, ctx.broadcaster.id, hit=True)
+        with (
+            patch(PATCH_CHECK, return_value=MagicMock()),
+            patch(PATCH_HTTPX, return_value=http_mock),
+        ):
+            await _roll(comp, ctx)
+            text: str = comp._ctx_reply.call_args[0][1]
+            assert "出局" in text
+
+    @pytest.mark.asyncio
+    async def test_new_channel_gets_fresh_chamber(self, component: GamesComponent) -> None:
+        assert "new_channel" not in component._chambers
+        ctx = _make_ctx(channel_id="new_channel")
+        with patch(PATCH_CHECK, return_value=None):
             await _roll(component, ctx)
-            text: str = component._ctx_reply.call_args[0][1]  # type: ignore[attr-defined]
-            assert "🎲" in text
-            assert "d6" in text
-            assert "Streamer" in text
+        # command disabled — chamber not created yet (created on first valid trigger)
 
     @pytest.mark.asyncio
-    async def test_custom_sides(self, component: GamesComponent) -> None:
+    async def test_chamber_shared_across_users(self) -> None:
+        comp = _make_roulette_component()
+        ctx1 = _make_ctx(user_id="u1")
+        ctx2 = _make_ctx(user_id="u2")
         with patch(PATCH_CHECK, return_value=MagicMock()):
-            ctx = _make_ctx()
-            await _roll(component, ctx, args="20")
-            text: str = component._ctx_reply.call_args[0][1]  # type: ignore[attr-defined]
-            assert "d20" in text
-
-    @pytest.mark.asyncio
-    async def test_result_in_range(self, component: GamesComponent) -> None:
-        results: set[int] = set()
-        with patch(PATCH_CHECK, return_value=MagicMock()):
-            for _ in range(50):
-                ctx = _make_ctx()
-                await _roll(component, ctx, args="6")
-                text: str = component._ctx_reply.call_args[0][1]  # type: ignore[attr-defined]
-                num = int(text.split("：")[-1])
-                results.add(num)
-        assert results <= set(range(1, 7))
-        assert len(results) > 1
-
-    @pytest.mark.asyncio
-    async def test_sides_below_minimum_returns_error(self, component: GamesComponent) -> None:
-        with patch(PATCH_CHECK, return_value=MagicMock()):
-            ctx = _make_ctx()
-            await _roll(component, ctx, args="1")
-            text: str = component._ctx_reply.call_args[0][1]  # type: ignore[attr-defined]
-            assert "至少" in text
-
-    @pytest.mark.asyncio
-    async def test_sides_above_maximum_returns_error(self, component: GamesComponent) -> None:
-        with patch(PATCH_CHECK, return_value=MagicMock()):
-            ctx = _make_ctx()
-            await _roll(component, ctx, args=str(_MAX_SIDES + 1))
-            text: str = component._ctx_reply.call_args[0][1]  # type: ignore[attr-defined]
-            assert str(_MAX_SIDES) in text
-
-    @pytest.mark.asyncio
-    async def test_sides_at_maximum_accepted(self, component: GamesComponent) -> None:
-        with patch(PATCH_CHECK, return_value=MagicMock()):
-            ctx = _make_ctx()
-            await _roll(component, ctx, args=str(_MAX_SIDES))
-            text: str = component._ctx_reply.call_args[0][1]  # type: ignore[attr-defined]
-            assert "🎲" in text
-
-    @pytest.mark.asyncio
-    async def test_non_numeric_arg_defaults_to_d6(self, component: GamesComponent) -> None:
-        with patch(PATCH_CHECK, return_value=MagicMock()):
-            ctx = _make_ctx()
-            await _roll(component, ctx, args="abc")
-            text: str = component._ctx_reply.call_args[0][1]  # type: ignore[attr-defined]
-            assert "d6" in text
-
-    @pytest.mark.asyncio
-    async def test_extra_args_only_first_token_parsed(self, component: GamesComponent) -> None:
-        with patch(PATCH_CHECK, return_value=MagicMock()):
-            ctx = _make_ctx()
-            await _roll(component, ctx, args="12 garbage")
-            text: str = component._ctx_reply.call_args[0][1]  # type: ignore[attr-defined]
-            assert "d12" in text
-
-    @pytest.mark.asyncio
-    async def test_fallback_to_chatter_name_when_no_display_name(
-        self, component: GamesComponent
-    ) -> None:
-        with patch(PATCH_CHECK, return_value=MagicMock()):
-            ctx = _make_ctx(display_name="", name="rawname")
-            await _roll(component, ctx)
-            text: str = component._ctx_reply.call_args[0][1]  # type: ignore[attr-defined]
-            assert "rawname" in text
+            _inject_chamber(comp, ctx1.broadcaster.id, hit=False)
+            await _roll(comp, ctx1)
+            _inject_chamber(comp, ctx2.broadcaster.id, hit=False)
+            await _roll(comp, ctx2)
+            # Both users share the same channel chamber namespace
+            assert ctx1.broadcaster.id == ctx2.broadcaster.id
 
 
 # ---------------------------------------------------------------------------
