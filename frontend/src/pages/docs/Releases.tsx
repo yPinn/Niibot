@@ -1,19 +1,28 @@
-import { type ReactNode, useCallback, useEffect, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
 
 import { getReleases, type GithubRelease } from '@/api/releases'
 import { PageHeader } from '@/components/PageHeader'
 import { PageMain } from '@/components/PageMain'
 import {
   Badge,
+  Calendar,
+  CalendarDayButton,
   Card,
   CardContent,
   CardHeader,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
   Icon,
   Skeleton,
   Stagger,
   StaggerItem,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
 } from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
+import { cn } from '@/lib/utils'
 
 type MarkdownBlock =
   | { type: 'h2'; text: string }
@@ -158,7 +167,7 @@ function ReleaseCard({ release }: { release: GithubRelease }) {
               Pre-release
             </Badge>
           )}
-          <span className="ml-auto text-label text-muted-foreground">
+          <span className="ml-auto text-sub text-muted-foreground">
             {formatDate(release.published_at)}
           </span>
         </div>
@@ -196,12 +205,83 @@ function ReleaseSkeleton() {
   )
 }
 
+const toDayKey = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+
+function ReleaseCalendar({
+  releases,
+  onSelect,
+}: {
+  releases: GithubRelease[]
+  onSelect: (id: number) => void
+}) {
+  const { releaseByDay, defaultMonth } = useMemo(() => {
+    const byDay = new Map<string, GithubRelease>()
+    for (const r of releases) {
+      const d = new Date(r.published_at)
+      const key = toDayKey(d)
+      if (!byDay.has(key)) {
+        byDay.set(key, r)
+      }
+    }
+    return {
+      releaseByDay: byDay,
+      defaultMonth: releases.length > 0 ? new Date(releases[0].published_at) : new Date(),
+    }
+  }, [releases])
+
+  return (
+    <Calendar
+      mode="single"
+      defaultMonth={defaultMonth}
+      showOutsideDays={false}
+      className="[--cell-size:--spacing(9)]"
+      classNames={{
+        month: 'flex w-full flex-col gap-2',
+        week: 'mt-1 flex w-full',
+      }}
+      disabled={date => !releaseByDay.has(toDayKey(date))}
+      onSelect={date => {
+        if (!date) return
+        const release = releaseByDay.get(toDayKey(date))
+        if (release) onSelect(release.id)
+      }}
+      components={{
+        DayButton: ({ day, modifiers, className, ...props }) => {
+          const release = releaseByDay.get(toDayKey(day.date))
+          if (release) {
+            return (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <CalendarDayButton
+                    day={day}
+                    modifiers={modifiers}
+                    className={cn(
+                      className,
+                      'bg-primary/15 text-primary hover:bg-primary hover:text-primary-foreground'
+                    )}
+                    {...props}
+                  />
+                </TooltipTrigger>
+                <TooltipContent side="top">{release.tag_name}</TooltipContent>
+              </Tooltip>
+            )
+          }
+          return (
+            <CalendarDayButton day={day} modifiers={modifiers} className={className} {...props} />
+          )
+        },
+      }}
+    />
+  )
+}
+
 export default function Releases() {
   useDocumentTitle('Releases')
 
   const [releases, setReleases] = useState<GithubRelease[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
+  const [calOpen, setCalOpen] = useState(false)
 
   const fetchReleases = useCallback(async () => {
     const data = await getReleases()
@@ -218,9 +298,40 @@ export default function Releases() {
     fetchReleases().catch(() => undefined)
   }, [fetchReleases])
 
+  const handleDateSelect = useCallback((id: number) => {
+    setCalOpen(false)
+    requestAnimationFrame(() => {
+      document
+        .querySelector(`[data-release-id="${id}"]`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    })
+  }, [])
+
   return (
     <PageMain>
-      <PageHeader title="Releases" description="Niibot 的版本更新說明與功能紀錄。" />
+      <PageHeader title="Releases" description="Niibot 的版本更新說明與功能紀錄。">
+        {!loading && !error && releases.length > 0 && (
+          <DropdownMenu open={calOpen} onOpenChange={setCalOpen}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    className="flex size-9 items-center justify-center rounded-md border bg-background text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                    aria-label="跳轉至發布日期"
+                  >
+                    <Icon icon="fa-solid fa-calendar-days" className="text-sub" />
+                  </button>
+                </DropdownMenuTrigger>
+              </TooltipTrigger>
+              <TooltipContent>跳轉至發布日期</TooltipContent>
+            </Tooltip>
+            <DropdownMenuContent align="end" className="p-0">
+              <ReleaseCalendar releases={releases} onSelect={handleDateSelect} />
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+      </PageHeader>
 
       {loading && (
         <div className="flex flex-col gap-section">
@@ -255,7 +366,7 @@ export default function Releases() {
       {!loading && !error && releases.length > 0 && (
         <Stagger inView className="flex flex-col gap-section">
           {releases.map(release => (
-            <StaggerItem key={release.id}>
+            <StaggerItem key={release.id} data-release-id={release.id}>
               <ReleaseCard release={release} />
             </StaggerItem>
           ))}

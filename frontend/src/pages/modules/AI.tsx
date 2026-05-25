@@ -518,7 +518,7 @@ export default function AIModule() {
               </div>
 
               {/* Self pronoun + catchphrase side by side */}
-              <div className="grid grid-cols-2 gap-section">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-section">
                 <div className="flex flex-col gap-element">
                   <div className="flex flex-col gap-0.5">
                     <Label htmlFor="self-pronoun">自稱</Label>
@@ -652,9 +652,9 @@ export default function AIModule() {
           {/* Command info + current model */}
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <CardTitle>指令設定</CardTitle>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="font-mono text-label text-muted-foreground">
                     {saved.enabled ? '啟用中' : '已停用'}
                   </span>
