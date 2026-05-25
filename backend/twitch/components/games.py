@@ -70,30 +70,28 @@ class GamesComponent(BotComponent):
             return
 
         channel_id = ctx.broadcaster.id
+
+        if ctx.chatter.broadcaster:  # type: ignore[attr-defined]
+            await self._ctx_reply(ctx, "狼人不能下場玩 ImTyping")
+            return
+
         chamber = self._get_chamber(channel_id)
         hit = chamber.pull()
 
         if not hit:
-            await self._ctx_reply(ctx, "你平安度過今晚")
+            await self._ctx_reply(ctx, "你平安度過今晚 BloodTrail")
             return
 
         self._chambers[channel_id] = _ChamberState()
-        await self._ctx_reply(ctx, "你被狼人選中，出局")
+        await self._ctx_reply(ctx, "你被狼人選中，出局 ResidentSleeper")
 
-        if ctx.chatter.broadcaster:  # type: ignore[attr-defined]
+        if channel_id not in self.bot._bot_is_mod:
+            LOGGER.warning("[%s] Roulette: bot is not mod, cannot timeout", channel_id)
             return
 
-        if ctx.chatter.moderator:  # type: ignore[attr-defined]
-            # Bot cannot timeout mods; use broadcaster token instead
-            token_obj = await self.channel_repo.get_token(channel_id, "broadcaster")
-            moderator_id = channel_id
-        else:
-            if channel_id not in self.bot._bot_is_mod:
-                return
-            token_obj = await self.channel_repo.get_token(self.bot._bot_id, "bot")
-            moderator_id = self.bot._bot_id
-
+        token_obj = await self.channel_repo.get_token(self.bot._bot_id, "bot")
         if not token_obj:
+            LOGGER.warning("[%s] Roulette: no bot token found", channel_id)
             return
 
         try:
@@ -107,7 +105,7 @@ class GamesComponent(BotComponent):
                     },
                     params={
                         "broadcaster_id": channel_id,
-                        "moderator_id": moderator_id,
+                        "moderator_id": self.bot._bot_id,
                     },
                     json={
                         "data": {

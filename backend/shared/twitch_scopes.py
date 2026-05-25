@@ -19,6 +19,7 @@ BOT_SCOPES: list[str] = [
     "moderator:read:followers",
     "moderator:manage:announcements",
     "moderator:manage:shoutouts",
+    "moderator:manage:banned_users",
 ]
 
 BROADCASTER_SCOPES: list[str] = [

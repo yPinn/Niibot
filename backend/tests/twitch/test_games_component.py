@@ -222,28 +222,21 @@ class TestRoulette:
             assert "出局" in text
 
     @pytest.mark.asyncio
-    async def test_hit_broadcaster_does_not_call_api(self) -> None:
+    async def test_broadcaster_no_chamber_pull(self) -> None:
         comp = _make_roulette_component()
-        ctx = _make_ctx(moderator=True, broadcaster=True)
-        _inject_chamber(comp, ctx.broadcaster.id, hit=True)
-        with patch(PATCH_CHECK, return_value=MagicMock()), patch(PATCH_HTTPX) as mock_cls:
+        ctx = _make_ctx(broadcaster=True)
+        with patch(PATCH_CHECK, return_value=MagicMock()):
             await _roll(comp, ctx)
-            mock_cls.assert_not_called()
+            assert ctx.broadcaster.id not in comp._chambers
 
     @pytest.mark.asyncio
-    async def test_hit_mod_uses_broadcaster_token(self) -> None:
+    async def test_broadcaster_message(self) -> None:
         comp = _make_roulette_component()
-        ctx = _make_ctx(moderator=True, broadcaster=False)
-        _inject_chamber(comp, ctx.broadcaster.id, hit=True)
-        http_mock = _make_http_mock(status_code=200)
-        with (
-            patch(PATCH_CHECK, return_value=MagicMock()),
-            patch(PATCH_HTTPX, return_value=http_mock),
-        ):
+        ctx = _make_ctx(broadcaster=True)
+        with patch(PATCH_CHECK, return_value=MagicMock()):
             await _roll(comp, ctx)
-            comp.channel_repo.get_token.assert_awaited_with(ctx.broadcaster.id, "broadcaster")
-            params = http_mock.post.call_args.kwargs["params"]
-            assert params["moderator_id"] == ctx.broadcaster.id
+            text: str = comp._ctx_reply.call_args[0][1]
+            assert "狼人" in text
 
     @pytest.mark.asyncio
     async def test_hit_bot_not_mod_does_not_call_api(self) -> None:
