@@ -279,7 +279,7 @@ export default function Matcher() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-5 gap-card shrink-0">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-card shrink-0">
                 <div className="flex flex-col items-center rounded-lg border bg-muted/20 px-4 py-2">
                   <span className="text-card-title font-bold tabular-nums">
                     {selectedChannel.shared_chatters.toLocaleString()}

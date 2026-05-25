@@ -63,7 +63,7 @@ export function SessionWatchChart({ data }: Props) {
               payload={payload as TooltipContentProps<number, string>['payload']}
             />
           )}
-          cursor={{ fill: 'var(--muted)/0.3' }}
+          cursor={{ fill: 'color-mix(in oklch, var(--muted) 30%, transparent)' }}
         />
         <Bar
           dataKey="total_watch_hours"

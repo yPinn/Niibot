@@ -42,7 +42,7 @@ export default function Support() {
                 Niibot 是在業餘時間維護的開源專案。你的支持能幫助支付伺服器費用，並持續開發新功能。
               </CardDescription>
             </CardHeader>
-            <CardContent className="flex flex-col items-center gap-4">
+            <CardContent className="flex flex-col items-center gap-section">
               {ECPAY_URL ? (
                 <Button asChild size="lg" className="w-full">
                   <a href={ECPAY_URL} target="_blank" rel="noopener noreferrer">

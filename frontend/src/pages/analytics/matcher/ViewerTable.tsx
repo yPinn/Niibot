@@ -26,18 +26,18 @@ interface ViewerTableProps {
 
 function HomeStatus({ sessions }: { sessions: number }) {
   if (sessions === 0) return <span className="text-label text-muted-foreground">從未</span>
-  if (sessions <= 2) return <span className="text-label text-blue-500">偶爾</span>
-  return <span className="text-label text-green-500">熟客</span>
+  if (sessions <= 2) return <span className="text-label text-status-info">偶爾</span>
+  return <span className="text-label text-status-online">熟客</span>
 }
 
 function TierBadge({ score }: { score: number }) {
   const [tier, className] =
     score >= 80
-      ? (['S', 'text-yellow-500 border-yellow-500/40'] as const)
+      ? (['S', 'text-status-loading border-status-loading/40'] as const)
       : score >= 60
-        ? (['A', 'text-green-500 border-green-500/40'] as const)
+        ? (['A', 'text-status-online border-status-online/40'] as const)
         : score >= 40
-          ? (['B', 'text-blue-500 border-blue-500/40'] as const)
+          ? (['B', 'text-status-info border-status-info/40'] as const)
           : (['C', 'text-muted-foreground'] as const)
   return (
     <Badge variant="outline" className={cn('font-mono font-bold text-label', className)}>
