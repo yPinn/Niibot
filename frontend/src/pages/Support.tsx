@@ -11,6 +11,7 @@ import {
   Stagger,
   StaggerItem,
 } from '@/components/ui'
+import { WipLockOverlay } from '@/components/WipLockOverlay'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
 const ECPAY_URL: string | undefined = import.meta.env.VITE_SUPPORT_ECPAY_URL
@@ -77,6 +78,7 @@ export default function Support() {
           </Card>
         </StaggerItem>
       </Stagger>
+      {import.meta.env.PROD && <WipLockOverlay />}
     </PageMain>
   )
 }
