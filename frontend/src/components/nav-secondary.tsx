@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { Link } from 'react-router-dom'
 
 import {
   Icon,
@@ -17,6 +18,7 @@ export function NavSecondary({
     title: string
     url: string
     icon: string
+    internal?: boolean
   }[]
 } & React.ComponentPropsWithoutRef<typeof SidebarGroup>) {
   return (
@@ -26,10 +28,17 @@ export function NavSecondary({
           {items.map(item => (
             <SidebarMenuItem key={item.title}>
               <SidebarMenuButton size="sm" tooltip={item.title} asChild>
-                <a href={item.url} target="_blank" rel="noopener noreferrer">
-                  <Icon icon={item.icon} />
-                  <span>{item.title}</span>
-                </a>
+                {item.internal ? (
+                  <Link to={item.url}>
+                    <Icon icon={item.icon} />
+                    <span>{item.title}</span>
+                  </Link>
+                ) : (
+                  <a href={item.url} target="_blank" rel="noopener noreferrer">
+                    <Icon icon={item.icon} />
+                    <span>{item.title}</span>
+                  </a>
+                )}
               </SidebarMenuButton>
             </SidebarMenuItem>
           ))}

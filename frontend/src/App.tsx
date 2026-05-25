@@ -38,6 +38,7 @@ const Privacy = lazy(() => import('@/pages/Privacy'))
 const Settings = lazy(() => import('@/pages/Settings'))
 const VideoQueueOverlay = lazy(() => import('@/pages/VideoQueueOverlay'))
 const ActivatePage = lazy(() => import('@/pages/activate'))
+const SupportPage = lazy(() => import('@/pages/Support'))
 
 // Dev-only: excluded from production bundle via dead-code elimination
 const TypographyDemo = import.meta.env.DEV ? lazy(() => import('@/pages/TypographyDemo')) : null
@@ -100,6 +101,7 @@ function App() {
                       <Route path="/modules/video-queue" element={<VideoQueue />} />
                       <Route path="/modules/crosshairs" element={<CrosshairModule />} />
                       <Route path="/modules/ai" element={<AIModule />} />
+                      <Route path="/support" element={<SupportPage />} />
                       {/* Discord Bot Routes */}
                       <Route path="/docs/get-started" element={<GetStarted />} />
                       <Route path="/docs/releases" element={<Releases />} />

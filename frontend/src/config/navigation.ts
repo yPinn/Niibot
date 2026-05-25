@@ -16,6 +16,7 @@ export interface NavSecondaryItem {
   title: string
   url: string
   icon: string
+  internal?: boolean
 }
 
 export interface NavigationData {
@@ -120,6 +121,12 @@ export const navigationData: NavigationData = {
   ],
   navSecondary: [
     {
+      title: 'Support',
+      url: '/support',
+      icon: 'fa-solid fa-mug-hot',
+      internal: true,
+    },
+    {
       title: 'Discord',
       url: import.meta.env.VITE_DISCORD_INVITE_URL,
       icon: 'fa-brands fa-discord',
@@ -169,6 +176,12 @@ export const discordNavigationData: NavigationData = {
     },
   ],
   navSecondary: [
+    {
+      title: 'Support',
+      url: '/support',
+      icon: 'fa-solid fa-mug-hot',
+      internal: true,
+    },
     {
       title: 'Discord',
       url: import.meta.env.VITE_DISCORD_INVITE_URL,
