@@ -33,6 +33,17 @@ class EventComponent(commands.Component):
     def refresh_pool(self, pool) -> None:
         self.event_configs.pool = pool
 
+    def _trigger_emote_sync(self, channel_id: str) -> None:
+        """Fire emote sync as a background task when bot mod status changes."""
+        import asyncio
+
+        for comp in self.bot._components.values():
+            if hasattr(comp, "sync_emotes"):
+                task = asyncio.create_task(comp.sync_emotes(channel_id))
+                self.bot._background_tasks.add(task)
+                task.add_done_callback(self.bot._background_tasks.discard)
+                return
+
     def _cleanup_cache(self, cache: dict[str, datetime]) -> None:
         """清理過期的 cache 項目"""
         now = datetime.now(UTC)
@@ -512,6 +523,7 @@ class EventComponent(commands.Component):
         if payload.user.id == self.bot.bot_id:
             self.bot._bot_is_mod.add(channel_id)  # type: ignore[attr-defined]
             LOGGER.info(f"[{payload.broadcaster.name}] Bot was granted mod — all features enabled")
+            self._trigger_emote_sync(channel_id)
 
         try:
             if hasattr(self.bot, "analytics"):
@@ -539,6 +551,7 @@ class EventComponent(commands.Component):
         if payload.user.id == self.bot.bot_id:
             self.bot._bot_is_mod.discard(channel_id)  # type: ignore[attr-defined]
             LOGGER.warning(f"[{payload.broadcaster.name}] Bot lost mod — all features blocked")
+            self._trigger_emote_sync(channel_id)
 
         try:
             if hasattr(self.bot, "analytics"):

@@ -3,6 +3,7 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+import httpx
 from openai import (
     APITimeoutError,
     AuthenticationError,
@@ -114,6 +115,50 @@ class AIComponent(BotComponent):
 
     def refresh_pool(self, pool) -> None:
         self.ai_settings_repo.pool = pool
+
+    async def sync_emotes(self, channel_id: str) -> None:
+        """Refresh enabled_emotes after bot mod status changes.
+
+        Calls chat/emotes/user with broadcaster_id so mod-granted access is
+        reflected, then updates ai_settings and notifies the bot to reload.
+        """
+        settings = get_settings()
+        token_row = await self.bot.channels.get_token(settings.bot_id, "bot")
+        if not token_row:
+            LOGGER.warning("[%s] emote sync skipped: no bot token", channel_id)
+            return
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                r = await client.get(
+                    "https://api.twitch.tv/helix/chat/emotes/user",
+                    headers={
+                        "Client-Id": settings.twitch_client_id,
+                        "Authorization": f"Bearer {token_row.token}",
+                    },
+                    params={"user_id": settings.bot_id, "broadcaster_id": channel_id},
+                )
+            if r.status_code != 200:
+                LOGGER.warning("[%s] emote sync API error: %s", channel_id, r.status_code)
+                return
+
+            emotes = r.json().get("data", [])
+            channel_names = [
+                e["name"] for e in emotes if e.get("emote_type") not in ("globals", "smilies")
+            ]
+            global_names = [e["name"] for e in emotes if e.get("emote_type") == "globals"]
+            available = channel_names + global_names
+
+            current = await self.ai_settings_repo.get(channel_id)
+            if set(current.get("enabled_emotes") or []) == set(available):
+                return
+
+            await self.ai_settings_repo.upsert(channel_id, enabled_emotes=available)
+            payload = json.dumps({"channel_id": channel_id, "table": "ai_settings"})
+            async with self.bot.token_database.acquire() as conn:
+                await conn.execute("SELECT pg_notify('config_change', $1)", payload)
+            LOGGER.info("[%s] emote sync: %d emotes updated", channel_id, len(available))
+        except Exception:
+            LOGGER.exception("[%s] emote sync failed", channel_id)
 
     @commands.command(aliases=["問"])
     async def ai(self, ctx: commands.Context[Bot], *, message: str | None = None) -> None:
