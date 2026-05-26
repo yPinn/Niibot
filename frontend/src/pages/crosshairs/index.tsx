@@ -114,7 +114,7 @@ export default function CrosshairRepo() {
                 <Skeleton className="h-4 w-20" />
                 <Skeleton className="h-7 w-7 rounded-md" />
               </div>
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 gap-section sm:grid-cols-3">
                 {Array.from({ length: 9 }).map((_, i) => (
                   <Skeleton key={i} className="aspect-square rounded-xl" />
                 ))}
@@ -187,7 +187,7 @@ export default function CrosshairRepo() {
                         ]}
                       />
                     </div>
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 gap-section sm:grid-cols-3">
                       {sorted.map(c => (
                         <CrosshairCard key={c.id} crosshair={c} onSelect={setSelected} />
                       ))}

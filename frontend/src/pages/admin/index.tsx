@@ -298,12 +298,12 @@ function ScopeDetailDialog({
             </div>
           </div>
           <div className="flex flex-col gap-element mt-1">
+            <TwitchRoleBadgeLabel role="bot" />
             <ModStatusBadge
               status={ch.is_bot ? 'broadcaster' : ch.mod_status}
               missingCount={ch.missing_scopes.length}
               bare
             />
-            {ch.is_bot && <TwitchRoleBadgeLabel role="bot" />}
           </div>
         </DialogHeader>
         <ScopeSection
@@ -461,7 +461,12 @@ function BotStatusPanel({
                     />
                   )}
                   <div className="min-w-0 flex-1">
-                    <p className="text-sub font-medium truncate">{bot.display_name || bot.name}</p>
+                    <div className="flex items-center gap-1.5">
+                      <TwitchRoleBadge role="bot" size={18} className="shrink-0 opacity-80" />
+                      <p className="text-sub font-medium truncate">
+                        {bot.display_name || bot.name}
+                      </p>
+                    </div>
                     <p className="text-label text-muted-foreground font-mono truncate">
                       {bot.name}
                     </p>
@@ -899,13 +904,17 @@ export default function AdminPage() {
   const [channelsLoading, setChannelsLoading] = useState(true)
 
   const { healthyChannels, issueChannels } = useMemo(() => {
-    const healthy = channels.filter(
-      ch => ch.is_bot || (ch.mod_status === 'mod' && ch.missing_scopes.length === 0)
-    )
-    const issues = channels.filter(
-      ch => !ch.is_bot && (ch.mod_status !== 'mod' || ch.missing_scopes.length > 0)
-    )
-    return { healthyChannels: healthy, issueChannels: issues }
+    const sortByLive = (chs: AdminChannel[]) =>
+      [...chs].sort((a, b) => (b.is_live ? 1 : 0) - (a.is_live ? 1 : 0))
+    const nonBots = channels.filter(ch => !ch.is_bot)
+    return {
+      healthyChannels: sortByLive(
+        nonBots.filter(ch => ch.mod_status === 'mod' && ch.missing_scopes.length === 0)
+      ),
+      issueChannels: sortByLive(
+        nonBots.filter(ch => ch.mod_status !== 'mod' || ch.missing_scopes.length > 0)
+      ),
+    }
   }, [channels])
 
   const [botStatus, setBotStatus] = useState<BotTokenInfo | null>(null)

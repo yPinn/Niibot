@@ -7,17 +7,16 @@ import {
   type TooltipContentProps,
 } from 'recharts'
 
-import type { LoyaltyTiers } from '@/api/analytics'
-
-interface Props {
-  tiers: LoyaltyTiers
+export interface SessionTiers {
+  core: number
+  regular: number
+  newcomer: number
+  silent: number
 }
 
-const TIERS = [
-  { key: 'core', label: '核心觀眾', desc: '連續 5+ 場', color: 'var(--primary)' },
-  { key: 'regular', label: '常客', desc: '連續 2–4 場', color: 'var(--status-info)' },
-  { key: 'newcomer', label: '新觀眾', desc: '首次出現', color: 'var(--status-online)' },
-] as const
+interface Props {
+  tiers: SessionTiers
+}
 
 const EMPTY_SLICE = [{ label: '', desc: '', color: 'var(--muted)', value: 1 }]
 
@@ -37,7 +36,33 @@ function ChartTooltip({
 }
 
 export function LoyaltyDonut({ tiers }: Props) {
-  const data = TIERS.map(t => ({
+  const tierDefs = [
+    {
+      key: 'core' as const,
+      label: '核心觀眾',
+      desc: '前 25%（前標）',
+      color: 'var(--primary)',
+    },
+    {
+      key: 'regular' as const,
+      label: '常駐觀眾',
+      desc: '前 50%（均標）',
+      color: 'var(--status-info)',
+    },
+    {
+      key: 'newcomer' as const,
+      label: '新進觀眾',
+      desc: '後 50%（近期追隨）',
+      color: 'var(--status-online)',
+    },
+    {
+      key: 'silent' as const,
+      label: '沉默觀眾',
+      desc: '後 50%（早期追隨）',
+      color: 'var(--muted-foreground)',
+    },
+  ]
+  const data = tierDefs.map(t => ({
     label: t.label,
     desc: t.desc,
     color: t.color,

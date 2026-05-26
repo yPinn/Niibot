@@ -284,7 +284,7 @@ export default function CrosshairModule() {
               </CardHeader>
               <CardContent>
                 {loadingMine ? (
-                  <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-5">
+                  <div className="grid grid-cols-1 gap-section sm:grid-cols-3 lg:grid-cols-5">
                     {Array.from({ length: 5 }).map((_, i) => (
                       <Skeleton key={i} className="aspect-square rounded-xl" />
                     ))}
@@ -294,7 +294,7 @@ export default function CrosshairModule() {
                     還沒有準星，點擊「新增準星」開始收藏
                   </p>
                 ) : (
-                  <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-5">
+                  <div className="grid grid-cols-1 gap-section sm:grid-cols-3 lg:grid-cols-5">
                     {sortedMine.map(c => (
                       <MyCrosshairCard
                         key={c.id}
@@ -343,7 +343,7 @@ export default function CrosshairModule() {
                 {(() => {
                   if (allPublicLoading && browseResults === null) {
                     return (
-                      <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-5">
+                      <div className="grid grid-cols-1 gap-section sm:grid-cols-3 lg:grid-cols-5">
                         {Array.from({ length: 8 }).map((_, i) => (
                           <Skeleton key={i} className="aspect-square rounded-xl" />
                         ))}
@@ -364,7 +364,7 @@ export default function CrosshairModule() {
                           ? `${browseResults[0]?.channel_name ?? browseInput} 的準星收藏（${browseResults.length} 個）`
                           : `共 ${sortedBrowse.length} 個`}
                       </p>
-                      <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-5">
+                      <div className="grid grid-cols-1 gap-section sm:grid-cols-3 lg:grid-cols-5">
                         {sortedBrowse.map(c => (
                           <BrowseCrosshairCard
                             key={c.id}

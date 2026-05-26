@@ -31,8 +31,11 @@ export const CrosshairCardBase = memo(function CrosshairCardBase({
       )}
       onClick={onCardClick}
     >
-      <div className="flex items-center px-element pt-element">
-        <p className="min-w-0 flex-1 truncate px-element text-sub font-medium text-foreground">
+      <div className="flex items-center justify-end px-element pt-element sm:justify-start">
+        <p
+          className="hidden min-w-0 flex-1 truncate px-element text-sub font-medium text-foreground sm:block"
+          title={crosshair.name}
+        >
           {crosshair.name}
         </p>
         <Tooltip>
@@ -53,6 +56,10 @@ export const CrosshairCardBase = memo(function CrosshairCardBase({
       </div>
       <div className="flex justify-center py-element">
         <CrosshairPreview game={crosshair.game} code={crosshair.code} size="sm" />
+      </div>
+      <div className="flex items-center gap-element border-t px-element py-element sm:hidden">
+        <Icon icon="fa-solid fa-crosshairs" />
+        <p className="min-w-0 truncate text-sub font-medium text-foreground">{crosshair.name}</p>
       </div>
       {(channelName !== undefined || copyCount !== undefined) && (
         <div className="flex items-center justify-between px-element pb-element">

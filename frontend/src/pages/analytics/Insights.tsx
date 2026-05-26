@@ -89,6 +89,7 @@ export default function Insights() {
   const [channelBadges, setChannelBadges] = useState<ChannelBadges | null>(null)
   const [isSyncing, setIsSyncing] = useState(false)
   const [showScatter, setShowScatter] = useState(true)
+  const [nowMs] = useState(() => Date.now())
   const loadedForRef = useRef<string | null>(null)
 
   const fetchViewers = useCallback(
@@ -174,6 +175,40 @@ export default function Insights() {
     },
     [sort]
   )
+
+  const sessionTiers = useMemo(() => {
+    const empty = {
+      core: 0,
+      regular: 0,
+      newcomer: 0,
+      silent: 0,
+      q3: undefined as number | undefined,
+      median: undefined as number | undefined,
+    }
+    if (!viewers.length) return empty
+    const sessions = viewers.map(v => v.sessions_attended).sort((a, b) => a - b)
+    const n = sessions.length
+    const q3 = sessions[Math.min(Math.floor(n * 0.75), n - 1)]
+    const median = sessions[Math.min(Math.floor(n * 0.5), n - 1)]
+    const newFollowerMs = Math.min(Number(period), 30) * 24 * 60 * 60 * 1000
+    const cutoff = nowMs - newFollowerMs
+    let core = 0,
+      regular = 0,
+      newcomer = 0,
+      silent = 0
+    for (const v of viewers) {
+      if (v.sessions_attended >= q3) {
+        core++
+      } else if (v.sessions_attended >= median) {
+        regular++
+      } else {
+        const followTs = v.follow_since ? new Date(v.follow_since).getTime() : 0
+        if (followTs >= cutoff) newcomer++
+        else silent++
+      }
+    }
+    return { core, regular, newcomer, silent, q3, median }
+  }, [viewers, period, nowMs])
 
   const { filtered, rankMap } = useMemo(() => {
     const sorted = [...viewers].sort((a, b) => {
@@ -292,10 +327,10 @@ export default function Insights() {
                 className="flex-1 min-h-0 **:outline-none"
                 style={{ minHeight: 200 }}
               >
-                {insightsLoading ? (
+                {!initialized ? (
                   <Skeleton className="h-full rounded-md" />
                 ) : (
-                  <LoyaltyDonut tiers={ins.loyalty_tiers} />
+                  <LoyaltyDonut tiers={sessionTiers} />
                 )}
               </motion.div>
             )}
