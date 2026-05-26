@@ -73,6 +73,7 @@ class AdminChannelInfo(BaseModel):
     avatar: str
     offline_image_url: str
     is_live: bool
+    is_enabled: bool
     mod_status: str  # 'mod' | 'no_mod' | 'token_error' | 'scope_error'
     is_bot: bool
     granted_scopes: list[str]
@@ -138,12 +139,14 @@ async def get_admin_channels(
     pool: Pool = Depends(get_db_pool),
 ) -> list[AdminChannelInfo]:
     """Return all monitored channels with mod status and scope breakdown. Owner-only."""
-    enabled = await channel_service.get_enabled_channels()
-    other = [ch for ch in enabled if ch["channel_id"] != owner_id]
+    repo_all = ChannelRepository(pool)
+    all_channels = await repo_all.list_all_channels()
+    other = [ch for ch in all_channels if ch.channel_id != owner_id]
     if not other:
         return []
 
-    channel_ids = [ch["channel_id"] for ch in other]
+    channel_ids = [ch.channel_id for ch in other]
+    enabled_set = {ch.channel_id for ch in other if ch.enabled}
     bot_id = get_settings().bot_id or ""
     repo = ChannelRepository(pool)
 
@@ -177,7 +180,7 @@ async def get_admin_channels(
 
     result = []
     for ch in other:
-        cid = ch["channel_id"]
+        cid = ch.channel_id
         if cid not in user_map:
             continue
         u = user_map[cid]
@@ -190,6 +193,7 @@ async def get_admin_channels(
                 avatar=u.get("profile_image_url", ""),
                 offline_image_url=u.get("offline_image_url", ""),
                 is_live=cid in live_ids,
+                is_enabled=cid in enabled_set,
                 mod_status=status,
                 is_bot=cid == bot_id,
                 granted_scopes=granted,
@@ -200,6 +204,8 @@ async def get_admin_channels(
     def _channel_tier(x: AdminChannelInfo) -> int:
         if x.is_bot:
             return 0
+        if not x.is_enabled:
+            return 6
         if x.mod_status == "mod":
             return 1 if not x.missing_scopes else 2
         if x.mod_status == "no_mod":

@@ -331,16 +331,25 @@ function ModStatusIcon({ status }: { status: ModStatus }) {
   )
 }
 
+function PauseStatusIcon() {
+  return (
+    <span className="inline-flex items-center justify-center size-4.5 rounded border-border bg-muted/80 text-muted-foreground">
+      <Icon icon="fa-solid fa-circle-pause" size="badge" />
+    </span>
+  )
+}
+
 function ChannelCard({ ch }: { ch: AdminChannel }) {
   const [open, setOpen] = useState(false)
   const status: ModStatus = ch.is_bot ? 'broadcaster' : ch.mod_status
+  const isPaused = !ch.is_enabled
 
   return (
     <>
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="relative w-full aspect-video rounded-lg border border-border overflow-hidden hover:ring-2 hover:ring-primary transition-all select-none"
+        className={`relative w-full aspect-video rounded-lg border border-border overflow-hidden hover:ring-2 hover:ring-primary transition-all select-none${isPaused ? ' opacity-50 grayscale' : ''}`}
       >
         {ch.offline_image_url ? (
           <img
@@ -357,7 +366,7 @@ function ChannelCard({ ch }: { ch: AdminChannel }) {
 
         <div className="absolute top-2 right-2 flex items-center gap-1">
           <TwitchRoleBadge role="bot" size={18} className="drop-shadow-sm opacity-80" />
-          <ModStatusIcon status={status} />
+          {isPaused ? <PauseStatusIcon /> : <ModStatusIcon status={status} />}
         </div>
 
         <div className="absolute bottom-0 left-0 right-0 flex items-end gap-2 p-2.5">
@@ -903,17 +912,20 @@ export default function AdminPage() {
   const [channels, setChannels] = useState<AdminChannel[]>([])
   const [channelsLoading, setChannelsLoading] = useState(true)
 
-  const { healthyChannels, issueChannels } = useMemo(() => {
+  const { healthyChannels, issueChannels, pausedChannels } = useMemo(() => {
     const sortByLive = (chs: AdminChannel[]) =>
       [...chs].sort((a, b) => (b.is_live ? 1 : 0) - (a.is_live ? 1 : 0))
     const nonBots = channels.filter(ch => !ch.is_bot)
+    const active = nonBots.filter(ch => ch.is_enabled)
+    const paused = nonBots.filter(ch => !ch.is_enabled)
     return {
       healthyChannels: sortByLive(
-        nonBots.filter(ch => ch.mod_status === 'mod' && ch.missing_scopes.length === 0)
+        active.filter(ch => ch.mod_status === 'mod' && ch.missing_scopes.length === 0)
       ),
       issueChannels: sortByLive(
-        nonBots.filter(ch => ch.mod_status !== 'mod' || ch.missing_scopes.length > 0)
+        active.filter(ch => ch.mod_status !== 'mod' || ch.missing_scopes.length > 0)
       ),
+      pausedChannels: sortByLive(paused),
     }
   }, [channels])
 
@@ -1044,6 +1056,24 @@ export default function AdminPage() {
                       ))}
                     </div>
                   </div>
+
+                  {pausedChannels.length > 0 && (
+                    <div>
+                      <div className="flex items-center gap-element mb-section">
+                        <span className="text-label font-medium uppercase tracking-wide text-muted-foreground select-none">
+                          暫停中
+                        </span>
+                        <Badge variant="outline" className="font-mono text-label">
+                          {pausedChannels.length}
+                        </Badge>
+                      </div>
+                      <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(200px,1fr))]">
+                        {pausedChannels.map(ch => (
+                          <ChannelCard key={ch.id} ch={ch} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </CardContent>

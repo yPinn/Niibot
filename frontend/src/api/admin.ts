@@ -10,6 +10,7 @@ export interface AdminChannel {
   avatar: string
   offline_image_url: string
   is_live: boolean
+  is_enabled: boolean
   mod_status: ModStatus
   is_bot: boolean
   granted_scopes: string[]

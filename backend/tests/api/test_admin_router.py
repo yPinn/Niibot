@@ -513,34 +513,33 @@ class TestGetBotStatus:
 
 
 class TestGetAdminChannels:
+    def _make_channel(self, channel_id: str, enabled: bool = True):
+        from shared.models.channel import Channel
+
+        return Channel(channel_id=channel_id, channel_name=channel_id, enabled=enabled)
+
+    def _make_twitch_user(self, channel_id: str, login: str, display_name: str) -> dict:
+        return {
+            "id": channel_id,
+            "login": login,
+            "display_name": display_name,
+            "profile_image_url": "",
+            "offline_image_url": "",
+        }
+
     def test_returns_empty_when_no_other_channels(self):
-        mock_channel_service = MagicMock()
-        mock_channel_service.get_enabled_channels = AsyncMock(
-            return_value=[{"channel_id": OWNER_ID}]
-        )
-        r = _make_client(mock_channel_service=mock_channel_service).get("/api/admin/channels")
+        with patch("routers.admin_router.ChannelRepository") as cr:
+            cr.return_value.list_all_channels = AsyncMock(
+                return_value=[self._make_channel(OWNER_ID)]
+            )
+            r = _make_client().get("/api/admin/channels")
         assert r.status_code == 200
         assert r.json() == []
 
-    def test_returns_channel_info(self):
-        mock_channel_service = MagicMock()
-        mock_channel_service.get_enabled_channels = AsyncMock(
-            return_value=[
-                {"channel_id": OWNER_ID},
-                {"channel_id": "ch-other"},
-            ]
-        )
+    def test_returns_enabled_channel_with_is_enabled_true(self):
         mock_twitch = MagicMock()
         mock_twitch.get_users_by_ids = AsyncMock(
-            return_value=[
-                {
-                    "id": "ch-other",
-                    "login": "other",
-                    "display_name": "Other",
-                    "profile_image_url": "",
-                    "offline_image_url": "",
-                }
-            ]
+            return_value=[self._make_twitch_user("ch-other", "other", "Other")]
         )
         mock_twitch.get_streams = AsyncMock(return_value=[])
         mock_twitch.get_bot_mod_status = AsyncMock(return_value="mod")
@@ -548,18 +547,50 @@ class TestGetAdminChannels:
         with patch("routers.admin_router.ChannelRepository") as cr:
             token_obj = MagicMock()
             token_obj.scopes = ""
+            cr.return_value.list_all_channels = AsyncMock(
+                return_value=[
+                    self._make_channel(OWNER_ID),
+                    self._make_channel("ch-other", enabled=True),
+                ]
+            )
             cr.return_value.get_token = AsyncMock(return_value=token_obj)
             with patch("routers.admin_router.ChannelService") as cs:
                 cs.return_value.get_token_with_refresh = AsyncMock(return_value="tok")
-                r = _make_client(
-                    mock_twitch_api=mock_twitch,
-                    mock_channel_service=mock_channel_service,
-                ).get("/api/admin/channels")
+                r = _make_client(mock_twitch_api=mock_twitch).get("/api/admin/channels")
 
         assert r.status_code == 200
         data = r.json()
         assert len(data) == 1
         assert data[0]["name"] == "other"
+        assert data[0]["is_enabled"] is True
+
+    def test_returns_paused_channel_with_is_enabled_false(self):
+        mock_twitch = MagicMock()
+        mock_twitch.get_users_by_ids = AsyncMock(
+            return_value=[self._make_twitch_user("ch-paused", "paused", "Paused")]
+        )
+        mock_twitch.get_streams = AsyncMock(return_value=[])
+        mock_twitch.get_bot_mod_status = AsyncMock(return_value="mod")
+
+        with patch("routers.admin_router.ChannelRepository") as cr:
+            token_obj = MagicMock()
+            token_obj.scopes = ""
+            cr.return_value.list_all_channels = AsyncMock(
+                return_value=[
+                    self._make_channel(OWNER_ID),
+                    self._make_channel("ch-paused", enabled=False),
+                ]
+            )
+            cr.return_value.get_token = AsyncMock(return_value=token_obj)
+            with patch("routers.admin_router.ChannelService") as cs:
+                cs.return_value.get_token_with_refresh = AsyncMock(return_value="tok")
+                r = _make_client(mock_twitch_api=mock_twitch).get("/api/admin/channels")
+
+        assert r.status_code == 200
+        data = r.json()
+        assert len(data) == 1
+        assert data[0]["name"] == "paused"
+        assert data[0]["is_enabled"] is False
 
 
 # ── GET /api/admin/logs/containers ──────────────────────────────────────────
