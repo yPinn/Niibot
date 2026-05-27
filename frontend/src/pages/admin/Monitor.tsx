@@ -35,8 +35,11 @@ import {
   Textarea,
 } from '@/components/ui'
 import { useServiceStatus } from '@/contexts/ServiceStatusContext'
+import { useAbortableFetch } from '@/hooks/useAbortableFetch'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { usePolling } from '@/hooks/usePolling'
+import { formatStartedAt, formatUptime } from '@/lib/format'
+import { sanitizeAnsiHtml } from '@/lib/sanitize'
 
 // ── Log helpers ───────────────────────────────────────────────────────────────
 
@@ -274,7 +277,7 @@ function LogLineRow({
   // Continuation lines (no recognized prefix) carry Rich's column-alignment spaces — strip them.
   const content = pg ? pg.body : py ? (pyBody?.message ?? py.body) : trimLeadingSpaces(raw)
 
-  const colored = hasAnsi(content) ? ansiConverter.toHtml(content) : null
+  const colored = hasAnsi(content) ? sanitizeAnsiHtml(ansiConverter.toHtml(content)) : null
 
   // When a structured level is known (py/pg), prefer level-based color over keyword scanning.
   // Use content color functions (not label colors) so body text has proper readable brightness.
@@ -526,15 +529,18 @@ function DbConsole() {
     })
   }, [result, sortCol, sortDir])
 
-  const handleSortClick = (colIdx: number) => {
-    setExpandedCell(null)
-    if (sortCol === colIdx) {
-      setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
-    } else {
-      setSortCol(colIdx)
-      setSortDir('asc')
-    }
-  }
+  const handleSortClick = useCallback(
+    (colIdx: number) => {
+      setExpandedCell(null)
+      if (sortCol === colIdx) {
+        setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
+      } else {
+        setSortCol(colIdx)
+        setSortDir('asc')
+      }
+    },
+    [sortCol]
+  )
 
   const runQuery = async (q: string) => {
     setLoading(true)
@@ -721,29 +727,6 @@ function DbConsole() {
 
 // ── Status card helpers ───────────────────────────────────────────────────────
 
-function formatUptime(seconds?: number): string {
-  if (seconds === undefined) return '—'
-  const d = Math.floor(seconds / 86400)
-  const h = Math.floor((seconds % 86400) / 3600)
-  const m = Math.floor((seconds % 3600) / 60)
-  const s = seconds % 60
-  if (d > 0) return `${d}d ${h}h ${m}m`
-  if (h > 0) return `${h}h ${m}m`
-  return `${m}m ${s}s`
-}
-
-function formatStartedAt(iso?: string): string {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleString('zh-TW', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  })
-}
-
 const DASH = <span className="text-muted-foreground/40">—</span>
 
 function StatusBadge({ online, ready }: { online: boolean; ready?: boolean }) {
@@ -814,6 +797,8 @@ function FieldRow({
 export default function AdminMonitor() {
   useDocumentTitle('Monitor')
 
+  const { guard, newToken } = useAbortableFetch()
+
   // ── Logs state ──────────────────────────────────────────────────────────────
   const [containers, setContainers] = useState<LogContainer[]>(DEFAULT_CONTAINERS)
   const [selected, setSelected] = useState('__status__')
@@ -831,8 +816,8 @@ export default function AdminMonitor() {
     try {
       const saved = localStorage.getItem('monitor-tab-order')
       if (saved) {
-        const parsed = JSON.parse(saved) as string[]
-        if (Array.isArray(parsed)) return parsed
+        const parsed: unknown = JSON.parse(saved)
+        if (Array.isArray(parsed) && parsed.every(x => typeof x === 'string')) return parsed
       }
     } catch {
       // ignore malformed localStorage value
@@ -844,10 +829,11 @@ export default function AdminMonitor() {
   const [draggingTab, setDraggingTab] = useState<string | null>(null)
 
   useEffect(() => {
+    const token = newToken()
     getLogContainers()
-      .then(cs => setContainers(cs))
+      .then(cs => guard(token, () => setContainers(cs)))
       .catch(() => {})
-  }, [])
+  }, [guard, newToken])
 
   useEffect(() => {
     if (selected === '__db__' || selected === '__status__') return
@@ -907,7 +893,7 @@ export default function AdminMonitor() {
     [containers, tabOrder]
   )
 
-  const handleDragEnd = () => {
+  const handleDragEnd = useCallback(() => {
     if (dragItem.current && dragOver.current && dragItem.current !== dragOver.current) {
       setTabOrder(prev => {
         const fromIdx = prev.indexOf(dragItem.current!)
@@ -923,13 +909,18 @@ export default function AdminMonitor() {
     dragItem.current = null
     dragOver.current = null
     setDraggingTab(null)
-  }
+  }, [])
 
   const handleRefresh = () => {
+    const token = newToken()
     dispatch({ type: 'start' })
     getContainerLogs(selected, tail)
-      .then(data => dispatch({ type: 'done', lines: data.lines }))
-      .catch(e => dispatch({ type: 'fail', error: e instanceof Error ? e.message : String(e) }))
+      .then(data => guard(token, () => dispatch({ type: 'done', lines: data.lines })))
+      .catch(e =>
+        guard(token, () =>
+          dispatch({ type: 'fail', error: e instanceof Error ? e.message : String(e) })
+        )
+      )
   }
 
   const handleScroll = useCallback(() => {

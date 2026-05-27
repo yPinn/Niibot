@@ -66,6 +66,7 @@ import {
   TwitchRoleBadgeLabel,
 } from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
+import { formatDateTimeShort } from '@/lib/format'
 
 // ── Scope grouping ────────────────────────────────────────────────────────────
 
@@ -619,7 +620,7 @@ function ActivationCard() {
   const [codes, setCodes] = useState<PendingCode[]>([])
   const [codesLoading, setCodesLoading] = useState(true)
   const [revoking, setRevoking] = useState<string | null>(null)
-  const [nowMs, setNowMs] = useState(0)
+  const [nowMs, setNowMs] = useState(() => Date.now())
 
   const fetchCodes = useCallback(async () => {
     setCodesLoading(true)
@@ -637,6 +638,11 @@ function ActivationCard() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchCodes().catch(() => undefined)
   }, [fetchCodes])
+
+  useEffect(() => {
+    const id = setInterval(() => setNowMs(Date.now()), 60_000)
+    return () => clearInterval(id)
+  }, [])
 
   const handleRevoke = useCallback(async (platformUserId: string) => {
     setRevoking(platformUserId)
@@ -724,13 +730,7 @@ function ActivationCard() {
                         <div className="flex items-baseline gap-element">
                           <p className="text-sub font-medium truncate">{label}</p>
                           <p className="text-label text-muted-foreground font-mono shrink-0">
-                            {new Date(req.created_at).toLocaleString('zh-TW', {
-                              month: '2-digit',
-                              day: '2-digit',
-                              hour: '2-digit',
-                              minute: '2-digit',
-                              hour12: false,
-                            })}
+                            {formatDateTimeShort(req.created_at)}
                           </p>
                         </div>
                         {req.note && (
@@ -810,12 +810,7 @@ function ActivationCard() {
                 const expiresMs = new Date(code.expires_at).getTime()
                 const hoursLeft = Math.max(0, Math.round((expiresMs - nowMs) / 3_600_000))
                 const isExpiringSoon = hoursLeft <= 12
-                const expiryLabel = new Date(code.expires_at).toLocaleString('zh-TW', {
-                  month: '2-digit',
-                  day: '2-digit',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })
+                const expiryLabel = formatDateTimeShort(code.expires_at)
                 const isRevoking = revoking === code.platform_user_id
                 return (
                   <div key={code.platform_user_id + code.expires_at}>
