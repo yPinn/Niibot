@@ -19,7 +19,7 @@
     "dev:discord": "npm run _dc -- --profile discord up --build --remove-orphans",
     "dev:bots": "npm run _dc -- --profile bots up --build --remove-orphans",
     "dev:full": "npm run _dc -- --profile full up --build --remove-orphans",
-    "build": "docker compose -f docker-compose.yml --profile full build",
+    "build": "docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile full build",
     "docker:db": "npm run _dc -- up postgres",
     "docker:down": "npm run _dc -- down --remove-orphans"
   },
