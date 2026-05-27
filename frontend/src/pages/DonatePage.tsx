@@ -29,13 +29,27 @@ import {
 } from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
-// ============================================================
-// Auto-submit payment form helper
-// ============================================================
+const PAYMENT_GATEWAY_HOSTS = new Set([
+  'payment.ecpay.com.tw',
+  'payment-stage.ecpay.com.tw',
+  'payment.opay.tw',
+  'www.paypal.com',
+  'core.newebpay.com',
+  'ccore.newebpay.com',
+])
+
+function isAllowedGatewayUrl(url: string): boolean {
+  try {
+    const { protocol, hostname } = new URL(url)
+    return protocol === 'https:' && PAYMENT_GATEWAY_HOSTS.has(hostname)
+  } catch {
+    return false
+  }
+}
 
 function submitPaymentForm(gatewayUrl: string, params: Record<string, string>) {
-  if (!gatewayUrl.startsWith('https://')) {
-    throw new Error(`Invalid gateway URL: must use HTTPS`)
+  if (!isAllowedGatewayUrl(gatewayUrl)) {
+    throw new Error(`Invalid gateway URL`)
   }
   const form = document.createElement('form')
   form.method = 'POST'
@@ -91,7 +105,7 @@ function PlatformCard({ platform, username }: PlatformCardProps) {
 
       // PayPal: simple redirect
       if (platform.platform === 'paypal' || Object.keys(checkout.form_params).length === 0) {
-        if (!checkout.gateway_url.startsWith('https://')) {
+        if (!isAllowedGatewayUrl(checkout.gateway_url)) {
           setError('無效的付款網址')
           setLoading(false)
           return

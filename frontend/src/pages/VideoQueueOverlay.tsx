@@ -161,7 +161,7 @@ function destroyAllPlayers(
     }
   }
   if (progressRef.current) {
-    clearInterval(progressRef.current)
+    clearInterval(progressRef.current ?? undefined)
     progressRef.current = null
   }
   if (clipTimerRef.current) {
@@ -275,7 +275,7 @@ export default function VideoQueueOverlay() {
     advancingRef.current = true
 
     if (progressRef.current) {
-      clearInterval(progressRef.current)
+      clearInterval(progressRef.current ?? undefined)
       progressRef.current = null
     }
     if (clipTimerRef.current) {
@@ -477,7 +477,11 @@ export default function VideoQueueOverlay() {
         }
         // ENDED fallback: polling check to catch missed onStateChange ENDED events
         const d = playerRef.current.getDuration()
-        if (d > 0 && t >= d - 0.5) handleVideoEnd(currentId)
+        if (d > 0 && t >= d - 0.5) {
+          clearInterval(progressRef.current ?? undefined)
+          progressRef.current = null
+          handleVideoEnd(currentId)
+        }
       }, 1000)
     }
 
@@ -599,7 +603,7 @@ export default function VideoQueueOverlay() {
           }
         }
       }
-      if (progressRef.current) clearInterval(progressRef.current)
+      if (progressRef.current) clearInterval(progressRef.current ?? undefined)
       if (clipTimerRef.current) clearTimeout(clipTimerRef.current)
     }
   }, [])

@@ -1,4 +1,12 @@
-import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { toast } from 'sonner'
 
 import { type Channel, getCurrentUser, getTwitchMonitoredChannels, type User } from '@/api'
@@ -180,24 +188,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [user])
 
-  return (
-    <AuthContext.Provider
-      value={{
-        user,
-        isAuthenticated: !!user,
-        isInitialized,
-        isInitError,
-        isAffiliate: user?.broadcaster_type === 'affiliate' || user?.broadcaster_type === 'partner',
-        channels,
-        logout,
-        refreshUser,
-        refreshChannels,
-        retryInit: loadInitialData,
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
+  const value = useMemo(
+    () => ({
+      user,
+      isAuthenticated: !!user,
+      isInitialized,
+      isInitError,
+      isAffiliate: user?.broadcaster_type === 'affiliate' || user?.broadcaster_type === 'partner',
+      channels,
+      logout,
+      refreshUser,
+      refreshChannels,
+      retryInit: loadInitialData,
+    }),
+    [
+      user,
+      isInitialized,
+      isInitError,
+      channels,
+      logout,
+      refreshUser,
+      refreshChannels,
+      loadInitialData,
+    ]
   )
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
 export function useAuth() {

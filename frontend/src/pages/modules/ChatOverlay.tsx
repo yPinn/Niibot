@@ -1,6 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'motion/react'
-import { toast } from 'sonner'
 
 import { OverlayUrlBlock } from '@/components/OverlayUrlBlock'
 import { PageHeader } from '@/components/PageHeader'
@@ -30,6 +29,7 @@ import {
 } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
+import { copyToClipboard } from '@/lib/clipboard'
 
 import {
   type AlignOption,
@@ -253,21 +253,27 @@ function ChatPreview({ s }: { s: ChatCssSettings }) {
   const fontSize = `${s.fontSize}px`
   const shadow = s.textShadow ? '1px 1px 3px rgba(0,0,0,0.9)' : undefined
 
-  const chatBg: React.CSSProperties =
-    s.messageBg === 'dark'
-      ? { background: 'rgba(0,0,0,0.52)', padding: '3px 10px', borderRadius: '4px' }
-      : s.messageBg === 'rounded'
-        ? { background: 'rgba(0,0,0,0.62)', padding: '5px 12px', borderRadius: '12px' }
-        : { padding: '1px 0' }
+  const chatBg = useMemo<React.CSSProperties>(
+    () =>
+      s.messageBg === 'dark'
+        ? { background: 'rgba(0,0,0,0.52)', padding: '3px 10px', borderRadius: '4px' }
+        : s.messageBg === 'rounded'
+          ? { background: 'rgba(0,0,0,0.62)', padding: '5px 12px', borderRadius: '12px' }
+          : { padding: '1px 0' },
+    [s.messageBg]
+  )
 
-  const msgBase: React.CSSProperties = {
-    fontFamily: 'Tahoma, Arial, sans-serif',
-    fontSize,
-    lineHeight: '1.5',
-    color: textColor,
-    wordBreak: 'break-word',
-    overflowWrap: 'break-word',
-  }
+  const msgBase = useMemo<React.CSSProperties>(
+    () => ({
+      fontFamily: 'Tahoma, Arial, sans-serif',
+      fontSize,
+      lineHeight: '1.5',
+      color: textColor,
+      wordBreak: 'break-word',
+      overflowWrap: 'break-word',
+    }),
+    [fontSize, textColor]
+  )
 
   function renderMsg(msg: DemoMsg): React.ReactNode {
     if (s.messageBg === 'bubble') {
@@ -664,13 +670,14 @@ export default function ChatOverlayModule() {
   const [rightPanel, setRightPanel] = useState<'preview' | 'css'>('preview')
   const [settingsOpen, setSettingsOpen] = useState(false)
 
-  const patch = (partial: Partial<ChatCssSettings>) =>
+  const patch = useCallback((partial: Partial<ChatCssSettings>) => {
     setSettings(prev => {
       const next = { ...prev, ...partial }
       // text shadow only applies to transparent backgrounds — reset when leaving transparent
       if (partial.background && partial.background !== 'transparent') next.textShadow = false
       return next
     })
+  }, [])
 
   useEffect(() => {
     saveSettings(settings)
@@ -678,12 +685,7 @@ export default function ChatOverlayModule() {
 
   const css = useMemo(() => generateCss(settings), [settings])
 
-  const copyCss = () => {
-    navigator.clipboard.writeText(css).then(
-      () => toast.success('CSS 已複製'),
-      () => toast.error('複製失敗，請手動選取')
-    )
-  }
+  const copyCss = () => copyToClipboard(css, 'CSS 已複製', '複製失敗，請手動選取')
 
   const twitchUrl = user?.name ? `https://www.twitch.tv/popout/${user.name}/chat` : ''
 

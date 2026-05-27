@@ -79,12 +79,10 @@ export function ServiceStatusProvider({ children }: { children: React.ReactNode 
 
     refreshRef.current = fetchStatus
 
-    // setTimeout keeps the interval aligned with the initial fetch.
-    const initialTimeout = setTimeout(fetchStatus, 0)
+    void fetchStatus()
     const interval = setInterval(fetchStatus, POLL_INTERVAL)
     return () => {
       mounted = false
-      clearTimeout(initialTimeout)
       clearInterval(interval)
     }
   }, [user])

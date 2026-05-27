@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { toast } from 'sonner'
 
 import { Button, Icon, Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui'
+import { copyToClipboard } from '@/lib/clipboard'
 
 export interface OverlayUrlBlockProps {
   /** Full overlay URL. When falsy, renders nothing. */
@@ -17,12 +17,7 @@ export function OverlayUrlBlock({ url }: OverlayUrlBlockProps) {
 
   if (!url) return null
 
-  const copy = () => {
-    navigator.clipboard.writeText(url).then(
-      () => toast.success('已複製'),
-      () => toast.error('複製失敗，請手動選取網址')
-    )
-  }
+  const copy = () => copyToClipboard(url, '已複製', '複製失敗，請手動選取網址')
 
   return (
     <div className="flex items-center gap-2">
