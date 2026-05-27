@@ -2,7 +2,7 @@
 """Download Twitch global role badge images to frontend/public/twitch-badges/.
 
 Usage:
-    TWITCH_CLIENT_ID=xxx TWITCH_CLIENT_SECRET=yyy python scripts/download_twitch_badges.py
+    TWITCH_CLIENT_ID=xxx TWITCH_CLIENT_SECRET=yyy python scripts/badges.py
 
 Flat badges (single version → /twitch-badges/{role}/{size}.png):
     broadcaster, lead_moderator, moderator, artist, vip, founder, partner, bot
