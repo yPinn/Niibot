@@ -65,10 +65,15 @@ src/
 │   ├── BotContext.tsx           # 目前活躍的 Bot 平台（twitch / discord）
 │   └── ServiceStatusContext.tsx # Twitch / Discord / API 服務狀態（30s polling）
 ├── config/         # navigation.ts — Twitch 與 Discord sidebar 導覽設定
-├── hooks/          # usePolling、useSortState、useBreadcrumbs、useDocumentTitle…
+├── hooks/          # usePolling、useSortState、useOptimisticToggle、useInputInsert、useAbortableFetch、useBreadcrumbs、useDocumentTitle
 ├── lib/
-│   ├── apiCache.ts # 記憶體內 TTL 快取（上限 200 條）+ 請求合併（deduplication）
-│   └── sort.ts     # 通用排序工具
+│   ├── apiCache.ts  # 記憶體內 TTL 快取（上限 200 條）+ 請求合併；CACHE_KEYS 集中管理所有快取鍵
+│   ├── sort.ts      # 通用排序工具（nameSort、ROLE_ORDER）
+│   ├── format.ts    # 日期時間格式化輔助函式
+│   ├── sanitize.ts  # DOMPurify 包裝（ANSI HTML 消毒，用於 Admin Monitor）
+│   ├── clipboard.ts # Clipboard API 複製工具
+│   ├── motion.ts    # Framer Motion 共用動畫 variant
+│   └── utils.ts     # cn()（Tailwind class 合併）
 ├── pages/
 │   ├── dashboard/  # Twitch Bot（Commands、Events、Overview、Timers）
 │   ├── modules/    # AI、ChatOverlay、GameQueue、VideoQueue、Crosshairs

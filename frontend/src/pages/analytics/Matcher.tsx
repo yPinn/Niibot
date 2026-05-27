@@ -24,7 +24,7 @@ import {
 import { WipLockOverlay } from '@/components/WipLockOverlay'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
-import { apiCache } from '@/lib/apiCache'
+import { apiCache, CACHE_KEYS } from '@/lib/apiCache'
 import { cn } from '@/lib/utils'
 
 import { TopGamesChart } from './insights/TopGamesChart'
@@ -77,11 +77,11 @@ function suitabilityScore(ch: MatcherChannelSummary): number {
 }
 
 function invalidateMatcherCache() {
-  apiCache.delete(`matcher:summaries:${DAYS}`)
+  apiCache.delete(CACHE_KEYS.MATCHER_SUMMARIES(DAYS))
 }
 
 function invalidateViewerCache(channelId: string) {
-  apiCache.delete(`matcher:viewers:${channelId}:50:0`)
+  apiCache.delete(CACHE_KEYS.MATCHER_VIEWERS(channelId, 50, 0))
 }
 
 export default function Matcher() {
