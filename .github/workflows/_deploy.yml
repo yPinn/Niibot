@@ -186,6 +186,7 @@ jobs:
           {
             echo "PORT=${SCRAPLING_PORT:-${SCRAPLING_PORT_DEFAULT}}"
             echo "LOG_LEVEL=${LOG_LEVEL}"
+            echo "ENVIRONMENT=${ENVIRONMENT}"
             [ -n "${THREADS_SESSION_ID}" ] && echo "THREADS_SESSION_ID=${THREADS_SESSION_ID}"
             [ -n "${ERROR_WEBHOOK_URL}" ]  && echo "ERROR_WEBHOOK_URL=${ERROR_WEBHOOK_URL}"
           } > "${PROJECT_DIR}/backend/scrapling/.env${ENV_SUFFIX}"

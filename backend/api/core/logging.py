@@ -17,7 +17,7 @@ _OWN_PREFIXES = ("core.", "services.", "routers.", "shared.")
 def setup_logging(settings: Settings) -> None:
     _setup_logging(
         log_level=settings.log_level,
-        webhook_url=settings.error_webhook_url or "",
+        webhook_url=settings.error_webhook_url if settings.is_production else "",
         service_name="api",
         suppress_loggers=_SUPPRESS,
         own_prefixes=_OWN_PREFIXES,

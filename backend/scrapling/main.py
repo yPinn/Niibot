@@ -37,7 +37,8 @@ from scrapling.fetchers import AsyncDynamicSession
 
 PORT = int(os.getenv("PORT", "3001"))
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
-_ERROR_WEBHOOK_URL = os.getenv("ERROR_WEBHOOK_URL", "")
+_IS_PRODUCTION = os.getenv("ENVIRONMENT", "").lower() == "production"
+_ERROR_WEBHOOK_URL = os.getenv("ERROR_WEBHOOK_URL", "") if _IS_PRODUCTION else ""
 
 logging.basicConfig(
     level=LOG_LEVEL,
