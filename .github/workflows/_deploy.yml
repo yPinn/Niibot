@@ -75,7 +75,7 @@ jobs:
       cancel-in-progress: false # never interrupt mid-run — partial migration would leave DB in broken state
 
     env:
-      PROJECT_DIR: /Users/pinn/Niibot
+      PROJECT_DIR: ${{ vars.PROJECT_DIR }}
       ENV_SUFFIX: ${{ inputs.env_suffix }}
       COMPOSE_ENV_FILE: ${{ inputs.compose_env_file }}
       COMPOSE_PROJECT: ${{ inputs.compose_project }}
