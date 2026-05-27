@@ -16,6 +16,8 @@ from datetime import UTC, datetime
 
 import twitchio
 
+from core.config import get_settings
+
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
@@ -99,6 +101,8 @@ class _NotifyMixin:
 
     async def _send_welcome_message(self, channel_id: str) -> None:
         """Send a one-line welcome message when the bot is enabled for a channel."""
+        if not get_settings().is_production:
+            return
         try:
             users = await self.fetch_users(ids=[channel_id])  # type: ignore[attr-defined]
             if not users:
@@ -115,6 +119,8 @@ class _NotifyMixin:
 
     async def _send_reauth_restored_message(self, channel_id: str, login: str) -> None:
         """Notify chat that bot functionality has been restored after reauth."""
+        if not get_settings().is_production:
+            return
         try:
             users = await self.fetch_users(ids=[channel_id])  # type: ignore[attr-defined]
             if not users:
