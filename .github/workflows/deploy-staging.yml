@@ -1,0 +1,29 @@
+name: Deploy Staging
+
+# Staging deployment — see _deploy.yml for secrets/variables reference.
+# GitHub Environment "staging" overrides: API_URL, ENVIRONMENT, FRONTEND_URL, POSTGRES_DB
+
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch:
+    inputs:
+      force_all:
+        description: "Force rebuild and restart all services"
+        type: boolean
+        default: false
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/_deploy.yml
+    with:
+      environment: staging
+      env_suffix: ".staging"
+      compose_env_file: docker-compose.staging.yml
+      compose_project: niibot-staging
+      branch: staging
+      api_port: 8001
+      scrapling_port_default: 3003
+      compose_change_pattern: docker-compose.staging.yml
+      force_all: ${{ inputs.force_all == true }}
+    secrets: inherit
