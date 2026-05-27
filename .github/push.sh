@@ -95,7 +95,7 @@ push_vars() {
   local current_map
   current_map=$(printf '%s' "$current_json" | $PYTHON -c "
 import json, sys
-for i in json.load(sys.stdin): print(f\"{i['name']}={i['value']}\")
+for i in json.load(sys.stdin.buffer): print(f\"{i['name']}={i['value']}\")
 ")
 
   while IFS='=' read -r key value || [[ -n "$key" ]]; do

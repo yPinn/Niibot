@@ -50,7 +50,7 @@ show_vars() {
   $PYTHON - "$tmp" "$outfile" "$example" <<'PYEOF'
 import json, sys
 
-with open(sys.argv[1]) as f:
+with open(sys.argv[1], encoding="utf-8") as f:
     data = json.load(f)
 outfile      = sys.argv[2]
 example_file = sys.argv[3] if len(sys.argv) > 3 else ""
@@ -146,35 +146,23 @@ show_secrets() {
   $PYTHON - "$tmp" <<'PYEOF'
 import json, sys, textwrap
 
-with open(sys.argv[1]) as f:
+with open(sys.argv[1], encoding="utf-8") as f:
     lines = f.read().split("\n", 3)
-label   = lines[0].strip()
-keys    = lines[1].split()
-env_set = {i["name"] for i in json.loads(lines[2])}
-base_set= {i["name"] for i in json.loads(lines[3])}
+keys     = lines[1].split()
+env_set  = {i["name"] for i in json.loads(lines[2])}
+base_set = {i["name"] for i in json.loads(lines[3])}
 
-groups  = {label: [], "base": [], "miss": []}
-for k in keys:
-    if k in env_set:        groups[label].append(k)
-    elif k in base_set:     groups["base"].append(k)
-    else:                   groups["miss"].append(k)
+missing = [k for k in keys if k not in env_set and k not in base_set]
 
-extra = [n for n in env_set if n not in keys]
-
-order = [label] + (["base"] if label != "base" else []) + ["miss"]
-for g in order:
-    items = groups.get(g, [])
-    if not items:
-        continue
-    row     = "  ".join(items)
+if not missing:
+    print("  all set")
+else:
+    row     = "  ".join(missing)
     wrapped = textwrap.wrap(row, width=60)
-    pad     = f"  {g:<5} "
+    pad     = "  miss  "
     cont    = " " * len(pad)
     for idx, part in enumerate(wrapped):
         print((pad if idx == 0 else cont) + part)
-
-for name in extra:
-    print(f"  extra {name}")
 PYEOF
   rm -f "$tmp"
 }
