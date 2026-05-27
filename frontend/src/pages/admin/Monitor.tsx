@@ -44,12 +44,12 @@ import { sanitizeAnsiHtml } from '@/lib/sanitize'
 // ── Log helpers ───────────────────────────────────────────────────────────────
 
 const DEFAULT_CONTAINERS: LogContainer[] = [
-  { name: 'niibot-api', label: 'API', running: false },
-  { name: 'niibot-twitch', label: 'Twitch', running: false },
-  { name: 'niibot-discord', label: 'Discord', running: false },
-  { name: 'niibot-postgres', label: 'Postgres', running: false },
-  { name: 'niibot-scrapling', label: 'Scrapling', running: false },
-  { name: 'niibot-instafix', label: 'Instafix', running: false },
+  { name: 'nb-api', label: 'API', running: false },
+  { name: 'nb-twitch', label: 'Twitch', running: false },
+  { name: 'nb-discord', label: 'Discord', running: false },
+  { name: 'nb-pg', label: 'Postgres', running: false },
+  { name: 'nb-scrapling', label: 'Scrapling', running: false },
+  { name: 'nb-instafix', label: 'Instafix', running: false },
 ]
 
 type FetchState = { loading: boolean; lines: LogLine[]; error: string | null }
@@ -1199,12 +1199,7 @@ export default function AdminMonitor() {
               ) : (
                 <div className="min-w-max">
                   {filteredLines.map((line, i) => (
-                    <LogLineRow
-                      key={i}
-                      line={line}
-                      index={i}
-                      isPgMode={selected === 'niibot-postgres'}
-                    />
+                    <LogLineRow key={i} line={line} index={i} isPgMode={selected === 'nb-pg'} />
                   ))}
                 </div>
               )}

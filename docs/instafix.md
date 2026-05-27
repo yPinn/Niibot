@@ -16,10 +16,10 @@ as OG-tagged HTML. Discord (and bots like Niibot) can then scrape the proxy inst
 services:
   instafix:
     image: ghcr.io/wikidepia/instafix:main
-    container_name: niibot-instafix
+    container_name: nb-instafix
     restart: unless-stopped
     networks:
-      - niibot-network # internal only — no host port needed
+      - nb-network # internal only — no host port needed
     # No healthcheck — the image is a Go binary on a minimal base (no wget/curl).
     # discord-bot depends on instafix with condition: service_started, not service_healthy.
 ```
