@@ -91,7 +91,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const userData = await getCurrentUser({ forceRefresh: true })
       setUser(userData)
     } catch (error) {
-      if (import.meta.env.DEV) console.error('Failed to load user:', error)
+      console.error('Failed to load user:', error)
       setUser(null)
     }
   }, [])
@@ -100,7 +100,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       await apiLogout()
     } catch (error) {
-      if (import.meta.env.DEV) console.error('Logout request failed:', error)
+      console.error('Logout request failed:', error)
     }
     setUser(null)
     setChannels([])
@@ -112,7 +112,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const channelData = await getTwitchMonitoredChannels({ forceRefresh: true })
       setChannels(channelData)
     } catch (error) {
-      if (import.meta.env.DEV) console.error('Failed to load channels:', error)
+      console.error('Failed to load channels:', error)
       setChannels([])
     }
   }, [])
@@ -142,7 +142,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       // Network error (not a 401 — apiFetch handles those via auth:unauthorized).
       // Don't treat a connectivity blip as "logged out".
-      if (import.meta.env.DEV) console.error('Failed to load initial data:', error)
+      console.error('Failed to load initial data:', error)
       setIsInitError(true)
       setIsInitialized(true)
     } finally {
@@ -152,6 +152,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Initial data load — guarded by ref against StrictMode double-mount.
   useEffect(() => {
+    /* v8 ignore next -- hasLoaded=true only fires after completion+remount (StrictMode); untestable without timing control */
     if (initRef.current.hasLoaded || initRef.current.isLoading) return
     loadInitialData()
   }, [loadInitialData])

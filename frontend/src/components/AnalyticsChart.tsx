@@ -290,13 +290,18 @@ export default function AnalyticsChart({
     activeIdxRef.current = s.activeTooltipIndex
 
     const value = s.activePayload?.[0]?.value as number | undefined
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const yScale = (Object.values(s.yAxisMap ?? {})[0] as any)?.scale
+    const yAxisEntry = Object.values(
+      (s as { yAxisMap?: Record<string, unknown> }).yAxisMap ?? {}
+    )[0]
+    const yScale =
+      yAxisEntry != null && typeof yAxisEntry === 'object' && 'scale' in yAxisEntry
+        ? (yAxisEntry as { scale: (v: number) => number }).scale
+        : undefined
     const off = s.offset as { top: number; height: number } | undefined
     const x = s.activeCoordinate?.x as number | undefined
 
     if (value !== undefined && yScale && off && x !== undefined) {
-      const rawY = yScale(value) as number
+      const rawY = yScale(value)
       // Clamp to plot area bounds so the tooltip never escapes the chart
       const clampedY = Math.max(off.top, Math.min(off.top + off.height, rawY))
       setTooltipPos({ x, y: clampedY })

@@ -444,20 +444,20 @@ async def add_video_entry(
 
         # Dashboard bypasses max_queue_size and min_view_count — broadcaster has full authority.
         if clip_slug:
-            title, duration_seconds, _ = await fetch_twitch_clip_info(
+            title, duration_seconds, _view_count = await fetch_twitch_clip_info(
                 clip_slug, app_settings.client_id, app_settings.client_secret
             )
             video_id = clip_slug
             is_vertical = False
             video_type = "twitch_clip"
         elif bvid:
-            title, duration_seconds, _, is_vertical = await fetch_bilibili_info(bvid)
+            title, duration_seconds, _view_count, is_vertical = await fetch_bilibili_info(bvid)
             video_id = bvid
             video_type = "bilibili"
         else:
             if video_id is None:
                 raise HTTPException(status_code=422, detail="No valid video source")
-            title, duration_seconds, _, is_vertical_from_api = await fetch_yt_info(
+            title, duration_seconds, _view_count, is_vertical_from_api = await fetch_yt_info(
                 video_id, app_settings.youtube_api_key
             )
             is_vertical = is_vertical or is_vertical_from_api

@@ -101,4 +101,7 @@ export const CACHE_KEYS = {
     `analytics:viewer-profile:${userId}:${days}`,
   ANALYTICS_CHANNEL_BADGES: 'analytics:channel-badges',
   ANALYTICS_GLOBAL_BADGES: 'analytics:global-badges',
+  MATCHER_SUMMARIES: (days: number) => `matcher:summaries:${days}`,
+  MATCHER_VIEWERS: (partnerChannelId: string, limit: number, offset: number) =>
+    `matcher:viewers:${partnerChannelId}:${limit}:${offset}`,
 } as const
