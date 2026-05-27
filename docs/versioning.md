@@ -2,7 +2,7 @@
 
 ## Display Format
 
-```
+```text
 v1.3.9 (32f0417)
  │ │ │   └─ short SHA — exact commit reference
  │ │ └─── commit count since last tag — auto-increments with every commit
@@ -16,7 +16,7 @@ PATCH is **never manually set**. It is generated at build time from `git describ
 
 ## How It Works
 
-The deploy workflow (`deploy.yml`) runs:
+The deploy workflow (`deploy-prod.yml`) runs:
 
 ```bash
 git describe --tags --always
@@ -25,22 +25,22 @@ git describe --tags --always
 
 And transforms it to the display format:
 
-| `git describe` output   | Runtime version       | Note |
-| ----------------------- | --------------------- | ---- |
-| `v1.4-9-g32f0417`       | `v1.4.9 (32f0417)`    | new-style tag |
-| `v1.4` (exact tag)      | `v1.4.0 (sha)`        | new-style tag |
-| `v1.3.2-9-g32f0417`     | `v1.3.9 (32f0417)`    | legacy tag, still handled |
-| `v1.3.2` (exact tag)    | `v1.3.0 (sha)`        | legacy tag, still handled |
+| `git describe` output | Runtime version    | Note                      |
+| --------------------- | ------------------ | ------------------------- |
+| `v1.4-9-g32f0417`     | `v1.4.9 (32f0417)` | new-style tag             |
+| `v1.4` (exact tag)    | `v1.4.0 (sha)`     | new-style tag             |
+| `v1.3.2-9-g32f0417`   | `v1.3.9 (32f0417)` | legacy tag, still handled |
+| `v1.3.2` (exact tag)  | `v1.3.0 (sha)`     | legacy tag, still handled |
 
 ---
 
 ## When to Bump
 
-| Change type                            | Action                           | Example          |
-| -------------------------------------- | -------------------------------- | ---------------- |
-| `fix:`, `refactor:`, `chore:`, `ci:`  | **Nothing** — commit count bumps automatically | — |
-| `feat:` — new feature                 | Tag new `vMAJOR.MINOR.0`         | `v1.3.0 → v1.4.0` |
-| `feat!:` or `BREAKING CHANGE:`        | Tag new `vMAJOR+1.0.0`           | `v1.4.0 → v2.0.0` |
+| Change type                          | Action                                         | Example           |
+| ------------------------------------ | ---------------------------------------------- | ----------------- |
+| `fix:`, `refactor:`, `chore:`, `ci:` | **Nothing** — commit count bumps automatically | —                 |
+| `feat:` — new feature                | Tag new `vMAJOR.MINOR.0`                       | `v1.3.0 → v1.4.0` |
+| `feat!:` or `BREAKING CHANGE:`       | Tag new `vMAJOR+1.0.0`                         | `v1.4.0 → v2.0.0` |
 
 ---
 
@@ -48,10 +48,12 @@ And transforms it to the display format:
 
 1. Merge all related PRs into `main`
 2. Tag the commit (two segments only, no patch):
-   ```
+
+   ```bash
    git tag v1.4
    git push origin v1.4
    ```
+
 3. Update `frontend/package.json` and `backend/pyproject.toml` to `MAJOR.MINOR.0` (metadata only — not used at runtime)
 
 No separate version bump commit is required.
@@ -60,19 +62,21 @@ No separate version bump commit is required.
 
 ## Rules
 
-- **Tags use `vMAJOR.MINOR`** — no patch segment; the runtime patch comes from commit count. (Tags before v1.4 used `vMAJOR.MINOR.PATCH` — these are kept as historical anchors and still handled correctly.)
+- **Tags use `vMAJOR.MINOR`** — no patch segment; the runtime patch comes from commit count.
+  (Tags before v1.4 used `vMAJOR.MINOR.PATCH` — kept as historical anchors, still handled correctly.)
 - **Tag only on `main`**, only when ready to deploy.
 - **One tag per release.** Frontend and backend share the same tag.
-- **`package.json` / `pyproject.toml` versions are metadata** — they are not read at runtime. Keep them in sync with the latest tag for IDE tooling and human reference only.
+- **`package.json` / `pyproject.toml` versions are metadata** — not read at runtime.
+  Keep them in sync with the latest tag for IDE tooling and human reference only.
 
 ---
 
 ## Component Reference
 
-| Component | Version source at runtime |
-| --------- | ------------------------- |
-| API Server | `APP_VERSION` env var (set from `git describe` in `deploy.yml`) |
-| Twitch Bot | same |
-| Discord Bot | same |
-| `frontend/package.json` | metadata only — not displayed at runtime |
-| `backend/pyproject.toml` | metadata only — not displayed at runtime |
+| Component                | Version source at runtime                                            |
+| ------------------------ | -------------------------------------------------------------------- |
+| API Server               | `APP_VERSION` env var (set from `git describe` in `deploy-prod.yml`) |
+| Twitch Bot               | same                                                                 |
+| Discord Bot              | same                                                                 |
+| `frontend/package.json`  | metadata only — not displayed at runtime                             |
+| `backend/pyproject.toml` | metadata only — not displayed at runtime                             |
