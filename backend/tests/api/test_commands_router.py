@@ -19,7 +19,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from core.config import get_settings
-from core.dependencies import get_current_channel_id, get_db_pool, get_twitch_api
+from core.dependencies import get_current_channel_id, get_db_pool, get_twitch_api, require_activated
 from routers.commands_router import router as _commands_router
 
 CHANNEL_ID = "ch-123"
@@ -69,6 +69,7 @@ def _reset_settings():
 def _make_client(mock_twitch_api: MagicMock | None = None) -> TestClient:
     app = FastAPI(lifespan=_no_lifespan)
     app.include_router(_commands_router)
+    app.dependency_overrides[require_activated] = lambda: None
     app.dependency_overrides[get_current_channel_id] = lambda: CHANNEL_ID
     app.dependency_overrides[get_db_pool] = lambda: AsyncMock()
     if mock_twitch_api is not None:

@@ -21,7 +21,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from core.config import get_settings
-from core.dependencies import get_current_channel_id, get_db_pool, get_twitch_api
+from core.dependencies import get_current_channel_id, get_db_pool, get_twitch_api, require_activated
 from routers.crosshairs_router import _user_lookup_cache
 from routers.crosshairs_router import router as _xh_router
 
@@ -64,6 +64,7 @@ def _make_client(
 ) -> TestClient:
     app = FastAPI(lifespan=_no_lifespan)
     app.include_router(_xh_router)
+    app.dependency_overrides[require_activated] = lambda: None
     app.dependency_overrides[get_current_channel_id] = lambda: CHANNEL_ID
     app.dependency_overrides[get_db_pool] = lambda: AsyncMock()
     if mock_twitch_api is not None:

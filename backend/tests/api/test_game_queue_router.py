@@ -25,6 +25,7 @@ from core.dependencies import (
     get_db_pool,
     get_game_queue_service,
     get_twitch_api,
+    require_activated,
 )
 from routers.game_queue_router import router as _gq_router
 
@@ -87,6 +88,7 @@ def _make_client(
 ) -> TestClient:
     app = FastAPI(lifespan=_no_lifespan)
     app.include_router(_gq_router)
+    app.dependency_overrides[require_activated] = lambda: None
     app.dependency_overrides[get_current_channel_id] = lambda: CHANNEL_ID
     app.dependency_overrides[get_db_pool] = lambda: AsyncMock()
     if mock_service is not None:

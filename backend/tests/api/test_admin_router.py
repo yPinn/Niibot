@@ -544,9 +544,13 @@ class TestGetAdminChannels:
         mock_twitch.get_streams = AsyncMock(return_value=[])
         mock_twitch.get_bot_mod_status = AsyncMock(return_value="mod")
 
+        mock_cs = MagicMock()
+        mock_cs.get_token_with_refresh = AsyncMock(return_value="tok")
+
+        token_obj = MagicMock()
+        token_obj.scopes = ""
+
         with patch("routers.admin_router.ChannelRepository") as cr:
-            token_obj = MagicMock()
-            token_obj.scopes = ""
             cr.return_value.list_all_channels = AsyncMock(
                 return_value=[
                     self._make_channel(OWNER_ID),
@@ -554,9 +558,9 @@ class TestGetAdminChannels:
                 ]
             )
             cr.return_value.get_token = AsyncMock(return_value=token_obj)
-            with patch("routers.admin_router.ChannelService") as cs:
-                cs.return_value.get_token_with_refresh = AsyncMock(return_value="tok")
-                r = _make_client(mock_twitch_api=mock_twitch).get("/api/admin/channels")
+            r = _make_client(mock_twitch_api=mock_twitch, mock_channel_service=mock_cs).get(
+                "/api/admin/channels"
+            )
 
         assert r.status_code == 200
         data = r.json()
@@ -572,9 +576,13 @@ class TestGetAdminChannels:
         mock_twitch.get_streams = AsyncMock(return_value=[])
         mock_twitch.get_bot_mod_status = AsyncMock(return_value="mod")
 
+        mock_cs = MagicMock()
+        mock_cs.get_token_with_refresh = AsyncMock(return_value="tok")
+
+        token_obj = MagicMock()
+        token_obj.scopes = ""
+
         with patch("routers.admin_router.ChannelRepository") as cr:
-            token_obj = MagicMock()
-            token_obj.scopes = ""
             cr.return_value.list_all_channels = AsyncMock(
                 return_value=[
                     self._make_channel(OWNER_ID),
@@ -582,9 +590,9 @@ class TestGetAdminChannels:
                 ]
             )
             cr.return_value.get_token = AsyncMock(return_value=token_obj)
-            with patch("routers.admin_router.ChannelService") as cs:
-                cs.return_value.get_token_with_refresh = AsyncMock(return_value="tok")
-                r = _make_client(mock_twitch_api=mock_twitch).get("/api/admin/channels")
+            r = _make_client(mock_twitch_api=mock_twitch, mock_channel_service=mock_cs).get(
+                "/api/admin/channels"
+            )
 
         assert r.status_code == 200
         data = r.json()

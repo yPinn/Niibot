@@ -18,7 +18,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from core.config import get_settings
-from core.dependencies import get_current_channel_id, get_db_pool, get_twitch_api
+from core.dependencies import get_current_channel_id, get_db_pool, get_twitch_api, require_activated
 from routers.video_queue_router import router as _vq_router
 
 CHANNEL_ID = "ch-vq"
@@ -74,6 +74,7 @@ def _make_public_client(twitch_api: MagicMock | None = None) -> TestClient:
 def _make_auth_client() -> TestClient:
     app = FastAPI(lifespan=_no_lifespan)
     app.include_router(_vq_router)
+    app.dependency_overrides[require_activated] = lambda: None
     app.dependency_overrides[get_current_channel_id] = lambda: CHANNEL_ID
     app.dependency_overrides[get_db_pool] = lambda: AsyncMock()
     return TestClient(app, raise_server_exceptions=False)
