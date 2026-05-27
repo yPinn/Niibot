@@ -8,7 +8,7 @@ import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from core.dependencies import get_current_channel_id, get_db_pool, get_twitch_api
+from core.dependencies import get_current_channel_id, get_db_pool, get_twitch_api, require_activated
 from services import TwitchAPIClient
 from shared.cache import AsyncTTLCache
 from shared.repositories.crosshair import VALID_GAMES, CrosshairRepository
@@ -129,6 +129,7 @@ async def record_crosshair_copy(
 @router.get("", response_model=list[CrosshairResponse])
 async def list_crosshairs(
     game: str | None = Query(None),
+    _: None = Depends(require_activated),
     channel_id: str = Depends(get_current_channel_id),
     pool: asyncpg.Pool = Depends(get_db_pool),
 ) -> list[CrosshairResponse]:
@@ -145,6 +146,7 @@ async def list_crosshairs(
 @router.post("", response_model=CrosshairResponse, status_code=201)
 async def create_crosshair(
     body: CrosshairCreate,
+    _: None = Depends(require_activated),
     channel_id: str = Depends(get_current_channel_id),
     pool: asyncpg.Pool = Depends(get_db_pool),
 ) -> CrosshairResponse:
@@ -171,6 +173,7 @@ async def create_crosshair(
 async def update_crosshair(
     crosshair_id: UUID,
     body: CrosshairUpdate,
+    _: None = Depends(require_activated),
     channel_id: str = Depends(get_current_channel_id),
     pool: asyncpg.Pool = Depends(get_db_pool),
 ) -> CrosshairResponse:
@@ -194,6 +197,7 @@ async def update_crosshair(
 @router.delete("/{crosshair_id}", status_code=204)
 async def delete_crosshair(
     crosshair_id: UUID,
+    _: None = Depends(require_activated),
     channel_id: str = Depends(get_current_channel_id),
     pool: asyncpg.Pool = Depends(get_db_pool),
 ) -> None:

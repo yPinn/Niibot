@@ -11,6 +11,7 @@ from core.dependencies import (
     get_command_config_service,
     get_current_channel_id,
     get_twitch_api,
+    require_activated,
 )
 from services import CommandConfigService, TwitchAPIClient
 from shared.cache import AsyncTTLCache
@@ -62,6 +63,7 @@ class CustomCommandCreate(BaseModel):
 
 @router.get("/configs", response_model=list[CommandConfigResponse])
 async def get_command_configs(
+    _: None = Depends(require_activated),
     channel_id: str = Depends(get_current_channel_id),
     service: CommandConfigService = Depends(get_command_config_service),
 ) -> list[CommandConfigResponse]:
@@ -77,6 +79,7 @@ async def get_command_configs(
 @router.post("/configs", response_model=CommandConfigResponse, status_code=201)
 async def create_custom_command(
     body: CustomCommandCreate,
+    _: None = Depends(require_activated),
     channel_id: str = Depends(get_current_channel_id),
     service: CommandConfigService = Depends(get_command_config_service),
 ) -> CommandConfigResponse:
@@ -105,6 +108,7 @@ async def create_custom_command(
 async def update_command_config(
     command_name: str,
     body: CommandConfigUpdate,
+    _: None = Depends(require_activated),
     channel_id: str = Depends(get_current_channel_id),
     service: CommandConfigService = Depends(get_command_config_service),
 ) -> CommandConfigResponse:
@@ -136,6 +140,7 @@ async def update_command_config(
 async def toggle_command_config(
     command_name: str,
     body: CommandConfigToggle,
+    _: None = Depends(require_activated),
     channel_id: str = Depends(get_current_channel_id),
     service: CommandConfigService = Depends(get_command_config_service),
 ) -> CommandConfigResponse:
@@ -156,6 +161,7 @@ async def toggle_command_config(
 @router.delete("/configs/{command_name}", status_code=204)
 async def delete_custom_command(
     command_name: str,
+    _: None = Depends(require_activated),
     channel_id: str = Depends(get_current_channel_id),
     service: CommandConfigService = Depends(get_command_config_service),
 ) -> None:

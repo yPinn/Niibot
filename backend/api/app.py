@@ -9,13 +9,13 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse, Response
 
 from core.config import get_settings
 from core.database import get_database_manager, init_database_manager
-from core.dependencies import close_twitch_api
+from core.dependencies import close_twitch_api, require_activated
 from core.logging import setup_logging
 from routers import (
     admin_router,
@@ -49,7 +49,6 @@ _started_at: str = ""
 _pool_heartbeat_task: asyncio.Task | None = None
 _db_retry_task: asyncio.Task | None = None
 _APP_VERSION = os.getenv("APP_VERSION", "dev")
-_GIT_COMMIT = os.getenv("GIT_COMMIT", "unknown")
 _REQUEST_TIMEOUT = 30.0
 
 
@@ -209,26 +208,32 @@ def create_app() -> FastAPI:
             headers={"X-Request-ID": rid},
         )
 
+    _activated = [Depends(require_activated)]
+
     # Register routers
+    # Public / webhook routers — no activation gate
     app.include_router(discord_webhook_router.router)
-    app.include_router(ai_settings_router.router)
-    app.include_router(admin_router.router)
     app.include_router(auth_router.router)
-    app.include_router(channels_router.router)
-    app.include_router(analytics_router.router)
-    app.include_router(matcher_router.router)
-    app.include_router(stats_router.router)
+    app.include_router(donation_router.router)
+    # Admin router — gated by stricter require_owner inside the router itself
+    app.include_router(admin_router.router)
+    # Fully-private routers — every endpoint requires an activated account
+    app.include_router(channels_router.router, dependencies=_activated)
+    app.include_router(analytics_router.router, dependencies=_activated)
+    app.include_router(matcher_router.router, dependencies=_activated)
+    app.include_router(stats_router.router, dependencies=_activated)
+    app.include_router(events_router.router, dependencies=_activated)
+    app.include_router(timers_router.router, dependencies=_activated)
+    app.include_router(message_triggers_router.router, dependencies=_activated)
+    app.include_router(payment_config_router.router, dependencies=_activated)
+    app.include_router(ai_settings_router.router, dependencies=_activated)
+    app.include_router(bots_router.router, dependencies=_activated)
+    app.include_router(releases_router.router, dependencies=_activated)
+    # Mixed routers — public overlay endpoints exempt; activation enforced per-endpoint inside
     app.include_router(commands_router.router)
-    app.include_router(events_router.router)
     app.include_router(game_queue_router.router)
     app.include_router(video_queue_router.router)
-    app.include_router(timers_router.router)
-    app.include_router(message_triggers_router.router)
-    app.include_router(payment_config_router.router)
-    app.include_router(donation_router.router)
     app.include_router(crosshairs_router.router)
-    app.include_router(bots_router.router)
-    app.include_router(releases_router.router)
 
     # Root endpoint
     @app.get("/")
@@ -265,7 +270,6 @@ def create_app() -> FastAPI:
         return {
             "service": "niibot-api",
             "version": _APP_VERSION,
-            "git_commit": _GIT_COMMIT,
             "started_at": _started_at,
             "environment": settings.environment,
             "uptime_seconds": int(time.time() - _start_time),

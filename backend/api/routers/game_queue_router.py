@@ -6,7 +6,12 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from core.dependencies import get_current_channel_id, get_game_queue_service, get_twitch_api
+from core.dependencies import (
+    get_current_channel_id,
+    get_game_queue_service,
+    get_twitch_api,
+    require_activated,
+)
 from services import TwitchAPIClient
 from services.game_queue_service import GameQueueService
 
@@ -66,6 +71,7 @@ class ClearResponse(BaseModel):
 
 @router.get("/state", response_model=QueueStateResponse)
 async def get_queue_state(
+    _: None = Depends(require_activated),
     channel_id: str = Depends(get_current_channel_id),
     service: GameQueueService = Depends(get_game_queue_service),
 ) -> QueueStateResponse:
@@ -80,6 +86,7 @@ async def get_queue_state(
 
 @router.post("/advance", response_model=QueueStateResponse)
 async def advance_batch(
+    _: None = Depends(require_activated),
     channel_id: str = Depends(get_current_channel_id),
     service: GameQueueService = Depends(get_game_queue_service),
 ) -> QueueStateResponse:
@@ -96,6 +103,7 @@ async def advance_batch(
 @router.delete("/entries/{entry_id}", response_model=QueueStateResponse)
 async def remove_player(
     entry_id: int,
+    _: None = Depends(require_activated),
     channel_id: str = Depends(get_current_channel_id),
     service: GameQueueService = Depends(get_game_queue_service),
 ) -> QueueStateResponse:
@@ -112,6 +120,7 @@ async def remove_player(
 @router.post("/entries/{entry_id}/promote", response_model=QueueStateResponse)
 async def promote_player(
     entry_id: int,
+    _: None = Depends(require_activated),
     channel_id: str = Depends(get_current_channel_id),
     service: GameQueueService = Depends(get_game_queue_service),
 ) -> QueueStateResponse:
@@ -131,6 +140,7 @@ async def promote_player(
 
 @router.delete("/clear", response_model=ClearResponse)
 async def clear_queue(
+    _: None = Depends(require_activated),
     channel_id: str = Depends(get_current_channel_id),
     service: GameQueueService = Depends(get_game_queue_service),
 ) -> ClearResponse:
@@ -146,6 +156,7 @@ async def clear_queue(
 
 @router.get("/settings", response_model=QueueSettingsResponse)
 async def get_settings(
+    _: None = Depends(require_activated),
     channel_id: str = Depends(get_current_channel_id),
     service: GameQueueService = Depends(get_game_queue_service),
 ) -> QueueSettingsResponse:
@@ -161,6 +172,7 @@ async def get_settings(
 @router.put("/settings", response_model=QueueSettingsResponse)
 async def update_settings(
     body: QueueSettingsUpdate,
+    _: None = Depends(require_activated),
     channel_id: str = Depends(get_current_channel_id),
     service: GameQueueService = Depends(get_game_queue_service),
 ) -> QueueSettingsResponse:

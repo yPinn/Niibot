@@ -31,7 +31,7 @@ class Settings(BaseServiceSettings):
 
     jwt_secret_key: str = Field(..., description="Secret key for JWT token signing")
     jwt_algorithm: str = Field(default="HS256", description="JWT signing algorithm")
-    jwt_expire_days: int = Field(default=30, description="JWT token expiration in days")
+    jwt_expire_days: int = Field(default=7, description="JWT token expiration in days")
 
     frontend_url: str = Field(default="http://localhost:3000", description="Frontend URL for CORS")
     api_url: str = Field(default="http://localhost:8000", description="API server URL")

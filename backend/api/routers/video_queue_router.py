@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from core.config import Settings, get_settings
-from core.dependencies import get_current_channel_id, get_db_pool, get_twitch_api
+from core.dependencies import get_current_channel_id, get_db_pool, get_twitch_api, require_activated
 from services import TwitchAPIClient
 from shared.cache import AsyncTTLCache
 from shared.repositories.channel import ChannelRepository
@@ -217,6 +217,7 @@ async def update_entry_metadata(
 
 @router.delete("/skip", status_code=200, response_model=PublicVideoQueueState)
 async def skip_current(
+    _: None = Depends(require_activated),
     channel_id: str = Depends(get_current_channel_id),
     pool: Pool = Depends(get_db_pool),
 ) -> PublicVideoQueueState:
@@ -234,6 +235,7 @@ async def skip_current(
 
 @router.delete("/clear", status_code=200, response_model=PublicVideoQueueState)
 async def clear_queue(
+    _: None = Depends(require_activated),
     channel_id: str = Depends(get_current_channel_id),
     pool: Pool = Depends(get_db_pool),
 ) -> PublicVideoQueueState:
@@ -251,6 +253,7 @@ async def clear_queue(
 
 @router.get("/settings", response_model=VideoQueueSettingsResponse)
 async def get_video_queue_settings(
+    _: None = Depends(require_activated),
     channel_id: str = Depends(get_current_channel_id),
     pool: Pool = Depends(get_db_pool),
 ) -> VideoQueueSettingsResponse:
@@ -276,6 +279,7 @@ async def get_video_queue_settings(
 @router.put("/settings", response_model=VideoQueueSettingsResponse)
 async def update_video_queue_settings(
     body: VideoQueueSettingsUpdate,
+    _: None = Depends(require_activated),
     channel_id: str = Depends(get_current_channel_id),
     pool: Pool = Depends(get_db_pool),
 ) -> VideoQueueSettingsResponse:
@@ -323,6 +327,7 @@ async def update_video_queue_settings(
 
 @router.get("/state", response_model=PublicVideoQueueState)
 async def get_state(
+    _: None = Depends(require_activated),
     channel_id: str = Depends(get_current_channel_id),
     pool: Pool = Depends(get_db_pool),
 ) -> PublicVideoQueueState:
@@ -339,6 +344,7 @@ async def get_state(
 @router.post("/entries/{entry_id}/set-next", response_model=PublicVideoQueueState)
 async def set_entry_as_next(
     entry_id: int,
+    _: None = Depends(require_activated),
     channel_id: str = Depends(get_current_channel_id),
     pool: Pool = Depends(get_db_pool),
 ) -> PublicVideoQueueState:
@@ -361,6 +367,7 @@ async def set_entry_as_next(
 @router.post("/entries/{entry_id}/play-now", response_model=PublicVideoQueueState)
 async def play_entry_now(
     entry_id: int,
+    _: None = Depends(require_activated),
     channel_id: str = Depends(get_current_channel_id),
     pool: Pool = Depends(get_db_pool),
 ) -> PublicVideoQueueState:
@@ -383,6 +390,7 @@ async def play_entry_now(
 @router.delete("/entries/{entry_id}", response_model=PublicVideoQueueState)
 async def remove_queue_entry(
     entry_id: int,
+    _: None = Depends(require_activated),
     channel_id: str = Depends(get_current_channel_id),
     pool: Pool = Depends(get_db_pool),
 ) -> PublicVideoQueueState:
@@ -405,6 +413,7 @@ async def remove_queue_entry(
 @router.post("/entries", response_model=PublicVideoQueueState, status_code=201)
 async def add_video_entry(
     body: AddVideoRequest,
+    _: None = Depends(require_activated),
     channel_id: str = Depends(get_current_channel_id),
     pool: Pool = Depends(get_db_pool),
     app_settings: Settings = Depends(get_settings),

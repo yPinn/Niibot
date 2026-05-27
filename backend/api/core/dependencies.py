@@ -108,17 +108,28 @@ def get_token_payload(auth_token: str | None = Cookie(None)) -> dict:
     return payload
 
 
+async def require_activated(
+    payload: dict = Depends(get_token_payload),
+    pool: asyncpg.Pool = Depends(get_db_pool),
+) -> None:
+    """Gate access to feature endpoints: account must be admin-approved."""
+    user_id = str(payload["sub"])
+    is_activated = await pool.fetchval(
+        "SELECT is_activated FROM users WHERE id = $1::uuid", user_id
+    )
+    if not is_activated:
+        raise HTTPException(status_code=403, detail="Account not activated")
+
+
 async def get_current_user_id(
-    auth_token: str | None = Cookie(None),
+    payload: dict = Depends(get_token_payload),
 ) -> str:
     """Return users.id (UUID) for user-level operations (preferences, etc.)"""
-    payload = get_token_payload(auth_token)
     return str(payload["sub"])
 
 
 async def get_current_channel_id(
-    auth_token: str | None = Cookie(None),
+    payload: dict = Depends(get_token_payload),
 ) -> str:
     """Return platform_user_id — maps to TwitchIO broadcaster.id / Helix broadcaster_id"""
-    payload = get_token_payload(auth_token)
     return str(payload["platform_user_id"])
