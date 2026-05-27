@@ -71,7 +71,7 @@ jobs:
     runs-on: self-hosted
     environment: ${{ inputs.environment }}
     concurrency:
-      group: deploy-${{ inputs.environment }}
+      group: deploy
       cancel-in-progress: false # never interrupt mid-run — partial migration would leave DB in broken state
 
     env:

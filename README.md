@@ -69,6 +69,9 @@ cp .github/secrets/prod.env.example .github/secrets/prod.env
 cp .github/variables/base.env.example .github/variables/base.env
 cp .github/variables/prod.env.example .github/variables/prod.env
 bash .github/push.sh prod
+
+# Or pull current values back from GitHub
+bash .github/pull.sh prod
 ```
 
 ## 環境變數
