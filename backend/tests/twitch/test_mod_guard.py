@@ -86,11 +86,20 @@ class TestModGuardNotifier:
         await notifier.notify("alice", "ch1", "niibot_", send_fn)
         assert "ch1" in notifier._last_notified
 
-    async def test_notify_skips_in_development(self):
+    async def test_notify_skips_in_non_prod(self):
         notifier = self._notifier()
         send_fn = AsyncMock()
         with patch("utils.mod_guard.get_settings") as mock_settings:
-            mock_settings.return_value.is_development = True
+            mock_settings.return_value.is_production = False
+            result = await notifier.notify("alice", "ch1", "niibot_", send_fn)
+        assert result is False
+        send_fn.assert_not_awaited()
+
+    async def test_notify_skips_in_staging(self):
+        notifier = self._notifier()
+        send_fn = AsyncMock()
+        with patch("utils.mod_guard.get_settings") as mock_settings:
+            mock_settings.return_value.is_production = False  # staging is not production
             result = await notifier.notify("alice", "ch1", "niibot_", send_fn)
         assert result is False
         send_fn.assert_not_awaited()

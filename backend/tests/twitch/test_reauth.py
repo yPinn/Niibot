@@ -182,12 +182,22 @@ class TestReauthNotifier:
         # The timestamp must have been recorded (cooldown enforced even on failure)
         assert "ch1" in notifier._last_notified
 
-    async def test_notify_skips_in_development(self):
-        """No chat message sent in dev environment — returns False immediately."""
+    async def test_notify_skips_in_non_prod(self):
+        """No chat message sent outside production — returns False immediately."""
         notifier = self._notifier()
         send_fn = AsyncMock()
         with patch("utils.reauth.get_settings") as mock_settings:
-            mock_settings.return_value.is_development = True
+            mock_settings.return_value.is_production = False
+            result = await notifier.notify("alice", "ch1", send_fn)
+        assert result is False
+        send_fn.assert_not_awaited()
+
+    async def test_notify_skips_in_staging(self):
+        """Staging environment must not send reauth notifications."""
+        notifier = self._notifier()
+        send_fn = AsyncMock()
+        with patch("utils.reauth.get_settings") as mock_settings:
+            mock_settings.return_value.is_production = False  # staging is not production
             result = await notifier.notify("alice", "ch1", send_fn)
         assert result is False
         send_fn.assert_not_awaited()
