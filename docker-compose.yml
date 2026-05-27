@@ -40,21 +40,15 @@ x-logging: &default-logging
 services:
   postgres:
     image: postgres:16
-    container_name: niibot-postgres
+    container_name: nb-pg
     restart: unless-stopped
     logging: *default-logging
     command: >
       postgres
         -c log_min_duration_statement=500
         -c log_line_prefix='%m [%p] '
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER must be set in root .env}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in root .env}
-      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB must be set in root .env}
-    volumes:
-      - ./data/postgres:/var/lib/postgresql/data
     networks:
-      - niibot-network
+      - nb-network
     healthcheck:
       test:
         ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:?} -d ${POSTGRES_DB:?}"]
@@ -62,56 +56,52 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER must be set in root .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in root .env}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB must be set in root .env}
 
   migrate:
-    image: niibot-api
+    image: nb-api
     build:
       context: ./backend
       dockerfile: api/Dockerfile
       args:
         APP_VERSION: ${APP_VERSION:-dev}
         GIT_COMMIT: ${GIT_COMMIT:-unknown}
-    container_name: niibot-migrate
+    container_name: nb-migrate
     command: python /app/scripts/db_migrate.py
-    env_file:
-      - ./backend/shared.env
-      - ./backend/api/.env
-    environment:
-      <<: *docker-db-env
+    restart: "no"
     networks:
-      - niibot-network
+      - nb-network
     depends_on:
       postgres:
         condition: service_healthy
-    restart: "no"
+    environment:
+      <<: *docker-db-env
 
   instafix:
     image: ghcr.io/wikidepia/instafix:main
-    container_name: niibot-instafix
+    container_name: nb-instafix
     restart: unless-stopped
     logging: *default-logging
     profiles: [discord, bots, full]
     networks:
-      - niibot-network
+      - nb-network
 
   scrapling:
-    image: niibot-scrapling
+    image: nb-scrapling
     build:
       context: ./backend
       dockerfile: scrapling/Dockerfile
-    container_name: niibot-scrapling
+    container_name: nb-scrapling
     restart: unless-stopped
     logging: *default-logging
     profiles: [discord, bots, full]
-    env_file:
-      - ./backend/scrapling/.env
-    environment:
-      PORT: ${SCRAPLING_PORT:-3001}
-      COOKIES_PATH: /app/cookies/session.json
     volumes:
       - scrapling-cookies:/app/cookies
     networks:
-      - niibot-network
+      - nb-network
     healthcheck:
       <<: *default-healthcheck
       test:
@@ -121,28 +111,24 @@ services:
           "-c",
           "import urllib.request; urllib.request.urlopen('http://localhost:${SCRAPLING_PORT:-3001}/health').read()",
         ]
+    environment:
+      PORT: ${SCRAPLING_PORT:-3001}
+      COOKIES_PATH: /app/cookies/session.json
 
   twitch-bot:
-    image: niibot-twitch
+    image: nb-twitch
     build:
       context: ./backend
       dockerfile: twitch/Dockerfile
       args:
         APP_VERSION: ${APP_VERSION:-dev}
         GIT_COMMIT: ${GIT_COMMIT:-unknown}
-    container_name: niibot-twitch
+    container_name: nb-twitch
     restart: unless-stopped
     logging: *default-logging
     profiles: [twitch, bots, full]
-    env_file:
-      - ./backend/shared.env
-      - ./backend/twitch/.env
-    environment:
-      <<: *docker-db-env
-    volumes:
-      - ./backend/data:/app/data
     networks:
-      - niibot-network
+      - nb-network
     depends_on:
       postgres:
         condition: service_healthy
@@ -157,28 +143,23 @@ services:
           "-c",
           "import urllib.request; urllib.request.urlopen('http://localhost:4344/health').read()",
         ]
+    environment:
+      <<: *docker-db-env
 
   discord-bot:
-    image: niibot-discord
+    image: nb-discord
     build:
       context: ./backend
       dockerfile: discord/Dockerfile
       args:
         APP_VERSION: ${APP_VERSION:-dev}
         GIT_COMMIT: ${GIT_COMMIT:-unknown}
-    container_name: niibot-discord
+    container_name: nb-discord
     restart: unless-stopped
     logging: *default-logging
     profiles: [discord, bots, full]
-    env_file:
-      - ./backend/shared.env
-      - ./backend/discord/.env
-    environment:
-      <<: [*docker-db-env, *docker-discord-svc-urls]
-    volumes:
-      - ./backend/data:/app/data
     networks:
-      - niibot-network
+      - nb-network
     depends_on:
       postgres:
         condition: service_healthy
@@ -198,34 +179,26 @@ services:
           "-c",
           "import urllib.request; urllib.request.urlopen('http://localhost:8080/health').read()",
         ]
+    environment:
+      <<: [*docker-db-env, *docker-discord-svc-urls]
 
   api:
-    image: niibot-api
+    image: nb-api
     build:
       context: ./backend
       dockerfile: api/Dockerfile
       args:
         APP_VERSION: ${APP_VERSION:-dev}
         GIT_COMMIT: ${GIT_COMMIT:-unknown}
-    container_name: niibot-api
+    container_name: nb-api
     restart: unless-stopped
     logging: *default-logging
     profiles: [api, full]
-    ports:
-      - "8000:8000"
     dns:
       - 8.8.8.8
       - 1.1.1.1
-    env_file:
-      - ./backend/shared.env
-      - ./backend/api/.env
-    environment:
-      <<: [*docker-db-env, *docker-api-svc-urls]
-    volumes:
-      - ./backend/data:/app/data
-      - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
-      - niibot-network
+      - nb-network
     depends_on:
       postgres:
         condition: service_healthy
@@ -240,10 +213,12 @@ services:
           "-c",
           "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()",
         ]
+    environment:
+      <<: [*docker-db-env, *docker-api-svc-urls]
 
 volumes:
   scrapling-cookies:
 
 networks:
-  niibot-network:
+  nb-network:
     driver: bridge

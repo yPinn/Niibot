@@ -63,9 +63,12 @@ docker compose build && docker compose up -d
 CI/CD 密鑰（GitHub Actions 部署前執行一次）：
 
 ```bash
-cp secrets.env.example secrets.env
-cp variables.env.example variables.env
-bash scripts/push-secrets.sh
+# Copy examples and fill in values
+cp .github/secrets/base.env.example .github/secrets/base.env
+cp .github/secrets/prod.env.example .github/secrets/prod.env
+cp .github/variables/base.env.example .github/variables/base.env
+cp .github/variables/prod.env.example .github/variables/prod.env
+bash .github/push.sh prod
 ```
 
 ## 環境變數

@@ -239,7 +239,7 @@ def create_app() -> FastAPI:
     @app.get("/")
     async def root():
         """Root endpoint - minimal service info"""
-        return {"service": "niibot-api", "status": "running"}
+        return {"service": "nb-api", "status": "running"}
 
     # Liveness probe — always 200, no external dependency
     @app.get("/health")
@@ -268,7 +268,7 @@ def create_app() -> FastAPI:
             pass  # DB manager not yet initialized
 
         return {
-            "service": "niibot-api",
+            "service": "nb-api",
             "version": _APP_VERSION,
             "started_at": _started_at,
             "environment": settings.environment,

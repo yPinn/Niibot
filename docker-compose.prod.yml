@@ -1,4 +1,4 @@
-# Dev overrides — exposes all ports to host for local inspection, uses same env files as prod.
+# Production overrides — exposes API port for Cloudflare Tunnel, loads prod env files.
 
 services:
   migrate:
@@ -7,17 +7,19 @@ services:
       - ./backend/api/.env
 
   scrapling:
-    ports:
-      - "3001:${SCRAPLING_PORT:-3001}"
     env_file:
       - ./backend/scrapling/.env
 
   twitch-bot:
+    volumes:
+      - ./backend/data:/app/data
     env_file:
       - ./backend/shared.env
       - ./backend/twitch/.env
 
   discord-bot:
+    volumes:
+      - ./backend/data:/app/data
     env_file:
       - ./backend/shared.env
       - ./backend/discord/.env
@@ -25,14 +27,13 @@ services:
   api:
     ports:
       - "8000:8000"
+    volumes:
+      - ./backend/data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     env_file:
       - ./backend/shared.env
       - ./backend/api/.env
 
   postgres:
-    ports:
-      - "5433:5432" # 5433 avoids conflict with a local postgres installation
-
-  instafix:
-    ports:
-      - "3002:3000" # 3002 avoids conflict with the frontend dev server on 3000
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data

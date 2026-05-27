@@ -299,12 +299,12 @@ async def approve_activation_request(
 
 _DOCKER_SOCKET = "/var/run/docker.sock"
 _KNOWN_CONTAINERS = [
-    {"name": "niibot-api", "label": "API Server"},
-    {"name": "niibot-twitch", "label": "Twitch Bot"},
-    {"name": "niibot-discord", "label": "Discord Bot"},
-    {"name": "niibot-postgres", "label": "PostgreSQL"},
-    {"name": "niibot-scrapling", "label": "Scrapling"},
-    {"name": "niibot-instafix", "label": "Instafix"},
+    {"name": "nb-api", "label": "API Server"},
+    {"name": "nb-twitch", "label": "Twitch Bot"},
+    {"name": "nb-discord", "label": "Discord Bot"},
+    {"name": "nb-pg", "label": "PostgreSQL"},
+    {"name": "nb-scrapling", "label": "Scrapling"},
+    {"name": "nb-instafix", "label": "Instafix"},
 ]
 _ALLOWED_CONTAINERS = {c["name"] for c in _KNOWN_CONTAINERS}
 

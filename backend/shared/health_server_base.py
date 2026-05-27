@@ -21,7 +21,7 @@ class BaseHealthServer(ABC):
     """Shared HTTP health check server with standard routes.
 
     Subclasses must implement:
-      - ``SERVICE_NAME`` — e.g. ``"niibot-discord"``
+      - ``SERVICE_NAME`` — e.g. ``"nb-discord"``
       - ``get_ready()`` — whether the bot/service is fully operational
       - ``get_metrics()`` — service-specific fields for the ``/status`` response
     """
