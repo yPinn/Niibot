@@ -465,6 +465,11 @@ jobs:
         continue-on-error: true
         env:
           WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}
+          GH_SVC_API: ${{ steps.changes.outputs.api }}
+          GH_SVC_TWITCH: ${{ steps.changes.outputs.twitch }}
+          GH_SVC_DISCORD: ${{ steps.changes.outputs.discord }}
+          GH_SVC_SCRAPLING: ${{ steps.changes.outputs.scrapling }}
+          GH_SVC_INSTAFIX: ${{ steps.changes.outputs.instafix }}
         run: |
           [ -z "${WEBHOOK_URL}" ] && { echo "DEPLOY_WEBHOOK_URL not set, skipping."; exit 0; }
           REASON="build or migration error"
@@ -478,6 +483,8 @@ jobs:
           import json, os
           from datetime import datetime, timezone, timedelta
           e = os.environ
+          svc_map = [('GH_SVC_API','API'),('GH_SVC_TWITCH','Twitch'),('GH_SVC_DISCORD','Discord'),('GH_SVC_SCRAPLING','Scrapling'),('GH_SVC_INSTAFIX','Instafix')]
+          svcs = ', '.join(label for key, label in svc_map if e.get(key) == 'true') or 'none'
           payload = {
             "embeds": [{
               "author": {"name": "Niibot CI/CD"},
@@ -485,9 +492,10 @@ jobs:
               "url": e["GH_RUN_URL"],
               "color": 15158332,
               "fields": [
-                {"name": "Reason", "value": e["GH_REASON"],        "inline": True},
-                {"name": "Commit", "value": f"`{e['GH_COMMIT']}`", "inline": True},
-                {"name": "Actor",  "value": e["GH_ACTOR"],         "inline": True},
+                {"name": "Reason",   "value": e["GH_REASON"],        "inline": True},
+                {"name": "Commit",   "value": f"`{e['GH_COMMIT']}`", "inline": True},
+                {"name": "Actor",    "value": e["GH_ACTOR"],         "inline": True},
+                {"name": "Services", "value": svcs,                  "inline": False},
               ],
               "footer": {"text": "GitHub Actions"},
               "timestamp": datetime.now(timezone(timedelta(hours=8))).isoformat(),
@@ -516,6 +524,11 @@ jobs:
         continue-on-error: true
         env:
           WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}
+          GH_SVC_API: ${{ steps.changes.outputs.api }}
+          GH_SVC_TWITCH: ${{ steps.changes.outputs.twitch }}
+          GH_SVC_DISCORD: ${{ steps.changes.outputs.discord }}
+          GH_SVC_SCRAPLING: ${{ steps.changes.outputs.scrapling }}
+          GH_SVC_INSTAFIX: ${{ steps.changes.outputs.instafix }}
         run: |
           [ -z "${WEBHOOK_URL}" ] && { echo "DEPLOY_WEBHOOK_URL not set, skipping."; exit 0; }
           export GH_ENV="${{ inputs.environment }}"
@@ -526,6 +539,8 @@ jobs:
           import json, os
           from datetime import datetime, timezone, timedelta
           e = os.environ
+          svc_map = [('GH_SVC_API','API'),('GH_SVC_TWITCH','Twitch'),('GH_SVC_DISCORD','Discord'),('GH_SVC_SCRAPLING','Scrapling'),('GH_SVC_INSTAFIX','Instafix')]
+          svcs = ', '.join(label for key, label in svc_map if e.get(key) == 'true') or 'none'
           payload = {
             "embeds": [{
               "author": {"name": "Niibot CI/CD"},
@@ -533,8 +548,9 @@ jobs:
               "url": e["GH_RUN_URL"],
               "color": 3066993,
               "fields": [
-                {"name": "Version", "value": f"`{e['GH_VERSION']}`", "inline": True},
-                {"name": "Actor",   "value": e["GH_ACTOR"],          "inline": True},
+                {"name": "Version",  "value": f"`{e['GH_VERSION']}`", "inline": True},
+                {"name": "Actor",    "value": e["GH_ACTOR"],          "inline": True},
+                {"name": "Services", "value": svcs,                   "inline": False},
               ],
               "footer": {"text": "GitHub Actions"},
               "timestamp": datetime.now(timezone(timedelta(hours=8))).isoformat(),
