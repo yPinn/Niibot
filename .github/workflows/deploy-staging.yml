@@ -1,0 +1,61 @@
+name: Deploy Staging
+
+# Staging deployment — see _deploy.yml for secrets/variables reference.
+# GitHub Environment "staging" overrides: API_URL, ENVIRONMENT, FRONTEND_URL, POSTGRES_DB
+
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch:
+    inputs:
+      force_all:
+        description: "Force rebuild all services"
+        type: boolean
+        default: false
+      deploy_api:
+        description: "Deploy API"
+        type: boolean
+        default: true
+      deploy_twitch:
+        description: "Deploy Twitch bot"
+        type: boolean
+        default: true
+      deploy_discord:
+        description: "Deploy Discord bot"
+        type: boolean
+        default: false
+      deploy_scrapling:
+        description: "Deploy Scrapling"
+        type: boolean
+        default: false
+      deploy_instafix:
+        description: "Pull and restart Instafix"
+        type: boolean
+        default: false
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    needs: ci
+    uses: ./.github/workflows/_deploy.yml
+    with:
+      environment: staging
+      env_suffix: ".staging"
+      compose_env_file: docker-compose.staging.yml
+      compose_project: niibot-staging
+      branch: staging
+      api_port: 8001
+      scrapling_port_default: 3003
+      compose_change_pattern: docker-compose.staging.yml
+      force_all: ${{ inputs.force_all == true }}
+      force_api: ${{ inputs.deploy_api == true }}
+      force_twitch: ${{ inputs.deploy_twitch == true }}
+      force_discord: ${{ inputs.deploy_discord == true }}
+      force_scrapling: ${{ inputs.deploy_scrapling == true }}
+      force_instafix: ${{ inputs.deploy_instafix == true }}
+      tag_images: true
+      prune_full: true
+      image_suffix: "-stg"
+    secrets: inherit
