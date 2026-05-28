@@ -26,4 +26,6 @@ jobs:
       scrapling_port_default: 3003
       compose_change_pattern: docker-compose.staging.yml
       force_all: ${{ inputs.force_all == true }}
+      tag_images: true
+      prune_full: true
     secrets: inherit
