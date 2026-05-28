@@ -435,3 +435,13 @@ jobs:
                 | xargs -I{} docker rmi "${IMAGE}${SUFFIX}:{}" 2>/dev/null || true
             done
           fi
+
+      - name: Notify deploy success
+        if: success()
+        env:
+          WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}
+        run: |
+          [ -z "${WEBHOOK_URL}" ] && { echo "DEPLOY_WEBHOOK_URL not set, skipping notification."; exit 0; }
+          curl -s -X POST "${WEBHOOK_URL}" \
+            -H "Content-Type: application/json" \
+            -d "{\"content\": \"Deploy **${{ inputs.environment }}** succeeded — commit \`${{ steps.meta.outputs.commit }}\` is live.\"}"
