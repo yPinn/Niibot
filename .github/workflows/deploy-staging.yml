@@ -14,7 +14,11 @@ on:
         default: false
 
 jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
   deploy:
+    needs: ci
     uses: ./.github/workflows/_deploy.yml
     with:
       environment: staging

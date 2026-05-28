@@ -15,7 +15,13 @@ on:
         default: false
 
 jobs:
+  ci:
+    if: github.event_name != 'schedule'
+    uses: ./.github/workflows/ci.yml
+
   deploy:
+    needs: ci
+    if: always() && (needs.ci.result == 'success' || needs.ci.result == 'skipped')
     uses: ./.github/workflows/_deploy.yml
     with:
       environment: production
