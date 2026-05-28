@@ -35,10 +35,10 @@ Niibot/
 
 ```bash
 # 複製所有 .env 範本（已存在的檔案會自動略過）
-./scripts/env.sh
+bash scripts/env.sh init
 
 # 或強制覆蓋
-./scripts/env.sh -f
+bash scripts/env.sh init -f
 ```
 
 接著填入各檔案的 secrets，再啟動服務：
