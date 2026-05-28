@@ -5,7 +5,7 @@
 #
 #   init      [-f]              Copy .env.example → .env  (skip existing; -f overwrites)
 #   snapshot  [--keep N]        Snapshot live env files to data/env/YYYYMMDD/
-#   backup    [--keep N]        Snapshot + compress to data/secrets-YYYYMMDD.tar.gz
+#   backup    [--keep N]        Snapshot + compress to data/env-YYYYMMDD.tar.gz
 #   restore   <DATE|FILE> [-f]  Restore from snapshot or .tar.gz  (-f overwrites)
 #   diff      [DATE|FILE]       Diff current env files against a snapshot
 #   list                        List available snapshots and backups
@@ -55,8 +55,8 @@ _list_snapshots() {
 }
 
 _list_backups() {
-  if ls "$DATA"/secrets-*.tar.gz &>/dev/null 2>&1; then
-    ls "$DATA"/secrets-*.tar.gz | sort -r | while IFS= read -r f; do basename "$f"; done
+  if ls "$DATA"/env-*.tar.gz &>/dev/null 2>&1; then
+    ls "$DATA"/env-*.tar.gz | sort -r | while IFS= read -r f; do basename "$f"; done
   fi
 }
 
@@ -64,7 +64,7 @@ _resolve_snap() {
   local arg="$1"
   if [[ "$arg" == *.tar.gz ]]; then
     local date snap
-    date="$(basename "$arg" .tar.gz | sed 's/^secrets-//')"
+    date="$(basename "$arg" .tar.gz | sed 's/^env-//')"
     snap="$DATA/env/$date"
     if [[ ! -d "$snap" ]]; then
       printf "Extracting %s → data/env/\n\n" "$(basename "$arg")"
@@ -75,7 +75,7 @@ _resolve_snap() {
   elif [[ "$arg" =~ ^[0-9]{8}$ ]]; then
     echo "$DATA/env/$arg"
   else
-    echo "error: expected YYYYMMDD or path to secrets-YYYYMMDD.tar.gz" >&2
+    echo "error: expected YYYYMMDD or path to env-YYYYMMDD.tar.gz" >&2
     exit 1
   fi
 }
@@ -163,7 +163,7 @@ cmd_snapshot() {
   _each_section _cp_env
   printf "\n%d copied, %d skipped\n" "$copied" "$skipped"
 
-  [[ $keep -gt 0 ]] && _prune_snapshots "$keep"
+  if [[ $keep -gt 0 ]]; then _prune_snapshots "$keep"; fi
 }
 
 # ── backup ────────────────────────────────────────────────────────────────────
@@ -180,7 +180,7 @@ cmd_backup() {
 
   local date out
   date="$(date +%Y%m%d)"
-  out="$DATA/secrets-$date.tar.gz"
+  out="$DATA/env-$date.tar.gz"
   tar -czf "$out" -C "$DATA/env" "$date"
   echo "→ $out"
 
@@ -320,7 +320,7 @@ Usage: bash scripts/env.sh <command> [options]
 
   init      [-f]              Copy .env.example → .env  (skip existing; -f overwrites)
   snapshot  [--keep N]        Snapshot live env files to data/env/YYYYMMDD/
-  backup    [--keep N]        Snapshot + compress to data/secrets-YYYYMMDD.tar.gz
+  backup    [--keep N]        Snapshot + compress to data/env-YYYYMMDD.tar.gz
   restore   <DATE|FILE> [-f]  Restore from snapshot or .tar.gz  (-f overwrites)
   diff      [DATE|FILE]       Diff current env files against a snapshot
   list                        List available snapshots and backups
