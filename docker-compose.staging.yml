@@ -10,6 +10,7 @@ services:
       - ./backend/api/.env.staging
 
   scrapling:
+    image: nb-scrapling-stg
     container_name: nb-scrapling-stg
     ports:
       - "3003:${SCRAPLING_PORT:-3001}"
@@ -17,6 +18,7 @@ services:
       - ./backend/scrapling/.env.staging
 
   twitch-bot:
+    image: nb-twitch-stg
     container_name: nb-twitch-stg
     volumes:
       - ./data/staging/backend:/app/data
@@ -25,6 +27,7 @@ services:
       - ./backend/twitch/.env.staging
 
   discord-bot:
+    image: nb-discord-stg
     container_name: nb-discord-stg
     volumes:
       - ./data/staging/backend:/app/data
@@ -33,6 +36,7 @@ services:
       - ./backend/discord/.env.staging
 
   api:
+    image: nb-api-stg
     container_name: nb-api-stg
     ports:
       - "8001:8000"

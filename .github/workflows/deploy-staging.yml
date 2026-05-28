@@ -28,4 +28,5 @@ jobs:
       force_all: ${{ inputs.force_all == true }}
       tag_images: true
       prune_full: true
+      image_suffix: "-stg"
     secrets: inherit

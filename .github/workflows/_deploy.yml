@@ -64,6 +64,10 @@ on:
         description: "Use --pull on forced rebuilds to pick up base image updates"
         type: boolean
         default: false
+      image_suffix:
+        description: "Image name suffix to isolate environments (e.g. -stg for staging)"
+        type: string
+        default: ""
 
 jobs:
   deploy:
@@ -299,12 +303,13 @@ jobs:
         if: inputs.tag_images
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
+          SUFFIX="${{ inputs.image_suffix }}"
           VERSION="${{ steps.meta.outputs.version }}"
           DOCKER_TAG=$(echo "$VERSION" | sed 's/ (/-/; s/)//')
-          [ "${{ steps.changes.outputs.api }}" = "true" ]       && docker tag nb-api       "nb-api:$DOCKER_TAG"       || true
-          [ "${{ steps.changes.outputs.discord }}" = "true" ]   && docker tag nb-discord   "nb-discord:$DOCKER_TAG"   || true
-          [ "${{ steps.changes.outputs.twitch }}" = "true" ]    && docker tag nb-twitch    "nb-twitch:$DOCKER_TAG"    || true
-          [ "${{ steps.changes.outputs.scrapling }}" = "true" ] && docker tag nb-scrapling "nb-scrapling:$DOCKER_TAG" || true
+          [ "${{ steps.changes.outputs.api }}" = "true" ]       && docker tag "nb-api${SUFFIX}"       "nb-api${SUFFIX}:$DOCKER_TAG"       || true
+          [ "${{ steps.changes.outputs.discord }}" = "true" ]   && docker tag "nb-discord${SUFFIX}"   "nb-discord${SUFFIX}:$DOCKER_TAG"   || true
+          [ "${{ steps.changes.outputs.twitch }}" = "true" ]    && docker tag "nb-twitch${SUFFIX}"    "nb-twitch${SUFFIX}:$DOCKER_TAG"    || true
+          [ "${{ steps.changes.outputs.scrapling }}" = "true" ] && docker tag "nb-scrapling${SUFFIX}" "nb-scrapling${SUFFIX}:$DOCKER_TAG" || true
           echo "Tagged rebuilt images as :$DOCKER_TAG"
 
       - name: Run migrations
@@ -369,11 +374,12 @@ jobs:
           docker image prune -f
 
           if [ "${{ inputs.prune_full }}" = "true" ]; then
+            SUFFIX="${{ inputs.image_suffix }}"
             # tail -n +4 keeps 3 most recent; no sort needed (docker images outputs newest-first; BSD sort -V unavailable on macOS)
             for IMAGE in nb-api nb-twitch nb-discord nb-scrapling; do
-              docker images "$IMAGE" --format "{{.Tag}}" \
+              docker images "${IMAGE}${SUFFIX}" --format "{{.Tag}}" \
                 | grep -v "^latest$" \
                 | tail -n +4 \
-                | xargs -I{} docker rmi "$IMAGE:{}" 2>/dev/null || true
+                | xargs -I{} docker rmi "${IMAGE}${SUFFIX}:{}" 2>/dev/null || true
             done
           fi
