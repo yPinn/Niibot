@@ -104,6 +104,12 @@ data/postgres/
 # Database backups
 data/backups/
 
+# Secrets archives
+data/secrets-*.tar.gz
+
+# Env status snapshots
+data/env/
+
 # Bot runtime data (guild-specific, not for version control)
 backend/data/log_channels.json
 
