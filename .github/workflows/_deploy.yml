@@ -414,13 +414,35 @@ jobs:
 
       - name: Notify deploy failure
         if: failure()
+        continue-on-error: true
         env:
           WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}
         run: |
-          [ -z "${WEBHOOK_URL}" ] && { echo "DEPLOY_WEBHOOK_URL not set, skipping notification."; exit 0; }
-          curl -s -X POST "${WEBHOOK_URL}" \
-            -H "Content-Type: application/json" \
-            -d "{\"content\": \"Deploy **${{ inputs.environment }}** failed on commit \`${{ steps.meta.outputs.commit }}\`. Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}"
+          [ -z "${WEBHOOK_URL}" ] && { echo "DEPLOY_WEBHOOK_URL not set, skipping."; exit 0; }
+          REASON="build or migration error"
+          [ "${{ steps.healthcheck.outcome }}" = "failure" ] && REASON="health check failed"
+          export GH_ENV="${{ inputs.environment }}"
+          export GH_COMMIT="${{ steps.meta.outputs.commit }}"
+          export GH_ACTOR="${{ github.actor }}"
+          export GH_REASON="$REASON"
+          export GH_RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          python3 - <<'PYEOF' | curl -s -X POST "${WEBHOOK_URL}" -H "Content-Type: application/json" -d @-
+          import json, os
+          e = os.environ
+          payload = {
+            "embeds": [{
+              "title": f"❌ Deploy failed: {e['GH_ENV']}",
+              "color": 15158332,
+              "fields": [
+                {"name": "Reason", "value": e["GH_REASON"],                            "inline": True},
+                {"name": "Commit", "value": f"`{e['GH_COMMIT']}`",                     "inline": True},
+                {"name": "Actor",  "value": e["GH_ACTOR"],                             "inline": True},
+                {"name": "Logs",   "value": f"[View run →]({e['GH_RUN_URL']})",  "inline": False},
+              ],
+            }]
+          }
+          print(json.dumps(payload))
+          PYEOF
 
       - name: Prune old images
         run: |
@@ -438,10 +460,28 @@ jobs:
 
       - name: Notify deploy success
         if: success()
+        continue-on-error: true
         env:
           WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}
         run: |
-          [ -z "${WEBHOOK_URL}" ] && { echo "DEPLOY_WEBHOOK_URL not set, skipping notification."; exit 0; }
-          curl -s -X POST "${WEBHOOK_URL}" \
-            -H "Content-Type: application/json" \
-            -d "{\"content\": \"Deploy **${{ inputs.environment }}** succeeded — commit \`${{ steps.meta.outputs.commit }}\` is live.\"}"
+          [ -z "${WEBHOOK_URL}" ] && { echo "DEPLOY_WEBHOOK_URL not set, skipping."; exit 0; }
+          export GH_ENV="${{ inputs.environment }}"
+          export GH_VERSION="${{ steps.meta.outputs.version }}"
+          export GH_ACTOR="${{ github.actor }}"
+          export GH_RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          python3 - <<'PYEOF' | curl -s -X POST "${WEBHOOK_URL}" -H "Content-Type: application/json" -d @-
+          import json, os
+          e = os.environ
+          payload = {
+            "embeds": [{
+              "title": f"✅ Deployed: {e['GH_ENV']}",
+              "color": 3066993,
+              "fields": [
+                {"name": "Version", "value": f"`{e['GH_VERSION']}`",                  "inline": True},
+                {"name": "Actor",   "value": e["GH_ACTOR"],                           "inline": True},
+                {"name": "Run",     "value": f"[View →]({e['GH_RUN_URL']})",    "inline": False},
+              ],
+            }]
+          }
+          print(json.dumps(payload))
+          PYEOF
