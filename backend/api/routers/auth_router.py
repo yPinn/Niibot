@@ -195,6 +195,15 @@ async def get_current_user(
         if user_row:
             theme = user_row["theme"]
             is_activated = user_row["is_activated"]
+
+        requires_reauth = await pool.fetchval(
+            "SELECT requires_reauth FROM tokens WHERE user_id = $1 AND token_type = 'broadcaster'",
+            platform_user_id,
+        )
+        if requires_reauth:
+            raise HTTPException(status_code=401, detail="reauth_required")
+    except HTTPException:
+        raise
     except Exception as e:
         LOGGER.warning(f"DB error fetching user row for {user_id}: {type(e).__name__}: {e}")
 
