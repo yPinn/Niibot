@@ -2,11 +2,20 @@
 """Twitch OAuth 工具 — 生成授權 URL、接收回調、交換 token 並寫入資料庫。
 
 Usage:
-    python scripts/tw_oauth.py [bot|broadcaster]
+    python scripts/tw_oauth.py [env] [role]
 
-    bot          — 用 BOT_SCOPES 授權 (niibot_ 帳號)
-    broadcaster  — 用 BROADCASTER_SCOPES 授權 (頻道主帳號)
-    (預設: 互動式選擇)
+    env   — prod | staging        (省略則互動選擇)
+    role  — bot | broadcaster     (省略則互動選擇)
+
+    參數順序不拘，例如:
+        python scripts/tw_oauth.py staging bot
+        python scripts/tw_oauth.py bot staging
+        python scripts/tw_oauth.py staging       # 僅指定 env，互動選 role
+        python scripts/tw_oauth.py               # 全互動
+
+Env files:
+    prod    → shared.env            + twitch/.env
+    staging → shared.staging.env   + twitch/.env.staging
 """
 
 from __future__ import annotations
@@ -30,9 +39,6 @@ from dotenv import load_dotenv
 from twitch.core.config import BOT_SCOPES, BROADCASTER_SCOPES
 
 _backend = Path(__file__).resolve().parent.parent
-load_dotenv(_backend / "shared.env")
-load_dotenv(_backend / "shared.env.local", override=True)
-load_dotenv(_backend / "twitch" / ".env")
 
 LISTEN_PORT = 3000
 REDIRECT_URI = f"http://localhost:{LISTEN_PORT}/callback"
@@ -90,7 +96,6 @@ _http = httpx.Client(timeout=10)
 
 
 def exchange_code(client_id: str, client_secret: str, code: str) -> dict:
-    """Exchange authorization code for access + refresh tokens."""
     resp = _http.post(
         "https://id.twitch.tv/oauth2/token",
         data={
@@ -106,7 +111,6 @@ def exchange_code(client_id: str, client_secret: str, code: str) -> dict:
 
 
 def validate_token(access_token: str) -> dict:
-    """Validate token and return user info (user_id, login, scopes)."""
     resp = _http.get(
         "https://id.twitch.tv/oauth2/validate",
         headers={"Authorization": f"OAuth {access_token}"},
@@ -138,7 +142,7 @@ async def save_token(
     token: str,
     refresh: str,
     scopes: list[str],
-    token_type: str = "broadcaster",
+    token_type: str,
 ) -> None:
     conn = await asyncpg.connect(database_url, ssl="prefer")
     try:
@@ -147,10 +151,11 @@ async def save_token(
             INSERT INTO tokens (user_id, token, refresh, scopes, token_type)
             VALUES ($1, $2, $3, $4, $5)
             ON CONFLICT (user_id, token_type) DO UPDATE SET
-                token      = EXCLUDED.token,
-                refresh    = EXCLUDED.refresh,
-                scopes     = EXCLUDED.scopes,
-                updated_at = NOW()
+                token           = EXCLUDED.token,
+                refresh         = EXCLUDED.refresh,
+                scopes          = EXCLUDED.scopes,
+                requires_reauth = FALSE,
+                updated_at      = NOW()
             """,
             user_id,
             token,
@@ -168,12 +173,10 @@ async def save_token(
 
 
 class _DualStackHTTPServer(HTTPServer):
-    """HTTPServer that listens on IPv6 with dual-stack (IPv4+IPv6) where available.
+    """Listens on IPv6 with dual-stack (IPv4+IPv6) where available.
 
     On macOS, `localhost` resolves to ::1 (IPv6), so a plain IPv4-only server
-    would refuse the OAuth callback redirect. Binding AF_INET6 with IPV6_V6ONLY=0
-    accepts both ::1 and 127.0.0.1 connections on Linux/macOS.
-    Falls back to plain IPv4 if the OS does not support IPv6 or dual-stack.
+    would refuse the OAuth callback redirect. Falls back to IPv4 if unsupported.
     """
 
     def __init__(self, port: int, handler: type) -> None:
@@ -247,55 +250,131 @@ def wait_for_callback() -> tuple[str | None, str | None]:
 
 
 # ---------------------------------------------------------------------------
-# Main
+# Config tables
 # ---------------------------------------------------------------------------
 
-MODES = {
+ENVS: dict[str, tuple[Path, Path | None]] = {
+    "prod": (
+        _backend / "shared.env",
+        _backend / "twitch" / ".env",
+    ),
+    "staging": (
+        _backend / "shared.staging.env",
+        _backend / "twitch" / ".env.staging",
+    ),
+}
+
+ROLES: dict[str, tuple[str, list[str]]] = {
     "bot": ("Bot", BOT_SCOPES),
     "broadcaster": ("Broadcaster", BROADCASTER_SCOPES),
 }
 
 
+# ---------------------------------------------------------------------------
+# Arg parsing + interactive prompts
+# ---------------------------------------------------------------------------
+
+
+def _pick(prompt: str, choices: dict[str, str]) -> str:
+    """Print numbered choices and return the selected key."""
+    for i, (key, label) in enumerate(choices.items(), 1):
+        print(f"  {cyan(str(i))}  {key:<14}{dim(label)}")
+    print()
+    keys = list(choices)
+    while True:
+        raw = input(f"  {prompt} {dim(f'[1–{len(keys)}]')}: ").strip()
+        if raw.isdigit() and 1 <= int(raw) <= len(keys):
+            return keys[int(raw) - 1]
+        if raw in keys:
+            return raw
+
+
+def parse_args() -> tuple[str, str]:
+    """Parse env + role from argv (order-independent); prompt for any missing."""
+    args = sys.argv[1:]
+
+    env: str | None = None
+    role: str | None = None
+    unknown: list[str] = []
+
+    for arg in args:
+        if arg in ENVS:
+            env = arg
+        elif arg in ROLES:
+            role = arg
+        else:
+            unknown.append(arg)
+
+    if unknown:
+        fail(
+            f"未知參數: {', '.join(unknown)}\n"
+            f"  可用環境: {', '.join(ENVS)}\n"
+            f"  可用角色: {', '.join(ROLES)}"
+        )
+
+    if env is None or role is None:
+        print()
+        print(bold("Twitch OAuth 授權工具"))
+        print()
+
+    if env is None:
+        env = _pick(
+            "選擇環境",
+            {
+                "prod": "shared.env + twitch/.env",
+                "staging": "shared.staging.env + twitch/.env.staging",
+            },
+        )
+
+    if role is None:
+        role = _pick(
+            "選擇角色",
+            {
+                "bot": "user:write:chat, moderator:manage:shoutouts …",
+                "broadcaster": "channel:bot, channel:read:subscriptions …",
+            },
+        )
+
+    return env, role
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+
 def main() -> None:
-    # -- env validation --
+    env, role = parse_args()
+
+    shared_env, twitch_env = ENVS[env]
+    load_dotenv(shared_env)
+    if env == "prod":
+        load_dotenv(_backend / "shared.env.local", override=True)
+    if twitch_env:
+        load_dotenv(twitch_env, override=True)
+
     client_id = os.getenv("TWITCH_CLIENT_ID")
     client_secret = os.getenv("TWITCH_CLIENT_SECRET")
     database_url = os.getenv("DATABASE_URL")
 
-    missing = []
-    if not client_id:
-        missing.append("TWITCH_CLIENT_ID")
-    if not client_secret:
-        missing.append("TWITCH_CLIENT_SECRET")
-    if not database_url:
-        missing.append("DATABASE_URL")
+    missing = [
+        k
+        for k, v in {
+            "TWITCH_CLIENT_ID": client_id,
+            "TWITCH_CLIENT_SECRET": client_secret,
+            "DATABASE_URL": database_url,
+        }.items()
+        if not v
+    ]
     if missing:
         fail(f"環境變數未設定: {', '.join(missing)}")
 
-    # -- mode selection --
-    mode = sys.argv[1] if len(sys.argv) > 1 else None
-
-    if mode and mode not in MODES:
-        fail(f"未知模式 '{mode}'。可用: bot, broadcaster")
-
-    if mode is None:
-        print()
-        print(bold("Twitch OAuth 授權工具"))
-        print()
-        print(
-            f"  {cyan('1')}  Bot 帳號      {dim('user:write:chat, moderator:manage:shoutouts …')}"
-        )
-        print(f"  {cyan('2')}  Broadcaster   {dim('channel:bot, channel:read:subscriptions …')}")
-        print()
-        choice = input(f"  選擇 {dim('[1/2]')}: ").strip()
-        mode = "bot" if choice == "1" else "broadcaster"
-
-    label, scopes = MODES[mode]
+    label, scopes = ROLES[role]
+    env_tag = f" {yellow('[STAGING]')}" if env == "staging" else ""
     total_steps = 4
 
-    # -- step 1: generate URL --
     print()
-    print(bold(f"=== {label} 授權 ==="))
+    print(bold(f"=== {label} 授權{env_tag} ==="))
     print()
 
     step(1, total_steps, "產生授權 URL")
@@ -309,7 +388,6 @@ def main() -> None:
     except Exception:
         print(f"     {yellow('!')} 請手動在瀏覽器中開啟上方 URL")
 
-    # -- step 2: wait for callback --
     step(
         2,
         total_steps,
@@ -325,7 +403,6 @@ def main() -> None:
 
     print(f"     {green('✓')} 收到授權碼")
 
-    # -- step 3: exchange + validate --
     step(3, total_steps, "交換並驗證 Token")
 
     try:
@@ -348,30 +425,22 @@ def main() -> None:
     print(f"     {green('✓')} {bold(login)} {dim(f'(ID: {user_id})')}")
     print(f"     {dim(f'Scopes: {len(granted_scopes)} granted')}")
 
-    # Scope diff check
-    requested = set(scopes)
-    granted = set(granted_scopes)
-    missing_scopes = requested - granted
+    missing_scopes = set(scopes) - set(granted_scopes)
     if missing_scopes:
         print(f"     {yellow('!')} 缺少 scopes: {', '.join(sorted(missing_scopes))}")
 
-    # -- step 4: save to DB --
     step(4, total_steps, "寫入資料庫")
 
-    assert database_url is not None  # validated above
-    assert mode is not None  # set via argv or interactive selection
+    assert database_url is not None
     try:
         asyncio.run(
-            save_token(
-                database_url, user_id, access_token, refresh_token, granted_scopes, token_type=mode
-            )
+            save_token(database_url, user_id, access_token, refresh_token, granted_scopes, role)
         )
     except Exception as e:
         fail(f"資料庫寫入失敗: {e}")
 
     print(f"     {green('✓')} tokens 表已更新")
 
-    # -- done --
     print()
     print(f"  {green('✓')} {bold('完成')} — {login} 的 token 已更新，重啟 bot 後生效。")
     print()
