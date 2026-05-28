@@ -29,6 +29,15 @@ LOCAL_FILES=(
   "frontend/.env"
 )
 
+STAGING_FILES=(
+  ".env.staging"
+  "backend/shared.staging.env"
+  "backend/api/.env.staging"
+  "backend/discord/.env.staging"
+  "backend/twitch/.env.staging"
+  "backend/scrapling/.env.staging"
+)
+
 CICD_FILES=(
   ".github/variables/base.env"
   ".github/variables/prod.env"
@@ -38,7 +47,7 @@ CICD_FILES=(
   ".github/secrets/staging.env"
 )
 
-ALL_FILES=("${LOCAL_FILES[@]}" "${CICD_FILES[@]}")
+ALL_FILES=("${LOCAL_FILES[@]}" "${STAGING_FILES[@]}" "${CICD_FILES[@]}")
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
 _list_snapshots() {
@@ -91,6 +100,17 @@ _prune_backups() {
   done < <(_list_backups)
 }
 
+# Apply function $1 to every file, grouped under section headers.
+_each_section() {
+  local fn="$1"
+  printf "── Local ────────────────────────────────────────────────\n"
+  for f in "${LOCAL_FILES[@]}";   do "$fn" "$f"; done
+  printf "\n── Staging ──────────────────────────────────────────────\n"
+  for f in "${STAGING_FILES[@]}"; do "$fn" "$f"; done
+  printf "\n── CI/CD ────────────────────────────────────────────────\n"
+  for f in "${CICD_FILES[@]}";    do "$fn" "$f"; done
+}
+
 # ── init ──────────────────────────────────────────────────────────────────────
 cmd_init() {
   local force=false
@@ -105,22 +125,13 @@ cmd_init() {
 
   _copy_example() {
     local rel="$1" src="$ROOT/$1.example" dst="$ROOT/$1"
-    if [[ ! -f "$src" ]]; then
-      echo "  -      $rel.example (not found)"; return
-    fi
-    if [[ -f "$dst" ]] && [[ "$force" == false ]]; then
-      echo "  skip   $rel (exists; -f to overwrite)"; return
-    fi
-    cp "$src" "$dst"
-    echo "  copied $rel"
+    if [[ ! -f "$src" ]];                        then echo "  -      $rel.example (not found)"; return; fi
+    if [[ -f "$dst" ]] && [[ "$force" == false ]]; then echo "  skip   $rel (exists; -f to overwrite)"; return; fi
+    cp "$src" "$dst" && echo "  copied $rel"
   }
 
-  printf "── Local ────────────────────────────────────────────────\n"
-  for f in "${LOCAL_FILES[@]}"; do _copy_example "$f"; done
-  printf "\n── CI/CD ────────────────────────────────────────────────\n"
-  for f in "${CICD_FILES[@]}"; do _copy_example "$f"; done
-  echo ""
-  echo "Done. Fill in secrets before running the project."
+  _each_section _copy_example
+  printf "\nDone. Fill in secrets before running the project.\n"
 }
 
 # ── snapshot ──────────────────────────────────────────────────────────────────
@@ -149,13 +160,10 @@ cmd_snapshot() {
   }
 
   printf "══ Snapshot  →  %s\n\n" "$snap"
-  printf "── Local ────────────────────────────────────────────────\n"
-  for f in "${LOCAL_FILES[@]}"; do _cp_env "$f"; done
-  printf "\n── CI/CD ────────────────────────────────────────────────\n"
-  for f in "${CICD_FILES[@]}"; do _cp_env "$f"; done
+  _each_section _cp_env
   printf "\n%d copied, %d skipped\n" "$copied" "$skipped"
 
-  if [[ $keep -gt 0 ]]; then _prune_snapshots "$keep"; fi
+  [[ $keep -gt 0 ]] && _prune_snapshots "$keep"
 }
 
 # ── backup ────────────────────────────────────────────────────────────────────
@@ -168,7 +176,7 @@ cmd_backup() {
     esac
   done
 
-  cmd_snapshot  # creates data/env/YYYYMMDD/ and prints progress
+  cmd_snapshot
 
   local date out
   date="$(date +%Y%m%d)"
@@ -203,7 +211,7 @@ cmd_restore() {
   _import_env() {
     local rel="$1" src="$snap/$1" dst="$ROOT/$1"
     if [[ ! -f "$src" ]]; then
-      echo "  -  $rel (not in snapshot)"; skipped=$((skipped + 1)); return
+      echo "  -     $rel (not in snapshot)"; skipped=$((skipped + 1)); return
     fi
     if [[ -f "$dst" ]] && [[ "$force" == false ]]; then
       echo "  skip  $rel (exists; -f to overwrite)"; skipped=$((skipped + 1)); return
@@ -213,10 +221,7 @@ cmd_restore() {
   }
 
   printf "══ Restore  ←  %s\n\n" "$snap"
-  printf "── Local ────────────────────────────────────────────────\n"
-  for f in "${LOCAL_FILES[@]}"; do _import_env "$f"; done
-  printf "\n── CI/CD ────────────────────────────────────────────────\n"
-  for f in "${CICD_FILES[@]}"; do _import_env "$f"; done
+  _each_section _import_env
   printf "\n%d restored, %d skipped\n" "$copied" "$skipped"
 }
 
@@ -238,16 +243,14 @@ cmd_diff() {
   echo ""
   local changed=0 missing=0 same=0
 
-  for rel in "${ALL_FILES[@]}"; do
-    local cur="$ROOT/$rel" old="$snap/$rel"
-    if [[ ! -f "$cur" && ! -f "$old" ]]; then
-      continue
+  _diff_file() {
+    local rel="$1" cur="$ROOT/$1" old="$snap/$1"
+    if   [[ ! -f "$cur" && ! -f "$old" ]]; then
+      return
     elif [[ ! -f "$old" ]]; then
-      echo "  + $rel  (new — not in snapshot)"
-      changed=$((changed + 1))
+      echo "  + $rel  (new — not in snapshot)"; changed=$((changed + 1))
     elif [[ ! -f "$cur" ]]; then
-      echo "  ✗ $rel  (missing locally)"
-      missing=$((missing + 1))
+      echo "  ✗ $rel  (missing locally)";       missing=$((missing + 1))
     elif ! diff -q "$cur" "$old" &>/dev/null; then
       echo "  ~ $rel"
       diff --unified=0 --label snapshot --label current "$old" "$cur" \
@@ -255,13 +258,12 @@ cmd_diff() {
       echo ""
       changed=$((changed + 1))
     else
-      printf "    %s\n" "$rel"
-      same=$((same + 1))
+      printf "    %s\n" "$rel"; same=$((same + 1))
     fi
-  done
+  }
 
-  echo ""
-  printf "%d changed  |  %d missing locally  |  %d unchanged\n" \
+  _each_section _diff_file
+  printf "\n%d changed  |  %d missing locally  |  %d unchanged\n" \
     "$changed" "$missing" "$same"
 }
 
