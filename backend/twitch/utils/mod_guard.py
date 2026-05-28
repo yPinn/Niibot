@@ -31,8 +31,8 @@ class ModGuardNotifier:
         send_fn: Callable[[str], Awaitable[object]],
     ) -> bool:
         """Send a /mod prompt if cooldown permits. Returns True if sent."""
-        if get_settings().is_development:
-            LOGGER.debug(f"[{broadcaster_login}] Mod guard notification skipped (dev)")
+        if not get_settings().is_production:
+            LOGGER.debug(f"[{broadcaster_login}] Mod guard notification skipped (non-prod)")
             return False
         if not self._can_notify(channel_id):
             return False

@@ -46,7 +46,7 @@ def setup_logging(settings: TwitchBotSettings) -> None:
     level = getattr(logging, settings.log_level, logging.INFO)
     _setup_logging(
         log_level=settings.log_level,
-        webhook_url=settings.error_webhook_url,
+        webhook_url=settings.error_webhook_url if settings.is_production else "",
         service_name="twitch",
         suppress_loggers=_build_suppress(level),
         own_prefixes=_OWN_PREFIXES,
