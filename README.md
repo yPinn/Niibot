@@ -34,16 +34,14 @@ Niibot/
 ## 快速開始
 
 ```bash
-# 複製所有 .env 範本
-cp .env.example .env
-cp backend/shared.env.example backend/shared.env
-cp backend/api/.env.example backend/api/.env
-cp backend/twitch/.env.example backend/twitch/.env
-cp backend/discord/.env.example backend/discord/.env
-cp backend/scrapling/.env.example backend/scrapling/.env
+# 複製所有 .env 範本（已存在的檔案會自動略過）
+bash scripts/env.sh init
+
+# 或強制覆蓋
+bash scripts/env.sh init -f
 ```
 
-> 本機開發可建立 `backend/shared.env.local`（gitignored）覆蓋 `shared.env` 中的值。
+接著填入各檔案的 secrets，再啟動服務：
 
 ```bash
 # 本機開發
@@ -63,24 +61,32 @@ docker compose build && docker compose up -d
 CI/CD 密鑰（GitHub Actions 部署前執行一次）：
 
 ```bash
-# Copy examples and fill in values
+# 從範本建立（僅首次）
 cp .github/secrets/base.env.example .github/secrets/base.env
 cp .github/secrets/prod.env.example .github/secrets/prod.env
+cp .github/secrets/staging.env.example .github/secrets/staging.env
 cp .github/variables/base.env.example .github/variables/base.env
 cp .github/variables/prod.env.example .github/variables/prod.env
+cp .github/variables/staging.env.example .github/variables/staging.env
+
+# 填入值後同步至 GitHub
 bash .github/push.sh prod
+
+# 或從 GitHub 拉回現有值
+bash .github/pull.sh prod
 ```
 
 ## 環境變數
 
 | 檔案                     | 內容                                                                               |
 | ------------------------ | ---------------------------------------------------------------------------------- |
-| `.env`                   | PostgreSQL 帳號、Cloudflare Tunnel Token                                           |
-| `backend/shared.env`     | DB URL、Frontend URL、Twitch App 金鑰、Groq / Gemini / OpenRouter、YouTube API Key |
-| `backend/api/.env`       | JWT Secret、API URL                                                                |
-| `backend/twitch/.env`    | Bot ID、Owner ID                                                                   |
+| `.env`                   | PostgreSQL 帳號、Docker 內部 DATABASE_URL                                          |
+| `backend/shared.env`     | DB URL、Frontend URL、Twitch App 金鑰、Bot / Owner ID、AI keys、YouTube API Key    |
+| `backend/api/.env`       | JWT Secret、API URL、Discord Public Key                                            |
+| `backend/twitch/.env`    | Conduit ID（optional）                                                             |
 | `backend/discord/.env`   | Discord Bot Token、Presence 設定                                                   |
-| `backend/scrapling/.env` | Threads / Instagram session cookie                                                 |
+| `backend/scrapling/.env` | Threads session cookie                                                             |
+| `frontend/.env`          | Vite dev proxy、Bot username、Discord invite URL                                   |
 
 Cloudflare Pages 需設定環境變數 `API_BACKEND`（後端位址）。
 
