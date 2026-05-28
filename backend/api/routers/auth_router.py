@@ -151,6 +151,12 @@ async def twitch_oauth_callback(
             display_name=user_info.get("display_name"),
             avatar=user_info.get("avatar"),
         )
+
+        if platform_user_id == str(settings.owner_id):
+            await pool.execute(
+                "UPDATE users SET is_activated = true WHERE id = $1::uuid",
+                user_id,
+            )
     except Exception as e:
         LOGGER.error(f"DB error during Twitch OAuth for {username}: {type(e).__name__}: {e}")
         return RedirectResponse(url=f"{error_redirect}?error=db_timeout")
