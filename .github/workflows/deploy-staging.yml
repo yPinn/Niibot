@@ -55,6 +55,9 @@ jobs:
       force_discord: ${{ inputs.deploy_discord == true }}
       force_scrapling: ${{ inputs.deploy_scrapling == true }}
       force_instafix: ${{ inputs.deploy_instafix == true }}
+      enable_discord: ${{ inputs.deploy_discord == true }}
+      enable_scrapling: ${{ inputs.deploy_scrapling == true }}
+      enable_instafix: ${{ inputs.deploy_instafix == true }}
       tag_images: true
       prune_full: true
       image_suffix: "-stg"
