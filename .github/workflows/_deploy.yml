@@ -89,6 +89,18 @@ on:
         description: "Force pull and restart Instafix (external image)"
         type: boolean
         default: false
+      enable_discord:
+        description: "Allow discord bot deployment (set false to exclude from staging)"
+        type: boolean
+        default: true
+      enable_scrapling:
+        description: "Allow scrapling deployment (set false to exclude from staging)"
+        type: boolean
+        default: true
+      enable_instafix:
+        description: "Allow instafix deployment (set false to exclude from staging)"
+        type: boolean
+        default: true
       runner:
         description: 'Runner label(s) as JSON array string — e.g. "[\"self-hosted\",\"macOS\"]"'
         type: string
@@ -257,45 +269,44 @@ jobs:
             FORCE="true"
           fi
 
+          api=false; discord=false; twitch=false; scrapling=false; instafix=false; reason=path_filter
+
           if [ "$FORCE" = "true" ]; then
-            echo "api=true"       >> $GITHUB_OUTPUT
-            echo "discord=true"   >> $GITHUB_OUTPUT
-            echo "twitch=true"    >> $GITHUB_OUTPUT
-            echo "scrapling=true" >> $GITHUB_OUTPUT
-            echo "instafix=true"  >> $GITHUB_OUTPUT
-            echo "reason=force"   >> $GITHUB_OUTPUT
-            exit 0
-          fi
+            api=true; discord=true; twitch=true; scrapling=true; instafix=true; reason=force
+          else
+            if [ -n "$CHANGED" ]; then
+              PATTERN="^backend/shared/|^backend/shared\.env|^docker-compose\.yml"
+              [ -n "${{ inputs.compose_change_pattern }}" ] && \
+                PATTERN="$PATTERN|^${{ inputs.compose_change_pattern }}"
 
-          api=false; discord=false; twitch=false; scrapling=false; instafix=false
+              if echo "$CHANGED" | grep -qE "$PATTERN"; then
+                api=true; discord=true; twitch=true
+              fi
 
-          if [ -n "$CHANGED" ]; then
-            PATTERN="^backend/shared/|^backend/shared\.env|^docker-compose\.yml"
-            [ -n "${{ inputs.compose_change_pattern }}" ] && \
-              PATTERN="$PATTERN|^${{ inputs.compose_change_pattern }}"
-
-            if echo "$CHANGED" | grep -qE "$PATTERN"; then
-              api=true; discord=true; twitch=true
+              echo "$CHANGED" | grep -qE "^backend/api/"       && api=true       || true
+              echo "$CHANGED" | grep -qE "^backend/discord/"   && discord=true   || true
+              echo "$CHANGED" | grep -qE "^backend/twitch/"    && twitch=true    || true
+              echo "$CHANGED" | grep -qE "^backend/scrapling/" && scrapling=true || true
             fi
 
-            echo "$CHANGED" | grep -qE "^backend/api/"       && api=true       || true
-            echo "$CHANGED" | grep -qE "^backend/discord/"   && discord=true   || true
-            echo "$CHANGED" | grep -qE "^backend/twitch/"    && twitch=true    || true
-            echo "$CHANGED" | grep -qE "^backend/scrapling/" && scrapling=true || true
+            [ "${{ inputs.force_api }}" = "true" ]       && api=true       || true
+            [ "${{ inputs.force_discord }}" = "true" ]   && discord=true   || true
+            [ "${{ inputs.force_twitch }}" = "true" ]    && twitch=true    || true
+            [ "${{ inputs.force_scrapling }}" = "true" ] && scrapling=true || true
+            [ "${{ inputs.force_instafix }}" = "true" ]  && instafix=true  || true
           fi
 
-          [ "${{ inputs.force_api }}" = "true" ]       && api=true       || true
-          [ "${{ inputs.force_discord }}" = "true" ]   && discord=true   || true
-          [ "${{ inputs.force_twitch }}" = "true" ]    && twitch=true    || true
-          [ "${{ inputs.force_scrapling }}" = "true" ] && scrapling=true || true
-          [ "${{ inputs.force_instafix }}" = "true" ]  && instafix=true  || true
+          # Cap: if service is not enabled, override to false regardless of detection/force flags
+          [ "${{ inputs.enable_discord }}" != "true" ]   && discord=false  || true
+          [ "${{ inputs.enable_scrapling }}" != "true" ] && scrapling=false || true
+          [ "${{ inputs.enable_instafix }}" != "true" ]  && instafix=false  || true
 
           echo "api=$api"             >> $GITHUB_OUTPUT
           echo "discord=$discord"     >> $GITHUB_OUTPUT
           echo "twitch=$twitch"       >> $GITHUB_OUTPUT
           echo "scrapling=$scrapling" >> $GITHUB_OUTPUT
           echo "instafix=$instafix"   >> $GITHUB_OUTPUT
-          echo "reason=path_filter"   >> $GITHUB_OUTPUT
+          echo "reason=$reason"       >> $GITHUB_OUTPUT
 
       - name: Log planned changes
         run: |

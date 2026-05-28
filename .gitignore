@@ -104,8 +104,8 @@ data/postgres/
 # Database backups
 data/backups/
 
-# Secrets archives
-data/secrets-*.tar.gz
+# Env archives
+data/env-*.tar.gz
 
 # Env status snapshots
 data/env/
