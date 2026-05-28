@@ -5,6 +5,7 @@
 # Optional secrets (omit to disable): YOUTUBE_API_KEY  GROQ_API_KEY  GEMINI_API_KEY
 #   OPENROUTER_API_KEY  OPENROUTER_MODEL  INSTAGRAM_SESSION_ID  THREADS_SESSION_ID
 #   CONDUIT_ID  ERROR_WEBHOOK_URL  RELEASES_GITHUB_TOKEN  DISCORD_PUBLIC_KEY  PAYMENT_ENCRYPTION_KEY
+#   DEPLOY_WEBHOOK_URL
 # Variables (repo-level; override per Environment for staging):
 #   API_URL  ENVIRONMENT  LOG_LEVEL  DISCORD_STATUS  DISCORD_ACTIVITY_TYPE
 #   DISCORD_ACTIVITY_NAME  DISCORD_ACTIVITY_URL  SCRAPLING_PORT
@@ -271,6 +272,15 @@ jobs:
           [ -n "${COMPOSE_PROJECT}" ] && echo "PROJECT_FLAG=-p ${COMPOSE_PROJECT}" >> "$GITHUB_ENV"
           [ -n "${ENV_SUFFIX}" ]      && echo "ENV_FILE_FLAG=--env-file .env${ENV_SUFFIX}" >> "$GITHUB_ENV"
 
+      - name: Save rollback point
+        run: |
+          SUFFIX="${{ inputs.image_suffix }}"
+          for IMG in nb-api nb-discord nb-twitch nb-scrapling; do
+            FULL="${IMG}${SUFFIX}"
+            ID=$(docker images "$FULL" --format "{{.ID}}" 2>/dev/null | head -1)
+            [ -n "$ID" ] && docker tag "$ID" "${FULL}:rollback" && echo "Saved rollback: ${FULL}" || true
+          done
+
       - name: Build images
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
@@ -335,6 +345,7 @@ jobs:
             ${PROJECT_FLAG:-} ${ENV_FILE_FLAG:-} up -d ${SERVICES}
 
       - name: Health check
+        id: healthcheck
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           COMPOSE_CMD="docker compose -f docker-compose.yml -f ${COMPOSE_ENV_FILE} ${PROJECT_FLAG:-} ${ENV_FILE_FLAG:-}"
@@ -365,6 +376,52 @@ jobs:
           curl -sf http://localhost:4344/health && echo "twitch-bot:  OK" || echo "WARN: twitch-bot not responding"
           curl -sf "http://localhost:${SCRAPLING_PORT_DEFAULT}/health" && echo "scrapling:   OK" || echo "WARN: scrapling not responding"
 
+      - name: Rollback on health check failure
+        if: failure() && steps.healthcheck.outcome == 'failure'
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          SUFFIX="${{ inputs.image_suffix }}"
+          SERVICES=""
+          [ "${{ steps.changes.outputs.api }}" = "true" ]       && SERVICES="$SERVICES api"
+          [ "${{ steps.changes.outputs.discord }}" = "true" ]   && SERVICES="$SERVICES discord-bot"
+          [ "${{ steps.changes.outputs.twitch }}" = "true" ]    && SERVICES="$SERVICES twitch-bot"
+          [ "${{ steps.changes.outputs.scrapling }}" = "true" ] && SERVICES="$SERVICES scrapling"
+
+          [ -z "$SERVICES" ] && exit 0
+
+          HAS_ROLLBACK=false
+          for SVC in $SERVICES; do
+            case $SVC in
+              api)         IMG="nb-api${SUFFIX}" ;;
+              discord-bot) IMG="nb-discord${SUFFIX}" ;;
+              twitch-bot)  IMG="nb-twitch${SUFFIX}" ;;
+              scrapling)   IMG="nb-scrapling${SUFFIX}" ;;
+            esac
+            if docker image inspect "${IMG}:rollback" > /dev/null 2>&1; then
+              docker tag "${IMG}:rollback" "${IMG}"
+              HAS_ROLLBACK=true
+              echo "Restored ${IMG} from :rollback"
+            fi
+          done
+
+          if [ "$HAS_ROLLBACK" = "true" ]; then
+            docker compose -f docker-compose.yml -f ${COMPOSE_ENV_FILE} \
+              ${PROJECT_FLAG:-} ${ENV_FILE_FLAG:-} up -d ${SERVICES}
+            echo "Rollback complete. NOTE: DB migrations were not rolled back."
+          else
+            echo "No :rollback images found — this may be the first deploy."
+          fi
+
+      - name: Notify deploy failure
+        if: failure()
+        env:
+          WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}
+        run: |
+          [ -z "${WEBHOOK_URL}" ] && { echo "DEPLOY_WEBHOOK_URL not set, skipping notification."; exit 0; }
+          curl -s -X POST "${WEBHOOK_URL}" \
+            -H "Content-Type: application/json" \
+            -d "{\"content\": \"Deploy **${{ inputs.environment }}** failed on commit \`${{ steps.meta.outputs.commit }}\`. Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}"
+
       - name: Prune old images
         run: |
           docker image prune -f
@@ -372,9 +429,9 @@ jobs:
           if [ "${{ inputs.prune_full }}" = "true" ]; then
             # tail -n +4 keeps 3 most recent; no sort needed (docker images outputs newest-first; BSD sort -V unavailable on macOS)
             for IMAGE in nb-api nb-twitch nb-discord nb-scrapling; do
-              docker images "$IMAGE" --format "{{.Tag}}" \
-                | grep -v "^latest$" \
+              docker images "${IMAGE}${SUFFIX}" --format "{{.Tag}}" \
+                | grep -vE "^(latest|rollback)$" \
                 | tail -n +4 \
-                | xargs -I{} docker rmi "$IMAGE:{}" 2>/dev/null || true
+                | xargs -I{} docker rmi "${IMAGE}${SUFFIX}:{}" 2>/dev/null || true
             done
           fi
