@@ -428,17 +428,21 @@ jobs:
           export GH_RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           python3 - <<'PYEOF' | curl -s -X POST "${WEBHOOK_URL}" -H "Content-Type: application/json" -d @-
           import json, os
+          from datetime import datetime, timezone, timedelta
           e = os.environ
           payload = {
             "embeds": [{
-              "title": f"❌ Deploy failed: {e['GH_ENV']}",
+              "author": {"name": "Niibot CI/CD"},
+              "title": f"Deploy failed: {e['GH_ENV']}",
+              "url": e["GH_RUN_URL"],
               "color": 15158332,
               "fields": [
-                {"name": "Reason", "value": e["GH_REASON"],                            "inline": True},
-                {"name": "Commit", "value": f"`{e['GH_COMMIT']}`",                     "inline": True},
-                {"name": "Actor",  "value": e["GH_ACTOR"],                             "inline": True},
-                {"name": "Logs",   "value": f"[View run →]({e['GH_RUN_URL']})",  "inline": False},
+                {"name": "Reason", "value": e["GH_REASON"],        "inline": True},
+                {"name": "Commit", "value": f"`{e['GH_COMMIT']}`", "inline": True},
+                {"name": "Actor",  "value": e["GH_ACTOR"],         "inline": True},
               ],
+              "footer": {"text": "GitHub Actions"},
+              "timestamp": datetime.now(timezone(timedelta(hours=8))).isoformat(),
             }]
           }
           print(json.dumps(payload))
@@ -471,16 +475,20 @@ jobs:
           export GH_RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           python3 - <<'PYEOF' | curl -s -X POST "${WEBHOOK_URL}" -H "Content-Type: application/json" -d @-
           import json, os
+          from datetime import datetime, timezone, timedelta
           e = os.environ
           payload = {
             "embeds": [{
-              "title": f"✅ Deployed: {e['GH_ENV']}",
+              "author": {"name": "Niibot CI/CD"},
+              "title": f"Deployed: {e['GH_ENV']}",
+              "url": e["GH_RUN_URL"],
               "color": 3066993,
               "fields": [
-                {"name": "Version", "value": f"`{e['GH_VERSION']}`",                  "inline": True},
-                {"name": "Actor",   "value": e["GH_ACTOR"],                           "inline": True},
-                {"name": "Run",     "value": f"[View →]({e['GH_RUN_URL']})",    "inline": False},
+                {"name": "Version", "value": f"`{e['GH_VERSION']}`", "inline": True},
+                {"name": "Actor",   "value": e["GH_ACTOR"],          "inline": True},
               ],
+              "footer": {"text": "GitHub Actions"},
+              "timestamp": datetime.now(timezone(timedelta(hours=8))).isoformat(),
             }]
           }
           print(json.dumps(payload))
