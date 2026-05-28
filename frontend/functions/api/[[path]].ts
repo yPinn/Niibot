@@ -28,7 +28,7 @@ export const onRequest: PagesFunction<Env> = async context => {
       init.body = context.request.body
     }
 
-    return fetch(target, init)
+    return await fetch(target, init)
   } catch (e) {
     const isTimeout = e instanceof DOMException && e.name === 'TimeoutError'
     return Response.json(
