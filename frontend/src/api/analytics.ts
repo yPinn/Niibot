@@ -362,7 +362,7 @@ const MATCHER_TTL = 5 * 60 * 1000
 
 export async function getMatcherSummaries(days: number = 30): Promise<MatcherChannelSummary[]> {
   return apiCache.fetch(
-    `matcher:summaries:${days}`,
+    CACHE_KEYS.MATCHER_SUMMARIES(days),
     async () => {
       const response = await apiFetch(`/api/analytics/matcher?days=${days}`, {
         credentials: 'include',
@@ -380,7 +380,7 @@ export async function getPotentialViewers(
   offset: number = 0
 ): Promise<MatcherViewersResponse> {
   return apiCache.fetch(
-    `matcher:viewers:${partnerChannelId}:${limit}:${offset}`,
+    CACHE_KEYS.MATCHER_VIEWERS(partnerChannelId, limit, offset),
     async () => {
       const response = await apiFetch(
         `/api/analytics/matcher/${partnerChannelId}/viewers?limit=${limit}&offset=${offset}`,

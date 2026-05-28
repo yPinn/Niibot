@@ -238,6 +238,11 @@ describe('activateAccount', () => {
     mockApiFetch.mockResolvedValue(new Response('{}', { status: 400 }))
     await expect(activateAccount('BAD')).rejects.toThrow('activation_failed')
   })
+
+  it('throws the default message when the error body is not valid JSON', async () => {
+    mockApiFetch.mockResolvedValue(new Response('not-json', { status: 400 }))
+    await expect(activateAccount('BAD')).rejects.toThrow('activation_failed')
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -276,6 +281,11 @@ describe('requestActivation', () => {
 
   it('throws the default message when the error body has no detail field', async () => {
     mockApiFetch.mockResolvedValue(new Response('{}', { status: 500 }))
+    await expect(requestActivation()).rejects.toThrow('request_failed')
+  })
+
+  it('throws the default message when the error body is not valid JSON', async () => {
+    mockApiFetch.mockResolvedValue(new Response('not-json', { status: 500 }))
     await expect(requestActivation()).rejects.toThrow('request_failed')
   })
 })

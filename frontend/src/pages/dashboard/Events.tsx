@@ -410,6 +410,7 @@ export default function Events() {
                             </TableCell>
                             <TableCell className="text-center">
                               <Switch
+                                aria-label={`啟用 ${EVENT_TYPE_NAMES[event.event_type] ?? event.event_type}`}
                                 checked={event.enabled}
                                 onCheckedChange={() => handleToggle(event)}
                                 disabled={locked}
@@ -558,6 +559,7 @@ export default function Events() {
                             </TableCell>
                             <TableCell className="text-center">
                               <Switch
+                                aria-label={`啟用 ${ACTION_TYPE_LABELS[red.action_type] ?? red.action_type}`}
                                 checked={red.enabled}
                                 onCheckedChange={() => handleRedemptionToggle(red)}
                               />

@@ -7,11 +7,11 @@
 ```text
 Niibot/
 ├── backend/
-│   ├── api/        # FastAPI — JWT 認證、Dashboard API（16 個 Routers）
+│   ├── api/        # FastAPI — JWT 認證、Dashboard API（19 個 Routers）
 │   ├── twitch/     # TwitchIO 3 Bot + EventSub + pg_notify 即時設定重載
 │   ├── discord/    # discord.py 2 Bot（Cogs 模組架構）
 │   ├── scrapling/  # Instagram / Threads 媒體抓取服務
-│   ├── shared/     # 共用 DB、Cache、Repositories、Migrations（67 個）
+│   ├── shared/     # 共用 DB、Cache、Repositories、Migrations（73 個）
 │   └── scripts/    # DB 管理工具
 ├── frontend/       # React 19 + Vite + Tailwind CSS v4
 │   └── functions/  # Cloudflare Pages Functions（API 反向代理）
@@ -52,8 +52,11 @@ uv run python discord/bot.py   # Discord Bot
 
 cd frontend && npm install && npm run dev
 
-# 生產部署
-docker compose build && docker compose up -d
+# 本地 Docker（單服務或全套）
+npm run docker:db      # 僅啟動 DB（背景）
+npm run dev:api        # API + DB
+npm run dev:full       # 全套
+npm run docker:down    # 停止所有
 ```
 
 啟動時 `migrate` 容器自動執行 DB Migration。
@@ -78,15 +81,15 @@ bash .github/pull.sh prod
 
 ## 環境變數
 
-| 檔案                     | 內容                                                                               |
-| ------------------------ | ---------------------------------------------------------------------------------- |
-| `.env`                   | PostgreSQL 帳號、Docker 內部 DATABASE_URL                                          |
-| `backend/shared.env`     | DB URL、Frontend URL、Twitch App 金鑰、Bot / Owner ID、AI keys、YouTube API Key    |
-| `backend/api/.env`       | JWT Secret、API URL、Discord Public Key                                            |
-| `backend/twitch/.env`    | Conduit ID（optional）                                                             |
-| `backend/discord/.env`   | Discord Bot Token、Presence 設定                                                   |
-| `backend/scrapling/.env` | Threads session cookie                                                             |
-| `frontend/.env`          | Vite dev proxy、Bot username、Discord invite URL                                   |
+| 檔案                     | 內容                                                                            |
+| ------------------------ | ------------------------------------------------------------------------------- |
+| `.env`                   | PostgreSQL 帳號、Docker 內部 DATABASE_URL                                       |
+| `backend/shared.env`     | DB URL、Frontend URL、Twitch App 金鑰、Bot / Owner ID、AI keys、YouTube API Key |
+| `backend/api/.env`       | JWT Secret、API URL、Discord Public Key                                         |
+| `backend/twitch/.env`    | Conduit ID（optional）                                                          |
+| `backend/discord/.env`   | Discord Bot Token、Presence 設定                                                |
+| `backend/scrapling/.env` | Threads session cookie                                                          |
+| `frontend/.env`          | Vite dev proxy、Bot username、Discord invite URL                                |
 
 Cloudflare Pages 需設定環境變數 `API_BACKEND`（後端位址）。
 

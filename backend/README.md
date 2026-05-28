@@ -29,7 +29,7 @@ backend/
 | `ai_provider.py`        | 多 AI Provider 鏈（Groq / Gemini / OpenRouter），自動 fallback |
 | `models/`               | Pydantic 資料模型                                              |
 | `repositories/`         | 資料庫存取層（per-domain）                                     |
-| `migrations/`           | 自製 migration runner；版本腳本在 `versions/`（目前 v067）     |
+| `migrations/`           | 自製 migration runner；版本腳本在 `versions/`（目前 v072）     |
 
 ## 服務架構
 
