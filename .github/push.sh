@@ -16,6 +16,7 @@
 #   .github/secrets/prod.env       .github/variables/prod.env
 #   .github/secrets/staging.env    .github/variables/staging.env
 set -euo pipefail
+export PYTHONUTF8=1
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV="${1:-}"
@@ -109,10 +110,10 @@ for i in json.load(sys.stdin.buffer): print(f\"{i['name']}={i['value']}\")
     if [[ "$current_val" == "$value" ]]; then
       unchanged=$((unchanged + 1))
     elif [[ ! "$current_map" =~ (^|$'\n')"${key}=" ]]; then
-      gh variable set "$key" --body "$value" --repo "$REPO" ${env_flags[@]+"${env_flags[@]}"} > /dev/null
+      MSYS_NO_PATHCONV=1 gh variable set "$key" --body "$value" --repo "$REPO" ${env_flags[@]+"${env_flags[@]}"} > /dev/null
       new_keys+=("$key"); new_count=$((new_count + 1))
     else
-      gh variable set "$key" --body "$value" --repo "$REPO" ${env_flags[@]+"${env_flags[@]}"} > /dev/null
+      MSYS_NO_PATHCONV=1 gh variable set "$key" --body "$value" --repo "$REPO" ${env_flags[@]+"${env_flags[@]}"} > /dev/null
       updated_keys+=("$key"); updated=$((updated + 1))
     fi
   done < "$file"

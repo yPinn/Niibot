@@ -7,6 +7,7 @@
 #   bash .github/pull.sh prod
 #   bash .github/pull.sh staging
 set -euo pipefail
+export PYTHONUTF8=1
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV="${1:-}"
