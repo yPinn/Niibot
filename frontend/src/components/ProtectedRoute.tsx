@@ -3,9 +3,6 @@ import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { useAuth } from '@/contexts/AuthContext'
 
-/**
- * Protected route - requires authentication
- */
 export function ProtectedRoute() {
   const { user, isAuthenticated, isInitialized, isInitError, retryInit } = useAuth()
   const location = useLocation()
@@ -32,16 +29,13 @@ export function ProtectedRoute() {
     return <Navigate to="/login" state={{ from: location }} replace />
   }
 
-  if (!user?.is_activated) {
+  if (!user?.is_activated && !user?.is_owner) {
     return <Navigate to="/activate" replace />
   }
 
   return <Outlet />
 }
 
-/**
- * Owner-only route - requires is_owner flag
- */
 export function OwnerRoute() {
   const { user, isAuthenticated, isInitialized } = useAuth()
 
@@ -56,9 +50,6 @@ export function OwnerRoute() {
   return <Outlet />
 }
 
-/**
- * Public only route - redirects authenticated users
- */
 export function PublicOnlyRoute() {
   const { isAuthenticated, isInitialized, user } = useAuth()
   const location = useLocation()
