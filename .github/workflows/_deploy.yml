@@ -371,7 +371,6 @@ jobs:
 
       - name: Run migrations
         working-directory: ${{ env.PROJECT_DIR }}
-        if: steps.changes.outputs.api == 'true'
         run: |
           docker compose -f docker-compose.yml -f ${COMPOSE_ENV_FILE} \
             ${PROJECT_FLAG:-} ${ENV_FILE_FLAG:-} run --rm migrate
