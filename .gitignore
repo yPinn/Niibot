@@ -98,8 +98,9 @@ logs/
 *.sqlite
 *.sqlite3
 
-# PostgreSQL data directory (bind mount from docker-compose)
+# PostgreSQL data directories (bind mounts from docker-compose)
 data/postgres/
+data/staging/postgres/
 
 # Database backups
 data/backups/

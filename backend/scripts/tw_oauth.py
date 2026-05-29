@@ -350,6 +350,8 @@ def main() -> None:
     load_dotenv(shared_env)
     if env == "prod":
         load_dotenv(_backend / "shared.env.local", override=True)
+    elif env == "staging":
+        load_dotenv(_backend / "shared.staging.env.local", override=True)
     if twitch_env:
         load_dotenv(twitch_env, override=True)
 
