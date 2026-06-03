@@ -319,8 +319,8 @@ jobs:
 
       - name: Set compose flags
         run: |
-          [ -n "${COMPOSE_PROJECT}" ] && echo "PROJECT_FLAG=-p ${COMPOSE_PROJECT}" >> "$GITHUB_ENV"
-          [ -n "${ENV_SUFFIX}" ]      && echo "ENV_FILE_FLAG=--env-file .env${ENV_SUFFIX}" >> "$GITHUB_ENV"
+          [ -n "${COMPOSE_PROJECT}" ] && echo "PROJECT_FLAG=-p ${COMPOSE_PROJECT}" >> "$GITHUB_ENV" || true
+          [ -n "${ENV_SUFFIX}" ]      && echo "ENV_FILE_FLAG=--env-file .env${ENV_SUFFIX}" >> "$GITHUB_ENV" || true
 
       - name: Save rollback point
         run: |
