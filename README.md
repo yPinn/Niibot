@@ -7,11 +7,11 @@
 ```text
 Niibot/
 ├── backend/
-│   ├── api/        # FastAPI — JWT 認證、Dashboard API（16 個 Routers）
+│   ├── api/        # FastAPI — JWT 認證、Dashboard API（19 個 Routers）
 │   ├── twitch/     # TwitchIO 3 Bot + EventSub + pg_notify 即時設定重載
 │   ├── discord/    # discord.py 2 Bot（Cogs 模組架構）
 │   ├── scrapling/  # Instagram / Threads 媒體抓取服務
-│   ├── shared/     # 共用 DB、Cache、Repositories、Migrations（67 個）
+│   ├── shared/     # 共用 DB、Cache、Repositories、Migrations（73 個）
 │   └── scripts/    # DB 管理工具
 ├── frontend/       # React 19 + Vite + Tailwind CSS v4
 │   └── functions/  # Cloudflare Pages Functions（API 反向代理）
@@ -34,16 +34,14 @@ Niibot/
 ## 快速開始
 
 ```bash
-# 複製所有 .env 範本
-cp .env.example .env
-cp backend/shared.env.example backend/shared.env
-cp backend/api/.env.example backend/api/.env
-cp backend/twitch/.env.example backend/twitch/.env
-cp backend/discord/.env.example backend/discord/.env
-cp backend/scrapling/.env.example backend/scrapling/.env
+# 複製所有 .env 範本（已存在的檔案會自動略過）
+bash scripts/env.sh init
+
+# 或強制覆蓋
+bash scripts/env.sh init -f
 ```
 
-> 本機開發可建立 `backend/shared.env.local`（gitignored）覆蓋 `shared.env` 中的值。
+接著填入各檔案的 secrets，再啟動服務：
 
 ```bash
 # 本機開發
@@ -54,8 +52,11 @@ uv run python discord/bot.py   # Discord Bot
 
 cd frontend && npm install && npm run dev
 
-# 生產部署
-docker compose build && docker compose up -d
+# 本地 Docker（單服務或全套）
+npm run docker:db      # 僅啟動 DB（背景）
+npm run dev:api        # API + DB
+npm run dev:full       # 全套
+npm run docker:down    # 停止所有
 ```
 
 啟動時 `migrate` 容器自動執行 DB Migration。
@@ -63,21 +64,32 @@ docker compose build && docker compose up -d
 CI/CD 密鑰（GitHub Actions 部署前執行一次）：
 
 ```bash
-cp secrets.env.example secrets.env
-cp variables.env.example variables.env
-bash scripts/push-secrets.sh
+# 從範本建立（僅首次）
+cp .github/secrets/base.env.example .github/secrets/base.env
+cp .github/secrets/prod.env.example .github/secrets/prod.env
+cp .github/secrets/staging.env.example .github/secrets/staging.env
+cp .github/variables/base.env.example .github/variables/base.env
+cp .github/variables/prod.env.example .github/variables/prod.env
+cp .github/variables/staging.env.example .github/variables/staging.env
+
+# 填入值後同步至 GitHub
+bash .github/push.sh prod
+
+# 或從 GitHub 拉回現有值
+bash .github/pull.sh prod
 ```
 
 ## 環境變數
 
-| 檔案                     | 內容                                                                               |
-| ------------------------ | ---------------------------------------------------------------------------------- |
-| `.env`                   | PostgreSQL 帳號、Cloudflare Tunnel Token                                           |
-| `backend/shared.env`     | DB URL、Frontend URL、Twitch App 金鑰、Groq / Gemini / OpenRouter、YouTube API Key |
-| `backend/api/.env`       | JWT Secret、API URL                                                                |
-| `backend/twitch/.env`    | Bot ID、Owner ID                                                                   |
-| `backend/discord/.env`   | Discord Bot Token、Presence 設定                                                   |
-| `backend/scrapling/.env` | Threads / Instagram session cookie                                                 |
+| 檔案                     | 內容                                                                            |
+| ------------------------ | ------------------------------------------------------------------------------- |
+| `.env`                   | PostgreSQL 帳號、Docker 內部 DATABASE_URL                                       |
+| `backend/shared.env`     | DB URL、Frontend URL、Twitch App 金鑰、Bot / Owner ID、AI keys、YouTube API Key |
+| `backend/api/.env`       | JWT Secret、API URL、Discord Public Key                                         |
+| `backend/twitch/.env`    | Conduit ID（optional）                                                          |
+| `backend/discord/.env`   | Discord Bot Token、Presence 設定                                                |
+| `backend/scrapling/.env` | Threads session cookie                                                          |
+| `frontend/.env`          | Vite dev proxy、Bot username、Discord invite URL                                |
 
 Cloudflare Pages 需設定環境變數 `API_BACKEND`（後端位址）。
 

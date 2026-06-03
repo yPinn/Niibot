@@ -16,6 +16,8 @@ from datetime import UTC, datetime
 
 import twitchio
 
+from core.config import get_settings
+
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
@@ -59,7 +61,7 @@ class _NotifyMixin:
                             from utils.reauth import missing_broadcaster_scopes
 
                             if missing_broadcaster_scopes(token_obj.scopes.split()):
-                                self._needs_reauth.add(channel_id)  # type: ignore[attr-defined]
+                                await self._mark_reauth_required(channel_id)
                                 LOGGER.warning(
                                     f"[NOTIFY] {self._ch(channel_id)} missing broadcaster scopes"  # type: ignore[attr-defined]
                                     " after channel toggle — marking for reauth"
@@ -97,8 +99,18 @@ class _NotifyMixin:
         except Exception as e:
             LOGGER.exception(f"[NOTIFY] Error handling channel toggle notification: {e}")
 
+    async def _mark_reauth_required(self, user_id: str) -> None:
+        """Add to in-memory set AND persist the flag to DB so the API forces re-login."""
+        self._needs_reauth.add(user_id)  # type: ignore[attr-defined]
+        try:
+            await self.channels.mark_requires_reauth(user_id)  # type: ignore[attr-defined]
+        except Exception:
+            LOGGER.warning(f"[NOTIFY] Failed to persist requires_reauth for {self._ch(user_id)}")  # type: ignore[attr-defined]
+
     async def _send_welcome_message(self, channel_id: str) -> None:
         """Send a one-line welcome message when the bot is enabled for a channel."""
+        if not get_settings().is_production:
+            return
         try:
             users = await self.fetch_users(ids=[channel_id])  # type: ignore[attr-defined]
             if not users:
@@ -115,6 +127,8 @@ class _NotifyMixin:
 
     async def _send_reauth_restored_message(self, channel_id: str, login: str) -> None:
         """Notify chat that bot functionality has been restored after reauth."""
+        if not get_settings().is_production:
+            return
         try:
             users = await self.fetch_users(ids=[channel_id])  # type: ignore[attr-defined]
             if not users:
@@ -157,7 +171,7 @@ class _NotifyMixin:
                 missing = missing_broadcaster_scopes(user_info.scopes)
                 if missing:
                     LOGGER.warning(f"[NOTIFY] {user_info.login} missing scopes: {missing}")
-                    self._needs_reauth.add(user_id)  # type: ignore[attr-defined]
+                    await self._mark_reauth_required(user_id)
                 else:
                     was_reauth = user_id in self._needs_reauth  # type: ignore[attr-defined]
                     self._needs_reauth.discard(user_id)  # type: ignore[attr-defined]
@@ -210,6 +224,7 @@ class _NotifyMixin:
 
             except twitchio.exceptions.InvalidTokenException as e:
                 LOGGER.warning(f"[NOTIFY] Invalid token for new user {user_id}: {e}")
+                await self._mark_reauth_required(user_id)
 
         except Exception as e:
             LOGGER.exception(f"[NOTIFY] Error handling new token notification: {e}")

@@ -630,5 +630,5 @@ class TestGetContainerLogs:
             "routers.admin_router.aiohttp.UnixConnector",
             side_effect=Exception("no socket"),
         ):
-            r = _make_client().get("/api/admin/logs/niibot-api")
+            r = _make_client().get("/api/admin/logs/nb-api")
         assert r.status_code == 503

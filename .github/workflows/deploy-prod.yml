@@ -1,0 +1,40 @@
+name: Deploy Prod
+
+# Production deployment — see _deploy.yml for secrets/variables reference.
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 20 * * 2" # Every Tue 20:00 UTC (Wed 04:00 CST) — full rebuild for base image updates
+  workflow_dispatch:
+    inputs:
+      force_all:
+        description: "Force rebuild and restart all services"
+        type: boolean
+        default: false
+
+jobs:
+  ci:
+    if: github.event_name != 'schedule'
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    needs: ci
+    if: always() && (needs.ci.result == 'success' || needs.ci.result == 'skipped')
+    uses: ./.github/workflows/_deploy.yml
+    with:
+      environment: production
+      env_suffix: ""
+      compose_env_file: docker-compose.prod.yml
+      compose_project: ""
+      branch: main
+      api_port: 8000
+      scrapling_port_default: 3001
+      compose_change_pattern: docker-compose.prod.yml
+      force_all: ${{ inputs.force_all == true }}
+      is_scheduled: ${{ github.event_name == 'schedule' }}
+      tag_images: true
+      prune_full: true
+      pull_on_force: true
+    secrets: inherit

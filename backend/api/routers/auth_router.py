@@ -151,6 +151,12 @@ async def twitch_oauth_callback(
             display_name=user_info.get("display_name"),
             avatar=user_info.get("avatar"),
         )
+
+        if platform_user_id == str(settings.owner_id):
+            await pool.execute(
+                "UPDATE users SET is_activated = true WHERE id = $1::uuid",
+                user_id,
+            )
     except Exception as e:
         LOGGER.error(f"DB error during Twitch OAuth for {username}: {type(e).__name__}: {e}")
         return RedirectResponse(url=f"{error_redirect}?error=db_timeout")
@@ -195,6 +201,15 @@ async def get_current_user(
         if user_row:
             theme = user_row["theme"]
             is_activated = user_row["is_activated"]
+
+        requires_reauth = await pool.fetchval(
+            "SELECT requires_reauth FROM tokens WHERE user_id = $1 AND token_type = 'broadcaster'",
+            platform_user_id,
+        )
+        if requires_reauth:
+            raise HTTPException(status_code=401, detail="reauth_required")
+    except HTTPException:
+        raise
     except Exception as e:
         LOGGER.warning(f"DB error fetching user row for {user_id}: {type(e).__name__}: {e}")
 

@@ -1,3 +1,4 @@
+import React from 'react'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -525,6 +526,109 @@ describe('AuthProvider 401 interceptor — overlay guard', () => {
 })
 
 // ---------------------------------------------------------------------------
+// import.meta.env.DEV branches — logout / refreshChannels / loadInitialData
+// ---------------------------------------------------------------------------
+
+describe('import.meta.env.DEV branch in logout', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.stubGlobal('location', { pathname: '/dashboard', href: 'http://localhost/dashboard' })
+    mockGetCurrentUser.mockResolvedValue(TWITCH_USER)
+    mockGetChannels.mockResolvedValue([])
+    mockApiLogout.mockRejectedValue(new Error('network error'))
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+    vi.unstubAllEnvs()
+  })
+
+  it('calls console.error in logout catch block when DEV=true', async () => {
+    vi.stubEnv('DEV', 'true')
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider })
+    await waitFor(() => expect(result.current.isInitialized).toBe(true))
+
+    const fetchError = new Error('network error')
+    mockApiLogout.mockRejectedValue(fetchError)
+
+    await act(async () => {
+      await result.current.logout()
+    })
+
+    expect(consoleSpy).toHaveBeenCalledWith('Logout request failed:', fetchError)
+    expect(result.current.user).toBeNull()
+    expect(window.location.href).toBe('/login')
+  })
+})
+
+describe('import.meta.env.DEV branch in refreshChannels', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.stubGlobal('location', { pathname: '/dashboard', href: 'http://localhost/dashboard' })
+    mockGetCurrentUser.mockResolvedValue(TWITCH_USER)
+    mockGetChannels.mockResolvedValue([])
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+    vi.unstubAllEnvs()
+  })
+
+  it('calls console.error in refreshChannels catch block when DEV=true', async () => {
+    vi.stubEnv('DEV', 'true')
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider })
+    await waitFor(() => expect(result.current.isInitialized).toBe(true))
+
+    const fetchError = new Error('channels error')
+    mockGetChannels.mockRejectedValue(fetchError)
+
+    await act(async () => {
+      await result.current.refreshChannels()
+    })
+
+    expect(consoleSpy).toHaveBeenCalledWith('Failed to load channels:', fetchError)
+    expect(result.current.channels).toEqual([])
+  })
+})
+
+describe('import.meta.env.DEV branch in loadInitialData', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.stubGlobal('location', { pathname: '/dashboard', href: 'http://localhost/dashboard' })
+    mockGetChannels.mockResolvedValue([])
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+    vi.unstubAllEnvs()
+  })
+
+  it('calls console.error in loadInitialData catch block when DEV=true', async () => {
+    vi.stubEnv('DEV', 'true')
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const initError = new Error('Network failure')
+    mockGetCurrentUser.mockRejectedValue(initError)
+
+    const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider })
+    await waitFor(() => expect(result.current.isInitialized).toBe(true))
+
+    expect(result.current.isInitError).toBe(true)
+    expect(consoleSpy).toHaveBeenCalledWith('Failed to load initial data:', initError)
+  })
+})
+
+// ---------------------------------------------------------------------------
 // import.meta.env.DEV branches — refreshUser error path with DEV=true (line 86)
 // ---------------------------------------------------------------------------
 
@@ -678,6 +782,37 @@ describe('channels polling — cancelled=true race', () => {
 describe('useAuth', () => {
   it('throws when used outside AuthProvider', () => {
     expect(() => renderHook(() => useAuth())).toThrow('useAuth must be used within an AuthProvider')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// useEffect hasLoaded guard — StrictMode double-mount protection (line 155)
+// ---------------------------------------------------------------------------
+
+describe('AuthProvider — StrictMode double-mount guard', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.stubGlobal('location', { pathname: '/dashboard', href: 'http://localhost/dashboard' })
+    mockGetChannels.mockResolvedValue([])
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  it('loads data exactly once even when the effect fires twice (StrictMode double-mount)', async () => {
+    mockGetCurrentUser.mockImplementation(() => Promise.resolve(TWITCH_USER))
+
+    const wrapper = ({ children }: { children: React.ReactNode }) =>
+      React.createElement(React.StrictMode, null, React.createElement(AuthProvider, null, children))
+
+    const { result } = renderHook(() => useAuth(), { wrapper })
+    await waitFor(() => expect(result.current.isInitialized).toBe(true))
+
+    // StrictMode fires effects twice; the hasLoaded guard must prevent a double fetch.
+    expect(mockGetCurrentUser).toHaveBeenCalledTimes(1)
   })
 })
 

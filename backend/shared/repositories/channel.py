@@ -59,15 +59,26 @@ class ChannelRepository:
                 INSERT INTO tokens (user_id, token, refresh, scopes, token_type)
                 VALUES ($1, $2, $3, $4, $5)
                 ON CONFLICT (user_id, token_type) DO UPDATE SET
-                    token      = EXCLUDED.token,
-                    refresh    = EXCLUDED.refresh,
-                    scopes     = COALESCE(EXCLUDED.scopes, tokens.scopes),
-                    updated_at = NOW()
+                    token           = EXCLUDED.token,
+                    refresh         = EXCLUDED.refresh,
+                    scopes          = COALESCE(EXCLUDED.scopes, tokens.scopes),
+                    requires_reauth = FALSE,
+                    updated_at      = NOW()
                 """,
                 user_id,
                 token,
                 refresh,
                 scopes,
+                token_type,
+            )
+        _token_cache.invalidate(f"token:{user_id}:{token_type}")
+
+    async def mark_requires_reauth(self, user_id: str, token_type: str = "broadcaster") -> None:
+        """Flag a token for re-auth; /auth/user checks this to force re-login, cleared by upsert_token."""
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE tokens SET requires_reauth = TRUE WHERE user_id = $1 AND token_type = $2",
+                user_id,
                 token_type,
             )
         _token_cache.invalidate(f"token:{user_id}:{token_type}")
@@ -102,10 +113,11 @@ class ChannelRepository:
                     INSERT INTO tokens (user_id, token, refresh, scopes, token_type)
                     VALUES ($1, $2, $3, $4, $5)
                     ON CONFLICT (user_id, token_type) DO UPDATE SET
-                        token      = EXCLUDED.token,
-                        refresh    = EXCLUDED.refresh,
-                        scopes     = COALESCE(EXCLUDED.scopes, tokens.scopes),
-                        updated_at = NOW()
+                        token           = EXCLUDED.token,
+                        refresh         = EXCLUDED.refresh,
+                        scopes          = COALESCE(EXCLUDED.scopes, tokens.scopes),
+                        requires_reauth = FALSE,
+                        updated_at      = NOW()
                     """,
                     user_id,
                     token,

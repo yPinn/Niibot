@@ -73,7 +73,7 @@ class ReauthNotifier:
 
     def _build_message(self, broadcaster_login: str) -> str:
         url = get_settings().frontend_url.rstrip("/")
-        return f"@{broadcaster_login} 授權過期了，麻煩重新登入 {url}"
+        return f"@{broadcaster_login} 授權過期了，麻煩重新登入 {url}/login"
 
     async def notify(
         self,
@@ -89,8 +89,8 @@ class ReauthNotifier:
         (5 min) when triggered by a viewer command so the broadcaster gets
         timely feedback without being spammed every message.
         """
-        if get_settings().is_development:
-            LOGGER.debug(f"[{broadcaster_login}] Reauth notification skipped (dev)")
+        if not get_settings().is_production:
+            LOGGER.debug(f"[{broadcaster_login}] Reauth notification skipped (non-prod)")
             return False
         cooldown = min_interval if min_interval is not None else _COOLDOWN
         if not self._can_notify(channel_id, cooldown):

@@ -17,7 +17,7 @@ LOGGER: logging.Logger = logging.getLogger(__name__)
 class HealthCheckServer(BaseHealthServer):
     """Twitch-specific health check server."""
 
-    SERVICE_NAME = "niibot-twitch"
+    SERVICE_NAME = "nb-twitch"
 
     def __init__(self, bot: "Bot | None" = None, host: str = "0.0.0.0", port: int | None = None):
         self.bot: Any = bot

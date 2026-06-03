@@ -11,8 +11,8 @@
 shared.env
 **/shared.env
 # GitHub Secrets/Variables upload files (contain real credentials)
-secrets.env
-variables.env
+.github/secrets/*.env
+.github/variables/*.env
 # Keep .env.example files for reference
 !.env.example
 !**/.env.example
@@ -98,11 +98,18 @@ logs/
 *.sqlite
 *.sqlite3
 
-# PostgreSQL data directory (bind mount from docker-compose)
+# PostgreSQL data directories (bind mounts from docker-compose)
 data/postgres/
+data/staging/postgres/
 
 # Database backups
 data/backups/
+
+# Env archives
+data/env-*.tar.gz
+
+# Env status snapshots
+data/env/
 
 # Bot runtime data (guild-specific, not for version control)
 backend/data/log_channels.json

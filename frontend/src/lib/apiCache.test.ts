@@ -129,6 +129,14 @@ describe('CACHE_KEYS', () => {
       'analytics:viewer-profile:user123:7'
     )
   })
+
+  it('MATCHER_SUMMARIES returns keyed string', () => {
+    expect(CACHE_KEYS.MATCHER_SUMMARIES(30)).toBe('matcher:summaries:30')
+  })
+
+  it('MATCHER_VIEWERS returns keyed string', () => {
+    expect(CACHE_KEYS.MATCHER_VIEWERS('ch123', 50, 0)).toBe('matcher:viewers:ch123:50:0')
+  })
 })
 
 describe('fetch', () => {

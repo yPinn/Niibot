@@ -1,0 +1,570 @@
+# Reusable deploy workflow — called by deploy-prod.yml and deploy-staging.yml.
+#
+# Required secrets: POSTGRES_USER  POSTGRES_PASSWORD  POSTGRES_DB  FRONTEND_URL
+#   TWITCH_CLIENT_ID  TWITCH_CLIENT_SECRET  JWT_SECRET_KEY  DISCORD_BOT_TOKEN  BOT_ID  OWNER_ID
+# Optional secrets (omit to disable): YOUTUBE_API_KEY  GROQ_API_KEY  GEMINI_API_KEY
+#   OPENROUTER_API_KEY  OPENROUTER_MODEL  INSTAGRAM_SESSION_ID  THREADS_SESSION_ID
+#   CONDUIT_ID  ERROR_WEBHOOK_URL  RELEASES_GITHUB_TOKEN  DISCORD_PUBLIC_KEY  PAYMENT_ENCRYPTION_KEY
+#   DEPLOY_WEBHOOK_URL
+# Variables (repo-level; override per Environment for staging):
+#   PROJECT_DIR  API_URL  ENVIRONMENT  LOG_LEVEL  DISCORD_STATUS  DISCORD_ACTIVITY_TYPE
+#   DISCORD_ACTIVITY_NAME  DISCORD_ACTIVITY_URL  SCRAPLING_PORT
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: "Display name (e.g. production, staging)"
+        type: string
+        required: true
+      env_suffix:
+        description: 'Env file suffix — "" for prod, ".staging" for staging'
+        type: string
+        default: ""
+      compose_env_file:
+        description: "Env-specific compose override file (e.g. docker-compose.prod.yml)"
+        type: string
+        required: true
+      compose_project:
+        description: "Compose project name — empty for prod, niibot-staging for staging"
+        type: string
+        default: ""
+      branch:
+        description: "Git branch to deploy"
+        type: string
+        required: true
+      api_port:
+        description: "API health check port"
+        type: number
+        default: 8000
+      scrapling_port_default:
+        description: "Scrapling fallback health check port"
+        type: number
+        default: 3001
+      compose_change_pattern:
+        description: "Extra file path that triggers a full service rebuild"
+        type: string
+        default: ""
+      force_all:
+        description: "Force rebuild and restart all services"
+        type: boolean
+        default: false
+      is_scheduled:
+        description: "True on scheduled runs — enables --pull for base image updates"
+        type: boolean
+        default: false
+      tag_images:
+        description: "Tag built images with version string after build"
+        type: boolean
+        default: false
+      prune_full:
+        description: "Prune old version-tagged images (beyond 3 most recent)"
+        type: boolean
+        default: false
+      pull_on_force:
+        description: "Use --pull on forced rebuilds to pick up base image updates"
+        type: boolean
+        default: false
+      image_suffix:
+        description: "Image name suffix to isolate environments (e.g. -stg for staging)"
+        type: string
+        default: ""
+      force_api:
+        description: "Force rebuild API service"
+        type: boolean
+        default: false
+      force_discord:
+        description: "Force rebuild Discord bot"
+        type: boolean
+        default: false
+      force_twitch:
+        description: "Force rebuild Twitch bot"
+        type: boolean
+        default: false
+      force_scrapling:
+        description: "Force rebuild Scrapling"
+        type: boolean
+        default: false
+      force_instafix:
+        description: "Force pull and restart Instafix (external image)"
+        type: boolean
+        default: false
+      enable_discord:
+        description: "Allow discord bot deployment (set false to exclude from staging)"
+        type: boolean
+        default: true
+      enable_scrapling:
+        description: "Allow scrapling deployment (set false to exclude from staging)"
+        type: boolean
+        default: true
+      enable_instafix:
+        description: "Allow instafix deployment (set false to exclude from staging)"
+        type: boolean
+        default: true
+      runner:
+        description: 'Runner label(s) as JSON array string — e.g. "[\"self-hosted\",\"macOS\"]"'
+        type: string
+        default: '["self-hosted"]'
+
+jobs:
+  deploy:
+    name: Deploy to ${{ inputs.environment }}
+    runs-on: ${{ fromJSON(inputs.runner) }}
+    environment: ${{ inputs.environment }}
+    concurrency:
+      group: deploy
+      cancel-in-progress: false # never interrupt mid-run — partial migration would leave DB in broken state
+
+    env:
+      PROJECT_DIR: ${{ vars.PROJECT_DIR }}
+      ENV_SUFFIX: ${{ inputs.env_suffix }}
+      COMPOSE_ENV_FILE: ${{ inputs.compose_env_file }}
+      COMPOSE_PROJECT: ${{ inputs.compose_project }}
+      API_PORT: ${{ inputs.api_port }}
+      SCRAPLING_PORT_DEFAULT: ${{ inputs.scrapling_port_default }}
+
+    steps:
+      - name: Write env files from secrets
+        env:
+          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+          FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
+          TWITCH_CLIENT_ID: ${{ secrets.TWITCH_CLIENT_ID }}
+          TWITCH_CLIENT_SECRET: ${{ secrets.TWITCH_CLIENT_SECRET }}
+          JWT_SECRET_KEY: ${{ secrets.JWT_SECRET_KEY }}
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+          BOT_ID: ${{ secrets.BOT_ID }}
+          OWNER_ID: ${{ secrets.OWNER_ID }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_MODEL: ${{ secrets.OPENROUTER_MODEL }}
+          INSTAGRAM_SESSION_ID: ${{ secrets.INSTAGRAM_SESSION_ID }}
+          THREADS_SESSION_ID: ${{ secrets.THREADS_SESSION_ID }}
+          CONDUIT_ID: ${{ secrets.CONDUIT_ID }}
+          ERROR_WEBHOOK_URL: ${{ secrets.ERROR_WEBHOOK_URL }}
+          RELEASES_GITHUB_TOKEN: ${{ secrets.RELEASES_GITHUB_TOKEN }}
+          DISCORD_PUBLIC_KEY: ${{ secrets.DISCORD_PUBLIC_KEY }}
+          PAYMENT_ENCRYPTION_KEY: ${{ secrets.PAYMENT_ENCRYPTION_KEY }}
+          API_URL: ${{ vars.API_URL }}
+          ENVIRONMENT: ${{ vars.ENVIRONMENT || inputs.environment }}
+          LOG_LEVEL: ${{ vars.LOG_LEVEL || 'INFO' }}
+          DISCORD_STATUS: ${{ vars.DISCORD_STATUS || 'online' }}
+          DISCORD_ACTIVITY_TYPE: ${{ vars.DISCORD_ACTIVITY_TYPE || 'playing' }}
+          DISCORD_ACTIVITY_NAME: ${{ vars.DISCORD_ACTIVITY_NAME }}
+          DISCORD_ACTIVITY_URL: ${{ vars.DISCORD_ACTIVITY_URL }}
+          SCRAPLING_PORT: ${{ vars.SCRAPLING_PORT }}
+        run: |
+          MISSING=""
+          for VAR in POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB FRONTEND_URL \
+                     TWITCH_CLIENT_ID TWITCH_CLIENT_SECRET JWT_SECRET_KEY \
+                     DISCORD_BOT_TOKEN BOT_ID OWNER_ID; do
+            [ -n "${!VAR}" ] || MISSING="$MISSING $VAR"
+          done
+          if [ -n "$MISSING" ]; then
+            echo "ERROR: Missing GitHub Secrets:$MISSING"
+            echo "Configure at: Settings → Secrets and variables → Actions"
+            exit 1
+          fi
+
+          DB_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
+
+          # Root .env[.staging]
+          {
+            echo "POSTGRES_USER=${POSTGRES_USER}"
+            echo "POSTGRES_PASSWORD=${POSTGRES_PASSWORD}"
+            echo "POSTGRES_DB=${POSTGRES_DB}"
+            echo "DOCKER_DATABASE_URL=${DB_URL}"
+            [ -n "${SCRAPLING_PORT}" ] && echo "SCRAPLING_PORT=${SCRAPLING_PORT}"
+          } > "${PROJECT_DIR}/.env${ENV_SUFFIX}"
+
+          # backend/shared[.staging].env
+          {
+            echo "DATABASE_URL=${DB_URL}"
+            echo "FRONTEND_URL=${FRONTEND_URL}"
+            echo "TWITCH_CLIENT_ID=${TWITCH_CLIENT_ID}"
+            echo "TWITCH_CLIENT_SECRET=${TWITCH_CLIENT_SECRET}"
+            echo "BOT_ID=${BOT_ID}"
+            echo "OWNER_ID=${OWNER_ID}"
+            echo "LOG_LEVEL=${LOG_LEVEL}"
+            echo "ENVIRONMENT=${ENVIRONMENT}"
+            [ -n "${YOUTUBE_API_KEY}" ]    && echo "YOUTUBE_API_KEY=${YOUTUBE_API_KEY}"
+            [ -n "${GROQ_API_KEY}" ]       && echo "GROQ_API_KEY=${GROQ_API_KEY}"
+            [ -n "${GEMINI_API_KEY}" ]     && echo "GEMINI_API_KEY=${GEMINI_API_KEY}"
+            [ -n "${OPENROUTER_API_KEY}" ] && echo "OPENROUTER_API_KEY=${OPENROUTER_API_KEY}"
+            [ -n "${OPENROUTER_MODEL}" ]   && echo "OPENROUTER_MODEL=${OPENROUTER_MODEL}"
+            [ -n "${ERROR_WEBHOOK_URL}" ]  && echo "ERROR_WEBHOOK_URL=${ERROR_WEBHOOK_URL}"
+          } > "${PROJECT_DIR}/backend/shared${ENV_SUFFIX}.env"
+
+          # backend/api/.env[.staging]
+          {
+            echo "JWT_SECRET_KEY=${JWT_SECRET_KEY}"
+            echo "API_URL=${API_URL}"
+            echo "ENVIRONMENT=${ENVIRONMENT}"
+            [ -n "${RELEASES_GITHUB_TOKEN}" ]    && echo "RELEASES_GITHUB_TOKEN=${RELEASES_GITHUB_TOKEN}"
+            [ -n "${DISCORD_PUBLIC_KEY}" ]       && echo "DISCORD_PUBLIC_KEY=${DISCORD_PUBLIC_KEY}"
+            [ -n "${PAYMENT_ENCRYPTION_KEY}" ]   && echo "PAYMENT_ENCRYPTION_KEY=${PAYMENT_ENCRYPTION_KEY}"
+          } > "${PROJECT_DIR}/backend/api/.env${ENV_SUFFIX}"
+
+          # backend/discord/.env[.staging]
+          {
+            echo "DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}"
+            echo "DISCORD_STATUS=${DISCORD_STATUS}"
+            echo "DISCORD_ACTIVITY_TYPE=${DISCORD_ACTIVITY_TYPE}"
+            [ -n "${DISCORD_ACTIVITY_NAME}" ] && echo "DISCORD_ACTIVITY_NAME=${DISCORD_ACTIVITY_NAME}"
+            [ -n "${DISCORD_ACTIVITY_URL}" ]  && echo "DISCORD_ACTIVITY_URL=${DISCORD_ACTIVITY_URL}"
+            [ -n "${INSTAGRAM_SESSION_ID}" ]  && echo "INSTAGRAM_SESSION_ID=${INSTAGRAM_SESSION_ID}"
+          } > "${PROJECT_DIR}/backend/discord/.env${ENV_SUFFIX}"
+
+          # backend/twitch/.env[.staging]
+          {
+            [ -n "${CONDUIT_ID}" ] && echo "CONDUIT_ID=${CONDUIT_ID}"
+          } > "${PROJECT_DIR}/backend/twitch/.env${ENV_SUFFIX}"
+
+          # backend/scrapling/.env[.staging]
+          {
+            echo "PORT=${SCRAPLING_PORT:-${SCRAPLING_PORT_DEFAULT}}"
+            echo "LOG_LEVEL=${LOG_LEVEL}"
+            echo "ENVIRONMENT=${ENVIRONMENT}"
+            [ -n "${THREADS_SESSION_ID}" ] && echo "THREADS_SESSION_ID=${THREADS_SESSION_ID}"
+            [ -n "${ERROR_WEBHOOK_URL}" ]  && echo "ERROR_WEBHOOK_URL=${ERROR_WEBHOOK_URL}"
+          } > "${PROJECT_DIR}/backend/scrapling/.env${ENV_SUFFIX}"
+
+          echo "Env files written for ${{ inputs.environment }}."
+
+      - name: Pull latest code
+        run: |
+          git -C $PROJECT_DIR fetch --force --tags origin ${{ inputs.branch }}
+          git -C $PROJECT_DIR reset --hard origin/${{ inputs.branch }}
+
+      - name: Set build metadata
+        id: meta
+        run: |
+          COMMIT=$(git -C $PROJECT_DIR rev-parse --short HEAD)
+          echo "commit=$COMMIT" >> $GITHUB_OUTPUT
+          RAW=$(git -C $PROJECT_DIR describe --tags --always 2>/dev/null || echo "dev")
+          # v1.3.2-9-gabcdef → v1.3.9 (abcdef)   (3-segment tag with commits ahead)
+          # v1.4-9-gabcdef   → v1.4.9 (abcdef)   (2-segment tag with commits ahead)
+          # v1.3.2           → v1.3.0 (sha)       (exact 3-segment tag)
+          # v1.4             → v1.4.0 (sha)       (exact 2-segment tag)
+          VERSION=$(echo "$RAW" | sed -E \
+            -e 's/^v([0-9]+)\.([0-9]+)\.[0-9]+-([0-9]+)-g([0-9a-f]+)$/v\1.\2.\3 (\4)/' \
+            -e 's/^v([0-9]+)\.([0-9]+)-([0-9]+)-g([0-9a-f]+)$/v\1.\2.\3 (\4)/' \
+            -e 's/^v([0-9]+)\.([0-9]+)\.[0-9]+$/v\1.\2.0 ('"$COMMIT"')/' \
+            -e 's/^v([0-9]+)\.([0-9]+)$/v\1.\2.0 ('"$COMMIT"')/')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Detect changed services
+        id: changes
+        run: |
+          cd $PROJECT_DIR
+
+          FORCE="${{ inputs.force_all }}"
+          BASE_SHA="${{ github.event.before }}"
+          CHANGED=$(git diff --name-only "${BASE_SHA}" HEAD 2>/dev/null) || true
+
+          if [ "${{ inputs.is_scheduled }}" = "true" ]; then
+            FORCE="true"
+          fi
+
+          api=false; discord=false; twitch=false; scrapling=false; instafix=false; reason=path_filter
+
+          if [ "$FORCE" = "true" ]; then
+            api=true; discord=true; twitch=true; scrapling=true; instafix=true; reason=force
+          else
+            if [ -n "$CHANGED" ]; then
+              PATTERN="^backend/shared/|^backend/shared\.env|^docker-compose\.yml"
+              [ -n "${{ inputs.compose_change_pattern }}" ] && \
+                PATTERN="$PATTERN|^${{ inputs.compose_change_pattern }}"
+
+              if echo "$CHANGED" | grep -qE "$PATTERN"; then
+                api=true; discord=true; twitch=true
+              fi
+
+              echo "$CHANGED" | grep -qE "^backend/api/"       && api=true       || true
+              echo "$CHANGED" | grep -qE "^backend/discord/"   && discord=true   || true
+              echo "$CHANGED" | grep -qE "^backend/twitch/"    && twitch=true    || true
+              echo "$CHANGED" | grep -qE "^backend/scrapling/" && scrapling=true || true
+            fi
+
+            [ "${{ inputs.force_api }}" = "true" ]       && api=true       || true
+            [ "${{ inputs.force_discord }}" = "true" ]   && discord=true   || true
+            [ "${{ inputs.force_twitch }}" = "true" ]    && twitch=true    || true
+            [ "${{ inputs.force_scrapling }}" = "true" ] && scrapling=true || true
+            [ "${{ inputs.force_instafix }}" = "true" ]  && instafix=true  || true
+          fi
+
+          # Cap: if service is not enabled, override to false regardless of detection/force flags
+          [ "${{ inputs.enable_discord }}" != "true" ]   && discord=false  || true
+          [ "${{ inputs.enable_scrapling }}" != "true" ] && scrapling=false || true
+          [ "${{ inputs.enable_instafix }}" != "true" ]  && instafix=false  || true
+
+          echo "api=$api"             >> $GITHUB_OUTPUT
+          echo "discord=$discord"     >> $GITHUB_OUTPUT
+          echo "twitch=$twitch"       >> $GITHUB_OUTPUT
+          echo "scrapling=$scrapling" >> $GITHUB_OUTPUT
+          echo "instafix=$instafix"   >> $GITHUB_OUTPUT
+          echo "reason=$reason"       >> $GITHUB_OUTPUT
+
+      - name: Log planned changes
+        run: |
+          echo "api=${{ steps.changes.outputs.api }}"
+          echo "discord=${{ steps.changes.outputs.discord }}"
+          echo "twitch=${{ steps.changes.outputs.twitch }}"
+          echo "scrapling=${{ steps.changes.outputs.scrapling }}"
+          echo "instafix=${{ steps.changes.outputs.instafix }}"
+          echo "reason=${{ steps.changes.outputs.reason }}"
+
+      - name: Set compose flags
+        run: |
+          [ -n "${COMPOSE_PROJECT}" ] && echo "PROJECT_FLAG=-p ${COMPOSE_PROJECT}" >> "$GITHUB_ENV"
+          [ -n "${ENV_SUFFIX}" ]      && echo "ENV_FILE_FLAG=--env-file .env${ENV_SUFFIX}" >> "$GITHUB_ENV"
+
+      - name: Save rollback point
+        run: |
+          SUFFIX="${{ inputs.image_suffix }}"
+          for IMG in nb-api nb-discord nb-twitch nb-scrapling; do
+            FULL="${IMG}${SUFFIX}"
+            ID=$(docker images "$FULL" --format "{{.ID}}" 2>/dev/null | head -1)
+            [ -n "$ID" ] && docker tag "$ID" "${FULL}:rollback" && echo "Saved rollback: ${FULL}" || true
+          done
+
+      - name: Build images
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          SERVICES=""
+          [ "${{ steps.changes.outputs.api }}" = "true" ]       && SERVICES="$SERVICES api"
+          [ "${{ steps.changes.outputs.discord }}" = "true" ]   && SERVICES="$SERVICES discord-bot"
+          [ "${{ steps.changes.outputs.twitch }}" = "true" ]    && SERVICES="$SERVICES twitch-bot"
+          [ "${{ steps.changes.outputs.scrapling }}" = "true" ] && SERVICES="$SERVICES scrapling"
+
+          if [ -z "$SERVICES" ]; then
+            echo "No images to build, skipping."
+            exit 0
+          fi
+
+          echo "Building:$SERVICES"
+
+          PULL_FLAG=""
+          [ "${{ inputs.pull_on_force }}" = "true" ] && \
+            [ "${{ steps.changes.outputs.reason }}" = "force" ] && PULL_FLAG="--pull"
+
+          docker compose -f docker-compose.yml -f ${COMPOSE_ENV_FILE} \
+            ${PROJECT_FLAG:-} build $PULL_FLAG $SERVICES \
+            --build-arg "APP_VERSION=${{ steps.meta.outputs.version }}" \
+            --build-arg "GIT_COMMIT=${{ steps.meta.outputs.commit }}"
+
+      - name: Tag images with version
+        if: inputs.tag_images
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          SUFFIX="${{ inputs.image_suffix }}"
+          VERSION="${{ steps.meta.outputs.version }}"
+          DOCKER_TAG=$(echo "$VERSION" | sed 's/ (/-/; s/)//')
+          [ "${{ steps.changes.outputs.api }}" = "true" ]       && docker tag "nb-api${SUFFIX}"       "nb-api${SUFFIX}:$DOCKER_TAG"       || true
+          [ "${{ steps.changes.outputs.discord }}" = "true" ]   && docker tag "nb-discord${SUFFIX}"   "nb-discord${SUFFIX}:$DOCKER_TAG"   || true
+          [ "${{ steps.changes.outputs.twitch }}" = "true" ]    && docker tag "nb-twitch${SUFFIX}"    "nb-twitch${SUFFIX}:$DOCKER_TAG"    || true
+          [ "${{ steps.changes.outputs.scrapling }}" = "true" ] && docker tag "nb-scrapling${SUFFIX}" "nb-scrapling${SUFFIX}:$DOCKER_TAG" || true
+          echo "Tagged rebuilt images as :$DOCKER_TAG"
+
+      - name: Run migrations
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          docker compose -f docker-compose.yml -f ${COMPOSE_ENV_FILE} \
+            ${PROJECT_FLAG:-} ${ENV_FILE_FLAG:-} run --rm migrate
+
+      - name: Restart changed services
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          SERVICES=""
+          [ "${{ steps.changes.outputs.api }}" = "true" ]       && SERVICES="$SERVICES api"
+          [ "${{ steps.changes.outputs.discord }}" = "true" ]   && SERVICES="$SERVICES discord-bot"
+          [ "${{ steps.changes.outputs.twitch }}" = "true" ]    && SERVICES="$SERVICES twitch-bot"
+          [ "${{ steps.changes.outputs.scrapling }}" = "true" ] && SERVICES="$SERVICES scrapling"
+          [ "${{ steps.changes.outputs.instafix }}" = "true" ]  && SERVICES="$SERVICES instafix"
+
+          if [ -z "$SERVICES" ]; then
+            echo "No services to restart, skipping."
+            exit 0
+          fi
+
+          echo "Restarting:$SERVICES"
+
+          # instafix uses an external image — pull latest before restarting
+          if [ "${{ steps.changes.outputs.instafix }}" = "true" ]; then
+            docker compose -f docker-compose.yml -f ${COMPOSE_ENV_FILE} \
+              ${PROJECT_FLAG:-} pull instafix
+          fi
+
+          docker compose -f docker-compose.yml -f ${COMPOSE_ENV_FILE} \
+            ${PROJECT_FLAG:-} ${ENV_FILE_FLAG:-} up -d ${SERVICES}
+
+      - name: Health check
+        id: healthcheck
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          COMPOSE_CMD="docker compose -f docker-compose.yml -f ${COMPOSE_ENV_FILE} ${PROJECT_FLAG:-} ${ENV_FILE_FLAG:-}"
+
+          deadline=$((SECONDS + 120))
+          until curl -sf "http://localhost:${API_PORT}/health" > /dev/null; do
+            if [ $SECONDS -ge $deadline ]; then
+              echo "ERROR: API did not respond within 120s"
+              $COMPOSE_CMD ps
+              $COMPOSE_CMD logs api --tail=30
+              exit 1
+            fi
+            echo "Waiting for API... (${SECONDS}s elapsed)"
+            sleep 5
+          done
+          echo "API liveness: OK"
+
+          if ! curl -sf "http://localhost:${API_PORT}/status" | python3 -c \
+            "import sys, json; d=json.load(sys.stdin); sys.exit(0 if d.get('db_connected') else 1)"; then
+            echo "ERROR: API is up but db_connected=false"
+            curl -s "http://localhost:${API_PORT}/status"
+            $COMPOSE_CMD logs api --tail=30
+            exit 1
+          fi
+          echo "API db_connected: OK"
+
+          curl -sf http://localhost:8080/health && echo "discord-bot: OK" || echo "WARN: discord-bot not responding"
+          curl -sf http://localhost:4344/health && echo "twitch-bot:  OK" || echo "WARN: twitch-bot not responding"
+          curl -sf "http://localhost:${SCRAPLING_PORT_DEFAULT}/health" && echo "scrapling:   OK" || echo "WARN: scrapling not responding"
+
+      - name: Rollback on health check failure
+        if: failure() && steps.healthcheck.outcome == 'failure'
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          SUFFIX="${{ inputs.image_suffix }}"
+          SERVICES=""
+          [ "${{ steps.changes.outputs.api }}" = "true" ]       && SERVICES="$SERVICES api"
+          [ "${{ steps.changes.outputs.discord }}" = "true" ]   && SERVICES="$SERVICES discord-bot"
+          [ "${{ steps.changes.outputs.twitch }}" = "true" ]    && SERVICES="$SERVICES twitch-bot"
+          [ "${{ steps.changes.outputs.scrapling }}" = "true" ] && SERVICES="$SERVICES scrapling"
+          # instafix uses an external image — excluded from rollback
+
+          [ -z "$SERVICES" ] && exit 0
+
+          HAS_ROLLBACK=false
+          for SVC in $SERVICES; do
+            case $SVC in
+              api)         IMG="nb-api${SUFFIX}" ;;
+              discord-bot) IMG="nb-discord${SUFFIX}" ;;
+              twitch-bot)  IMG="nb-twitch${SUFFIX}" ;;
+              scrapling)   IMG="nb-scrapling${SUFFIX}" ;;
+            esac
+            if docker image inspect "${IMG}:rollback" > /dev/null 2>&1; then
+              docker tag "${IMG}:rollback" "${IMG}"
+              HAS_ROLLBACK=true
+              echo "Restored ${IMG} from :rollback"
+            fi
+          done
+
+          if [ "$HAS_ROLLBACK" = "true" ]; then
+            docker compose -f docker-compose.yml -f ${COMPOSE_ENV_FILE} \
+              ${PROJECT_FLAG:-} ${ENV_FILE_FLAG:-} up -d ${SERVICES}
+            echo "Rollback complete. NOTE: DB migrations were not rolled back."
+          else
+            echo "No :rollback images found — this may be the first deploy."
+          fi
+
+      - name: Notify deploy failure
+        if: failure()
+        continue-on-error: true
+        env:
+          WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}
+          GH_SVC_API: ${{ steps.changes.outputs.api }}
+          GH_SVC_TWITCH: ${{ steps.changes.outputs.twitch }}
+          GH_SVC_DISCORD: ${{ steps.changes.outputs.discord }}
+          GH_SVC_SCRAPLING: ${{ steps.changes.outputs.scrapling }}
+          GH_SVC_INSTAFIX: ${{ steps.changes.outputs.instafix }}
+        run: |
+          [ -z "${WEBHOOK_URL}" ] && { echo "DEPLOY_WEBHOOK_URL not set, skipping."; exit 0; }
+          REASON="build or migration error"
+          [ "${{ steps.healthcheck.outcome }}" = "failure" ] && REASON="health check failed"
+          export GH_ENV="${{ inputs.environment }}"
+          export GH_COMMIT="${{ steps.meta.outputs.commit }}"
+          export GH_ACTOR="${{ github.actor }}"
+          export GH_REASON="$REASON"
+          export GH_RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          python3 - <<'PYEOF' | curl -s -X POST "${WEBHOOK_URL}" -H "Content-Type: application/json" -d @-
+          import json, os
+          from datetime import datetime, timezone, timedelta
+          e = os.environ
+          svc_map = [('GH_SVC_API','API'),('GH_SVC_TWITCH','Twitch'),('GH_SVC_DISCORD','Discord'),('GH_SVC_SCRAPLING','Scrapling'),('GH_SVC_INSTAFIX','Instafix')]
+          svcs = ', '.join(label for key, label in svc_map if e.get(key) == 'true') or 'none'
+          payload = {
+            "embeds": [{
+              "author": {"name": "Niibot CI/CD"},
+              "title": f"Deploy failed: {e['GH_ENV']}",
+              "url": e["GH_RUN_URL"],
+              "color": 15158332,
+              "fields": [
+                {"name": "Reason",   "value": e["GH_REASON"],        "inline": True},
+                {"name": "Commit",   "value": f"`{e['GH_COMMIT']}`", "inline": True},
+                {"name": "Actor",    "value": e["GH_ACTOR"],         "inline": True},
+                {"name": "Services", "value": svcs,                  "inline": False},
+              ],
+              "footer": {"text": "GitHub Actions"},
+              "timestamp": datetime.now(timezone(timedelta(hours=8))).isoformat(),
+            }]
+          }
+          print(json.dumps(payload))
+          PYEOF
+
+      - name: Prune old images
+        run: |
+          docker image prune -f
+
+          if [ "${{ inputs.prune_full }}" = "true" ]; then
+            SUFFIX="${{ inputs.image_suffix }}"
+            # tail -n +4 keeps 3 most recent; no sort needed (docker images outputs newest-first; BSD sort -V unavailable on macOS)
+            for IMAGE in nb-api nb-twitch nb-discord nb-scrapling; do
+              docker images "${IMAGE}${SUFFIX}" --format "{{.Tag}}" \
+                | grep -vE "^(latest|rollback)$" \
+                | tail -n +4 \
+                | xargs -I{} docker rmi "${IMAGE}${SUFFIX}:{}" 2>/dev/null || true
+            done
+          fi
+
+      - name: Notify deploy success
+        if: success()
+        continue-on-error: true
+        env:
+          WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}
+          GH_SVC_API: ${{ steps.changes.outputs.api }}
+          GH_SVC_TWITCH: ${{ steps.changes.outputs.twitch }}
+          GH_SVC_DISCORD: ${{ steps.changes.outputs.discord }}
+          GH_SVC_SCRAPLING: ${{ steps.changes.outputs.scrapling }}
+          GH_SVC_INSTAFIX: ${{ steps.changes.outputs.instafix }}
+        run: |
+          [ -z "${WEBHOOK_URL}" ] && { echo "DEPLOY_WEBHOOK_URL not set, skipping."; exit 0; }
+          export GH_ENV="${{ inputs.environment }}"
+          export GH_VERSION="${{ steps.meta.outputs.version }}"
+          export GH_ACTOR="${{ github.actor }}"
+          export GH_RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          python3 - <<'PYEOF' | curl -s -X POST "${WEBHOOK_URL}" -H "Content-Type: application/json" -d @-
+          import json, os
+          from datetime import datetime, timezone, timedelta
+          e = os.environ
+          svc_map = [('GH_SVC_API','API'),('GH_SVC_TWITCH','Twitch'),('GH_SVC_DISCORD','Discord'),('GH_SVC_SCRAPLING','Scrapling'),('GH_SVC_INSTAFIX','Instafix')]
+          svcs = ', '.join(label for key, label in svc_map if e.get(key) == 'true') or 'none'
+          payload = {
+            "embeds": [{
+              "author": {"name": "Niibot CI/CD"},
+              "title": f"Deployed: {e['GH_ENV']}",
+              "url": e["GH_RUN_URL"],
+              "color": 3066993,
+              "fields": [
+                {"name": "Version",  "value": f"`{e['GH_VERSION']}`", "inline": True},
+                {"name": "Actor",    "value": e["GH_ACTOR"],          "inline": True},
+                {"name": "Services", "value": svcs,                   "inline": False},
+              ],
+              "footer": {"text": "GitHub Actions"},
+              "timestamp": datetime.now(timezone(timedelta(hours=8))).isoformat(),
+            }]
+          }
+          print(json.dumps(payload))
+          PYEOF

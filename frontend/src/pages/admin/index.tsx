@@ -557,7 +557,11 @@ function BotStatusPanel({
                   </SelectContent>
                 </Select>
               )}
-              <Switch checked={niibotAuth.enabled} onCheckedChange={onAuthToggle} />
+              <Switch
+                aria-label="啟用 Niibot 認證"
+                checked={niibotAuth.enabled}
+                onCheckedChange={onAuthToggle}
+              />
             </div>
           )}
         </div>

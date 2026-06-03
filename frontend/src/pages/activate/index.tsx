@@ -63,7 +63,7 @@ export default function ActivatePage() {
   if (!isInitialized) return null
   if (!isAuthenticated) return <Navigate to="/login" replace />
   if (statusLoading) return null
-  if (user?.is_activated) return <Navigate to="/dashboard" replace />
+  if (user?.is_activated || user?.is_owner) return <Navigate to="/dashboard" replace />
 
   const handleOtpSubmit = async () => {
     if (code.length !== 6) return

@@ -9,7 +9,7 @@
 #
 # Restoring a backup:
 #   gunzip -c data/backups/niibot-20260224.sql.gz | \
-#     docker exec -i niibot-postgres psql -U $POSTGRES_USER $POSTGRES_DB
+#     docker exec -i nb-pg psql -U $POSTGRES_USER $POSTGRES_DB
 
 set -euo pipefail
 
@@ -30,7 +30,7 @@ OUTFILE="$BACKUP_DIR/$FILENAME"
 
 echo "[$(date)] Starting backup → $OUTFILE"
 
-docker exec niibot-postgres \
+docker exec nb-pg \
   pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" \
   | gzip > "$OUTFILE"
 

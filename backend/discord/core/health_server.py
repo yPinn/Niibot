@@ -18,7 +18,7 @@ LOGGER: logging.Logger = logging.getLogger(__name__)
 class HealthCheckServer(BaseHealthServer):
     """Discord-specific health check server."""
 
-    SERVICE_NAME = "niibot-discord"
+    SERVICE_NAME = "nb-discord"
 
     def __init__(
         self, bot: "Bot | None" = None, host: str = "0.0.0.0", port: int | None = None
