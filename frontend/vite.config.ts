@@ -1,7 +1,7 @@
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react-swc'
 import path from 'path'
-import { defineConfig } from 'vite'
+import { defineConfig } from 'vitest/config'
 
 export default defineConfig(() => ({
   plugins: [react(), tailwindcss()],
@@ -18,6 +18,17 @@ export default defineConfig(() => ({
   esbuild: {
     // Strip console.* calls and debugger statements from production builds
     drop: ['console', 'debugger'] as ('console' | 'debugger')[],
+  },
+  test: {
+    environment: 'jsdom',
+    coverage: {
+      thresholds: {
+        lines: 80,
+        functions: 80,
+        branches: 80,
+        statements: 80,
+      },
+    },
   },
   server: {
     port: 3000,

@@ -6,6 +6,10 @@ on:
   workflow_call:
   workflow_dispatch:
 
+permissions:
+  contents: read
+  pull-requests: read
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -44,6 +48,20 @@ jobs:
       - name: Build & Type check
         run: npm run build
 
+  secrets:
+    name: Secret Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   backend:
     name: Backend Lint & Test
     runs-on: ubuntu-latest
@@ -70,7 +88,9 @@ jobs:
         run: uvx ruff format --check .
 
       - name: Audit dependencies
-        run: uv export --frozen --no-dev | uvx pip-audit -r /dev/stdin
+        run: |
+          set -o pipefail
+          uv export --frozen --no-dev | uvx pip-audit -r /dev/stdin
 
       - name: Install dev dependencies
         run: uv sync --frozen --group dev
