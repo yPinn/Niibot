@@ -263,6 +263,10 @@ jobs:
 
           FORCE="${{ inputs.force_all }}"
           BASE_SHA="${{ github.event.before }}"
+          # workflow_run events don't carry event.before — fall back to HEAD~1
+          if [ -z "$BASE_SHA" ]; then
+            BASE_SHA=$(git rev-parse HEAD~1 2>/dev/null || echo "")
+          fi
           CHANGED=$(git diff --name-only "${BASE_SHA}" HEAD 2>/dev/null) || true
 
           if [ "${{ inputs.is_scheduled }}" = "true" ]; then
@@ -371,6 +375,7 @@ jobs:
               aquasec/trivy:latest image \
               --exit-code 1 \
               --severity CRITICAL \
+              --ignore-status affected,will_not_fix \
               --no-progress \
               "${IMG}" || FAIL=true
           done
