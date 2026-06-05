@@ -5,6 +5,7 @@ on:
     branches: [main, staging]
   pull_request:
     branches: [main, staging]
+  workflow_call:
   workflow_dispatch:
 
 permissions:
@@ -52,9 +53,6 @@ jobs:
   secrets:
     name: Secret Scan
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: read
     steps:
       - uses: actions/checkout@v4
         with:
