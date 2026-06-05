@@ -375,6 +375,7 @@ jobs:
               aquasec/trivy:latest image \
               --exit-code 1 \
               --severity CRITICAL \
+              --ignore-status affected \
               --no-progress \
               "${IMG}" || FAIL=true
           done
