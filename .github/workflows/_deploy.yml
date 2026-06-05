@@ -356,6 +356,26 @@ jobs:
             --build-arg "APP_VERSION=${{ steps.meta.outputs.version }}" \
             --build-arg "GIT_COMMIT=${{ steps.meta.outputs.commit }}"
 
+      - name: Scan images for CVEs
+        run: |
+          SUFFIX="${{ inputs.image_suffix }}"
+          FAIL=false
+          for IMG in \
+            $([ "${{ steps.changes.outputs.api }}" = "true" ]       && echo "nb-api${SUFFIX}")       \
+            $([ "${{ steps.changes.outputs.discord }}" = "true" ]   && echo "nb-discord${SUFFIX}")   \
+            $([ "${{ steps.changes.outputs.twitch }}" = "true" ]    && echo "nb-twitch${SUFFIX}")    \
+            $([ "${{ steps.changes.outputs.scrapling }}" = "true" ] && echo "nb-scrapling${SUFFIX}"); do
+            echo "Scanning ${IMG} ..."
+            docker run --rm \
+              -v /var/run/docker.sock:/var/run/docker.sock \
+              aquasec/trivy:latest image \
+              --exit-code 1 \
+              --severity CRITICAL \
+              --no-progress \
+              "${IMG}" || FAIL=true
+          done
+          [ "$FAIL" = "true" ] && exit 1 || true
+
       - name: Tag images with version
         if: inputs.tag_images
         working-directory: ${{ env.PROJECT_DIR }}
@@ -433,8 +453,24 @@ jobs:
           curl -sf http://localhost:4344/health && echo "twitch-bot:  OK" || echo "WARN: twitch-bot not responding"
           curl -sf "http://localhost:${SCRAPLING_PORT_DEFAULT}/health" && echo "scrapling:   OK" || echo "WARN: scrapling not responding"
 
-      - name: Rollback on health check failure
-        if: failure() && steps.healthcheck.outcome == 'failure'
+      - name: Smoke test
+        id: smoketest
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          BASE="http://localhost:${API_PORT}"
+
+          ROOT=$(curl -sf "${BASE}/")
+          echo "$ROOT" | python3 -c \
+            "import sys,json; d=json.load(sys.stdin); sys.exit(0 if d.get('status')=='running' else 1)" \
+            || { echo "ERROR: GET / unexpected response: $ROOT"; exit 1; }
+          echo "GET /: OK"
+
+          PING=$(curl -sf "${BASE}/ping")
+          [ "$PING" = "pong" ] || { echo "ERROR: GET /ping returned: $PING"; exit 1; }
+          echo "GET /ping: OK"
+
+      - name: Rollback on failure
+        if: failure() && (steps.healthcheck.outcome == 'failure' || steps.smoketest.outcome == 'failure')
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           SUFFIX="${{ inputs.image_suffix }}"
