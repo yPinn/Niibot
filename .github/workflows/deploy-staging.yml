@@ -2,9 +2,12 @@ name: Deploy Staging
 
 # Staging deployment — see _deploy.yml for secrets/variables reference.
 # GitHub Environment "staging" overrides: API_URL, ENVIRONMENT, FRONTEND_URL, POSTGRES_DB
+# Triggered automatically after CI passes on staging, or manually via workflow_dispatch.
 
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
     branches: [staging]
   workflow_dispatch:
     inputs:
@@ -35,14 +38,12 @@ on:
 
 permissions:
   contents: read
-  pull-requests: read
 
 jobs:
-  ci:
-    uses: ./.github/workflows/ci.yml
-
   deploy:
-    needs: ci
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
     uses: ./.github/workflows/_deploy.yml
     with:
       environment: staging

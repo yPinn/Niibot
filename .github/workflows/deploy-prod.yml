@@ -1,9 +1,12 @@
 name: Deploy Prod
 
 # Production deployment — see _deploy.yml for secrets/variables reference.
+# Triggered automatically after CI passes on main, or manually via workflow_dispatch.
 
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
     branches: [main]
   schedule:
     - cron: "0 20 * * 2" # Every Tue 20:00 UTC (Wed 04:00 CST) — full rebuild for base image updates
@@ -36,16 +39,13 @@ on:
 
 permissions:
   contents: read
-  pull-requests: read
 
 jobs:
-  ci:
-    if: github.event_name != 'schedule'
-    uses: ./.github/workflows/ci.yml
-
   deploy:
-    needs: ci
-    if: always() && (needs.ci.result == 'success' || needs.ci.result == 'skipped')
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'schedule' ||
+      github.event.workflow_run.conclusion == 'success'
     uses: ./.github/workflows/_deploy.yml
     with:
       environment: production

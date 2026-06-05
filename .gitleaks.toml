@@ -1,0 +1,6 @@
+[allowlist]
+description = "Test fixtures and public test credentials"
+
+paths = [
+  "backend/tests",
+]
