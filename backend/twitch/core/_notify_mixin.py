@@ -253,6 +253,15 @@ class _NotifyMixin:
             data = json.loads(payload)
             channel_id = data.get("channel_id")
             table = data.get("table", "")
+
+            # Global module_config changes have no channel_id — invalidate global cache.
+            if table == "module_config":
+                from shared.repositories.module_config import _CACHE_KEY, _module_config_cache
+
+                _module_config_cache.invalidate(_CACHE_KEY)
+                LOGGER.info("[NOTIFY] module_config updated, global pack cache invalidated")
+                return
+
             if not channel_id or channel_id not in self._subscribed_channels:  # type: ignore[attr-defined]
                 return
 
