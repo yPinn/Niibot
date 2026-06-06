@@ -8,6 +8,8 @@ from pydantic_settings import SettingsConfigDict
 
 from shared.config_base import BaseServiceSettings
 
+DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
+
 
 class Settings(BaseServiceSettings):
     model_config = SettingsConfigDict(

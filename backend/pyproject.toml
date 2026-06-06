@@ -105,4 +105,5 @@ filterwarnings = [
     "ignore::DeprecationWarning:twitchio",
     "ignore::DeprecationWarning:discord",
     "ignore::DeprecationWarning:pypinyin",
+    "ignore:Inheritance class AiohttpAdapter:DeprecationWarning",
 ]
