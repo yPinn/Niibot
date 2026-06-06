@@ -2,6 +2,7 @@
 
 services:
   migrate:
+    image: nb-api
     env_file:
       - ./backend/shared.env
       - ./backend/api/.env

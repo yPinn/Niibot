@@ -2,7 +2,8 @@ name: Deploy Staging
 
 # Staging deployment — see _deploy.yml for secrets/variables reference.
 # GitHub Environment "staging" overrides: API_URL, ENVIRONMENT, FRONTEND_URL, POSTGRES_DB
-# Triggered automatically after CI passes on staging, or manually via workflow_dispatch.
+# Auto-deploy is handled by the deploy-staging job in ci.yml (push to staging → CI pass → deploy).
+# This file is kept for manual workflow_dispatch with fine-grained force flags.
 
 on:
   workflow_dispatch:
