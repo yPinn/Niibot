@@ -4,10 +4,6 @@ name: Deploy Prod
 # Triggered automatically after CI passes on main, or manually via workflow_dispatch.
 
 on:
-  workflow_run:
-    workflows: ["CI"]
-    types: [completed]
-    branches: [main]
   schedule:
     - cron: "0 20 * * 2" # Every Tue 20:00 UTC (Wed 04:00 CST) — full rebuild for base image updates
   workflow_dispatch:
@@ -44,8 +40,7 @@ jobs:
   deploy:
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'schedule' ||
-      github.event.workflow_run.conclusion == 'success'
+      github.event_name == 'schedule'
     uses: ./.github/workflows/_deploy.yml
     with:
       environment: production

@@ -5,10 +5,6 @@ name: Deploy Staging
 # Triggered automatically after CI passes on staging, or manually via workflow_dispatch.
 
 on:
-  workflow_run:
-    workflows: ["CI"]
-    types: [completed]
-    branches: [staging]
   workflow_dispatch:
     inputs:
       force_all:
@@ -41,9 +37,7 @@ permissions:
 
 jobs:
   deploy:
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      github.event.workflow_run.conclusion == 'success'
+    if: github.event_name == 'workflow_dispatch'
     uses: ./.github/workflows/_deploy.yml
     with:
       environment: staging
