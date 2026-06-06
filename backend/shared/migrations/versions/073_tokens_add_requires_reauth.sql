@@ -3,4 +3,4 @@
 -- Cleared automatically by upsert_token / upsert_token_only on re-authorization.
 -- Checked by the API's /auth/user endpoint to force dashboard re-login.
 
-ALTER TABLE tokens ADD COLUMN requires_reauth BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE tokens ADD COLUMN IF NOT EXISTS requires_reauth BOOLEAN NOT NULL DEFAULT FALSE;
