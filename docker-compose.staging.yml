@@ -4,6 +4,7 @@
 
 services:
   migrate:
+    image: nb-api-stg
     container_name: nb-migrate-stg
     env_file:
       - ./backend/shared.staging.env
