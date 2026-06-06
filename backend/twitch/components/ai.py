@@ -18,7 +18,10 @@ from core.component import BotComponent
 from core.config import DATA_DIR, get_settings
 from core.guards import has_role, is_on_cooldown, record_cooldown
 from shared.ai_provider import ProviderEntry, build_provider_chain, call_provider_chain
+from shared.knowledge_packs import KnowledgePack, load_packs
+from shared.knowledge_packs import match_entries as match_pack_entries
 from shared.repositories.ai_settings import AISettingsRepository, build_system_prompt
+from shared.repositories.module_config import ModuleConfigRepository
 
 if TYPE_CHECKING:
     from core.bot import Bot
@@ -59,6 +62,8 @@ def _load_chat_filter() -> tuple[list[str], list[str]]:
 
 _FLAGGED_SUBSTRINGS, _FLAGGED_PINYIN = _load_chat_filter()
 
+_KNOWLEDGE_PACKS: dict[str, KnowledgePack] = load_packs(DATA_DIR)
+
 
 # Dialect confusion pairs applied before pinyin matching.
 # Each tuple is (source, replacement); order matters.
@@ -98,6 +103,7 @@ class AIComponent(BotComponent):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot: Bot = bot  # type: ignore[assignment]
         self.ai_settings_repo = AISettingsRepository(self.bot.token_database)  # type: ignore[attr-defined]
+        self.module_config_repo = ModuleConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
 
         settings = get_settings()
         self.provider_chain: list[ProviderEntry] = build_provider_chain(
@@ -115,6 +121,7 @@ class AIComponent(BotComponent):
 
     def refresh_pool(self, pool) -> None:
         self.ai_settings_repo.pool = pool
+        self.module_config_repo.pool = pool
 
     async def sync_emotes(self, channel_id: str) -> None:
         """Refresh enabled_emotes after bot mod status changes.
@@ -191,8 +198,15 @@ class AIComponent(BotComponent):
                 f"AI request: channel={ctx.channel.name}, user={ctx.chatter.name}, message={message[:100]}"
             )
 
+            enabled_packs = await self.module_config_repo.get_enabled_packs()
+            matched = (
+                match_pack_entries(_KNOWLEDGE_PACKS, enabled_packs, message)
+                if enabled_packs
+                else []
+            )
+
             messages: list[ChatCompletionMessageParam] = [
-                {"role": "system", "content": build_system_prompt(ai_settings)},
+                {"role": "system", "content": build_system_prompt(ai_settings, matched)},
                 {"role": "user", "content": message},
             ]
 
