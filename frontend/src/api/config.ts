@@ -130,6 +130,7 @@ export const API_ENDPOINTS = {
     settings: join('/api/ai/settings'),
     reset: join('/api/ai/settings/reset'),
     emotes: join('/api/ai/emotes'),
+    packs: join('/api/ai/packs'),
   },
   donate: {
     public: (username: string) => join(`/api/donate/public/${username}`),
@@ -147,6 +148,7 @@ export const API_ENDPOINTS = {
   },
   admin: {
     channels: join('/api/admin/channels'),
+    moduleAiPacks: join('/api/admin/modules/ai-packs'),
     botStatus: join('/api/admin/bot-status'),
     activationCodes: join('/api/admin/activation-codes'),
     revokeActivationCode: (platformUserId: string) =>

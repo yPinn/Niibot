@@ -116,6 +116,7 @@ export const navigationData: NavigationData = {
       items: [
         { title: 'Overview', url: '/admin' },
         { title: 'Monitor', url: '/admin/monitor' },
+        { title: 'Modules', url: '/admin/modules' },
       ],
     },
   ],
@@ -172,6 +173,7 @@ export const discordNavigationData: NavigationData = {
       items: [
         { title: 'Overview', url: '/admin' },
         { title: 'Monitor', url: '/admin/monitor' },
+        { title: 'Modules', url: '/admin/modules' },
       ],
     },
   ],

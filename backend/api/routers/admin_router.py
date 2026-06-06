@@ -2,6 +2,7 @@
 
 import asyncio
 import decimal
+import json
 import logging
 import re
 import struct
@@ -25,6 +26,7 @@ from services import ChannelService, TwitchAPIClient
 from shared.repositories.activation_code import ActivationCodeRepository
 from shared.repositories.activation_request import ActivationRequestRepository
 from shared.repositories.channel import ChannelRepository
+from shared.repositories.module_config import ModuleConfigRepository
 from shared.twitch_scopes import BOT_SCOPES
 from shared.twitch_scopes import BROADCASTER_SCOPES as _BROADCASTER_SCOPES
 
@@ -478,6 +480,36 @@ async def run_db_query(
         row_count=len(result_rows),
         duration_ms=duration_ms,
     )
+
+
+# ── Global module configuration ───────────────────────────────────────────────
+
+
+class AiPacksPatch(BaseModel):
+    enabled_packs: list[str]
+
+
+@router.get("/modules/ai-packs", response_model=list[str])
+async def get_module_ai_packs(
+    _: str = Depends(require_owner),
+    pool: Pool = Depends(get_db_pool),
+) -> list[str]:
+    """Return globally enabled knowledge pack IDs. Owner-only."""
+    return await ModuleConfigRepository(pool).get_enabled_packs()
+
+
+@router.patch("/modules/ai-packs", response_model=list[str])
+async def set_module_ai_packs(
+    body: AiPacksPatch,
+    _: str = Depends(require_owner),
+    pool: Pool = Depends(get_db_pool),
+) -> list[str]:
+    """Set globally enabled knowledge pack IDs and notify all bots to reload. Owner-only."""
+    result = await ModuleConfigRepository(pool).set_enabled_packs(body.enabled_packs)
+    payload = json.dumps({"table": "module_config"})
+    async with pool.acquire() as conn:
+        await conn.execute("SELECT pg_notify('config_change', $1)", payload)
+    return result
 
 
 @router.post("/activation-requests/{request_id}/reject")

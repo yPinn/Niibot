@@ -19,6 +19,7 @@ const Overview = lazy(() => import('@/pages/dashboard/Overview'))
 const Timers = lazy(() => import('@/pages/dashboard/Timers'))
 const AdminPage = lazy(() => import('@/pages/admin'))
 const AdminMonitor = lazy(() => import('@/pages/admin/Monitor'))
+const AdminModules = lazy(() => import('@/pages/admin/Modules'))
 const Insights = lazy(() => import('@/pages/analytics/Insights'))
 const Matcher = lazy(() => import('@/pages/analytics/Matcher'))
 const DiscordDashboard = lazy(() => import('@/pages/discord/Dashboard'))
@@ -110,6 +111,7 @@ function App() {
                       <Route element={<OwnerRoute />}>
                         <Route path="/admin" element={<AdminPage />} />
                         <Route path="/admin/monitor" element={<AdminMonitor />} />
+                        <Route path="/admin/modules" element={<AdminModules />} />
                       </Route>
                     </Route>
                   </Route>

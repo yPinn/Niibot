@@ -125,6 +125,23 @@ export interface DbQueryResult {
   duration_ms: number
 }
 
+export async function getModuleAIPacks(): Promise<string[]> {
+  const res = await apiFetch(API_ENDPOINTS.admin.moduleAiPacks, { credentials: 'include' })
+  if (!res.ok) throw new Error('Failed to fetch module AI packs')
+  return res.json()
+}
+
+export async function setModuleAIPacks(packs: string[]): Promise<string[]> {
+  const res = await apiFetch(API_ENDPOINTS.admin.moduleAiPacks, {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled_packs: packs }),
+  })
+  if (!res.ok) throw new Error('Failed to update module AI packs')
+  return res.json()
+}
+
 export async function runDbQuery(sql: string): Promise<DbQueryResult> {
   const response = await apiFetch(API_ENDPOINTS.admin.dbQuery, {
     method: 'POST',
