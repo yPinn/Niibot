@@ -10,7 +10,9 @@ import discord
 from pydantic import Field
 from pydantic_settings import SettingsConfigDict
 
-from shared.config_base import BaseServiceSettings
+from shared.config_base import DATA_DIR, RUNTIME_DIR, BaseServiceSettings
+
+__all__ = ["DATA_DIR", "RUNTIME_DIR", "BotConfig", "DiscordBotSettings", "get_settings"]
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -28,12 +30,6 @@ CORE_DIR = Path(__file__).resolve().parent
 DISCORD_DIR = CORE_DIR.parent
 BACKEND_DIR = DISCORD_DIR.parent
 COGS_DIR = DISCORD_DIR / "cogs"
-
-DATA_DIR = BACKEND_DIR / "data"  # static repo content baked into image
-RUNTIME_DIR = BACKEND_DIR / "runtime"  # mutable state, volume-mounted per env
-# Ensure the runtime dir exists at process start; writers (events.py log
-# channels, giveaway persistence, …) can then save without duplicating mkdir.
-RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
 
 
 class DiscordBotSettings(BaseServiceSettings):

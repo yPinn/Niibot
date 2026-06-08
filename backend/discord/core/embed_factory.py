@@ -144,8 +144,6 @@ class EmbedFactory:
         return embed
 
 
-# Lazily-initialised process-wide default factory backed by data/embed.json.
-# Loading this JSON once shaves ~10 redundant disk reads off Discord bot startup.
-# Declared after the class so the forward reference is unambiguous.
+# Process-wide cache for EmbedFactory.default(); guarded by _default_lock.
 _default_instance: EmbedFactory | None = None
 _default_lock = threading.Lock()

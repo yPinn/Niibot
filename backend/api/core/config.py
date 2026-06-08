@@ -6,14 +6,9 @@ from pathlib import Path
 from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import SettingsConfigDict
 
-from shared.config_base import BaseServiceSettings
+from shared.config_base import DATA_DIR, RUNTIME_DIR, BaseServiceSettings
 
-_BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
-DATA_DIR = _BACKEND_DIR / "data"  # static repo content baked into image
-RUNTIME_DIR = _BACKEND_DIR / "runtime"  # mutable state, volume-mounted per env
-# Ensure the runtime dir exists at process start; writers (events.py, giveaway
-# persistence, …) can then save without each duplicating mkdir logic.
-RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+__all__ = ["DATA_DIR", "RUNTIME_DIR", "Settings", "get_settings"]
 
 
 class Settings(BaseServiceSettings):

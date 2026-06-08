@@ -3,11 +3,29 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
+
+# ── Shared filesystem layout ─────────────────────────────────────────────────
+# Single source of truth for backend paths — each service config re-exports
+# DATA_DIR / RUNTIME_DIR from here so the three services can't drift.
+#
+# `shared/config_base.py` sits at backend/shared/, so .parent.parent is the
+# backend root in both local checkouts and Docker images (where /app == backend).
+_BACKEND_DIR = Path(__file__).resolve().parent.parent
+DATA_DIR = _BACKEND_DIR / "data"  # static repo content baked into image
+RUNTIME_DIR = _BACKEND_DIR / "runtime"  # mutable state, volume-mounted per env
+
+try:
+    RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+except OSError:
+    # Read-only FS (some test/CI sandboxes) — writers will surface a clearer
+    # error on first save attempt.
+    LOGGER.warning("Could not pre-create RUNTIME_DIR %s", RUNTIME_DIR, exc_info=True)
 
 
 class BaseServiceSettings(BaseSettings):
