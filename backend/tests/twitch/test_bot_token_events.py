@@ -63,6 +63,9 @@ def bot():
         b._channel_names = {}
         b._bot_is_mod = set()
         b._mod_check_pending = set()
+        b._needs_reauth = set()
+        b._token_refresh_buffer = []
+        b._token_refresh_flush_task = None
         return b
 
 
