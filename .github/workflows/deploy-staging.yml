@@ -61,4 +61,6 @@ jobs:
       tag_images: true
       prune_full: true
       image_suffix: "-stg"
+      legacy_data_dir: data/staging/backend
+      runtime_data_dir: data/staging/runtime
     secrets: inherit

@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
+import json
+import logging
+import threading
 from datetime import datetime
 
 import discord
+
+from core.config import DATA_DIR
+
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 # Sentinel: "use the value from global embed.json config"
 _UNSET = object()
@@ -15,7 +22,7 @@ class EmbedFactory:
 
     Initialise once per cog::
 
-        self._embed = EmbedFactory(load_json(DATA_DIR / "embed.json"))
+        self._embed = EmbedFactory.default()
 
     Build embeds with named props — author and footer come from config by
     default; pass explicit values to override or suppress::
@@ -42,6 +49,35 @@ class EmbedFactory:
 
     def __init__(self, cfg: dict) -> None:
         self._cfg = cfg
+
+    @classmethod
+    def default(cls) -> EmbedFactory:
+        """Return a process-wide cached factory built from data/embed.json.
+
+        Thread-safe via _default_lock; the lock is contested only on first call
+        per process (typically Discord bot startup). Tests that need a custom
+        config should construct EmbedFactory directly instead.
+        """
+        global _default_instance
+        if _default_instance is not None:
+            return _default_instance
+        with _default_lock:
+            if _default_instance is None:  # double-checked under lock
+                try:
+                    with open(DATA_DIR / "embed.json", encoding="utf-8") as f:
+                        cfg = json.load(f)
+                except Exception:
+                    LOGGER.warning("Failed to load embed.json, using empty config", exc_info=True)
+                    cfg = {}
+                _default_instance = cls(cfg)
+        return _default_instance
+
+    @classmethod
+    def _reset_default_for_tests(cls) -> None:
+        """Drop the cached default factory so the next .default() reloads from disk."""
+        global _default_instance
+        with _default_lock:
+            _default_instance = None
 
     # ------------------------------------------------------------------
 
@@ -106,3 +142,8 @@ class EmbedFactory:
             embed.set_image(url=image)
 
         return embed
+
+
+# Process-wide cache for EmbedFactory.default(); guarded by _default_lock.
+_default_instance: EmbedFactory | None = None
+_default_lock = threading.Lock()

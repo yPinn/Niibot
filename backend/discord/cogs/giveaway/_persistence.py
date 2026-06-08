@@ -13,7 +13,7 @@ LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 class GiveawayPersistence:
-    """Manages loading and saving active_giveaways.json."""
+    """Manages loading and saving giveaway_state.json."""
 
     def __init__(self, filepath: Path) -> None:
         self._filepath = filepath

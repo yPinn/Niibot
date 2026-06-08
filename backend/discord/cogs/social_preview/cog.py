@@ -34,7 +34,7 @@ import discord
 import httpx
 from discord.ext import commands
 
-from core import DATA_DIR, EmbedFactory, UserBoundView, get_settings, load_json
+from core import EmbedFactory, UserBoundView, get_settings
 
 from ._embeds import (
     build_bilibili_embed,
@@ -253,7 +253,7 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
 
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
-        self._embed = EmbedFactory(load_json(DATA_DIR / "embed.json"))
+        self._embed = EmbedFactory.default()
         self._http = httpx.AsyncClient(
             timeout=HTTP_TIMEOUT,
             headers={"User-Agent": _UA},

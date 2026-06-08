@@ -7,7 +7,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from core import BOT_NAME, BOT_VERSION, DATA_DIR, GIT_COMMIT, EmbedFactory, UserBoundView, load_json
+from core import BOT_NAME, BOT_VERSION, GIT_COMMIT, EmbedFactory, UserBoundView
 
 
 class _Cmd(NamedTuple):
@@ -190,7 +190,7 @@ class HelpView(UserBoundView):
 class UtilityCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self._embed = EmbedFactory(load_json(DATA_DIR / "embed.json"))
+        self._embed = EmbedFactory.default()
 
     @app_commands.command(name="ping", description="Bot 延遲")
     async def ping(self, interaction: discord.Interaction) -> None:

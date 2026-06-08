@@ -13,7 +13,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from core import DATA_DIR, EmbedFactory, load_json
+from core import DATA_DIR, EmbedFactory
 
 from ._views import CategoryButtonsView, ItemListView, RecommendationView
 from .constants import EAT_COLOR, EAT_THUMBNAIL
@@ -30,7 +30,7 @@ class EatCog(commands.Cog):
         self.bot = bot
         self.data_file = DATA_DIR / "eat.json"
         self.data: EatData = {}
-        self._embed = EmbedFactory(load_json(DATA_DIR / "embed.json"))
+        self._embed = EmbedFactory.default()
         self._lock = asyncio.Lock()
         self._dirty = False
 

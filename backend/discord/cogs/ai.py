@@ -13,7 +13,7 @@ from openai import (
 )
 from openai.types.chat import ChatCompletionMessageParam
 
-from core import DATA_DIR, EmbedFactory, get_settings, load_json
+from core import DATA_DIR, EmbedFactory, get_settings
 from shared.ai_provider import ProviderEntry, build_provider_chain, call_provider_chain
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -49,7 +49,7 @@ class AICog(commands.Cog):
             timeout=40.0,
             provider_order=("gemini", "groq", "openrouter"),  # quality-first for rich responses
         )
-        self._embed = EmbedFactory(load_json(DATA_DIR / "embed.json"))
+        self._embed = EmbedFactory.default()
 
     async def cog_load(self) -> None:
         LOGGER.info(f"AI ready: {len(self.provider_chain)} provider entries")

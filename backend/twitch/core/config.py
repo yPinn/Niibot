@@ -6,16 +6,15 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import SettingsConfigDict
 
-from shared.config_base import BaseServiceSettings
+from shared.config_base import DATA_DIR, RUNTIME_DIR, BaseServiceSettings
 from shared.twitch_scopes import BOT_SCOPES, BROADCASTER_SCOPES
 
 # === Path Configuration ===
 TWITCH_DIR = Path(__file__).resolve().parent.parent
 BACKEND_DIR = TWITCH_DIR.parent
 COMPONENTS_DIR = TWITCH_DIR / "components"
-DATA_DIR = BACKEND_DIR / "data"
 
-__all__ = ["BOT_SCOPES", "BROADCASTER_SCOPES"]
+__all__ = ["BOT_SCOPES", "BROADCASTER_SCOPES", "DATA_DIR", "RUNTIME_DIR"]
 
 
 class TwitchBotSettings(BaseServiceSettings):
