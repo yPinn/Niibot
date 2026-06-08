@@ -248,3 +248,43 @@ class TestLoadJson:
         fp = tmp_path / "embed.json"
         fp.write_text(json.dumps(data), encoding="utf-8")
         assert _load_json(fp) == data
+
+
+# ===========================================================================
+# EmbedFactory.default() — process-wide singleton
+# ===========================================================================
+
+
+class TestDefault:
+    """`.default()` lazily loads data/embed.json once and reuses the factory.
+
+    The fixture monkey-patches DATA_DIR on the importlib-loaded module copy and
+    resets the cached singleton via the private test helper before each test.
+    """
+
+    def test_returns_cached_singleton(self, tmp_path, monkeypatch):
+        EmbedFactory._reset_default_for_tests()
+        (tmp_path / "embed.json").write_text(json.dumps(_FULL_CFG), encoding="utf-8")
+        monkeypatch.setattr(_ef_mod, "DATA_DIR", tmp_path)
+
+        a = EmbedFactory.default()
+        b = EmbedFactory.default()
+        assert a is b
+        assert a._cfg == _FULL_CFG
+
+    def test_returns_empty_factory_when_embed_json_missing(self, tmp_path, monkeypatch):
+        EmbedFactory._reset_default_for_tests()
+        monkeypatch.setattr(_ef_mod, "DATA_DIR", tmp_path)  # no embed.json present
+
+        factory = EmbedFactory.default()
+        assert factory._cfg == {}
+
+    def test_reset_helper_drops_cache(self, tmp_path, monkeypatch):
+        EmbedFactory._reset_default_for_tests()
+        (tmp_path / "embed.json").write_text("{}", encoding="utf-8")
+        monkeypatch.setattr(_ef_mod, "DATA_DIR", tmp_path)
+
+        first = EmbedFactory.default()
+        EmbedFactory._reset_default_for_tests()
+        second = EmbedFactory.default()
+        assert first is not second

@@ -404,10 +404,13 @@ jobs:
 
       - name: Migrate runtime data (idempotent)
         working-directory: ${{ env.PROJECT_DIR }}
+        env:
+          # Indirection via env vars — never inline ${{ inputs.* }} into shell
+          # commands (GHSA-style script-injection hygiene).
+          LEGACY_DIR: ${{ inputs.legacy_data_dir }}
+          RUNTIME_DIR: ${{ inputs.runtime_data_dir }}
         run: |
-          bash backend/scripts/migrate_runtime_data.sh \
-            "${{ inputs.legacy_data_dir }}" \
-            "${{ inputs.runtime_data_dir }}"
+          bash backend/scripts/migrate_runtime_data.sh "$LEGACY_DIR" "$RUNTIME_DIR"
 
       - name: Run migrations
         working-directory: ${{ env.PROJECT_DIR }}

@@ -34,7 +34,6 @@ def _load_log_channels() -> dict[int, int]:
 def _save_log_channels(data: dict[int, int]) -> None:
     payload = json.dumps({str(k): v for k, v in data.items()}, ensure_ascii=False, indent=2)
     dir_ = _LOG_CHANNELS_FILE.parent
-    dir_.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(
         "w", dir=dir_, encoding="utf-8", delete=False, suffix=".tmp"
     ) as tmp:

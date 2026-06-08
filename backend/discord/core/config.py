@@ -31,6 +31,9 @@ COGS_DIR = DISCORD_DIR / "cogs"
 
 DATA_DIR = BACKEND_DIR / "data"  # static repo content baked into image
 RUNTIME_DIR = BACKEND_DIR / "runtime"  # mutable state, volume-mounted per env
+# Ensure the runtime dir exists at process start; writers (events.py log
+# channels, giveaway persistence, …) can then save without duplicating mkdir.
+RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
 
 
 class DiscordBotSettings(BaseServiceSettings):

@@ -15,6 +15,9 @@ BACKEND_DIR = TWITCH_DIR.parent
 COMPONENTS_DIR = TWITCH_DIR / "components"
 DATA_DIR = BACKEND_DIR / "data"  # static repo content baked into image
 RUNTIME_DIR = BACKEND_DIR / "runtime"  # mutable state, volume-mounted per env
+# Ensure the runtime dir exists at process start; writers can save without
+# each duplicating mkdir logic.
+RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
 
 __all__ = ["BOT_SCOPES", "BROADCASTER_SCOPES"]
 

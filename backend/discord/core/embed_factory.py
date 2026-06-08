@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 from datetime import datetime
 
 import discord
@@ -14,10 +15,6 @@ LOGGER: logging.Logger = logging.getLogger(__name__)
 
 # Sentinel: "use the value from global embed.json config"
 _UNSET = object()
-
-# Lazily-initialised process-wide default factory backed by data/embed.json.
-# Loading this JSON once shaves ~10 redundant disk reads off Discord bot startup.
-_default_instance: EmbedFactory | None = None
 
 
 class EmbedFactory:
@@ -57,19 +54,30 @@ class EmbedFactory:
     def default(cls) -> EmbedFactory:
         """Return a process-wide cached factory built from data/embed.json.
 
-        Tests that need a custom config should construct EmbedFactory directly
-        instead of going through this accessor.
+        Thread-safe via _default_lock; the lock is contested only on first call
+        per process (typically Discord bot startup). Tests that need a custom
+        config should construct EmbedFactory directly instead.
         """
         global _default_instance
-        if _default_instance is None:
-            try:
-                with open(DATA_DIR / "embed.json", encoding="utf-8") as f:
-                    cfg = json.load(f)
-            except Exception:
-                LOGGER.warning("Failed to load embed.json, using empty config", exc_info=True)
-                cfg = {}
-            _default_instance = cls(cfg)
+        if _default_instance is not None:
+            return _default_instance
+        with _default_lock:
+            if _default_instance is None:  # double-checked under lock
+                try:
+                    with open(DATA_DIR / "embed.json", encoding="utf-8") as f:
+                        cfg = json.load(f)
+                except Exception:
+                    LOGGER.warning("Failed to load embed.json, using empty config", exc_info=True)
+                    cfg = {}
+                _default_instance = cls(cfg)
         return _default_instance
+
+    @classmethod
+    def _reset_default_for_tests(cls) -> None:
+        """Drop the cached default factory so the next .default() reloads from disk."""
+        global _default_instance
+        with _default_lock:
+            _default_instance = None
 
     # ------------------------------------------------------------------
 
@@ -134,3 +142,10 @@ class EmbedFactory:
             embed.set_image(url=image)
 
         return embed
+
+
+# Lazily-initialised process-wide default factory backed by data/embed.json.
+# Loading this JSON once shaves ~10 redundant disk reads off Discord bot startup.
+# Declared after the class so the forward reference is unambiguous.
+_default_instance: EmbedFactory | None = None
+_default_lock = threading.Lock()

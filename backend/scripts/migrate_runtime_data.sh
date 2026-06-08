@@ -43,7 +43,7 @@ for entry in "${MOVES[@]}"; do
         continue
     fi
     mv "$src" "$dst"
-    echo "[moved] $src → $dst"
+    echo "[moved] $src -> $dst"
 done
 
 echo "Runtime data migration complete."

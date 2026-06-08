@@ -11,6 +11,9 @@ from shared.config_base import BaseServiceSettings
 _BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
 DATA_DIR = _BACKEND_DIR / "data"  # static repo content baked into image
 RUNTIME_DIR = _BACKEND_DIR / "runtime"  # mutable state, volume-mounted per env
+# Ensure the runtime dir exists at process start; writers (events.py, giveaway
+# persistence, …) can then save without each duplicating mkdir logic.
+RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
 
 
 class Settings(BaseServiceSettings):
