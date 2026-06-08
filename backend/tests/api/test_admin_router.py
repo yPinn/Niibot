@@ -613,7 +613,31 @@ class TestListLogContainers:
         assert r.status_code == 200
         data = r.json()
         assert all(c["running"] is False for c in data)
-        assert len(data) == 6  # _KNOWN_CONTAINERS has 6 entries
+        assert len(data) == 6  # six bot services
+
+    def test_dev_environment_uses_bare_container_names(self, monkeypatch):
+        monkeypatch.setenv("ENVIRONMENT", "development")
+        get_settings.cache_clear()
+        with patch(
+            "routers.admin_router.aiohttp.UnixConnector", side_effect=Exception("no socket")
+        ):
+            r = _make_client().get("/api/admin/logs/containers")
+        names = [c["name"] for c in r.json()]
+        assert "nb-api" in names
+        assert "nb-api-stg" not in names
+
+    def test_staging_environment_uses_stg_suffix(self, monkeypatch):
+        """Staging API shares the docker host with prod, so it must NOT query
+        bare names — those would return prod container status."""
+        monkeypatch.setenv("ENVIRONMENT", "staging")
+        get_settings.cache_clear()
+        with patch(
+            "routers.admin_router.aiohttp.UnixConnector", side_effect=Exception("no socket")
+        ):
+            r = _make_client().get("/api/admin/logs/containers")
+        names = [c["name"] for c in r.json()]
+        assert "nb-api-stg" in names
+        assert "nb-api" not in names
 
 
 # ── GET /api/admin/logs/{container} ─────────────────────────────────────────
@@ -632,3 +656,10 @@ class TestGetContainerLogs:
         ):
             r = _make_client().get("/api/admin/logs/nb-api")
         assert r.status_code == 503
+
+    def test_staging_rejects_prod_container_name(self, monkeypatch):
+        """In staging, querying bare 'nb-api' must 400 — it's not in the allow list."""
+        monkeypatch.setenv("ENVIRONMENT", "staging")
+        get_settings.cache_clear()
+        r = _make_client().get("/api/admin/logs/nb-api")
+        assert r.status_code == 400
