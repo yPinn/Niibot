@@ -38,7 +38,12 @@ class ModuleConfigRepository:
             )
         if not row:
             return []
-        return list(json.loads(row["value"]) or [])
+        # JSONB codec (shared.database) auto-decodes to Python list/dict, but tests
+        # using raw asyncpg may return a string — handle both. Matches event_config pattern.
+        value = row["value"]
+        if isinstance(value, str):
+            value = json.loads(value)
+        return list(value or [])
 
     async def set_enabled_packs(self, pack_ids: list[str]) -> list[str]:
         """Persist globally enabled pack IDs and invalidate cache."""
