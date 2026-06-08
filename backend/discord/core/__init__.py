@@ -14,6 +14,7 @@ from .config import (
     DATA_DIR,
     DISCORD_DIR,
     GIT_COMMIT,
+    RUNTIME_DIR,
     BotConfig,
     get_settings,
 )
@@ -46,6 +47,7 @@ __all__ = [
     "BACKEND_DIR",
     "COGS_DIR",
     "DATA_DIR",
+    "RUNTIME_DIR",
     # Utilities
     "EmbedFactory",
     "render_message_image",

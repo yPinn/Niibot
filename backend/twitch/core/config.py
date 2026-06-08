@@ -13,7 +13,8 @@ from shared.twitch_scopes import BOT_SCOPES, BROADCASTER_SCOPES
 TWITCH_DIR = Path(__file__).resolve().parent.parent
 BACKEND_DIR = TWITCH_DIR.parent
 COMPONENTS_DIR = TWITCH_DIR / "components"
-DATA_DIR = BACKEND_DIR / "data"
+DATA_DIR = BACKEND_DIR / "data"  # static repo content baked into image
+RUNTIME_DIR = BACKEND_DIR / "runtime"  # mutable state, volume-mounted per env
 
 __all__ = ["BOT_SCOPES", "BROADCASTER_SCOPES"]
 

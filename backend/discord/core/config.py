@@ -29,11 +29,8 @@ DISCORD_DIR = CORE_DIR.parent
 BACKEND_DIR = DISCORD_DIR.parent
 COGS_DIR = DISCORD_DIR / "cogs"
 
-# In Docker, DISCORD_DIR resolves to /app
-if str(DISCORD_DIR) == "/app":
-    DATA_DIR = Path("/app/data")
-else:
-    DATA_DIR = BACKEND_DIR / "data"
+DATA_DIR = BACKEND_DIR / "data"  # static repo content baked into image
+RUNTIME_DIR = BACKEND_DIR / "runtime"  # mutable state, volume-mounted per env
 
 
 class DiscordBotSettings(BaseServiceSettings):

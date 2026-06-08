@@ -9,7 +9,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
-from core import DATA_DIR, EmbedFactory, load_json
+from core import EmbedFactory
 from shared.repositories.birthday import BirthdayRepository
 
 from ._views import DashboardView, InitSetupView, UpdateSettingsView
@@ -25,7 +25,7 @@ class BirthdayCog(commands.Cog):
         self.bot = bot
         self.repo: BirthdayRepository
         self._ready = False
-        self._embed = EmbedFactory(load_json(DATA_DIR / "embed.json"))
+        self._embed = EmbedFactory.default()
 
     async def cog_load(self) -> None:
         LOGGER.info("Birthday ready (DB connecting in background...)")

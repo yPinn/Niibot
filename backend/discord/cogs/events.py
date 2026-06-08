@@ -15,11 +15,11 @@ from cachetools import LRUCache
 from discord import app_commands
 from discord.ext import commands
 
-from core import DATA_DIR, EmbedFactory, load_json, render_message_image
+from core import RUNTIME_DIR, EmbedFactory, render_message_image
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
-_LOG_CHANNELS_FILE = DATA_DIR / "log_channels.json"
+_LOG_CHANNELS_FILE = RUNTIME_DIR / "log_channels.json"
 _MSG_CACHE_SIZE = 2000  # max cached messages across all guilds
 
 
@@ -34,6 +34,7 @@ def _load_log_channels() -> dict[int, int]:
 def _save_log_channels(data: dict[int, int]) -> None:
     payload = json.dumps({str(k): v for k, v in data.items()}, ensure_ascii=False, indent=2)
     dir_ = _LOG_CHANNELS_FILE.parent
+    dir_.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(
         "w", dir=dir_, encoding="utf-8", delete=False, suffix=".tmp"
     ) as tmp:
@@ -77,7 +78,7 @@ class EventsCog(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
         self.log_channels: dict[int, int] = _load_log_channels()
-        self._embed = EmbedFactory(load_json(DATA_DIR / "embed.json"))
+        self._embed = EmbedFactory.default()
         self._msg_cache: LRUCache[int, discord.Message] = LRUCache(maxsize=_MSG_CACHE_SIZE)
         self._log_skip_ids: set[int] = set()
 

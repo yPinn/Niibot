@@ -22,7 +22,7 @@ services:
     image: nb-twitch-stg
     container_name: nb-twitch-stg
     volumes:
-      - ./data/staging/backend:/app/data
+      - ./data/staging/runtime:/app/runtime
     env_file:
       - ./backend/shared.staging.env
       - ./backend/twitch/.env.staging
@@ -31,7 +31,7 @@ services:
     image: nb-discord-stg
     container_name: nb-discord-stg
     volumes:
-      - ./data/staging/backend:/app/data
+      - ./data/staging/runtime:/app/runtime
     env_file:
       - ./backend/shared.staging.env
       - ./backend/discord/.env.staging
@@ -42,7 +42,7 @@ services:
     ports:
       - "8001:8000"
     volumes:
-      - ./data/staging/backend:/app/data
+      - ./data/staging/runtime:/app/runtime
       - /var/run/docker.sock:/var/run/docker.sock:ro
     env_file:
       - ./backend/shared.staging.env

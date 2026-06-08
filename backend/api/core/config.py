@@ -8,7 +8,9 @@ from pydantic_settings import SettingsConfigDict
 
 from shared.config_base import BaseServiceSettings
 
-DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
+_BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
+DATA_DIR = _BACKEND_DIR / "data"  # static repo content baked into image
+RUNTIME_DIR = _BACKEND_DIR / "runtime"  # mutable state, volume-mounted per env
 
 
 class Settings(BaseServiceSettings):

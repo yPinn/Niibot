@@ -112,7 +112,11 @@ data/env-*.tar.gz
 data/env/
 
 # Bot runtime data (guild-specific, not for version control)
+backend/runtime/*
+!backend/runtime/.gitkeep
+# Legacy paths — kept until prod/staging migration removes the originals
 backend/data/log_channels.json
+backend/data/active_giveaways.json
 
 # macOS
 .DS_Store

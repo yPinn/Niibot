@@ -2,12 +2,22 @@
 
 from __future__ import annotations
 
+import json
+import logging
 from datetime import datetime
 
 import discord
 
+from core.config import DATA_DIR
+
+LOGGER: logging.Logger = logging.getLogger(__name__)
+
 # Sentinel: "use the value from global embed.json config"
 _UNSET = object()
+
+# Lazily-initialised process-wide default factory backed by data/embed.json.
+# Loading this JSON once shaves ~10 redundant disk reads off Discord bot startup.
+_default_instance: EmbedFactory | None = None
 
 
 class EmbedFactory:
@@ -15,7 +25,7 @@ class EmbedFactory:
 
     Initialise once per cog::
 
-        self._embed = EmbedFactory(load_json(DATA_DIR / "embed.json"))
+        self._embed = EmbedFactory.default()
 
     Build embeds with named props — author and footer come from config by
     default; pass explicit values to override or suppress::
@@ -42,6 +52,24 @@ class EmbedFactory:
 
     def __init__(self, cfg: dict) -> None:
         self._cfg = cfg
+
+    @classmethod
+    def default(cls) -> EmbedFactory:
+        """Return a process-wide cached factory built from data/embed.json.
+
+        Tests that need a custom config should construct EmbedFactory directly
+        instead of going through this accessor.
+        """
+        global _default_instance
+        if _default_instance is None:
+            try:
+                with open(DATA_DIR / "embed.json", encoding="utf-8") as f:
+                    cfg = json.load(f)
+            except Exception:
+                LOGGER.warning("Failed to load embed.json, using empty config", exc_info=True)
+                cfg = {}
+            _default_instance = cls(cfg)
+        return _default_instance
 
     # ------------------------------------------------------------------
 

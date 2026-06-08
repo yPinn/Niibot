@@ -120,7 +120,7 @@ class GamesCog(commands.Cog):
 
     def _load_data(self) -> None:
         self.games_data = load_json(DATA_DIR / "games.json")
-        self._embed = EmbedFactory(load_json(DATA_DIR / "embed.json"))
+        self._embed = EmbedFactory.default()
 
     game = app_commands.Group(name="game", description="遊戲指令")
 

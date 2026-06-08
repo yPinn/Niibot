@@ -16,15 +16,18 @@ from cogs.events import (
     _save_log_channels,
     _top_role_color,
 )
+from core import EmbedFactory
 
 # ── Fixtures & helpers ─────────────────────────────────────────────────────────
 
 
 @pytest.fixture
 def cog():
+    # Real EmbedFactory with empty config so .build(title=…) returns a real
+    # discord.Embed (tests assert on embed.title), without touching disk.
     with (
         patch("cogs.events._load_log_channels", return_value={}),
-        patch("cogs.events.load_json", return_value={}),
+        patch("cogs.events.EmbedFactory.default", return_value=EmbedFactory({})),
     ):
         bot = MagicMock(spec=commands.Bot)
         c = EventsCog(bot)
