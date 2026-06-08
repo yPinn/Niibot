@@ -355,7 +355,8 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
     def _shared_chat_participants(
         payload: twitchio.SharedChatSessionBegin | twitchio.SharedChatSessionUpdate,
     ) -> tuple[tuple[str, str], ...]:
-        return tuple((str(p.id), p.name) for p in payload.participants)
+        # PartialUser.name is Optional (e.g. deleted accounts); fall back to id for logging.
+        return tuple((str(p.id), p.name or str(p.id)) for p in payload.participants)
 
     @staticmethod
     def _format_parties(
@@ -385,7 +386,7 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
             session = SharedChatSession(
                 session_id=session_id,
                 host_id=str(payload.host.id),
-                host_name=payload.host.name,
+                host_name=payload.host.name or str(payload.host.id),
                 participants=participants,
                 started_at=datetime.now(UTC),
                 our_channel_ids=(channel_id,),
@@ -419,7 +420,7 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
             session = SharedChatSession(
                 session_id=session_id,
                 host_id=str(payload.host.id),
-                host_name=payload.host.name,
+                host_name=payload.host.name or str(payload.host.id),
                 participants=new_participants,
                 started_at=datetime.now(UTC),
                 our_channel_ids=(channel_id,),
