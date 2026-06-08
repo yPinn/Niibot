@@ -99,6 +99,9 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
         # User-token messages are automatically source-only (Twitch API design),
         # so this map is for awareness/logging rather than routing decisions.
         self._shared_chat_sessions: dict[str, SharedChatSession] = {}
+        # Debounced batching for periodic token-refresh logs (single line per burst).
+        self._token_refresh_buffer: list[str] = []
+        self._token_refresh_flush_task: asyncio.Task | None = None
         # Channels missing one or more BROADCASTER_SCOPES — notified on next stream online
         self._needs_reauth: set[str] = set()
         # Channel IDs where bot has confirmed moderator status
@@ -211,12 +214,39 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
             scopes=scopes_str,
             token_type=token_type,
         )
-        LOGGER.info("[%s] Token refreshed and persisted", self._ch(payload.user_id))
-        if payload.user_id != self._bot_id and payload.user_id not in self._bot_is_mod:
+        LOGGER.debug("[%s] Token refreshed and persisted", self._ch(payload.user_id))
+        self._buffer_token_refresh_log(payload.user_id)
+        if (
+            payload.user_id != self._bot_id
+            and payload.user_id not in self._bot_is_mod
+            and payload.user_id not in self._needs_reauth
+        ):
             LOGGER.debug(
                 "[%s] Re-checking mod status after token refresh", self._ch(payload.user_id)
             )
             await self._check_bot_mod_status(payload.user_id)
+
+    def _buffer_token_refresh_log(self, user_id: str) -> None:
+        """Collect token-refresh events; flush a single batched INFO line after a quiet window."""
+        self._token_refresh_buffer.append(user_id)
+        if self._token_refresh_flush_task and not self._token_refresh_flush_task.done():
+            self._token_refresh_flush_task.cancel()
+        task = asyncio.create_task(self._flush_token_refresh_log())
+        self._token_refresh_flush_task = task
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
+
+    async def _flush_token_refresh_log(self) -> None:
+        try:
+            await asyncio.sleep(5)
+        except asyncio.CancelledError:
+            return
+        if not self._token_refresh_buffer:
+            return
+        ids = self._token_refresh_buffer[:]
+        self._token_refresh_buffer.clear()
+        names = ",".join(self._ch(uid) for uid in ids)
+        LOGGER.info("Token refresh: %d channels [%s]", len(ids), names)
 
     async def event_message(self, payload: twitchio.ChatMessage) -> None:
         if payload.broadcaster:
@@ -579,8 +609,7 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
                 # Token expired or missing scope — broadcaster needs to re-auth, not grant /mod.
                 self._needs_reauth.add(channel_id)
                 LOGGER.warning(
-                    "[%s] Mod status check auth failure (%s)"
-                    " — broadcaster token invalid or missing scope, marking for reauth",
+                    "[%s] Marking for reauth (mod check %s)",
                     self._ch(channel_id),
                     resp.status_code,
                 )

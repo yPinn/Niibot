@@ -291,6 +291,102 @@ async def test_mod_check_auth_failure_marks_needs_reauth(status_code):
 
 
 # ---------------------------------------------------------------------------
+# Tests — event_token_refreshed mod-check dedup
+# ---------------------------------------------------------------------------
+
+
+def _make_bot_for_token_refresh(needs_reauth: set[str] | None = None):
+    """Minimal Bot instance for event_token_refreshed tests."""
+    with (
+        patch("twitch.core.bot._ChannelMixin.__init__", return_value=None),
+        patch("twitch.core.bot._MessageRouterMixin.__init__", return_value=None),
+        patch("twitch.core.bot._NotifyMixin.__init__", return_value=None),
+        patch("twitch.core.bot._SessionMixin.__init__", return_value=None),
+        patch("twitch.core.bot.commands.AutoBot.__init__", return_value=None),
+    ):
+        from twitch.core.bot import Bot
+
+        b = Bot.__new__(Bot)
+        b._bot_id = "bot-001"
+        b._channel_names = {}
+        b._needs_reauth = needs_reauth if needs_reauth is not None else set()
+        b._bot_is_mod = set()
+        b._token_refresh_buffer = []
+        b._token_refresh_flush_task = None
+        b._background_tasks = set()
+        b.channels = MagicMock()
+        b.channels.upsert_token_only = AsyncMock()
+        b._check_bot_mod_status = AsyncMock()
+        return b
+
+
+def _make_refresh_payload(user_id: str):
+    p = MagicMock()
+    p.user_id = user_id
+    p.token = "new-tok"
+    p.refresh_token = "new-refresh"
+    p.scopes = ["chat:read"]
+    return p
+
+
+@pytest.mark.asyncio
+async def test_token_refresh_skips_mod_check_when_needs_reauth():
+    """Channel already flagged for reauth → mod check is skipped on refresh (no 401 log spam)."""
+    b = _make_bot_for_token_refresh(needs_reauth={"123"})
+
+    await b.event_token_refreshed(_make_refresh_payload("123"))
+
+    b._check_bot_mod_status.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_token_refresh_triggers_mod_check_when_not_mod_and_not_reauth():
+    """Channel not mod and not in reauth → mod check runs (covers new channels)."""
+    b = _make_bot_for_token_refresh(needs_reauth=set())
+
+    await b.event_token_refreshed(_make_refresh_payload("123"))
+
+    b._check_bot_mod_status.assert_awaited_once_with("123")
+
+
+@pytest.mark.asyncio
+async def test_token_refresh_skips_mod_check_when_already_mod():
+    """Channel confirmed mod → no need to re-check."""
+    b = _make_bot_for_token_refresh()
+    b._bot_is_mod = {"123"}
+
+    await b.event_token_refreshed(_make_refresh_payload("123"))
+
+    b._check_bot_mod_status.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_token_refresh_batches_burst_into_single_log_line(caplog):
+    """Multiple refreshes within the debounce window produce one summary INFO line."""
+    import asyncio
+    import logging
+
+    b = _make_bot_for_token_refresh()
+    b._ch = lambda uid: f"name{uid}({uid})"  # stub _ch for predictable output
+
+    with patch("twitch.core.bot.asyncio.sleep", new=AsyncMock()):
+        # Three refreshes back-to-back; each cancels the previous flush task.
+        await b.event_token_refreshed(_make_refresh_payload("u1"))
+        await b.event_token_refreshed(_make_refresh_payload("u2"))
+        await b.event_token_refreshed(_make_refresh_payload("u3"))
+
+        # Drain whichever flush task survived (cancelled ones raise CancelledError silently).
+        pending = [t for t in b._background_tasks if not t.done()]
+        with caplog.at_level(logging.INFO, logger="twitch.core.bot"):
+            await asyncio.gather(*pending, return_exceptions=True)
+
+    summary = [r for r in caplog.records if r.message.startswith("Token refresh:")]
+    assert len(summary) == 1
+    assert "3 channels" in summary[0].message
+    assert "u1" in summary[0].message and "u3" in summary[0].message
+
+
+# ---------------------------------------------------------------------------
 # Tests — Shared Chat session tracking
 # ---------------------------------------------------------------------------
 
