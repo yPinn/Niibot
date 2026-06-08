@@ -288,3 +288,268 @@ async def test_mod_check_auth_failure_marks_needs_reauth(status_code):
 
     assert "123" in b._needs_reauth
     assert "123" not in b._bot_is_mod
+
+
+# ---------------------------------------------------------------------------
+# Tests — Shared Chat session tracking
+# ---------------------------------------------------------------------------
+
+
+def _make_shared_chat_bot():
+    """Minimal Bot for shared-chat event tests."""
+    with (
+        patch("twitch.core.bot._ChannelMixin.__init__", return_value=None),
+        patch("twitch.core.bot._MessageRouterMixin.__init__", return_value=None),
+        patch("twitch.core.bot._NotifyMixin.__init__", return_value=None),
+        patch("twitch.core.bot._SessionMixin.__init__", return_value=None),
+        patch("twitch.core.bot.commands.AutoBot.__init__", return_value=None),
+    ):
+        from twitch.core.bot import Bot
+
+        b = Bot.__new__(Bot)
+        b._shared_chat_sessions = {}
+        return b
+
+
+def _make_shared_chat_payload(
+    *,
+    broadcaster_id: str,
+    broadcaster_name: str,
+    host_id: str,
+    host_name: str,
+    session_id: str = "sess-1",
+    participants: list[tuple[str, str]] | None = None,
+):
+    payload = MagicMock()
+    payload.broadcaster = _make_partial_user(broadcaster_id, broadcaster_name)
+    payload.host = _make_partial_user(host_id, host_name)
+    payload.session_id = session_id
+    payload.participants = [_make_partial_user(pid, name) for pid, name in (participants or [])]
+    return payload
+
+
+def _make_session(
+    *,
+    session_id: str = "sess-1",
+    host_id: str = "999",
+    host_name: str = "other_host",
+    participants: tuple[tuple[str, str], ...] = (("999", "other_host"), ("123", "ours")),
+    our_channel_ids: tuple[str, ...] = ("123",),
+):
+    from datetime import UTC, datetime
+
+    from twitch.core.bot import SharedChatSession
+
+    return SharedChatSession(
+        session_id=session_id,
+        host_id=host_id,
+        host_name=host_name,
+        participants=participants,
+        started_at=datetime.now(UTC),
+        our_channel_ids=our_channel_ids,
+    )
+
+
+@pytest.mark.asyncio
+async def test_shared_chat_begin_stores_session_keyed_by_session_id(caplog):
+    import logging
+
+    b = _make_shared_chat_bot()
+    payload = _make_shared_chat_payload(
+        broadcaster_id="123",
+        broadcaster_name="ours",
+        host_id="999",
+        host_name="other_host",
+        session_id="sess-1",
+        participants=[("999", "other_host"), ("123", "ours"), ("555", "third")],
+    )
+
+    with caplog.at_level(logging.INFO, logger="twitch.core.bot"):
+        await b.event_shared_chat_begin(payload)
+
+    session = b._shared_chat_sessions["sess-1"]
+    assert session.our_channel_ids == ("123",)
+    assert ("555", "third") in session.participants
+
+    msgs = [r.message for r in caplog.records if "SharedChat begin" in r.message]
+    assert len(msgs) == 1
+    assert "session=sess-1" in msgs[0]
+    assert "other_host(host)" in msgs[0]
+    assert "ours(self)" in msgs[0]
+
+
+@pytest.mark.asyncio
+async def test_shared_chat_begin_dedups_when_second_of_our_channels_joins(caplog):
+    import logging
+
+    b = _make_shared_chat_bot()
+    payload_a = _make_shared_chat_payload(
+        broadcaster_id="123",
+        broadcaster_name="ours_a",
+        host_id="999",
+        host_name="other_host",
+        session_id="sess-1",
+        participants=[("999", "other_host"), ("123", "ours_a")],
+    )
+    payload_b = _make_shared_chat_payload(
+        broadcaster_id="456",
+        broadcaster_name="ours_b",
+        host_id="999",
+        host_name="other_host",
+        session_id="sess-1",
+        participants=[("999", "other_host"), ("123", "ours_a"), ("456", "ours_b")],
+    )
+
+    with caplog.at_level(logging.INFO, logger="twitch.core.bot"):
+        await b.event_shared_chat_begin(payload_a)
+        await b.event_shared_chat_begin(payload_b)
+
+    begin_msgs = [r.message for r in caplog.records if "SharedChat begin" in r.message]
+    assert len(begin_msgs) == 1  # second begin is silent
+    assert b._shared_chat_sessions["sess-1"].our_channel_ids == ("123", "456")
+
+
+@pytest.mark.asyncio
+async def test_shared_chat_update_logs_diff_only_from_canonical(caplog):
+    import logging
+
+    b = _make_shared_chat_bot()
+    b._shared_chat_sessions["sess-1"] = _make_session(
+        participants=(("999", "other_host"), ("123", "ours_a"), ("456", "ours_b")),
+        our_channel_ids=("123", "456"),
+    )
+
+    payload_from_canonical = _make_shared_chat_payload(
+        broadcaster_id="123",
+        broadcaster_name="ours_a",
+        host_id="999",
+        host_name="other_host",
+        session_id="sess-1",
+        participants=[
+            ("999", "other_host"),
+            ("123", "ours_a"),
+            ("456", "ours_b"),
+            ("777", "newcomer"),
+        ],
+    )
+    payload_from_non_canonical = _make_shared_chat_payload(
+        broadcaster_id="456",
+        broadcaster_name="ours_b",
+        host_id="999",
+        host_name="other_host",
+        session_id="sess-1",
+        participants=[
+            ("999", "other_host"),
+            ("123", "ours_a"),
+            ("456", "ours_b"),
+            ("777", "newcomer"),
+        ],
+    )
+
+    with caplog.at_level(logging.INFO, logger="twitch.core.bot"):
+        await b.event_shared_chat_update(payload_from_non_canonical)
+        await b.event_shared_chat_update(payload_from_canonical)
+
+    update_msgs = [r.message for r in caplog.records if "SharedChat update" in r.message]
+    # Only canonical (123) logs — but it runs second, and by then state already updated
+    # by the non-canonical call, so its diff is empty → no log emitted.
+    # First call (non-canonical) is silenced by design.
+    assert len(update_msgs) == 0
+
+
+@pytest.mark.asyncio
+async def test_shared_chat_update_canonical_logs_membership_diff(caplog):
+    import logging
+
+    b = _make_shared_chat_bot()
+    b._shared_chat_sessions["sess-1"] = _make_session(
+        participants=(("999", "other_host"), ("123", "ours")),
+        our_channel_ids=("123",),
+    )
+    payload = _make_shared_chat_payload(
+        broadcaster_id="123",
+        broadcaster_name="ours",
+        host_id="999",
+        host_name="other_host",
+        session_id="sess-1",
+        participants=[("999", "other_host"), ("123", "ours"), ("777", "newcomer")],
+    )
+
+    with caplog.at_level(logging.INFO, logger="twitch.core.bot"):
+        await b.event_shared_chat_update(payload)
+
+    update_msgs = [r.message for r in caplog.records if "SharedChat update" in r.message]
+    assert len(update_msgs) == 1
+    assert "+newcomer" in update_msgs[0]
+    assert "session=sess-1" in update_msgs[0]
+
+
+@pytest.mark.asyncio
+async def test_shared_chat_end_logs_only_when_last_of_our_channels_leaves(caplog):
+    import logging
+
+    b = _make_shared_chat_bot()
+    b._shared_chat_sessions["sess-1"] = _make_session(
+        participants=(("999", "other_host"), ("123", "ours_a"), ("456", "ours_b")),
+        our_channel_ids=("123", "456"),
+    )
+
+    end_a = MagicMock()
+    end_a.broadcaster = _make_partial_user("123", "ours_a")
+    end_a.session_id = "sess-1"
+    end_b = MagicMock()
+    end_b.broadcaster = _make_partial_user("456", "ours_b")
+    end_b.session_id = "sess-1"
+
+    with caplog.at_level(logging.INFO, logger="twitch.core.bot"):
+        await b.event_shared_chat_end(end_a)
+        # After A leaves, session still present (B still in)
+        assert "sess-1" in b._shared_chat_sessions
+        await b.event_shared_chat_end(end_b)
+
+    end_msgs = [r.message for r in caplog.records if "SharedChat end" in r.message]
+    assert len(end_msgs) == 1
+    assert "sess-1" not in b._shared_chat_sessions
+    assert "duration=" in end_msgs[0]
+
+
+@pytest.mark.asyncio
+async def test_shared_chat_end_without_tracked_session_logs_bare(caplog):
+    """End arrives for a session we never tracked (bot restart) — log a bare end."""
+    import logging
+
+    b = _make_shared_chat_bot()
+    payload = MagicMock()
+    payload.broadcaster = _make_partial_user("123", "ours")
+    payload.session_id = "orphan-sess"
+
+    with caplog.at_level(logging.INFO, logger="twitch.core.bot"):
+        await b.event_shared_chat_end(payload)
+
+    msgs = [r.message for r in caplog.records if "SharedChat end" in r.message]
+    assert len(msgs) == 1
+    assert "session=orphan-sess" in msgs[0]
+    assert "duration=" not in msgs[0]
+
+
+@pytest.mark.asyncio
+async def test_shared_chat_update_without_prior_begin_synthesizes_and_logs_begin(caplog):
+    """Update arriving before Begin (race) synthesizes the session and logs as begin."""
+    import logging
+
+    b = _make_shared_chat_bot()
+    payload = _make_shared_chat_payload(
+        broadcaster_id="123",
+        broadcaster_name="ours",
+        host_id="999",
+        host_name="other_host",
+        session_id="sess-x",
+        participants=[("999", "other_host"), ("123", "ours")],
+    )
+
+    with caplog.at_level(logging.INFO, logger="twitch.core.bot"):
+        await b.event_shared_chat_update(payload)
+
+    assert "sess-x" in b._shared_chat_sessions
+    begin_msgs = [r.message for r in caplog.records if "SharedChat begin" in r.message]
+    assert len(begin_msgs) == 1

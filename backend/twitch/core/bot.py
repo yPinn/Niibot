@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 
 import asyncpg
@@ -32,6 +33,24 @@ from shared.repositories.timer import TimerConfigRepository
 from utils.mod_guard import mod_guard_notifier
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class SharedChatSession:
+    """Snapshot of an active Shared Chat session, deduplicated per session_id.
+
+    `participants` is a tuple of (user_id, login) pairs for ALL channels in
+    the session (host + guests). `our_channel_ids` records which of our
+    monitored channels joined the session, in arrival order — the first
+    entry is the canonical logger for update events.
+    """
+
+    session_id: str
+    host_id: str
+    host_name: str
+    participants: tuple[tuple[str, str], ...]
+    started_at: datetime
+    our_channel_ids: tuple[str, ...]
 
 
 class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, commands.AutoBot):
@@ -75,10 +94,11 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
         self._channel_line_counts: dict[str, int] = {}
         # Strong references to background tasks to prevent GC collection
         self._background_tasks: set[asyncio.Task] = set()
-        # Channel IDs currently in an active Shared Chat session.
+        # Active Shared Chat sessions keyed by session_id (NOT channel_id), so
+        # a session two of our channels co-participate in is tracked once.
         # User-token messages are automatically source-only (Twitch API design),
-        # so this set is for awareness/logging rather than routing decisions.
-        self._shared_chat_channels: set[str] = set()
+        # so this map is for awareness/logging rather than routing decisions.
+        self._shared_chat_sessions: dict[str, SharedChatSession] = {}
         # Channels missing one or more BROADCASTER_SCOPES — notified on next stream online
         self._needs_reauth: set[str] = set()
         # Channel IDs where bot has confirmed moderator status
@@ -301,22 +321,138 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
 
         await super().event_message(payload)
 
+    @staticmethod
+    def _shared_chat_participants(
+        payload: twitchio.SharedChatSessionBegin | twitchio.SharedChatSessionUpdate,
+    ) -> tuple[tuple[str, str], ...]:
+        return tuple((str(p.id), p.name) for p in payload.participants)
+
+    @staticmethod
+    def _format_parties(
+        participants: tuple[tuple[str, str], ...],
+        self_ids: frozenset[str],
+        host_id: str,
+    ) -> str:
+        """Render party list with inline role tags: name(host), name(self), name(self,host)."""
+
+        def tag(pid: str) -> str:
+            tags = []
+            if pid in self_ids:
+                tags.append("self")
+            if pid == host_id:
+                tags.append("host")
+            return f"({','.join(tags)})" if tags else ""
+
+        return ",".join(f"{name}{tag(pid)}" for pid, name in participants)
+
     async def event_shared_chat_begin(self, payload: twitchio.SharedChatSessionBegin) -> None:
         channel_id = str(payload.broadcaster.id)
-        self._shared_chat_channels.add(channel_id)
+        session_id = payload.session_id
+        participants = self._shared_chat_participants(payload)
+        existing = self._shared_chat_sessions.get(session_id)
+
+        if existing is None:
+            session = SharedChatSession(
+                session_id=session_id,
+                host_id=str(payload.host.id),
+                host_name=payload.host.name,
+                participants=participants,
+                started_at=datetime.now(UTC),
+                our_channel_ids=(channel_id,),
+            )
+            self._shared_chat_sessions[session_id] = session
+            LOGGER.info(
+                "SharedChat begin session=%s parties=%s",
+                session_id,
+                self._format_parties(
+                    participants, frozenset(session.our_channel_ids), session.host_id
+                ),
+            )
+            return
+
+        # Another of our channels joined the same session — silent merge.
+        if channel_id not in existing.our_channel_ids:
+            self._shared_chat_sessions[session_id] = replace(
+                existing,
+                participants=participants,
+                our_channel_ids=existing.our_channel_ids + (channel_id,),
+            )
+
+    async def event_shared_chat_update(self, payload: twitchio.SharedChatSessionUpdate) -> None:
+        channel_id = str(payload.broadcaster.id)
+        session_id = payload.session_id
+        new_participants = self._shared_chat_participants(payload)
+        prev = self._shared_chat_sessions.get(session_id)
+
+        if prev is None:
+            # Update arrived before begin (rare) — synthesize and log as begin.
+            session = SharedChatSession(
+                session_id=session_id,
+                host_id=str(payload.host.id),
+                host_name=payload.host.name,
+                participants=new_participants,
+                started_at=datetime.now(UTC),
+                our_channel_ids=(channel_id,),
+            )
+            self._shared_chat_sessions[session_id] = session
+            LOGGER.info(
+                "SharedChat begin session=%s parties=%s",
+                session_id,
+                self._format_parties(
+                    new_participants, frozenset(session.our_channel_ids), session.host_id
+                ),
+            )
+            return
+
+        prev_ids = {pid for pid, _ in prev.participants}
+        new_ids = {pid for pid, _ in new_participants}
+        joined = [name for pid, name in new_participants if pid not in prev_ids]
+        left = [name for pid, name in prev.participants if pid not in new_ids]
+
+        our_ids = prev.our_channel_ids
+        if channel_id not in our_ids:
+            our_ids = our_ids + (channel_id,)
+        self._shared_chat_sessions[session_id] = replace(
+            prev, participants=new_participants, our_channel_ids=our_ids
+        )
+
+        # Only the canonical (first) of our channels in this session logs updates.
+        if channel_id != our_ids[0]:
+            return
+        if not joined and not left:
+            return
         LOGGER.info(
-            "[%s] Shared Chat started (session=%s, host=%s)",
-            payload.broadcaster.name,
-            payload.session_id,
-            payload.host.name,
+            "SharedChat update session=%s +%s -%s",
+            session_id,
+            ",".join(joined) or "—",
+            ",".join(left) or "—",
         )
 
     async def event_shared_chat_end(self, payload: twitchio.SharedChatSessionEnd) -> None:
         channel_id = str(payload.broadcaster.id)
-        self._shared_chat_channels.discard(channel_id)
+        session_id = payload.session_id
+        prev = self._shared_chat_sessions.get(session_id)
+
+        if prev is None:
+            # End arrived without a tracked begin (e.g. bot restarted mid-session).
+            LOGGER.info("SharedChat end session=%s", session_id)
+            return
+
+        remaining = tuple(c for c in prev.our_channel_ids if c != channel_id)
+        if remaining:
+            # Other of our channels still in this session — silent.
+            self._shared_chat_sessions[session_id] = replace(prev, our_channel_ids=remaining)
+            return
+
+        # Last of our channels leaving — log end and drop the session.
+        duration = int((datetime.now(UTC) - prev.started_at).total_seconds())
         LOGGER.info(
-            "[%s] Shared Chat ended (session=%s)", payload.broadcaster.name, payload.session_id
+            "SharedChat end session=%s duration=%ds parties=%s",
+            session_id,
+            duration,
+            self._format_parties(prev.participants, frozenset(prev.our_channel_ids), prev.host_id),
         )
+        del self._shared_chat_sessions[session_id]
 
     async def event_command_error(self, payload: commands.CommandErrorPayload) -> None:
         """Suppress CommandNotFound to avoid log noise from unknown commands."""
