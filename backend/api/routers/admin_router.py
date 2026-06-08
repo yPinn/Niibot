@@ -300,15 +300,29 @@ async def approve_activation_request(
 
 
 _DOCKER_SOCKET = "/var/run/docker.sock"
-_KNOWN_CONTAINERS = [
-    {"name": "nb-api", "label": "API Server"},
-    {"name": "nb-twitch", "label": "Twitch Bot"},
-    {"name": "nb-discord", "label": "Discord Bot"},
-    {"name": "nb-pg", "label": "PostgreSQL"},
-    {"name": "nb-scrapling", "label": "Scrapling"},
-    {"name": "nb-instafix", "label": "Instafix"},
+
+# Per-environment container name suffix. Prod and staging share the docker host,
+# so the staging API must NOT query bare names like "nb-api" — those resolve to
+# prod containers. docker-compose.staging.yml suffixes every service with "-stg".
+_CONTAINER_SUFFIX_BY_ENV = {"staging": "-stg"}
+
+_CONTAINER_BASES = [
+    ("nb-api", "API Server"),
+    ("nb-twitch", "Twitch Bot"),
+    ("nb-discord", "Discord Bot"),
+    ("nb-pg", "PostgreSQL"),
+    ("nb-scrapling", "Scrapling"),
+    ("nb-instafix", "Instafix"),
 ]
-_ALLOWED_CONTAINERS = {c["name"] for c in _KNOWN_CONTAINERS}
+
+
+def _known_containers() -> list[dict[str, str]]:
+    suffix = _CONTAINER_SUFFIX_BY_ENV.get(get_settings().environment, "")
+    return [{"name": f"{base}{suffix}", "label": label} for base, label in _CONTAINER_BASES]
+
+
+def _allowed_containers() -> set[str]:
+    return {c["name"] for c in _known_containers()}
 
 
 class LogContainerInfo(BaseModel):
@@ -351,11 +365,12 @@ async def list_log_containers(
     _: str = Depends(require_owner),
 ) -> list[LogContainerInfo]:
     """List known Docker containers with running status. Owner-only."""
+    known = _known_containers()
     try:
         connector = aiohttp.UnixConnector(path=_DOCKER_SOCKET)
         async with aiohttp.ClientSession(connector=connector) as session:
             result: list[LogContainerInfo] = []
-            for c in _KNOWN_CONTAINERS:
+            for c in known:
                 try:
                     async with session.get(
                         f"http://localhost/v1.41/containers/{c['name']}/json"
@@ -370,7 +385,7 @@ async def list_log_containers(
             return result
     except Exception as e:
         LOGGER.warning("Docker socket unavailable for container list: %s", e)
-        return [LogContainerInfo(**c, running=False) for c in _KNOWN_CONTAINERS]
+        return [LogContainerInfo(**c, running=False) for c in known]
 
 
 @router.get("/logs/{container}", response_model=ContainerLogsResponse)
@@ -383,7 +398,7 @@ async def get_container_logs(
     _: str = Depends(require_owner),
 ) -> ContainerLogsResponse:
     """Fetch logs from a Docker container. Owner-only."""
-    if container not in _ALLOWED_CONTAINERS:
+    if container not in _allowed_containers():
         raise HTTPException(status_code=400, detail="Unknown container")
 
     params = "?stdout=1&stderr=1&timestamps=1"
