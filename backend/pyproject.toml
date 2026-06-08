@@ -84,7 +84,7 @@ ignore_errors = true
 
 [dependency-groups]
 dev = [
-    "mypy>=1.19.0,<2.0.0",
+    "mypy>=1.19.0,<3.0.0",
     "ruff>=0.15.0,<1.0.0",
     "types-aiofiles>=25.0.0",
     "types-cachetools>=6.2.0.20251022",
