@@ -15,14 +15,14 @@ from pydantic import BaseModel, Field, field_validator
 from core.config import DATA_DIR, Settings, get_settings
 from core.dependencies import get_current_channel_id, get_db_pool, get_twitch_api
 from services.twitch_api import TwitchAPIClient
-from shared.knowledge_packs import KnowledgePack, load_packs
+from shared.packs import Pack, load_packs
 from shared.repositories.ai_settings import DEFAULT_AI_SETTINGS, AISettingsRepository
 from shared.repositories.channel import ChannelRepository
 
-_PACKS: dict[str, KnowledgePack] = {}
+_PACKS: dict[str, Pack] = {}
 
 
-def _get_packs() -> dict[str, KnowledgePack]:
+def _get_packs() -> dict[str, Pack]:
     """Lazy-load available packs from disk (for the /packs listing endpoint)."""
     global _PACKS
     if not _PACKS:

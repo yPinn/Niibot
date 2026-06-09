@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 
 import { getModuleAIPacks, setModuleAIPacks } from '@/api/admin'
-import { getAIPacks, type KnowledgePack } from '@/api/aiSettings'
+import { getAIPacks, type Pack } from '@/api/aiSettings'
 import { PageHeader } from '@/components/PageHeader'
 import { PageMain } from '@/components/PageMain'
 import { Card, CardContent, CardHeader, CardTitle, Skeleton, Switch } from '@/components/ui'
@@ -11,7 +11,7 @@ import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 export default function AdminModules() {
   useDocumentTitle('Admin · Modules')
 
-  const [availablePacks, setAvailablePacks] = useState<KnowledgePack[]>([])
+  const [availablePacks, setAvailablePacks] = useState<Pack[]>([])
   const [enabledPacks, setEnabledPacks] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
 

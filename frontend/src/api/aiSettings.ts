@@ -28,13 +28,13 @@ export const AI_SETTINGS_DEFAULT: AISettings = {
   min_role: 'everyone',
 }
 
-export interface KnowledgePack {
+export interface Pack {
   id: string
   name: string
   description: string
 }
 
-export async function getAIPacks(): Promise<KnowledgePack[]> {
+export async function getAIPacks(): Promise<Pack[]> {
   const res = await apiFetch(API_ENDPOINTS.ai.packs, { credentials: 'include' })
   if (!res.ok) throw new Error(`Failed to fetch AI packs: ${res.status}`)
   return res.json()

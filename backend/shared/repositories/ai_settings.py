@@ -73,7 +73,7 @@ def build_system_prompt(
 ) -> str:
     """Assemble a system prompt string from structured settings fields.
 
-    matched_entries: (pack_name, entry_content) pairs from knowledge_packs.match_entries().
+    matched_entries: (pack_name, entry_content) pairs from packs.match_entries().
     Injected between catchphrase and format sections when present.
     """
     name = (settings.get("bot_name") or "Twitch 聊天室機器人").strip()

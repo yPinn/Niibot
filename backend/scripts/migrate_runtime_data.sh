@@ -4,7 +4,7 @@
 # Background:
 #   Before this refactor, log_channels.json + active_giveaways.json lived in the
 #   same dir as static repo content (backend/data/), forcing each env to mount
-#   that whole dir as a volume. Static content (knowledge_packs, embed.json, …)
+#   that whole dir as a volume. Static content (packs, embed.json, …)
 #   is now baked into the image, and only runtime state lives in backend/runtime/.
 #
 # Usage (run from project root):
