@@ -9,3 +9,7 @@ frontend/.prettierignore
 frontend/.dockerignore
 backend/.dockerignore
 frontend/public/_headers
+
+# Pack data files — long CJK paragraphs / frontmatter-first (no H1).
+# markdownlint-cli does not support per-directory config overrides.
+backend/data/packs/
