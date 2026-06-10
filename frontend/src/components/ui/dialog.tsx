@@ -1,8 +1,7 @@
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 
+import { Icon } from '@/components/primitives'
 import { cn } from '@/lib/utils'
-
-import { Icon } from './icon'
 
 const Dialog = DialogPrimitive.Root
 const DialogTrigger = DialogPrimitive.Trigger

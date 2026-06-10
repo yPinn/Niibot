@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-import { Spinner } from '@/components/ui'
+import { Spinner } from '@/components/primitives'
 
 interface LoadingSpinnerProps {
   size?: 'sm' | 'md' | 'lg'

@@ -5,7 +5,7 @@
  *   import { variants, duration, ease, viewport } from '@/lib/motion'
  *   <motion.div variants={variants.slideUp} initial="hidden" animate="visible" />
  *
- * Or use the semantic wrapper components from @/components/ui/motion:
+ * Or use the semantic wrapper components from @/components/primitives:
  *   <FadeIn>, <SlideUp>, <Stagger>, <StaggerItem>, <Reveal>
  */
 import { type Variants } from 'motion/react'

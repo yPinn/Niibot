@@ -1,6 +1,7 @@
+import { useTheme } from '@/components/layout/theme-provider'
 import { LoginForm } from '@/components/login-form'
-import { useTheme } from '@/components/theme-provider'
-import { Button, FadeIn, Icon } from '@/components/ui'
+import { FadeIn, Icon } from '@/components/primitives'
+import { Button } from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
 export default function LoginPage() {

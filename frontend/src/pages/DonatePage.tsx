@@ -12,17 +12,14 @@ import {
   type PublicPlatformInfo,
 } from '@/api/donation'
 import {
-  Button,
-  Card,
-  CardContent,
   EmptyState,
-  Input,
   SlideUp,
   SlideUpSm,
   Spinner,
   Stagger,
   StaggerItem,
-} from '@/components/ui'
+} from '@/components/primitives'
+import { Button, Card, CardContent, Input } from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
 const PAYMENT_GATEWAY_HOSTS = new Set([

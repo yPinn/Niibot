@@ -1,7 +1,7 @@
 import { Fragment } from 'react'
 import { Outlet } from 'react-router-dom'
 
-import { AppSidebar } from '@/components/app-sidebar'
+import { AppSidebar } from '@/components/layout/app-sidebar'
 import { OnlineDropdown } from '@/components/OnlineDropdown'
 import {
   Breadcrumb,

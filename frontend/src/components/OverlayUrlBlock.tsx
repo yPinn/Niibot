@@ -1,6 +1,7 @@
 import { useState } from 'react'
 
-import { Button, Icon, Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui'
+import { Icon } from '@/components/primitives'
+import { Button, Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui'
 import { copyToClipboard } from '@/lib/clipboard'
 
 export interface OverlayUrlBlockProps {

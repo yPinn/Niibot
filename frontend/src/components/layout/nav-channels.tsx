@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react'
 
 import { type Channel } from '@/api/channels'
+import { Icon } from '@/components/primitives'
 import {
   Avatar,
   AvatarFallback,
@@ -11,7 +12,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-  Icon,
   SidebarGroup,
   SidebarGroupLabel,
   SidebarMenu,

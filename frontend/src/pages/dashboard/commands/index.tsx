@@ -3,8 +3,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { type ChannelDefaults, getChannelDefaults } from '@/api/channels'
 import { type CommandConfig, getCommandConfigs, toggleCommandConfig } from '@/api/commands'
 import { getTriggerConfigs, toggleTrigger, type TriggerConfig } from '@/api/triggers'
-import { PageHeader } from '@/components/PageHeader'
-import { PageMain } from '@/components/PageMain'
+import { PageHeader } from '@/components/layout/PageHeader'
+import { PageMain } from '@/components/layout/PageMain'
+import { Icon, SlideUp } from '@/components/primitives'
 import {
   Badge,
   Button,
@@ -14,9 +15,7 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-  Icon,
   Skeleton,
-  SlideUp,
   Tabs,
   TabsContent,
   TabsList,

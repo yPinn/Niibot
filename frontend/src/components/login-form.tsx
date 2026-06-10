@@ -4,7 +4,8 @@ import { toast } from 'sonner'
 
 import { openTwitchOAuth } from '@/api'
 import rabbitBg from '@/assets/images/Rabbit.jpg'
-import { Button, Card, CardContent, Icon, SlideUp } from '@/components/ui'
+import { Icon, SlideUp } from '@/components/primitives'
+import { Button, Card, CardContent } from '@/components/ui'
 import { cn } from '@/lib/utils'
 
 const ERROR_MESSAGES: Record<string, string> = {

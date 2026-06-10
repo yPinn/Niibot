@@ -3,8 +3,9 @@ import { Link, useParams } from 'react-router-dom'
 
 import { getPublicCommands, type PublicChannelProfile, type PublicCommand } from '@/api/commands'
 import avatarFallback from '@/assets/images/Avatar.png'
+import { useTheme } from '@/components/layout/theme-provider'
+import { EmptyState, FadeIn, Icon } from '@/components/primitives'
 import { SortableHead } from '@/components/SortableHead'
-import { useTheme } from '@/components/theme-provider'
 import {
   Avatar,
   AvatarFallback,
@@ -15,9 +16,6 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
-  EmptyState,
-  FadeIn,
-  Icon,
   Skeleton,
   Table,
   TableBody,

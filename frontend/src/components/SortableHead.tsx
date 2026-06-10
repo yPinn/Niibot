@@ -1,4 +1,5 @@
-import { Icon, TableHead } from '@/components/ui'
+import { Icon } from '@/components/primitives'
+import { TableHead } from '@/components/ui'
 import type { SortDir } from '@/lib/sort'
 
 export interface SortableHeadProps<K extends string> {

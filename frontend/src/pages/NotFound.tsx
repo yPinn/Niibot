@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 
-import { Button, FadeIn, Icon } from '@/components/ui'
+import { FadeIn, Icon } from '@/components/primitives'
+import { Button } from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
 export default function NotFound() {

@@ -1,6 +1,6 @@
+import { EmptyState } from '@/components/primitives'
 import {
   Badge,
-  EmptyState,
   Skeleton,
   Table,
   TableBody,

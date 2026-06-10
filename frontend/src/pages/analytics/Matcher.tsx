@@ -7,17 +7,15 @@ import {
   type MatcherViewersResponse,
   refreshMatcher,
 } from '@/api/analytics'
-import { PageHeader } from '@/components/PageHeader'
-import { PageMain } from '@/components/PageMain'
+import { PageHeader } from '@/components/layout/PageHeader'
+import { PageMain } from '@/components/layout/PageMain'
+import { EmptyState, Icon, SlideUp } from '@/components/primitives'
 import {
   Avatar,
   AvatarFallback,
   AvatarImage,
   Badge,
-  EmptyState,
-  Icon,
   Skeleton,
-  SlideUp,
   Tooltip,
   TooltipContent,
   TooltipTrigger,

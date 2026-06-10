@@ -12,15 +12,8 @@ import {
 } from 'recharts'
 
 import { type ChannelBadges, type ViewerSummary } from '@/api/analytics'
-import {
-  Icon,
-  Switch,
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-  TwitchBadgeGroup,
-} from '@/components/ui'
+import { Icon, TwitchBadgeGroup } from '@/components/primitives'
+import { Switch, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui'
 import { cn } from '@/lib/utils'
 
 import { buildViewerBadges, formatCompact } from './utils'

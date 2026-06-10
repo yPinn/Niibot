@@ -1,9 +1,9 @@
 import React, { useEffect, useReducer } from 'react'
 
 import { type ChannelBadges, getViewerProfile, type ViewerProfile } from '@/api/analytics'
+import { Icon, type TwitchRole, TwitchRoleBadge } from '@/components/primitives'
 import {
   Badge,
-  Icon,
   Sheet,
   SheetContent,
   SheetDescription,
@@ -15,8 +15,6 @@ import {
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-  type TwitchRole,
-  TwitchRoleBadge,
 } from '@/components/ui'
 import { cn } from '@/lib/utils'
 

@@ -12,8 +12,9 @@ import {
 } from '@/api'
 import { AffiliateLockOverlay } from '@/components/AffiliateLockOverlay'
 import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog'
-import { PageHeader } from '@/components/PageHeader'
-import { PageMain } from '@/components/PageMain'
+import { PageHeader } from '@/components/layout/PageHeader'
+import { PageMain } from '@/components/layout/PageMain'
+import { Icon, SlideUp, Spinner, Stagger, StaggerItem } from '@/components/primitives'
 import {
   Badge,
   Button,
@@ -25,14 +26,11 @@ import {
   CardTitle,
   Collapsible,
   CollapsibleContent,
-  Icon,
   Input,
   Label,
   Skeleton,
-  Spinner,
   Switch,
 } from '@/components/ui'
-import { SlideUp, Stagger, StaggerItem } from '@/components/ui/motion'
 import { WipLockOverlay } from '@/components/WipLockOverlay'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'

@@ -3,8 +3,8 @@ import { toast } from 'sonner'
 
 import { getModuleAIPacks, setModuleAIPacks } from '@/api/admin'
 import { getAIPacks, type Pack } from '@/api/aiSettings'
-import { PageHeader } from '@/components/PageHeader'
-import { PageMain } from '@/components/PageMain'
+import { PageHeader } from '@/components/layout/PageHeader'
+import { PageMain } from '@/components/layout/PageMain'
 import { Card, CardContent, CardHeader, CardTitle, Skeleton, Switch } from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 

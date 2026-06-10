@@ -14,10 +14,10 @@ import {
 } from 'recharts'
 
 import { type SessionSummary } from '@/api/analytics'
+import { Icon } from '@/components/primitives'
 import {
   Card,
   CardContent,
-  Icon,
   Skeleton,
   Tooltip as InfoTooltip,
   TooltipContent as InfoTooltipContent,

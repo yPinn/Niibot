@@ -1,5 +1,6 @@
-import { Icon } from '@/components/ui/icon'
 import { cn } from '@/lib/utils'
+
+import { Icon } from './Icon'
 
 function Spinner({ className, ...props }: React.ComponentProps<'div'>) {
   return (

@@ -1,7 +1,8 @@
 import { memo } from 'react'
 
 import type { Crosshair } from '@/api/crosshairs'
-import { Button, Card, Icon, Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui'
+import { Icon } from '@/components/primitives'
+import { Button, Card, Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui'
 import { cn } from '@/lib/utils'
 
 import { CrosshairPreview } from './CrosshairPreview'

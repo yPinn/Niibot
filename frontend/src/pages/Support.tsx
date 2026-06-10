@@ -1,16 +1,7 @@
-import { PageHeader } from '@/components/PageHeader'
-import { PageMain } from '@/components/PageMain'
-import {
-  Button,
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-  Icon,
-  Stagger,
-  StaggerItem,
-} from '@/components/ui'
+import { PageHeader } from '@/components/layout/PageHeader'
+import { PageMain } from '@/components/layout/PageMain'
+import { Icon, Stagger, StaggerItem } from '@/components/primitives'
+import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui'
 import { WipLockOverlay } from '@/components/WipLockOverlay'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 

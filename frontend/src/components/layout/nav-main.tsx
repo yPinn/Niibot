@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 
+import { Icon } from '@/components/primitives'
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-  Icon,
   SidebarGroup,
   SidebarGroupLabel,
   SidebarMenu,

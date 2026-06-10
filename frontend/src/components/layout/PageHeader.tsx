@@ -1,6 +1,6 @@
 import { type ReactNode } from 'react'
 
-import { SlideUp } from '@/components/ui'
+import { SlideUp } from '@/components/primitives'
 import { cn } from '@/lib/utils'
 
 export interface PageHeaderProps {

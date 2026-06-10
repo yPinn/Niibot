@@ -11,9 +11,9 @@ import {
 } from '@/api/commands'
 import { createTrigger, deleteTrigger, type TriggerConfig, updateTrigger } from '@/api/triggers'
 import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog'
+import { Icon, Spinner } from '@/components/primitives'
 import {
   Button,
-  Icon,
   Input,
   Label,
   Select,
@@ -28,7 +28,6 @@ import {
   SheetFooter,
   SheetHeader,
   SheetTitle,
-  Spinner,
   Switch,
   Textarea,
 } from '@/components/ui'

@@ -12,7 +12,8 @@ import { CrosshairCardBase } from '@/components/crosshairs/CrosshairCardBase'
 import { CrosshairDetailPreview } from '@/components/crosshairs/CrosshairPreview'
 import { SortDropdown } from '@/components/crosshairs/SortDropdown'
 import { copyCode } from '@/components/crosshairs/utils'
-import { useTheme } from '@/components/theme-provider'
+import { useTheme } from '@/components/layout/theme-provider'
+import { EmptyState, FadeIn, Icon } from '@/components/primitives'
 import {
   Avatar,
   AvatarFallback,
@@ -23,9 +24,6 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
-  EmptyState,
-  FadeIn,
-  Icon,
   Sheet,
   SheetContent,
   SheetHeader,

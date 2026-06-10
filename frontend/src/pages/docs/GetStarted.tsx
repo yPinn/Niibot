@@ -3,21 +3,17 @@ import { Link } from 'react-router-dom'
 import { motion } from 'motion/react'
 
 import { DiscordHelpBanner } from '@/components/DiscordHelpBanner'
-import { PageHeader } from '@/components/PageHeader'
-import { PageMain } from '@/components/PageMain'
+import { PageHeader } from '@/components/layout/PageHeader'
+import { PageMain } from '@/components/layout/PageMain'
 import {
-  Badge,
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
   Icon,
   SlideUp,
   Stagger,
   StaggerItem,
   TwitchBadgeGroup,
   type TwitchRole,
-} from '@/components/ui'
+} from '@/components/primitives'
+import { Badge, Card, CardContent, CardHeader, CardTitle } from '@/components/ui'
 import { WarningBanner } from '@/components/WarningBanner'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 

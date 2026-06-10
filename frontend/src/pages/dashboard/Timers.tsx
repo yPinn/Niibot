@@ -12,8 +12,9 @@ import {
   updateTimer,
 } from '@/api/timers'
 import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog'
-import { PageHeader } from '@/components/PageHeader'
-import { PageMain } from '@/components/PageMain'
+import { PageHeader } from '@/components/layout/PageHeader'
+import { PageMain } from '@/components/layout/PageMain'
+import { EmptyState, Icon, SlideUp, Spinner } from '@/components/primitives'
 import { SortableHead } from '@/components/SortableHead'
 import {
   Alert,
@@ -26,8 +27,6 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-  EmptyState,
-  Icon,
   Input,
   Label,
   Sheet,
@@ -38,8 +37,6 @@ import {
   SheetHeader,
   SheetTitle,
   Skeleton,
-  SlideUp,
-  Spinner,
   Switch,
   Table,
   TableBody,

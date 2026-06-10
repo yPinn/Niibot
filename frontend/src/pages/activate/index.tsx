@@ -8,17 +8,15 @@ import {
   getPendingActivationCode,
   requestActivation,
 } from '@/api/user'
+import { FadeIn, Icon, Spinner } from '@/components/primitives'
 import {
   Button,
   Card,
   CardContent,
-  FadeIn,
-  Icon,
   InputOTP,
   InputOTPGroup,
   InputOTPSlot,
   Separator,
-  Spinner,
 } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
