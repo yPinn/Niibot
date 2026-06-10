@@ -13,261 +13,30 @@ import {
 import { type ChannelBadges, getChannelBadges } from '@/api/analytics'
 import { PageHeader } from '@/components/PageHeader'
 import { PageMain } from '@/components/PageMain'
+import { Icon, SlideUp, Spinner } from '@/components/primitives'
 import {
   Button,
   Card,
   CardContent,
   CardHeader,
   CardTitle,
-  Icon,
   Input,
   Label,
   Skeleton,
-  SlideUp,
-  Spinner,
   Switch,
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-  TwitchBadge,
 } from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
-// ── Constants ────────────────────────────────────────────────────────────────
-
-// ── Persona presets ───────────────────────────────────────────────────────────
-
-type PersonaPresetValues = Pick<
-  AISettings,
-  'persona' | 'self_pronoun' | 'catchphrase' | 'refusal_style'
->
-
-const PERSONA_PRESETS: {
-  name: string
-  desc: string
-  icon: string
-  values: PersonaPresetValues
-}[] = [
-  {
-    name: '預設',
-    desc: '中性助手',
-    icon: 'fa-solid fa-robot',
-    values: { persona: '', self_pronoun: '我', catchphrase: '', refusal_style: 'humorous' },
-  },
-  {
-    name: '毒舌',
-    desc: '嘲諷語氣，不惡意',
-    icon: 'fa-solid fa-fire',
-    values: {
-      persona: '毒舌風格，回答問題時習慣帶一點嘲諷語氣，喜歡調侃觀眾，但不惡意攻擊',
-      self_pronoun: '老子',
-      catchphrase: '懂嗎',
-      refusal_style: 'humorous',
-    },
-  },
-  {
-    name: '元氣',
-    desc: '活潑開朗，充滿熱情',
-    icon: 'fa-solid fa-star',
-    values: {
-      persona: '活潑開朗，對每個問題都充滿熱情，喜歡用可愛語氣說話，偶爾使用感嘆號',
-      self_pronoun: '我',
-      catchphrase: '喔！',
-      refusal_style: 'polite',
-    },
-  },
-  {
-    name: '傲嬌',
-    desc: '嘴硬心軟，認真本質',
-    icon: 'fa-solid fa-crown',
-    values: {
-      persona: '傲嬌性格，表面高傲冷漠，實際上非常認真回答問題，絕不承認自己其實很用心',
-      self_pronoun: '本小姐',
-      catchphrase: '才不是特地幫你的',
-      refusal_style: 'humorous',
-    },
-  },
-  {
-    name: '穩重',
-    desc: '見多識廣，語帶智慧',
-    icon: 'fa-solid fa-mug-hot',
-    values: {
-      persona: '沉穩低調，見多識廣，說話帶有人生歷練，偶爾發表簡短的人生感悟',
-      self_pronoun: '在下',
-      catchphrase: '',
-      refusal_style: 'humorous',
-    },
-  },
-]
-
-const LANG_OPTIONS = [
-  { value: 'zh-tw' as const, label: '繁中' },
-  { value: 'en' as const, label: '英文' },
-  { value: 'auto' as const, label: '自動' },
-]
-
-const REFUSAL_OPTIONS = [
-  { value: 'humorous' as const, label: '冷幽默', desc: '假裝系統錯誤、腦袋當機' },
-  { value: 'polite' as const, label: '禮貌拒絕', desc: '直接說無法協助' },
-]
-
-const COMMAND_INFO = [
-  { label: '指令', value: '!ai / !問' },
-  { label: '用法', value: '!ai <問題>' },
-] as const
-
-const ROLE_OPTIONS = [
-  { value: 'everyone' as const, label: '所有人' },
-  { value: 'subscriber' as const, label: '訂閱者' },
-  { value: 'vip' as const, label: 'VIP' },
-  { value: 'moderator' as const, label: '版主' },
-  { value: 'broadcaster' as const, label: '頻道主' },
-]
-
-const PROVIDERS = [
-  { name: 'Groq', icon: 'fa-solid fa-bolt', model: 'llama-3.3-70b-versatile', note: '優先' },
-  { name: 'Gemini', icon: 'fa-brands fa-google', model: 'gemini-1.5-flash', note: '備援' },
-  { name: 'OpenRouter', icon: 'fa-solid fa-route', model: 'free models', note: '最後備援' },
-] as const
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-function getBadgeOverlay(
-  emote: EmoteItem,
-  channelBadges: ChannelBadges | null
-): { src: string; label: string } | null {
-  if (emote.emote_type === 'subscriptions') {
-    return {
-      src: channelBadges?.subscriber_1m ?? '/twitch-badges/subscriber/1x.png',
-      label: '訂閱限定',
-    }
-  }
-  return null
-}
-
-function longestCommonPrefix(names: string[]): string {
-  if (names.length === 0) return ''
-  let prefix = names[0]
-  for (const name of names) {
-    while (!name.startsWith(prefix)) prefix = prefix.slice(0, -1)
-    if (!prefix) return ''
-  }
-  return prefix.length >= 2 ? prefix : ''
-}
-
-// ── Sub-components ───────────────────────────────────────────────────────────
-
-function OptionGroup<T extends string | number>({
-  options,
-  value,
-  onChange,
-  disabled,
-}: {
-  options: { value: T; label: string; desc?: string }[]
-  value: T
-  onChange: (v: T) => void
-  disabled?: boolean
-}) {
-  return (
-    <div className="flex flex-wrap gap-2">
-      {options.map(opt => (
-        <button
-          key={String(opt.value)}
-          type="button"
-          disabled={disabled}
-          onClick={() => onChange(opt.value)}
-          className={`select-none rounded-md border font-medium transition-colors disabled:opacity-50 ${
-            opt.desc ? 'flex flex-col px-4 py-2 text-left min-w-30' : 'px-3 py-1.5 text-sub'
-          } ${
-            value === opt.value ? 'border-primary bg-primary/10 text-primary' : 'hover:bg-accent'
-          }`}
-        >
-          <span className={opt.desc ? 'text-sub' : undefined}>{opt.label}</span>
-          {opt.desc && (
-            <span className="mt-0.5 text-label font-normal text-muted-foreground">{opt.desc}</span>
-          )}
-        </button>
-      ))}
-    </div>
-  )
-}
-
-function EmoteChip({
-  emote,
-  prefix,
-  available,
-  channelBadges,
-}: {
-  emote: EmoteItem
-  prefix: string
-  available: boolean
-  channelBadges: ChannelBadges | null
-}) {
-  const badgeOverlay = getBadgeOverlay(emote, channelBadges)
-  const displayName =
-    prefix && emote.name.startsWith(prefix) ? emote.name.slice(prefix.length) : emote.name
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <div
-          className={`relative flex select-none flex-col items-center gap-1 rounded-md border border-transparent p-1.5 transition-opacity ${
-            available ? '' : 'opacity-40'
-          }`}
-        >
-          {badgeOverlay && (
-            <span className="absolute top-1 right-1 rounded-sm bg-black/60 p-0.5">
-              <TwitchBadge src={badgeOverlay.src} alt="" size={18} />
-            </span>
-          )}
-
-          <img
-            src={emote.url}
-            alt={displayName}
-            className="h-14 w-14 object-contain"
-            loading="lazy"
-          />
-          <span className="text-label text-muted-foreground max-w-14 truncate">{displayName}</span>
-        </div>
-      </TooltipTrigger>
-      <TooltipContent>
-        <p>{emote.name}</p>
-        {!available && <p className="mt-0.5 text-muted-foreground">Bot 無法使用</p>}
-      </TooltipContent>
-    </Tooltip>
-  )
-}
-
-function EmoteSection({
-  label,
-  emotes,
-  prefix,
-  channelBadges,
-}: {
-  label: string
-  emotes: EmoteItem[]
-  prefix: string
-  channelBadges: ChannelBadges | null
-}) {
-  if (emotes.length === 0) return null
-  return (
-    <div className="flex flex-col gap-element">
-      <span className="text-sub text-muted-foreground">{label}</span>
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(5rem,1fr))] gap-1">
-        {emotes.map(emote => (
-          <EmoteChip
-            key={emote.id}
-            emote={emote}
-            prefix={prefix}
-            available={emote.available}
-            channelBadges={channelBadges}
-          />
-        ))}
-      </div>
-    </div>
-  )
-}
-
-// ── Page ────────────────────────────────────────────────────────────────────
+import {
+  COMMAND_INFO,
+  LANG_OPTIONS,
+  PERSONA_PRESETS,
+  PROVIDERS,
+  REFUSAL_OPTIONS,
+  ROLE_OPTIONS,
+} from './ai/constants'
+import { EmoteSection, OptionGroup } from './ai/EmoteSection'
+import { longestCommonPrefix } from './ai/utils'
 
 export default function AIModule() {
   useDocumentTitle('AI Assistant')

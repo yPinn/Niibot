@@ -13,13 +13,13 @@ import {
   setVideoAsNext,
   skipCurrentVideo,
   updateVideoQueueSettings,
-  type VideoQueueEntry,
   type VideoQueueSettings,
 } from '@/api/videoQueue'
 import { AffiliateLockOverlay } from '@/components/AffiliateLockOverlay'
 import { OverlayUrlBlock } from '@/components/OverlayUrlBlock'
 import { PageHeader } from '@/components/PageHeader'
 import { PageMain } from '@/components/PageMain'
+import { EmptyState, Icon, SlideUp, Spinner } from '@/components/primitives'
 import {
   Badge,
   Button,
@@ -29,8 +29,6 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-  EmptyState,
-  Icon,
   Input,
   Label,
   Select,
@@ -46,249 +44,22 @@ import {
   SheetSection,
   SheetTitle,
   Skeleton,
-  SlideUp,
-  Spinner,
   Switch,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
 } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { usePolling } from '@/hooks/usePolling'
 
+import { QueueTable, SourceBadge } from './videoQueue/QueueTable'
+import {
+  clampValue,
+  formatDuration,
+  MIN_VIEW_COUNT_OPTIONS,
+  REDEMPTION_DURATION_OPTIONS,
+  snapToOption,
+} from './videoQueue/utils'
+
 const POLL_INTERVAL = 5_000
-
-const MIN_VIEW_COUNT_OPTIONS = [
-  { value: 0, label: '不限制' },
-  { value: 500, label: '500+' },
-  { value: 1_000, label: '1,000+' },
-  { value: 5_000, label: '5,000+' },
-  { value: 10_000, label: '10,000+' },
-] as const
-
-// redemption (channel points): starts at 1 video, up to 3 videos
-const REDEMPTION_DURATION_OPTIONS = [
-  { value: 300, label: '5 分鐘' },
-  { value: 600, label: '10 分鐘' },
-  { value: 900, label: '15 分鐘' },
-] as const
-
-/** Snap a raw seconds value to the nearest option in the list. */
-function snapToOption(options: readonly { value: number }[], value: number): number {
-  return options.reduce((prev, curr) =>
-    Math.abs(curr.value - value) < Math.abs(prev.value - value) ? curr : prev
-  ).value
-}
-
-const SOURCE_CONFIG: Record<string, { label: string; className: string }> = {
-  chat: { label: '聊天', className: 'text-muted-foreground' },
-  redemption: {
-    label: '兌換',
-    className: 'border-status-special/50 text-status-special',
-  },
-  donation: {
-    label: '斗內',
-    className: 'border-status-warning/50 text-status-warning',
-  },
-  dashboard: {
-    label: '主播',
-    className: 'border-status-info/50 text-status-info',
-  },
-}
-
-function ClipBadge() {
-  return (
-    <Badge
-      variant="outline"
-      className="shrink-0 text-label px-1 py-0 text-status-special border-status-special/60"
-    >
-      Clip
-    </Badge>
-  )
-}
-
-function SourceBadge({ source }: { source: string }) {
-  const cfg = SOURCE_CONFIG[source] ?? { label: source, className: '' }
-  return (
-    <Badge variant="outline" className={`shrink-0 text-label ${cfg.className}`}>
-      {cfg.label}
-    </Badge>
-  )
-}
-
-function formatDuration(seconds: number): string {
-  const m = Math.floor(seconds / 60)
-  const s = Math.floor(seconds % 60)
-  return `${m}:${s.toString().padStart(2, '0')}`
-}
-
-function clampValue(value: string, min: number, max: number): string {
-  const n = parseInt(value, 10)
-  if (isNaN(n)) return String(min)
-  return String(Math.min(max, Math.max(min, n)))
-}
-
-function QueueTable({
-  current,
-  entries,
-  onSkip,
-  onSetNext,
-  onPlayNow,
-  onRemove,
-}: {
-  current?: VideoQueueEntry | null
-  entries: VideoQueueEntry[]
-  onSkip?: () => void
-  onSetNext?: (id: number) => void
-  onPlayNow?: (id: number) => void
-  onRemove?: (id: number) => void
-}) {
-  const hasActions = !!(onSetNext || onPlayNow || onRemove)
-  if (!current && entries.length === 0) return null
-
-  return (
-    <div className="overflow-x-auto">
-      {/* table-fixed: column widths are enforced by <th> — dynamic content can't shift fixed cols */}
-      <Table className="table-fixed">
-        <TableHeader>
-          <TableRow>
-            <TableHead className="w-10" />
-            <TableHead>影片</TableHead>
-            <TableHead className="w-20 sm:w-28">點播者</TableHead>
-            <TableHead className="hidden sm:table-cell w-20 text-center">來源</TableHead>
-            <TableHead className="w-16 tabular-nums">長度</TableHead>
-            {(hasActions || onSkip) && <TableHead className="w-28" />}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {current && (
-            <TableRow className="bg-primary/10">
-              <TableCell>
-                <Icon
-                  icon="fa-solid fa-play"
-                  className="size-3 text-primary"
-                  wrapperClassName="mx-auto"
-                />
-              </TableCell>
-              <TableCell>
-                <div className="flex items-center gap-1.5 min-w-0">
-                  {current.video_type === 'twitch_clip' && <ClipBadge />}
-                  <div className="truncate font-medium" title={current.title || current.video_id}>
-                    {current.title || current.video_id}
-                  </div>
-                </div>
-              </TableCell>
-              <TableCell className="text-muted-foreground text-sub">
-                <span className="block truncate">{current.requested_by}</span>
-              </TableCell>
-              <TableCell className="hidden sm:table-cell text-center">
-                <SourceBadge source={current.source} />
-              </TableCell>
-              <TableCell className="text-muted-foreground text-sub tabular-nums">
-                {current.duration_seconds ? formatDuration(current.duration_seconds) : '--:--'}
-              </TableCell>
-              {(hasActions || onSkip) && (
-                <TableCell className="text-right">
-                  {onSkip && (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button variant="ghost" size="icon-sm" onClick={onSkip}>
-                          <Icon icon="fa-solid fa-forward-step" className="size-3.5" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>跳過當前影片</TooltipContent>
-                    </Tooltip>
-                  )}
-                </TableCell>
-              )}
-            </TableRow>
-          )}
-
-          {entries.map((entry, idx) => (
-            <TableRow key={entry.id}>
-              <TableCell className="text-center">
-                <Badge variant="outline">{idx + 1}</Badge>
-              </TableCell>
-              <TableCell>
-                <div className="flex items-center gap-1.5 min-w-0">
-                  {entry.video_type === 'twitch_clip' && <ClipBadge />}
-                  <div className="truncate font-medium" title={entry.title || entry.video_id}>
-                    {entry.title || entry.video_id}
-                  </div>
-                </div>
-              </TableCell>
-              <TableCell className="text-muted-foreground text-sub">
-                <span className="block truncate">{entry.requested_by}</span>
-              </TableCell>
-              <TableCell className="hidden sm:table-cell text-center">
-                <SourceBadge source={entry.source} />
-              </TableCell>
-              <TableCell className="text-muted-foreground text-sub tabular-nums">
-                {entry.duration_seconds ? formatDuration(entry.duration_seconds) : '--:--'}
-              </TableCell>
-              {(hasActions || onSkip) && (
-                <TableCell className="text-right">
-                  <div className="flex justify-end gap-1">
-                    {onSetNext && (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            onClick={() => onSetNext(entry.id)}
-                          >
-                            <Icon icon="fa-solid fa-arrow-up-to-line" className="size-3.5" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>排定為下一首</TooltipContent>
-                      </Tooltip>
-                    )}
-                    {onPlayNow && (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            onClick={() => onPlayNow(entry.id)}
-                          >
-                            <Icon icon="fa-solid fa-play" className="size-3.5" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>直接插播</TooltipContent>
-                      </Tooltip>
-                    )}
-                    {onRemove && (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            onClick={() => onRemove(entry.id)}
-                            className="border border-destructive/30 text-muted-foreground hover:border-destructive/60 hover:text-destructive"
-                          >
-                            <Icon icon="fa-solid fa-xmark" className="size-3.5" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>移除</TooltipContent>
-                      </Tooltip>
-                    )}
-                  </div>
-                </TableCell>
-              )}
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
-  )
-}
 
 export default function VideoQueue() {
   useDocumentTitle('Video Queue')
@@ -732,7 +503,7 @@ export default function VideoQueue() {
                 {/* Line 2: always same DOM structure — invisible holds badge height */}
                 <span className="flex items-center gap-1.5">
                   <span className={`min-w-0 truncate ${current ? '' : 'invisible'}`}>
-                    {current?.requested_by ?? '\u00A0'}
+                    {current?.requested_by ?? ' '}
                   </span>
                   <span className={`shrink-0 ${current ? '' : 'invisible'}`}>
                     <SourceBadge source={current?.source ?? 'dashboard'} />
