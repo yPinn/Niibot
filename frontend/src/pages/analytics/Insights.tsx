@@ -34,12 +34,12 @@ import {
 } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
+import { formatDuration } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 import { LoyaltyDonut } from './insights/LoyaltyDonut'
 import { SummaryTile } from './insights/SummaryTile'
 import { SORT_COLS, type SortKey } from './insights/types'
-import { formatDuration } from './insights/utils'
 import { ViewerList } from './insights/ViewerList'
 import { ViewerScatterChart } from './insights/ViewerScatterChart'
 import { ViewerSheet } from './insights/ViewerSheet'

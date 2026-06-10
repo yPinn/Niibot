@@ -26,10 +26,10 @@ import { WipLockOverlay } from '@/components/WipLockOverlay'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { apiCache, CACHE_KEYS } from '@/lib/apiCache'
+import { formatCompact } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 import { TopGamesChart } from './insights/TopGamesChart'
-import { formatCompact } from './insights/utils'
 import { ChannelCard } from './matcher/ChannelCard'
 import { ViewerTable } from './matcher/ViewerTable'
 
