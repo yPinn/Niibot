@@ -3,8 +3,8 @@ import { Link } from 'react-router-dom'
 import { motion } from 'motion/react'
 
 import { DiscordHelpBanner } from '@/components/DiscordHelpBanner'
-import { PageHeader } from '@/components/PageHeader'
-import { PageMain } from '@/components/PageMain'
+import { PageHeader } from '@/components/layout/PageHeader'
+import { PageMain } from '@/components/layout/PageMain'
 import {
   Icon,
   SlideUp,

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 
 import { getContainerLogs, getLogContainers, type LogLine } from '@/api/admin'
-import { PageMain } from '@/components/PageMain'
+import { PageMain } from '@/components/layout/PageMain'
 import { Icon, SlideUp, Spinner } from '@/components/primitives'
 import {
   Button,

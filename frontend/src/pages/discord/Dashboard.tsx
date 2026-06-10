@@ -1,6 +1,6 @@
 import { DiscordHelpBanner } from '@/components/DiscordHelpBanner'
-import { PageHeader } from '@/components/PageHeader'
-import { PageMain } from '@/components/PageMain'
+import { PageHeader } from '@/components/layout/PageHeader'
+import { PageMain } from '@/components/layout/PageMain'
 import { Icon, SlideUp, Stagger, StaggerItem } from '@/components/primitives'
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle } from '@/components/ui'
 import { WarningBanner } from '@/components/WarningBanner'

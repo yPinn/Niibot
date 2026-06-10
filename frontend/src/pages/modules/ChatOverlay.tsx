@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
+import { PageHeader } from '@/components/layout/PageHeader'
+import { PageMain } from '@/components/layout/PageMain'
 import { OverlayUrlBlock } from '@/components/OverlayUrlBlock'
-import { PageHeader } from '@/components/PageHeader'
-import { PageMain } from '@/components/PageMain'
 import { Icon, SlideUp } from '@/components/primitives'
 import {
   Button,

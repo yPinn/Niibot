@@ -16,9 +16,9 @@ import {
   type VideoQueueSettings,
 } from '@/api/videoQueue'
 import { AffiliateLockOverlay } from '@/components/AffiliateLockOverlay'
+import { PageHeader } from '@/components/layout/PageHeader'
+import { PageMain } from '@/components/layout/PageMain'
 import { OverlayUrlBlock } from '@/components/OverlayUrlBlock'
-import { PageHeader } from '@/components/PageHeader'
-import { PageMain } from '@/components/PageMain'
 import { EmptyState, Icon, SlideUp, Spinner } from '@/components/primitives'
 import {
   Badge,

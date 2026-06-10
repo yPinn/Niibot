@@ -1,8 +1,8 @@
 import { useNavigate } from 'react-router-dom'
 
 import { type User } from '@/api'
+import { useTheme } from '@/components/layout/theme-provider'
 import { Icon } from '@/components/primitives'
-import { useTheme } from '@/components/theme-provider'
 import {
   Avatar,
   AvatarFallback,

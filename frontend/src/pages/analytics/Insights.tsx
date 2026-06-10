@@ -12,8 +12,8 @@ import {
 } from '@/api/analytics'
 
 const CHART_BOX = 'aspect-[3/2] min-h-[360px] max-h-[480px]'
-import { PageHeader } from '@/components/PageHeader'
-import { PageMain } from '@/components/PageMain'
+import { PageHeader } from '@/components/layout/PageHeader'
+import { PageMain } from '@/components/layout/PageMain'
 import {
   AnimatePresence,
   EmptyState,

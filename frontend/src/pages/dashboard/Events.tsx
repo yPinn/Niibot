@@ -13,8 +13,8 @@ import {
   updateRedemptionConfig,
 } from '@/api/events'
 import { AffiliateLockOverlay } from '@/components/AffiliateLockOverlay'
-import { PageHeader } from '@/components/PageHeader'
-import { PageMain } from '@/components/PageMain'
+import { PageHeader } from '@/components/layout/PageHeader'
+import { PageMain } from '@/components/layout/PageMain'
 import { EmptyState, Icon, SlideUp, Spinner } from '@/components/primitives'
 import { SortableHead } from '@/components/SortableHead'
 import {

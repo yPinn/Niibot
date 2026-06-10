@@ -1,6 +1,7 @@
 import { Link, useNavigate } from 'react-router-dom'
 
 import avatarSrc from '@/assets/images/Avatar.png'
+import { useTheme } from '@/components/layout/theme-provider'
 import { Icon } from '@/components/primitives'
 import {
   FadeIn,
@@ -10,7 +11,6 @@ import {
   Stagger,
   StaggerItem,
 } from '@/components/primitives'
-import { useTheme } from '@/components/theme-provider'
 import { Badge, Button } from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 

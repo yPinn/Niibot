@@ -11,8 +11,8 @@ import {
   resetAISettings,
 } from '@/api/aiSettings'
 import { type ChannelBadges, getChannelBadges } from '@/api/analytics'
-import { PageHeader } from '@/components/PageHeader'
-import { PageMain } from '@/components/PageMain'
+import { PageHeader } from '@/components/layout/PageHeader'
+import { PageMain } from '@/components/layout/PageMain'
 import { Icon, SlideUp, Spinner } from '@/components/primitives'
 import {
   Button,

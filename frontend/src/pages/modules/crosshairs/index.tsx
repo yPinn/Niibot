@@ -15,8 +15,8 @@ import {
   updateCrosshair,
 } from '@/api/crosshairs'
 import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog'
-import { PageHeader } from '@/components/PageHeader'
-import { PageMain } from '@/components/PageMain'
+import { PageHeader } from '@/components/layout/PageHeader'
+import { PageMain } from '@/components/layout/PageMain'
 import { EmptyState, Icon } from '@/components/primitives'
 import {
   Badge,
