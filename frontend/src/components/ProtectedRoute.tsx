@@ -1,6 +1,7 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom'
 
 import { LoadingSpinner } from '@/components/LoadingSpinner'
+import { Button } from '@/components/ui/button'
 import { useAuth } from '@/contexts/AuthContext'
 
 export function ProtectedRoute() {
@@ -15,12 +16,7 @@ export function ProtectedRoute() {
     return (
       <div className="flex h-screen flex-col items-center justify-center gap-4">
         <p className="text-muted-foreground">無法連線到伺服器，請檢查網路後重試。</p>
-        <button
-          onClick={retryInit}
-          className="rounded bg-primary px-4 py-2 text-sm text-primary-foreground hover:opacity-90"
-        >
-          重試
-        </button>
+        <Button onClick={retryInit}>重試</Button>
       </div>
     )
   }
