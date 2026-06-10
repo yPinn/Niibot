@@ -474,7 +474,7 @@ export function CrosshairAdjustSheet({
         <SheetHeader className="shrink-0 pb-0">
           <SheetTitle className="text-card-title">調整準星</SheetTitle>
           <div className="flex flex-col items-center gap-3 pt-2 pb-1">
-            <div className="flex items-center justify-center rounded-2xl bg-zinc-500 p-3">
+            <div className="flex items-center justify-center rounded-2xl bg-muted p-3">
               <CrosshairSVG p={params} size="lg" />
             </div>
             <code className="max-w-full break-all rounded bg-muted px-2 py-1 text-center font-mono text-label text-muted-foreground">
