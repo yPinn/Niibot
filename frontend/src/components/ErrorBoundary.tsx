@@ -1,5 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 
+import { Button } from '@/components/ui/button'
+
 interface Props {
   children: ReactNode
 }
@@ -32,12 +34,7 @@ export class ErrorBoundary extends Component<Props, State> {
               {this.state.error.message}
             </pre>
           )}
-          <button
-            className="bg-primary text-primary-foreground rounded px-4 py-2 text-sm"
-            onClick={() => window.location.reload()}
-          >
-            重新整理
-          </button>
+          <Button onClick={() => window.location.reload()}>重新整理</Button>
         </div>
       )
     }

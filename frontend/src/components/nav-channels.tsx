@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react'
 
+import { type Channel } from '@/api/channels'
 import {
   Avatar,
   AvatarFallback,
@@ -21,17 +22,6 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui'
-
-interface Channel {
-  id: string
-  name: string
-  display_name: string
-  avatar: string
-  is_live: boolean
-  viewer_count?: number
-  game_name?: string
-  title?: string
-}
 
 type SortType = 'alphabet' | 'viewers'
 

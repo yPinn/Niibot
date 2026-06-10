@@ -22,17 +22,10 @@ import {
   type TwitchReward,
   updateRedemptionConfig,
 } from '@/api/events'
+import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog'
 import { PageHeader } from '@/components/PageHeader'
 import { PageMain } from '@/components/PageMain'
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
   Badge,
   Button,
   Card,
@@ -874,31 +867,24 @@ function ActivationCard() {
         </CardContent>
       </Card>
 
-      <AlertDialog open={!!confirmReject} onOpenChange={open => !open && setConfirmReject(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>確定拒絕申請？</AlertDialogTitle>
-            <AlertDialogDescription>
-              將拒絕{' '}
-              <span className="font-medium text-foreground">
-                {confirmReject?.display_name ??
-                  confirmReject?.username ??
-                  confirmReject?.platform_user_id}
-              </span>{' '}
-              的授權申請。對方可以重新送出申請。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => confirmReject && handleReject(confirmReject)}
-            >
-              拒絕
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <DeleteConfirmDialog
+        open={!!confirmReject}
+        onOpenChange={open => !open && setConfirmReject(null)}
+        title="確定拒絕申請？"
+        description={
+          <>
+            將拒絕{' '}
+            <span className="font-medium text-foreground">
+              {confirmReject?.display_name ??
+                confirmReject?.username ??
+                confirmReject?.platform_user_id}
+            </span>{' '}
+            的授權申請。對方可以重新送出申請。
+          </>
+        }
+        actionLabel="拒絕"
+        onConfirm={() => confirmReject && handleReject(confirmReject)}
+      />
     </>
   )
 }

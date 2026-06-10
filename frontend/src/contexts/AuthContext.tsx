@@ -22,7 +22,7 @@ interface AuthContextType {
   isAffiliate: boolean // true for Twitch affiliate or partner
   channels: Channel[]
   logout: () => Promise<void>
-  refreshUser: () => Promise<void>
+  refreshUser: () => Promise<User | null>
   refreshChannels: () => Promise<void>
   retryInit: () => void
 }
@@ -86,13 +86,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener('auth:reauth-required', handleReauthRequired)
   }, [])
 
-  const refreshUser = useCallback(async () => {
+  const refreshUser = useCallback(async (): Promise<User | null> => {
     try {
       const userData = await getCurrentUser({ forceRefresh: true })
       setUser(userData)
+      return userData
     } catch (error) {
-      console.error('Failed to load user:', error)
+      if (import.meta.env.DEV) console.error('Failed to load user:', error)
       setUser(null)
+      return null
     }
   }, [])
 
@@ -100,7 +102,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       await apiLogout()
     } catch (error) {
-      console.error('Logout request failed:', error)
+      if (import.meta.env.DEV) console.error('Logout request failed:', error)
     }
     setUser(null)
     setChannels([])
@@ -112,7 +114,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const channelData = await getTwitchMonitoredChannels({ forceRefresh: true })
       setChannels(channelData)
     } catch (error) {
-      console.error('Failed to load channels:', error)
+      if (import.meta.env.DEV) console.error('Failed to load channels:', error)
       setChannels([])
     }
   }, [])
@@ -142,7 +144,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       // Network error (not a 401 — apiFetch handles those via auth:unauthorized).
       // Don't treat a connectivity blip as "logged out".
-      console.error('Failed to load initial data:', error)
+      if (import.meta.env.DEV) console.error('Failed to load initial data:', error)
       setIsInitError(true)
       setIsInitialized(true)
     } finally {

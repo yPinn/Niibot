@@ -1,12 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
-import {
-  getBotModStatus,
-  getTwitchChannelStatus,
-  grantBotMod,
-  toggleTwitchChannel,
-} from '@/api/channels'
+import { getBotModStatus, getTwitchChannelStatus, toggleTwitchChannel } from '@/api/channels'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,6 +15,7 @@ import {
 } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { useServiceStatus } from '@/contexts/ServiceStatusContext'
+import { useGrantMod } from '@/hooks/useGrantMod'
 
 export function OnlineDropdown() {
   const { user, isInitialized } = useAuth()
@@ -27,8 +23,8 @@ export function OnlineDropdown() {
   const [myChannelSubscribed, setMyChannelSubscribed] = useState(false)
   const [loading, setLoading] = useState(false)
   const [isMod, setIsMod] = useState<boolean | null>(null)
-  const [grantingMod, setGrantingMod] = useState(false)
   const hasLoadedRef = useRef(false)
+  const { granting: grantingMod, grantMod: handleGrantMod } = useGrantMod(() => setIsMod(true))
 
   const fetchChannelStatus = useCallback(async () => {
     if (!user) return
@@ -70,24 +66,6 @@ export function OnlineDropdown() {
       })
     } finally {
       setLoading(false)
-    }
-  }
-
-  const handleGrantMod = async () => {
-    setGrantingMod(true)
-    try {
-      const res = await grantBotMod()
-      if (res.already_mod) {
-        setIsMod(true)
-        toast.info('Niibot 已經是管理員了')
-      } else if (res.granted) {
-        setIsMod(true)
-        toast.success('管理員授予成功')
-      }
-    } catch {
-      toast.error('授予失敗，請稍後再試')
-    } finally {
-      setGrantingMod(false)
     }
   }
 

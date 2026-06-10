@@ -66,7 +66,7 @@ class ApiCache {
     }
 
     const pending = this.pendingRequests.get(key) as Promise<T> | undefined
-    if (pending) {
+    if (pending && !options?.forceRefresh) {
       return pending
     }
 

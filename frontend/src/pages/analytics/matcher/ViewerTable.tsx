@@ -9,9 +9,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui'
+import { formatRelativeDays, formatWatchHours } from '@/lib/format'
 import { cn } from '@/lib/utils'
-
-import { formatRelativeDays, formatWatchHours } from '../insights/utils'
 
 import type { MatcherViewersResponse } from './types'
 

@@ -117,8 +117,8 @@ export default function ActivatePage() {
 
   const handleCheckApproval = async () => {
     try {
-      await refreshUser()
-      if (user?.is_activated) {
+      const freshUser = await refreshUser()
+      if (freshUser?.is_activated) {
         navigate('/dashboard', { replace: true })
       } else {
         const res = await getActivationRequestStatus()

@@ -14,17 +14,10 @@ import {
   getPublicCrosshairs,
   updateCrosshair,
 } from '@/api/crosshairs'
+import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog'
 import { PageHeader } from '@/components/PageHeader'
 import { PageMain } from '@/components/PageMain'
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
   Badge,
   Button,
   Card,
@@ -414,7 +407,7 @@ export default function CrosshairModule() {
 
           <SheetSection>
             <div className="flex justify-center py-element">
-              <div className="flex items-center justify-center rounded-2xl bg-zinc-500 p-3">
+              <div className="flex items-center justify-center rounded-2xl bg-muted p-3">
                 <CrosshairPreview
                   game={form.game}
                   code={form.code || '0;P;0l;4;0o;2;0t;2'}
@@ -501,23 +494,13 @@ export default function CrosshairModule() {
         </SheetContent>
       </Sheet>
 
-      <AlertDialog open={!!deleteTarget} onOpenChange={open => !open && setDeleteTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>確定刪除「{deleteTarget?.name}」？</AlertDialogTitle>
-            <AlertDialogDescription>此操作無法復原。</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => deleteTarget && handleDelete(deleteTarget)}
-            >
-              刪除
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <DeleteConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={open => !open && setDeleteTarget(null)}
+        title={`確定刪除「${deleteTarget?.name}」？`}
+        description="此操作無法復原。"
+        onConfirm={() => deleteTarget && handleDelete(deleteTarget)}
+      />
     </>
   )
 }

@@ -8,6 +8,10 @@ import {
   type PublicChannelProfile,
 } from '@/api/crosshairs'
 import avatarFallback from '@/assets/images/Avatar.png'
+import { CrosshairCardBase } from '@/components/crosshairs/CrosshairCardBase'
+import { CrosshairDetailPreview } from '@/components/crosshairs/CrosshairPreview'
+import { SortDropdown } from '@/components/crosshairs/SortDropdown'
+import { copyCode } from '@/components/crosshairs/utils'
 import { useTheme } from '@/components/theme-provider'
 import {
   Avatar,
@@ -30,11 +34,6 @@ import {
   Skeleton,
 } from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
-
-import { CrosshairCardBase } from '../modules/crosshairs/CrosshairCardBase'
-import { CrosshairDetailPreview } from '../modules/crosshairs/CrosshairPreview'
-import { SortDropdown } from '../modules/crosshairs/SortDropdown'
-import { copyCode } from '../modules/crosshairs/utils'
 
 type SortKey = 'default' | 'copies'
 

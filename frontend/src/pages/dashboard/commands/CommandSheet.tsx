@@ -10,15 +10,8 @@ import {
   updateCommandConfig,
 } from '@/api/commands'
 import { createTrigger, deleteTrigger, type TriggerConfig, updateTrigger } from '@/api/triggers'
+import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog'
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
   Button,
   Icon,
   Input,
@@ -571,27 +564,17 @@ export function CommandSheet({
         </SheetFooter>
       </SheetContent>
 
-      <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>確定刪除？</AlertDialogTitle>
-            <AlertDialogDescription>
-              {editing?.mode === 'edit-trigger'
-                ? `即將刪除自動回應「${editing.trigger.pattern}」，此操作無法還原。`
-                : `即將刪除指令「!${editing?.mode === 'edit-command' ? editing.command.command_name : ''}」，此操作無法還原。`}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={handleDelete}
-            >
-              刪除
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <DeleteConfirmDialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title="確定刪除？"
+        description={
+          editing?.mode === 'edit-trigger'
+            ? `即將刪除自動回應「${editing.trigger.pattern}」，此操作無法還原。`
+            : `即將刪除指令「!${editing?.mode === 'edit-command' ? editing.command.command_name : ''}」，此操作無法還原。`
+        }
+        onConfirm={handleDelete}
+      />
     </Sheet>
   )
 }
