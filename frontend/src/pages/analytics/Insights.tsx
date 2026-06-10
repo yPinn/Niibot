@@ -10,15 +10,13 @@ import {
   syncChannelRoles,
   type ViewerSummary,
 } from '@/api/analytics'
+
+const CHART_BOX = 'aspect-[3/2] min-h-[360px] max-h-[480px]'
 import { PageHeader } from '@/components/PageHeader'
 import { PageMain } from '@/components/PageMain'
 import {
   AnimatePresence,
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
+  EmptyState,
   FadeIn,
   Icon,
   Input,
@@ -263,7 +261,7 @@ export default function Insights() {
         className="grid grid-cols-1 lg:grid-cols-2 gap-section flex-1 min-h-0 overflow-y-auto lg:overflow-hidden lg:grid-rows-1"
       >
         {/* ── Left: Chart + Summary tiles ──────────────────────────── */}
-        <div className="rounded-lg border bg-card p-section flex flex-col gap-section min-h-0">
+        <div className="rounded-lg border bg-card p-section flex flex-col gap-section min-h-0 lg:self-start">
           {/* Chart header */}
           <div className="flex items-center justify-between shrink-0">
             <span className="text-sub font-semibold">
@@ -299,21 +297,24 @@ export default function Insights() {
 
           <AnimatePresence mode="wait" initial={false}>
             {showScatter ? (
-              <FadeIn
-                key="scatter"
-                className="flex-1 min-h-0 rounded-md bg-muted/20 p-3 **:outline-none"
-                style={{ minHeight: 200 }}
-              >
-                {initialized && viewers.length > 0 ? (
-                  <ViewerScatterChart
-                    viewers={viewers}
-                    hoveredUserId={hoveredUserId}
-                    onHover={setHoveredUserId}
-                    channelBadges={channelBadges}
+              <FadeIn key="scatter" className="shrink-0 **:outline-none">
+                {!initialized ? (
+                  <Skeleton className="aspect-[3/2] min-h-[360px] max-h-[480px] rounded-md" />
+                ) : viewers.length === 0 ? (
+                  <EmptyState
+                    className="py-empty"
+                    icon="fa-solid fa-chart-scatter"
+                    title="尚無觀眾資料"
+                    description="每場直播結束後會累積觀眾資料"
                   />
                 ) : (
-                  <div className="h-full flex items-center justify-center text-label text-muted-foreground">
-                    尚無觀眾資料
+                  <div className={CHART_BOX}>
+                    <ViewerScatterChart
+                      viewers={viewers}
+                      hoveredUserId={hoveredUserId}
+                      onHover={setHoveredUserId}
+                      channelBadges={channelBadges}
+                    />
                   </div>
                 )}
               </FadeIn>
@@ -324,13 +325,21 @@ export default function Insights() {
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.12 }}
-                className="flex-1 min-h-0 **:outline-none"
-                style={{ minHeight: 200 }}
+                className="shrink-0 **:outline-none"
               >
                 {!initialized ? (
-                  <Skeleton className="h-full rounded-md" />
+                  <Skeleton className="aspect-[3/2] min-h-[360px] max-h-[480px] rounded-md" />
+                ) : viewers.length === 0 ? (
+                  <EmptyState
+                    className="py-empty"
+                    icon="fa-solid fa-chart-pie"
+                    title="尚無觀眾資料"
+                    description="每場直播結束後會累積觀眾資料"
+                  />
                 ) : (
-                  <LoyaltyDonut tiers={sessionTiers} />
+                  <div className={CHART_BOX}>
+                    <LoyaltyDonut tiers={sessionTiers} />
+                  </div>
                 )}
               </motion.div>
             )}
@@ -460,37 +469,19 @@ export default function Insights() {
                 transition={{ duration: 0.15 }}
               >
                 {viewersError ? (
-                  <Empty className="border-none py-empty">
-                    <EmptyHeader>
-                      <EmptyMedia>
-                        <Icon
-                          icon="fa-solid fa-triangle-exclamation"
-                          wrapperClassName="size-20 opacity-25"
-                          className="text-[5rem]"
-                        />
-                      </EmptyMedia>
-                      <EmptyTitle>載入觀眾資料失敗</EmptyTitle>
-                      <EmptyDescription>
-                        請重新整理頁面，若問題持續請檢查伺服器狀態
-                      </EmptyDescription>
-                    </EmptyHeader>
-                  </Empty>
+                  <EmptyState
+                    className="py-empty"
+                    icon="fa-solid fa-triangle-exclamation"
+                    title="載入觀眾資料失敗"
+                    description="請重新整理頁面，若問題持續請檢查伺服器狀態"
+                  />
                 ) : viewers.length === 0 ? (
-                  <Empty className="border-none py-empty">
-                    <EmptyHeader>
-                      <EmptyMedia>
-                        <Icon
-                          icon="fa-solid fa-users"
-                          wrapperClassName="size-20 opacity-25"
-                          className="text-[5rem]"
-                        />
-                      </EmptyMedia>
-                      <EmptyTitle>尚無觀眾資料</EmptyTitle>
-                      <EmptyDescription>
-                        每場直播結束後會累積觀眾資料，歷史紀錄可在此查閱
-                      </EmptyDescription>
-                    </EmptyHeader>
-                  </Empty>
+                  <EmptyState
+                    className="py-empty"
+                    icon="fa-solid fa-users"
+                    title="尚無觀眾資料"
+                    description="每場直播結束後會累積觀眾資料，歷史紀錄可在此查閱"
+                  />
                 ) : (
                   <ViewerList
                     filtered={filtered}

@@ -31,6 +31,7 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
+  EmptyState,
   Icon,
   Input,
   Sheet,
@@ -290,9 +291,12 @@ export default function CrosshairModule() {
                     ))}
                   </div>
                 ) : crosshairs.length === 0 ? (
-                  <p className="py-12 text-center text-muted-foreground">
-                    還沒有準星，點擊「新增準星」開始收藏
-                  </p>
+                  <EmptyState
+                    className="py-empty"
+                    icon="fa-solid fa-crosshairs"
+                    title="尚無準星"
+                    description="點擊「新增準星」開始收藏"
+                  />
                 ) : (
                   <div className="grid grid-cols-1 gap-section sm:grid-cols-3 lg:grid-cols-5">
                     {sortedMine.map(c => (
@@ -351,11 +355,19 @@ export default function CrosshairModule() {
                     )
                   }
                   if (sortedBrowse.length === 0) {
-                    return (
-                      <p className="py-12 text-center text-muted-foreground">
-                        {browseResults !== null ? '此使用者尚無準星' : '目前尚無任何準星'}
-                      </p>
-                    )
+                    const empty =
+                      browseResults !== null
+                        ? {
+                            icon: 'fa-solid fa-magnifying-glass',
+                            title: '此使用者尚無準星',
+                            description: '此使用者尚未公開分享任何準星',
+                          }
+                        : {
+                            icon: 'fa-solid fa-crosshairs',
+                            title: '目前尚無任何準星',
+                            description: '社群尚未公開任何準星',
+                          }
+                    return <EmptyState className="py-empty" {...empty} />
                   }
                   return (
                     <>

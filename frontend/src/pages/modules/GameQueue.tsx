@@ -24,10 +24,7 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-  Empty,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
+  EmptyState,
   Icon,
   Input,
   Label,
@@ -74,18 +71,11 @@ function EntryTable({
 
   if (entries.length === 0) {
     return (
-      <Empty className="border-none">
-        <EmptyHeader>
-          <EmptyMedia>
-            <Icon
-              icon="fa-solid fa-users"
-              wrapperClassName="size-20 opacity-25"
-              className="text-[5rem]"
-            />
-          </EmptyMedia>
-          <EmptyTitle>{emptyText ?? '目前無玩家'}</EmptyTitle>
-        </EmptyHeader>
-      </Empty>
+      <EmptyState
+        icon="fa-solid fa-users"
+        title={emptyText ?? '目前無玩家'}
+        description="等待觀眾使用兌換券加入"
+      />
     )
   }
 

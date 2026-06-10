@@ -29,11 +29,7 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
+  EmptyState,
   Icon,
   Input,
   Label,
@@ -694,19 +690,11 @@ export default function VideoQueue() {
                 onRemove={handleRemove}
               />
               {!current && queue.length === 0 && (
-                <Empty className="border-none">
-                  <EmptyHeader>
-                    <EmptyMedia>
-                      <Icon
-                        icon="fa-solid fa-circle-play"
-                        wrapperClassName="size-20 opacity-25"
-                        className="text-[5rem]"
-                      />
-                    </EmptyMedia>
-                    <EmptyTitle>佇列為空</EmptyTitle>
-                    <EmptyDescription>貼上連結後按 Enter 或點擊「新增」</EmptyDescription>
-                  </EmptyHeader>
-                </Empty>
+                <EmptyState
+                  icon="fa-solid fa-circle-play"
+                  title="佇列為空"
+                  description="貼上連結後按 Enter 或點擊「新增」"
+                />
               )}
             </CardContent>
           </Card>

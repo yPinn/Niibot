@@ -19,10 +19,7 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
-  Empty,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
+  EmptyState,
   FadeIn,
   Icon,
   Sheet,
@@ -159,18 +156,11 @@ export default function CrosshairRepo() {
 
               <CardContent>
                 {crosshairs.length === 0 ? (
-                  <Empty className="border-none">
-                    <EmptyHeader>
-                      <EmptyMedia>
-                        <Icon
-                          icon="fa-solid fa-crosshairs"
-                          wrapperClassName="size-20 opacity-25"
-                          className="text-[5rem]"
-                        />
-                      </EmptyMedia>
-                      <EmptyTitle>尚無準星</EmptyTitle>
-                    </EmptyHeader>
-                  </Empty>
+                  <EmptyState
+                    icon="fa-solid fa-crosshairs"
+                    title="尚無準星"
+                    description="此實況主尚未公開分享任何準星"
+                  />
                 ) : (
                   <>
                     <div className="flex items-center justify-between px-1 mb-card">
