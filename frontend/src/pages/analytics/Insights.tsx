@@ -351,7 +351,7 @@ export default function Insights() {
             <Stagger
               key={insightsLoading ? 'l' : 'd'}
               exit={{ opacity: 0, transition: { duration: 0.08 } }}
-              className="grid grid-cols-4 gap-1.5 shrink-0"
+              className="grid grid-cols-2 gap-1.5 shrink-0 sm:grid-cols-4"
             >
               {insightsLoading ? (
                 Array.from({ length: 7 }).map((_, i) => (
