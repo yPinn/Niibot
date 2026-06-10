@@ -1,8 +1,5 @@
-import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { toast } from 'sonner'
 
-import { grantBotMod } from '@/api/channels'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -13,6 +10,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Icon } from '@/components/ui/icon'
+import { useGrantMod } from '@/hooks/useGrantMod'
 
 interface ModSetupDialogProps {
   open: boolean
@@ -20,25 +18,10 @@ interface ModSetupDialogProps {
 }
 
 export function ModSetupDialog({ open, onOpenChange }: ModSetupDialogProps) {
-  const [granting, setGranting] = useState(false)
+  const { granting, grantMod } = useGrantMod(() => onOpenChange(false))
 
   function dismiss() {
     onOpenChange(false)
-  }
-
-  async function handleGrant() {
-    setGranting(true)
-    try {
-      const res = await grantBotMod()
-      if (res.granted || res.already_mod) {
-        toast.success(res.already_mod ? 'Niibot 已經是管理員了' : '管理員授予成功！')
-        onOpenChange(false)
-      }
-    } catch {
-      toast.error('授予失敗，請手動在聊天室輸入 /mod niibot_')
-    } finally {
-      setGranting(false)
-    }
   }
 
   return (
@@ -68,7 +51,7 @@ export function ModSetupDialog({ open, onOpenChange }: ModSetupDialogProps) {
               查看說明
             </Link>
           </Button>
-          <Button size="sm" onClick={handleGrant} disabled={granting}>
+          <Button size="sm" onClick={grantMod} disabled={granting}>
             <Icon icon={granting ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-sword'} />
             {granting ? '授予中…' : '一鍵授予 Mod'}
           </Button>

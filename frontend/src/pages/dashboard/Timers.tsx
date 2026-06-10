@@ -11,20 +11,13 @@ import {
   toggleTimer,
   updateTimer,
 } from '@/api/timers'
+import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog'
 import { PageHeader } from '@/components/PageHeader'
 import { PageMain } from '@/components/PageMain'
 import { SortableHead } from '@/components/SortableHead'
 import {
   Alert,
   AlertDescription,
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
   Badge,
   Button,
   Card,
@@ -636,27 +629,19 @@ export default function Timers() {
         </SheetContent>
       </Sheet>
 
-      <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>確定刪除計時器？</AlertDialogTitle>
-            <AlertDialogDescription>
-              即將刪除計時器「
-              <span className="font-medium text-foreground">{editing?.timer?.timer_name}</span>
-              」，此操作無法還原。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => editing?.timer && handleDelete(editing.timer)}
-            >
-              刪除
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <DeleteConfirmDialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title="確定刪除計時器？"
+        description={
+          <>
+            即將刪除計時器「
+            <span className="font-medium text-foreground">{editing?.timer?.timer_name}</span>
+            」，此操作無法還原。
+          </>
+        }
+        onConfirm={() => editing?.timer && handleDelete(editing.timer)}
+      />
     </PageMain>
   )
 }

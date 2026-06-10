@@ -11,17 +11,10 @@ import {
   upsertPaymentConfig,
 } from '@/api'
 import { AffiliateLockOverlay } from '@/components/AffiliateLockOverlay'
+import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog'
 import { PageHeader } from '@/components/PageHeader'
 import { PageMain } from '@/components/PageMain'
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
   Badge,
   Button,
   Card,
@@ -501,33 +494,21 @@ export default function Settings() {
         </Card>
       </SlideUp>
 
-      {/* Delete confirmation dialog */}
-      <AlertDialog
+      <DeleteConfirmDialog
         open={!!pendingDeletePlatform}
         onOpenChange={(open: boolean) => !open && setPendingDeletePlatform(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>確定刪除設定？</AlertDialogTitle>
-            <AlertDialogDescription>
-              即將刪除{' '}
-              <span className="font-medium text-foreground">
-                {pendingDeletePlatform ? PLATFORM_LABELS[pendingDeletePlatform] : ''}
-              </span>{' '}
-              的金流設定，此操作無法還原。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={handleConfirmDelete}
-            >
-              刪除
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        title="確定刪除設定？"
+        description={
+          <>
+            即將刪除{' '}
+            <span className="font-medium text-foreground">
+              {pendingDeletePlatform ? PLATFORM_LABELS[pendingDeletePlatform] : ''}
+            </span>{' '}
+            的金流設定，此操作無法還原。
+          </>
+        }
+        onConfirm={handleConfirmDelete}
+      />
       {import.meta.env.PROD && <WipLockOverlay />}
     </PageMain>
   )
