@@ -631,9 +631,7 @@ export default function VideoQueue() {
         </SheetContent>
       </Sheet>
 
-      {!isAffiliate && (
-        <AffiliateLockOverlay message="成為 Twitch 聯盟夥伴或合作夥伴後即可使用影片佇列功能" />
-      )}
+      {!isAffiliate && <AffiliateLockOverlay message="取得資格後可使用影片佇列功能" fullPage />}
 
       <SlideUp inView className="grid grid-cols-1 gap-section lg:grid-cols-12 lg:items-stretch">
         <div className="lg:col-span-8">

@@ -398,9 +398,7 @@ export default function Events() {
                             </TableCell>
                             <TableCell className="hidden md:table-cell max-w-0 truncate font-mono text-label">
                               {locked ? (
-                                <span className="text-muted-foreground">
-                                  需要聯盟夥伴或合作夥伴資格
-                                </span>
+                                <span className="text-muted-foreground">需要實況盟友資格</span>
                               ) : (
                                 event.message_template
                               )}
@@ -441,7 +439,7 @@ export default function Events() {
           <Card className="relative overflow-hidden">
             {!isAffiliate && (
               <AffiliateLockOverlay
-                message="成為 Twitch 聯盟夥伴或合作夥伴後即可設定忠誠點數獎勵"
+                message="取得資格後可設定忠誠點數獎勵"
                 className="rounded-[inherit]"
               />
             )}
@@ -456,17 +454,6 @@ export default function Events() {
                     <Skeleton key={i} className="h-10 w-full" />
                   ))}
                 </div>
-              ) : !isAffiliate ? (
-                <Empty>
-                  <EmptyHeader>
-                    <EmptyMedia>
-                      <Icon icon="fa-solid fa-lock" wrapperClassName="size-6" />
-                    </EmptyMedia>
-                    <EmptyDescription>
-                      成為 Twitch 聯盟夥伴或合作夥伴後即可設定忠誠點數獎勵
-                    </EmptyDescription>
-                  </EmptyHeader>
-                </Empty>
               ) : (
                 <div className="overflow-x-auto rounded-md border">
                   <Table className="table-fixed">

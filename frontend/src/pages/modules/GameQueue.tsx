@@ -278,9 +278,7 @@ export default function GameQueue() {
     <PageMain>
       <PageHeader title="Game Queue" description="管理遊戲排隊系統" />
 
-      {!isAffiliate && (
-        <AffiliateLockOverlay message="成為 Twitch 聯盟夥伴或合作夥伴後即可使用遊戲排隊功能" />
-      )}
+      {!isAffiliate && <AffiliateLockOverlay message="取得資格後可使用遊戲排隊功能" fullPage />}
 
       {/* Row 1: Full Queue (col-8) + sidebar (col-4) */}
       <SlideUp inView className="grid grid-cols-1 gap-section lg:grid-cols-12 lg:items-stretch">
