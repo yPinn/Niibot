@@ -182,7 +182,7 @@ export default function Settings() {
         <Card className="relative overflow-hidden">
           {locked && (
             <AffiliateLockOverlay
-              message="成為 Twitch 聯盟夥伴或合作夥伴後即可設定金流"
+              message="取得資格後可設定金流方式"
               className="rounded-[inherit]"
             />
           )}

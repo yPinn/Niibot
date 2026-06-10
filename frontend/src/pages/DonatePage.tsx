@@ -15,11 +15,7 @@ import {
   Button,
   Card,
   CardContent,
-  Empty,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-  Icon,
+  EmptyState,
   Input,
   SlideUp,
   SlideUpSm,
@@ -224,35 +220,23 @@ export default function DonatePage() {
 
   if (notFound || !info) {
     return (
-      <Empty className="border-none min-h-screen">
-        <EmptyHeader>
-          <EmptyMedia>
-            <Icon
-              icon="fa-solid fa-circle-xmark"
-              wrapperClassName="size-20 opacity-25"
-              className="text-[5rem]"
-            />
-          </EmptyMedia>
-          <EmptyTitle>找不到這位實況主</EmptyTitle>
-        </EmptyHeader>
-      </Empty>
+      <EmptyState
+        className="min-h-screen"
+        icon="fa-solid fa-circle-xmark"
+        title="找不到這位實況主"
+        description="請確認連結是否正確"
+      />
     )
   }
 
   if (info.platforms.length === 0) {
     return (
-      <Empty className="border-none min-h-screen">
-        <EmptyHeader>
-          <EmptyMedia>
-            <Icon
-              icon="fa-solid fa-ban"
-              wrapperClassName="size-20 opacity-25"
-              className="text-[5rem]"
-            />
-          </EmptyMedia>
-          <EmptyTitle>{info.username} 尚未開啟斗內功能</EmptyTitle>
-        </EmptyHeader>
-      </Empty>
+      <EmptyState
+        className="min-h-screen"
+        icon="fa-solid fa-ban"
+        title={`${info.username} 尚未開啟斗內功能`}
+        description="實況主尚未綁定任何金流方式"
+      />
     )
   }
 

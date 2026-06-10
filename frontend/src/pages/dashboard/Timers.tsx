@@ -33,11 +33,7 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
+  EmptyState,
   Icon,
   Input,
   Label,
@@ -385,19 +381,11 @@ export default function Timers() {
                     {sorted.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={6}>
-                          <Empty className="border-none">
-                            <EmptyHeader>
-                              <EmptyMedia>
-                                <Icon
-                                  icon="fa-solid fa-clock"
-                                  wrapperClassName="size-20 opacity-25"
-                                  className="text-[5rem]"
-                                />
-                              </EmptyMedia>
-                              <EmptyTitle>尚無計時器</EmptyTitle>
-                              <EmptyDescription>點擊「新增計時器」開始設定</EmptyDescription>
-                            </EmptyHeader>
-                          </Empty>
+                          <EmptyState
+                            icon="fa-solid fa-clock"
+                            title="尚無計時器"
+                            description="點擊「新增計時器」開始設定"
+                          />
                         </TableCell>
                       </TableRow>
                     ) : (

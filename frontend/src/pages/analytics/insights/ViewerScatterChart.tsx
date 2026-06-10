@@ -246,8 +246,8 @@ export function ViewerScatterChart({
   const axisMin = logScale ? 1 : 0
 
   return (
-    <div className="flex flex-col gap-element">
-      <div className="flex items-center justify-between">
+    <div className="flex flex-col gap-element h-full">
+      <div className="flex items-center justify-between shrink-0">
         <div className="flex items-center gap-1.5">
           <p className="text-label text-muted-foreground">觀眾分佈</p>
           <TooltipProvider delayDuration={200}>
@@ -324,127 +324,131 @@ export function ViewerScatterChart({
           </div>
         </div>
       </div>
-      <p className="text-label text-muted-foreground/60">觀看時長 × 留言數</p>
-      <ResponsiveContainer width="100%" height={320}>
-        <ScatterChart
-          margin={{ top: 16, right: 8, bottom: 8, left: 4 }}
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          onMouseMove={(state: any) => {
-            const point = state?.activePayload?.[0]?.payload as DotData | undefined
-            onHover(point?.user_id ?? null)
-          }}
-          onMouseLeave={() => onHover(null)}
-        >
-          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-          <XAxis
-            dataKey="x"
-            type="number"
-            scale={logScale ? 'log' : 'auto'}
-            domain={[axisMin, 'auto']}
-            tick={({ x, y, payload }: AxisTick) => (
-              <text
-                x={x}
-                y={Number(y) + 10}
-                textAnchor="middle"
-                style={{ fontSize: 'var(--text-label)' }}
-                fill="var(--muted-foreground)"
-              >
-                {payload.value === 0
-                  ? '0'
-                  : payload.value >= 60
-                    ? `${Math.floor(payload.value / 60)}h`
-                    : `${payload.value}m`}
-              </text>
-            )}
-            tickLine={false}
-            axisLine={false}
-          />
-          <YAxis
-            dataKey="y"
-            type="number"
-            scale={logScale ? 'log' : 'auto'}
-            domain={[axisMin, 'auto']}
-            tick={({ x, y, payload }: AxisTick) => (
-              <text
-                x={Number(x) - 2}
-                y={y}
-                textAnchor="end"
-                dominantBaseline="middle"
-                style={{ fontSize: 'var(--text-label)' }}
-                fill="var(--muted-foreground)"
-              >
-                {formatCompact(payload.value)}
-              </text>
-            )}
-            tickLine={false}
-            axisLine={false}
-            width={44}
-          />
-          {midX > 0 && midY > 0 && (
-            <>
-              <ReferenceArea
-                x1={axisMin}
-                x2={midX}
-                y1={axisMin}
-                y2={midY}
-                fill="var(--muted-foreground)"
-                fillOpacity={0.06}
-                ifOverflow="hidden"
-              />
-              <ReferenceArea
-                x1={axisMin}
-                x2={midX}
-                y1={midY}
-                y2={AXIS_MAX}
-                fill="var(--chart-4)"
-                fillOpacity={0.12}
-                ifOverflow="hidden"
-              />
-              <ReferenceArea
-                x1={midX}
-                x2={AXIS_MAX}
-                y1={axisMin}
-                y2={midY}
-                fill="var(--chart-2)"
-                fillOpacity={0.12}
-                ifOverflow="hidden"
-              />
-              <ReferenceArea
-                x1={midX}
-                x2={AXIS_MAX}
-                y1={midY}
-                y2={AXIS_MAX}
-                fill="var(--status-success)"
-                fillOpacity={0.1}
-                ifOverflow="hidden"
-              />
-              <ReferenceLine
-                x={midX}
-                stroke="var(--border)"
-                strokeWidth={1.5}
-                strokeDasharray="4 3"
-                ifOverflow="hidden"
-              />
-              <ReferenceLine
-                y={midY}
-                stroke="var(--border)"
-                strokeWidth={1.5}
-                strokeDasharray="4 3"
-                ifOverflow="hidden"
-              />
-            </>
-          )}
-          {viewers.length < SCATTER_TOOLTIP_THRESHOLD && (
-            <RechartsTooltip
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              content={(props: any) => <ScatterTooltip {...props} channelBadges={channelBadges} />}
-              cursor={{ strokeDasharray: '3 3', stroke: 'var(--muted-foreground)' }}
+      <p className="text-label text-muted-foreground/60 shrink-0">觀看時長 × 留言數</p>
+      <div className="flex-1 min-h-0">
+        <ResponsiveContainer width="100%" height="100%">
+          <ScatterChart
+            margin={{ top: 16, right: 8, bottom: 8, left: 4 }}
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            onMouseMove={(state: any) => {
+              const point = state?.activePayload?.[0]?.payload as DotData | undefined
+              onHover(point?.user_id ?? null)
+            }}
+            onMouseLeave={() => onHover(null)}
+          >
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+            <XAxis
+              dataKey="x"
+              type="number"
+              scale={logScale ? 'log' : 'auto'}
+              domain={[axisMin, 'auto']}
+              tick={({ x, y, payload }: AxisTick) => (
+                <text
+                  x={x}
+                  y={Number(y) + 10}
+                  textAnchor="middle"
+                  style={{ fontSize: 'var(--text-label)' }}
+                  fill="var(--muted-foreground)"
+                >
+                  {payload.value === 0
+                    ? '0'
+                    : payload.value >= 60
+                      ? `${Math.floor(payload.value / 60)}h`
+                      : `${payload.value}m`}
+                </text>
+              )}
+              tickLine={false}
+              axisLine={false}
             />
-          )}
-          <Scatter data={plotData} shape={shape} />
-        </ScatterChart>
-      </ResponsiveContainer>
-      <div className="flex items-center justify-between">
+            <YAxis
+              dataKey="y"
+              type="number"
+              scale={logScale ? 'log' : 'auto'}
+              domain={[axisMin, 'auto']}
+              tick={({ x, y, payload }: AxisTick) => (
+                <text
+                  x={Number(x) - 2}
+                  y={y}
+                  textAnchor="end"
+                  dominantBaseline="middle"
+                  style={{ fontSize: 'var(--text-label)' }}
+                  fill="var(--muted-foreground)"
+                >
+                  {formatCompact(payload.value)}
+                </text>
+              )}
+              tickLine={false}
+              axisLine={false}
+              width={44}
+            />
+            {midX > 0 && midY > 0 && (
+              <>
+                <ReferenceArea
+                  x1={axisMin}
+                  x2={midX}
+                  y1={axisMin}
+                  y2={midY}
+                  fill="var(--muted-foreground)"
+                  fillOpacity={0.06}
+                  ifOverflow="hidden"
+                />
+                <ReferenceArea
+                  x1={axisMin}
+                  x2={midX}
+                  y1={midY}
+                  y2={AXIS_MAX}
+                  fill="var(--chart-4)"
+                  fillOpacity={0.12}
+                  ifOverflow="hidden"
+                />
+                <ReferenceArea
+                  x1={midX}
+                  x2={AXIS_MAX}
+                  y1={axisMin}
+                  y2={midY}
+                  fill="var(--chart-2)"
+                  fillOpacity={0.12}
+                  ifOverflow="hidden"
+                />
+                <ReferenceArea
+                  x1={midX}
+                  x2={AXIS_MAX}
+                  y1={midY}
+                  y2={AXIS_MAX}
+                  fill="var(--status-success)"
+                  fillOpacity={0.1}
+                  ifOverflow="hidden"
+                />
+                <ReferenceLine
+                  x={midX}
+                  stroke="var(--border)"
+                  strokeWidth={1.5}
+                  strokeDasharray="4 3"
+                  ifOverflow="hidden"
+                />
+                <ReferenceLine
+                  y={midY}
+                  stroke="var(--border)"
+                  strokeWidth={1.5}
+                  strokeDasharray="4 3"
+                  ifOverflow="hidden"
+                />
+              </>
+            )}
+            {viewers.length < SCATTER_TOOLTIP_THRESHOLD && (
+              <RechartsTooltip
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                content={(props: any) => (
+                  <ScatterTooltip {...props} channelBadges={channelBadges} />
+                )}
+                cursor={{ strokeDasharray: '3 3', stroke: 'var(--muted-foreground)' }}
+              />
+            )}
+            <Scatter data={plotData} shape={shape} />
+          </ScatterChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="flex items-center justify-between shrink-0">
         <div className="flex-1">
           {pearsonR !== null && (
             <TooltipProvider delayDuration={200}>

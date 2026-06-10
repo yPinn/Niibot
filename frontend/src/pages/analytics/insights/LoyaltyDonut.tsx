@@ -18,7 +18,22 @@ interface Props {
   tiers: SessionTiers
 }
 
-const EMPTY_SLICE = [{ label: '', desc: '', color: 'var(--muted)', value: 1 }]
+const TIER_DEFS = [
+  { key: 'core', label: '核心觀眾', desc: '前 25%（前標）', color: 'var(--primary)' },
+  { key: 'regular', label: '常駐觀眾', desc: '前 50%（均標）', color: 'var(--status-info)' },
+  { key: 'newcomer', label: '新進觀眾', desc: '後 50%（近期追隨）', color: 'var(--status-online)' },
+  {
+    key: 'silent',
+    label: '沉默觀眾',
+    desc: '後 50%（早期追隨）',
+    color: 'var(--muted-foreground)',
+  },
+] as const satisfies ReadonlyArray<{
+  key: keyof SessionTiers
+  label: string
+  desc: string
+  color: string
+}>
 
 function ChartTooltip({
   active,
@@ -36,33 +51,7 @@ function ChartTooltip({
 }
 
 export function LoyaltyDonut({ tiers }: Props) {
-  const tierDefs = [
-    {
-      key: 'core' as const,
-      label: '核心觀眾',
-      desc: '前 25%（前標）',
-      color: 'var(--primary)',
-    },
-    {
-      key: 'regular' as const,
-      label: '常駐觀眾',
-      desc: '前 50%（均標）',
-      color: 'var(--status-info)',
-    },
-    {
-      key: 'newcomer' as const,
-      label: '新進觀眾',
-      desc: '後 50%（近期追隨）',
-      color: 'var(--status-online)',
-    },
-    {
-      key: 'silent' as const,
-      label: '沉默觀眾',
-      desc: '後 50%（早期追隨）',
-      color: 'var(--muted-foreground)',
-    },
-  ]
-  const data = tierDefs.map(t => ({
+  const data = TIER_DEFS.map(t => ({
     label: t.label,
     desc: t.desc,
     color: t.color,
@@ -76,31 +65,29 @@ export function LoyaltyDonut({ tiers }: Props) {
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
-              data={total > 0 ? data : EMPTY_SLICE}
+              data={data}
               cx="50%"
               cy="50%"
               innerRadius="55%"
               outerRadius="80%"
-              paddingAngle={total > 0 ? 3 : 0}
+              paddingAngle={3}
               dataKey="value"
               strokeWidth={0}
               isAnimationActive={false}
               activeShape={undefined}
             >
-              {(total > 0 ? data : EMPTY_SLICE).map(d => (
+              {data.map(d => (
                 <Cell key={d.color} fill={d.color} />
               ))}
             </Pie>
-            {total > 0 && (
-              <Tooltip
-                content={({ active, payload }) => (
-                  <ChartTooltip
-                    active={active}
-                    payload={payload as TooltipContentProps<number, string>['payload']}
-                  />
-                )}
-              />
-            )}
+            <Tooltip
+              content={({ active, payload }) => (
+                <ChartTooltip
+                  active={active}
+                  payload={payload as TooltipContentProps<number, string>['payload']}
+                />
+              )}
+            />
           </PieChart>
         </ResponsiveContainer>
 

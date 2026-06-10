@@ -14,6 +14,7 @@ import {
   AvatarFallback,
   AvatarImage,
   Badge,
+  EmptyState,
   Icon,
   Skeleton,
   SlideUp,
@@ -208,7 +209,12 @@ export default function Matcher() {
               </div>
             ))
           ) : summaries.length === 0 ? (
-            <p className="text-sub text-muted-foreground text-center py-empty">尚無頻道資料</p>
+            <EmptyState
+              className="py-empty"
+              icon="fa-solid fa-tower-broadcast"
+              title="尚無頻道資料"
+              description="系統分析後將列出可能重疊觀眾的頻道"
+            />
           ) : (
             sortedSummaries.map(channel => (
               <ChannelCard

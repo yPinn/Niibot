@@ -294,7 +294,7 @@ export default function GetStarted() {
                 </p>
               </CardHeader>
               <CardContent>
-                <Stagger inView className="grid gap-card grid-cols-2">
+                <Stagger inView className="grid gap-card grid-cols-1 sm:grid-cols-2">
                   {MODULE_FEATURES.map(item => {
                     const isObs = !!item.badge
                     return (

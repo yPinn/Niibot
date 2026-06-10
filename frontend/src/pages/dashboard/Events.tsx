@@ -26,11 +26,7 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
+  EmptyState,
   Icon,
   Input,
   Label,
@@ -398,9 +394,7 @@ export default function Events() {
                             </TableCell>
                             <TableCell className="hidden md:table-cell max-w-0 truncate font-mono text-label">
                               {locked ? (
-                                <span className="text-muted-foreground">
-                                  需要聯盟夥伴或合作夥伴資格
-                                </span>
+                                <span className="text-muted-foreground">需要實況盟友資格</span>
                               ) : (
                                 event.message_template
                               )}
@@ -441,7 +435,7 @@ export default function Events() {
           <Card className="relative overflow-hidden">
             {!isAffiliate && (
               <AffiliateLockOverlay
-                message="成為 Twitch 聯盟夥伴或合作夥伴後即可設定忠誠點數獎勵"
+                message="取得資格後可設定忠誠點數獎勵"
                 className="rounded-[inherit]"
               />
             )}
@@ -456,17 +450,6 @@ export default function Events() {
                     <Skeleton key={i} className="h-10 w-full" />
                   ))}
                 </div>
-              ) : !isAffiliate ? (
-                <Empty>
-                  <EmptyHeader>
-                    <EmptyMedia>
-                      <Icon icon="fa-solid fa-lock" wrapperClassName="size-6" />
-                    </EmptyMedia>
-                    <EmptyDescription>
-                      成為 Twitch 聯盟夥伴或合作夥伴後即可設定忠誠點數獎勵
-                    </EmptyDescription>
-                  </EmptyHeader>
-                </Empty>
               ) : (
                 <div className="overflow-x-auto rounded-md border">
                   <Table className="table-fixed">
@@ -504,21 +487,11 @@ export default function Events() {
                       {sortedRedemptions.length === 0 ? (
                         <TableRow>
                           <TableCell colSpan={3}>
-                            <Empty className="border-none">
-                              <EmptyHeader>
-                                <EmptyMedia>
-                                  <Icon
-                                    icon="fa-solid fa-coins"
-                                    wrapperClassName="size-20 opacity-25"
-                                    className="text-[5rem]"
-                                  />
-                                </EmptyMedia>
-                                <EmptyTitle>尚無兌換設定</EmptyTitle>
-                                <EmptyDescription>
-                                  在 Twitch 上建立頻道點數獎勵後即會顯示於此
-                                </EmptyDescription>
-                              </EmptyHeader>
-                            </Empty>
+                            <EmptyState
+                              icon="fa-solid fa-coins"
+                              title="尚無兌換設定"
+                              description="在 Twitch 上建立頻道點數獎勵後即會顯示於此"
+                            />
                           </TableCell>
                         </TableRow>
                       ) : (

@@ -15,10 +15,7 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
-  Empty,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
+  EmptyState,
   FadeIn,
   Icon,
   Skeleton,
@@ -178,18 +175,11 @@ export default function PublicCommands() {
               </CardHeader>
               <CardContent>
                 {commands.length === 0 ? (
-                  <Empty className="border-none">
-                    <EmptyHeader>
-                      <EmptyMedia>
-                        <Icon
-                          icon="fa-solid fa-terminal"
-                          wrapperClassName="size-20 opacity-25"
-                          className="text-[5rem]"
-                        />
-                      </EmptyMedia>
-                      <EmptyTitle>尚無指令</EmptyTitle>
-                    </EmptyHeader>
-                  </Empty>
+                  <EmptyState
+                    icon="fa-solid fa-terminal"
+                    title="尚無指令"
+                    description="此實況主尚未設定任何指令"
+                  />
                 ) : (
                   <Tabs defaultValue="builtin">
                     <TabsList>
@@ -214,18 +204,11 @@ export default function PublicCommands() {
                     {/* ── Builtin Tab ── */}
                     <TabsContent value="builtin">
                       {builtinRows.length === 0 ? (
-                        <Empty className="border-none">
-                          <EmptyHeader>
-                            <EmptyMedia>
-                              <Icon
-                                icon="fa-solid fa-terminal"
-                                wrapperClassName="size-20 opacity-25"
-                                className="text-[5rem]"
-                              />
-                            </EmptyMedia>
-                            <EmptyTitle>尚無內建指令</EmptyTitle>
-                          </EmptyHeader>
-                        </Empty>
+                        <EmptyState
+                          icon="fa-solid fa-terminal"
+                          title="尚無內建指令"
+                          description="此實況主沒有啟用的內建指令"
+                        />
                       ) : (
                         <div className="overflow-x-auto rounded-md border">
                           <Table>
@@ -280,18 +263,11 @@ export default function PublicCommands() {
                     {/* ── Custom Tab (commands + triggers mixed) ── */}
                     <TabsContent value="custom">
                       {customRows.length === 0 ? (
-                        <Empty className="border-none">
-                          <EmptyHeader>
-                            <EmptyMedia>
-                              <Icon
-                                icon="fa-solid fa-terminal"
-                                wrapperClassName="size-20 opacity-25"
-                                className="text-[5rem]"
-                              />
-                            </EmptyMedia>
-                            <EmptyTitle>尚無自訂指令或自動回應</EmptyTitle>
-                          </EmptyHeader>
-                        </Empty>
+                        <EmptyState
+                          icon="fa-solid fa-terminal"
+                          title="尚無自訂指令或自動回應"
+                          description="此實況主尚未建立自訂指令"
+                        />
                       ) : (
                         <div className="overflow-x-auto rounded-md border">
                           <Table>
