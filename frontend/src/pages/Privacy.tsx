@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 
-import { Button, Icon } from '@/components/ui'
+import { Icon } from '@/components/primitives'
+import { Button } from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
 const EFFECTIVE_DATE = '2026 年 4 月 23 日'

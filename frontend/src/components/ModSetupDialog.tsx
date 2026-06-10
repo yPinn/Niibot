@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 
+import { Icon } from '@/components/primitives'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -9,7 +10,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Icon } from '@/components/ui/icon'
 import { useGrantMod } from '@/hooks/useGrantMod'
 
 interface ModSetupDialogProps {

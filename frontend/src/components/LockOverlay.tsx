@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-import { Icon } from '@/components/ui'
+import { Icon } from '@/components/primitives'
 import { cn } from '@/lib/utils'
 
 interface LockOverlayProps {

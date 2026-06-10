@@ -5,6 +5,7 @@ import { type CommandConfig, getCommandConfigs, toggleCommandConfig } from '@/ap
 import { getTriggerConfigs, toggleTrigger, type TriggerConfig } from '@/api/triggers'
 import { PageHeader } from '@/components/PageHeader'
 import { PageMain } from '@/components/PageMain'
+import { Icon, SlideUp } from '@/components/primitives'
 import {
   Badge,
   Button,
@@ -14,9 +15,7 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-  Icon,
   Skeleton,
-  SlideUp,
   Tabs,
   TabsContent,
   TabsList,

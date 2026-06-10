@@ -2,8 +2,6 @@ import { cva, type VariantProps } from 'class-variance-authority'
 
 import { cn } from '@/lib/utils'
 
-import { Icon } from './icon'
-
 function Empty({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
@@ -93,24 +91,4 @@ function EmptyContent({ className, ...props }: React.ComponentProps<'div'>) {
   )
 }
 
-interface EmptyStateProps extends Omit<React.ComponentProps<'div'>, 'title'> {
-  icon: string
-  title: React.ReactNode
-  description?: React.ReactNode
-}
-
-function EmptyState({ icon, title, description, className, ...rest }: EmptyStateProps) {
-  return (
-    <Empty className={cn('border-none', className)} {...rest}>
-      <EmptyHeader>
-        <EmptyMedia>
-          <Icon icon={icon} wrapperClassName="size-20 opacity-25" className="text-[5rem]" />
-        </EmptyMedia>
-        <EmptyTitle>{title}</EmptyTitle>
-        {description && <EmptyDescription>{description}</EmptyDescription>}
-      </EmptyHeader>
-    </Empty>
-  )
-}
-
-export { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyState, EmptyTitle }
+export { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle }

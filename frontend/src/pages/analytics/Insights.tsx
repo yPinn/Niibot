@@ -19,12 +19,14 @@ import {
   EmptyState,
   FadeIn,
   Icon,
-  Input,
-  Separator,
-  Skeleton,
   SlideUp,
   Stagger,
   StaggerItem,
+} from '@/components/primitives'
+import {
+  Input,
+  Separator,
+  Skeleton,
   Tabs,
   TabsList,
   TabsTrigger,

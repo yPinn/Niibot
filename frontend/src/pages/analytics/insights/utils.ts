@@ -1,5 +1,5 @@
 import { type ChannelBadges, type ViewerSummary } from '@/api/analytics'
-import { type BadgeEntry, type TwitchRole } from '@/components/ui'
+import { type BadgeEntry, type TwitchRole } from '@/components/primitives'
 
 const BITS_TIERS = [
   5000000, 4500000, 4000000, 3500000, 3000000, 2500000, 2000000, 1750000, 1500000, 1250000, 1000000,

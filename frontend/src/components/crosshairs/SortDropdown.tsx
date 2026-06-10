@@ -1,9 +1,9 @@
+import { Icon } from '@/components/primitives'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-  Icon,
 } from '@/components/ui'
 
 interface SortOption<K extends string> {

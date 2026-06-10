@@ -1,15 +1,8 @@
 import React from 'react'
 
 import { type ChannelBadges, type ViewerSummary } from '@/api/analytics'
-import {
-  EmptyState,
-  Icon,
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-  TwitchBadgeGroup,
-} from '@/components/ui'
+import { EmptyState, Icon, TwitchBadgeGroup } from '@/components/primitives'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui'
 import { cn } from '@/lib/utils'
 
 import { SORT_COLS, type SortKey } from './types'

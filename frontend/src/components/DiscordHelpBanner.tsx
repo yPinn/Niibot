@@ -1,4 +1,4 @@
-import { Icon } from '@/components/ui'
+import { Icon } from '@/components/primitives'
 
 const INVITE_URL = import.meta.env.VITE_DISCORD_INVITE_URL
 

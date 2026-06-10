@@ -1,10 +1,9 @@
 import type { ChannelDefaults } from '@/api/channels'
+import { EmptyState, Icon } from '@/components/primitives'
 import { SortableHead } from '@/components/SortableHead'
 import {
   Badge,
   Button,
-  EmptyState,
-  Icon,
   Switch,
   Table,
   TableBody,

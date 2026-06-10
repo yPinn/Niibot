@@ -9,15 +9,13 @@ import {
 } from '@/api/analytics'
 import { PageHeader } from '@/components/PageHeader'
 import { PageMain } from '@/components/PageMain'
+import { EmptyState, Icon, SlideUp } from '@/components/primitives'
 import {
   Avatar,
   AvatarFallback,
   AvatarImage,
   Badge,
-  EmptyState,
-  Icon,
   Skeleton,
-  SlideUp,
   Tooltip,
   TooltipContent,
   TooltipTrigger,

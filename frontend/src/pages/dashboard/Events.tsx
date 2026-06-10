@@ -15,6 +15,7 @@ import {
 import { AffiliateLockOverlay } from '@/components/AffiliateLockOverlay'
 import { PageHeader } from '@/components/PageHeader'
 import { PageMain } from '@/components/PageMain'
+import { EmptyState, Icon, SlideUp, Spinner } from '@/components/primitives'
 import { SortableHead } from '@/components/SortableHead'
 import {
   Alert,
@@ -26,8 +27,6 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-  EmptyState,
-  Icon,
   Input,
   Label,
   Select,
@@ -43,8 +42,6 @@ import {
   SheetHeader,
   SheetTitle,
   Skeleton,
-  SlideUp,
-  Spinner,
   Switch,
   Table,
   TableBody,

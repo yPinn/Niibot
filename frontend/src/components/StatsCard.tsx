@@ -1,3 +1,4 @@
+import { Icon } from '@/components/primitives'
 import {
   Card,
   CardContent,
@@ -5,7 +6,6 @@ import {
   CardTitle,
   Empty,
   EmptyTitle,
-  Icon,
   Skeleton,
 } from '@/components/ui'
 

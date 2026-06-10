@@ -2,13 +2,13 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
 import { getBotModStatus, getTwitchChannelStatus, toggleTwitchChannel } from '@/api/channels'
+import { Icon } from '@/components/primitives'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-  Icon,
   Tooltip,
   TooltipContent,
   TooltipTrigger,

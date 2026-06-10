@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 
 import { type User } from '@/api'
+import { Icon } from '@/components/primitives'
 import { useTheme } from '@/components/theme-provider'
 import {
   Avatar,
@@ -12,7 +13,6 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-  Icon,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,

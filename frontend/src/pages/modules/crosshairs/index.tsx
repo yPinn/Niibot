@@ -17,6 +17,7 @@ import {
 import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog'
 import { PageHeader } from '@/components/PageHeader'
 import { PageMain } from '@/components/PageMain'
+import { EmptyState, Icon } from '@/components/primitives'
 import {
   Badge,
   Button,
@@ -24,8 +25,6 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
-  EmptyState,
-  Icon,
   Input,
   Sheet,
   SheetContent,

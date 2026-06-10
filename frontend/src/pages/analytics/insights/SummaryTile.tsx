@@ -1,4 +1,4 @@
-import { Icon } from '@/components/ui'
+import { Icon } from '@/components/primitives'
 
 export function SummaryTile({
   icon,

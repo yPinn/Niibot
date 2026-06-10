@@ -3,6 +3,7 @@ import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react
 import { getReleases, type GithubRelease } from '@/api/releases'
 import { PageHeader } from '@/components/PageHeader'
 import { PageMain } from '@/components/PageMain'
+import { EmptyState, Icon, Stagger, StaggerItem } from '@/components/primitives'
 import {
   Badge,
   Calendar,
@@ -13,11 +14,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuTrigger,
-  EmptyState,
-  Icon,
   Skeleton,
-  Stagger,
-  StaggerItem,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
