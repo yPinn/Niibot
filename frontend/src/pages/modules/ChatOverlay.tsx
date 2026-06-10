@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { PageMain } from '@/components/layout/PageMain'
 import { OverlayUrlBlock } from '@/components/OverlayUrlBlock'
-import { Icon, SlideUp } from '@/components/primitives'
+import { Icon, OptionPicker, SlideUp } from '@/components/primitives'
 import {
   Button,
   Card,
@@ -37,7 +37,7 @@ import {
   MSG_BG_OPTIONS,
   SPACING_STEPS,
 } from './chatOverlay/options'
-import { OptionButtonGroup, StepSlider } from './chatOverlay/SettingsControls'
+import { StepSlider } from './chatOverlay/SettingsControls'
 import { type ChatCssSettings, generateCss, loadSettings, saveSettings } from './chatOverlayCss'
 
 export default function ChatOverlayModule() {
@@ -297,13 +297,13 @@ export default function ChatOverlayModule() {
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-section">
-                  <OptionButtonGroup
+                  <OptionPicker
                     label="樣式"
                     options={MSG_BG_OPTIONS}
                     value={settings.messageBg}
                     onChange={v => patch({ messageBg: v })}
                   />
-                  <OptionButtonGroup
+                  <OptionPicker
                     label="對齊"
                     options={ALIGN_OPTIONS}
                     value={settings.align}
@@ -344,7 +344,7 @@ export default function ChatOverlayModule() {
                       onCheckedChange={v => patch({ hideHeader: v })}
                     />
                   </div>
-                  <OptionButtonGroup
+                  <OptionPicker
                     label="徽章顯示"
                     options={BADGE_FILTER_OPTIONS}
                     value={settings.badgeFilter}
@@ -390,7 +390,7 @@ export default function ChatOverlayModule() {
                     />
                   </div>
                   {settings.animation && (
-                    <OptionButtonGroup
+                    <OptionPicker
                       label="方向"
                       options={ANIM_DIR_OPTIONS}
                       value={settings.animDir}

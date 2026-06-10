@@ -13,7 +13,7 @@ import {
 import { type ChannelBadges, getChannelBadges } from '@/api/analytics'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { PageMain } from '@/components/layout/PageMain'
-import { Icon, SlideUp, Spinner } from '@/components/primitives'
+import { Icon, OptionPicker, SlideUp, Spinner } from '@/components/primitives'
 import {
   Button,
   Card,
@@ -35,7 +35,7 @@ import {
   REFUSAL_OPTIONS,
   ROLE_OPTIONS,
 } from './ai/constants'
-import { EmoteSection, OptionGroup } from './ai/EmoteSection'
+import { EmoteSection } from './ai/EmoteSection'
 import { longestCommonPrefix } from './ai/utils'
 
 export default function AIModule() {
@@ -391,7 +391,7 @@ export default function AIModule() {
                     用什麼語言跟大家聊？「自動」會跟著觀眾的語言切換
                   </p>
                 </div>
-                <OptionGroup
+                <OptionPicker
                   options={LANG_OPTIONS}
                   value={draft.response_lang}
                   onChange={v => patch('response_lang', v)}
@@ -405,7 +405,7 @@ export default function AIModule() {
                     遇到答不了的問題，用什麼方式應付觀眾？
                   </p>
                 </div>
-                <OptionGroup
+                <OptionPicker
                   options={REFUSAL_OPTIONS}
                   value={draft.refusal_style}
                   onChange={v => patch('refusal_style', v)}
@@ -503,7 +503,7 @@ export default function AIModule() {
                   <Label>最低身份</Label>
                   <p className="text-label text-muted-foreground">哪些觀眾可以使用此指令？</p>
                 </div>
-                <OptionGroup
+                <OptionPicker
                   options={ROLE_OPTIONS}
                   value={draft.min_role}
                   onChange={v => patch('min_role', v)}

@@ -12,6 +12,7 @@ export {
   Stagger,
   StaggerItem,
 } from './Motion'
+export { OptionPicker } from './OptionPicker'
 export { Spinner } from './Spinner'
 export {
   type BadgeEntry,

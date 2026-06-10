@@ -16,41 +16,6 @@ function getBadgeOverlay(
   return null
 }
 
-export function OptionGroup<T extends string | number>({
-  options,
-  value,
-  onChange,
-  disabled,
-}: {
-  options: { value: T; label: string; desc?: string }[]
-  value: T
-  onChange: (v: T) => void
-  disabled?: boolean
-}) {
-  return (
-    <div className="flex flex-wrap gap-2">
-      {options.map(opt => (
-        <button
-          key={String(opt.value)}
-          type="button"
-          disabled={disabled}
-          onClick={() => onChange(opt.value)}
-          className={`select-none rounded-md border font-medium transition-colors disabled:opacity-50 ${
-            opt.desc ? 'flex flex-col px-4 py-2 text-left min-w-30' : 'px-3 py-1.5 text-sub'
-          } ${
-            value === opt.value ? 'border-primary bg-primary/10 text-primary' : 'hover:bg-accent'
-          }`}
-        >
-          <span className={opt.desc ? 'text-sub' : undefined}>{opt.label}</span>
-          {opt.desc && (
-            <span className="mt-0.5 text-label font-normal text-muted-foreground">{opt.desc}</span>
-          )}
-        </button>
-      ))}
-    </div>
-  )
-}
-
 export function EmoteChip({
   emote,
   prefix,
