@@ -12,7 +12,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta, timezone
 
 import discord
-from cachetools import LRUCache
+from cachetools import LRUCache, TTLCache
 from discord import app_commands
 from discord.ext import commands
 
@@ -21,7 +21,9 @@ from core import RUNTIME_DIR, EmbedFactory, render_message_image
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 _LOG_CHANNELS_FILE = RUNTIME_DIR / "log_channels.json"
-_MSG_CACHE_SIZE = 2000  # max cached messages across all guilds
+_PER_GUILD_CACHE_SIZE = 500  # max cached messages per guild (isolated buckets)
+_SKIP_IDS_MAX = 1000  # max pending skip-delete IDs
+_SKIP_IDS_TTL = 300  # seconds before an unconsumed skip ID is auto-evicted
 
 # Times are stored/sourced in UTC and displayed in GMT+8, matching the bot-wide
 # convention (see social_preview/_embeds.py, birthday/constants.py).
@@ -128,12 +130,33 @@ class EventsCog(commands.Cog):
         self.bot = bot
         self.log_channels: dict[int, int] = _load_log_channels()
         self._embed = EmbedFactory.default()
-        self._msg_cache: LRUCache[int, discord.Message] = LRUCache(maxsize=_MSG_CACHE_SIZE)
-        self._log_skip_ids: set[int] = set()
+        # Per-guild caches so a busy guild can't evict another guild's messages.
+        self._msg_cache: dict[int, LRUCache[int, discord.Message]] = {}
+        # TTL-bounded so a skip ID whose delete never arrives is auto-reclaimed.
+        self._log_skip_ids: TTLCache[int, bool] = TTLCache(maxsize=_SKIP_IDS_MAX, ttl=_SKIP_IDS_TTL)
 
     def skip_delete_log(self, message_id: int) -> None:
         """Register a message ID to be excluded from the next delete log entry."""
-        self._log_skip_ids.add(message_id)
+        self._log_skip_ids[message_id] = True
+
+    def _cache_message(self, message: discord.Message) -> None:
+        """Store *message* in its guild's bucket, creating the bucket on demand."""
+        if message.guild is None:
+            return
+        bucket = self._msg_cache.get(message.guild.id)
+        if bucket is None:
+            bucket = LRUCache(maxsize=_PER_GUILD_CACHE_SIZE)
+            self._msg_cache[message.guild.id] = bucket
+        bucket[message.id] = message
+
+    def _pop_cached(
+        self, guild_id: int, message_id: int, default: discord.Message
+    ) -> discord.Message:
+        """Pop a cached message from its guild bucket, or return *default*."""
+        bucket = self._msg_cache.get(guild_id)
+        if bucket is None:
+            return default
+        return bucket.pop(message_id, default)
 
     # ── Slash command group ──────────────────────────────────────────────────
 
@@ -230,21 +253,25 @@ class EventsCog(commands.Cog):
     async def on_message(self, message: discord.Message) -> None:
         if message.author.bot or not message.guild:
             return
-        self._msg_cache[message.id] = message
+        self._cache_message(message)
+
+    @commands.Cog.listener()
+    async def on_guild_remove(self, guild: discord.Guild) -> None:
+        """Drop a guild's message-cache bucket when the bot leaves it."""
+        self._msg_cache.pop(guild.id, None)
 
     @commands.Cog.listener()
     async def on_message_delete(self, message: discord.Message) -> None:
         if message.author.bot or not message.guild:
             return
-        if message.id in self._log_skip_ids:
-            self._log_skip_ids.discard(message.id)
+        if self._log_skip_ids.pop(message.id, None) is not None:
             return
 
         log_channel = self.get_log_channel(message.guild)
         if not log_channel or log_channel == message.channel:
             return
 
-        cached = self._msg_cache.pop(message.id, message)
+        cached = self._pop_cached(message.guild.id, message.id, message)
         content_available = bool(cached.content or cached.attachments)
 
         deleter, audit_available = await _find_deleter(
@@ -334,8 +361,9 @@ class EventsCog(commands.Cog):
         if not log_channel or log_channel == before.channel:
             return
 
-        if after.id in self._msg_cache:
-            self._msg_cache[after.id] = after
+        bucket = self._msg_cache.get(before.guild.id)
+        if bucket is not None and after.id in bucket:
+            bucket[after.id] = after
 
         channel_ref = (
             before.channel.mention if hasattr(before.channel, "mention") else str(before.channel)
@@ -447,8 +475,10 @@ class EventsCog(commands.Cog):
         if not log_channel:
             return
 
-        for msg in messages:
-            self._msg_cache.pop(msg.id, None)
+        bucket = self._msg_cache.get(guild.id)
+        if bucket is not None:
+            for msg in messages:
+                bucket.pop(msg.id, None)
 
         channel = messages[0].channel
         channel_ref = channel.mention if hasattr(channel, "mention") else str(channel)

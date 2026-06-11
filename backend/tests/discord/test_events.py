@@ -297,18 +297,36 @@ class TestOnMessage:
     async def test_caches_non_bot_guild_message(self, cog):
         msg = _make_message()
         await cog.on_message(msg)
-        assert cog._msg_cache[msg.id] is msg
+        assert cog._msg_cache[msg.guild.id][msg.id] is msg
 
     async def test_skips_bot_messages(self, cog):
         msg = _make_message(is_bot=True)
         await cog.on_message(msg)
-        assert msg.id not in cog._msg_cache
+        assert cog._msg_cache == {}
 
     async def test_skips_dm_messages(self, cog):
         msg = _make_message()
         msg.guild = None
         await cog.on_message(msg)
-        assert msg.id not in cog._msg_cache
+        assert cog._msg_cache == {}
+
+    async def test_per_guild_buckets_are_isolated(self, cog):
+        g1 = _make_guild(guild_id=1)
+        g2 = _make_guild(guild_id=2)
+        m1 = _make_message(guild=g1, msg_id=11)
+        m2 = _make_message(guild=g2, msg_id=22)
+        await cog.on_message(m1)
+        await cog.on_message(m2)
+        assert cog._msg_cache[1][11] is m1
+        assert cog._msg_cache[2][22] is m2
+        assert 22 not in cog._msg_cache[1]
+
+    async def test_on_guild_remove_drops_bucket(self, cog):
+        msg = _make_message()
+        await cog.on_message(msg)
+        assert msg.guild.id in cog._msg_cache
+        await cog.on_guild_remove(msg.guild)
+        assert msg.guild.id not in cog._msg_cache
 
 
 # ── on_message_delete ─────────────────────────────────────────────────────────
@@ -386,7 +404,7 @@ class TestOnMessageDelete:
         guild.get_channel = MagicMock(return_value=log_ch)
 
         msg = _make_message(guild=guild, content="Hello world")
-        cog._msg_cache[msg.id] = msg
+        cog._cache_message(msg)
 
         with (
             patch("cogs.events._find_deleter", new_callable=AsyncMock, return_value=(None, True)),
@@ -424,11 +442,11 @@ class TestOnMessageEdit:
         before = _make_message(guild=guild, content="old", msg_id=77)
         after = _make_message(guild=guild, content="new", msg_id=77)
         after.guild = guild
-        cog._msg_cache[77] = before  # pre-cache old version
+        cog._cache_message(before)  # pre-cache old version
 
         await cog.on_message_edit(before, after)
 
-        assert cog._msg_cache.get(77) is after
+        assert cog._msg_cache[guild.id].get(77) is after
         cog._send_log.assert_called_once()
 
 
@@ -644,7 +662,7 @@ class TestOnBulkMessageDelete:
 
         msgs = [_make_message(guild=guild, msg_id=i) for i in range(3)]
         for m in msgs:
-            cog._msg_cache[m.id] = m
+            cog._cache_message(m)
 
         async def empty_logs(**kwargs):
             return
@@ -656,7 +674,7 @@ class TestOnBulkMessageDelete:
             await cog.on_bulk_message_delete(msgs)
 
         for m in msgs:
-            assert m.id not in cog._msg_cache
+            assert m.id not in cog._msg_cache.get(guild.id, {})
         cog._send_log.assert_called_once()
 
     async def test_adds_executor_when_audit_entry_found(self, cog):
