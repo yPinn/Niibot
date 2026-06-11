@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import re
 from typing import Literal
@@ -14,6 +13,12 @@ from pydantic import BaseModel, Field, field_validator
 
 from core.config import DATA_DIR, Settings, get_settings
 from core.dependencies import get_current_channel_id, get_db_pool, get_twitch_api
+from services.emote_sync import (
+    available_emote_names,
+    is_emote_available,
+    notify_config_change,
+    sync_enabled_emotes,
+)
 from services.twitch_api import TwitchAPIClient
 from shared.packs import Pack, load_packs
 from shared.repositories.ai_settings import DEFAULT_AI_SETTINGS, AISettingsRepository
@@ -119,25 +124,10 @@ class EmoteItem(BaseModel):
     animated: bool = False
 
 
-async def _notify(pool: asyncpg.Pool, channel_id: str) -> None:
-    payload = json.dumps({"channel_id": channel_id, "table": "ai_settings"})
-    async with pool.acquire() as conn:
-        await conn.execute("SELECT pg_notify('config_change', $1)", payload)
-
-
 async def _sync_emotes(pool: asyncpg.Pool, channel_id: str, available_names: list[str]) -> None:
     """Background task: persist available emote names so the bot prompt stays current."""
     try:
-        repo = AISettingsRepository(pool)
-        current = await repo.get(channel_id)
-        if set(current.get("enabled_emotes") or []) != set(available_names):
-            await repo.upsert(channel_id, enabled_emotes=available_names)
-            await _notify(pool, channel_id)
-            LOGGER.info(
-                "Channel %s: synced %d available emotes → enabled_emotes",
-                channel_id,
-                len(available_names),
-            )
+        await sync_enabled_emotes(pool, channel_id, available_names)
     except Exception:
         LOGGER.exception("Background emote sync failed for channel %s", channel_id)
 
@@ -176,7 +166,7 @@ async def patch_ai_settings(
             raise HTTPException(status_code=422, detail="No fields provided")
 
         result = await AISettingsRepository(pool).upsert(channel_id, **patch)
-        await _notify(pool, channel_id)
+        await notify_config_change(pool, channel_id)
 
         LOGGER.info("Channel %s updated AI settings: %s", channel_id, list(patch))
         return AISettingsResponse(**result)
@@ -200,7 +190,7 @@ async def reset_ai_settings(
     try:
         reset_data = {k: v for k, v in DEFAULT_AI_SETTINGS.items() if k != "enabled_emotes"}
         result = await AISettingsRepository(pool).upsert(channel_id, **reset_data)
-        await _notify(pool, channel_id)
+        await notify_config_change(pool, channel_id)
 
         LOGGER.info("Channel %s reset AI settings to defaults", channel_id)
         return AISettingsResponse(**result)
@@ -241,13 +231,6 @@ async def get_ai_emotes(
 
         accessible: set[str] | None = {e["id"] for e in user_raw} if bot_token else None
 
-        def is_available(e: dict) -> bool:
-            if e.get("emote_type") == "globals":
-                return True
-            if accessible is not None:
-                return e["id"] in accessible
-            return e.get("emote_type") == "follower"
-
         items = [
             EmoteItem(
                 id=e["id"],
@@ -255,7 +238,7 @@ async def get_ai_emotes(
                 url=e["url"],
                 emote_type=e.get("emote_type", ""),
                 tier=e.get("tier", ""),
-                available=is_available(e),
+                available=is_emote_available(e, accessible),
                 animated=e.get("animated", False),
             )
             for e in channel_raw
@@ -271,9 +254,7 @@ async def get_ai_emotes(
             for e in global_raw
         ]
 
-        channel_names = [e.name for e in items if e.available and e.emote_type != "globals"]
-        global_names = [e.name for e in items if e.available and e.emote_type == "globals"]
-        available_names = channel_names + global_names
+        available_names = available_emote_names(channel_raw, global_raw, accessible)
         background_tasks.add_task(_sync_emotes, pool, channel_id, available_names)
         return items
     except Exception:

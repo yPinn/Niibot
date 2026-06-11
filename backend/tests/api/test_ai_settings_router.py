@@ -109,8 +109,8 @@ class TestPatchAISettings:
         updated = {**_DEFAULT_SETTINGS, "bot_name": "NewBot"}
         with patch("routers.ai_settings_router.AISettingsRepository") as repo:
             repo.return_value.upsert = AsyncMock(return_value=updated)
-            # patch _notify so we don't hit real pool
-            with patch("routers.ai_settings_router._notify", AsyncMock()):
+            # patch notify_config_change so we don't hit real pool
+            with patch("routers.ai_settings_router.notify_config_change", AsyncMock()):
                 r = _make_client().patch("/api/ai/settings", json={"bot_name": "NewBot"})
         assert r.status_code == 200
         assert r.json()["bot_name"] == "NewBot"
@@ -142,7 +142,7 @@ class TestPatchAISettings:
     def test_exception_returns_500(self):
         with patch("routers.ai_settings_router.AISettingsRepository") as repo:
             repo.return_value.upsert = AsyncMock(side_effect=RuntimeError)
-            with patch("routers.ai_settings_router._notify", AsyncMock()):
+            with patch("routers.ai_settings_router.notify_config_change", AsyncMock()):
                 r = _make_client().patch("/api/ai/settings", json={"bot_name": "X"})
         assert r.status_code == 500
 
@@ -154,7 +154,7 @@ class TestResetAISettings:
     def test_reset_returns_defaults(self):
         with patch("routers.ai_settings_router.AISettingsRepository") as repo:
             repo.return_value.upsert = AsyncMock(return_value=_DEFAULT_SETTINGS)
-            with patch("routers.ai_settings_router._notify", AsyncMock()):
+            with patch("routers.ai_settings_router.notify_config_change", AsyncMock()):
                 r = _make_client().post("/api/ai/settings/reset")
         assert r.status_code == 200
         assert r.json()["bot_name"] == "Niibot"
@@ -162,7 +162,7 @@ class TestResetAISettings:
     def test_exception_returns_500(self):
         with patch("routers.ai_settings_router.AISettingsRepository") as repo:
             repo.return_value.upsert = AsyncMock(side_effect=RuntimeError)
-            with patch("routers.ai_settings_router._notify", AsyncMock()):
+            with patch("routers.ai_settings_router.notify_config_change", AsyncMock()):
                 r = _make_client().post("/api/ai/settings/reset")
         assert r.status_code == 500
 
