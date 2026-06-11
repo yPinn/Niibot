@@ -1,3 +1,4 @@
+import type { EmoteItem } from './aiSettings'
 import { API_ENDPOINTS, apiFetch } from './config'
 
 export type ModStatus = 'mod' | 'no_mod' | 'token_error' | 'scope_error' | 'broadcaster'
@@ -73,6 +74,37 @@ export async function getAdminChannels(): Promise<AdminChannel[]> {
 export async function getAdminBotStatus(): Promise<BotTokenInfo> {
   const response = await apiFetch(API_ENDPOINTS.admin.botStatus, { credentials: 'include' })
   if (!response.ok) throw new Error('Failed to fetch bot status')
+  return response.json()
+}
+
+export interface BotEmoteChannel {
+  channel_id: string
+  name: string
+  display_name: string
+  avatar: string
+  available_count: number
+  total_count: number
+  emotes: EmoteItem[]
+}
+
+export interface BotEmoteResync {
+  channel_id: string
+  synced: boolean
+  available_count: number
+}
+
+export async function getBotEmotes(): Promise<BotEmoteChannel[]> {
+  const response = await apiFetch(API_ENDPOINTS.admin.botEmotes, { credentials: 'include' })
+  if (!response.ok) throw new Error('Failed to fetch bot emotes')
+  return response.json()
+}
+
+export async function resyncBotEmotes(channelId?: string): Promise<BotEmoteResync[]> {
+  const response = await apiFetch(API_ENDPOINTS.admin.resyncBotEmotes(channelId), {
+    method: 'POST',
+    credentials: 'include',
+  })
+  if (!response.ok) throw new Error('Failed to resync bot emotes')
   return response.json()
 }
 
