@@ -1,4 +1,10 @@
-"""OAuth helper functions — user find/create and account linking."""
+"""OAuth state helpers — HMAC-signed state encoding/decoding for CSRF protection.
+
+User/identity creation has moved to ``services.identity_service.IdentityService``
+which provides idempotent reauth handling and data-drift reconciliation. The old
+``find_or_create_user`` helper has been removed; see migration 080 and the
+project documentation for the new admission model.
+"""
 
 import base64
 import binascii
@@ -8,85 +14,7 @@ import json
 import logging
 import secrets
 
-from asyncpg import Pool
-from asyncpg.exceptions import UniqueViolationError
-
 LOGGER: logging.Logger = logging.getLogger(__name__)
-
-
-async def find_or_create_user(
-    pool: Pool,
-    platform: str,
-    platform_user_id: str,
-    username: str,
-    display_name: str | None = None,
-    avatar: str | None = None,
-) -> str:
-    """Find existing user by linked account or create a new one.
-
-    Uses a transaction to prevent TOCTOU race on concurrent OAuth callbacks.
-    Returns users.id as string.
-    """
-    async with pool.acquire() as conn:
-        # Fast path: linked account already exists (common case — no transaction needed)
-        row = await conn.fetchrow(
-            "SELECT user_id FROM user_linked_accounts"
-            " WHERE platform = $1 AND platform_user_id = $2",
-            platform,
-            platform_user_id,
-        )
-        if row:
-            return str(row["user_id"])
-
-        # Slow path: create new user + linked account inside a transaction.
-        # Under READ COMMITTED two concurrent OAuth callbacks can both pass the
-        # fast-path check above. The UNIQUE constraint on user_linked_accounts
-        # ensures only one INSERT wins; the loser catches UniqueViolationError
-        # and falls back to a plain SELECT to return the winner's user_id.
-        try:
-            async with conn.transaction():
-                user_row = await conn.fetchrow(
-                    "INSERT INTO users (display_name, avatar) VALUES ($1, $2) RETURNING id",
-                    display_name or username,
-                    avatar,
-                )
-                user_id = str(user_row["id"])
-
-                await conn.execute(
-                    "INSERT INTO user_linked_accounts"
-                    " (user_id, platform, platform_user_id, username)"
-                    " VALUES ($1, $2, $3, $4)",
-                    user_row["id"],
-                    platform,
-                    platform_user_id,
-                    username,
-                )
-
-                # Auto-create a pending activation request so admin can review new sign-ups.
-                await conn.execute(
-                    "INSERT INTO activation_requests (user_id, platform, platform_user_id, note)"
-                    " VALUES ($1, $2, $3, '')",
-                    user_row["id"],
-                    platform,
-                    platform_user_id,
-                )
-        except UniqueViolationError:
-            # A concurrent request won the race — fetch the winner's user_id
-            row = await conn.fetchrow(
-                "SELECT user_id FROM user_linked_accounts"
-                " WHERE platform = $1 AND platform_user_id = $2",
-                platform,
-                platform_user_id,
-            )
-            if row is None:
-                raise RuntimeError(
-                    f"Concurrent OAuth race for {platform}:{platform_user_id} — "
-                    "winner's account disappeared before fallback SELECT"
-                ) from None
-            return str(row["user_id"])
-
-    LOGGER.info(f"Created user {user_id} for {platform}:{platform_user_id} ({username})")
-    return user_id
 
 
 # ---------------------------------------------------------------------------

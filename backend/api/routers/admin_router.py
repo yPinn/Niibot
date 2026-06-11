@@ -17,14 +17,15 @@ from pydantic import BaseModel
 
 from core.config import get_settings
 from core.dependencies import (
+    get_admission_service,
     get_channel_service,
     get_current_channel_id,
+    get_current_user_id,
     get_db_pool,
     get_twitch_api,
 )
-from services import ChannelService, TwitchAPIClient
+from services import AdmissionService, ChannelService, TwitchAPIClient
 from shared.repositories.activation_code import ActivationCodeRepository
-from shared.repositories.activation_request import ActivationRequestRepository
 from shared.repositories.channel import ChannelRepository
 from shared.repositories.module_config import ModuleConfigRepository
 from shared.twitch_scopes import BOT_SCOPES
@@ -230,13 +231,37 @@ class PendingCodeInfo(BaseModel):
 
 
 class ActivationRequestInfo(BaseModel):
-    id: int
+    """Legacy shape consumed by the existing admin UI list view.
+
+    `id` is the user's UUID rendered as a string (was previously the integer
+    activation_requests.id). `note` is the latest 'requested' event reason or
+    an empty string. The frontend was updated to treat id as a string in the
+    same release.
+    """
+
+    id: str
     platform_user_id: str
     display_name: str | None
     username: str | None
     avatar: str | None
     note: str
     created_at: datetime
+
+
+class MembershipEventInfo(BaseModel):
+    id: int
+    event_type: str
+    actor_type: str
+    actor_user_id: str | None
+    reason: str | None
+    metadata: dict
+    occurred_at: datetime
+
+
+class MembershipDecisionRequest(BaseModel):
+    """Body for approve/reject/suspend/reinstate calls."""
+
+    reason: str = ""
 
 
 @router.get("/activation-codes", response_model=list[PendingCodeInfo])
@@ -279,23 +304,77 @@ async def get_activation_requests(
     _: str = Depends(require_owner),
     pool: Pool = Depends(get_db_pool),
 ) -> list[ActivationRequestInfo]:
-    """List pending manual activation requests. Owner-only."""
-    repo = ActivationRequestRepository(pool)
-    rows = await repo.list_pending()
-    return [ActivationRequestInfo(**r) for r in rows]
+    """List pending memberships for owner review. Owner-only.
+
+    Backed by the new memberships + membership_events tables; the response
+    shape is preserved so the existing frontend keeps working. The `id`
+    field now carries the user's UUID rather than the legacy integer
+    activation_requests.id — approve/reject endpoints accept either.
+    """
+    rows = await pool.fetch(
+        """
+        SELECT m.user_id::text                                    AS id,
+               COALESCE(i.platform_user_id, '')                   AS platform_user_id,
+               u.display_name,
+               i.username,
+               u.avatar,
+               COALESCE(
+                   (
+                       SELECT reason FROM membership_events e
+                       WHERE e.user_id = m.user_id
+                         AND e.event_type = 'requested'
+                       ORDER BY e.occurred_at DESC LIMIT 1
+                   ),
+                   ''
+               )                                                  AS note,
+               COALESCE(
+                   (
+                       SELECT occurred_at FROM membership_events e
+                       WHERE e.user_id = m.user_id
+                         AND e.event_type = 'requested'
+                       ORDER BY e.occurred_at DESC LIMIT 1
+                   ),
+                   m.updated_at
+               )                                                  AS created_at
+          FROM memberships m
+          JOIN users u ON u.id = m.user_id
+     LEFT JOIN identities i
+            ON i.user_id = m.user_id AND i.platform = 'twitch'
+         WHERE m.status = 'pending'
+      ORDER BY created_at ASC
+        """
+    )
+    return [ActivationRequestInfo(**dict(r)) for r in rows]
 
 
-@router.post("/activation-requests/{request_id}/approve")
+@router.post("/activation-requests/{user_id}/approve")
 async def approve_activation_request(
-    request_id: int,
+    user_id: str,
+    body: MembershipDecisionRequest | None = None,
+    approver_id: str = Depends(get_current_user_id),
     _: str = Depends(require_owner),
-    pool: Pool = Depends(get_db_pool),
+    admission: AdmissionService = Depends(get_admission_service),
 ) -> dict:
-    """Approve a manual activation request, activating the user. Owner-only."""
-    repo = ActivationRequestRepository(pool)
-    if not await repo.approve(request_id):
-        raise HTTPException(status_code=404, detail="Request not found or already reviewed")
-    LOGGER.info("Activation request %d approved by owner", request_id)
+    """Approve a pending membership. Owner-only.
+
+    Body may carry an optional `reason` recorded in membership_events for
+    audit. The path param accepts the user's UUID (canonical) or the legacy
+    integer request id is no longer supported — frontend was updated.
+    """
+    try:
+        decision = await admission.approve(
+            user_id=user_id,
+            approver_user_id=approver_id,
+            reason=(body.reason if body else "") or "admin_approval",
+        )
+    except ValueError:
+        raise HTTPException(status_code=404, detail="No membership for user") from None
+    LOGGER.info(
+        "Membership approved: user=%s by=%s state_changed=%s",
+        user_id,
+        approver_id,
+        decision.state_changed,
+    )
     return {"approved": True}
 
 
@@ -527,15 +606,77 @@ async def set_module_ai_packs(
     return result
 
 
-@router.post("/activation-requests/{request_id}/reject")
+@router.post("/activation-requests/{user_id}/reject")
 async def reject_activation_request(
-    request_id: int,
+    user_id: str,
+    body: MembershipDecisionRequest | None = None,
+    approver_id: str = Depends(get_current_user_id),
     _: str = Depends(require_owner),
-    pool: Pool = Depends(get_db_pool),
+    admission: AdmissionService = Depends(get_admission_service),
 ) -> dict:
-    """Reject a manual activation request. Owner-only."""
-    repo = ActivationRequestRepository(pool)
-    if not await repo.reject(request_id):
-        raise HTTPException(status_code=404, detail="Request not found or already reviewed")
-    LOGGER.info("Activation request %d rejected by owner", request_id)
+    """Reject a pending membership. Owner-only."""
+    try:
+        decision = await admission.reject(
+            user_id=user_id,
+            approver_user_id=approver_id,
+            reason=(body.reason if body else "") or "admin_rejection",
+        )
+    except ValueError:
+        raise HTTPException(status_code=404, detail="No membership for user") from None
+    LOGGER.info(
+        "Membership rejected: user=%s by=%s state_changed=%s",
+        user_id,
+        approver_id,
+        decision.state_changed,
+    )
     return {"rejected": True}
+
+
+@router.get(
+    "/memberships/{user_id}/timeline",
+    response_model=list[MembershipEventInfo],
+)
+async def get_membership_timeline(
+    user_id: str,
+    _: str = Depends(require_owner),
+    admission: AdmissionService = Depends(get_admission_service),
+) -> list[MembershipEventInfo]:
+    """Full membership_events history for a user. Owner-only."""
+    events = await admission.timeline(user_id, limit=200)
+    return [MembershipEventInfo(**event.__dict__) for event in events]
+
+
+@router.post("/memberships/{user_id}/suspend")
+async def suspend_membership(
+    user_id: str,
+    body: MembershipDecisionRequest,
+    approver_id: str = Depends(get_current_user_id),
+    _: str = Depends(require_owner),
+    admission: AdmissionService = Depends(get_admission_service),
+) -> dict:
+    if not body.reason:
+        raise HTTPException(status_code=400, detail="reason is required")
+    decision = await admission.suspend(
+        user_id=user_id,
+        approver_user_id=approver_id,
+        reason=body.reason,
+    )
+    LOGGER.info("Membership suspended: user=%s by=%s", user_id, approver_id)
+    return {"suspended": True, "state_changed": decision.state_changed}
+
+
+@router.post("/memberships/{user_id}/reinstate")
+async def reinstate_membership(
+    user_id: str,
+    body: MembershipDecisionRequest,
+    approver_id: str = Depends(get_current_user_id),
+    _: str = Depends(require_owner),
+    admission: AdmissionService = Depends(get_admission_service),
+) -> dict:
+    decision = await admission.reinstate(
+        user_id=user_id,
+        approver_user_id=approver_id,
+        reason=body.reason or "admin_reinstate",
+    )
+    LOGGER.info("Membership reinstated: user=%s by=%s", user_id, approver_id)
+    return {"reinstated": True, "state_changed": decision.state_changed}
