@@ -3,6 +3,7 @@ import { PageMain } from '@/components/layout/PageMain'
 import { Icon, Stagger, StaggerItem } from '@/components/primitives'
 import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui'
 import { WipLockOverlay } from '@/components/WipLockOverlay'
+import { SHOW_WIP_LOCK } from '@/config/env'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
 const ECPAY_URL: string | undefined = import.meta.env.VITE_SUPPORT_ECPAY_URL
@@ -69,7 +70,7 @@ export default function Support() {
           </Card>
         </StaggerItem>
       </Stagger>
-      {import.meta.env.PROD && <WipLockOverlay />}
+      {SHOW_WIP_LOCK && <WipLockOverlay />}
     </PageMain>
   )
 }

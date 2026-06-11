@@ -32,6 +32,7 @@ import {
   Switch,
 } from '@/components/ui'
 import { WipLockOverlay } from '@/components/WipLockOverlay'
+import { SHOW_WIP_LOCK } from '@/config/env'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
@@ -507,7 +508,7 @@ export default function Settings() {
         }
         onConfirm={handleConfirmDelete}
       />
-      {import.meta.env.PROD && <WipLockOverlay />}
+      {SHOW_WIP_LOCK && <WipLockOverlay />}
     </PageMain>
   )
 }
