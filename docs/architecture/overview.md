@@ -1,0 +1,167 @@
+# 架構總覽
+
+Niibot 是多平台直播整合系統，由四個 Python 服務 + 一個前端組成，共用單一 PostgreSQL。
+本文串起全貌；個別子系統細節見各自文件與 README。
+
+- 多租戶 / 入會狀態機：[admission-and-tenancy.md](admission-and-tenancy.md)
+- 後端結構與 API 端點：[backend/README.md](../../backend/README.md)
+- 版本規範：[versioning.md](../versioning.md)
+
+---
+
+## 服務拓樸
+
+```text
+                       Cloudflare Pages
+                    ┌────────────────────┐
+   使用者 ─HTTPS──▶ │ Frontend (React 19) │
+                    │  functions/ 反向代理 │
+                    └─────────┬───────────┘
+                              │ /api/*
+                  Cloudflare Tunnel
+                              │
+                    ┌─────────▼───────────┐
+                    │   API (FastAPI)     │  :8000  /docs (OpenAPI)
+                    └─────────┬───────────┘
+                              │ asyncpg pool
+          ┌───────────────────┼───────────────────┐
+          │                   │                   │
+   ┌──────▼──────┐     ┌──────▼──────┐     ┌──────▼──────┐
+   │ PostgreSQL  │◀───▶│ Twitch Bot  │     │ Discord Bot │
+   │  (shared)   │     │ health:4344 │     │ health:8080 │
+   └──────┬──────┘     │  EventSub   │     │   Cogs      │
+          │            └─────────────┘     └─────────────┘
+          │ LISTEN/NOTIFY (即時設定重載)
+          │
+   ┌──────▼──────┐
+   │  Scrapling  │  :3001  Instagram / Threads 媒體抓取 sidecar
+   └─────────────┘
+```
+
+四個服務共用 `backend/shared/`（DB pool、cache、repositories、models、migrations），
+但**各自獨立程序、獨立部署**。唯一的耦合是 PostgreSQL（資料 + 跨程序訊號）。
+
+| 服務        | 技術         | 對外               | 健康檢查       |
+| ----------- | ------------ | ------------------ | -------------- |
+| API         | FastAPI      | `:8000`（Tunnel）  | `/health`      |
+| Twitch Bot  | TwitchIO 3   | EventSub WebSocket | `:4344/health` |
+| Discord Bot | discord.py 2 | Gateway            | `:8080/health` |
+| Scrapling   | scrapling    | `:3001`（內部）    | —              |
+| PostgreSQL  | PG 16        | `:5433`（Docker）  | —              |
+
+---
+
+## 多租戶邊界
+
+每個 Twitch 廣播主的頻道是一個獨立 **tenant**。三項職責刻意拆在不同 service，
+勿在 router / repository 內耦合：
+
+- **IdentityService** — `(platform, platform_user_id)` find_or_link
+- **AdmissionService** — `memberships.status` 狀態機 + `membership_events` 稽核軌跡
+- **TenantService** — 頻道擁有權 + per-channel RBAC（`channel_members`）
+
+channel-scoped 資料表一律以 `channel_id` 過濾；migration 083 的 Postgres RLS 為第二道防線。
+完整設計見 [admission-and-tenancy.md](admission-and-tenancy.md)。
+
+---
+
+## 即時設定傳播（LISTEN / NOTIFY）
+
+設定改動需即時反映到正在運行的 Bot，又不能讓 Bot 輪詢 DB。Niibot 用 PostgreSQL 的
+`LISTEN/NOTIFY` 做跨程序訊號：
+
+```text
+Dashboard 改設定 ──▶ API 寫入 DB ──▶ pg_notify(channel, payload)
+                                          │
+                          Twitch Bot pg_listen() ◀─┘
+                                          │
+                          重載對應記憶體狀態（免重啟）
+```
+
+| NOTIFY 頻道      | 觸發來源                  | Bot 反應                            |
+| ---------------- | ------------------------- | ----------------------------------- |
+| `config_change`  | 指令 / 觸發 / 計時器 CRUD | 重載該頻道設定                      |
+| `channel_toggle` | 頻道啟停 Bot              | 訂閱 / 取消 EventSub、檢查 mod 權限 |
+| `new_token`      | OAuth 新 token            | 載入新 broadcaster token            |
+| `token_reauth`   | token 失效                | 標記頻道需重新授權                  |
+
+實作：Twitch Bot 用 `pg_listen()`（`twitch/core/pg_listener.py`）開**專用連線**做
+LISTEN（不佔用 pool），斷線自動重連。
+
+行內快取 `AsyncTTLCache`（`shared/cache.py`，LRU + TTL）負責程序內讀取加速；
+`pg_notify` 負責**跨程序**失效。兩者互補。
+
+---
+
+## AI Provider 鏈
+
+`shared/ai_provider.py` 建一條依序嘗試的 provider 鏈，缺金鑰者靜默跳過：
+
+```text
+build_provider_chain(provider_order=...)
+  Groq ──fail──▶ Gemini ──fail──▶ OpenRouter（最多 3 個 free 備援模型）
+```
+
+`provider_order` 可依服務調整優先序：
+
+- Twitch — `("groq", "gemini", "openrouter")` **速度優先**（聊天需低延遲）
+- Discord — `("gemini", "groq", "openrouter")` **品質優先**
+
+OpenRouter 的 free-tier 備援名單來自 `data/free_models.json`，由
+`scripts/update_free_models.py` 定期刷新。AI 知識包（`data/packs/`）注入見
+[backend/data/README.md](../../backend/data/README.md)。
+
+---
+
+## 部署拓樸
+
+後端透過 **Cloudflare Tunnel** 對外，無需開放主機埠；前端在 **Cloudflare Pages**，
+`/api/*` 由 Pages Functions 代理回後端。
+
+各環境用 `docker-compose.yml`（base）+ overlay，彼此隔離（獨立 project / network / volume）：
+
+| 環境   | overlay                      | API port |
+| ------ | ---------------------------- | -------- |
+| 正式區 | `docker-compose.prod.yml`    | 8000     |
+| 測試區 | `docker-compose.staging.yml` | 8001     |
+| 本機   | `docker-compose.dev.yml`     | 8000     |
+
+部署時 `migrate` 容器自動跑 DB migration。版本由後端 `git describe` 決定（見
+[versioning.md](../versioning.md)），前後端共用同一 tag。
+
+---
+
+## 資料流範例
+
+### Twitch OAuth 登入
+
+```text
+前端 ─▶ /api/auth/login ─▶ Twitch OAuth ─▶ /api/auth/callback
+  └─ IdentityService.find_or_link ─▶ 簽發 JWT httponly cookie（HS256）
+```
+
+### 聊天指令觸發
+
+```text
+觀眾在 Twitch 聊天打指令 ─▶ Twitch Bot（記憶體中的頻道設定）
+  └─ 命中 ─▶ 回覆；設定來源為 DB，經 config_change NOTIFY 保持最新
+```
+
+### Dashboard 改設定
+
+```text
+前端 ─▶ /api/commands（CRUD）─▶ DB 寫入 + pg_notify('config_change')
+  └─ Twitch Bot 即時重載，無需重啟
+```
+
+---
+
+## 延伸閱讀
+
+| 主題                 | 文件                                                          |
+| -------------------- | ------------------------------------------------------------- |
+| 多租戶 / Admission   | [admission-and-tenancy.md](admission-and-tenancy.md)          |
+| 後端結構 / API 端點  | [backend/README.md](../../backend/README.md)                  |
+| 靜態資料 / AI 知識包 | [backend/data/README.md](../../backend/data/README.md)        |
+| 版本規範             | [versioning.md](../versioning.md)                             |
+| 媒體抓取             | [fixtweet.md](../fixtweet.md) · [instafix.md](../instafix.md) |
