@@ -11,7 +11,7 @@ Niibot/
 │   ├── twitch/     # TwitchIO 3 Bot + EventSub + pg_notify 即時設定重載
 │   ├── discord/    # discord.py 2 Bot（Cogs 模組架構）
 │   ├── scrapling/  # Instagram / Threads 媒體抓取服務
-│   ├── shared/     # 共用 DB、Cache、Repositories、Migrations（73 個）
+│   ├── shared/     # 共用 DB、Cache、Repositories、Migrations（84 個）
 │   └── scripts/    # DB 管理工具
 ├── frontend/       # React 19 + Vite + Tailwind CSS v4
 │   └── functions/  # Cloudflare Pages Functions（API 反向代理）
@@ -30,6 +30,8 @@ Niibot/
 後端透過 **Cloudflare Tunnel** 對外；前端部署在 **Cloudflare Pages**，`/api/*` 由 CF Pages Functions 代理至後端。
 
 各子系統詳細說明：[backend/README.md](backend/README.md) · [frontend/README.md](frontend/README.md)
+
+架構文件：[總覽](docs/architecture/overview.md) · [多租戶與入會](docs/architecture/admission-and-tenancy.md)
 
 ## 快速開始
 
