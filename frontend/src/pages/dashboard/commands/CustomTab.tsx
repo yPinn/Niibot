@@ -1,14 +1,9 @@
 import type { ChannelDefaults } from '@/api/channels'
+import { EmptyState, Icon } from '@/components/primitives'
 import { SortableHead } from '@/components/SortableHead'
 import {
   Badge,
   Button,
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-  Icon,
   Switch,
   Table,
   TableBody,
@@ -103,19 +98,11 @@ export function CustomTab({ customRows, sortState, defaults, onToggle, onEdit }:
           {customRows.length === 0 ? (
             <TableRow>
               <TableCell colSpan={8}>
-                <Empty className="border-none">
-                  <EmptyHeader>
-                    <EmptyMedia>
-                      <Icon
-                        icon="fa-solid fa-terminal"
-                        wrapperClassName="size-20 opacity-25"
-                        className="text-[5rem]"
-                      />
-                    </EmptyMedia>
-                    <EmptyTitle>尚無自訂指令或自動回應</EmptyTitle>
-                    <EmptyDescription>點擊「新增」開始建立指令</EmptyDescription>
-                  </EmptyHeader>
-                </Empty>
+                <EmptyState
+                  icon="fa-solid fa-terminal"
+                  title="尚無自訂指令或自動回應"
+                  description="點擊「新增」開始建立指令"
+                />
               </TableCell>
             </TableRow>
           ) : (

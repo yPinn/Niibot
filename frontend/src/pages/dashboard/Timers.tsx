@@ -11,20 +11,14 @@ import {
   toggleTimer,
   updateTimer,
 } from '@/api/timers'
-import { PageHeader } from '@/components/PageHeader'
-import { PageMain } from '@/components/PageMain'
+import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog'
+import { PageHeader } from '@/components/layout/PageHeader'
+import { PageMain } from '@/components/layout/PageMain'
+import { EmptyState, Icon, SlideUp, Spinner } from '@/components/primitives'
 import { SortableHead } from '@/components/SortableHead'
 import {
   Alert,
   AlertDescription,
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
   Badge,
   Button,
   Card,
@@ -33,12 +27,6 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-  Icon,
   Input,
   Label,
   Sheet,
@@ -49,8 +37,6 @@ import {
   SheetHeader,
   SheetTitle,
   Skeleton,
-  SlideUp,
-  Spinner,
   Switch,
   Table,
   TableBody,
@@ -385,19 +371,11 @@ export default function Timers() {
                     {sorted.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={6}>
-                          <Empty className="border-none">
-                            <EmptyHeader>
-                              <EmptyMedia>
-                                <Icon
-                                  icon="fa-solid fa-clock"
-                                  wrapperClassName="size-20 opacity-25"
-                                  className="text-[5rem]"
-                                />
-                              </EmptyMedia>
-                              <EmptyTitle>尚無計時器</EmptyTitle>
-                              <EmptyDescription>點擊「新增計時器」開始設定</EmptyDescription>
-                            </EmptyHeader>
-                          </Empty>
+                          <EmptyState
+                            icon="fa-solid fa-clock"
+                            title="尚無計時器"
+                            description="點擊「新增計時器」開始設定"
+                          />
                         </TableCell>
                       </TableRow>
                     ) : (
@@ -648,27 +626,19 @@ export default function Timers() {
         </SheetContent>
       </Sheet>
 
-      <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>確定刪除計時器？</AlertDialogTitle>
-            <AlertDialogDescription>
-              即將刪除計時器「
-              <span className="font-medium text-foreground">{editing?.timer?.timer_name}</span>
-              」，此操作無法還原。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => editing?.timer && handleDelete(editing.timer)}
-            >
-              刪除
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <DeleteConfirmDialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title="確定刪除計時器？"
+        description={
+          <>
+            即將刪除計時器「
+            <span className="font-medium text-foreground">{editing?.timer?.timer_name}</span>
+            」，此操作無法還原。
+          </>
+        }
+        onConfirm={() => editing?.timer && handleDelete(editing.timer)}
+      />
     </PageMain>
   )
 }

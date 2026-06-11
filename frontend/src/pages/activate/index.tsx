@@ -8,22 +8,20 @@ import {
   getPendingActivationCode,
   requestActivation,
 } from '@/api/user'
+import { FadeIn, Icon, Spinner } from '@/components/primitives'
 import {
   Button,
   Card,
   CardContent,
-  FadeIn,
-  Icon,
   InputOTP,
   InputOTPGroup,
   InputOTPSlot,
   Separator,
-  Spinner,
 } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
-type RequestStatus = 'pending' | 'rejected'
+type RequestStatus = 'pending' | 'rejected' | 'suspended'
 
 export default function ActivatePage() {
   useDocumentTitle('Activate Account')
@@ -46,15 +44,19 @@ export default function ActivatePage() {
       .then(async res => {
         if (res.status === 'rejected') {
           setRequestStatus('rejected')
+        } else if (res.status === 'suspended') {
+          setRequestStatus('suspended')
         } else if (!res.status) {
-          // No request yet (edge case) — auto-create one
+          // No membership row yet (legacy account predating the model) —
+          // create one via the new admission flow.
           try {
             await requestActivation()
           } catch {
             // best-effort — page still shows pending state regardless
           }
         }
-        // pending or auto-created → default state is already 'pending'
+        // pending / active → default state is already 'pending'; active is
+        // redirected below by the user?.is_activated check.
       })
       .catch(() => {})
       .finally(() => setStatusLoading(false))
@@ -117,8 +119,8 @@ export default function ActivatePage() {
 
   const handleCheckApproval = async () => {
     try {
-      await refreshUser()
-      if (user?.is_activated) {
+      const freshUser = await refreshUser()
+      if (freshUser?.is_activated) {
         navigate('/dashboard', { replace: true })
       } else {
         const res = await getActivationRequestStatus()
@@ -214,6 +216,18 @@ export default function ActivatePage() {
                   {reapplyLoading ? <Spinner className="mr-1.5" /> : null}
                   重新申請
                 </Button>
+              </div>
+            ) : requestStatus === 'suspended' ? (
+              <div className="flex flex-col items-center gap-3 text-center w-full">
+                <div className="flex items-center justify-center size-10 rounded-full bg-destructive/10">
+                  <Icon icon="fa-solid fa-circle-pause" wrapperClassName="text-destructive" />
+                </div>
+                <div>
+                  <p className="font-medium text-sub">帳號已暫停</p>
+                  <p className="text-label text-muted-foreground mt-0.5">
+                    請聯繫管理員以了解詳細原因。
+                  </p>
+                </div>
               </div>
             ) : (
               <div className="flex flex-col items-center gap-3 text-center w-full">

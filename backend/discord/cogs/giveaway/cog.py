@@ -11,7 +11,7 @@ import discord
 from discord import app_commands, ui
 from discord.ext import commands, tasks
 
-from core import DATA_DIR, EmbedFactory, load_json
+from core import DATA_DIR, RUNTIME_DIR, EmbedFactory, load_json
 
 from ._embeds import create_giveaway_embed, create_result_embed
 from ._persistence import GiveawayPersistence
@@ -26,7 +26,7 @@ class GiveawayCog(commands.Cog):
         self.config: dict = {}
         self.global_embed_config: dict = {}
         self._load_data()
-        self._persistence = GiveawayPersistence(DATA_DIR / "active_giveaways.json")
+        self._persistence = GiveawayPersistence(RUNTIME_DIR / "giveaway_state.json")
         self.active_giveaways: dict[int, dict] = self._persistence.load()
 
     async def cog_load(self) -> None:

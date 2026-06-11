@@ -6,7 +6,10 @@ Python 後端，三個服務共用 `shared/` 模組。詳細部署說明見根�
 
 ```text
 backend/
-├── api/        # FastAPI — Twitch OAuth + JWT、頻道/指令/事件/贊助 API
+├── api/        # FastAPI — Twitch OAuth + JWT、頻道/指令/事件/贊助 API（19 routers）
+│   ├── core/       # config、dependencies、rate_limit、logging
+│   ├── routers/    # 路由層（薄，僅做 I/O 與授權）
+│   └── services/   # 業務邏輯（含 Identity / Admission / Tenant，見下方）
 ├── twitch/     # Twitch Bot — 聊天指令、VideoQueue、GameQueue、Channel Points、EventSub
 ├── discord/    # Discord Bot — Slash Commands、生日提醒、社群預覽、AI
 ├── shared/     # 共用模組（詳見下方）
@@ -16,20 +19,37 @@ backend/
 └── uv.lock
 ```
 
+### 多租戶服務層（`api/services/`）
+
+Niibot 為多租戶——每個 Twitch 頻道是獨立 tenant。三項職責刻意拆分，勿在 router/repository 內耦合：
+
+- **`IdentityService`** — 依 `(platform, platform_user_id)` find_or_link；identity row 遺失時自我修復。
+- **`AdmissionService`** — `memberships.status` 狀態機（pending/active/suspended/rejected），轉換附加寫入 `membership_events`。
+- **`TenantService`** — 頻道擁有權 + per-channel RBAC（`channel_members`）；channel-scoped 端點掛 `require_tenant_access`。
+
+完整設計：[docs/architecture/admission-and-tenancy.md](../docs/architecture/admission-and-tenancy.md)。
+`memberships` 為真實來源；`users.is_activated` 與 `activation_requests` 為 legacy，僅保留供回滾。
+
 ### shared/ 模組
 
-| 模組                    | 說明                                                           |
-| ----------------------- | -------------------------------------------------------------- |
-| `database.py`           | asyncpg 連線池管理、`pool_heartbeat_loop`                      |
-| `cache.py`              | `AsyncTTLCache`（LRU + TTL）；搭配 `pg_notify` 即時失效        |
-| `config_base.py`        | `BaseServiceSettings`：三服務共用 config 基底                  |
-| `health_server_base.py` | `BaseHealthServer`：Discord / Twitch health server 基底        |
-| `logging_setup.py`      | 結構化 logging 設定（含 Discord webhook error handler）        |
-| `builtin_commands.py`   | 內建指令定義與別名映射                                         |
-| `ai_provider.py`        | 多 AI Provider 鏈（Groq / Gemini / OpenRouter），自動 fallback |
-| `models/`               | Pydantic 資料模型                                              |
-| `repositories/`         | 資料庫存取層（per-domain）                                     |
-| `migrations/`           | 自製 migration runner；版本腳本在 `versions/`（目前 v072）     |
+| 模組                         | 說明                                                                      |
+| ---------------------------- | ------------------------------------------------------------------------- |
+| `database.py`                | asyncpg 連線池管理、`pool_heartbeat_loop`                                 |
+| `cache.py`                   | `AsyncTTLCache`（LRU + TTL）；搭配 `pg_notify` 即時失效                   |
+| `config_base.py`             | `BaseServiceSettings`：三服務共用 config 基底                             |
+| `health_server_base.py`      | `BaseHealthServer`：Discord / Twitch health server 基底                   |
+| `logging_setup.py`           | 結構化 logging 設定（含 Discord webhook error handler）                   |
+| `builtin_commands.py`        | 內建指令定義與別名映射                                                    |
+| `ai_provider.py`             | 多 AI Provider 鏈（Groq / Gemini / OpenRouter），自動 fallback            |
+| `builtin_timers.py`          | 內建定時訊息定義                                                          |
+| `crypto.py`                  | OAuth token / 金流金鑰加解密（AES）                                       |
+| `discord_webhook_handler.py` | 將 ERROR 以上 log 推送至 Discord webhook                                  |
+| `packs.py`                   | AI 知識包（`data/packs/`）載入、key 比對與 token 預算                     |
+| `retry_utils.py`             | 通用 async 重試 / backoff helper                                          |
+| `twitch_scopes.py`           | Twitch OAuth scope 常數與分組                                             |
+| `models/`                    | Pydantic 資料模型                                                         |
+| `repositories/`              | 資料庫存取層（per-domain）                                                |
+| `migrations/`                | 自製 migration runner；版本腳本在 `versions/`（目前 v083，含 tenant RLS） |
 
 ## 服務架構
 
@@ -98,24 +118,26 @@ uv run python scripts/db_migrate.py
 
 開發環境互動式文件：`http://localhost:8000/docs`
 
-| 路由前綴               | 功能                                                  |
-| ---------------------- | ----------------------------------------------------- |
-| `/api/auth`            | Twitch OAuth、JWT cookie、用戶偏好                    |
-| `/api/channels`        | 監控頻道管理、Bot 啟停                                |
-| `/api/commands`        | 指令 CRUD、啟停、公開列表                             |
-| `/api/events`          | EventSub 事件設定、Channel Points 兌換                |
-| `/api/analytics`       | 場次分析、觀眾 Profile、熱門指令統計                  |
-| `/api/stats/channel`   | 頻道統計（top chatters / commands）                   |
-| `/api/game-queue`      | 遊戲排隊                                              |
-| `/api/video-queue`     | 影片佇列                                              |
-| `/api/timers`          | 定時訊息 CRUD                                         |
-| `/api/triggers`        | 關鍵字觸發 CRUD                                       |
-| `/api/crosshairs`      | 準星管理、公開庫                                      |
-| `/api/ai`              | AI 助手設定（角色、enabled、cooldown、min_role、貼圖）|
-| `/api/donate`          | 贊助結帳（ECPay / OPay / NewebPay / PayPal）、webhook |
-| `/api/payment-configs` | 金流平台設定                                          |
-| `/api/bots`            | Bot 狀態查詢                                          |
-| `/api/admin`           | 管理員工具（限 Owner）                                |
-| `/health`, `/status`   | 服務健康檢查                                          |
+| 路由前綴               | 功能                                                      |
+| ---------------------- | --------------------------------------------------------- |
+| `/api/auth`            | Twitch OAuth、JWT cookie、用戶偏好                        |
+| `/api/channels`        | 監控頻道管理、Bot 啟停                                    |
+| `/api/commands`        | 指令 CRUD、啟停、公開列表                                 |
+| `/api/events`          | EventSub 事件設定、Channel Points 兌換                    |
+| `/api/analytics`       | 場次分析、觀眾 Profile、熱門指令統計、觀眾配對（matcher） |
+| `/api/stats/channel`   | 頻道統計（top chatters / commands）                       |
+| `/api/game-queue`      | 遊戲排隊                                                  |
+| `/api/video-queue`     | 影片佇列                                                  |
+| `/api/timers`          | 定時訊息 CRUD                                             |
+| `/api/triggers`        | 關鍵字觸發 CRUD                                           |
+| `/api/crosshairs`      | 準星管理、公開庫                                          |
+| `/api/ai`              | AI 助手設定（角色、enabled、cooldown、min_role、貼圖）    |
+| `/api/donate`          | 贊助結帳（ECPay / OPay / NewebPay / PayPal）、webhook     |
+| `/api/payment-configs` | 金流平台設定                                              |
+| `/api/bots`            | Bot 狀態查詢                                              |
+| `/api/discord`         | Discord 互動 webhook（slash command 簽章驗證）            |
+| `/api/releases`        | 版本資訊查詢（`git describe`）                            |
+| `/api/admin`           | 管理員工具（限 Owner）                                    |
+| `/health`, `/status`   | 服務健康檢查                                              |
 
 **安全機制：** JWT httponly cookie（HS256、30 天）/ HMAC-SHA256 OAuth CSRF state / 全域安全標頭（CSP、HSTS 等）/ 金流 webhook 驗簽（CheckMacValue SHA-256、NewebPay AES-256-CBC + TradeSha）

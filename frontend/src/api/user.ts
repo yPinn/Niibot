@@ -86,8 +86,15 @@ export async function getPendingActivationCode(): Promise<string | null> {
   return (data as { code: string | null }).code
 }
 
+export type MembershipStatus =
+  | 'pending'
+  | 'active'
+  | 'approved' // legacy alias kept for older API responses
+  | 'rejected'
+  | 'suspended'
+
 export async function getActivationRequestStatus(): Promise<{
-  status: 'pending' | 'approved' | 'rejected' | null
+  status: MembershipStatus | null
   created_at?: string
 }> {
   const response = await apiFetch(API_ENDPOINTS.auth.activationRequest, {

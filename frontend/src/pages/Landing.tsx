@@ -1,18 +1,17 @@
 import { Link, useNavigate } from 'react-router-dom'
 
 import avatarSrc from '@/assets/images/Avatar.png'
-import { useTheme } from '@/components/theme-provider'
+import { useTheme } from '@/components/layout/theme-provider'
+import { Icon } from '@/components/primitives'
 import {
-  Badge,
-  Button,
   FadeIn,
   FadeInZoom,
-  Icon,
   SlideUp,
   SlideUpSm,
   Stagger,
   StaggerItem,
-} from '@/components/ui'
+} from '@/components/primitives'
+import { Badge, Button } from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
 const FEATURES = [

@@ -320,9 +320,23 @@ class TestTwitchOAuthCallback:
 
 
 class TestTwitchOAuthCallbackSuccess:
-    """Happy-path: verifies scopes flow from exchange_code_for_token → save_token."""
+    """Happy-path: verifies the OAuth callback's 4-stage pipeline.
 
-    def _run(self, scopes_value):
+    Stages exercised:
+      1. ChannelService.save_token  — credential persistence
+      2. IdentityService.find_or_link — identity binding
+      3. AdmissionService.ensure_pending / auto_admit — admission state
+      4. TenantService.ensure_tenant_for_owner — tenant bootstrap
+    """
+
+    def _run(
+        self,
+        scopes_value,
+        *,
+        is_new_user: bool = False,
+        was_reconciled: bool = False,
+        twitch_uid: str = _TWITCH_UID,
+    ):
         from services.oauth_service import encode_oauth_state
 
         settings = get_settings()
@@ -336,23 +350,46 @@ class TestTwitchOAuthCallbackSuccess:
                 {
                     "access_token": "acc_tok",
                     "refresh_token": "ref_tok",
-                    "user_id": _TWITCH_UID,
+                    "user_id": twitch_uid,
                     "scopes": scopes_value,
                 },
             )
         )
 
         pool = _make_pool()
-        mock_svc = MagicMock()
-        mock_svc.save_token = AsyncMock(return_value=True)
+        mock_channel_svc = MagicMock()
+        mock_channel_svc.save_token = AsyncMock(return_value=True)
+
+        # IdentityService mock — find_or_link returns a result describing the
+        # branch taken (fast / link / reconciled / fresh).
+        mock_identity = MagicMock()
+        mock_identity.id = "11111111-2222-3333-4444-555555555555"
+        mock_link_result = MagicMock(
+            identity=mock_identity,
+            user_id=_USER_UUID,
+            is_new_user=is_new_user,
+            is_new_identity=is_new_user or was_reconciled,
+            was_reconciled=was_reconciled,
+        )
+        mock_identity_svc = MagicMock()
+        mock_identity_svc.find_or_link = AsyncMock(return_value=mock_link_result)
+
+        # AdmissionService mock — track whether each entry point fires so we
+        # can assert reauth idempotency (the headline bug).
+        mock_admission_svc = MagicMock()
+        mock_admission_svc.ensure_pending = AsyncMock()
+        mock_admission_svc.auto_admit = AsyncMock()
+
+        # TenantService mock — bootstrap is unconditional and idempotent.
+        mock_tenant_svc = MagicMock()
+        mock_tenant_svc.ensure_tenant_for_owner = AsyncMock()
 
         with (
             patch("routers.auth_router.get_database_manager") as mock_dbm,
-            patch("routers.auth_router.get_channel_service", return_value=mock_svc),
-            patch(
-                "routers.auth_router.find_or_create_user",
-                new=AsyncMock(return_value=_USER_UUID),
-            ),
+            patch("routers.auth_router.get_channel_service", return_value=mock_channel_svc),
+            patch("routers.auth_router.IdentityService", return_value=mock_identity_svc),
+            patch("routers.auth_router.AdmissionService", return_value=mock_admission_svc),
+            patch("routers.auth_router.TenantService", return_value=mock_tenant_svc),
         ):
             mock_dbm.return_value.pool = pool
             client = _make_client(twitch_api=twitch_api)
@@ -362,23 +399,76 @@ class TestTwitchOAuthCallbackSuccess:
                 follow_redirects=False,
             )
 
-        return r, mock_svc
+        return r, mock_channel_svc, mock_identity_svc, mock_admission_svc, mock_tenant_svc
 
     def test_redirects_to_dashboard_on_success(self):
-        r, _ = self._run(scopes_value="channel:bot channel:read:redemptions")
+        r, *_ = self._run(scopes_value="channel:bot channel:read:redemptions")
         assert r.status_code in (302, 307)
         assert "/dashboard" in r.headers["location"]
 
     def test_scopes_forwarded_to_save_token(self):
-        _, mock_svc = self._run(scopes_value="channel:bot channel:read:redemptions")
-        mock_svc.save_token.assert_awaited_once()
-        _, kwargs = mock_svc.save_token.call_args
+        _, mock_channel_svc, *_ = self._run(scopes_value="channel:bot channel:read:redemptions")
+        mock_channel_svc.save_token.assert_awaited_once()
+        _, kwargs = mock_channel_svc.save_token.call_args
         assert kwargs.get("scopes") == "channel:bot channel:read:redemptions"
 
     def test_none_scopes_forwarded_as_none(self):
-        _, mock_svc = self._run(scopes_value=None)
-        _, kwargs = mock_svc.save_token.call_args
+        _, mock_channel_svc, *_ = self._run(scopes_value=None)
+        _, kwargs = mock_channel_svc.save_token.call_args
         assert kwargs.get("scopes") is None
+
+    def test_reauth_does_not_touch_admission(self):
+        """Regression test for the ghost-pending-request bug.
+
+        Existing user reauthing must NOT trigger ensure_pending or
+        auto_admit. IdentityService returns is_new_user=False; admission
+        service should be left alone.
+        """
+        _, _, mock_identity, mock_admission, _ = self._run(
+            scopes_value="channel:bot",
+            is_new_user=False,
+        )
+        mock_identity.find_or_link.assert_awaited_once()
+        mock_admission.ensure_pending.assert_not_awaited()
+        mock_admission.auto_admit.assert_not_awaited()
+
+    def test_new_user_signup_triggers_ensure_pending(self):
+        """First-time signup should queue an admission request."""
+        _, _, _, mock_admission, _ = self._run(
+            scopes_value="channel:bot",
+            is_new_user=True,
+        )
+        mock_admission.ensure_pending.assert_awaited_once()
+        # ensure_pending receives user_id positionally
+        args, kwargs = mock_admission.ensure_pending.call_args
+        assert args[0] == _USER_UUID
+        assert kwargs.get("reason") == "first_signup"
+
+    def test_owner_signup_triggers_auto_admit(self):
+        """Owner ID match should bypass admin review via auto_admit('owner')."""
+        owner_id = str(get_settings().owner_id)
+        _, _, _, mock_admission, _ = self._run(
+            scopes_value="channel:bot",
+            is_new_user=True,
+            twitch_uid=owner_id,
+        )
+        # auto_admit fires, ensure_pending does NOT (auto_admit wins the
+        # is_owner branch)
+        mock_admission.auto_admit.assert_awaited_once()
+        _, kwargs = mock_admission.auto_admit.call_args
+        assert kwargs.get("reason") == "owner"
+        mock_admission.ensure_pending.assert_not_awaited()
+
+    def test_tenant_bootstrap_always_runs(self):
+        """ensure_tenant_for_owner is idempotent and called on every callback."""
+        _, _, _, _, mock_tenant = self._run(
+            scopes_value="channel:bot",
+            is_new_user=False,
+        )
+        mock_tenant.ensure_tenant_for_owner.assert_awaited_once()
+        _, kwargs = mock_tenant.ensure_tenant_for_owner.call_args
+        assert kwargs.get("channel_id") == _TWITCH_UID
+        assert kwargs.get("owner_user_id") == _USER_UUID
 
 
 # ---------------------------------------------------------------------------

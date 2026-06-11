@@ -10,7 +10,9 @@ import discord
 from pydantic import Field
 from pydantic_settings import SettingsConfigDict
 
-from shared.config_base import BaseServiceSettings
+from shared.config_base import DATA_DIR, RUNTIME_DIR, BaseServiceSettings
+
+__all__ = ["DATA_DIR", "RUNTIME_DIR", "BotConfig", "DiscordBotSettings", "get_settings"]
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -28,12 +30,6 @@ CORE_DIR = Path(__file__).resolve().parent
 DISCORD_DIR = CORE_DIR.parent
 BACKEND_DIR = DISCORD_DIR.parent
 COGS_DIR = DISCORD_DIR / "cogs"
-
-# In Docker, DISCORD_DIR resolves to /app
-if str(DISCORD_DIR) == "/app":
-    DATA_DIR = Path("/app/data")
-else:
-    DATA_DIR = BACKEND_DIR / "data"
 
 
 class DiscordBotSettings(BaseServiceSettings):

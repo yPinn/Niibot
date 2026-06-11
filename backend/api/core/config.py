@@ -6,9 +6,9 @@ from pathlib import Path
 from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import SettingsConfigDict
 
-from shared.config_base import BaseServiceSettings
+from shared.config_base import DATA_DIR, RUNTIME_DIR, BaseServiceSettings
 
-DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
+__all__ = ["DATA_DIR", "RUNTIME_DIR", "Settings", "get_settings"]
 
 
 class Settings(BaseServiceSettings):

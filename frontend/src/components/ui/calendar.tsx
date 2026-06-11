@@ -1,8 +1,8 @@
 import * as React from 'react'
 import { type DayButton, DayPicker, getDefaultClassNames } from 'react-day-picker'
 
+import { Icon } from '@/components/primitives'
 import { Button, buttonVariants } from '@/components/ui/button'
-import { Icon } from '@/components/ui/icon'
 import { cn } from '@/lib/utils'
 
 function Calendar({

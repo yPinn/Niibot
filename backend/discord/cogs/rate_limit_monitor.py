@@ -4,14 +4,14 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from core import DATA_DIR, EmbedFactory, load_json
+from core import EmbedFactory
 
 
 class RateLimitMonitorCog(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
         self.rate_limiter = bot.rate_limiter  # type: ignore[attr-defined]
-        self._embed = EmbedFactory(load_json(DATA_DIR / "embed.json"))
+        self._embed = EmbedFactory.default()
 
     @app_commands.command(name="rate", description="Discord API 速率限制統計")
     @app_commands.default_permissions(administrator=True)

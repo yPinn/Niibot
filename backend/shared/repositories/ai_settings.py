@@ -67,8 +67,15 @@ _CHANNEL_POLICY = (
 )
 
 
-def build_system_prompt(settings: dict) -> str:
-    """Assemble a system prompt string from structured settings fields."""
+def build_system_prompt(
+    settings: dict,
+    matched_entries: list[tuple[str, str]] | None = None,
+) -> str:
+    """Assemble a system prompt string from structured settings fields.
+
+    matched_entries: (pack_name, entry_content) pairs from packs.match_entries().
+    Injected between catchphrase and format sections when present.
+    """
     name = (settings.get("bot_name") or "Twitch 聊天室機器人").strip()
     persona = (settings.get("persona") or "").strip()
     self_pronoun = (settings.get("self_pronoun") or "我").strip() or "我"
@@ -81,14 +88,28 @@ def build_system_prompt(settings: dict) -> str:
 
     parts: list[str] = [
         f"你是 {name}，回應直接顯示於公開直播聊天室，須符合 Twitch 服務條款。"
-        f"請一律自稱「{self_pronoun}」。",
+        f"需要自稱時請使用「{self_pronoun}」；但不必每句話都自稱，"
+        f"避免在短回覆中反覆出現而影響閱讀流暢度。",
     ]
 
     if persona:
         parts.append(f"\n\n個性：{persona}")
 
     if catchphrase:
-        parts.append(f"\n\n口頭禪：適時在句尾加入「{catchphrase}」，自然融入語氣，不必每句都用。")
+        parts.append(
+            f"\n\n口頭禪：你有大機率傾向會說「{catchphrase}」，"
+            f"但並非每句話都需包含；只在語氣自然合適時使用，"
+            f"以保持回覆的閱讀流暢度。"
+        )
+
+    if matched_entries:
+        sections = "\n\n".join(
+            f"【{pack_name}】\n{content}" for pack_name, content in matched_entries
+        )
+        parts.append(
+            "\n\n參考資料（由頻道主啟用的知識包提供，"
+            "僅在與問題直接相關時引用，不必主動提及）：\n" + sections
+        )
 
     parts.append(
         "\n\n格式：\n"
@@ -102,9 +123,15 @@ def build_system_prompt(settings: dict) -> str:
 
     if emotes:
         parts.append(
-            f"\n\n貼圖：可視情況在回覆的句首或句尾插入一個 Twitch 貼圖名稱"
-            f"（名稱前後各保留一個半形空白才能正確渲染）；不適合時不要強迫使用。"
-            f"優先選用前段的頻道專屬貼圖，後段為全球貼圖備用。"
+            "\n\n貼圖（Twitch emotes）：\n"
+            "- 一般回覆：可視情況在句首或句尾插入一個貼圖增添情感；不適合時不要強迫使用。\n"
+            "- 列出多個貼圖時（例如使用者詢問可用貼圖）：以半形空白分隔，不可省略。\n"
+            "- 渲染規則：每個貼圖名稱前後都必須是半形空白（或位於訊息開頭/結尾），"
+            "才能被 Twitch 正確識別為貼圖；若與「、」「，」「,」「。」或其他標點直接相連，"
+            "會被當成純文字顯示。\n"
+            "- 範例：✓「我有 Kappa PogChamp TriHard 等貼圖」；"
+            "✗「我有 Kappa、PogChamp、TriHard 等貼圖」。\n"
+            "- 優先選用頻道專屬貼圖（清單前段），全球貼圖（後段）為備用。\n"
             f"可用貼圖：{' '.join(emotes)}"
         )
 

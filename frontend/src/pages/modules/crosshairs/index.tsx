@@ -14,24 +14,17 @@ import {
   getPublicCrosshairs,
   updateCrosshair,
 } from '@/api/crosshairs'
-import { PageHeader } from '@/components/PageHeader'
-import { PageMain } from '@/components/PageMain'
+import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog'
+import { PageHeader } from '@/components/layout/PageHeader'
+import { PageMain } from '@/components/layout/PageMain'
+import { EmptyState, Icon } from '@/components/primitives'
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
   Badge,
   Button,
   Card,
   CardContent,
   CardHeader,
   CardTitle,
-  Icon,
   Input,
   Sheet,
   SheetContent,
@@ -290,9 +283,12 @@ export default function CrosshairModule() {
                     ))}
                   </div>
                 ) : crosshairs.length === 0 ? (
-                  <p className="py-12 text-center text-muted-foreground">
-                    還沒有準星，點擊「新增準星」開始收藏
-                  </p>
+                  <EmptyState
+                    className="py-empty"
+                    icon="fa-solid fa-crosshairs"
+                    title="尚無準星"
+                    description="點擊「新增準星」開始收藏"
+                  />
                 ) : (
                   <div className="grid grid-cols-1 gap-section sm:grid-cols-3 lg:grid-cols-5">
                     {sortedMine.map(c => (
@@ -351,11 +347,19 @@ export default function CrosshairModule() {
                     )
                   }
                   if (sortedBrowse.length === 0) {
-                    return (
-                      <p className="py-12 text-center text-muted-foreground">
-                        {browseResults !== null ? '此使用者尚無準星' : '目前尚無任何準星'}
-                      </p>
-                    )
+                    const empty =
+                      browseResults !== null
+                        ? {
+                            icon: 'fa-solid fa-magnifying-glass',
+                            title: '此使用者尚無準星',
+                            description: '此使用者尚未公開分享任何準星',
+                          }
+                        : {
+                            icon: 'fa-solid fa-crosshairs',
+                            title: '目前尚無任何準星',
+                            description: '社群尚未公開任何準星',
+                          }
+                    return <EmptyState className="py-empty" {...empty} />
                   }
                   return (
                     <>
@@ -402,7 +406,7 @@ export default function CrosshairModule() {
 
           <SheetSection>
             <div className="flex justify-center py-element">
-              <div className="flex items-center justify-center rounded-2xl bg-zinc-500 p-3">
+              <div className="flex items-center justify-center rounded-2xl bg-muted p-3">
                 <CrosshairPreview
                   game={form.game}
                   code={form.code || '0;P;0l;4;0o;2;0t;2'}
@@ -489,23 +493,13 @@ export default function CrosshairModule() {
         </SheetContent>
       </Sheet>
 
-      <AlertDialog open={!!deleteTarget} onOpenChange={open => !open && setDeleteTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>確定刪除「{deleteTarget?.name}」？</AlertDialogTitle>
-            <AlertDialogDescription>此操作無法復原。</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => deleteTarget && handleDelete(deleteTarget)}
-            >
-              刪除
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <DeleteConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={open => !open && setDeleteTarget(null)}
+        title={`確定刪除「${deleteTarget?.name}」？`}
+        description="此操作無法復原。"
+        onConfirm={() => deleteTarget && handleDelete(deleteTarget)}
+      />
     </>
   )
 }

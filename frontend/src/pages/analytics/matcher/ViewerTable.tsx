@@ -1,10 +1,6 @@
+import { EmptyState } from '@/components/primitives'
 import {
   Badge,
-  Empty,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-  Icon,
   Skeleton,
   Table,
   TableBody,
@@ -13,9 +9,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui'
+import { formatRelativeDays, formatWatchHours } from '@/lib/format'
 import { cn } from '@/lib/utils'
-
-import { formatRelativeDays, formatWatchHours } from '../insights/utils'
 
 import type { MatcherViewersResponse } from './types'
 
@@ -76,18 +71,12 @@ export function ViewerTable({ data, isLoading }: ViewerTableProps) {
 
   if (!data || data.total === 0) {
     return (
-      <Empty className="border-none py-empty">
-        <EmptyHeader>
-          <EmptyMedia>
-            <Icon
-              icon="fa-solid fa-users"
-              wrapperClassName="size-20 opacity-25"
-              className="text-[5rem]"
-            />
-          </EmptyMedia>
-          <EmptyTitle>尚無潛在觀眾資料</EmptyTitle>
-        </EmptyHeader>
-      </Empty>
+      <EmptyState
+        className="py-empty"
+        icon="fa-solid fa-users"
+        title="尚無潛在觀眾資料"
+        description="目前找不到與此頻道重疊的觀眾"
+      />
     )
   }
 

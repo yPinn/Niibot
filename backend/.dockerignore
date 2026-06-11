@@ -23,6 +23,11 @@ __pycache__/
 *.db
 *.sqlite3
 
+# Skip docs and runtime state from the image (data/ is COPY'd but README is
+# repo-only docs, and runtime/ is volume-mounted so its contents are env-specific).
+data/README.md
+runtime/
+
 # Tests
 tests/
 

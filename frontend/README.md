@@ -33,7 +33,10 @@ npm run dev     # 啟動開發伺服器（localhost:3000）
 VITE_API_URL=http://localhost:8000  # 後端代理目標（預設 localhost:8000）
 VITE_BOT_USERNAME=niibot_           # Bot 帳號名，抑制自身的「授予 Mod」提示
 VITE_DISCORD_INVITE_URL=            # Discord Bot 邀請連結
+VITE_ENVIRONMENT=                   # 部署環境：production 鎖定 WIP 頁面；staging/dev 不鎖定
 ```
+
+> 部署時於 Cloudflare Pages 設定：staging 須明確設 `VITE_ENVIRONMENT=staging` 才解鎖；未設定者一律保持鎖定（fail-safe）。
 
 ## 指令
 

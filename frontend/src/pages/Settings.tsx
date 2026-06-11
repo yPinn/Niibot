@@ -11,17 +11,11 @@ import {
   upsertPaymentConfig,
 } from '@/api'
 import { AffiliateLockOverlay } from '@/components/AffiliateLockOverlay'
-import { PageHeader } from '@/components/PageHeader'
-import { PageMain } from '@/components/PageMain'
+import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog'
+import { PageHeader } from '@/components/layout/PageHeader'
+import { PageMain } from '@/components/layout/PageMain'
+import { Icon, SlideUp, Spinner, Stagger, StaggerItem } from '@/components/primitives'
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
   Badge,
   Button,
   Card,
@@ -32,15 +26,13 @@ import {
   CardTitle,
   Collapsible,
   CollapsibleContent,
-  Icon,
   Input,
   Label,
   Skeleton,
-  Spinner,
   Switch,
 } from '@/components/ui'
-import { SlideUp, Stagger, StaggerItem } from '@/components/ui/motion'
 import { WipLockOverlay } from '@/components/WipLockOverlay'
+import { SHOW_WIP_LOCK } from '@/config/env'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
@@ -182,7 +174,7 @@ export default function Settings() {
         <Card className="relative overflow-hidden">
           {locked && (
             <AffiliateLockOverlay
-              message="成為 Twitch 聯盟夥伴或合作夥伴後即可設定金流"
+              message="取得資格後可設定金流方式"
               className="rounded-[inherit]"
             />
           )}
@@ -501,34 +493,22 @@ export default function Settings() {
         </Card>
       </SlideUp>
 
-      {/* Delete confirmation dialog */}
-      <AlertDialog
+      <DeleteConfirmDialog
         open={!!pendingDeletePlatform}
         onOpenChange={(open: boolean) => !open && setPendingDeletePlatform(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>確定刪除設定？</AlertDialogTitle>
-            <AlertDialogDescription>
-              即將刪除{' '}
-              <span className="font-medium text-foreground">
-                {pendingDeletePlatform ? PLATFORM_LABELS[pendingDeletePlatform] : ''}
-              </span>{' '}
-              的金流設定，此操作無法還原。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={handleConfirmDelete}
-            >
-              刪除
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-      {import.meta.env.PROD && <WipLockOverlay />}
+        title="確定刪除設定？"
+        description={
+          <>
+            即將刪除{' '}
+            <span className="font-medium text-foreground">
+              {pendingDeletePlatform ? PLATFORM_LABELS[pendingDeletePlatform] : ''}
+            </span>{' '}
+            的金流設定，此操作無法還原。
+          </>
+        }
+        onConfirm={handleConfirmDelete}
+      />
+      {SHOW_WIP_LOCK && <WipLockOverlay />}
     </PageMain>
   )
 }

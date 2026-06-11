@@ -12,11 +12,23 @@ import asyncpg
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
-from core.config import Settings, get_settings
+from core.config import DATA_DIR, Settings, get_settings
 from core.dependencies import get_current_channel_id, get_db_pool, get_twitch_api
 from services.twitch_api import TwitchAPIClient
+from shared.packs import Pack, load_packs
 from shared.repositories.ai_settings import DEFAULT_AI_SETTINGS, AISettingsRepository
 from shared.repositories.channel import ChannelRepository
+
+_PACKS: dict[str, Pack] = {}
+
+
+def _get_packs() -> dict[str, Pack]:
+    """Lazy-load available packs from disk (for the /packs listing endpoint)."""
+    global _PACKS
+    if not _PACKS:
+        _PACKS = load_packs(DATA_DIR)
+    return _PACKS
+
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -68,6 +80,12 @@ class AISettingsResponse(BaseModel):
     enabled: bool
     cooldown: int
     min_role: str
+
+
+class PackInfo(BaseModel):
+    id: str
+    name: str
+    description: str
 
 
 class AISettingsPatch(BaseModel):
@@ -122,6 +140,13 @@ async def _sync_emotes(pool: asyncpg.Pool, channel_id: str, available_names: lis
             )
     except Exception:
         LOGGER.exception("Background emote sync failed for channel %s", channel_id)
+
+
+@router.get("/packs", response_model=list[PackInfo])
+async def get_ai_packs() -> list[PackInfo]:
+    """Return all available knowledge packs (loaded from disk at first call)."""
+    packs = _get_packs()
+    return [PackInfo(id=p.id, name=p.name, description=p.description) for p in packs.values()]
 
 
 @router.get("/settings", response_model=AISettingsResponse)

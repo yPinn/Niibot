@@ -255,18 +255,27 @@ class ChannelPointsComponent(commands.Component):
                 pass
             return
 
-        # Best-effort parallel path: first to complete activates the account. Skip if user hasn't OAuth'd yet.
+        # Best-effort: queue a pending membership for users who already linked
+        # their Twitch identity but haven't been admitted yet. The repository's
+        # ON CONFLICT clause is idempotent and never demotes an already-active
+        # member, so this is safe to call on every redemption.
         try:
             row = await self.activation_repo.pool.fetchrow(
-                "SELECT u.id FROM users u"
-                " JOIN user_linked_accounts ula ON ula.user_id = u.id"
-                " WHERE ula.platform = 'twitch' AND ula.platform_user_id = $1"
-                "   AND u.is_activated = FALSE",
+                """
+                SELECT i.user_id::text AS user_id
+                  FROM identities i
+             LEFT JOIN memberships m ON m.user_id = i.user_id
+                 WHERE i.platform = 'twitch'
+                   AND i.platform_user_id = $1
+                   AND (m.status IS NULL OR m.status NOT IN ('active', 'suspended'))
+                """,
                 platform_user_id,
             )
             if row:
                 await self.activation_request_repo.create(
-                    str(row["id"]), "twitch", platform_user_id
+                    row["user_id"],
+                    "twitch",
+                    platform_user_id,
                 )
                 LOGGER.info(
                     "[%s] Niibot auth: activation request submitted for %s", channel_name, user_name

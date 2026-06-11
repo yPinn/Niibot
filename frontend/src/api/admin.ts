@@ -37,13 +37,31 @@ export interface PendingCode {
 }
 
 export interface ActivationRequest {
-  id: number
+  /** User UUID (was previously the int activation_requests.id). */
+  id: string
   platform_user_id: string
   display_name: string | null
   username: string | null
   avatar: string | null
   note: string
   created_at: string
+}
+
+export interface MembershipEvent {
+  id: number
+  event_type:
+    | 'requested'
+    | 'auto_admitted'
+    | 'approved'
+    | 'rejected'
+    | 'suspended'
+    | 'reinstated'
+    | 'withdrawn'
+  actor_type: 'system' | 'owner' | 'user'
+  actor_user_id: string | null
+  reason: string | null
+  metadata: Record<string, unknown>
+  occurred_at: string
 }
 
 export async function getAdminChannels(): Promise<AdminChannel[]> {
@@ -80,20 +98,32 @@ export async function getActivationRequests(): Promise<ActivationRequest[]> {
   return response.json()
 }
 
-export async function approveActivationRequest(id: number): Promise<void> {
-  const response = await apiFetch(API_ENDPOINTS.admin.approveRequest(id), {
+export async function approveActivationRequest(userId: string, reason: string = ''): Promise<void> {
+  const response = await apiFetch(API_ENDPOINTS.admin.approveRequest(userId), {
     method: 'POST',
     credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reason }),
   })
   if (!response.ok) throw new Error('Failed to approve request')
 }
 
-export async function rejectActivationRequest(id: number): Promise<void> {
-  const response = await apiFetch(API_ENDPOINTS.admin.rejectRequest(id), {
+export async function rejectActivationRequest(userId: string, reason: string = ''): Promise<void> {
+  const response = await apiFetch(API_ENDPOINTS.admin.rejectRequest(userId), {
     method: 'POST',
     credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reason }),
   })
   if (!response.ok) throw new Error('Failed to reject request')
+}
+
+export async function getMembershipTimeline(userId: string): Promise<MembershipEvent[]> {
+  const response = await apiFetch(API_ENDPOINTS.admin.membershipTimeline(userId), {
+    credentials: 'include',
+  })
+  if (!response.ok) throw new Error('Failed to fetch membership timeline')
+  return response.json()
 }
 
 export interface LogContainer {
@@ -123,6 +153,23 @@ export interface DbQueryResult {
   rows: (string | number | boolean | null)[][]
   row_count: number
   duration_ms: number
+}
+
+export async function getModuleAIPacks(): Promise<string[]> {
+  const res = await apiFetch(API_ENDPOINTS.admin.moduleAiPacks, { credentials: 'include' })
+  if (!res.ok) throw new Error('Failed to fetch module AI packs')
+  return res.json()
+}
+
+export async function setModuleAIPacks(packs: string[]): Promise<string[]> {
+  const res = await apiFetch(API_ENDPOINTS.admin.moduleAiPacks, {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled_packs: packs }),
+  })
+  if (!res.ok) throw new Error('Failed to update module AI packs')
+  return res.json()
 }
 
 export async function runDbQuery(sql: string): Promise<DbQueryResult> {

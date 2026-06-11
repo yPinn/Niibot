@@ -2,10 +2,10 @@ import { useMemo } from 'react'
 
 import type { ChannelDefaults } from '@/api/channels'
 import type { CommandConfig } from '@/api/commands'
+import { Icon } from '@/components/primitives'
 import { SortableHead } from '@/components/SortableHead'
 import {
   Button,
-  Icon,
   Switch,
   Table,
   TableBody,

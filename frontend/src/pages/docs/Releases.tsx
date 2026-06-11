@@ -1,8 +1,9 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
 
 import { getReleases, type GithubRelease } from '@/api/releases'
-import { PageHeader } from '@/components/PageHeader'
-import { PageMain } from '@/components/PageMain'
+import { PageHeader } from '@/components/layout/PageHeader'
+import { PageMain } from '@/components/layout/PageMain'
+import { EmptyState, Icon, Stagger, StaggerItem } from '@/components/primitives'
 import {
   Badge,
   Calendar,
@@ -13,10 +14,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuTrigger,
-  Icon,
   Skeleton,
-  Stagger,
-  StaggerItem,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -342,25 +340,21 @@ export default function Releases() {
       )}
 
       {!loading && error && (
-        <Card>
-          <CardContent className="flex flex-col items-center gap-element py-empty text-center">
-            <Icon
-              icon="fa-solid fa-circle-exclamation"
-              size="md"
-              wrapperClassName="text-status-warning"
-            />
-            <p className="text-sub text-muted-foreground">無法載入更新說明，請稍後再試。</p>
-          </CardContent>
-        </Card>
+        <EmptyState
+          className="py-empty"
+          icon="fa-solid fa-triangle-exclamation"
+          title="載入更新說明失敗"
+          description="請稍後再試，若問題持續請檢查網路狀態"
+        />
       )}
 
       {!loading && !error && releases.length === 0 && (
-        <Card>
-          <CardContent className="flex flex-col items-center gap-element py-empty text-center">
-            <Icon icon="fa-solid fa-tag" size="md" wrapperClassName="text-muted-foreground" />
-            <p className="text-sub text-muted-foreground">尚無任何版本發佈。</p>
-          </CardContent>
-        </Card>
+        <EmptyState
+          className="py-empty"
+          icon="fa-solid fa-tag"
+          title="尚無任何版本發佈"
+          description="後續更新將會顯示在這裡"
+        />
       )}
 
       {!loading && !error && releases.length > 0 && (

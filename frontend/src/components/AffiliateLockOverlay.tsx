@@ -1,25 +1,20 @@
-import { Icon } from '@/components/ui'
-import { cn } from '@/lib/utils'
+import { LockOverlay } from './LockOverlay'
 
 interface AffiliateLockOverlayProps {
   message: string
+  /** Set when the overlay sits at PageMain level (not inside a bounded Card) so it stays click-blocking through scroll. */
+  fullPage?: boolean
   className?: string
 }
 
-export function AffiliateLockOverlay({ message, className }: AffiliateLockOverlayProps) {
+export function AffiliateLockOverlay({ message, fullPage, className }: AffiliateLockOverlayProps) {
   return (
-    <div
-      className={cn(
-        'absolute inset-0 z-modal flex flex-col items-center justify-center gap-4 bg-background/80 backdrop-blur-sm',
-        className
-      )}
-    >
-      <Icon
-        icon="fa-solid fa-lock"
-        className="text-5xl text-muted-foreground"
-        wrapperClassName="size-16"
-      />
-      <span className="text-sub text-muted-foreground">{message}</span>
-    </div>
+    <LockOverlay
+      icon="fa-solid fa-lock"
+      title="需要實況盟友資格"
+      description={message}
+      fullPage={fullPage}
+      className={className}
+    />
   )
 }

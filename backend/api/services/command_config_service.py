@@ -5,6 +5,7 @@ from dataclasses import asdict
 
 import asyncpg
 
+from core.config import get_settings
 from shared.builtin_commands import BUILTIN_DESCRIPTIONS, PUBLIC_DESCRIPTIONS
 from shared.repositories.command_config import (
     UNSET as _UNSET,
@@ -132,8 +133,16 @@ class CommandConfigService:
     # ---- Redemption configs ----
 
     async def list_redemptions(self, channel_id: str) -> list[dict]:
-        """Get redemption configs."""
-        configs = await self.redemption_repo.ensure_defaults(channel_id)
+        """Get redemption configs.
+
+        Passes owner_id so RedemptionConfigRepository.ensure_defaults seeds the
+        niibot_auth row when this channel is the bot owner. The repository's
+        in-process `_seeded_redemptions` cache makes the call idempotent —
+        subsequent requests skip the INSERT loop entirely.
+        """
+        configs = await self.redemption_repo.ensure_defaults(
+            channel_id, owner_id=str(get_settings().owner_id)
+        )
         return [asdict(cfg) for cfg in configs]
 
     async def update_redemption(

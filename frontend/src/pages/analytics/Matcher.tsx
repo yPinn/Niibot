@@ -7,28 +7,28 @@ import {
   type MatcherViewersResponse,
   refreshMatcher,
 } from '@/api/analytics'
-import { PageHeader } from '@/components/PageHeader'
-import { PageMain } from '@/components/PageMain'
+import { PageHeader } from '@/components/layout/PageHeader'
+import { PageMain } from '@/components/layout/PageMain'
+import { EmptyState, Icon, SlideUp } from '@/components/primitives'
 import {
   Avatar,
   AvatarFallback,
   AvatarImage,
   Badge,
-  Icon,
   Skeleton,
-  SlideUp,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui'
 import { WipLockOverlay } from '@/components/WipLockOverlay'
+import { SHOW_WIP_LOCK } from '@/config/env'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { apiCache, CACHE_KEYS } from '@/lib/apiCache'
+import { formatCompact } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 import { TopGamesChart } from './insights/TopGamesChart'
-import { formatCompact } from './insights/utils'
 import { ChannelCard } from './matcher/ChannelCard'
 import { ViewerTable } from './matcher/ViewerTable'
 
@@ -208,7 +208,12 @@ export default function Matcher() {
               </div>
             ))
           ) : summaries.length === 0 ? (
-            <p className="text-sub text-muted-foreground text-center py-empty">尚無頻道資料</p>
+            <EmptyState
+              className="py-empty"
+              icon="fa-solid fa-tower-broadcast"
+              title="尚無頻道資料"
+              description="系統分析後將列出可能重疊觀眾的頻道"
+            />
           ) : (
             sortedSummaries.map(channel => (
               <ChannelCard
@@ -377,7 +382,7 @@ export default function Matcher() {
           )}
         </div>
       </SlideUp>
-      {import.meta.env.PROD && <WipLockOverlay />}
+      {SHOW_WIP_LOCK && <WipLockOverlay />}
     </PageMain>
   )
 }

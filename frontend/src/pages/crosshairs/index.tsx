@@ -8,7 +8,12 @@ import {
   type PublicChannelProfile,
 } from '@/api/crosshairs'
 import avatarFallback from '@/assets/images/Avatar.png'
-import { useTheme } from '@/components/theme-provider'
+import { CrosshairCardBase } from '@/components/crosshairs/CrosshairCardBase'
+import { CrosshairDetailPreview } from '@/components/crosshairs/CrosshairPreview'
+import { SortDropdown } from '@/components/crosshairs/SortDropdown'
+import { copyCode } from '@/components/crosshairs/utils'
+import { useTheme } from '@/components/layout/theme-provider'
+import { EmptyState, FadeIn, Icon } from '@/components/primitives'
 import {
   Avatar,
   AvatarFallback,
@@ -19,12 +24,6 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
-  Empty,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-  FadeIn,
-  Icon,
   Sheet,
   SheetContent,
   SheetHeader,
@@ -33,11 +32,6 @@ import {
   Skeleton,
 } from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
-
-import { CrosshairCardBase } from '../modules/crosshairs/CrosshairCardBase'
-import { CrosshairDetailPreview } from '../modules/crosshairs/CrosshairPreview'
-import { SortDropdown } from '../modules/crosshairs/SortDropdown'
-import { copyCode } from '../modules/crosshairs/utils'
 
 type SortKey = 'default' | 'copies'
 
@@ -159,18 +153,11 @@ export default function CrosshairRepo() {
 
               <CardContent>
                 {crosshairs.length === 0 ? (
-                  <Empty className="border-none">
-                    <EmptyHeader>
-                      <EmptyMedia>
-                        <Icon
-                          icon="fa-solid fa-crosshairs"
-                          wrapperClassName="size-20 opacity-25"
-                          className="text-[5rem]"
-                        />
-                      </EmptyMedia>
-                      <EmptyTitle>尚無準星</EmptyTitle>
-                    </EmptyHeader>
-                  </Empty>
+                  <EmptyState
+                    icon="fa-solid fa-crosshairs"
+                    title="尚無準星"
+                    description="此實況主尚未公開分享任何準星"
+                  />
                 ) : (
                   <>
                     <div className="flex items-center justify-between px-1 mb-card">

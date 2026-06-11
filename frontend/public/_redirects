@@ -1,0 +1,4 @@
+# SPA fallback — every unknown path serves the app shell so client-side
+# routing (react-router) can take over. Static assets and Pages Functions
+# (/api/*, /health, /status) take precedence over this catch-all.
+/*    /index.html    200

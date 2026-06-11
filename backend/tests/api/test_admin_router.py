@@ -14,6 +14,7 @@ os.environ.setdefault("OWNER_ID", "owner-123")
 
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -22,14 +23,17 @@ from fastapi.testclient import TestClient
 
 from core.config import get_settings
 from core.dependencies import (
+    get_admission_service,
     get_channel_service,
     get_current_channel_id,
+    get_current_user_id,
     get_db_pool,
     get_twitch_api,
 )
 from routers.admin_router import router as _admin_router
 
 OWNER_ID = "owner-123"
+_APPROVER_UUID = "11111111-1111-1111-1111-111111111111"
 _NOW = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
 
 
@@ -50,15 +54,21 @@ def _make_client(
     mock_twitch_api: MagicMock | None = None,
     mock_channel_service: MagicMock | None = None,
     mock_pool: MagicMock | None = None,
+    mock_admission: MagicMock | None = None,
 ) -> TestClient:
     app = FastAPI(lifespan=_no_lifespan)
     app.include_router(_admin_router)
     app.dependency_overrides[get_current_channel_id] = lambda: channel_id
+    # Owner-only endpoints that mutate via AdmissionService also need the
+    # caller's user_id for actor_user_id attribution.
+    app.dependency_overrides[get_current_user_id] = lambda: _APPROVER_UUID
     app.dependency_overrides[get_db_pool] = lambda: mock_pool or AsyncMock()
     if mock_twitch_api is not None:
         app.dependency_overrides[get_twitch_api] = lambda: mock_twitch_api
     if mock_channel_service is not None:
         app.dependency_overrides[get_channel_service] = lambda: mock_channel_service
+    if mock_admission is not None:
+        app.dependency_overrides[get_admission_service] = lambda: mock_admission
     return TestClient(app, raise_server_exceptions=False)
 
 
@@ -142,18 +152,22 @@ class TestRevokeActivationCode:
 
 
 class TestGetActivationRequests:
+    """Backed by memberships + membership_events; pool.fetch returns rows
+    matching the ActivationRequestInfo shape."""
+
     def test_returns_empty_list(self):
-        with patch("routers.admin_router.ActivationRequestRepository") as mock_repo:
-            instance = mock_repo.return_value
-            instance.list_pending = AsyncMock(return_value=[])
-            r = _make_client().get("/api/admin/activation-requests")
+        pool = _make_pool(fetch=[])
+        # The endpoint uses pool.fetch (the asyncpg pool's direct fetch),
+        # not pool.acquire().fetch — wire it explicitly.
+        pool.fetch = AsyncMock(return_value=[])
+        r = _make_client(mock_pool=pool).get("/api/admin/activation-requests")
         assert r.status_code == 200
         assert r.json() == []
 
-    def test_returns_pending_requests(self):
+    def test_returns_pending_memberships(self):
         pending = [
             {
-                "id": 1,
+                "id": "aaaa1111-2222-3333-4444-555555555555",
                 "platform_user_id": "u1",
                 "display_name": "Alice",
                 "username": "alice",
@@ -162,53 +176,134 @@ class TestGetActivationRequests:
                 "created_at": _NOW,
             }
         ]
-        with patch("routers.admin_router.ActivationRequestRepository") as mock_repo:
-            instance = mock_repo.return_value
-            instance.list_pending = AsyncMock(return_value=pending)
-            r = _make_client().get("/api/admin/activation-requests")
+        pool = _make_pool(fetch=pending)
+        pool.fetch = AsyncMock(return_value=pending)
+        r = _make_client(mock_pool=pool).get("/api/admin/activation-requests")
         assert r.status_code == 200
-        assert len(r.json()) == 1
-        assert r.json()[0]["platform_user_id"] == "u1"
+        body = r.json()
+        assert len(body) == 1
+        assert body[0]["id"] == "aaaa1111-2222-3333-4444-555555555555"
+        assert body[0]["platform_user_id"] == "u1"
 
 
-# ── POST /api/admin/activation-requests/{id}/approve ────────────────────────
+# ── POST /api/admin/activation-requests/{user_id}/approve ───────────────────
 
 
 class TestApproveActivationRequest:
+    """Now delegates to AdmissionService.approve; takes user_id (UUID) not int."""
+
+    def _decision(self):
+        membership = MagicMock(status="active")
+        return MagicMock(membership=membership, event_id=11, state_changed=True)
+
     def test_approve_returns_approved_true(self):
-        with patch("routers.admin_router.ActivationRequestRepository") as mock_repo:
-            instance = mock_repo.return_value
-            instance.approve = AsyncMock(return_value=True)
-            r = _make_client().post("/api/admin/activation-requests/1/approve")
+        admission = MagicMock()
+        admission.approve = AsyncMock(return_value=self._decision())
+        target_user = "bbbb2222-3333-4444-5555-666666666666"
+        r = _make_client(mock_admission=admission).post(
+            f"/api/admin/activation-requests/{target_user}/approve",
+            json={"reason": "vetted"},
+        )
         assert r.status_code == 200
         assert r.json()["approved"] is True
+        # AdmissionService.approve was called with the target user + approver
+        admission.approve.assert_awaited_once()
+        kwargs = admission.approve.call_args.kwargs
+        assert kwargs["user_id"] == target_user
+        assert kwargs["approver_user_id"] == _APPROVER_UUID
+        assert kwargs["reason"] == "vetted"
 
-    def test_approve_missing_request_returns_404(self):
-        with patch("routers.admin_router.ActivationRequestRepository") as mock_repo:
-            instance = mock_repo.return_value
-            instance.approve = AsyncMock(return_value=False)
-            r = _make_client().post("/api/admin/activation-requests/99/approve")
+    def test_approve_no_body_uses_default_reason(self):
+        admission = MagicMock()
+        admission.approve = AsyncMock(return_value=self._decision())
+        r = _make_client(mock_admission=admission).post(
+            "/api/admin/activation-requests/bbbb2222-3333-4444-5555-666666666666/approve",
+        )
+        assert r.status_code == 200
+        assert admission.approve.call_args.kwargs["reason"] == "admin_approval"
+
+    def test_approve_missing_membership_returns_404(self):
+        admission = MagicMock()
+        admission.approve = AsyncMock(side_effect=ValueError("No membership"))
+        r = _make_client(mock_admission=admission).post(
+            "/api/admin/activation-requests/cccc3333-4444-5555-6666-777777777777/approve",
+            json={"reason": "x"},
+        )
         assert r.status_code == 404
 
 
-# ── POST /api/admin/activation-requests/{id}/reject ─────────────────────────
+# ── POST /api/admin/activation-requests/{user_id}/reject ────────────────────
 
 
 class TestRejectActivationRequest:
+    def _decision(self):
+        membership = MagicMock(status="rejected")
+        return MagicMock(membership=membership, event_id=5, state_changed=True)
+
     def test_reject_returns_rejected_true(self):
-        with patch("routers.admin_router.ActivationRequestRepository") as mock_repo:
-            instance = mock_repo.return_value
-            instance.reject = AsyncMock(return_value=True)
-            r = _make_client().post("/api/admin/activation-requests/1/reject")
+        admission = MagicMock()
+        admission.reject = AsyncMock(return_value=self._decision())
+        target_user = "dddd4444-5555-6666-7777-888888888888"
+        r = _make_client(mock_admission=admission).post(
+            f"/api/admin/activation-requests/{target_user}/reject",
+            json={"reason": "bad_actor"},
+        )
         assert r.status_code == 200
         assert r.json()["rejected"] is True
+        kwargs = admission.reject.call_args.kwargs
+        assert kwargs["user_id"] == target_user
+        assert kwargs["approver_user_id"] == _APPROVER_UUID
+        assert kwargs["reason"] == "bad_actor"
 
-    def test_reject_missing_request_returns_404(self):
-        with patch("routers.admin_router.ActivationRequestRepository") as mock_repo:
-            instance = mock_repo.return_value
-            instance.reject = AsyncMock(return_value=False)
-            r = _make_client().post("/api/admin/activation-requests/99/reject")
+    def test_reject_missing_membership_returns_404(self):
+        admission = MagicMock()
+        admission.reject = AsyncMock(side_effect=ValueError("No membership"))
+        r = _make_client(mock_admission=admission).post(
+            "/api/admin/activation-requests/eeee5555-6666-7777-8888-999999999999/reject",
+            json={"reason": "x"},
+        )
         assert r.status_code == 404
+
+
+# ── GET /api/admin/memberships/{user_id}/timeline ───────────────────────────
+
+
+class TestGetMembershipTimeline:
+    def test_timeline_returns_events(self):
+        # admin_router does ``MembershipEventInfo(**event.__dict__)``, so each
+        # mocked event needs a real ``__dict__`` that maps to the response
+        # model's fields. SimpleNamespace gives us that without the magic
+        # collisions MagicMock causes when ``__dict__`` is set via kwargs.
+        events = [
+            SimpleNamespace(
+                id=1,
+                event_type="requested",
+                actor_type="system",
+                actor_user_id=None,
+                reason="first_signup",
+                metadata={},
+                occurred_at=_NOW,
+            ),
+            SimpleNamespace(
+                id=2,
+                event_type="approved",
+                actor_type="owner",
+                actor_user_id=_APPROVER_UUID,
+                reason="vetted",
+                metadata={},
+                occurred_at=_NOW,
+            ),
+        ]
+        admission = MagicMock()
+        admission.timeline = AsyncMock(return_value=events)
+        r = _make_client(mock_admission=admission).get(
+            "/api/admin/memberships/ffff6666-7777-8888-9999-aaaaaaaaaaaa/timeline",
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert len(body) == 2
+        assert body[0]["event_type"] == "requested"
+        assert body[1]["actor_type"] == "owner"
 
 
 # ── POST /api/admin/db/query ─────────────────────────────────────────────────
@@ -613,7 +708,31 @@ class TestListLogContainers:
         assert r.status_code == 200
         data = r.json()
         assert all(c["running"] is False for c in data)
-        assert len(data) == 6  # _KNOWN_CONTAINERS has 6 entries
+        assert len(data) == 6  # six bot services
+
+    def test_dev_environment_uses_bare_container_names(self, monkeypatch):
+        monkeypatch.setenv("ENVIRONMENT", "development")
+        get_settings.cache_clear()
+        with patch(
+            "routers.admin_router.aiohttp.UnixConnector", side_effect=Exception("no socket")
+        ):
+            r = _make_client().get("/api/admin/logs/containers")
+        names = [c["name"] for c in r.json()]
+        assert "nb-api" in names
+        assert "nb-api-stg" not in names
+
+    def test_staging_environment_uses_stg_suffix(self, monkeypatch):
+        """Staging API shares the docker host with prod, so it must NOT query
+        bare names — those would return prod container status."""
+        monkeypatch.setenv("ENVIRONMENT", "staging")
+        get_settings.cache_clear()
+        with patch(
+            "routers.admin_router.aiohttp.UnixConnector", side_effect=Exception("no socket")
+        ):
+            r = _make_client().get("/api/admin/logs/containers")
+        names = [c["name"] for c in r.json()]
+        assert "nb-api-stg" in names
+        assert "nb-api" not in names
 
 
 # ── GET /api/admin/logs/{container} ─────────────────────────────────────────
@@ -632,3 +751,10 @@ class TestGetContainerLogs:
         ):
             r = _make_client().get("/api/admin/logs/nb-api")
         assert r.status_code == 503
+
+    def test_staging_rejects_prod_container_name(self, monkeypatch):
+        """In staging, querying bare 'nb-api' must 400 — it's not in the allow list."""
+        monkeypatch.setenv("ENVIRONMENT", "staging")
+        get_settings.cache_clear()
+        r = _make_client().get("/api/admin/logs/nb-api")
+        assert r.status_code == 400

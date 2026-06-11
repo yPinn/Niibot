@@ -15,7 +15,7 @@ import httpx
 from discord import app_commands
 from discord.ext import commands
 
-from core import DATA_DIR, EmbedFactory, load_json
+from core import EmbedFactory
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -78,7 +78,7 @@ class TftCog(commands.Cog):
 
     def _load_embed_config(self) -> None:
         """載入全域 embed 配置"""
-        self._embed = EmbedFactory(load_json(DATA_DIR / "embed.json"))
+        self._embed = EmbedFactory.default()
 
     async def cog_unload(self) -> None:
         """Cog 卸載時關閉 HTTP 客戶端"""

@@ -17,6 +17,8 @@ WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
 COPY shared/ ./shared/
 COPY twitch/ ./twitch/
+COPY data/ ./data/
+RUN mkdir -p /app/runtime
 
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONPATH="/app" \

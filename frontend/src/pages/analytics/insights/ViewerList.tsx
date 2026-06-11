@@ -1,19 +1,8 @@
 import React from 'react'
 
 import { type ChannelBadges, type ViewerSummary } from '@/api/analytics'
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-  Icon,
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-  TwitchBadgeGroup,
-} from '@/components/ui'
+import { EmptyState, Icon, TwitchBadgeGroup } from '@/components/primitives'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui'
 import { cn } from '@/lib/utils'
 
 import { SORT_COLS, type SortKey } from './types'
@@ -137,21 +126,12 @@ export function ViewerList({
 }: ViewerListProps) {
   if (filtered.length === 0) {
     return (
-      <Empty className="border-none py-empty lg:flex-1">
-        <EmptyHeader>
-          <EmptyMedia>
-            <Icon
-              icon={search ? 'fa-solid fa-magnifying-glass' : 'fa-solid fa-users'}
-              wrapperClassName="size-20 opacity-25"
-              className="text-[5rem]"
-            />
-          </EmptyMedia>
-          <EmptyTitle>{search ? '找不到符合的觀眾' : '尚無觀眾資料'}</EmptyTitle>
-          {!search && (
-            <EmptyDescription>每場直播結束後會累積觀眾資料，歷史紀錄可在此查閱</EmptyDescription>
-          )}
-        </EmptyHeader>
-      </Empty>
+      <EmptyState
+        className="py-empty lg:flex-1"
+        icon={search ? 'fa-solid fa-magnifying-glass' : 'fa-solid fa-users'}
+        title={search ? '找不到符合的觀眾' : '尚無觀眾資料'}
+        description={search ? undefined : '每場直播結束後會累積觀眾資料，歷史紀錄可在此查閱'}
+      />
     )
   }
   return (

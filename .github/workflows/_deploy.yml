@@ -105,6 +105,14 @@ on:
         description: 'Runner label(s) as JSON array string — e.g. "[\"self-hosted\",\"macOS\"]"'
         type: string
         default: '["self-hosted"]'
+      legacy_data_dir:
+        description: "Pre-refactor mutable-data location, relative to PROJECT_DIR (one-shot migration)"
+        type: string
+        default: "backend/data"
+      runtime_data_dir:
+        description: "New runtime/state dir, relative to PROJECT_DIR"
+        type: string
+        default: "backend/runtime"
 
 jobs:
   deploy:
@@ -393,6 +401,16 @@ jobs:
           [ "${{ steps.changes.outputs.twitch }}" = "true" ]    && docker tag "nb-twitch${SUFFIX}"    "nb-twitch${SUFFIX}:$DOCKER_TAG"    || true
           [ "${{ steps.changes.outputs.scrapling }}" = "true" ] && docker tag "nb-scrapling${SUFFIX}" "nb-scrapling${SUFFIX}:$DOCKER_TAG" || true
           echo "Tagged rebuilt images as :$DOCKER_TAG"
+
+      - name: Migrate runtime data (idempotent)
+        working-directory: ${{ env.PROJECT_DIR }}
+        env:
+          # Indirection via env vars — never inline ${{ inputs.* }} into shell
+          # commands (GHSA-style script-injection hygiene).
+          LEGACY_DIR: ${{ inputs.legacy_data_dir }}
+          RUNTIME_DIR: ${{ inputs.runtime_data_dir }}
+        run: |
+          bash backend/scripts/migrate_runtime_data.sh "$LEGACY_DIR" "$RUNTIME_DIR"
 
       - name: Run migrations
         working-directory: ${{ env.PROJECT_DIR }}

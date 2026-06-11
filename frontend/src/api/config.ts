@@ -130,6 +130,7 @@ export const API_ENDPOINTS = {
     settings: join('/api/ai/settings'),
     reset: join('/api/ai/settings/reset'),
     emotes: join('/api/ai/emotes'),
+    packs: join('/api/ai/packs'),
   },
   donate: {
     public: (username: string) => join(`/api/donate/public/${username}`),
@@ -147,13 +148,15 @@ export const API_ENDPOINTS = {
   },
   admin: {
     channels: join('/api/admin/channels'),
+    moduleAiPacks: join('/api/admin/modules/ai-packs'),
     botStatus: join('/api/admin/bot-status'),
     activationCodes: join('/api/admin/activation-codes'),
     revokeActivationCode: (platformUserId: string) =>
       join(`/api/admin/activation-codes/${platformUserId}`),
     activationRequests: join('/api/admin/activation-requests'),
-    approveRequest: (id: number) => join(`/api/admin/activation-requests/${id}/approve`),
-    rejectRequest: (id: number) => join(`/api/admin/activation-requests/${id}/reject`),
+    approveRequest: (userId: string) => join(`/api/admin/activation-requests/${userId}/approve`),
+    rejectRequest: (userId: string) => join(`/api/admin/activation-requests/${userId}/reject`),
+    membershipTimeline: (userId: string) => join(`/api/admin/memberships/${userId}/timeline`),
     logContainers: join('/api/admin/logs/containers'),
     containerLogs: (name: string) => join(`/api/admin/logs/${name}`),
     dbQuery: join('/api/admin/db/query'),

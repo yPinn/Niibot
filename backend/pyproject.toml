@@ -1,6 +1,6 @@
 [project]
 name = "niibot-backend"
-version = "1.11"
+version = "1.12"
 description = "FastAPI backend for Discord and Twitch bots"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -14,7 +14,7 @@ dependencies = [
     "openai>=2.21.0,<3.0.0",
     "pydantic-settings>=2.13.0,<3.0.0",
     "python-dotenv>=1.2.0,<2.0.0",
-    "rich>=14.0.0,<15.0.0",
+    "rich>=14.0.0,<16.0.0",
     "twitchio>=3.2.0,<4.0.0",
     "uvicorn[standard]>=0.41.0,<1.0.0",
     "pydantic>=2.12.0,<3.0.0",
@@ -84,7 +84,7 @@ ignore_errors = true
 
 [dependency-groups]
 dev = [
-    "mypy>=1.19.0,<2.0.0",
+    "mypy>=1.19.0,<3.0.0",
     "ruff>=0.15.0,<1.0.0",
     "types-aiofiles>=25.0.0",
     "types-cachetools>=6.2.0.20251022",

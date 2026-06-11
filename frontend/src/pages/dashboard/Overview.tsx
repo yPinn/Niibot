@@ -5,10 +5,12 @@ import { getBotModStatus } from '@/api/channels'
 import { BOT_USERNAME } from '@/api/config'
 import { type ChannelStats, getChannelStats } from '@/api/stats'
 import AnalyticsChart from '@/components/AnalyticsChart'
+import { PageMain } from '@/components/layout/PageMain'
 import { ModSetupDialog } from '@/components/ModSetupDialog'
+import { SlideUp, Stagger, StaggerItem } from '@/components/primitives'
 import StatsCard from '@/components/StatsCard'
 import TwitchPlayer from '@/components/TwitchPlayer'
-import { Skeleton, SlideUp, Stagger, StaggerItem } from '@/components/ui'
+import { Skeleton } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
@@ -90,7 +92,7 @@ export default function Dashboard() {
   }, [channels, fetchStats, fetchAnalytics])
 
   return (
-    <main className="flex flex-col flex-1 min-h-0 gap-section p-page overflow-y-auto lg:p-page-lg transition-all duration-slow ease-default">
+    <PageMain className="transition-all duration-slow ease-default">
       <ModSetupDialog open={showModDialog} onOpenChange={setShowModDialog} />
 
       <SlideUp inView className="lg:flex-1 lg:min-h-0">
@@ -142,6 +144,6 @@ export default function Dashboard() {
           />
         </StaggerItem>
       </Stagger>
-    </main>
+    </PageMain>
   )
 }

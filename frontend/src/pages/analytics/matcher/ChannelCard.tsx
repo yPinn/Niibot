@@ -1,4 +1,5 @@
-import { Avatar, AvatarFallback, AvatarImage, Badge, Card, Icon } from '@/components/ui'
+import { Icon } from '@/components/primitives'
+import { Avatar, AvatarFallback, AvatarImage, Badge, Card } from '@/components/ui'
 import { cn } from '@/lib/utils'
 
 import type { MatcherChannelSummary } from './types'
