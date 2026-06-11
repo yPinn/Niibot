@@ -9,7 +9,7 @@ import logging
 import os
 import tempfile
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 
 import discord
 from cachetools import LRUCache
@@ -22,6 +22,15 @@ LOGGER: logging.Logger = logging.getLogger(__name__)
 
 _LOG_CHANNELS_FILE = RUNTIME_DIR / "log_channels.json"
 _MSG_CACHE_SIZE = 2000  # max cached messages across all guilds
+
+# Times are stored/sourced in UTC and displayed in GMT+8, matching the bot-wide
+# convention (see social_preview/_embeds.py, birthday/constants.py).
+_TZ_GMT8 = timezone(timedelta(hours=8))
+
+
+def _fmt_local(dt: datetime) -> str:
+    """Format a UTC datetime as a GMT+8 wall-clock string (no tz label)."""
+    return dt.astimezone(_TZ_GMT8).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _load_log_channels() -> dict[int, int]:
@@ -245,8 +254,8 @@ class EventsCog(commands.Cog):
         channel_ref = (
             message.channel.mention if hasattr(message.channel, "mention") else str(message.channel)
         )
-        sent_at = cached.created_at.astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
-        deleted_at = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
+        sent_at = _fmt_local(cached.created_at)
+        deleted_at = _fmt_local(datetime.now(UTC))
 
         embed = self._embed.build(
             title="訊息刪除",
@@ -280,7 +289,7 @@ class EventsCog(commands.Cog):
 
         author = cached.author
         avatar_url = author.display_avatar.url if author.display_avatar else None
-        local_dt = cached.created_at.astimezone()
+        local_dt = cached.created_at.astimezone(_TZ_GMT8)
         hour = local_dt.hour
         period = "上午" if hour < 12 else "下午"
         h12 = hour % 12 or 12
@@ -369,7 +378,7 @@ class EventsCog(commands.Cog):
         reason = (entry.reason if entry else None) or "無"
 
         if timeout_until is not None and timeout_until > now:
-            expires = timeout_until.astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
+            expires = _fmt_local(timeout_until)
             embed = self._embed.build(
                 title="成員禁言",
                 description=f"{after.mention} (`{after}`)",
@@ -469,8 +478,8 @@ class EventsCog(commands.Cog):
         if not log_channel:
             return
 
-        joined = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
-        created = member.created_at.astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
+        joined = _fmt_local(datetime.now(UTC))
+        created = _fmt_local(member.created_at)
 
         embed = self._embed.build(
             title="成員加入",
@@ -553,12 +562,8 @@ class EventsCog(commands.Cog):
         )
         kicker = entry.user if entry else None
 
-        joined = (
-            member.joined_at.astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
-            if member.joined_at
-            else "不明"
-        )
-        left = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
+        joined = _fmt_local(member.joined_at) if member.joined_at else "不明"
+        left = _fmt_local(datetime.now(UTC))
         roles = [r for r in member.roles if r.name != "@everyone"]
 
         title = "成員被踢出" if kicker else "成員離開"
