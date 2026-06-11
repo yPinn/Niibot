@@ -3,7 +3,7 @@
 import logging
 
 import asyncpg
-from fastapi import Cookie, Depends, HTTPException
+from fastapi import Cookie, Depends, HTTPException, Path
 
 from core.config import get_settings
 from core.database import get_database_manager
@@ -15,8 +15,17 @@ from services import (
     EventConfigService,
     TwitchAPIClient,
 )
+from services.admission_service import AdmissionService
 from services.game_queue_service import GameQueueService
+from services.identity_service import IdentityService
 from services.message_trigger_service import MessageTriggerService
+from services.tenant_service import (
+    TenantAccessDeniedError,
+    TenantContext,
+    TenantNotFoundError,
+    TenantService,
+    TenantSuspendedError,
+)
 from services.timer_service import TimerService
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -108,16 +117,29 @@ def get_token_payload(auth_token: str | None = Cookie(None)) -> dict:
     return payload
 
 
+def get_identity_service(pool: asyncpg.Pool = Depends(get_db_pool)) -> IdentityService:
+    return IdentityService(pool)
+
+
+def get_admission_service(pool: asyncpg.Pool = Depends(get_db_pool)) -> AdmissionService:
+    return AdmissionService(pool)
+
+
+def get_tenant_service(pool: asyncpg.Pool = Depends(get_db_pool)) -> TenantService:
+    return TenantService(pool)
+
+
 async def require_activated(
     payload: dict = Depends(get_token_payload),
-    pool: asyncpg.Pool = Depends(get_db_pool),
+    admission: AdmissionService = Depends(get_admission_service),
 ) -> None:
-    """Gate access to feature endpoints: account must be admin-approved."""
+    """Gate access to feature endpoints: caller's membership must be active.
+
+    Consults memberships.status (the new model). Legacy users.is_activated is
+    no longer read; the backfill in migration 080 guarantees a 1:1 mapping.
+    """
     user_id = str(payload["sub"])
-    is_activated = await pool.fetchval(
-        "SELECT is_activated FROM users WHERE id = $1::uuid", user_id
-    )
-    if not is_activated:
+    if not await admission.is_active(user_id):
         raise HTTPException(status_code=403, detail="Account not activated")
 
 
@@ -131,5 +153,60 @@ async def get_current_user_id(
 async def get_current_channel_id(
     payload: dict = Depends(get_token_payload),
 ) -> str:
-    """Return platform_user_id — maps to TwitchIO broadcaster.id / Helix broadcaster_id"""
+    """Return platform_user_id — maps to TwitchIO broadcaster.id / Helix broadcaster_id.
+
+    Legacy shim: still returns the caller's own platform_user_id. New code
+    should depend on ``require_tenant_access`` instead, which verifies the
+    caller actually has a role on the requested channel.
+    """
     return str(payload["platform_user_id"])
+
+
+async def require_tenant_access(
+    channel_id: str = Path(..., description="Tenant channel_id"),
+    payload: dict = Depends(get_token_payload),
+    tenant: TenantService = Depends(get_tenant_service),
+) -> TenantContext:
+    """FastAPI dependency: verify caller has at least 'manager' role on the channel.
+
+    Use as ``ctx: TenantContext = Depends(require_tenant_access)`` in any
+    router that accepts ``{channel_id}`` in its path. For endpoints scoped
+    to the caller's own channel without a path parameter, prefer
+    ``require_self_tenant_access`` below.
+    """
+    user_id = str(payload["sub"])
+    try:
+        return await tenant.assert_access(
+            channel_id=channel_id, user_id=user_id, required_role="manager"
+        )
+    except TenantNotFoundError:
+        raise HTTPException(status_code=404, detail="Channel not found") from None
+    except TenantSuspendedError:
+        raise HTTPException(status_code=403, detail="Channel suspended") from None
+    except TenantAccessDeniedError:
+        raise HTTPException(status_code=403, detail="Not a member of this channel") from None
+
+
+async def require_self_tenant_access(
+    payload: dict = Depends(get_token_payload),
+    tenant: TenantService = Depends(get_tenant_service),
+) -> TenantContext:
+    """Tenant context for the caller's *own* channel.
+
+    Convenience for legacy routes that don't accept channel_id in the URL.
+    The channel_id is taken from the JWT's platform_user_id, matching the
+    behaviour of get_current_channel_id but now wrapped with proper member
+    enforcement so suspended / orphaned tenants are properly rejected.
+    """
+    user_id = str(payload["sub"])
+    channel_id = str(payload["platform_user_id"])
+    try:
+        return await tenant.assert_access(
+            channel_id=channel_id, user_id=user_id, required_role="manager"
+        )
+    except TenantNotFoundError:
+        raise HTTPException(status_code=404, detail="Channel not found") from None
+    except TenantSuspendedError:
+        raise HTTPException(status_code=403, detail="Channel suspended") from None
+    except TenantAccessDeniedError:
+        raise HTTPException(status_code=403, detail="Not a member of this channel") from None

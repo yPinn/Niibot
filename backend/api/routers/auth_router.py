@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from core.config import Settings, get_settings
 from core.database import get_database_manager
 from core.dependencies import (
+    get_admission_service,
     get_auth_service,
     get_channel_service,
     get_current_user_id,
@@ -20,14 +21,15 @@ from core.dependencies import (
     get_twitch_api,
 )
 from core.rate_limit import RateLimiter
-from services import AuthService, TwitchAPIClient
-from services.oauth_service import (
-    decode_oauth_state,
-    encode_oauth_state,
-    find_or_create_user,
+from services import (
+    AdmissionService,
+    AuthService,
+    IdentityService,
+    TenantService,
+    TwitchAPIClient,
 )
+from services.oauth_service import decode_oauth_state, encode_oauth_state
 from shared.repositories.activation_code import ActivationCodeRepository
-from shared.repositories.activation_request import ActivationRequestRepository
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -90,7 +92,19 @@ async def twitch_oauth_callback(
     auth_service: AuthService = Depends(get_auth_service),
     settings: Settings = Depends(get_settings),
 ) -> RedirectResponse:
-    """Handle Twitch OAuth callback"""
+    """Handle Twitch OAuth callback.
+
+    Splits cleanly into three concerns:
+      1. exchange code for token + fetch user info        (identity proof)
+      2. IdentityService.find_or_link                     (identity binding)
+      3. AdmissionService.ensure_pending / auto_admit     (admission)
+      4. TenantService.ensure_tenant_for_owner            (tenant setup)
+      5. CredentialService persistence (still via channel_service.save_token)
+
+    Each layer is idempotent on reauth: an already-active member who reauths
+    just walks through (1), (2), and (5) — no admission row is created or
+    modified.
+    """
     error_redirect = f"{settings.frontend_url}/login"
 
     if error:
@@ -129,6 +143,7 @@ async def twitch_oauth_callback(
     username = user_info.get("name") or user_info.get("display_name") or platform_user_id
 
     try:
+        # 1. Persist Twitch credentials (broadcaster token + channel row).
         channel_svc = get_channel_service(pool)
         save_success = await channel_svc.save_token(
             user_id=platform_user_id,
@@ -138,25 +153,47 @@ async def twitch_oauth_callback(
             scopes=scopes,
             display_name=user_info.get("display_name"),
         )
-
         if not save_success:
             LOGGER.error(f"Failed to save token and channel for {username}")
             return RedirectResponse(url=f"{error_redirect}?error=save_token_failed")
 
-        user_id = await find_or_create_user(
-            pool,
-            "twitch",
-            platform_user_id,
-            username,
+        # 2. Resolve / create identity (idempotent on reauth, self-healing).
+        identity_svc = IdentityService(pool)
+        link_result = await identity_svc.find_or_link(
+            platform="twitch",
+            platform_user_id=platform_user_id,
+            username=username,
             display_name=user_info.get("display_name"),
             avatar=user_info.get("avatar"),
         )
+        user_id = link_result.user_id
 
-        if platform_user_id == str(settings.owner_id):
-            await pool.execute(
-                "UPDATE users SET is_activated = true WHERE id = $1::uuid",
+        # 3. Admission. ONLY new users get a pending membership inserted;
+        #    existing-but-not-active users keep whatever status they have.
+        #    Owner is auto-admitted (replaces the previous SQL bypass).
+        admission_svc = AdmissionService(pool)
+        is_owner = platform_user_id == str(settings.owner_id)
+        if is_owner:
+            await admission_svc.auto_admit(user_id, reason="owner")
+        elif link_result.is_new_user:
+            await admission_svc.ensure_pending(
                 user_id,
+                reason="first_signup",
+                metadata={
+                    "platform": "twitch",
+                    "platform_user_id": platform_user_id,
+                },
             )
+        # else: reauth / reconciliation paths — membership is left untouched.
+
+        # 4. Tenant bootstrap (channel + channel_members owner).
+        tenant_svc = TenantService(pool)
+        await tenant_svc.ensure_tenant_for_owner(
+            channel_id=platform_user_id,
+            owner_user_id=user_id,
+            channel_name=username,
+            display_name=user_info.get("display_name"),
+        )
     except Exception as e:
         LOGGER.error(f"DB error during Twitch OAuth for {username}: {type(e).__name__}: {e}")
         return RedirectResponse(url=f"{error_redirect}?error=db_timeout")
@@ -186,21 +223,18 @@ async def get_current_user(
     auth_token: str | None = Cookie(None),
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
     pool: Pool = Depends(get_db_pool),
+    admission: AdmissionService = Depends(get_admission_service),
 ) -> UserInfoResponse:
-    """Get current authenticated user information"""
+    """Get current authenticated user information."""
     payload = get_token_payload(auth_token)
     user_id = str(payload["sub"])
     platform_user_id = str(payload["platform_user_id"])
 
     theme = "system"
-    is_activated = False
     try:
-        user_row = await pool.fetchrow(
-            "SELECT theme, is_activated FROM users WHERE id = $1::uuid", user_id
-        )
+        user_row = await pool.fetchrow("SELECT theme FROM users WHERE id = $1::uuid", user_id)
         if user_row:
             theme = user_row["theme"]
-            is_activated = user_row["is_activated"]
 
         requires_reauth = await pool.fetchval(
             "SELECT requires_reauth FROM tokens WHERE user_id = $1 AND token_type = 'broadcaster'",
@@ -212,6 +246,9 @@ async def get_current_user(
         raise
     except Exception as e:
         LOGGER.warning(f"DB error fetching user row for {user_id}: {type(e).__name__}: {e}")
+
+    membership = await admission.get(user_id)
+    is_activated = membership is not None and membership.status == "active"
 
     user_info = await twitch_api.get_user_info(platform_user_id)
     if not user_info:
@@ -268,6 +305,7 @@ async def activate_account(
     body: ActivateRequest,
     auth_token: str | None = Cookie(None),
     pool: Pool = Depends(get_db_pool),
+    admission: AdmissionService = Depends(get_admission_service),
 ) -> dict:
     """Activate account using an OTP code from the niibot_auth redemption."""
     payload = get_token_payload(auth_token)
@@ -275,10 +313,7 @@ async def activate_account(
     platform = str(payload["platform"])
     platform_user_id = str(payload["platform_user_id"])
 
-    already_activated = await pool.fetchval(
-        "SELECT is_activated FROM users WHERE id = $1::uuid", user_id
-    )
-    if already_activated:
+    if await admission.is_active(user_id):
         return {"activated": True}
 
     if not _otp_rate_limiter.allow(user_id):
@@ -295,6 +330,17 @@ async def activate_account(
     if not success:
         raise HTTPException(status_code=400, detail="invalid_or_expired_code")
 
+    # Hash the code only for the audit metadata. The plaintext is never persisted.
+    import hashlib
+
+    code_hash = hashlib.sha256(body.code.strip().encode()).hexdigest()
+    await admission.grant_via_otp(
+        user_id,
+        platform=platform,
+        platform_user_id=platform_user_id,
+        code_hash=code_hash,
+    )
+
     LOGGER.info(f"Account activated: user {user_id} ({platform}:{platform_user_id})")
     return {"activated": True}
 
@@ -302,46 +348,54 @@ async def activate_account(
 @router.post("/auth/request-activation")
 async def request_activation(
     auth_token: str | None = Cookie(None),
-    pool: Pool = Depends(get_db_pool),
+    admission: AdmissionService = Depends(get_admission_service),
 ) -> dict:
-    """Re-submit activation request after rejection."""
+    """Submit (or re-submit after rejection) an activation request.
+
+    Suspended accounts cannot re-apply through this endpoint — suspension is
+    an operator decision and only AdmissionService.reinstate (called from the
+    admin router) can lift it.
+    """
     payload = get_token_payload(auth_token)
     user_id = str(payload["sub"])
-    platform = str(payload["platform"])
-    platform_user_id = str(payload["platform_user_id"])
 
-    already_activated = await pool.fetchval(
-        "SELECT is_activated FROM users WHERE id = $1::uuid", user_id
-    )
-    if already_activated:
+    current = await admission.get(user_id)
+    if current is None:
+        # Edge case — user pre-dates admission model; create a fresh pending row.
+        decision = await admission.ensure_pending(user_id, reason="explicit_request")
+        return {"status": decision.membership.status}
+
+    if current.status == "active":
         return {"status": "already_activated"}
-
-    repo = ActivationRequestRepository(pool)
-    existing = await repo.get_for_user(user_id)
-    if existing and existing["status"] == "pending":
+    if current.status == "pending":
         return {"status": "pending"}
+    if current.status == "suspended":
+        # Operator-imposed; user cannot self-lift.
+        raise HTTPException(status_code=403, detail="account_suspended")
 
-    await repo.create(user_id, platform, platform_user_id, "")
-    LOGGER.info(f"Activation re-request submitted: user {user_id} ({platform}:{platform_user_id})")
-    return {"status": "pending"}
+    # rejected → user explicit re-application
+    decision = await admission.reapply(user_id)
+    LOGGER.info(f"Activation re-request submitted: user {user_id}")
+    return {"status": decision.membership.status}
 
 
 @router.get("/auth/activation-request")
 async def get_activation_request_status(
     auth_token: str | None = Cookie(None),
-    pool: Pool = Depends(get_db_pool),
+    admission: AdmissionService = Depends(get_admission_service),
 ) -> dict:
-    """Return the most recent activation request status for the current user."""
+    """Return the most recent membership status + last decision timestamp."""
     payload = get_token_payload(auth_token)
     user_id = str(payload["sub"])
 
-    repo = ActivationRequestRepository(pool)
-    request = await repo.get_for_user(user_id)
-    if not request:
+    membership = await admission.get(user_id)
+    if membership is None:
         return {"status": None}
+
+    # Mirror the legacy response shape that the /activate page consumes.
     return {
-        "status": request["status"],
-        "created_at": request["created_at"].isoformat(),
+        "status": membership.status,
+        "created_at": membership.updated_at.isoformat(),
     }
 
 

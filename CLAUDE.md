@@ -13,6 +13,35 @@
 - Frontend: Cloudflare Pages
 - Auth: Twitch OAuth via backend JWT cookie sessions (Discord dashboard OAuth removed)
 
+## Admission & Tenancy
+
+Niibot is multi-tenant — each Twitch broadcaster's channel is a separate
+tenant. Three concerns are deliberately split across distinct services; do
+NOT couple them inside routers or repositories:
+
+- **IdentityService** — find_or_link by `(platform, platform_user_id)`,
+  self-heals when an identity row goes missing via reconciliation. Replaces
+  the deprecated `oauth_service.find_or_create_user`.
+- **AdmissionService** — owns the `memberships.status` state machine
+  (`pending | active | suspended | rejected`); every transition writes a
+  matching `membership_events` row (append-only, DB-enforced immutable).
+- **TenantService** — channel ownership + per-channel RBAC via
+  `channel_members`. Use `require_tenant_access` or `require_self_tenant_access`
+  FastAPI dependencies on channel-scoped endpoints.
+
+Full design + rollout notes:
+[docs/architecture/admission-and-tenancy.md](docs/architecture/admission-and-tenancy.md).
+
+Key invariants:
+
+- The OAuth callback must NOT create `activation_requests` rows for existing
+  users. Reauth idempotency is enforced by IdentityService's fast path.
+- `users.is_activated` and the `activation_requests` table are LEGACY and
+  retained only for rollback safety; `memberships` is the source of truth.
+- Channel-scoped tables must always filter by `channel_id`. Postgres RLS
+  policies in migration 083 act as a second line of defence (left disabled
+  until full router migration).
+
 ## Git Workflow (GitHub Flow + staging)
 
 ### Branch Strategy
@@ -61,12 +90,12 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml [--profile <name>
 
 Port table:
 
-| Service | Base | Prod | Dev | Staging |
-| ------- | ---- | ---- | --- | ------- |
-| api | — | 8000 | 8000 | 8001 |
-| postgres | — | — | 5433 | 5434 |
-| scrapling | — | — | 3001 | 3003 |
-| instafix | — | — | 3002 | 3004 |
+| Service   | Base | Prod | Dev  | Staging |
+| --------- | ---- | ---- | ---- | ------- |
+| api       | —    | 8000 | 8000 | 8001    |
+| postgres  | —    | —    | 5433 | 5434    |
+| scrapling | —    | —    | 3001 | 3003    |
+| instafix  | —    | —    | 3002 | 3004    |
 
 ### Environment Variables
 

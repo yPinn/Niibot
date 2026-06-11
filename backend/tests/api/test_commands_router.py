@@ -19,10 +19,18 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from core.config import get_settings
-from core.dependencies import get_current_channel_id, get_db_pool, get_twitch_api, require_activated
+from core.dependencies import (
+    get_current_channel_id,
+    get_db_pool,
+    get_twitch_api,
+    require_activated,
+    require_self_tenant_access,
+)
 from routers.commands_router import router as _commands_router
+from services import TenantContext
 
 CHANNEL_ID = "ch-123"
+_OWNER_USER_UUID = "11111111-2222-3333-4444-555555555555"
 
 _CMD_CONFIG = {
     "id": 1,
@@ -71,6 +79,14 @@ def _make_client(mock_twitch_api: MagicMock | None = None) -> TestClient:
     app.include_router(_commands_router)
     app.dependency_overrides[require_activated] = lambda: None
     app.dependency_overrides[get_current_channel_id] = lambda: CHANNEL_ID
+    # POST /configs was migrated to require_self_tenant_access as the
+    # tenant-boundary exemplar; supply a canned context so tests don't
+    # need to mock channels/channel_members lookups.
+    app.dependency_overrides[require_self_tenant_access] = lambda: TenantContext(
+        channel_id=CHANNEL_ID,
+        user_id=_OWNER_USER_UUID,
+        role="owner",
+    )
     app.dependency_overrides[get_db_pool] = lambda: AsyncMock()
     if mock_twitch_api is not None:
         app.dependency_overrides[get_twitch_api] = lambda: mock_twitch_api

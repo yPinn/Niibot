@@ -154,8 +154,9 @@ export const API_ENDPOINTS = {
     revokeActivationCode: (platformUserId: string) =>
       join(`/api/admin/activation-codes/${platformUserId}`),
     activationRequests: join('/api/admin/activation-requests'),
-    approveRequest: (id: number) => join(`/api/admin/activation-requests/${id}/approve`),
-    rejectRequest: (id: number) => join(`/api/admin/activation-requests/${id}/reject`),
+    approveRequest: (userId: string) => join(`/api/admin/activation-requests/${userId}/approve`),
+    rejectRequest: (userId: string) => join(`/api/admin/activation-requests/${userId}/reject`),
+    membershipTimeline: (userId: string) => join(`/api/admin/memberships/${userId}/timeline`),
     logContainers: join('/api/admin/logs/containers'),
     containerLogs: (name: string) => join(`/api/admin/logs/${name}`),
     dbQuery: join('/api/admin/db/query'),

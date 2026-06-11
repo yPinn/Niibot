@@ -4,19 +4,37 @@ This module provides service classes for handling business logic.
 Services are initialized with their dependencies and accessed through dependency injection.
 """
 
+from .admission_service import AdmissionDecision, AdmissionService
 from .analytics_service import AnalyticsService
 from .auth_service import AuthService
 from .channel_service import ChannelService
 from .command_config_service import CommandConfigService
 from .event_config_service import EventConfigService
+from .identity_service import FindOrLinkResult, IdentityService
+from .tenant_service import (
+    TenantAccessDeniedError,
+    TenantContext,
+    TenantNotFoundError,
+    TenantService,
+    TenantSuspendedError,
+)
 from .twitch_api import TokenRefreshResult, TwitchAPIClient
 
 __all__ = [
+    "AdmissionDecision",
+    "AdmissionService",
     "AnalyticsService",
     "AuthService",
     "ChannelService",
     "CommandConfigService",
     "EventConfigService",
+    "FindOrLinkResult",
+    "IdentityService",
+    "TenantAccessDeniedError",
+    "TenantContext",
+    "TenantNotFoundError",
+    "TenantService",
+    "TenantSuspendedError",
     "TokenRefreshResult",
     "TwitchAPIClient",
 ]

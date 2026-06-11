@@ -14,8 +14,9 @@ from core.dependencies import (
     get_current_channel_id,
     get_db_pool,
     get_twitch_api,
+    require_self_tenant_access,
 )
-from services import ChannelService, TwitchAPIClient
+from services import ChannelService, TenantContext, TwitchAPIClient
 from shared.repositories.channel import ChannelRepository
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -145,10 +146,19 @@ async def get_my_channel_status(
 @router.post("/twitch/toggle", response_model=ToggleResponse)
 async def toggle_channel(
     request: ChannelToggleRequest,
-    channel_id: str = Depends(get_current_channel_id),
+    ctx: TenantContext = Depends(require_self_tenant_access),
     channel_service: ChannelService = Depends(get_channel_service),
 ) -> ToggleResponse:
-    """Enable or disable bot for a channel"""
+    """Enable or disable bot for a channel.
+
+    Exemplar for the new tenant-access dependency. ``require_self_tenant_access``
+    verifies the caller actually holds at least 'manager' role on the channel
+    via channel_members rather than trusting JWT alone — relevant for the
+    future mod-delegation flow. The legacy `get_current_channel_id`
+    dependency is still wired into the other endpoints in this file and is
+    safe to swap incrementally.
+    """
+    channel_id = ctx.channel_id
     try:
         if request.channel_id != channel_id:
             raise HTTPException(status_code=403, detail="Cannot toggle another channel")

@@ -27,7 +27,7 @@ import { formatDateTimeShort } from '@/lib/format'
 export function ActivationCard() {
   const [requests, setRequests] = useState<ActivationRequest[]>([])
   const [reqLoading, setReqLoading] = useState(true)
-  const [actioningId, setActioningId] = useState<number | null>(null)
+  const [actioningId, setActioningId] = useState<string | null>(null)
   const [confirmReject, setConfirmReject] = useState<ActivationRequest | null>(null)
 
   const fetchRequests = useCallback(async () => {

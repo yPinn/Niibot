@@ -12,8 +12,9 @@ from core.dependencies import (
     get_current_channel_id,
     get_twitch_api,
     require_activated,
+    require_self_tenant_access,
 )
-from services import CommandConfigService, TwitchAPIClient
+from services import CommandConfigService, TenantContext, TwitchAPIClient
 from shared.cache import AsyncTTLCache
 from shared.repositories.command_config import UNSET as _UNSET
 
@@ -80,10 +81,19 @@ async def get_command_configs(
 async def create_custom_command(
     body: CustomCommandCreate,
     _: None = Depends(require_activated),
-    channel_id: str = Depends(get_current_channel_id),
+    ctx: TenantContext = Depends(require_self_tenant_access),
     service: CommandConfigService = Depends(get_command_config_service),
 ) -> CommandConfigResponse:
-    """Create a new custom command."""
+    """Create a new custom command.
+
+    Exemplar for the new tenant-access dependency on a write endpoint.
+    Other endpoints in this file still use ``get_current_channel_id`` (the
+    legacy shim) and can be migrated incrementally — both dependencies
+    return the caller's channel today, but only ``require_self_tenant_access``
+    enforces channel_members membership, which matters once mod delegation
+    or tenant suspension is enabled.
+    """
+    channel_id = ctx.channel_id
     if body.min_role not in VALID_ROLES:
         raise HTTPException(status_code=400, detail=f"Invalid min_role: {body.min_role}")
     if not body.custom_response:
