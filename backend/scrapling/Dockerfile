@@ -1,9 +1,10 @@
 FROM python:3.12.12-slim-bookworm AS builder
 COPY --from=ghcr.io/astral-sh/uv:0.11.14 /uv /bin/uv
-ENV UV_LINK_MODE=copy
+ENV UV_LINK_MODE=copy \
+    UV_SYSTEM_CERTS=1
 WORKDIR /app
-COPY scrapling/requirements.txt ./
-RUN uv venv && uv pip install --no-cache -r requirements.txt
+COPY scrapling/pyproject.toml scrapling/uv.lock ./
+RUN uv sync --frozen --no-cache --no-install-project --no-dev
 
 FROM python:3.12.12-slim-bookworm
 RUN apt-get update && apt-get upgrade -y --no-install-recommends && rm -rf /var/lib/apt/lists/*
