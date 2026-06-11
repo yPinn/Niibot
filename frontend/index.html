@@ -20,11 +20,14 @@
     <link rel="manifest" href="/site.webmanifest" />
 
     <!-- ═══════════════════════════════════════════
-         主題色 (Theme Color)
-         Android Chrome / Safari 15+ / PWA
+         主題色 & PWA
+         Android Chrome / Safari 15+ / iOS Home Screen
          ═══════════════════════════════════════════ -->
-    <meta name="theme-color" content="#5865F2" media="(prefers-color-scheme: dark)" />
-    <meta name="theme-color" content="#5865F2" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#5865F2" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Niibot" />
 
     <!-- ═══════════════════════════════════════════
          Open Graph — Facebook / Discord / LINE
@@ -35,8 +38,9 @@
     <meta property="og:description" content="除了幫你上班，我什麼都能做。" />
     <meta property="og:url" content="https://niibot.llazypilot.com/" />
     <meta property="og:image" content="https://niibot.llazypilot.com/images/Avatar.png" />
-    <meta property="og:image:width" content="1200" />
-    <meta property="og:image:height" content="630" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1080" />
+    <meta property="og:image:height" content="1080" />
     <meta property="og:image:alt" content="Niibot avatar" />
     <meta property="og:locale" content="zh_TW" />
 
@@ -50,6 +54,27 @@
     <meta name="twitter:description" content="除了幫你上班，我什麼都能做。" />
     <meta name="twitter:image" content="https://niibot.llazypilot.com/images/Avatar.png" />
     <meta name="twitter:image:alt" content="Niibot avatar" />
+
+    <!-- ═══════════════════════════════════════════
+         Structured Data (JSON-LD)
+         ═══════════════════════════════════════════ -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "name": "Niibot",
+        "alternateName": "泥爸",
+        "url": "https://niibot.llazypilot.com/",
+        "description": "除了幫你上班，我什麼都能做。",
+        "inLanguage": "zh-TW",
+        "publisher": {
+          "@type": "Organization",
+          "name": "Niibot",
+          "url": "https://niibot.llazypilot.com/",
+          "logo": "https://niibot.llazypilot.com/images/Avatar.png"
+        }
+      }
+    </script>
 
     <script>
       ;(function () {

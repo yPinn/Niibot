@@ -1,0 +1,22 @@
+# https://niibot.llazypilot.com
+User-agent: *
+Allow: /
+
+# Authenticated app areas — no value to crawlers (auth-walled SPA routes)
+Disallow: /admin
+Disallow: /dashboard
+Disallow: /settings
+Disallow: /analytics
+Disallow: /commands
+Disallow: /events
+Disallow: /timers
+Disallow: /modules
+Disallow: /discord
+Disallow: /docs
+Disallow: /activate
+Disallow: /login
+
+# OBS / embed overlay endpoints
+Disallow: /*/overlay
+
+Sitemap: https://niibot.llazypilot.com/sitemap.xml
