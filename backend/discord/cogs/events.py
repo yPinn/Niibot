@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import tempfile
+from collections.abc import Callable
 from datetime import UTC, datetime
 
 import discord
@@ -50,27 +51,67 @@ def _top_role_color(member: discord.Member) -> tuple[int, int, int] | None:
     return None
 
 
+async def _find_audit_entry(
+    guild: discord.Guild,
+    action: discord.AuditLogAction,
+    *,
+    match: Callable[[discord.AuditLogEntry], bool],
+    max_age: float = 10.0,
+    attempts: tuple[float, ...] = (1.0, 1.5),
+) -> tuple[discord.AuditLogEntry | None, bool]:
+    """Poll the audit log for a recent entry matching *match*.
+
+    Returns ``(entry, audit_available)``. ``audit_available`` is False only when
+    the bot lacks the View Audit Log permission, letting callers distinguish
+    "no permission" (truly unknown) from "no matching entry" (e.g. a genuine
+    self-action, which audit logs never record).
+
+    Polls across *attempts* delays to tolerate audit-log propagation lag, which
+    a single fixed sleep does not.
+
+    Known limitation (not handled): Discord coalesces consecutive deletions by
+    the same user in the same channel into one audit entry with an incrementing
+    count, so the Nth rapid deletion cannot be attributed precisely; we match
+    the most recent entry within the time window.
+    """
+    for delay in attempts:
+        await asyncio.sleep(delay)
+        try:
+            async for entry in guild.audit_logs(limit=10, action=action):
+                if (datetime.now(UTC) - entry.created_at).total_seconds() < max_age and match(
+                    entry
+                ):
+                    return entry, True
+        except discord.Forbidden:
+            return None, False
+    return None, True
+
+
 async def _find_deleter(
     guild: discord.Guild,
     channel_id: int,
     author_id: int,
-) -> discord.Member | discord.User | None:
-    """Query audit log to find who deleted a message. Returns None on self-delete or no permission."""
-    await asyncio.sleep(1.5)
-    try:
-        async for entry in guild.audit_logs(limit=10, action=discord.AuditLogAction.message_delete):
-            extra_channel = getattr(entry.extra, "channel", None)
-            if (
-                entry.target
-                and entry.target.id == author_id
-                and extra_channel is not None
-                and getattr(extra_channel, "id", None) == channel_id
-                and (datetime.now(UTC) - entry.created_at).total_seconds() < 15
-            ):
-                return entry.user
-    except discord.Forbidden:
-        pass
-    return None
+) -> tuple[discord.Member | discord.User | None, bool]:
+    """Find who deleted a message via audit log.
+
+    Returns ``(deleter, audit_available)``; ``deleter`` is None on a self-delete
+    or when no matching audit entry exists. ``audit_available`` is False when the
+    bot lacks the View Audit Log permission.
+    """
+
+    def _match(entry: discord.AuditLogEntry) -> bool:
+        extra_channel = getattr(entry.extra, "channel", None)
+        return bool(
+            entry.target
+            and entry.target.id == author_id
+            and extra_channel is not None
+            and getattr(extra_channel, "id", None) == channel_id
+        )
+
+    entry, available = await _find_audit_entry(
+        guild, discord.AuditLogAction.message_delete, match=_match, max_age=15.0
+    )
+    return (entry.user if entry else None), available
 
 
 class EventsCog(commands.Cog):
@@ -197,7 +238,9 @@ class EventsCog(commands.Cog):
         cached = self._msg_cache.pop(message.id, message)
         content_available = bool(cached.content or cached.attachments)
 
-        deleter = await _find_deleter(message.guild, message.channel.id, message.author.id)
+        deleter, audit_available = await _find_deleter(
+            message.guild, message.channel.id, message.author.id
+        )
 
         channel_ref = (
             message.channel.mention if hasattr(message.channel, "mention") else str(message.channel)
@@ -212,10 +255,13 @@ class EventsCog(commands.Cog):
         )
         embed.add_field(name="作者", value=cached.author.mention, inline=True)
         embed.add_field(name="頻道", value=channel_ref, inline=True)
-        if deleter and deleter.id != cached.author.id:
-            embed.add_field(name="刪除者", value=deleter.mention, inline=True)
+        if not audit_available:
+            deleter_value = "未知（無審核權限）"
+        elif deleter and deleter.id != cached.author.id:
+            deleter_value = deleter.mention
         else:
-            embed.add_field(name="刪除者", value="本人", inline=True)
+            deleter_value = "本人"
+        embed.add_field(name="刪除者", value=deleter_value, inline=True)
         embed.add_field(name="發送時間", value=sent_at, inline=True)
         embed.add_field(name="刪除時間", value=deleted_at, inline=True)
         if cached.attachments:
@@ -299,11 +345,62 @@ class EventsCog(commands.Cog):
 
         await self._send_log(log_channel, embed)
 
+    async def _log_timeout_change(
+        self,
+        log_channel: discord.TextChannel,
+        after: discord.Member,
+    ) -> None:
+        """Log a timeout (communication disabled) applied / removed on *after*."""
+        now = datetime.now(UTC)
+        timeout_until = after.timed_out_until
+
+        entry, audit_available = await _find_audit_entry(
+            after.guild,
+            discord.AuditLogAction.member_update,
+            match=lambda e: bool(e.target and e.target.id == after.id),
+        )
+        if not audit_available:
+            executor = "未知（無審核權限）"
+        elif entry and entry.user:
+            executor = entry.user.mention
+        else:
+            # No audit entry usually means the timeout lapsed automatically.
+            executor = "自動／未知"
+        reason = (entry.reason if entry else None) or "無"
+
+        if timeout_until is not None and timeout_until > now:
+            expires = timeout_until.astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
+            embed = self._embed.build(
+                title="成員禁言",
+                description=f"{after.mention} (`{after}`)",
+                color=discord.Color.dark_orange(),
+                timestamp=now,
+            )
+            embed.add_field(name="執行者", value=executor, inline=True)
+            embed.add_field(name="到期時間", value=expires, inline=True)
+            embed.add_field(name="原因", value=reason, inline=False)
+        else:
+            embed = self._embed.build(
+                title="解除禁言",
+                description=f"{after.mention} (`{after}`)",
+                color=discord.Color.teal(),
+                timestamp=now,
+            )
+            embed.add_field(name="執行者", value=executor, inline=True)
+            embed.add_field(name="原因", value=reason, inline=False)
+
+        await self._send_log(log_channel, embed)
+
     @commands.Cog.listener()
     async def on_member_update(self, before: discord.Member, after: discord.Member) -> None:
         log_channel = self.get_log_channel(before.guild)
         if not log_channel:
             return
+
+        # Timeout (communication disabled) is a moderation action — log it as its
+        # own embed with an executor, independent of nick/role changes below.
+        if before.timed_out_until != after.timed_out_until:
+            await self._log_timeout_change(log_channel, after)
 
         changes: list[str] = []
 
@@ -344,10 +441,13 @@ class EventsCog(commands.Cog):
         for msg in messages:
             self._msg_cache.pop(msg.id, None)
 
-        channel_ref = (
-            messages[0].channel.mention
-            if hasattr(messages[0].channel, "mention")
-            else str(messages[0].channel)
+        channel = messages[0].channel
+        channel_ref = channel.mention if hasattr(channel, "mention") else str(channel)
+
+        entry, audit_available = await _find_audit_entry(
+            guild,
+            discord.AuditLogAction.message_bulk_delete,
+            match=lambda e: bool(e.target and e.target.id == getattr(channel, "id", None)),
         )
 
         embed = self._embed.build(
@@ -356,6 +456,10 @@ class EventsCog(commands.Cog):
             color=discord.Color.red(),
             timestamp=datetime.now(UTC),
         )
+        if not audit_available:
+            embed.add_field(name="執行者", value="未知（無審核權限）", inline=True)
+        elif entry and entry.user:
+            embed.add_field(name="執行者", value=entry.user.mention, inline=True)
 
         await self._send_log(log_channel, embed)
 
@@ -387,22 +491,13 @@ class EventsCog(commands.Cog):
         if not log_channel:
             return
 
-        banner: discord.Member | discord.User | None = None
-        await asyncio.sleep(1.0)
-        try:
-            async for entry in guild.audit_logs(limit=5, action=discord.AuditLogAction.ban):
-                if (
-                    entry.target
-                    and entry.target.id == user.id
-                    and (datetime.now(UTC) - entry.created_at).total_seconds() < 10
-                ):
-                    banner = entry.user
-                    reason = entry.reason or "無"
-                    break
-            else:
-                reason = "無"
-        except discord.Forbidden:
-            reason = "無"
+        entry, _ = await _find_audit_entry(
+            guild,
+            discord.AuditLogAction.ban,
+            match=lambda e: bool(e.target and e.target.id == user.id),
+        )
+        banner = entry.user if entry else None
+        reason = (entry.reason if entry else None) or "無"
 
         embed = self._embed.build(
             title="成員被封禁",
@@ -424,19 +519,12 @@ class EventsCog(commands.Cog):
         if not log_channel:
             return
 
-        unbanner: discord.Member | discord.User | None = None
-        await asyncio.sleep(1.0)
-        try:
-            async for entry in guild.audit_logs(limit=5, action=discord.AuditLogAction.unban):
-                if (
-                    entry.target
-                    and entry.target.id == user.id
-                    and (datetime.now(UTC) - entry.created_at).total_seconds() < 10
-                ):
-                    unbanner = entry.user
-                    break
-        except discord.Forbidden:
-            pass
+        entry, _ = await _find_audit_entry(
+            guild,
+            discord.AuditLogAction.unban,
+            match=lambda e: bool(e.target and e.target.id == user.id),
+        )
+        unbanner = entry.user if entry else None
 
         embed = self._embed.build(
             title="成員解除封禁",
@@ -457,20 +545,13 @@ class EventsCog(commands.Cog):
         if not log_channel:
             return
 
-        # Check audit log to distinguish voluntary leave from kick (1s delay for propagation)
-        await asyncio.sleep(1.0)
-        kicker: discord.Member | discord.User | None = None
-        try:
-            async for entry in member.guild.audit_logs(limit=5, action=discord.AuditLogAction.kick):
-                if (
-                    entry.target
-                    and entry.target.id == member.id
-                    and (datetime.now(UTC) - entry.created_at).total_seconds() < 10
-                ):
-                    kicker = entry.user
-                    break
-        except discord.Forbidden:
-            pass
+        # Check audit log to distinguish a voluntary leave from a kick.
+        entry, _ = await _find_audit_entry(
+            member.guild,
+            discord.AuditLogAction.kick,
+            match=lambda e: bool(e.target and e.target.id == member.id),
+        )
+        kicker = entry.user if entry else None
 
         joined = (
             member.joined_at.astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")

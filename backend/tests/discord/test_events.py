@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
@@ -11,6 +11,7 @@ from discord.ext import commands
 
 from cogs.events import (
     EventsCog,
+    _find_audit_entry,
     _find_deleter,
     _load_log_channels,
     _save_log_channels,
@@ -56,6 +57,7 @@ def _make_member(guild=None, *, bot: bool = False, member_id: int = 42) -> Magic
     m._user.primary_guild = None
     m.roles = []
     m.joined_at = datetime.now(UTC)
+    m.timed_out_until = None
     return m
 
 
@@ -158,7 +160,7 @@ def _make_audit_entry(author_id: int, channel_id: int, user=None, age_seconds: f
 class TestFindDeleter:
     pytestmark = pytest.mark.asyncio
 
-    async def test_returns_user_from_matching_audit_entry(self):
+    async def test_returns_user_and_available_from_matching_entry(self):
         deleter = MagicMock(spec=discord.Member)
         entry = _make_audit_entry(author_id=42, channel_id=10, user=deleter)
         guild = _make_guild()
@@ -169,11 +171,12 @@ class TestFindDeleter:
         guild.audit_logs = mock_logs
 
         with patch("cogs.events.asyncio.sleep", new_callable=AsyncMock):
-            result = await _find_deleter(guild, channel_id=10, author_id=42)
+            result, available = await _find_deleter(guild, channel_id=10, author_id=42)
 
         assert result is deleter
+        assert available is True
 
-    async def test_returns_none_when_no_matching_entry(self):
+    async def test_no_matching_entry_is_available_but_none(self):
         entry = _make_audit_entry(author_id=99, channel_id=10)  # different author
         guild = _make_guild()
 
@@ -183,11 +186,12 @@ class TestFindDeleter:
         guild.audit_logs = mock_logs
 
         with patch("cogs.events.asyncio.sleep", new_callable=AsyncMock):
-            result = await _find_deleter(guild, channel_id=10, author_id=42)
+            result, available = await _find_deleter(guild, channel_id=10, author_id=42)
 
         assert result is None
+        assert available is True
 
-    async def test_returns_none_on_forbidden(self):
+    async def test_forbidden_reports_unavailable(self):
         guild = _make_guild()
 
         async def mock_logs(**kwargs):
@@ -197,9 +201,69 @@ class TestFindDeleter:
         guild.audit_logs = mock_logs
 
         with patch("cogs.events.asyncio.sleep", new_callable=AsyncMock):
-            result = await _find_deleter(guild, channel_id=10, author_id=42)
+            result, available = await _find_deleter(guild, channel_id=10, author_id=42)
 
         assert result is None
+        assert available is False
+
+
+class TestFindAuditEntry:
+    pytestmark = pytest.mark.asyncio
+
+    async def test_returns_entry_when_match(self):
+        entry = MagicMock()
+        entry.target = MagicMock(id=7)
+        entry.created_at = datetime.now(UTC)
+        guild = _make_guild()
+
+        async def mock_logs(**kwargs):
+            yield entry
+
+        guild.audit_logs = mock_logs
+
+        with patch("cogs.events.asyncio.sleep", new_callable=AsyncMock):
+            result, available = await _find_audit_entry(
+                guild, discord.AuditLogAction.ban, match=lambda e: e.target.id == 7
+            )
+
+        assert result is entry
+        assert available is True
+
+    async def test_stale_entry_is_skipped(self):
+        entry = MagicMock()
+        entry.target = MagicMock(id=7)
+        entry.created_at = datetime.now(UTC) - timedelta(seconds=60)
+        guild = _make_guild()
+
+        async def mock_logs(**kwargs):
+            yield entry
+
+        guild.audit_logs = mock_logs
+
+        with patch("cogs.events.asyncio.sleep", new_callable=AsyncMock):
+            result, available = await _find_audit_entry(
+                guild, discord.AuditLogAction.ban, match=lambda e: e.target.id == 7
+            )
+
+        assert result is None
+        assert available is True
+
+    async def test_forbidden_returns_unavailable(self):
+        guild = _make_guild()
+
+        async def mock_logs(**kwargs):
+            raise discord.Forbidden(MagicMock(), "no perms")
+            yield
+
+        guild.audit_logs = mock_logs
+
+        with patch("cogs.events.asyncio.sleep", new_callable=AsyncMock):
+            result, available = await _find_audit_entry(
+                guild, discord.AuditLogAction.ban, match=lambda e: True
+            )
+
+        assert result is None
+        assert available is False
 
 
 # ── EventsCog.get_log_channel ─────────────────────────────────────────────────
@@ -288,13 +352,30 @@ class TestOnMessageDelete:
         msg.attachments = []
 
         with (
-            patch("cogs.events._find_deleter", new_callable=AsyncMock, return_value=None),
+            patch("cogs.events._find_deleter", new_callable=AsyncMock, return_value=(None, True)),
         ):
             await cog.on_message_delete(msg)
 
         cog._send_log.assert_called_once()
         _, kwargs = cog._send_log.call_args
         assert kwargs.get("image_bytes") is None or len(cog._send_log.call_args.args) == 2
+
+    @pytest.mark.asyncio
+    async def test_unknown_deleter_when_no_audit_permission(self, cog):
+        guild = _make_guild(guild_id=1)
+        log_ch = MagicMock(spec=discord.TextChannel)
+        log_ch.id = 50
+        cog.log_channels[1] = 50
+        guild.get_channel = MagicMock(return_value=log_ch)
+
+        msg = _make_message(guild=guild, content="")
+
+        with patch("cogs.events._find_deleter", new_callable=AsyncMock, return_value=(None, False)):
+            await cog.on_message_delete(msg)
+
+        embed = cog._send_log.call_args.args[1]
+        fields = {f.name: f.value for f in embed.fields}
+        assert fields["刪除者"] == "未知（無審核權限）"
 
     @pytest.mark.asyncio
     async def test_renders_image_for_cached_message_with_content(self, cog):
@@ -308,7 +389,7 @@ class TestOnMessageDelete:
         cog._msg_cache[msg.id] = msg
 
         with (
-            patch("cogs.events._find_deleter", new_callable=AsyncMock, return_value=None),
+            patch("cogs.events._find_deleter", new_callable=AsyncMock, return_value=(None, True)),
             patch(
                 "cogs.events.render_message_image",
                 new_callable=AsyncMock,
@@ -405,6 +486,90 @@ class TestOnMemberUpdate:
         await cog.on_member_update(before, after)
         cog._send_log.assert_called_once()
 
+    async def test_logs_timeout_applied_with_executor(self, cog):
+        guild = _make_guild(guild_id=1)
+        log_ch = MagicMock(spec=discord.TextChannel)
+        log_ch.id = 50
+        cog.log_channels[1] = 50
+        guild.get_channel = MagicMock(return_value=log_ch)
+
+        before = _make_member(guild=guild)
+        after = _make_member(guild=guild)
+        before.nick = after.nick = None
+        before.roles = after.roles = []
+        before.timed_out_until = None
+        after.timed_out_until = datetime.now(UTC) + timedelta(hours=1)
+
+        mod = MagicMock(spec=discord.Member)
+        mod.mention = "<@99>"
+        entry = MagicMock()
+        entry.target = MagicMock(id=after.id)
+        entry.created_at = datetime.now(UTC)
+        entry.user = mod
+        entry.reason = "spam"
+
+        async def mock_logs(**kwargs):
+            yield entry
+
+        guild.audit_logs = mock_logs
+
+        with patch("cogs.events.asyncio.sleep", new_callable=AsyncMock):
+            await cog.on_member_update(before, after)
+
+        cog._send_log.assert_called_once()
+        embed = cog._send_log.call_args.args[1]
+        assert embed.title == "成員禁言"
+        fields = {f.name: f.value for f in embed.fields}
+        assert fields["執行者"] == "<@99>"
+
+    async def test_logs_timeout_removed_auto_when_no_entry(self, cog):
+        guild = _make_guild(guild_id=1)
+        log_ch = MagicMock(spec=discord.TextChannel)
+        log_ch.id = 50
+        cog.log_channels[1] = 50
+        guild.get_channel = MagicMock(return_value=log_ch)
+
+        before = _make_member(guild=guild)
+        after = _make_member(guild=guild)
+        before.nick = after.nick = None
+        before.roles = after.roles = []
+        before.timed_out_until = datetime.now(UTC) + timedelta(hours=1)
+        after.timed_out_until = None
+
+        async def empty_logs(**kwargs):
+            return
+            yield
+
+        guild.audit_logs = empty_logs
+
+        with patch("cogs.events.asyncio.sleep", new_callable=AsyncMock):
+            await cog.on_member_update(before, after)
+
+        cog._send_log.assert_called_once()
+        embed = cog._send_log.call_args.args[1]
+        assert embed.title == "解除禁言"
+        fields = {f.name: f.value for f in embed.fields}
+        assert fields["執行者"] == "自動／未知"
+
+    async def test_no_timeout_embed_when_timeout_unchanged(self, cog):
+        guild = _make_guild(guild_id=1)
+        log_ch = MagicMock(spec=discord.TextChannel)
+        log_ch.id = 50
+        cog.log_channels[1] = 50
+        guild.get_channel = MagicMock(return_value=log_ch)
+
+        before = _make_member(guild=guild)
+        after = _make_member(guild=guild)
+        before.nick = "Old"
+        after.nick = "New"
+        before.roles = after.roles = []
+        before.timed_out_until = after.timed_out_until = None
+
+        await cog.on_member_update(before, after)
+
+        cog._send_log.assert_called_once()
+        assert cog._send_log.call_args.args[1].title == "成員資訊更新"
+
 
 # ── on_member_remove ─────────────────────────────────────────────────────────
 
@@ -481,11 +646,69 @@ class TestOnBulkMessageDelete:
         for m in msgs:
             cog._msg_cache[m.id] = m
 
-        await cog.on_bulk_message_delete(msgs)
+        async def empty_logs(**kwargs):
+            return
+            yield
+
+        guild.audit_logs = empty_logs
+
+        with patch("cogs.events.asyncio.sleep", new_callable=AsyncMock):
+            await cog.on_bulk_message_delete(msgs)
 
         for m in msgs:
             assert m.id not in cog._msg_cache
         cog._send_log.assert_called_once()
+
+    async def test_adds_executor_when_audit_entry_found(self, cog):
+        guild = _make_guild(guild_id=1)
+        log_ch = MagicMock(spec=discord.TextChannel)
+        log_ch.id = 50
+        cog.log_channels[1] = 50
+        guild.get_channel = MagicMock(return_value=log_ch)
+
+        msgs = [_make_message(guild=guild, msg_id=i) for i in range(3)]
+        msgs[0].channel.id = 321  # audit entry target is the channel
+
+        mod = MagicMock(spec=discord.Member)
+        mod.mention = "<@99>"
+        entry = MagicMock()
+        entry.target = MagicMock(id=321)
+        entry.created_at = datetime.now(UTC)
+        entry.user = mod
+
+        async def mock_logs(**kwargs):
+            yield entry
+
+        guild.audit_logs = mock_logs
+
+        with patch("cogs.events.asyncio.sleep", new_callable=AsyncMock):
+            await cog.on_bulk_message_delete(msgs)
+
+        embed = cog._send_log.call_args.args[1]
+        fields = {f.name: f.value for f in embed.fields}
+        assert fields["執行者"] == "<@99>"
+
+    async def test_unknown_executor_when_forbidden(self, cog):
+        guild = _make_guild(guild_id=1)
+        log_ch = MagicMock(spec=discord.TextChannel)
+        log_ch.id = 50
+        cog.log_channels[1] = 50
+        guild.get_channel = MagicMock(return_value=log_ch)
+
+        msgs = [_make_message(guild=guild, msg_id=1)]
+
+        async def forbidden_logs(**kwargs):
+            raise discord.Forbidden(MagicMock(), "no perms")
+            yield
+
+        guild.audit_logs = forbidden_logs
+
+        with patch("cogs.events.asyncio.sleep", new_callable=AsyncMock):
+            await cog.on_bulk_message_delete(msgs)
+
+        embed = cog._send_log.call_args.args[1]
+        fields = {f.name: f.value for f in embed.fields}
+        assert fields["執行者"] == "未知（無審核權限）"
 
     async def test_skips_when_no_log_channel(self, cog):
         msgs = [_make_message()]
