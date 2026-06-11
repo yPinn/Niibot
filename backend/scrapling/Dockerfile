@@ -1,7 +1,7 @@
 FROM python:3.12.12-slim-bookworm AS builder
 COPY --from=ghcr.io/astral-sh/uv:0.11.14 /uv /bin/uv
 ENV UV_LINK_MODE=copy \
-    UV_NATIVE_TLS=1
+    UV_SYSTEM_CERTS=1
 WORKDIR /app
 COPY scrapling/pyproject.toml scrapling/uv.lock ./
 RUN uv sync --frozen --no-cache --no-install-project --no-dev
