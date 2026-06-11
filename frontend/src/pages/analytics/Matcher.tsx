@@ -21,6 +21,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui'
 import { WipLockOverlay } from '@/components/WipLockOverlay'
+import { SHOW_WIP_LOCK } from '@/config/env'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { apiCache, CACHE_KEYS } from '@/lib/apiCache'
@@ -381,7 +382,7 @@ export default function Matcher() {
           )}
         </div>
       </SlideUp>
-      {import.meta.env.PROD && <WipLockOverlay />}
+      {SHOW_WIP_LOCK && <WipLockOverlay />}
     </PageMain>
   )
 }
