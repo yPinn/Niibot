@@ -9,14 +9,10 @@ import discord
 import pytest
 from discord.ext import commands
 
-from cogs.events import (
-    EventsCog,
-    _find_audit_entry,
-    _find_deleter,
-    _load_log_channels,
-    _save_log_channels,
-    _top_role_color,
-)
+from cogs.events._audit import _find_audit_entry, _find_deleter
+from cogs.events._persistence import _load_log_channels, _save_log_channels
+from cogs.events.cog import EventsCog
+from cogs.events.constants import _top_role_color
 from core import EmbedFactory
 
 # ── Fixtures & helpers ─────────────────────────────────────────────────────────
@@ -27,8 +23,8 @@ def cog():
     # Real EmbedFactory with empty config so .build(title=…) returns a real
     # discord.Embed (tests assert on embed.title), without touching disk.
     with (
-        patch("cogs.events._load_log_channels", return_value={}),
-        patch("cogs.events.EmbedFactory.default", return_value=EmbedFactory({})),
+        patch("cogs.events.cog._load_log_channels", return_value={}),
+        patch("cogs.events.cog.EmbedFactory.default", return_value=EmbedFactory({})),
     ):
         bot = MagicMock(spec=commands.Bot)
         c = EventsCog(bot)
@@ -125,12 +121,12 @@ class TestTopRoleColor:
 
 class TestLogChannelPersistence:
     def test_load_missing_file_returns_empty(self, tmp_path):
-        with patch("cogs.events._LOG_CHANNELS_FILE", tmp_path / "nonexistent.json"):
+        with patch("cogs.events._persistence._LOG_CHANNELS_FILE", tmp_path / "nonexistent.json"):
             assert _load_log_channels() == {}
 
     def test_save_and_load_roundtrip(self, tmp_path):
         fp = tmp_path / "lc.json"
-        with patch("cogs.events._LOG_CHANNELS_FILE", fp):
+        with patch("cogs.events._persistence._LOG_CHANNELS_FILE", fp):
             _save_log_channels({1: 100, 2: 200})
             result = _load_log_channels()
         assert result == {1: 100, 2: 200}
@@ -138,7 +134,7 @@ class TestLogChannelPersistence:
     def test_corrupt_json_returns_empty(self, tmp_path):
         fp = tmp_path / "lc.json"
         fp.write_text("not json {{", encoding="utf-8")
-        with patch("cogs.events._LOG_CHANNELS_FILE", fp):
+        with patch("cogs.events._persistence._LOG_CHANNELS_FILE", fp):
             assert _load_log_channels() == {}
 
 
@@ -170,7 +166,7 @@ class TestFindDeleter:
 
         guild.audit_logs = mock_logs
 
-        with patch("cogs.events.asyncio.sleep", new_callable=AsyncMock):
+        with patch("cogs.events._audit.asyncio.sleep", new_callable=AsyncMock):
             result, available = await _find_deleter(guild, channel_id=10, author_id=42)
 
         assert result is deleter
@@ -185,7 +181,7 @@ class TestFindDeleter:
 
         guild.audit_logs = mock_logs
 
-        with patch("cogs.events.asyncio.sleep", new_callable=AsyncMock):
+        with patch("cogs.events._audit.asyncio.sleep", new_callable=AsyncMock):
             result, available = await _find_deleter(guild, channel_id=10, author_id=42)
 
         assert result is None
@@ -200,7 +196,7 @@ class TestFindDeleter:
 
         guild.audit_logs = mock_logs
 
-        with patch("cogs.events.asyncio.sleep", new_callable=AsyncMock):
+        with patch("cogs.events._audit.asyncio.sleep", new_callable=AsyncMock):
             result, available = await _find_deleter(guild, channel_id=10, author_id=42)
 
         assert result is None
@@ -221,7 +217,7 @@ class TestFindAuditEntry:
 
         guild.audit_logs = mock_logs
 
-        with patch("cogs.events.asyncio.sleep", new_callable=AsyncMock):
+        with patch("cogs.events._audit.asyncio.sleep", new_callable=AsyncMock):
             result, available = await _find_audit_entry(
                 guild, discord.AuditLogAction.ban, match=lambda e: e.target.id == 7
             )
@@ -240,7 +236,7 @@ class TestFindAuditEntry:
 
         guild.audit_logs = mock_logs
 
-        with patch("cogs.events.asyncio.sleep", new_callable=AsyncMock):
+        with patch("cogs.events._audit.asyncio.sleep", new_callable=AsyncMock):
             result, available = await _find_audit_entry(
                 guild, discord.AuditLogAction.ban, match=lambda e: e.target.id == 7
             )
@@ -257,7 +253,7 @@ class TestFindAuditEntry:
 
         guild.audit_logs = mock_logs
 
-        with patch("cogs.events.asyncio.sleep", new_callable=AsyncMock):
+        with patch("cogs.events._audit.asyncio.sleep", new_callable=AsyncMock):
             result, available = await _find_audit_entry(
                 guild, discord.AuditLogAction.ban, match=lambda e: True
             )
@@ -370,7 +366,9 @@ class TestOnMessageDelete:
         msg.attachments = []
 
         with (
-            patch("cogs.events._find_deleter", new_callable=AsyncMock, return_value=(None, True)),
+            patch(
+                "cogs.events.cog._find_deleter", new_callable=AsyncMock, return_value=(None, True)
+            ),
         ):
             await cog.on_message_delete(msg)
 
@@ -388,7 +386,9 @@ class TestOnMessageDelete:
 
         msg = _make_message(guild=guild, content="")
 
-        with patch("cogs.events._find_deleter", new_callable=AsyncMock, return_value=(None, False)):
+        with patch(
+            "cogs.events.cog._find_deleter", new_callable=AsyncMock, return_value=(None, False)
+        ):
             await cog.on_message_delete(msg)
 
         embed = cog._send_log.call_args.args[1]
@@ -407,9 +407,11 @@ class TestOnMessageDelete:
         cog._cache_message(msg)
 
         with (
-            patch("cogs.events._find_deleter", new_callable=AsyncMock, return_value=(None, True)),
             patch(
-                "cogs.events.render_message_image",
+                "cogs.events.cog._find_deleter", new_callable=AsyncMock, return_value=(None, True)
+            ),
+            patch(
+                "cogs.events.cog.render_message_image",
                 new_callable=AsyncMock,
                 return_value=b"fakepng",
             ),
@@ -531,7 +533,7 @@ class TestOnMemberUpdate:
 
         guild.audit_logs = mock_logs
 
-        with patch("cogs.events.asyncio.sleep", new_callable=AsyncMock):
+        with patch("cogs.events._audit.asyncio.sleep", new_callable=AsyncMock):
             await cog.on_member_update(before, after)
 
         cog._send_log.assert_called_once()
@@ -560,7 +562,7 @@ class TestOnMemberUpdate:
 
         guild.audit_logs = empty_logs
 
-        with patch("cogs.events.asyncio.sleep", new_callable=AsyncMock):
+        with patch("cogs.events._audit.asyncio.sleep", new_callable=AsyncMock):
             await cog.on_member_update(before, after)
 
         cog._send_log.assert_called_once()
@@ -610,7 +612,7 @@ class TestOnMemberRemove:
 
         guild.audit_logs = empty_logs
 
-        with patch("cogs.events.asyncio.sleep", new_callable=AsyncMock):
+        with patch("cogs.events._audit.asyncio.sleep", new_callable=AsyncMock):
             await cog.on_member_remove(member)
 
         cog._send_log.assert_called_once()
@@ -639,7 +641,7 @@ class TestOnMemberRemove:
 
         guild.audit_logs = mock_logs
 
-        with patch("cogs.events.asyncio.sleep", new_callable=AsyncMock):
+        with patch("cogs.events._audit.asyncio.sleep", new_callable=AsyncMock):
             await cog.on_member_remove(member)
 
         cog._send_log.assert_called_once()
@@ -670,7 +672,7 @@ class TestOnBulkMessageDelete:
 
         guild.audit_logs = empty_logs
 
-        with patch("cogs.events.asyncio.sleep", new_callable=AsyncMock):
+        with patch("cogs.events._audit.asyncio.sleep", new_callable=AsyncMock):
             await cog.on_bulk_message_delete(msgs)
 
         for m in msgs:
@@ -699,7 +701,7 @@ class TestOnBulkMessageDelete:
 
         guild.audit_logs = mock_logs
 
-        with patch("cogs.events.asyncio.sleep", new_callable=AsyncMock):
+        with patch("cogs.events._audit.asyncio.sleep", new_callable=AsyncMock):
             await cog.on_bulk_message_delete(msgs)
 
         embed = cog._send_log.call_args.args[1]
@@ -721,7 +723,7 @@ class TestOnBulkMessageDelete:
 
         guild.audit_logs = forbidden_logs
 
-        with patch("cogs.events.asyncio.sleep", new_callable=AsyncMock):
+        with patch("cogs.events._audit.asyncio.sleep", new_callable=AsyncMock):
             await cog.on_bulk_message_delete(msgs)
 
         embed = cog._send_log.call_args.args[1]

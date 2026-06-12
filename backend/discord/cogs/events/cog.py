@@ -1,128 +1,31 @@
-"""Event logging for Discord server events."""
+"""EventsCog — listens to server events and posts logs to the configured channel."""
 
 from __future__ import annotations
 
-import asyncio
 import io
-import json
 import logging
-import os
-import tempfile
-from collections.abc import Callable
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, datetime
 
 import discord
 from cachetools import LRUCache, TTLCache
 from discord import app_commands
 from discord.ext import commands
 
-from core import RUNTIME_DIR, EmbedFactory, render_message_image
+from core import EmbedFactory, render_message_image
+
+from . import _embeds
+from ._audit import _find_audit_entry, _find_deleter
+from ._persistence import _load_log_channels, _save_log_channels
+from .constants import (
+    _PER_GUILD_CACHE_SIZE,
+    _SKIP_IDS_MAX,
+    _SKIP_IDS_TTL,
+    _TZ_GMT8,
+    _fmt_local,
+    _top_role_color,
+)
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
-
-_LOG_CHANNELS_FILE = RUNTIME_DIR / "log_channels.json"
-_PER_GUILD_CACHE_SIZE = 500  # max cached messages per guild (isolated buckets)
-_SKIP_IDS_MAX = 1000  # max pending skip-delete IDs
-_SKIP_IDS_TTL = 300  # seconds before an unconsumed skip ID is auto-evicted
-
-# Times are stored/sourced in UTC and displayed in GMT+8, matching the bot-wide
-# convention (see social_preview/_embeds.py, birthday/constants.py).
-_TZ_GMT8 = timezone(timedelta(hours=8))
-
-
-def _fmt_local(dt: datetime) -> str:
-    """Format a UTC datetime as a GMT+8 wall-clock string (no tz label)."""
-    return dt.astimezone(_TZ_GMT8).strftime("%Y-%m-%d %H:%M:%S")
-
-
-def _load_log_channels() -> dict[int, int]:
-    try:
-        with open(_LOG_CHANNELS_FILE, encoding="utf-8") as f:
-            return {int(k): int(v) for k, v in json.load(f).items()}
-    except (FileNotFoundError, json.JSONDecodeError, ValueError):
-        return {}
-
-
-def _save_log_channels(data: dict[int, int]) -> None:
-    payload = json.dumps({str(k): v for k, v in data.items()}, ensure_ascii=False, indent=2)
-    dir_ = _LOG_CHANNELS_FILE.parent
-    with tempfile.NamedTemporaryFile(
-        "w", dir=dir_, encoding="utf-8", delete=False, suffix=".tmp"
-    ) as tmp:
-        tmp.write(payload)
-        tmp_path = tmp.name
-    os.replace(tmp_path, _LOG_CHANNELS_FILE)
-
-
-def _top_role_color(member: discord.Member) -> tuple[int, int, int] | None:
-    """Return the member's top coloured role as an RGB tuple, or None."""
-    for role in reversed(member.roles):
-        if role.color.value:
-            return (role.color.r, role.color.g, role.color.b)
-    return None
-
-
-async def _find_audit_entry(
-    guild: discord.Guild,
-    action: discord.AuditLogAction,
-    *,
-    match: Callable[[discord.AuditLogEntry], bool],
-    max_age: float = 10.0,
-    attempts: tuple[float, ...] = (1.0, 1.5),
-) -> tuple[discord.AuditLogEntry | None, bool]:
-    """Poll the audit log for a recent entry matching *match*.
-
-    Returns ``(entry, audit_available)``. ``audit_available`` is False only when
-    the bot lacks the View Audit Log permission, letting callers distinguish
-    "no permission" (truly unknown) from "no matching entry" (e.g. a genuine
-    self-action, which audit logs never record).
-
-    Polls across *attempts* delays to tolerate audit-log propagation lag, which
-    a single fixed sleep does not.
-
-    Known limitation (not handled): Discord coalesces consecutive deletions by
-    the same user in the same channel into one audit entry with an incrementing
-    count, so the Nth rapid deletion cannot be attributed precisely; we match
-    the most recent entry within the time window.
-    """
-    for delay in attempts:
-        await asyncio.sleep(delay)
-        try:
-            async for entry in guild.audit_logs(limit=10, action=action):
-                if (datetime.now(UTC) - entry.created_at).total_seconds() < max_age and match(
-                    entry
-                ):
-                    return entry, True
-        except discord.Forbidden:
-            return None, False
-    return None, True
-
-
-async def _find_deleter(
-    guild: discord.Guild,
-    channel_id: int,
-    author_id: int,
-) -> tuple[discord.Member | discord.User | None, bool]:
-    """Find who deleted a message via audit log.
-
-    Returns ``(deleter, audit_available)``; ``deleter`` is None on a self-delete
-    or when no matching audit entry exists. ``audit_available`` is False when the
-    bot lacks the View Audit Log permission.
-    """
-
-    def _match(entry: discord.AuditLogEntry) -> bool:
-        extra_channel = getattr(entry.extra, "channel", None)
-        return bool(
-            entry.target
-            and entry.target.id == author_id
-            and extra_channel is not None
-            and getattr(extra_channel, "id", None) == channel_id
-        )
-
-    entry, available = await _find_audit_entry(
-        guild, discord.AuditLogAction.message_delete, match=_match, max_age=15.0
-    )
-    return (entry.user if entry else None), available
 
 
 class EventsCog(commands.Cog):
@@ -247,6 +150,45 @@ class EventsCog(commands.Cog):
         except (discord.Forbidden, discord.HTTPException) as e:
             LOGGER.warning("Failed to send log to %s: %s", log_channel.id, e)
 
+    async def _render_delete_image(self, cached: discord.Message) -> bytes | None:
+        """Render the deleted message as a Discord-style image, or None on failure."""
+        author = cached.author
+        avatar_url = author.display_avatar.url if author.display_avatar else None
+        local_dt = cached.created_at.astimezone(_TZ_GMT8)
+        hour = local_dt.hour
+        period = "上午" if hour < 12 else "下午"
+        h12 = hour % 12 or 12
+        timestamp_str = f"{period} {h12:02d}:{local_dt.minute:02d}"
+        role_color: tuple[int, int, int] | None = None
+        server_tag: tuple[str, str | None] | None = None
+        decoration_url: str | None = None
+
+        user_obj = author._user if isinstance(author, discord.Member) else author
+        deco = getattr(user_obj, "avatar_decoration", None)
+        if deco is not None:
+            decoration_url = deco.url
+
+        if isinstance(author, discord.Member):
+            role_color = _top_role_color(author)
+            pg = getattr(author._user, "primary_guild", None)
+            if pg and getattr(pg, "identity_enabled", False) and pg.tag:
+                server_tag = (pg.tag, pg.badge.url if pg.badge else None)
+
+        try:
+            image: bytes = await render_message_image(
+                avatar_url=avatar_url,
+                display_name=author.display_name,
+                timestamp_str=timestamp_str,
+                content=cached.content,
+                role_color=role_color,
+                server_tag=server_tag,
+                decoration_url=decoration_url,
+            )
+        except Exception as e:
+            LOGGER.warning("Message image render failed: %s", e)
+            return None
+        return image
+
     # ── Event listeners ──────────────────────────────────────────────────────
 
     @commands.Cog.listener()
@@ -281,75 +223,29 @@ class EventsCog(commands.Cog):
         channel_ref = (
             message.channel.mention if hasattr(message.channel, "mention") else str(message.channel)
         )
-        sent_at = _fmt_local(cached.created_at)
-        deleted_at = _fmt_local(datetime.now(UTC))
-
-        embed = self._embed.build(
-            title="訊息刪除",
-            color=discord.Color.orange(),
-            timestamp=datetime.now(UTC),
-        )
-        embed.add_field(name="作者", value=cached.author.mention, inline=True)
-        embed.add_field(name="頻道", value=channel_ref, inline=True)
         if not audit_available:
             deleter_value = "未知（無審核權限）"
         elif deleter and deleter.id != cached.author.id:
             deleter_value = deleter.mention
         else:
             deleter_value = "本人"
-        embed.add_field(name="刪除者", value=deleter_value, inline=True)
-        embed.add_field(name="發送時間", value=sent_at, inline=True)
-        embed.add_field(name="刪除時間", value=deleted_at, inline=True)
-        if cached.attachments:
-            names = "\n".join(a.filename for a in cached.attachments[:5])
-            embed.add_field(name="附件", value=names, inline=False)
-        if not content_available:
-            embed.add_field(
-                name="⚠️ 訊息內容",
-                value="無法取得（訊息於 bot 快取範圍外發送）",
-                inline=False,
-            )
+
+        embed = _embeds.build_delete_embed(
+            self._embed,
+            author=cached.author,
+            channel_ref=channel_ref,
+            deleter_value=deleter_value,
+            sent_at=_fmt_local(cached.created_at),
+            deleted_at=_fmt_local(datetime.now(UTC)),
+            attachments=cached.attachments,
+            content_available=content_available,
+        )
 
         if not content_available or not cached.content:
             await self._send_log(log_channel, embed)
             return
 
-        author = cached.author
-        avatar_url = author.display_avatar.url if author.display_avatar else None
-        local_dt = cached.created_at.astimezone(_TZ_GMT8)
-        hour = local_dt.hour
-        period = "上午" if hour < 12 else "下午"
-        h12 = hour % 12 or 12
-        timestamp_str = f"{period} {h12:02d}:{local_dt.minute:02d}"
-        role_color: tuple[int, int, int] | None = None
-        server_tag: tuple[str, str | None] | None = None
-        decoration_url: str | None = None
-
-        user_obj = author._user if isinstance(author, discord.Member) else author
-        deco = getattr(user_obj, "avatar_decoration", None)
-        if deco is not None:
-            decoration_url = deco.url
-
-        if isinstance(author, discord.Member):
-            role_color = _top_role_color(author)
-            pg = getattr(author._user, "primary_guild", None)
-            if pg and getattr(pg, "identity_enabled", False) and pg.tag:
-                server_tag = (pg.tag, pg.badge.url if pg.badge else None)
-
-        try:
-            image_bytes = await render_message_image(
-                avatar_url=avatar_url,
-                display_name=author.display_name,
-                timestamp_str=timestamp_str,
-                content=cached.content,
-                role_color=role_color,
-                server_tag=server_tag,
-                decoration_url=decoration_url,
-            )
-        except Exception as e:
-            LOGGER.warning("Message image render failed: %s", e)
-            image_bytes = None
-
+        image_bytes = await self._render_delete_image(cached)
         await self._send_log(log_channel, embed, image_bytes)
 
     @commands.Cog.listener()
@@ -368,18 +264,14 @@ class EventsCog(commands.Cog):
         channel_ref = (
             before.channel.mention if hasattr(before.channel, "mention") else str(before.channel)
         )
-
-        embed = self._embed.build(
-            title="訊息編輯",
-            url=after.jump_url,
-            color=discord.Color.blue(),
-            timestamp=datetime.now(UTC),
+        embed = _embeds.build_edit_embed(
+            self._embed,
+            author=before.author,
+            channel_ref=channel_ref,
+            jump_url=after.jump_url,
+            before_content=before.content,
+            after_content=after.content,
         )
-        embed.add_field(name="作者", value=before.author.mention, inline=True)
-        embed.add_field(name="頻道", value=channel_ref, inline=True)
-        embed.add_field(name="編輯前", value=before.content[:1024] or "無內容", inline=False)
-        embed.add_field(name="編輯後", value=after.content[:1024] or "無內容", inline=False)
-
         await self._send_log(log_channel, embed)
 
     async def _log_timeout_change(
@@ -405,27 +297,16 @@ class EventsCog(commands.Cog):
             executor = "自動／未知"
         reason = (entry.reason if entry else None) or "無"
 
-        if timeout_until is not None and timeout_until > now:
-            expires = _fmt_local(timeout_until)
-            embed = self._embed.build(
-                title="成員禁言",
-                description=f"{after.mention} (`{after}`)",
-                color=discord.Color.dark_orange(),
-                timestamp=now,
-            )
-            embed.add_field(name="執行者", value=executor, inline=True)
-            embed.add_field(name="到期時間", value=expires, inline=True)
-            embed.add_field(name="原因", value=reason, inline=False)
-        else:
-            embed = self._embed.build(
-                title="解除禁言",
-                description=f"{after.mention} (`{after}`)",
-                color=discord.Color.teal(),
-                timestamp=now,
-            )
-            embed.add_field(name="執行者", value=executor, inline=True)
-            embed.add_field(name="原因", value=reason, inline=False)
-
+        applied = timeout_until is not None and timeout_until > now
+        embed = _embeds.build_timeout_embed(
+            self._embed,
+            member=after,
+            applied=applied,
+            executor=executor,
+            expires=_fmt_local(timeout_until) if applied and timeout_until else None,
+            reason=reason,
+            now=now,
+        )
         await self._send_log(log_channel, embed)
 
     @commands.Cog.listener()
@@ -455,14 +336,7 @@ class EventsCog(commands.Cog):
         if not changes:
             return
 
-        embed = self._embed.build(
-            title="成員資訊更新",
-            description=f"{after.mention} (`{after}`)",
-            color=discord.Color.purple(),
-            timestamp=datetime.now(UTC),
-        )
-        embed.add_field(name="變更內容", value="\n".join(changes), inline=False)
-
+        embed = _embeds.build_member_update_embed(self._embed, member=after, changes=changes)
         await self._send_log(log_channel, embed)
 
     @commands.Cog.listener()
@@ -488,18 +362,19 @@ class EventsCog(commands.Cog):
             discord.AuditLogAction.message_bulk_delete,
             match=lambda e: bool(e.target and e.target.id == getattr(channel, "id", None)),
         )
-
-        embed = self._embed.build(
-            title="批量訊息刪除",
-            description=f"在 {channel_ref} 刪除了 {len(messages)} 則訊息",
-            color=discord.Color.red(),
-            timestamp=datetime.now(UTC),
-        )
         if not audit_available:
-            embed.add_field(name="執行者", value="未知（無審核權限）", inline=True)
+            executor_value: str | None = "未知（無審核權限）"
         elif entry and entry.user:
-            embed.add_field(name="執行者", value=entry.user.mention, inline=True)
+            executor_value = entry.user.mention
+        else:
+            executor_value = None
 
+        embed = _embeds.build_bulk_delete_embed(
+            self._embed,
+            channel_ref=channel_ref,
+            count=len(messages),
+            executor_value=executor_value,
+        )
         await self._send_log(log_channel, embed)
 
     @commands.Cog.listener()
@@ -508,20 +383,12 @@ class EventsCog(commands.Cog):
         if not log_channel:
             return
 
-        joined = _fmt_local(datetime.now(UTC))
-        created = _fmt_local(member.created_at)
-
-        embed = self._embed.build(
-            title="成員加入",
-            description=f"{member.mention} (`{member}`)",
-            color=discord.Color.green(),
-            timestamp=datetime.now(UTC),
+        embed = _embeds.build_join_embed(
+            self._embed,
+            member=member,
+            created=_fmt_local(member.created_at),
+            joined=_fmt_local(datetime.now(UTC)),
         )
-        embed.add_field(name="帳號建立時間", value=created, inline=True)
-        embed.add_field(name="加入時間", value=joined, inline=True)
-        if member.display_avatar:
-            embed.set_thumbnail(url=member.display_avatar.url)
-
         await self._send_log(log_channel, embed)
 
     @commands.Cog.listener()
@@ -538,18 +405,7 @@ class EventsCog(commands.Cog):
         banner = entry.user if entry else None
         reason = (entry.reason if entry else None) or "無"
 
-        embed = self._embed.build(
-            title="成員被封禁",
-            description=f"{user.mention} (`{user}`)",
-            color=discord.Color.dark_red(),
-            timestamp=datetime.now(UTC),
-        )
-        if banner:
-            embed.add_field(name="執行者", value=banner.mention, inline=True)
-        embed.add_field(name="原因", value=reason, inline=True)
-        if user.display_avatar:
-            embed.set_thumbnail(url=user.display_avatar.url)
-
+        embed = _embeds.build_ban_embed(self._embed, user=user, banner=banner, reason=reason)
         await self._send_log(log_channel, embed)
 
     @commands.Cog.listener()
@@ -565,17 +421,7 @@ class EventsCog(commands.Cog):
         )
         unbanner = entry.user if entry else None
 
-        embed = self._embed.build(
-            title="成員解除封禁",
-            description=f"{user.mention} (`{user}`)",
-            color=discord.Color.teal(),
-            timestamp=datetime.now(UTC),
-        )
-        if unbanner:
-            embed.add_field(name="執行者", value=unbanner.mention, inline=True)
-        if user.display_avatar:
-            embed.set_thumbnail(url=user.display_avatar.url)
-
+        embed = _embeds.build_unban_embed(self._embed, user=user, unbanner=unbanner)
         await self._send_log(log_channel, embed)
 
     @commands.Cog.listener()
@@ -592,30 +438,13 @@ class EventsCog(commands.Cog):
         )
         kicker = entry.user if entry else None
 
-        joined = _fmt_local(member.joined_at) if member.joined_at else "不明"
-        left = _fmt_local(datetime.now(UTC))
         roles = [r for r in member.roles if r.name != "@everyone"]
-
-        title = "成員被踢出" if kicker else "成員離開"
-        embed = self._embed.build(
-            title=title,
-            description=f"{member.mention} (`{member}`)",
-            color=discord.Color.dark_grey(),
-            timestamp=datetime.now(UTC),
+        embed = _embeds.build_remove_embed(
+            self._embed,
+            member=member,
+            kicker=kicker,
+            joined=_fmt_local(member.joined_at) if member.joined_at else "不明",
+            left=_fmt_local(datetime.now(UTC)),
+            roles=roles,
         )
-        if kicker:
-            embed.add_field(name="執行者", value=kicker.mention, inline=True)
-        embed.add_field(name="加入時間", value=joined, inline=True)
-        embed.add_field(name="離開時間", value=left, inline=True)
-        if roles:
-            embed.add_field(
-                name="身分組",
-                value=", ".join(r.mention for r in roles[:10]),
-                inline=False,
-            )
-
         await self._send_log(log_channel, embed)
-
-
-async def setup(bot: commands.Bot) -> None:
-    await bot.add_cog(EventsCog(bot))
