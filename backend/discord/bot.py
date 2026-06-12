@@ -30,6 +30,7 @@ from core import (  # noqa: E402
     BotConfig,
     HealthCheckServer,
     RateLimitMonitor,
+    close_session,
     get_settings,
     setup_logging,
 )
@@ -358,6 +359,7 @@ async def main() -> None:
             LOGGER.error(f"Fatal error during bot runtime: {e}", exc_info=True)
         finally:
             await bot.close_database()
+            await close_session()
             await health_server.stop()
             if not bot.is_closed():
                 await bot.close()

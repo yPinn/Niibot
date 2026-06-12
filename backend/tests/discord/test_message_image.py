@@ -7,7 +7,22 @@ import io
 import pytest
 from PIL import Image, ImageFont
 
-from core.message_image import _IMG_WIDTH, _is_emoji, _render_sync, _wrap_text, render_message_image
+from core.message_image import (
+    _FS_CONTENT,
+    _FS_NAME,
+    _FS_TIME,
+    _IMG_WIDTH,
+    _MEDIUM_PATHS,
+    _REGULAR_PATHS,
+    _cached_chain,
+    _cached_font,
+    _get_session,
+    _is_emoji,
+    _render_sync,
+    _wrap_text,
+    close_session,
+    render_message_image,
+)
 
 # ── _is_emoji ─────────────────────────────────────────────────────────────────
 
@@ -145,3 +160,48 @@ class TestRenderMessageImage:
             role_color=(255, 100, 0),
         )
         assert isinstance(result, bytes)
+
+
+# ── Font cache ─────────────────────────────────────────────────────────────────
+
+
+class TestFontCache:
+    def test_cached_font_returns_same_instance(self):
+        f1 = _cached_font(_MEDIUM_PATHS, _FS_NAME)
+        f2 = _cached_font(_MEDIUM_PATHS, _FS_NAME)
+        assert f1 is f2
+
+    def test_cached_font_distinguishes_size(self):
+        assert _cached_font(_REGULAR_PATHS, _FS_TIME) is not _cached_font(
+            _REGULAR_PATHS, _FS_CONTENT
+        )
+
+    def test_cached_chain_returns_same_instance(self):
+        c1 = _cached_chain(_REGULAR_PATHS, _FS_CONTENT)
+        c2 = _cached_chain(_REGULAR_PATHS, _FS_CONTENT)
+        assert c1 is c2
+
+
+# ── Shared aiohttp session ──────────────────────────────────────────────────────
+
+
+class TestSharedSession:
+    pytestmark = pytest.mark.asyncio
+
+    async def test_get_session_reuses_instance(self):
+        try:
+            s1 = _get_session()
+            s2 = _get_session()
+            assert s1 is s2
+            assert not s1.closed
+        finally:
+            await close_session()
+
+    async def test_close_session_closes_and_allows_recreation(self):
+        s1 = _get_session()
+        await close_session()
+        assert s1.closed
+        s2 = _get_session()
+        assert s2 is not s1
+        assert not s2.closed
+        await close_session()

@@ -150,6 +150,9 @@ export const API_ENDPOINTS = {
     channels: join('/api/admin/channels'),
     moduleAiPacks: join('/api/admin/modules/ai-packs'),
     botStatus: join('/api/admin/bot-status'),
+    botEmotes: join('/api/admin/bot-emotes'),
+    resyncBotEmotes: (channelId?: string) =>
+      join(`/api/admin/bot-emotes/resync${channelId ? `?channel_id=${channelId}` : ''}`),
     activationCodes: join('/api/admin/activation-codes'),
     revokeActivationCode: (platformUserId: string) =>
       join(`/api/admin/activation-codes/${platformUserId}`),

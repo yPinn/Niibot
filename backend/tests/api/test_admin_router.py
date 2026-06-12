@@ -758,3 +758,137 @@ class TestGetContainerLogs:
         get_settings.cache_clear()
         r = _make_client().get("/api/admin/logs/nb-api")
         assert r.status_code == 400
+
+
+# ── GET /api/admin/bot-emotes ────────────────────────────────────────────────
+
+
+def _channel(channel_id: str, enabled: bool = True):
+    from shared.models.channel import Channel
+
+    return Channel(channel_id=channel_id, channel_name=channel_id, enabled=enabled)
+
+
+def _emote(eid: str, name: str, emote_type: str = "follower") -> dict:
+    return {
+        "id": eid,
+        "name": name,
+        "url": f"https://cdn.example.com/{eid}.png",
+        "emote_type": emote_type,
+        "tier": "",
+        "animated": False,
+    }
+
+
+class TestGetBotEmotes:
+    def test_non_owner_gets_403(self):
+        r = _make_client(channel_id="someone-else").get("/api/admin/bot-emotes")
+        assert r.status_code == 403
+
+    def test_returns_empty_when_no_enabled_channels(self):
+        # Only owner + bot channels exist → nothing to aggregate.
+        with patch("routers.admin_router.ChannelRepository") as cr:
+            cr.return_value.list_all_channels = AsyncMock(
+                return_value=[_channel(OWNER_ID), _channel("bot-test")]
+            )
+            cr.return_value.get_token = AsyncMock(return_value=MagicMock(token="tok"))
+            r = _make_client().get("/api/admin/bot-emotes")
+        assert r.status_code == 200
+        assert r.json() == []
+
+    def test_aggregates_availability_per_channel(self):
+        mock_twitch = MagicMock()
+        mock_twitch.get_users_by_ids = AsyncMock(
+            return_value=[
+                {
+                    "id": "ch-a",
+                    "login": "alice",
+                    "display_name": "Alice",
+                    "profile_image_url": "https://img/a.png",
+                }
+            ]
+        )
+        # Channel has a follower emote and a subscription emote.
+        mock_twitch.get_channel_emotes = AsyncMock(
+            return_value=[
+                _emote("e1", "aliceFollow", "follower"),
+                _emote("e2", "aliceSub", "subscriptions"),
+            ]
+        )
+        # Bot can only access the follower emote (e1).
+        mock_twitch.get_user_emotes = AsyncMock(return_value=[{"id": "e1"}])
+
+        with patch("routers.admin_router.ChannelRepository") as cr:
+            cr.return_value.list_all_channels = AsyncMock(
+                return_value=[_channel(OWNER_ID), _channel("ch-a")]
+            )
+            cr.return_value.get_token = AsyncMock(return_value=MagicMock(token="tok"))
+            r = _make_client(mock_twitch_api=mock_twitch).get("/api/admin/bot-emotes")
+
+        assert r.status_code == 200
+        data = r.json()
+        assert len(data) == 1
+        ch = data[0]
+        assert ch["channel_id"] == "ch-a"
+        assert ch["display_name"] == "Alice"
+        assert ch["total_count"] == 2
+        assert ch["available_count"] == 1
+        by_name = {e["name"]: e["available"] for e in ch["emotes"]}
+        assert by_name == {"aliceFollow": True, "aliceSub": False}
+
+
+# ── POST /api/admin/bot-emotes/resync ────────────────────────────────────────
+
+
+class TestResyncBotEmotes:
+    def test_non_owner_gets_403(self):
+        r = _make_client(channel_id="someone-else").post("/api/admin/bot-emotes/resync")
+        assert r.status_code == 403
+
+    def test_unknown_channel_returns_404(self):
+        mock_twitch = MagicMock()
+        mock_twitch.get_global_emotes = AsyncMock(return_value=[])
+        with patch("routers.admin_router.ChannelRepository") as cr:
+            cr.return_value.list_all_channels = AsyncMock(
+                return_value=[_channel(OWNER_ID), _channel("ch-a")]
+            )
+            cr.return_value.get_token = AsyncMock(return_value=MagicMock(token="tok"))
+            r = _make_client(mock_twitch_api=mock_twitch).post(
+                "/api/admin/bot-emotes/resync?channel_id=ch-missing"
+            )
+        assert r.status_code == 404
+
+    def test_resync_writes_back_available_names(self):
+        mock_twitch = MagicMock()
+        mock_twitch.get_global_emotes = AsyncMock(return_value=[_emote("g1", "Kappa", "globals")])
+        mock_twitch.get_channel_emotes = AsyncMock(
+            return_value=[
+                _emote("e1", "aliceFollow", "follower"),
+                _emote("e2", "aliceSub", "subscriptions"),
+            ]
+        )
+        mock_twitch.get_user_emotes = AsyncMock(return_value=[{"id": "e1"}])
+
+        with (
+            patch("routers.admin_router.ChannelRepository") as cr,
+            patch("routers.admin_router.sync_enabled_emotes", new_callable=AsyncMock) as mock_sync,
+        ):
+            cr.return_value.list_all_channels = AsyncMock(
+                return_value=[_channel(OWNER_ID), _channel("ch-a")]
+            )
+            cr.return_value.get_token = AsyncMock(return_value=MagicMock(token="tok"))
+            mock_sync.return_value = True
+            r = _make_client(mock_twitch_api=mock_twitch).post(
+                "/api/admin/bot-emotes/resync?channel_id=ch-a"
+            )
+
+        assert r.status_code == 200
+        data = r.json()
+        assert len(data) == 1
+        assert data[0]["channel_id"] == "ch-a"
+        assert data[0]["synced"] is True
+        # Available names = available channel emotes (aliceFollow) + all globals (Kappa).
+        mock_sync.assert_awaited_once()
+        _pool, cid, names = mock_sync.await_args.args
+        assert cid == "ch-a"
+        assert names == ["aliceFollow", "Kappa"]
