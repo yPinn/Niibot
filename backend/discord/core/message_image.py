@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
+import threading
 from pathlib import Path
 
 import aiohttp
@@ -195,6 +196,36 @@ class _FontChain:
         return x
 
 
+# ── Thread-local font cache ─────────────────────────────────────────────────────
+# Fonts are immutable once loaded, but Pillow FreeTypeFont objects are not
+# guaranteed thread-safe and renders run in a thread-pool executor. Cache per
+# thread so each worker reuses its own instances instead of re-scanning the font
+# paths and re-loading from disk on every render.
+_tls = threading.local()
+
+
+def _cached_font(paths: list[str], size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    store: dict[tuple[int, int], ImageFont.FreeTypeFont | ImageFont.ImageFont] = (
+        _tls.__dict__.setdefault("fonts", {})
+    )
+    key = (id(paths), size)
+    font = store.get(key)
+    if font is None:
+        font = _load_font(paths, size)
+        store[key] = font
+    return font
+
+
+def _cached_chain(paths: list[str], size: int) -> _FontChain:
+    store: dict[tuple[int, int], _FontChain] = _tls.__dict__.setdefault("chains", {})
+    key = (id(paths), size)
+    chain = store.get(key)
+    if chain is None:
+        chain = _FontChain(size, paths)
+        store[key] = chain
+    return chain
+
+
 # ── Image helpers ─────────────────────────────────────────────────────────────
 
 
@@ -303,11 +334,11 @@ def _render_sync(
     server_tag: tuple[str, bytes | None] | None,
     deco_bytes: bytes | None = None,
 ) -> bytes:
-    font_name = _load_font(_MEDIUM_PATHS, _FS_NAME)
-    font_time = _load_font(_REGULAR_PATHS, _FS_TIME)
-    font_measure = _load_font(_REGULAR_PATHS, _FS_CONTENT)  # single font for wrap measurement
-    chain_content = _FontChain(_FS_CONTENT, _REGULAR_PATHS)
-    chain_tag = _FontChain(_FS_TAG, _REGULAR_PATHS)
+    font_name = _cached_font(_MEDIUM_PATHS, _FS_NAME)
+    font_time = _cached_font(_REGULAR_PATHS, _FS_TIME)
+    font_measure = _cached_font(_REGULAR_PATHS, _FS_CONTENT)  # single font for wrap measurement
+    chain_content = _cached_chain(_REGULAR_PATHS, _FS_CONTENT)
+    chain_tag = _cached_chain(_REGULAR_PATHS, _FS_TAG)
 
     max_content_w = _IMG_WIDTH - _CONTENT_X - _PAD_LEFT
     lines = _wrap_text(content or "(無文字內容)", font_measure, max_content_w)
@@ -387,14 +418,36 @@ def _render_sync(
 # ── Async entry point ─────────────────────────────────────────────────────────
 
 
+_session: aiohttp.ClientSession | None = None
+
+
+def _get_session() -> aiohttp.ClientSession:
+    """Return a process-wide aiohttp session, created lazily inside the loop.
+
+    Reusing one session across renders shares the connection pool instead of
+    opening (and tearing down) a fresh session per avatar/badge/decoration fetch.
+    """
+    global _session
+    if _session is None or _session.closed:
+        _session = aiohttp.ClientSession()
+    return _session
+
+
+async def close_session() -> None:
+    """Close the shared aiohttp session. Call once on bot shutdown."""
+    global _session
+    if _session is not None and not _session.closed:
+        await _session.close()
+    _session = None
+
+
 async def _fetch_bytes(url: str | None) -> bytes | None:
     if not url:
         return None
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
-                if resp.status == 200:
-                    return await resp.read()
+        async with _get_session().get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+            if resp.status == 200:
+                return await resp.read()
     except Exception as e:
         LOGGER.warning("HTTP fetch failed %s: %s", url, e)
     return None
