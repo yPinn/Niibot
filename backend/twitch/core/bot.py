@@ -195,6 +195,17 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
             else:
                 LOGGER.info("Channel authorized and added: %s (ID: %s)", user.name, user.id)
 
+        # Admission gate: do not join a channel that is not enabled (owner not
+        # approved). enabled is admission-driven (migration 084); approval flips
+        # it, which fires channel_toggle → _handle_channel_toggle subscribes then.
+        channel = await self.channels.get_channel(payload.user_id)
+        if not channel or not channel.enabled:
+            LOGGER.info(
+                "Channel %s authorized but not enabled (awaiting admission) — not subscribing",
+                payload.user_id,
+            )
+            return
+
         if payload.user_id not in self._subscribed_channels:
             await self.subscribe_channel_events(payload.user_id)
         else:

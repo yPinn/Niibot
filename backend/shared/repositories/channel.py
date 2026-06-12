@@ -125,10 +125,14 @@ class ChannelRepository:
                     scopes,
                     token_type,
                 )
+                # enabled is intentionally omitted so the row uses the column
+                # default (FALSE). Admission — not signup — turns a channel on
+                # (see migration 084). ON CONFLICT must NOT touch enabled either,
+                # so a re-auth never re-enables a suspended/pending channel.
                 await conn.execute(
                     """
-                    INSERT INTO channels (channel_id, channel_name, display_name, enabled)
-                    VALUES ($1, $2, $3, TRUE)
+                    INSERT INTO channels (channel_id, channel_name, display_name)
+                    VALUES ($1, $2, $3)
                     ON CONFLICT (channel_id) DO UPDATE SET
                         channel_name = EXCLUDED.channel_name,
                         display_name = COALESCE(EXCLUDED.display_name, channels.display_name),
@@ -189,10 +193,36 @@ class ChannelRepository:
             )
             return [Channel(**dict(r)) for r in rows]
 
+    async def list_active_owner_channel_ids(self) -> set[str]:
+        """Channel IDs whose owner has an 'active' membership (admission gate).
+
+        Used by the admin monitored-channels view to exclude tenants that are
+        still pending / suspended / rejected. A channel can be in this set while
+        disabled (an active owner who manually paused the bot), so callers must
+        not conflate it with ``enabled``.
+        """
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT c.channel_id
+                  FROM channels c
+                  JOIN memberships m ON m.user_id = c.owner_user_id
+                 WHERE m.status = 'active'
+                """
+            )
+            return {r["channel_id"] for r in rows}
+
     async def upsert_channel(
         self, channel_id: str, channel_name: str, enabled: bool = True
     ) -> None:
-        """Insert or update a channel row."""
+        """Insert or update a channel row.
+
+        ON CONFLICT deliberately does NOT touch ``enabled``: a channel's monitored
+        state is owned by admission (migration 084), so re-asserting a channel
+        row (e.g. the bot processing a new_token) must never re-enable a
+        suspended/pending channel. The ``enabled`` argument only applies when a
+        brand-new row is inserted.
+        """
         async with self.pool.acquire() as conn:
             await conn.execute(
                 """
@@ -200,7 +230,6 @@ class ChannelRepository:
                 VALUES ($1, $2, $3)
                 ON CONFLICT (channel_id) DO UPDATE SET
                     channel_name = EXCLUDED.channel_name,
-                    enabled      = EXCLUDED.enabled,
                     updated_at   = NOW()
                 """,
                 channel_id,
