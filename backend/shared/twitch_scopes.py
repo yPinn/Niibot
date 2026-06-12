@@ -14,6 +14,7 @@ BOT_SCOPES: list[str] = [
     "user:write:chat",
     # user
     "user:read:emotes",
+    "user:read:subscriptions",
     "user:manage:whispers",
     # moderation
     "moderator:read:followers",

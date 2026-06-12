@@ -84,6 +84,8 @@ export interface BotEmoteChannel {
   avatar: string
   available_count: number
   total_count: number
+  /** Bot holds a real subscription to this channel (authoritative, not inferred from emotes). */
+  is_subscribed: boolean
   emotes: EmoteItem[]
 }
 

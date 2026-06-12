@@ -894,6 +894,28 @@ class TwitchAPIClient:
             LOGGER.exception("Error fetching user emotes for broadcaster %s", broadcaster_id)
             return []
 
+    async def is_user_subscribed(self, broadcaster_id: str, user_token: str, user_id: str) -> bool:
+        """Whether the authenticated user (bot) holds a real subscription to a channel.
+
+        Uses Check User Subscription (requires ``user:read:subscriptions`` on the
+        user token). Authoritative where emote-availability is not: a channel emote
+        the bot unlocked via channel points appears usable but is NOT a
+        subscription, and this endpoint correctly reports such cases as not
+        subscribed (404). Returns False on 404, missing scope (401), or any error.
+        """
+        try:
+            response = await self._helix_get(
+                "subscriptions/user",
+                {"broadcaster_id": broadcaster_id, "user_id": user_id},
+                token=user_token,
+            )
+            if response and response.status_code == 200:
+                return bool(response.json().get("data"))
+            return False
+        except Exception:
+            LOGGER.exception("Error checking subscription for broadcaster %s", broadcaster_id)
+            return False
+
     @staticmethod
     def parse_duration(duration_str: str) -> float:
         """Parse Twitch duration string (e.g. '3h2m1s') to hours."""
