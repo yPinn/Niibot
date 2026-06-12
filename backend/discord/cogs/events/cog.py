@@ -15,7 +15,12 @@ from core import EmbedFactory, render_message_image
 
 from . import _embeds
 from ._audit import _find_audit_entry, _find_deleter
-from ._persistence import _load_log_channels, _save_log_channels
+from ._persistence import (
+    _load_ignored_roles,
+    _load_log_channels,
+    _save_ignored_roles,
+    _save_log_channels,
+)
 from .constants import (
     _PER_GUILD_CACHE_SIZE,
     _SKIP_IDS_MAX,
@@ -32,6 +37,9 @@ class EventsCog(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
         self.log_channels: dict[int, int] = _load_log_channels()
+        # Per-guild role IDs whose add/remove is excluded from member-update logs
+        # (e.g. bot-driven status roles like Twitch "live").
+        self.ignored_roles: dict[int, set[int]] = _load_ignored_roles()
         self._embed = EmbedFactory.default()
         # Per-guild caches so a busy guild can't evict another guild's messages.
         self._msg_cache: dict[int, LRUCache[int, discord.Message]] = {}
@@ -119,6 +127,42 @@ class EventsCog(commands.Cog):
             await interaction.response.send_message(
                 "尚未設定日誌頻道，請使用 `/log set` 設定", ephemeral=True
             )
+
+    @log.command(name="ignore-role", description="切換：將身分組排除/納入成員更新日誌")
+    @app_commands.describe(role="要切換忽略狀態的身分組")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def log_ignore_role(self, interaction: discord.Interaction, role: discord.Role) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message("此指令只能在伺服器中使用", ephemeral=True)
+            return
+
+        ignored = self.ignored_roles.setdefault(interaction.guild.id, set())
+        if role.id in ignored:
+            ignored.discard(role.id)
+            if not ignored:
+                del self.ignored_roles[interaction.guild.id]
+            message = f"已將 {role.mention} 從忽略清單移除，其變更將重新記錄"
+        else:
+            ignored.add(role.id)
+            message = f"已將 {role.mention} 加入忽略清單，其變更將不再記錄"
+        _save_ignored_roles(self.ignored_roles)
+        await interaction.response.send_message(message, ephemeral=True)
+
+    @log.command(name="ignored-roles", description="查看目前忽略的身分組")
+    async def log_ignored_roles(self, interaction: discord.Interaction) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message("此指令只能在伺服器中使用", ephemeral=True)
+            return
+
+        ids = self.ignored_roles.get(interaction.guild.id, set())
+        roles = [interaction.guild.get_role(rid) for rid in ids]
+        mentions = [r.mention for r in roles if r is not None]
+        if mentions:
+            await interaction.response.send_message(
+                "目前忽略的身分組：" + ", ".join(mentions), ephemeral=True
+            )
+        else:
+            await interaction.response.send_message("目前沒有忽略任何身分組", ephemeral=True)
 
     # ── Internal helpers ─────────────────────────────────────────────────────
 
@@ -326,8 +370,10 @@ class EventsCog(commands.Cog):
             changes.append(f"暱稱: `{before.nick or '無'}` → `{after.nick or '無'}`")
 
         if before.roles != after.roles:
-            added = [r for r in after.roles if r not in before.roles]
-            removed = [r for r in before.roles if r not in after.roles]
+            # Exclude ignored roles (e.g. bot-driven status roles) from logging.
+            ignored = self.ignored_roles.get(after.guild.id, set())
+            added = [r for r in after.roles if r not in before.roles and r.id not in ignored]
+            removed = [r for r in before.roles if r not in after.roles and r.id not in ignored]
             if added:
                 changes.append(f"新增身分組: {', '.join(r.mention for r in added)}")
             if removed:

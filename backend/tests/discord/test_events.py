@@ -10,7 +10,12 @@ import pytest
 from discord.ext import commands
 
 from cogs.events._audit import _find_audit_entry, _find_deleter
-from cogs.events._persistence import _load_log_channels, _save_log_channels
+from cogs.events._persistence import (
+    _load_ignored_roles,
+    _load_log_channels,
+    _save_ignored_roles,
+    _save_log_channels,
+)
 from cogs.events.cog import EventsCog
 from cogs.events.constants import _top_role_color
 from core import EmbedFactory
@@ -24,6 +29,7 @@ def cog():
     # discord.Embed (tests assert on embed.title), without touching disk.
     with (
         patch("cogs.events.cog._load_log_channels", return_value={}),
+        patch("cogs.events.cog._load_ignored_roles", return_value={}),
         patch("cogs.events.cog.EmbedFactory.default", return_value=EmbedFactory({})),
     ):
         bot = MagicMock(spec=commands.Bot)
@@ -83,10 +89,12 @@ def _make_message(
 # ── _top_role_color ────────────────────────────────────────────────────────────
 
 
-def _make_role(color_value: int) -> MagicMock:
+def _make_role(color_value: int, *, role_id: int = 1) -> MagicMock:
     r = MagicMock(spec=discord.Role)
     r.color = discord.Color(color_value)
     r.name = "role"
+    r.id = role_id
+    r.mention = f"<@&{role_id}>"
     return r
 
 
@@ -136,6 +144,45 @@ class TestLogChannelPersistence:
         fp.write_text("not json {{", encoding="utf-8")
         with patch("cogs.events._persistence._LOG_CHANNELS_FILE", fp):
             assert _load_log_channels() == {}
+
+
+class TestIgnoredRolesPersistence:
+    def test_load_missing_file_returns_empty(self, tmp_path):
+        with patch("cogs.events._persistence._IGNORED_ROLES_FILE", tmp_path / "missing.json"):
+            assert _load_ignored_roles() == {}
+
+    def test_save_and_load_roundtrip(self, tmp_path):
+        fp = tmp_path / "ir.json"
+        with patch("cogs.events._persistence._IGNORED_ROLES_FILE", fp):
+            _save_ignored_roles({1: {100, 200}, 2: {300}})
+            result = _load_ignored_roles()
+        assert result == {1: {100, 200}, 2: {300}}
+
+    def test_corrupt_json_returns_empty(self, tmp_path):
+        fp = tmp_path / "ir.json"
+        fp.write_text("not json {{", encoding="utf-8")
+        with patch("cogs.events._persistence._IGNORED_ROLES_FILE", fp):
+            assert _load_ignored_roles() == {}
+
+
+class TestIgnoreRoleCommand:
+    pytestmark = pytest.mark.asyncio
+
+    async def test_toggle_adds_then_removes(self, cog):
+        guild = _make_guild(guild_id=1)
+        interaction = MagicMock(spec=discord.Interaction)
+        interaction.guild = guild
+        interaction.response.send_message = AsyncMock()
+        role = _make_role(0, role_id=7)
+
+        with patch("cogs.events.cog._save_ignored_roles"):
+            await EventsCog.log_ignore_role.callback(cog, interaction, role)
+            assert 7 in cog.ignored_roles.get(1, set())
+
+            await EventsCog.log_ignore_role.callback(cog, interaction, role)
+            assert 7 not in cog.ignored_roles.get(1, set())
+            # Empty set pruned so the file doesn't accumulate empty guild entries.
+            assert 1 not in cog.ignored_roles
 
 
 # ── _find_deleter ──────────────────────────────────────────────────────────────
@@ -505,6 +552,69 @@ class TestOnMemberUpdate:
 
         await cog.on_member_update(before, after)
         cog._send_log.assert_called_once()
+
+    async def test_skips_when_only_ignored_role_changes(self, cog):
+        guild = _make_guild(guild_id=1)
+        log_ch = MagicMock(spec=discord.TextChannel)
+        log_ch.id = 50
+        cog.log_channels[1] = 50
+        cog.ignored_roles[1] = {7}  # "live" status role
+        guild.get_channel = MagicMock(return_value=log_ch)
+
+        before = _make_member(guild=guild)
+        after = _make_member(guild=guild)
+        before.nick = after.nick = None
+        live_role = _make_role(0xFF0000, role_id=7)
+        before.roles = []
+        after.roles = [live_role]
+
+        await cog.on_member_update(before, after)
+        cog._send_log.assert_not_called()
+
+    async def test_logs_only_non_ignored_roles(self, cog):
+        guild = _make_guild(guild_id=1)
+        log_ch = MagicMock(spec=discord.TextChannel)
+        log_ch.id = 50
+        cog.log_channels[1] = 50
+        cog.ignored_roles[1] = {7}
+        guild.get_channel = MagicMock(return_value=log_ch)
+
+        before = _make_member(guild=guild)
+        after = _make_member(guild=guild)
+        before.nick = after.nick = None
+        live_role = _make_role(0xFF0000, role_id=7)
+        vip_role = _make_role(0x00FF00, role_id=8)
+        before.roles = []
+        after.roles = [live_role, vip_role]
+
+        await cog.on_member_update(before, after)
+        cog._send_log.assert_called_once()
+        embed = cog._send_log.call_args.args[1]
+        changes = embed.fields[0].value
+        assert "<@&8>" in changes
+        assert "<@&7>" not in changes
+
+    async def test_ignored_role_still_logs_nick_change(self, cog):
+        guild = _make_guild(guild_id=1)
+        log_ch = MagicMock(spec=discord.TextChannel)
+        log_ch.id = 50
+        cog.log_channels[1] = 50
+        cog.ignored_roles[1] = {7}
+        guild.get_channel = MagicMock(return_value=log_ch)
+
+        before = _make_member(guild=guild)
+        after = _make_member(guild=guild)
+        before.nick = "Old"
+        after.nick = "New"
+        live_role = _make_role(0xFF0000, role_id=7)
+        before.roles = []
+        after.roles = [live_role]
+
+        await cog.on_member_update(before, after)
+        cog._send_log.assert_called_once()
+        changes = cog._send_log.call_args.args[1].fields[0].value
+        assert "暱稱" in changes
+        assert "<@&7>" not in changes
 
     async def test_logs_timeout_applied_with_executor(self, cog):
         guild = _make_guild(guild_id=1)
