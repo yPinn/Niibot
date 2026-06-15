@@ -627,6 +627,7 @@ class TestGetAdminChannels:
             cr.return_value.list_all_channels = AsyncMock(
                 return_value=[self._make_channel(OWNER_ID)]
             )
+            cr.return_value.list_active_owner_channel_ids = AsyncMock(return_value=set())
             r = _make_client().get("/api/admin/channels")
         assert r.status_code == 200
         assert r.json() == []
@@ -652,6 +653,7 @@ class TestGetAdminChannels:
                     self._make_channel("ch-other", enabled=True),
                 ]
             )
+            cr.return_value.list_active_owner_channel_ids = AsyncMock(return_value={"ch-other"})
             cr.return_value.get_token = AsyncMock(return_value=token_obj)
             r = _make_client(mock_twitch_api=mock_twitch, mock_channel_service=mock_cs).get(
                 "/api/admin/channels"
@@ -684,6 +686,9 @@ class TestGetAdminChannels:
                     self._make_channel("ch-paused", enabled=False),
                 ]
             )
+            # Active owner who manually paused the bot: still an admitted tenant,
+            # so it must appear (filter is by membership, not by enabled).
+            cr.return_value.list_active_owner_channel_ids = AsyncMock(return_value={"ch-paused"})
             cr.return_value.get_token = AsyncMock(return_value=token_obj)
             r = _make_client(mock_twitch_api=mock_twitch, mock_channel_service=mock_cs).get(
                 "/api/admin/channels"
@@ -694,6 +699,40 @@ class TestGetAdminChannels:
         assert len(data) == 1
         assert data[0]["name"] == "paused"
         assert data[0]["is_enabled"] is False
+
+    def test_excludes_pending_owner_channel(self):
+        # A channel whose owner is NOT active (pending/suspended/rejected) must
+        # not appear in the monitored-channels view — it belongs in the
+        # authorization queue. Here ch-pending has a channels row but is absent
+        # from the active-owner set.
+        mock_twitch = MagicMock()
+        mock_twitch.get_users_by_ids = AsyncMock(
+            return_value=[self._make_twitch_user("ch-pending", "pending", "Pending")]
+        )
+        mock_twitch.get_streams = AsyncMock(return_value=[])
+        mock_twitch.get_bot_mod_status = AsyncMock(return_value="mod")
+
+        mock_cs = MagicMock()
+        mock_cs.get_token_with_refresh = AsyncMock(return_value="tok")
+
+        token_obj = MagicMock()
+        token_obj.scopes = ""
+
+        with patch("routers.admin_router.ChannelRepository") as cr:
+            cr.return_value.list_all_channels = AsyncMock(
+                return_value=[
+                    self._make_channel(OWNER_ID),
+                    self._make_channel("ch-pending", enabled=False),
+                ]
+            )
+            cr.return_value.list_active_owner_channel_ids = AsyncMock(return_value=set())
+            cr.return_value.get_token = AsyncMock(return_value=token_obj)
+            r = _make_client(mock_twitch_api=mock_twitch, mock_channel_service=mock_cs).get(
+                "/api/admin/channels"
+            )
+
+        assert r.status_code == 200
+        assert r.json() == []
 
 
 # ── GET /api/admin/logs/containers ──────────────────────────────────────────
@@ -786,15 +825,52 @@ class TestGetBotEmotes:
         assert r.status_code == 403
 
     def test_returns_empty_when_no_enabled_channels(self):
-        # Only owner + bot channels exist → nothing to aggregate.
+        # Only the bot's own channel and a disabled channel → nothing to aggregate.
         with patch("routers.admin_router.ChannelRepository") as cr:
             cr.return_value.list_all_channels = AsyncMock(
-                return_value=[_channel(OWNER_ID), _channel("bot-test")]
+                return_value=[_channel("bot-test"), _channel("ch-off", enabled=False)]
             )
             cr.return_value.get_token = AsyncMock(return_value=MagicMock(token="tok"))
             r = _make_client().get("/api/admin/bot-emotes")
         assert r.status_code == 200
         assert r.json() == []
+
+    def test_includes_owner_channel(self):
+        # The owner is also a broadcaster; their own channel must be aggregated.
+        # Only the bot's own channel is excluded.
+        mock_twitch = MagicMock()
+        mock_twitch.get_users_by_ids = AsyncMock(
+            return_value=[
+                {
+                    "id": OWNER_ID,
+                    "login": "owner",
+                    "display_name": "Owner",
+                    "profile_image_url": "https://img/o.png",
+                },
+                {
+                    "id": "ch-a",
+                    "login": "alice",
+                    "display_name": "Alice",
+                    "profile_image_url": "https://img/a.png",
+                },
+            ]
+        )
+        mock_twitch.get_channel_emotes = AsyncMock(
+            return_value=[_emote("e1", "follow1", "follower")]
+        )
+        mock_twitch.get_user_emotes = AsyncMock(return_value=[{"id": "e1"}])
+        mock_twitch.is_user_subscribed = AsyncMock(return_value=False)
+
+        with patch("routers.admin_router.ChannelRepository") as cr:
+            cr.return_value.list_all_channels = AsyncMock(
+                return_value=[_channel(OWNER_ID), _channel("ch-a"), _channel("bot-test")]
+            )
+            cr.return_value.get_token = AsyncMock(return_value=MagicMock(token="tok"))
+            r = _make_client(mock_twitch_api=mock_twitch).get("/api/admin/bot-emotes")
+
+        assert r.status_code == 200
+        ids = {c["channel_id"] for c in r.json()}
+        assert ids == {OWNER_ID, "ch-a"}
 
     def test_aggregates_availability_per_channel(self):
         mock_twitch = MagicMock()
@@ -817,10 +893,12 @@ class TestGetBotEmotes:
         )
         # Bot can only access the follower emote (e1).
         mock_twitch.get_user_emotes = AsyncMock(return_value=[{"id": "e1"}])
+        mock_twitch.is_user_subscribed = AsyncMock(return_value=False)
 
         with patch("routers.admin_router.ChannelRepository") as cr:
+            # bot-test is the bot's own channel and must be excluded.
             cr.return_value.list_all_channels = AsyncMock(
-                return_value=[_channel(OWNER_ID), _channel("ch-a")]
+                return_value=[_channel("bot-test"), _channel("ch-a")]
             )
             cr.return_value.get_token = AsyncMock(return_value=MagicMock(token="tok"))
             r = _make_client(mock_twitch_api=mock_twitch).get("/api/admin/bot-emotes")
@@ -835,6 +913,39 @@ class TestGetBotEmotes:
         assert ch["available_count"] == 1
         by_name = {e["name"]: e["available"] for e in ch["emotes"]}
         assert by_name == {"aliceFollow": True, "aliceSub": False}
+        # Bot only has a follower emote here → not subscribed.
+        assert ch["is_subscribed"] is False
+
+    def test_reports_bot_subscription(self):
+        # A real subscription is reported from the authoritative check, not
+        # inferred from emote availability (which channel points could inflate).
+        mock_twitch = MagicMock()
+        mock_twitch.get_users_by_ids = AsyncMock(
+            return_value=[
+                {
+                    "id": "ch-a",
+                    "login": "alice",
+                    "display_name": "Alice",
+                    "profile_image_url": "https://img/a.png",
+                }
+            ]
+        )
+        mock_twitch.get_channel_emotes = AsyncMock(
+            return_value=[_emote("e1", "aliceFollow", "follower")]
+        )
+        mock_twitch.get_user_emotes = AsyncMock(return_value=[{"id": "e1"}])
+        mock_twitch.is_user_subscribed = AsyncMock(return_value=True)
+
+        with patch("routers.admin_router.ChannelRepository") as cr:
+            cr.return_value.list_all_channels = AsyncMock(return_value=[_channel("ch-a")])
+            cr.return_value.get_token = AsyncMock(return_value=MagicMock(token="tok"))
+            r = _make_client(mock_twitch_api=mock_twitch).get("/api/admin/bot-emotes")
+
+        assert r.status_code == 200
+        data = r.json()
+        assert len(data) == 1
+        assert data[0]["is_subscribed"] is True
+        mock_twitch.is_user_subscribed.assert_awaited_once_with("ch-a", "tok", "bot-test")
 
 
 # ── POST /api/admin/bot-emotes/resync ────────────────────────────────────────

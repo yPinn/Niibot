@@ -14,10 +14,13 @@ export default defineConfig(() => ({
     // Disable the modulePreload polyfill inline script — all target browsers support
     // <link rel="modulepreload"> natively, and the inline script violates our CSP.
     modulePreload: { polyfill: false },
-  },
-  esbuild: {
-    // Strip console.* calls and debugger statements from production builds
-    drop: ['console', 'debugger'] as ('console' | 'debugger')[],
+    // Vite 8 runs on Rolldown/Oxc (esbuild is no longer the transformer), so the
+    // former esbuild.drop console stripping moves to Terser — bundler-agnostic and
+    // the documented path for granular drops.
+    minify: 'terser' as const,
+    terserOptions: {
+      compress: { drop_console: true, drop_debugger: true },
+    },
   },
   test: {
     environment: 'jsdom',

@@ -215,6 +215,19 @@ class TestUpsertToken:
         first_execute_args = conn.execute.call_args_list[0][0]
         assert "channel:bot bits:read" in first_execute_args
 
+    async def test_channel_insert_does_not_force_enabled(self):
+        # Signup must not enable a channel — admission does (migration 084). The
+        # channels upsert must neither insert enabled=TRUE nor touch it on
+        # conflict, so a re-auth never re-enables a suspended/pending channel.
+        pool, conn = _make_pool(execute="INSERT 0 1")
+        repo = ChannelRepository(pool)
+
+        await repo.upsert_token("u1", "tok", "ref", channel_name="streamer")
+
+        channels_sql = conn.execute.call_args_list[1][0][0]
+        assert "INTO channels" in channels_sql
+        assert "enabled" not in channels_sql
+
 
 # ---------------------------------------------------------------------------
 # Channel operations
@@ -317,6 +330,39 @@ class TestUpsertChannel:
 
         assert _channel_cache.get("channel:u1") is _MISSING
         assert _enabled_channels_cache.get("enabled_channels") is _MISSING
+
+    async def test_conflict_does_not_touch_enabled(self):
+        # The bot re-asserts channel rows (e.g. on new_token); it must not flip
+        # enabled, which is admission-owned. The ON CONFLICT clause must not
+        # assign enabled.
+        pool, conn = _make_pool(execute="INSERT 0 1")
+        repo = ChannelRepository(pool)
+
+        await repo.upsert_channel("u1", "streamer")
+
+        sql = conn.execute.call_args_list[0][0][0]
+        conflict_clause = sql.split("ON CONFLICT", 1)[1]
+        assert "enabled" not in conflict_clause
+
+
+@pytest.mark.asyncio
+class TestListActiveOwnerChannelIds:
+    async def test_returns_channel_ids_with_active_owner(self):
+        pool, conn = _make_pool(fetch=[{"channel_id": "c1"}, {"channel_id": "c2"}])
+        repo = ChannelRepository(pool)
+
+        result = await repo.list_active_owner_channel_ids()
+
+        assert result == {"c1", "c2"}
+        sql = conn.fetch.call_args[0][0]
+        assert "memberships" in sql
+        assert "'active'" in sql
+
+    async def test_returns_empty_set_when_none(self):
+        pool, _ = _make_pool(fetch=[])
+        repo = ChannelRepository(pool)
+
+        assert await repo.list_active_owner_channel_ids() == set()
 
 
 @pytest.mark.asyncio

@@ -76,7 +76,7 @@ export function EmoteSection({
   return (
     <div className="flex flex-col gap-element">
       <span className="text-sub text-muted-foreground">{label}</span>
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(5rem,1fr))] gap-1">
+      <div className="grid grid-cols-[repeat(auto-fill,5rem)] gap-1">
         {emotes.map(emote => (
           <EmoteChip
             key={emote.id}

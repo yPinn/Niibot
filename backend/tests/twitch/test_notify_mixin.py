@@ -44,6 +44,12 @@ class _StubMixin(_NotifyMixin):
         token.scopes = None  # no missing scopes by default
         self.channels = MagicMock()
         self.channels.get_token = AsyncMock(return_value=token)
+        # Default: an admitted (enabled) channel so the admission gate in
+        # _handle_new_token passes through. Tests that exercise the gate
+        # override get_channel with a disabled channel.
+        enabled_channel = MagicMock()
+        enabled_channel.enabled = True
+        self.channels.get_channel = AsyncMock(return_value=enabled_channel)
 
 
 def _payload(channel_id: str, *, enabled: bool) -> str:
@@ -264,6 +270,61 @@ class TestHandleNewTokenReauthRestored:
         await mixin._handle_new_token(None, None, "new_token", _new_token_payload("u1"))
 
         mixin._check_bot_mod_status.assert_awaited_once_with("u1")
+
+
+# ---------------------------------------------------------------------------
+# _handle_new_token — admission gate (don't join unapproved channels)
+# ---------------------------------------------------------------------------
+
+
+class TestHandleNewTokenAdmissionGate:
+    pytestmark = pytest.mark.asyncio
+
+    async def test_does_not_subscribe_when_channel_disabled(self):
+        """A pending/suspended owner's channel has enabled=FALSE: load the token
+        but never subscribe (joining is reserved for admitted channels)."""
+        from shared.twitch_scopes import BROADCASTER_SCOPES
+
+        mixin = _StubMixin()
+        mixin._subscribed_channels = set()  # not yet subscribed
+        mixin.add_token = AsyncMock(return_value=_make_user_info("alice", BROADCASTER_SCOPES))
+        mixin.add_channel_to_db = AsyncMock()
+        disabled_channel = MagicMock()
+        disabled_channel.enabled = False
+        mixin.channels.get_channel = AsyncMock(return_value=disabled_channel)
+
+        await mixin._handle_new_token(None, None, "new_token", _new_token_payload("u1"))
+
+        mixin.subscribe_channel_events.assert_not_awaited()
+        assert "u1" not in mixin._subscribed_channels
+
+    async def test_does_not_subscribe_when_channel_missing(self):
+        """No channels row yet (race during signup) → fail closed, don't join."""
+        from shared.twitch_scopes import BROADCASTER_SCOPES
+
+        mixin = _StubMixin()
+        mixin._subscribed_channels = set()
+        mixin.add_token = AsyncMock(return_value=_make_user_info("alice", BROADCASTER_SCOPES))
+        mixin.add_channel_to_db = AsyncMock()
+        mixin.channels.get_channel = AsyncMock(return_value=None)
+
+        await mixin._handle_new_token(None, None, "new_token", _new_token_payload("u1"))
+
+        mixin.subscribe_channel_events.assert_not_awaited()
+
+    async def test_subscribes_when_channel_enabled(self):
+        """An admitted (enabled) channel that is not yet subscribed gets joined."""
+        from shared.twitch_scopes import BROADCASTER_SCOPES
+
+        mixin = _StubMixin()
+        mixin._subscribed_channels = set()
+        mixin.add_token = AsyncMock(return_value=_make_user_info("alice", BROADCASTER_SCOPES))
+        mixin.add_channel_to_db = AsyncMock()
+        # get_channel defaults to an enabled channel via _StubMixin.
+
+        await mixin._handle_new_token(None, None, "new_token", _new_token_payload("u1"))
+
+        mixin.subscribe_channel_events.assert_awaited_once_with("u1")
 
 
 # ---------------------------------------------------------------------------
