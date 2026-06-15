@@ -534,7 +534,7 @@ export default function AIModule() {
             </CardHeader>
             <CardContent className="flex flex-col gap-element">
               {emotesLoading ? (
-                <div className="grid grid-cols-[repeat(auto-fill,minmax(5rem,1fr))] gap-1">
+                <div className="grid grid-cols-[repeat(auto-fill,5rem)] gap-1">
                   {Array.from({ length: 16 }).map((_, i) => (
                     <div key={i} className="flex flex-col items-center gap-1 p-1.5">
                       <Skeleton className="h-14 w-14 rounded-md" />
