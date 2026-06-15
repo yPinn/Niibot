@@ -183,6 +183,19 @@ class _NotifyMixin:
 
                 await self.add_channel_to_db(user_id, user_info.login or "unknown")  # type: ignore[attr-defined]
 
+                # Admission gate: only join channels whose owner is approved.
+                # channels.enabled is driven by memberships.status (migration
+                # 084); a pending/suspended owner has enabled=FALSE, so we load
+                # the token but do not subscribe. Approval flips enabled, which
+                # fires channel_toggle → _handle_channel_toggle subscribes then.
+                channel = await self.channels.get_channel(user_id)  # type: ignore[attr-defined]
+                if not channel or not channel.enabled:
+                    LOGGER.info(
+                        f"[NOTIFY] Channel {self._ch(user_id)} not enabled "  # type: ignore[attr-defined]
+                        "(awaiting admission) — token loaded, not subscribing"
+                    )
+                    return
+
                 if user_id not in self._subscribed_channels:  # type: ignore[attr-defined]
                     await self.subscribe_channel_events(user_id)  # type: ignore[attr-defined]
                     await self._check_bot_mod_status(user_id)  # type: ignore[attr-defined]

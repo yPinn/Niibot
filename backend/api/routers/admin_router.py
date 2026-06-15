@@ -148,14 +148,25 @@ async def get_admin_channels(
 ) -> list[AdminChannelInfo]:
     """Return all monitored channels with mod status and scope breakdown. Owner-only."""
     repo_all = ChannelRepository(pool)
+    bot_id = get_settings().bot_id or ""
     all_channels = await repo_all.list_all_channels()
-    other = [ch for ch in all_channels if ch.channel_id != owner_id]
+    # Admission gate: this view lists admitted tenants only. A channel whose
+    # owner's membership is not 'active' (pending/suspended/rejected) belongs in
+    # the authorization queue, not here — even if a channels row still exists.
+    # The bot's own account is always kept. Active-but-paused channels stay
+    # (the owner manually disabled the bot), so we filter by membership, not
+    # by enabled.
+    active_ids = await repo_all.list_active_owner_channel_ids()
+    other = [
+        ch
+        for ch in all_channels
+        if ch.channel_id != owner_id and (ch.channel_id == bot_id or ch.channel_id in active_ids)
+    ]
     if not other:
         return []
 
     channel_ids = [ch.channel_id for ch in other]
     enabled_set = {ch.channel_id for ch in other if ch.enabled}
-    bot_id = get_settings().bot_id or ""
     repo = ChannelRepository(pool)
 
     users_data, streams_data = await asyncio.gather(
