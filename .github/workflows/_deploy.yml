@@ -287,7 +287,11 @@ jobs:
             api=true; discord=true; twitch=true; scrapling=true; instafix=true; reason=force
           else
             if [ -n "$CHANGED" ]; then
-              PATTERN="^backend/shared/|^backend/shared\.env|^docker-compose\.yml"
+              # api/discord/twitch all build from ./backend with the root
+              # pyproject.toml + uv.lock (see api/Dockerfile), so a change to
+              # those shared dependency files must rebuild all three.
+              # scrapling has its own lock and is matched separately below.
+              PATTERN="^backend/shared/|^backend/shared\.env|^backend/uv\.lock|^backend/pyproject\.toml|^docker-compose\.yml"
               [ -n "${{ inputs.compose_change_pattern }}" ] && \
                 PATTERN="$PATTERN|^${{ inputs.compose_change_pattern }}"
 
