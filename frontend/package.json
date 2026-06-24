@@ -69,7 +69,7 @@
     "@vitejs/plugin-react-swc": "^4.2.2",
     "@vitest/coverage-v8": "^4.1.9",
     "baseline-browser-mapping": "^2.9.19",
-    "eslint": "^9.39.1",
+    "eslint": "^10.5.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-import": "^2.32.0",
     "eslint-plugin-prettier": "^5.5.4",
