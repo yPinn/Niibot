@@ -4,7 +4,7 @@ version = "1.12"
 description = "Instagram / Threads media-fetch sidecar for Niibot"
 requires-python = ">=3.12"
 dependencies = [
-    "fastapi>=0.129.0,<1.0.0",
+    "fastapi>=0.138.1,<1.0.0",
     "uvicorn[standard]>=0.49.0,<1.0.0",
     "scrapling[all]==0.4.9",
 ]
