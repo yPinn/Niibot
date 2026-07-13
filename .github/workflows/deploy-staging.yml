@@ -24,10 +24,6 @@ on:
         description: "Deploy Discord bot"
         type: boolean
         default: false
-      deploy_scrapling:
-        description: "Deploy Scrapling"
-        type: boolean
-        default: false
       deploy_instafix:
         description: "Pull and restart Instafix"
         type: boolean
@@ -47,16 +43,13 @@ jobs:
       compose_project: niibot-staging
       branch: staging
       api_port: 8001
-      scrapling_port_default: 3003
       compose_change_pattern: docker-compose.staging.yml
       force_all: ${{ inputs.force_all == true }}
       force_api: ${{ inputs.deploy_api == true }}
       force_twitch: ${{ inputs.deploy_twitch == true }}
       force_discord: ${{ inputs.deploy_discord == true }}
-      force_scrapling: ${{ inputs.deploy_scrapling == true }}
       force_instafix: ${{ inputs.deploy_instafix == true }}
       enable_discord: ${{ inputs.deploy_discord == true }}
-      enable_scrapling: ${{ inputs.deploy_scrapling == true }}
       enable_instafix: ${{ inputs.deploy_instafix == true }}
       tag_images: true
       prune_full: true

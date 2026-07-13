@@ -7,10 +7,6 @@ services:
       - ./backend/shared.env
       - ./backend/api/.env
 
-  scrapling:
-    env_file:
-      - ./backend/scrapling/.env
-
   twitch-bot:
     volumes:
       - ./backend/runtime:/app/runtime

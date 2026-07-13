@@ -112,16 +112,13 @@ jobs:
       compose_project: niibot-staging
       branch: staging
       api_port: 8001
-      scrapling_port_default: 3003
       compose_change_pattern: docker-compose.staging.yml
       force_all: false
       force_api: false
       force_twitch: false
       force_discord: false
-      force_scrapling: false
       force_instafix: false
       enable_discord: false
-      enable_scrapling: false
       enable_instafix: false
       tag_images: true
       prune_full: true

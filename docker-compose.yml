@@ -6,11 +6,6 @@ x-api-svc-urls: &docker-api-svc-urls
   TWITCH_BOT_URL: http://twitch-bot:4344
   DISCORD_BOT_URL: http://discord-bot:8080
 
-# Discord bot service URLs — INSTAFIX_HOST already defaults to Docker name in code.
-# SCRAPLING_HOST has no default; override to use service name in Docker.
-x-discord-svc-urls: &docker-discord-svc-urls
-  SCRAPLING_HOST: scrapling:${SCRAPLING_PORT:-3001}
-
 x-healthcheck: &default-healthcheck
   interval: 60s
   timeout: 10s
@@ -27,8 +22,8 @@ x-logging: &default-logging
 # Profiles guide:
 #   --profile api      → API + DB
 #   --profile twitch   → Twitch bot + DB
-#   --profile discord  → Discord bot + DB + Instafix + Scrapling
-#   --profile bots     → All bots + DB + Instafix + Scrapling
+#   --profile discord  → Discord bot + DB + Instafix
+#   --profile bots     → All bots + DB + Instafix
 #   --profile full     → Everything
 #
 # No profile / postgres only:
@@ -89,32 +84,6 @@ services:
     networks:
       - nb-network
 
-  scrapling:
-    image: nb-scrapling
-    build:
-      context: ./backend
-      dockerfile: scrapling/Dockerfile
-    container_name: nb-scrapling
-    restart: unless-stopped
-    logging: *default-logging
-    profiles: [discord, bots, full]
-    volumes:
-      - scrapling-cookies:/app/cookies
-    networks:
-      - nb-network
-    healthcheck:
-      <<: *default-healthcheck
-      test:
-        [
-          "CMD",
-          "python",
-          "-c",
-          "import urllib.request; urllib.request.urlopen('http://localhost:${SCRAPLING_PORT:-3001}/health').read()",
-        ]
-    environment:
-      PORT: ${SCRAPLING_PORT:-3001}
-      COOKIES_PATH: /app/cookies/session.json
-
   twitch-bot:
     image: nb-twitch
     build:
@@ -167,9 +136,6 @@ services:
         condition: service_completed_successfully
       instafix:
         condition: service_started
-      scrapling:
-        condition: service_started
-        required: false
     healthcheck:
       <<: *default-healthcheck
       test:
@@ -180,7 +146,7 @@ services:
           "import urllib.request; urllib.request.urlopen('http://localhost:8080/health').read()",
         ]
     environment:
-      <<: [*docker-db-env, *docker-discord-svc-urls]
+      <<: *docker-db-env
 
   api:
     image: nb-api
@@ -215,9 +181,6 @@ services:
         ]
     environment:
       <<: [*docker-db-env, *docker-api-svc-urls]
-
-volumes:
-  scrapling-cookies:
 
 networks:
   nb-network:
