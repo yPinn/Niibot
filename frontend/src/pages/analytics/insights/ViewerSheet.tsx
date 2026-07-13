@@ -167,9 +167,7 @@ function StatTile({
 
 type ViewerSheetState = { profile: ViewerProfile | null; loading: boolean }
 type ViewerSheetAction =
-  | { type: 'reset' }
-  | { type: 'success'; payload: ViewerProfile }
-  | { type: 'error' }
+  { type: 'reset' } | { type: 'success'; payload: ViewerProfile } | { type: 'error' }
 
 function viewerSheetReducer(_: ViewerSheetState, action: ViewerSheetAction): ViewerSheetState {
   if (action.type === 'reset') return { profile: null, loading: true }
