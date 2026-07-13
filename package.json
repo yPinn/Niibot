@@ -10,7 +10,7 @@
     "_dc": "docker compose -f docker-compose.yml -f docker-compose.dev.yml",
     "format": "npm run format --prefix frontend && uv run --project backend ruff format backend",
     "lint": "npm run lint --prefix frontend && uv run --project backend ruff check backend",
-    "typecheck": "npm run typecheck --prefix frontend && uv run --project backend --directory backend mypy .",
+    "typecheck": "npm run typecheck --prefix frontend && uv run --directory backend mypy .",
     "fix": "npm run format && npm run lint",
     "test": "npm run lint && npm run typecheck",
     "dev:fe": "npm run dev --prefix frontend",
