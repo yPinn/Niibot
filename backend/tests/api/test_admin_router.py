@@ -627,7 +627,7 @@ class TestGetAdminChannels:
             cr.return_value.list_all_channels = AsyncMock(
                 return_value=[self._make_channel(OWNER_ID)]
             )
-            cr.return_value.list_active_owner_channel_ids = AsyncMock(return_value=set())
+            cr.return_value.list_monitored_owner_channel_status = AsyncMock(return_value={})
             r = _make_client().get("/api/admin/channels")
         assert r.status_code == 200
         assert r.json() == []
@@ -653,7 +653,9 @@ class TestGetAdminChannels:
                     self._make_channel("ch-other", enabled=True),
                 ]
             )
-            cr.return_value.list_active_owner_channel_ids = AsyncMock(return_value={"ch-other"})
+            cr.return_value.list_monitored_owner_channel_status = AsyncMock(
+                return_value={"ch-other": ("active", "user-other")}
+            )
             cr.return_value.get_token = AsyncMock(return_value=token_obj)
             r = _make_client(mock_twitch_api=mock_twitch, mock_channel_service=mock_cs).get(
                 "/api/admin/channels"
@@ -664,6 +666,8 @@ class TestGetAdminChannels:
         assert len(data) == 1
         assert data[0]["name"] == "other"
         assert data[0]["is_enabled"] is True
+        assert data[0]["membership_status"] == "active"
+        assert data[0]["owner_user_id"] == "user-other"
 
     def test_returns_paused_channel_with_is_enabled_false(self):
         mock_twitch = MagicMock()
@@ -688,7 +692,9 @@ class TestGetAdminChannels:
             )
             # Active owner who manually paused the bot: still an admitted tenant,
             # so it must appear (filter is by membership, not by enabled).
-            cr.return_value.list_active_owner_channel_ids = AsyncMock(return_value={"ch-paused"})
+            cr.return_value.list_monitored_owner_channel_status = AsyncMock(
+                return_value={"ch-paused": ("active", "user-paused")}
+            )
             cr.return_value.get_token = AsyncMock(return_value=token_obj)
             r = _make_client(mock_twitch_api=mock_twitch, mock_channel_service=mock_cs).get(
                 "/api/admin/channels"
@@ -699,12 +705,45 @@ class TestGetAdminChannels:
         assert len(data) == 1
         assert data[0]["name"] == "paused"
         assert data[0]["is_enabled"] is False
+        assert data[0]["membership_status"] == "active"
 
-    def test_excludes_pending_owner_channel(self):
-        # A channel whose owner is NOT active (pending/suspended/rejected) must
-        # not appear in the monitored-channels view — it belongs in the
-        # authorization queue. Here ch-pending has a channels row but is absent
-        # from the active-owner set.
+    def test_excludes_rejected_owner_channel(self):
+        # A channel whose owner was rejected has no monitoring value and must
+        # not appear — it's absent from list_monitored_owner_channel_status
+        # (which only returns active/pending/suspended).
+        mock_twitch = MagicMock()
+        mock_twitch.get_users_by_ids = AsyncMock(
+            return_value=[self._make_twitch_user("ch-rejected", "rejected", "Rejected")]
+        )
+        mock_twitch.get_streams = AsyncMock(return_value=[])
+        mock_twitch.get_bot_mod_status = AsyncMock(return_value="mod")
+
+        mock_cs = MagicMock()
+        mock_cs.get_token_with_refresh = AsyncMock(return_value="tok")
+
+        token_obj = MagicMock()
+        token_obj.scopes = ""
+
+        with patch("routers.admin_router.ChannelRepository") as cr:
+            cr.return_value.list_all_channels = AsyncMock(
+                return_value=[
+                    self._make_channel(OWNER_ID),
+                    self._make_channel("ch-rejected", enabled=False),
+                ]
+            )
+            cr.return_value.list_monitored_owner_channel_status = AsyncMock(return_value={})
+            cr.return_value.get_token = AsyncMock(return_value=token_obj)
+            r = _make_client(mock_twitch_api=mock_twitch, mock_channel_service=mock_cs).get(
+                "/api/admin/channels"
+            )
+
+        assert r.status_code == 200
+        assert r.json() == []
+
+    def test_includes_pending_owner_channel(self):
+        # Pending owners now surface in the monitor grid (待審 bucket in the
+        # frontend) instead of being dropped entirely — they already have a
+        # channels row from the OAuth callback.
         mock_twitch = MagicMock()
         mock_twitch.get_users_by_ids = AsyncMock(
             return_value=[self._make_twitch_user("ch-pending", "pending", "Pending")]
@@ -725,14 +764,59 @@ class TestGetAdminChannels:
                     self._make_channel("ch-pending", enabled=False),
                 ]
             )
-            cr.return_value.list_active_owner_channel_ids = AsyncMock(return_value=set())
+            cr.return_value.list_monitored_owner_channel_status = AsyncMock(
+                return_value={"ch-pending": ("pending", "user-pending")}
+            )
             cr.return_value.get_token = AsyncMock(return_value=token_obj)
             r = _make_client(mock_twitch_api=mock_twitch, mock_channel_service=mock_cs).get(
                 "/api/admin/channels"
             )
 
         assert r.status_code == 200
-        assert r.json() == []
+        data = r.json()
+        assert len(data) == 1
+        assert data[0]["name"] == "pending"
+        assert data[0]["membership_status"] == "pending"
+        assert data[0]["owner_user_id"] == "user-pending"
+
+    def test_includes_suspended_owner_channel(self):
+        # Suspended owners surface too (已停權 bucket in the frontend), with
+        # owner_user_id populated so the frontend can call the reinstate
+        # endpoint, which is keyed on user_id.
+        mock_twitch = MagicMock()
+        mock_twitch.get_users_by_ids = AsyncMock(
+            return_value=[self._make_twitch_user("ch-suspended", "suspended", "Suspended")]
+        )
+        mock_twitch.get_streams = AsyncMock(return_value=[])
+        mock_twitch.get_bot_mod_status = AsyncMock(return_value="mod")
+
+        mock_cs = MagicMock()
+        mock_cs.get_token_with_refresh = AsyncMock(return_value="tok")
+
+        token_obj = MagicMock()
+        token_obj.scopes = ""
+
+        with patch("routers.admin_router.ChannelRepository") as cr:
+            cr.return_value.list_all_channels = AsyncMock(
+                return_value=[
+                    self._make_channel(OWNER_ID),
+                    self._make_channel("ch-suspended", enabled=False),
+                ]
+            )
+            cr.return_value.list_monitored_owner_channel_status = AsyncMock(
+                return_value={"ch-suspended": ("suspended", "user-suspended")}
+            )
+            cr.return_value.get_token = AsyncMock(return_value=token_obj)
+            r = _make_client(mock_twitch_api=mock_twitch, mock_channel_service=mock_cs).get(
+                "/api/admin/channels"
+            )
+
+        assert r.status_code == 200
+        data = r.json()
+        assert len(data) == 1
+        assert data[0]["name"] == "suspended"
+        assert data[0]["membership_status"] == "suspended"
+        assert data[0]["owner_user_id"] == "user-suspended"
 
 
 # ── GET /api/admin/logs/containers ──────────────────────────────────────────

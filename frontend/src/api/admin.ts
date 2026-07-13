@@ -4,6 +4,8 @@ import { API_ENDPOINTS, apiFetch } from './config'
 export type ModStatus = 'mod' | 'no_mod' | 'token_error' | 'scope_error' | 'broadcaster'
 export type BotTokenStatus = 'ok' | 'missing' | 'no_token'
 
+export type ChannelMembershipStatus = 'active' | 'pending' | 'suspended'
+
 export interface AdminChannel {
   id: string
   name: string
@@ -16,6 +18,8 @@ export interface AdminChannel {
   is_bot: boolean
   granted_scopes: string[]
   missing_scopes: string[]
+  membership_status: ChannelMembershipStatus
+  owner_user_id: string | null
 }
 
 export interface BotTokenInfo {
@@ -158,6 +162,16 @@ export async function getMembershipTimeline(userId: string): Promise<MembershipE
   })
   if (!response.ok) throw new Error('Failed to fetch membership timeline')
   return response.json()
+}
+
+export async function reinstateMembership(userId: string, reason: string = ''): Promise<void> {
+  const response = await apiFetch(API_ENDPOINTS.admin.reinstateMembership(userId), {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reason }),
+  })
+  if (!response.ok) throw new Error('Failed to reinstate membership')
 }
 
 export interface LogContainer {

@@ -86,6 +86,8 @@ class AdminChannelInfo(BaseModel):
     is_bot: bool
     granted_scopes: list[str]
     missing_scopes: list[str]
+    membership_status: str  # 'active' | 'pending' | 'suspended'
+    owner_user_id: str | None
 
 
 class BotTokenInfo(BaseModel):
@@ -146,21 +148,23 @@ async def get_admin_channels(
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
     pool: Pool = Depends(get_db_pool),
 ) -> list[AdminChannelInfo]:
-    """Return all monitored channels with mod status and scope breakdown. Owner-only."""
+    """Return all monitored channels with mod status and scope breakdown. Owner-only.
+
+    Includes active, pending, and suspended tenants (rejected is excluded — no
+    monitoring value) so the owner can see channels awaiting review or that
+    were suspended, not just active ones. The frontend buckets by
+    ``membership_status`` rather than ``is_enabled``, since a non-active owner's
+    channel is always disabled regardless of why (084's trigger), which would
+    otherwise be indistinguishable from an active owner who manually paused it.
+    """
     repo_all = ChannelRepository(pool)
     bot_id = get_settings().bot_id or ""
     all_channels = await repo_all.list_all_channels()
-    # Admission gate: this view lists admitted tenants only. A channel whose
-    # owner's membership is not 'active' (pending/suspended/rejected) belongs in
-    # the authorization queue, not here — even if a channels row still exists.
-    # The bot's own account is always kept. Active-but-paused channels stay
-    # (the owner manually disabled the bot), so we filter by membership, not
-    # by enabled.
-    active_ids = await repo_all.list_active_owner_channel_ids()
+    status_map = await repo_all.list_monitored_owner_channel_status()
     other = [
         ch
         for ch in all_channels
-        if ch.channel_id != owner_id and (ch.channel_id == bot_id or ch.channel_id in active_ids)
+        if ch.channel_id != owner_id and (ch.channel_id == bot_id or ch.channel_id in status_map)
     ]
     if not other:
         return []
@@ -204,6 +208,7 @@ async def get_admin_channels(
             continue
         u = user_map[cid]
         status, granted, missing = channel_data.get(cid, ("error", [], []))
+        membership_status, owner_user_id = status_map.get(cid, ("active", None))
         result.append(
             AdminChannelInfo(
                 id=cid,
@@ -217,12 +222,18 @@ async def get_admin_channels(
                 is_bot=cid == bot_id,
                 granted_scopes=granted,
                 missing_scopes=missing,
+                membership_status=membership_status,
+                owner_user_id=owner_user_id,
             )
         )
 
     def _channel_tier(x: AdminChannelInfo) -> int:
         if x.is_bot:
             return 0
+        if x.membership_status == "suspended":
+            return 7
+        if x.membership_status == "pending":
+            return 8
         if not x.is_enabled:
             return 6
         if x.mod_status == "mod":

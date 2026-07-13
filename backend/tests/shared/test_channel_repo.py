@@ -366,6 +366,36 @@ class TestListActiveOwnerChannelIds:
 
 
 @pytest.mark.asyncio
+class TestListMonitoredOwnerChannelStatus:
+    async def test_returns_status_and_owner_by_channel_id(self):
+        pool, conn = _make_pool(
+            fetch=[
+                {"channel_id": "c1", "status": "active", "owner_user_id": "u1"},
+                {"channel_id": "c2", "status": "pending", "owner_user_id": "u2"},
+                {"channel_id": "c3", "status": "suspended", "owner_user_id": "u3"},
+            ]
+        )
+        repo = ChannelRepository(pool)
+
+        result = await repo.list_monitored_owner_channel_status()
+
+        assert result == {
+            "c1": ("active", "u1"),
+            "c2": ("pending", "u2"),
+            "c3": ("suspended", "u3"),
+        }
+        sql = conn.fetch.call_args[0][0]
+        assert "memberships" in sql
+        assert "'active', 'pending', 'suspended'" in sql
+
+    async def test_returns_empty_dict_when_none(self):
+        pool, _ = _make_pool(fetch=[])
+        repo = ChannelRepository(pool)
+
+        assert await repo.list_monitored_owner_channel_status() == {}
+
+
+@pytest.mark.asyncio
 class TestDisableChannelByName:
     async def test_clears_enabled_channels_cache(self):
         _enabled_channels_cache.set("enabled_channels", [_CHANNEL_ROW])
