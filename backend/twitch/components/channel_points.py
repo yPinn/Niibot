@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 import aiohttp
 import asyncpg
 import twitchio
+from cachetools import TTLCache  # type: ignore[import-untyped]
 from twitchio.ext import commands
 
 from core.config import get_settings
@@ -49,6 +50,11 @@ class ChannelPointsComponent(commands.Component):
         self.vq_repo = VideoQueueRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.vq_settings_repo = VideoQueueSettingsRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self._session: aiohttp.ClientSession | None = None
+        # EventSub delivers at-least-once; dedupe redemptions by id so a
+        # redelivery (e.g. around conduit shard reassociation/reconnect) is
+        # neither re-logged nor reprocessed. TTL comfortably exceeds Twitch's
+        # redelivery window; maxsize keeps memory bounded.
+        self._seen_redemptions: TTLCache = TTLCache(maxsize=2048, ttl=600)
 
     def refresh_pool(self, pool) -> None:
         self.redemption_repo.pool = pool
@@ -82,6 +88,11 @@ class ChannelPointsComponent(commands.Component):
         payload: twitchio.ChannelPointsRedemptionAdd,
     ) -> None:
         """Channel Points 兌換事件"""
+        if payload.id in self._seen_redemptions:
+            LOGGER.debug("Duplicate redemption %s ignored (EventSub redelivery)", payload.id)
+            return
+        self._seen_redemptions[payload.id] = True
+
         LOGGER.debug("event_custom_redemption_add triggered: %s", type(payload).__name__)
 
         channel_name = payload.broadcaster.name

@@ -38,9 +38,7 @@ import { EnvBadge, FieldRow, StatusBadge, VersionText } from './monitor/StatusCa
 
 type FetchState = { loading: boolean; lines: LogLine[]; error: string | null }
 type FetchAction =
-  | { type: 'start' }
-  | { type: 'done'; lines: LogLine[] }
-  | { type: 'fail'; error: string }
+  { type: 'start' } | { type: 'done'; lines: LogLine[] } | { type: 'fail'; error: string }
 
 function fetchReducer(state: FetchState, action: FetchAction): FetchState {
   switch (action.type) {

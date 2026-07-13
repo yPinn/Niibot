@@ -1,9 +1,10 @@
 import { useState } from 'react'
 
 import type { AdminChannel, ModStatus } from '@/api/admin'
-import { Icon, TwitchRoleBadge, TwitchRoleBadgeLabel } from '@/components/primitives'
+import { Icon, Spinner, TwitchRoleBadge, TwitchRoleBadgeLabel } from '@/components/primitives'
 import {
   Badge,
+  Button,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -105,17 +106,39 @@ export function ModStatusBadge({
   )
 }
 
+// ── Membership status config ────────────────────────────────────────────────
+
+const MEMBERSHIP_STATUS_LABEL: Record<'pending' | 'suspended', string> = {
+  pending: '待審核中，尚未通過授權',
+  suspended: '授權已暫停，bot 暫停監控此頻道',
+}
+
 // ── Scope detail dialog ───────────────────────────────────────────────────────
 
 function ScopeDetailDialog({
   ch,
   open,
   onOpenChange,
+  onReinstate,
 }: {
   ch: AdminChannel
   open: boolean
   onOpenChange: (v: boolean) => void
+  onReinstate?: (ch: AdminChannel) => void | Promise<void>
 }) {
+  const [reinstating, setReinstating] = useState(false)
+
+  const handleReinstate = async () => {
+    if (!onReinstate) return
+    setReinstating(true)
+    try {
+      await onReinstate(ch)
+      onOpenChange(false)
+    } finally {
+      setReinstating(false)
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-sm">
@@ -133,18 +156,37 @@ function ScopeDetailDialog({
           </div>
           <div className="flex flex-col gap-element mt-1">
             <TwitchRoleBadgeLabel role="bot" />
-            <ModStatusBadge
-              status={ch.is_bot ? 'broadcaster' : ch.mod_status}
-              missingCount={ch.missing_scopes.length}
-              bare
-            />
+            {ch.membership_status === 'pending' || ch.membership_status === 'suspended' ? (
+              <span className="text-sub text-muted-foreground">
+                {MEMBERSHIP_STATUS_LABEL[ch.membership_status]}
+              </span>
+            ) : (
+              <ModStatusBadge
+                status={ch.is_bot ? 'broadcaster' : ch.mod_status}
+                missingCount={ch.missing_scopes.length}
+                bare
+              />
+            )}
           </div>
         </DialogHeader>
-        <ScopeSection
-          title="Broadcaster Scopes"
-          granted={ch.granted_scopes}
-          missing={ch.missing_scopes}
-        />
+        {ch.membership_status !== 'suspended' && (
+          <ScopeSection
+            title="Broadcaster Scopes"
+            granted={ch.granted_scopes}
+            missing={ch.missing_scopes}
+          />
+        )}
+        {ch.membership_status === 'suspended' && onReinstate && (
+          <Button
+            variant="outline"
+            className="text-status-online border-status-online/30 hover:bg-status-online/10"
+            onClick={() => void handleReinstate()}
+            disabled={reinstating}
+          >
+            {reinstating ? <Spinner /> : <Icon icon="fa-solid fa-rotate-left" size="xs" />}
+            恢復授權
+          </Button>
+        )}
       </DialogContent>
     </Dialog>
   )
@@ -173,17 +215,42 @@ function PauseStatusIcon() {
   )
 }
 
-export function ChannelCard({ ch }: { ch: AdminChannel }) {
+function PendingStatusIcon() {
+  return (
+    <span className="inline-flex items-center justify-center size-4.5 rounded border-status-info/20 bg-status-info/10 text-status-info">
+      <Icon icon="fa-solid fa-hourglass-half" size="badge" />
+    </span>
+  )
+}
+
+function SuspendedStatusIcon() {
+  return (
+    <span className="inline-flex items-center justify-center size-4.5 rounded border-destructive/20 bg-destructive/10 text-destructive">
+      <Icon icon="fa-solid fa-ban" size="badge" />
+    </span>
+  )
+}
+
+export function ChannelCard({
+  ch,
+  onReinstate,
+}: {
+  ch: AdminChannel
+  onReinstate?: (ch: AdminChannel) => void | Promise<void>
+}) {
   const [open, setOpen] = useState(false)
   const status: ModStatus = ch.is_bot ? 'broadcaster' : ch.mod_status
+  const isPending = ch.membership_status === 'pending'
+  const isSuspended = ch.membership_status === 'suspended'
   const isPaused = !ch.is_enabled
+  const isDimmed = isPaused || isPending || isSuspended
 
   return (
     <>
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className={`relative w-full aspect-video rounded-lg border border-border overflow-hidden hover:ring-2 hover:ring-primary transition-all select-none${isPaused ? ' opacity-50 grayscale' : ''}`}
+        className={`relative w-full aspect-video rounded-lg border border-border overflow-hidden hover:ring-2 hover:ring-primary transition-all select-none${isDimmed ? ' opacity-50 grayscale' : ''}`}
       >
         {ch.offline_image_url ? (
           <img
@@ -200,7 +267,15 @@ export function ChannelCard({ ch }: { ch: AdminChannel }) {
 
         <div className="absolute top-2 right-2 flex items-center gap-1">
           <TwitchRoleBadge role="bot" size={18} className="drop-shadow-sm opacity-80" />
-          {isPaused ? <PauseStatusIcon /> : <ModStatusIcon status={status} />}
+          {isSuspended ? (
+            <SuspendedStatusIcon />
+          ) : isPending ? (
+            <PendingStatusIcon />
+          ) : isPaused ? (
+            <PauseStatusIcon />
+          ) : (
+            <ModStatusIcon status={status} />
+          )}
         </div>
 
         <div className="absolute bottom-0 left-0 right-0 flex items-end gap-2 p-2.5">
@@ -218,7 +293,7 @@ export function ChannelCard({ ch }: { ch: AdminChannel }) {
           {ch.is_live && <span className="size-2 rounded-full bg-status-live shrink-0 mb-1" />}
         </div>
       </button>
-      <ScopeDetailDialog ch={ch} open={open} onOpenChange={setOpen} />
+      <ScopeDetailDialog ch={ch} open={open} onOpenChange={setOpen} onReinstate={onReinstate} />
     </>
   )
 }
