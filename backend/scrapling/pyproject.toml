@@ -6,5 +6,5 @@ requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.139.0,<1.0.0",
     "uvicorn[standard]>=0.51.0,<1.0.0",
-    "scrapling[all]==0.4.10",
+    "scrapling[all]==0.4.11",
 ]
