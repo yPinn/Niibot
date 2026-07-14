@@ -25,6 +25,13 @@ class _NoChatter:
     name: str | None = None
 
 
+def _still_on_interval(last_fire: datetime | None, now: datetime, interval_seconds: int) -> bool:
+    """True if interval_seconds hasn't elapsed since last_fire (i.e. too soon to fire again)."""
+    if last_fire is None:
+        return False
+    return (now - last_fire).total_seconds() < interval_seconds
+
+
 class TimerManagerComponent(commands.Component):
     """Background component that polls timers every 60 seconds and fires them
     when both the time interval and minimum chat-line threshold are satisfied.
@@ -86,14 +93,9 @@ class TimerManagerComponent(commands.Component):
             for timer in timers:
                 # --- Time gate ---
                 last_fire = self._timer_last_fire.get(timer.id)
-                if last_fire is not None:
-                    elapsed = (now - last_fire).total_seconds()
-                    if elapsed < timer.interval_seconds:
-                        LOGGER.debug(
-                            f"[timer-poll] '{timer.timer_name}' skip: time "
-                            f"({elapsed:.0f}s / {timer.interval_seconds}s)"
-                        )
-                        continue
+                if _still_on_interval(last_fire, now, timer.interval_seconds):
+                    LOGGER.debug(f"[timer-poll] '{timer.timer_name}' skip: time")
+                    continue
 
                 # --- Chat-line gate ---
                 lines_at_last = self._timer_last_fire_lines.get(timer.id, 0)
@@ -114,10 +116,8 @@ class TimerManagerComponent(commands.Component):
                     continue
                 bkey = (channel_id, bt.timer_name)
                 last_fire = self._builtin_last_fire.get(bkey)
-                if last_fire is not None:
-                    elapsed = (now - last_fire).total_seconds()
-                    if elapsed < bt.interval_seconds:
-                        continue
+                if _still_on_interval(last_fire, now, bt.interval_seconds):
+                    continue
                 lines_at_last = self._builtin_last_fire_lines.get(bkey, 0)
                 if current_lines - lines_at_last < bt.min_lines:
                     continue
@@ -154,6 +154,9 @@ class TimerManagerComponent(commands.Component):
         for timer in timers:
             if timer.command_alias and timer.command_alias.lower() == cmd_name:
                 now = datetime.now(UTC)
+                last_fire = self._timer_last_fire.get(timer.id)
+                if _still_on_interval(last_fire, now, timer.interval_seconds):
+                    return
                 current_lines = self.bot._channel_line_counts.get(channel_id, 0)
                 await self._fire_timer(channel_id, timer, current_lines, now)
                 break
