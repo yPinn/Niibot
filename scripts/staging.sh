@@ -16,15 +16,15 @@
 # Profiles:
 #   api     → api  (+ postgres always)
 #   twitch  → twitch-bot
-#   discord → discord-bot + scrapling + instafix
-#   bots    → twitch-bot + discord-bot + scrapling + instafix
+#   discord → discord-bot + instafix
+#   bots    → twitch-bot + discord-bot + instafix
 #   full    → all services  ← use for down/reset to stop everything
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-# Staging root env: injects POSTGRES_USER/PASSWORD/DB, SCRAPLING_PORT, etc.
+# Staging root env: injects POSTGRES_USER/PASSWORD/DB, etc.
 # Written by CI/CD deploy workflow; must exist before running any command.
 [[ -f "$ROOT/.env.staging" ]] || { echo "error: $ROOT/.env.staging not found"; exit 1; }
 
@@ -32,7 +32,7 @@ ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 #   -p niibot-staging          isolates project name → separate containers, network, volumes from prod
 #   --env-file .env.staging    injects root env (DB credentials, ports) into compose variable substitution
 #   -f docker-compose.yml      base service definitions (images, healthchecks, shared config)
-#   -f docker-compose.staging.yml  staging overrides (ports 8001/5434/3003/3004, -stg container names)
+#   -f docker-compose.staging.yml  staging overrides (ports 8001/5434/3004, -stg container names)
 DC=(docker compose
     -p niibot-staging
     --env-file "$ROOT/.env.staging"
@@ -52,14 +52,14 @@ case "$CMD" in
 
   down)
     # --profile full required: plain `down` only stops profile-less services (postgres, migrate).
-    # Services with profiles (api, discord-bot, twitch-bot, scrapling, instafix) stay running
+    # Services with profiles (api, discord-bot, twitch-bot, instafix) stay running
     # without it.
     echo "Stopping staging..."
     "${DC[@]}" --profile full down --remove-orphans
     ;;
 
   reset)
-    # Same as down but also wipes volumes (postgres data, scrapling cookies, etc.).
+    # Same as down but also wipes volumes (postgres data, etc.).
     echo "Resetting staging (removing volumes)..."
     "${DC[@]}" --profile full down --remove-orphans -v
     ;;
