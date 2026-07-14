@@ -25,7 +25,7 @@ Niibot 為多租戶——每個 Twitch 頻道是獨立 tenant。三項職責刻�
 
 - **`IdentityService`** — 依 `(platform, platform_user_id)` find_or_link；identity row 遺失時自我修復。
 - **`AdmissionService`** — `memberships.status` 狀態機（pending/active/suspended/rejected），轉換附加寫入 `membership_events`。
-- **`TenantService`** — 頻道擁有權 + per-channel RBAC（`channel_members`）；channel-scoped 端點掛 `require_tenant_access`。
+- **`TenantService`** — 頻道擁有權 + per-channel RBAC（`channel_members`）；新端點應掛 `require_tenant_access`，但目前僅 `commands_router` 完成遷移，其餘仍用 legacy 的 `get_current_channel_id`（詳見 rollout 進度）。
 
 完整設計：[docs/architecture/admission-and-tenancy.md](../docs/architecture/admission-and-tenancy.md)。
 `memberships` 為真實來源；`users.is_activated` 與 `activation_requests` 為 legacy，僅保留供回滾。
@@ -70,7 +70,6 @@ Frontend ──HTTP──▶ API (8000)
 | API                  | `8000` |
 | Discord Bot health   | `8080` |
 | Twitch Bot health    | `4344` |
-| Scrapling sidecar    | `3001` |
 | PostgreSQL（Docker） | `5433` |
 
 ## 開發
@@ -105,7 +104,6 @@ cp discord/.env.example discord/.env
 | `api/.env`       | JWT Secret、API URL                                                                |
 | `twitch/.env`    | Bot ID、Owner ID、EventSub 設定                                                    |
 | `discord/.env`   | Discord Bot Token、Presence 設定                                                   |
-| `scrapling/.env` | Threads / Instagram session cookie                                                 |
 
 ## DB Migrations
 
