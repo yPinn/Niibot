@@ -1,5 +1,6 @@
 """Authentication API routes"""
 
+import hashlib
 import logging
 from typing import Literal
 from urllib.parse import quote as _url_quote
@@ -331,8 +332,6 @@ async def activate_account(
         raise HTTPException(status_code=400, detail="invalid_or_expired_code")
 
     # Hash the code only for the audit metadata. The plaintext is never persisted.
-    import hashlib
-
     code_hash = hashlib.sha256(body.code.strip().encode()).hexdigest()
     await admission.grant_via_otp(
         user_id,
