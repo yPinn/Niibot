@@ -315,6 +315,77 @@ class CommandConfigRepository:
 
         return await _retry_on_db_error(_query)
 
+    async def try_insert_config(
+        self,
+        channel_id: str,
+        command_name: str,
+        *,
+        command_type: str = "custom",
+        enabled: bool = True,
+        custom_response: str | None = None,
+        cooldown: int | None = None,
+        min_role: str = "everyone",
+        aliases: str | None = None,
+    ) -> CommandConfig | None:
+        """Atomically create a brand-new command; returns None if the name is taken.
+
+        Unlike upsert_config (always succeeds via ON CONFLICT DO UPDATE), this
+        relies on the DB's unique constraint on (channel_id, command_name) so a
+        check-then-insert race between two concurrent callers can't silently
+        overwrite one caller's command with the other's.
+        """
+        alias_list = [a.strip() for a in aliases.split(",") if a.strip()] if aliases else []
+
+        async def _query():
+            async with self.pool.acquire() as conn:
+                async with conn.transaction():
+                    row = await conn.fetchrow(
+                        f"""
+                        INSERT INTO command_configs
+                            (channel_id, command_name, command_type, enabled,
+                             custom_response, cooldown, min_role)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7)
+                        ON CONFLICT (channel_id, command_name) DO NOTHING
+                        RETURNING {_CMD_COLUMNS_BASE}
+                        """,
+                        channel_id,
+                        command_name,
+                        command_type,
+                        enabled,
+                        custom_response,
+                        cooldown,
+                        min_role,
+                    )
+                    if row is None:
+                        return None
+                    cmd_id = row["id"]
+
+                    for alias in alias_list:
+                        await conn.execute(
+                            "INSERT INTO command_aliases (command_id, alias) VALUES ($1, $2) "
+                            "ON CONFLICT DO NOTHING",
+                            cmd_id,
+                            alias,
+                        )
+
+                    # cmd_id is brand-new, so aliases is fully known here —
+                    # no need to re-fetch what was just written.
+                    unique_aliases = sorted(set(alias_list))
+                    row_fields = {k: v for k, v in dict(row).items() if k != "aliases"}
+                    result = CommandConfig(
+                        **row_fields,
+                        aliases=",".join(unique_aliases) if unique_aliases else None,
+                    )
+
+                _cmd_cache.invalidate(f"cmd_config:{channel_id}:{command_name}")
+                _cmd_list_cache.invalidate(f"cmd_list:{channel_id}")
+                for alias in alias_list:
+                    _cmd_cache.invalidate(f"cmd_alias:{channel_id}:{alias}")
+
+                return result
+
+        return await _retry_on_db_error(_query)
+
     async def increment_usage_count(self, channel_id: str, command_name: str) -> None:
         """Increment usage_count for a command by 1 and record last_used_at.
 
