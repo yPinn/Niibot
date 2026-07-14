@@ -431,6 +431,95 @@ class VideoQueueRepository:
             )
             return VideoQueueEntry(**dict(row))
 
+    async def add_if_within_limits(
+        self,
+        channel_id: str,
+        video_id: str,
+        requested_by: str,
+        source: str,
+        *,
+        max_queue_size: int,
+        max_per_user: int,
+        requested_by_id: str | None = None,
+        title: str | None = None,
+        duration_seconds: int | None = None,
+        is_vertical: bool = False,
+        video_type: str = "youtube",
+        priority: int = 0,
+    ) -> VideoQueueEntry | None:
+        """Re-validate duplicate/queue-size/per-user limits and insert atomically.
+
+        Callers typically pre-check these same limits before doing slow I/O
+        (fetching video metadata), for a fast, specific rejection message.
+        But that check and this insert are seconds apart, so two concurrent
+        requests can both pass the pre-check before either row exists. This
+        method closes that gap: a transaction-scoped advisory lock keyed on
+        channel_id serializes concurrent adds for the same channel, and the
+        limits are re-checked inside that same transaction immediately before
+        the INSERT. Returns None if any limit is exceeded at insert time —
+        callers should fall back to a generic "queue changed, try again"
+        message in that (rare) case.
+        """
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute(
+                    "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", channel_id
+                )
+
+                # One query for all three limits — minimizes time held under the lock.
+                counts = await conn.fetchrow(
+                    """
+                    SELECT
+                        COUNT(*) FILTER (
+                            WHERE video_id = $2 AND status IN ('queued', 'playing')
+                        ) AS duplicate_count,
+                        COUNT(*) FILTER (WHERE status = 'queued') AS queue_size,
+                        COUNT(*) FILTER (
+                            WHERE status IN ('queued', 'playing')
+                            AND CASE
+                                WHEN $3::text IS NOT NULL THEN
+                                    requested_by_id = $3
+                                    OR (requested_by_id IS NULL AND requested_by = $4)
+                                ELSE
+                                    requested_by = $4
+                            END
+                        ) AS user_count
+                    FROM video_queue
+                    WHERE channel_id = $1
+                    """,
+                    channel_id,
+                    video_id,
+                    requested_by_id,
+                    requested_by,
+                )
+                if counts["duplicate_count"] > 0:
+                    return None
+                if counts["queue_size"] >= max_queue_size:
+                    return None
+                if max_per_user > 0 and counts["user_count"] >= max_per_user:
+                    return None
+
+                row = await conn.fetchrow(
+                    f"""
+                    INSERT INTO video_queue
+                        (channel_id, video_id, title, duration_seconds, is_vertical,
+                         requested_by, source, video_type, priority, requested_by_id)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                    RETURNING {_ENTRY_COLUMNS}
+                    """,
+                    channel_id,
+                    video_id,
+                    title,
+                    duration_seconds,
+                    is_vertical,
+                    requested_by,
+                    source,
+                    video_type,
+                    priority,
+                    requested_by_id,
+                )
+                return VideoQueueEntry(**dict(row))
+
     async def get_current(self, channel_id: str) -> VideoQueueEntry | None:
         """Return the currently playing entry, or None."""
         async with self.pool.acquire() as conn:

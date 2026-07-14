@@ -146,6 +146,56 @@ class MessageTriggerRepository:
             _trigger_list_cache.invalidate(f"trigger_list:{channel_id}")
             return result
 
+    async def try_insert(
+        self,
+        channel_id: str,
+        trigger_name: str,
+        *,
+        match_type: str,
+        pattern: str,
+        case_sensitive: bool,
+        response: str,
+        min_role: str,
+        cooldown: int | None,
+        priority: int,
+        enabled: bool,
+    ) -> MessageTriggerConfig | None:
+        """Atomically create a brand-new trigger; returns None if the name is taken.
+
+        Unlike upsert (always succeeds via ON CONFLICT DO UPDATE), this relies
+        on the DB's unique constraint on (channel_id, trigger_name) so a
+        check-then-insert race between two concurrent callers can't silently
+        overwrite one caller's trigger with the other's.
+        """
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                row = await conn.fetchrow(
+                    f"""
+                    INSERT INTO message_triggers
+                        (channel_id, trigger_name, match_type, pattern, case_sensitive,
+                         response, min_role, cooldown, priority, enabled)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                    ON CONFLICT (channel_id, trigger_name) DO NOTHING
+                    RETURNING {_COLUMNS_BASE}
+                    """,
+                    channel_id,
+                    trigger_name,
+                    match_type,
+                    pattern,
+                    case_sensitive,
+                    response,
+                    min_role,
+                    cooldown,
+                    priority,
+                    enabled,
+                )
+                if row is None:
+                    return None
+                result = MessageTriggerConfig(**dict(row))
+
+            _trigger_list_cache.invalidate(f"trigger_list:{channel_id}")
+            return result
+
     async def delete(self, channel_id: str, trigger_name: str) -> bool:
         """Delete a trigger. Returns True if deleted.
 

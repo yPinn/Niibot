@@ -222,6 +222,82 @@ class TestUpsert:
 
 
 # ---------------------------------------------------------------------------
+# try_insert
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestTryInsert:
+    async def test_returns_mapped_trigger_config_when_created(self):
+        _trigger_list_cache.clear()
+        pool, _ = _make_pool(fetchrow=_TRIGGER_ROW)
+        repo = MessageTriggerRepository(pool)
+
+        result = await repo.try_insert(
+            "ch123",
+            "hello",
+            match_type="contains",
+            pattern="hello",
+            case_sensitive=False,
+            response="Hello there!",
+            min_role="everyone",
+            cooldown=30,
+            priority=0,
+            enabled=True,
+        )
+
+        assert result is not None
+        assert result.trigger_name == "hello"
+
+    async def test_returns_none_on_conflict(self):
+        """ON CONFLICT DO NOTHING found an existing row — must not overwrite it."""
+        _trigger_list_cache.clear()
+        pool, conn = _make_pool()
+        conn.fetchrow.return_value = None
+        repo = MessageTriggerRepository(pool)
+
+        result = await repo.try_insert(
+            "ch123",
+            "hello",
+            match_type="contains",
+            pattern="hello",
+            case_sensitive=False,
+            response="Hello there!",
+            min_role="everyone",
+            cooldown=None,
+            priority=0,
+            enabled=True,
+        )
+
+        assert result is None
+        # No follow-up SELECT after a conflict
+        assert conn.fetchrow.call_count == 1
+
+    async def test_invalidates_cache_when_created(self):
+        _trigger_list_cache.set("trigger_list:ch123", [])
+        pool, _ = _make_pool(fetchrow=_TRIGGER_ROW)
+        repo = MessageTriggerRepository(pool)
+
+        await repo.try_insert(
+            "ch123",
+            "hello",
+            match_type="contains",
+            pattern="hello",
+            case_sensitive=False,
+            response="Hello there!",
+            min_role="everyone",
+            cooldown=None,
+            priority=0,
+            enabled=True,
+        )
+
+        pool2, conn2 = _make_pool(fetch=[])
+        repo2 = MessageTriggerRepository(pool2)
+        await repo2.list_enabled("ch123")
+        assert conn2.fetch.call_count == 1
+
+
+# ---------------------------------------------------------------------------
 # delete
 # ---------------------------------------------------------------------------
 

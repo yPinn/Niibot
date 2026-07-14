@@ -36,6 +36,7 @@ from typing import TYPE_CHECKING
 from twitchio.ext import commands
 
 from core.component import BotComponent
+from shared.builtin_commands import BUILTIN_MAP
 from shared.repositories.command_config import CommandConfigRepository
 from utils.trigger_matching import validate_regex_pattern
 
@@ -160,12 +161,12 @@ class CommandManagerComponent(BotComponent):
             if not cmd_name:
                 await self._ctx_reply(ctx, "用法：!cmd a !指令名 回覆文字")
                 return
-            existing = await self.cmd_repo.get_config(channel_id, cmd_name)
-            if existing:
+            if cmd_name in BUILTIN_MAP:
                 await self._ctx_reply(ctx, f"!{cmd_name} 已存在，請用 !cmd e 編輯")
                 return
             aliases = options.get("alias")
-            config = await self.cmd_repo.upsert_config(
+            # Atomic insert — avoids a check-then-insert race between concurrent !cmd a calls.
+            config = await self.cmd_repo.try_insert_config(
                 channel_id,
                 cmd_name,
                 command_type="custom",
@@ -175,6 +176,9 @@ class CommandManagerComponent(BotComponent):
                 min_role=min_role,
                 aliases=aliases,
             )
+            if config is None:
+                await self._ctx_reply(ctx, f"!{cmd_name} 已存在，請用 !cmd e 編輯")
+                return
             preview = response_text[:30] + ("…" if len(response_text) > 30 else "")
             reply = f"已新增 !{cmd_name} → {preview}"
             if config.aliases:
@@ -218,20 +222,8 @@ class CommandManagerComponent(BotComponent):
                     return
                 _regex_create_tracker[_rl_key] = datetime.now(UTC)
             trigger_name = _sanitize_trigger_name(pattern)
-            existing_trigger = await self.bot.message_trigger_configs.get_by_name(
-                channel_id, trigger_name
-            )
-            if existing_trigger and existing_trigger.pattern != pattern:
-                await self._ctx_reply(
-                    ctx,
-                    f"觸發詞與現有「{existing_trigger.pattern}」衝突，"
-                    f"請用 !cmd e {existing_trigger.pattern} 編輯，或先 !cmd d {existing_trigger.pattern} 刪除",
-                )
-                return
-            if existing_trigger:
-                await self._ctx_reply(ctx, f"「{pattern}」已存在，請用 !cmd e 編輯")
-                return
-            await self.bot.message_trigger_configs.upsert(
+            # Atomic insert — avoids a check-then-insert race between concurrent !cmd a calls.
+            created = await self.bot.message_trigger_configs.try_insert(
                 channel_id,
                 trigger_name,
                 match_type=match_type,
@@ -243,6 +235,19 @@ class CommandManagerComponent(BotComponent):
                 priority=0,
                 enabled=enabled,
             )
+            if created is None:
+                existing_trigger = await self.bot.message_trigger_configs.get_by_name(
+                    channel_id, trigger_name
+                )
+                if existing_trigger and existing_trigger.pattern != pattern:
+                    await self._ctx_reply(
+                        ctx,
+                        f"觸發詞與現有「{existing_trigger.pattern}」衝突，"
+                        f"請用 !cmd e {existing_trigger.pattern} 編輯，或先 !cmd d {existing_trigger.pattern} 刪除",
+                    )
+                else:
+                    await self._ctx_reply(ctx, f"「{pattern}」已存在，請用 !cmd e 編輯")
+                return
             preview = response_text[:30] + ("…" if len(response_text) > 30 else "")
             await self._ctx_reply(ctx, f"已新增觸發 {pattern} → {preview}")
             LOGGER.info(f"[{ctx.channel.name}] Trigger added: '{pattern}' by {ctx.chatter.name}")
