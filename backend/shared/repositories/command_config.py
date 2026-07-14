@@ -460,7 +460,7 @@ class RedemptionConfigRepository:
                     enabled,
                 )
                 result = RedemptionConfig(**dict(row))
-                _redemption_cache.clear()
+                self.invalidate_channel(channel_id)
                 return result
 
         return await _retry_on_db_error(_query)

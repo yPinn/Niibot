@@ -483,6 +483,18 @@ class TestRedemptionUpsertConfig:
 
         assert _redemption_cache.get("redemption:ch1:vip") is _MISSING
 
+    async def test_does_not_clear_other_channels_cache(self):
+        """upsert_config must only invalidate the edited channel — not every
+        tenant's cache (the original bug: a bare .clear() wiped everyone)."""
+        _redemption_cache.set("redemption:ch1:vip", _REDEMPTION_ROW)
+        _redemption_cache.set("redemption:ch2:vip", _REDEMPTION_ROW)
+        pool, _ = _make_pool(fetchrow=_REDEMPTION_ROW)
+        repo = RedemptionConfigRepository(pool)
+
+        await repo.upsert_config("ch1", "vip", "vip")
+
+        assert _redemption_cache.get("redemption:ch2:vip") == _REDEMPTION_ROW
+
 
 class TestRedemptionInvalidateChannel:
     def test_removes_matching_channel_keys_from_cache(self):
