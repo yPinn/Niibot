@@ -19,11 +19,11 @@ from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from core.config import get_settings
-from core.dependencies import get_current_channel_id, get_db_pool
+from core.dependencies import get_current_channel_id, get_db_pool, require_activated
 from routers.message_triggers_router import router as _triggers_router
 
 _CHANNEL_ID = "test-channel-123"
@@ -58,11 +58,27 @@ def _make_client(service_mock: MagicMock | None = None) -> TestClient:
     pool = AsyncMock()
     app.dependency_overrides[get_db_pool] = lambda: pool
     app.dependency_overrides[get_current_channel_id] = lambda: _CHANNEL_ID
+    app.dependency_overrides[require_activated] = lambda: None
 
     if service_mock:
         # Inject the service mock via pool — but we patch at the class level below.
         pass
 
+    return TestClient(app, raise_server_exceptions=False)
+
+
+def _make_client_not_activated() -> TestClient:
+    """Client where require_activated rejects the caller, for gate tests."""
+    app = FastAPI(lifespan=_no_lifespan)
+    app.include_router(_triggers_router)
+
+    app.dependency_overrides[get_db_pool] = lambda: AsyncMock()
+    app.dependency_overrides[get_current_channel_id] = lambda: _CHANNEL_ID
+
+    def _reject() -> None:
+        raise HTTPException(status_code=403, detail="Account not activated")
+
+    app.dependency_overrides[require_activated] = _reject
     return TestClient(app, raise_server_exceptions=False)
 
 
@@ -493,3 +509,16 @@ class TestDeleteTrigger:
         ):
             r = _make_client().delete("/api/triggers/configs/mytest")
         assert r.status_code == 500
+
+
+class TestActivationGate:
+    def test_list_rejected_when_not_activated(self):
+        r = _make_client_not_activated().get("/api/triggers/configs")
+        assert r.status_code == 403
+
+    def test_create_rejected_when_not_activated(self):
+        r = _make_client_not_activated().post(
+            "/api/triggers/configs",
+            json={"trigger_name": "mytest", "pattern": "hi", "response": "hello"},
+        )
+        assert r.status_code == 403
