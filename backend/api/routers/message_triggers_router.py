@@ -13,7 +13,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from core.dependencies import get_current_channel_id, get_trigger_service
+from core.dependencies import get_current_channel_id, get_trigger_service, require_activated
 from services.message_trigger_service import MessageTriggerService
 
 _REGEX_MAX_LEN = 200
@@ -110,6 +110,7 @@ async def _validate_regex_pattern(pattern: str, match_type: str) -> None:
 async def get_trigger_configs(
     channel_id: str = Depends(get_current_channel_id),
     service: MessageTriggerService = Depends(get_trigger_service),
+    _: None = Depends(require_activated),
 ) -> list[MessageTriggerResponse]:
     """Get all message triggers for the authenticated user's channel."""
     try:
@@ -125,6 +126,7 @@ async def create_trigger(
     body: TriggerCreate,
     channel_id: str = Depends(get_current_channel_id),
     service: MessageTriggerService = Depends(get_trigger_service),
+    _: None = Depends(require_activated),
 ) -> MessageTriggerResponse:
     """Create a new message trigger."""
     await _validate_regex_pattern(body.pattern, body.match_type)
@@ -156,6 +158,7 @@ async def update_trigger(
     body: TriggerUpdate,
     channel_id: str = Depends(get_current_channel_id),
     service: MessageTriggerService = Depends(get_trigger_service),
+    _: None = Depends(require_activated),
 ) -> MessageTriggerResponse:
     """Update a message trigger's settings."""
     try:
@@ -199,6 +202,7 @@ async def toggle_trigger(
     body: TriggerToggle,
     channel_id: str = Depends(get_current_channel_id),
     service: MessageTriggerService = Depends(get_trigger_service),
+    _: None = Depends(require_activated),
 ) -> MessageTriggerResponse:
     """Toggle a trigger's enabled state."""
     try:
@@ -219,6 +223,7 @@ async def delete_trigger(
     trigger_name: str,
     channel_id: str = Depends(get_current_channel_id),
     service: MessageTriggerService = Depends(get_trigger_service),
+    _: None = Depends(require_activated),
 ) -> None:
     """Delete a message trigger."""
     try:

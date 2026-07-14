@@ -872,11 +872,14 @@ async def suspend_membership(
 ) -> dict:
     if not body.reason:
         raise HTTPException(status_code=400, detail="reason is required")
-    decision = await admission.suspend(
-        user_id=user_id,
-        approver_user_id=approver_id,
-        reason=body.reason,
-    )
+    try:
+        decision = await admission.suspend(
+            user_id=user_id,
+            approver_user_id=approver_id,
+            reason=body.reason,
+        )
+    except ValueError:
+        raise HTTPException(status_code=404, detail="No membership for user") from None
     LOGGER.info("Membership suspended: user=%s by=%s", user_id, approver_id)
     return {"suspended": True, "state_changed": decision.state_changed}
 
@@ -889,10 +892,13 @@ async def reinstate_membership(
     _: str = Depends(require_owner),
     admission: AdmissionService = Depends(get_admission_service),
 ) -> dict:
-    decision = await admission.reinstate(
-        user_id=user_id,
-        approver_user_id=approver_id,
-        reason=body.reason or "admin_reinstate",
-    )
+    try:
+        decision = await admission.reinstate(
+            user_id=user_id,
+            approver_user_id=approver_id,
+            reason=body.reason or "admin_reinstate",
+        )
+    except ValueError:
+        raise HTTPException(status_code=404, detail="No membership for user") from None
     LOGGER.info("Membership reinstated: user=%s by=%s", user_id, approver_id)
     return {"reinstated": True, "state_changed": decision.state_changed}

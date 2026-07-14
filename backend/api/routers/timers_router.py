@@ -8,7 +8,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from core.dependencies import get_current_channel_id, get_timer_service
+from core.dependencies import get_current_channel_id, get_timer_service, require_activated
 from services.timer_service import TimerService
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -58,6 +58,7 @@ class TimerToggle(BaseModel):
 async def get_timer_configs(
     channel_id: str = Depends(get_current_channel_id),
     service: TimerService = Depends(get_timer_service),
+    _: None = Depends(require_activated),
 ) -> list[TimerConfigResponse]:
     """Get all timers for the authenticated user's channel."""
     try:
@@ -73,6 +74,7 @@ async def create_timer(
     body: TimerCreate,
     channel_id: str = Depends(get_current_channel_id),
     service: TimerService = Depends(get_timer_service),
+    _: None = Depends(require_activated),
 ) -> TimerConfigResponse:
     """Create a new timer."""
     try:
@@ -100,6 +102,7 @@ async def update_timer(
     body: TimerUpdate,
     channel_id: str = Depends(get_current_channel_id),
     service: TimerService = Depends(get_timer_service),
+    _: None = Depends(require_activated),
 ) -> TimerConfigResponse:
     """Update a timer's settings."""
     try:
@@ -133,6 +136,7 @@ async def toggle_timer(
     body: TimerToggle,
     channel_id: str = Depends(get_current_channel_id),
     service: TimerService = Depends(get_timer_service),
+    _: None = Depends(require_activated),
 ) -> TimerConfigResponse:
     """Toggle a timer's enabled state."""
     try:
@@ -153,6 +157,7 @@ async def delete_timer(
     timer_name: str,
     channel_id: str = Depends(get_current_channel_id),
     service: TimerService = Depends(get_timer_service),
+    _: None = Depends(require_activated),
 ) -> None:
     """Delete a timer."""
     try:

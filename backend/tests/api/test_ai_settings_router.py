@@ -15,11 +15,16 @@ from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from core.config import get_settings
-from core.dependencies import get_current_channel_id, get_db_pool, get_twitch_api
+from core.dependencies import (
+    get_current_channel_id,
+    get_db_pool,
+    get_twitch_api,
+    require_activated,
+)
 from routers.ai_settings_router import _contains_bias
 from routers.ai_settings_router import router as _ai_router
 
@@ -58,6 +63,22 @@ def _make_client(mock_twitch: MagicMock | None = None) -> TestClient:
     app.dependency_overrides[get_current_channel_id] = lambda: CHANNEL_ID
     app.dependency_overrides[get_db_pool] = lambda: AsyncMock()
     app.dependency_overrides[get_twitch_api] = lambda: mock_twitch or MagicMock()
+    app.dependency_overrides[require_activated] = lambda: None
+    return TestClient(app, raise_server_exceptions=False)
+
+
+def _make_client_not_activated() -> TestClient:
+    """Client where require_activated rejects the caller, for gate tests."""
+    app = FastAPI(lifespan=_no_lifespan)
+    app.include_router(_ai_router)
+    app.dependency_overrides[get_current_channel_id] = lambda: CHANNEL_ID
+    app.dependency_overrides[get_db_pool] = lambda: AsyncMock()
+    app.dependency_overrides[get_twitch_api] = lambda: MagicMock()
+
+    def _reject() -> None:
+        raise HTTPException(status_code=403, detail="Account not activated")
+
+    app.dependency_overrides[require_activated] = _reject
     return TestClient(app, raise_server_exceptions=False)
 
 
@@ -255,3 +276,17 @@ class TestGetAIEmotes:
             r = _make_client(mock_twitch).get("/api/ai/emotes")
 
         assert r.status_code == 500
+
+
+class TestActivationGate:
+    def test_get_settings_rejected_when_not_activated(self):
+        r = _make_client_not_activated().get("/api/ai/settings")
+        assert r.status_code == 403
+
+    def test_patch_settings_rejected_when_not_activated(self):
+        r = _make_client_not_activated().patch("/api/ai/settings", json={"bot_name": "X"})
+        assert r.status_code == 403
+
+    def test_packs_endpoint_is_not_gated(self):
+        r = _make_client_not_activated().get("/api/ai/packs")
+        assert r.status_code == 200

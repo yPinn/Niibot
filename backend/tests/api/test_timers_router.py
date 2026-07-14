@@ -15,11 +15,11 @@ from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from core.config import get_settings
-from core.dependencies import get_current_channel_id, get_db_pool
+from core.dependencies import get_current_channel_id, get_db_pool, require_activated
 from routers.timers_router import router as _timers_router
 
 CHANNEL_ID = "ch-timers"
@@ -56,6 +56,21 @@ def _make_client() -> TestClient:
     app.include_router(_timers_router)
     app.dependency_overrides[get_current_channel_id] = lambda: CHANNEL_ID
     app.dependency_overrides[get_db_pool] = lambda: AsyncMock()
+    app.dependency_overrides[require_activated] = lambda: None
+    return TestClient(app, raise_server_exceptions=False)
+
+
+def _make_client_not_activated() -> TestClient:
+    """Client where require_activated rejects the caller, for gate tests."""
+    app = FastAPI(lifespan=_no_lifespan)
+    app.include_router(_timers_router)
+    app.dependency_overrides[get_current_channel_id] = lambda: CHANNEL_ID
+    app.dependency_overrides[get_db_pool] = lambda: AsyncMock()
+
+    def _reject() -> None:
+        raise HTTPException(status_code=403, detail="Account not activated")
+
+    app.dependency_overrides[require_activated] = _reject
     return TestClient(app, raise_server_exceptions=False)
 
 
@@ -243,3 +258,23 @@ class TestDeleteTimer:
         with patch.object(m.TimerService, "delete_timer", AsyncMock(side_effect=RuntimeError)):
             r = _make_client().delete("/api/timers/configs/social")
         assert r.status_code == 500
+
+
+# ── require_activated gate ──
+
+
+class TestActivationGate:
+    def test_list_rejected_when_not_activated(self):
+        r = _make_client_not_activated().get("/api/timers/configs")
+        assert r.status_code == 403
+
+    def test_create_rejected_when_not_activated(self):
+        r = _make_client_not_activated().post(
+            "/api/timers/configs",
+            json={
+                "timer_name": "social",
+                "interval_seconds": 300,
+                "message_template": "hi",
+            },
+        )
+        assert r.status_code == 403

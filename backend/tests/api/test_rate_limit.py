@@ -80,3 +80,26 @@ class TestRateLimiterRequire:
             with pytest.raises(HTTPException) as exc_info:
                 rl.require("key")
             assert exc_info.value.status_code == 429
+
+
+class TestRateLimiterSweep:
+    def test_idle_keys_are_evicted_after_sweep_interval(self):
+        """Keys whose window has fully expired must not live in _log forever."""
+        rl = RateLimiter(max_calls=1, period=0.05)  # 50 ms window
+        rl.allow("stale-key")  # creates + fills the bucket
+        time.sleep(0.1)  # window expires — bucket is now empty but still present
+
+        # Drive enough calls (on other keys) to trigger a sweep.
+        for i in range(RateLimiter._SWEEP_INTERVAL):
+            rl.allow(f"filler-{i}")
+
+        assert "stale-key" not in rl._log
+
+    def test_active_keys_survive_a_sweep(self):
+        rl = RateLimiter(max_calls=5, period=60.0)
+        rl.allow("active-key")
+
+        for i in range(RateLimiter._SWEEP_INTERVAL):
+            rl.allow(f"filler-{i}")
+
+        assert "active-key" in rl._log
