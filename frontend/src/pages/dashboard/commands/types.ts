@@ -10,4 +10,5 @@ export type EditingState =
   | { mode: 'edit-trigger'; trigger: TriggerConfig }
 
 export type CustomRow =
-  { kind: 'command'; data: CommandConfig } | { kind: 'trigger'; data: TriggerConfig }
+  | { kind: 'command'; data: CommandConfig }
+  | { kind: 'trigger'; data: TriggerConfig }
