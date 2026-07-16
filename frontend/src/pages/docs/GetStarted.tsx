@@ -16,6 +16,8 @@ import {
 import { Badge, Card, CardContent, CardHeader, CardTitle } from '@/components/ui'
 import { WarningBanner } from '@/components/WarningBanner'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
+import { useOnboardingStatus } from '@/hooks/useOnboardingStatus'
+import { countCompleted, type OnboardingStatus } from '@/lib/onboarding-status'
 
 type ChatLine =
   | { type: 'message'; roles: TwitchRole[]; username: string; message: string }
@@ -167,24 +169,33 @@ const MOD_METHODS = [
   },
 ]
 
-const CORE_FEATURES = [
+const CORE_FEATURES: {
+  icon: string
+  title: string
+  desc: string
+  href: string
+  doneKey?: keyof OnboardingStatus
+}[] = [
   {
     icon: 'fa-solid fa-terminal',
     title: '指令管理',
     desc: '新增觀眾可呼叫的指令，可設冷卻時間與開放對象，支援內建與完全自訂。',
     href: '/commands',
+    doneKey: 'commandsDone',
   },
   {
     icon: 'fa-solid fa-bolt',
     title: '事件回應',
     desc: '追蹤、訂閱、突襲或贈禮時，自動發出設定的訊息，互動不漏掉。',
     href: '/events',
+    doneKey: 'eventsDone',
   },
   {
     icon: 'fa-solid fa-clock',
     title: '定時訊息',
     desc: '設定週期性廣播自動發送頻道公告，靜止時段不觸發。',
     href: '/timers',
+    doneKey: 'timersDone',
   },
   {
     icon: 'fa-solid fa-chart-mixed',
@@ -227,6 +238,8 @@ const MODULE_FEATURES = [
 
 export default function GetStarted() {
   useDocumentTitle('Get Started')
+  const { loading: statusLoading, status } = useOnboardingStatus()
+  const { completed, total } = countCompleted(status)
 
   return (
     <PageMain className="select-none">
@@ -240,7 +253,17 @@ export default function GetStarted() {
           <SlideUp inView delay={0.05}>
             <Card>
               <CardHeader>
-                <CardTitle className="text-card-title">核心功能</CardTitle>
+                <CardTitle className="flex items-center gap-2 text-card-title">
+                  核心功能
+                  {!statusLoading && total > 0 && (
+                    <Badge
+                      variant="outline"
+                      className="text-label border-primary/30 text-primary/70"
+                    >
+                      {completed}/{total} 已完成
+                    </Badge>
+                  )}
+                </CardTitle>
                 <p className="text-sub text-muted-foreground">
                   授予 Mod 後，建議先熟悉這幾項核心功能。
                 </p>
@@ -262,9 +285,27 @@ export default function GetStarted() {
                           wrapperClassName="mt-0.5 shrink-0 text-primary/70 group-hover:text-primary transition-colors"
                         />
                         <div className="flex-1 min-w-0">
-                          <p className="text-sub font-semibold group-hover:text-primary transition-colors">
-                            {item.title}
-                          </p>
+                          <div className="flex items-center gap-1.5">
+                            <p className="text-sub font-semibold group-hover:text-primary transition-colors">
+                              {item.title}
+                            </p>
+                            {item.doneKey &&
+                              !statusLoading &&
+                              status[item.doneKey] !== null &&
+                              (status[item.doneKey] ? (
+                                <Icon
+                                  icon="fa-solid fa-circle-check"
+                                  size="xs"
+                                  wrapperClassName="text-status-success"
+                                />
+                              ) : (
+                                <Icon
+                                  icon="fa-regular fa-circle"
+                                  size="xs"
+                                  wrapperClassName="text-muted-foreground/50"
+                                />
+                              ))}
+                          </div>
                           <p className="text-label leading-relaxed text-muted-foreground mt-0.5">
                             {item.desc}
                           </p>
@@ -353,6 +394,14 @@ export default function GetStarted() {
                       wrapperClassName="text-status-warning"
                     />
                     讓機器人成為聊天室管理員
+                    {!statusLoading && status.modDone && (
+                      <Badge
+                        variant="outline"
+                        className="ml-auto shrink-0 text-label border-status-success/30 text-status-success"
+                      >
+                        已完成
+                      </Badge>
+                    )}
                   </CardTitle>
                   <p className="text-sub text-muted-foreground">
                     機器人需要 Mod 才能發言。點選右上角 <strong>Niibot</strong>{' '}
