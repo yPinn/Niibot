@@ -136,7 +136,7 @@ export const navigationData: NavigationData = {
     },
     {
       title: 'Discord',
-      url: import.meta.env.VITE_DISCORD_INVITE_URL,
+      url: import.meta.env.VITE_DISCORD_COMMUNITY_URL,
       icon: 'fa-brands fa-discord',
     },
   ],
@@ -193,7 +193,7 @@ export const discordNavigationData: NavigationData = {
     },
     {
       title: 'Discord',
-      url: import.meta.env.VITE_DISCORD_INVITE_URL,
+      url: import.meta.env.VITE_DISCORD_COMMUNITY_URL,
       icon: 'fa-brands fa-discord',
     },
   ],

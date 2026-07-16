@@ -58,7 +58,7 @@ const COMMANDS = [
   { cmd: '/kick /ban /mute', desc: '踢出、封鎖或禁言成員（需管理員）' },
 ]
 
-const INVITE_URL = import.meta.env.VITE_DISCORD_INVITE_URL
+const INVITE_URL = import.meta.env.VITE_DISCORD_BOT_INVITE_URL
 
 export default function DiscordDashboard() {
   useDocumentTitle('Discord Bot')

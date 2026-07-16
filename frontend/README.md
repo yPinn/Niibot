@@ -32,7 +32,8 @@ npm run dev     # 啟動開發伺服器（localhost:3000）
 ```env
 VITE_API_URL=http://localhost:8000  # 後端代理目標（預設 localhost:8000）
 VITE_BOT_USERNAME=niibot_           # Bot 帳號名，抑制自身的「授予 Mod」提示
-VITE_DISCORD_INVITE_URL=            # Discord Bot 邀請連結
+VITE_DISCORD_COMMUNITY_URL=         # Discord 社群邀請連結（側邊欄／說明橫幅／條款頁聯絡方式）
+VITE_DISCORD_BOT_INVITE_URL=        # Discord Bot OAuth 邀請連結（將 Bot 加入自己的伺服器）
 VITE_ENVIRONMENT=                   # 部署環境：production 鎖定 WIP 頁面；staging/dev 不鎖定
 ```
 
