@@ -54,7 +54,7 @@
       "minimatch": "^10.2.1"
     },
     "markdown-it": "^14.2.0",
-    "js-yaml": "^4.2.0",
+    "js-yaml": "^4.3.0",
     "undici": "^7.28.0"
   },
   "devDependencies": {
