@@ -11,7 +11,7 @@ LOGGER: logging.Logger = logging.getLogger(__name__)
 class AuthService:
     """Handle JWT token creation and validation"""
 
-    def __init__(self, secret_key: str, algorithm: str = "HS256", expire_days: int = 30):
+    def __init__(self, secret_key: str, algorithm: str = "HS256", expire_days: int = 7):
         if not secret_key:
             raise ValueError("JWT secret key cannot be empty")
 
