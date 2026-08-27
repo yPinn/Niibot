@@ -27,14 +27,13 @@ import io
 import logging
 import re
 import time
-from html.parser import HTMLParser
 from urllib.parse import quote_plus, unquote
 
 import discord
 import httpx
 from discord.ext import commands
 
-from core import EmbedFactory, UserBoundView, get_settings
+from core import EmbedFactory, get_settings
 
 from ._embeds import (
     build_bilibili_embed,
@@ -48,6 +47,8 @@ from ._embeds import (
     build_twitch_channel_embed,
     build_twitch_clip_embed,
 )
+from ._ogparser import _parse_og, _twitch_clip_mp4_url  # noqa: F401  (re-exported for tests)
+from ._views import _BasePreviewView, _InstagramCarouselView, _ThreadsCarouselView
 from .constants import (
     BILIBILI_API,
     BILIBILI_CARD_API,
@@ -55,7 +56,6 @@ from .constants import (
     BILIBILI_LIVE_RE,
     BILIBILI_RE,
     BILIBILI_SPACE_RE,
-    DISMISS_TIMEOUT,
     HTTP_TIMEOUT,
     INSTAGRAM_APP_ID,
     INSTAGRAM_PROFILE_API,
@@ -87,7 +87,6 @@ _UA = (
 )
 
 _BILIBILI_BV_RE = re.compile(r"BV[A-Za-z0-9]+")
-_TWITCH_THUMB_RE = re.compile(r"-preview-\d+x\d+\.jpg$", re.IGNORECASE)
 
 
 async def _anone() -> None:
@@ -96,156 +95,6 @@ async def _anone() -> None:
 
 async def _anone_pair() -> tuple[None, None]:
     return None, None
-
-
-def _twitch_clip_mp4_url(thumbnail_url: str) -> str | None:
-    """Derive the direct MP4 URL from a Twitch clip thumbnail URL.
-
-    Twitch CDN pattern: <base>-preview-<W>x<H>.jpg → <base>.mp4
-    Returns None if the thumbnail URL doesn't match the expected pattern.
-    """
-    if not thumbnail_url or not _TWITCH_THUMB_RE.search(thumbnail_url):
-        return None
-    return _TWITCH_THUMB_RE.sub(".mp4", thumbnail_url)
-
-
-class _BasePreviewView(UserBoundView):
-    async def on_timeout(self) -> None:
-        if self.message:
-            try:
-                await self.message.edit(view=None)
-            except (discord.NotFound, discord.HTTPException):
-                pass
-
-
-class _CarouselView(_BasePreviewView):
-    """Base class for ◀ 1/N ▶ carousel navigation views."""
-
-    def __init__(
-        self,
-        user_id: int,
-        items: list[tuple[str | None, str | None]],
-    ) -> None:
-        super().__init__(user_id, timeout=DISMISS_TIMEOUT)
-        self._items = items
-        self.current = 0
-        self._sync_buttons()
-
-    def _sync_buttons(self) -> None:
-        self.prev_btn.disabled = self.current == 0
-        self.next_btn.disabled = self.current == len(self._items) - 1
-        self.page_btn.label = f"{self.current + 1}/{len(self._items)}"
-
-    def _build_embed(self) -> discord.Embed:
-        raise NotImplementedError
-
-    async def _navigate(self, interaction: discord.Interaction) -> None:
-        # Guard against Discord race condition where a disabled button fires late.
-        if not (0 <= self.current < len(self._items)):
-            await interaction.response.defer()
-            return
-        await interaction.response.edit_message(
-            embed=self._build_embed(), view=self, attachments=[]
-        )
-
-    @discord.ui.button(label="◀", style=discord.ButtonStyle.secondary, disabled=True)
-    async def prev_btn(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
-        self.current = max(0, self.current - 1)
-        self._sync_buttons()
-        await self._navigate(interaction)
-
-    @discord.ui.button(label="…", style=discord.ButtonStyle.secondary, disabled=True)
-    async def page_btn(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
-        await interaction.response.defer()
-
-    @discord.ui.button(label="▶", style=discord.ButtonStyle.secondary)
-    async def next_btn(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
-        self.current = min(len(self._items) - 1, self.current + 1)
-        self._sync_buttons()
-        await self._navigate(interaction)
-
-    async def on_timeout(self) -> None:
-        if self.message:
-            try:
-                self.current = 0
-                await self.message.edit(embed=self._build_embed(), view=None, attachments=[])
-            except (discord.NotFound, discord.HTTPException):
-                pass
-
-
-class _InstagramCarouselView(_CarouselView):
-    """◀ 1/N ▶ photo navigation for Instagram carousel posts."""
-
-    def __init__(
-        self,
-        user_id: int,
-        items: list[tuple[str | None, str | None]],
-        factory: EmbedFactory,
-        og_meta: dict[str, str],
-        post_url: str,
-    ) -> None:
-        super().__init__(user_id, items)
-        self._factory = factory
-        self._og_meta = og_meta
-        self._post_url = post_url
-
-    def _build_embed(self) -> discord.Embed:
-        image_cdn, _ = self._items[self.current]
-        meta = {**self._og_meta, "image": image_cdn} if image_cdn else self._og_meta
-        return build_instagram_embed(self._factory, meta, self._post_url)
-
-
-class _ThreadsCarouselView(_CarouselView):
-    """◀ 1/N ▶ navigation for Threads image carousel posts.
-
-    Paginates image slots only. Videos are sent once as a bundled reply at
-    creation time and are never deleted by this view.
-    """
-
-    def __init__(
-        self,
-        user_id: int,
-        items: list[tuple[str | None, str | None]],
-        factory: EmbedFactory,
-        data: dict,
-        post_url: str,
-    ) -> None:
-        super().__init__(user_id, items)
-        self._factory = factory
-        self._data = data
-        self._post_url = post_url
-
-    def _build_embed(self) -> discord.Embed:
-        image_url, _ = self._items[self.current]
-        return build_threads_embed(
-            self._factory,
-            {**self._data, "image_urls": [image_url] if image_url else [], "video_urls": []},
-            self._post_url,
-        )
-
-
-class _OGParser(HTMLParser):
-    def __init__(self) -> None:
-        super().__init__()
-        self.og: dict[str, str] = {}
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag != "meta":
-            return
-        attr = dict(attrs)
-        prop = attr.get("property") or attr.get("name") or ""
-        content = attr.get("content") or ""
-        if prop.startswith("og:") and content:
-            self.og.setdefault(prop[3:], content)
-        elif prop == "twitter:title" and content:
-            # InstaFix sets the username in twitter:title, not og:title
-            self.og.setdefault("title", content)
-
-
-def _parse_og(html: str) -> dict[str, str]:
-    parser = _OGParser()
-    parser.feed(html[:20_000])
-    return parser.og
 
 
 class SocialPreviewCog(commands.Cog, name="SocialPreview"):

@@ -162,6 +162,13 @@ async def get_current_channel_id(
     return str(payload["platform_user_id"])
 
 
+async def require_owner(channel_id: str = Depends(get_current_channel_id)) -> str:
+    """Gate access to owner-only endpoints (the admin router)."""
+    if channel_id != str(get_settings().owner_id):
+        raise HTTPException(status_code=403, detail="Owner access required")
+    return channel_id
+
+
 async def require_tenant_access(
     channel_id: str = Path(..., description="Tenant channel_id"),
     payload: dict = Depends(get_token_payload),

@@ -27,7 +27,8 @@ from core.config import Settings, get_settings
 from core.dependencies import get_db_pool
 from core.rate_limit import RateLimiter
 from shared.repositories.donation import DonationRepository, generate_trade_no
-from shared.repositories.video_queue import VideoQueueRepository, extract_youtube_info
+from shared.repositories.video_queue import VideoQueueRepository
+from shared.video_sources import extract_youtube_info
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
