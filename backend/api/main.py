@@ -26,10 +26,16 @@ if __name__ == "__main__":
 
     settings = get_settings()
 
+    # Honour X-Forwarded-* so request.client.host is the real caller, not the
+    # reverse proxy — otherwise every caller shares one bucket in the per-IP
+    # rate limiters (OTP activation, donation checkout). uvicorn reads the trust
+    # list from the FORWARDED_ALLOW_IPS env var; set it to the proxy IP/CIDR
+    # (or "*" if the proxy is the sole ingress).
     uvicorn.run(
         "main:app",
         host=settings.host,
         port=settings.port,
         reload=settings.is_development,
         log_config=None,  # We handle logging ourselves
+        proxy_headers=True,
     )
