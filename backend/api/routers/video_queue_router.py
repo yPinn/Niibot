@@ -19,6 +19,8 @@ from shared.repositories.video_queue import (
     SOURCE_PRIORITY,
     VideoQueueRepository,
     VideoQueueSettingsRepository,
+)
+from shared.video_sources import (
     extract_twitch_clip_slug,
     extract_youtube_info,
     fetch_bilibili_info,
