@@ -10,16 +10,56 @@ from __future__ import annotations
 import asyncio
 import json as _json
 import logging
+import os
 import socket
 import ssl as _ssl
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, fields
 from typing import Any, ClassVar
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 import asyncpg
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
+
+# Hosts for which an unencrypted DB connection is acceptable (local dev / the
+# private Docker network).  Any other host is assumed to be a managed/remote
+# Postgres reachable over a network we don't control, so TLS is required.
+_LOCAL_DB_HOSTS = {"localhost", "127.0.0.1", "::1", "postgres", "db", "nb-pg"}
+_VALID_SSL_MODES = {
+    "disable",
+    "allow",
+    "prefer",
+    "require",
+    "verify-ca",
+    "verify-full",
+}
+
+
+def resolve_db_ssl(database_url: str) -> str | None:
+    """Return the ``ssl`` argument for ``asyncpg.create_pool``.
+
+    Priority:
+      1. ``DB_SSL`` env var (disable|allow|prefer|require|verify-ca|verify-full)
+      2. an ``sslmode`` already present in the DSN query → ``None`` (let asyncpg
+         honour the DSN rather than silently overriding it)
+      3. a local / container-local host → ``"prefer"`` (plaintext is fine on a
+         trusted network and keeps local dev zero-config)
+      4. anything else (remote / managed Postgres) → ``"require"`` so the
+         connection is always encrypted
+    """
+    env_mode = os.getenv("DB_SSL", "").strip().lower()
+    if env_mode in _VALID_SSL_MODES:
+        return env_mode
+    if env_mode:
+        LOGGER.warning("Ignoring invalid DB_SSL=%r; falling back to auto-detection", env_mode)
+
+    parsed = urlparse(database_url)
+    if "sslmode" in parse_qs(parsed.query):
+        return None
+
+    host = (parsed.hostname or "").lower()
+    return "prefer" if host in _LOCAL_DB_HOSTS else "require"
 
 
 @dataclass
@@ -96,20 +136,23 @@ class DatabaseManager:
         - Prepared statements enabled (cache=100)
         - Session-level init (SET statement_timeout)
         - Maintains min_size idle connections
-        - ssl="prefer": uses SSL when available, plain-text for local deployments
+        - ssl: required for remote hosts, "prefer" for local (see resolve_db_ssl)
         """
         cfg = self.config
-        return {
+        kwargs: dict[str, Any] = {
             "dsn": self.database_url,
             "min_size": cfg.min_size,
             "max_size": cfg.max_size,
             "timeout": cfg.timeout,
             "command_timeout": cfg.command_timeout,
-            "ssl": "prefer",
             "statement_cache_size": 100,
             "max_inactive_connection_lifetime": cfg.max_inactive_connection_lifetime,
             "init": self._init_session_connection,
         }
+        ssl_arg = resolve_db_ssl(self.database_url)
+        if ssl_arg is not None:
+            kwargs["ssl"] = ssl_arg
+        return kwargs
 
     def _transaction_pool_kwargs(self) -> dict[str, Any]:
         """Build asyncpg.create_pool kwargs for transaction mode (port 6543).
@@ -120,20 +163,23 @@ class DatabaseManager:
         - SET commands not used (don't persist across transactions in pooler mode)
         - min_size=0: don't hold idle connections (pooler manages them)
         - max_inactive=0: release connections immediately after use
-        - ssl="prefer": uses SSL when available
+        - ssl: required for remote hosts, "prefer" for local (see resolve_db_ssl)
         """
         cfg = self.config
-        return {
+        kwargs: dict[str, Any] = {
             "dsn": self.database_url,
             "min_size": 0,
             "max_size": cfg.max_size,
             "timeout": cfg.timeout,
             "command_timeout": cfg.command_timeout,
-            "ssl": "prefer",
             "statement_cache_size": 0,
             "max_inactive_connection_lifetime": 0,
             "init": self._register_json_codecs,
         }
+        ssl_arg = resolve_db_ssl(self.database_url)
+        if ssl_arg is not None:
+            kwargs["ssl"] = ssl_arg
+        return kwargs
 
     # ── Diagnostics ──────────────────────────────────────────────────
 
