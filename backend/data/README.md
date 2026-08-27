@@ -163,10 +163,12 @@ per environment so each deployment keeps its own state.
 ```python
 # Static (always present, baked into image):
 from core.config import DATA_DIR
+
 load_json(DATA_DIR / "embed.json")
 
 # Mutable (created at first write, volume-mounted):
 from core.config import RUNTIME_DIR
+
 RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
 (RUNTIME_DIR / "log_channels.json").write_text(...)
 ```
