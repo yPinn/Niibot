@@ -380,6 +380,36 @@ class TestReinstateMembership:
         assert r.status_code == 404
 
 
+# ── /api/admin/modules/ai-packs ──────────────────────────────────────────────
+
+
+class TestModuleAiPacks:
+    def test_get_returns_enabled_packs(self):
+        with patch("routers.admin.modules.ModuleConfigRepository") as mc:
+            mc.return_value.get_enabled_packs = AsyncMock(return_value=["lol", "valorant"])
+            r = _make_client().get("/api/admin/modules/ai-packs")
+        assert r.status_code == 200
+        assert r.json() == ["lol", "valorant"]
+
+    def test_patch_sets_packs_and_notifies(self):
+        conn = AsyncMock()
+        pool = MagicMock()
+        pool.acquire.return_value.__aenter__ = AsyncMock(return_value=conn)
+        pool.acquire.return_value.__aexit__ = AsyncMock(return_value=None)
+        with patch("routers.admin.modules.ModuleConfigRepository") as mc:
+            mc.return_value.set_enabled_packs = AsyncMock(return_value=["lol"])
+            r = _make_client(mock_pool=pool).patch(
+                "/api/admin/modules/ai-packs", json={"enabled_packs": ["lol"]}
+            )
+        assert r.status_code == 200
+        assert r.json() == ["lol"]
+        conn.execute.assert_awaited_once()
+
+    def test_non_owner_gets_403(self):
+        r = _make_client(channel_id="not-the-owner").get("/api/admin/modules/ai-packs")
+        assert r.status_code == 403
+
+
 # ── POST /api/admin/db/query ─────────────────────────────────────────────────
 
 
@@ -898,9 +928,7 @@ class TestGetAdminChannels:
 
 class TestListLogContainers:
     def test_docker_unavailable_returns_all_not_running(self):
-        with patch(
-            "routers.admin_router.aiohttp.UnixConnector", side_effect=Exception("no socket")
-        ):
+        with patch("routers.admin.logs.aiohttp.UnixConnector", side_effect=Exception("no socket")):
             r = _make_client().get("/api/admin/logs/containers")
         assert r.status_code == 200
         data = r.json()
@@ -910,9 +938,7 @@ class TestListLogContainers:
     def test_dev_environment_uses_bare_container_names(self, monkeypatch):
         monkeypatch.setenv("ENVIRONMENT", "development")
         get_settings.cache_clear()
-        with patch(
-            "routers.admin_router.aiohttp.UnixConnector", side_effect=Exception("no socket")
-        ):
+        with patch("routers.admin.logs.aiohttp.UnixConnector", side_effect=Exception("no socket")):
             r = _make_client().get("/api/admin/logs/containers")
         names = [c["name"] for c in r.json()]
         assert "nb-api" in names
@@ -923,9 +949,7 @@ class TestListLogContainers:
         bare names — those would return prod container status."""
         monkeypatch.setenv("ENVIRONMENT", "staging")
         get_settings.cache_clear()
-        with patch(
-            "routers.admin_router.aiohttp.UnixConnector", side_effect=Exception("no socket")
-        ):
+        with patch("routers.admin.logs.aiohttp.UnixConnector", side_effect=Exception("no socket")):
             r = _make_client().get("/api/admin/logs/containers")
         names = [c["name"] for c in r.json()]
         assert "nb-api-stg" in names
@@ -943,7 +967,7 @@ class TestGetContainerLogs:
 
     def test_docker_socket_unavailable_returns_503(self):
         with patch(
-            "routers.admin_router.aiohttp.UnixConnector",
+            "routers.admin.logs.aiohttp.UnixConnector",
             side_effect=Exception("no socket"),
         ):
             r = _make_client().get("/api/admin/logs/nb-api")
