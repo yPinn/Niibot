@@ -215,6 +215,25 @@ class TestReDoSProtection:
         assert validate_regex_pattern(r"\d+") is True
         assert validate_regex_pattern(r"^hello\s+world$") is True
 
+    def test_catastrophic_non_word_pattern_rejected(self):
+        """Canaries cover more than word chars: a digit-class ReDoS is rejected too.
+
+        ``(\\d+)+$`` blows up only on a long run of digits — the old single
+        ``"a"*30 + "b"`` canary never exercised it.
+        """
+        from twitch.utils.trigger_matching import validate_regex_pattern
+
+        assert validate_regex_pattern(r"(\d+)+$") is False
+
+    def test_regex_match_caps_input_length(self):
+        """Match-time input is truncated so a slow pattern can't be fed huge input."""
+        from twitch.utils import trigger_matching
+
+        t = make_trigger(pattern="needle$", match_type="regex")
+        # "needle" sits past the cap, so the (truncated) text must not match.
+        text = "x" * trigger_matching._MATCH_INPUT_CAP + "needle"
+        assert match_trigger(t, text) is False
+
     def test_aliases_are_matched(self):
         """Aliases field (comma-separated) must also be tested against the text."""
         t = make_trigger(pattern="!hello", match_type="startswith", aliases="!hi,!hey")
