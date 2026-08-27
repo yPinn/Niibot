@@ -162,12 +162,11 @@ class GiveawayView(ui.View):
         host_avatar_url: str,
         end_time: datetime | None = None,
     ):
-        timeout_seconds = None
-        if end_time:
-            remaining = (end_time - datetime.now(UTC)).total_seconds()
-            timeout_seconds = min(remaining, 900) if remaining > 0 else 1
-
-        super().__init__(timeout=timeout_seconds)
+        # bot.add_view(view, message_id=...) persistence requires timeout=None —
+        # a bounded timeout breaks the buttons after any idle gap. Expiry is
+        # enforced per-button via end_time instead. Call stop() explicitly
+        # once a giveaway finishes (see _end_giveaway/_cancel_giveaway).
+        super().__init__(timeout=None)
         self.host_id = host_id
         self.prize_name = prize_name
         self.prize_count = prize_count
@@ -293,6 +292,7 @@ class GiveawayView(ui.View):
             f"Giveaway cancelled | Guild: {guild_name} | "
             f"Prize: {self.prize_name} | Participants: {len(self.participants)}"
         )
+        self.stop()  # evict from the view store now that the giveaway is done
 
     async def _end_giveaway(self, interaction: discord.Interaction) -> None:
         async with self._lock:
@@ -312,6 +312,7 @@ class GiveawayView(ui.View):
                     item.disabled = True
             if interaction.message:
                 await interaction.message.edit(view=self)
+            self.stop()
             return
 
         winner_count = min(self.prize_count, len(self.participants))
@@ -349,3 +350,4 @@ class GiveawayView(ui.View):
             f"Prize: {self.prize_name} | "
             f"Participants: {len(self.participants)} | Winners: {len(winner_ids)}"
         )
+        self.stop()  # evict from the view store now that the giveaway is done

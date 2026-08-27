@@ -316,6 +316,132 @@ class TestAdd:
         assert result.status == "queued"
 
 
+def _counts(duplicate: int = 0, queue: int = 0, user: int = 0) -> dict:
+    """Row shape returned by add_if_within_limits' single combined counts query."""
+    return {"duplicate_count": duplicate, "queue_size": queue, "user_count": user}
+
+
+@pytest.mark.asyncio
+class TestAddIfWithinLimits:
+    async def test_inserts_when_within_all_limits(self):
+        pool, conn = _make_pool()
+        conn.fetchrow.side_effect = [_counts(queue=5), _ENTRY_ROW]
+        repo = VideoQueueRepository(pool)
+
+        result = await repo.add_if_within_limits(
+            "ch1", "dQw4w9WgXcQ", "user1", "chat", max_queue_size=20, max_per_user=0
+        )
+
+        assert result is not None
+        assert result.video_id == "dQw4w9WgXcQ"
+
+    async def test_acquires_advisory_lock_scoped_to_channel(self):
+        pool, conn = _make_pool()
+        conn.fetchrow.side_effect = [_counts(queue=5), _ENTRY_ROW]
+        repo = VideoQueueRepository(pool)
+
+        await repo.add_if_within_limits(
+            "ch1", "dQw4w9WgXcQ", "user1", "chat", max_queue_size=20, max_per_user=0
+        )
+
+        first_call_sql = conn.execute.call_args_list[0][0][0]
+        assert "pg_advisory_xact_lock" in first_call_sql
+
+    async def test_checks_all_limits_in_a_single_round_trip(self):
+        """Combining the three checks into one query matters here: this runs
+        while holding an exclusive advisory lock, so fewer round-trips means
+        less time every other request for the channel is blocked."""
+        pool, conn = _make_pool()
+        conn.fetchrow.side_effect = [_counts(queue=5), _ENTRY_ROW]
+        repo = VideoQueueRepository(pool)
+
+        await repo.add_if_within_limits(
+            "ch1",
+            "dQw4w9WgXcQ",
+            "user1",
+            "chat",
+            max_queue_size=20,
+            max_per_user=2,
+            requested_by_id="u123",
+        )
+
+        # One fetchrow for the combined counts query, one for the INSERT.
+        assert conn.fetchrow.call_count == 2
+
+    async def test_returns_none_when_video_already_active(self):
+        pool, conn = _make_pool()
+        conn.fetchrow.side_effect = [_counts(duplicate=1)]
+        repo = VideoQueueRepository(pool)
+
+        result = await repo.add_if_within_limits(
+            "ch1", "dQw4w9WgXcQ", "user1", "chat", max_queue_size=20, max_per_user=0
+        )
+
+        assert result is None
+        # Only the counts query ran — no wasted INSERT attempt after rejection.
+        assert conn.fetchrow.call_count == 1
+
+    async def test_returns_none_when_queue_full(self):
+        pool, conn = _make_pool()
+        conn.fetchrow.side_effect = [_counts(queue=20)]
+        repo = VideoQueueRepository(pool)
+
+        result = await repo.add_if_within_limits(
+            "ch1", "dQw4w9WgXcQ", "user1", "chat", max_queue_size=20, max_per_user=0
+        )
+
+        assert result is None
+        assert conn.fetchrow.call_count == 1
+
+    async def test_returns_none_when_user_limit_reached(self):
+        pool, conn = _make_pool()
+        conn.fetchrow.side_effect = [_counts(queue=5, user=2)]
+        repo = VideoQueueRepository(pool)
+
+        result = await repo.add_if_within_limits(
+            "ch1",
+            "dQw4w9WgXcQ",
+            "user1",
+            "chat",
+            max_queue_size=20,
+            max_per_user=2,
+            requested_by_id="u123",
+        )
+
+        assert result is None
+        assert conn.fetchrow.call_count == 1
+
+    async def test_inserts_when_user_limit_not_reached(self):
+        pool, conn = _make_pool()
+        conn.fetchrow.side_effect = [_counts(queue=5, user=1), _ENTRY_ROW]
+        repo = VideoQueueRepository(pool)
+
+        result = await repo.add_if_within_limits(
+            "ch1",
+            "dQw4w9WgXcQ",
+            "user1",
+            "chat",
+            max_queue_size=20,
+            max_per_user=2,
+            requested_by_id="u123",
+        )
+
+        assert result is not None
+
+    async def test_skips_per_user_check_when_max_per_user_is_zero(self):
+        """Even if user_count in the row would exceed a real limit, max_per_user=0
+        means "no limit" — the check must be skipped, not evaluated as 0 >= 0."""
+        pool, conn = _make_pool()
+        conn.fetchrow.side_effect = [_counts(queue=5, user=999), _ENTRY_ROW]
+        repo = VideoQueueRepository(pool)
+
+        result = await repo.add_if_within_limits(
+            "ch1", "dQw4w9WgXcQ", "user1", "chat", max_queue_size=20, max_per_user=0
+        )
+
+        assert result is not None
+
+
 @pytest.mark.asyncio
 class TestGetCurrent:
     async def test_returns_none_when_nothing_playing(self):

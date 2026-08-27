@@ -25,10 +25,6 @@ on:
         description: "Force restart Discord bot"
         type: boolean
         default: false
-      deploy_scrapling:
-        description: "Force restart Scrapling"
-        type: boolean
-        default: false
       deploy_instafix:
         description: "Pull and restart Instafix"
         type: boolean
@@ -50,13 +46,11 @@ jobs:
       compose_project: ""
       branch: main
       api_port: 8000
-      scrapling_port_default: 3001
       compose_change_pattern: docker-compose.prod.yml
       force_all: ${{ inputs.force_all == true }}
       force_api: ${{ inputs.deploy_api == true }}
       force_twitch: ${{ inputs.deploy_twitch == true }}
       force_discord: ${{ inputs.deploy_discord == true }}
-      force_scrapling: ${{ inputs.deploy_scrapling == true }}
       force_instafix: ${{ inputs.deploy_instafix == true }}
       is_scheduled: ${{ github.event_name == 'schedule' }}
       tag_images: true

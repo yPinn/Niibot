@@ -295,6 +295,10 @@ class AdmissionService:
         approver_user_id: str,
         reason: str,
     ) -> AdmissionDecision:
+        current = await self.repo.get(user_id)
+        if current is None:
+            raise ValueError(f"No membership exists for user {user_id}")
+
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 membership = await self.repo.upsert_status(
@@ -320,6 +324,10 @@ class AdmissionService:
         approver_user_id: str,
         reason: str,
     ) -> AdmissionDecision:
+        current = await self.repo.get(user_id)
+        if current is None:
+            raise ValueError(f"No membership exists for user {user_id}")
+
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 membership = await self.repo.upsert_status(

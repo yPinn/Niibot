@@ -12,7 +12,12 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
 from core.config import DATA_DIR, Settings, get_settings
-from core.dependencies import get_current_channel_id, get_db_pool, get_twitch_api
+from core.dependencies import (
+    get_current_channel_id,
+    get_db_pool,
+    get_twitch_api,
+    require_activated,
+)
 from services.emote_sync import (
     available_emote_names,
     is_emote_available,
@@ -143,6 +148,7 @@ async def get_ai_packs() -> list[PackInfo]:
 async def get_ai_settings(
     channel_id: str = Depends(get_current_channel_id),
     pool: asyncpg.Pool = Depends(get_db_pool),
+    _: None = Depends(require_activated),
 ) -> AISettingsResponse:
     """Return current AI settings for the authenticated channel."""
     try:
@@ -158,6 +164,7 @@ async def patch_ai_settings(
     body: AISettingsPatch,
     channel_id: str = Depends(get_current_channel_id),
     pool: asyncpg.Pool = Depends(get_db_pool),
+    _: None = Depends(require_activated),
 ) -> AISettingsResponse:
     """Update one or more AI settings fields for the authenticated channel."""
     try:
@@ -181,6 +188,7 @@ async def patch_ai_settings(
 async def reset_ai_settings(
     channel_id: str = Depends(get_current_channel_id),
     pool: asyncpg.Pool = Depends(get_db_pool),
+    _: None = Depends(require_activated),
 ) -> AISettingsResponse:
     """Reset user-configurable AI settings to factory defaults.
 
@@ -206,6 +214,7 @@ async def get_ai_emotes(
     pool: asyncpg.Pool = Depends(get_db_pool),
     twitch: TwitchAPIClient = Depends(get_twitch_api),
     settings: Settings = Depends(get_settings),
+    _: None = Depends(require_activated),
 ) -> list[EmoteItem]:
     """Return all channel + global emotes with bot availability status.
 

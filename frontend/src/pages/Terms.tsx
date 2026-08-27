@@ -7,7 +7,7 @@ import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
 const EFFECTIVE_DATE = '2026 年 4 月 23 日'
 const SERVICE_NAME = 'Niibot'
-const CONTACT_DISCORD = import.meta.env.VITE_DISCORD_INVITE_URL
+const CONTACT_DISCORD = import.meta.env.VITE_DISCORD_COMMUNITY_URL
 
 export default function Terms() {
   useDocumentTitle('Terms of Service')

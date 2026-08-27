@@ -10,6 +10,7 @@ AdmissionService so state changes always carry a matching event.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal
@@ -128,8 +129,6 @@ class MembershipRepository:
         conn: asyncpg.Connection | None = None,
     ) -> int:
         """Append an admission event. Returns the new event id."""
-        import json
-
         sql = (
             "INSERT INTO membership_events"
             " (user_id, event_type, actor_type, actor_user_id, reason, metadata)"

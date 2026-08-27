@@ -16,11 +16,11 @@ from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from core.config import get_settings
-from core.dependencies import get_current_user_id, get_db_pool
+from core.dependencies import get_current_user_id, get_db_pool, require_activated
 from routers.payment_config_router import router as _pc_router
 
 USER_ID = "user-abc"
@@ -58,6 +58,21 @@ def _make_client() -> TestClient:
     app.include_router(_pc_router)
     app.dependency_overrides[get_current_user_id] = lambda: USER_ID
     app.dependency_overrides[get_db_pool] = lambda: AsyncMock()
+    app.dependency_overrides[require_activated] = lambda: None
+    return TestClient(app, raise_server_exceptions=False)
+
+
+def _make_client_not_activated() -> TestClient:
+    """Client where require_activated rejects the caller, for gate tests."""
+    app = FastAPI(lifespan=_no_lifespan)
+    app.include_router(_pc_router)
+    app.dependency_overrides[get_current_user_id] = lambda: USER_ID
+    app.dependency_overrides[get_db_pool] = lambda: AsyncMock()
+
+    def _reject() -> None:
+        raise HTTPException(status_code=403, detail="Account not activated")
+
+    app.dependency_overrides[require_activated] = _reject
     return TestClient(app, raise_server_exceptions=False)
 
 
@@ -189,3 +204,23 @@ class TestDeletePaymentConfig:
             mock_repo.return_value.delete_config = AsyncMock(side_effect=RuntimeError)
             r = _make_client().delete("/api/payment-configs/ecpay")
         assert r.status_code == 500
+
+
+# ── require_activated gate ────────────────────────────────────────────────────
+
+
+class TestActivationGate:
+    def test_list_rejected_when_not_activated(self):
+        r = _make_client_not_activated().get("/api/payment-configs")
+        assert r.status_code == 403
+
+    def test_upsert_rejected_when_not_activated(self):
+        r = _make_client_not_activated().put(
+            "/api/payment-configs/ecpay",
+            json={"merchant_id": "M1", "hash_key": "k", "hash_iv": "iv"},
+        )
+        assert r.status_code == 403
+
+    def test_delete_rejected_when_not_activated(self):
+        r = _make_client_not_activated().delete("/api/payment-configs/ecpay")
+        assert r.status_code == 403

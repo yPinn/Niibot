@@ -37,9 +37,11 @@ import {
 import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { formatDuration } from '@/lib/format'
+import { deriveSuggestions } from '@/lib/insights-suggestions'
 import { cn } from '@/lib/utils'
 
 import { LoyaltyDonut } from './insights/LoyaltyDonut'
+import { SuggestedActions } from './insights/SuggestedActions'
 import { SummaryTile } from './insights/SummaryTile'
 import { SORT_COLS, type SortKey } from './insights/types'
 import { ViewerList } from './insights/ViewerList'
@@ -239,6 +241,17 @@ export default function Insights() {
 
   const ins = insights ?? EMPTY_INSIGHTS
 
+  const suggestions = useMemo(
+    () =>
+      deriveSuggestions({
+        insights: ins,
+        tiers: sessionTiers,
+        viewers,
+        periodDays: Number(period),
+      }),
+    [ins, sessionTiers, viewers, period]
+  )
+
   return (
     <PageMain>
       <PageHeader
@@ -423,6 +436,8 @@ export default function Insights() {
               )}
             </Stagger>
           </AnimatePresence>
+
+          {initialized && !insightsLoading && <SuggestedActions suggestions={suggestions} />}
         </div>
 
         {/* ── Right: Viewer list ────────────────────────────────────── */}

@@ -500,18 +500,23 @@ class ChannelPointsComponent(commands.Component):
                     )
                     return
 
-            await self.vq_repo.add(
+            entry = await self.vq_repo.add_if_within_limits(
                 channel_id=channel_id,
                 video_id=video_id,  # type: ignore[arg-type]
                 requested_by=user_name,
                 source="redemption",
+                max_queue_size=settings.max_queue_size,
+                max_per_user=settings.max_per_user,
+                requested_by_id=user_id,
                 title=title,
                 duration_seconds=duration_seconds,
                 is_vertical=is_vertical,
                 video_type=video_type,
                 priority=SOURCE_PRIORITY["redemption"],
-                requested_by_id=user_id,
             )
+            if entry is None:
+                await self._reply(broadcaster, f"@{user_name} 點歌失敗，佇列狀態已變更，請重試")
+                return
             position = await self.vq_repo.get_queue_size(channel_id)
             title_part = f"「{title}」" if title else ""
             dur_part = (

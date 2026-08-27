@@ -328,6 +328,77 @@ class TestUpsertConfig:
 
 
 @pytest.mark.asyncio
+class TestTryInsertConfig:
+    async def test_returns_inserted_config_when_created(self):
+        _clear_caches()
+        pool, _ = _make_pool(fetchrow=_CUSTOM_ROW)
+        repo = CommandConfigRepository(pool)
+
+        result = await repo.try_insert_config("ch1", "mycommand", custom_response="Hello!")
+
+        assert result is not None
+        assert result.command_name == "mycommand"
+
+    async def test_returns_none_on_conflict(self):
+        """ON CONFLICT DO NOTHING found an existing row — must not overwrite it."""
+        _clear_caches()
+        pool, conn = _make_pool()
+        conn.fetchrow.return_value = None
+        repo = CommandConfigRepository(pool)
+
+        result = await repo.try_insert_config("ch1", "mycommand", custom_response="Hello!")
+
+        assert result is None
+        assert conn.fetchrow.call_count == 1  # no follow-up SELECT after a conflict
+
+    async def test_invalidates_cmd_and_list_caches_when_created(self):
+        _clear_caches()
+        _cmd_cache.set("cmd_config:ch1:mycommand", _CUSTOM_ROW)
+        _cmd_list_cache.set("cmd_list:ch1", [_CUSTOM_ROW])
+        pool, _ = _make_pool(fetchrow=_CUSTOM_ROW)
+        repo = CommandConfigRepository(pool)
+
+        await repo.try_insert_config("ch1", "mycommand", custom_response="Hello!")
+
+        from shared.cache import _MISSING
+
+        assert _cmd_cache.get("cmd_config:ch1:mycommand") is _MISSING
+        assert _cmd_list_cache.get("cmd_list:ch1") is _MISSING
+
+    async def test_does_not_re_fetch_after_successful_insert(self):
+        """The row is brand-new — no second round-trip is needed to read it back."""
+        _clear_caches()
+        pool, conn = _make_pool(fetchrow=_CUSTOM_ROW)
+        repo = CommandConfigRepository(pool)
+
+        await repo.try_insert_config("ch1", "mycommand", custom_response="Hello!")
+
+        assert conn.fetchrow.call_count == 1
+
+    async def test_computes_sorted_deduplicated_aliases(self):
+        _clear_caches()
+        pool, _ = _make_pool(fetchrow=_CUSTOM_ROW)
+        repo = CommandConfigRepository(pool)
+
+        result = await repo.try_insert_config(
+            "ch1", "mycommand", custom_response="Hello!", aliases="hey, hi,hey"
+        )
+
+        assert result is not None
+        assert result.aliases == "hey,hi"
+
+    async def test_aliases_is_none_when_none_provided(self):
+        _clear_caches()
+        pool, _ = _make_pool(fetchrow=_CUSTOM_ROW)
+        repo = CommandConfigRepository(pool)
+
+        result = await repo.try_insert_config("ch1", "mycommand", custom_response="Hello!")
+
+        assert result is not None
+        assert result.aliases is None
+
+
+@pytest.mark.asyncio
 class TestDeleteConfig:
     async def test_returns_true_when_deleted(self):
         _clear_caches()
@@ -482,6 +553,18 @@ class TestRedemptionUpsertConfig:
         from shared.cache import _MISSING
 
         assert _redemption_cache.get("redemption:ch1:vip") is _MISSING
+
+    async def test_does_not_clear_other_channels_cache(self):
+        """upsert_config must only invalidate the edited channel — not every
+        tenant's cache (the original bug: a bare .clear() wiped everyone)."""
+        _redemption_cache.set("redemption:ch1:vip", _REDEMPTION_ROW)
+        _redemption_cache.set("redemption:ch2:vip", _REDEMPTION_ROW)
+        pool, _ = _make_pool(fetchrow=_REDEMPTION_ROW)
+        repo = RedemptionConfigRepository(pool)
+
+        await repo.upsert_config("ch1", "vip", "vip")
+
+        assert _redemption_cache.get("redemption:ch2:vip") == _REDEMPTION_ROW
 
 
 class TestRedemptionInvalidateChannel:

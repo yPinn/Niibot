@@ -187,11 +187,12 @@ class AIComponent(BotComponent):
             ctx.channel.id, "ai", _Cooldown(cooldown=ai_settings.get("cooldown", 15))
         ):
             return
-        record_cooldown(ctx.channel.id, "ai")
 
         if not message or not message.strip():
             await self._ctx_reply(ctx, "用法：!ai <問題>")
             return
+
+        record_cooldown(ctx.channel.id, "ai")
 
         try:
             LOGGER.debug(

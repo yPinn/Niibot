@@ -249,3 +249,68 @@ class TestOtpGrant:
 
         assert decision.membership.status == "active"
         assert decision.state_changed is True
+
+
+@pytest.mark.asyncio
+class TestSuspendReinstate:
+    async def test_suspend_raises_when_no_membership(self):
+        user = str(uuid.uuid4())
+        conn = AsyncMock()
+        conn.fetchrow.return_value = None
+        pool = _pool_with(conn)
+        svc = AdmissionService(pool)
+
+        with pytest.raises(ValueError, match="No membership"):
+            await svc.suspend(user_id=user, approver_user_id=user, reason="abuse")
+
+    async def test_reinstate_raises_when_no_membership(self):
+        user = str(uuid.uuid4())
+        conn = AsyncMock()
+        conn.fetchrow.return_value = None
+        pool = _pool_with(conn)
+        svc = AdmissionService(pool)
+
+        with pytest.raises(ValueError, match="No membership"):
+            await svc.reinstate(user_id=user, approver_user_id=user, reason="appeal")
+
+    async def test_suspend_records_owner_actor(self):
+        user = str(uuid.uuid4())
+        approver = str(uuid.uuid4())
+        event_id_row = MagicMock()
+        event_id_row.__getitem__ = lambda self, k: 21 if k == "id" else None
+
+        conn = AsyncMock()
+        conn.fetchrow.side_effect = [
+            _membership_row(user, "active"),  # repo.get existence check
+            _membership_row(user, "suspended"),  # upsert RETURNING
+            event_id_row,  # insert_event RETURNING
+        ]
+        conn.transaction = MagicMock(return_value=_tx_cm())
+        pool = _pool_with(conn)
+        svc = AdmissionService(pool)
+
+        decision = await svc.suspend(user_id=user, approver_user_id=approver, reason="abuse")
+
+        assert decision.membership.status == "suspended"
+        assert decision.state_changed is True
+
+    async def test_reinstate_records_owner_actor(self):
+        user = str(uuid.uuid4())
+        approver = str(uuid.uuid4())
+        event_id_row = MagicMock()
+        event_id_row.__getitem__ = lambda self, k: 22 if k == "id" else None
+
+        conn = AsyncMock()
+        conn.fetchrow.side_effect = [
+            _membership_row(user, "suspended"),  # repo.get existence check
+            _membership_row(user, "active"),  # upsert RETURNING
+            event_id_row,  # insert_event RETURNING
+        ]
+        conn.transaction = MagicMock(return_value=_tx_cm())
+        pool = _pool_with(conn)
+        svc = AdmissionService(pool)
+
+        decision = await svc.reinstate(user_id=user, approver_user_id=approver, reason="appeal")
+
+        assert decision.membership.status == "active"
+        assert decision.state_changed is True

@@ -306,6 +306,80 @@ class TestGetMembershipTimeline:
         assert body[1]["actor_type"] == "owner"
 
 
+# ── POST /api/admin/memberships/{user_id}/suspend ───────────────────────────
+
+
+class TestSuspendMembership:
+    def _decision(self):
+        membership = MagicMock(status="suspended")
+        return MagicMock(membership=membership, event_id=21, state_changed=True)
+
+    def test_suspend_returns_true(self):
+        admission = MagicMock()
+        admission.suspend = AsyncMock(return_value=self._decision())
+        target_user = "dddd4444-5555-6666-7777-888888888888"
+        r = _make_client(mock_admission=admission).post(
+            f"/api/admin/memberships/{target_user}/suspend",
+            json={"reason": "abuse"},
+        )
+        assert r.status_code == 200
+        assert r.json()["suspended"] is True
+        kwargs = admission.suspend.call_args.kwargs
+        assert kwargs["user_id"] == target_user
+        assert kwargs["approver_user_id"] == _APPROVER_UUID
+        assert kwargs["reason"] == "abuse"
+
+    def test_suspend_missing_membership_returns_404(self):
+        admission = MagicMock()
+        admission.suspend = AsyncMock(side_effect=ValueError("No membership"))
+        r = _make_client(mock_admission=admission).post(
+            "/api/admin/memberships/eeee5555-6666-7777-8888-999999999999/suspend",
+            json={"reason": "abuse"},
+        )
+        assert r.status_code == 404
+
+    def test_suspend_missing_reason_returns_400(self):
+        admission = MagicMock()
+        r = _make_client(mock_admission=admission).post(
+            "/api/admin/memberships/dddd4444-5555-6666-7777-888888888888/suspend",
+            json={"reason": ""},
+        )
+        assert r.status_code == 400
+
+
+# ── POST /api/admin/memberships/{user_id}/reinstate ─────────────────────────
+
+
+class TestReinstateMembership:
+    def _decision(self):
+        membership = MagicMock(status="active")
+        return MagicMock(membership=membership, event_id=22, state_changed=True)
+
+    def test_reinstate_returns_true(self):
+        admission = MagicMock()
+        admission.reinstate = AsyncMock(return_value=self._decision())
+        target_user = "dddd4444-5555-6666-7777-888888888888"
+        r = _make_client(mock_admission=admission).post(
+            f"/api/admin/memberships/{target_user}/reinstate",
+            json={"reason": "appeal"},
+        )
+        assert r.status_code == 200
+        assert r.json()["reinstated"] is True
+        kwargs = admission.reinstate.call_args.kwargs
+        assert kwargs["user_id"] == target_user
+        assert kwargs["approver_user_id"] == _APPROVER_UUID
+        assert kwargs["reason"] == "appeal"
+
+    def test_reinstate_missing_membership_returns_404(self):
+        admission = MagicMock()
+        admission.reinstate = AsyncMock(side_effect=ValueError("No membership"))
+        r = _make_client(mock_admission=admission).post(
+            "/api/admin/memberships/eeee5555-6666-7777-8888-999999999999/reinstate",
+            json={"reason": "appeal"},
+        )
+        assert r.status_code == 404
+
+
 # ── POST /api/admin/db/query ─────────────────────────────────────────────────
 
 

@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from core.config import Settings, get_settings
-from core.dependencies import get_current_user_id, get_db_pool
+from core.dependencies import get_current_user_id, get_db_pool, require_activated
 from shared.repositories.donation import DonationRepository
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -45,6 +45,7 @@ class PaymentConfigResponse(BaseModel):
 async def list_payment_configs(
     user_id: str = Depends(get_current_user_id),
     pool: Pool = Depends(get_db_pool),
+    _: None = Depends(require_activated),
 ) -> list[PaymentConfigResponse]:
     """List all payment platform configs for the authenticated streamer."""
     try:
@@ -74,6 +75,7 @@ async def upsert_payment_config(
     user_id: str = Depends(get_current_user_id),
     pool: Pool = Depends(get_db_pool),
     settings: Settings = Depends(get_settings),
+    _: None = Depends(require_activated),
 ) -> PaymentConfigResponse:
     """Create or update a payment platform config."""
     if platform not in _VALID_PLATFORMS:
@@ -129,6 +131,7 @@ async def delete_payment_config(
     platform: str,
     user_id: str = Depends(get_current_user_id),
     pool: Pool = Depends(get_db_pool),
+    _: None = Depends(require_activated),
 ) -> dict[str, str]:
     """Delete a payment platform config."""
     if platform not in _VALID_PLATFORMS:

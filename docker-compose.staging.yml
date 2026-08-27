@@ -1,6 +1,6 @@
 # Staging overrides — isolated project (niibot-staging), loads staging env files.
 # Ports offset from prod to avoid conflicts:
-#   api 8001 | postgres 5434 | scrapling 3003 | instafix 3004
+#   api 8001 | postgres 5434 | instafix 3004
 
 services:
   migrate:
@@ -9,14 +9,6 @@ services:
     env_file:
       - ./backend/shared.staging.env
       - ./backend/api/.env.staging
-
-  scrapling:
-    image: nb-scrapling-stg
-    container_name: nb-scrapling-stg
-    ports:
-      - "3003:${SCRAPLING_PORT:-3001}"
-    env_file:
-      - ./backend/scrapling/.env.staging
 
   twitch-bot:
     image: nb-twitch-stg

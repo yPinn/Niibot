@@ -10,7 +10,6 @@ Niibot/
 │   ├── api/        # FastAPI — JWT 認證、Dashboard API（19 個 Routers）
 │   ├── twitch/     # TwitchIO 3 Bot + EventSub + pg_notify 即時設定重載
 │   ├── discord/    # discord.py 2 Bot（Cogs 模組架構）
-│   ├── scrapling/  # Instagram / Threads 媒體抓取服務
 │   ├── shared/     # 共用 DB、Cache、Repositories、Migrations（84 個）
 │   └── scripts/    # DB 管理工具
 ├── frontend/       # React 19 + Vite + Tailwind CSS v4
@@ -23,7 +22,6 @@ Niibot/
 | API         | FastAPI 0.129 + asyncpg | Docker           |
 | Twitch Bot  | TwitchIO 3              | Docker           |
 | Discord Bot | discord.py 2            | Docker           |
-| Scrapling   | Python + scrapling      | Docker           |
 | Database    | PostgreSQL 16           | Docker           |
 | Frontend    | React 19 + Vite 7       | Cloudflare Pages |
 
@@ -90,7 +88,6 @@ bash .github/pull.sh prod
 | `backend/api/.env`       | JWT Secret、API URL、Discord Public Key                                         |
 | `backend/twitch/.env`    | Conduit ID（optional）                                                          |
 | `backend/discord/.env`   | Discord Bot Token、Presence 設定                                                |
-| `backend/scrapling/.env` | Threads session cookie                                                          |
 | `frontend/.env`          | Vite dev proxy、Bot username、Discord invite URL                                |
 
 Cloudflare Pages 需設定環境變數 `API_BACKEND`（後端位址）。

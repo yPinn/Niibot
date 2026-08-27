@@ -47,6 +47,21 @@ const FEATURES = [
     title: '數據分析',
     desc: '依時間區間查看聊天量趨勢與最活躍觀眾排名，掌握頻道互動概況。',
   },
+  {
+    icon: 'fa-solid fa-robot',
+    title: 'AI 聊天助理',
+    desc: '串接 AI 回答觀眾問題，可自訂人設與貼圖權限，聊天室不冷場。',
+  },
+  {
+    icon: 'fa-solid fa-crosshairs',
+    title: '準星收藏',
+    desc: '收藏並展示準星設定，觀眾一鍵複製套用，FPS 實況主必備。',
+  },
+  {
+    icon: 'fa-solid fa-hand-holding-heart',
+    title: '贊助斗內',
+    desc: '提供專屬贊助頁面與金流串接，觀眾可以直接支持你的直播。',
+  },
 ]
 
 const DISCORD_FEATURES = [
@@ -122,7 +137,7 @@ export default function Home() {
           <SlideUp delay={0.15} className="flex flex-col items-center md:items-start">
             <h1 className="text-4xl font-bold tracking-tight sm:text-5xl lg:text-7xl">Niibot</h1>
             <p className="mt-3 text-section-title text-muted-foreground">
-              Twitch 聊天機器人 | 泥爸
+              Twitch 直播小幫手 | 泥爸
             </p>
             <p className="mt-6 max-w-xl text-content leading-relaxed text-muted-foreground sm:text-lg">
               大家好，我是 Niibot，一名沒有勞基法保障的虛擬社畜。

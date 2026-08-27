@@ -8,7 +8,7 @@
 #   DEPLOY_WEBHOOK_URL
 # Variables (repo-level; override per Environment for staging):
 #   PROJECT_DIR  API_URL  ENVIRONMENT  LOG_LEVEL  DISCORD_STATUS  DISCORD_ACTIVITY_TYPE
-#   DISCORD_ACTIVITY_NAME  DISCORD_ACTIVITY_URL  SCRAPLING_PORT
+#   DISCORD_ACTIVITY_NAME  DISCORD_ACTIVITY_URL
 
 on:
   workflow_call:
@@ -37,10 +37,6 @@ on:
         description: "API health check port"
         type: number
         default: 8000
-      scrapling_port_default:
-        description: "Scrapling fallback health check port"
-        type: number
-        default: 3001
       compose_change_pattern:
         description: "Extra file path that triggers a full service rebuild"
         type: string
@@ -81,20 +77,12 @@ on:
         description: "Force rebuild Twitch bot"
         type: boolean
         default: false
-      force_scrapling:
-        description: "Force rebuild Scrapling"
-        type: boolean
-        default: false
       force_instafix:
         description: "Force pull and restart Instafix (external image)"
         type: boolean
         default: false
       enable_discord:
         description: "Allow discord bot deployment (set false to exclude from staging)"
-        type: boolean
-        default: true
-      enable_scrapling:
-        description: "Allow scrapling deployment (set false to exclude from staging)"
         type: boolean
         default: true
       enable_instafix:
@@ -129,7 +117,6 @@ jobs:
       COMPOSE_ENV_FILE: ${{ inputs.compose_env_file }}
       COMPOSE_PROJECT: ${{ inputs.compose_project }}
       API_PORT: ${{ inputs.api_port }}
-      SCRAPLING_PORT_DEFAULT: ${{ inputs.scrapling_port_default }}
 
     steps:
       - name: Write env files from secrets
@@ -163,7 +150,6 @@ jobs:
           DISCORD_ACTIVITY_TYPE: ${{ vars.DISCORD_ACTIVITY_TYPE || 'playing' }}
           DISCORD_ACTIVITY_NAME: ${{ vars.DISCORD_ACTIVITY_NAME }}
           DISCORD_ACTIVITY_URL: ${{ vars.DISCORD_ACTIVITY_URL }}
-          SCRAPLING_PORT: ${{ vars.SCRAPLING_PORT }}
         run: |
           MISSING=""
           for VAR in POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB FRONTEND_URL \
@@ -185,7 +171,6 @@ jobs:
             echo "POSTGRES_PASSWORD=${POSTGRES_PASSWORD}"
             echo "POSTGRES_DB=${POSTGRES_DB}"
             echo "DOCKER_DATABASE_URL=${DB_URL}"
-            [ -n "${SCRAPLING_PORT}" ] && echo "SCRAPLING_PORT=${SCRAPLING_PORT}"
           } > "${PROJECT_DIR}/.env${ENV_SUFFIX}"
 
           # backend/shared[.staging].env
@@ -231,15 +216,6 @@ jobs:
             [ -n "${CONDUIT_ID}" ] && echo "CONDUIT_ID=${CONDUIT_ID}"
           } > "${PROJECT_DIR}/backend/twitch/.env${ENV_SUFFIX}"
 
-          # backend/scrapling/.env[.staging]
-          {
-            echo "PORT=${SCRAPLING_PORT:-${SCRAPLING_PORT_DEFAULT}}"
-            echo "LOG_LEVEL=${LOG_LEVEL}"
-            echo "ENVIRONMENT=${ENVIRONMENT}"
-            [ -n "${THREADS_SESSION_ID}" ] && echo "THREADS_SESSION_ID=${THREADS_SESSION_ID}"
-            [ -n "${ERROR_WEBHOOK_URL}" ]  && echo "ERROR_WEBHOOK_URL=${ERROR_WEBHOOK_URL}"
-          } > "${PROJECT_DIR}/backend/scrapling/.env${ENV_SUFFIX}"
-
           echo "Env files written for ${{ inputs.environment }}."
 
       - name: Pull latest code
@@ -281,16 +257,15 @@ jobs:
             FORCE="true"
           fi
 
-          api=false; discord=false; twitch=false; scrapling=false; instafix=false; reason=path_filter
+          api=false; discord=false; twitch=false; instafix=false; reason=path_filter
 
           if [ "$FORCE" = "true" ]; then
-            api=true; discord=true; twitch=true; scrapling=true; instafix=true; reason=force
+            api=true; discord=true; twitch=true; instafix=true; reason=force
           else
             if [ -n "$CHANGED" ]; then
               # api/discord/twitch all build from ./backend with the root
               # pyproject.toml + uv.lock (see api/Dockerfile), so a change to
               # those shared dependency files must rebuild all three.
-              # scrapling has its own lock and is matched separately below.
               PATTERN="^backend/shared/|^backend/shared\.env|^backend/uv\.lock|^backend/pyproject\.toml|^docker-compose\.yml"
               [ -n "${{ inputs.compose_change_pattern }}" ] && \
                 PATTERN="$PATTERN|^${{ inputs.compose_change_pattern }}"
@@ -302,25 +277,21 @@ jobs:
               echo "$CHANGED" | grep -qE "^backend/api/"       && api=true       || true
               echo "$CHANGED" | grep -qE "^backend/discord/"   && discord=true   || true
               echo "$CHANGED" | grep -qE "^backend/twitch/"    && twitch=true    || true
-              echo "$CHANGED" | grep -qE "^backend/scrapling/" && scrapling=true || true
             fi
 
             [ "${{ inputs.force_api }}" = "true" ]       && api=true       || true
             [ "${{ inputs.force_discord }}" = "true" ]   && discord=true   || true
             [ "${{ inputs.force_twitch }}" = "true" ]    && twitch=true    || true
-            [ "${{ inputs.force_scrapling }}" = "true" ] && scrapling=true || true
             [ "${{ inputs.force_instafix }}" = "true" ]  && instafix=true  || true
           fi
 
           # Cap: if service is not enabled, override to false regardless of detection/force flags
           [ "${{ inputs.enable_discord }}" != "true" ]   && discord=false  || true
-          [ "${{ inputs.enable_scrapling }}" != "true" ] && scrapling=false || true
           [ "${{ inputs.enable_instafix }}" != "true" ]  && instafix=false  || true
 
           echo "api=$api"             >> $GITHUB_OUTPUT
           echo "discord=$discord"     >> $GITHUB_OUTPUT
           echo "twitch=$twitch"       >> $GITHUB_OUTPUT
-          echo "scrapling=$scrapling" >> $GITHUB_OUTPUT
           echo "instafix=$instafix"   >> $GITHUB_OUTPUT
           echo "reason=$reason"       >> $GITHUB_OUTPUT
 
@@ -329,7 +300,6 @@ jobs:
           echo "api=${{ steps.changes.outputs.api }}"
           echo "discord=${{ steps.changes.outputs.discord }}"
           echo "twitch=${{ steps.changes.outputs.twitch }}"
-          echo "scrapling=${{ steps.changes.outputs.scrapling }}"
           echo "instafix=${{ steps.changes.outputs.instafix }}"
           echo "reason=${{ steps.changes.outputs.reason }}"
 
@@ -341,7 +311,7 @@ jobs:
       - name: Save rollback point
         run: |
           SUFFIX="${{ inputs.image_suffix }}"
-          for IMG in nb-api nb-discord nb-twitch nb-scrapling; do
+          for IMG in nb-api nb-discord nb-twitch; do
             FULL="${IMG}${SUFFIX}"
             ID=$(docker images "$FULL" --format "{{.ID}}" 2>/dev/null | head -1)
             [ -n "$ID" ] && docker tag "$ID" "${FULL}:rollback" && echo "Saved rollback: ${FULL}" || true
@@ -354,7 +324,6 @@ jobs:
           [ "${{ steps.changes.outputs.api }}" = "true" ]       && SERVICES="$SERVICES api"
           [ "${{ steps.changes.outputs.discord }}" = "true" ]   && SERVICES="$SERVICES discord-bot"
           [ "${{ steps.changes.outputs.twitch }}" = "true" ]    && SERVICES="$SERVICES twitch-bot"
-          [ "${{ steps.changes.outputs.scrapling }}" = "true" ] && SERVICES="$SERVICES scrapling"
 
           if [ -z "$SERVICES" ]; then
             echo "No images to build, skipping."
@@ -379,8 +348,7 @@ jobs:
           for IMG in \
             $([ "${{ steps.changes.outputs.api }}" = "true" ]       && echo "nb-api${SUFFIX}")       \
             $([ "${{ steps.changes.outputs.discord }}" = "true" ]   && echo "nb-discord${SUFFIX}")   \
-            $([ "${{ steps.changes.outputs.twitch }}" = "true" ]    && echo "nb-twitch${SUFFIX}")    \
-            $([ "${{ steps.changes.outputs.scrapling }}" = "true" ] && echo "nb-scrapling${SUFFIX}"); do
+            $([ "${{ steps.changes.outputs.twitch }}" = "true" ]    && echo "nb-twitch${SUFFIX}"); do
             echo "Scanning ${IMG} ..."
             docker run --rm \
               -v /var/run/docker.sock:/var/run/docker.sock \
@@ -403,7 +371,6 @@ jobs:
           [ "${{ steps.changes.outputs.api }}" = "true" ]       && docker tag "nb-api${SUFFIX}"       "nb-api${SUFFIX}:$DOCKER_TAG"       || true
           [ "${{ steps.changes.outputs.discord }}" = "true" ]   && docker tag "nb-discord${SUFFIX}"   "nb-discord${SUFFIX}:$DOCKER_TAG"   || true
           [ "${{ steps.changes.outputs.twitch }}" = "true" ]    && docker tag "nb-twitch${SUFFIX}"    "nb-twitch${SUFFIX}:$DOCKER_TAG"    || true
-          [ "${{ steps.changes.outputs.scrapling }}" = "true" ] && docker tag "nb-scrapling${SUFFIX}" "nb-scrapling${SUFFIX}:$DOCKER_TAG" || true
           echo "Tagged rebuilt images as :$DOCKER_TAG"
 
       - name: Migrate runtime data (idempotent)
@@ -429,7 +396,6 @@ jobs:
           [ "${{ steps.changes.outputs.api }}" = "true" ]       && SERVICES="$SERVICES api"
           [ "${{ steps.changes.outputs.discord }}" = "true" ]   && SERVICES="$SERVICES discord-bot"
           [ "${{ steps.changes.outputs.twitch }}" = "true" ]    && SERVICES="$SERVICES twitch-bot"
-          [ "${{ steps.changes.outputs.scrapling }}" = "true" ] && SERVICES="$SERVICES scrapling"
           [ "${{ steps.changes.outputs.instafix }}" = "true" ]  && SERVICES="$SERVICES instafix"
 
           if [ -z "$SERVICES" ]; then
@@ -478,7 +444,6 @@ jobs:
 
           curl -sf http://localhost:8080/health && echo "discord-bot: OK" || echo "WARN: discord-bot not responding"
           curl -sf http://localhost:4344/health && echo "twitch-bot:  OK" || echo "WARN: twitch-bot not responding"
-          curl -sf "http://localhost:${SCRAPLING_PORT_DEFAULT}/health" && echo "scrapling:   OK" || echo "WARN: scrapling not responding"
 
       - name: Smoke test
         id: smoketest
@@ -505,7 +470,6 @@ jobs:
           [ "${{ steps.changes.outputs.api }}" = "true" ]       && SERVICES="$SERVICES api"
           [ "${{ steps.changes.outputs.discord }}" = "true" ]   && SERVICES="$SERVICES discord-bot"
           [ "${{ steps.changes.outputs.twitch }}" = "true" ]    && SERVICES="$SERVICES twitch-bot"
-          [ "${{ steps.changes.outputs.scrapling }}" = "true" ] && SERVICES="$SERVICES scrapling"
           # instafix uses an external image — excluded from rollback
 
           [ -z "$SERVICES" ] && exit 0
@@ -516,7 +480,6 @@ jobs:
               api)         IMG="nb-api${SUFFIX}" ;;
               discord-bot) IMG="nb-discord${SUFFIX}" ;;
               twitch-bot)  IMG="nb-twitch${SUFFIX}" ;;
-              scrapling)   IMG="nb-scrapling${SUFFIX}" ;;
             esac
             if docker image inspect "${IMG}:rollback" > /dev/null 2>&1; then
               docker tag "${IMG}:rollback" "${IMG}"
@@ -541,7 +504,6 @@ jobs:
           GH_SVC_API: ${{ steps.changes.outputs.api }}
           GH_SVC_TWITCH: ${{ steps.changes.outputs.twitch }}
           GH_SVC_DISCORD: ${{ steps.changes.outputs.discord }}
-          GH_SVC_SCRAPLING: ${{ steps.changes.outputs.scrapling }}
           GH_SVC_INSTAFIX: ${{ steps.changes.outputs.instafix }}
         run: |
           [ -z "${WEBHOOK_URL}" ] && { echo "DEPLOY_WEBHOOK_URL not set, skipping."; exit 0; }
@@ -556,7 +518,7 @@ jobs:
           import json, os
           from datetime import datetime, timezone, timedelta
           e = os.environ
-          svc_map = [('GH_SVC_API','API'),('GH_SVC_TWITCH','Twitch'),('GH_SVC_DISCORD','Discord'),('GH_SVC_SCRAPLING','Scrapling'),('GH_SVC_INSTAFIX','Instafix')]
+          svc_map = [('GH_SVC_API','API'),('GH_SVC_TWITCH','Twitch'),('GH_SVC_DISCORD','Discord'),('GH_SVC_INSTAFIX','Instafix')]
           svcs = ', '.join(label for key, label in svc_map if e.get(key) == 'true') or 'none'
           payload = {
             "embeds": [{
@@ -584,7 +546,7 @@ jobs:
           if [ "${{ inputs.prune_full }}" = "true" ]; then
             SUFFIX="${{ inputs.image_suffix }}"
             # tail -n +4 keeps 3 most recent; no sort needed (docker images outputs newest-first; BSD sort -V unavailable on macOS)
-            for IMAGE in nb-api nb-twitch nb-discord nb-scrapling; do
+            for IMAGE in nb-api nb-twitch nb-discord; do
               docker images "${IMAGE}${SUFFIX}" --format "{{.Tag}}" \
                 | grep -vE "^(latest|rollback)$" \
                 | tail -n +4 \
@@ -600,7 +562,6 @@ jobs:
           GH_SVC_API: ${{ steps.changes.outputs.api }}
           GH_SVC_TWITCH: ${{ steps.changes.outputs.twitch }}
           GH_SVC_DISCORD: ${{ steps.changes.outputs.discord }}
-          GH_SVC_SCRAPLING: ${{ steps.changes.outputs.scrapling }}
           GH_SVC_INSTAFIX: ${{ steps.changes.outputs.instafix }}
         run: |
           [ -z "${WEBHOOK_URL}" ] && { echo "DEPLOY_WEBHOOK_URL not set, skipping."; exit 0; }
@@ -612,7 +573,7 @@ jobs:
           import json, os
           from datetime import datetime, timezone, timedelta
           e = os.environ
-          svc_map = [('GH_SVC_API','API'),('GH_SVC_TWITCH','Twitch'),('GH_SVC_DISCORD','Discord'),('GH_SVC_SCRAPLING','Scrapling'),('GH_SVC_INSTAFIX','Instafix')]
+          svc_map = [('GH_SVC_API','API'),('GH_SVC_TWITCH','Twitch'),('GH_SVC_DISCORD','Discord'),('GH_SVC_INSTAFIX','Instafix')]
           svcs = ', '.join(label for key, label in svc_map if e.get(key) == 'true') or 'none'
           payload = {
             "embeds": [{

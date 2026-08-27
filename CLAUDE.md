@@ -94,7 +94,6 @@ Port table:
 | --------- | ---- | ---- | ---- | ------- |
 | api       | —    | 8000 | 8000 | 8001    |
 | postgres  | —    | —    | 5433 | 5434    |
-| scrapling | —    | —    | 3001 | 3003    |
 | instafix  | —    | —    | 3002 | 3004    |
 
 ### Environment Variables

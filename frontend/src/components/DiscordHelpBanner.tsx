@@ -1,6 +1,6 @@
 import { Icon } from '@/components/primitives'
 
-const INVITE_URL = import.meta.env.VITE_DISCORD_INVITE_URL
+const INVITE_URL = import.meta.env.VITE_DISCORD_COMMUNITY_URL
 
 export function DiscordHelpBanner() {
   return (

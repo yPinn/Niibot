@@ -1,6 +1,6 @@
 # 架構總覽
 
-Niibot 是多平台直播整合系統，由四個 Python 服務 + 一個前端組成，共用單一 PostgreSQL。
+Niibot 是多平台直播整合系統，由三個 Python 服務 + 一個前端組成，共用單一 PostgreSQL。
 本文串起全貌；個別子系統細節見各自文件與 README。
 
 - 多租戶 / 入會狀態機：[admission-and-tenancy.md](admission-and-tenancy.md)
@@ -29,16 +29,11 @@ Niibot 是多平台直播整合系統，由四個 Python 服務 + 一個前端�
    ┌──────▼──────┐     ┌──────▼──────┐     ┌──────▼──────┐
    │ PostgreSQL  │◀───▶│ Twitch Bot  │     │ Discord Bot │
    │  (shared)   │     │ health:4344 │     │ health:8080 │
-   └──────┬──────┘     │  EventSub   │     │   Cogs      │
-          │            └─────────────┘     └─────────────┘
-          │ LISTEN/NOTIFY (即時設定重載)
-          │
-   ┌──────▼──────┐
-   │  Scrapling  │  :3001  Instagram / Threads 媒體抓取 sidecar
-   └─────────────┘
+   └─────────────┘     │  EventSub   │     │   Cogs      │
+                       └─────────────┘     └─────────────┘
 ```
 
-四個服務共用 `backend/shared/`（DB pool、cache、repositories、models、migrations），
+三個服務共用 `backend/shared/`（DB pool、cache、repositories、models、migrations），
 但**各自獨立程序、獨立部署**。唯一的耦合是 PostgreSQL（資料 + 跨程序訊號）。
 
 | 服務        | 技術         | 對外               | 健康檢查       |
@@ -46,7 +41,6 @@ Niibot 是多平台直播整合系統，由四個 Python 服務 + 一個前端�
 | API         | FastAPI      | `:8000`（Tunnel）  | `/health`      |
 | Twitch Bot  | TwitchIO 3   | EventSub WebSocket | `:4344/health` |
 | Discord Bot | discord.py 2 | Gateway            | `:8080/health` |
-| Scrapling   | scrapling    | `:3001`（內部）    | —              |
 | PostgreSQL  | PG 16        | `:5433`（Docker）  | —              |
 
 ---
