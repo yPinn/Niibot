@@ -151,6 +151,17 @@ class UpstreamError(AppError):
     log_level = logging.ERROR
 
 
+# ── Cross-cutting domain errors ─────────────────────────────────────────────
+# Shared by more than one router (public overlay endpoints all resolve a
+# channel by Twitch login). Defined here so the code has a single owner and
+# validate_catalog() does not flag it as a duplicate.
+
+
+class ChannelNotFoundError(NotFoundError):
+    code = "CHANNEL.NOT_FOUND"
+    user_message = "找不到這個頻道"
+
+
 def iter_error_classes(root: type[AppError] = AppError) -> Iterator[type[AppError]]:
     """Depth-first walk of every ``AppError`` subclass currently imported."""
     yield root

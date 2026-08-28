@@ -16,7 +16,7 @@ from core.dependencies import (
 )
 from services import CommandConfigService, TenantContext, TwitchAPIClient
 from shared.cache import AsyncTTLCache
-from shared.errors import InvalidInputError, NotFoundError
+from shared.errors import ChannelNotFoundError, InvalidInputError, NotFoundError
 from shared.repositories.command_config import UNSET as _UNSET
 
 # Cache username → user_info for 60 s to avoid a Twitch API call on every page load
@@ -35,11 +35,6 @@ class CommandNotFoundError(NotFoundError):
 class CommandInvalidError(InvalidInputError):
     code = "COMMAND.INVALID"
     user_message = "指令的設定有誤，請檢查後再試"
-
-
-class ChannelNotFoundError(NotFoundError):
-    code = "CHANNEL.NOT_FOUND"
-    user_message = "找不到這個頻道"
 
 
 class CommandConfigResponse(BaseModel):
