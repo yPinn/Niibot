@@ -12,7 +12,9 @@ import pytest
 
 # iter_error_classes() only sees subclasses that have been imported. As
 # domains migrate to AppError, import their modules here so this guard covers
-# them (e.g. `from api.services import tenant_service  # noqa: F401`).
+# their codes too.
+from api.services import tenant_service  # noqa: F401
+
 from shared.errors import (
     ALLOWED_STATUS,
     CODE_RE,
@@ -24,7 +26,19 @@ from shared.errors import (
 
 _LATIN = re.compile(r"[A-Za-z]")
 
-ALL_CLASSES = sorted(set(iter_error_classes()), key=lambda c: c.__name__)
+
+def _catalog() -> list[type[AppError]]:
+    # The backend is importable under two path roots (`services.x` and
+    # `api.services.x`), so a migrated module can appear twice as distinct
+    # class objects. Dedupe on module basename + qualname.
+    by_identity: dict[str, type[AppError]] = {}
+    for cls in iter_error_classes():
+        key = f"{cls.__module__.rsplit('.', 1)[-1]}.{cls.__qualname__}"
+        by_identity.setdefault(key, cls)
+    return sorted(by_identity.values(), key=lambda c: c.__name__)
+
+
+ALL_CLASSES = _catalog()
 
 
 class TestCatalogInvariants:

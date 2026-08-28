@@ -20,11 +20,8 @@ from services.game_queue_service import GameQueueService
 from services.identity_service import IdentityService
 from services.message_trigger_service import MessageTriggerService
 from services.tenant_service import (
-    TenantAccessDeniedError,
     TenantContext,
-    TenantNotFoundError,
     TenantService,
-    TenantSuspendedError,
 )
 from services.timer_service import TimerService
 
@@ -182,16 +179,11 @@ async def require_tenant_access(
     ``require_self_tenant_access`` below.
     """
     user_id = str(payload["sub"])
-    try:
-        return await tenant.assert_access(
-            channel_id=channel_id, user_id=user_id, required_role="manager"
-        )
-    except TenantNotFoundError:
-        raise HTTPException(status_code=404, detail="Channel not found") from None
-    except TenantSuspendedError:
-        raise HTTPException(status_code=403, detail="Channel suspended") from None
-    except TenantAccessDeniedError:
-        raise HTTPException(status_code=403, detail="Not a member of this channel") from None
+    # TenantService raises AppError subclasses (TENANT.*); the global handler
+    # in app.py turns them into the standard envelope with the right status.
+    return await tenant.assert_access(
+        channel_id=channel_id, user_id=user_id, required_role="manager"
+    )
 
 
 async def require_self_tenant_access(
@@ -207,13 +199,6 @@ async def require_self_tenant_access(
     """
     user_id = str(payload["sub"])
     channel_id = str(payload["platform_user_id"])
-    try:
-        return await tenant.assert_access(
-            channel_id=channel_id, user_id=user_id, required_role="manager"
-        )
-    except TenantNotFoundError:
-        raise HTTPException(status_code=404, detail="Channel not found") from None
-    except TenantSuspendedError:
-        raise HTTPException(status_code=403, detail="Channel suspended") from None
-    except TenantAccessDeniedError:
-        raise HTTPException(status_code=403, detail="Not a member of this channel") from None
+    return await tenant.assert_access(
+        channel_id=channel_id, user_id=user_id, required_role="manager"
+    )
