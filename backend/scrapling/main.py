@@ -7,18 +7,8 @@ logged-in Threads session cookie. On each request:
   3. Runs page_action to poll every 300 ms (up to 6 s) for real content, then
      extracts the caption and engagement counts from the rendered DOM.
 
-Endpoints
----------
-GET /threads?url=<threads-post-url>
-  → 200 {"caption": "...", "like_count": "...", "reply_count": "...",
-         "repost_count": "...", "share_count": "...",
-         "image_urls": ["https://...", ...],
-         "video_urls": ["https://...", ...]}
-  → 422 {"detail": "..."}    (invalid / missing url param)
-  → 503 {"detail": "..."}    (browser not yet ready)
-  → 500 {"detail": "..."}    (unhandled error)
-
-GET /health → 200 {"status": "ok"}
+Endpoints: GET /threads, GET /threads/profile, GET /health.
+Contract and response shapes: docs/integrations/scrapling.md.
 """
 
 import asyncio

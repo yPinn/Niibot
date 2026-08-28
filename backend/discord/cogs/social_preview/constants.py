@@ -96,9 +96,8 @@ INSTAGRAM_PROFILE_API = (
 )
 INSTAGRAM_APP_ID = "936619743392459"
 
-# Self-hosted InstaFix (github.com/Wikidepia/InstaFix).
-# Docker: "instafix:3000" | Local dev: "localhost:3000"
-# Configured via INSTAFIX_HOST env var → get_settings().instafix_host
+# Self-hosted InstaFix, host from INSTAFIX_HOST → get_settings().instafix_host.
+# See docs/integrations/instafix.md.
 INSTAGRAM_PROXY_URL = "http://{host}/{path}/{shortcode}/"
 INSTAGRAM_ICON_URL = "https://upload.wikimedia.org/wikipedia/commons/a/a5/Instagram_icon.png"
 
