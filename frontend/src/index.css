@@ -1,8 +1,8 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 
-/* FontAwesome */
-@import '@/assets/fontawesome/css/all.css';
+/* FontAwesome — generated subset (see scripts/build-fa-subset.mjs; run `npm run fa:subset`) */
+@import '@/assets/fontawesome/css/fontawesome.subset.css';
 
 @font-face {
   font-family: 'Fira Code';

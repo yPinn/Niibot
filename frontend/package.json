@@ -4,13 +4,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc -b --noEmit",
+    "build": "npm run fa:subset && tsc -b && vite build",
+    "fa:subset": "node scripts/build-fa-subset.mjs",
     "lint": "eslint .",
     "lint:fix": "eslint --fix .",
     "format": "prettier --write --ignore-unknown .",
     "format:check": "prettier --check .",
+    "typecheck": "tsc -b --noEmit",
     "test": "vitest",
     "test:cov": "vitest --coverage"
   },

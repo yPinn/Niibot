@@ -2,7 +2,6 @@ import { lazy, Suspense } from 'react'
 import { Route, Routes } from 'react-router-dom'
 
 import { ErrorBoundary } from '@/components/ErrorBoundary'
-import SidebarLayout from '@/components/layout/SidebarLayout'
 import { ThemeProvider } from '@/components/layout/theme-provider'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { OwnerRoute, ProtectedRoute, PublicOnlyRoute } from '@/components/ProtectedRoute'
@@ -10,7 +9,10 @@ import { Toaster } from '@/components/ui'
 import { AuthProvider } from '@/contexts/AuthContext'
 import { BotProvider } from '@/contexts/BotContext'
 import { ServiceStatusProvider } from '@/contexts/ServiceStatusContext'
-// Lazy-loaded: all pages including Landing and NotFound to keep motion out of main bundle
+// Lazy-loaded: all pages including Landing and NotFound to keep motion out of main bundle.
+// SidebarLayout is lazy too — it pulls the full radix sidebar/nav tree that public
+// routes (landing, login, overlays) never render.
+const SidebarLayout = lazy(() => import('@/components/layout/SidebarLayout'))
 const Landing = lazy(() => import('@/pages/Landing'))
 const NotFound = lazy(() => import('@/pages/NotFound'))
 const Commands = lazy(() => import('@/pages/dashboard/commands'))

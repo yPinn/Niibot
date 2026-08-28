@@ -47,17 +47,18 @@ VITE_ENVIRONMENT=                   # 部署環境：production 鎖定 WIP 頁�
 
 ## 指令
 
-| 指令                   | 說明                          |
-| ---------------------- | ----------------------------- |
-| `npm run build`        | 打包正式版本（含型別檢查）    |
-| `npm run preview`      | 本機預覽打包結果              |
-| `npm run typecheck`    | 只執行型別檢查，不打包        |
-| `npm run lint`         | 掃描程式碼問題                |
-| `npm run lint:fix`     | 自動修正程式碼問題            |
-| `npm run format`       | 修正排版格式                  |
-| `npm run format:check` | 只檢查格式，不修改（CI 用）   |
-| `npm run test`         | 執行測試（存檔自動重跑）      |
-| `npm run test:cov`     | 測試＋覆蓋率報告（目標 80%+） |
+| 指令                   | 說明                                       |
+| ---------------------- | ------------------------------------------ |
+| `npm run build`        | 打包正式版本（先跑 fa:subset，含型別檢查） |
+| `npm run fa:subset`    | 重建 Font Awesome 子集 CSS                 |
+| `npm run preview`      | 本機預覽打包結果                           |
+| `npm run lint`         | 掃描程式碼問題                             |
+| `npm run lint:fix`     | 自動修正程式碼問題                         |
+| `npm run format`       | 修正排版格式                               |
+| `npm run format:check` | 只檢查格式，不修改（CI 用）                |
+| `npm run typecheck`    | 只執行型別檢查，不打包                     |
+| `npm run test`         | 執行測試（存檔自動重跑）                   |
+| `npm run test:cov`     | 測試＋覆蓋率報告（目標 80%+）              |
 
 ## 結構
 
@@ -68,7 +69,8 @@ src/
 ├── api/            # API client — apiFetch、端點常數、各模組請求函式
 ├── components/
 │   ├── ui/         # shadcn/ui 元件（Button、Card、Sidebar…）
-│   ├── layouts/    # SidebarLayout（Dashboard 頁面外框）
+│   ├── primitives/ # Icon（本地 Font Awesome className 包裝）、Motion…
+│   ├── layout/     # SidebarLayout（Dashboard 頁面外框）、nav、theme-provider
 │   └── ...         # 業務元件（PageHeader、AnalyticsChart、ProtectedRoute、ErrorBoundary…）
 ├── contexts/
 │   ├── AuthContext.tsx          # 認證狀態、user、channels、401 全域攔截
@@ -151,4 +153,14 @@ OwnerRoute（限擁有者）
 | 輸出資料夾 | `dist`                                               |
 | 環境變數   | `API_BACKEND`（後端網址，由 Cloudflare Tunnel 提供） |
 
-Production build 自動移除所有 `console.*` 與 `debugger`（`esbuild.drop`）。
+Production build 自動移除所有 `console.*` 與 `debugger`（Terser `compress.drop_console` / `drop_debugger`）。
+
+### 圖示（Font Awesome）
+
+專案用本地 Font Awesome Pro，透過 `<Icon icon="fa-solid fa-…" />`（`components/primitives/Icon`）
+以 className 方式渲染——**不使用** lucide-react 或任何 JS 圖示套件。`shadcn add` 匯入的 lucide
+請換成 `<Icon>`。
+
+`build` 前會跑 `scripts/build-fa-subset.mjs`：掃描 `src/` 用到的 `fa-*` class，從完整的
+`all.css`（~630 KB）產生只含所需圖示 + solid/regular/brands 三個 `@font-face` 的
+`fontawesome.subset.css`（~6 KB gzip）。新增圖示後若 dev 環境沒顯示，手動跑 `npm run fa:subset`。
