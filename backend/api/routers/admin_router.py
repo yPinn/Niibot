@@ -21,6 +21,7 @@ from core.dependencies import (
     get_twitch_api,
     require_owner,
 )
+from routers.admin.client_errors import router as _client_errors_router
 from routers.admin.db import _json_safe  # noqa: F401  re-exported for tests
 from routers.admin.db import router as _db_router
 from routers.admin.logs import _parse_docker_stream  # noqa: F401  re-exported for tests
@@ -66,6 +67,7 @@ class AdminInvalidError(InvalidInputError):
 router.include_router(_logs_router)
 router.include_router(_db_router)
 router.include_router(_modules_router)
+router.include_router(_client_errors_router)
 
 
 def _scope_diff(stored_str: str | None, required: list[str]) -> tuple[list[str], list[str]]:

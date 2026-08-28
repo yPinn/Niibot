@@ -71,6 +71,60 @@ class ClientErrorRepository:
                     _HARD_ROW_CEILING,
                 )
 
+    async def list_grouped(
+        self, *, since_hours: int, kind: str | None = None, limit: int = 100
+    ) -> list[asyncpg.Record]:
+        """Aggregate recent rows by fingerprint, newest group first.
+
+        Each row carries the group's count, first/last seen, and the most
+        recent row's representative fields (message, route, kind, …).
+        """
+        async with self.pool.acquire() as conn:
+            return await conn.fetch(
+                """
+                SELECT
+                    fingerprint,
+                    COUNT(*)                                              AS count,
+                    MIN(occurred_at)                                      AS first_seen,
+                    MAX(occurred_at)                                      AS last_seen,
+                    (array_agg(kind        ORDER BY occurred_at DESC))[1] AS kind,
+                    (array_agg(message     ORDER BY occurred_at DESC))[1] AS message,
+                    (array_agg(route       ORDER BY occurred_at DESC))[1] AS route,
+                    (array_agg(error_code  ORDER BY occurred_at DESC))[1] AS error_code,
+                    (array_agg(http_status ORDER BY occurred_at DESC))[1] AS http_status,
+                    (array_agg(app_version ORDER BY occurred_at DESC))[1] AS app_version,
+                    (array_agg(request_id  ORDER BY occurred_at DESC)
+                        FILTER (WHERE request_id IS NOT NULL))[1]         AS request_id
+                FROM client_errors
+                WHERE occurred_at > NOW() - make_interval(hours => $1)
+                  AND ($2::text IS NULL OR kind = $2)
+                GROUP BY fingerprint
+                ORDER BY last_seen DESC
+                LIMIT $3
+                """,
+                since_hours,
+                kind,
+                limit,
+            )
+
+    async def list_by_fingerprint(
+        self, fingerprint: str, *, limit: int = 50
+    ) -> list[asyncpg.Record]:
+        """Raw events for one fingerprint, newest first — for the drill-down."""
+        async with self.pool.acquire() as conn:
+            return await conn.fetch(
+                """
+                SELECT occurred_at, kind, message, stack, component_stack, url, route,
+                       request_id, error_code, http_status, user_id, user_agent, app_version
+                FROM client_errors
+                WHERE fingerprint = $1
+                ORDER BY occurred_at DESC
+                LIMIT $2
+                """,
+                fingerprint,
+                limit,
+            )
+
     async def prune_old(self) -> int:
         """Delete rows older than the retention window. Returns rows removed."""
         async with self.pool.acquire() as conn:
