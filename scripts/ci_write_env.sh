@@ -28,6 +28,8 @@ DRY_RUN="${DRY_RUN:-}"
 export SECRETS_JSON VARS_JSON PROJECT_DIR DEPLOY_ENVIRONMENT ENV_SUFFIX DRY_RUN
 
 python3 - <<'PYEOF'
+from __future__ import annotations
+
 import json
 import os
 import sys
@@ -120,7 +122,9 @@ for tag, path_rel in FILE_PATHS.items():
         continue
     target = project_dir / path_rel
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(content, encoding="utf-8", newline="\n")
+    # write_bytes (not write_text with newline=) — the newline kwarg is 3.10+
+    # and the deploy runner's python3 is older; content is already \n-only.
+    target.write_bytes(content.encode("utf-8"))
     print(f"wrote {path_rel} ({len(lines)} keys)")
 
 if dry_run:
