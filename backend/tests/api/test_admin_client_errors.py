@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import os
 
-os.environ.setdefault("JWT_SECRET_KEY", "test-admin-client-errors-secret-key-32c")
+# Must match the other api tests — this file is alphabetically first, so a
+# different value here would win the setdefault race and break real-JWT tests.
+os.environ.setdefault("JWT_SECRET_KEY", "test-jwt-secret-key-for-auth-router-tests")
 os.environ.setdefault("CLIENT_ID", "test-client-id")
 os.environ.setdefault("CLIENT_SECRET", "test-client-secret")
 os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost/test")
