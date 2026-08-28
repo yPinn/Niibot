@@ -620,8 +620,13 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
             if resp.status_code == 200:
                 data = resp.json().get("data", [])
                 if data:
+                    was_mod = channel_id in self._bot_is_mod
                     self._bot_is_mod.add(channel_id)
                     LOGGER.info("[%s] Bot confirmed mod", self._ch(channel_id))
+                    if not was_mod:
+                        # channel.follow needs the bot as moderator — (re)subscribe
+                        # now that mod is confirmed (initial attempt 403s pre-mod).
+                        await self.resubscribe_follow(channel_id)
                 else:
                     LOGGER.info(
                         "[%s] Bot is NOT mod — chat features blocked until /mod is granted",

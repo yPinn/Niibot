@@ -443,18 +443,31 @@ async def sync_channel_roles(
     """Bulk-sync roles and follow dates from Twitch into viewer_channel_status."""
     _sync_roles_limiter.require(channel_id)
 
+    from core.config import get_settings
     from shared.repositories.channel import ChannelRepository
 
-    token_row = await ChannelRepository(pool).get_token(channel_id)
+    repo = ChannelRepository(pool)
+    token_row = await repo.get_token(channel_id)
     if not token_row:
         raise NoBroadcasterTokenError()
 
     token = token_row.token
+
+    # Followers are read with the bot token (bot acts as moderator); returns []
+    # if the bot has no token or is not a mod of this channel.
+    bot_id = get_settings().bot_id or ""
+    bot_token_row = await repo.get_token(bot_id, "bot") if bot_id else None
+
+    async def _fetch_followers() -> list[dict]:
+        if not bot_token_row:
+            return []
+        return await twitch_api.fetch_all_followers(channel_id, bot_token_row.token, bot_id)
+
     mods, vips, subs, followers = await asyncio.gather(
         twitch_api.fetch_all_moderators(channel_id, token),
         twitch_api.fetch_all_vips(channel_id, token),
         twitch_api.fetch_all_subscribers(channel_id, token),
-        twitch_api.fetch_all_followers(channel_id, token),
+        _fetch_followers(),
     )
     LOGGER.info(
         "sync_roles_fetched",

@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import logging
 
+from twitchio import eventsub
+
 from core.subscriptions import get_channel_subscriptions
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -57,30 +59,37 @@ class _ChannelMixin:
             subs = get_channel_subscriptions(broadcaster_user_id, self._bot_id)  # type: ignore[attr-defined]
             resp = await self.multi_subscribe(subs)  # type: ignore[attr-defined]
             non_conflict: list = []
-            follow_auth_errors: list = []
+            moderator_auth_errors: list = []
+            follow_pending = False
             if resp.errors:
                 for e in resp.errors:
                     e_str = str(e)
                     if "409" in e_str or "already exists" in e_str:
                         continue
-                    elif "403" in e_str and (
-                        "ChannelFollow" in e_str or "ChannelModerator" in e_str
-                    ):
-                        # broadcaster missing required scope:
-                        #   ChannelFollow      → moderator:read:followers
-                        #   ChannelModerator   → moderation:read / channel:manage:moderators
-                        follow_auth_errors.append(e)
+                    elif "403" in e_str and "ChannelFollow" in e_str:
+                        # channel.follow uses moderator_user_id=bot; a 403 means
+                        # the bot is not a mod yet. Re-subscribed by
+                        # resubscribe_follow once mod is granted — NOT a
+                        # broadcaster reauth condition.
+                        follow_pending = True
+                    elif "403" in e_str and "ChannelModerator" in e_str:
+                        # broadcaster missing channel:manage:moderators
+                        moderator_auth_errors.append(e)
                     else:
                         non_conflict.append(e)
                 if non_conflict:
                     LOGGER.warning(
                         f"[{self._ch(broadcaster_user_id)}] Subscription errors: {non_conflict}"
                     )
-                if follow_auth_errors:
+                if follow_pending:
+                    LOGGER.debug(
+                        f"[{self._ch(broadcaster_user_id)}] channel.follow deferred"
+                        " — bot not mod yet; will subscribe on mod grant"
+                    )
+                if moderator_auth_errors:
                     LOGGER.warning(
-                        f"[{self._ch(broadcaster_user_id)}] Auth-scope subscription failures"
-                        " — broadcaster needs to reauth (moderator:read:followers,"
-                        " moderation:read / channel:manage:moderators)"
+                        f"[{self._ch(broadcaster_user_id)}] channel.moderator subscription"
+                        " failed — broadcaster needs to reauth (channel:manage:moderators)"
                     )
                     self._needs_reauth.add(broadcaster_user_id)  # type: ignore[attr-defined]
 
@@ -94,7 +103,7 @@ class _ChannelMixin:
                 self._subscription_ids[broadcaster_user_id] = subscription_ids  # type: ignore[attr-defined]
 
             # Mark as subscribed unless there are real (non-409, non-follow-403) errors with no
-            # successes. follow_auth_errors only means channel.follow is unavailable until reauth —
+            # successes. follow_pending / moderator_auth_errors don't block the channel —
             # the other subscriptions still exist on the Conduit from the previous session.
             if subscription_ids or not non_conflict:
                 self._subscribed_channels.add(broadcaster_user_id)  # type: ignore[attr-defined]
@@ -106,6 +115,45 @@ class _ChannelMixin:
 
         except Exception as e:
             LOGGER.exception(f"[{self._ch(broadcaster_user_id)}] Failed to subscribe: {e}")
+
+    async def resubscribe_follow(self, broadcaster_user_id: str) -> None:
+        """(Re)create the channel.follow subscription once the bot is a mod.
+
+        channel.follow uses moderator_user_id=bot, so it 403s when attempted
+        before the bot is granted mod. Called from _check_bot_mod_status and
+        event_moderator_add after mod is confirmed. Idempotent — a pre-existing
+        subscription returns 409, treated as success.
+        """
+        if broadcaster_user_id not in self._subscribed_channels:  # type: ignore[attr-defined]
+            return
+        try:
+            sub = eventsub.ChannelFollowSubscription(
+                broadcaster_user_id=broadcaster_user_id,
+                moderator_user_id=self._bot_id,  # type: ignore[attr-defined]
+            )
+            resp = await self.multi_subscribe([sub])  # type: ignore[attr-defined]
+            for e in resp.errors:
+                e_str = str(e)
+                if "409" in e_str or "already exists" in e_str:
+                    LOGGER.debug(f"[{self._ch(broadcaster_user_id)}] channel.follow already active")
+                else:
+                    LOGGER.warning(
+                        f"[{self._ch(broadcaster_user_id)}] channel.follow re-subscribe failed: {e}"
+                    )
+                return
+
+            new_ids = [
+                sub_id for s in resp.success if isinstance(sub_id := s.response.get("id"), str)
+            ]
+            if new_ids:
+                self._subscription_ids.setdefault(broadcaster_user_id, []).extend(new_ids)  # type: ignore[attr-defined]
+                LOGGER.info(
+                    f"[{self._ch(broadcaster_user_id)}] channel.follow subscribed (bot now mod)"
+                )
+        except Exception as e:
+            LOGGER.warning(
+                f"[{self._ch(broadcaster_user_id)}] channel.follow re-subscribe error: {e}"
+            )
 
     async def unsubscribe_channel_events(self, broadcaster_user_id: str) -> None:
         if broadcaster_user_id not in self._subscribed_channels:  # type: ignore[attr-defined]

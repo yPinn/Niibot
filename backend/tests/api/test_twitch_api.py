@@ -451,7 +451,8 @@ class TestUserHelpers:
         )
         api = mock.client()
 
-        followers = await api.fetch_all_followers("b1", "tok")
+        followers = await api.fetch_all_followers("b1", "tok", "bot1")
+        assert mock.requests[-1].url.params["moderator_id"] == "bot1"
         assert followers == [
             {
                 "user_id": "1",

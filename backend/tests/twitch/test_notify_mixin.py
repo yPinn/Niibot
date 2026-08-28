@@ -417,6 +417,7 @@ def mod_bot():
         b._bot_is_mod = set()
         b._needs_reauth = set()
         b._mod_check_pending = set()
+        b._subscribed_channels = set()
         b.channels = MagicMock()
         return b
 
