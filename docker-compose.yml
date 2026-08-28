@@ -15,8 +15,9 @@ x-healthcheck: &default-healthcheck
 x-logging: &default-logging
   driver: json-file
   options:
-    max-size: "20m"
+    max-size: "50m"
     max-file: "5"
+    compress: "true"
 
 # ---------------------------------------------------------------------------
 # Profiles guide:
@@ -67,6 +68,7 @@ services:
     container_name: nb-migrate
     command: python /app/scripts/db_migrate.py
     restart: "no"
+    logging: *default-logging
     networks:
       - nb-network
     depends_on:
