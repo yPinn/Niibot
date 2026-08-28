@@ -209,6 +209,63 @@ class GeneralCommandsComponent(BotComponent):
         )
         await self._record_command(ctx, "rank")
 
+    @commands.command(name="so", aliases=["推薦"])
+    async def shoutout(self, ctx: commands.Context, *, target: str | None = None) -> None:
+        """版主指令：推薦另一個頻道。用法: !so <頻道名>
+
+        Uses the bot token (moderator:manage:shoutouts) — the bot must be a mod.
+        Twitch rate-limits shoutouts to one per 2 min / one per target per 60 min.
+        """
+        config = await check_command(
+            self.cmd_repo, ctx, channel_repo=self.channel_repo, command_name="so"
+        )
+        if not config:
+            return
+
+        # Moderator-only — virtual builtin configs are always min_role="everyone",
+        # so gate here. `.moderator` already includes the broadcaster.
+        if not ctx.chatter.moderator:  # type: ignore[attr-defined]
+            return
+
+        login = (target or "").strip().lstrip("@").lower()
+        if not login:
+            await self._ctx_reply(ctx, "用法： !so <頻道名>")
+            return
+
+        channel_id = ctx.channel.id
+        try:
+            users = await ctx.bot.fetch_users(logins=[login])
+        except Exception as e:
+            LOGGER.warning(f"[{ctx.channel.name}] !so fetch_users failed: {e}")
+            await self._ctx_reply(ctx, "查詢頻道失敗，請稍後再試")
+            return
+
+        if not users:
+            await self._ctx_reply(ctx, f"找不到頻道 {login}")
+            return
+        target_user = users[0]
+
+        if target_user.id == channel_id:
+            await self._ctx_reply(ctx, "不能推薦自己啦 KappaPride")
+            return
+
+        try:
+            await ctx.bot._http.post_chat_shoutout(
+                broadcaster_id=channel_id,
+                to_broadcaster_id=target_user.id,
+                moderator_id=ctx.bot.bot_id,
+                token_for=ctx.bot.bot_id,
+            )
+            LOGGER.info(f"[{ctx.channel.name}] !so → {login} by {ctx.chatter.name}")
+            await self._record_command(ctx, "so")
+        except Exception as e:
+            status = getattr(e, "status", None) or getattr(e, "status_code", None)
+            if status == 429:
+                await self._ctx_reply(ctx, "推薦太頻繁了，請稍後再試（每 2 分鐘一次）")
+            else:
+                LOGGER.error(f"[{ctx.channel.name}] !so failed: {e}")
+                await self._ctx_reply(ctx, "推薦失敗，請確認機器人是否為版主")
+
     @commands.Component.listener()
     async def event_stream_online(self, payload: twitchio.StreamOnline) -> None:
         LOGGER.info(f"[{payload.broadcaster.name}] Stream online")
