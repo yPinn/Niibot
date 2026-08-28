@@ -32,7 +32,7 @@ jobs:
     uses: ./.github/workflows/_deploy.yml
     with:
       environment: production
-      services: ${{ inputs.services == 'default' && '' || inputs.services }}
+      services: ${{ inputs.services }} # "" on schedule, "default" on dispatch — both handled in _deploy.yml
       force_all: ${{ inputs.force_all == true }}
       is_scheduled: ${{ github.event_name == 'schedule' }}
     secrets: inherit
