@@ -3,12 +3,13 @@
 Uses data already collected by the bot in chatter_stats to compute
 channel_overlap_summary and channel_overlap_viewers for the Matcher feature.
 
-Usage:
-    python scripts/tw_backfill_matcher.py
-    python scripts/tw_backfill_matcher.py --days 30
-    python scripts/tw_backfill_matcher.py --dry-run
+    python scripts/tw_backfill_matcher.py [--days 7,30,90] [--dry-run]
+    npm run nb -- twitch backfill-matcher --days 30
 """
 
+from __future__ import annotations
+
+import argparse
 import asyncio
 import sys
 from pathlib import Path
@@ -17,7 +18,8 @@ import asyncpg
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from api.core.config import get_settings
+from _lib import add_env_arg, load_env  # noqa: E402
+from api.core.config import get_settings  # noqa: E402
 
 WINDOWS = [7, 30, 90]
 
@@ -328,16 +330,33 @@ async def main(target_days: list[int], dry_run: bool) -> None:
         await conn.close()
 
 
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Backfill Matcher overlap tables.")
+    parser.add_argument(
+        "--days",
+        default=",".join(map(str, WINDOWS)),
+        help="comma-separated windows (default 7,30,90)",
+    )
+    parser.add_argument("--dry-run", action="store_true")
+    add_env_arg(parser)
+    return parser
+
+
+def run(args: argparse.Namespace) -> int:
+    load_env(getattr(args, "env", None) or "prod")
+    raw = getattr(args, "days", None) or ",".join(map(str, WINDOWS))
+    try:
+        target_days = [int(d) for d in str(raw).split(",")]
+    except ValueError:
+        print(f"Invalid --days value: {raw!r}  (例: --days 7,30,90)")
+        return 1
+    asyncio.run(main(target_days, bool(getattr(args, "dry_run", False))))
+    return 0
+
+
+def _main() -> int:
+    return run(build_parser().parse_args())
+
+
 if __name__ == "__main__":
-    dry_run = "--dry-run" in sys.argv
-    target_days = WINDOWS
-
-    for i, arg in enumerate(sys.argv):
-        if arg == "--days" and i + 1 < len(sys.argv):
-            try:
-                target_days = [int(d) for d in sys.argv[i + 1].split(",")]
-            except ValueError:
-                print(f"Invalid --days value: {sys.argv[i + 1]}  (例: --days 7,30,90)")
-                sys.exit(1)
-
-    asyncio.run(main(target_days, dry_run))
+    raise SystemExit(_main())

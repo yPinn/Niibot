@@ -77,15 +77,17 @@ def _is_low_quality(model_id: str) -> bool:
     return any(p in lower for p in LOW_QUALITY_PATTERNS)
 
 
-def main() -> None:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Update free_models.json")
     parser.add_argument(
         "--with-uptime",
         action="store_true",
         help="Fetch uptime for each model (adds ~1s per model)",
     )
-    args = parser.parse_args()
+    return parser
 
+
+def run(args: argparse.Namespace) -> int:
     print("Fetching model list from OpenRouter...")
     data = _fetch(MODELS_URL)
     all_models = data.get("data", [])
@@ -179,7 +181,12 @@ def main() -> None:
 
     print(f"\nDone. {len(merged)} models written to {OUTPUT} (+{added} new, -{removed} removed)")
     print("Review newly added models and set enabled=true as appropriate.")
+    return 0
+
+
+def main() -> int:
+    return run(build_parser().parse_args())
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

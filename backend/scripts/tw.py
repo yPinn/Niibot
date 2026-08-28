@@ -1,37 +1,40 @@
 #!/usr/bin/env python3
 """Twitch token / emote diagnostics.
 
-Usage:
-    uv run scripts/tw.py tokens   # list stored tokens, validate, show scopes
-    uv run scripts/tw.py emotes   # show the bot's emote access per channel
+python scripts/tw.py tokens   # list stored tokens, validate, show scopes
+python scripts/tw.py emotes   # show the bot's emote access per channel
+npm run nb -- twitch tokens
 """
+
+from __future__ import annotations
 
 import argparse
 import asyncio
 import os
-import sys
-from pathlib import Path
 
-BACKEND_DIR = Path(__file__).resolve().parent.parent
-# Ensure backend/ is on sys.path so shared.* and twitch.* are importable.
-if str(BACKEND_DIR) not in sys.path:
-    sys.path.insert(0, str(BACKEND_DIR))
+import asyncpg
+import httpx
+from _lib import add_env_arg, database_url, ensure_backend_on_path, load_env
 
-import asyncpg  # noqa: E402
-import httpx  # noqa: E402
-from dotenv import load_dotenv  # noqa: E402
-from twitch.core.config import BOT_SCOPES, BROADCASTER_SCOPES  # noqa: E402
+# Populated by run() after load_env().
+CLIENT_ID = ""
+CLIENT_SECRET = ""
+BOT_ID = ""
+_BOT_SCOPES_SET: set[str] = set()
+_BROADCASTER_SCOPES_SET: set[str] = set()
 
-load_dotenv(BACKEND_DIR / "shared.env")
-load_dotenv(BACKEND_DIR / "shared.env.local", override=True)
-load_dotenv(BACKEND_DIR / "twitch" / ".env")
 
-CLIENT_ID = os.getenv("TWITCH_CLIENT_ID", "")
-CLIENT_SECRET = os.getenv("TWITCH_CLIENT_SECRET", "")
-BOT_ID = os.getenv("BOT_ID", "")
+def _load_config(env: str) -> None:
+    global CLIENT_ID, CLIENT_SECRET, BOT_ID, _BOT_SCOPES_SET, _BROADCASTER_SCOPES_SET
+    load_env(env, service="twitch")
+    ensure_backend_on_path()
+    from twitch.core.config import BOT_SCOPES, BROADCASTER_SCOPES
 
-_BOT_SCOPES_SET = set(BOT_SCOPES)
-_BROADCASTER_SCOPES_SET = set(BROADCASTER_SCOPES)
+    CLIENT_ID = os.getenv("TWITCH_CLIENT_ID", "")
+    CLIENT_SECRET = os.getenv("TWITCH_CLIENT_SECRET", "")
+    BOT_ID = os.getenv("BOT_ID", "")
+    _BOT_SCOPES_SET = set(BOT_SCOPES)
+    _BROADCASTER_SCOPES_SET = set(BROADCASTER_SCOPES)
 
 
 # ── tokens ──────────────────────────────────────────────────────────────────
@@ -46,11 +49,7 @@ def _identify_role(scopes: set[str]) -> str:
 
 
 async def _tokens() -> None:
-    db_url = os.getenv("DATABASE_URL")
-    if not db_url:
-        sys.exit("[ERROR] DATABASE_URL not found")
-
-    conn = await asyncpg.connect(db_url)
+    conn = await asyncpg.connect(database_url())
     rows = await conn.fetch("SELECT user_id, token FROM tokens ORDER BY user_id")
     channels = await conn.fetch("SELECT channel_id, channel_name FROM channels")
     uid_to_name = {row["channel_id"]: row["channel_name"] for row in channels}
@@ -140,18 +139,15 @@ async def _helix(client: httpx.AsyncClient, token: str, path: str, params) -> li
 
 async def _emotes() -> None:
     if not all([CLIENT_ID, CLIENT_SECRET, BOT_ID]):
-        sys.exit("[ERROR] TWITCH_CLIENT_ID / TWITCH_CLIENT_SECRET / BOT_ID not set")
-    db_url = os.getenv("DATABASE_URL")
-    if not db_url:
-        sys.exit("[ERROR] DATABASE_URL not set")
+        raise SystemExit("[ERROR] TWITCH_CLIENT_ID / TWITCH_CLIENT_SECRET / BOT_ID not set")
 
-    conn = await asyncpg.connect(db_url)
+    conn = await asyncpg.connect(database_url())
     bot_row = await conn.fetchrow(
         "SELECT refresh FROM tokens WHERE user_id = $1 AND token_type = 'bot'", BOT_ID
     )
     if not bot_row:
         await conn.close()
-        sys.exit("[ERROR] bot token not found")
+        raise SystemExit("[ERROR] bot token not found")
     channels = await conn.fetch(
         "SELECT channel_id, channel_name FROM channels ORDER BY channel_name"
     )
@@ -271,20 +267,36 @@ async def _emotes() -> None:
     print()
 
 
-async def main() -> None:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Twitch token / emote diagnostics.")
-    sub = parser.add_subparsers(required=True)
-    p_tokens = sub.add_parser("tokens", help="List stored tokens, validate, show scopes")
-    p_tokens.set_defaults(action="tokens")
-    p_emotes = sub.add_parser("emotes", help="Show the bot's emote access per channel")
-    p_emotes.set_defaults(action="emotes")
-    args = parser.parse_args()
+    sub = parser.add_subparsers(dest="action", required=True)
+    for name, helptext in (
+        ("tokens", "List stored tokens, validate, show scopes"),
+        ("emotes", "Show the bot's emote access per channel"),
+    ):
+        p = sub.add_parser(name, help=helptext)
+        add_env_arg(p)
+    return parser
 
-    await {"tokens": _tokens, "emotes": _emotes}[args.action]()
+
+async def _run(action: str, env: str) -> int:
+    _load_config(env)
+    await {"tokens": _tokens, "emotes": _emotes}[action]()
+    return 0
+
+
+def run(args: argparse.Namespace) -> int:
+    action = getattr(args, "action", None) or getattr(args, "tw_action", "")
+    assert action in ("tokens", "emotes"), f"unknown action {action!r}"
+    try:
+        return asyncio.run(_run(action, getattr(args, "env", None) or "prod"))
+    except KeyboardInterrupt:
+        return 130
+
+
+def main() -> int:
+    return run(build_parser().parse_args())
 
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        pass
+    raise SystemExit(main())
