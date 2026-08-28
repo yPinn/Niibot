@@ -41,6 +41,11 @@ Key invariants:
 - Channel-scoped tables must always filter by `channel_id`. Postgres RLS
   policies in migration 083 act as a second line of defence (left disabled
   until full router migration).
+- `channels.enabled` is DB-gated to admission (migration 084): a channel may be
+  `enabled=TRUE` only while its owner's `memberships.status = 'active'`. Triggers
+  enforce this and fire `channel_toggle`, so approve/suspend joins/parts the bot
+  with no application call sites. Do not set `enabled=TRUE` from app code for a
+  non-active owner — the trigger will override it.
 
 ## Git Workflow (GitHub Flow + staging)
 
@@ -72,38 +77,18 @@ feature/xxx  ──PR──►  staging  ──(QA pass)──PR──►  main
 hotfix/xxx  ──PR──►  main  ──PR──►  staging  (backport)
 ```
 
-### Docker Compose per Environment
+### Docker Compose & Environments
 
-Each environment uses `docker-compose.yml` (base, no host ports) plus its own overlay:
-
-```bash
-# Production
-docker compose -f docker-compose.yml -f docker-compose.prod.yml [--profile <name>] up -d
-
-# Staging (isolated project, separate containers/network/volumes)
-docker compose -p niibot-staging --env-file .env.staging \
-  -f docker-compose.yml -f docker-compose.staging.yml [--profile <name>] up -d
-
-# Local dev
-docker compose -f docker-compose.yml -f docker-compose.dev.yml [--profile <name>] up
-```
-
-Port table:
-
-| Service   | Base | Prod | Dev  | Staging |
-| --------- | ---- | ---- | ---- | ------- |
-| api       | —    | 8000 | 8000 | 8001    |
-| postgres  | —    | —    | 5433 | 5434    |
-| instafix  | —    | —    | 3002 | 3004    |
+Each environment = `docker-compose.yml` (base, no host ports) + its overlay
+(`prod` / `staging` / `dev`), isolated by Compose project. `migrate` container
+runs DB migrations on startup. Full commands, port table, and CI/CD secret sync:
+[docs/guides/deployment.md](docs/guides/deployment.md).
 
 ### Environment Variables
 
-| File                   | Purpose                           |
-| ---------------------- | --------------------------------- |
-| `.env`                 | Production secrets (never commit) |
-| `.env.staging`         | Staging secrets (never commit)    |
-| `.env.example`         | Template for production           |
-| `.env.staging.example` | Template for staging              |
+`bash scripts/env.sh init` copies every `*.env.example` → `*.env`. The single
+source of truth for every variable is
+[docs/guides/environment.md](docs/guides/environment.md). Never commit a `.env`.
 
 ### Branch Protection (set on GitHub)
 

@@ -27,7 +27,8 @@ from core.config import Settings, get_settings
 from core.dependencies import get_db_pool
 from core.rate_limit import RateLimiter
 from shared.repositories.donation import DonationRepository, generate_trade_no
-from shared.repositories.video_queue import VideoQueueRepository, extract_youtube_info
+from shared.repositories.video_queue import VideoQueueRepository
+from shared.video_sources import extract_youtube_info
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -107,6 +108,16 @@ def _verify_webhook_mac(form_data: dict, hash_key: str, hash_iv: str) -> bool:
     received = form_data.get("CheckMacValue", "")
     computed = _build_check_mac_value(form_data, hash_key, hash_iv)
     return hmac.compare_digest(received.upper(), computed)
+
+
+def _amount_matches(raw: object, expected: int) -> bool:
+    """True if the gateway-reported amount parses to exactly *expected*."""
+    if raw is None:
+        return False
+    try:
+        return int(raw) == expected  # type: ignore[call-overload]
+    except (TypeError, ValueError):
+        return False
 
 
 def _pkcs7_pad(data: bytes, block_size: int = 16) -> bytes:
@@ -416,11 +427,7 @@ async def _handle_payment_webhook(
         return "1|OK"
 
     trade_amt = form_data.get("TradeAmt")
-    try:
-        webhook_amount = int(trade_amt) if trade_amt is not None else None
-    except ValueError:
-        webhook_amount = None
-    if webhook_amount is None or webhook_amount != int(order.amount):
+    if not _amount_matches(trade_amt, int(order.amount)):
         LOGGER.warning(
             f"[{platform} webhook] Amount mismatch for {trade_no}: "
             f"expected {order.amount}, got {trade_amt}"
@@ -550,6 +557,15 @@ async def webhook_newebpay(
         LOGGER.info(f"[newebpay webhook] Order {trade_no} failed, Status={inner_status}")
         await repo.mark_failed(trade_no)
         return JSONResponse({"status": "ok"}, status_code=200)
+
+    # Verify the paid amount matches the order (parity with the ECPay/OPay path).
+    paid_amt = trade_data.get("Amt")
+    if not _amount_matches(paid_amt, int(order.amount)):
+        LOGGER.warning(
+            f"[newebpay webhook] Amount mismatch for {trade_no}: "
+            f"expected {order.amount}, got {paid_amt}"
+        )
+        return JSONResponse({"status": "error"}, status_code=200)
 
     paid_order = await repo.mark_paid(trade_no)
     if paid_order is None:

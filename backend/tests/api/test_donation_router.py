@@ -8,6 +8,7 @@ Covers:
 
 from __future__ import annotations
 
+import json
 import os
 
 os.environ.setdefault("JWT_SECRET_KEY", "test-jwt-secret-key-donation")
@@ -28,6 +29,8 @@ from core.dependencies import get_db_pool
 from routers.donation_router import (
     _build_check_mac_value,
     _handle_payment_webhook,
+    _newebpay_aes_encrypt,
+    _newebpay_sha256,
     _verify_webhook_mac,
 )
 from routers.donation_router import router as _donation_router
@@ -327,6 +330,64 @@ class TestWebhookAmountValidation:
         form = {**self._BASE_FORM, "TradeAmt": "200.50"}
         result = await self._call(form, order_amount=200)
         assert result == "0|Error"
+
+
+# ---------------------------------------------------------------------------
+# POST /api/donate/webhook/newebpay — amount validation (parity with ECPay/OPay)
+# ---------------------------------------------------------------------------
+
+
+class TestNewebpayWebhookAmountValidation:
+    """webhook_newebpay must reject a decrypted Amt that doesn't match the order."""
+
+    # NewebPay hash_key must be 32 bytes and hash_iv 16 bytes (AES-256-CBC).
+    _KEY = "0123456789abcdef0123456789abcdef"
+    _IV = "abcdef0123456789"
+
+    def _post(self, amt: int, order_amount: int = 200):
+        trade_json = json.dumps({"Status": "SUCCESS", "MerchantOrderNo": "T001", "Amt": amt})
+        trade_info = _newebpay_aes_encrypt(trade_json, self._KEY, self._IV)
+        trade_sha = _newebpay_sha256(trade_info, self._KEY, self._IV)
+
+        config = _make_config(self._KEY, self._IV)
+        order = _make_order(order_amount)
+
+        with (
+            patch(
+                "routers.donation_router.DonationRepository.get_config_by_merchant_id",
+                new=AsyncMock(return_value=config),
+            ),
+            patch(
+                "routers.donation_router.DonationRepository.get_order_by_trade_no",
+                new=AsyncMock(return_value=order),
+            ),
+            patch(
+                "routers.donation_router.DonationRepository.mark_paid",
+                new=AsyncMock(return_value=None),
+            ) as mark_paid,
+        ):
+            resp = _make_client().post(
+                "/api/donate/webhook/newebpay",
+                data={
+                    "Status": "SUCCESS",
+                    "MerchantID": "MERCH1",
+                    "TradeInfo": trade_info,
+                    "TradeSha": trade_sha,
+                    "Version": "2.0",
+                },
+            )
+        return resp, mark_paid
+
+    def test_matching_amount_marks_paid(self):
+        resp, mark_paid = self._post(amt=200, order_amount=200)
+        assert resp.status_code == 200
+        mark_paid.assert_awaited_once()
+
+    def test_mismatched_amount_does_not_mark_paid(self):
+        resp, mark_paid = self._post(amt=1, order_amount=200)
+        assert resp.status_code == 200
+        assert resp.json() == {"status": "error"}
+        mark_paid.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------

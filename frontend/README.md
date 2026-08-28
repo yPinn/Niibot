@@ -6,19 +6,21 @@ Niibot 的網頁控制台，部署在 Cloudflare Pages。CF Pages Functions 將 
 
 ## 技術棧
 
-| 工具                          | 用途                            |
-| ----------------------------- | ------------------------------- |
-| React 19 + TypeScript 5.9     | UI 框架與型別系統               |
-| Vite 7（SWC）+ React Router 7 | 建置工具與頁面路由              |
-| Tailwind CSS 4                | 樣式系統                        |
-| shadcn/ui（基於 Radix UI）    | UI 元件庫（按鈕、卡片、側欄等） |
-| Motion 12                     | 動畫與轉場                      |
-| Recharts                      | 數據圖表                        |
-| Vitest + Testing Library      | 自動化測試                      |
+| 工具                       | 用途                            |
+| -------------------------- | ------------------------------- |
+| React 19 + TypeScript      | UI 框架與型別系統               |
+| Vite（SWC）+ React Router  | 建置工具與頁面路由              |
+| Tailwind CSS 4             | 樣式系統                        |
+| shadcn/ui（基於 Radix UI） | UI 元件庫（按鈕、卡片、側欄等） |
+| Motion                     | 動畫與轉場                      |
+| Recharts                   | 數據圖表                        |
+| Vitest + Testing Library   | 自動化測試                      |
+
+精確版本見 `package.json`。
 
 ## 前置需求
 
-- [Node.js 22+](https://nodejs.org/)
+- Node.js — 版本見 `.nvmrc`
 
 ## 開發
 
@@ -32,26 +34,31 @@ npm run dev     # 啟動開發伺服器（localhost:3000）
 ```env
 VITE_API_URL=http://localhost:8000  # 後端代理目標（預設 localhost:8000）
 VITE_BOT_USERNAME=niibot_           # Bot 帳號名，抑制自身的「授予 Mod」提示
-VITE_DISCORD_COMMUNITY_URL=         # Discord 社群邀請連結（側邊欄／說明橫幅／條款頁聯絡方式）
-VITE_DISCORD_BOT_INVITE_URL=        # Discord Bot OAuth 邀請連結（將 Bot 加入自己的伺服器）
-VITE_ENVIRONMENT=                   # 部署環境：production 鎖定 WIP 頁面；staging/dev 不鎖定
+VITE_DISCORD_COMMUNITY_URL=         # Discord 社群邀請連結（側欄／說明橫幅／條款頁）
+VITE_DISCORD_BOT_INVITE_URL=        # 把 Bot 加入自己伺服器的 OAuth 連結
+VITE_SUPPORT_ECPAY_URL=             # 贊助頁 ECPay 連結
+VITE_ENVIRONMENT=                   # 部署環境：production 鎖定 WIP 頁面；staging/dev 不鎖
 ```
 
-> 部署時於 Cloudflare Pages 設定：staging 須明確設 `VITE_ENVIRONMENT=staging` 才解鎖；未設定者一律保持鎖定（fail-safe）。
+完整欄位說明見 [docs/guides/environment.md](../docs/guides/environment.md)。
+
+> 部署時於 Cloudflare Pages 設定：staging 須明確設 `VITE_ENVIRONMENT=staging` 才解鎖；
+> 未設定者一律保持鎖定（fail-safe）。
 
 ## 指令
 
-| 指令                   | 說明                          |
-| ---------------------- | ----------------------------- |
-| `npm run build`        | 打包正式版本（含型別檢查）    |
-| `npm run preview`      | 本機預覽打包結果              |
-| `npm run typecheck`    | 只執行型別檢查，不打包        |
-| `npm run lint`         | 掃描程式碼問題                |
-| `npm run lint:fix`     | 自動修正程式碼問題            |
-| `npm run format`       | 修正排版格式                  |
-| `npm run format:check` | 只檢查格式，不修改（CI 用）   |
-| `npm run test`         | 執行測試（存檔自動重跑）      |
-| `npm run test:cov`     | 測試＋覆蓋率報告（目標 80%+） |
+| 指令                   | 說明                                       |
+| ---------------------- | ------------------------------------------ |
+| `npm run build`        | 打包正式版本（先跑 fa:subset，含型別檢查） |
+| `npm run fa:subset`    | 重建 Font Awesome 子集 CSS                 |
+| `npm run preview`      | 本機預覽打包結果                           |
+| `npm run lint`         | 掃描程式碼問題                             |
+| `npm run lint:fix`     | 自動修正程式碼問題                         |
+| `npm run format`       | 修正排版格式                               |
+| `npm run format:check` | 只檢查格式，不修改（CI 用）                |
+| `npm run typecheck`    | 只執行型別檢查，不打包                     |
+| `npm run test`         | 執行測試（存檔自動重跑）                   |
+| `npm run test:cov`     | 測試＋覆蓋率報告（目標 80%+）              |
 
 ## 結構
 
@@ -62,21 +69,25 @@ src/
 ├── api/            # API client — apiFetch、端點常數、各模組請求函式
 ├── components/
 │   ├── ui/         # shadcn/ui 元件（Button、Card、Sidebar…）
-│   ├── layouts/    # SidebarLayout（Dashboard 頁面外框）
+│   ├── primitives/ # Icon（本地 Font Awesome className 包裝）、Motion…
+│   ├── layout/     # SidebarLayout（Dashboard 頁面外框）、nav、theme-provider
 │   └── ...         # 業務元件（PageHeader、AnalyticsChart、ProtectedRoute、ErrorBoundary…）
 ├── contexts/
 │   ├── AuthContext.tsx          # 認證狀態、user、channels、401 全域攔截
 │   ├── BotContext.tsx           # 目前活躍的 Bot 平台（twitch / discord）
 │   └── ServiceStatusContext.tsx # Twitch / Discord / API 服務狀態（30s polling）
 ├── config/         # navigation.ts — Twitch 與 Discord sidebar 導覽設定
-├── hooks/          # usePolling、useSortState、useOptimisticToggle、useInputInsert、useAbortableFetch、useBreadcrumbs、useDocumentTitle
+├── hooks/          # usePolling、useSortState、useOptimisticToggle、useInputInsert、
+│                   #   useAbortableFetch、useBreadcrumbs、useDocumentTitle、useGrantMod、useOnboardingStatus
 ├── lib/
 │   ├── apiCache.ts  # 記憶體內 TTL 快取（上限 200 條）+ 請求合併；CACHE_KEYS 集中管理所有快取鍵
 │   ├── sort.ts      # 通用排序工具（nameSort、ROLE_ORDER）
 │   ├── format.ts    # 日期時間格式化輔助函式
 │   ├── sanitize.ts  # DOMPurify 包裝（ANSI HTML 消毒，用於 Admin Monitor）
 │   ├── clipboard.ts # Clipboard API 複製工具
-│   ├── motion.ts    # Framer Motion 共用動畫 variant
+│   ├── motion.ts    # Motion 共用動畫 variant
+│   ├── insights-suggestions.ts  # Insights 頁的建議行動推導
+│   ├── onboarding-status.ts     # 設定完成度判斷
 │   └── utils.ts     # cn()（Tailwind class 合併）
 ├── pages/
 │   ├── dashboard/  # Twitch Bot（Commands、Events、Overview、Timers）
@@ -87,7 +98,7 @@ src/
 │   ├── admin/      # 管理員頁面（OwnerRoute）
 │   ├── activate/   # 啟用碼頁面
 │   ├── docs/       # GetStarted、Releases
-│   └── ...         # Landing、Login、PublicCommands、Overlays、Settings、DonatePage
+│   └── ...         # Landing、Login、PublicCommands、Overlays、Settings、DonatePage、Support、NotFound
 └── test/           # Vitest 設定（setup.ts）
 functions/          # CF Pages Functions — /api/*、/health、/status 反向代理
 ```
@@ -104,7 +115,9 @@ functions/          # CF Pages Functions — /api/*、/health、/status 反向�
   /:username/game-queue/overlay  GameQueueOverlay（OBS browser source）
   /:username/video-queue/overlay VideoQueueOverlay（OBS browser source）
   /activate                      ActivatePage（啟用碼）
+  /support                       Support（贊助頁）
   /login                         LoginPage（PublicOnlyRoute，已登入者重導）
+  *                              NotFound（404）
 
 ProtectedRoute → SidebarLayout（需登入）
   /dashboard                     Overview
@@ -125,6 +138,9 @@ ProtectedRoute → SidebarLayout（需登入）
 OwnerRoute（限擁有者）
   /admin                         AdminPage
   /admin/monitor                 AdminMonitor
+  /admin/modules                 AdminModules
+
+/dev/typography                  TypographyDemo（僅開發用）
 ```
 
 ## 部署
@@ -137,4 +153,14 @@ OwnerRoute（限擁有者）
 | 輸出資料夾 | `dist`                                               |
 | 環境變數   | `API_BACKEND`（後端網址，由 Cloudflare Tunnel 提供） |
 
-Production build 自動移除所有 `console.*` 與 `debugger`（`esbuild.drop`）。
+Production build 自動移除所有 `console.*` 與 `debugger`（Terser `compress.drop_console` / `drop_debugger`）。
+
+### 圖示（Font Awesome）
+
+專案用本地 Font Awesome Pro，透過 `<Icon icon="fa-solid fa-…" />`（`components/primitives/Icon`）
+以 className 方式渲染——**不使用** lucide-react 或任何 JS 圖示套件。`shadcn add` 匯入的 lucide
+請換成 `<Icon>`。
+
+`build` 前會跑 `scripts/build-fa-subset.mjs`：掃描 `src/` 用到的 `fa-*` class，從完整的
+`all.css`（~630 KB）產生只含所需圖示 + solid/regular/brands 三個 `@font-face` 的
+`fontawesome.subset.css`（~6 KB gzip）。新增圖示後若 dev 環境沒顯示，手動跑 `npm run fa:subset`。

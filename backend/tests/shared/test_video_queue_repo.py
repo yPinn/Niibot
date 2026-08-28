@@ -10,10 +10,12 @@ import pytest
 from shared.repositories.video_queue import (
     VideoQueueRepository,
     VideoQueueSettingsRepository,
+    _settings_cache,
+)
+from shared.video_sources import (
     _app_token_cache,
     _get_twitch_app_token,
     _parse_iso8601_duration,
-    _settings_cache,
     extract_bilibili_bvid,
     extract_twitch_clip_slug,
     extract_youtube_id,

@@ -710,7 +710,7 @@ class TestGetSummary:
 # Query mixin — list_viewers
 # ---------------------------------------------------------------------------
 
-_BOT_LIST_PATCH = "shared.repositories.analytics._query_mixin._get_bot_list"
+_BOT_LIST_PATCH = "shared.repositories.analytics._query_common._get_bot_list"
 
 
 def _make_viewer_row(
@@ -916,7 +916,7 @@ def _score(
 ) -> float:
     """Python mirror of _SCORE_SQL for arithmetic verification.
 
-    Must be kept in sync with _query_mixin._SCORE_SQL whenever the formula
+    Must be kept in sync with _query_common._SCORE_SQL whenever the formula
     changes — these tests will fail if they drift apart.
     """
     watch_hours = watch_seconds / 3600.0

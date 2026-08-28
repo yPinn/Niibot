@@ -1,7 +1,8 @@
 # Admission & Tenancy Model
 
-> Last updated: 2026-06-11 — covers migrations 076–083 and the IdentityService /
-> AdmissionService / TenantService introduced in the same release.
+> Covers migrations 076–084 and the IdentityService / AdmissionService /
+> TenantService introduced in the 076–083 release; 084 wired admission into
+> `channels.enabled` (see "Admission gates channel monitoring" below).
 
 This document is the source of truth for how identity, admission (approval to
 use the bot), and tenancy (per-channel isolation) work in Niibot. Read this
@@ -191,14 +192,14 @@ async def list_commands(
     return await service.list_commands(ctx.channel_id)
 ```
 
-Exemplars already migrated:
+Migrated so far: `channels_router` and `commands_router` (both use the tenant
+dependencies for their channel-scoped endpoints).
 
-- `POST /api/channels/twitch/toggle` (state mutation; high-risk)
-- `POST /api/commands/configs` (config creation)
-
-The remaining channel-scoped endpoints (~30 across 14 routers) still use the
-legacy shim. They behave identically today; migrating them adds proper
-`channel_members` enforcement (matters for mod delegation and tenant
+Twelve routers still carry the legacy `get_current_channel_id` shim on some or
+all of their endpoints (`ai_settings`, `analytics`, `channels`, `commands`,
+`crosshairs`, `events`, `game_queue`, `matcher`, `message_triggers`, `stats`,
+`timers`, `video_queue`). They behave identically today; migrating them adds
+proper `channel_members` enforcement (matters for mod delegation and tenant
 suspension). Migrate per-router in follow-up PRs.
 
 ### Test override SOP when migrating a router
@@ -241,10 +242,36 @@ accordingly):
 | 081 | Backfill: `channels.owner_user_id` via identities lookup; seed `channel_members(role='owner')`                           |
 | 082 | Backfill: `tokens.identity_id` via identities lookup                                                                     |
 | 083 | RLS policies created but DISABLED; flip on per-table after staging shakedown                                             |
+| 084 | Triggers tying `channels.enabled` to `memberships.status`; new channels default `enabled=FALSE`; backfill disable        |
 
 **Rollback safety:** legacy columns (`users.is_activated`,
 `activation_requests`) are retained during the rollout for dual-read fallback.
 Drop them in a follow-up migration after one or two stable releases.
+
+## Admission gates channel monitoring (migration 084)
+
+Before 084, `channels.enabled` (whether the Twitch bot joins a channel) was
+decoupled from `memberships.status`. A brand-new, unapproved user got a channel
+row with `enabled=TRUE` at signup, so the bot operated in unapproved channels
+and the admin "monitored channels" view mixed pending users in with active
+tenants — admission review was effectively advisory.
+
+084 enforces the invariant **at the DB layer** (matching the codebase's
+trigger-based approach in 077 and 083):
+
+- **New channels default to `enabled=FALSE`.** Admission is what turns a channel on.
+- **`trg_memberships_sync_channel_enabled`** — on `memberships.status` INSERT/UPDATE,
+  sets the owner's `channels.enabled = (status = 'active')`.
+- **`trg_channels_enabled_from_owner`** — on any `channels` write: derives
+  `enabled` from the owner's membership when the owner is first linked (this is
+  what enables a channel at signup, where `owner_user_id` is set _after_ the
+  membership row), and otherwise guards that a non-active owner can never set
+  `enabled=TRUE`. Active owners keep full manual on/off control.
+
+Both paths change `enabled`, which fires the existing
+`trg_channels_notify_toggle` → `pg_notify('channel_toggle')`, so the running bot
+joins on approval and parts on reject/suspend with no application call sites to
+keep in sync.
 
 ## Things this design intentionally does NOT do
 
@@ -264,7 +291,8 @@ ROW LEVEL SECURITY` is left to the operator after they confirm
 
 ## Open follow-up work
 
-- Migrate the remaining 12 channel-scoped routers to `require_self_tenant_access`.
+- Migrate the twelve routers still on `get_current_channel_id` to the tenant
+  dependencies (see list above).
 - Surface the membership timeline in the admin UI (the backend endpoint
   `GET /api/admin/memberships/{user_id}/timeline` exists; frontend component
   pending).

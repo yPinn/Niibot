@@ -15,8 +15,8 @@ import logging
 import twitchio
 
 from core.guards import has_role, is_on_cooldown, record_cooldown
+from shared.trigger_matching import match_trigger
 from utils.substitution import substitute_variables as _substitute_variables
-from utils.trigger_matching import match_trigger
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 

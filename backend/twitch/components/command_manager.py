@@ -38,7 +38,7 @@ from twitchio.ext import commands
 from core.component import BotComponent
 from shared.builtin_commands import BUILTIN_MAP
 from shared.repositories.command_config import CommandConfigRepository
-from utils.trigger_matching import validate_regex_pattern
+from shared.trigger_matching import validate_regex_pattern
 
 if TYPE_CHECKING:
     from core.bot import Bot

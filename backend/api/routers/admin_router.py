@@ -1,16 +1,13 @@
-"""Admin-only API routes — accessible only to the bot owner."""
+"""Admin-only API routes — accessible only to the bot owner.
+
+Docker log access, the ad-hoc DB query endpoint, and global module config live
+in the ``routers.admin`` sub-package and are mounted onto this router below.
+"""
 
 import asyncio
-import decimal
-import json
 import logging
-import re
-import struct
-import time
-import uuid
-from datetime import date, datetime
+from datetime import datetime
 
-import aiohttp
 from asyncpg import Pool
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -19,11 +16,16 @@ from core.config import get_settings
 from core.dependencies import (
     get_admission_service,
     get_channel_service,
-    get_current_channel_id,
     get_current_user_id,
     get_db_pool,
     get_twitch_api,
+    require_owner,
 )
+from routers.admin.db import _json_safe  # noqa: F401  re-exported for tests
+from routers.admin.db import router as _db_router
+from routers.admin.logs import _parse_docker_stream  # noqa: F401  re-exported for tests
+from routers.admin.logs import router as _logs_router
+from routers.admin.modules import router as _modules_router
 from services import AdmissionService, ChannelService, TwitchAPIClient
 from services.emote_sync import (
     available_emote_names,
@@ -32,19 +34,15 @@ from services.emote_sync import (
 )
 from shared.repositories.activation_code import ActivationCodeRepository
 from shared.repositories.channel import ChannelRepository
-from shared.repositories.module_config import ModuleConfigRepository
 from shared.twitch_scopes import BOT_SCOPES
 from shared.twitch_scopes import BROADCASTER_SCOPES as _BROADCASTER_SCOPES
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
-
-
-async def require_owner(channel_id: str = Depends(get_current_channel_id)) -> str:
-    if channel_id != str(get_settings().owner_id):
-        raise HTTPException(status_code=403, detail="Owner access required")
-    return channel_id
+router.include_router(_logs_router)
+router.include_router(_db_router)
+router.include_router(_modules_router)
 
 
 def _scope_diff(stored_str: str | None, required: list[str]) -> tuple[list[str], list[str]]:
@@ -403,234 +401,6 @@ async def approve_activation_request(
         decision.state_changed,
     )
     return {"approved": True}
-
-
-_DOCKER_SOCKET = "/var/run/docker.sock"
-
-# Per-environment container name suffix. Prod and staging share the docker host,
-# so the staging API must NOT query bare names like "nb-api" — those resolve to
-# prod containers. docker-compose.staging.yml suffixes every service with "-stg".
-_CONTAINER_SUFFIX_BY_ENV = {"staging": "-stg"}
-
-_CONTAINER_BASES = [
-    ("nb-api", "API Server"),
-    ("nb-twitch", "Twitch Bot"),
-    ("nb-discord", "Discord Bot"),
-    ("nb-pg", "PostgreSQL"),
-    ("nb-scrapling", "Scrapling"),
-    ("nb-instafix", "Instafix"),
-]
-
-
-def _known_containers() -> list[dict[str, str]]:
-    suffix = _CONTAINER_SUFFIX_BY_ENV.get(get_settings().environment, "")
-    return [{"name": f"{base}{suffix}", "label": label} for base, label in _CONTAINER_BASES]
-
-
-def _allowed_containers() -> set[str]:
-    return {c["name"] for c in _known_containers()}
-
-
-class LogContainerInfo(BaseModel):
-    name: str
-    label: str
-    running: bool
-
-
-class LogLine(BaseModel):
-    stream: str  # 'stdout' | 'stderr'
-    text: str
-
-
-class ContainerLogsResponse(BaseModel):
-    container: str
-    lines: list[LogLine]
-
-
-def _parse_docker_stream(raw: bytes) -> list[LogLine]:
-    lines: list[LogLine] = []
-    i = 0
-    while i + 8 <= len(raw):
-        stream_type = raw[i]
-        size = struct.unpack(">I", raw[i + 4 : i + 8])[0]
-        if i + 8 + size > len(raw):
-            break
-        payload = raw[i + 8 : i + 8 + size].decode("utf-8", errors="replace")
-        for line in payload.split("\n"):
-            stripped = line.rstrip("\r")
-            if stripped:
-                lines.append(
-                    LogLine(stream="stderr" if stream_type == 2 else "stdout", text=stripped)
-                )
-        i += 8 + size
-    return lines
-
-
-@router.get("/logs/containers", response_model=list[LogContainerInfo])
-async def list_log_containers(
-    _: str = Depends(require_owner),
-) -> list[LogContainerInfo]:
-    """List known Docker containers with running status. Owner-only."""
-    known = _known_containers()
-    try:
-        connector = aiohttp.UnixConnector(path=_DOCKER_SOCKET)
-        async with aiohttp.ClientSession(connector=connector) as session:
-            result: list[LogContainerInfo] = []
-            for c in known:
-                try:
-                    async with session.get(
-                        f"http://localhost/v1.41/containers/{c['name']}/json"
-                    ) as resp:
-                        running = False
-                        if resp.status == 200:
-                            data = await resp.json()
-                            running = data.get("State", {}).get("Running", False)
-                        result.append(LogContainerInfo(**c, running=running))
-                except Exception:
-                    result.append(LogContainerInfo(**c, running=False))
-            return result
-    except Exception as e:
-        LOGGER.warning("Docker socket unavailable for container list: %s", e)
-        return [LogContainerInfo(**c, running=False) for c in known]
-
-
-@router.get("/logs/{container}", response_model=ContainerLogsResponse)
-async def get_container_logs(
-    container: str,
-    tail: int = Query(default=200, ge=10, le=2000),
-    since: float | None = Query(
-        default=None, description="Unix timestamp — fetch only logs after this time"
-    ),
-    _: str = Depends(require_owner),
-) -> ContainerLogsResponse:
-    """Fetch logs from a Docker container. Owner-only."""
-    if container not in _allowed_containers():
-        raise HTTPException(status_code=400, detail="Unknown container")
-
-    params = "?stdout=1&stderr=1&timestamps=1"
-    if since is not None:
-        params += f"&since={since}"
-    else:
-        params += f"&tail={tail}"
-
-    try:
-        connector = aiohttp.UnixConnector(path=_DOCKER_SOCKET)
-        async with aiohttp.ClientSession(connector=connector) as session:
-            async with session.get(
-                f"http://localhost/v1.41/containers/{container}/logs{params}"
-            ) as resp:
-                if resp.status == 404:
-                    raise HTTPException(status_code=404, detail="Container not found")
-                if resp.status != 200:
-                    raise HTTPException(status_code=502, detail=f"Docker API error: {resp.status}")
-                raw = await resp.read()
-    except HTTPException:
-        raise
-    except Exception as e:
-        LOGGER.warning("Docker socket unavailable for logs(%s): %s", container, e)
-        raise HTTPException(status_code=503, detail="Docker socket unavailable") from e
-
-    return ContainerLogsResponse(container=container, lines=_parse_docker_stream(raw))
-
-
-_LIMIT_RE = re.compile(r"\bLIMIT\s+\d+", re.IGNORECASE)
-_SELECT_RE = re.compile(r"^\s*(SELECT|WITH)\b", re.IGNORECASE)
-_DB_ROW_CAP = 500
-_DB_TIMEOUT = 5.0
-
-
-def _json_safe(val: object) -> object:
-    if val is None or isinstance(val, (bool, int, float, str)):
-        return val
-    if isinstance(val, (datetime, date)):
-        return val.isoformat()
-    if isinstance(val, decimal.Decimal):
-        return float(val)
-    if isinstance(val, uuid.UUID):
-        return str(val)
-    return str(val)
-
-
-class DbQueryRequest(BaseModel):
-    sql: str
-
-
-class DbQueryResponse(BaseModel):
-    columns: list[str]
-    rows: list[list]
-    row_count: int
-    duration_ms: float
-
-
-@router.post("/db/query", response_model=DbQueryResponse)
-async def run_db_query(
-    body: DbQueryRequest,
-    _: str = Depends(require_owner),
-    pool: Pool = Depends(get_db_pool),
-) -> DbQueryResponse:
-    """Execute a read-only SELECT query against the database. Owner-only."""
-    sql = body.sql.strip()
-    if not _SELECT_RE.match(sql):
-        raise HTTPException(status_code=400, detail="Only SELECT queries are allowed")
-    if not _LIMIT_RE.search(sql):
-        sql = f"{sql} LIMIT {_DB_ROW_CAP}"
-
-    t0 = time.monotonic()
-    try:
-        async with pool.acquire() as conn:
-            async with conn.transaction(readonly=True):
-                rows = await asyncio.wait_for(conn.fetch(sql), timeout=_DB_TIMEOUT)
-    except TimeoutError:
-        raise HTTPException(
-            status_code=408, detail=f"Query timed out ({_DB_TIMEOUT:.0f}s limit)"
-        ) from None
-    except Exception as e:
-        LOGGER.error("DB query failed: %s", e)
-        raise HTTPException(status_code=400, detail="Query failed") from e
-
-    duration_ms = (time.monotonic() - t0) * 1000
-
-    if not rows:
-        return DbQueryResponse(columns=[], rows=[], row_count=0, duration_ms=duration_ms)
-
-    columns = list(rows[0].keys())
-    result_rows = [[_json_safe(v) for v in row] for row in rows]
-    return DbQueryResponse(
-        columns=columns,
-        rows=result_rows,
-        row_count=len(result_rows),
-        duration_ms=duration_ms,
-    )
-
-
-# ── Global module configuration ───────────────────────────────────────────────
-
-
-class AiPacksPatch(BaseModel):
-    enabled_packs: list[str]
-
-
-@router.get("/modules/ai-packs", response_model=list[str])
-async def get_module_ai_packs(
-    _: str = Depends(require_owner),
-    pool: Pool = Depends(get_db_pool),
-) -> list[str]:
-    """Return globally enabled knowledge pack IDs. Owner-only."""
-    return await ModuleConfigRepository(pool).get_enabled_packs()
-
-
-@router.patch("/modules/ai-packs", response_model=list[str])
-async def set_module_ai_packs(
-    body: AiPacksPatch,
-    _: str = Depends(require_owner),
-    pool: Pool = Depends(get_db_pool),
-) -> list[str]:
-    """Set globally enabled knowledge pack IDs and notify all bots to reload. Owner-only."""
-    result = await ModuleConfigRepository(pool).set_enabled_packs(body.enabled_packs)
-    payload = json.dumps({"table": "module_config"})
-    async with pool.acquire() as conn:
-        await conn.execute("SELECT pg_notify('config_change', $1)", payload)
-    return result
 
 
 # ── Bot emote availability (diagnostics + resync) ────────────────────────────

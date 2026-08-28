@@ -1,11 +1,11 @@
 # 架構總覽
 
 Niibot 是多平台直播整合系統，由三個 Python 服務 + 一個前端組成，共用單一 PostgreSQL。
-本文串起全貌；個別子系統細節見各自文件與 README。
+另有一個選用的 Threads 抓取 sidecar（scrapling）。本文串起全貌；子系統細節見各自文件。
 
 - 多租戶 / 入會狀態機：[admission-and-tenancy.md](admission-and-tenancy.md)
-- 後端結構與 API 端點：[backend/README.md](../../backend/README.md)
-- 版本規範：[versioning.md](../versioning.md)
+- 後端結構：[backend/README.md](../../backend/README.md) · API 端點：[api-endpoints.md](../reference/api-endpoints.md)
+- 版本規範：[versioning.md](../reference/versioning.md)
 
 ---
 
@@ -42,6 +42,11 @@ Niibot 是多平台直播整合系統，由三個 Python 服務 + 一個前端�
 | Twitch Bot  | TwitchIO 3   | EventSub WebSocket | `:4344/health` |
 | Discord Bot | discord.py 2 | Gateway            | `:8080/health` |
 | PostgreSQL  | PG 16        | `:5433`（Docker）  | —              |
+
+**scrapling**（`backend/scrapling/`）是選用的旁掛服務：discord 的 social preview 用它抓
+JS 算圖的 Threads 內容。不共用 `backend/shared/`、不在 `docker-compose.yml`、不進 CI 部署——
+需要時獨立啟動並設 `SCRAPLING_HOST`；未設定時 Threads 走純 OG 降級路徑。
+見 [integrations/scrapling.md](../integrations/scrapling.md)。
 
 ---
 
@@ -82,6 +87,10 @@ Dashboard 改設定 ──▶ API 寫入 DB ──▶ pg_notify(channel, payload
 實作：Twitch Bot 用 `pg_listen()`（`twitch/core/pg_listener.py`）開**專用連線**做
 LISTEN（不佔用 pool），斷線自動重連。
 
+`channel_toggle` 不只由 dashboard 觸發：migration 084 起，`memberships.status` 進出
+`active` 會經 DB trigger 連動 `channels.enabled`，因此核准／停權會即時讓 Bot 加入或離開頻道，
+無需應用層呼叫。詳見 [admission-and-tenancy.md](admission-and-tenancy.md)。
+
 行內快取 `AsyncTTLCache`（`shared/cache.py`，LRU + TTL）負責程序內讀取加速；
 `pg_notify` 負責**跨程序**失效。兩者互補。
 
@@ -101,9 +110,9 @@ build_provider_chain(provider_order=...)
 - Twitch — `("groq", "gemini", "openrouter")` **速度優先**（聊天需低延遲）
 - Discord — `("gemini", "groq", "openrouter")` **品質優先**
 
-OpenRouter 的 free-tier 備援名單來自 `data/free_models.json`，由
-`scripts/update_free_models.py` 定期刷新。AI 知識包（`data/packs/`）注入見
-[backend/data/README.md](../../backend/data/README.md)。
+OpenRouter 的 free-tier 備援名單來自 `backend/data/free_models.json`，由
+`backend/scripts/update_free_models.py` 定期刷新。AI 知識包（`backend/data/packs/`）注入見
+[static-data.md](../reference/static-data.md)。
 
 ---
 
@@ -112,16 +121,9 @@ OpenRouter 的 free-tier 備援名單來自 `data/free_models.json`，由
 後端透過 **Cloudflare Tunnel** 對外，無需開放主機埠；前端在 **Cloudflare Pages**，
 `/api/*` 由 Pages Functions 代理回後端。
 
-各環境用 `docker-compose.yml`（base）+ overlay，彼此隔離（獨立 project / network / volume）：
-
-| 環境   | overlay                      | API port |
-| ------ | ---------------------------- | -------- |
-| 正式區 | `docker-compose.prod.yml`    | 8000     |
-| 測試區 | `docker-compose.staging.yml` | 8001     |
-| 本機   | `docker-compose.dev.yml`     | 8000     |
-
-部署時 `migrate` 容器自動跑 DB migration。版本由後端 `git describe` 決定（見
-[versioning.md](../versioning.md)），前後端共用同一 tag。
+各環境用 `docker-compose.yml`（base）+ overlay，彼此隔離（獨立 project / network / volume）。
+`migrate` 容器在部署時自動跑 DB migration；版本由 `git describe` 決定，前後端共用同一 tag。
+完整指令、埠對照、CI/CD 密鑰見 [deployment.md](../guides/deployment.md)。
 
 ---
 
@@ -152,10 +154,10 @@ OpenRouter 的 free-tier 備援名單來自 `data/free_models.json`，由
 
 ## 延伸閱讀
 
-| 主題                 | 文件                                                          |
-| -------------------- | ------------------------------------------------------------- |
-| 多租戶 / Admission   | [admission-and-tenancy.md](admission-and-tenancy.md)          |
-| 後端結構 / API 端點  | [backend/README.md](../../backend/README.md)                  |
-| 靜態資料 / AI 知識包 | [backend/data/README.md](../../backend/data/README.md)        |
-| 版本規範             | [versioning.md](../versioning.md)                             |
-| 媒體抓取             | [fixtweet.md](../fixtweet.md) · [instafix.md](../instafix.md) |
+- 多租戶 / Admission：[admission-and-tenancy.md](admission-and-tenancy.md)
+- 後端結構：[backend/README.md](../../backend/README.md)
+- API 端點：[api-endpoints.md](../reference/api-endpoints.md)
+- 靜態資料 / AI 知識包：[static-data.md](../reference/static-data.md)
+- 版本規範：[versioning.md](../reference/versioning.md)
+- 媒體抓取：[fixtweet](../integrations/fixtweet.md) ·
+  [instafix](../integrations/instafix.md) · [scrapling](../integrations/scrapling.md)

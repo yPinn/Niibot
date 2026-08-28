@@ -4,10 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import re
-import subprocess
-import sys
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -15,30 +12,13 @@ from pydantic import BaseModel, Field
 
 from core.dependencies import get_current_channel_id, get_trigger_service, require_activated
 from services.message_trigger_service import MessageTriggerService
+from shared.trigger_matching import validate_regex_pattern
 
 _REGEX_MAX_LEN = 200
-_REDOS_CANARY = "a" * 30 + "b"
-_REDOS_TIMEOUT = 1.5
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/triggers", tags=["triggers"])
-
-
-def _redos_safe(pattern: str) -> bool:
-    """Run pattern against a canary in a subprocess. Returns True if safe (no timeout)."""
-    env = {**os.environ, "_NII_PATTERN": pattern, "_NII_CANARY": _REDOS_CANARY}
-    code = "import re, os; re.search(os.environ['_NII_PATTERN'], os.environ['_NII_CANARY'])"
-    try:
-        result = subprocess.run(
-            [sys.executable, "-c", code],
-            env=env,
-            timeout=_REDOS_TIMEOUT,
-            capture_output=True,
-        )
-        return result.returncode == 0
-    except subprocess.TimeoutExpired:
-        return False
 
 
 class MessageTriggerResponse(BaseModel):
@@ -101,7 +81,7 @@ async def _validate_regex_pattern(pattern: str, match_type: str) -> None:
     except re.error as exc:
         raise HTTPException(status_code=400, detail=f"Invalid regex pattern: {exc}") from exc
     loop = asyncio.get_running_loop()
-    safe = await loop.run_in_executor(None, _redos_safe, pattern)
+    safe = await loop.run_in_executor(None, validate_regex_pattern, pattern)
     if not safe:
         raise HTTPException(status_code=400, detail="Regex pattern is unsafe (potential ReDoS)")
 

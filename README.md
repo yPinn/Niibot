@@ -7,106 +7,69 @@
 ```text
 Niibot/
 ├── backend/
-│   ├── api/        # FastAPI — JWT 認證、Dashboard API（19 個 Routers）
-│   ├── twitch/     # TwitchIO 3 Bot + EventSub + pg_notify 即時設定重載
-│   ├── discord/    # discord.py 2 Bot（Cogs 模組架構）
-│   ├── shared/     # 共用 DB、Cache、Repositories、Migrations（84 個）
-│   └── scripts/    # DB 管理工具
-├── frontend/       # React 19 + Vite + Tailwind CSS v4
-│   └── functions/  # Cloudflare Pages Functions（API 反向代理）
-└── data/           # 靜態資料（運勢、塔羅、遊戲等 JSON）
+│   ├── api/         # FastAPI — Twitch OAuth + JWT、Dashboard API
+│   ├── twitch/      # TwitchIO 3 Bot + EventSub + pg_notify 即時設定重載
+│   ├── discord/     # discord.py 2 Bot（Cogs 模組架構）
+│   ├── scrapling/   # 選用：Threads 抓取 sidecar（不在 docker-compose）
+│   ├── shared/      # 共用 DB、Cache、Repositories、Migrations
+│   ├── scripts/     # DB 管理、OAuth token 工具
+│   └── data/        # 靜態資料（運勢、塔羅、AI 知識包等）
+├── frontend/        # React 19 + Vite + Tailwind CSS 4
+│   └── functions/   # Cloudflare Pages Functions（/api 反向代理）
+├── docs/            # 架構、操作指南、參考文件
+├── scripts/         # env 檔管理、staging 管理
+└── data/            # 本機 Docker volume 與備份（不提交）
 ```
 
-| 服務        | 技術                    | 部署             |
-| ----------- | ----------------------- | ---------------- |
-| API         | FastAPI 0.129 + asyncpg | Docker           |
-| Twitch Bot  | TwitchIO 3              | Docker           |
-| Discord Bot | discord.py 2            | Docker           |
-| Database    | PostgreSQL 16           | Docker           |
-| Frontend    | React 19 + Vite 7       | Cloudflare Pages |
+| 服務        | 技術          | 部署             |
+| ----------- | ------------- | ---------------- |
+| API         | FastAPI       | Docker           |
+| Twitch Bot  | TwitchIO 3    | Docker           |
+| Discord Bot | discord.py 2  | Docker           |
+| Database    | PostgreSQL 16 | Docker           |
+| Frontend    | React 19      | Cloudflare Pages |
 
-後端透過 **Cloudflare Tunnel** 對外；前端部署在 **Cloudflare Pages**，`/api/*` 由 CF Pages Functions 代理至後端。
+精確套件版本見 `backend/pyproject.toml` 與 `frontend/package.json`。
 
-各子系統詳細說明：[backend/README.md](backend/README.md) · [frontend/README.md](frontend/README.md)
-
-架構文件：[總覽](docs/architecture/overview.md) · [多租戶與入會](docs/architecture/admission-and-tenancy.md)
+後端透過 **Cloudflare Tunnel** 對外；前端部署在 **Cloudflare Pages**，
+`/api/*` 由 Pages Functions 代理至後端。
 
 ## 快速開始
 
 ```bash
-# 複製所有 .env 範本（已存在的檔案會自動略過）
-bash scripts/env.sh init
-
-# 或強制覆蓋
-bash scripts/env.sh init -f
+bash scripts/env.sh init      # 複製所有 .env 範本（-f 強制覆蓋）
 ```
 
-接著填入各檔案的 secrets，再啟動服務：
+填入各檔 secrets 後即可啟動。完整步驟（直接跑程序或走 Docker Compose）見
+[docs/guides/development.md](docs/guides/development.md)。
 
-```bash
-# 本機開發
-cd backend && uv sync --group dev
-uv run python api/main.py      # API :8000
-uv run python twitch/main.py   # Twitch Bot
-uv run python discord/bot.py   # Discord Bot
+## 文件
 
-cd frontend && npm install && npm run dev
-
-# 本地 Docker（單服務或全套）
-npm run docker:db      # 僅啟動 DB（背景）
-npm run dev:api        # API + DB
-npm run dev:full       # 全套
-npm run docker:down    # 停止所有
-```
-
-啟動時 `migrate` 容器自動執行 DB Migration。
-
-CI/CD 密鑰（GitHub Actions 部署前執行一次）：
-
-```bash
-# 從範本建立（僅首次）
-cp .github/secrets/base.env.example .github/secrets/base.env
-cp .github/secrets/prod.env.example .github/secrets/prod.env
-cp .github/secrets/staging.env.example .github/secrets/staging.env
-cp .github/variables/base.env.example .github/variables/base.env
-cp .github/variables/prod.env.example .github/variables/prod.env
-cp .github/variables/staging.env.example .github/variables/staging.env
-
-# 填入值後同步至 GitHub
-bash .github/push.sh prod
-
-# 或從 GitHub 拉回現有值
-bash .github/pull.sh prod
-```
-
-## 環境變數
-
-| 檔案                     | 內容                                                                            |
-| ------------------------ | ------------------------------------------------------------------------------- |
-| `.env`                   | PostgreSQL 帳號、Docker 內部 DATABASE_URL                                       |
-| `backend/shared.env`     | DB URL、Frontend URL、Twitch App 金鑰、Bot / Owner ID、AI keys、YouTube API Key |
-| `backend/api/.env`       | JWT Secret、API URL、Discord Public Key                                         |
-| `backend/twitch/.env`    | Conduit ID（optional）                                                          |
-| `backend/discord/.env`   | Discord Bot Token、Presence 設定                                                |
-| `frontend/.env`          | Vite dev proxy、Bot username、Discord invite URL                                |
-
-Cloudflare Pages 需設定環境變數 `API_BACKEND`（後端位址）。
+| 主題                            | 位置                                                                              |
+| ------------------------------- | --------------------------------------------------------------------------------- |
+| 文件總覽                        | [docs/README.md](docs/README.md)                                                  |
+| 架構總覽 · 多租戶模型           | [docs/architecture/](docs/architecture/)                                          |
+| 本機開發 · 部署 · 環境變數      | [docs/guides/](docs/guides/)                                                      |
+| API 端點 · 靜態資料 · 版本規範  | [docs/reference/](docs/reference/)                                                |
+| Instafix · FixTweet · Scrapling | [docs/integrations/](docs/integrations/)                                          |
+| 子系統細節                      | [backend/README.md](backend/README.md) · [frontend/README.md](frontend/README.md) |
 
 ## 外部服務
 
 | 服務                                                       | 用途                        |
 | ---------------------------------------------------------- | --------------------------- |
-| [Twitch Developer Console](https://dev.twitch.tv/console)  | OAuth CLIENT_ID / SECRET    |
-| [Discord Developer Portal](https://discord.com/developers) | Bot Token                   |
+| [Twitch Developer Console](https://dev.twitch.tv/console)  | OAuth Client ID / Secret    |
+| [Discord Developer Portal](https://discord.com/developers) | Bot Token、互動 Public Key  |
 | [Cloudflare Zero Trust](https://dash.cloudflare.com/)      | Tunnel Token（生產環境）    |
-| [OpenRouter](https://openrouter.ai/keys)                   | AI 功能（選用）             |
+| Groq · Gemini · OpenRouter                                 | AI 功能（至少設一組）       |
 | [Google Cloud Console](https://console.cloud.google.com/)  | YouTube Data API v3（選用） |
 
 ## 測試
 
 ```bash
-cd backend && uv run pytest tests/ -v
-cd frontend && npm run test:coverage
+npm run test                     # 前後端一起（vitest --run + pytest）
+cd frontend && npm run test:cov  # 只跑前端 + 覆蓋率
+cd backend  && uv run pytest     # 只跑後端
 ```
 
 ## License
