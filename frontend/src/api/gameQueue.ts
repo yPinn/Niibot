@@ -1,4 +1,5 @@
-import { API_ENDPOINTS, apiFetch } from './config'
+import { API_ENDPOINTS } from './config'
+import { apiJson } from './errors'
 
 export interface QueueEntry {
   id: number
@@ -43,77 +44,69 @@ export interface ClearResponse extends QueueState {
   cleared_count: number
 }
 
+const authed = { credentials: 'include' } as const
+
 // ---- Queue State ----
 
-export async function getQueueState(): Promise<QueueState> {
-  const response = await apiFetch(API_ENDPOINTS.gameQueue.state, {
-    credentials: 'include',
-  })
-  if (!response.ok) throw new Error(`Failed to fetch queue state: ${response.statusText}`)
-  return response.json()
+export function getQueueState(): Promise<QueueState> {
+  return apiJson(API_ENDPOINTS.gameQueue.state, authed, { fallback: '載入排隊清單失敗' })
 }
 
-export async function advanceBatch(): Promise<QueueState> {
-  const response = await apiFetch(API_ENDPOINTS.gameQueue.advance, {
-    method: 'POST',
-    credentials: 'include',
-  })
-  if (!response.ok) throw new Error(`Failed to advance batch: ${response.statusText}`)
-  return response.json()
+export function advanceBatch(): Promise<QueueState> {
+  return apiJson(
+    API_ENDPOINTS.gameQueue.advance,
+    { method: 'POST', ...authed },
+    { fallback: '換下一批失敗' }
+  )
 }
 
-export async function removePlayer(entryId: number): Promise<QueueState> {
-  const response = await apiFetch(API_ENDPOINTS.gameQueue.removeEntry(entryId), {
-    method: 'DELETE',
-    credentials: 'include',
-  })
-  if (!response.ok) throw new Error(`Failed to remove player: ${response.statusText}`)
-  return response.json()
+export function removePlayer(entryId: number): Promise<QueueState> {
+  return apiJson(
+    API_ENDPOINTS.gameQueue.removeEntry(entryId),
+    { method: 'DELETE', ...authed },
+    { fallback: '移除玩家失敗' }
+  )
 }
 
-export async function promotePlayer(entryId: number): Promise<QueueState> {
-  const response = await apiFetch(API_ENDPOINTS.gameQueue.promoteEntry(entryId), {
-    method: 'POST',
-    credentials: 'include',
-  })
-  if (!response.ok) throw new Error(`Failed to promote player: ${response.statusText}`)
-  return response.json()
+export function promotePlayer(entryId: number): Promise<QueueState> {
+  return apiJson(
+    API_ENDPOINTS.gameQueue.promoteEntry(entryId),
+    { method: 'POST', ...authed },
+    { fallback: '提前玩家失敗' }
+  )
 }
 
-export async function clearQueue(): Promise<ClearResponse> {
-  const response = await apiFetch(API_ENDPOINTS.gameQueue.clear, {
-    method: 'DELETE',
-    credentials: 'include',
-  })
-  if (!response.ok) throw new Error(`Failed to clear queue: ${response.statusText}`)
-  return response.json()
+export function clearQueue(): Promise<ClearResponse> {
+  return apiJson(
+    API_ENDPOINTS.gameQueue.clear,
+    { method: 'DELETE', ...authed },
+    { fallback: '清空排隊清單失敗' }
+  )
 }
 
 // ---- Settings ----
 
-export async function getQueueSettings(): Promise<QueueSettings> {
-  const response = await apiFetch(API_ENDPOINTS.gameQueue.settings, {
-    credentials: 'include',
-  })
-  if (!response.ok) throw new Error(`Failed to fetch queue settings: ${response.statusText}`)
-  return response.json()
+export function getQueueSettings(): Promise<QueueSettings> {
+  return apiJson(API_ENDPOINTS.gameQueue.settings, authed, { fallback: '載入排隊設定失敗' })
 }
 
-export async function updateQueueSettings(data: QueueSettingsUpdate): Promise<QueueSettings> {
-  const response = await apiFetch(API_ENDPOINTS.gameQueue.settings, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify(data),
-  })
-  if (!response.ok) throw new Error(`Failed to update queue settings: ${response.statusText}`)
-  return response.json()
+export function updateQueueSettings(data: QueueSettingsUpdate): Promise<QueueSettings> {
+  return apiJson(
+    API_ENDPOINTS.gameQueue.settings,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      ...authed,
+      body: JSON.stringify(data),
+    },
+    { fallback: '更新排隊設定失敗' }
+  )
 }
 
 // ---- Public (OBS Overlay) ----
 
-export async function getPublicQueueState(username: string): Promise<PublicQueueState> {
-  const response = await apiFetch(API_ENDPOINTS.gameQueue.public(username))
-  if (!response.ok) throw new Error(`Failed to fetch public queue state: ${response.statusText}`)
-  return response.json()
+export function getPublicQueueState(username: string): Promise<PublicQueueState> {
+  return apiJson(API_ENDPOINTS.gameQueue.public(username), undefined, {
+    fallback: '載入排隊狀態失敗',
+  })
 }
