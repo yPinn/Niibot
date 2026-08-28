@@ -106,6 +106,30 @@ async def test_own_channel_message_is_processed(bot):
 
 
 @pytest.mark.asyncio
+async def test_channel_bound_into_log_context_during_handling(bot):
+    """The broadcaster name/id is visible in the log context while the
+    message is processed (so every downstream log line carries it)."""
+    import structlog
+
+    seen: dict = {}
+
+    async def _capture(_payload):
+        seen.update(structlog.contextvars.get_contextvars())
+        return False
+
+    bot._handle_custom_command = _capture
+    payload = _make_payload(broadcaster_name="streamer_a", broadcaster_id="123", text="hi")
+
+    with patch("twitch.core.bot.commands.AutoBot.event_message", new=AsyncMock()):
+        await bot.event_message(payload)
+
+    assert seen.get("channel") == "streamer_a"
+    assert seen.get("channel_id") == "123"
+    # and it does not leak after the handler returns
+    assert "channel" not in structlog.contextvars.get_contextvars()
+
+
+@pytest.mark.asyncio
 async def test_unsubscribed_channel_is_blocked(bot):
     """Messages from a channel not in _subscribed_channels are dropped before shared-chat check."""
     payload = _make_payload(broadcaster_id="999")  # not in bot._subscribed_channels
