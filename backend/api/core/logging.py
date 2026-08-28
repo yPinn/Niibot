@@ -21,5 +21,6 @@ def setup_logging(settings: Settings) -> None:
         service_name="api",
         suppress_loggers=_SUPPRESS,
         own_prefixes=_OWN_PREFIXES,
+        console=settings.is_development,
     )
     logging.getLogger(__name__).info(f"Logging: {settings.log_level} | Env: {settings.environment}")
