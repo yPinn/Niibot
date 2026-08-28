@@ -5,8 +5,8 @@ This script:
 2. Fetches real VODs from Twitch API for each enabled channel
 3. Creates session records from the VOD data
 
-    python scripts/twitch_backfill_sessions.py [--keep-existing] [--limit N]
-    npm run nb -- twitch backfill-sessions --limit 50
+    npm run nb -- twitch backfill-sessions [--keep-existing] [--limit N]
+    uv run --directory backend python scripts/twitch_backfill_sessions.py [...]
 """
 
 from __future__ import annotations

@@ -1,13 +1,14 @@
 """Manage Discord slash commands: list, clear, sync, or diff.
 
-    python scripts/discord_cmds.py ls    [--prod] [--guild ID]
-    python scripts/discord_cmds.py diff  [--prod] [--guild ID] [--global]
-    python scripts/discord_cmds.py sync  [--prod] [--guild ID] [--global] [--yes]
-    python scripts/discord_cmds.py rm    [--prod] [--guild ID] [--global] [--yes]
-    npm run nb -- discord sync --prod
+    npm run nb -- discord {ls|diff|sync|rm} [--prod] [--guild ID] [--global] [-y]
+    uv run --directory backend python scripts/discord_cmds.py {ls|diff|sync|rm} [...]
+
+    ls    list registered commands       diff  preview what sync would change
+    sync  push the tree to Discord       rm    clear registered commands
 
 Scope resolution: --global forces global; otherwise --guild overrides the
 DISCORD_GUILD_ID from the env file; otherwise that env value is used.
+(Run `... --help` for which flags each subcommand accepts.)
 """
 
 import argparse

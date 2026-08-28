@@ -40,7 +40,7 @@ live (secret-filled) files under `data/`.
 | `twitch backfill-sessions [--limit N] [--keep-existing]`           | backfill sessions from Twitch VODs                              | `… scripts/twitch_backfill_sessions.py`                           |
 | `twitch backfill-matcher [--days 7,30,90] [--dry-run]`             | backfill overlap tables from `chatter_stats`                    | `… scripts/twitch_backfill_matcher.py`                            |
 | `discord ls\|diff\|sync\|rm [--prod] [--guild ID] [--global] [-y]` | manage Discord slash commands                                   | `… scripts/discord_cmds.py <cmd>`                                 |
-| `models update [--with-uptime]`                                    | refresh `twitch/free_models.json` from OpenRouter               | `… scripts/models_update.py`                                      |
+| `models update [--with-uptime]`                                    | refresh `backend/data/free_models.json` from OpenRouter         | `… scripts/models_update.py`                                      |
 | `env init [-f]`                                                    | copy every `*.env.example` → `*.env`                            | `bash scripts/env.sh init`                                        |
 | `env gen \| check \| print KEY`                                    | (re)generate env templates from `env.registry.toml`             | `python scripts/gen_env.py`                                       |
 | `env snapshot \| backup \| restore \| diff \| list \| clean`       | snapshot / restore live env files                               | `bash scripts/env.sh <cmd>`                                       |

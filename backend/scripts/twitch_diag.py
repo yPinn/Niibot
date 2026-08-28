@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Twitch token / emote diagnostics.
 
-python scripts/twitch_diag.py tokens   # stored tokens, validate, show scopes
-python scripts/twitch_diag.py emotes   # bot emote access per channel
-npm run nb -- twitch tokens
+    npm run nb -- twitch {tokens|emotes} [--env staging]
+    uv run --directory backend python scripts/twitch_diag.py {tokens|emotes} [--env staging]
+
+tokens — list stored tokens, validate each, show granted vs expected scopes
+emotes — bot emote access per enabled channel
 """
 
 from __future__ import annotations

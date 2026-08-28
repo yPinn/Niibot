@@ -1,13 +1,14 @@
-"""Generate test session + viewer data for development.
+"""Generate fake session + viewer data for development.
 
-Real-to-fake account ratio: 10 real Twitch accounts / 15 total ≈ 67 %
+    npm run nb -- db seed [channel_id] [n_sessions]        # n_sessions default 15
+    uv run --directory backend python scripts/dev/db_seed.py [channel_id] [n_sessions]
+
+channel_id defaults to the owner channel. ~10 of every 15 accounts use real
+Twitch logins so chatter/event data looks realistic.
 
 Tables written:
   stream_sessions, chatter_stats, stream_events,
   command_stats, viewer_channel_status, viewer_attendance_streaks
-
-Usage:
-  cd backend && python scripts/dev/db_seed.py [channel_id] [n_sessions]
 """
 
 from __future__ import annotations

@@ -1,7 +1,9 @@
 """Check database setup: NOTIFY triggers, functions, table structure, migrations.
 
-python scripts/db_check.py [--env staging]
-npm run nb -- db check
+    npm run nb -- db check [--env staging]
+    uv run --directory backend python scripts/db_check.py [--env staging]
+
+Read-only — reports what's present vs expected, never writes.
 """
 
 from __future__ import annotations

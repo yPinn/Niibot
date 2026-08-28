@@ -1,8 +1,9 @@
 """Run database migrations using shared.migrations.runner.
 
-python scripts/db_migrate.py          # run all pending migrations
-python scripts/db_migrate.py --dry    # show pending migrations without applying
-npm run nb -- db migrate [--dry] [--env staging]
+    npm run nb -- db migrate [--dry] [--env staging]
+    uv run --directory backend python scripts/db_migrate.py [--dry] [--env staging]
+
+--dry lists pending migrations without applying them.
 """
 
 from __future__ import annotations

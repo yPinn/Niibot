@@ -1,22 +1,18 @@
 #!/usr/bin/env python3
-"""Twitch OAuth 工具 — 生成授權 URL、接收回調、交換 token 並寫入資料庫。
+"""Twitch OAuth 工具 — 開瀏覽器授權、收 callback、換 token 寫入 DB tokens 表。
 
-Usage:
+何時用: 首次設定、token 被撤銷、或新增 scope 後需重新授權。跑完重啟對應 bot 生效。
+前置: Twitch dev console 的 OAuth Redirect URLs 需含 http://localhost:3000/callback
+
+用法（擇一；--env / --role 省略則進互動選單）:
     npm run nb -- twitch oauth [--env prod|staging] [--role bot|broadcaster]
-    python scripts/twitch_oauth.py [env] [role]        # 直接跑（互動 fallback）
+    uv run --directory backend python scripts/twitch_oauth.py [--env ...] [--role ...]
 
-    env   — prod | staging        (省略則互動選擇)
-    role  — bot | broadcaster     (省略則互動選擇)
+    --env    prod    → shared.env         + twitch/.env
+             staging → shared.staging.env + twitch/.env.staging
+    --role   bot | broadcaster   決定請求的 scope 集合（見 twitch.core.config）
 
-    參數順序不拘，例如:
-        python scripts/twitch_oauth.py staging bot
-        python scripts/twitch_oauth.py bot staging
-        python scripts/twitch_oauth.py staging   # 僅指定 env，互動選 role
-        python scripts/twitch_oauth.py           # 全互動
-
-Env files:
-    prod    → shared.env            + twitch/.env
-    staging → shared.staging.env   + twitch/.env.staging
+直接跑時亦接受舊式位置參數（順序不拘），例: ... scripts/twitch_oauth.py staging bot
 """
 
 from __future__ import annotations

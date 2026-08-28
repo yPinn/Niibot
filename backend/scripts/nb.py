@@ -149,7 +149,7 @@ def build_parser() -> argparse.ArgumentParser:
     md = groups.add_parser("models", help="OpenRouter free-model list").add_subparsers(
         dest="cmd", required=True, metavar="<command>"
     )
-    p = md.add_parser("update", help="refresh twitch/free_models.json")
+    p = md.add_parser("update", help="refresh data/free_models.json")
     p.add_argument("--with-uptime", action="store_true")
     p.set_defaults(_handler=_run_py("models_update"))
 

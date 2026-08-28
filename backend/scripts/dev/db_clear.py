@@ -1,8 +1,10 @@
-"""Clear all analytics / session data from database (dev / reset use only).
+"""Wipe all analytics / session data (dev / reset only).
 
-WARNING: Deletes stream_sessions and every dependent table.
-         Do NOT run against production data.
-         For production backfill, use `nb twitch backfill-sessions` instead.
+    npm run nb -- db clear [-y]             # -y skips the confirm prompt
+    uv run --directory backend python scripts/dev/db_clear.py [-y]
+
+WARNING: Deletes stream_sessions and every dependent table. Never run against
+         production; for prod backfill use `nb twitch backfill-sessions`.
 
 Tables cleared (FK-safe order):
   stream_events, chatter_stats, command_stats,
