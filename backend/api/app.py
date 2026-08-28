@@ -43,6 +43,7 @@ from routers import (
 from routers.bots_router import close_bots_http_client
 from shared.database import pool_heartbeat_loop
 from shared.errors import AppError, build_envelope
+from shared.log_context import bind_log_context, clear_log_context
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -234,11 +235,20 @@ def create_app() -> FastAPI:
             )
 
     # request context — accept upstream ID or generate; echoed on every
-    # response, including the 500 / 504 built above.
+    # response, including the 500 / 504 built above. Binds the id (+ method
+    # / path) into the log context so every line emitted while handling the
+    # request carries it. clear_log_context() guards against a reused worker
+    # leaking a previous request's user_id.
     @app.middleware("http")
     async def add_request_context(request: Request, call_next) -> Response:
         request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
         request.state.request_id = request_id
+        clear_log_context()
+        bind_log_context(
+            request_id=request_id,
+            http_method=request.method,
+            http_path=request.url.path,
+        )
         response = await call_next(request)
         response.headers["X-Request-ID"] = request_id
         return response

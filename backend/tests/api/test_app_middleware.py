@@ -18,7 +18,10 @@ os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost/test")
 os.environ.setdefault("FRONTEND_URL", "https://niibot.tv")
 os.environ.setdefault("BOT_ID", "bot-test")
 
+import logging
+
 import pytest
+import structlog
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
@@ -171,6 +174,45 @@ class TestValidationHandler:
         assert body["error"]["code"] == "VALIDATION.INVALID_INPUT"
         # pydantic's English message must not reach the client
         assert "Input should be" not in r.text
+
+
+class TestLogCorrelation:
+    """The same request_id must reach the response body, the response header,
+    and the log context used while handling the failure."""
+
+    def _capture(self, client: TestClient, path: str, rid: str) -> tuple[dict, dict]:
+        captured: dict = {}
+
+        class Spy(logging.Handler):
+            def emit(self, record: logging.LogRecord) -> None:
+                if record.getMessage() == "request_failed":
+                    captured.update(structlog.contextvars.get_contextvars())
+
+        spy = Spy()
+        logging.getLogger().addHandler(spy)
+        try:
+            r = client.get(path, headers={"X-Request-ID": rid})
+        finally:
+            logging.getLogger().removeHandler(spy)
+        return r.json(), captured
+
+    def test_500_correlation(self, client: TestClient):
+        body, ctx = self._capture(client, "/_test/error", "corr-500")
+        assert body["error"]["request_id"] == "corr-500"
+        assert ctx.get("request_id") == "corr-500"
+        assert ctx.get("http_path") == "/_test/error"
+
+    def test_app_error_correlation(self, client: TestClient):
+        body, ctx = self._capture(client, "/_test/app-error", "corr-ae")
+        assert body["error"]["request_id"] == "corr-ae"
+        assert ctx.get("request_id") == "corr-ae"
+
+    def test_context_does_not_leak_between_requests(self, client: TestClient):
+        # first request binds; second (different id) must not see the first.
+        _, ctx1 = self._capture(client, "/_test/app-error", "leak-A")
+        _, ctx2 = self._capture(client, "/_test/error", "leak-B")
+        assert ctx1["request_id"] == "leak-A"
+        assert ctx2["request_id"] == "leak-B"
 
 
 class TestCors:
