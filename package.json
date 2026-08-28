@@ -40,6 +40,9 @@
     "*": [
       "secretlint"
     ],
+    "env.registry.toml": [
+      "uv run --no-project python scripts/gen_env.py --check"
+    ],
     "frontend/**/*.{js,jsx,ts,tsx}": [
       "npx --prefix frontend eslint --config frontend/eslint.config.js --cache --cache-location frontend/.cache/eslint/ --fix",
       "npx --prefix frontend prettier --write --ignore-unknown"

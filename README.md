@@ -43,6 +43,8 @@ bash scripts/env.sh init      # 複製所有 .env 範本（-f 強制覆蓋）
 填入各檔 secrets 後即可啟動。完整步驟（直接跑程序或走 Docker Compose）見
 [docs/guides/development.md](docs/guides/development.md)。
 
+env 變數的單一來源是 [`env.registry.toml`](env.registry.toml)；改動後跑 `npm run env:gen`。
+
 ## 文件
 
 | 主題                            | 位置                                                                              |
