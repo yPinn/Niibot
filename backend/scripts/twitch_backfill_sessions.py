@@ -5,26 +5,27 @@ This script:
 2. Fetches real VODs from Twitch API for each enabled channel
 3. Creates session records from the VOD data
 
-Usage:
-    python db_backfill_sessions.py [--keep-existing] [--limit N]
-
-Options:
-    --keep-existing    Don't clear existing sessions, only add new ones
-    --limit N          Limit VODs per channel (default: 20)
+    python scripts/twitch_backfill_sessions.py [--keep-existing] [--limit N]
+    npm run nb -- twitch backfill-sessions --limit 50
 """
 
+from __future__ import annotations
+
+import argparse
 import asyncio
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
 import asyncpg
+from _lib import add_env_arg, ensure_backend_on_path, load_env
 
-# Ensure backend/ is on sys.path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+ensure_backend_on_path()
+# api.services.twitch_api re-imports `services._twitch_api...` internally → backend/api/ too.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "api"))
 
-from api.core.config import get_settings
-from api.services.twitch_api import TwitchAPIClient
+from api.core.config import get_settings  # noqa: E402
+from api.services.twitch_api import TwitchAPIClient  # noqa: E402
 
 
 async def clear_existing_sessions(conn: asyncpg.Connection) -> None:
@@ -163,16 +164,23 @@ async def backfill_sessions(keep_existing: bool = False, limit: int = 20) -> Non
         await conn.close()
 
 
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Backfill stream sessions from Twitch VODs.")
+    parser.add_argument("--keep-existing", action="store_true", help="add only, don't clear")
+    parser.add_argument("--limit", type=int, default=20, help="VODs per channel (default 20)")
+    add_env_arg(parser)
+    return parser
+
+
+def run(args: argparse.Namespace) -> int:
+    load_env(args.env)
+    asyncio.run(backfill_sessions(keep_existing=args.keep_existing, limit=args.limit))
+    return 0
+
+
+def _main() -> int:
+    return run(build_parser().parse_args())
+
+
 if __name__ == "__main__":
-    keep_existing = "--keep-existing" in sys.argv
-    limit = 20
-
-    for i, arg in enumerate(sys.argv):
-        if arg == "--limit" and i + 1 < len(sys.argv):
-            try:
-                limit = int(sys.argv[i + 1])
-            except ValueError:
-                print(f"Invalid limit value: {sys.argv[i + 1]}")
-                sys.exit(1)
-
-    asyncio.run(backfill_sessions(keep_existing=keep_existing, limit=limit))
+    raise SystemExit(_main())

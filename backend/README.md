@@ -96,8 +96,9 @@ uv run mypy .              # 型別檢查
 環境變數對照見 [docs/guides/environment.md](../docs/guides/environment.md)。
 本機開發可建 `shared.env.local`（gitignored）覆蓋 `shared.env`。
 
-DB migration 手動執行：`uv run python scripts/db_migrate.py`
-（Docker 環境下由 `migrate` 容器自動執行）。
+DB migration 手動執行：`npm run nb -- db migrate`
+（Docker 環境下由 `migrate` 容器自動執行）。所有 dev/ops 腳本統一入口見
+[scripts/README.md](../scripts/README.md)。
 
 ## API 端點
 

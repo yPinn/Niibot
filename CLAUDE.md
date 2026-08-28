@@ -86,9 +86,12 @@ runs DB migrations on startup. Full commands, port table, and CI/CD secret sync:
 
 ### Environment Variables
 
-`bash scripts/env.sh init` copies every `*.env.example` → `*.env`. The single
-source of truth for every variable is
+`npm run nb -- env init` (alias for `bash scripts/env.sh init`) copies every
+`*.env.example` → `*.env`. The single source of truth for every variable is
 [docs/guides/environment.md](docs/guides/environment.md). Never commit a `.env`.
+
+All dev/ops scripts share one entry point — `npm run nb -- <group> <command>`
+(`npm run nb -- --help`). See [scripts/README.md](scripts/README.md).
 
 ### Branch Protection (set on GitHub)
 

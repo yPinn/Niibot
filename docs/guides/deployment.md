@@ -54,14 +54,14 @@ Profile：`api` / `twitch` / `discord` / `bots` / `full`（見 [development.md](
 
 ## Staging 管理
 
-`scripts/staging.sh` 包好上面的長指令：
+`nb staging` (alias for `scripts/staging.sh`) 包好上面的長指令：
 
 ```bash
-bash scripts/staging.sh up [profile]   # 啟動
-bash scripts/staging.sh down            # 停止，保留 volume
-bash scripts/staging.sh reset           # 停止並清除 volume
-bash scripts/staging.sh build [service] # 重建映像
-bash scripts/staging.sh logs [service]  # 追 log
+npm run nb -- staging up [profile]   # 啟動
+npm run nb -- staging down            # 停止，保留 volume
+npm run nb -- staging reset           # 停止並清除 volume
+npm run nb -- staging build [service] # 重建映像
+npm run nb -- staging logs [service]  # 追 log
 ```
 
 ## CI/CD 密鑰

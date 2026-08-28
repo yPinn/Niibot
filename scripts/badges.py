@@ -2,6 +2,7 @@
 """Download Twitch global role badge images to frontend/public/twitch-badges/.
 
 Usage:
+    npm run nb -- badges          # nb loads TWITCH_CLIENT_ID/SECRET from shared.env
     TWITCH_CLIENT_ID=xxx TWITCH_CLIENT_SECRET=yyy python scripts/badges.py
 
 Flat badges (single version → /twitch-badges/{role}/{size}.png):
