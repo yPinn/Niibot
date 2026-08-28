@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Generate every env template + docs table + manifest from env.registry.toml.
 
-    python scripts/gen_env.py            # (re)write all generated files
-    python scripts/gen_env.py --check    # verify on-disk == generated; exit 1 on drift
+    npm run nb -- env gen                 # or: npm run env:gen
+    npm run nb -- env check               # verify on-disk == generated; exit 1 on drift
     python scripts/gen_env.py --print KEY # show where one variable lives
 
 The registry (env.registry.toml at the repo root) is the single source of truth.

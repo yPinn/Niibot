@@ -1,6 +1,12 @@
 # scripts/
 
-Every dev/ops tool has **one** entry point:
+Two locations, one entry point:
+
+- **`scripts/`** — repo-wide ops (env files span every service, `env.registry.toml`
+  lives at the repo root, staging compose is repo-level, CI helpers). Mostly bash.
+- **`backend/scripts/`** — backend dev tools (DB, Twitch/Discord, backfills). Python.
+
+Everything is reachable through one command:
 
 ```bash
 npm run nb -- <group> <command> [options]      # from repo root
@@ -9,6 +15,15 @@ npm run nb -- <group> <command> [options]      # from repo root
 `npm run nb -- --help` lists groups; `npm run nb -- <group> --help` lists a group's
 commands. Each script also still runs standalone (see the last column) — `nb` is a
 thin dispatcher that lazy-imports one script per call.
+
+## Env files: two stages
+
+1. `nb env gen` — regenerate `*.env.example` templates + `env.manifest.json` +
+   the docs table from `env.registry.toml` (the single source of truth).
+2. `nb env init` — copy every `*.env.example` → `*.env` so you can fill in secrets.
+
+`nb env snapshot` / `backup` / `restore` / `diff` manage timestamped copies of the
+live (secret-filled) files under `data/`.
 
 ## Commands
 
