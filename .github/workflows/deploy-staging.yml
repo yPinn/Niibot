@@ -27,6 +27,6 @@ jobs:
     uses: ./.github/workflows/_deploy.yml
     with:
       environment: staging
-      services: ${{ inputs.services == 'default' && '' || inputs.services }}
-      force_all: ${{ inputs.force_all == true }}
+      services: ${{ inputs.services }} # "default" is handled in _deploy.yml
+      force_all: ${{ inputs.force_all }}
     secrets: inherit

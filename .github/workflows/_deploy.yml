@@ -129,11 +129,12 @@ jobs:
           cd "$PROJECT_DIR"
 
           # Eligible set: the environment default, or an explicit `services` override.
+          # "default" is the choice-input default the caller may forward verbatim.
           case "$SERVICES_INPUT" in
-            "")   ELIGIBLE="$DEFAULT_SERVICES" ;;
-            all)  ELIGIBLE="api twitch discord instafix" ;;
-            both) ELIGIBLE="twitch discord" ;;
-            *)    ELIGIBLE=$(echo "$SERVICES_INPUT" | tr ',' ' ') ;;
+            ""|default) ELIGIBLE="$DEFAULT_SERVICES" ;;
+            all)        ELIGIBLE="api twitch discord instafix" ;;
+            both)       ELIGIBLE="twitch discord" ;;
+            *)          ELIGIBLE=$(echo "$SERVICES_INPUT" | tr ',' ' ') ;;
           esac
           eligible() { case " $ELIGIBLE " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
 
