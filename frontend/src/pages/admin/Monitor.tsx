@@ -231,11 +231,14 @@ export default function AdminMonitor() {
   } = useServiceStatus()
 
   // Frontend-error summary shown on the Status tab (last 24h).
-  const [errSummary, setErrSummary] = useState<{ total: number; kinds: number } | null>(null)
+  // null = loading · 'error' = fetch failed · object = loaded
+  const [errSummary, setErrSummary] = useState<{ total: number; kinds: number } | 'error' | null>(
+    null
+  )
   const loadErrSummary = useCallback(() => {
     getClientErrorGroups({ sinceHours: 24 })
       .then(gs => setErrSummary({ total: gs.reduce((n, g) => n + g.count, 0), kinds: gs.length }))
-      .catch(() => {})
+      .catch(() => setErrSummary('error'))
   }, [])
   useEffect(() => {
     loadErrSummary()
@@ -497,8 +500,10 @@ export default function AdminMonitor() {
                   <FieldRow
                     label="近 24 小時"
                     loading={errSummary === null}
+                    offline={errSummary === 'error'}
                     value={
-                      errSummary && (
+                      errSummary &&
+                      errSummary !== 'error' && (
                         <span
                           className={
                             errSummary.total === 0 ? 'text-status-online' : 'text-status-warning'
@@ -513,7 +518,8 @@ export default function AdminMonitor() {
                   <FieldRow
                     label="種類"
                     loading={errSummary === null}
-                    value={errSummary ? `${errSummary.kinds} 種` : null}
+                    offline={errSummary === 'error'}
+                    value={errSummary && errSummary !== 'error' ? `${errSummary.kinds} 種` : null}
                   />
                 </CardContent>
               </Card>
