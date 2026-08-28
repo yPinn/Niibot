@@ -28,7 +28,7 @@ npm install
 npm run dev                      # 開發伺服器 :3000（代理 /api 到 :8000）
 ```
 
-Postgres 可只開容器：`npm run docker:db`（背景啟動，對外 `:5433`）。
+Postgres 可只開容器：`npm run dev:db`（背景啟動，對外 `:5433`）。
 
 ## 2b. 全部走 Docker Compose
 
@@ -42,8 +42,8 @@ dev overlay 會把每個服務的埠對外。
 | `npm run dev:discord` | Discord bot + DB + Instafix |
 | `npm run dev:bots`    | 兩個 bot + DB + Instafix    |
 | `npm run dev:full`    | 全部                        |
-| `npm run docker:db`   | 只開 DB（背景）             |
-| `npm run docker:down` | 停止全部                    |
+| `npm run dev:db`      | 只開 DB（背景）             |
+| `npm run dev:down`    | 停止全部                    |
 
 底層等同 `docker compose --profile <name> up --build`。啟動時 `migrate` 容器會自動跑 DB migration。
 
@@ -52,20 +52,22 @@ dev overlay 會把每個服務的埠對外。
 
 ## 3. 檢查與測試
 
-從 repo 根：
+root 的 `lint` / `format` / `typecheck` / `fix` / `test` 都是 fan-out，一次跑前後端；
+也可以 `cd` 進單一資料夾只跑該側。
 
 ```bash
-npm run lint          # 前端 ESLint + 後端 ruff check
-npm run format        # 前端 prettier + 後端 ruff format
-npm run typecheck     # 前端 tsc + 後端 mypy
-npm run fix           # format + lint 一次跑完
+npm run lint          # 前端 ESLint      + 後端 ruff check
+npm run format        # 前端 prettier    + 後端 ruff format
+npm run typecheck     # 前端 tsc         + 後端 mypy
+npm run fix           # 前端 eslint --fix + prettier、後端 ruff check --fix + ruff format
+npm run test          # 前端 vitest --run + 後端 pytest（覆蓋率目標 80%+）
 ```
 
-各自的測試：
+只跑單側：
 
 ```bash
+cd frontend && npm run test:cov
 cd backend  && uv run pytest
-cd frontend && npm run test:cov   # 覆蓋率目標 80%+
 ```
 
 DB migration 手動執行：`cd backend && uv run python scripts/db_migrate.py`。

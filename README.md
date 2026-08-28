@@ -67,8 +67,9 @@ bash scripts/env.sh init      # 複製所有 .env 範本（-f 強制覆蓋）
 ## 測試
 
 ```bash
-cd backend  && uv run pytest
-cd frontend && npm run test:cov
+npm run test                     # 前後端一起（vitest --run + pytest）
+cd frontend && npm run test:cov  # 只跑前端 + 覆蓋率
+cd backend  && uv run pytest     # 只跑後端
 ```
 
 ## License
