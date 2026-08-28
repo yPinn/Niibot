@@ -10,8 +10,10 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
 from fastapi import Depends, FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse, Response
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from core.config import get_settings
 from core.database import get_database_manager, init_database_manager
@@ -40,6 +42,7 @@ from routers import (
 )
 from routers.bots_router import close_bots_http_client
 from shared.database import pool_heartbeat_loop
+from shared.errors import AppError, build_envelope
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -148,18 +151,41 @@ def create_app() -> FastAPI:
         redoc_url="/redoc" if settings.is_development else None,
     )
 
-    # Configure CORS — explicit list avoids exposing unnecessary methods/headers
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=settings.cors_origins,
-        allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        allow_headers=["Content-Type", "Cookie", "X-Request-ID"],
-    )
+    # ── Middleware & error handling ─────────────────────────────────────
+    #
+    # FastAPI prepends middleware, so the LAST one registered is the
+    # OUTERMOST. Target order, outer → inner:
+    #
+    #   CORS → request context → catch-all 500 → timeout → security headers
+    #
+    # CORS must be outermost so that error responses (500 / 504) still carry
+    # Access-Control-Allow-Origin. Otherwise a cross-origin frontend sees a
+    # bare network error and cannot read the body or the X-Request-ID header
+    # it needs to report the failure.
 
-    # ── Middleware stack (innermost registered first) ────────────────────
+    def _log_request_failure(
+        request: Request,
+        *,
+        code: str,
+        status: int,
+        exc: BaseException | None = None,
+        level: int = logging.ERROR,
+        context: dict | None = None,
+    ) -> None:
+        LOGGER.log(
+            level,
+            "request_failed",
+            extra={
+                "code": code,
+                "http_status": status,
+                "http_method": request.method,
+                "http_path": request.url.path,
+                **(context or {}),
+            },
+            exc_info=exc if (exc is not None and level >= logging.ERROR) else None,
+        )
 
-    # 1. Security headers (innermost — runs last on request, first on response)
+    # innermost — security headers
     @app.middleware("http")
     async def add_security_headers(request: Request, call_next) -> Response:
         response: Response = await call_next(request)
@@ -172,40 +198,125 @@ def create_app() -> FastAPI:
             response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
         return response
 
-    # 2. Request ID — accept upstream ID or generate; echoed in every response
+    # request timeout → 504
     @app.middleware("http")
-    async def add_request_id(request: Request, call_next) -> Response:
+    async def request_timeout(request: Request, call_next) -> Response:
+        try:
+            return await asyncio.wait_for(call_next(request), timeout=_REQUEST_TIMEOUT)
+        except TimeoutError:
+            rid = getattr(request.state, "request_id", None)
+            _log_request_failure(request, code="HTTP.504", status=504, level=logging.WARNING)
+            return JSONResponse(
+                status_code=504,
+                content=build_envelope(
+                    code="HTTP.504",
+                    message="伺服器處理時間過長，請稍後再試",
+                    request_id=rid,
+                ),
+            )
+
+    # catch-all — anything with no registered handler. Runs *inside* CORS so
+    # the 500 response is CORS-decorated (unlike Starlette's built-in 500).
+    @app.middleware("http")
+    async def catch_unhandled(request: Request, call_next) -> Response:
+        try:
+            return await call_next(request)
+        except Exception as exc:  # noqa: BLE001 — deliberate boundary
+            rid = getattr(request.state, "request_id", None)
+            _log_request_failure(request, code="INTERNAL.UNEXPECTED", status=500, exc=exc)
+            return JSONResponse(
+                status_code=500,
+                content=build_envelope(
+                    code="INTERNAL.UNEXPECTED",
+                    message="系統暫時出了點狀況，請稍後再試",
+                    request_id=rid,
+                ),
+            )
+
+    # request context — accept upstream ID or generate; echoed on every
+    # response, including the 500 / 504 built above.
+    @app.middleware("http")
+    async def add_request_context(request: Request, call_next) -> Response:
         request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
         request.state.request_id = request_id
         response = await call_next(request)
         response.headers["X-Request-ID"] = request_id
         return response
 
-    # 3. Request timeout (outermost — wraps everything; returns 504 on breach)
-    @app.middleware("http")
-    async def request_timeout(request: Request, call_next) -> Response:
-        try:
-            return await asyncio.wait_for(call_next(request), timeout=_REQUEST_TIMEOUT)
-        except TimeoutError:
-            rid = getattr(request.state, "request_id", "-")
-            LOGGER.warning("Request timed out [%s]: %s %s", rid, request.method, request.url.path)
-            return JSONResponse(
-                status_code=504,
-                content={"detail": "Request timed out"},
-                headers={"X-Request-ID": rid},
-            )
+    # outermost — CORS
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origins,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Content-Type", "Cookie", "X-Request-ID"],
+        expose_headers=["X-Request-ID"],
+    )
 
-    # ── Global exception handler ─────────────────────────────────────────
-    # Catches any exception that escapes FastAPI's built-in HTTPException /
-    # ValidationError handlers.  Logs with request ID so the 500 is traceable.
+    # ── Exception handlers ──────────────────────────────────────────────
+    # These run in Starlette's ExceptionMiddleware (inside every HTTP
+    # middleware), so their responses pass back out through CORS normally.
+    # All of them emit the same envelope shape as build_envelope().
+
+    @app.exception_handler(AppError)
+    async def _handle_app_error(request: Request, exc: AppError) -> JSONResponse:
+        rid = getattr(request.state, "request_id", None)
+        _log_request_failure(
+            request,
+            code=exc.code,
+            status=exc.http_status,
+            exc=exc,
+            level=exc.log_level,
+            context=exc.context,
+        )
+        return JSONResponse(status_code=exc.http_status, content=exc.to_envelope(rid))
+
+    @app.exception_handler(RequestValidationError)
+    async def _handle_validation(request: Request, exc: RequestValidationError) -> JSONResponse:
+        rid = getattr(request.state, "request_id", None)
+        _log_request_failure(
+            request,
+            code="VALIDATION.INVALID_INPUT",
+            status=422,
+            level=logging.INFO,
+            context={"validation_errors": exc.errors()},
+        )
+        return JSONResponse(
+            status_code=422,
+            content=build_envelope(
+                code="VALIDATION.INVALID_INPUT",
+                message="輸入的內容有誤，請檢查後再試",
+                request_id=rid,
+            ),
+        )
+
+    @app.exception_handler(StarletteHTTPException)
+    async def _handle_http_exception(request: Request, exc: StarletteHTTPException) -> JSONResponse:
+        rid = getattr(request.state, "request_id", None)
+        detail = exc.detail if isinstance(exc.detail, str) and exc.detail else "請求無法處理"
+        if exc.status_code >= 500:
+            _log_request_failure(
+                request, code=f"HTTP.{exc.status_code}", status=exc.status_code, exc=exc
+            )
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=build_envelope(code=f"HTTP.{exc.status_code}", message=detail, request_id=rid),
+            headers=exc.headers,
+        )
+
+    # Fallback for exceptions raised *outside* catch_unhandled (e.g. within
+    # CORS itself). Rare; this response is not CORS-decorated.
     @app.exception_handler(Exception)
-    async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-        rid = getattr(request.state, "request_id", "-")
-        LOGGER.exception("Unhandled exception [%s]: %s %s", rid, request.method, request.url.path)
+    async def _handle_unexpected(request: Request, exc: Exception) -> JSONResponse:
+        rid = getattr(request.state, "request_id", None)
+        _log_request_failure(request, code="INTERNAL.UNEXPECTED", status=500, exc=exc)
         return JSONResponse(
             status_code=500,
-            content={"detail": "Internal server error"},
-            headers={"X-Request-ID": rid},
+            content=build_envelope(
+                code="INTERNAL.UNEXPECTED",
+                message="系統暫時出了點狀況，請稍後再試",
+                request_id=rid,
+            ),
         )
 
     _activated = [Depends(require_activated)]

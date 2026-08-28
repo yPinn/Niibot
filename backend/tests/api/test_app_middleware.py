@@ -21,9 +21,13 @@ os.environ.setdefault("BOT_ID", "bot-test")
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from pydantic import BaseModel
 
 from app import create_app
 from core.config import get_settings
+from shared.errors import NotFoundError
+
+_ALLOWED_ORIGIN = "https://niibot.tv"
 
 
 @asynccontextmanager
@@ -51,6 +55,17 @@ def client() -> TestClient:
     @test_app.get("/_test/error")
     async def _error():
         raise RuntimeError("deliberate test error")
+
+    @test_app.get("/_test/app-error")
+    async def _app_error():
+        raise NotFoundError(user_message="找不到這個東西", context={"secret_id": "leaky-12345"})
+
+    class _Body(BaseModel):
+        count: int
+
+    @test_app.post("/_test/validate")
+    async def _validate(body: _Body):
+        return {"count": body.count}
 
     return TestClient(test_app, raise_server_exceptions=False)
 
@@ -109,9 +124,14 @@ class TestGlobalExceptionHandler:
         r = client.get("/_test/error")
         assert r.status_code == 500
 
-    def test_error_body_is_generic(self, client: TestClient):
-        r = client.get("/_test/error")
-        assert r.json() == {"detail": "Internal server error"}
+    def test_error_body_envelope(self, client: TestClient):
+        r = client.get("/_test/error", headers={"X-Request-ID": "rid-500"})
+        body = r.json()
+        assert body["detail"] == body["error"]["message"]
+        assert body["error"]["code"] == "INTERNAL.UNEXPECTED"
+        assert body["error"]["request_id"] == "rid-500"
+        # generic, no internals leaked
+        assert "deliberate test error" not in r.text
 
     def test_error_response_includes_request_id(self, client: TestClient):
         r = client.get("/_test/error")
@@ -122,3 +142,49 @@ class TestGlobalExceptionHandler:
         r = client.get("/_test/error", headers={"X-Request-ID": trace_id})
         assert r.status_code == 500
         assert r.headers["X-Request-ID"] == trace_id
+
+
+class TestAppErrorHandler:
+    def test_status_and_envelope(self, client: TestClient):
+        r = client.get("/_test/app-error", headers={"X-Request-ID": "rid-ae"})
+        assert r.status_code == 404
+        body = r.json()
+        assert body["detail"] == "找不到這個東西"
+        assert body["error"] == {
+            "code": "INTERNAL.NOT_FOUND",
+            "message": "找不到這個東西",
+            "request_id": "rid-ae",
+            "fields": None,
+        }
+
+    def test_context_not_leaked(self, client: TestClient):
+        r = client.get("/_test/app-error")
+        assert "leaky-12345" not in r.text
+
+
+class TestValidationHandler:
+    def test_detail_is_string_not_list(self, client: TestClient):
+        r = client.post("/_test/validate", json={"count": "not-an-int"})
+        assert r.status_code == 422
+        body = r.json()
+        assert isinstance(body["detail"], str)  # B3: never a list
+        assert body["error"]["code"] == "VALIDATION.INVALID_INPUT"
+        # pydantic's English message must not reach the client
+        assert "Input should be" not in r.text
+
+
+class TestCors:
+    def test_expose_headers_on_ok(self, client: TestClient):
+        r = client.get("/_test/ok", headers={"Origin": _ALLOWED_ORIGIN})
+        assert r.headers["access-control-allow-origin"] == _ALLOWED_ORIGIN
+        assert "x-request-id" in r.headers.get("access-control-expose-headers", "").lower()
+
+    def test_cors_headers_on_500(self, client: TestClient):
+        # B2: a cross-origin frontend must be able to read the error body.
+        r = client.get("/_test/error", headers={"Origin": _ALLOWED_ORIGIN})
+        assert r.status_code == 500
+        assert r.headers.get("access-control-allow-origin") == _ALLOWED_ORIGIN
+
+    def test_cors_headers_on_504_path_present_for_app_error(self, client: TestClient):
+        r = client.get("/_test/app-error", headers={"Origin": _ALLOWED_ORIGIN})
+        assert r.headers.get("access-control-allow-origin") == _ALLOWED_ORIGIN
