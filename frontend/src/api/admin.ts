@@ -181,11 +181,6 @@ export interface LogContainer {
   running: boolean
 }
 
-export interface LogLine {
-  stream: 'stdout' | 'stderr'
-  text: string
-}
-
 export type LogLevel = 'DEBUG' | 'INFO' | 'WARNING' | 'ERROR' | 'CRITICAL' | 'UNKNOWN'
 
 export interface LogRecord {
@@ -209,8 +204,6 @@ export interface LogRecord {
 
 export interface ContainerLogs {
   container: string
-  /** @deprecated use `records` */
-  lines: LogLine[]
   records: LogRecord[]
 }
 

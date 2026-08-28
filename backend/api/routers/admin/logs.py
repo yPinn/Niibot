@@ -77,8 +77,6 @@ class LogRecordOut(BaseModel):
 
 class ContainerLogsResponse(BaseModel):
     container: str
-    #: deprecated — kept one release for the old viewer; use `records`.
-    lines: list[LogLine]
     records: list[LogRecordOut]
 
 
@@ -304,6 +302,5 @@ async def get_container_logs(
     lines = _parse_docker_stream(raw)
     return ContainerLogsResponse(
         container=container,
-        lines=lines,
         records=_to_records(lines, level=level, q=q),
     )
