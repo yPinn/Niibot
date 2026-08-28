@@ -35,12 +35,16 @@ from pathlib import Path
 
 project_dir = Path(os.environ["PROJECT_DIR"])
 suffix = os.environ.get("ENV_SUFFIX", "")
-deploy_env = os.environ["DEPLOY_ENVIRONMENT"]
+deploy_env = os.environ["DEPLOY_ENVIRONMENT"].strip()
 dry_run = os.environ.get("DRY_RUN") == "1"
 
 manifest = json.loads((project_dir / "env.manifest.json").read_text(encoding="utf-8"))
-secrets = json.loads(os.environ["SECRETS_JSON"] or "{}")
-gh_vars = json.loads(os.environ["VARS_JSON"] or "{}")
+
+# GitHub Secrets/Variables commonly carry a trailing newline (e.g. set from a
+# file by .github/push.sh) — strip surrounding whitespace so it never lands in
+# an env value. An interior newline is still rejected further down.
+secrets = {k: str(v).strip() for k, v in json.loads(os.environ["SECRETS_JSON"] or "{}").items()}
+gh_vars = {k: str(v).strip() for k, v in json.loads(os.environ["VARS_JSON"] or "{}").items()}
 
 # manifest "file" tag -> path relative to PROJECT_DIR, with the env suffix applied.
 # "shared" is special: backend/shared.staging.env, not backend/shared.env.staging.
