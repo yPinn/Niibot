@@ -114,9 +114,6 @@ data/env/
 # Bot runtime data (guild-specific, not for version control)
 backend/runtime/*
 !backend/runtime/.gitkeep
-# Legacy paths — kept until prod/staging migration removes the originals
-backend/data/log_channels.json
-backend/data/active_giveaways.json
 
 # macOS
 .DS_Store
@@ -141,6 +138,5 @@ Desktop.ini
 # GitHub Actions self-hosted runner
 actions-runner/
 
-# Task tracking (session-specific scratch, lessons.md should be tracked)
-tasks/*
-!tasks/lessons.md
+# Task tracking (session-specific scratch, never version-controlled)
+tasks/
