@@ -524,6 +524,9 @@ class EventComponent(commands.Component):
             self.bot._bot_is_mod.add(channel_id)  # type: ignore[attr-defined]
             LOGGER.info(f"[{payload.broadcaster.name}] Bot was granted mod — all features enabled")
             self._trigger_emote_sync(channel_id)
+            # channel.follow subscription needs the bot as moderator — it 403s
+            # if the channel was added before this grant. (Re)subscribe now.
+            await self.bot.resubscribe_follow(channel_id)  # type: ignore[attr-defined]
 
         try:
             if hasattr(self.bot, "analytics"):

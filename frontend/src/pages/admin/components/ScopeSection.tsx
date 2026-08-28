@@ -3,7 +3,10 @@ import { Icon } from '@/components/primitives'
 const SCOPE_CATEGORIES: { label: string; scopes: string[] }[] = [
   { label: 'Identity', scopes: ['user:bot', 'channel:bot'] },
   { label: 'Chat', scopes: ['user:read:chat', 'user:write:chat'] },
-  { label: 'User', scopes: ['user:read:emotes', 'user:manage:whispers'] },
+  {
+    label: 'User',
+    scopes: ['user:read:emotes', 'user:read:subscriptions', 'user:manage:whispers'],
+  },
   {
     label: 'Channel',
     scopes: [
@@ -17,11 +20,11 @@ const SCOPE_CATEGORIES: { label: string; scopes: string[] }[] = [
   {
     label: 'Moderation',
     scopes: [
-      'moderation:read',
       'moderator:read:followers',
       'moderator:read:chatters',
       'moderator:manage:announcements',
       'moderator:manage:shoutouts',
+      'moderator:manage:banned_users',
     ],
   },
 ]

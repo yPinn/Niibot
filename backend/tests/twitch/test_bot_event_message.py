@@ -258,6 +258,7 @@ def _make_bot_for_mod_check():
         b._needs_reauth = set()
         b._bot_is_mod = set()
         b._mod_check_pending = set()
+        b._subscribed_channels = set()
         token = MagicMock()
         token.token = "tok"
         b.channels = MagicMock()

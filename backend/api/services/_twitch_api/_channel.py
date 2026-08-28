@@ -60,51 +60,6 @@ class _ChannelMixin(_TwitchAPIBase):
             LOGGER.exception("Error getting videos for user %s", user_id)
             return []
 
-    # ------------------------------------------------------------------
-    # Subscriptions
-    # ------------------------------------------------------------------
-
-    async def get_sub_status(self, broadcaster_id: str, user_id: str, token: str) -> dict | None:
-        """Check if user_id is subscribed to broadcaster_id's channel.
-
-        Requires broadcaster token with channel:read:subscriptions scope.
-        Returns the subscription object or None if not subscribed / error.
-        """
-        try:
-            response = await self._helix_get(
-                "subscriptions",
-                {"broadcaster_id": broadcaster_id, "user_id": user_id},
-                token=token,
-            )
-            if not response or response.status_code != 200:
-                return None
-            data = response.json().get("data", [])
-            return data[0] if data else None
-        except Exception:
-            LOGGER.exception(
-                "Error checking subscription: broadcaster=%s user=%s", broadcaster_id, user_id
-            )
-            return None
-
-    async def get_follow_status(self, broadcaster_id: str, user_id: str, token: str) -> dict | None:
-        """Check if user_id follows broadcaster_id.
-
-        Requires broadcaster token with moderator:read:followers scope.
-        Returns follower object (with followed_at) or None if confirmed not following.
-        Raises on non-200 so callers can distinguish scope errors from a real non-follow.
-        """
-        response = await self._helix_get(
-            "channels/followers",
-            {"broadcaster_id": broadcaster_id, "user_id": user_id},
-            token=token,
-        )
-        if not response:
-            raise RuntimeError("No response from Twitch API")
-        if response.status_code != 200:
-            raise RuntimeError(f"Twitch channels/followers returned {response.status_code}")
-        data = response.json().get("data", [])
-        return data[0] if data else None
-
     async def get_channel_badges(self, broadcaster_id: str) -> dict:
         """Fetch channel badge data for subscriber and founder badges.
 

@@ -10,8 +10,12 @@ def get_channel_subscriptions(
         eventsub.StreamOnlineSubscription(broadcaster_user_id=broadcaster_user_id),
         eventsub.StreamOfflineSubscription(broadcaster_user_id=broadcaster_user_id),
         eventsub.ChannelPointsRedeemAddSubscription(broadcaster_user_id=broadcaster_user_id),
+        # moderator_user_id = bot: the bot reads followers as a moderator, so
+        # `moderator:read:followers` lives on the bot token, not the broadcaster.
+        # Requires the bot to already be a mod — re-subscribed via
+        # `resubscribe_follow` once mod is granted (see _channel_mixin).
         eventsub.ChannelFollowSubscription(
-            broadcaster_user_id=broadcaster_user_id, moderator_user_id=broadcaster_user_id
+            broadcaster_user_id=broadcaster_user_id, moderator_user_id=bot_id
         ),
         eventsub.ChannelSubscribeSubscription(broadcaster_user_id=broadcaster_user_id),
         eventsub.ChannelCheerSubscription(broadcaster_user_id=broadcaster_user_id),

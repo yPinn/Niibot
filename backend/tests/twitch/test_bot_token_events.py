@@ -127,7 +127,7 @@ class TestEventTokenRefreshed:
 
 
 # ---------------------------------------------------------------------------
-# _watch_time_loop — uses channels.get_token (not raw SQL)
+# _watch_time_loop — delegates to _fetch_chatters (which uses the bot token)
 # ---------------------------------------------------------------------------
 
 
@@ -151,46 +151,17 @@ class TestWatchTimeLoopTokenFetch:
             with pytest.raises(asyncio.CancelledError):
                 await bot._watch_time_loop()
 
-    async def test_uses_channels_get_token(self, bot):
-        from shared.models.channel import Token
-
-        token_obj = Token(user_id="ch1", token="valid_tok", refresh="ref")
+    async def test_calls_fetch_chatters_with_channel_id_only(self, bot):
         bot._active_sessions = {"ch1": 1}
-        bot.channels.get_token = AsyncMock(return_value=token_obj)
         bot._fetch_chatters = AsyncMock(return_value=[])
 
         await self._run_one_iteration(bot)
 
-        bot.channels.get_token.assert_called_with("ch1")
-
-    async def test_passes_token_value_to_fetch_chatters(self, bot):
-        from shared.models.channel import Token
-
-        token_obj = Token(user_id="ch1", token="the_access_token", refresh="ref")
-        bot._active_sessions = {"ch1": 1}
-        bot.channels.get_token = AsyncMock(return_value=token_obj)
-        bot._fetch_chatters = AsyncMock(return_value=[])
-
-        await self._run_one_iteration(bot)
-
-        bot._fetch_chatters.assert_called_once_with("ch1", "the_access_token")
-
-    async def test_skips_channel_when_no_token(self, bot):
-        bot._active_sessions = {"ch1": 1}
-        bot.channels.get_token = AsyncMock(return_value=None)
-        bot._fetch_chatters = AsyncMock(return_value=[])
-
-        await self._run_one_iteration(bot)
-
-        bot._fetch_chatters.assert_not_called()
+        bot._fetch_chatters.assert_called_once_with("ch1")
 
     async def test_no_raw_sql_token_access(self, bot):
         """token_database must not be used — all token access goes through the repository."""
-        from shared.models.channel import Token
-
-        token_obj = Token(user_id="ch1", token="tok", refresh="ref")
         bot._active_sessions = {"ch1": 1}
-        bot.channels.get_token = AsyncMock(return_value=token_obj)
         bot._fetch_chatters = AsyncMock(return_value=[])
         bot.token_database = MagicMock()  # would fail loudly if called
         bot.token_database.fetchrow = AsyncMock(side_effect=AssertionError("raw SQL used!"))
@@ -198,3 +169,47 @@ class TestWatchTimeLoopTokenFetch:
         await self._run_one_iteration(bot)
 
         bot.token_database.fetchrow.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# _fetch_chatters — reads chatters with the BOT token, moderator_id = bot
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestFetchChattersUsesBotToken:
+    def _http_ctx(self, resp):
+        ctx = MagicMock()
+        client = MagicMock()
+        client.get = AsyncMock(return_value=resp)
+        ctx.__aenter__ = AsyncMock(return_value=client)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        return ctx, client
+
+    async def test_uses_bot_token_and_bot_moderator_id(self, bot):
+        from shared.models.channel import Token
+
+        bot.channels.get_token = AsyncMock(
+            return_value=Token(user_id="bot-001", token="BOT_TOK", refresh="ref")
+        )
+        resp = MagicMock(status_code=200)
+        resp.json.return_value = {"data": [], "pagination": {}}
+        ctx, client = self._http_ctx(resp)
+
+        with patch("twitch.core._session_mixin.httpx.AsyncClient", return_value=ctx):
+            await bot._fetch_chatters("ch1")
+
+        bot.channels.get_token.assert_awaited_once_with("bot-001", "bot")
+        _, kwargs = client.get.call_args
+        assert kwargs["params"]["moderator_id"] == "bot-001"
+        assert kwargs["params"]["broadcaster_id"] == "ch1"
+        assert kwargs["headers"]["Authorization"] == "Bearer BOT_TOK"
+
+    async def test_returns_empty_when_no_bot_token(self, bot):
+        bot.channels.get_token = AsyncMock(return_value=None)
+
+        with patch("twitch.core._session_mixin.httpx.AsyncClient") as mock_client:
+            result = await bot._fetch_chatters("ch1")
+
+        assert result == []
+        mock_client.assert_not_called()
