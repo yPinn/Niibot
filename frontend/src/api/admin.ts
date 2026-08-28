@@ -186,9 +186,32 @@ export interface LogLine {
   text: string
 }
 
+export type LogLevel = 'DEBUG' | 'INFO' | 'WARNING' | 'ERROR' | 'CRITICAL' | 'UNKNOWN'
+
+export interface LogRecord {
+  stream: 'stdout' | 'stderr'
+  ts: string
+  level: LogLevel
+  source: 'json' | 'postgres' | 'raw'
+  message: string
+  logger: string
+  mod: string
+  own: boolean
+  service: string
+  request_id: string | null
+  channel: string | null
+  code: string | null
+  pid: string | null
+  exception: string | null
+  extra: Record<string, unknown>
+  raw: string
+}
+
 export interface ContainerLogs {
   container: string
+  /** @deprecated use `records` */
   lines: LogLine[]
+  records: LogRecord[]
 }
 
 export async function getLogContainers(): Promise<LogContainer[]> {
@@ -234,11 +257,12 @@ export async function runDbQuery(sql: string): Promise<DbQueryResult> {
 
 export async function getContainerLogs(
   container: string,
-  tail = 200,
-  since?: number
+  opts: { tail?: number; since?: number; level?: string; q?: string } = {}
 ): Promise<ContainerLogs> {
-  const params = new URLSearchParams({ tail: String(tail) })
-  if (since !== undefined) params.set('since', String(since))
+  const params = new URLSearchParams({ tail: String(opts.tail ?? 200) })
+  if (opts.since !== undefined) params.set('since', String(opts.since))
+  if (opts.level && opts.level !== 'ALL') params.set('level', opts.level)
+  if (opts.q) params.set('q', opts.q)
   const url = `${API_ENDPOINTS.admin.containerLogs(container)}?${params}`
   const response = await apiFetch(url, { credentials: 'include' })
   if (!response.ok) throw await parseApiError(response, `讀取 ${container} 記錄失敗`)
