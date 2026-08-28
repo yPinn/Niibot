@@ -38,6 +38,7 @@ api、twitch-bot、discord-bot 三服務共用。至少設一組 AI key；空的
 | --- | --- |
 | `BOT_ID` | Bot 的 Twitch user ID（id.twitch.tv） |
 | `DATABASE_URL` | 本機直跑時的連線字串（Docker 內由 DOCKER_DATABASE_URL 覆蓋） |
+| `ENVIRONMENT` | production / development（api/twitch/discord 共用，經 config_base） |
 | `ERROR_WEBHOOK_URL` | (選用) ERROR 以上 log 推送的 Discord webhook（於 shared.env 設一次，三服務共用） |
 | `FRONTEND_URL` | OAuth redirect origin 與 CORS allow-list（api 與 twitch-bot 共用） |
 | `GEMINI_API_KEY` | AI provider（AI Studio key，非 GCP service account） |
@@ -60,7 +61,6 @@ App 憑證走 `shared.env`。
 | --- | --- |
 | `API_URL` | 對外 URL，用於 OAuth redirect 與 webhook callback |
 | `DISCORD_PUBLIC_KEY` | Discord 互動 webhook 簽章驗證（Developer Portal → General Information） |
-| `ENVIRONMENT` | production / development |
 | `JWT_ALGORITHM` | (選用) 預設 HS256 |
 | `JWT_EXPIRE_DAYS` | (選用) 預設 7 |
 | `JWT_SECRET_KEY` | JWT 簽章密鑰 |

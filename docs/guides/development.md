@@ -14,6 +14,17 @@ bash scripts/env.sh init -f   # 強制覆蓋
 `scripts/env.sh` 其他子命令：`snapshot` / `backup`（快照到 `data/`）、
 `restore <日期|檔案>`、`diff`、`list`、`clean`。
 
+### 改動 env 變數
+
+所有 `*.env.example`、`.github/*/*.env.example`、`environment.md` 對照表、
+`env.manifest.json` 都由 [`env.registry.toml`](../../env.registry.toml) 產生。
+**不要手改產生檔**——改 registry 後跑：
+
+```bash
+npm run env:gen     # 重新產生全部
+npm run env:check   # 驗證同步（CI 會擋）
+```
+
 ## 2a. 直接跑程序
 
 ```bash
