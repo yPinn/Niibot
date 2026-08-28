@@ -121,8 +121,10 @@ class ConflictError(AppError):
 
 
 class InvalidInputError(AppError):
-    code = "VALIDATION.INVALID_INPUT"
-    http_status = 422
+    # Domain-level rejection of a semantically bad value. FastAPI's own
+    # request-shape failures use VALIDATION.INVALID_INPUT (422); this is 400.
+    code = "INPUT.INVALID"
+    http_status = 400
     user_message = "輸入的內容有誤，請檢查後再試"
     log_level = logging.INFO
 
@@ -153,3 +155,40 @@ def iter_error_classes(root: type[AppError] = AppError) -> Iterator[type[AppErro
     yield root
     for sub in root.__subclasses__():
         yield from iter_error_classes(sub)
+
+
+_LATIN_RE = re.compile(r"[A-Za-z]")
+
+
+def validate_catalog() -> list[str]:
+    """Return a list of contract violations across all imported AppError
+    subclasses (empty = healthy). Used by tests and startup checks.
+
+    The backend is importable under two path roots (``services.x`` and
+    ``api.services.x``); dedupe on module basename + qualname so a migrated
+    module isn't double-counted.
+    """
+    seen: dict[str, str] = {}
+    problems: list[str] = []
+    codes: dict[str, str] = {}
+    for cls in iter_error_classes():
+        key = f"{cls.__module__.rsplit('.', 1)[-1]}.{cls.__qualname__}"
+        if key in seen:
+            continue
+        seen[key] = cls.__name__
+
+        if not CODE_RE.match(cls.code):
+            problems.append(f"{cls.__name__}: malformed code {cls.code!r}")
+        if cls.code in codes and codes[cls.code] != key:
+            problems.append(f"{cls.__name__}: code {cls.code!r} already on {codes[cls.code]}")
+        codes[cls.code] = key
+
+        if cls.http_status not in ALLOWED_STATUS:
+            problems.append(f"{cls.__name__}: status {cls.http_status} not allowed")
+
+        msg = cls.user_message
+        if not msg or msg.strip() != msg or len(msg) > 30 or "\n" in msg:
+            problems.append(f"{cls.__name__}: user_message not clean prose ({msg!r})")
+        elif _LATIN_RE.search(msg) or cls.code in msg:
+            problems.append(f"{cls.__name__}: user_message leaks tech text ({msg!r})")
+    return problems

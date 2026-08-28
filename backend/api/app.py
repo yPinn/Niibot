@@ -10,14 +10,13 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
 from fastapi import Depends, FastAPI, Request
-from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse, Response
-from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from core.config import get_settings
 from core.database import get_database_manager, init_database_manager
 from core.dependencies import close_twitch_api, require_activated
+from core.error_handlers import log_request_failure, register_exception_handlers
 from core.logging import setup_logging
 from routers import (
     admin_router,
@@ -42,7 +41,7 @@ from routers import (
 )
 from routers.bots_router import close_bots_http_client
 from shared.database import pool_heartbeat_loop
-from shared.errors import AppError, build_envelope
+from shared.errors import build_envelope
 from shared.log_context import bind_log_context, clear_log_context
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -164,28 +163,6 @@ def create_app() -> FastAPI:
     # bare network error and cannot read the body or the X-Request-ID header
     # it needs to report the failure.
 
-    def _log_request_failure(
-        request: Request,
-        *,
-        code: str,
-        status: int,
-        exc: BaseException | None = None,
-        level: int = logging.ERROR,
-        context: dict | None = None,
-    ) -> None:
-        LOGGER.log(
-            level,
-            "request_failed",
-            extra={
-                "code": code,
-                "http_status": status,
-                "http_method": request.method,
-                "http_path": request.url.path,
-                **(context or {}),
-            },
-            exc_info=exc if (exc is not None and level >= logging.ERROR) else None,
-        )
-
     # innermost — security headers
     @app.middleware("http")
     async def add_security_headers(request: Request, call_next) -> Response:
@@ -206,7 +183,7 @@ def create_app() -> FastAPI:
             return await asyncio.wait_for(call_next(request), timeout=_REQUEST_TIMEOUT)
         except TimeoutError:
             rid = getattr(request.state, "request_id", None)
-            _log_request_failure(request, code="HTTP.504", status=504, level=logging.WARNING)
+            log_request_failure(request, code="HTTP.504", status=504, level=logging.WARNING)
             return JSONResponse(
                 status_code=504,
                 content=build_envelope(
@@ -224,7 +201,7 @@ def create_app() -> FastAPI:
             return await call_next(request)
         except Exception as exc:  # noqa: BLE001 — deliberate boundary
             rid = getattr(request.state, "request_id", None)
-            _log_request_failure(request, code="INTERNAL.UNEXPECTED", status=500, exc=exc)
+            log_request_failure(request, code="INTERNAL.UNEXPECTED", status=500, exc=exc)
             return JSONResponse(
                 status_code=500,
                 content=build_envelope(
@@ -264,70 +241,10 @@ def create_app() -> FastAPI:
     )
 
     # ── Exception handlers ──────────────────────────────────────────────
-    # These run in Starlette's ExceptionMiddleware (inside every HTTP
-    # middleware), so their responses pass back out through CORS normally.
-    # All of them emit the same envelope shape as build_envelope().
-
-    @app.exception_handler(AppError)
-    async def _handle_app_error(request: Request, exc: AppError) -> JSONResponse:
-        rid = getattr(request.state, "request_id", None)
-        _log_request_failure(
-            request,
-            code=exc.code,
-            status=exc.http_status,
-            exc=exc,
-            level=exc.log_level,
-            context=exc.context,
-        )
-        return JSONResponse(status_code=exc.http_status, content=exc.to_envelope(rid))
-
-    @app.exception_handler(RequestValidationError)
-    async def _handle_validation(request: Request, exc: RequestValidationError) -> JSONResponse:
-        rid = getattr(request.state, "request_id", None)
-        _log_request_failure(
-            request,
-            code="VALIDATION.INVALID_INPUT",
-            status=422,
-            level=logging.INFO,
-            context={"validation_errors": exc.errors()},
-        )
-        return JSONResponse(
-            status_code=422,
-            content=build_envelope(
-                code="VALIDATION.INVALID_INPUT",
-                message="輸入的內容有誤，請檢查後再試",
-                request_id=rid,
-            ),
-        )
-
-    @app.exception_handler(StarletteHTTPException)
-    async def _handle_http_exception(request: Request, exc: StarletteHTTPException) -> JSONResponse:
-        rid = getattr(request.state, "request_id", None)
-        detail = exc.detail if isinstance(exc.detail, str) and exc.detail else "請求無法處理"
-        if exc.status_code >= 500:
-            _log_request_failure(
-                request, code=f"HTTP.{exc.status_code}", status=exc.status_code, exc=exc
-            )
-        return JSONResponse(
-            status_code=exc.status_code,
-            content=build_envelope(code=f"HTTP.{exc.status_code}", message=detail, request_id=rid),
-            headers=exc.headers,
-        )
-
-    # Fallback for exceptions raised *outside* catch_unhandled (e.g. within
-    # CORS itself). Rare; this response is not CORS-decorated.
-    @app.exception_handler(Exception)
-    async def _handle_unexpected(request: Request, exc: Exception) -> JSONResponse:
-        rid = getattr(request.state, "request_id", None)
-        _log_request_failure(request, code="INTERNAL.UNEXPECTED", status=500, exc=exc)
-        return JSONResponse(
-            status_code=500,
-            content=build_envelope(
-                code="INTERNAL.UNEXPECTED",
-                message="系統暫時出了點狀況，請稍後再試",
-                request_id=rid,
-            ),
-        )
+    # Run in Starlette's ExceptionMiddleware (inside every HTTP middleware),
+    # so responses pass back out through CORS. Same set is installed on
+    # throwaway apps in router tests. See core/error_handlers.py.
+    register_exception_handlers(app)
 
     _activated = [Depends(require_activated)]
 
