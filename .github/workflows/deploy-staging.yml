@@ -1,31 +1,20 @@
 name: Deploy Staging
 
-# Staging deployment — see _deploy.yml for secrets/variables reference.
+# Staging deployment — see _deploy.yml for the derived config.
 # GitHub Environment "staging" overrides: API_URL, ENVIRONMENT, FRONTEND_URL, POSTGRES_DB
 # Auto-deploy is handled by the deploy-staging job in ci.yml (push to staging → CI pass → deploy).
-# This file is kept for manual workflow_dispatch with fine-grained force flags.
+# This file is kept for manual workflow_dispatch — e.g. to spin up the staging bots for a test.
 
 on:
   workflow_dispatch:
     inputs:
+      services:
+        description: "Which services to deploy (default = api only)"
+        type: choice
+        options: [default, api, twitch, discord, "twitch,discord", all]
+        default: default
       force_all:
-        description: "Force rebuild all services"
-        type: boolean
-        default: false
-      deploy_api:
-        description: "Deploy API"
-        type: boolean
-        default: true
-      deploy_twitch:
-        description: "Deploy Twitch bot"
-        type: boolean
-        default: true
-      deploy_discord:
-        description: "Deploy Discord bot"
-        type: boolean
-        default: false
-      deploy_instafix:
-        description: "Pull and restart Instafix"
+        description: "Force rebuild + restart the resolved service set"
         type: boolean
         default: false
 
@@ -38,22 +27,6 @@ jobs:
     uses: ./.github/workflows/_deploy.yml
     with:
       environment: staging
-      env_suffix: ".staging"
-      compose_env_file: docker-compose.staging.yml
-      compose_project: niibot-staging
-      branch: staging
-      api_port: 8001
-      compose_change_pattern: docker-compose.staging.yml
+      services: ${{ inputs.services == 'default' && '' || inputs.services }}
       force_all: ${{ inputs.force_all == true }}
-      force_api: ${{ inputs.deploy_api == true }}
-      force_twitch: ${{ inputs.deploy_twitch == true }}
-      force_discord: ${{ inputs.deploy_discord == true }}
-      force_instafix: ${{ inputs.deploy_instafix == true }}
-      enable_discord: ${{ inputs.deploy_discord == true }}
-      enable_instafix: ${{ inputs.deploy_instafix == true }}
-      tag_images: true
-      prune_full: true
-      image_suffix: "-stg"
-      legacy_data_dir: data/staging/backend
-      runtime_data_dir: data/staging/runtime
     secrets: inherit
