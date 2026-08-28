@@ -1,4 +1,5 @@
-import { API_ENDPOINTS, apiFetch } from './config'
+import { API_ENDPOINTS } from './config'
+import { apiJson } from './errors'
 
 export interface CommandConfig {
   /** Null for builtin commands without an explicit DB row. */
@@ -33,59 +34,62 @@ export interface CustomCommandCreate {
 
 // ---- Command Configs ----
 
-export async function getCommandConfigs(): Promise<CommandConfig[]> {
-  const response = await apiFetch(API_ENDPOINTS.commands.configs, {
-    credentials: 'include',
-  })
-  if (!response.ok) throw new Error(`Failed to fetch command configs: ${response.statusText}`)
-  return response.json()
+export function getCommandConfigs(): Promise<CommandConfig[]> {
+  return apiJson(
+    API_ENDPOINTS.commands.configs,
+    { credentials: 'include' },
+    { fallback: '載入指令設定失敗' }
+  )
 }
 
-export async function createCustomCommand(data: CustomCommandCreate): Promise<CommandConfig> {
-  const response = await apiFetch(API_ENDPOINTS.commands.createConfig, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify(data),
-  })
-  if (!response.ok) throw new Error(`Failed to create custom command: ${response.statusText}`)
-  return response.json()
+export function createCustomCommand(data: CustomCommandCreate): Promise<CommandConfig> {
+  return apiJson(
+    API_ENDPOINTS.commands.createConfig,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(data),
+    },
+    { fallback: '建立自訂指令失敗' }
+  )
 }
 
-export async function updateCommandConfig(
+export function updateCommandConfig(
   commandName: string,
   data: CommandConfigUpdate
 ): Promise<CommandConfig> {
-  const response = await apiFetch(API_ENDPOINTS.commands.updateConfig(commandName), {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify(data),
-  })
-  if (!response.ok) throw new Error(`Failed to update command config: ${response.statusText}`)
-  return response.json()
+  return apiJson(
+    API_ENDPOINTS.commands.updateConfig(commandName),
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(data),
+    },
+    { fallback: '更新指令設定失敗' }
+  )
 }
 
-export async function toggleCommandConfig(
-  commandName: string,
-  enabled: boolean
-): Promise<CommandConfig> {
-  const response = await apiFetch(API_ENDPOINTS.commands.toggleConfig(commandName), {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify({ enabled }),
-  })
-  if (!response.ok) throw new Error(`Failed to toggle command config: ${response.statusText}`)
-  return response.json()
+export function toggleCommandConfig(commandName: string, enabled: boolean): Promise<CommandConfig> {
+  return apiJson(
+    API_ENDPOINTS.commands.toggleConfig(commandName),
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ enabled }),
+    },
+    { fallback: '切換指令設定失敗' }
+  )
 }
 
-export async function deleteCustomCommand(commandName: string): Promise<void> {
-  const response = await apiFetch(API_ENDPOINTS.commands.deleteConfig(commandName), {
-    method: 'DELETE',
-    credentials: 'include',
-  })
-  if (!response.ok) throw new Error(`Failed to delete custom command: ${response.statusText}`)
+export function deleteCustomCommand(commandName: string): Promise<void> {
+  return apiJson(
+    API_ENDPOINTS.commands.deleteConfig(commandName),
+    { method: 'DELETE', credentials: 'include' },
+    { fallback: '刪除自訂指令失敗' }
+  )
 }
 
 // ---- Public Commands ----
@@ -107,8 +111,8 @@ export interface PublicCommandsData {
   commands: PublicCommand[]
 }
 
-export async function getPublicCommands(username: string): Promise<PublicCommandsData> {
-  const response = await apiFetch(API_ENDPOINTS.commands.public(username))
-  if (!response.ok) throw new Error(`Failed to fetch public commands: ${response.statusText}`)
-  return response.json()
+export function getPublicCommands(username: string): Promise<PublicCommandsData> {
+  return apiJson(API_ENDPOINTS.commands.public(username), undefined, {
+    fallback: '載入公開指令失敗',
+  })
 }

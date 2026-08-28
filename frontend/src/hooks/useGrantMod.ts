@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 
 import { grantBotMod } from '@/api/channels'
+import { toastApiError } from '@/lib/toast-error'
 
 export function useGrantMod(onSuccess?: (alreadyMod: boolean) => void) {
   const [granting, setGranting] = useState(false)
@@ -18,8 +19,8 @@ export function useGrantMod(onSuccess?: (alreadyMod: boolean) => void) {
         }
         onSuccess?.(res.already_mod)
       }
-    } catch {
-      toast.error('授予失敗，請稍後再試')
+    } catch (e) {
+      toastApiError(e, '授予失敗，請稍後再試')
     } finally {
       setGranting(false)
     }

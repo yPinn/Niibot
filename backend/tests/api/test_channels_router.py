@@ -21,6 +21,7 @@ from fastapi.testclient import TestClient
 import services.channel_service as cs
 from core.config import get_settings
 from core.dependencies import get_current_channel_id, get_db_pool, get_twitch_api
+from core.error_handlers import register_exception_handlers
 from routers.channels_router import router as _channels_router
 
 CHANNEL_ID = "ch-123"
@@ -44,6 +45,7 @@ def _make_client(
 ) -> TestClient:
     """Build a TestClient with all heavyweight dependencies stubbed out."""
     app = FastAPI(lifespan=_no_lifespan)
+    register_exception_handlers(app)
     app.include_router(_channels_router)
 
     mock_api = twitch_api or MagicMock()

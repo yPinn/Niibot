@@ -35,6 +35,7 @@ from core import (  # noqa: E402
     setup_logging,
 )
 from shared.database import DatabaseManager, PoolConfig, pool_heartbeat_loop  # noqa: E402
+from shared.log_context import bound_log_context  # noqa: E402
 from shared.retry_utils import format_duration as _format_duration  # noqa: E402
 from shared.retry_utils import parse_retry_after as _parse_retry_after_shared  # noqa: E402
 
@@ -129,13 +130,19 @@ class NiibotClient(commands.Bot):
             interaction: discord.Interaction,
             error: discord.app_commands.AppCommandError,
         ) -> None:
-            if isinstance(error, discord.app_commands.MissingPermissions):
-                msg = "你沒有使用此指令的權限"
-            elif isinstance(error, discord.app_commands.CheckFailure):
-                msg = "權限不足"
-            else:
-                LOGGER.error("Unhandled app command error", exc_info=error)
-                msg = "指令執行時發生錯誤"
+            cmd = interaction.command.qualified_name if interaction.command else None
+            with bound_log_context(
+                command=cmd,
+                guild_id=interaction.guild_id,
+                channel_id=interaction.channel_id,
+            ):
+                if isinstance(error, discord.app_commands.MissingPermissions):
+                    msg = "你沒有使用此指令的權限"
+                elif isinstance(error, discord.app_commands.CheckFailure):
+                    msg = "權限不足"
+                else:
+                    LOGGER.error("Unhandled app command error", exc_info=error)
+                    msg = "指令執行時發生錯誤"
             try:
                 if not interaction.response.is_done():
                     await interaction.response.send_message(msg, ephemeral=True)
@@ -255,7 +262,12 @@ class NiibotClient(commands.Bot):
             await ctx.send(f"Missing required argument: `{error.param.name}`")
             return
 
-        LOGGER.error(f"Command error: {error}", exc_info=error)
+        with bound_log_context(
+            command=ctx.command.qualified_name if ctx.command else None,
+            guild_id=ctx.guild.id if ctx.guild else None,
+            channel_id=ctx.channel.id if ctx.channel else None,
+        ):
+            LOGGER.error(f"Command error: {error}", exc_info=error)
         await ctx.send("An error occurred while executing the command")
 
 

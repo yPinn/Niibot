@@ -19,13 +19,14 @@ from urllib.parse import urlparse
 
 from asyncpg import Pool
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 
 from core.config import Settings, get_settings
 from core.dependencies import get_db_pool
 from core.rate_limit import RateLimiter
+from shared.errors import AppError, ChannelNotFoundError, InvalidInputError, NotFoundError
 from shared.repositories.donation import DonationRepository, generate_trade_no
 from shared.repositories.video_queue import VideoQueueRepository
 from shared.video_sources import extract_youtube_info
@@ -38,17 +39,35 @@ router = APIRouter(prefix="/api/donate", tags=["donation"])
 _checkout_limiter = RateLimiter(max_calls=10, period=60.0)
 
 
+class DonationInvalidError(InvalidInputError):
+    code = "DONATION.INVALID"
+    user_message = "贊助資料有誤，請檢查後再試"
+
+
+class DonationTargetNotFoundError(NotFoundError):
+    code = "DONATION.TARGET_NOT_FOUND"
+    user_message = "找不到可用的贊助管道"
+
+
+class DonationGatewayUnavailableError(AppError):
+    code = "DONATION.GATEWAY_UNAVAILABLE"
+    http_status = 503
+    user_message = "這個頻道的贊助功能暫時無法使用"
+
+
 def _extract_video_id(youtube_url: str | None, media_share_enabled: bool) -> str | None:
     """Validate and extract YouTube video ID from a URL.
 
     Returns the video ID if valid and media share is enabled, else None.
-    Raises HTTPException(400) if the URL is provided but invalid.
+    Raises DonationInvalidError if the URL is provided but invalid.
     """
     if not youtube_url or not media_share_enabled:
         return None
     video_id, _ = extract_youtube_info(youtube_url)
     if not video_id:
-        raise HTTPException(status_code=400, detail="Invalid YouTube URL")
+        raise DonationInvalidError(
+            user_message="YouTube 影片網址無效", context={"youtube_url": youtube_url}
+        )
     return video_id
 
 
@@ -73,6 +92,7 @@ async def _enqueue_donated_video(
             f"[{platform} webhook] Enqueued video {youtube_video_id} for channel {channel_id}"
         )
     except Exception:
+        # Enqueue is best-effort; the payment itself already succeeded.
         LOGGER.exception(f"[{platform} webhook] Failed to enqueue video for order {trade_no}")
 
 
@@ -224,7 +244,7 @@ async def get_public_donate_info(
     repo = DonationRepository(pool, settings.payment_encryption_key or None)
     result = await repo.get_configs_by_username(username)
     if result is None:
-        raise HTTPException(status_code=404, detail="Streamer not found")
+        raise ChannelNotFoundError(context={"username": username})
 
     _user_id, _channel_id, configs = result
     return PublicDonateInfo(
@@ -257,28 +277,32 @@ async def checkout(
     _checkout_limiter.require(request.client.host if request.client else "unknown")
 
     if body.platform not in _GATEWAYS and body.platform != "paypal":
-        raise HTTPException(status_code=400, detail="Unsupported platform")
+        raise DonationInvalidError(
+            user_message="這個贊助平台不在支援清單內", context={"platform": body.platform}
+        )
 
     if body.return_url:
         _parsed = urlparse(body.return_url)
         _allowed = urlparse(settings.frontend_url)
         if _parsed.scheme != _allowed.scheme or _parsed.netloc != _allowed.netloc:
-            raise HTTPException(status_code=400, detail="Invalid return_url")
+            raise DonationInvalidError(
+                user_message="回傳網址無效", context={"return_url": body.return_url}
+            )
 
     repo = DonationRepository(pool, settings.payment_encryption_key or None)
     result = await repo.get_configs_by_username(username)
     if result is None:
-        raise HTTPException(status_code=404, detail="Streamer not found")
+        raise ChannelNotFoundError(context={"username": username})
 
     user_id, channel_id, configs = result
     config = next((c for c in configs if c.platform == body.platform and c.enabled), None)
     if config is None:
-        raise HTTPException(status_code=404, detail="Platform not configured or disabled")
+        raise DonationTargetNotFoundError(context={"platform": body.platform})
 
     if body.amount < config.min_amount:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Minimum donation amount is NT${config.min_amount}",
+        raise DonationInvalidError(
+            user_message="贊助金額低於這個頻道設定的最低金額",
+            context={"amount": body.amount, "min_amount": config.min_amount},
         )
 
     # ------------------------------------------------------------------
@@ -295,7 +319,7 @@ async def checkout(
     # ------------------------------------------------------------------
     if body.platform == "newebpay":
         if not config.hash_key or not config.hash_iv:
-            raise HTTPException(status_code=500, detail="Payment gateway not configured")
+            raise DonationGatewayUnavailableError(context={"platform": body.platform})
 
         youtube_video_id_nb = _extract_video_id(body.youtube_url, config.media_share_enabled)
 
@@ -375,7 +399,7 @@ async def checkout(
         params["ClientBackURL"] = body.return_url
 
     if not config.hash_key or not config.hash_iv:
-        raise HTTPException(status_code=500, detail="Payment gateway not configured")
+        raise DonationGatewayUnavailableError(context={"platform": body.platform})
     params["CheckMacValue"] = _build_check_mac_value(params, config.hash_key, config.hash_iv)
 
     gateway_url = _GATEWAYS[body.platform]

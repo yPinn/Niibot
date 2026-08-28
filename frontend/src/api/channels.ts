@@ -1,6 +1,8 @@
 import { apiCache, CACHE_KEYS } from '@/lib/apiCache'
+import { reportSilent } from '@/lib/clientErrorReporter'
 
 import { API_ENDPOINTS, apiFetch } from './config'
+import { parseApiError } from './errors'
 
 export interface Channel {
   id: string
@@ -41,6 +43,7 @@ async function fetchTwitchMonitoredChannels(): Promise<Channel[]> {
     return await response.json()
   } catch (error) {
     if (import.meta.env.DEV) console.error('Failed to get channels:', error)
+    reportSilent(error)
     return []
   }
 }
@@ -65,6 +68,7 @@ export async function getTwitchChannelStatus(): Promise<ChannelStatus | null> {
     return response.json()
   } catch (error) {
     if (import.meta.env.DEV) console.error('Failed to get channel status:', error)
+    reportSilent(error)
     return null
   }
 }
@@ -79,7 +83,7 @@ export async function getChannelDefaults(): Promise<ChannelDefaults> {
   const response = await apiFetch(API_ENDPOINTS.channels.defaults, {
     credentials: 'include',
   })
-  if (!response.ok) throw new Error('Failed to fetch channel defaults')
+  if (!response.ok) throw await parseApiError(response, '載入頻道預設值失敗')
   return response.json()
 }
 
@@ -92,7 +96,7 @@ export async function updateChannelDefaults(
     credentials: 'include',
     body: JSON.stringify(data),
   })
-  if (!response.ok) throw new Error('Failed to update channel defaults')
+  if (!response.ok) throw await parseApiError(response, '更新頻道預設值失敗')
   return response.json()
 }
 
@@ -126,7 +130,7 @@ export async function grantBotMod(): Promise<GrantModResponse> {
     method: 'POST',
     credentials: 'include',
   })
-  if (!response.ok) throw new Error('Failed to grant moderator status')
+  if (!response.ok) throw await parseApiError(response, '授予 Bot 板主失敗')
   return response.json()
 }
 
@@ -146,9 +150,7 @@ export async function toggleTwitchChannel(
     }),
   })
 
-  if (!response.ok) {
-    throw new Error('Failed to toggle channel')
-  }
+  if (!response.ok) throw await parseApiError(response, '切換頻道失敗')
 
   return response.json()
 }

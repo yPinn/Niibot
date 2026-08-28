@@ -1,4 +1,5 @@
 import { API_ENDPOINTS, apiFetch } from './config'
+import { apiJson } from './errors'
 
 export type CrosshairGame = 'valorant'
 
@@ -49,65 +50,67 @@ export interface CrosshairUpdate {
   display_order?: number
 }
 
-export async function getPublicCrosshairs(
+const withGame = (base: string, game?: CrosshairGame) =>
+  game ? `${base}?game=${encodeURIComponent(game)}` : base
+
+export function getPublicCrosshairs(
   username: string,
   game?: CrosshairGame
 ): Promise<PublicCrosshairsData> {
-  const base = API_ENDPOINTS.crosshairs.public(username)
-  const url = game ? `${base}?game=${encodeURIComponent(game)}` : base
-  const res = await apiFetch(url)
-  if (!res.ok) throw new Error(`Failed to fetch crosshairs: ${res.statusText}`)
-  return res.json()
-}
-
-export async function getAllPublicCrosshairs(
-  game?: CrosshairGame
-): Promise<CrosshairWithChannel[]> {
-  const base = API_ENDPOINTS.crosshairs.allPublic
-  const url = game ? `${base}?game=${encodeURIComponent(game)}` : base
-  const res = await apiFetch(url)
-  if (!res.ok) throw new Error(`Failed to fetch crosshairs: ${res.statusText}`)
-  return res.json()
-}
-
-export async function getCrosshairs(game?: CrosshairGame): Promise<Crosshair[]> {
-  const base = API_ENDPOINTS.crosshairs.list
-  const url = game ? `${base}?game=${encodeURIComponent(game)}` : base
-  const res = await apiFetch(url, { credentials: 'include' })
-  if (!res.ok) throw new Error(`Failed to fetch crosshairs: ${res.statusText}`)
-  return res.json()
-}
-
-export async function createCrosshair(data: CrosshairCreate): Promise<Crosshair> {
-  const res = await apiFetch(API_ENDPOINTS.crosshairs.create, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify(data),
+  return apiJson(withGame(API_ENDPOINTS.crosshairs.public(username), game), undefined, {
+    fallback: '載入準心失敗',
   })
-  if (!res.ok) throw new Error(`Failed to create crosshair: ${res.statusText}`)
-  return res.json()
 }
 
-export async function updateCrosshair(id: string, data: CrosshairUpdate): Promise<Crosshair> {
-  const res = await apiFetch(API_ENDPOINTS.crosshairs.update(id), {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify(data),
+export function getAllPublicCrosshairs(game?: CrosshairGame): Promise<CrosshairWithChannel[]> {
+  return apiJson(withGame(API_ENDPOINTS.crosshairs.allPublic, game), undefined, {
+    fallback: '載入準心失敗',
   })
-  if (!res.ok) throw new Error(`Failed to update crosshair: ${res.statusText}`)
-  return res.json()
+}
+
+export function getCrosshairs(game?: CrosshairGame): Promise<Crosshair[]> {
+  return apiJson(
+    withGame(API_ENDPOINTS.crosshairs.list, game),
+    { credentials: 'include' },
+    { fallback: '載入準心失敗' }
+  )
+}
+
+export function createCrosshair(data: CrosshairCreate): Promise<Crosshair> {
+  return apiJson(
+    API_ENDPOINTS.crosshairs.create,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(data),
+    },
+    { fallback: '新增準心失敗' }
+  )
+}
+
+export function updateCrosshair(id: string, data: CrosshairUpdate): Promise<Crosshair> {
+  return apiJson(
+    API_ENDPOINTS.crosshairs.update(id),
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(data),
+    },
+    { fallback: '更新準心失敗' }
+  )
 }
 
 export async function recordCrosshairCopy(id: string): Promise<void> {
+  // fire-and-forget analytics ping — never surfaces to the user
   await apiFetch(API_ENDPOINTS.crosshairs.copy(id), { method: 'POST' }).catch(() => {})
 }
 
-export async function deleteCrosshair(id: string): Promise<void> {
-  const res = await apiFetch(API_ENDPOINTS.crosshairs.delete(id), {
-    method: 'DELETE',
-    credentials: 'include',
-  })
-  if (!res.ok) throw new Error(`Failed to delete crosshair: ${res.statusText}`)
+export function deleteCrosshair(id: string): Promise<void> {
+  return apiJson(
+    API_ENDPOINTS.crosshairs.delete(id),
+    { method: 'DELETE', credentials: 'include' },
+    { fallback: '刪除準心失敗' }
+  )
 }

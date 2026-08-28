@@ -20,6 +20,7 @@
     "typecheck": "npm run typecheck --prefix frontend && uv run --directory backend mypy .",
     "fix": "npm run lint:fix --prefix frontend && npm run format --prefix frontend && uv run --directory backend ruff check --fix . && uv run --directory backend ruff format .",
     "test": "npm run test:cov --prefix frontend -- --run && uv run --directory backend pytest tests",
+    "nb": "uv run --directory backend python scripts/nb.py",
     "env:gen": "uv run --no-project python scripts/gen_env.py",
     "env:check": "uv run --no-project python scripts/gen_env.py --check",
     "_dc": "docker compose -f docker-compose.yml -f docker-compose.dev.yml"
@@ -39,6 +40,9 @@
   "lint-staged": {
     "*": [
       "secretlint"
+    ],
+    "env.registry.toml": [
+      "uv run --no-project python scripts/gen_env.py --check"
     ],
     "frontend/**/*.{js,jsx,ts,tsx}": [
       "npx --prefix frontend eslint --config frontend/eslint.config.js --cache --cache-location frontend/.cache/eslint/ --fix",

@@ -20,6 +20,7 @@ from fastapi.testclient import TestClient
 
 from core.config import get_settings
 from core.dependencies import get_current_channel_id, get_db_pool, get_twitch_api
+from core.error_handlers import register_exception_handlers
 from routers.events_router import router as _events_router
 
 CHANNEL_ID = "ch-events"
@@ -63,6 +64,7 @@ def _reset_settings():
 
 def _make_client(mock_twitch_api: MagicMock | None = None) -> TestClient:
     app = FastAPI(lifespan=_no_lifespan)
+    register_exception_handlers(app)
     app.include_router(_events_router)
     app.dependency_overrides[get_current_channel_id] = lambda: CHANNEL_ID
     app.dependency_overrides[get_db_pool] = lambda: AsyncMock()
@@ -121,7 +123,7 @@ class TestUpdateEventConfig:
             json={"message_template": "test", "enabled": True},
         )
         assert r.status_code == 400
-        assert "invalid_type" in r.json()["detail"]
+        assert r.json()["error"]["code"] == "EVENT.INVALID"
 
     def test_all_valid_event_types_accepted(self):
         import services.event_config_service as m

@@ -28,6 +28,7 @@ import {
   Skeleton,
 } from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
+import { toastApiError } from '@/lib/toast-error'
 
 import { ActivationCard } from './components/ActivationCard'
 import { BotStatusPanel } from './components/BotStatusPanel'
@@ -103,8 +104,8 @@ export default function AdminPage() {
       })
       setNiibotAuth(updated)
       toast.success('Niibot 授權獎勵已更新')
-    } catch {
-      toast.error('更新失敗')
+    } catch (e) {
+      toastApiError(e, '更新失敗')
     }
   }
 
@@ -117,8 +118,8 @@ export default function AdminPage() {
       // server-side (084's trigger) and re-derives mod_status, neither of
       // which the client can compute from the stale suspended-state record.
       setChannels(await getAdminChannels())
-    } catch {
-      toast.error('恢復失敗')
+    } catch (e) {
+      toastApiError(e, '恢復失敗')
     }
   }
 
@@ -132,9 +133,9 @@ export default function AdminPage() {
         enabled: newEnabled,
       })
       setNiibotAuth(updated)
-    } catch {
+    } catch (e) {
       setNiibotAuth(prev => (prev ? { ...prev, enabled: !newEnabled } : prev))
-      toast.error('切換狀態失敗')
+      toastApiError(e, '切換狀態失敗')
     }
   }
 

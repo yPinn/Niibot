@@ -1,6 +1,8 @@
 import { apiCache } from '@/lib/apiCache'
+import { reportSilent } from '@/lib/clientErrorReporter'
 
 import { API_ENDPOINTS, apiFetch } from './config'
+import { parseApiError } from './errors'
 
 export interface GithubRelease {
   id: number
@@ -21,13 +23,13 @@ export async function getReleases(): Promise<GithubRelease[] | null> {
           credentials: 'include',
         })
         if (!response.ok) {
-          if (import.meta.env.DEV)
-            console.error(`Failed to fetch releases: ${response.status} ${response.statusText}`)
+          reportSilent(await parseApiError(response, '載入版本紀錄失敗'))
           return null
         }
         return (await response.json()) as GithubRelease[]
       } catch (error) {
         if (import.meta.env.DEV) console.error('Failed to get releases:', error)
+        reportSilent(error)
         return null
       }
     },

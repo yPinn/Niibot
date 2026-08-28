@@ -8,11 +8,12 @@ import logging
 from datetime import datetime
 
 from asyncpg import Pool
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from core.config import Settings, get_settings
 from core.dependencies import get_current_user_id, get_db_pool, require_activated
+from shared.errors import InvalidInputError, NotFoundError
 from shared.repositories.donation import DonationRepository
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -20,6 +21,16 @@ LOGGER: logging.Logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/payment-configs", tags=["payment-configs"])
 
 _VALID_PLATFORMS = {"ecpay", "opay", "paypal", "newebpay"}
+
+
+class PaymentConfigNotFoundError(NotFoundError):
+    code = "PAYMENT_CONFIG.NOT_FOUND"
+    user_message = "找不到這個金流設定"
+
+
+class PaymentConfigInvalidError(InvalidInputError):
+    code = "PAYMENT_CONFIG.INVALID"
+    user_message = "金流設定有誤，請檢查後再試"
 
 
 class PaymentConfigUpsert(BaseModel):
@@ -48,24 +59,20 @@ async def list_payment_configs(
     _: None = Depends(require_activated),
 ) -> list[PaymentConfigResponse]:
     """List all payment platform configs for the authenticated streamer."""
-    try:
-        repo = DonationRepository(pool)
-        configs = await repo.list_configs(user_id)
-        return [
-            PaymentConfigResponse(
-                platform=c.platform,
-                merchant_id=c.merchant_id,
-                has_hash=c.has_hash,
-                min_amount=c.min_amount,
-                media_share_enabled=c.media_share_enabled,
-                enabled=c.enabled,
-                updated_at=c.updated_at,
-            )
-            for c in configs
-        ]
-    except Exception:
-        LOGGER.exception(f"Failed to list payment configs for user {user_id}")
-        raise HTTPException(status_code=500, detail="Failed to fetch payment configs") from None
+    repo = DonationRepository(pool)
+    configs = await repo.list_configs(user_id)
+    return [
+        PaymentConfigResponse(
+            platform=c.platform,
+            merchant_id=c.merchant_id,
+            has_hash=c.has_hash,
+            min_amount=c.min_amount,
+            media_share_enabled=c.media_share_enabled,
+            enabled=c.enabled,
+            updated_at=c.updated_at,
+        )
+        for c in configs
+    ]
 
 
 @router.put("/{platform}", response_model=PaymentConfigResponse)
@@ -79,9 +86,8 @@ async def upsert_payment_config(
 ) -> PaymentConfigResponse:
     """Create or update a payment platform config."""
     if platform not in _VALID_PLATFORMS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid platform. Must be one of: {', '.join(sorted(_VALID_PLATFORMS))}",
+        raise PaymentConfigInvalidError(
+            user_message="這個金流平台不在支援清單內", context={"platform": platform}
         )
 
     repo = DonationRepository(pool, settings.payment_encryption_key or None)
@@ -93,37 +99,34 @@ async def upsert_payment_config(
         # Allow omitting keys on update if they're already stored.
         existing = await repo.get_config(user_id, platform)
         if not existing or not existing.hash_key or not existing.hash_iv:
-            raise HTTPException(status_code=400, detail=f"{platform} requires hash_key and hash_iv")
+            raise PaymentConfigInvalidError(
+                user_message="這個金流平台需要填寫完整的金鑰資料",
+                context={"platform": platform},
+            )
         # Preserve existing decrypted values — repo will re-encrypt on write.
         hash_key = existing.hash_key
         hash_iv = existing.hash_iv
 
-    try:
-        config = await repo.upsert_config(
-            user_id=user_id,
-            platform=platform,
-            merchant_id=body.merchant_id,
-            hash_key=hash_key,
-            hash_iv=hash_iv,
-            min_amount=body.min_amount,
-            media_share_enabled=body.media_share_enabled,
-            enabled=body.enabled,
-        )
-        LOGGER.info(f"User {user_id} upserted payment config for platform {platform}")
-        return PaymentConfigResponse(
-            platform=config.platform,
-            merchant_id=config.merchant_id,
-            has_hash=bool(config.hash_key),
-            min_amount=config.min_amount,
-            media_share_enabled=config.media_share_enabled,
-            enabled=config.enabled,
-            updated_at=config.updated_at,
-        )
-    except HTTPException:
-        raise
-    except Exception:
-        LOGGER.exception(f"Failed to upsert payment config for user {user_id} platform {platform}")
-        raise HTTPException(status_code=500, detail="Failed to save payment config") from None
+    config = await repo.upsert_config(
+        user_id=user_id,
+        platform=platform,
+        merchant_id=body.merchant_id,
+        hash_key=hash_key,
+        hash_iv=hash_iv,
+        min_amount=body.min_amount,
+        media_share_enabled=body.media_share_enabled,
+        enabled=body.enabled,
+    )
+    LOGGER.info("payment_config_upserted", extra={"platform": platform})
+    return PaymentConfigResponse(
+        platform=config.platform,
+        merchant_id=config.merchant_id,
+        has_hash=bool(config.hash_key),
+        min_amount=config.min_amount,
+        media_share_enabled=config.media_share_enabled,
+        enabled=config.enabled,
+        updated_at=config.updated_at,
+    )
 
 
 @router.delete("/{platform}")
@@ -135,17 +138,13 @@ async def delete_payment_config(
 ) -> dict[str, str]:
     """Delete a payment platform config."""
     if platform not in _VALID_PLATFORMS:
-        raise HTTPException(status_code=400, detail="Invalid platform")
+        raise PaymentConfigInvalidError(
+            user_message="這個金流平台不在支援清單內", context={"platform": platform}
+        )
 
-    try:
-        repo = DonationRepository(pool)
-        deleted = await repo.delete_config(user_id=user_id, platform=platform)
-        if not deleted:
-            raise HTTPException(status_code=404, detail="Config not found")
-        LOGGER.info(f"User {user_id} deleted payment config for platform {platform}")
-        return {"status": "ok"}
-    except HTTPException:
-        raise
-    except Exception:
-        LOGGER.exception(f"Failed to delete payment config for user {user_id} platform {platform}")
-        raise HTTPException(status_code=500, detail="Failed to delete payment config") from None
+    repo = DonationRepository(pool)
+    deleted = await repo.delete_config(user_id=user_id, platform=platform)
+    if not deleted:
+        raise PaymentConfigNotFoundError(context={"platform": platform})
+    LOGGER.info("payment_config_deleted", extra={"platform": platform})
+    return {"status": "ok"}

@@ -1,6 +1,7 @@
 import { apiCache, CACHE_KEYS } from '@/lib/apiCache'
 
 import { API_ENDPOINTS, apiFetch } from './config'
+import { apiJson } from './errors'
 
 export type Theme = 'dark' | 'light' | 'system'
 
@@ -38,16 +39,16 @@ export async function getCurrentUser(options?: { forceRefresh?: boolean }): Prom
 }
 
 export async function updateUserPreferences(prefs: { theme: Theme }): Promise<void> {
-  const response = await apiFetch(API_ENDPOINTS.user.preferences, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify(prefs),
-  })
-  if (!response.ok) {
-    throw new Error('Failed to update preferences')
-  }
-
+  await apiJson(
+    API_ENDPOINTS.user.preferences,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(prefs),
+    },
+    { fallback: '更新偏好設定失敗' }
+  )
   // Sync cache so refreshUser() won't return stale theme
   apiCache.patch<User>(CACHE_KEYS.CURRENT_USER, user => ({ ...user, ...prefs }))
 }
@@ -105,12 +106,10 @@ export async function getActivationRequestStatus(): Promise<{
 }
 
 export async function logout(): Promise<void> {
-  const response = await apiFetch(API_ENDPOINTS.auth.logout, {
-    method: 'POST',
-    credentials: 'include',
-  })
-  if (!response.ok) {
-    throw new Error('Failed to logout')
-  }
+  await apiJson(
+    API_ENDPOINTS.auth.logout,
+    { method: 'POST', credentials: 'include' },
+    { fallback: '登出失敗' }
+  )
   apiCache.clear()
 }

@@ -22,6 +22,7 @@ from core._session_mixin import _SessionMixin
 from core.config import COMPONENTS_DIR
 from core.pg_listener import pg_listen
 from shared.database import DatabaseManager
+from shared.log_context import bound_log_context
 from shared.repositories.analytics import AnalyticsRepository
 from shared.repositories.channel import ChannelRepository
 from shared.repositories.command_config import (
@@ -260,105 +261,110 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
         LOGGER.info("Token refresh: %d channels [%s]", len(ids), names)
 
     async def event_message(self, payload: twitchio.ChatMessage) -> None:
-        if payload.broadcaster:
-            LOGGER.debug(
-                "[%s#%s]: %s", payload.chatter.name, payload.broadcaster.name, payload.text
-            )
-
-            if payload.broadcaster.id not in self._subscribed_channels:
-                LOGGER.debug(
-                    "Ignoring message from unsubscribed channel: %s", payload.broadcaster.name
-                )
-                return
-
-            # Skip messages that originated in a shared-chat partner's channel —
-            # source_broadcaster is set only when the message came from a different
-            # channel in an active shared-chat session.  The partner's own
-            # subscription fires a separate event where source_broadcaster is None,
-            # so processing there avoids duplicate command responses across channels.
-            if payload.source_broadcaster is not None:
-                LOGGER.debug(
-                    "Skipping shared-chat message from %s seen in %s",
-                    payload.source_broadcaster.name,
-                    payload.broadcaster.name,
-                )
-                return
-
-            channel_id = payload.broadcaster.id
-            chatter_id = payload.chatter.id
-
-            # Ignore bot's own messages — prevents self-triggering loops
-            if chatter_id == self.bot_id:
-                return
-
-            if channel_id in self._needs_reauth:
-                from utils.reauth import CMD_COOLDOWN, reauth_notifier
-
-                is_command = bool(payload.text and payload.text.startswith("!"))
-                await reauth_notifier.notify(
-                    broadcaster_login=payload.broadcaster.name,
-                    channel_id=channel_id,
-                    send_fn=lambda msg: payload.broadcaster.send_message(
-                        message=msg,
-                        sender=self.bot_id,
-                    ),
-                    min_interval=CMD_COOLDOWN if is_command else None,
-                )
-                return
-
-            if channel_id in self._active_sessions:
-                buf = self._chatter_buffers.setdefault(channel_id, {})
-                if chatter_id in buf:
-                    buf[chatter_id]["count"] += 1
-                    buf[chatter_id]["last_at"] = datetime.now(UTC)
-                    buf[chatter_id]["username"] = payload.chatter.name
-                    buf[chatter_id]["display_name"] = payload.chatter.display_name
-                else:
-                    buf[chatter_id] = {
-                        "username": payload.chatter.name,
-                        "display_name": payload.chatter.display_name,
-                        "count": 1,
-                        "last_at": datetime.now(UTC),
-                    }
-                self._channel_line_counts[channel_id] = (
-                    self._channel_line_counts.get(channel_id, 0) + 1
-                )
-
-            # Mod guard: block all functionality until bot has mod in this channel.
-            # Skip notification while the status check is still in-flight.
-            if channel_id not in self._bot_is_mod:
-                if channel_id in self._mod_check_pending:
-                    LOGGER.debug(
-                        "[%s] Mod check in-flight, deferring guard", payload.broadcaster.name
-                    )
-                    return
-                await mod_guard_notifier.notify(
-                    broadcaster_login=payload.broadcaster.name or "",
-                    channel_id=channel_id,
-                    bot_login=self._bot_login,
-                    send_fn=lambda msg: payload.broadcaster.send_message(
-                        message=msg,
-                        sender=self.bot_id,
-                    ),
-                )
-                return
-
-            if payload.text and payload.text.startswith("!"):
-                parts = payload.text.split(maxsplit=1)
-                if parts:
-                    parts[0] = parts[0].lower()
-                    payload.text = " ".join(parts)
-
-            handled = await self._handle_custom_command(payload)
-            if handled:
-                return
-
-            if payload.text and not payload.text.startswith("!"):
-                triggered = await self._handle_message_trigger(payload)
-                if triggered:
-                    return
-        else:
+        if not payload.broadcaster:
             LOGGER.debug("[%s]: %s", payload.chatter.name, payload.text)
+            await super().event_message(payload)
+            return
+
+        # Bind the channel for every log line emitted while this message is
+        # handled (custom commands, triggers, and the twitchio command
+        # dispatch in super().event_message all run inside this scope).
+        with bound_log_context(
+            channel=payload.broadcaster.name,
+            channel_id=payload.broadcaster.id,
+            chatter=payload.chatter.name,
+        ):
+            await self._handle_broadcaster_message(payload)
+
+    async def _handle_broadcaster_message(self, payload: twitchio.ChatMessage) -> None:
+        LOGGER.debug("[%s#%s]: %s", payload.chatter.name, payload.broadcaster.name, payload.text)
+
+        if payload.broadcaster.id not in self._subscribed_channels:
+            LOGGER.debug("Ignoring message from unsubscribed channel: %s", payload.broadcaster.name)
+            return
+
+        # Skip messages that originated in a shared-chat partner's channel —
+        # source_broadcaster is set only when the message came from a different
+        # channel in an active shared-chat session.  The partner's own
+        # subscription fires a separate event where source_broadcaster is None,
+        # so processing there avoids duplicate command responses across channels.
+        if payload.source_broadcaster is not None:
+            LOGGER.debug(
+                "Skipping shared-chat message from %s seen in %s",
+                payload.source_broadcaster.name,
+                payload.broadcaster.name,
+            )
+            return
+
+        channel_id = payload.broadcaster.id
+        chatter_id = payload.chatter.id
+
+        # Ignore bot's own messages — prevents self-triggering loops
+        if chatter_id == self.bot_id:
+            return
+
+        if channel_id in self._needs_reauth:
+            from utils.reauth import CMD_COOLDOWN, reauth_notifier
+
+            is_command = bool(payload.text and payload.text.startswith("!"))
+            await reauth_notifier.notify(
+                broadcaster_login=payload.broadcaster.name,
+                channel_id=channel_id,
+                send_fn=lambda msg: payload.broadcaster.send_message(
+                    message=msg,
+                    sender=self.bot_id,
+                ),
+                min_interval=CMD_COOLDOWN if is_command else None,
+            )
+            return
+
+        if channel_id in self._active_sessions:
+            buf = self._chatter_buffers.setdefault(channel_id, {})
+            if chatter_id in buf:
+                buf[chatter_id]["count"] += 1
+                buf[chatter_id]["last_at"] = datetime.now(UTC)
+                buf[chatter_id]["username"] = payload.chatter.name
+                buf[chatter_id]["display_name"] = payload.chatter.display_name
+            else:
+                buf[chatter_id] = {
+                    "username": payload.chatter.name,
+                    "display_name": payload.chatter.display_name,
+                    "count": 1,
+                    "last_at": datetime.now(UTC),
+                }
+            self._channel_line_counts[channel_id] = self._channel_line_counts.get(channel_id, 0) + 1
+
+        # Mod guard: block all functionality until bot has mod in this channel.
+        # Skip notification while the status check is still in-flight.
+        if channel_id not in self._bot_is_mod:
+            if channel_id in self._mod_check_pending:
+                LOGGER.debug("[%s] Mod check in-flight, deferring guard", payload.broadcaster.name)
+                return
+            await mod_guard_notifier.notify(
+                broadcaster_login=payload.broadcaster.name or "",
+                channel_id=channel_id,
+                bot_login=self._bot_login,
+                send_fn=lambda msg: payload.broadcaster.send_message(
+                    message=msg,
+                    sender=self.bot_id,
+                ),
+            )
+            return
+
+        if payload.text and payload.text.startswith("!"):
+            parts = payload.text.split(maxsplit=1)
+            if parts:
+                parts[0] = parts[0].lower()
+                payload.text = " ".join(parts)
+
+        handled = await self._handle_custom_command(payload)
+        if handled:
+            return
+
+        if payload.text and not payload.text.startswith("!"):
+            triggered = await self._handle_message_trigger(payload)
+            if triggered:
+                return
 
         await super().event_message(payload)
 
@@ -500,7 +506,11 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
         """Suppress CommandNotFound to avoid log noise from unknown commands."""
         if isinstance(payload.exception, CommandNotFound):
             return
-        LOGGER.error("Command error: %s", payload.exception)
+        ctx = getattr(payload, "context", None)
+        command = getattr(getattr(ctx, "command", None), "name", None)
+        channel = getattr(getattr(ctx, "broadcaster", None), "name", None)
+        with bound_log_context(command=command, channel=channel):
+            LOGGER.error("Command error: %s", payload.exception)
 
     # ------------------------------------------------------------------
     # Token management
@@ -555,7 +565,7 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
                 if "user:bot" not in user_info.scopes:
                     LOGGER.warning(
                         "Bot token is missing 'user:bot' scope — bot badge will NOT appear "
-                        "in chat. Re-authorize: python scripts/tw_oauth.py bot"
+                        "in chat. Re-authorize: npm run nb -- twitch oauth --role bot"
                     )
                 else:
                     LOGGER.info("Bot token has 'user:bot' scope — bot badge enabled.")
@@ -610,8 +620,13 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
             if resp.status_code == 200:
                 data = resp.json().get("data", [])
                 if data:
+                    was_mod = channel_id in self._bot_is_mod
                     self._bot_is_mod.add(channel_id)
                     LOGGER.info("[%s] Bot confirmed mod", self._ch(channel_id))
+                    if not was_mod:
+                        # channel.follow needs the bot as moderator — (re)subscribe
+                        # now that mod is confirmed (initial attempt 403s pre-mod).
+                        await self.resubscribe_follow(channel_id)
                 else:
                     LOGGER.info(
                         "[%s] Bot is NOT mod — chat features blocked until /mod is granted",

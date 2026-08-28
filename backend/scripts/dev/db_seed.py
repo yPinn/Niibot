@@ -1,17 +1,19 @@
-"""Generate test session + viewer data for development.
+"""Generate fake session + viewer data for development.
 
-Real-to-fake account ratio: 10 real Twitch accounts / 15 total ≈ 67 %
+    npm run nb -- db seed [channel_id] [n_sessions]        # n_sessions default 15
+    uv run --directory backend python scripts/dev/db_seed.py [channel_id] [n_sessions]
+
+channel_id defaults to the owner channel. ~10 of every 15 accounts use real
+Twitch logins so chatter/event data looks realistic.
 
 Tables written:
   stream_sessions, chatter_stats, stream_events,
   command_stats, viewer_channel_status, viewer_attendance_streaks
-
-Usage:
-  cd backend && python scripts/dev/db_seed.py [channel_id] [n_sessions]
 """
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import random
 import sys
@@ -19,10 +21,15 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # scripts/ for _lib
 
-import asyncpg
-from api.core.config import get_settings
+from _lib import ensure_backend_on_path, load_env, utf8_stdio  # noqa: E402
+
+ensure_backend_on_path()
+utf8_stdio()
+
+import asyncpg  # noqa: E402
+from api.core.config import get_settings  # noqa: E402
 
 # ── Account pool ───────────────────────────────────────────────────────────────
 # Each entry drives realistic chatter_stats + event generation.
@@ -330,6 +337,7 @@ def _rand_offset(min_s: int, max_s: int) -> timedelta:
 
 
 async def seed_test_data(channel_id: str | None = None, n_sessions: int = 15) -> None:
+    load_env("prod")
     settings = get_settings()
     conn = await asyncpg.connect(settings.database_url, statement_cache_size=0)
 
@@ -706,7 +714,21 @@ async def seed_test_data(channel_id: str | None = None, n_sessions: int = 15) ->
         await conn.close()
 
 
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="[dev] generate fake session / viewer data.")
+    parser.add_argument("channel_id", nargs="?", help="target channel (default: owner)")
+    parser.add_argument("n_sessions", nargs="?", type=int, default=15)
+    return parser
+
+
+def run(args: argparse.Namespace) -> int:
+    asyncio.run(seed_test_data(args.channel_id, args.n_sessions))
+    return 0
+
+
+def main() -> int:
+    return run(build_parser().parse_args())
+
+
 if __name__ == "__main__":
-    _channel_id: str | None = sys.argv[1] if len(sys.argv) > 1 else None
-    _n: int = int(sys.argv[2]) if len(sys.argv) > 2 else 15
-    asyncio.run(seed_test_data(_channel_id, _n))
+    raise SystemExit(main())

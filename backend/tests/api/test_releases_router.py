@@ -19,6 +19,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from core.config import get_settings
+from core.error_handlers import register_exception_handlers
 from routers.releases_router import router as _releases_router
 
 _RELEASE_PAYLOAD = [
@@ -66,6 +67,7 @@ def _reset_settings():
 
 def _make_client() -> TestClient:
     app = FastAPI(lifespan=_no_lifespan)
+    register_exception_handlers(app)
     app.include_router(_releases_router)
     return TestClient(app, raise_server_exceptions=False)
 

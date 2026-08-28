@@ -20,13 +20,11 @@ from services.game_queue_service import GameQueueService
 from services.identity_service import IdentityService
 from services.message_trigger_service import MessageTriggerService
 from services.tenant_service import (
-    TenantAccessDeniedError,
     TenantContext,
-    TenantNotFoundError,
     TenantService,
-    TenantSuspendedError,
 )
 from services.timer_service import TimerService
+from shared.log_context import bind_log_context
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -114,6 +112,7 @@ def get_token_payload(auth_token: str | None = Cookie(None)) -> dict:
         LOGGER.warning("Invalid or expired token")
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
+    bind_log_context(user_id=str(payload.get("sub")) if payload.get("sub") else None)
     return payload
 
 
@@ -159,7 +158,9 @@ async def get_current_channel_id(
     should depend on ``require_tenant_access`` instead, which verifies the
     caller actually has a role on the requested channel.
     """
-    return str(payload["platform_user_id"])
+    channel_id = str(payload["platform_user_id"])
+    bind_log_context(channel_id=channel_id)
+    return channel_id
 
 
 async def require_owner(channel_id: str = Depends(get_current_channel_id)) -> str:
@@ -182,16 +183,13 @@ async def require_tenant_access(
     ``require_self_tenant_access`` below.
     """
     user_id = str(payload["sub"])
-    try:
-        return await tenant.assert_access(
-            channel_id=channel_id, user_id=user_id, required_role="manager"
-        )
-    except TenantNotFoundError:
-        raise HTTPException(status_code=404, detail="Channel not found") from None
-    except TenantSuspendedError:
-        raise HTTPException(status_code=403, detail="Channel suspended") from None
-    except TenantAccessDeniedError:
-        raise HTTPException(status_code=403, detail="Not a member of this channel") from None
+    # TenantService raises AppError subclasses (TENANT.*); the global handler
+    # in app.py turns them into the standard envelope with the right status.
+    ctx = await tenant.assert_access(
+        channel_id=channel_id, user_id=user_id, required_role="manager"
+    )
+    bind_log_context(channel_id=ctx.channel_id, role=ctx.role)
+    return ctx
 
 
 async def require_self_tenant_access(
@@ -207,13 +205,8 @@ async def require_self_tenant_access(
     """
     user_id = str(payload["sub"])
     channel_id = str(payload["platform_user_id"])
-    try:
-        return await tenant.assert_access(
-            channel_id=channel_id, user_id=user_id, required_role="manager"
-        )
-    except TenantNotFoundError:
-        raise HTTPException(status_code=404, detail="Channel not found") from None
-    except TenantSuspendedError:
-        raise HTTPException(status_code=403, detail="Channel suspended") from None
-    except TenantAccessDeniedError:
-        raise HTTPException(status_code=403, detail="Not a member of this channel") from None
+    ctx = await tenant.assert_access(
+        channel_id=channel_id, user_id=user_id, required_role="manager"
+    )
+    bind_log_context(channel_id=ctx.channel_id, role=ctx.role)
+    return ctx

@@ -138,9 +138,7 @@ describe('updateUserPreferences', () => {
 
   it('throws when the response is not ok', async () => {
     mockApiFetch.mockResolvedValue(new Response('', { status: 500 }))
-    await expect(updateUserPreferences({ theme: 'dark' })).rejects.toThrow(
-      'Failed to update preferences'
-    )
+    await expect(updateUserPreferences({ theme: 'dark' })).rejects.toThrow('更新偏好設定失敗')
   })
 })
 
@@ -174,7 +172,7 @@ describe('logout', () => {
 
   it('throws when the response is not ok', async () => {
     mockApiFetch.mockResolvedValue(new Response('', { status: 500 }))
-    await expect(logout()).rejects.toThrow('Failed to logout')
+    await expect(logout()).rejects.toThrow('登出失敗')
   })
 
   it('does not clear the cache when the request fails', async () => {

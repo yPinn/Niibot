@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from core.config import get_settings
 from core.database import get_database_manager, init_database_manager
 from core.dependencies import close_twitch_api, require_activated
+from core.error_handlers import log_request_failure, register_exception_handlers
 from core.logging import setup_logging
 from routers import (
     admin_router,
@@ -24,6 +25,7 @@ from routers import (
     auth_router,
     bots_router,
     channels_router,
+    client_errors_router,
     commands_router,
     crosshairs_router,
     discord_webhook_router,
@@ -39,7 +41,10 @@ from routers import (
     video_queue_router,
 )
 from routers.bots_router import close_bots_http_client
+from routers.client_errors_router import client_error_retention_loop
 from shared.database import pool_heartbeat_loop
+from shared.errors import build_envelope
+from shared.log_context import bind_log_context, clear_log_context
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -48,6 +53,7 @@ _start_time: float = 0.0
 _started_at: str = ""
 _pool_heartbeat_task: asyncio.Task | None = None
 _db_retry_task: asyncio.Task | None = None
+_client_error_retention_task: asyncio.Task | None = None
 _APP_VERSION = os.getenv("APP_VERSION", "dev")
 _REQUEST_TIMEOUT = 30.0
 
@@ -78,6 +84,7 @@ async def _db_retry_loop(db_manager) -> None:
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Handle startup and shutdown"""
     global _start_time, _started_at, _pool_heartbeat_task, _db_retry_task
+    global _client_error_retention_task
     _start_time = time.time()
     _started_at = datetime.now(UTC).isoformat()
 
@@ -114,6 +121,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Start pool heartbeat to detect and recover dead connections
     _pool_heartbeat_task = asyncio.create_task(pool_heartbeat_loop(db_manager))
 
+    # Daily prune of the client_errors telemetry table
+    _client_error_retention_task = asyncio.create_task(client_error_retention_loop(db_manager))
+
     yield
 
     # Shutdown
@@ -122,6 +132,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         _db_retry_task.cancel()
     if _pool_heartbeat_task:
         _pool_heartbeat_task.cancel()
+    if _client_error_retention_task:
+        _client_error_retention_task.cancel()
     try:
         await close_twitch_api()
         await close_bots_http_client()
@@ -148,18 +160,19 @@ def create_app() -> FastAPI:
         redoc_url="/redoc" if settings.is_development else None,
     )
 
-    # Configure CORS — explicit list avoids exposing unnecessary methods/headers
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=settings.cors_origins,
-        allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        allow_headers=["Content-Type", "Cookie", "X-Request-ID"],
-    )
+    # ── Middleware & error handling ─────────────────────────────────────
+    #
+    # FastAPI prepends middleware, so the LAST one registered is the
+    # OUTERMOST. Target order, outer → inner:
+    #
+    #   CORS → request context → catch-all 500 → timeout → security headers
+    #
+    # CORS must be outermost so that error responses (500 / 504) still carry
+    # Access-Control-Allow-Origin. Otherwise a cross-origin frontend sees a
+    # bare network error and cannot read the body or the X-Request-ID header
+    # it needs to report the failure.
 
-    # ── Middleware stack (innermost registered first) ────────────────────
-
-    # 1. Security headers (innermost — runs last on request, first on response)
+    # innermost — security headers
     @app.middleware("http")
     async def add_security_headers(request: Request, call_next) -> Response:
         response: Response = await call_next(request)
@@ -172,41 +185,75 @@ def create_app() -> FastAPI:
             response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
         return response
 
-    # 2. Request ID — accept upstream ID or generate; echoed in every response
-    @app.middleware("http")
-    async def add_request_id(request: Request, call_next) -> Response:
-        request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
-        request.state.request_id = request_id
-        response = await call_next(request)
-        response.headers["X-Request-ID"] = request_id
-        return response
-
-    # 3. Request timeout (outermost — wraps everything; returns 504 on breach)
+    # request timeout → 504
     @app.middleware("http")
     async def request_timeout(request: Request, call_next) -> Response:
         try:
             return await asyncio.wait_for(call_next(request), timeout=_REQUEST_TIMEOUT)
         except TimeoutError:
-            rid = getattr(request.state, "request_id", "-")
-            LOGGER.warning("Request timed out [%s]: %s %s", rid, request.method, request.url.path)
+            rid = getattr(request.state, "request_id", None)
+            log_request_failure(request, code="HTTP.504", status=504, level=logging.WARNING)
             return JSONResponse(
                 status_code=504,
-                content={"detail": "Request timed out"},
-                headers={"X-Request-ID": rid},
+                content=build_envelope(
+                    code="HTTP.504",
+                    message="伺服器處理時間過長，請稍後再試",
+                    request_id=rid,
+                ),
             )
 
-    # ── Global exception handler ─────────────────────────────────────────
-    # Catches any exception that escapes FastAPI's built-in HTTPException /
-    # ValidationError handlers.  Logs with request ID so the 500 is traceable.
-    @app.exception_handler(Exception)
-    async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-        rid = getattr(request.state, "request_id", "-")
-        LOGGER.exception("Unhandled exception [%s]: %s %s", rid, request.method, request.url.path)
-        return JSONResponse(
-            status_code=500,
-            content={"detail": "Internal server error"},
-            headers={"X-Request-ID": rid},
+    # catch-all — anything with no registered handler. Runs *inside* CORS so
+    # the 500 response is CORS-decorated (unlike Starlette's built-in 500).
+    @app.middleware("http")
+    async def catch_unhandled(request: Request, call_next) -> Response:
+        try:
+            return await call_next(request)
+        except Exception as exc:  # noqa: BLE001 — deliberate boundary
+            rid = getattr(request.state, "request_id", None)
+            log_request_failure(request, code="INTERNAL.UNEXPECTED", status=500, exc=exc)
+            return JSONResponse(
+                status_code=500,
+                content=build_envelope(
+                    code="INTERNAL.UNEXPECTED",
+                    message="系統暫時出了點狀況，請稍後再試",
+                    request_id=rid,
+                ),
+            )
+
+    # request context — accept upstream ID or generate; echoed on every
+    # response, including the 500 / 504 built above. Binds the id (+ method
+    # / path) into the log context so every line emitted while handling the
+    # request carries it. clear_log_context() guards against a reused worker
+    # leaking a previous request's user_id.
+    @app.middleware("http")
+    async def add_request_context(request: Request, call_next) -> Response:
+        request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+        request.state.request_id = request_id
+        clear_log_context()
+        bind_log_context(
+            request_id=request_id,
+            http_method=request.method,
+            http_path=request.url.path,
         )
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request_id
+        return response
+
+    # outermost — CORS
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origins,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Content-Type", "Cookie", "X-Request-ID"],
+        expose_headers=["X-Request-ID"],
+    )
+
+    # ── Exception handlers ──────────────────────────────────────────────
+    # Run in Starlette's ExceptionMiddleware (inside every HTTP middleware),
+    # so responses pass back out through CORS. Same set is installed on
+    # throwaway apps in router tests. See core/error_handlers.py.
+    register_exception_handlers(app)
 
     _activated = [Depends(require_activated)]
 
@@ -215,6 +262,7 @@ def create_app() -> FastAPI:
     app.include_router(discord_webhook_router.router)
     app.include_router(auth_router.router)
     app.include_router(donation_router.router)
+    app.include_router(client_errors_router.router)
     # Admin router — gated by stricter require_owner inside the router itself
     app.include_router(admin_router.router)
     # Fully-private routers — every endpoint requires an activated account

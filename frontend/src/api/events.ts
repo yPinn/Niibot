@@ -1,4 +1,5 @@
 import { API_ENDPOINTS, apiFetch } from './config'
+import { apiJson } from './errors'
 
 export interface EventConfig {
   id: number
@@ -35,37 +36,41 @@ export interface RedemptionConfigUpdate {
   enabled: boolean
 }
 
-export async function getEventConfigs(): Promise<EventConfig[]> {
-  const response = await apiFetch(API_ENDPOINTS.events.configs, {
-    credentials: 'include',
-  })
-  if (!response.ok) throw new Error(`Failed to fetch event configs: ${response.statusText}`)
-  return response.json()
+export function getEventConfigs(): Promise<EventConfig[]> {
+  return apiJson(
+    API_ENDPOINTS.events.configs,
+    { credentials: 'include' },
+    { fallback: '載入事件設定失敗' }
+  )
 }
 
-export async function updateEventConfig(
+export function updateEventConfig(
   eventType: string,
   data: EventConfigUpdate
 ): Promise<EventConfig> {
-  const response = await apiFetch(API_ENDPOINTS.events.updateConfig(eventType), {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify(data),
-  })
-  if (!response.ok) throw new Error(`Failed to update event config: ${response.statusText}`)
-  return response.json()
+  return apiJson(
+    API_ENDPOINTS.events.updateConfig(eventType),
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(data),
+    },
+    { fallback: '更新事件設定失敗' }
+  )
 }
 
-export async function toggleEventConfig(eventType: string, enabled: boolean): Promise<EventConfig> {
-  const response = await apiFetch(API_ENDPOINTS.events.toggleConfig(eventType), {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify({ enabled }),
-  })
-  if (!response.ok) throw new Error(`Failed to toggle event config: ${response.statusText}`)
-  return response.json()
+export function toggleEventConfig(eventType: string, enabled: boolean): Promise<EventConfig> {
+  return apiJson(
+    API_ENDPOINTS.events.toggleConfig(eventType),
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ enabled }),
+    },
+    { fallback: '切換事件設定失敗' }
+  )
 }
 
 // ---- Twitch Rewards ----
@@ -78,6 +83,7 @@ export class NonPartnerError extends Error {
 }
 
 export async function getTwitchRewards(): Promise<TwitchReward[]> {
+  // 403 here means "not affiliate/partner", a normal state — not an error toast.
   const response = await apiFetch(API_ENDPOINTS.events.twitchRewards, {
     credentials: 'include',
   })
@@ -88,24 +94,26 @@ export async function getTwitchRewards(): Promise<TwitchReward[]> {
 
 // ---- Redemption Configs ----
 
-export async function getRedemptionConfigs(): Promise<RedemptionConfig[]> {
-  const response = await apiFetch(API_ENDPOINTS.events.redemptions, {
-    credentials: 'include',
-  })
-  if (!response.ok) throw new Error(`Failed to fetch redemption configs: ${response.statusText}`)
-  return response.json()
+export function getRedemptionConfigs(): Promise<RedemptionConfig[]> {
+  return apiJson(
+    API_ENDPOINTS.events.redemptions,
+    { credentials: 'include' },
+    { fallback: '載入兌換設定失敗' }
+  )
 }
 
-export async function updateRedemptionConfig(
+export function updateRedemptionConfig(
   actionType: string,
   data: RedemptionConfigUpdate
 ): Promise<RedemptionConfig> {
-  const response = await apiFetch(API_ENDPOINTS.events.updateRedemption(actionType), {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify(data),
-  })
-  if (!response.ok) throw new Error(`Failed to update redemption config: ${response.statusText}`)
-  return response.json()
+  return apiJson(
+    API_ENDPOINTS.events.updateRedemption(actionType),
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(data),
+    },
+    { fallback: '更新兌換設定失敗' }
+  )
 }

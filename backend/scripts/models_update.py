@@ -1,17 +1,12 @@
 #!/usr/bin/env python3
-"""Fetch current free models from OpenRouter and update twitch/free_models.json.
+"""Refresh backend/data/free_models.json from OpenRouter's free-model list.
 
-Usage (from backend/ directory):
-    uv run python scripts/update_free_models.py
-    uv run python scripts/update_free_models.py --with-uptime   # fetch uptime per model (slower)
+    npm run nb -- models update [--with-uptime]     # --with-uptime is slower
+    uv run --directory backend python scripts/models_update.py [--with-uptime]
 
-The script:
-- Fetches /api/v1/models and filters free (:free) models
-- Optionally enriches each with uptime from /api/v1/models/{id}/endpoints
-- Merges with existing free_models.json (preserves enabled/rpd/rpm/note)
-- Adds newly appeared models as disabled (require manual review)
-- Removes models that no longer exist on OpenRouter
-- Writes sorted result back to twitch/free_models.json
+Merges into the existing file: keeps enabled/rpd/rpm/note, adds new models as
+disabled (need manual review), drops models OpenRouter no longer lists.
+--with-uptime enriches each entry via /api/v1/models/{id}/endpoints.
 """
 
 from __future__ import annotations
@@ -77,15 +72,17 @@ def _is_low_quality(model_id: str) -> bool:
     return any(p in lower for p in LOW_QUALITY_PATTERNS)
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Update free_models.json")
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Refresh data/free_models.json")
     parser.add_argument(
         "--with-uptime",
         action="store_true",
         help="Fetch uptime for each model (adds ~1s per model)",
     )
-    args = parser.parse_args()
+    return parser
 
+
+def run(args: argparse.Namespace) -> int:
     print("Fetching model list from OpenRouter...")
     data = _fetch(MODELS_URL)
     all_models = data.get("data", [])
@@ -179,7 +176,12 @@ def main() -> None:
 
     print(f"\nDone. {len(merged)} models written to {OUTPUT} (+{added} new, -{removed} removed)")
     print("Review newly added models and set enabled=true as appropriate.")
+    return 0
+
+
+def main() -> int:
+    return run(build_parser().parse_args())
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

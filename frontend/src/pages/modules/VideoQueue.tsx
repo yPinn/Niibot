@@ -49,6 +49,7 @@ import {
 import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { usePolling } from '@/hooks/usePolling'
+import { toastApiError } from '@/lib/toast-error'
 
 import { QueueTable, SourceBadge } from './videoQueue/QueueTable'
 import {
@@ -116,8 +117,8 @@ export default function VideoQueue() {
       const updated = await updateVideoQueueSettings({ enabled })
       setSettings(updated)
       toast.success(enabled ? '影片佇列已啟用' : '影片佇列已停用')
-    } catch {
-      toast.error('更新失敗')
+    } catch (e) {
+      toastApiError(e, '更新失敗')
     }
   }
 
@@ -126,8 +127,8 @@ export default function VideoQueue() {
       const updated = await updateVideoQueueSettings({ redemption_enabled })
       setSettings(updated)
       toast.success(redemption_enabled ? '點數兌換已開啟' : '點數兌換已關閉')
-    } catch {
-      toast.error('更新失敗')
+    } catch (e) {
+      toastApiError(e, '更新失敗')
     }
   }
 
@@ -160,8 +161,8 @@ export default function VideoQueue() {
       })
       setSettings(updated)
       toast.success('設定已儲存')
-    } catch {
-      toast.error('更新失敗')
+    } catch (e) {
+      toastApiError(e, '更新失敗')
     } finally {
       setSaving(false)
     }
@@ -172,8 +173,8 @@ export default function VideoQueue() {
       const newState = await skipCurrentVideo()
       setState(newState)
       toast.success('已跳過當前影片')
-    } catch {
-      toast.error('跳過失敗')
+    } catch (e) {
+      toastApiError(e, '跳過失敗')
     }
   }
 
@@ -182,8 +183,8 @@ export default function VideoQueue() {
       const newState = await clearVideoQueue()
       setState(newState)
       toast.success('已清空隊列')
-    } catch {
-      toast.error('清空失敗')
+    } catch (e) {
+      toastApiError(e, '清空失敗')
     }
   }
 
@@ -192,8 +193,8 @@ export default function VideoQueue() {
       const newState = await setVideoAsNext(entryId)
       setState(newState)
       toast.success('已移至下一首')
-    } catch {
-      toast.error('排序失敗')
+    } catch (e) {
+      toastApiError(e, '排序失敗')
     }
   }
 
@@ -202,8 +203,8 @@ export default function VideoQueue() {
       const newState = await playVideoNow(entryId)
       setState(newState)
       toast.success('已插播')
-    } catch {
-      toast.error('插播失敗')
+    } catch (e) {
+      toastApiError(e, '插播失敗')
     }
   }
 
@@ -212,8 +213,8 @@ export default function VideoQueue() {
       const newState = await removeQueueEntry(entryId)
       setState(newState)
       toast.success('已移除')
-    } catch {
-      toast.error('移除失敗')
+    } catch (e) {
+      toastApiError(e, '移除失敗')
     }
   }
 
@@ -232,7 +233,7 @@ export default function VideoQueue() {
       setAddUrlInput('')
       toast.success('已加入隊列')
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '新增失敗')
+      toastApiError(e, '新增失敗')
     } finally {
       setAdding(false)
     }

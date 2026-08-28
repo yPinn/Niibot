@@ -24,6 +24,7 @@ from fastapi.testclient import TestClient
 
 from core.config import get_settings
 from core.dependencies import get_current_channel_id, get_db_pool, require_activated
+from core.error_handlers import register_exception_handlers
 from routers.message_triggers_router import router as _triggers_router
 
 _CHANNEL_ID = "test-channel-123"
@@ -53,6 +54,7 @@ async def _no_lifespan(app: FastAPI):
 
 def _make_client(service_mock: MagicMock | None = None) -> TestClient:
     app = FastAPI(lifespan=_no_lifespan)
+    register_exception_handlers(app)
     app.include_router(_triggers_router)
 
     pool = AsyncMock()
@@ -70,6 +72,7 @@ def _make_client(service_mock: MagicMock | None = None) -> TestClient:
 def _make_client_not_activated() -> TestClient:
     """Client where require_activated rejects the caller, for gate tests."""
     app = FastAPI(lifespan=_no_lifespan)
+    register_exception_handlers(app)
     app.include_router(_triggers_router)
 
     app.dependency_overrides[get_db_pool] = lambda: AsyncMock()
@@ -131,7 +134,7 @@ class TestCreateTriggerRegexValidation:
             },
         )
         assert r.status_code == 400
-        assert "regex" in r.json()["detail"].lower()
+        assert r.json()["error"]["code"] == "TRIGGER.INVALID"
 
     def test_regex_too_long_returns_400(self):
         """Regex patterns over 200 chars must be rejected."""
@@ -146,7 +149,7 @@ class TestCreateTriggerRegexValidation:
             },
         )
         assert r.status_code == 400
-        assert "200" in r.json()["detail"]
+        assert r.json()["error"]["code"] == "TRIGGER.INVALID"
 
     def test_non_regex_match_type_skips_validation(self):
         """startswith/contains/exact patterns are not regex-validated."""
@@ -211,7 +214,7 @@ class TestUpdateTriggerRegexValidation:
             json={"match_type": "regex", "pattern": "[invalid("},
         )
         assert r.status_code == 400
-        assert "regex" in r.json()["detail"].lower()
+        assert r.json()["error"]["code"] == "TRIGGER.INVALID"
 
     def test_pattern_only_existing_non_regex_skips_validation(self):
         """Pattern-only update when existing match_type is 'startswith' → no regex check."""
@@ -251,7 +254,7 @@ class TestUpdateTriggerRegexValidation:
                 json={"pattern": "[invalid("},
             )
         assert r.status_code == 400
-        assert "regex" in r.json()["detail"].lower()
+        assert r.json()["error"]["code"] == "TRIGGER.INVALID"
 
     def test_match_type_only_no_pattern_skips_validation(self):
         """Sending only match_type=regex (no pattern) must not attempt validation."""
@@ -418,7 +421,8 @@ class TestCreateTriggerErrors:
                 json={"trigger_name": "dup", "pattern": "hi", "response": "ok"},
             )
         assert r.status_code == 400
-        assert "duplicate" in r.json()["detail"]
+        assert r.json()["error"]["code"] == "TRIGGER.INVALID"
+        assert "duplicate" not in r.text
 
     def test_generic_exception_returns_500(self):
         import unittest.mock as um
@@ -455,7 +459,8 @@ class TestUpdateTriggerErrors:
         ):
             r = _make_client().put("/api/triggers/configs/mytest", json={"enabled": True})
         assert r.status_code == 400
-        assert "bad value" in r.json()["detail"]
+        assert r.json()["error"]["code"] == "TRIGGER.INVALID"
+        assert "bad value" not in r.text
 
     def test_generic_exception_returns_500(self):
         import unittest.mock as um

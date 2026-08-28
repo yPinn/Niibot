@@ -68,6 +68,15 @@ export function formatWatchHours(sec: number): string {
   return `${(sec / 3600).toFixed(1)}h`
 }
 
+/** "剛剛" / "N 分鐘前" / "N 小時前" / "N 天前" — sub-day granularity. */
+export function formatRelativeTime(iso: string): string {
+  const secs = Math.floor((Date.now() - new Date(iso).getTime()) / 1000)
+  if (secs < 60) return '剛剛'
+  if (secs < 3600) return `${Math.floor(secs / 60)} 分鐘前`
+  if (secs < 86_400) return `${Math.floor(secs / 3600)} 小時前`
+  return `${Math.floor(secs / 86_400)} 天前`
+}
+
 export function formatRelativeDays(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime()
   const days = Math.floor(diff / 86_400_000)

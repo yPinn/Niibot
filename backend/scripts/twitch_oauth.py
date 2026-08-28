@@ -1,25 +1,23 @@
 #!/usr/bin/env python3
-"""Twitch OAuth 工具 — 生成授權 URL、接收回調、交換 token 並寫入資料庫。
+"""Twitch OAuth 工具 — 開瀏覽器授權、收 callback、換 token 寫入 DB tokens 表。
 
-Usage:
-    python scripts/tw_oauth.py [env] [role]
+何時用: 首次設定、token 被撤銷、或新增 scope 後需重新授權。跑完重啟對應 bot 生效。
+前置: Twitch dev console 的 OAuth Redirect URLs 需含 http://localhost:3000/callback
 
-    env   — prod | staging        (省略則互動選擇)
-    role  — bot | broadcaster     (省略則互動選擇)
+用法（擇一；--env / --role 省略則進互動選單）:
+    npm run nb -- twitch oauth [--env prod|staging] [--role bot|broadcaster]
+    uv run --directory backend python scripts/twitch_oauth.py [--env ...] [--role ...]
 
-    參數順序不拘，例如:
-        python scripts/tw_oauth.py staging bot
-        python scripts/tw_oauth.py bot staging
-        python scripts/tw_oauth.py staging       # 僅指定 env，互動選 role
-        python scripts/tw_oauth.py               # 全互動
+    --env    prod    → shared.env         + twitch/.env
+             staging → shared.staging.env + twitch/.env.staging
+    --role   bot | broadcaster   決定請求的 scope 集合（見 twitch.core.config）
 
-Env files:
-    prod    → shared.env            + twitch/.env
-    staging → shared.staging.env   + twitch/.env.staging
+直接跑時亦接受舊式位置參數（順序不拘），例: ... scripts/twitch_oauth.py staging bot
 """
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import os
 import socket
@@ -30,15 +28,14 @@ from pathlib import Path
 from threading import Event, Thread
 from urllib.parse import parse_qs, quote, urlparse
 
-# Ensure backend/ is on sys.path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # backend/ for twitch.*
 
 import asyncpg
 import httpx
-from dotenv import load_dotenv
+from _lib import load_env, utf8_stdio
 from twitch.core.config import BOT_SCOPES, BROADCASTER_SCOPES
 
-_backend = Path(__file__).resolve().parent.parent
+utf8_stdio()
 
 LISTEN_PORT = 3000
 REDIRECT_URI = f"http://localhost:{LISTEN_PORT}/callback"
@@ -250,19 +247,10 @@ def wait_for_callback() -> tuple[str | None, str | None]:
 
 
 # ---------------------------------------------------------------------------
-# Config tables
+# Config tables  (env-file resolution lives in _lib.load_env)
 # ---------------------------------------------------------------------------
 
-ENVS: dict[str, tuple[Path, Path | None]] = {
-    "prod": (
-        _backend / "shared.env",
-        _backend / "twitch" / ".env",
-    ),
-    "staging": (
-        _backend / "shared.staging.env",
-        _backend / "twitch" / ".env.staging",
-    ),
-}
+ENVS = ("prod", "staging")
 
 ROLES: dict[str, tuple[str, list[str]]] = {
     "bot": ("Bot", BOT_SCOPES),
@@ -289,34 +277,31 @@ def _pick(prompt: str, choices: dict[str, str]) -> str:
             return raw
 
 
-def parse_args() -> tuple[str, str]:
-    """Parse env + role from argv (order-independent); prompt for any missing."""
-    args = sys.argv[1:]
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Twitch OAuth token generator.")
+    parser.add_argument("--env", choices=ENVS, help="prod | staging (interactive if omitted)")
+    parser.add_argument(
+        "--role", choices=tuple(ROLES), help="bot | broadcaster (interactive if omitted)"
+    )
+    # Legacy positional form: `twitch_oauth.py staging bot` (order-independent).
+    parser.add_argument("legacy", nargs="*", help=argparse.SUPPRESS)
+    return parser
 
-    env: str | None = None
-    role: str | None = None
-    unknown: list[str] = []
 
-    for arg in args:
-        if arg in ENVS:
-            env = arg
-        elif arg in ROLES:
-            role = arg
+def _resolve_env_role(args: argparse.Namespace) -> tuple[str, str]:
+    """Resolve env + role from flags / legacy positionals; prompt for any missing."""
+    env: str | None = args.env
+    role: str | None = args.role
+    for tok in getattr(args, "legacy", []):  # legacy positionals — standalone only
+        if tok in ENVS:
+            env = env or tok
+        elif tok in ROLES:
+            role = role or tok
         else:
-            unknown.append(arg)
-
-    if unknown:
-        fail(
-            f"未知參數: {', '.join(unknown)}\n"
-            f"  可用環境: {', '.join(ENVS)}\n"
-            f"  可用角色: {', '.join(ROLES)}"
-        )
+            fail(f"未知參數: {tok}\n  可用環境: {', '.join(ENVS)}\n  可用角色: {', '.join(ROLES)}")
 
     if env is None or role is None:
-        print()
-        print(bold("Twitch OAuth 授權工具"))
-        print()
-
+        print(f"\n{bold('Twitch OAuth 授權工具')}\n")
     if env is None:
         env = _pick(
             "選擇環境",
@@ -325,7 +310,6 @@ def parse_args() -> tuple[str, str]:
                 "staging": "shared.staging.env + twitch/.env.staging",
             },
         )
-
     if role is None:
         role = _pick(
             "選擇角色",
@@ -334,7 +318,6 @@ def parse_args() -> tuple[str, str]:
                 "broadcaster": "channel:bot, channel:read:subscriptions …",
             },
         )
-
     return env, role
 
 
@@ -343,17 +326,9 @@ def parse_args() -> tuple[str, str]:
 # ---------------------------------------------------------------------------
 
 
-def main() -> None:
-    env, role = parse_args()
-
-    shared_env, twitch_env = ENVS[env]
-    load_dotenv(shared_env)
-    if env == "prod":
-        load_dotenv(_backend / "shared.env.local", override=True)
-    elif env == "staging":
-        load_dotenv(_backend / "shared.staging.env.local", override=True)
-    if twitch_env:
-        load_dotenv(twitch_env, override=True)
+def run(args: argparse.Namespace) -> int:
+    env, role = _resolve_env_role(args)
+    load_env(env, service="twitch")
 
     client_id = os.getenv("TWITCH_CLIENT_ID")
     client_secret = os.getenv("TWITCH_CLIENT_SECRET")
@@ -446,7 +421,12 @@ def main() -> None:
     print()
     print(f"  {green('✓')} {bold('完成')} — {login} 的 token 已更新，重啟 bot 後生效。")
     print()
+    return 0
+
+
+def main() -> int:
+    return run(build_parser().parse_args())
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Unified env file manager.
 #
-# Usage: bash scripts/env.sh <command> [options]
+# Preferred: npm run nb -- env <command>   (nb env also routes gen/check to gen_env.py)
+# Direct:    bash scripts/env.sh <command> [options]
 #
 #   init      [-f]              Copy .env.example → .env  (skip existing; -f overwrites)
 #   snapshot  [--keep N]        Snapshot live env files to data/env/YYYYMMDD/
@@ -329,7 +330,7 @@ case "$CMD" in
   clean)    cmd_clean    "$@" ;;
   *)
     cat <<'EOF'
-Usage: bash scripts/env.sh <command> [options]
+Usage: npm run nb -- env <command>   (or: bash scripts/env.sh <command> [options])
 
   init      [-f]              Copy .env.example → .env  (skip existing; -f overwrites)
   snapshot  [--keep N]        Snapshot live env files to data/env/YYYYMMDD/

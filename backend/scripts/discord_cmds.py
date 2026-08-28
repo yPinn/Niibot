@@ -1,13 +1,14 @@
 """Manage Discord slash commands: list, clear, sync, or diff.
 
-Usage:
-    uv run scripts/dc.py ls    [--prod] [--guild ID]
-    uv run scripts/dc.py diff  [--prod] [--guild ID] [--global]
-    uv run scripts/dc.py sync  [--prod] [--guild ID] [--global] [--yes]   # alias: init
-    uv run scripts/dc.py rm    [--prod] [--guild ID] [--global] [--yes]
+    npm run nb -- discord {ls|diff|sync|rm} [--prod] [--guild ID] [--global] [-y]
+    uv run --directory backend python scripts/discord_cmds.py {ls|diff|sync|rm} [...]
+
+    ls    list registered commands       diff  preview what sync would change
+    sync  push the tree to Discord       rm    clear registered commands
 
 Scope resolution: --global forces global; otherwise --guild overrides the
 DISCORD_GUILD_ID from the env file; otherwise that env value is used.
+(Run `... --help` for which flags each subcommand accepts.)
 """
 
 import argparse
@@ -281,30 +282,43 @@ def _confirm(action: str, guild_id: str | None, assume_yes: bool) -> bool:
     return input(f"{prompt} [y/N] ").strip().lower() == "y"
 
 
-async def main() -> None:
-    args = _build_parser().parse_args()
+async def _run(args: argparse.Namespace) -> int:
+    # standalone parser sets `action`; nb sets `dc_action`
+    action = getattr(args, "action", None) or getattr(args, "dc_action", "")
+    assert action in ("ls", "diff", "sync", "rm"), f"unknown action {action!r}"
 
     label = "PRODUCTION" if args.prod else "DEV"
     env_file = ".env.production" if args.prod else ".env"
-    verb = {"ls": "Listing", "rm": "Clearing", "sync": "Syncing", "diff": "Diffing"}[args.action]
+    verb = {"ls": "Listing", "rm": "Clearing", "sync": "Syncing", "diff": "Diffing"}[action]
     print(f"[{label}] {verb} commands...")
     print(f"Config: {env_file}")
 
     token, env_guild_id = load_env(args.prod)
     guild_id = resolve_guild(args, env_guild_id)
 
-    if args.action in ("rm", "sync") and not _confirm(args.action, guild_id, args.yes):
+    if action in ("rm", "sync") and not _confirm(action, guild_id, getattr(args, "yes", False)):
         print("Aborted.")
-        sys.exit(0)
+        return 0
 
-    bot = _Runner(args.action, guild_id)
+    bot = _Runner(action, guild_id)
     async with bot:
         await bot.start(token)
-    sys.exit(bot.exit_code)
+    return bot.exit_code
+
+
+def run(args: argparse.Namespace) -> int:
+    try:
+        return asyncio.run(_run(args))
+    except KeyboardInterrupt:
+        return 130
+
+
+def main() -> int:
+    return run(_build_parser().parse_args())
 
 
 if __name__ == "__main__":
     try:
-        asyncio.run(main())
+        raise SystemExit(main())
     except KeyboardInterrupt:
         pass

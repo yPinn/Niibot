@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Staging environment management.
 #
-# Usage: bash scripts/staging.sh <command> [options]
+# Preferred: npm run nb -- staging <command>
+# Direct:    bash scripts/staging.sh <command> [options]
 #
 #   up [profile]          Start staging  (profiles: api | twitch | discord | bots | full)
 #   down                  Stop all, preserve volumes
@@ -99,6 +100,6 @@ case "$CMD" in
     ;;
 
   *)
-    sed -n '/^# Usage/,/^# Profiles/{ /^#/{ s/^# \?//; p } }' "$0"
+    sed -n '/^# Preferred/,/^# Profiles/{ /^#/{ s/^# \?//; p } }' "$0"
     ;;
 esac

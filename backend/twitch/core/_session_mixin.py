@@ -268,12 +268,23 @@ class _SessionMixin:
     # Watch-time tracking
     # ------------------------------------------------------------------
 
-    async def _fetch_chatters(self, channel_id: str, token: str) -> list[dict]:
+    async def _fetch_chatters(self, channel_id: str) -> list[dict]:
         """Fetch all current chatroom members via /helix/chat/chatters.
+
+        Uses the bot's own token (master-slave: the bot reads chatters as a
+        moderator, so `moderator:read:followers`/`moderator:read:chatters` live
+        on the bot, not the broadcaster). Requires the bot to be a mod of the
+        channel — a 401/403 is logged and skipped, and self-heals once the bot
+        is granted mod.
 
         Returns list of {"user_id", "user_login", "user_name"}.
         Paginates automatically; skips on non-200 response.
         """
+        bot_token = await self.channels.get_token(self._bot_id, "bot")  # type: ignore[attr-defined]
+        if not bot_token:
+            LOGGER.debug("No bot token, skipping watch time for %s", self._ch(channel_id))  # type: ignore[attr-defined]
+            return []
+
         viewers: list[dict] = []
         cursor: str | None = None
 
@@ -281,7 +292,7 @@ class _SessionMixin:
             while True:
                 params: dict = {
                     "broadcaster_id": channel_id,
-                    "moderator_id": channel_id,
+                    "moderator_id": self._bot_id,  # type: ignore[attr-defined]
                     "first": 1000,
                 }
                 if cursor:
@@ -291,7 +302,7 @@ class _SessionMixin:
                     "https://api.twitch.tv/helix/chat/chatters",
                     headers={
                         "Client-Id": self._client_id,  # type: ignore[attr-defined]
-                        "Authorization": f"Bearer {token}",
+                        "Authorization": f"Bearer {bot_token.token}",
                     },
                     params=params,
                 )
@@ -318,11 +329,7 @@ class _SessionMixin:
         await asyncio.sleep(_interval)
 
         async def _process_channel(channel_id: str, session_id: int) -> None:
-            token_obj = await self.channels.get_token(channel_id)  # type: ignore[attr-defined]
-            if not token_obj:
-                LOGGER.debug(f"No token for channel {self._ch(channel_id)}, skipping watch time")  # type: ignore[attr-defined]
-                return
-            viewers = await self._fetch_chatters(channel_id, token_obj.token)
+            viewers = await self._fetch_chatters(channel_id)
             if not viewers:
                 return
             async with _sem:

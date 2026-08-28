@@ -26,6 +26,7 @@ from core.dependencies import (
     require_activated,
     require_self_tenant_access,
 )
+from core.error_handlers import register_exception_handlers
 from routers.commands_router import router as _commands_router
 from services import TenantContext
 
@@ -76,6 +77,7 @@ def _reset_settings():
 
 def _make_client(mock_twitch_api: MagicMock | None = None) -> TestClient:
     app = FastAPI(lifespan=_no_lifespan)
+    register_exception_handlers(app)
     app.include_router(_commands_router)
     app.dependency_overrides[require_activated] = lambda: None
     app.dependency_overrides[get_current_channel_id] = lambda: CHANNEL_ID
@@ -151,7 +153,7 @@ class TestCreateCustomCommand:
             json={"command_name": "test", "custom_response": "hi", "min_role": "admin"},
         )
         assert r.status_code == 400
-        assert "min_role" in r.json()["detail"]
+        assert r.json()["error"]["code"] == "COMMAND.INVALID"
 
     def test_missing_custom_response_returns_400(self):
         r = _make_client().post(
@@ -194,7 +196,7 @@ class TestUpdateCommandConfig:
             json={"min_role": "admin"},
         )
         assert r.status_code == 400
-        assert "min_role" in r.json()["detail"]
+        assert r.json()["error"]["code"] == "COMMAND.INVALID"
 
     def test_valid_min_role_passes(self):
         import services.command_config_service as m

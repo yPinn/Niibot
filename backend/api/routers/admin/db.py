@@ -13,10 +13,17 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from core.dependencies import get_db_pool, require_owner
+from shared.errors import InvalidInputError
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+class DbQueryInvalidError(InvalidInputError):
+    code = "ADMIN.DB_QUERY_INVALID"
+    user_message = "查詢無法執行，請檢查語法"
+
 
 _LIMIT_RE = re.compile(r"\bLIMIT\s+\d+", re.IGNORECASE)
 _SELECT_RE = re.compile(r"^\s*(SELECT|WITH)\b", re.IGNORECASE)
@@ -56,7 +63,7 @@ async def run_db_query(
     """Execute a read-only SELECT query against the database. Owner-only."""
     sql = body.sql.strip()
     if not _SELECT_RE.match(sql):
-        raise HTTPException(status_code=400, detail="Only SELECT queries are allowed")
+        raise DbQueryInvalidError(user_message="只能執行 SELECT 查詢")
     if not _LIMIT_RE.search(sql):
         sql = f"{sql} LIMIT {_DB_ROW_CAP}"
 
@@ -66,12 +73,14 @@ async def run_db_query(
             async with conn.transaction(readonly=True):
                 rows = await asyncio.wait_for(conn.fetch(sql), timeout=_DB_TIMEOUT)
     except TimeoutError:
+        # 408 is not an AppError-allowed status; keep it as a bare HTTPException.
         raise HTTPException(
             status_code=408, detail=f"Query timed out ({_DB_TIMEOUT:.0f}s limit)"
         ) from None
     except Exception as e:
-        LOGGER.error("DB query failed: %s", e)
-        raise HTTPException(status_code=400, detail="Query failed") from e
+        raise DbQueryInvalidError(
+            user_message="查詢失敗，請檢查語法", context={"reason": str(e)}
+        ) from e
 
     duration_ms = (time.monotonic() - t0) * 1000
 

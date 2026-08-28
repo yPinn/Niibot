@@ -5,14 +5,27 @@
 ## 1. 準備 env 檔
 
 ```bash
-bash scripts/env.sh init      # 複製所有 *.env.example → *.env（已存在者略過）
-bash scripts/env.sh init -f   # 強制覆蓋
+npm run nb -- env init        # 複製所有 *.env.example → *.env（已存在者略過）
+npm run nb -- env init -f     # 強制覆蓋
 ```
 
 接著填入各檔 secrets。欄位對照見 [environment.md](environment.md)。
 
-`scripts/env.sh` 其他子命令：`snapshot` / `backup`（快照到 `data/`）、
-`restore <日期|檔案>`、`diff`、`list`、`clean`。
+`nb env` 其他子命令：`snapshot` / `backup`（快照到 `data/`）、
+`restore <日期|檔案>`、`diff`、`list`、`clean`、`gen` / `check`（從 registry 生成）。
+所有 dev/ops 腳本統一入口見 [scripts/README.md](../../scripts/README.md)
+（`npm run nb -- --help`）。
+
+### 改動 env 變數
+
+所有 `*.env.example`、`.github/*/*.env.example`、`environment.md` 對照表、
+`env.manifest.json` 都由 [`env.registry.toml`](../../env.registry.toml) 產生。
+**不要手改產生檔**——改 registry 後跑：
+
+```bash
+npm run env:gen     # 重新產生全部
+npm run env:check   # 驗證同步（CI 會擋）
+```
 
 ## 2a. 直接跑程序
 
@@ -70,4 +83,4 @@ cd frontend && npm run test:cov
 cd backend  && uv run pytest
 ```
 
-DB migration 手動執行：`cd backend && uv run python scripts/db_migrate.py`。
+DB migration 手動執行：`npm run nb -- db migrate`（`--dry` 只列出待套用）。

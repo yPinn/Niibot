@@ -1,8 +1,10 @@
-"""Clear all analytics / session data from database (dev / reset use only).
+"""Wipe all analytics / session data (dev / reset only).
 
-WARNING: Deletes stream_sessions and every dependent table.
-         Do NOT run against production data.
-         For production backfill, use scripts/tw_backfill_sessions.py instead.
+    npm run nb -- db clear [-y]             # -y skips the confirm prompt
+    uv run --directory backend python scripts/dev/db_clear.py [-y]
+
+WARNING: Deletes stream_sessions and every dependent table. Never run against
+         production; for prod backfill use `nb twitch backfill-sessions`.
 
 Tables cleared (FK-safe order):
   stream_events, chatter_stats, command_stats,
@@ -11,24 +13,25 @@ Tables cleared (FK-safe order):
   channel_overlap_viewers, channel_overlap_summary
 """
 
+import argparse
 import asyncio
 import sys
 from pathlib import Path
 
 import asyncpg
 
-# Force UTF-8 stdout/stderr so Unicode symbols print correctly on Windows.
-if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
-if hasattr(sys.stderr, "reconfigure"):
-    sys.stderr.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # scripts/ for _lib
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+from _lib import confirm, ensure_backend_on_path, load_env, utf8_stdio  # noqa: E402
 
-from api.core.config import get_settings
+ensure_backend_on_path()
+utf8_stdio()
+
+from api.core.config import get_settings  # noqa: E402
 
 
 async def clear_test_data() -> None:
+    load_env("prod")
     settings = get_settings()
     conn = await asyncpg.connect(settings.database_url, statement_cache_size=0)
 
@@ -60,5 +63,23 @@ async def clear_test_data() -> None:
         await conn.close()
 
 
-if __name__ == "__main__":
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="[dev] wipe analytics / session tables.")
+    parser.add_argument("-y", "--yes", action="store_true", help="skip confirmation")
+    return parser
+
+
+def run(args: argparse.Namespace) -> int:
+    if not confirm("Delete ALL analytics/session data (stream_sessions + dependents)?", args.yes):
+        print("Aborted.")
+        return 0
     asyncio.run(clear_test_data())
+    return 0
+
+
+def main() -> int:
+    return run(build_parser().parse_args())
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

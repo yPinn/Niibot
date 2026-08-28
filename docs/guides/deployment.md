@@ -7,8 +7,14 @@
 | 分支                 | 環境   | 部署方式                                                               |
 | -------------------- | ------ | ---------------------------------------------------------------------- |
 | `main`               | 正式區 | `deploy-prod.yml`：手動 `workflow_dispatch` 或每週排程（基底映像更新） |
-| `staging`            | 測試區 | `deploy-staging.yml`                                                   |
+| `staging`            | 測試區 | 推 `staging` → CI 綠 → 自動部署（`ci.yml`）                            |
 | `feature/*`、`fix/*` | 本機   | —                                                                      |
+
+- `deploy-staging.yml` 保留供手動 `workflow_dispatch`（例如臨時起 staging bot 測試）。
+- `_deploy.yml` 是共用工作流，caller 只傳 `environment`（`production` \| `staging`）；
+  路徑／埠／suffix／預設服務集由內部 `Resolve environment config` step 依環境推導。
+- runner 上的 env 檔由 `scripts/ci_write_env.sh` 依 `env.manifest.json` 寫出
+  （來源 GitHub Secrets／Variables）。
 
 一般流程：`feature/xxx` ──PR──▶ `staging` ──(QA)──PR──▶ `main`。
 Hotfix：`hotfix/xxx` ──PR──▶ `main` ──PR──▶ `staging`（backport）。
@@ -48,17 +54,20 @@ Profile：`api` / `twitch` / `discord` / `bots` / `full`（見 [development.md](
 
 ## Staging 管理
 
-`scripts/staging.sh` 包好上面的長指令：
+`nb staging` (alias for `scripts/staging.sh`) 包好上面的長指令：
 
 ```bash
-bash scripts/staging.sh up [profile]   # 啟動
-bash scripts/staging.sh down            # 停止，保留 volume
-bash scripts/staging.sh reset           # 停止並清除 volume
-bash scripts/staging.sh build [service] # 重建映像
-bash scripts/staging.sh logs [service]  # 追 log
+npm run nb -- staging up [profile]   # 啟動
+npm run nb -- staging down            # 停止，保留 volume
+npm run nb -- staging reset           # 停止並清除 volume
+npm run nb -- staging build [service] # 重建映像
+npm run nb -- staging logs [service]  # 追 log
 ```
 
 ## CI/CD 密鑰
+
+鍵清單由 [`env.registry.toml`](../../env.registry.toml) 產生（`npm run env:gen`）——
+`.github/{secrets,variables}/*.env.example` 的**鍵**與 registry 對齊，值仍各環境手維護。
 
 GitHub Actions 部署所需的值放在版本庫外的檔案，用腳本與 GitHub 同步：
 

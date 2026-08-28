@@ -37,11 +37,16 @@ Niibot/
 ## 快速開始
 
 ```bash
-bash scripts/env.sh init      # 複製所有 .env 範本（-f 強制覆蓋）
+npm run nb -- env init        # 複製所有 .env 範本（-f 強制覆蓋）
 ```
+
+所有 dev/ops 腳本統一入口：`npm run nb -- <group> <command>`（`npm run nb -- --help`），
+見 [scripts/README.md](scripts/README.md)。
 
 填入各檔 secrets 後即可啟動。完整步驟（直接跑程序或走 Docker Compose）見
 [docs/guides/development.md](docs/guides/development.md)。
+
+env 變數的單一來源是 [`env.registry.toml`](env.registry.toml)；改動後跑 `npm run env:gen`。
 
 ## 文件
 

@@ -8,7 +8,7 @@ import re
 from typing import Literal
 
 import asyncpg
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends
 from pydantic import BaseModel, Field, field_validator
 
 from core.config import DATA_DIR, Settings, get_settings
@@ -25,6 +25,7 @@ from services.emote_sync import (
     sync_enabled_emotes,
 )
 from services.twitch_api import TwitchAPIClient
+from shared.errors import InvalidInputError
 from shared.packs import Pack, load_packs
 from shared.repositories.ai_settings import DEFAULT_AI_SETTINGS, AISettingsRepository
 from shared.repositories.channel import ChannelRepository
@@ -76,6 +77,12 @@ def _contains_bias(text: str) -> bool:
 
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
+
+
+class AISettingsEmptyPatchError(InvalidInputError):
+    code = "AI_SETTINGS.EMPTY_PATCH"
+    http_status = 422
+    user_message = "沒有要更新的欄位"
 
 
 class AISettingsResponse(BaseModel):
@@ -134,7 +141,8 @@ async def _sync_emotes(pool: asyncpg.Pool, channel_id: str, available_names: lis
     try:
         await sync_enabled_emotes(pool, channel_id, available_names)
     except Exception:
-        LOGGER.exception("Background emote sync failed for channel %s", channel_id)
+        # Background best-effort sync; a failure must not surface anywhere.
+        LOGGER.exception("emote_sync_failed")
 
 
 @router.get("/packs", response_model=list[PackInfo])
@@ -151,12 +159,8 @@ async def get_ai_settings(
     _: None = Depends(require_activated),
 ) -> AISettingsResponse:
     """Return current AI settings for the authenticated channel."""
-    try:
-        settings = await AISettingsRepository(pool).get(channel_id)
-        return AISettingsResponse(**settings)
-    except Exception:
-        LOGGER.exception("Failed to get AI settings")
-        raise HTTPException(status_code=500, detail="Failed to fetch AI settings") from None
+    settings = await AISettingsRepository(pool).get(channel_id)
+    return AISettingsResponse(**settings)
 
 
 @router.patch("/settings", response_model=AISettingsResponse)
@@ -167,21 +171,15 @@ async def patch_ai_settings(
     _: None = Depends(require_activated),
 ) -> AISettingsResponse:
     """Update one or more AI settings fields for the authenticated channel."""
-    try:
-        patch = body.model_dump(exclude_none=True)
-        if not patch:
-            raise HTTPException(status_code=422, detail="No fields provided")
+    patch = body.model_dump(exclude_none=True)
+    if not patch:
+        raise AISettingsEmptyPatchError()
 
-        result = await AISettingsRepository(pool).upsert(channel_id, **patch)
-        await notify_config_change(pool, channel_id)
+    result = await AISettingsRepository(pool).upsert(channel_id, **patch)
+    await notify_config_change(pool, channel_id)
 
-        LOGGER.info("Channel %s updated AI settings: %s", channel_id, list(patch))
-        return AISettingsResponse(**result)
-    except HTTPException:
-        raise
-    except Exception:
-        LOGGER.exception("Failed to update AI settings")
-        raise HTTPException(status_code=500, detail="Failed to update AI settings") from None
+    LOGGER.info("ai_settings_updated", extra={"fields": list(patch)})
+    return AISettingsResponse(**result)
 
 
 @router.post("/settings/reset", response_model=AISettingsResponse)
@@ -195,16 +193,12 @@ async def reset_ai_settings(
     enabled_emotes is excluded — it is bot-managed and re-synced automatically
     when the emotes page is visited; resetting it would cause a temporary gap.
     """
-    try:
-        reset_data = {k: v for k, v in DEFAULT_AI_SETTINGS.items() if k != "enabled_emotes"}
-        result = await AISettingsRepository(pool).upsert(channel_id, **reset_data)
-        await notify_config_change(pool, channel_id)
+    reset_data = {k: v for k, v in DEFAULT_AI_SETTINGS.items() if k != "enabled_emotes"}
+    result = await AISettingsRepository(pool).upsert(channel_id, **reset_data)
+    await notify_config_change(pool, channel_id)
 
-        LOGGER.info("Channel %s reset AI settings to defaults", channel_id)
-        return AISettingsResponse(**result)
-    except Exception:
-        LOGGER.exception("Failed to reset AI settings")
-        raise HTTPException(status_code=500, detail="Failed to reset AI settings") from None
+    LOGGER.info("ai_settings_reset")
+    return AISettingsResponse(**result)
 
 
 @router.get("/emotes", response_model=list[EmoteItem])
@@ -228,44 +222,40 @@ async def get_ai_emotes(
         if token_row:
             bot_token = token_row.token
 
-    try:
-        coros: list = [twitch.get_global_emotes(), twitch.get_channel_emotes(channel_id)]
-        if bot_token:
-            coros.append(twitch.get_user_emotes(channel_id, bot_token, settings.bot_id))
+    coros: list = [twitch.get_global_emotes(), twitch.get_channel_emotes(channel_id)]
+    if bot_token:
+        coros.append(twitch.get_user_emotes(channel_id, bot_token, settings.bot_id))
 
-        results = await asyncio.gather(*coros)
-        global_raw: list[dict] = results[0]
-        channel_raw: list[dict] = results[1]
-        user_raw: list[dict] = results[2] if bot_token else []
+    results = await asyncio.gather(*coros)
+    global_raw: list[dict] = results[0]
+    channel_raw: list[dict] = results[1]
+    user_raw: list[dict] = results[2] if bot_token else []
 
-        accessible: set[str] | None = {e["id"] for e in user_raw} if bot_token else None
+    accessible: set[str] | None = {e["id"] for e in user_raw} if bot_token else None
 
-        items = [
-            EmoteItem(
-                id=e["id"],
-                name=e["name"],
-                url=e["url"],
-                emote_type=e.get("emote_type", ""),
-                tier=e.get("tier", ""),
-                available=is_emote_available(e, accessible),
-                animated=e.get("animated", False),
-            )
-            for e in channel_raw
-        ] + [
-            EmoteItem(
-                id=e["id"],
-                name=e["name"],
-                url=e["url"],
-                emote_type="globals",
-                available=True,
-                animated=e.get("animated", False),
-            )
-            for e in global_raw
-        ]
+    items = [
+        EmoteItem(
+            id=e["id"],
+            name=e["name"],
+            url=e["url"],
+            emote_type=e.get("emote_type", ""),
+            tier=e.get("tier", ""),
+            available=is_emote_available(e, accessible),
+            animated=e.get("animated", False),
+        )
+        for e in channel_raw
+    ] + [
+        EmoteItem(
+            id=e["id"],
+            name=e["name"],
+            url=e["url"],
+            emote_type="globals",
+            available=True,
+            animated=e.get("animated", False),
+        )
+        for e in global_raw
+    ]
 
-        available_names = available_emote_names(channel_raw, global_raw, accessible)
-        background_tasks.add_task(_sync_emotes, pool, channel_id, available_names)
-        return items
-    except Exception:
-        LOGGER.exception("Failed to fetch emotes for channel %s", channel_id)
-        raise HTTPException(status_code=500, detail="Failed to fetch emotes") from None
+    available_names = available_emote_names(channel_raw, global_raw, accessible)
+    background_tasks.add_task(_sync_emotes, pool, channel_id, available_names)
+    return items

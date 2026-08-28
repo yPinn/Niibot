@@ -3,7 +3,7 @@
 import logging
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from core.constants import VALID_ROLES
@@ -16,6 +16,7 @@ from core.dependencies import (
 )
 from services import CommandConfigService, TenantContext, TwitchAPIClient
 from shared.cache import AsyncTTLCache
+from shared.errors import ChannelNotFoundError, InvalidInputError, NotFoundError
 from shared.repositories.command_config import UNSET as _UNSET
 
 # Cache username → user_info for 60 s to avoid a Twitch API call on every page load
@@ -24,6 +25,16 @@ _user_lookup_cache: AsyncTTLCache = AsyncTTLCache(maxsize=256, ttl=60.0)
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/commands", tags=["commands"])
+
+
+class CommandNotFoundError(NotFoundError):
+    code = "COMMAND.NOT_FOUND"
+    user_message = "找不到這個指令"
+
+
+class CommandInvalidError(InvalidInputError):
+    code = "COMMAND.INVALID"
+    user_message = "指令的設定有誤，請檢查後再試"
 
 
 class CommandConfigResponse(BaseModel):
@@ -69,12 +80,8 @@ async def get_command_configs(
     service: CommandConfigService = Depends(get_command_config_service),
 ) -> list[CommandConfigResponse]:
     """Get all command configs for the authenticated user's channel."""
-    try:
-        configs = await service.list_commands(channel_id)
-        return [CommandConfigResponse(**cfg) for cfg in configs]
-    except Exception:
-        LOGGER.exception("Failed to get command configs")
-        raise HTTPException(status_code=500, detail="Failed to fetch command configs") from None
+    configs = await service.list_commands(channel_id)
+    return [CommandConfigResponse(**cfg) for cfg in configs]
 
 
 @router.post("/configs", response_model=CommandConfigResponse, status_code=201)
@@ -95,23 +102,21 @@ async def create_custom_command(
     """
     channel_id = ctx.channel_id
     if body.min_role not in VALID_ROLES:
-        raise HTTPException(status_code=400, detail=f"Invalid min_role: {body.min_role}")
-    if not body.custom_response:
-        raise HTTPException(status_code=400, detail="custom_response is required")
-    try:
-        cfg = await service.create_custom_command(
-            channel_id,
-            body.command_name,
-            custom_response=body.custom_response,
-            cooldown=body.cooldown,
-            min_role=body.min_role,
-            aliases=body.aliases,
+        raise CommandInvalidError(
+            user_message="身分組設定不正確", context={"min_role": body.min_role}
         )
-        LOGGER.info("Channel %s created custom command: %s", channel_id, body.command_name)
-        return CommandConfigResponse(**cfg)
-    except Exception:
-        LOGGER.exception("Failed to create custom command")
-        raise HTTPException(status_code=500, detail="Failed to create custom command") from None
+    if not body.custom_response:
+        raise CommandInvalidError(user_message="自訂回覆內容不能空白")
+    cfg = await service.create_custom_command(
+        channel_id,
+        body.command_name,
+        custom_response=body.custom_response,
+        cooldown=body.cooldown,
+        min_role=body.min_role,
+        aliases=body.aliases,
+    )
+    LOGGER.info("command_created", extra={"command_name": body.command_name})
+    return CommandConfigResponse(**cfg)
 
 
 @router.put("/configs/{command_name}", response_model=CommandConfigResponse)
@@ -124,26 +129,22 @@ async def update_command_config(
 ) -> CommandConfigResponse:
     """Update a command config."""
     if body.min_role is not None and body.min_role not in VALID_ROLES:
-        raise HTTPException(status_code=400, detail=f"Invalid min_role: {body.min_role}")
-    try:
-        cfg = await service.update_command(
-            channel_id,
-            command_name,
-            enabled=body.enabled,
-            custom_response=body.custom_response,
-            cooldown=body.cooldown if "cooldown" in body.model_fields_set else _UNSET,
-            min_role=body.min_role,
-            aliases=body.aliases,
+        raise CommandInvalidError(
+            user_message="身分組設定不正確", context={"min_role": body.min_role}
         )
-        if cfg is None:
-            raise HTTPException(status_code=404, detail="Command not found")
-        LOGGER.info("Channel %s updated command config: %s", channel_id, command_name)
-        return CommandConfigResponse(**cfg)
-    except HTTPException:
-        raise
-    except Exception:
-        LOGGER.exception("Failed to update command config")
-        raise HTTPException(status_code=500, detail="Failed to update command config") from None
+    cfg = await service.update_command(
+        channel_id,
+        command_name,
+        enabled=body.enabled,
+        custom_response=body.custom_response,
+        cooldown=body.cooldown if "cooldown" in body.model_fields_set else _UNSET,
+        min_role=body.min_role,
+        aliases=body.aliases,
+    )
+    if cfg is None:
+        raise CommandNotFoundError(context={"command_name": command_name})
+    LOGGER.info("command_updated", extra={"command_name": command_name})
+    return CommandConfigResponse(**cfg)
 
 
 @router.patch("/configs/{command_name}/toggle", response_model=CommandConfigResponse)
@@ -155,17 +156,11 @@ async def toggle_command_config(
     service: CommandConfigService = Depends(get_command_config_service),
 ) -> CommandConfigResponse:
     """Toggle a command's enabled state."""
-    try:
-        cfg = await service.toggle_command(channel_id, command_name, body.enabled)
-        if cfg is None:
-            raise HTTPException(status_code=404, detail="Command not found")
-        LOGGER.info("Channel %s toggled command: %s -> %s", channel_id, command_name, body.enabled)
-        return CommandConfigResponse(**cfg)
-    except HTTPException:
-        raise
-    except Exception:
-        LOGGER.exception("Failed to toggle command config")
-        raise HTTPException(status_code=500, detail="Failed to toggle command config") from None
+    cfg = await service.toggle_command(channel_id, command_name, body.enabled)
+    if cfg is None:
+        raise CommandNotFoundError(context={"command_name": command_name})
+    LOGGER.info("command_toggled", extra={"command_name": command_name, "enabled": body.enabled})
+    return CommandConfigResponse(**cfg)
 
 
 @router.delete("/configs/{command_name}", status_code=204)
@@ -176,19 +171,13 @@ async def delete_custom_command(
     service: CommandConfigService = Depends(get_command_config_service),
 ) -> None:
     """Delete a custom command (only custom type)."""
-    try:
-        deleted = await service.delete_custom_command(channel_id, command_name)
-        if not deleted:
-            raise HTTPException(
-                status_code=404,
-                detail="Custom command not found or cannot delete builtin commands",
-            )
-        LOGGER.info("Channel %s deleted custom command: %s", channel_id, command_name)
-    except HTTPException:
-        raise
-    except Exception:
-        LOGGER.exception("Failed to delete custom command")
-        raise HTTPException(status_code=500, detail="Failed to delete custom command") from None
+    deleted = await service.delete_custom_command(channel_id, command_name)
+    if not deleted:
+        raise CommandNotFoundError(
+            user_message="找不到這個自訂指令，或它是內建指令無法刪除",
+            context={"command_name": command_name},
+        )
+    LOGGER.info("command_deleted", extra={"command_name": command_name})
 
 
 class PublicCommandItem(BaseModel):
@@ -220,31 +209,22 @@ async def get_public_commands(
     then queries command_configs by channel_id directly.
     No dependency on channels.channel_name.
     """
-    try:
-        cache_key = f"user_by_login:{username.lower()}"
-        if cache_key in _user_lookup_cache:
-            user_info = _user_lookup_cache.get(cache_key)
-        else:
-            user_info = await twitch_api.get_user_by_login(username)
-            if user_info:
-                _user_lookup_cache.set(cache_key, user_info)
-        if not user_info:
-            raise HTTPException(status_code=404, detail="Channel not found")
+    cache_key = f"user_by_login:{username.lower()}"
+    if cache_key in _user_lookup_cache:
+        user_info = _user_lookup_cache.get(cache_key)
+    else:
+        user_info = await twitch_api.get_user_by_login(username)
+        if user_info:
+            _user_lookup_cache.set(cache_key, user_info)
+    if not user_info:
+        raise ChannelNotFoundError(context={"username": username})
 
-        channel_id = user_info["id"]
-        profile = PublicChannelProfile(
-            display_name=user_info.get("display_name"),
-            profile_image_url=user_info.get("avatar"),
-        )
-
-        commands = await service.list_public_commands(channel_id)
-
-        return PublicCommandsResponse(
-            channel=profile,
-            commands=[PublicCommandItem(**cmd) for cmd in commands],
-        )
-    except HTTPException:
-        raise
-    except Exception:
-        LOGGER.exception("Failed to get public commands")
-        raise HTTPException(status_code=500, detail="Failed to fetch commands") from None
+    profile = PublicChannelProfile(
+        display_name=user_info.get("display_name"),
+        profile_image_url=user_info.get("avatar"),
+    )
+    commands = await service.list_public_commands(user_info["id"])
+    return PublicCommandsResponse(
+        channel=profile,
+        commands=[PublicCommandItem(**cmd) for cmd in commands],
+    )

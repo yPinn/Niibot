@@ -1,69 +1,67 @@
 """Run database migrations using shared.migrations.runner.
 
-Usage:
-    python db_migrate.py          # Run all pending migrations
-    python db_migrate.py --dry    # Show pending migrations without applying
+    npm run nb -- db migrate [--dry] [--env staging]
+    uv run --directory backend python scripts/db_migrate.py [--dry] [--env staging]
+
+--dry lists pending migrations without applying them.
 """
 
+from __future__ import annotations
+
+import argparse
 import asyncio
 import logging
-import os
-import sys
 from pathlib import Path
 
-# Ensure backend/ is on sys.path so shared.* is importable
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from _lib import add_env_arg, db_pool, ensure_backend_on_path
 
-import asyncpg
-from dotenv import load_dotenv
+ensure_backend_on_path()
 
-from shared.migrations.runner import MigrationRunner
-
-_backend = Path(__file__).resolve().parent.parent
-load_dotenv(_backend / "shared.env")
-load_dotenv(_backend / "shared.env.local", override=True)
+from shared.migrations.runner import MigrationRunner  # noqa: E402
 
 logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s")
 
+_VERSIONS_DIR = Path(__file__).resolve().parent.parent / "shared" / "migrations" / "versions"
 
-async def main() -> None:
-    database_url = os.getenv("DATABASE_URL")
-    if not database_url:
-        print("ERROR: DATABASE_URL not set. Check shared.env or environment variables.")
-        sys.exit(1)
 
-    pool = await asyncpg.create_pool(database_url, min_size=1, max_size=2, statement_cache_size=0)
-    if pool is None:
-        print("ERROR: Failed to create connection pool.")
-        sys.exit(1)
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Run database migrations.")
+    parser.add_argument("--dry", action="store_true", help="show pending migrations, don't apply")
+    add_env_arg(parser)
+    return parser
 
-    try:
+
+async def _run(args: argparse.Namespace) -> int:
+    async with db_pool(args.env, max_size=2) as pool:
         runner = MigrationRunner(pool)
-
         await runner.apply_version_renames()
 
-        if "--dry" in sys.argv:
+        if args.dry:
             applied = await runner.get_applied()
-            versions_dir = (
-                Path(__file__).resolve().parent.parent / "shared" / "migrations" / "versions"
-            )
-            sql_files = sorted(versions_dir.glob("*.sql"))
-            pending = [f.stem for f in sql_files if f.stem not in applied]
-
+            pending = [f.stem for f in sorted(_VERSIONS_DIR.glob("*.sql")) if f.stem not in applied]
             print(f"Applied: {len(applied)} | Pending: {len(pending)}")
             for v in pending:
                 print(f"  -> {v}")
             if not pending:
                 print("Database is up to date.")
-        else:
-            newly_applied = await runner.run_pending()
-            if not newly_applied:
-                print("No pending migrations.")
-            else:
-                print(f"Applied {len(newly_applied)} migration(s).")
-    finally:
-        await pool.close()
+            return 0
+
+        newly_applied = await runner.run_pending()
+        print(
+            f"Applied {len(newly_applied)} migration(s)."
+            if newly_applied
+            else "No pending migrations."
+        )
+        return 0
+
+
+def run(args: argparse.Namespace) -> int:
+    return asyncio.run(_run(args))
+
+
+def main() -> int:
+    return run(build_parser().parse_args())
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    raise SystemExit(main())

@@ -20,6 +20,7 @@ from fastapi.testclient import TestClient
 
 from core.config import get_settings
 from core.dependencies import get_current_channel_id, get_db_pool, require_activated
+from core.error_handlers import register_exception_handlers
 from routers.timers_router import router as _timers_router
 
 CHANNEL_ID = "ch-timers"
@@ -53,6 +54,7 @@ def _reset_settings():
 
 def _make_client() -> TestClient:
     app = FastAPI(lifespan=_no_lifespan)
+    register_exception_handlers(app)
     app.include_router(_timers_router)
     app.dependency_overrides[get_current_channel_id] = lambda: CHANNEL_ID
     app.dependency_overrides[get_db_pool] = lambda: AsyncMock()
@@ -66,6 +68,8 @@ def _make_client_not_activated() -> TestClient:
     app.include_router(_timers_router)
     app.dependency_overrides[get_current_channel_id] = lambda: CHANNEL_ID
     app.dependency_overrides[get_db_pool] = lambda: AsyncMock()
+
+    register_exception_handlers(app)
 
     def _reject() -> None:
         raise HTTPException(status_code=403, detail="Account not activated")
@@ -138,7 +142,9 @@ class TestCreateTimer:
                 },
             )
         assert r.status_code == 400
-        assert "interval too short" in r.json()["detail"]
+        assert r.json()["error"]["code"] == "TIMER.INVALID"
+        # the raw ValueError text must not reach the user
+        assert "interval too short" not in r.text
 
     def test_interval_below_minimum_returns_422(self):
         r = _make_client().post(
@@ -189,7 +195,8 @@ class TestUpdateTimer:
         ):
             r = _make_client().put("/api/timers/configs/social", json={"min_lines": -1})
         assert r.status_code == 400
-        assert "min_lines negative" in r.json()["detail"]
+        assert r.json()["error"]["code"] == "TIMER.INVALID"
+        assert "min_lines negative" not in r.text
 
     def test_not_found_returns_404(self):
         import services.timer_service as m

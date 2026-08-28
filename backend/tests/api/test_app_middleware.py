@@ -18,12 +18,19 @@ os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost/test")
 os.environ.setdefault("FRONTEND_URL", "https://niibot.tv")
 os.environ.setdefault("BOT_ID", "bot-test")
 
+import logging
+
 import pytest
+import structlog
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from pydantic import BaseModel
 
 from app import create_app
 from core.config import get_settings
+from shared.errors import NotFoundError
+
+_ALLOWED_ORIGIN = "https://niibot.tv"
 
 
 @asynccontextmanager
@@ -51,6 +58,17 @@ def client() -> TestClient:
     @test_app.get("/_test/error")
     async def _error():
         raise RuntimeError("deliberate test error")
+
+    @test_app.get("/_test/app-error")
+    async def _app_error():
+        raise NotFoundError(user_message="找不到這個東西", context={"secret_id": "leaky-12345"})
+
+    class _Body(BaseModel):
+        count: int
+
+    @test_app.post("/_test/validate")
+    async def _validate(body: _Body):
+        return {"count": body.count}
 
     return TestClient(test_app, raise_server_exceptions=False)
 
@@ -109,9 +127,14 @@ class TestGlobalExceptionHandler:
         r = client.get("/_test/error")
         assert r.status_code == 500
 
-    def test_error_body_is_generic(self, client: TestClient):
-        r = client.get("/_test/error")
-        assert r.json() == {"detail": "Internal server error"}
+    def test_error_body_envelope(self, client: TestClient):
+        r = client.get("/_test/error", headers={"X-Request-ID": "rid-500"})
+        body = r.json()
+        assert body["detail"] == body["error"]["message"]
+        assert body["error"]["code"] == "INTERNAL.UNEXPECTED"
+        assert body["error"]["request_id"] == "rid-500"
+        # generic, no internals leaked
+        assert "deliberate test error" not in r.text
 
     def test_error_response_includes_request_id(self, client: TestClient):
         r = client.get("/_test/error")
@@ -122,3 +145,88 @@ class TestGlobalExceptionHandler:
         r = client.get("/_test/error", headers={"X-Request-ID": trace_id})
         assert r.status_code == 500
         assert r.headers["X-Request-ID"] == trace_id
+
+
+class TestAppErrorHandler:
+    def test_status_and_envelope(self, client: TestClient):
+        r = client.get("/_test/app-error", headers={"X-Request-ID": "rid-ae"})
+        assert r.status_code == 404
+        body = r.json()
+        assert body["detail"] == "找不到這個東西"
+        assert body["error"] == {
+            "code": "INTERNAL.NOT_FOUND",
+            "message": "找不到這個東西",
+            "request_id": "rid-ae",
+            "fields": None,
+        }
+
+    def test_context_not_leaked(self, client: TestClient):
+        r = client.get("/_test/app-error")
+        assert "leaky-12345" not in r.text
+
+
+class TestValidationHandler:
+    def test_detail_is_string_not_list(self, client: TestClient):
+        r = client.post("/_test/validate", json={"count": "not-an-int"})
+        assert r.status_code == 422
+        body = r.json()
+        assert isinstance(body["detail"], str)  # B3: never a list
+        assert body["error"]["code"] == "VALIDATION.INVALID_INPUT"
+        # pydantic's English message must not reach the client
+        assert "Input should be" not in r.text
+
+
+class TestLogCorrelation:
+    """The same request_id must reach the response body, the response header,
+    and the log context used while handling the failure."""
+
+    def _capture(self, client: TestClient, path: str, rid: str) -> tuple[dict, dict]:
+        captured: dict = {}
+
+        class Spy(logging.Handler):
+            def emit(self, record: logging.LogRecord) -> None:
+                if record.getMessage() == "request_failed":
+                    captured.update(structlog.contextvars.get_contextvars())
+
+        spy = Spy()
+        logging.getLogger().addHandler(spy)
+        try:
+            r = client.get(path, headers={"X-Request-ID": rid})
+        finally:
+            logging.getLogger().removeHandler(spy)
+        return r.json(), captured
+
+    def test_500_correlation(self, client: TestClient):
+        body, ctx = self._capture(client, "/_test/error", "corr-500")
+        assert body["error"]["request_id"] == "corr-500"
+        assert ctx.get("request_id") == "corr-500"
+        assert ctx.get("http_path") == "/_test/error"
+
+    def test_app_error_correlation(self, client: TestClient):
+        body, ctx = self._capture(client, "/_test/app-error", "corr-ae")
+        assert body["error"]["request_id"] == "corr-ae"
+        assert ctx.get("request_id") == "corr-ae"
+
+    def test_context_does_not_leak_between_requests(self, client: TestClient):
+        # first request binds; second (different id) must not see the first.
+        _, ctx1 = self._capture(client, "/_test/app-error", "leak-A")
+        _, ctx2 = self._capture(client, "/_test/error", "leak-B")
+        assert ctx1["request_id"] == "leak-A"
+        assert ctx2["request_id"] == "leak-B"
+
+
+class TestCors:
+    def test_expose_headers_on_ok(self, client: TestClient):
+        r = client.get("/_test/ok", headers={"Origin": _ALLOWED_ORIGIN})
+        assert r.headers["access-control-allow-origin"] == _ALLOWED_ORIGIN
+        assert "x-request-id" in r.headers.get("access-control-expose-headers", "").lower()
+
+    def test_cors_headers_on_500(self, client: TestClient):
+        # B2: a cross-origin frontend must be able to read the error body.
+        r = client.get("/_test/error", headers={"Origin": _ALLOWED_ORIGIN})
+        assert r.status_code == 500
+        assert r.headers.get("access-control-allow-origin") == _ALLOWED_ORIGIN
+
+    def test_cors_headers_on_504_path_present_for_app_error(self, client: TestClient):
+        r = client.get("/_test/app-error", headers={"Origin": _ALLOWED_ORIGIN})
+        assert r.headers.get("access-control-allow-origin") == _ALLOWED_ORIGIN

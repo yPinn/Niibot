@@ -5,15 +5,26 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from core.dependencies import get_current_channel_id, get_timer_service, require_activated
 from services.timer_service import TimerService
+from shared.errors import InvalidInputError, NotFoundError
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/timers", tags=["timers"])
+
+
+class TimerNotFoundError(NotFoundError):
+    code = "TIMER.NOT_FOUND"
+    user_message = "找不到這個計時器"
+
+
+class TimerInvalidError(InvalidInputError):
+    code = "TIMER.INVALID"
+    user_message = "計時器的設定有誤，請檢查後再試"
 
 
 class TimerConfigResponse(BaseModel):
@@ -61,12 +72,8 @@ async def get_timer_configs(
     _: None = Depends(require_activated),
 ) -> list[TimerConfigResponse]:
     """Get all timers for the authenticated user's channel."""
-    try:
-        timers = await service.list_timers(channel_id)
-        return [TimerConfigResponse(**t) for t in timers]
-    except Exception:
-        LOGGER.exception("Failed to get timer configs")
-        raise HTTPException(status_code=500, detail="Failed to fetch timer configs") from None
+    timers = await service.list_timers(channel_id)
+    return [TimerConfigResponse(**t) for t in timers]
 
 
 @router.post("/configs", response_model=TimerConfigResponse, status_code=201)
@@ -87,13 +94,10 @@ async def create_timer(
             announce=body.announce,
             command_alias=body.command_alias,
         )
-        LOGGER.info("Channel %s created timer: %s", channel_id, body.timer_name)
-        return TimerConfigResponse(**timer)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except Exception:
-        LOGGER.exception("Failed to create timer")
-        raise HTTPException(status_code=500, detail="Failed to create timer") from None
+        raise TimerInvalidError(context={"reason": str(e)}) from e
+    LOGGER.info("timer_created", extra={"timer_name": body.timer_name})
+    return TimerConfigResponse(**timer)
 
 
 @router.put("/configs/{timer_name}", response_model=TimerConfigResponse)
@@ -117,17 +121,12 @@ async def update_timer(
             command_alias=body.command_alias,
             clear_alias=body.clear_alias,
         )
-        if timer is None:
-            raise HTTPException(status_code=404, detail="Timer not found")
-        LOGGER.info("Channel %s updated timer: %s", channel_id, timer_name)
-        return TimerConfigResponse(**timer)
-    except HTTPException:
-        raise
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except Exception:
-        LOGGER.exception("Failed to update timer")
-        raise HTTPException(status_code=500, detail="Failed to update timer") from None
+        raise TimerInvalidError(context={"reason": str(e)}) from e
+    if timer is None:
+        raise TimerNotFoundError(context={"timer_name": timer_name})
+    LOGGER.info("timer_updated", extra={"timer_name": timer_name})
+    return TimerConfigResponse(**timer)
 
 
 @router.patch("/configs/{timer_name}/toggle", response_model=TimerConfigResponse)
@@ -139,17 +138,11 @@ async def toggle_timer(
     _: None = Depends(require_activated),
 ) -> TimerConfigResponse:
     """Toggle a timer's enabled state."""
-    try:
-        timer = await service.toggle_timer(channel_id, timer_name, body.enabled)
-        if timer is None:
-            raise HTTPException(status_code=404, detail="Timer not found")
-        LOGGER.info("Channel %s toggled timer: %s -> %s", channel_id, timer_name, body.enabled)
-        return TimerConfigResponse(**timer)
-    except HTTPException:
-        raise
-    except Exception:
-        LOGGER.exception("Failed to toggle timer")
-        raise HTTPException(status_code=500, detail="Failed to toggle timer") from None
+    timer = await service.toggle_timer(channel_id, timer_name, body.enabled)
+    if timer is None:
+        raise TimerNotFoundError(context={"timer_name": timer_name})
+    LOGGER.info("timer_toggled", extra={"timer_name": timer_name, "enabled": body.enabled})
+    return TimerConfigResponse(**timer)
 
 
 @router.delete("/configs/{timer_name}", status_code=204)
@@ -160,13 +153,7 @@ async def delete_timer(
     _: None = Depends(require_activated),
 ) -> None:
     """Delete a timer."""
-    try:
-        deleted = await service.delete_timer(channel_id, timer_name)
-        if not deleted:
-            raise HTTPException(status_code=404, detail="Timer not found")
-        LOGGER.info("Channel %s deleted timer: %s", channel_id, timer_name)
-    except HTTPException:
-        raise
-    except Exception:
-        LOGGER.exception("Failed to delete timer")
-        raise HTTPException(status_code=500, detail="Failed to delete timer") from None
+    deleted = await service.delete_timer(channel_id, timer_name)
+    if not deleted:
+        raise TimerNotFoundError(context={"timer_name": timer_name})
+    LOGGER.info("timer_deleted", extra={"timer_name": timer_name})

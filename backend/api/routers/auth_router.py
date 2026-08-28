@@ -30,6 +30,7 @@ from services import (
     TwitchAPIClient,
 )
 from services.oauth_service import decode_oauth_state, encode_oauth_state
+from shared.errors import AccessDeniedError, AppError, NotFoundError, RateLimitedError
 from shared.repositories.activation_code import ActivationCodeRepository
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -39,6 +40,27 @@ LOGGER: logging.Logger = logging.getLogger(__name__)
 _otp_rate_limiter = RateLimiter(max_calls=5, period=600.0)
 
 router = APIRouter(prefix="/api", tags=["authentication"])
+
+
+class ReauthRequiredError(AppError):
+    code = "AUTH.REAUTH_REQUIRED"
+    http_status = 401
+    user_message = "Twitch 授權需要重新登入"
+
+
+class AuthUserNotFoundError(NotFoundError):
+    code = "AUTH.USER_NOT_FOUND"
+    user_message = "找不到你的帳號資料"
+
+
+class TooManyAttemptsError(RateLimitedError):
+    code = "AUTH.TOO_MANY_ATTEMPTS"
+    user_message = "嘗試次數太多，請稍後再試"
+
+
+class AccountSuspendedError(AccessDeniedError):
+    code = "AUTH.ACCOUNT_SUSPENDED"
+    user_message = "你的帳號已被停權"
 
 
 class OAuthURLResponse(BaseModel):
@@ -242,8 +264,8 @@ async def get_current_user(
             platform_user_id,
         )
         if requires_reauth:
-            raise HTTPException(status_code=401, detail="reauth_required")
-    except HTTPException:
+            raise ReauthRequiredError()
+    except AppError:
         raise
     except Exception as e:
         LOGGER.warning(f"DB error fetching user row for {user_id}: {type(e).__name__}: {e}")
@@ -253,7 +275,7 @@ async def get_current_user(
 
     user_info = await twitch_api.get_user_info(platform_user_id)
     if not user_info:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise AuthUserNotFoundError(context={"platform_user_id": platform_user_id})
 
     owner_id_cfg = str(get_settings().owner_id)
     is_owner = platform_user_id == owner_id_cfg
@@ -318,7 +340,7 @@ async def activate_account(
         return {"activated": True}
 
     if not _otp_rate_limiter.allow(user_id):
-        raise HTTPException(status_code=429, detail="too_many_attempts")
+        raise TooManyAttemptsError()
 
     repo = ActivationCodeRepository(pool)
     success = await repo.redeem(
@@ -329,6 +351,8 @@ async def activate_account(
     )
 
     if not success:
+        # Deliberate machine-readable detail: the /activate page branches on
+        # this exact string to show the "code invalid/expired" hint.
         raise HTTPException(status_code=400, detail="invalid_or_expired_code")
 
     # Hash the code only for the audit metadata. The plaintext is never persisted.
@@ -370,7 +394,7 @@ async def request_activation(
         return {"status": "pending"}
     if current.status == "suspended":
         # Operator-imposed; user cannot self-lift.
-        raise HTTPException(status_code=403, detail="account_suspended")
+        raise AccountSuspendedError()
 
     # rejected → user explicit re-application
     decision = await admission.reapply(user_id)

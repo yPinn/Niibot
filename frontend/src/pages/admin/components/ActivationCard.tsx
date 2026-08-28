@@ -23,6 +23,7 @@ import {
   Skeleton,
 } from '@/components/ui'
 import { formatDateTimeShort } from '@/lib/format'
+import { toastApiError } from '@/lib/toast-error'
 
 export function ActivationCard() {
   const [requests, setRequests] = useState<ActivationRequest[]>([])
@@ -52,8 +53,8 @@ export function ActivationCard() {
       await approveActivationRequest(req.id)
       setRequests(prev => prev.filter(r => r.id !== req.id))
       toast.success(`${req.display_name ?? req.username ?? req.platform_user_id} 已通過審核`)
-    } catch {
-      toast.error('審核失敗')
+    } catch (e) {
+      toastApiError(e, '審核失敗')
     } finally {
       setActioningId(null)
     }
@@ -66,8 +67,8 @@ export function ActivationCard() {
       await rejectActivationRequest(req.id)
       setRequests(prev => prev.filter(r => r.id !== req.id))
       toast.success('申請已拒絕')
-    } catch {
-      toast.error('操作失敗')
+    } catch (e) {
+      toastApiError(e, '操作失敗')
     } finally {
       setActioningId(null)
     }
@@ -105,8 +106,8 @@ export function ActivationCard() {
     try {
       await revokeActivationCode(platformUserId)
       setCodes(prev => prev.filter(c => c.platform_user_id !== platformUserId))
-    } catch {
-      toast.error('撤銷失敗')
+    } catch (e) {
+      toastApiError(e, '撤銷失敗')
     } finally {
       setRevoking(null)
     }

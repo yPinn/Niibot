@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Generate every env template + docs table + manifest from env.registry.toml.
 
-    python scripts/gen_env.py            # (re)write all generated files
-    python scripts/gen_env.py --check    # verify on-disk == generated; exit 1 on drift
+    npm run nb -- env gen                 # or: npm run env:gen
+    npm run nb -- env check               # verify on-disk == generated; exit 1 on drift
     python scripts/gen_env.py --print KEY # show where one variable lives
 
 The registry (env.registry.toml at the repo root) is the single source of truth.
@@ -80,8 +80,8 @@ GITHUB_META: dict[str, tuple[str, str, list[str]]] = {
     "variables_staging": ("variables", "staging", ["GitHub Variables — staging (overrides base per-environment)."]),
 }
 
-# The deploy workflow now reads env.manifest.json via scripts/ci_write_env.sh.
-DEPLOY_WORKFLOW = ".github/workflows/_deploy.yml"
+# The deploy workflow reads env.manifest.json via scripts/ci_write_env.sh —
+# it no longer enumerates env keys, so there is nothing here to check against it.
 
 
 @dataclass
@@ -241,6 +241,11 @@ def build_manifest(vars_: list[Var], meta: dict) -> dict:
         entry = {"source": v.ci_source, "scope": v.ci_scope, "conditional": v.ci_conditional}
         if v.ci_file:
             entry["file"] = v.ci_file
+        # var: sources pass GitHub Variables straight through; an unset one would
+        # write an empty value, so carry the registry default as a fallback
+        # (was `${{ vars.X || 'default' }}` in the old heredoc).
+        if v.ci_source.startswith("var:") and not v.ci_conditional and v.default:
+            entry["default"] = v.default
         ci[v.env_name] = entry
 
     return {
@@ -252,13 +257,6 @@ def build_manifest(vars_: list[Var], meta: dict) -> dict:
         ),
         "ci": ci,
         "github_example_keys": _gh_keys(vars_),
-        "deploy_workflow_env_keys": sorted(
-            {
-                v.ci_source.split(":", 1)[1]
-                for v in vars_
-                if v.ci_managed and ":" in v.ci_source and not v.ci_source.startswith("derived")
-            }
-        ),
     }
 
 
@@ -389,7 +387,8 @@ def cmd_check() -> int:
         drift.append(str(DOCS.relative_to(ROOT)) + " (env block)")
 
     # .github/*.env.example are fully generated too (compared above via generated_outputs).
-    # deploy workflow — checked in Phase 4 once it reads env.manifest.json directly.
+    # _deploy.yml reads env.manifest.json via scripts/ci_write_env.sh — it holds no
+    # generated key list, so there is nothing to diff it against here.
 
     if drift:
         print("env drift — run `python scripts/gen_env.py`:")

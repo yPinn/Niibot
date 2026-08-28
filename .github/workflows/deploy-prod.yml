@@ -1,7 +1,8 @@
 name: Deploy Prod
 
-# Production deployment — see _deploy.yml for secrets/variables reference.
-# Triggered manually via workflow_dispatch or on weekly schedule (base image updates).
+# Production deployment — see _deploy.yml for the derived config and the
+# env.registry.toml single source of truth for secrets/variables.
+# Triggered manually via workflow_dispatch or on the weekly schedule (base image updates).
 # NOT triggered automatically on push — production deploys are intentional only.
 
 on:
@@ -9,24 +10,14 @@ on:
     - cron: "0 20 * * 2" # Every Tue 20:00 UTC (Wed 04:00 CST) — full rebuild for base image updates
   workflow_dispatch:
     inputs:
+      services:
+        description: "Which services to act on"
+        type: choice
+        options:
+          [default, api, twitch, discord, instafix, "twitch,discord", all]
+        default: default
       force_all:
-        description: "Force rebuild and restart all services"
-        type: boolean
-        default: false
-      deploy_api:
-        description: "Force restart API"
-        type: boolean
-        default: false
-      deploy_twitch:
-        description: "Force restart Twitch bot"
-        type: boolean
-        default: false
-      deploy_discord:
-        description: "Force restart Discord bot"
-        type: boolean
-        default: false
-      deploy_instafix:
-        description: "Pull and restart Instafix"
+        description: "Force rebuild + restart the resolved service set"
         type: boolean
         default: false
 
@@ -41,19 +32,7 @@ jobs:
     uses: ./.github/workflows/_deploy.yml
     with:
       environment: production
-      env_suffix: ""
-      compose_env_file: docker-compose.prod.yml
-      compose_project: ""
-      branch: main
-      api_port: 8000
-      compose_change_pattern: docker-compose.prod.yml
+      services: ${{ inputs.services }} # "" on schedule, "default" on dispatch — both handled in _deploy.yml
       force_all: ${{ inputs.force_all == true }}
-      force_api: ${{ inputs.deploy_api == true }}
-      force_twitch: ${{ inputs.deploy_twitch == true }}
-      force_discord: ${{ inputs.deploy_discord == true }}
-      force_instafix: ${{ inputs.deploy_instafix == true }}
       is_scheduled: ${{ github.event_name == 'schedule' }}
-      tag_images: true
-      prune_full: true
-      pull_on_force: true
     secrets: inherit
