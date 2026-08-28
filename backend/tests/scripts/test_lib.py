@@ -52,8 +52,18 @@ class TestLoadEnv:
 
     def test_missing_shared_env_raises(self, tmp_path, monkeypatch):
         monkeypatch.setattr(_lib, "BACKEND_DIR", tmp_path)
+        monkeypatch.delenv("DATABASE_URL", raising=False)
         with pytest.raises(FileNotFoundError, match="env init"):
             _lib.load_env("prod")
+
+    def test_missing_shared_env_tolerated_when_env_provisioned(self, tmp_path, monkeypatch):
+        # Containers / CI inject DATABASE_URL as a real env var, no file on disk.
+        monkeypatch.setattr(_lib, "BACKEND_DIR", tmp_path)
+        monkeypatch.setenv("DATABASE_URL", "postgres://from-env")
+
+        _lib.load_env("prod")  # must not raise
+
+        assert _lib.database_url() == "postgres://from-env"
 
     def test_unknown_service_raises(self, tmp_path, monkeypatch):
         (tmp_path / "shared.env").write_text("X=1\n", encoding="utf-8")

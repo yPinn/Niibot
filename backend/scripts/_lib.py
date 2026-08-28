@@ -52,6 +52,10 @@ def load_env(env: str = "prod", *, service: str | None = None) -> None:
         shared[.staging].env  ->  shared[.staging].env.local  ->  <service>/.env[.staging]
 
     The `.local` and service files are optional; naming matches scripts/env.sh.
+
+    A missing base file is fatal for local CLI use, but tolerated when the config
+    is already in the environment — containers / CI inject it as real env vars
+    (compose `env_file:` / `environment:`), never as a file inside the image.
     """
     if env not in ("prod", "staging"):
         raise ValueError(f"env must be 'prod' or 'staging', got {env!r}")
@@ -59,6 +63,9 @@ def load_env(env: str = "prod", *, service: str | None = None) -> None:
     suffix = "" if env == "prod" else ".staging"
     shared = BACKEND_DIR / f"shared{suffix}.env"
     if not shared.exists():
+        if os.getenv("DATABASE_URL"):
+            print(f"note: {shared.name} absent — using existing environment", file=sys.stderr)
+            return
         raise FileNotFoundError(f"{shared} not found — run `npm run nb -- env init`")
 
     load_dotenv(shared, encoding="utf-8")
