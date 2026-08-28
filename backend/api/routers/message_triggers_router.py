@@ -9,10 +9,10 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from twitch.utils.trigger_matching import validate_regex_pattern
 
 from core.dependencies import get_current_channel_id, get_trigger_service, require_activated
 from services.message_trigger_service import MessageTriggerService
+from shared.trigger_matching import validate_regex_pattern
 
 _REGEX_MAX_LEN = 200
 

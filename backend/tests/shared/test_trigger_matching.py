@@ -1,6 +1,6 @@
-"""Unit tests for twitch.utils.trigger_matching.match_trigger."""
+"""Unit tests for shared.trigger_matching.match_trigger."""
 
-from twitch.utils.trigger_matching import match_trigger
+from shared.trigger_matching import match_trigger
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -198,19 +198,19 @@ class TestReDoSProtection:
         the test process.  The pattern (a+)+$ is a classic ReDoS input that
         causes exponential backtracking on a non-matching string.
         """
-        from twitch.utils.trigger_matching import validate_regex_pattern
+        from shared.trigger_matching import validate_regex_pattern
 
         assert validate_regex_pattern(r"(a+)+$") is False
 
     def test_invalid_regex_rejected_by_validate(self):
         """validate_regex_pattern must return False for syntactically invalid patterns."""
-        from twitch.utils.trigger_matching import validate_regex_pattern
+        from shared.trigger_matching import validate_regex_pattern
 
         assert validate_regex_pattern(r"[invalid(") is False
 
     def test_safe_regex_accepted_by_validate(self):
         """validate_regex_pattern must return True for well-behaved patterns."""
-        from twitch.utils.trigger_matching import validate_regex_pattern
+        from shared.trigger_matching import validate_regex_pattern
 
         assert validate_regex_pattern(r"\d+") is True
         assert validate_regex_pattern(r"^hello\s+world$") is True
@@ -221,13 +221,13 @@ class TestReDoSProtection:
         ``(\\d+)+$`` blows up only on a long run of digits — the old single
         ``"a"*30 + "b"`` canary never exercised it.
         """
-        from twitch.utils.trigger_matching import validate_regex_pattern
+        from shared.trigger_matching import validate_regex_pattern
 
         assert validate_regex_pattern(r"(\d+)+$") is False
 
     def test_regex_match_caps_input_length(self):
         """Match-time input is truncated so a slow pattern can't be fed huge input."""
-        from twitch.utils import trigger_matching
+        from shared import trigger_matching
 
         t = make_trigger(pattern="needle$", match_type="regex")
         # "needle" sits past the cap, so the (truncated) text must not match.
