@@ -5,12 +5,13 @@ from datetime import datetime
 from uuid import UUID
 
 import asyncpg
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
 from core.dependencies import get_current_channel_id, get_db_pool, get_twitch_api, require_activated
 from services import TwitchAPIClient
 from shared.cache import AsyncTTLCache
+from shared.errors import ChannelNotFoundError, InvalidInputError, NotFoundError
 from shared.repositories.crosshair import VALID_GAMES, CrosshairRepository
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -18,6 +19,16 @@ LOGGER: logging.Logger = logging.getLogger(__name__)
 _user_lookup_cache: AsyncTTLCache = AsyncTTLCache(maxsize=256, ttl=60.0)
 
 router = APIRouter(prefix="/api/crosshairs", tags=["crosshairs"])
+
+
+class CrosshairNotFoundError(NotFoundError):
+    code = "CROSSHAIR.NOT_FOUND"
+    user_message = "找不到這個準心"
+
+
+class CrosshairInvalidError(InvalidInputError):
+    code = "CROSSHAIR.INVALID"
+    user_message = "這個遊戲不在支援清單內"
 
 
 class CrosshairResponse(BaseModel):
@@ -70,13 +81,9 @@ async def list_all_public_crosshairs(
     pool: asyncpg.Pool = Depends(get_db_pool),
 ) -> list[CrosshairWithChannelResponse]:
     """List recent crosshairs from all channels (public, no auth)."""
-    try:
-        repo = CrosshairRepository(pool)
-        rows = await repo.list_all_public(game=game, limit=limit)
-        return [CrosshairWithChannelResponse(**row) for row in rows]
-    except Exception:
-        LOGGER.exception("Failed to list all public crosshairs")
-        raise HTTPException(status_code=500, detail="Failed to fetch crosshairs") from None
+    repo = CrosshairRepository(pool)
+    rows = await repo.list_all_public(game=game, limit=limit)
+    return [CrosshairWithChannelResponse(**row) for row in rows]
 
 
 @router.get("/public/{username}", response_model=PublicCrosshairsResponse)
@@ -96,21 +103,17 @@ async def get_public_crosshairs(
             _user_lookup_cache.set(cache_key, user_info)
 
     if not user_info:
-        raise HTTPException(status_code=404, detail="Channel not found")
+        raise ChannelNotFoundError(context={"username": username})
 
-    try:
-        repo = CrosshairRepository(pool)
-        rows = await repo.list_by_channel(user_info["id"], game=game)
-        return PublicCrosshairsResponse(
-            channel=PublicChannelProfile(
-                display_name=user_info.get("display_name"),
-                profile_image_url=user_info.get("avatar"),
-            ),
-            crosshairs=[CrosshairResponse(**row) for row in rows],
-        )
-    except Exception:
-        LOGGER.exception("Failed to get public crosshairs")
-        raise HTTPException(status_code=500, detail="Failed to fetch crosshairs") from None
+    repo = CrosshairRepository(pool)
+    rows = await repo.list_by_channel(user_info["id"], game=game)
+    return PublicCrosshairsResponse(
+        channel=PublicChannelProfile(
+            display_name=user_info.get("display_name"),
+            profile_image_url=user_info.get("avatar"),
+        ),
+        crosshairs=[CrosshairResponse(**row) for row in rows],
+    )
 
 
 @router.post("/public/{crosshair_id}/copy", status_code=204)
@@ -123,7 +126,10 @@ async def record_crosshair_copy(
         repo = CrosshairRepository(pool)
         await repo.increment_copy(str(crosshair_id))
     except Exception:
-        LOGGER.exception("Failed to increment copy count for crosshair %s", crosshair_id)
+        # Best-effort metric; never fail the caller over it.
+        LOGGER.exception(
+            "crosshair_copy_increment_failed", extra={"crosshair_id": str(crosshair_id)}
+        )
 
 
 @router.get("", response_model=list[CrosshairResponse])
@@ -134,13 +140,9 @@ async def list_crosshairs(
     pool: asyncpg.Pool = Depends(get_db_pool),
 ) -> list[CrosshairResponse]:
     """List crosshairs for the authenticated channel."""
-    try:
-        repo = CrosshairRepository(pool)
-        rows = await repo.list_by_channel(channel_id, game=game)
-        return [CrosshairResponse(**row) for row in rows]
-    except Exception:
-        LOGGER.exception("Failed to list crosshairs")
-        raise HTTPException(status_code=500, detail="Failed to fetch crosshairs") from None
+    repo = CrosshairRepository(pool)
+    rows = await repo.list_by_channel(channel_id, game=game)
+    return [CrosshairResponse(**row) for row in rows]
 
 
 @router.post("", response_model=CrosshairResponse, status_code=201)
@@ -152,21 +154,17 @@ async def create_crosshair(
 ) -> CrosshairResponse:
     """Create a crosshair entry."""
     if body.game not in VALID_GAMES:
-        raise HTTPException(status_code=400, detail=f"Invalid game: {body.game}")
-    try:
-        repo = CrosshairRepository(pool)
-        row = await repo.create(
-            channel_id,
-            game=body.game,
-            name=body.name,
-            code=body.code,
-            description=body.description,
-            display_order=body.display_order,
-        )
-        return CrosshairResponse(**row)
-    except Exception:
-        LOGGER.exception("Failed to create crosshair")
-        raise HTTPException(status_code=500, detail="Failed to create crosshair") from None
+        raise CrosshairInvalidError(context={"game": body.game})
+    repo = CrosshairRepository(pool)
+    row = await repo.create(
+        channel_id,
+        game=body.game,
+        name=body.name,
+        code=body.code,
+        description=body.description,
+        display_order=body.display_order,
+    )
+    return CrosshairResponse(**row)
 
 
 @router.patch("/{crosshair_id}", response_model=CrosshairResponse)
@@ -179,19 +177,13 @@ async def update_crosshair(
 ) -> CrosshairResponse:
     """Update a crosshair entry."""
     if body.game is not None and body.game not in VALID_GAMES:
-        raise HTTPException(status_code=400, detail=f"Invalid game: {body.game}")
+        raise CrosshairInvalidError(context={"game": body.game})
     fields = body.model_dump(exclude_unset=True)
-    try:
-        repo = CrosshairRepository(pool)
-        row = await repo.update(str(crosshair_id), channel_id, fields=fields)
-        if row is None:
-            raise HTTPException(status_code=404, detail="Crosshair not found")
-        return CrosshairResponse(**row)
-    except HTTPException:
-        raise
-    except Exception:
-        LOGGER.exception("Failed to update crosshair")
-        raise HTTPException(status_code=500, detail="Failed to update crosshair") from None
+    repo = CrosshairRepository(pool)
+    row = await repo.update(str(crosshair_id), channel_id, fields=fields)
+    if row is None:
+        raise CrosshairNotFoundError(context={"crosshair_id": str(crosshair_id)})
+    return CrosshairResponse(**row)
 
 
 @router.delete("/{crosshair_id}", status_code=204)
@@ -202,13 +194,7 @@ async def delete_crosshair(
     pool: asyncpg.Pool = Depends(get_db_pool),
 ) -> None:
     """Delete a crosshair entry."""
-    try:
-        repo = CrosshairRepository(pool)
-        deleted = await repo.delete(str(crosshair_id), channel_id)
-        if not deleted:
-            raise HTTPException(status_code=404, detail="Crosshair not found")
-    except HTTPException:
-        raise
-    except Exception:
-        LOGGER.exception("Failed to delete crosshair")
-        raise HTTPException(status_code=500, detail="Failed to delete crosshair") from None
+    repo = CrosshairRepository(pool)
+    deleted = await repo.delete(str(crosshair_id), channel_id)
+    if not deleted:
+        raise CrosshairNotFoundError(context={"crosshair_id": str(crosshair_id)})
