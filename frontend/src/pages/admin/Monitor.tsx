@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 
-import { getContainerLogs, getLogContainers, type LogRecord } from '@/api/admin'
+import {
+  getClientErrorGroups,
+  getContainerLogs,
+  getLogContainers,
+  type LogRecord,
+} from '@/api/admin'
 import { PageMain } from '@/components/layout/PageMain'
 import { Icon, SlideUp, Spinner } from '@/components/primitives'
 import {
@@ -18,10 +23,12 @@ import {
 } from '@/components/ui'
 import { useServiceStatus } from '@/contexts/ServiceStatusContext'
 import { useAbortableFetch } from '@/hooks/useAbortableFetch'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { usePolling } from '@/hooks/usePolling'
 import { formatStartedAt, formatUptime } from '@/lib/format'
 
+import { ClientErrorsPanel } from './monitor/ClientErrorsPanel'
 import { DbConsole } from './monitor/DbConsole'
 import {
   DEFAULT_CONTAINERS,
@@ -72,6 +79,7 @@ export default function AdminMonitor() {
   const termRef = useRef<HTMLDivElement>(null)
   const [levelFilter, setLevelFilter] = useState<LevelFilter>('INFO')
   const [search, setSearch] = useState('')
+  const debouncedSearch = useDebouncedValue(search.trim(), 300)
   const [tabOrder, setTabOrder] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem('monitor-tab-order')
@@ -95,10 +103,10 @@ export default function AdminMonitor() {
       .catch(() => {})
   }, [guard, newToken])
 
-  const query = { tail, level: levelFilter, q: search.trim() || undefined }
+  const query = { tail, level: levelFilter, q: debouncedSearch || undefined }
 
   useEffect(() => {
-    if (selected === '__db__' || selected === '__status__') return
+    if (selected === '__db__' || selected === '__status__' || selected === '__errors__') return
     let cancelled = false
     dispatch({ type: 'start' })
     getContainerLogs(selected, query)
@@ -113,10 +121,10 @@ export default function AdminMonitor() {
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected, tail, levelFilter, search])
+  }, [selected, tail, levelFilter, debouncedSearch])
 
   const pollFetch = useCallback(async () => {
-    if (selected === '__db__' || selected === '__status__') return
+    if (selected === '__db__' || selected === '__status__' || selected === '__errors__') return
     try {
       const data = await getContainerLogs(selected, query)
       dispatch({ type: 'done', records: data.records })
@@ -124,11 +132,12 @@ export default function AdminMonitor() {
       // silent — don't disrupt the view on transient poll failure
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected, tail, levelFilter, search])
+  }, [selected, tail, levelFilter, debouncedSearch])
 
   const isDbMode = selected === '__db__'
   const isStatusMode = selected === '__status__'
-  const isLogMode = !isDbMode && !isStatusMode
+  const isErrorsMode = selected === '__errors__'
+  const isLogMode = !isDbMode && !isStatusMode && !isErrorsMode
 
   usePolling({ fetchFn: pollFetch, intervalMs: 5_000, enabled: isLogMode, skipInitialCall: true })
 
@@ -188,6 +197,29 @@ export default function AdminMonitor() {
     }
   }, [])
 
+  const jumpToLatest = useCallback(() => {
+    const el = termRef.current
+    if (!el) return
+    el.scrollTop = el.scrollHeight
+    followRef.current = true
+    setIsFollowing(true)
+  }, [])
+
+  /** From the Errors tab: open the API container log filtered to one request id.
+   *  request_id is bound by the API's request-context middleware, so nb-api is
+   *  where the matching structured lines live. */
+  const traceRequestId = useCallback(
+    (requestId: string) => {
+      const api = containers.find(c => c.name.startsWith('nb-api')) ?? containers[0]
+      setSelected(api.name)
+      setLevelFilter('ALL')
+      setSearch(requestId)
+      followRef.current = false
+      setIsFollowing(false)
+    },
+    [containers]
+  )
+
   // ── Status state ─────────────────────────────────────────────────────────
   const {
     twitch,
@@ -197,6 +229,22 @@ export default function AdminMonitor() {
     initialLoading,
     refresh: refreshStatus,
   } = useServiceStatus()
+
+  // Frontend-error summary shown on the Status tab (last 24h).
+  const [errSummary, setErrSummary] = useState<{ total: number; kinds: number } | null>(null)
+  const loadErrSummary = useCallback(() => {
+    getClientErrorGroups({ sinceHours: 24 })
+      .then(gs => setErrSummary({ total: gs.reduce((n, g) => n + g.count, 0), kinds: gs.length }))
+      .catch(() => {})
+  }, [])
+  useEffect(() => {
+    loadErrSummary()
+  }, [loadErrSummary])
+
+  const refreshStatusAll = useCallback(() => {
+    refreshStatus()
+    loadErrSummary()
+  }, [refreshStatus, loadErrSummary])
 
   const services = useMemo(
     () => [
@@ -282,18 +330,6 @@ export default function AdminMonitor() {
           </SlideUp>
           {isLogMode && (
             <div className="flex items-center gap-2">
-              <div className="hidden lg:flex items-center gap-0.5">
-                {LEVEL_FILTER_OPTS.map(lvl => (
-                  <button
-                    key={lvl}
-                    onClick={() => setLevelFilter(lvl)}
-                    className={`px-2 py-0.5 rounded text-label font-mono transition-colors select-none ${levelPillClass(lvl, levelFilter === lvl)}`}
-                  >
-                    {lvl === 'WARNING' ? 'WARN' : lvl}
-                  </button>
-                ))}
-              </div>
-              <div className="hidden lg:block w-px h-4 bg-border/50 shrink-0" />
               <Button
                 variant="ghost"
                 size="icon"
@@ -317,7 +353,7 @@ export default function AdminMonitor() {
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={refreshStatus}
+                onClick={refreshStatusAll}
                 aria-label="Refresh status"
               >
                 <Icon icon="fa-solid fa-rotate" wrapperClassName="text-muted-foreground" />
@@ -335,7 +371,7 @@ export default function AdminMonitor() {
               setLevelFilter('INFO')
               followRef.current = true
               setIsFollowing(true)
-              if (v === '__status__') refreshStatus()
+              if (v === '__status__') refreshStatusAll()
             }}
           >
             <TabsList variant="line" className="h-10 bg-transparent gap-0">
@@ -343,6 +379,15 @@ export default function AdminMonitor() {
                 <Icon icon="fa-solid fa-gauge" size="xs" />
                 Status
               </TabsTrigger>
+              <TabsTrigger value="__errors__" className="text-label px-3">
+                <Icon icon="fa-solid fa-triangle-exclamation" size="xs" />
+                Errors
+              </TabsTrigger>
+              <TabsTrigger value="__db__" className="text-label px-3">
+                <Icon icon="fa-solid fa-database" size="xs" />
+                DB
+              </TabsTrigger>
+              <div className="mx-2 my-2 w-px shrink-0 bg-border/50" aria-hidden />
               {sortedContainers.map(c => (
                 <TabsTrigger
                   key={c.name}
@@ -365,10 +410,6 @@ export default function AdminMonitor() {
                   {c.label}
                 </TabsTrigger>
               ))}
-              <TabsTrigger value="__db__" className="text-label px-3">
-                <Icon icon="fa-solid fa-database" size="xs" />
-                DB
-              </TabsTrigger>
             </TabsList>
           </Tabs>
         </div>
@@ -432,12 +473,58 @@ export default function AdminMonitor() {
                   </CardContent>
                 </Card>
               ))}
+
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center gap-2">
+                    <Icon
+                      icon="fa-solid fa-bug"
+                      size="sm"
+                      wrapperClassName="text-muted-foreground"
+                    />
+                    <CardTitle className="text-card-title">前端錯誤</CardTitle>
+                  </div>
+                  <CardAction>
+                    <button
+                      onClick={() => setSelected('__errors__')}
+                      className="text-label text-muted-foreground hover:text-foreground"
+                    >
+                      查看 →
+                    </button>
+                  </CardAction>
+                </CardHeader>
+                <CardContent>
+                  <FieldRow
+                    label="近 24 小時"
+                    loading={errSummary === null}
+                    value={
+                      errSummary && (
+                        <span
+                          className={
+                            errSummary.total === 0 ? 'text-status-online' : 'text-status-warning'
+                          }
+                        >
+                          {errSummary.total} 筆
+                        </span>
+                      )
+                    }
+                  />
+                  <Separator className="opacity-40" />
+                  <FieldRow
+                    label="種類"
+                    loading={errSummary === null}
+                    value={errSummary ? `${errSummary.kinds} 種` : null}
+                  />
+                </CardContent>
+              </Card>
             </div>
           </div>
         ) : isDbMode ? (
           <DbConsole />
+        ) : isErrorsMode ? (
+          <ClientErrorsPanel onTraceRequestId={traceRequestId} />
         ) : (
-          <div className="dark flex flex-col flex-1 min-h-0">
+          <div className="dark relative flex flex-col flex-1 min-h-0">
             <div
               ref={termRef}
               onScroll={handleScroll}
@@ -446,13 +533,13 @@ export default function AdminMonitor() {
               {loading && records.length === 0 ? (
                 <div className="flex items-center gap-2 px-4 py-3 text-muted-foreground">
                   <Spinner className="size-3" />
-                  <span>Loading logs…</span>
+                  <span>載入日誌中…</span>
                 </div>
               ) : error ? (
                 <div className="px-4 py-3 text-destructive">{error}</div>
               ) : records.length === 0 ? (
                 <div className="px-4 py-3 text-muted-foreground">
-                  {search || levelFilter !== 'ALL' ? '沒有符合條件的記錄' : 'No log output.'}
+                  {debouncedSearch || levelFilter !== 'ALL' ? '沒有符合條件的記錄' : '沒有日誌輸出'}
                 </div>
               ) : (
                 <div className="min-w-max">
@@ -462,6 +549,16 @@ export default function AdminMonitor() {
                 </div>
               )}
             </div>
+
+            {!isFollowing && records.length > 0 && (
+              <button
+                onClick={jumpToLatest}
+                className="absolute bottom-12 right-4 z-10 flex items-center gap-1.5 rounded-full border border-border/50 bg-accent px-3 py-1.5 text-label font-mono text-accent-foreground shadow-lg transition-colors hover:bg-accent/80"
+              >
+                <Icon icon="fa-solid fa-arrow-down" size="xs" />
+                最新
+              </button>
+            )}
 
             {/* Status bar */}
             <div className="flex items-center justify-between px-page lg:px-page-lg py-1.5 border-t border-border/20 bg-background shrink-0">

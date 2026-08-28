@@ -66,4 +66,26 @@ describe('LogRecordRow', () => {
     expect(screen.getByText('[28]')).toBeInTheDocument()
     expect(screen.getByText('deadlock')).toBeInTheDocument()
   })
+
+  it('renders primitive extra fields as key=value chips', () => {
+    render(
+      <LogRecordRow
+        record={{
+          ...base,
+          extra: { http_method: 'POST', http_path: '/api/timers', retries: 2, payload: { a: 1 } },
+        }}
+        index={0}
+      />
+    )
+    expect(screen.getByText('http_method=POST')).toBeInTheDocument()
+    expect(screen.getByText('http_path=/api/timers')).toBeInTheDocument()
+    expect(screen.getByText('retries=2')).toBeInTheDocument()
+    // non-primitive values are skipped
+    expect(screen.queryByText(/payload=/)).not.toBeInTheDocument()
+  })
+
+  it('marks a stderr row with an accent border', () => {
+    const { container } = render(<LogRecordRow record={{ ...base, stream: 'stderr' }} index={0} />)
+    expect(container.firstChild).toHaveClass('border-status-offline/40')
+  })
 })

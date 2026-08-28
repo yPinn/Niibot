@@ -164,6 +164,9 @@ export const API_ENDPOINTS = {
     logContainers: join('/api/admin/logs/containers'),
     containerLogs: (name: string) => join(`/api/admin/logs/${name}`),
     dbQuery: join('/api/admin/db/query'),
+    clientErrors: (qs: string) => join(`/api/admin/client-errors${qs}`),
+    clientErrorEvents: (fingerprint: string) =>
+      join(`/api/admin/client-errors/${encodeURIComponent(fingerprint)}`),
   },
   releases: {
     list: join('/api/releases'),

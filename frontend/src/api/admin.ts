@@ -261,3 +261,57 @@ export async function getContainerLogs(
   if (!response.ok) throw await parseApiError(response, `讀取 ${container} 記錄失敗`)
   return response.json()
 }
+
+// ── Client error telemetry (frontend errors, grouped by fingerprint) ──────────
+
+export type ClientErrorKind = 'error' | 'unhandledrejection' | 'react' | 'api'
+
+export interface ClientErrorGroup {
+  fingerprint: string
+  count: number
+  first_seen: string
+  last_seen: string
+  kind: ClientErrorKind
+  message: string
+  route: string | null
+  error_code: string | null
+  http_status: number | null
+  app_version: string | null
+  request_id: string | null
+}
+
+export interface ClientErrorEvent {
+  occurred_at: string
+  kind: ClientErrorKind
+  message: string
+  stack: string | null
+  component_stack: string | null
+  url: string
+  route: string | null
+  request_id: string | null
+  error_code: string | null
+  http_status: number | null
+  user_id: string | null
+  user_agent: string | null
+  app_version: string | null
+}
+
+export async function getClientErrorGroups(
+  opts: { sinceHours?: number; kind?: ClientErrorKind } = {}
+): Promise<ClientErrorGroup[]> {
+  const params = new URLSearchParams()
+  if (opts.sinceHours !== undefined) params.set('since_hours', String(opts.sinceHours))
+  if (opts.kind) params.set('kind', opts.kind)
+  const qs = params.toString() ? `?${params}` : ''
+  const response = await apiFetch(API_ENDPOINTS.admin.clientErrors(qs), { credentials: 'include' })
+  if (!response.ok) throw await parseApiError(response, '載入前端錯誤失敗')
+  return response.json()
+}
+
+export async function getClientErrorEvents(fingerprint: string): Promise<ClientErrorEvent[]> {
+  const response = await apiFetch(API_ENDPOINTS.admin.clientErrorEvents(fingerprint), {
+    credentials: 'include',
+  })
+  if (!response.ok) throw await parseApiError(response, '載入錯誤明細失敗')
+  return response.json()
+}
