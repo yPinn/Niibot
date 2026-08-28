@@ -1,6 +1,7 @@
 import { apiCache, CACHE_KEYS } from '@/lib/apiCache'
 
 import { API_ENDPOINTS, apiFetch } from './config'
+import { parseApiError } from './errors'
 
 export interface SessionSummary {
   session_id: number
@@ -52,7 +53,7 @@ export async function getAnalyticsSummary(days: number = 30): Promise<AnalyticsS
       const response = await apiFetch(`${API_ENDPOINTS.analytics.summary}?days=${days}`, {
         credentials: 'include',
       })
-      if (!response.ok) throw new Error(`Failed to fetch analytics summary: ${response.statusText}`)
+      if (!response.ok) throw await parseApiError(response, '載入數據總覽失敗')
       return response.json() as Promise<AnalyticsSummary>
     },
     { ttl: ANALYTICS_TTL }
@@ -70,7 +71,7 @@ export async function getTopCommands(
         `${API_ENDPOINTS.analytics.topCommands}?days=${days}&limit=${limit}`,
         { credentials: 'include' }
       )
-      if (!response.ok) throw new Error(`Failed to fetch top commands: ${response.statusText}`)
+      if (!response.ok) throw await parseApiError(response, '載入熱門指令失敗')
       return response.json() as Promise<AnalyticsCommandStat[]>
     },
     { ttl: ANALYTICS_TTL }
@@ -84,7 +85,7 @@ export async function getSessionCommands(sessionId: number): Promise<AnalyticsCo
       const response = await apiFetch(API_ENDPOINTS.analytics.sessionCommands(sessionId), {
         credentials: 'include',
       })
-      if (!response.ok) throw new Error(`Failed to fetch session commands: ${response.statusText}`)
+      if (!response.ok) throw await parseApiError(response, '載入場次指令失敗')
       return response.json() as Promise<AnalyticsCommandStat[]>
     },
     { ttl: SESSION_TTL }
@@ -145,7 +146,7 @@ export async function getInsights(days: number = 30): Promise<ChannelInsights> {
       const response = await apiFetch(`${API_ENDPOINTS.analytics.insights}?days=${days}`, {
         credentials: 'include',
       })
-      if (!response.ok) throw new Error(`Failed to fetch insights: ${response.statusText}`)
+      if (!response.ok) throw await parseApiError(response, '載入洞察數據失敗')
       return response.json() as Promise<ChannelInsights>
     },
     { ttl: ANALYTICS_TTL }
@@ -220,7 +221,7 @@ export async function listViewers(
         credentials: 'include',
         ...(forceRefresh && { cache: 'no-store' as RequestCache }),
       })
-      if (!response.ok) throw new Error(`Failed to fetch viewers: ${response.statusText}`)
+      if (!response.ok) throw await parseApiError(response, '載入觀眾清單失敗')
       return response.json() as Promise<ViewerSummary[]>
     },
     { ttl: ANALYTICS_TTL, forceRefresh }
@@ -235,7 +236,7 @@ export async function getViewerProfile(userId: string, days: number = 30): Promi
         `${API_ENDPOINTS.analytics.viewerProfile(userId)}?days=${days}`,
         { credentials: 'include' }
       )
-      if (!response.ok) throw new Error(`Failed to fetch viewer profile: ${response.statusText}`)
+      if (!response.ok) throw await parseApiError(response, '載入觀眾檔案失敗')
       return response.json() as Promise<ViewerProfile>
     },
     { ttl: ANALYTICS_TTL }
@@ -269,7 +270,7 @@ export async function getChannelBadges(): Promise<ChannelBadges> {
       const response = await apiFetch(API_ENDPOINTS.analytics.channelBadges, {
         credentials: 'include',
       })
-      if (!response.ok) throw new Error(`Failed to fetch channel badges: ${response.statusText}`)
+      if (!response.ok) throw await parseApiError(response, '載入頻道徽章失敗')
       return response.json() as Promise<ChannelBadges>
     },
     { ttl: 60 * 60 * 1000 }
@@ -285,7 +286,7 @@ export async function getGlobalBadges(): Promise<GlobalBadgeSets> {
       const response = await apiFetch(API_ENDPOINTS.analytics.globalBadges, {
         credentials: 'include',
       })
-      if (!response.ok) throw new Error(`Failed to fetch global badges: ${response.statusText}`)
+      if (!response.ok) throw await parseApiError(response, '載入全域徽章失敗')
       return response.json() as Promise<GlobalBadgeSets>
     },
     { ttl: 24 * 60 * 60 * 1000 }
@@ -304,7 +305,7 @@ export async function syncChannelRoles(): Promise<RoleSyncResult> {
     method: 'POST',
     credentials: 'include',
   })
-  if (!response.ok) throw new Error(`Role sync failed: ${response.statusText}`)
+  if (!response.ok) throw await parseApiError(response, '同步身分組失敗')
   return response.json() as Promise<RoleSyncResult>
 }
 
@@ -367,7 +368,7 @@ export async function getMatcherSummaries(days: number = 30): Promise<MatcherCha
       const response = await apiFetch(`/api/analytics/matcher?days=${days}`, {
         credentials: 'include',
       })
-      if (!response.ok) throw new Error(`Failed to fetch matcher summaries: ${response.statusText}`)
+      if (!response.ok) throw await parseApiError(response, '載入配對數據失敗')
       return response.json() as Promise<MatcherChannelSummary[]>
     },
     { ttl: MATCHER_TTL }
@@ -386,7 +387,7 @@ export async function getPotentialViewers(
         `/api/analytics/matcher/${partnerChannelId}/viewers?limit=${limit}&offset=${offset}`,
         { credentials: 'include' }
       )
-      if (!response.ok) throw new Error(`Failed to fetch potential viewers: ${response.statusText}`)
+      if (!response.ok) throw await parseApiError(response, '載入潛在觀眾失敗')
       return response.json() as Promise<MatcherViewersResponse>
     },
     { ttl: MATCHER_TTL }
@@ -398,7 +399,7 @@ export async function refreshMatcher(): Promise<RefreshResult> {
     method: 'POST',
     credentials: 'include',
   })
-  if (!response.ok) throw new Error(`Failed to refresh matcher: ${response.statusText}`)
+  if (!response.ok) throw await parseApiError(response, '重新整理配對失敗')
   return response.json() as Promise<RefreshResult>
 }
 
@@ -409,7 +410,7 @@ export async function getSessionEvents(sessionId: number): Promise<StreamEvent[]
       const response = await apiFetch(API_ENDPOINTS.analytics.sessionEvents(sessionId), {
         credentials: 'include',
       })
-      if (!response.ok) throw new Error(`Failed to fetch session events: ${response.statusText}`)
+      if (!response.ok) throw await parseApiError(response, '載入場次事件失敗')
       return response.json() as Promise<StreamEvent[]>
     },
     { ttl: SESSION_TTL }

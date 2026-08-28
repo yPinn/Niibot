@@ -89,7 +89,7 @@ describe('grantBotMod', () => {
 
   it('throws when response is not ok', async () => {
     mockApiFetch.mockResolvedValue(new Response('', { status: 500 }))
-    await expect(grantBotMod()).rejects.toThrow('Failed to grant moderator status')
+    await expect(grantBotMod()).rejects.toThrow('授予 Bot 板主失敗')
   })
 
   it('calls the correct endpoint with POST and credentials', async () => {

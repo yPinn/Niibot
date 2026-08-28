@@ -1,4 +1,5 @@
 import { API_ENDPOINTS, apiFetch } from './config'
+import { parseApiError } from './errors'
 
 export interface VideoQueueEntry {
   id: number
@@ -45,7 +46,7 @@ export interface VideoQueueSettingsUpdate {
 
 export async function getPublicVideoQueueState(username: string): Promise<PublicVideoQueueState> {
   const response = await apiFetch(API_ENDPOINTS.videoQueue.public(username))
-  if (!response.ok) throw new Error(`Failed to fetch video queue state: ${response.statusText}`)
+  if (!response.ok) throw await parseApiError(response, '載入點播佇列失敗')
   return response.json()
 }
 
@@ -58,7 +59,7 @@ export async function advanceVideoQueue(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ done_id: doneId }),
   })
-  if (!response.ok) throw new Error(`Failed to advance video queue: ${response.statusText}`)
+  if (!response.ok) throw await parseApiError(response, '播放下一部失敗')
   return response.json()
 }
 
@@ -79,7 +80,7 @@ export async function reportVideoMetadata(
 
 export async function getVideoQueueState(): Promise<PublicVideoQueueState> {
   const response = await apiFetch(API_ENDPOINTS.videoQueue.state, { credentials: 'include' })
-  if (!response.ok) throw new Error(`Failed to fetch video queue state: ${response.statusText}`)
+  if (!response.ok) throw await parseApiError(response, '載入點播佇列失敗')
   return response.json()
 }
 
@@ -88,7 +89,7 @@ export async function skipCurrentVideo(): Promise<PublicVideoQueueState> {
     method: 'DELETE',
     credentials: 'include',
   })
-  if (!response.ok) throw new Error(`Failed to skip video: ${response.statusText}`)
+  if (!response.ok) throw await parseApiError(response, '跳過影片失敗')
   return response.json()
 }
 
@@ -97,13 +98,13 @@ export async function clearVideoQueue(): Promise<PublicVideoQueueState> {
     method: 'DELETE',
     credentials: 'include',
   })
-  if (!response.ok) throw new Error(`Failed to clear video queue: ${response.statusText}`)
+  if (!response.ok) throw await parseApiError(response, '清空點播佇列失敗')
   return response.json()
 }
 
 export async function getVideoQueueSettings(): Promise<VideoQueueSettings> {
   const response = await apiFetch(API_ENDPOINTS.videoQueue.settings, { credentials: 'include' })
-  if (!response.ok) throw new Error(`Failed to fetch video queue settings: ${response.statusText}`)
+  if (!response.ok) throw await parseApiError(response, '載入點播設定失敗')
   return response.json()
 }
 
@@ -116,7 +117,7 @@ export async function updateVideoQueueSettings(
     credentials: 'include',
     body: JSON.stringify(data),
   })
-  if (!response.ok) throw new Error(`Failed to update video queue settings: ${response.statusText}`)
+  if (!response.ok) throw await parseApiError(response, '更新點播設定失敗')
   return response.json()
 }
 
@@ -125,7 +126,7 @@ export async function setVideoAsNext(entryId: number): Promise<PublicVideoQueueS
     method: 'POST',
     credentials: 'include',
   })
-  if (!response.ok) throw new Error(`Failed to set entry as next: ${response.statusText}`)
+  if (!response.ok) throw await parseApiError(response, '設為下一部失敗')
   return response.json()
 }
 
@@ -134,7 +135,7 @@ export async function playVideoNow(entryId: number): Promise<PublicVideoQueueSta
     method: 'POST',
     credentials: 'include',
   })
-  if (!response.ok) throw new Error(`Failed to play entry now: ${response.statusText}`)
+  if (!response.ok) throw await parseApiError(response, '立即播放失敗')
   return response.json()
 }
 
@@ -143,7 +144,7 @@ export async function removeQueueEntry(entryId: number): Promise<PublicVideoQueu
     method: 'DELETE',
     credentials: 'include',
   })
-  if (!response.ok) throw new Error(`Failed to remove entry: ${response.statusText}`)
+  if (!response.ok) throw await parseApiError(response, '移除影片失敗')
   return response.json()
 }
 

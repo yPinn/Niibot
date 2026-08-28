@@ -1,4 +1,5 @@
-import { API_ENDPOINTS, apiFetch } from './config'
+import { API_ENDPOINTS } from './config'
+import { apiJson } from './errors'
 
 export type DonationPlatform = 'ecpay' | 'opay' | 'paypal' | 'newebpay'
 
@@ -46,63 +47,54 @@ export interface CheckoutResponse {
   form_params: Record<string, string>
 }
 
-export async function getPaymentConfigs(): Promise<PaymentConfigResponse[]> {
-  const res = await apiFetch(API_ENDPOINTS.paymentConfigs.list, {
-    credentials: 'include',
-  })
-  if (!res.ok) throw new Error('Failed to fetch payment configs')
-  return res.json()
+export function getPaymentConfigs(): Promise<PaymentConfigResponse[]> {
+  return apiJson(
+    API_ENDPOINTS.paymentConfigs.list,
+    { credentials: 'include' },
+    { fallback: '載入贊助設定失敗' }
+  )
 }
 
-export async function upsertPaymentConfig(
+export function upsertPaymentConfig(
   platform: DonationPlatform,
   data: PaymentConfigUpsert
 ): Promise<PaymentConfigResponse> {
-  const res = await apiFetch(API_ENDPOINTS.paymentConfigs.upsert(platform), {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify(data),
-  })
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    throw new Error(body.detail || 'Failed to save payment config')
-  }
-  return res.json()
+  return apiJson(
+    API_ENDPOINTS.paymentConfigs.upsert(platform),
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(data),
+    },
+    { fallback: '儲存贊助設定失敗' }
+  )
 }
 
-export async function deletePaymentConfig(platform: DonationPlatform): Promise<void> {
-  const res = await apiFetch(API_ENDPOINTS.paymentConfigs.delete(platform), {
-    method: 'DELETE',
-    credentials: 'include',
-  })
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    throw new Error(body.detail || 'Failed to delete payment config')
-  }
+export function deletePaymentConfig(platform: DonationPlatform): Promise<void> {
+  return apiJson(
+    API_ENDPOINTS.paymentConfigs.delete(platform),
+    { method: 'DELETE', credentials: 'include' },
+    { fallback: '刪除贊助設定失敗' }
+  )
 }
 
-export async function getPublicDonateInfo(username: string): Promise<PublicDonateInfo> {
-  const res = await apiFetch(API_ENDPOINTS.donate.public(username))
-  if (res.status === 404) throw new Error('Streamer not found')
-  if (!res.ok) throw new Error('Failed to load donation info')
-  return res.json()
+export function getPublicDonateInfo(username: string): Promise<PublicDonateInfo> {
+  return apiJson(API_ENDPOINTS.donate.public(username), undefined, {
+    fallback: '載入贊助資訊失敗',
+  })
 }
 
-export async function createCheckout(
-  username: string,
-  data: CheckoutRequest
-): Promise<CheckoutResponse> {
-  const res = await apiFetch(API_ENDPOINTS.donate.checkout(username), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  })
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    throw new Error(body.detail || 'Failed to create checkout')
-  }
-  return res.json()
+export function createCheckout(username: string, data: CheckoutRequest): Promise<CheckoutResponse> {
+  return apiJson(
+    API_ENDPOINTS.donate.checkout(username),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    },
+    { fallback: '建立結帳失敗' }
+  )
 }
 
 export const PLATFORM_LABELS: Record<DonationPlatform, string> = {
