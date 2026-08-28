@@ -16,7 +16,7 @@ PATCH is **never manually set**. It is generated at build time from `git describ
 
 ## How It Works
 
-The deploy workflow (`deploy-prod.yml`) runs:
+The shared deploy workflow (`.github/workflows/_deploy.yml`) runs:
 
 ```bash
 git describe --tags --always
@@ -54,7 +54,9 @@ And transforms it to the display format:
    git push origin v1.4
    ```
 
-3. Update `frontend/package.json` and `backend/pyproject.toml` to `MAJOR.MINOR.0` (metadata only — not used at runtime)
+3. Update `backend/pyproject.toml` `version` to `MAJOR.MINOR`, matching the tag
+   (metadata only — not read at runtime). `frontend/package.json` has no
+   `version` field and needs no change.
 
 No separate version bump commit is required.
 
@@ -66,17 +68,18 @@ No separate version bump commit is required.
   (Tags before v1.4 used `vMAJOR.MINOR.PATCH` — kept as historical anchors, still handled correctly.)
 - **Tag only on `main`**, only when ready to deploy.
 - **One tag per release.** Frontend and backend share the same tag.
-- **`package.json` / `pyproject.toml` versions are metadata** — not read at runtime.
-  Keep them in sync with the latest tag for IDE tooling and human reference only.
+- **`backend/pyproject.toml` `version` is metadata** — not read at runtime.
+  Keep it in sync with the latest tag (two segments, e.g. `1.12`) for tooling
+  and human reference. `frontend/package.json` carries no version.
 
 ---
 
 ## Component Reference
 
-| Component                | Version source at runtime                                            |
-| ------------------------ | -------------------------------------------------------------------- |
-| API Server               | `APP_VERSION` env var (set from `git describe` in `deploy-prod.yml`) |
-| Twitch Bot               | same                                                                 |
-| Discord Bot              | same                                                                 |
-| `frontend/package.json`  | metadata only — not displayed at runtime                             |
-| `backend/pyproject.toml` | metadata only — not displayed at runtime                             |
+| Component                | Version source at runtime                                        |
+| ------------------------ | ---------------------------------------------------------------- |
+| API Server               | `APP_VERSION` env var (set from `git describe` in `_deploy.yml`) |
+| Twitch Bot               | same                                                             |
+| Discord Bot              | same                                                             |
+| Frontend                 | `git describe` at Cloudflare Pages build (no `version` field)    |
+| `backend/pyproject.toml` | metadata only — not displayed at runtime                         |

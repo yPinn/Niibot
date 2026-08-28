@@ -6,19 +6,21 @@ Niibot 的網頁控制台，部署在 Cloudflare Pages。CF Pages Functions 將 
 
 ## 技術棧
 
-| 工具                          | 用途                            |
-| ----------------------------- | ------------------------------- |
-| React 19 + TypeScript 5.9     | UI 框架與型別系統               |
-| Vite 7（SWC）+ React Router 7 | 建置工具與頁面路由              |
-| Tailwind CSS 4                | 樣式系統                        |
-| shadcn/ui（基於 Radix UI）    | UI 元件庫（按鈕、卡片、側欄等） |
-| Motion 12                     | 動畫與轉場                      |
-| Recharts                      | 數據圖表                        |
-| Vitest + Testing Library      | 自動化測試                      |
+| 工具                       | 用途                            |
+| -------------------------- | ------------------------------- |
+| React 19 + TypeScript      | UI 框架與型別系統               |
+| Vite（SWC）+ React Router  | 建置工具與頁面路由              |
+| Tailwind CSS 4             | 樣式系統                        |
+| shadcn/ui（基於 Radix UI） | UI 元件庫（按鈕、卡片、側欄等） |
+| Motion                     | 動畫與轉場                      |
+| Recharts                   | 數據圖表                        |
+| Vitest + Testing Library   | 自動化測試                      |
+
+精確版本見 `package.json`。
 
 ## 前置需求
 
-- [Node.js 22+](https://nodejs.org/)
+- Node.js — 版本見 `.nvmrc`
 
 ## 開發
 
@@ -32,12 +34,16 @@ npm run dev     # 啟動開發伺服器（localhost:3000）
 ```env
 VITE_API_URL=http://localhost:8000  # 後端代理目標（預設 localhost:8000）
 VITE_BOT_USERNAME=niibot_           # Bot 帳號名，抑制自身的「授予 Mod」提示
-VITE_DISCORD_COMMUNITY_URL=         # Discord 社群邀請連結（側邊欄／說明橫幅／條款頁聯絡方式）
-VITE_DISCORD_BOT_INVITE_URL=        # Discord Bot OAuth 邀請連結（將 Bot 加入自己的伺服器）
-VITE_ENVIRONMENT=                   # 部署環境：production 鎖定 WIP 頁面；staging/dev 不鎖定
+VITE_DISCORD_COMMUNITY_URL=         # Discord 社群邀請連結（側欄／說明橫幅／條款頁）
+VITE_DISCORD_BOT_INVITE_URL=        # 把 Bot 加入自己伺服器的 OAuth 連結
+VITE_SUPPORT_ECPAY_URL=             # 贊助頁 ECPay 連結
+VITE_ENVIRONMENT=                   # 部署環境：production 鎖定 WIP 頁面；staging/dev 不鎖
 ```
 
-> 部署時於 Cloudflare Pages 設定：staging 須明確設 `VITE_ENVIRONMENT=staging` 才解鎖；未設定者一律保持鎖定（fail-safe）。
+完整欄位說明見 [docs/guides/environment.md](../docs/guides/environment.md)。
+
+> 部署時於 Cloudflare Pages 設定：staging 須明確設 `VITE_ENVIRONMENT=staging` 才解鎖；
+> 未設定者一律保持鎖定（fail-safe）。
 
 ## 指令
 
@@ -69,14 +75,17 @@ src/
 │   ├── BotContext.tsx           # 目前活躍的 Bot 平台（twitch / discord）
 │   └── ServiceStatusContext.tsx # Twitch / Discord / API 服務狀態（30s polling）
 ├── config/         # navigation.ts — Twitch 與 Discord sidebar 導覽設定
-├── hooks/          # usePolling、useSortState、useOptimisticToggle、useInputInsert、useAbortableFetch、useBreadcrumbs、useDocumentTitle
+├── hooks/          # usePolling、useSortState、useOptimisticToggle、useInputInsert、
+│                   #   useAbortableFetch、useBreadcrumbs、useDocumentTitle、useGrantMod、useOnboardingStatus
 ├── lib/
 │   ├── apiCache.ts  # 記憶體內 TTL 快取（上限 200 條）+ 請求合併；CACHE_KEYS 集中管理所有快取鍵
 │   ├── sort.ts      # 通用排序工具（nameSort、ROLE_ORDER）
 │   ├── format.ts    # 日期時間格式化輔助函式
 │   ├── sanitize.ts  # DOMPurify 包裝（ANSI HTML 消毒，用於 Admin Monitor）
 │   ├── clipboard.ts # Clipboard API 複製工具
-│   ├── motion.ts    # Framer Motion 共用動畫 variant
+│   ├── motion.ts    # Motion 共用動畫 variant
+│   ├── insights-suggestions.ts  # Insights 頁的建議行動推導
+│   ├── onboarding-status.ts     # 設定完成度判斷
 │   └── utils.ts     # cn()（Tailwind class 合併）
 ├── pages/
 │   ├── dashboard/  # Twitch Bot（Commands、Events、Overview、Timers）
@@ -87,7 +96,7 @@ src/
 │   ├── admin/      # 管理員頁面（OwnerRoute）
 │   ├── activate/   # 啟用碼頁面
 │   ├── docs/       # GetStarted、Releases
-│   └── ...         # Landing、Login、PublicCommands、Overlays、Settings、DonatePage
+│   └── ...         # Landing、Login、PublicCommands、Overlays、Settings、DonatePage、Support、NotFound
 └── test/           # Vitest 設定（setup.ts）
 functions/          # CF Pages Functions — /api/*、/health、/status 反向代理
 ```
@@ -104,7 +113,9 @@ functions/          # CF Pages Functions — /api/*、/health、/status 反向�
   /:username/game-queue/overlay  GameQueueOverlay（OBS browser source）
   /:username/video-queue/overlay VideoQueueOverlay（OBS browser source）
   /activate                      ActivatePage（啟用碼）
+  /support                       Support（贊助頁）
   /login                         LoginPage（PublicOnlyRoute，已登入者重導）
+  *                              NotFound（404）
 
 ProtectedRoute → SidebarLayout（需登入）
   /dashboard                     Overview
@@ -125,6 +136,9 @@ ProtectedRoute → SidebarLayout（需登入）
 OwnerRoute（限擁有者）
   /admin                         AdminPage
   /admin/monitor                 AdminMonitor
+  /admin/modules                 AdminModules
+
+/dev/typography                  TypographyDemo（僅開發用）
 ```
 
 ## 部署
