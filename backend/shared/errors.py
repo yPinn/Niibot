@@ -14,13 +14,14 @@ pins the invariants below.
 
 user_message writing rules (enforced by the test):
 
-* One sentence, ~12–24 characters. No line breaks, no trailing period.
+* One sentence, up to ~40 characters. No line breaks, no trailing period.
 * Say *what happened + what to do next*, never the mechanism.
     OK   「儲存失敗，請稍後再試」  「這個名稱已經有人用了，換一個吧」
     NOT  「資料庫連線逾時」        「Upstream API 回傳 502」
-* Must not contain: HTTP status codes, exception class names, Latin-letter
-  technical terms, internal field/program names, stack traces, internal IDs,
-  or the error code itself.
+* Must not contain: HTTP status codes, exception class names, technical
+  jargon, internal field/program names, stack traces, internal IDs, or the
+  error code itself. Recognisable brand names (YouTube, Twitch, ...) are ok —
+  see _ALLOWED_WORDS.
 * Address the user as 「你」. For server-side faults, take responsibility
   (「系統暫時出了點狀況」, not 「發生未知錯誤」). For 4xx, state it neutrally —
   do not blame the user.
