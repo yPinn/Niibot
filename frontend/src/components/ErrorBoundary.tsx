@@ -1,6 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { reportClientError } from '@/lib/clientErrorReporter'
 
 interface Props {
   children: ReactNode
@@ -19,6 +20,12 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     if (import.meta.env.DEV) console.error('[ErrorBoundary]', error, info.componentStack)
+    reportClientError({
+      kind: 'react',
+      message: error.message,
+      stack: error.stack,
+      componentStack: info.componentStack,
+    })
   }
 
   render() {

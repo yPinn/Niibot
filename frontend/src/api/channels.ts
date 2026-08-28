@@ -1,4 +1,5 @@
 import { apiCache, CACHE_KEYS } from '@/lib/apiCache'
+import { reportSilent } from '@/lib/clientErrorReporter'
 
 import { API_ENDPOINTS, apiFetch } from './config'
 import { parseApiError } from './errors'
@@ -42,6 +43,7 @@ async function fetchTwitchMonitoredChannels(): Promise<Channel[]> {
     return await response.json()
   } catch (error) {
     if (import.meta.env.DEV) console.error('Failed to get channels:', error)
+    reportSilent(error)
     return []
   }
 }
@@ -66,6 +68,7 @@ export async function getTwitchChannelStatus(): Promise<ChannelStatus | null> {
     return response.json()
   } catch (error) {
     if (import.meta.env.DEV) console.error('Failed to get channel status:', error)
+    reportSilent(error)
     return null
   }
 }

@@ -1,6 +1,8 @@
 import { apiCache, CACHE_KEYS } from '@/lib/apiCache'
+import { reportSilent } from '@/lib/clientErrorReporter'
 
 import { API_ENDPOINTS, apiFetch } from './config'
+import { parseApiError } from './errors'
 
 export interface CommandStat {
   name: string
@@ -29,13 +31,13 @@ export async function getChannelStats(days = 30): Promise<ChannelStats | null> {
           credentials: 'include',
         })
         if (!response.ok) {
-          if (import.meta.env.DEV)
-            console.error(`Failed to fetch stats: ${response.status} ${response.statusText}`)
+          reportSilent(await parseApiError(response, '載入頻道統計失敗'))
           return null
         }
         return (await response.json()) as ChannelStats
       } catch (error) {
         if (import.meta.env.DEV) console.error('Failed to get channel stats:', error)
+        reportSilent(error)
         return null
       }
     },

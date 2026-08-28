@@ -168,6 +168,7 @@ export const API_ENDPOINTS = {
   releases: {
     list: join('/api/releases'),
   },
+  clientErrors: join('/api/client-errors'),
   health: join('/health'),
   status: join('/status'),
 } as const
