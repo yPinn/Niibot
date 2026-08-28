@@ -111,11 +111,12 @@ for key, spec in manifest["ci"].items():
         sys.exit(1)
     buffers.setdefault(tag, []).append(f"{key}={value}")
 
+# Write every file, even with no keys — compose lists them under env_file: and
+# a missing one aborts `docker compose up` (backend/twitch/.env has only the
+# optional CONDUIT_ID). Matches the old heredoc, which always created all five.
 for tag, path_rel in FILE_PATHS.items():
     lines = buffers.get(tag, [])
-    if not lines:
-        continue
-    content = "\n".join(lines) + "\n"
+    content = "".join(f"{line}\n" for line in lines)
     if dry_run:
         print(f"\n===== {path_rel} =====")
         print(content, end="")
