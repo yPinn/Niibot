@@ -14,6 +14,7 @@ from core.config import Settings, get_settings
 from core.dependencies import get_current_channel_id, get_db_pool, get_twitch_api, require_activated
 from services import TwitchAPIClient
 from shared.cache import AsyncTTLCache
+from shared.errors import AccessDeniedError, AppError, ConflictError, InvalidInputError
 from shared.repositories.channel import ChannelRepository
 from shared.repositories.video_queue import (
     SOURCE_PRIORITY,
@@ -32,6 +33,22 @@ from shared.video_sources import (
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/video-queue", tags=["video-queue"])
+
+
+class VideoQueueDisabledError(AccessDeniedError):
+    code = "VIDEO_QUEUE.DISABLED"
+    user_message = "點播功能目前沒有開啟"
+
+
+class VideoAlreadyQueuedError(ConflictError):
+    code = "VIDEO_QUEUE.ALREADY_EXISTS"
+    user_message = "這部影片已經在佇列裡了"
+
+
+class InvalidVideoUrlError(InvalidInputError):
+    code = "VIDEO_QUEUE.INVALID_URL"
+    http_status = 422
+    user_message = "看不懂這個連結，支援 YouTube、Twitch 剪輯或 Bilibili"
 
 
 class VideoEntryResponse(BaseModel):
@@ -429,7 +446,7 @@ async def add_video_entry(
     if not video_id and not clip_slug:
         bvid = await resolve_bilibili_url(body.url)
     if not video_id and not clip_slug and not bvid:
-        raise HTTPException(status_code=422, detail="Invalid YouTube, Twitch clip, or Bilibili URL")
+        raise InvalidVideoUrlError()
 
     try:
         repo = VideoQueueRepository(pool)
@@ -437,12 +454,12 @@ async def add_video_entry(
 
         settings = await settings_repo.get_or_create(channel_id)
         if not settings.enabled:
-            raise HTTPException(status_code=403, detail="Video queue is disabled")
+            raise VideoQueueDisabledError()
 
         # 422 above ensures exactly one of these is non-None.
         active_id: str = clip_slug or bvid or video_id  # type: ignore[assignment]
         if await repo.video_is_active(channel_id, active_id):
-            raise HTTPException(status_code=409, detail="Video already in queue")
+            raise VideoAlreadyQueuedError()
 
         # Dashboard bypasses max_queue_size and min_view_count — broadcaster has full authority.
         if clip_slug:
@@ -458,7 +475,7 @@ async def add_video_entry(
             video_type = "bilibili"
         else:
             if video_id is None:
-                raise HTTPException(status_code=422, detail="No valid video source")
+                raise InvalidVideoUrlError()
             title, duration_seconds, _view_count, is_vertical_from_api = await fetch_yt_info(
                 video_id, app_settings.youtube_api_key
             )
@@ -483,7 +500,7 @@ async def add_video_entry(
         )
         LOGGER.info("Channel %s added %s %s from dashboard", channel_id, video_type, video_id)
         return await _build_public_state(channel_id, repo, settings_repo)
-    except HTTPException:
+    except (HTTPException, AppError):
         raise
     except Exception:
         LOGGER.exception("Failed to add video entry")

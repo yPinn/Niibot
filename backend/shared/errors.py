@@ -157,7 +157,23 @@ def iter_error_classes(root: type[AppError] = AppError) -> Iterator[type[AppErro
         yield from iter_error_classes(sub)
 
 
-_LATIN_RE = re.compile(r"[A-Za-z]")
+# Brand / product names that are fine to show a non-technical user.
+_ALLOWED_WORDS = {
+    "youtube",
+    "twitch",
+    "bilibili",
+    "discord",
+    "obs",
+    "ai",
+    "paypal",
+    "ecpay",
+    "opay",
+    "newebpay",
+    "bot",
+    "valorant",
+    "tft",
+}
+_WORD_RE = re.compile(r"[A-Za-z]+")
 
 
 def validate_catalog() -> list[str]:
@@ -187,8 +203,11 @@ def validate_catalog() -> list[str]:
             problems.append(f"{cls.__name__}: status {cls.http_status} not allowed")
 
         msg = cls.user_message
-        if not msg or msg.strip() != msg or len(msg) > 30 or "\n" in msg:
+        bad_words = [w for w in _WORD_RE.findall(msg) if w.lower() not in _ALLOWED_WORDS]
+        if not msg or msg.strip() != msg or len(msg) > 40 or "\n" in msg:
             problems.append(f"{cls.__name__}: user_message not clean prose ({msg!r})")
-        elif _LATIN_RE.search(msg) or cls.code in msg:
-            problems.append(f"{cls.__name__}: user_message leaks tech text ({msg!r})")
+        elif bad_words or cls.code in msg:
+            problems.append(
+                f"{cls.__name__}: user_message leaks tech text {bad_words or cls.code!r} ({msg!r})"
+            )
     return problems

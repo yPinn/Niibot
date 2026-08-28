@@ -35,6 +35,7 @@ import { WipLockOverlay } from '@/components/WipLockOverlay'
 import { SHOW_WIP_LOCK } from '@/config/env'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
+import { toastApiError } from '@/lib/toast-error'
 
 const ALL_PLATFORMS: DonationPlatform[] = ['ecpay', 'opay', 'newebpay', 'paypal']
 
@@ -113,8 +114,8 @@ export default function Settings() {
         }
         return updated
       })
-    } catch {
-      toast.error('無法載入金流設定')
+    } catch (e) {
+      toastApiError(e, '無法載入金流設定')
     } finally {
       setPaymentLoading(false)
     }
@@ -142,8 +143,8 @@ export default function Settings() {
       })
       toast.success(`已儲存 ${PLATFORM_LABELS[platform]} 設定`)
       await fetchPaymentConfigs()
-    } catch {
-      toast.error('儲存失敗', { description: '請稍後再試' })
+    } catch (e) {
+      toastApiError(e, '儲存失敗')
     } finally {
       setPaymentSaving(null)
     }
@@ -159,8 +160,8 @@ export default function Settings() {
       toast.success(`已刪除 ${PLATFORM_LABELS[platform]} 設定`)
       setPaymentForms(prev => ({ ...prev, [platform]: emptyForm() }))
       await fetchPaymentConfigs()
-    } catch {
-      toast.error('刪除失敗', { description: '請稍後再試' })
+    } catch (e) {
+      toastApiError(e, '刪除失敗')
     } finally {
       setPaymentDeleting(null)
     }

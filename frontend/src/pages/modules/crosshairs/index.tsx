@@ -43,6 +43,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
+import { toastApiError } from '@/lib/toast-error'
 
 import { CrosshairAdjustSheet } from './CrosshairAdjustSheet'
 import { CrosshairCardBase } from './CrosshairCardBase'
@@ -113,7 +114,7 @@ export default function CrosshairModule() {
       .then(data => {
         if (!cancelled) setCrosshairs(data)
       })
-      .catch(() => toast.error('無法載入準星'))
+      .catch(e => toastApiError(e, '無法載入準星'))
       .finally(() => {
         if (!cancelled) setLoadingMine(false)
       })
@@ -148,8 +149,8 @@ export default function CrosshairModule() {
       })
       setCrosshairs(cs => cs.map(c => (c.id === target.id ? updated : c)))
       toast.success('已更新準星')
-    } catch {
-      toast.error('儲存失敗')
+    } catch (e) {
+      toastApiError(e, '儲存失敗')
     }
   }, [])
 
@@ -197,8 +198,8 @@ export default function CrosshairModule() {
         toast.success('已新增準星')
       }
       setSheetOpen(false)
-    } catch {
-      toast.error('儲存失敗')
+    } catch (e) {
+      toastApiError(e, '儲存失敗')
     } finally {
       setSaving(false)
     }
@@ -210,8 +211,8 @@ export default function CrosshairModule() {
       await deleteCrosshair(c.id)
       setCrosshairs(cs => cs.filter(x => x.id !== c.id))
       toast.success('已刪除準星')
-    } catch {
-      toast.error('刪除失敗')
+    } catch (e) {
+      toastApiError(e, '刪除失敗')
     } finally {
       setDeletingId(null)
       setDeleteTarget(null)

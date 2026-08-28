@@ -56,6 +56,7 @@ import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { useInputInsert } from '@/hooks/useInputInsert'
 import { useOptimisticToggle } from '@/hooks/useOptimisticToggle'
 import { useSortState } from '@/hooks/useSortState'
+import { toastApiError } from '@/lib/toast-error'
 
 const TEMPLATE_VARIABLES: Record<string, { var: string; desc: string }[]> = {
   follow: [{ var: '$(user)', desc: '追隨者名稱' }],
@@ -279,8 +280,8 @@ export default function Events() {
       setEvents(prev => prev.map(e => (e.event_type === updated.event_type ? updated : e)))
       toast.success('事件設定已儲存')
       setEditingEvent(null)
-    } catch {
-      toast.error('儲存事件設定失敗')
+    } catch (e) {
+      toastApiError(e, '儲存事件設定失敗')
     } finally {
       setSaving(false)
     }
@@ -294,8 +295,8 @@ export default function Events() {
       })
       setRedemptions(prev => prev.map(r => (r.action_type === updated.action_type ? updated : r)))
       toast.success('忠誠點數獎勵已更新')
-    } catch {
-      toast.error('更新忠誠點數獎勵失敗')
+    } catch (e) {
+      toastApiError(e, '更新忠誠點數獎勵失敗')
     }
   }
 

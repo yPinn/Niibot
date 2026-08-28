@@ -33,6 +33,7 @@ import {
 } from '@/components/ui'
 import { VariableInserter } from '@/components/VariableInserter'
 import { useInputInsert } from '@/hooks/useInputInsert'
+import { toastApiError } from '@/lib/toast-error'
 
 import { EDITABLE_COMMANDS, ROLE_LABELS } from './constants'
 import type { EditingState } from './types'
@@ -278,7 +279,7 @@ export function CommandSheet({
     } catch (e) {
       const msg = e instanceof Error ? e.message : '儲存失敗'
       dispatch({ type: 'SAVE_ERROR', msg })
-      toast.error('儲存失敗', { description: msg })
+      toastApiError(e, '儲存失敗')
     } finally {
       dispatch({ type: 'SAVE_DONE' })
     }
@@ -297,8 +298,8 @@ export function CommandSheet({
         toast.success('觸發器已刪除')
       }
       onClose()
-    } catch {
-      toast.error('刪除失敗')
+    } catch (e) {
+      toastApiError(e, '刪除失敗')
     }
   }
 

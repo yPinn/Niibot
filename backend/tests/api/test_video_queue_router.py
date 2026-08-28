@@ -19,6 +19,7 @@ from fastapi.testclient import TestClient
 
 from core.config import get_settings
 from core.dependencies import get_current_channel_id, get_db_pool, get_twitch_api, require_activated
+from core.error_handlers import register_exception_handlers
 from routers.video_queue_router import router as _vq_router
 
 CHANNEL_ID = "ch-vq"
@@ -65,6 +66,7 @@ def _make_entry(**kw) -> MagicMock:
 
 def _make_public_client(twitch_api: MagicMock | None = None) -> TestClient:
     app = FastAPI(lifespan=_no_lifespan)
+    register_exception_handlers(app)
     app.include_router(_vq_router)
     app.dependency_overrides[get_db_pool] = lambda: AsyncMock()
     app.dependency_overrides[get_twitch_api] = lambda: twitch_api or MagicMock()
@@ -73,6 +75,7 @@ def _make_public_client(twitch_api: MagicMock | None = None) -> TestClient:
 
 def _make_auth_client() -> TestClient:
     app = FastAPI(lifespan=_no_lifespan)
+    register_exception_handlers(app)
     app.include_router(_vq_router)
     app.dependency_overrides[require_activated] = lambda: None
     app.dependency_overrides[get_current_channel_id] = lambda: CHANNEL_ID
@@ -585,7 +588,7 @@ class TestAddVideoEntry:
                 json={"url": "https://example.com/not-a-video"},
             )
         assert r.status_code == 422
-        assert "Invalid" in r.json()["detail"]
+        assert r.json()["error"]["code"] == "VIDEO_QUEUE.INVALID_URL"
 
     def test_queue_disabled_returns_403(self):
         with (

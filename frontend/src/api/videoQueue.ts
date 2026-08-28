@@ -1,5 +1,5 @@
 import { API_ENDPOINTS, apiFetch } from './config'
-import { parseApiError } from './errors'
+import { apiJson, parseApiError } from './errors'
 
 export interface VideoQueueEntry {
   id: number
@@ -148,24 +148,15 @@ export async function removeQueueEntry(entryId: number): Promise<PublicVideoQueu
   return response.json()
 }
 
-export async function addVideoToQueue(url: string): Promise<PublicVideoQueueState> {
-  const response = await apiFetch(API_ENDPOINTS.videoQueue.addEntry, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify({ url }),
-  })
-  if (response.status === 409) {
-    const body = await response.json().catch(() => ({}))
-    // detail strings are coupled to backend literals:
-    //   "Video already in queue"  → video_queue_router.py
-    //   "Queue is full"           → video_queue_router.py
-    const detail: string = body?.detail ?? ''
-    if (detail === 'Video already in queue') throw new Error('該影片已在佇列中')
-    else if (detail === 'Queue is full') throw new Error('隊列已滿')
-    else throw new Error(detail || '新增失敗，請稍後再試')
-  }
-  if (response.status === 422) throw new Error('無效的 YouTube、Twitch Clip 或 Bilibili 連結')
-  if (!response.ok) throw new Error('新增失敗，請稍後再試')
-  return response.json()
+export function addVideoToQueue(url: string): Promise<PublicVideoQueueState> {
+  return apiJson(
+    API_ENDPOINTS.videoQueue.addEntry,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ url }),
+    },
+    { fallback: '新增影片失敗' }
+  )
 }
