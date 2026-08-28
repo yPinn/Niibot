@@ -111,7 +111,7 @@ build_provider_chain(provider_order=...)
 - Discord — `("gemini", "groq", "openrouter")` **品質優先**
 
 OpenRouter 的 free-tier 備援名單來自 `backend/data/free_models.json`，由
-`backend/scripts/update_free_models.py` 定期刷新。AI 知識包（`backend/data/packs/`）注入見
+`npm run nb -- models update` 定期刷新。AI 知識包（`backend/data/packs/`）注入見
 [static-data.md](../reference/static-data.md)。
 
 ---

@@ -565,7 +565,7 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
                 if "user:bot" not in user_info.scopes:
                     LOGGER.warning(
                         "Bot token is missing 'user:bot' scope — bot badge will NOT appear "
-                        "in chat. Re-authorize: python scripts/tw_oauth.py bot"
+                        "in chat. Re-authorize: npm run nb -- twitch oauth --role bot"
                     )
                 else:
                     LOGGER.info("Bot token has 'user:bot' scope — bot badge enabled.")

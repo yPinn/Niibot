@@ -56,7 +56,7 @@ def add_env_arg(parser: argparse.ArgumentParser) -> None:
 
 
 def load_env(env: str = "prod", *, service: str | None = None) -> None:
-    """Load env files into os.environ, mirroring docker-compose / tw_oauth order.
+    """Load env files into os.environ, mirroring docker-compose / twitch_oauth order.
 
     prod:     shared.env  ->  shared.env.local (override)  ->  <service>/.env (override)
     staging:  shared.staging.env  ->  shared.staging.env.local  ->  <service>/.env.staging

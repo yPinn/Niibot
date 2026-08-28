@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Twitch token / emote diagnostics.
 
-python scripts/tw.py tokens   # list stored tokens, validate, show scopes
-python scripts/tw.py emotes   # show the bot's emote access per channel
+python scripts/twitch_diag.py tokens   # stored tokens, validate, show scopes
+python scripts/twitch_diag.py emotes   # bot emote access per channel
 npm run nb -- twitch tokens
 """
 

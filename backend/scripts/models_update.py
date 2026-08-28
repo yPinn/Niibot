@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Fetch current free models from OpenRouter and update twitch/free_models.json.
 
-Usage (from backend/ directory):
-    uv run python scripts/update_free_models.py
-    uv run python scripts/update_free_models.py --with-uptime   # fetch uptime per model (slower)
+Usage:
+    npm run nb -- models update [--with-uptime]
+    python scripts/models_update.py [--with-uptime]   # --with-uptime is slower
 
 The script:
 - Fetches /api/v1/models and filters free (:free) models

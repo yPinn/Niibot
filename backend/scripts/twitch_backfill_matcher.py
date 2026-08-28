@@ -3,7 +3,7 @@
 Uses data already collected by the bot in chatter_stats to compute
 channel_overlap_summary and channel_overlap_viewers for the Matcher feature.
 
-    python scripts/tw_backfill_matcher.py [--days 7,30,90] [--dry-run]
+    python scripts/twitch_backfill_matcher.py [--days 7,30,90] [--dry-run]
     npm run nb -- twitch backfill-matcher --days 30
 """
 

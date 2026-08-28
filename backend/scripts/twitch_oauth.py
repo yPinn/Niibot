@@ -2,16 +2,17 @@
 """Twitch OAuth 工具 — 生成授權 URL、接收回調、交換 token 並寫入資料庫。
 
 Usage:
-    python scripts/tw_oauth.py [env] [role]
+    npm run nb -- twitch oauth [--env prod|staging] [--role bot|broadcaster]
+    python scripts/twitch_oauth.py [env] [role]        # 直接跑（互動 fallback）
 
     env   — prod | staging        (省略則互動選擇)
     role  — bot | broadcaster     (省略則互動選擇)
 
     參數順序不拘，例如:
-        python scripts/tw_oauth.py staging bot
-        python scripts/tw_oauth.py bot staging
-        python scripts/tw_oauth.py staging       # 僅指定 env，互動選 role
-        python scripts/tw_oauth.py               # 全互動
+        python scripts/twitch_oauth.py staging bot
+        python scripts/twitch_oauth.py bot staging
+        python scripts/twitch_oauth.py staging   # 僅指定 env，互動選 role
+        python scripts/twitch_oauth.py           # 全互動
 
 Env files:
     prod    → shared.env            + twitch/.env
@@ -297,7 +298,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--role", choices=tuple(ROLES), help="bot | broadcaster (interactive if omitted)"
     )
-    # Legacy positional form: `tw_oauth.py staging bot` (order-independent).
+    # Legacy positional form: `twitch_oauth.py staging bot` (order-independent).
     parser.add_argument("legacy", nargs="*", help=argparse.SUPPRESS)
     return parser
 

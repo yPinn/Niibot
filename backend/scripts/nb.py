@@ -118,24 +118,24 @@ def build_parser() -> argparse.ArgumentParser:
     p = tw.add_parser("oauth", help="generate a bot/broadcaster token")
     p.add_argument("--role", choices=("bot", "broadcaster"))
     p.add_argument("--env", choices=("prod", "staging"))
-    p.set_defaults(_handler=_run_py("tw_oauth"))
+    p.set_defaults(_handler=_run_py("twitch_oauth"))
     for name, helptext in (
         ("tokens", "list stored tokens + scopes"),
         ("emotes", "bot emote access per channel"),
     ):
         p = tw.add_parser(name, help=helptext)
         p.add_argument("--env", choices=("prod", "staging"), default="prod")
-        p.set_defaults(_handler=_run_py("tw"), tw_action=name)
+        p.set_defaults(_handler=_run_py("twitch_diag"), tw_action=name)
     p = tw.add_parser("backfill-sessions", help="backfill sessions from VODs")
     p.add_argument("--keep-existing", action="store_true")
     p.add_argument("--limit", type=int, default=20)
     p.add_argument("--env", choices=("prod", "staging"), default="prod")
-    p.set_defaults(_handler=_run_py("tw_backfill_sessions"))
+    p.set_defaults(_handler=_run_py("twitch_backfill_sessions"))
     p = tw.add_parser("backfill-matcher", help="backfill overlap tables from chatter_stats")
     p.add_argument("--days", default="7,30,90", help="comma-separated windows")
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--env", choices=("prod", "staging"), default="prod")
-    p.set_defaults(_handler=_run_py("tw_backfill_matcher"))
+    p.set_defaults(_handler=_run_py("twitch_backfill_matcher"))
 
     # discord ------------------------------------------------------------------
     dc = groups.add_parser("discord", help="Discord slash-command management").add_subparsers(
@@ -160,7 +160,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p = md.add_parser("update", help="refresh twitch/free_models.json")
     p.add_argument("--with-uptime", action="store_true")
-    p.set_defaults(_handler=_run_py("update_free_models"))
+    p.set_defaults(_handler=_run_py("models_update"))
 
     # env / staging / badges (passthrough) -----------------------------------
     _add_passthrough_group(

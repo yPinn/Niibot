@@ -1,6 +1,6 @@
 """Single source of truth for Twitch OAuth scopes.
 
-BOT_SCOPES      — scopes the bot account needs (obtained via tw_oauth.py bot)
+BOT_SCOPES      — scopes the bot account needs (`nb twitch oauth --role bot`)
 BROADCASTER_SCOPES — minimum scopes the streamer grants to authorise the bot
 
 Both lists are ordered by logical category so frontend grouping is predictable.

@@ -49,7 +49,7 @@ class TestDispatch:
 
         nb.main(["twitch", "tokens"])
 
-        assert seen["mod"] == "tw"
+        assert seen["mod"] == "twitch_diag"
         assert seen["args"].tw_action == "tokens"
 
     def test_discord_sync_sets_dc_action(self, monkeypatch):

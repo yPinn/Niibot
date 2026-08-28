@@ -34,13 +34,13 @@ live (secret-filled) files under `data/`.
 | `db seed [channel_id] [n]`                                         | **[dev]** generate fake session/viewer data                     | `… scripts/dev/db_seed.py`                                        |
 | `db clear [-y]`                                                    | **[dev]** wipe analytics/session tables (confirms first)        | `… scripts/dev/db_clear.py`                                       |
 | `db backup`                                                        | `pg_dump` via docker                                            | `bash backend/scripts/db_backup.sh`                               |
-| `twitch oauth [--role bot\|broadcaster] [--env staging]`           | generate a bot/broadcaster token (interactive if flags omitted) | `… scripts/tw_oauth.py`                                           |
-| `twitch tokens [--env staging]`                                    | list stored tokens, validate, show scopes                       | `… scripts/tw.py tokens`                                          |
-| `twitch emotes [--env staging]`                                    | bot emote access per channel                                    | `… scripts/tw.py emotes`                                          |
-| `twitch backfill-sessions [--limit N] [--keep-existing]`           | backfill sessions from Twitch VODs                              | `… scripts/tw_backfill_sessions.py`                               |
-| `twitch backfill-matcher [--days 7,30,90] [--dry-run]`             | backfill overlap tables from `chatter_stats`                    | `… scripts/tw_backfill_matcher.py`                                |
+| `twitch oauth [--role bot\|broadcaster] [--env staging]`           | generate a bot/broadcaster token (interactive if flags omitted) | `… scripts/twitch_oauth.py`                                       |
+| `twitch tokens [--env staging]`                                    | list stored tokens, validate, show scopes                       | `… scripts/twitch_diag.py tokens`                                 |
+| `twitch emotes [--env staging]`                                    | bot emote access per channel                                    | `… scripts/twitch_diag.py emotes`                                 |
+| `twitch backfill-sessions [--limit N] [--keep-existing]`           | backfill sessions from Twitch VODs                              | `… scripts/twitch_backfill_sessions.py`                           |
+| `twitch backfill-matcher [--days 7,30,90] [--dry-run]`             | backfill overlap tables from `chatter_stats`                    | `… scripts/twitch_backfill_matcher.py`                            |
 | `discord ls\|diff\|sync\|rm [--prod] [--guild ID] [--global] [-y]` | manage Discord slash commands                                   | `… scripts/discord_cmds.py <cmd>`                                 |
-| `models update [--with-uptime]`                                    | refresh `twitch/free_models.json` from OpenRouter               | `uv run --directory backend python scripts/update_free_models.py` |
+| `models update [--with-uptime]`                                    | refresh `twitch/free_models.json` from OpenRouter               | `… scripts/models_update.py`                                      |
 | `env init [-f]`                                                    | copy every `*.env.example` → `*.env`                            | `bash scripts/env.sh init`                                        |
 | `env gen \| check \| print KEY`                                    | (re)generate env templates from `env.registry.toml`             | `python scripts/gen_env.py`                                       |
 | `env snapshot \| backup \| restore \| diff \| list \| clean`       | snapshot / restore live env files                               | `bash scripts/env.sh <cmd>`                                       |

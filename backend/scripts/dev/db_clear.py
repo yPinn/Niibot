@@ -2,7 +2,7 @@
 
 WARNING: Deletes stream_sessions and every dependent table.
          Do NOT run against production data.
-         For production backfill, use scripts/tw_backfill_sessions.py instead.
+         For production backfill, use `nb twitch backfill-sessions` instead.
 
 Tables cleared (FK-safe order):
   stream_events, chatter_stats, command_stats,
