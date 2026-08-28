@@ -933,7 +933,7 @@ class TestListLogContainers:
         assert r.status_code == 200
         data = r.json()
         assert all(c["running"] is False for c in data)
-        assert len(data) == 6  # six bot services
+        assert len(data) == 5  # api, twitch, discord, pg, instafix
 
     def test_dev_environment_uses_bare_container_names(self, monkeypatch):
         monkeypatch.setenv("ENVIRONMENT", "development")
