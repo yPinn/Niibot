@@ -30,6 +30,7 @@ from core.dependencies import (
     get_db_pool,
     get_twitch_api,
 )
+from core.error_handlers import register_exception_handlers
 from routers.admin_router import router as _admin_router
 
 OWNER_ID = "owner-123"
@@ -57,6 +58,7 @@ def _make_client(
     mock_admission: MagicMock | None = None,
 ) -> TestClient:
     app = FastAPI(lifespan=_no_lifespan)
+    register_exception_handlers(app)
     app.include_router(_admin_router)
     app.dependency_overrides[get_current_channel_id] = lambda: channel_id
     # Owner-only endpoints that mutate via AdmissionService also need the

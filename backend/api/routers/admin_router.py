@@ -9,7 +9,7 @@ import logging
 from datetime import datetime
 
 from asyncpg import Pool
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
 from core.config import get_settings
@@ -32,6 +32,7 @@ from services.emote_sync import (
     is_emote_available,
     sync_enabled_emotes,
 )
+from shared.errors import ChannelNotFoundError, InvalidInputError, NotFoundError
 from shared.repositories.activation_code import ActivationCodeRepository
 from shared.repositories.channel import ChannelRepository
 from shared.twitch_scopes import BOT_SCOPES
@@ -40,6 +41,28 @@ from shared.twitch_scopes import BROADCASTER_SCOPES as _BROADCASTER_SCOPES
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
+
+
+class AdminBotNotConfiguredError(NotFoundError):
+    code = "ADMIN.BOT_NOT_CONFIGURED"
+    user_message = "機器人帳號尚未設定"
+
+
+class ActivationCodeNotFoundError(NotFoundError):
+    code = "ADMIN.CODE_NOT_FOUND"
+    user_message = "找不到這名使用者的有效啟用碼"
+
+
+class MembershipNotFoundError(NotFoundError):
+    code = "ADMIN.MEMBERSHIP_NOT_FOUND"
+    user_message = "找不到這名使用者的會員資料"
+
+
+class AdminInvalidError(InvalidInputError):
+    code = "ADMIN.INVALID"
+    user_message = "輸入的內容有誤，請檢查後再試"
+
+
 router.include_router(_logs_router)
 router.include_router(_db_router)
 router.include_router(_modules_router)
@@ -107,7 +130,7 @@ async def get_bot_status(
     """Return bot account's own token scope status. Owner-only."""
     bot_id = get_settings().bot_id or ""
     if not bot_id:
-        raise HTTPException(status_code=404, detail="Bot ID not configured")
+        raise AdminBotNotConfiguredError()
 
     repo = ChannelRepository(pool)
     token_obj, users = await asyncio.gather(
@@ -319,8 +342,8 @@ async def revoke_activation_code(
     """Invalidate an unused activation code for a user. Owner-only."""
     repo = ActivationCodeRepository(pool)
     if not await repo.invalidate("twitch", platform_user_id):
-        raise HTTPException(status_code=404, detail="No active code found for this user")
-    LOGGER.info("Activation code revoked for %s", platform_user_id)
+        raise ActivationCodeNotFoundError(context={"platform_user_id": platform_user_id})
+    LOGGER.info("activation_code_revoked", extra={"platform_user_id": platform_user_id})
     return {"revoked": True}
 
 
@@ -392,13 +415,11 @@ async def approve_activation_request(
             approver_user_id=approver_id,
             reason=(body.reason if body else "") or "admin_approval",
         )
-    except ValueError:
-        raise HTTPException(status_code=404, detail="No membership for user") from None
+    except ValueError as e:
+        raise MembershipNotFoundError(context={"user_id": user_id}) from e
     LOGGER.info(
-        "Membership approved: user=%s by=%s state_changed=%s",
-        user_id,
-        approver_id,
-        decision.state_changed,
+        "membership_approved",
+        extra={"user_id": user_id, "state_changed": decision.state_changed},
     )
     return {"approved": True}
 
@@ -557,7 +578,9 @@ async def resync_bot_emotes(
     if channel_id is not None:
         channels = [ch for ch in channels if ch.channel_id == channel_id]
         if not channels:
-            raise HTTPException(status_code=404, detail="Channel not found or not enabled")
+            raise ChannelNotFoundError(
+                user_message="找不到頻道，或頻道未啟用", context={"channel_id": channel_id}
+            )
     if not channels:
         return []
 
@@ -585,9 +608,11 @@ async def resync_bot_emotes(
         results.append(r)  # type: ignore[arg-type]
 
     LOGGER.info(
-        "Bot emote resync: %d channel(s), %d updated",
-        len(results),
-        sum(1 for r in results if r.synced),
+        "bot_emote_resync",
+        extra={
+            "channels": len(results),
+            "updated": sum(1 for r in results if r.synced),
+        },
     )
     return results
 
@@ -607,13 +632,11 @@ async def reject_activation_request(
             approver_user_id=approver_id,
             reason=(body.reason if body else "") or "admin_rejection",
         )
-    except ValueError:
-        raise HTTPException(status_code=404, detail="No membership for user") from None
+    except ValueError as e:
+        raise MembershipNotFoundError(context={"user_id": user_id}) from e
     LOGGER.info(
-        "Membership rejected: user=%s by=%s state_changed=%s",
-        user_id,
-        approver_id,
-        decision.state_changed,
+        "membership_rejected",
+        extra={"user_id": user_id, "state_changed": decision.state_changed},
     )
     return {"rejected": True}
 
@@ -641,16 +664,16 @@ async def suspend_membership(
     admission: AdmissionService = Depends(get_admission_service),
 ) -> dict:
     if not body.reason:
-        raise HTTPException(status_code=400, detail="reason is required")
+        raise AdminInvalidError(user_message="請填寫停權原因")
     try:
         decision = await admission.suspend(
             user_id=user_id,
             approver_user_id=approver_id,
             reason=body.reason,
         )
-    except ValueError:
-        raise HTTPException(status_code=404, detail="No membership for user") from None
-    LOGGER.info("Membership suspended: user=%s by=%s", user_id, approver_id)
+    except ValueError as e:
+        raise MembershipNotFoundError(context={"user_id": user_id}) from e
+    LOGGER.info("membership_suspended", extra={"user_id": user_id})
     return {"suspended": True, "state_changed": decision.state_changed}
 
 
@@ -668,7 +691,7 @@ async def reinstate_membership(
             approver_user_id=approver_id,
             reason=body.reason or "admin_reinstate",
         )
-    except ValueError:
-        raise HTTPException(status_code=404, detail="No membership for user") from None
-    LOGGER.info("Membership reinstated: user=%s by=%s", user_id, approver_id)
+    except ValueError as e:
+        raise MembershipNotFoundError(context={"user_id": user_id}) from e
+    LOGGER.info("membership_reinstated", extra={"user_id": user_id})
     return {"reinstated": True, "state_changed": decision.state_changed}
