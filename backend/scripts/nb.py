@@ -4,18 +4,10 @@
     npm run nb -- <group> <command> [options]        # from repo root
     uv run --directory backend python scripts/nb.py <group> <command>
 
-Groups:
-    db        migrate | check | seed | clear | backup
-    twitch    oauth | tokens | emotes | backfill-sessions | backfill-matcher
-    discord   ls | diff | sync | rm
-    models    update
-    env       init | gen | check | snapshot | backup | restore | diff | list | clean
-    staging   up | down | reset | build | logs | ps | restart | migrate | exec
-    badges
-
-The individual scripts still run standalone (python scripts/<name>.py); nb is a
-thin dispatcher that lazy-imports one script per invocation so the api/twitch/
-discord `core` packages never collide.
+Groups: db · twitch · discord · models · env · staging · badges
+(`nb --help` / `nb <group> --help` for the full surface). The individual scripts
+still run standalone; nb lazy-imports one per invocation so the api/twitch/discord
+`core` packages never collide.
 """
 
 from __future__ import annotations
@@ -24,7 +16,9 @@ import argparse
 import subprocess
 import sys
 
-from _lib import REPO_ROOT, ensure_backend_on_path, load_env
+from _lib import REPO_ROOT, add_env_arg, ensure_backend_on_path, load_env, utf8_stdio
+
+utf8_stdio()  # covers every lazy-imported script; standalone scripts call it themselves
 
 # ── subprocess groups (bash / root-level python) ─────────────────────────────
 
@@ -38,14 +32,11 @@ def _sh(*parts: str, passthrough: list[str] | None = None) -> int:
 
 
 def _run_env(args: argparse.Namespace) -> int:
-    sub, rest = args.sub, args.rest
-    if sub in _GEN_ENV_CMDS:
-        flag = [] if sub == "gen" else [f"--{sub}"]
-        return _sh(sys.executable, "scripts/gen_env.py", passthrough=flag + rest)
-    if sub in _ENV_SH_CMDS:
-        return _sh("bash", "scripts/env.sh", sub, passthrough=rest)
-    print(f"[ERROR] unknown env command: {sub}", file=sys.stderr)
-    return 2
+    # `sub` is choices-constrained, so anything not in _GEN_ENV_CMDS is an env.sh cmd
+    if args.sub in _GEN_ENV_CMDS:
+        flag = [] if args.sub == "gen" else [f"--{args.sub}"]
+        return _sh(sys.executable, "scripts/gen_env.py", passthrough=flag + args.rest)
+    return _sh("bash", "scripts/env.sh", args.sub, passthrough=args.rest)
 
 
 def _run_staging(args: argparse.Namespace) -> int:
@@ -95,10 +86,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p = db.add_parser("migrate", help="run pending migrations")
     p.add_argument("--dry", action="store_true", help="show pending, don't apply")
-    p.add_argument("--env", choices=("prod", "staging"), default="prod")
+    add_env_arg(p)
     p.set_defaults(_handler=_run_py("db_migrate"))
     p = db.add_parser("check", help="verify DB triggers / schema")
-    p.add_argument("--env", choices=("prod", "staging"), default="prod")
+    add_env_arg(p)
     p.set_defaults(_handler=_run_py("db_check"))
     p = db.add_parser("seed", help="[dev] generate fake session/viewer data")
     p.add_argument("channel_id", nargs="?")
@@ -124,17 +115,17 @@ def build_parser() -> argparse.ArgumentParser:
         ("emotes", "bot emote access per channel"),
     ):
         p = tw.add_parser(name, help=helptext)
-        p.add_argument("--env", choices=("prod", "staging"), default="prod")
+        add_env_arg(p)
         p.set_defaults(_handler=_run_py("twitch_diag"), tw_action=name)
     p = tw.add_parser("backfill-sessions", help="backfill sessions from VODs")
     p.add_argument("--keep-existing", action="store_true")
     p.add_argument("--limit", type=int, default=20)
-    p.add_argument("--env", choices=("prod", "staging"), default="prod")
+    add_env_arg(p)
     p.set_defaults(_handler=_run_py("twitch_backfill_sessions"))
     p = tw.add_parser("backfill-matcher", help="backfill overlap tables from chatter_stats")
     p.add_argument("--days", default="7,30,90", help="comma-separated windows")
     p.add_argument("--dry-run", action="store_true")
-    p.add_argument("--env", choices=("prod", "staging"), default="prod")
+    add_env_arg(p)
     p.set_defaults(_handler=_run_py("twitch_backfill_matcher"))
 
     # discord ------------------------------------------------------------------

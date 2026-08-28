@@ -14,7 +14,9 @@ import os
 
 import asyncpg
 import httpx
-from _lib import add_env_arg, database_url, ensure_backend_on_path, load_env
+from _lib import add_env_arg, database_url, ensure_backend_on_path, load_env, utf8_stdio
+
+utf8_stdio()
 
 # Populated by run() after load_env().
 CLIENT_ID = ""
@@ -286,10 +288,11 @@ async def _run(action: str, env: str) -> int:
 
 
 def run(args: argparse.Namespace) -> int:
+    # standalone parser sets `action`; nb sets `tw_action`
     action = getattr(args, "action", None) or getattr(args, "tw_action", "")
     assert action in ("tokens", "emotes"), f"unknown action {action!r}"
     try:
-        return asyncio.run(_run(action, getattr(args, "env", None) or "prod"))
+        return asyncio.run(_run(action, args.env))
     except KeyboardInterrupt:
         return 130
 

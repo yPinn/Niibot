@@ -32,14 +32,14 @@ from pathlib import Path
 from threading import Event, Thread
 from urllib.parse import parse_qs, quote, urlparse
 
-# Ensure backend/ is on sys.path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # backend/ for twitch.*
 
 import asyncpg
 import httpx
+from _lib import load_env, utf8_stdio
 from twitch.core.config import BOT_SCOPES, BROADCASTER_SCOPES
 
-_backend = Path(__file__).resolve().parent.parent
+utf8_stdio()
 
 LISTEN_PORT = 3000
 REDIRECT_URI = f"http://localhost:{LISTEN_PORT}/callback"
@@ -251,19 +251,10 @@ def wait_for_callback() -> tuple[str | None, str | None]:
 
 
 # ---------------------------------------------------------------------------
-# Config tables
+# Config tables  (env-file resolution lives in _lib.load_env)
 # ---------------------------------------------------------------------------
 
-ENVS: dict[str, tuple[Path, Path | None]] = {
-    "prod": (
-        _backend / "shared.env",
-        _backend / "twitch" / ".env",
-    ),
-    "staging": (
-        _backend / "shared.staging.env",
-        _backend / "twitch" / ".env.staging",
-    ),
-}
+ENVS = ("prod", "staging")
 
 ROLES: dict[str, tuple[str, list[str]]] = {
     "bot": ("Bot", BOT_SCOPES),
@@ -292,9 +283,7 @@ def _pick(prompt: str, choices: dict[str, str]) -> str:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Twitch OAuth token generator.")
-    parser.add_argument(
-        "--env", choices=tuple(ENVS), help="prod | staging (interactive if omitted)"
-    )
+    parser.add_argument("--env", choices=ENVS, help="prod | staging (interactive if omitted)")
     parser.add_argument(
         "--role", choices=tuple(ROLES), help="bot | broadcaster (interactive if omitted)"
     )
@@ -307,7 +296,7 @@ def _resolve_env_role(args: argparse.Namespace) -> tuple[str, str]:
     """Resolve env + role from flags / legacy positionals; prompt for any missing."""
     env: str | None = args.env
     role: str | None = args.role
-    for tok in args.legacy or []:
+    for tok in getattr(args, "legacy", []):  # legacy positionals — standalone only
         if tok in ENVS:
             env = env or tok
         elif tok in ROLES:
@@ -342,8 +331,6 @@ def _resolve_env_role(args: argparse.Namespace) -> tuple[str, str]:
 
 
 def run(args: argparse.Namespace) -> int:
-    from _lib import load_env
-
     env, role = _resolve_env_role(args)
     load_env(env, service="twitch")
 

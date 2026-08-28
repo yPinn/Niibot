@@ -19,13 +19,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 async def _run(args: argparse.Namespace) -> int:
-    async with db_conn(getattr(args, "env", None) or "prod") as conn:
+    async with db_conn(args.env) as conn:
         print("=" * 60)
         print("DATABASE SETUP CHECK")
         print("=" * 60)
 
-        for label, table in (("tokens", "tokens"), ("channels", "channels")):
-            print(f"\n[TRIGGERS on {label} table]")
+        for table in ("tokens", "channels"):
+            print(f"\n[TRIGGERS on {table} table]")
             triggers = await conn.fetch(
                 """
                 SELECT trigger_name, event_manipulation, action_timing

@@ -11,14 +11,13 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import sys
-from pathlib import Path
 
 import asyncpg
+from _lib import add_env_arg, ensure_backend_on_path, load_env, utf8_stdio
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+ensure_backend_on_path()
+utf8_stdio()
 
-from _lib import add_env_arg, load_env  # noqa: E402
 from api.core.config import get_settings  # noqa: E402
 
 WINDOWS = [7, 30, 90]
@@ -343,14 +342,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def run(args: argparse.Namespace) -> int:
-    load_env(getattr(args, "env", None) or "prod")
-    raw = getattr(args, "days", None) or ",".join(map(str, WINDOWS))
+    load_env(args.env)
     try:
-        target_days = [int(d) for d in str(raw).split(",")]
+        target_days = [int(d) for d in str(args.days).split(",")]
     except ValueError:
-        print(f"Invalid --days value: {raw!r}  (例: --days 7,30,90)")
+        print(f"Invalid --days value: {args.days!r}  (例: --days 7,30,90)")
         return 1
-    asyncio.run(main(target_days, bool(getattr(args, "dry_run", False))))
+    asyncio.run(main(target_days, args.dry_run))
     return 0
 
 

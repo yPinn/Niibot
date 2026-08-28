@@ -20,11 +20,12 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # scripts/ for _lib
 
-from _lib import load_env  # noqa: E402
+from _lib import ensure_backend_on_path, load_env, utf8_stdio  # noqa: E402
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+ensure_backend_on_path()
+utf8_stdio()
 
 import asyncpg  # noqa: E402
 from api.core.config import get_settings  # noqa: E402
@@ -720,12 +721,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def run(args: argparse.Namespace) -> int:
-    asyncio.run(
-        seed_test_data(
-            getattr(args, "channel_id", None),
-            int(getattr(args, "n_sessions", 15) or 15),
-        )
-    )
+    asyncio.run(seed_test_data(args.channel_id, args.n_sessions))
     return 0
 
 

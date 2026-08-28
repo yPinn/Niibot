@@ -18,13 +18,12 @@ from pathlib import Path
 
 import asyncpg
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # scripts/ for _lib
 
-from _lib import confirm, load_env, utf8_stdio  # noqa: E402
+from _lib import confirm, ensure_backend_on_path, load_env, utf8_stdio  # noqa: E402
 
+ensure_backend_on_path()
 utf8_stdio()
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from api.core.config import get_settings  # noqa: E402
 
@@ -69,10 +68,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def run(args: argparse.Namespace) -> int:
-    if not confirm(
-        "Delete ALL analytics/session data (stream_sessions + dependents)?",
-        getattr(args, "yes", False),
-    ):
+    if not confirm("Delete ALL analytics/session data (stream_sessions + dependents)?", args.yes):
         print("Aborted.")
         return 0
     asyncio.run(clear_test_data())

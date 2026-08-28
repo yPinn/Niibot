@@ -31,11 +31,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 async def _run(args: argparse.Namespace) -> int:
-    async with db_pool(getattr(args, "env", None) or "prod", max_size=2) as pool:
+    async with db_pool(args.env, max_size=2) as pool:
         runner = MigrationRunner(pool)
         await runner.apply_version_renames()
 
-        if getattr(args, "dry", False):
+        if args.dry:
             applied = await runner.get_applied()
             pending = [f.stem for f in sorted(_VERSIONS_DIR.glob("*.sql")) if f.stem not in applied]
             print(f"Applied: {len(applied)} | Pending: {len(pending)}")

@@ -18,14 +18,12 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import asyncpg
+from _lib import add_env_arg, ensure_backend_on_path, load_env
 
-# backend/ + backend/api on sys.path — api.services.twitch_api re-imports
-# `services._twitch_api...` internally, which needs backend/api/ too.
-_BACKEND = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(_BACKEND))
-sys.path.insert(0, str(_BACKEND / "api"))
+ensure_backend_on_path()
+# api.services.twitch_api re-imports `services._twitch_api...` internally → backend/api/ too.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "api"))
 
-from _lib import add_env_arg, load_env  # noqa: E402
 from api.core.config import get_settings  # noqa: E402
 from api.services.twitch_api import TwitchAPIClient  # noqa: E402
 
@@ -175,13 +173,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def run(args: argparse.Namespace) -> int:
-    load_env(getattr(args, "env", None) or "prod")
-    asyncio.run(
-        backfill_sessions(
-            keep_existing=bool(getattr(args, "keep_existing", False)),
-            limit=int(getattr(args, "limit", 20) or 20),
-        )
-    )
+    load_env(args.env)
+    asyncio.run(backfill_sessions(keep_existing=args.keep_existing, limit=args.limit))
     return 0
 
 

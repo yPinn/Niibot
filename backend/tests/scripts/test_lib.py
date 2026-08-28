@@ -66,15 +66,21 @@ class TestConfirm:
     def test_assume_yes_short_circuits(self):
         assert _lib.confirm("wipe everything?", assume_yes=True) is True
 
-    def test_non_interactive_refuses(self, monkeypatch, capsys):
-        monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+    def test_no_input_refuses(self, monkeypatch, capsys):
+        def _eof(_):
+            raise EOFError
+
+        monkeypatch.setattr("builtins.input", _eof)
         assert _lib.confirm("wipe everything?") is False
-        assert "Refusing without --yes" in capsys.readouterr().out
+        assert "Refusing" in capsys.readouterr().out
 
     def test_interactive_yes(self, monkeypatch):
-        monkeypatch.setattr("sys.stdin.isatty", lambda: True)
         monkeypatch.setattr("builtins.input", lambda _: "y")
         assert _lib.confirm("go?") is True
+
+    def test_interactive_no(self, monkeypatch):
+        monkeypatch.setattr("builtins.input", lambda _: "")
+        assert _lib.confirm("go?") is False
 
 
 class TestAddEnvArg:

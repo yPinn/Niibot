@@ -282,6 +282,7 @@ def _confirm(action: str, guild_id: str | None, assume_yes: bool) -> bool:
 
 
 async def _run(args: argparse.Namespace) -> int:
+    # standalone parser sets `action`; nb sets `dc_action`
     action = getattr(args, "action", None) or getattr(args, "dc_action", "")
     assert action in ("ls", "diff", "sync", "rm"), f"unknown action {action!r}"
 
