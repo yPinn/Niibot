@@ -24,6 +24,7 @@ from typing import Literal
 
 import asyncpg
 
+from shared.errors import AccessDeniedError, AppError, NotFoundError
 from shared.repositories.channel_member import (
     ChannelMember,
     ChannelMemberRepository,
@@ -44,16 +45,27 @@ class TenantContext:
     role: TenantRole
 
 
-class TenantAccessDeniedError(Exception):
-    """Raised when a user does not have the required role on a channel."""
-
-
-class TenantNotFoundError(Exception):
+class TenantNotFoundError(NotFoundError):
     """Raised when channel_id does not exist."""
 
+    code = "TENANT.NOT_FOUND"
+    user_message = "找不到這個頻道"
 
-class TenantSuspendedError(Exception):
+
+class TenantSuspendedError(AppError):
     """Raised when a tenant has been operator-suspended."""
+
+    code = "TENANT.SUSPENDED"
+    http_status = 403
+    user_message = "這個頻道已被停用"
+    log_level = logging.WARNING
+
+
+class TenantAccessDeniedError(AccessDeniedError):
+    """Raised when a user does not have the required role on a channel."""
+
+    code = "TENANT.ACCESS_DENIED"
+    user_message = "你不是這個頻道的成員"
 
 
 class TenantService:
@@ -143,13 +155,13 @@ class TenantService:
                 channel_id,
             )
         if row is None:
-            raise TenantNotFoundError(channel_id)
+            raise TenantNotFoundError(context={"channel_id": channel_id})
         if row["suspended_at"] is not None:
-            raise TenantSuspendedError(channel_id)
+            raise TenantSuspendedError(context={"channel_id": channel_id})
 
         member = await self.members.get(channel_id, user_id)
         if member is None or not role_satisfies(member.role, required_role):
-            raise TenantAccessDeniedError(channel_id)
+            raise TenantAccessDeniedError(context={"channel_id": channel_id, "user_id": user_id})
         return TenantContext(channel_id=channel_id, user_id=user_id, role=member.role)
 
     async def list_user_tenants(self, user_id: str) -> list[ChannelMember]:

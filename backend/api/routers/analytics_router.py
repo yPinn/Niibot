@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Annotated, Any
 
 import asyncpg
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, Query, Response
 from pydantic import BaseModel, field_validator
 
 from core.dependencies import (
@@ -18,12 +18,28 @@ from core.dependencies import (
 )
 from core.rate_limit import RateLimiter
 from services import AnalyticsService, TwitchAPIClient
+from shared.errors import InvalidInputError, NotFoundError
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 _background_tasks: set[asyncio.Task] = set()
 
 # Sync-roles fetches up to 4 full Twitch lists — limit to once per 2 min per channel
 _sync_roles_limiter = RateLimiter(max_calls=1, period=120.0)
+
+
+class SessionNotFoundError(NotFoundError):
+    code = "ANALYTICS.SESSION_NOT_FOUND"
+    user_message = "找不到這場直播紀錄"
+
+
+class ViewerNotFoundError(NotFoundError):
+    code = "ANALYTICS.VIEWER_NOT_FOUND"
+    user_message = "找不到這位觀眾"
+
+
+class NoBroadcasterTokenError(InvalidInputError):
+    code = "ANALYTICS.NO_TOKEN"
+    user_message = "這個頻道還沒完成 Twitch 授權"
 
 
 def _on_background_task_done(task: asyncio.Task) -> None:
@@ -229,16 +245,10 @@ async def get_analytics_summary(
     channel_id: str = Depends(get_current_channel_id),
     service: AnalyticsService = Depends(get_analytics_service),
 ) -> AnalyticsSummary:
-    try:
-        summary_data = await service.get_summary(channel_id, days)
-
-        response.headers["Cache-Control"] = "private, max-age=300"
-        LOGGER.debug("Channel %s requested analytics summary (days=%d)", channel_id, days)
-        return AnalyticsSummary(**summary_data)
-
-    except Exception:
-        LOGGER.exception("Failed to get analytics summary")
-        raise HTTPException(status_code=500, detail="Failed to fetch analytics") from None
+    summary_data = await service.get_summary(channel_id, days)
+    response.headers["Cache-Control"] = "private, max-age=300"
+    LOGGER.debug("analytics_summary_requested", extra={"days": days})
+    return AnalyticsSummary(**summary_data)
 
 
 @router.get("/sessions/{session_id}/commands", response_model=list[CommandStat])
@@ -248,20 +258,12 @@ async def get_session_commands(
     channel_id: str = Depends(get_current_channel_id),
     service: AnalyticsService = Depends(get_analytics_service),
 ) -> list[CommandStat]:
-    try:
-        commands = await service.get_session_commands(session_id, channel_id)
+    commands = await service.get_session_commands(session_id, channel_id)
+    if commands is None:
+        raise SessionNotFoundError(context={"session_id": session_id})
 
-        if commands is None:
-            raise HTTPException(status_code=404, detail="Session not found")
-
-        response.headers["Cache-Control"] = "private, max-age=600"
-        return [CommandStat(**cmd) for cmd in commands]
-
-    except HTTPException:
-        raise
-    except Exception:
-        LOGGER.exception("Failed to get session commands")
-        raise HTTPException(status_code=500, detail="Failed to fetch commands") from None
+    response.headers["Cache-Control"] = "private, max-age=600"
+    return [CommandStat(**cmd) for cmd in commands]
 
 
 @router.get("/sessions/{session_id}/events", response_model=list[StreamEvent])
@@ -271,20 +273,12 @@ async def get_session_events(
     channel_id: str = Depends(get_current_channel_id),
     service: AnalyticsService = Depends(get_analytics_service),
 ) -> list[StreamEvent]:
-    try:
-        events = await service.get_session_events(session_id, channel_id)
+    events = await service.get_session_events(session_id, channel_id)
+    if events is None:
+        raise SessionNotFoundError(context={"session_id": session_id})
 
-        if events is None:
-            raise HTTPException(status_code=404, detail="Session not found")
-
-        response.headers["Cache-Control"] = "private, max-age=600"
-        return [StreamEvent(**event) for event in events]
-
-    except HTTPException:
-        raise
-    except Exception:
-        LOGGER.exception("Failed to get session events")
-        raise HTTPException(status_code=500, detail="Failed to fetch events") from None
+    response.headers["Cache-Control"] = "private, max-age=600"
+    return [StreamEvent(**event) for event in events]
 
 
 @router.get("/insights", response_model=ChannelInsights)
@@ -294,13 +288,9 @@ async def get_insights(
     channel_id: str = Depends(get_current_channel_id),
     service: AnalyticsService = Depends(get_analytics_service),
 ) -> ChannelInsights:
-    try:
-        data = await service.get_insights(channel_id, days)
-        response.headers["Cache-Control"] = "private, max-age=300"
-        return ChannelInsights(**data)
-    except Exception:
-        LOGGER.exception("Failed to get channel insights")
-        raise HTTPException(status_code=500, detail="Failed to fetch insights") from None
+    data = await service.get_insights(channel_id, days)
+    response.headers["Cache-Control"] = "private, max-age=300"
+    return ChannelInsights(**data)
 
 
 @router.get("/viewers", response_model=list[ViewerSummary])
@@ -311,13 +301,9 @@ async def list_viewers(
     channel_id: str = Depends(get_current_channel_id),
     service: AnalyticsService = Depends(get_analytics_service),
 ) -> list[ViewerSummary]:
-    try:
-        viewers = await service.list_viewers(channel_id, days, limit)
-        response.headers["Cache-Control"] = "private, max-age=300"
-        return [ViewerSummary(**v) for v in viewers]
-    except Exception:
-        LOGGER.exception("Failed to list viewers")
-        raise HTTPException(status_code=500, detail="Failed to fetch viewers") from None
+    viewers = await service.list_viewers(channel_id, days, limit)
+    response.headers["Cache-Control"] = "private, max-age=300"
+    return [ViewerSummary(**v) for v in viewers]
 
 
 def _build_twitch_status(status: dict) -> ViewerTwitchStatus:
@@ -384,45 +370,39 @@ async def get_viewer_profile(
     service: AnalyticsService = Depends(get_analytics_service),
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
 ) -> ViewerProfile:
-    try:
-        profile, attendance_rows = await asyncio.gather(
-            service.get_viewer_profile(channel_id, user_id, days),
-            service.get_viewer_session_attendance(channel_id, user_id, days),
-        )
-        if profile is None:
-            raise HTTPException(status_code=404, detail="Viewer not found")
+    profile, attendance_rows = await asyncio.gather(
+        service.get_viewer_profile(channel_id, user_id, days),
+        service.get_viewer_session_attendance(channel_id, user_id, days),
+    )
+    if profile is None:
+        raise ViewerNotFoundError(context={"user_id": user_id})
 
-        status: dict[str, Any] = profile.get("channel_status") or {}
-        profile = {k: v for k, v in profile.items() if k != "channel_status"}
+    status: dict[str, Any] = profile.get("channel_status") or {}
+    profile = {k: v for k, v in profile.items() if k != "channel_status"}
 
-        profile_image_url: str | None = status.get("profile_image_url")
-        offline_image_url: str | None = status.get("offline_image_url")
-        account_created_at: datetime | None = status.get("account_created_at")
-        broadcaster_type: str | None = status.get("broadcaster_type")
+    profile_image_url: str | None = status.get("profile_image_url")
+    offline_image_url: str | None = status.get("offline_image_url")
+    account_created_at: datetime | None = status.get("account_created_at")
+    broadcaster_type: str | None = status.get("broadcaster_type")
 
-        if profile_image_url is None:
-            (
-                profile_image_url,
-                offline_image_url,
-                account_created_at,
-                broadcaster_type,
-            ) = await _enrich_profile_image(user_id, profile, channel_id, twitch_api, service)
+    if profile_image_url is None:
+        (
+            profile_image_url,
+            offline_image_url,
+            account_created_at,
+            broadcaster_type,
+        ) = await _enrich_profile_image(user_id, profile, channel_id, twitch_api, service)
 
-        response.headers["Cache-Control"] = "private, max-age=300"
-        return ViewerProfile(
-            twitch=_build_twitch_status(status),
-            profile_image_url=profile_image_url,
-            offline_image_url=offline_image_url,
-            account_created_at=account_created_at,
-            broadcaster_type=broadcaster_type,
-            session_attendance=[ViewerSessionAttendance(**r) for r in attendance_rows],
-            **profile,
-        )
-    except HTTPException:
-        raise
-    except Exception:
-        LOGGER.exception("Failed to get viewer profile")
-        raise HTTPException(status_code=500, detail="Failed to fetch viewer") from None
+    response.headers["Cache-Control"] = "private, max-age=300"
+    return ViewerProfile(
+        twitch=_build_twitch_status(status),
+        profile_image_url=profile_image_url,
+        offline_image_url=offline_image_url,
+        account_created_at=account_created_at,
+        broadcaster_type=broadcaster_type,
+        session_attendance=[ViewerSessionAttendance(**r) for r in attendance_rows],
+        **profile,
+    )
 
 
 @router.get("/channel/badges")
@@ -467,7 +447,7 @@ async def sync_channel_roles(
 
     token_row = await ChannelRepository(pool).get_token(channel_id)
     if not token_row:
-        raise HTTPException(status_code=400, detail="No broadcaster token stored for this channel")
+        raise NoBroadcasterTokenError()
 
     token = token_row.token
     mods, vips, subs, followers = await asyncio.gather(
@@ -477,12 +457,13 @@ async def sync_channel_roles(
         twitch_api.fetch_all_followers(channel_id, token),
     )
     LOGGER.info(
-        "sync-roles: channel=%s mods=%d vips=%d subs=%d follows=%d",
-        channel_id,
-        len(mods),
-        len(vips),
-        len(subs),
-        len(followers),
+        "sync_roles_fetched",
+        extra={
+            "mods": len(mods),
+            "vips": len(vips),
+            "subs": len(subs),
+            "follows": len(followers),
+        },
     )
     mod_count, vip_count, sub_count, follow_count = await asyncio.gather(
         service.bulk_upsert_mod_status(channel_id, mods),
@@ -505,14 +486,6 @@ async def get_top_commands(
     channel_id: str = Depends(get_current_channel_id),
     service: AnalyticsService = Depends(get_analytics_service),
 ) -> list[CommandStat]:
-    try:
-        commands = await service.get_top_commands(channel_id, days, limit)
-
-        LOGGER.debug(
-            "Channel %s requested top commands (days=%d, limit=%d)", channel_id, days, limit
-        )
-        return [CommandStat(**cmd) for cmd in commands]
-
-    except Exception:
-        LOGGER.exception("Failed to get top commands")
-        raise HTTPException(status_code=500, detail="Failed to fetch top commands") from None
+    commands = await service.get_top_commands(channel_id, days, limit)
+    LOGGER.debug("top_commands_requested", extra={"days": days, "limit": limit})
+    return [CommandStat(**cmd) for cmd in commands]

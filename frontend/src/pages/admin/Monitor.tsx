@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 
-import { getContainerLogs, getLogContainers, type LogLine } from '@/api/admin'
+import { getContainerLogs, getLogContainers, type LogRecord } from '@/api/admin'
 import { PageMain } from '@/components/layout/PageMain'
 import { Icon, SlideUp, Spinner } from '@/components/primitives'
 import {
@@ -23,29 +23,27 @@ import { usePolling } from '@/hooks/usePolling'
 import { formatStartedAt, formatUptime } from '@/lib/format'
 
 import { DbConsole } from './monitor/DbConsole'
-import { LogLineRow } from './monitor/LogLineRow'
 import {
   DEFAULT_CONTAINERS,
-  getLineLevel,
   LEVEL_FILTER_OPTS,
-  LEVEL_ORDER,
   type LevelFilter,
   levelPillClass,
 } from './monitor/logParsers'
+import { LogRecordRow } from './monitor/LogRecordRow'
 import { EnvBadge, FieldRow, StatusBadge, VersionText } from './monitor/StatusCards'
 
 // ── Fetch state ───────────────────────────────────────────────────────────────
 
-type FetchState = { loading: boolean; lines: LogLine[]; error: string | null }
+type FetchState = { loading: boolean; records: LogRecord[]; error: string | null }
 type FetchAction =
-  { type: 'start' } | { type: 'done'; lines: LogLine[] } | { type: 'fail'; error: string }
+  { type: 'start' } | { type: 'done'; records: LogRecord[] } | { type: 'fail'; error: string }
 
 function fetchReducer(state: FetchState, action: FetchAction): FetchState {
   switch (action.type) {
     case 'start':
       return { ...state, loading: true, error: null }
     case 'done':
-      return { loading: false, lines: action.lines, error: null }
+      return { loading: false, records: action.records, error: null }
     case 'fail':
       return { ...state, loading: false, error: action.error }
   }
@@ -66,13 +64,14 @@ export default function AdminMonitor() {
   const tail = 200
   const followRef = useRef(true)
   const [isFollowing, setIsFollowing] = useState(true)
-  const [{ loading, lines, error }, dispatch] = useReducer(fetchReducer, {
+  const [{ loading, records, error }, dispatch] = useReducer(fetchReducer, {
     loading: false,
-    lines: [],
+    records: [],
     error: null,
   })
   const termRef = useRef<HTMLDivElement>(null)
   const [levelFilter, setLevelFilter] = useState<LevelFilter>('INFO')
+  const [search, setSearch] = useState('')
   const [tabOrder, setTabOrder] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem('monitor-tab-order')
@@ -96,13 +95,15 @@ export default function AdminMonitor() {
       .catch(() => {})
   }, [guard, newToken])
 
+  const query = { tail, level: levelFilter, q: search.trim() || undefined }
+
   useEffect(() => {
     if (selected === '__db__' || selected === '__status__') return
     let cancelled = false
     dispatch({ type: 'start' })
-    getContainerLogs(selected, tail)
+    getContainerLogs(selected, query)
       .then(data => {
-        if (!cancelled) dispatch({ type: 'done', lines: data.lines })
+        if (!cancelled) dispatch({ type: 'done', records: data.records })
       })
       .catch(e => {
         if (!cancelled)
@@ -111,17 +112,19 @@ export default function AdminMonitor() {
     return () => {
       cancelled = true
     }
-  }, [selected, tail])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, tail, levelFilter, search])
 
   const pollFetch = useCallback(async () => {
     if (selected === '__db__' || selected === '__status__') return
     try {
-      const data = await getContainerLogs(selected, tail)
-      dispatch({ type: 'done', lines: data.lines })
+      const data = await getContainerLogs(selected, query)
+      dispatch({ type: 'done', records: data.records })
     } catch {
       // silent — don't disrupt the view on transient poll failure
     }
-  }, [selected, tail])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, tail, levelFilter, search])
 
   const isDbMode = selected === '__db__'
   const isStatusMode = selected === '__status__'
@@ -129,20 +132,11 @@ export default function AdminMonitor() {
 
   usePolling({ fetchFn: pollFetch, intervalMs: 5_000, enabled: isLogMode, skipInitialCall: true })
 
-  const filteredLines = useMemo(() => {
-    if (levelFilter === 'ALL') return lines
-    const threshold = LEVEL_ORDER[levelFilter]
-    return lines.filter(line => {
-      const lvl = getLineLevel(line.text)
-      return lvl === null || LEVEL_ORDER[lvl] >= threshold
-    })
-  }, [lines, levelFilter])
-
   useEffect(() => {
     if (isFollowing && termRef.current) {
       termRef.current.scrollTop = termRef.current.scrollHeight
     }
-  }, [filteredLines, isFollowing])
+  }, [records, isFollowing])
 
   const sortedContainers = useMemo(
     () =>
@@ -175,8 +169,8 @@ export default function AdminMonitor() {
   const handleRefresh = () => {
     const token = newToken()
     dispatch({ type: 'start' })
-    getContainerLogs(selected, tail)
-      .then(data => guard(token, () => dispatch({ type: 'done', lines: data.lines })))
+    getContainerLogs(selected, query)
+      .then(data => guard(token, () => dispatch({ type: 'done', records: data.records })))
       .catch(e =>
         guard(token, () =>
           dispatch({ type: 'fail', error: e instanceof Error ? e.message : String(e) })
@@ -379,9 +373,9 @@ export default function AdminMonitor() {
           </Tabs>
         </div>
 
-        {/* Mobile filter row — only visible below lg when on a log tab */}
+        {/* Filter row — level pills + server-side search */}
         {isLogMode && (
-          <div className="lg:hidden flex items-center gap-0.5 px-page py-1.5 border-b border-border/30 overflow-x-auto shrink-0">
+          <div className="flex items-center gap-2 px-page py-1.5 border-b border-border/30 overflow-x-auto shrink-0">
             {LEVEL_FILTER_OPTS.map(lvl => (
               <button
                 key={lvl}
@@ -391,6 +385,12 @@ export default function AdminMonitor() {
                 {lvl === 'WARNING' ? 'WARN' : lvl}
               </button>
             ))}
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="搜尋…"
+              className="ml-auto min-w-0 shrink rounded border border-border/40 bg-background px-2 py-0.5 font-mono text-label outline-none focus:border-border"
+            />
           </div>
         )}
 
@@ -443,23 +443,21 @@ export default function AdminMonitor() {
               onScroll={handleScroll}
               className="flex-1 min-h-0 overflow-auto bg-background font-mono text-label leading-5 py-2"
             >
-              {loading && lines.length === 0 ? (
+              {loading && records.length === 0 ? (
                 <div className="flex items-center gap-2 px-4 py-3 text-muted-foreground">
                   <Spinner className="size-3" />
                   <span>Loading logs…</span>
                 </div>
               ) : error ? (
                 <div className="px-4 py-3 text-destructive">{error}</div>
-              ) : lines.length === 0 ? (
-                <div className="px-4 py-3 text-muted-foreground">No log output.</div>
-              ) : filteredLines.length === 0 ? (
+              ) : records.length === 0 ? (
                 <div className="px-4 py-3 text-muted-foreground">
-                  No {levelFilter} lines in {lines.length} fetched.
+                  {search || levelFilter !== 'ALL' ? '沒有符合條件的記錄' : 'No log output.'}
                 </div>
               ) : (
                 <div className="min-w-max">
-                  {filteredLines.map((line, i) => (
-                    <LogLineRow key={i} line={line} index={i} isPgMode={selected === 'nb-pg'} />
+                  {records.map((rec, i) => (
+                    <LogRecordRow key={i} record={rec} index={i} />
                   ))}
                 </div>
               )}
@@ -468,11 +466,7 @@ export default function AdminMonitor() {
             {/* Status bar */}
             <div className="flex items-center justify-between px-page lg:px-page-lg py-1.5 border-t border-border/20 bg-background shrink-0">
               <span className="font-mono text-label text-muted-foreground">
-                {lines.length === 0
-                  ? '—'
-                  : levelFilter === 'ALL'
-                    ? `${lines.length} lines`
-                    : `${filteredLines.length} / ${lines.length} lines`}
+                {records.length === 0 ? '—' : `${records.length} records`}
               </span>
               {isFollowing && (
                 <span className="font-mono text-label text-status-online flex items-center gap-1.5">

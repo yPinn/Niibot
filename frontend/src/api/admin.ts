@@ -1,5 +1,6 @@
 import type { EmoteItem } from './aiSettings'
 import { API_ENDPOINTS, apiFetch } from './config'
+import { parseApiError } from './errors'
 
 export type ModStatus = 'mod' | 'no_mod' | 'token_error' | 'scope_error' | 'broadcaster'
 export type BotTokenStatus = 'ok' | 'missing' | 'no_token'
@@ -71,13 +72,13 @@ export interface MembershipEvent {
 
 export async function getAdminChannels(): Promise<AdminChannel[]> {
   const response = await apiFetch(API_ENDPOINTS.admin.channels, { credentials: 'include' })
-  if (!response.ok) throw new Error('Failed to fetch admin channels')
+  if (!response.ok) throw await parseApiError(response, '載入頻道清單失敗')
   return response.json()
 }
 
 export async function getAdminBotStatus(): Promise<BotTokenInfo> {
   const response = await apiFetch(API_ENDPOINTS.admin.botStatus, { credentials: 'include' })
-  if (!response.ok) throw new Error('Failed to fetch bot status')
+  if (!response.ok) throw await parseApiError(response, '載入 Bot 狀態失敗')
   return response.json()
 }
 
@@ -101,7 +102,7 @@ export interface BotEmoteResync {
 
 export async function getBotEmotes(): Promise<BotEmoteChannel[]> {
   const response = await apiFetch(API_ENDPOINTS.admin.botEmotes, { credentials: 'include' })
-  if (!response.ok) throw new Error('Failed to fetch bot emotes')
+  if (!response.ok) throw await parseApiError(response, '載入 Bot 表情失敗')
   return response.json()
 }
 
@@ -110,13 +111,13 @@ export async function resyncBotEmotes(channelId?: string): Promise<BotEmoteResyn
     method: 'POST',
     credentials: 'include',
   })
-  if (!response.ok) throw new Error('Failed to resync bot emotes')
+  if (!response.ok) throw await parseApiError(response, '重新同步 Bot 表情失敗')
   return response.json()
 }
 
 export async function getPendingActivationCodes(): Promise<PendingCode[]> {
   const response = await apiFetch(API_ENDPOINTS.admin.activationCodes, { credentials: 'include' })
-  if (!response.ok) throw new Error('Failed to fetch pending codes')
+  if (!response.ok) throw await parseApiError(response, '載入待啟用代碼失敗')
   return response.json()
 }
 
@@ -125,14 +126,14 @@ export async function revokeActivationCode(platformUserId: string): Promise<void
     method: 'DELETE',
     credentials: 'include',
   })
-  if (!response.ok) throw new Error('Failed to revoke code')
+  if (!response.ok) throw await parseApiError(response, '撤銷代碼失敗')
 }
 
 export async function getActivationRequests(): Promise<ActivationRequest[]> {
   const response = await apiFetch(API_ENDPOINTS.admin.activationRequests, {
     credentials: 'include',
   })
-  if (!response.ok) throw new Error('Failed to fetch activation requests')
+  if (!response.ok) throw await parseApiError(response, '載入啟用申請失敗')
   return response.json()
 }
 
@@ -143,7 +144,7 @@ export async function approveActivationRequest(userId: string, reason: string = 
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ reason }),
   })
-  if (!response.ok) throw new Error('Failed to approve request')
+  if (!response.ok) throw await parseApiError(response, '核准申請失敗')
 }
 
 export async function rejectActivationRequest(userId: string, reason: string = ''): Promise<void> {
@@ -153,14 +154,14 @@ export async function rejectActivationRequest(userId: string, reason: string = '
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ reason }),
   })
-  if (!response.ok) throw new Error('Failed to reject request')
+  if (!response.ok) throw await parseApiError(response, '駁回申請失敗')
 }
 
 export async function getMembershipTimeline(userId: string): Promise<MembershipEvent[]> {
   const response = await apiFetch(API_ENDPOINTS.admin.membershipTimeline(userId), {
     credentials: 'include',
   })
-  if (!response.ok) throw new Error('Failed to fetch membership timeline')
+  if (!response.ok) throw await parseApiError(response, '載入會員紀錄失敗')
   return response.json()
 }
 
@@ -171,7 +172,7 @@ export async function reinstateMembership(userId: string, reason: string = ''): 
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ reason }),
   })
-  if (!response.ok) throw new Error('Failed to reinstate membership')
+  if (!response.ok) throw await parseApiError(response, '恢復會員失敗')
 }
 
 export interface LogContainer {
@@ -180,19 +181,35 @@ export interface LogContainer {
   running: boolean
 }
 
-export interface LogLine {
+export type LogLevel = 'DEBUG' | 'INFO' | 'WARNING' | 'ERROR' | 'CRITICAL' | 'UNKNOWN'
+
+export interface LogRecord {
   stream: 'stdout' | 'stderr'
-  text: string
+  ts: string
+  level: LogLevel
+  source: 'json' | 'postgres' | 'raw'
+  message: string
+  logger: string
+  mod: string
+  own: boolean
+  service: string
+  request_id: string | null
+  channel: string | null
+  code: string | null
+  pid: string | null
+  exception: string | null
+  extra: Record<string, unknown>
+  raw: string
 }
 
 export interface ContainerLogs {
   container: string
-  lines: LogLine[]
+  records: LogRecord[]
 }
 
 export async function getLogContainers(): Promise<LogContainer[]> {
   const response = await apiFetch(API_ENDPOINTS.admin.logContainers, { credentials: 'include' })
-  if (!response.ok) throw new Error('Failed to fetch containers')
+  if (!response.ok) throw await parseApiError(response, '載入容器清單失敗')
   return response.json()
 }
 
@@ -205,7 +222,7 @@ export interface DbQueryResult {
 
 export async function getModuleAIPacks(): Promise<string[]> {
   const res = await apiFetch(API_ENDPOINTS.admin.moduleAiPacks, { credentials: 'include' })
-  if (!res.ok) throw new Error('Failed to fetch module AI packs')
+  if (!res.ok) throw await parseApiError(res, '載入 AI 知識包設定失敗')
   return res.json()
 }
 
@@ -216,7 +233,7 @@ export async function setModuleAIPacks(packs: string[]): Promise<string[]> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ enabled_packs: packs }),
   })
-  if (!res.ok) throw new Error('Failed to update module AI packs')
+  if (!res.ok) throw await parseApiError(res, '更新 AI 知識包設定失敗')
   return res.json()
 }
 
@@ -227,22 +244,20 @@ export async function runDbQuery(sql: string): Promise<DbQueryResult> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sql }),
   })
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({ detail: 'Request failed' }))
-    throw new Error(err.detail ?? 'Query failed')
-  }
+  if (!response.ok) throw await parseApiError(response, '查詢失敗')
   return response.json()
 }
 
 export async function getContainerLogs(
   container: string,
-  tail = 200,
-  since?: number
+  opts: { tail?: number; since?: number; level?: string; q?: string } = {}
 ): Promise<ContainerLogs> {
-  const params = new URLSearchParams({ tail: String(tail) })
-  if (since !== undefined) params.set('since', String(since))
+  const params = new URLSearchParams({ tail: String(opts.tail ?? 200) })
+  if (opts.since !== undefined) params.set('since', String(opts.since))
+  if (opts.level && opts.level !== 'ALL') params.set('level', opts.level)
+  if (opts.q) params.set('q', opts.q)
   const url = `${API_ENDPOINTS.admin.containerLogs(container)}?${params}`
   const response = await apiFetch(url, { credentials: 'include' })
-  if (!response.ok) throw new Error(`Failed to fetch logs for ${container}`)
+  if (!response.ok) throw await parseApiError(response, `讀取 ${container} 記錄失敗`)
   return response.json()
 }

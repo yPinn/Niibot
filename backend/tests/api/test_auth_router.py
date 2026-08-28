@@ -34,6 +34,7 @@ from core.dependencies import (
     get_db_pool,
     get_twitch_api,
 )
+from core.error_handlers import register_exception_handlers
 from routers.auth_router import router as _auth_router
 from services.auth_service import AuthService
 
@@ -112,6 +113,7 @@ def _make_client(
 ) -> TestClient:
     """Build a TestClient with mocked external dependencies."""
     app = FastAPI(lifespan=_no_lifespan)
+    register_exception_handlers(app)
     app.include_router(_auth_router)
 
     _pool = pool or _make_pool()
@@ -521,4 +523,4 @@ class TestActivateRateLimit:
             r = client.post("/api/auth/activate", json={"code": "123456"})
 
         assert r.status_code == 429
-        assert r.json()["detail"] == "too_many_attempts"
+        assert r.json()["error"]["code"] == "AUTH.TOO_MANY_ATTEMPTS"

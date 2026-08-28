@@ -1,4 +1,5 @@
-import { API_ENDPOINTS, apiFetch } from './config'
+import { API_ENDPOINTS } from './config'
+import { apiJson } from './errors'
 
 export interface TriggerConfig {
   id: number
@@ -42,57 +43,57 @@ export interface TriggerUpdate {
   aliases?: string | null
 }
 
-export async function getTriggerConfigs(): Promise<TriggerConfig[]> {
-  const response = await apiFetch(API_ENDPOINTS.triggers.configs, {
-    credentials: 'include',
-  })
-  if (!response.ok) throw new Error(`Failed to fetch triggers: ${response.statusText}`)
-  return response.json()
+export function getTriggerConfigs(): Promise<TriggerConfig[]> {
+  return apiJson(
+    API_ENDPOINTS.triggers.configs,
+    { credentials: 'include' },
+    { fallback: '載入觸發詞失敗' }
+  )
 }
 
-export async function createTrigger(data: TriggerCreate): Promise<TriggerConfig> {
-  const response = await apiFetch(API_ENDPOINTS.triggers.createConfig, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify(data),
-  })
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}))
-    throw new Error(err.detail ?? `Failed to create trigger: ${response.statusText}`)
-  }
-  return response.json()
+export function createTrigger(data: TriggerCreate): Promise<TriggerConfig> {
+  return apiJson(
+    API_ENDPOINTS.triggers.createConfig,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(data),
+    },
+    { fallback: '建立觸發詞失敗' }
+  )
 }
 
-export async function updateTrigger(name: string, data: TriggerUpdate): Promise<TriggerConfig> {
-  const response = await apiFetch(API_ENDPOINTS.triggers.updateConfig(name), {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify(data),
-  })
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}))
-    throw new Error(err.detail ?? `Failed to update trigger: ${response.statusText}`)
-  }
-  return response.json()
+export function updateTrigger(name: string, data: TriggerUpdate): Promise<TriggerConfig> {
+  return apiJson(
+    API_ENDPOINTS.triggers.updateConfig(name),
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(data),
+    },
+    { fallback: '更新觸發詞失敗' }
+  )
 }
 
-export async function toggleTrigger(name: string, enabled: boolean): Promise<TriggerConfig> {
-  const response = await apiFetch(API_ENDPOINTS.triggers.toggleConfig(name), {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify({ enabled }),
-  })
-  if (!response.ok) throw new Error(`Failed to toggle trigger: ${response.statusText}`)
-  return response.json()
+export function toggleTrigger(name: string, enabled: boolean): Promise<TriggerConfig> {
+  return apiJson(
+    API_ENDPOINTS.triggers.toggleConfig(name),
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ enabled }),
+    },
+    { fallback: '切換觸發詞失敗' }
+  )
 }
 
-export async function deleteTrigger(name: string): Promise<void> {
-  const response = await apiFetch(API_ENDPOINTS.triggers.deleteConfig(name), {
-    method: 'DELETE',
-    credentials: 'include',
-  })
-  if (!response.ok) throw new Error(`Failed to delete trigger: ${response.statusText}`)
+export function deleteTrigger(name: string): Promise<void> {
+  return apiJson(
+    API_ENDPOINTS.triggers.deleteConfig(name),
+    { method: 'DELETE', credentials: 'include' },
+    { fallback: '刪除觸發詞失敗' }
+  )
 }

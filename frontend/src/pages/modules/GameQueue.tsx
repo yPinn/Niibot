@@ -39,6 +39,7 @@ import {
 import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { usePolling } from '@/hooks/usePolling'
+import { toastApiError } from '@/lib/toast-error'
 
 const POLL_INTERVAL = 30_000
 
@@ -168,8 +169,8 @@ export default function GameQueue() {
       await updateQueueSettings({ enabled })
       setState(prev => (prev ? { ...prev, enabled } : prev))
       toast.success(enabled ? '隊列已開啟' : '隊列已關閉')
-    } catch {
-      toast.error('更新失敗')
+    } catch (e) {
+      toastApiError(e, '更新失敗')
     }
   }
 
@@ -184,8 +185,8 @@ export default function GameQueue() {
       await updateQueueSettings({ group_size: size })
       await fetchState()
       toast.success(`已調整為 ${size} 人/場`)
-    } catch {
-      toast.error('更新失敗')
+    } catch (e) {
+      toastApiError(e, '更新失敗')
     } finally {
       setSaving(false)
     }
@@ -196,8 +197,8 @@ export default function GameQueue() {
       const newState = await advanceBatch()
       setState(newState)
       toast.success('已結算當前批次')
-    } catch {
-      toast.error('結算失敗')
+    } catch (e) {
+      toastApiError(e, '結算失敗')
     }
   }
 
@@ -205,8 +206,8 @@ export default function GameQueue() {
     try {
       const newState = await removePlayer(entryId)
       setState(newState)
-    } catch {
-      toast.error('移除失敗')
+    } catch (e) {
+      toastApiError(e, '移除失敗')
     }
   }
 
@@ -215,8 +216,8 @@ export default function GameQueue() {
       const newState = await promotePlayer(entryId)
       setState(newState)
       toast.success('已移至當前批次')
-    } catch {
-      toast.error('移至失敗')
+    } catch (e) {
+      toastApiError(e, '移至失敗')
     }
   }
 
@@ -225,8 +226,8 @@ export default function GameQueue() {
       const result = await clearQueue()
       setState(result)
       toast.success(`已清空隊列 (${result.cleared_count} 人)`)
-    } catch {
-      toast.error('清空失敗')
+    } catch (e) {
+      toastApiError(e, '清空失敗')
     }
   }
 

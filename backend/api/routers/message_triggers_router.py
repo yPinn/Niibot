@@ -7,11 +7,12 @@ import logging
 import re
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from core.dependencies import get_current_channel_id, get_trigger_service, require_activated
 from services.message_trigger_service import MessageTriggerService
+from shared.errors import InvalidInputError, NotFoundError
 from shared.trigger_matching import validate_regex_pattern
 
 _REGEX_MAX_LEN = 200
@@ -19,6 +20,16 @@ _REGEX_MAX_LEN = 200
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/triggers", tags=["triggers"])
+
+
+class TriggerNotFoundError(NotFoundError):
+    code = "TRIGGER.NOT_FOUND"
+    user_message = "找不到這個觸發詞"
+
+
+class TriggerInvalidError(InvalidInputError):
+    code = "TRIGGER.INVALID"
+    user_message = "觸發詞的設定有誤，請檢查後再試"
 
 
 class MessageTriggerResponse(BaseModel):
@@ -72,18 +83,20 @@ async def _validate_regex_pattern(pattern: str, match_type: str) -> None:
     if match_type != "regex":
         return
     if len(pattern) > _REGEX_MAX_LEN:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Regex pattern exceeds maximum length of {_REGEX_MAX_LEN} characters",
+        raise TriggerInvalidError(
+            user_message=f"正規表達式太長了，上限 {_REGEX_MAX_LEN} 個字元",
+            context={"pattern_len": len(pattern)},
         )
     try:
         re.compile(pattern)
     except re.error as exc:
-        raise HTTPException(status_code=400, detail=f"Invalid regex pattern: {exc}") from exc
+        raise TriggerInvalidError(
+            user_message="正規表達式語法有誤", context={"regex_error": str(exc)}
+        ) from exc
     loop = asyncio.get_running_loop()
     safe = await loop.run_in_executor(None, validate_regex_pattern, pattern)
     if not safe:
-        raise HTTPException(status_code=400, detail="Regex pattern is unsafe (potential ReDoS)")
+        raise TriggerInvalidError(user_message="這個正規表達式可能造成效能問題，請簡化")
 
 
 @router.get("/configs", response_model=list[MessageTriggerResponse])
@@ -93,12 +106,8 @@ async def get_trigger_configs(
     _: None = Depends(require_activated),
 ) -> list[MessageTriggerResponse]:
     """Get all message triggers for the authenticated user's channel."""
-    try:
-        triggers = await service.list_triggers(channel_id)
-        return [MessageTriggerResponse(**t) for t in triggers]
-    except Exception:
-        LOGGER.exception("Failed to get trigger configs")
-        raise HTTPException(status_code=500, detail="Failed to fetch trigger configs") from None
+    triggers = await service.list_triggers(channel_id)
+    return [MessageTriggerResponse(**t) for t in triggers]
 
 
 @router.post("/configs", response_model=MessageTriggerResponse, status_code=201)
@@ -123,13 +132,10 @@ async def create_trigger(
             priority=body.priority,
             aliases=body.aliases or None,
         )
-        LOGGER.info("Channel %s created trigger: %s", channel_id, body.trigger_name)
-        return MessageTriggerResponse(**trigger)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except Exception:
-        LOGGER.exception("Failed to create trigger")
-        raise HTTPException(status_code=500, detail="Failed to create trigger") from None
+        raise TriggerInvalidError(context={"reason": str(e)}) from e
+    LOGGER.info("trigger_created", extra={"trigger_name": body.trigger_name})
+    return MessageTriggerResponse(**trigger)
 
 
 @router.put("/configs/{trigger_name}", response_model=MessageTriggerResponse)
@@ -141,15 +147,15 @@ async def update_trigger(
     _: None = Depends(require_activated),
 ) -> MessageTriggerResponse:
     """Update a message trigger's settings."""
+    if body.pattern is not None:
+        effective_match_type = body.match_type
+        if effective_match_type is None:
+            existing = await service.get_trigger(channel_id, trigger_name)
+            effective_match_type = (
+                existing.get("match_type", "contains") if existing else "contains"
+            )
+        await _validate_regex_pattern(body.pattern, effective_match_type)
     try:
-        if body.pattern is not None:
-            effective_match_type = body.match_type
-            if effective_match_type is None:
-                existing = await service.get_trigger(channel_id, trigger_name)
-                effective_match_type = (
-                    existing.get("match_type", "contains") if existing else "contains"
-                )
-            await _validate_regex_pattern(body.pattern, effective_match_type)
         trigger = await service.update_trigger(
             channel_id,
             trigger_name,
@@ -163,17 +169,12 @@ async def update_trigger(
             enabled=body.enabled,
             aliases=body.aliases,
         )
-        if trigger is None:
-            raise HTTPException(status_code=404, detail="Trigger not found")
-        LOGGER.info("Channel %s updated trigger: %s", channel_id, trigger_name)
-        return MessageTriggerResponse(**trigger)
-    except HTTPException:
-        raise
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except Exception:
-        LOGGER.exception("Failed to update trigger")
-        raise HTTPException(status_code=500, detail="Failed to update trigger") from None
+        raise TriggerInvalidError(context={"reason": str(e)}) from e
+    if trigger is None:
+        raise TriggerNotFoundError(context={"trigger_name": trigger_name})
+    LOGGER.info("trigger_updated", extra={"trigger_name": trigger_name})
+    return MessageTriggerResponse(**trigger)
 
 
 @router.patch("/configs/{trigger_name}/toggle", response_model=MessageTriggerResponse)
@@ -185,17 +186,11 @@ async def toggle_trigger(
     _: None = Depends(require_activated),
 ) -> MessageTriggerResponse:
     """Toggle a trigger's enabled state."""
-    try:
-        trigger = await service.toggle_trigger(channel_id, trigger_name, body.enabled)
-        if trigger is None:
-            raise HTTPException(status_code=404, detail="Trigger not found")
-        LOGGER.info("Channel %s toggled trigger: %s -> %s", channel_id, trigger_name, body.enabled)
-        return MessageTriggerResponse(**trigger)
-    except HTTPException:
-        raise
-    except Exception:
-        LOGGER.exception("Failed to toggle trigger")
-        raise HTTPException(status_code=500, detail="Failed to toggle trigger") from None
+    trigger = await service.toggle_trigger(channel_id, trigger_name, body.enabled)
+    if trigger is None:
+        raise TriggerNotFoundError(context={"trigger_name": trigger_name})
+    LOGGER.info("trigger_toggled", extra={"trigger_name": trigger_name, "enabled": body.enabled})
+    return MessageTriggerResponse(**trigger)
 
 
 @router.delete("/configs/{trigger_name}", status_code=204)
@@ -206,13 +201,7 @@ async def delete_trigger(
     _: None = Depends(require_activated),
 ) -> None:
     """Delete a message trigger."""
-    try:
-        deleted = await service.delete_trigger(channel_id, trigger_name)
-        if not deleted:
-            raise HTTPException(status_code=404, detail="Trigger not found")
-        LOGGER.info("Channel %s deleted trigger: %s", channel_id, trigger_name)
-    except HTTPException:
-        raise
-    except Exception:
-        LOGGER.exception("Failed to delete trigger")
-        raise HTTPException(status_code=500, detail="Failed to delete trigger") from None
+    deleted = await service.delete_trigger(channel_id, trigger_name)
+    if not deleted:
+        raise TriggerNotFoundError(context={"trigger_name": trigger_name})
+    LOGGER.info("trigger_deleted", extra={"trigger_name": trigger_name})

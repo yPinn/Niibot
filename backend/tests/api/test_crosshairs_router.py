@@ -22,6 +22,7 @@ from fastapi.testclient import TestClient
 
 from core.config import get_settings
 from core.dependencies import get_current_channel_id, get_db_pool, get_twitch_api, require_activated
+from core.error_handlers import register_exception_handlers
 from routers.crosshairs_router import _user_lookup_cache
 from routers.crosshairs_router import router as _xh_router
 
@@ -63,6 +64,7 @@ def _make_client(
     mock_twitch_api: MagicMock | None = None,
 ) -> TestClient:
     app = FastAPI(lifespan=_no_lifespan)
+    register_exception_handlers(app)
     app.include_router(_xh_router)
     app.dependency_overrides[require_activated] = lambda: None
     app.dependency_overrides[get_current_channel_id] = lambda: CHANNEL_ID
@@ -196,7 +198,8 @@ class TestCreateCrosshair:
             json={"game": "cs2", "name": "Test", "code": "abc"},
         )
         assert r.status_code == 400
-        assert "Invalid game" in r.json()["detail"]
+        assert r.json()["error"]["code"] == "CROSSHAIR.INVALID"
+        assert "cs2" not in r.text
 
     def test_repo_error_returns_500(self):
         with patch("routers.crosshairs_router.CrosshairRepository") as mock_repo:

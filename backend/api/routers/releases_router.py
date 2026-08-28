@@ -5,10 +5,11 @@ from __future__ import annotations
 import logging
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from pydantic import BaseModel
 
 from core.config import get_settings
+from shared.errors import NotFoundError, UpstreamError
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -16,6 +17,22 @@ router = APIRouter(prefix="/api/releases", tags=["releases"])
 
 _GITHUB_REPO = "yPinn/Niibot"
 _GITHUB_API_URL = f"https://api.github.com/repos/{_GITHUB_REPO}/releases"
+
+
+class ReleasesNotFoundError(NotFoundError):
+    code = "RELEASES.NOT_FOUND"
+    user_message = "找不到版本資訊"
+
+
+class ReleasesUpstreamError(UpstreamError):
+    code = "RELEASES.UPSTREAM_FAILED"
+    user_message = "版本資訊暫時抓不到，請稍後再試"
+
+
+class ReleasesTimeoutError(UpstreamError):
+    code = "RELEASES.UPSTREAM_TIMEOUT"
+    http_status = 504
+    user_message = "版本資訊載入逾時，請稍後再試"
 
 
 class GithubRelease(BaseModel):
@@ -43,20 +60,12 @@ async def get_releases() -> list[GithubRelease]:
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(f"{_GITHUB_API_URL}?per_page=30", headers=headers)
+    except httpx.TimeoutException as exc:
+        raise ReleasesTimeoutError() from exc
 
-        if response.status_code == 404:
-            raise HTTPException(status_code=404, detail="Repository not found or no releases")
-        if not response.is_success:
-            LOGGER.error("GitHub API returned %s", response.status_code)
-            raise HTTPException(status_code=502, detail="GitHub API error")
+    if response.status_code == 404:
+        raise ReleasesNotFoundError()
+    if not response.is_success:
+        raise ReleasesUpstreamError(context={"github_status": response.status_code})
 
-        return [GithubRelease(**r) for r in response.json() if not r.get("draft")]
-
-    except HTTPException:
-        raise
-    except httpx.TimeoutException:
-        LOGGER.error("GitHub API timeout")
-        raise HTTPException(status_code=504, detail="GitHub API timeout") from None
-    except Exception:
-        LOGGER.exception("Unexpected error fetching releases")
-        raise HTTPException(status_code=500, detail="Failed to fetch releases") from None
+    return [GithubRelease(**r) for r in response.json() if not r.get("draft")]

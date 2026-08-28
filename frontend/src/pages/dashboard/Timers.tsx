@@ -55,6 +55,7 @@ import { useInputInsert } from '@/hooks/useInputInsert'
 import { useOptimisticToggle } from '@/hooks/useOptimisticToggle'
 import { useSortState } from '@/hooks/useSortState'
 import { nameSort } from '@/lib/sort'
+import { toastApiError } from '@/lib/toast-error'
 
 type TimerSortKey = 'name' | 'interval' | 'enabled'
 
@@ -265,7 +266,7 @@ export default function Timers() {
     } catch (e) {
       const msg = e instanceof Error ? e.message : '儲存失敗'
       dispatch({ type: 'SAVE_ERROR', msg })
-      toast.error('儲存失敗', { description: msg })
+      toastApiError(e, '儲存失敗')
     } finally {
       dispatch({ type: 'SAVE_DONE' })
     }
@@ -277,8 +278,8 @@ export default function Timers() {
       setTimers(prev => prev.filter(t => t.timer_name !== timer.timer_name))
       setEditing(null)
       toast.success('計時器已刪除')
-    } catch {
-      toast.error('刪除計時器失敗')
+    } catch (e) {
+      toastApiError(e, '刪除計時器失敗')
     }
   }
 

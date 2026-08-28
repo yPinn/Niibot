@@ -26,6 +26,7 @@ import {
   Switch,
 } from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
+import { toastApiError } from '@/lib/toast-error'
 
 import {
   COMMAND_INFO,
@@ -146,8 +147,8 @@ export default function AIModule() {
       setSaved(normalized)
       setDraft(prev => ({ ...normalized, cooldown: prev.cooldown, min_role: prev.min_role }))
       toast.success('角色設定已儲存')
-    } catch {
-      toast.error('儲存失敗，請重試')
+    } catch (e) {
+      toastApiError(e, '儲存失敗，請重試')
     } finally {
       setSaving(false)
     }
@@ -161,8 +162,8 @@ export default function AIModule() {
       setSaved(normalized)
       setDraft(normalized)
       toast.success('已重設為預設值')
-    } catch {
-      toast.error('重設失敗，請重試')
+    } catch (e) {
+      toastApiError(e, '重設失敗，請重試')
     } finally {
       setSaving(false)
     }
@@ -187,8 +188,8 @@ export default function AIModule() {
         refusal_style: prev.refusal_style,
       }))
       toast.success('指令設定已儲存')
-    } catch {
-      toast.error('儲存失敗，請重試')
+    } catch (e) {
+      toastApiError(e, '儲存失敗，請重試')
     } finally {
       setSaving(false)
     }
@@ -201,10 +202,10 @@ export default function AIModule() {
     try {
       await patchAISettings({ enabled: value })
       toast.success(value ? 'AI 助手已啟用' : 'AI 助手已停用')
-    } catch {
+    } catch (e) {
       setSaved(s => ({ ...s, enabled: prev }))
       setDraft(d => ({ ...d, enabled: prev }))
-      toast.error('切換失敗，請重試')
+      toastApiError(e, '切換失敗，請重試')
     }
   }
 

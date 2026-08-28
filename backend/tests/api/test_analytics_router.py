@@ -21,6 +21,7 @@ from fastapi.testclient import TestClient
 
 from core.config import get_settings
 from core.dependencies import get_current_channel_id, get_db_pool
+from core.error_handlers import register_exception_handlers
 from routers.analytics_router import router as _analytics_router
 
 CHANNEL_ID = "ch-analytics"
@@ -66,6 +67,7 @@ def _reset_settings():
 
 def _make_client() -> TestClient:
     app = FastAPI(lifespan=_no_lifespan)
+    register_exception_handlers(app)
     app.include_router(_analytics_router)
     app.dependency_overrides[get_current_channel_id] = lambda: CHANNEL_ID
     app.dependency_overrides[get_db_pool] = lambda: AsyncMock()

@@ -14,6 +14,7 @@ import { PageMain } from '@/components/layout/PageMain'
 import { Icon, Spinner, TwitchRoleBadge } from '@/components/primitives'
 import { Button, Card, CardContent, CardHeader, CardTitle, Skeleton, Switch } from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
+import { toastApiError } from '@/lib/toast-error'
 import { EmoteSection } from '@/pages/modules/ai/EmoteSection'
 import { longestCommonPrefix } from '@/pages/modules/ai/utils'
 
@@ -55,9 +56,9 @@ export default function AdminModules() {
     setEnabledPacks(next)
     try {
       await setModuleAIPacks(next)
-    } catch {
+    } catch (e) {
       setEnabledPacks(prev)
-      toast.error('更新失敗，請重試')
+      toastApiError(e, '更新失敗，請重試')
     }
   }
 
@@ -69,8 +70,8 @@ export default function AdminModules() {
       toast.success(updated > 0 ? `已更新 ${updated} 個頻道的可用貼圖` : '貼圖已是最新狀態')
       const fresh = await getBotEmotes()
       setBotEmotes(fresh)
-    } catch {
-      toast.error('重新同步失敗，請重試')
+    } catch (e) {
+      toastApiError(e, '重新同步失敗，請重試')
     } finally {
       setResyncing(null)
     }

@@ -29,4 +29,5 @@ def setup_logging(settings: DiscordBotSettings) -> None:
         suppress_loggers=_SUPPRESS,
         own_prefixes=_OWN_PREFIXES,
         skip_suffixes=("cog", "__init__"),
+        console=settings.is_development,
     )

@@ -21,6 +21,7 @@ from fastapi.testclient import TestClient
 
 from core.config import get_settings
 from core.dependencies import get_current_user_id, get_db_pool, require_activated
+from core.error_handlers import register_exception_handlers
 from routers.payment_config_router import router as _pc_router
 
 USER_ID = "user-abc"
@@ -55,6 +56,7 @@ def _reset_settings():
 
 def _make_client() -> TestClient:
     app = FastAPI(lifespan=_no_lifespan)
+    register_exception_handlers(app)
     app.include_router(_pc_router)
     app.dependency_overrides[get_current_user_id] = lambda: USER_ID
     app.dependency_overrides[get_db_pool] = lambda: AsyncMock()
@@ -65,6 +67,7 @@ def _make_client() -> TestClient:
 def _make_client_not_activated() -> TestClient:
     """Client where require_activated rejects the caller, for gate tests."""
     app = FastAPI(lifespan=_no_lifespan)
+    register_exception_handlers(app)
     app.include_router(_pc_router)
     app.dependency_overrides[get_current_user_id] = lambda: USER_ID
     app.dependency_overrides[get_db_pool] = lambda: AsyncMock()
@@ -132,7 +135,8 @@ class TestUpsertPaymentConfig:
                 json={"merchant_id": "M001", "min_amount": 30},
             )
         assert r.status_code == 400
-        assert "hash_key" in r.json()["detail"]
+        assert r.json()["error"]["code"] == "PAYMENT_CONFIG.INVALID"
+        assert "hash_key" not in r.text
 
     def test_ecpay_without_hash_keeps_existing(self):
         """Omitting hash on update preserves the stored keys (keep-existing-hash)."""

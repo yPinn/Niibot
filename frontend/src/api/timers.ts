@@ -1,4 +1,5 @@
-import { API_ENDPOINTS, apiFetch } from './config'
+import { API_ENDPOINTS } from './config'
+import { apiJson } from './errors'
 
 export interface TimerConfig {
   id: number | null
@@ -34,57 +35,57 @@ export interface TimerUpdate {
   clear_alias?: boolean
 }
 
-export async function getTimerConfigs(): Promise<TimerConfig[]> {
-  const response = await apiFetch(API_ENDPOINTS.timers.configs, {
-    credentials: 'include',
-  })
-  if (!response.ok) throw new Error(`Failed to fetch timers: ${response.statusText}`)
-  return response.json()
+export function getTimerConfigs(): Promise<TimerConfig[]> {
+  return apiJson(
+    API_ENDPOINTS.timers.configs,
+    { credentials: 'include' },
+    { fallback: '載入計時器失敗' }
+  )
 }
 
-export async function createTimer(data: TimerCreate): Promise<TimerConfig> {
-  const response = await apiFetch(API_ENDPOINTS.timers.createConfig, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify(data),
-  })
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}))
-    throw new Error(err.detail ?? `Failed to create timer: ${response.statusText}`)
-  }
-  return response.json()
+export function createTimer(data: TimerCreate): Promise<TimerConfig> {
+  return apiJson(
+    API_ENDPOINTS.timers.createConfig,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(data),
+    },
+    { fallback: '建立計時器失敗' }
+  )
 }
 
-export async function updateTimer(name: string, data: TimerUpdate): Promise<TimerConfig> {
-  const response = await apiFetch(API_ENDPOINTS.timers.updateConfig(name), {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify(data),
-  })
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}))
-    throw new Error(err.detail ?? `Failed to update timer: ${response.statusText}`)
-  }
-  return response.json()
+export function updateTimer(name: string, data: TimerUpdate): Promise<TimerConfig> {
+  return apiJson(
+    API_ENDPOINTS.timers.updateConfig(name),
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(data),
+    },
+    { fallback: '更新計時器失敗' }
+  )
 }
 
-export async function toggleTimer(name: string, enabled: boolean): Promise<TimerConfig> {
-  const response = await apiFetch(API_ENDPOINTS.timers.toggleConfig(name), {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify({ enabled }),
-  })
-  if (!response.ok) throw new Error(`Failed to toggle timer: ${response.statusText}`)
-  return response.json()
+export function toggleTimer(name: string, enabled: boolean): Promise<TimerConfig> {
+  return apiJson(
+    API_ENDPOINTS.timers.toggleConfig(name),
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ enabled }),
+    },
+    { fallback: '切換計時器失敗' }
+  )
 }
 
-export async function deleteTimer(name: string): Promise<void> {
-  const response = await apiFetch(API_ENDPOINTS.timers.deleteConfig(name), {
-    method: 'DELETE',
-    credentials: 'include',
-  })
-  if (!response.ok) throw new Error(`Failed to delete timer: ${response.statusText}`)
+export function deleteTimer(name: string): Promise<void> {
+  return apiJson(
+    API_ENDPOINTS.timers.deleteConfig(name),
+    { method: 'DELETE', credentials: 'include' },
+    { fallback: '刪除計時器失敗' }
+  )
 }

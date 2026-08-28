@@ -50,4 +50,5 @@ def setup_logging(settings: TwitchBotSettings) -> None:
         service_name="twitch",
         suppress_loggers=_build_suppress(level),
         own_prefixes=_OWN_PREFIXES,
+        console=settings.is_development,
     )

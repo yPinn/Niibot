@@ -1,4 +1,5 @@
-import { API_ENDPOINTS, apiFetch } from './config'
+import { API_ENDPOINTS } from './config'
+import { apiJson } from './errors'
 
 export interface AISettings {
   bot_name: string
@@ -34,12 +35,6 @@ export interface Pack {
   description: string
 }
 
-export async function getAIPacks(): Promise<Pack[]> {
-  const res = await apiFetch(API_ENDPOINTS.ai.packs, { credentials: 'include' })
-  if (!res.ok) throw new Error(`Failed to fetch AI packs: ${res.status}`)
-  return res.json()
-}
-
 export interface EmoteItem {
   id: string
   name: string
@@ -50,34 +45,37 @@ export interface EmoteItem {
   animated: boolean
 }
 
-export async function getAISettings(): Promise<AISettings> {
-  const res = await apiFetch(API_ENDPOINTS.ai.settings, { credentials: 'include' })
-  if (!res.ok) throw new Error(`Failed to fetch AI settings: ${res.status}`)
-  return res.json()
+const authed = { credentials: 'include' } as const
+
+export function getAIPacks(): Promise<Pack[]> {
+  return apiJson(API_ENDPOINTS.ai.packs, authed, { fallback: '載入 AI 知識包失敗' })
 }
 
-export async function patchAISettings(patch: Partial<AISettings>): Promise<AISettings> {
-  const res = await apiFetch(API_ENDPOINTS.ai.settings, {
-    method: 'PATCH',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(patch),
-  })
-  if (!res.ok) throw new Error(`Failed to update AI settings: ${res.status}`)
-  return res.json()
+export function getAISettings(): Promise<AISettings> {
+  return apiJson(API_ENDPOINTS.ai.settings, authed, { fallback: '載入 AI 設定失敗' })
 }
 
-export async function resetAISettings(): Promise<AISettings> {
-  const res = await apiFetch(API_ENDPOINTS.ai.reset, {
-    method: 'POST',
-    credentials: 'include',
-  })
-  if (!res.ok) throw new Error(`Failed to reset AI settings: ${res.status}`)
-  return res.json()
+export function patchAISettings(patch: Partial<AISettings>): Promise<AISettings> {
+  return apiJson(
+    API_ENDPOINTS.ai.settings,
+    {
+      method: 'PATCH',
+      ...authed,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    },
+    { fallback: '更新 AI 設定失敗' }
+  )
 }
 
-export async function getAIEmotes(): Promise<EmoteItem[]> {
-  const res = await apiFetch(API_ENDPOINTS.ai.emotes, { credentials: 'include' })
-  if (!res.ok) throw new Error(`Failed to fetch emotes: ${res.status}`)
-  return res.json()
+export function resetAISettings(): Promise<AISettings> {
+  return apiJson(
+    API_ENDPOINTS.ai.reset,
+    { method: 'POST', ...authed },
+    { fallback: '重設 AI 設定失敗' }
+  )
+}
+
+export function getAIEmotes(): Promise<EmoteItem[]> {
+  return apiJson(API_ENDPOINTS.ai.emotes, authed, { fallback: '載入表情符號失敗' })
 }

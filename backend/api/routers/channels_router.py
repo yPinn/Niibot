@@ -4,7 +4,7 @@ import asyncio
 import logging
 
 from asyncpg import Pool
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -17,11 +17,34 @@ from core.dependencies import (
     require_self_tenant_access,
 )
 from services import ChannelService, TenantContext, TwitchAPIClient
+from shared.errors import AccessDeniedError, AppError, ChannelNotFoundError, UpstreamError
 from shared.repositories.channel import ChannelRepository
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/channels", tags=["channels"])
+
+
+class ChannelAccessDeniedError(AccessDeniedError):
+    code = "CHANNEL.ACCESS_DENIED"
+    user_message = "你沒有權限操作這個頻道"
+
+
+class ChannelToggleFailedError(AppError):
+    code = "CHANNEL.TOGGLE_FAILED"
+    http_status = 500
+    user_message = "頻道開關切換失敗，請稍後再試"
+
+
+class BotNotConfiguredError(AppError):
+    code = "CHANNEL.BOT_NOT_CONFIGURED"
+    http_status = 503
+    user_message = "機器人尚未設定完成，請稍後再試"
+
+
+class TwitchUnavailableError(UpstreamError):
+    code = "CHANNEL.TWITCH_UNAVAILABLE"
+    user_message = "Twitch 暫時沒有回應，請稍後再試"
 
 
 class ChannelToggleRequest(BaseModel):
@@ -78,54 +101,49 @@ async def get_monitored_channels(
     Uses app access token for Twitch API calls (public endpoints).
     User token is not required for fetching user info and stream status.
     """
-    try:
-        enabled_channels = await channel_service.get_enabled_channels()
-        LOGGER.debug("Found %d enabled channels", len(enabled_channels))
+    enabled_channels = await channel_service.get_enabled_channels()
+    LOGGER.debug("Found %d enabled channels", len(enabled_channels))
 
-        if not enabled_channels:
-            return []
+    if not enabled_channels:
+        return []
 
-        channel_ids = [ch["channel_id"] for ch in enabled_channels]
+    channel_ids = [ch["channel_id"] for ch in enabled_channels]
 
-        # Fetch user info and stream status in parallel (both use app token)
-        users_data, streams_data = await asyncio.gather(
-            twitch_api.get_users_by_ids(channel_ids),
-            twitch_api.get_streams(channel_ids),
+    # Fetch user info and stream status in parallel (both use app token)
+    users_data, streams_data = await asyncio.gather(
+        twitch_api.get_users_by_ids(channel_ids),
+        twitch_api.get_streams(channel_ids),
+    )
+
+    if not users_data:
+        LOGGER.warning("No user data returned from Twitch API")
+        return []
+
+    # Index live streams by user_id for O(1) lookup
+    live_map: dict[str, dict] = {s["user_id"]: s for s in streams_data}
+
+    # Build channel info list
+    channels_info: dict[str, ChannelInfo] = {}
+    for user in users_data:
+        uid = user["id"]
+        stream = live_map.get(uid)
+        channels_info[user["login"]] = ChannelInfo(
+            id=uid,
+            name=user["login"],
+            display_name=user["display_name"],
+            avatar=user["profile_image_url"],
+            is_live=stream is not None,
+            viewer_count=stream["viewer_count"] if stream else 0,
+            game_name=stream["game_name"] if stream else "",
+            title=stream["title"] if stream else "",
         )
 
-        if not users_data:
-            LOGGER.warning("No user data returned from Twitch API")
-            return []
+    # Filter out the current user's channel and sort
+    result = [ch for ch in channels_info.values() if ch.id != channel_id]
+    result.sort(key=lambda x: (not x.is_live, x.display_name))
 
-        # Index live streams by user_id for O(1) lookup
-        live_map: dict[str, dict] = {s["user_id"]: s for s in streams_data}
-
-        # Build channel info list
-        channels_info: dict[str, ChannelInfo] = {}
-        for user in users_data:
-            uid = user["id"]
-            stream = live_map.get(uid)
-            channels_info[user["login"]] = ChannelInfo(
-                id=uid,
-                name=user["login"],
-                display_name=user["display_name"],
-                avatar=user["profile_image_url"],
-                is_live=stream is not None,
-                viewer_count=stream["viewer_count"] if stream else 0,
-                game_name=stream["game_name"] if stream else "",
-                title=stream["title"] if stream else "",
-            )
-
-        # Filter out the current user's channel and sort
-        result = [ch for ch in channels_info.values() if ch.id != channel_id]
-        result.sort(key=lambda x: (not x.is_live, x.display_name))
-
-        LOGGER.debug("Returning %d monitored channels for channel %s", len(result), channel_id)
-        return result
-
-    except Exception:
-        LOGGER.exception("Failed to get monitored channels")
-        raise HTTPException(status_code=500, detail="Failed to fetch channels") from None
+    LOGGER.debug("Returning %d monitored channels", len(result))
+    return result
 
 
 @router.get("/twitch/my-status", response_model=ChannelStatusResponse)
@@ -134,13 +152,8 @@ async def get_my_channel_status(
     channel_service: ChannelService = Depends(get_channel_service),
 ) -> ChannelStatusResponse:
     """Get current user's channel status"""
-    try:
-        status = await channel_service.get_channel_status(channel_id)
-        return ChannelStatusResponse(**status)
-
-    except Exception:
-        LOGGER.exception("Failed to get channel status")
-        raise HTTPException(status_code=500, detail="Failed to fetch status") from None
+    status = await channel_service.get_channel_status(channel_id)
+    return ChannelStatusResponse(**status)
 
 
 @router.post("/twitch/toggle", response_model=ToggleResponse)
@@ -159,24 +172,16 @@ async def toggle_channel(
     safe to swap incrementally.
     """
     channel_id = ctx.channel_id
-    try:
-        if request.channel_id != channel_id:
-            raise HTTPException(status_code=403, detail="Cannot toggle another channel")
+    if request.channel_id != channel_id:
+        raise ChannelAccessDeniedError(context={"target_channel_id": request.channel_id})
 
-        success = await channel_service.toggle_channel(channel_id, request.enabled)
+    success = await channel_service.toggle_channel(channel_id, request.enabled)
+    if not success:
+        raise ChannelToggleFailedError(context={"enabled": request.enabled})
 
-        if success:
-            action = "enabled" if request.enabled else "disabled"
-            LOGGER.info("Channel %s: %s", action, channel_id)
-            return ToggleResponse(message=f"Channel {action} successfully")
-        else:
-            raise HTTPException(status_code=500, detail="Failed to update channel status")
-
-    except HTTPException:
-        raise
-    except Exception:
-        LOGGER.exception("Failed to toggle channel")
-        raise HTTPException(status_code=500, detail="Failed to toggle channel") from None
+    action = "enabled" if request.enabled else "disabled"
+    LOGGER.info("channel_toggled", extra={"action": action})
+    return ToggleResponse(message=f"Channel {action} successfully")
 
 
 @router.get("/twitch/mod-status", response_model=ModStatusResponse)
@@ -196,7 +201,7 @@ async def get_bot_mod_status(
         )
     bot_id = settings.bot_id
     if not bot_id:
-        raise HTTPException(status_code=503, detail="BOT_ID not configured")
+        raise BotNotConfiguredError()
     is_mod = await twitch_api.check_bot_is_moderator(channel_id, bot_id, token)
     return ModStatusResponse(is_moderator=is_mod)
 
@@ -219,15 +224,11 @@ async def grant_bot_mod(
 
     bot_id = settings.bot_id
     if not bot_id:
-        raise HTTPException(status_code=503, detail="BOT_ID not configured")
-    try:
-        resp = await twitch_api.add_moderator(channel_id, bot_id, token)
-    except Exception:
-        LOGGER.exception("Failed to call Twitch grant-mod API")
-        raise HTTPException(status_code=500, detail="Failed to grant moderator status") from None
+        raise BotNotConfiguredError()
+    resp = await twitch_api.add_moderator(channel_id, bot_id, token)
 
     if resp.status_code == 204:
-        LOGGER.info("Granted bot mod for channel %s", channel_id)
+        LOGGER.info("bot_mod_granted")
         return GrantModResponse(granted=True)
 
     if resp.status_code == 422:
@@ -240,8 +241,9 @@ async def grant_bot_mod(
             content={"detail": "Missing required Twitch scope"},
         )
 
-    LOGGER.error("Unexpected grant-mod response %d: %s", resp.status_code, resp.text)
-    raise HTTPException(status_code=502, detail="Twitch API error")
+    raise TwitchUnavailableError(
+        context={"helix_status": resp.status_code, "helix_body": resp.text}
+    )
 
 
 @router.get("/defaults", response_model=ChannelDefaultsResponse)
@@ -250,17 +252,13 @@ async def get_channel_defaults(
     pool: Pool = Depends(get_db_pool),
 ) -> ChannelDefaultsResponse:
     """Get channel default cooldown settings."""
-    try:
-        repo = ChannelRepository(pool)
-        channel = await repo.get_channel(channel_id)
-        if not channel:
-            return ChannelDefaultsResponse(default_cooldown=0)
-        return ChannelDefaultsResponse(
-            default_cooldown=channel.default_cooldown,
-        )
-    except Exception:
-        LOGGER.exception("Failed to get channel defaults")
-        raise HTTPException(status_code=500, detail="Failed to fetch channel defaults") from None
+    repo = ChannelRepository(pool)
+    channel = await repo.get_channel(channel_id)
+    if not channel:
+        return ChannelDefaultsResponse(default_cooldown=0)
+    return ChannelDefaultsResponse(
+        default_cooldown=channel.default_cooldown,
+    )
 
 
 @router.put("/defaults", response_model=ChannelDefaultsResponse)
@@ -270,20 +268,14 @@ async def update_channel_defaults(
     pool: Pool = Depends(get_db_pool),
 ) -> ChannelDefaultsResponse:
     """Update channel default cooldown settings."""
-    try:
-        repo = ChannelRepository(pool)
-        channel = await repo.update_channel_defaults(
-            channel_id,
-            default_cooldown=body.default_cooldown,
-        )
-        if not channel:
-            raise HTTPException(status_code=404, detail="Channel not found")
-        LOGGER.info("Channel %s updated channel defaults", channel_id)
-        return ChannelDefaultsResponse(
-            default_cooldown=channel.default_cooldown,
-        )
-    except HTTPException:
-        raise
-    except Exception:
-        LOGGER.exception("Failed to update channel defaults")
-        raise HTTPException(status_code=500, detail="Failed to update channel defaults") from None
+    repo = ChannelRepository(pool)
+    channel = await repo.update_channel_defaults(
+        channel_id,
+        default_cooldown=body.default_cooldown,
+    )
+    if not channel:
+        raise ChannelNotFoundError(context={"channel_id": channel_id})
+    LOGGER.info("channel_defaults_updated")
+    return ChannelDefaultsResponse(
+        default_cooldown=channel.default_cooldown,
+    )

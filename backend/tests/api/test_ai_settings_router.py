@@ -25,6 +25,7 @@ from core.dependencies import (
     get_twitch_api,
     require_activated,
 )
+from core.error_handlers import register_exception_handlers
 from routers.ai_settings_router import _contains_bias
 from routers.ai_settings_router import router as _ai_router
 
@@ -59,6 +60,7 @@ def _reset_settings():
 
 def _make_client(mock_twitch: MagicMock | None = None) -> TestClient:
     app = FastAPI(lifespan=_no_lifespan)
+    register_exception_handlers(app)
     app.include_router(_ai_router)
     app.dependency_overrides[get_current_channel_id] = lambda: CHANNEL_ID
     app.dependency_overrides[get_db_pool] = lambda: AsyncMock()
@@ -70,6 +72,7 @@ def _make_client(mock_twitch: MagicMock | None = None) -> TestClient:
 def _make_client_not_activated() -> TestClient:
     """Client where require_activated rejects the caller, for gate tests."""
     app = FastAPI(lifespan=_no_lifespan)
+    register_exception_handlers(app)
     app.include_router(_ai_router)
     app.dependency_overrides[get_current_channel_id] = lambda: CHANNEL_ID
     app.dependency_overrides[get_db_pool] = lambda: AsyncMock()

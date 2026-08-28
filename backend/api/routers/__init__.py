@@ -7,6 +7,7 @@ from . import (
     auth_router,
     bots_router,
     channels_router,
+    client_errors_router,
     commands_router,
     crosshairs_router,
     discord_webhook_router,
@@ -41,5 +42,6 @@ __all__ = [
     "stats_router",
     "timers_router",
     "bots_router",
+    "client_errors_router",
     "video_queue_router",
 ]

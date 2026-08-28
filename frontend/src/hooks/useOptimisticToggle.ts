@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
 
+import { toastApiError } from '@/lib/toast-error'
+
 export interface UseOptimisticToggleOptions<T extends { enabled: boolean }> {
   /** The React state setter for the list that contains the toggled item. */
   setState: React.Dispatch<React.SetStateAction<T[]>>
@@ -53,9 +55,9 @@ export function useOptimisticToggle<T extends { enabled: boolean }>(
         await toggleFn(item, newEnabled)
         const msgs = messagesRef.current
         toast.success(newEnabled ? (msgs?.on ?? '已啟用') : (msgs?.off ?? '已停用'))
-      } catch {
+      } catch (e) {
         setState(prev => prev.map(x => (getId(x) === id ? { ...x, enabled: item.enabled } : x)))
-        toast.error(messagesRef.current?.error ?? '切換失敗')
+        toastApiError(e, messagesRef.current?.error ?? '切換失敗')
       } finally {
         pendingRef.current.delete(id)
       }

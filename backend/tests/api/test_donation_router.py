@@ -26,6 +26,7 @@ from fastapi.testclient import TestClient
 
 from core.config import get_settings
 from core.dependencies import get_db_pool
+from core.error_handlers import register_exception_handlers
 from routers.donation_router import (
     _build_check_mac_value,
     _handle_payment_webhook,
@@ -43,6 +44,7 @@ async def _no_lifespan(app: FastAPI):
 
 def _make_client(pool: AsyncMock | None = None) -> TestClient:
     app = FastAPI(lifespan=_no_lifespan)
+    register_exception_handlers(app)
     app.include_router(_donation_router)
     _pool = pool or AsyncMock()
     app.dependency_overrides[get_db_pool] = lambda: _pool
@@ -103,7 +105,7 @@ class TestCheckoutReturnUrlValidation:
             },
         )
         assert r.status_code == 400
-        assert "return_url" in r.json()["detail"]
+        assert r.json()["error"]["code"] == "DONATION.INVALID"
 
     def test_http_scheme_rejected_when_frontend_is_https(self):
         """http:// must be rejected when FRONTEND_URL is https://."""
@@ -152,7 +154,7 @@ class TestCheckoutReturnUrlValidation:
             },
         )
         assert r.status_code == 400
-        assert "platform" in r.json()["detail"].lower()
+        assert r.json()["error"]["code"] == "DONATION.INVALID"
 
 
 # ---------------------------------------------------------------------------
@@ -529,13 +531,11 @@ class TestExtractVideoId:
         assert _extract_video_id(None, True) is None
 
     def test_invalid_url_raises_400(self):
-        from fastapi import HTTPException
+        from routers.donation_router import DonationInvalidError, _extract_video_id
 
-        from routers.donation_router import _extract_video_id
-
-        with pytest.raises(HTTPException) as exc_info:
+        with pytest.raises(DonationInvalidError) as exc_info:
             _extract_video_id("https://example.com/not-yt", True)
-        assert exc_info.value.status_code == 400
+        assert exc_info.value.http_status == 400
 
 
 # ---------------------------------------------------------------------------
