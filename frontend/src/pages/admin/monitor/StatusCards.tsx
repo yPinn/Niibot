@@ -59,7 +59,7 @@ export function FieldRow({
       <span className="text-label font-medium uppercase tracking-wide text-muted-foreground shrink-0">
         {label}
       </span>
-      <div className="text-sub font-mono flex items-center">
+      <div className="text-sub font-mono flex min-w-0 items-center break-all">
         {loading ? <Skeleton className="h-4 w-20" /> : offline ? DASH : value}
       </div>
     </div>

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { type DbQueryResult, runDbQuery } from '@/api/admin'
 import { Icon, Spinner } from '@/components/primitives'
@@ -165,7 +165,14 @@ const DB_PRESETS: DbPresetGroup[] = [
   },
 ]
 
-export function DbConsole() {
+export function DbConsole({
+  reloadNonce,
+  onLoadingChange,
+}: {
+  /** Bump to re-run the current query from the parent's shared refresh button. */
+  reloadNonce?: number
+  onLoadingChange?: (loading: boolean) => void
+} = {}) {
   const [sql, setSql] = useState(DB_PRESETS[0].items[0].sql)
   const [activePreset, setActivePreset] = useState<string>('Channels')
   const [result, setResult] = useState<DbQueryResult | null>(null)
@@ -226,6 +233,23 @@ export function DbConsole() {
   }
 
   const handleRun = () => runQuery(sql)
+
+  // Parent's shared refresh button bumps `reloadNonce` — re-run whatever is in
+  // the editor. Skip the initial render (nothing has been run yet).
+  const didMount = useRef(false)
+  useEffect(() => {
+    if (!didMount.current) {
+      didMount.current = true
+      return
+    }
+    runQuery(sql)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reloadNonce])
+
+  useEffect(() => {
+    onLoadingChange?.(loading)
+    return () => onLoadingChange?.(false)
+  }, [loading, onLoadingChange])
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
@@ -300,7 +324,7 @@ export function DbConsole() {
         </div>
 
         {/* Results */}
-        <div className="flex-1 min-h-0 overflow-auto">
+        <div className="flex-1 min-h-0 min-w-0 overflow-auto">
           {result && result.row_count > 0 && (
             <Table>
               <TableHeader>
