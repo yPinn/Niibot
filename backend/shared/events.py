@@ -9,7 +9,7 @@ event type: the ``event_configs`` DB key (+ migration 053 CHECK), the DB seed
 twitchio EventSub class that delivers it (or ``None``).
 
 ``backend/shared/`` is imported by the api and discord services too, so this
-module must NOT import ``twitchio``. ``twitch/core/subscriptions.py`` maps
+module must NOT import ``twitchio``. ``twitch/core/eventsub_catalog.py`` maps
 ``subscription_class`` (a bare string) to a real ``eventsub`` factory;
 ``tests/twitch/test_event_catalog.py`` keeps the layers consistent.
 """

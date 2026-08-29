@@ -21,7 +21,7 @@ from typing import Any, Protocol
 
 from twitchio import eventsub
 
-from core.subscriptions import get_channel_subscriptions
+from core.eventsub_catalog import get_channel_subscriptions
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 

@@ -1,4 +1,7 @@
-"""EventSub subscriptions created for every monitored channel.
+"""EventSub subscription definitions — the full set created for every channel.
+
+This is the *catalog / factory* layer (pure functions, no state); runtime
+subscribe/unsubscribe state lives in ``core.subscription_manager``.
 
 The template-driven notification events (follow / subscribe / raid / bits) are
 derived from ``shared.events.EVENT_CATALOG`` so the catalog stays the single

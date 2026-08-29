@@ -17,7 +17,7 @@ from core.config import get_settings
 from core.database import get_database_manager, init_database_manager
 from core.dependencies import close_twitch_api, require_activated
 from core.error_handlers import log_request_failure, register_exception_handlers
-from core.logging import setup_logging
+from core.logging_setup import setup_logging
 from routers import (
     admin_router,
     ai_settings_router,

@@ -4,8 +4,8 @@ The point of the catalog is that adding an event type in one layer but not the
 others fails loudly here instead of silently never firing (which is exactly how
 resub / gift_sub shipped broken). Each catalog entry is checked against:
 
-- the twitchio EventSub factory map in twitch.core.subscriptions
-- the twitchio listener method on EventComponent
+- the twitchio EventSub factory map in twitch.core.eventsub_catalog
+- the twitchio listener method on EventsComponent
 - the event_configs CHECK constraint (migration 053)
 - the DEFAULT_TEMPLATES / DEFAULT_ENABLED seed dicts
 
@@ -21,8 +21,8 @@ import sys
 from pathlib import Path
 
 import pytest
-from twitch.components.events import EventComponent
-from twitch.core.subscriptions import _CATALOG_FACTORIES, get_channel_subscriptions
+from twitch.components.events import EventsComponent
+from twitch.core.eventsub_catalog import _CATALOG_FACTORIES, get_channel_subscriptions
 from twitchio import eventsub
 
 from shared.events import EVENT_CATALOG, EVENT_KEYS
@@ -47,8 +47,8 @@ _MIGRATION_053 = (
 class TestCatalogConsistency:
     def test_listener_exists(self, event):
         name = _LISTENER_BY_KEY[event.key]
-        assert callable(getattr(EventComponent, name, None)), (
-            f"{event.key}: EventComponent.{name} listener missing"
+        assert callable(getattr(EventsComponent, name, None)), (
+            f"{event.key}: EventsComponent.{name} listener missing"
         )
 
     def test_subscription_class_has_factory(self, event):

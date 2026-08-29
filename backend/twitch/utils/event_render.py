@@ -1,4 +1,4 @@
-"""Rendering helpers for EventComponent's configurable chat greetings.
+"""Rendering helpers for EventsComponent's configurable chat greetings.
 
 Kept separate from ``utils.substitution`` (which handles custom command /
 trigger responses with a chatter object and its own variable set). These are

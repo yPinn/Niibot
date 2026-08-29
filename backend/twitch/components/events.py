@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-class EventComponent(commands.Component):
+class EventsComponent(commands.Component):
     """EventSub 事件監聽組件"""
 
     COOLDOWN_HOURS = 24
@@ -528,7 +528,7 @@ class EventComponent(commands.Component):
 
 
 async def setup(bot: commands.Bot) -> None:
-    await bot.add_component(EventComponent(bot))
+    await bot.add_component(EventsComponent(bot))
 
 
 async def teardown(bot: commands.Bot) -> None: ...

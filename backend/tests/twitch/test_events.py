@@ -1,10 +1,10 @@
-"""Unit tests for EventComponent — _get_template (fail-closed) and _notify."""
+"""Unit tests for EventsComponent — _get_template (fail-closed) and _notify."""
 
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from twitch.components.events import EventComponent
+from twitch.components.events import EventsComponent
 
 pytestmark = pytest.mark.asyncio
 
@@ -23,7 +23,7 @@ def _component(config=None, *, raises=False, is_mod=True):
         _bot_is_mod={"ch"} if is_mod else set(),
         create_partialuser=MagicMock(return_value=partial),
     )
-    comp = EventComponent(bot)
+    comp = EventsComponent(bot)
     comp._sent_partial = partial  # test handle for the channel's send_message
     return comp
 

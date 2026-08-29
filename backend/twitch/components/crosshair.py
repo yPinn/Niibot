@@ -63,7 +63,7 @@ def _split_name_code(args: str) -> tuple[str, str] | None:
     return parts[0].strip(), parts[1].strip()
 
 
-class CrosshairCommandsComponent(BotComponent):
+class CrosshairComponent(BotComponent):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot: Bot = bot  # type: ignore[assignment]
         self.cmd_repo = CommandConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
@@ -247,7 +247,7 @@ class CrosshairCommandsComponent(BotComponent):
 
 
 async def setup(bot: commands.Bot) -> None:
-    await bot.add_component(CrosshairCommandsComponent(bot))
+    await bot.add_component(CrosshairComponent(bot))
 
 
 async def teardown(bot: commands.Bot) -> None: ...
