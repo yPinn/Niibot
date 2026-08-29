@@ -54,6 +54,14 @@ class EventComponent(commands.Component):
     def _bot_has_mod(self, channel_id: str) -> bool:
         return channel_id in self.bot._bot_is_mod  # type: ignore[attr-defined]
 
+    def _session_id(self, channel_id: str) -> int | None:
+        """Active stream-session id for this channel, or None when not live.
+
+        Stream-event analytics (``record_*_event``) only makes sense during a
+        session; viewer-state upserts run regardless.
+        """
+        return self.bot._active_sessions.get(channel_id)  # type: ignore[attr-defined]
+
     def _should_notify(self, user_id: str) -> bool:
         """檢查是否應該發送通知（防刷機制，僅用於追隨事件）"""
         self._event_counter += 1
@@ -73,10 +81,8 @@ class EventComponent(commands.Component):
         self._follow_cache[user_id] = now
         return True
 
-    async def _get_message(
-        self, channel_id: str, event_type: str, variables: dict[str, str]
-    ) -> str | None:
-        """Resolve a channel's template for an event, or None to stay silent.
+    async def _get_template(self, channel_id: str, event_type: str) -> str | None:
+        """The channel's message template for an event, or None to stay silent.
 
         Fails closed: a missing config row (channel never seeded / opened the
         dashboard), a disabled event, or a DB read error all mean "don't post".
@@ -89,8 +95,37 @@ class EventComponent(commands.Component):
             return None
         if config is None or not config.enabled:
             return None
+        return config.message_template
 
-        return render_template(config.message_template, variables)
+    async def _notify(
+        self, channel_id: str, event_type: str, variables: dict[str, str], *, label: str
+    ) -> bool:
+        """Post the channel's configured greeting for an event.
+
+        Returns True if a message was sent. Silent (False) when the bot is not
+        a mod in the channel, the event is disabled / unconfigured, or the send
+        fails — every reason is logged against *label*.
+        """
+        if not self._bot_has_mod(channel_id):
+            LOGGER.debug(f"{label} (bot not mod, skipped)")
+            return False
+
+        template = await self._get_template(channel_id, event_type)
+        if template is None:
+            LOGGER.info(f"{label} (disabled)")
+            return False
+
+        try:
+            await self.bot.create_partialuser(channel_id).send_message(
+                message=render_template(template, variables),
+                sender=self.bot.bot_id,
+            )
+        except Exception as e:
+            LOGGER.error(f"{label} (error: {e})")
+            return False
+
+        LOGGER.info(label)
+        return True
 
     @commands.Component.listener()
     async def event_follow(
@@ -107,53 +142,40 @@ class EventComponent(commands.Component):
         broadcaster_name = payload.broadcaster.name
         channel_id = payload.broadcaster.id
 
-        # Always persist follow_since (idempotent COALESCE upsert)
-        if hasattr(self.bot, "analytics"):
-            try:
-                followed_at = payload.followed_at
-                await self.bot.analytics.upsert_viewer_follow_status(
-                    channel_id=channel_id,
-                    user_id=user_id,
-                    username=payload.user.name or user_name,
-                    display_name=payload.user.display_name,
-                    follow_since=followed_at,
-                )
-            except Exception as e:
-                LOGGER.warning(f"[{broadcaster_name}] Follow status upsert failed: {e}")
+        # Always persist follow_since (idempotent COALESCE upsert), even when
+        # the greeting is disabled / the bot is not a mod.
+        try:
+            await self.bot.analytics.upsert_viewer_follow_status(
+                channel_id=channel_id,
+                user_id=user_id,
+                username=payload.user.name or user_name,
+                display_name=payload.user.display_name,
+                follow_since=payload.followed_at,
+            )
+        except Exception as e:
+            LOGGER.warning(f"[{broadcaster_name}] Follow status upsert failed: {e}")
 
         if not self._should_notify(user_id):
             LOGGER.info(f"[{broadcaster_name}] Follow: {user_name} (cooldown)")
             return
 
-        if not self._bot_has_mod(channel_id):
-            LOGGER.debug(f"[{broadcaster_name}] Follow: {user_name} (bot not mod, skipped)")
+        label = f"[{broadcaster_name}] Follow: {user_name}"
+        if not await self._notify(channel_id, "follow", {"user": user_name}, label=label):
             return
 
         try:
-            message = await self._get_message(channel_id, "follow", {"user": user_name})
-            if message is None:
-                LOGGER.info(f"[{broadcaster_name}] Follow: {user_name} (disabled)")
-                return
-
-            await payload.broadcaster.send_message(
-                message=message,
-                sender=self.bot.bot_id,
-            )
-            LOGGER.info(f"[{broadcaster_name}] Follow: {user_name}")
-
-            if hasattr(self.bot, "_active_sessions") and hasattr(self.bot, "analytics"):
-                session_id = self.bot._active_sessions.get(channel_id)
-                if session_id:
-                    await self.bot.analytics.record_follow_event(
-                        session_id=session_id,
-                        channel_id=channel_id,
-                        user_id=user_id,
-                        username=payload.user.name or user_name,
-                        display_name=payload.user.display_name,
-                        occurred_at=datetime.now(UTC),
-                    )
+            session_id = self._session_id(channel_id)
+            if session_id is not None:
+                await self.bot.analytics.record_follow_event(
+                    session_id=session_id,
+                    channel_id=channel_id,
+                    user_id=user_id,
+                    username=payload.user.name or user_name,
+                    display_name=payload.user.display_name,
+                    occurred_at=datetime.now(UTC),
+                )
         except Exception as e:
-            LOGGER.error(f"[{broadcaster_name}] Follow: {user_name} (error: {e})")
+            LOGGER.warning(f"[{broadcaster_name}] Follow analytics failed: {e}")
 
     @commands.Component.listener()
     async def event_subscription(
@@ -173,56 +195,39 @@ class EventComponent(commands.Component):
         sub_type = "Gift" if payload.gift else "Sub"
 
         # Always persist subscription status regardless of notification config
-        if hasattr(self.bot, "analytics"):
-            try:
-                await self.bot.analytics.upsert_viewer_subscription(
+        try:
+            await self.bot.analytics.upsert_viewer_subscription(
+                channel_id=channel_id,
+                user_id=payload.user.id,
+                username=payload.user.name or user_name,
+                display_name=payload.user.display_name,
+                sub_tier=tier_name,
+                sub_gifted=bool(payload.gift),
+            )
+        except Exception as e:
+            LOGGER.warning(f"[{broadcaster_name}] Subscription status upsert failed: {e}")
+
+        label = f"[{broadcaster_name}] {sub_type}: {user_name} ({tier_name})"
+        if not await self._notify(
+            channel_id, "subscribe", {"user": user_name, "tier": tier_name}, label=label
+        ):
+            return
+
+        try:
+            session_id = self._session_id(channel_id)
+            if session_id is not None:
+                await self.bot.analytics.record_subscribe_event(
+                    session_id=session_id,
                     channel_id=channel_id,
                     user_id=payload.user.id,
                     username=payload.user.name or user_name,
                     display_name=payload.user.display_name,
-                    sub_tier=tier_name,
-                    sub_gifted=bool(payload.gift),
+                    tier=payload.tier,
+                    is_gift=payload.gift,
+                    occurred_at=datetime.now(UTC),
                 )
-            except Exception as e:
-                LOGGER.warning(f"[{broadcaster_name}] Subscription status upsert failed: {e}")
-
-        if not self._bot_has_mod(channel_id):
-            LOGGER.debug(
-                f"[{broadcaster_name}] {sub_type}: {user_name} ({tier_name}) (bot not mod, skipped)"
-            )
-            return
-
-        try:
-            message = await self._get_message(
-                channel_id, "subscribe", {"user": user_name, "tier": tier_name}
-            )
-            if message is None:
-                LOGGER.info(
-                    f"[{broadcaster_name}] {sub_type}: {user_name} ({tier_name}) (disabled)"
-                )
-                return
-
-            await payload.broadcaster.send_message(
-                message=message,
-                sender=self.bot.bot_id,
-            )
-            LOGGER.info(f"[{broadcaster_name}] {sub_type}: {user_name} ({tier_name})")
-
-            if hasattr(self.bot, "_active_sessions") and hasattr(self.bot, "analytics"):
-                session_id = self.bot._active_sessions.get(channel_id)
-                if session_id:
-                    await self.bot.analytics.record_subscribe_event(
-                        session_id=session_id,
-                        channel_id=channel_id,
-                        user_id=payload.user.id,
-                        username=payload.user.name or user_name,
-                        display_name=payload.user.display_name,
-                        tier=payload.tier,
-                        is_gift=payload.gift,
-                        occurred_at=datetime.now(UTC),
-                    )
         except Exception as e:
-            LOGGER.error(f"[{broadcaster_name}] {sub_type}: {user_name} ({tier_name}) (error: {e})")
+            LOGGER.warning(f"[{broadcaster_name}] {sub_type} analytics failed: {e}")
 
     @commands.Component.listener()
     async def event_subscription_gift(
@@ -247,47 +252,30 @@ class EventComponent(commands.Component):
         cumulative = payload.cumulative_total
         cumulative_str = str(cumulative) if cumulative is not None else "?"
 
-        # Analytics — always write regardless of mod status (before mod guard)
+        # Analytics — always write, even for a disabled greeting / non-mod bot.
         if not payload.anonymous and payload.user and cumulative is not None:
-            if hasattr(self.bot, "analytics"):
-                try:
-                    await self.bot.analytics.upsert_viewer_gift_count(
-                        channel_id=channel_id,
-                        user_id=payload.user.id,
-                        username=payload.user.name or "",
-                        display_name=payload.user.display_name,
-                        total_gifts_given=int(cumulative),
-                    )
-                except Exception as e:
-                    LOGGER.warning(f"[{broadcaster_name}] Gift upsert failed: {e}")
-
-        if not self._bot_has_mod(channel_id):
-            LOGGER.debug(f"[{broadcaster_name}] GiftSub: bot not mod, skipped")
-            return
-
-        try:
-            message = await self._get_message(
-                channel_id,
-                "gift_sub",
-                {
-                    "user": user_name,
-                    "tier": tier_name,
-                    "total": str(total),
-                    "cumulative": cumulative_str,
-                },
-            )
-            if message is not None:
-                await payload.broadcaster.send_message(
-                    message=message,
-                    sender=self.bot.bot_id,
+            try:
+                await self.bot.analytics.upsert_viewer_gift_count(
+                    channel_id=channel_id,
+                    user_id=payload.user.id,
+                    username=payload.user.name or "",
+                    display_name=payload.user.display_name,
+                    total_gifts_given=int(cumulative),
                 )
-                LOGGER.info(f"[{broadcaster_name}] GiftSub: {user_name} x{total} ({tier_name})")
-            else:
-                LOGGER.info(
-                    f"[{broadcaster_name}] GiftSub: {user_name} x{total} ({tier_name}) (disabled)"
-                )
-        except Exception as e:
-            LOGGER.error(f"[{broadcaster_name}] GiftSub: {user_name} (error: {e})")
+            except Exception as e:
+                LOGGER.warning(f"[{broadcaster_name}] Gift upsert failed: {e}")
+
+        await self._notify(
+            channel_id,
+            "gift_sub",
+            {
+                "user": user_name,
+                "tier": tier_name,
+                "total": str(total),
+                "cumulative": cumulative_str,
+            },
+            label=f"[{broadcaster_name}] GiftSub: {user_name} x{total} ({tier_name})",
+        )
 
     @commands.Component.listener()
     async def event_subscription_message(
@@ -301,40 +289,22 @@ class EventComponent(commands.Component):
         user_name = payload.user.display_name or payload.user.name or ""
         broadcaster_name = payload.broadcaster.name
         channel_id = payload.broadcaster.id
-
-        if not self._bot_has_mod(channel_id):
-            LOGGER.debug(f"[{broadcaster_name}] Resub: {user_name} (bot not mod, skipped)")
-            return
         tier_name = tier_label(payload.tier)
         months = payload.months
         streak = payload.streak_months if payload.streak_months is not None else 0
-        resub_text = clean_message_var(payload.text)
 
-        try:
-            message = await self._get_message(
-                channel_id,
-                "resub",
-                {
-                    "user": user_name,
-                    "tier": tier_name,
-                    "months": str(months),
-                    "streak": str(streak),
-                    "message": resub_text,
-                },
-            )
-            if message is None:
-                LOGGER.info(
-                    f"[{broadcaster_name}] Resub: {user_name} ({tier_name} ×{months}) (disabled)"
-                )
-                return
-
-            await payload.broadcaster.send_message(
-                message=message,
-                sender=self.bot.bot_id,
-            )
-            LOGGER.info(f"[{broadcaster_name}] Resub: {user_name} ({tier_name} ×{months})")
-        except Exception as e:
-            LOGGER.error(f"[{broadcaster_name}] Resub: {user_name} (error: {e})")
+        await self._notify(
+            channel_id,
+            "resub",
+            {
+                "user": user_name,
+                "tier": tier_name,
+                "months": str(months),
+                "streak": str(streak),
+                "message": clean_message_var(payload.text),
+            },
+            label=f"[{broadcaster_name}] Resub: {user_name} ({tier_name} ×{months})",
+        )
 
     @commands.Component.listener()
     async def event_cheer(
@@ -355,50 +325,37 @@ class EventComponent(commands.Component):
             )
         broadcaster_name = payload.broadcaster.name
         channel_id = payload.broadcaster.id
-
-        if not self._bot_has_mod(channel_id):
-            LOGGER.debug(f"[{broadcaster_name}] Cheer: {user_name} (bot not mod, skipped)")
-            return
         bits_amount = payload.bits
-        cheer_message = clean_message_var(payload.message or "")
+
+        label = f"[{broadcaster_name}] Cheer: {user_name} {bits_amount} bits"
+        if not await self._notify(
+            channel_id,
+            "bits",
+            {
+                "user": user_name,
+                "amount": str(bits_amount),
+                "message": clean_message_var(payload.message or ""),
+            },
+            label=label,
+        ):
+            return
 
         try:
-            message = await self._get_message(
-                channel_id,
-                "bits",
-                {"user": user_name, "amount": str(bits_amount), "message": cheer_message},
-            )
-            if message is None:
-                LOGGER.info(
-                    f"[{broadcaster_name}] Cheer: {user_name} {bits_amount} bits (disabled)"
+            session_id = self._session_id(channel_id)
+            if session_id is not None:
+                user_id = None if payload.anonymous else (payload.user.id if payload.user else None)
+                await self.bot.analytics.record_cheer_event(
+                    session_id=session_id,
+                    channel_id=channel_id,
+                    user_id=user_id,
+                    username=payload.user.name
+                    if payload.user and not payload.anonymous
+                    else user_name,
+                    bits=bits_amount,
+                    occurred_at=datetime.now(UTC),
                 )
-                return
-
-            await payload.broadcaster.send_message(
-                message=message,
-                sender=self.bot.bot_id,
-            )
-            LOGGER.info(f"[{broadcaster_name}] Cheer: {user_name} {bits_amount} bits")
-
-            if hasattr(self.bot, "_active_sessions") and hasattr(self.bot, "analytics"):
-                session_id = self.bot._active_sessions.get(channel_id)
-                if session_id:
-                    user_id = (
-                        None if payload.anonymous else (payload.user.id if payload.user else None)
-                    )
-                    await self.bot.analytics.record_cheer_event(
-                        session_id=session_id,
-                        channel_id=channel_id,
-                        user_id=user_id,
-                        username=payload.user.name
-                        if payload.user and not payload.anonymous
-                        else user_name,
-                        bits=bits_amount,
-                        occurred_at=datetime.now(UTC),
-                    )
-
         except Exception as e:
-            LOGGER.error(f"[{broadcaster_name}] Cheer: {user_name} {bits_amount} bits (error: {e})")
+            LOGGER.warning(f"[{broadcaster_name}] Cheer analytics failed: {e}")
 
     @commands.Component.listener()
     async def event_raid(
@@ -419,61 +376,52 @@ class EventComponent(commands.Component):
             LOGGER.debug(f"[{broadcaster_name}] Raid: {raider_name} (bot not mod, skipped)")
             return
 
+        await self._notify(
+            broadcaster_id,
+            "raid",
+            {"user": raider_name, "count": str(viewer_count)},
+            label=f"[{broadcaster_name}] Raid: {raider_name} ({viewer_count})",
+        )
+
         try:
             config = await self.event_configs.get_config(broadcaster_id, "raid")
-            auto_shoutout = True
-            if config is not None:
-                auto_shoutout = config.options.get("auto_shoutout", True)
+        except Exception:
+            config = None
+        auto_shoutout = config.options.get("auto_shoutout", True) if config else True
 
-            message = await self._get_message(
-                broadcaster_id, "raid", {"user": raider_name, "count": str(viewer_count)}
-            )
-            if message is not None:
-                await payload.to_broadcaster.send_message(
-                    message=message,
-                    sender=self.bot.bot_id,
+        if auto_shoutout:
+            try:
+                await payload.to_broadcaster.send_shoutout(
+                    to_broadcaster=raider_id,
+                    moderator=self.bot.bot_id,
                 )
-
-            shoutout_sent = False
-            if auto_shoutout:
-                try:
-                    await payload.to_broadcaster.send_shoutout(
-                        to_broadcaster=raider_id,
-                        moderator=self.bot.bot_id,
-                    )
-                    shoutout_sent = True
-                except Exception as shoutout_err:
-                    if is_scope_error(shoutout_err):
-                        await reauth_notifier.notify(
-                            broadcaster_login=broadcaster_name or "",
-                            channel_id=broadcaster_id,
-                            send_fn=lambda msg: payload.to_broadcaster.send_message(
-                                message=msg,
-                                sender=self.bot.bot_id,
-                            ),
-                        )
-                    else:
-                        LOGGER.error(f"[{broadcaster_name}] Shoutout failed: {shoutout_err}")
-
-            if hasattr(self.bot, "_active_sessions") and hasattr(self.bot, "analytics"):
-                session_id = self.bot._active_sessions.get(broadcaster_id)
-                if session_id:
-                    await self.bot.analytics.record_raid_event(
-                        session_id=session_id,
+                LOGGER.info(f"[{broadcaster_name}] Raid shoutout sent: {raider_name}")
+            except Exception as shoutout_err:
+                if is_scope_error(shoutout_err):
+                    await reauth_notifier.notify(
+                        broadcaster_login=broadcaster_name or "",
                         channel_id=broadcaster_id,
-                        from_broadcaster_id=raider_id,
-                        from_broadcaster_name=payload.from_broadcaster.name or raider_name,
-                        viewers=viewer_count,
-                        occurred_at=datetime.now(UTC),
+                        send_fn=lambda msg: payload.to_broadcaster.send_message(
+                            message=msg,
+                            sender=self.bot.bot_id,
+                        ),
                     )
+                else:
+                    LOGGER.error(f"[{broadcaster_name}] Shoutout failed: {shoutout_err}")
 
-            LOGGER.info(
-                f"[{broadcaster_name}] Raid: {raider_name} ({viewer_count})"
-                f" (shoutout {'sent' if shoutout_sent else 'skipped'})"
-            )
-
+        try:
+            session_id = self._session_id(broadcaster_id)
+            if session_id is not None:
+                await self.bot.analytics.record_raid_event(
+                    session_id=session_id,
+                    channel_id=broadcaster_id,
+                    from_broadcaster_id=raider_id,
+                    from_broadcaster_name=payload.from_broadcaster.name or raider_name,
+                    viewers=viewer_count,
+                    occurred_at=datetime.now(UTC),
+                )
         except Exception as e:
-            LOGGER.error(f"[{broadcaster_name}] Raid: {raider_name} (error: {e})")
+            LOGGER.warning(f"[{broadcaster_name}] Raid analytics failed: {e}")
 
     @commands.Component.listener()
     async def event_subscription_end(
@@ -485,13 +433,12 @@ class EventComponent(commands.Component):
         broadcaster_name = payload.broadcaster.name
         user_name = payload.user.display_name or payload.user.name or ""
         try:
-            if hasattr(self.bot, "analytics"):
-                await self.bot.analytics.upsert_viewer_subscription_end(
-                    channel_id=channel_id,
-                    user_id=payload.user.id,
-                    username=payload.user.name or user_name,
-                    display_name=payload.user.display_name,
-                )
+            await self.bot.analytics.upsert_viewer_subscription_end(
+                channel_id=channel_id,
+                user_id=payload.user.id,
+                username=payload.user.name or user_name,
+                display_name=payload.user.display_name,
+            )
             LOGGER.info(f"[{broadcaster_name}] SubEnd: {user_name}")
         except Exception as e:
             LOGGER.error(f"[{broadcaster_name}] SubEnd: {user_name} (error: {e})")
@@ -515,14 +462,13 @@ class EventComponent(commands.Component):
             await self.bot.resubscribe_follow(channel_id)  # type: ignore[attr-defined]
 
         try:
-            if hasattr(self.bot, "analytics"):
-                await self.bot.analytics.upsert_viewer_mod_status(
-                    channel_id=channel_id,
-                    user_id=payload.user.id,
-                    username=payload.user.name or user_name,
-                    display_name=payload.user.display_name,
-                    is_mod=True,
-                )
+            await self.bot.analytics.upsert_viewer_mod_status(
+                channel_id=channel_id,
+                user_id=payload.user.id,
+                username=payload.user.name or user_name,
+                display_name=payload.user.display_name,
+                is_mod=True,
+            )
             LOGGER.info(f"[{payload.broadcaster.name}] ModAdd: {user_name}")
         except Exception as e:
             LOGGER.error(f"[{payload.broadcaster.name}] ModAdd: {user_name} (error: {e})")
@@ -543,14 +489,13 @@ class EventComponent(commands.Component):
             self._trigger_emote_sync(channel_id)
 
         try:
-            if hasattr(self.bot, "analytics"):
-                await self.bot.analytics.upsert_viewer_mod_status(
-                    channel_id=channel_id,
-                    user_id=payload.user.id,
-                    username=payload.user.name or user_name,
-                    display_name=payload.user.display_name,
-                    is_mod=False,
-                )
+            await self.bot.analytics.upsert_viewer_mod_status(
+                channel_id=channel_id,
+                user_id=payload.user.id,
+                username=payload.user.name or user_name,
+                display_name=payload.user.display_name,
+                is_mod=False,
+            )
             LOGGER.info(f"[{payload.broadcaster.name}] ModRemove: {user_name}")
         except Exception as e:
             LOGGER.error(f"[{payload.broadcaster.name}] ModRemove: {user_name} (error: {e})")
