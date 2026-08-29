@@ -63,7 +63,7 @@ def _split_name_code(args: str) -> tuple[str, str] | None:
     return parts[0].strip(), parts[1].strip()
 
 
-class CrosshairCommandsComponent(BotComponent):
+class CrosshairComponent(BotComponent):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot: Bot = bot  # type: ignore[assignment]
         self.cmd_repo = CommandConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
@@ -76,22 +76,17 @@ class CrosshairCommandsComponent(BotComponent):
         self.cmd_repo.pool = pool
         self.xhair_repo.pool = pool
 
-    @property
-    def _has_analytics(self) -> bool:
-        return hasattr(self.bot, "_active_sessions") and hasattr(self.bot, "analytics")
-
     async def _record_command(self, ctx: commands.Context, command_name: str) -> None:
         try:
             channel_id = ctx.channel.id
             await self.cmd_repo.increment_usage_count(channel_id, command_name)
-            if self._has_analytics:
-                session_id = self.bot._active_sessions.get(channel_id)  # type: ignore[attr-defined]
-                if session_id:
-                    await self.bot.analytics.record_command_usage(  # type: ignore[attr-defined]
-                        session_id=session_id,
-                        channel_id=channel_id,
-                        command_name=f"!{command_name}",
-                    )
+            session_id = self.bot.sessions.session_id(channel_id)
+            if session_id:
+                await self.bot.analytics.record_command_usage(  # type: ignore[attr-defined]
+                    session_id=session_id,
+                    channel_id=channel_id,
+                    command_name=f"!{command_name}",
+                )
         except Exception as e:
             LOGGER.error(f"Failed to record command usage: {e}")
 
@@ -252,7 +247,7 @@ class CrosshairCommandsComponent(BotComponent):
 
 
 async def setup(bot: commands.Bot) -> None:
-    await bot.add_component(CrosshairCommandsComponent(bot))
+    await bot.add_component(CrosshairComponent(bot))
 
 
 async def teardown(bot: commands.Bot) -> None: ...

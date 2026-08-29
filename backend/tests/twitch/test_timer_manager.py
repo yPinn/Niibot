@@ -19,7 +19,8 @@ CHANNEL_ID = "ch_test"
 def _make_bot() -> MagicMock:
     bot = MagicMock()
     bot._bot_is_mod = {CHANNEL_ID}
-    bot._channel_line_counts = {CHANNEL_ID: 0}
+    bot.sessions.line_count = MagicMock(return_value=0)
+    bot.sessions.live_channels = frozenset({CHANNEL_ID})
     bot.bot_id = "bot123"
     bot.timer_configs = MagicMock()
     bot.channels = MagicMock()

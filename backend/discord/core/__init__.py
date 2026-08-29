@@ -20,7 +20,7 @@ from .config import (
 )
 from .embed_factory import EmbedFactory
 from .health_server import HealthCheckServer
-from .logging import setup_logging
+from .logging_setup import setup_logging
 from .message_image import close_session, render_message_image
 from .rate_limiter import RateLimitMonitor, RateLimitStats
 from .views import UserBoundView

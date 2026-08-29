@@ -8,11 +8,11 @@ from .config import (
     TWITCH_DIR,
     get_settings,
 )
+from .eventsub_catalog import get_channel_subscriptions
 from .guards import check_command, has_role, is_on_cooldown, record_cooldown
 from .health_server import HealthCheckServer
-from .logging import setup_logging
+from .logging_setup import setup_logging
 from .pg_listener import pg_listen
-from .subscriptions import get_channel_subscriptions
 
 __all__ = [
     # Settings

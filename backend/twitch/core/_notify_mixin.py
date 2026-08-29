@@ -1,10 +1,10 @@
 """PG NOTIFY handlers and cache refresh mixin.
 
-Extracted from Bot to keep bot.py under 300 lines.
 Depends on attributes defined in Bot.__init__:
-    self._bot_id, self._subscribed_channels, self._active_sessions, self.owner_id
+    self._bot_id, self.owner_id, self.subs, self.sessions
     self.channels, self.command_configs, self.redemption_configs
     self.timer_configs, self.message_trigger_configs
+Uses self._ch() defined on Bot.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 import twitchio
 
@@ -22,9 +22,25 @@ LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 class _NotifyMixin:
-    def _ch(self, channel_id: str) -> str:
-        """Provided by _ChannelMixin at runtime; falls back to bare id."""
-        return channel_id
+    if TYPE_CHECKING:
+        # Defined on Bot; declared here so mypy resolves the mixin's calls.
+        def _ch(self, channel_id: str) -> str: ...
+
+    async def _seed_and_warm_channel(self, channel_id: str) -> int:
+        """Seed redemption + event config defaults and warm the command cache
+        for a newly-subscribed channel. Returns the warmed-config count
+        (0 on failure, which is logged rather than raised).
+        """
+        try:
+            await self.redemption_configs.ensure_defaults(  # type: ignore[attr-defined]
+                channel_id,
+                owner_id=self.owner_id,  # type: ignore[attr-defined]
+            )
+            await self.event_configs.ensure_defaults(channel_id)  # type: ignore[attr-defined]
+            return await self.command_configs.warm_cache(channel_id)  # type: ignore[attr-defined]
+        except Exception as e:
+            LOGGER.warning(f"[NOTIFY] Failed to seed/warm {self._ch(channel_id)}: {e}")
+            return 0
 
     # ------------------------------------------------------------------
     # PG NOTIFY handlers
@@ -48,8 +64,8 @@ class _NotifyMixin:
             )
 
             if enabled:
-                if channel_id not in self._subscribed_channels:  # type: ignore[attr-defined]
-                    await self.subscribe_channel_events(channel_id)  # type: ignore[attr-defined]
+                if not self.subs.is_subscribed(channel_id):  # type: ignore[attr-defined]
+                    await self.subs.subscribe(channel_id)  # type: ignore[attr-defined]
                     await self._check_bot_mod_status(channel_id)  # type: ignore[attr-defined]
 
                     # Scope check: mod check catches expired tokens (401/403) but a valid
@@ -58,7 +74,7 @@ class _NotifyMixin:
                     if channel_id not in self._needs_reauth:  # type: ignore[attr-defined]
                         token_obj = await self.channels.get_token(channel_id)  # type: ignore[attr-defined]
                         if token_obj and token_obj.scopes:
-                            from utils.reauth import missing_broadcaster_scopes
+                            from shared.twitch_scopes import missing_broadcaster_scopes
 
                             if missing_broadcaster_scopes(token_obj.scopes.split()):
                                 await self._mark_reauth_required(channel_id)
@@ -67,19 +83,10 @@ class _NotifyMixin:
                                     " after channel toggle — marking for reauth"
                                 )
 
-                    try:
-                        await self.redemption_configs.ensure_defaults(  # type: ignore[attr-defined]
-                            channel_id,
-                            owner_id=self.owner_id,  # type: ignore[attr-defined]
-                        )
-                        count = await self.command_configs.warm_cache(channel_id)  # type: ignore[attr-defined]
-                        LOGGER.info(
-                            f"[NOTIFY] Warmed cache: {count} configs for {self._ch(channel_id)}"
-                        )  # type: ignore[attr-defined]
-                    except Exception as e:
-                        LOGGER.warning(
-                            f"[NOTIFY] Failed to warm cache for {self._ch(channel_id)}: {e}"
-                        )  # type: ignore[attr-defined]
+                    count = await self._seed_and_warm_channel(channel_id)
+                    LOGGER.info(
+                        f"[NOTIFY] Warmed cache: {count} configs for {self._ch(channel_id)}"
+                    )
                     await self._send_welcome_message(channel_id)  # type: ignore[attr-defined]
                     LOGGER.info(f"[NOTIFY] Instantly subscribed to channel: {self._ch(channel_id)}")  # type: ignore[attr-defined]
                 else:
@@ -87,8 +94,8 @@ class _NotifyMixin:
                         f"[NOTIFY] Channel {self._ch(channel_id)} already subscribed, skipping"
                     )  # type: ignore[attr-defined]
             else:
-                if channel_id in self._subscribed_channels:  # type: ignore[attr-defined]
-                    await self.unsubscribe_channel_events(channel_id)  # type: ignore[attr-defined]
+                if self.subs.is_subscribed(channel_id):  # type: ignore[attr-defined]
+                    await self.subs.unsubscribe(channel_id)  # type: ignore[attr-defined]
                     self._bot_is_mod.discard(channel_id)  # type: ignore[attr-defined]
                     LOGGER.info(
                         f"[NOTIFY] Instantly unsubscribed from channel: {self._ch(channel_id)}"
@@ -166,7 +173,7 @@ class _NotifyMixin:
                 user_info = await self.add_token(token_obj.token, token_obj.refresh)  # type: ignore[attr-defined]
                 LOGGER.info(f"[NOTIFY] Loaded token for new user: {user_info.login} ({user_id})")
 
-                from utils.reauth import missing_broadcaster_scopes
+                from shared.twitch_scopes import missing_broadcaster_scopes
 
                 missing = missing_broadcaster_scopes(user_info.scopes)
                 if missing:
@@ -196,40 +203,15 @@ class _NotifyMixin:
                     )
                     return
 
-                if user_id not in self._subscribed_channels:  # type: ignore[attr-defined]
-                    await self.subscribe_channel_events(user_id)  # type: ignore[attr-defined]
+                if not self.subs.is_subscribed(user_id):  # type: ignore[attr-defined]
+                    await self.subs.subscribe(user_id)  # type: ignore[attr-defined]
                     await self._check_bot_mod_status(user_id)  # type: ignore[attr-defined]
 
-                    try:
-                        await self.redemption_configs.ensure_defaults(  # type: ignore[attr-defined]
-                            user_id,
-                            owner_id=self.owner_id,  # type: ignore[attr-defined]
-                        )
-                        count = await self.command_configs.warm_cache(user_id)  # type: ignore[attr-defined]
-                        LOGGER.info(
-                            f"[NOTIFY] Warmed cache: {count} configs for {self._ch(user_id)}"
-                        )  # type: ignore[attr-defined]
-                    except Exception as e:
-                        LOGGER.warning(
-                            f"[NOTIFY] Failed to warm cache for {self._ch(user_id)}: {e}"
-                        )  # type: ignore[attr-defined]
+                    count = await self._seed_and_warm_channel(user_id)
+                    LOGGER.info(f"[NOTIFY] Warmed cache: {count} configs for {self._ch(user_id)}")
 
                     try:
-                        streams = [s async for s in self.fetch_streams(user_ids=[user_id])]  # type: ignore[attr-defined]
-                        if streams:
-                            stream = streams[0]
-                            session_id = await self.analytics.create_session(  # type: ignore[attr-defined]
-                                channel_id=user_id,
-                                started_at=stream.started_at or datetime.now(UTC),
-                                title=stream.title,
-                                game_name=stream.game_name,
-                                game_id=str(stream.game_id) if stream.game_id else None,
-                            )
-                            self._active_sessions[user_id] = session_id  # type: ignore[attr-defined]
-                            LOGGER.info(
-                                f"[NOTIFY] Created recovery session {session_id} "
-                                f"for live channel {user_id}"
-                            )
+                        await self.sessions.ensure_session(user_id)  # type: ignore[attr-defined]
                     except Exception as e:
                         LOGGER.warning(f"[NOTIFY] Failed to check live status for {user_id}: {e}")
 
@@ -275,7 +257,7 @@ class _NotifyMixin:
                 LOGGER.info("[NOTIFY] module_config updated, global pack cache invalidated")
                 return
 
-            if not channel_id or channel_id not in self._subscribed_channels:  # type: ignore[attr-defined]
+            if not channel_id or not self.subs.is_subscribed(channel_id):  # type: ignore[attr-defined]
                 return
 
             LOGGER.info(
@@ -340,11 +322,10 @@ class _NotifyMixin:
         """
         while True:
             try:
-                for channel_id in list(self._subscribed_channels):  # type: ignore[attr-defined]
+                subscribed = self.subs.subscribed  # type: ignore[attr-defined]
+                for channel_id in subscribed:
                     await self._refresh_channel_cache(channel_id)  # type: ignore[attr-defined]
-                LOGGER.debug(
-                    f"Periodic cache refresh complete for {len(self._subscribed_channels)} channels"  # type: ignore[attr-defined]
-                )
+                LOGGER.debug(f"Periodic cache refresh complete for {len(subscribed)} channels")
             except asyncio.CancelledError:
                 break
             except Exception as e:

@@ -1378,3 +1378,140 @@ class TestGetInsightsNewFields:
             assert "started_at" in point
             assert "game_name" in point
             assert "total_watch_hours" in point
+
+
+class TestBulkUpsertBanned:
+    pytestmark = pytest.mark.asyncio
+
+    async def test_upserts_listed_and_clears_stale(self):
+        pool, conn = _make_pool(executemany=None, execute="UPDATE 2")
+        repo = AnalyticsRepository(pool)
+
+        count = await repo.bulk_upsert_banned(
+            "ch1",
+            [
+                {
+                    "user_id": "1",
+                    "user_login": "a",
+                    "user_name": "A",
+                    "expires_at": "2024-06-02T00:00:00Z",
+                    "reason": "spam",
+                },
+                {"user_id": "2", "user_login": "b", "user_name": None, "expires_at": None},
+            ],
+        )
+
+        assert count == 2
+        # rows carry parsed expiry + reason
+        rows = conn.executemany.call_args[0][1]
+        assert rows[0][4] == datetime(2024, 6, 2, tzinfo=UTC)
+        assert rows[0][5] == "spam"
+        assert rows[1][4] is None
+        # stale-clear excludes the two listed ids
+        clear_args = conn.execute.call_args[0]
+        assert clear_args[1] == "ch1"
+        assert set(clear_args[2]) == {"1", "2"}
+
+    async def test_empty_list_still_clears_all(self):
+        pool, conn = _make_pool(execute="UPDATE 5")
+        repo = AnalyticsRepository(pool)
+
+        count = await repo.bulk_upsert_banned("ch1", [])
+
+        assert count == 0
+        conn.executemany.assert_not_called()
+        conn.execute.assert_awaited_once()
+        assert conn.execute.call_args[0][2] == []
+
+
+class TestUpsertViewerSubPrime:
+    pytestmark = pytest.mark.asyncio
+
+    async def test_writes_only_the_prime_flag(self):
+        pool, conn = _make_pool(execute="INSERT 0 1")
+        repo = AnalyticsRepository(pool)
+
+        await repo.upsert_viewer_sub_prime("ch1", "u1", "alice", "Alice", is_prime=True)
+
+        sql, *args = conn.execute.call_args[0]
+        assert args == ["ch1", "u1", "alice", "Alice", True]
+        # narrow upsert — never touches tier / gifted
+        assert "sub_is_prime" in sql
+        assert "sub_tier" not in sql
+        assert "sub_gifted" not in sql
+
+    async def test_missing_table_is_swallowed(self):
+        from asyncpg.exceptions import UndefinedTableError
+
+        pool, conn = _make_pool()
+        conn.execute.side_effect = UndefinedTableError("nope")
+        repo = AnalyticsRepository(pool)
+
+        await repo.upsert_viewer_sub_prime("ch1", "u1", "a", None, is_prime=False)  # no raise
+
+    async def test_subscription_end_nulls_prime(self):
+        pool, conn = _make_pool(execute="INSERT 0 1")
+        repo = AnalyticsRepository(pool)
+
+        await repo.upsert_viewer_subscription_end("ch1", "u1", "a", None)
+
+        sql = conn.execute.call_args[0][0]
+        assert "sub_is_prime  = NULL" in sql
+
+
+class TestGetPlusProgramEstimate:
+    pytestmark = pytest.mark.asyncio
+
+    async def test_shapes_row_and_computes_plans(self):
+        row = {
+            "confirmed_points": 105,
+            "confirmed_subs": 60,
+            "pending_points": 200,
+            "pending_subs": 150,
+            "t1": 40,
+            "t2": 10,
+            "t3": 10,
+            "data_as_of": _NOW,
+        }
+        pool, _conn = _make_pool(fetchrow=row)
+        repo = AnalyticsRepository(pool)
+
+        result = await repo.get_plus_program_estimate("ch1")
+
+        assert result["confirmed_points"] == 105
+        assert result["tier_breakdown"] == {"t1": 40, "t2": 10, "t3": 10}
+        assert result["plan_confirmed"] == "60/40"  # 105 >= 100
+        assert result["plan_ceiling"] == "70/30"  # 305 >= 300
+        assert result["data_as_of"] == _NOW
+
+    async def test_zero_roster_is_50_50(self):
+        row = {
+            "confirmed_points": 0,
+            "confirmed_subs": 0,
+            "pending_points": 0,
+            "pending_subs": 0,
+            "t1": 0,
+            "t2": 0,
+            "t3": 0,
+            "data_as_of": None,
+        }
+        pool, _conn = _make_pool(fetchrow=row)
+        repo = AnalyticsRepository(pool)
+
+        result = await repo.get_plus_program_estimate("ch1")
+
+        assert result["plan_confirmed"] == "50/50"
+        assert result["plan_ceiling"] == "50/50"
+        assert result["data_as_of"] is None
+
+    async def test_missing_column_returns_empty(self):
+        from asyncpg.exceptions import UndefinedColumnError
+
+        pool, conn = _make_pool()
+        conn.fetchrow.side_effect = UndefinedColumnError("no sub_is_prime")
+        repo = AnalyticsRepository(pool)
+
+        result = await repo.get_plus_program_estimate("ch1")
+
+        assert result["confirmed_points"] == 0
+        assert result["plan_confirmed"] == "50/50"

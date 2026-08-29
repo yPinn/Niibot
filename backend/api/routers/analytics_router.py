@@ -129,6 +129,23 @@ class LoyaltyTiers(BaseModel):
     newcomer: int
 
 
+class PlusTierBreakdown(BaseModel):
+    t1: int = 0
+    t2: int = 0
+    t3: int = 0
+
+
+class PlusProgramEstimate(BaseModel):
+    confirmed_points: int = 0
+    confirmed_subs: int = 0
+    pending_points: int = 0
+    pending_subs: int = 0
+    tier_breakdown: PlusTierBreakdown = PlusTierBreakdown()
+    plan_confirmed: str = "50/50"
+    plan_ceiling: str = "50/50"
+    data_as_of: datetime | None = None
+
+
 class ChannelInsights(BaseModel):
     total_sessions: int
     total_stream_seconds: int
@@ -293,6 +310,21 @@ async def get_insights(
     return ChannelInsights(**data)
 
 
+@router.get("/plus-estimate", response_model=PlusProgramEstimate)
+async def get_plus_program_estimate(
+    response: Response,
+    channel_id: str = Depends(get_current_channel_id),
+    service: AnalyticsService = Depends(get_analytics_service),
+) -> PlusProgramEstimate:
+    """Single-month Twitch Plus Program point estimate from the current
+    subscriber roster (refreshed by POST /sync-roles). Prime status is only
+    known for subs observed live via chat notification — the rest are 'pending'.
+    """
+    data = await service.get_plus_program_estimate(channel_id)
+    response.headers["Cache-Control"] = "private, max-age=300"
+    return PlusProgramEstimate(**data)
+
+
 @router.get("/viewers", response_model=list[ViewerSummary])
 async def list_viewers(
     response: Response,
@@ -431,6 +463,7 @@ class RoleSyncResult(BaseModel):
     vips_synced: int
     subs_synced: int
     follows_synced: int = 0
+    bans_synced: int = 0
 
 
 @router.post("/sync-roles", response_model=RoleSyncResult)
@@ -440,7 +473,7 @@ async def sync_channel_roles(
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
     pool: asyncpg.Pool = Depends(get_db_pool),
 ) -> RoleSyncResult:
-    """Bulk-sync roles and follow dates from Twitch into viewer_channel_status."""
+    """Bulk-sync roles, follow dates, and ban status into viewer_channel_status."""
     _sync_roles_limiter.require(channel_id)
 
     from core.config import get_settings
@@ -453,21 +486,22 @@ async def sync_channel_roles(
 
     token = token_row.token
 
-    # Followers are read with the bot token (bot acts as moderator); returns []
-    # if the bot has no token or is not a mod of this channel.
     bot_id = get_settings().bot_id or ""
     bot_token_row = await repo.get_token(bot_id, "bot") if bot_id else None
 
-    async def _fetch_followers() -> list[dict]:
+    # Followers and bans are read with the bot token (bot acts as moderator);
+    # both return [] if the bot has no token or is not a mod of this channel.
+    async def _bot_read(fetch) -> list[dict]:
         if not bot_token_row:
             return []
-        return await twitch_api.fetch_all_followers(channel_id, bot_token_row.token, bot_id)
+        return await fetch(channel_id, bot_token_row.token, bot_id)
 
-    mods, vips, subs, followers = await asyncio.gather(
+    mods, vips, subs, followers, banned = await asyncio.gather(
         twitch_api.fetch_all_moderators(channel_id, token),
         twitch_api.fetch_all_vips(channel_id, token),
         twitch_api.fetch_all_subscribers(channel_id, token),
-        _fetch_followers(),
+        _bot_read(twitch_api.fetch_all_followers),
+        _bot_read(twitch_api.fetch_all_banned),
     )
     LOGGER.info(
         "sync_roles_fetched",
@@ -476,19 +510,22 @@ async def sync_channel_roles(
             "vips": len(vips),
             "subs": len(subs),
             "follows": len(followers),
+            "bans": len(banned),
         },
     )
-    mod_count, vip_count, sub_count, follow_count = await asyncio.gather(
+    mod_count, vip_count, sub_count, follow_count, ban_count = await asyncio.gather(
         service.bulk_upsert_mod_status(channel_id, mods),
         service.bulk_upsert_vip_status(channel_id, vips),
         service.bulk_upsert_subscribers(channel_id, subs),
         service.bulk_upsert_follow_dates(channel_id, followers),
+        service.bulk_upsert_banned(channel_id, banned),
     )
     return RoleSyncResult(
         mods_synced=mod_count,
         vips_synced=vip_count,
         subs_synced=sub_count,
         follows_synced=follow_count,
+        bans_synced=ban_count,
     )
 
 

@@ -26,7 +26,7 @@ def main() -> None:
     # Minimal imports for health server — bind port before heavy setup
     from core.config import get_settings
     from core.health_server import HealthCheckServer
-    from core.logging import setup_logging
+    from core.logging_setup import setup_logging
 
     try:
         setup_logging(get_settings())

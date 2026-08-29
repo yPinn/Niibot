@@ -15,12 +15,12 @@ from twitchio.ext import commands
 from twitchio.ext.commands import CommandNotFound
 from twitchio.payloads import TokenRefreshedPayload as _TokenRefreshedPayload
 
-from core._channel_mixin import _ChannelMixin
+from core._message_router_mixin import _MessageRouterMixin
 from core._notify_mixin import _NotifyMixin
-from core._router_mixin import _MessageRouterMixin
-from core._session_mixin import _SessionMixin
 from core.config import COMPONENTS_DIR
 from core.pg_listener import pg_listen
+from core.session_service import SessionService
+from core.subscription_manager import SubscriptionManager
 from shared.database import DatabaseManager
 from shared.log_context import bound_log_context
 from shared.repositories.analytics import AnalyticsRepository
@@ -29,6 +29,7 @@ from shared.repositories.command_config import (
     CommandConfigRepository,
     RedemptionConfigRepository,
 )
+from shared.repositories.event_config import EventConfigRepository
 from shared.repositories.message_trigger import MessageTriggerRepository
 from shared.repositories.timer import TimerConfigRepository
 from utils.mod_guard import mod_guard_notifier
@@ -54,7 +55,7 @@ class SharedChatSession:
     our_channel_ids: tuple[str, ...]
 
 
-class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, commands.AutoBot):
+class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
     token_database: asyncpg.Pool
 
     def __init__(
@@ -74,25 +75,15 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
         self._client_id = client_id
         self._db_manager = db_manager
         self._database_url = database_url
-        self._subscribed_channels: set[str] = set()
-        self._subscription_ids: dict[str, list[str]] = {}
-        self._channel_names: dict[str, str] = {}  # channel_id → login_name for log enrichment
         self._bot_id = bot_id
 
         self.channels = ChannelRepository(token_database)
         self.analytics = AnalyticsRepository(token_database)
         self.command_configs = CommandConfigRepository(token_database)
         self.redemption_configs = RedemptionConfigRepository(token_database)
+        self.event_configs = EventConfigRepository(token_database)
         self.timer_configs = TimerConfigRepository(token_database)
         self.message_trigger_configs = MessageTriggerRepository(token_database)
-        self._active_sessions: dict[str, int] = {}
-        # Channels currently mid-way through session creation — prevents double-create
-        # between event_stream_online and _session_verify_loop running concurrently.
-        self._session_creating: set[str] = set()
-        # In-memory chatter buffers: {channel_id: {user_id: {"username": str, "count": int, "last_at": datetime}}}
-        self._chatter_buffers: dict[str, dict[str, dict]] = {}
-        # Per-channel cumulative message count during active sessions (for timer min_lines gate)
-        self._channel_line_counts: dict[str, int] = {}
         # Strong references to background tasks to prevent GC collection
         self._background_tasks: set[asyncio.Task] = set()
         # Active Shared Chat sessions keyed by session_id (NOT channel_id), so
@@ -126,6 +117,89 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
 
         super().__init__(**init_kwargs)
 
+        # EventSub subscription ownership (was loose _subscribed_channels /
+        # _subscription_ids / _channel_names on this class).
+        self.subs = SubscriptionManager(
+            bot_id=bot_id,
+            multi_subscribe=self.multi_subscribe,
+            delete_subscription=self.delete_eventsub_subscription,
+            needs_reauth=self._needs_reauth,
+        )
+        # Stream-session ownership (was loose _active_sessions / _session_creating /
+        # _chatter_buffers / _channel_line_counts, mutated from 3 places).
+        self.sessions = SessionService(
+            analytics=self.analytics,
+            channels=self.channels,
+            subs=self.subs,
+            client=self,
+            bot_id=bot_id,
+            client_id=client_id,
+        )
+
+    # ------------------------------------------------------------------
+    # Channel helpers
+    # ------------------------------------------------------------------
+
+    def _ch(self, channel_id: str) -> str:
+        """Return 'login(id)' when the name is known, otherwise just 'id'."""
+        return self.subs.ch(channel_id)
+
+    async def add_channel_to_db(self, channel_id: str, channel_name: str) -> None:
+        if channel_id == self._bot_id:
+            LOGGER.debug(f"Skipping bot's own channel: {channel_name}")
+            return
+
+        await self.channels.upsert_channel(channel_id, channel_name.lower(), enabled=True)
+        self.subs.remember(channel_id, channel_name)
+        LOGGER.info(f"Added channel {channel_name} (ID: {channel_id}) to database")
+
+    async def _bootstrap_channels(self) -> None:
+        """Subscribe to EventSub for all enabled channels on startup, then seed
+        per-channel config defaults and warm the caches.
+        """
+        try:
+            await asyncio.sleep(2)
+
+            enabled_channels = await self.channels.list_enabled_channels()
+            LOGGER.info(f"Subscribing to {len(enabled_channels)} enabled channels...")
+            self.subs.remember_many(enabled_channels)
+
+            warmed_channels = self.channels.warm_channel_cache(enabled_channels)
+            LOGGER.info(f"Warmed channel cache: {warmed_channels} channels")
+
+            non_bot = [ch for ch in enabled_channels if ch.channel_id != self._bot_id]
+
+            # Pre-add to _mod_check_pending before subscribing: asyncio.gather tasks
+            # haven't run their first line yet when the event loop yields, so a
+            # message arriving in that window would fire a spurious mod-guard
+            # notification.
+            subscribed_ids: list[str] = []
+            for ch in non_bot:
+                self._mod_check_pending.add(ch.channel_id)
+                try:
+                    await self.subs.subscribe(ch.channel_id)
+                    subscribed_ids.append(ch.channel_id)
+                except Exception as e:
+                    LOGGER.error(
+                        f"Failed to subscribe channel {ch.channel_name or ch.channel_id}: {e}"
+                    )
+                    self._mod_check_pending.discard(ch.channel_id)
+
+            await asyncio.gather(
+                *(self._check_bot_mod_status(cid) for cid in subscribed_ids),
+                return_exceptions=True,
+            )
+
+            total_warmed = 0
+            for ch in non_bot:
+                total_warmed += await self._seed_and_warm_channel(ch.channel_id)
+
+            LOGGER.info(
+                f"Initial channel subscription complete — warmed cache: {total_warmed} configs"
+            )
+        except Exception as e:
+            LOGGER.exception(f"Error subscribing to initial channels: {e}")
+
     # ------------------------------------------------------------------
     # Setup
     # ------------------------------------------------------------------
@@ -142,20 +216,20 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
                     LOGGER.error("Failed to load component %s: %s", module_name, e)
 
         for coro in (
-            self._subscribe_initial_channels(),
+            self._bootstrap_channels(),
             pg_listen(self._database_url, "new_token", self._handle_new_token),
             pg_listen(self._database_url, "token_reauth", self._handle_token_reauth),
             pg_listen(self._database_url, "channel_toggle", self._handle_channel_toggle),
             pg_listen(self._database_url, "config_change", self._handle_config_change),
-            self._recover_active_sessions(),
-            self._session_verify_loop(),
-            self._watch_time_loop(),
             self._pool_heartbeat_loop(),
             self._periodic_cache_refresh(),
         ):
             task = asyncio.create_task(coro)
             self._background_tasks.add(task)
             task.add_done_callback(self._background_tasks.discard)
+
+        # Session recovery + verify + watch-time loops (owned by SessionService).
+        self.sessions.start()
 
     # ------------------------------------------------------------------
     # Events
@@ -164,14 +238,49 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
     async def event_ready(self) -> None:
         LOGGER.info("Successfully logged in as: %s", self.bot_id)
 
-    async def event_eventsub_notification(self, payload) -> None:
-        LOGGER.debug("EventSub notification received: %s", type(payload).__name__)
+    async def event_stream_online(self, payload: twitchio.StreamOnline) -> None:
+        channel_id = payload.broadcaster.id
+        LOGGER.info("[%s] Stream online", payload.broadcaster.name)
 
-    async def event_eventsub_ready(self) -> None:
-        LOGGER.info("EventSub is ready to receive notifications")
+        # Proactively surface a reauth problem on go-live — don't wait for a chat message.
+        if channel_id in self._needs_reauth:
+            from utils.reauth import reauth_notifier
 
-    async def event_eventsub_error(self, error: Exception) -> None:
-        LOGGER.error("EventSub error: %s", error)
+            await reauth_notifier.notify(
+                broadcaster_login=payload.broadcaster.name,
+                channel_id=channel_id,
+                send_fn=lambda msg: payload.broadcaster.send_message(
+                    message=msg, sender=self.bot_id
+                ),
+            )
+
+        await self.sessions.on_stream_online(channel_id)
+
+    async def event_stream_offline(self, payload: twitchio.StreamOffline) -> None:
+        LOGGER.info("[%s] Stream offline", payload.broadcaster.name)
+        await self.sessions.on_stream_offline(payload.broadcaster.id)
+
+    async def event_subscription_revoked(self, payload: twitchio.SubscriptionRevoked) -> None:
+        """Twitch revoked a subscription — the channel silently stops receiving
+        this event type. Log it (ERROR+ reaches the error webhook) and flag the
+        broadcaster for dashboard reauth if they pulled their token.
+        """
+        condition = payload.raw.get("condition") or {}
+        channel_id = (
+            condition.get("broadcaster_user_id")
+            or condition.get("to_broadcaster_user_id")
+            or condition.get("user_id")
+        )
+        reason = getattr(payload.status, "value", str(payload.status))
+        ch = self._ch(channel_id) if channel_id else "?"
+
+        log = (
+            LOGGER.warning if reason in ("authorization_revoked", "user_removed") else LOGGER.error
+        )
+        log("EventSub subscription revoked: %s type=%s reason=%s", ch, payload.type, reason)
+
+        if reason == "authorization_revoked" and channel_id and channel_id != self._bot_id:
+            await self._mark_reauth_required(channel_id)
 
     async def event_oauth_authorized(
         self, payload: twitchio.authentication.UserTokenPayload
@@ -207,8 +316,8 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
             )
             return
 
-        if payload.user_id not in self._subscribed_channels:
-            await self.subscribe_channel_events(payload.user_id)
+        if not self.subs.is_subscribed(payload.user_id):
+            await self.subs.subscribe(payload.user_id)
         else:
             LOGGER.debug("Channel %s already subscribed, skipping", payload.user_id)
 
@@ -279,7 +388,7 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
     async def _handle_broadcaster_message(self, payload: twitchio.ChatMessage) -> None:
         LOGGER.debug("[%s#%s]: %s", payload.chatter.name, payload.broadcaster.name, payload.text)
 
-        if payload.broadcaster.id not in self._subscribed_channels:
+        if not self.subs.is_subscribed(payload.broadcaster.id):
             LOGGER.debug("Ignoring message from unsubscribed channel: %s", payload.broadcaster.name)
             return
 
@@ -318,21 +427,9 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
             )
             return
 
-        if channel_id in self._active_sessions:
-            buf = self._chatter_buffers.setdefault(channel_id, {})
-            if chatter_id in buf:
-                buf[chatter_id]["count"] += 1
-                buf[chatter_id]["last_at"] = datetime.now(UTC)
-                buf[chatter_id]["username"] = payload.chatter.name
-                buf[chatter_id]["display_name"] = payload.chatter.display_name
-            else:
-                buf[chatter_id] = {
-                    "username": payload.chatter.name,
-                    "display_name": payload.chatter.display_name,
-                    "count": 1,
-                    "last_at": datetime.now(UTC),
-                }
-            self._channel_line_counts[channel_id] = self._channel_line_counts.get(channel_id, 0) + 1
+        self.sessions.record_line(
+            channel_id, chatter_id, payload.chatter.name or "", payload.chatter.display_name
+        )
 
         # Mod guard: block all functionality until bot has mod in this channel.
         # Skip notification while the status check is still in-flight.
@@ -571,7 +668,7 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
                     LOGGER.info("Bot token has 'user:bot' scope — bot badge enabled.")
                 continue  # bot account does not need a channels row
 
-            from utils.reauth import missing_broadcaster_scopes
+            from shared.twitch_scopes import missing_broadcaster_scopes
 
             missing = missing_broadcaster_scopes(user_info.scopes)
             if missing:
@@ -626,7 +723,7 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
                     if not was_mod:
                         # channel.follow needs the bot as moderator — (re)subscribe
                         # now that mod is confirmed (initial attempt 403s pre-mod).
-                        await self.resubscribe_follow(channel_id)
+                        await self.subs.resubscribe_follow(channel_id)
                 else:
                     LOGGER.info(
                         "[%s] Bot is NOT mod — chat features blocked until /mod is granted",
@@ -662,6 +759,7 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
         self.analytics.pool = pool
         self.command_configs.pool = pool
         self.redemption_configs.pool = pool
+        self.event_configs.pool = pool
         self.timer_configs.pool = pool
         self.message_trigger_configs.pool = pool
         for comp in self._components.values():

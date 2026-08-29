@@ -30,7 +30,7 @@ class HealthCheckServer(BaseHealthServer):
         s = get_settings()
         return {
             "bot_id": self.bot.bot_id if self.bot else None,
-            "connected_channels": len(self.bot._subscribed_channels) if self.bot else 0,
+            "connected_channels": len(self.bot.subs.subscribed) if self.bot else 0,
             "components": len(self.bot._components) if self.bot else 0,
             "ai_model": get_primary_model_label(
                 groq_api_key=s.groq_api_key,

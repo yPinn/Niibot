@@ -21,7 +21,6 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 
 from core.config import get_settings
-from shared.twitch_scopes import BROADCASTER_SCOPES
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -105,8 +104,3 @@ class ReauthNotifier:
 
 
 reauth_notifier = ReauthNotifier()
-
-
-def missing_broadcaster_scopes(scopes: list[str] | set[str]) -> list[str]:
-    """Return BROADCASTER_SCOPES entries absent from *scopes*."""
-    return [s for s in BROADCASTER_SCOPES if s not in scopes]

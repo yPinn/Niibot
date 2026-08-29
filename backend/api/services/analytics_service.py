@@ -42,6 +42,10 @@ class AnalyticsService:
         """Get aggregated channel insights."""
         return await self.repo.get_insights(channel_id, days)
 
+    async def get_plus_program_estimate(self, channel_id: str) -> dict:
+        """Single-month Twitch Plus Program point estimate."""
+        return await self.repo.get_plus_program_estimate(channel_id)
+
     async def list_viewers(self, channel_id: str, days: int = 30, limit: int = 50) -> list[dict]:
         """Get top viewers list."""
         return await self.repo.list_viewers(channel_id, days, limit)
@@ -89,6 +93,9 @@ class AnalyticsService:
 
     async def bulk_upsert_subscribers(self, channel_id: str, subs: list[dict]) -> int:
         return await self.repo.bulk_upsert_subscribers(channel_id, subs)
+
+    async def bulk_upsert_banned(self, channel_id: str, banned: list[dict]) -> int:
+        return await self.repo.bulk_upsert_banned(channel_id, banned)
 
     async def upsert_viewer_profile_cache(
         self,

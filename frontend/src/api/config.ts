@@ -47,6 +47,7 @@ export const API_ENDPOINTS = {
   analytics: {
     summary: join('/api/analytics/summary'),
     insights: join('/api/analytics/insights'),
+    plusEstimate: join('/api/analytics/plus-estimate'),
     viewers: join('/api/analytics/viewers'),
     viewerProfile: (userId: string) => join(`/api/analytics/viewers/${userId}`),
     topCommands: join('/api/analytics/top-commands'),
@@ -68,6 +69,7 @@ export const API_ENDPOINTS = {
     public: (username: string) => join(`/api/commands/public/${username}`),
   },
   events: {
+    catalog: join('/api/events/catalog'),
     configs: join('/api/events/configs'),
     updateConfig: (eventType: string) => join(`/api/events/configs/${eventType}`),
     toggleConfig: (eventType: string) => join(`/api/events/configs/${eventType}/toggle`),

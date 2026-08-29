@@ -27,6 +27,8 @@ export default defineConfig({
         'src/components/ProtectedRoute.tsx',
         'src/api/user.ts',
         'src/contexts/AuthContext.tsx',
+        'src/pages/dashboard/events/renderTemplate.ts',
+        'src/lib/plus-program.ts',
       ],
       thresholds: { lines: 80, functions: 80, branches: 80 },
     },
