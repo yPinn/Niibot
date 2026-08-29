@@ -74,6 +74,61 @@ class TestRecordFromLine:
         assert rec.ts == ""
         assert rec.level == "UNKNOWN"
 
+    def test_console_line_decoded_to_structured(self):
+        # structlog ConsoleRenderer output (colours stripped for readability;
+        # real lines carry ANSI which the parser removes).
+        body = (
+            "2026-08-29T21:22:03.697864Z [info     ] "
+            "Will watch for changes in ['/app/api'] "
+            "[routers.timers_router] mod=timers_router own=True "
+            "request_id=abc-123 service=api"
+        )
+        rec = _record_from_line(_line(TS + body))
+        assert rec.source == "console"
+        assert rec.level == "INFO"
+        assert rec.message == "Will watch for changes in ['/app/api']"
+        assert rec.logger == "routers.timers_router"
+        assert rec.mod == "timers_router"
+        assert rec.own is True
+        assert rec.request_id == "abc-123"
+        assert rec.service == "api"
+
+    def test_console_line_uvicorn_not_misread_as_error(self):
+        # `mod=error` (logger name uvicorn.error) used to trip _guess_level.
+        body = (
+            "2026-08-29T21:22:03.698Z [info     ] Uvicorn running on http://0.0.0.0:8000 "
+            "[uvicorn.error] "
+            "color_message='Uvicorn running on http://%s (Press CTRL+C to quit)' "
+            "mod=error own=False service=api"
+        )
+        rec = _record_from_line(_line(TS + body))
+        assert rec.source == "console"
+        assert rec.level == "INFO"
+        assert rec.message == "Uvicorn running on http://0.0.0.0:8000"
+        assert rec.extra["color_message"].startswith("Uvicorn running on http://%s")
+
+    def test_console_line_ansi_stripped(self):
+        body = (
+            "\x1b[2m2026-08-29T21:22:03.700Z\x1b[0m [\x1b[31m\x1b[1merror    \x1b[0m] "
+            "\x1b[1mboom\x1b[0m [\x1b[34mservices.x\x1b[0m] "
+            "\x1b[36mmod\x1b[0m=\x1b[35mx\x1b[0m \x1b[36mown\x1b[0m=\x1b[35mTrue\x1b[0m "
+            "\x1b[36mservice\x1b[0m=\x1b[35mapi\x1b[0m"
+        )
+        rec = _record_from_line(_line(TS + body))
+        assert rec.source == "console"
+        assert rec.level == "ERROR"
+        assert rec.message == "boom"
+
+    def test_non_pipeline_bracket_line_stays_raw(self):
+        # An arbitrary line that happens to have a [dotted.token] but no kv tail.
+        rec = _record_from_line(_line(TS + "2026-08-29T21:22:03.7Z [info] loaded [app.config] ok"))
+        assert rec.source == "raw"
+
+    def test_guess_level_ignores_key_value_error(self):
+        rec = _record_from_line(_line(TS + "startup done  mod=error own=False service=x"))
+        assert rec.source == "raw"
+        assert rec.level == "UNKNOWN"
+
     def test_bad_json_falls_back_to_raw(self):
         rec = _record_from_line(_line(TS + '{"event": not valid json'))
         assert rec.source == "raw"
