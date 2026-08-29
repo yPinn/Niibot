@@ -12,6 +12,8 @@ from datetime import datetime
 import asyncpg
 from asyncpg.exceptions import UndefinedTableError
 
+from shared.events import tier_label
+
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
@@ -479,8 +481,6 @@ class _AnalyticsEventsMixin:
             display_name,
         )
 
-    _TIER_MAP: dict[str, str] = {"1000": "T1", "2000": "T2", "3000": "T3"}
-
     async def bulk_upsert_mod_status(self, channel_id: str, mods: list[dict]) -> int:
         """Set is_mod=TRUE for every user in *mods*. Returns the count upserted."""
         if not mods:
@@ -590,7 +590,7 @@ class _AnalyticsEventsMixin:
                 s["user_id"],
                 s["user_login"],
                 s.get("user_name"),
-                self._TIER_MAP.get(s.get("tier", ""), s.get("tier")),
+                tier_label(s["tier"]) if s.get("tier") else None,
                 bool(s.get("is_gift", False)),
             )
             for s in subs

@@ -5,14 +5,9 @@ trigger responses with a chatter object and its own variable set). These are
 pure functions over a plain ``dict[str, str]`` of event variables.
 """
 
-TIER_LABELS = {"1000": "T1", "2000": "T2", "3000": "T3"}
+from shared.events import tier_label  # noqa: F401  (re-exported for EventComponent)
 
-_MESSAGE_VAR_LIMIT = 200
-
-
-def tier_label(tier: str) -> str:
-    """Twitch sub-tier code to display label (``"1000"`` -> ``"T1"``)."""
-    return TIER_LABELS.get(tier, tier)
+MESSAGE_VAR_LIMIT = 200
 
 
 def clean_message_var(value: str) -> str:
@@ -25,7 +20,7 @@ def clean_message_var(value: str) -> str:
     text = " ".join(value.split())
     if text[:1] in "/.":
         text = text[1:].lstrip()
-    return text[:_MESSAGE_VAR_LIMIT]
+    return text[:MESSAGE_VAR_LIMIT]
 
 
 def render_template(template: str, variables: dict[str, str]) -> str:

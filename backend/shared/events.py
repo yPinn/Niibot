@@ -29,6 +29,16 @@ from typing import Literal, get_args
 
 EventKey = Literal["follow", "subscribe", "resub", "gift_sub", "raid", "bits"]
 
+# Twitch sub-tier code -> display label. Used both when rendering the $(tier)
+# event variable (twitch service) and when backfilling viewer_channel_status
+# from the Helix subscriptions endpoint (analytics repo).
+TIER_LABELS = {"1000": "T1", "2000": "T2", "3000": "T3"}
+
+
+def tier_label(tier: str) -> str:
+    """``"1000"`` -> ``"T1"``; unknown codes pass through unchanged."""
+    return TIER_LABELS.get(tier, tier)
+
 
 @dataclass(frozen=True)
 class EventVariable:
