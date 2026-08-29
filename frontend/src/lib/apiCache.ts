@@ -96,6 +96,7 @@ export const CACHE_KEYS = {
   ANALYTICS_SESSION_COMMANDS: (sessionId: number) => `analytics:session-commands:${sessionId}`,
   ANALYTICS_SESSION_EVENTS: (sessionId: number) => `analytics:session-events:${sessionId}`,
   ANALYTICS_INSIGHTS: (days: number) => `analytics:insights:${days}`,
+  ANALYTICS_PLUS_ESTIMATE: 'analytics:plus-estimate',
   ANALYTICS_VIEWERS: (days: number) => `analytics:viewers:${days}`,
   ANALYTICS_VIEWER_PROFILE: (userId: string, days: number) =>
     `analytics:viewer-profile:${userId}:${days}`,

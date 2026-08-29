@@ -6,12 +6,15 @@ import {
   type ChannelInsights,
   getChannelBadges,
   getInsights,
+  getPlusProgramEstimate,
   listViewers,
+  type PlusProgramEstimate,
   syncChannelRoles,
   type ViewerSummary,
 } from '@/api/analytics'
 
 const CHART_BOX = 'aspect-[3/2] min-h-[360px] max-h-[480px]'
+import { AffiliateLockOverlay } from '@/components/AffiliateLockOverlay'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { PageMain } from '@/components/layout/PageMain'
 import {
@@ -36,11 +39,13 @@ import {
 } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
+import { apiCache, CACHE_KEYS } from '@/lib/apiCache'
 import { formatDuration } from '@/lib/format'
 import { deriveSuggestions } from '@/lib/insights-suggestions'
 import { cn } from '@/lib/utils'
 
 import { LoyaltyDonut } from './insights/LoyaltyDonut'
+import { PlusProgramCard } from './insights/PlusProgramCard'
 import { SuggestedActions } from './insights/SuggestedActions'
 import { SummaryTile } from './insights/SummaryTile'
 import { SORT_COLS, type SortKey } from './insights/types'
@@ -74,7 +79,7 @@ const EMPTY_INSIGHTS: ChannelInsights = {
 
 export default function Insights() {
   useDocumentTitle('Insights')
-  const { user, isInitialized } = useAuth()
+  const { user, isInitialized, isAffiliate } = useAuth()
 
   const [period, setPeriod] = useState('30')
   const [search, setSearch] = useState('')
@@ -89,6 +94,8 @@ export default function Insights() {
   const [sheetOpen, setSheetOpen] = useState(false)
   const [hoveredUserId, setHoveredUserId] = useState<string | null>(null)
   const [channelBadges, setChannelBadges] = useState<ChannelBadges | null>(null)
+  const [plusEstimate, setPlusEstimate] = useState<PlusProgramEstimate | null>(null)
+  const [plusLoading, setPlusLoading] = useState(true)
   const [isSyncing, setIsSyncing] = useState(false)
   const [showScatter, setShowScatter] = useState(true)
   const [nowMs] = useState(() => Date.now())
@@ -140,12 +147,24 @@ export default function Insights() {
       .catch(() => null)
   }, [isInitialized, user])
 
+  useEffect(() => {
+    if (!isInitialized || !user || !isAffiliate) return
+    getPlusProgramEstimate()
+      .then(setPlusEstimate)
+      .catch(() => setPlusEstimate(null))
+      .finally(() => setPlusLoading(false))
+  }, [isInitialized, user, isAffiliate])
+
   const handleSyncRoles = useCallback(async () => {
     if (isSyncing) return
     setIsSyncing(true)
     try {
       await syncChannelRoles()
       void fetchViewers(Number(period), true)
+      apiCache.delete(CACHE_KEYS.ANALYTICS_PLUS_ESTIMATE)
+      getPlusProgramEstimate()
+        .then(setPlusEstimate)
+        .catch(() => null)
     } catch {
       // silent
     } finally {
@@ -438,6 +457,23 @@ export default function Insights() {
           </AnimatePresence>
 
           {initialized && !insightsLoading && <SuggestedActions suggestions={suggestions} />}
+
+          {isAffiliate ? (
+            <PlusProgramCard
+              estimate={plusEstimate}
+              loading={plusLoading}
+              refreshing={isSyncing}
+              onRefresh={handleSyncRoles}
+            />
+          ) : (
+            <div className="relative rounded-md border px-2.5 py-6 shrink-0 overflow-hidden">
+              <AffiliateLockOverlay
+                message="取得資格後可查看加強版方案積分"
+                className="rounded-[inherit]"
+              />
+              <p className="text-label text-muted-foreground">加強版方案積分（本月試算）</p>
+            </div>
+          )}
         </div>
 
         {/* ── Right: Viewer list ────────────────────────────────────── */}
