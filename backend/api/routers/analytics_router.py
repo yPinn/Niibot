@@ -431,6 +431,7 @@ class RoleSyncResult(BaseModel):
     vips_synced: int
     subs_synced: int
     follows_synced: int = 0
+    bans_synced: int = 0
 
 
 @router.post("/sync-roles", response_model=RoleSyncResult)
@@ -440,7 +441,7 @@ async def sync_channel_roles(
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
     pool: asyncpg.Pool = Depends(get_db_pool),
 ) -> RoleSyncResult:
-    """Bulk-sync roles and follow dates from Twitch into viewer_channel_status."""
+    """Bulk-sync roles, follow dates, and ban status into viewer_channel_status."""
     _sync_roles_limiter.require(channel_id)
 
     from core.config import get_settings
@@ -453,21 +454,27 @@ async def sync_channel_roles(
 
     token = token_row.token
 
-    # Followers are read with the bot token (bot acts as moderator); returns []
-    # if the bot has no token or is not a mod of this channel.
     bot_id = get_settings().bot_id or ""
     bot_token_row = await repo.get_token(bot_id, "bot") if bot_id else None
 
+    # Followers and bans are read with the bot token (bot acts as moderator);
+    # both return [] if the bot has no token or is not a mod of this channel.
     async def _fetch_followers() -> list[dict]:
         if not bot_token_row:
             return []
         return await twitch_api.fetch_all_followers(channel_id, bot_token_row.token, bot_id)
 
-    mods, vips, subs, followers = await asyncio.gather(
+    async def _fetch_banned() -> list[dict]:
+        if not bot_token_row:
+            return []
+        return await twitch_api.fetch_all_banned(channel_id, bot_token_row.token, bot_id)
+
+    mods, vips, subs, followers, banned = await asyncio.gather(
         twitch_api.fetch_all_moderators(channel_id, token),
         twitch_api.fetch_all_vips(channel_id, token),
         twitch_api.fetch_all_subscribers(channel_id, token),
         _fetch_followers(),
+        _fetch_banned(),
     )
     LOGGER.info(
         "sync_roles_fetched",
@@ -476,19 +483,22 @@ async def sync_channel_roles(
             "vips": len(vips),
             "subs": len(subs),
             "follows": len(followers),
+            "bans": len(banned),
         },
     )
-    mod_count, vip_count, sub_count, follow_count = await asyncio.gather(
+    mod_count, vip_count, sub_count, follow_count, ban_count = await asyncio.gather(
         service.bulk_upsert_mod_status(channel_id, mods),
         service.bulk_upsert_vip_status(channel_id, vips),
         service.bulk_upsert_subscribers(channel_id, subs),
         service.bulk_upsert_follow_dates(channel_id, followers),
+        service.bulk_upsert_banned(channel_id, banned),
     )
     return RoleSyncResult(
         mods_synced=mod_count,
         vips_synced=vip_count,
         subs_synced=sub_count,
         follows_synced=follow_count,
+        bans_synced=ban_count,
     )
 
 

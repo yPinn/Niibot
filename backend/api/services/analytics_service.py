@@ -90,6 +90,9 @@ class AnalyticsService:
     async def bulk_upsert_subscribers(self, channel_id: str, subs: list[dict]) -> int:
         return await self.repo.bulk_upsert_subscribers(channel_id, subs)
 
+    async def bulk_upsert_banned(self, channel_id: str, banned: list[dict]) -> int:
+        return await self.repo.bulk_upsert_banned(channel_id, banned)
+
     async def upsert_viewer_profile_cache(
         self,
         channel_id: str,

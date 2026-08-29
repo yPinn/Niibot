@@ -145,6 +145,15 @@ async def test_bulk_upsert_subscribers_delegates():
 
 
 @pytest.mark.asyncio
+async def test_bulk_upsert_banned_delegates():
+    svc, repo = _make_svc()
+    repo.bulk_upsert_banned = AsyncMock(return_value=4)
+    result = await svc.bulk_upsert_banned(CHANNEL_ID, [{}])
+    repo.bulk_upsert_banned.assert_awaited_once_with(CHANNEL_ID, [{}])
+    assert result == 4
+
+
+@pytest.mark.asyncio
 async def test_upsert_viewer_profile_cache_delegates():
     svc, repo = _make_svc()
     repo.upsert_viewer_profile_cache = AsyncMock(return_value=None)

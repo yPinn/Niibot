@@ -298,6 +298,7 @@ export interface RoleSyncResult {
   vips_synced: number
   subs_synced: number
   follows_synced: number
+  bans_synced: number
 }
 
 export async function syncChannelRoles(): Promise<RoleSyncResult> {

@@ -421,65 +421,70 @@ class _AnalyticsEventsMixin:
             is_vip,
         )
 
-    async def upsert_viewer_ban(
-        self,
-        channel_id: str,
-        user_id: str,
-        username: str,
-        display_name: str | None,
-        ban_expires_at: datetime | None,
-        ban_reason: str | None,
-    ) -> None:
-        """Record a ban event."""
-        await self._execute_upsert(
-            """
-            INSERT INTO viewer_channel_status
-                (channel_id, user_id, username, display_name,
-                 is_banned, ban_expires_at, ban_reason, updated_at)
-            VALUES ($1, $2, $3, $4, TRUE, $5, $6, NOW())
-            ON CONFLICT (channel_id, user_id) DO UPDATE SET
-                username       = EXCLUDED.username,
-                display_name   = COALESCE(EXCLUDED.display_name, viewer_channel_status.display_name),
-                is_banned      = TRUE,
-                ban_expires_at = EXCLUDED.ban_expires_at,
-                ban_reason     = EXCLUDED.ban_reason,
-                updated_at     = NOW()
-            """,
-            channel_id,
-            user_id,
-            username,
-            display_name,
-            ban_expires_at,
-            ban_reason,
-        )
+    async def bulk_upsert_banned(self, channel_id: str, banned: list[dict]) -> int:
+        """Reconcile ban status against the moderation/banned list (active bans +
+        timeouts). Sets is_banned for everyone on the list and clears it for
+        anyone in this channel no longer on it. Returns the count currently banned.
 
-    async def upsert_viewer_unban(
-        self,
-        channel_id: str,
-        user_id: str,
-        username: str,
-        display_name: str | None,
-    ) -> None:
-        """Clear ban status on unban."""
-        await self._execute_upsert(
-            """
-            INSERT INTO viewer_channel_status
-                (channel_id, user_id, username, display_name,
-                 is_banned, ban_expires_at, ban_reason, updated_at)
-            VALUES ($1, $2, $3, $4, FALSE, NULL, NULL, NOW())
-            ON CONFLICT (channel_id, user_id) DO UPDATE SET
-                username       = EXCLUDED.username,
-                display_name   = COALESCE(EXCLUDED.display_name, viewer_channel_status.display_name),
-                is_banned      = FALSE,
-                ban_expires_at = NULL,
-                ban_reason     = NULL,
-                updated_at     = NOW()
-            """,
-            channel_id,
-            user_id,
-            username,
-            display_name,
-        )
+        banned: list of {"user_id", "user_login", "user_name",
+                         "expires_at" (ISO string | None), "reason"}
+        """
+        rows: list[tuple] = []
+        for b in banned:
+            if not b.get("user_id"):
+                continue
+            expires = b.get("expires_at")
+            expires_at = None
+            if expires:
+                try:
+                    expires_at = datetime.fromisoformat(str(expires).replace("Z", "+00:00"))
+                except ValueError:
+                    expires_at = None
+            rows.append(
+                (
+                    channel_id,
+                    b["user_id"],
+                    b.get("user_login") or "",
+                    b.get("user_name"),
+                    expires_at,
+                    b.get("reason") or None,
+                )
+            )
+        banned_ids = [r[1] for r in rows]
+        try:
+            async with self.pool.acquire() as conn:
+                if rows:
+                    await conn.executemany(
+                        """
+                        INSERT INTO viewer_channel_status
+                            (channel_id, user_id, username, display_name,
+                             is_banned, ban_expires_at, ban_reason, updated_at)
+                        VALUES ($1, $2, $3, $4, TRUE, $5, $6, NOW())
+                        ON CONFLICT (channel_id, user_id) DO UPDATE SET
+                            username       = EXCLUDED.username,
+                            display_name   = COALESCE(EXCLUDED.display_name,
+                                                      viewer_channel_status.display_name),
+                            is_banned      = TRUE,
+                            ban_expires_at = EXCLUDED.ban_expires_at,
+                            ban_reason     = EXCLUDED.ban_reason,
+                            updated_at     = NOW()
+                        """,
+                        rows,
+                    )
+                await conn.execute(
+                    """
+                    UPDATE viewer_channel_status
+                    SET is_banned = FALSE, ban_expires_at = NULL, ban_reason = NULL, updated_at = NOW()
+                    WHERE channel_id = $1 AND is_banned = TRUE
+                      AND user_id <> ALL($2::text[])
+                    """,
+                    channel_id,
+                    banned_ids,
+                )
+        except UndefinedTableError:
+            LOGGER.warning("viewer_channel_status table missing — bulk ban upsert skipped.")
+            return 0
+        return len(rows)
 
     async def bulk_upsert_mod_status(self, channel_id: str, mods: list[dict]) -> int:
         """Set is_mod=TRUE for every user in *mods*. Returns the count upserted."""

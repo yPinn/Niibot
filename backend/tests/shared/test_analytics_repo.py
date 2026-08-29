@@ -1378,3 +1378,47 @@ class TestGetInsightsNewFields:
             assert "started_at" in point
             assert "game_name" in point
             assert "total_watch_hours" in point
+
+
+class TestBulkUpsertBanned:
+    pytestmark = pytest.mark.asyncio
+
+    async def test_upserts_listed_and_clears_stale(self):
+        pool, conn = _make_pool(executemany=None, execute="UPDATE 2")
+        repo = AnalyticsRepository(pool)
+
+        count = await repo.bulk_upsert_banned(
+            "ch1",
+            [
+                {
+                    "user_id": "1",
+                    "user_login": "a",
+                    "user_name": "A",
+                    "expires_at": "2024-06-02T00:00:00Z",
+                    "reason": "spam",
+                },
+                {"user_id": "2", "user_login": "b", "user_name": None, "expires_at": None},
+            ],
+        )
+
+        assert count == 2
+        # rows carry parsed expiry + reason
+        rows = conn.executemany.call_args[0][1]
+        assert rows[0][4] == datetime(2024, 6, 2, tzinfo=UTC)
+        assert rows[0][5] == "spam"
+        assert rows[1][4] is None
+        # stale-clear excludes the two listed ids
+        clear_args = conn.execute.call_args[0]
+        assert clear_args[1] == "ch1"
+        assert set(clear_args[2]) == {"1", "2"}
+
+    async def test_empty_list_still_clears_all(self):
+        pool, conn = _make_pool(execute="UPDATE 5")
+        repo = AnalyticsRepository(pool)
+
+        count = await repo.bulk_upsert_banned("ch1", [])
+
+        assert count == 0
+        conn.executemany.assert_not_called()
+        conn.execute.assert_awaited_once()
+        assert conn.execute.call_args[0][2] == []
