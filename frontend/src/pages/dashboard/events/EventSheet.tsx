@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 
 import { type EventConfig, type EventDefinition, updateEventConfig } from '@/api/events'
 import { Spinner } from '@/components/primitives'
+import { SettingRow } from '@/components/SettingRow'
 import {
   Button,
   Input,
@@ -102,30 +103,21 @@ export function EventSheet({ event, definition, onClose, onSaved }: EventSheetPr
             <TemplatePreview template={editTemplate} variables={definition.variables} />
           )}
 
-          {definition?.options_schema.map(opt => {
-            if (opt.type !== 'boolean') return null
-            return (
-              <div key={opt.key} className="flex items-center justify-between">
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-sub font-medium leading-none">{opt.label}</span>
-                  <span className="text-label text-muted-foreground">{opt.description}</span>
-                </div>
+          {definition?.options_schema.map(opt =>
+            opt.type !== 'boolean' ? null : (
+              <SettingRow key={opt.key} title={opt.label} description={opt.description}>
                 <Switch
                   aria-label={opt.label}
                   checked={(editOptions[opt.key] as boolean) ?? opt.default}
                   onCheckedChange={v => setEditOptions(prev => ({ ...prev, [opt.key]: v }))}
                 />
-              </div>
+              </SettingRow>
             )
-          })}
+          )}
 
-          <div className="flex items-center justify-between">
-            <div className="flex flex-col gap-0.5">
-              <span className="text-sub font-medium leading-none">啟用</span>
-              <span className="text-label text-muted-foreground">關閉後事件觸發時不會發送訊息</span>
-            </div>
+          <SettingRow title="啟用" description="關閉後事件觸發時不會發送訊息">
             <Switch aria-label="啟用" checked={editEnabled} onCheckedChange={setEditEnabled} />
-          </div>
+          </SettingRow>
         </div>
 
         <SheetFooter className="flex-row justify-end gap-2">

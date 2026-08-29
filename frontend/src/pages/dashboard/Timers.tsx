@@ -15,6 +15,7 @@ import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { PageMain } from '@/components/layout/PageMain'
 import { EmptyState, Icon, SlideUp, Spinner } from '@/components/primitives'
+import { SettingRow } from '@/components/SettingRow'
 import { SortableHead } from '@/components/SortableHead'
 import {
   Alert,
@@ -518,17 +519,13 @@ export default function Timers() {
             </div>
 
             {editing?.mode === 'edit' && (
-              <div className="flex items-center justify-between">
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-sub font-medium leading-none">啟用</span>
-                  <span className="text-label text-muted-foreground">關閉後不會觸發</span>
-                </div>
+              <SettingRow title="啟用" description="關閉後不會觸發">
                 <Switch
                   aria-label="啟用"
                   checked={form.enabled}
                   onCheckedChange={v => dispatch({ type: 'SET', field: 'enabled', value: v })}
                 />
-              </div>
+              </SettingRow>
             )}
 
             <Button
@@ -581,24 +578,23 @@ export default function Timers() {
                   </span>
                 </div>
 
-                <div className="flex items-center justify-between">
-                  <div className="flex flex-col gap-0.5">
-                    <span className="flex items-center gap-1.5 text-sub font-medium leading-none">
+                <SettingRow
+                  title={
+                    <>
                       公告模式
                       <Badge variant="secondary" className="text-label">
                         需要管理員
                       </Badge>
-                    </span>
-                    <span className="text-label text-muted-foreground">
-                      以聊天室公告方式發送，訊息會被高亮顯示
-                    </span>
-                  </div>
+                    </>
+                  }
+                  description="以聊天室公告方式發送，訊息會被高亮顯示"
+                >
                   <Switch
                     aria-label="公告模式"
                     checked={form.announce}
                     onCheckedChange={v => dispatch({ type: 'SET', field: 'announce', value: v })}
                   />
-                </div>
+                </SettingRow>
               </div>
             )}
 

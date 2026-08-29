@@ -12,6 +12,7 @@ import { getAIPacks, type Pack } from '@/api/aiSettings'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { PageMain } from '@/components/layout/PageMain'
 import { Icon, Spinner, TwitchRoleBadge } from '@/components/primitives'
+import { SettingRow } from '@/components/SettingRow'
 import { Button, Card, CardContent, CardHeader, CardTitle, Skeleton, Switch } from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { toastApiError } from '@/lib/toast-error'
@@ -276,19 +277,17 @@ export default function AdminModules() {
           ) : (
             <div className="flex flex-col gap-2 mt-1">
               {availablePacks.map(pack => (
-                <div
+                <SettingRow
                   key={pack.id}
-                  className="flex items-center justify-between rounded-md border px-3 py-2.5"
+                  title={pack.name}
+                  description={pack.description}
+                  className="rounded-md border px-3 py-2.5"
                 >
-                  <div className="flex flex-col gap-0.5 pr-4 min-w-0">
-                    <span className="text-sub font-medium">{pack.name}</span>
-                    <span className="text-label text-muted-foreground">{pack.description}</span>
-                  </div>
                   <Switch
                     checked={enabledPacks.includes(pack.id)}
                     onCheckedChange={() => handleToggle(pack.id)}
                   />
-                </div>
+                </SettingRow>
               ))}
             </div>
           )}
