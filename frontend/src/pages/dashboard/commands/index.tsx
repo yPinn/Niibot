@@ -25,7 +25,7 @@ import {
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { useOptimisticToggle } from '@/hooks/useOptimisticToggle'
 import { useSortState } from '@/hooks/useSortState'
-import { nameSort, ROLE_ORDER } from '@/lib/sort'
+import { applyDir, nameSort, ROLE_ORDER } from '@/lib/sort'
 
 import { BuiltinTab } from './BuiltinTab'
 import { CommandSheet } from './CommandSheet'
@@ -98,7 +98,7 @@ export default function Commands() {
           cmp = Number(a.data.enabled) - Number(b.data.enabled)
           break
       }
-      return customSortDir === 'desc' ? -cmp : cmp
+      return applyDir(cmp, customSortDir)
     })
     return all
   }, [commands, triggers, customSortKey, customSortDir])

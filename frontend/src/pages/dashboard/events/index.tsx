@@ -19,6 +19,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { useOptimisticToggle } from '@/hooks/useOptimisticToggle'
 import { useSortState } from '@/hooks/useSortState'
+import { applyDir } from '@/lib/sort'
 import { toastApiError } from '@/lib/toast-error'
 
 import { ACTION_TYPE_LABELS } from './constants'
@@ -92,8 +93,13 @@ export default function Events() {
     fetchRedemptions()
   }, [fetchEvents, fetchRedemptions])
 
-  const catalogMap = useMemo(() => new Map(catalog.map(d => [d.key, d])), [catalog])
-  const orderIndex = useMemo(() => new Map(catalog.map((d, i) => [d.key, i])), [catalog])
+  const { catalogMap, orderIndex } = useMemo(
+    () => ({
+      catalogMap: new Map(catalog.map(d => [d.key, d])),
+      orderIndex: new Map(catalog.map((d, i) => [d.key, i])),
+    }),
+    [catalog]
+  )
 
   const { sortKey: eventSortKey, sortDir: eventSortDir } = eventSort
   const sortedEvents = useMemo(() => {
@@ -115,7 +121,7 @@ export default function Events() {
           cmp = Number(a.enabled) - Number(b.enabled)
           break
       }
-      return eventSortDir === 'desc' ? -cmp : cmp
+      return applyDir(cmp, eventSortDir)
     })
   }, [events, eventSortKey, eventSortDir, catalogMap, orderIndex])
 
@@ -138,7 +144,7 @@ export default function Events() {
             cmp = Number(a.enabled) - Number(b.enabled)
             break
         }
-        return redSortDir === 'desc' ? -cmp : cmp
+        return applyDir(cmp, redSortDir)
       })
   }, [redemptions, redSortKey, redSortDir])
 

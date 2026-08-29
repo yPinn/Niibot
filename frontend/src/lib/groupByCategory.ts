@@ -23,12 +23,15 @@ export function groupByCategory<T extends { category_label?: string | null }>(
     else buckets.set(key, [row])
   }
 
+  // Labelled groups keep first-appearance order; the unlabelled group sorts last.
   const entries = [...buckets.entries()]
-  const nullIdx = entries.findIndex(([label]) => label === null)
-  if (nullIdx !== -1) entries.push(...entries.splice(nullIdx, 1))
+  const ordered = [
+    ...entries.filter(([label]) => label !== null),
+    ...entries.filter(([label]) => label === null),
+  ]
 
-  return entries.map(([label, groupRows]) => ({
+  return ordered.map(([label, groupRows]) => ({
     label,
-    rows: [...groupRows].sort(sortWithin),
+    rows: groupRows.sort(sortWithin),
   }))
 }

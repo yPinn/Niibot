@@ -146,13 +146,22 @@ export default function Insights() {
       .catch(() => null)
   }, [isInitialized, user])
 
+  const loadPlusEstimate = useCallback(
+    (forceRefresh = false) => {
+      if (!isAffiliate) return
+      if (forceRefresh) apiCache.delete(CACHE_KEYS.ANALYTICS_PLUS_ESTIMATE)
+      getPlusProgramEstimate()
+        .then(setPlusEstimate)
+        .catch(() => setPlusEstimate(null))
+        .finally(() => setPlusLoading(false))
+    },
+    [isAffiliate]
+  )
+
   useEffect(() => {
-    if (!isInitialized || !user || !isAffiliate) return
-    getPlusProgramEstimate()
-      .then(setPlusEstimate)
-      .catch(() => setPlusEstimate(null))
-      .finally(() => setPlusLoading(false))
-  }, [isInitialized, user, isAffiliate])
+    if (!isInitialized || !user) return
+    loadPlusEstimate()
+  }, [isInitialized, user, loadPlusEstimate])
 
   const handleSyncRoles = useCallback(async () => {
     if (isSyncing) return
@@ -160,16 +169,13 @@ export default function Insights() {
     try {
       await syncChannelRoles()
       void fetchViewers(Number(period), true)
-      apiCache.delete(CACHE_KEYS.ANALYTICS_PLUS_ESTIMATE)
-      getPlusProgramEstimate()
-        .then(setPlusEstimate)
-        .catch(() => null)
+      loadPlusEstimate(true)
     } catch {
       // silent
     } finally {
       setIsSyncing(false)
     }
-  }, [isSyncing, period, fetchViewers])
+  }, [isSyncing, period, fetchViewers, loadPlusEstimate])
 
   const handlePeriodChange = useCallback(
     (value: string) => {
@@ -335,7 +341,6 @@ export default function Insights() {
                   <Skeleton className="aspect-[3/2] min-h-[360px] max-h-[480px] rounded-md" />
                 ) : viewers.length === 0 ? (
                   <EmptyState
-                    className="py-empty"
                     icon="fa-solid fa-chart-scatter"
                     title="尚無觀眾資料"
                     description="每場直播結束後會累積觀眾資料"
@@ -364,7 +369,6 @@ export default function Insights() {
                   <Skeleton className="aspect-[3/2] min-h-[360px] max-h-[480px] rounded-md" />
                 ) : viewers.length === 0 ? (
                   <EmptyState
-                    className="py-empty"
                     icon="fa-solid fa-chart-pie"
                     title="尚無觀眾資料"
                     description="每場直播結束後會累積觀眾資料"
@@ -513,14 +517,12 @@ export default function Insights() {
               >
                 {viewersError ? (
                   <EmptyState
-                    className="py-empty"
                     icon="fa-solid fa-triangle-exclamation"
                     title="載入觀眾資料失敗"
                     description="請重新整理頁面，若問題持續請檢查伺服器狀態"
                   />
                 ) : viewers.length === 0 ? (
                   <EmptyState
-                    className="py-empty"
                     icon="fa-solid fa-users"
                     title="尚無觀眾資料"
                     description="每場直播結束後會累積觀眾資料，歷史紀錄可在此查閱"

@@ -10,7 +10,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui'
 import { formatRelativeTime } from '@/lib/format'
-import { PLUS_TIER2_POINTS, plusProgress, subsToClose } from '@/lib/plus-program'
+import { PLUS_TIER2_POINTS, plusProgress, type PlusSplit, subsToClose } from '@/lib/plus-program'
 import { cn } from '@/lib/utils'
 
 interface PlusProgramCardProps {
@@ -21,14 +21,14 @@ interface PlusProgramCardProps {
   onRefresh: () => void
 }
 
-function splitColor(split: string): string {
+function splitColor(split: PlusSplit): string {
   if (split === '70/30') return 'text-status-online'
   if (split === '60/40') return 'text-status-info'
   return 'text-muted-foreground'
 }
 
 /** Twitch numbers the plan tiers 等級 0 (50/50) / 等級 1 (60/40) / 等級 2 (70/30). */
-function planLabel(split: string): string {
+function planLabel(split: PlusSplit): string {
   if (split === '70/30') return '等級 2（70/30）'
   if (split === '60/40') return '等級 1（60/40）'
   return '等級 0（50/50）'
@@ -64,7 +64,6 @@ export function PlusProgramCard({
   const { confirmed_points, confirmed_subs, pending_points, pending_subs, data_as_of } = estimate
   const prog = plusProgress(confirmed_points)
   const gap = subsToClose(prog.remaining)
-  const nextTierLabel = prog.nextThreshold === 100 ? '等級 1（60/40）' : '等級 2（70/30）'
 
   return (
     <CardShell>
@@ -119,7 +118,6 @@ export function PlusProgramCard({
       <div className="flex flex-col gap-1">
         <Progress
           max={PLUS_TIER2_POINTS}
-          value={confirmed_points}
           aria-label="加強版方案積分進度"
           segments={[
             { value: confirmed_points },
@@ -134,12 +132,12 @@ export function PlusProgramCard({
         </div>
       </div>
 
-      {prog.nextThreshold === null ? (
+      {prog.nextSplit === null ? (
         <p className="text-label text-status-online">已達最高分潤層級（70/30）</p>
       ) : (
         <div className="flex flex-col gap-1.5">
           <p className="text-sub text-foreground tabular-nums">
-            {`距 ${nextTierLabel} 還差 ${gap.points} 點`}
+            {`距 ${planLabel(prog.nextSplit)} 還差 ${prog.remaining} 點`}
           </p>
           <div className="grid grid-cols-3 gap-1 text-label text-muted-foreground/70 tabular-nums">
             <span>{`層級 1 ×${gap.t1}`}</span>

@@ -1,12 +1,12 @@
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
 import { getPublicCommands, type PublicChannelProfile, type PublicCommand } from '@/api/commands'
 import avatarFallback from '@/assets/images/Avatar.png'
+import { GroupedTableBody } from '@/components/GroupedTableBody'
 import { useTheme } from '@/components/layout/theme-provider'
 import { EmptyState, FadeIn, Icon } from '@/components/primitives'
 import { SortableHead } from '@/components/SortableHead'
-import { TableGroupHeader } from '@/components/TableGroupHeader'
 import { TableShell } from '@/components/TableShell'
 import { TableSkeletonRows } from '@/components/TableSkeletonRows'
 import {
@@ -33,7 +33,7 @@ import {
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { useSortState } from '@/hooks/useSortState'
 import { groupByCategory } from '@/lib/groupByCategory'
-import { nameSort, ROLE_ORDER } from '@/lib/sort'
+import { applyDir, nameSort, ROLE_ORDER } from '@/lib/sort'
 
 const ROLE_LABELS: Record<string, { label: string; variant: 'default' | 'secondary' | 'outline' }> =
   {
@@ -64,7 +64,7 @@ export default function PublicCommands() {
       let cmp = 0
       if (builtinSortKey === 'name') cmp = nameSort(a.name, b.name)
       else cmp = (ROLE_ORDER[a.min_role] ?? 0) - (ROLE_ORDER[b.min_role] ?? 0)
-      return builtinSortDir === 'desc' ? -cmp : cmp
+      return applyDir(cmp, builtinSortDir)
     }
     return groupByCategory(
       commands.filter(c => c.command_type === 'builtin'),
@@ -83,7 +83,7 @@ export default function PublicCommands() {
           (a.command_type === 'custom' ? 0 : 1) - (b.command_type === 'custom' ? 0 : 1)
         cmp = kindCmp !== 0 ? kindCmp : nameSort(a.name, b.name)
       } else cmp = (ROLE_ORDER[a.min_role] ?? 0) - (ROLE_ORDER[b.min_role] ?? 0)
-      return customSortDir === 'desc' ? -cmp : cmp
+      return applyDir(cmp, customSortDir)
     })
   }, [commands, customSortKey, customSortDir])
 
@@ -228,37 +228,28 @@ export default function PublicCommands() {
                               </SortableHead>
                             </TableRow>
                           </TableHeader>
-                          <TableBody>
-                            {builtinGroups.map(group => (
-                              <Fragment key={group.label ?? '_uncategorised'}>
-                                {group.label && (
-                                  <TableGroupHeader
-                                    label={group.label}
-                                    count={group.rows.length}
-                                    colSpan={3}
-                                  />
-                                )}
-                                {group.rows.map(cmd => {
-                                  const role = ROLE_LABELS[cmd.min_role] ?? ROLE_LABELS.everyone
-                                  return (
-                                    <TableRow key={cmd.name}>
-                                      <TableCell className="font-mono font-medium">
-                                        {cmd.name}
-                                      </TableCell>
-                                      <TableCell className="hidden md:table-cell text-muted-foreground">
-                                        {cmd.description}
-                                      </TableCell>
-                                      <TableCell className="text-center">
-                                        <Badge variant={role.variant} className="text-label">
-                                          {role.label}
-                                        </Badge>
-                                      </TableCell>
-                                    </TableRow>
-                                  )
-                                })}
-                              </Fragment>
-                            ))}
-                          </TableBody>
+                          <GroupedTableBody
+                            groups={builtinGroups}
+                            colSpan={3}
+                            renderRow={cmd => {
+                              const role = ROLE_LABELS[cmd.min_role] ?? ROLE_LABELS.everyone
+                              return (
+                                <TableRow key={cmd.name}>
+                                  <TableCell className="font-mono font-medium">
+                                    {cmd.name}
+                                  </TableCell>
+                                  <TableCell className="hidden md:table-cell text-muted-foreground">
+                                    {cmd.description}
+                                  </TableCell>
+                                  <TableCell className="text-center">
+                                    <Badge variant={role.variant} className="text-label">
+                                      {role.label}
+                                    </Badge>
+                                  </TableCell>
+                                </TableRow>
+                              )
+                            }}
+                          />
                         </TableShell>
                       )}
                     </TabsContent>

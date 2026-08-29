@@ -1,15 +1,14 @@
-import { Fragment, useMemo } from 'react'
+import { useMemo } from 'react'
 
 import type { ChannelDefaults } from '@/api/channels'
 import type { CommandConfig } from '@/api/commands'
+import { GroupedTableBody } from '@/components/GroupedTableBody'
 import { Icon } from '@/components/primitives'
 import { SortableHead } from '@/components/SortableHead'
-import { TableGroupHeader } from '@/components/TableGroupHeader'
 import { TableShell } from '@/components/TableShell'
 import {
   Button,
   Switch,
-  TableBody,
   TableCell,
   TableHead,
   TableHeader,
@@ -20,7 +19,7 @@ import {
 } from '@/components/ui'
 import type { SortState } from '@/hooks/useSortState'
 import { groupByCategory } from '@/lib/groupByCategory'
-import { nameSort, ROLE_ORDER } from '@/lib/sort'
+import { applyDir, nameSort, ROLE_ORDER } from '@/lib/sort'
 
 import { formatCooldown, ROLE_LABELS } from './constants'
 import type { SortKey } from './types'
@@ -60,7 +59,7 @@ export function BuiltinTab({ commands, sortState, defaults, onToggle, onEdit }: 
           cmp = Number(a.enabled) - Number(b.enabled)
           break
       }
-      return sortDir === 'desc' ? -cmp : cmp
+      return applyDir(cmp, sortDir)
     }
     return groupByCategory(commands, compare)
   }, [commands, sortKey, sortDir])
@@ -92,69 +91,60 @@ export function BuiltinTab({ commands, sortState, defaults, onToggle, onEdit }: 
           <TableHead className="w-[7%] text-right">操作</TableHead>
         </TableRow>
       </TableHeader>
-      <TableBody>
-        {groups.map(group => (
-          <Fragment key={group.label ?? '_uncategorised'}>
-            {group.label && (
-              <TableGroupHeader
-                label={group.label}
-                count={group.rows.length}
-                colSpan={COLUMN_COUNT}
-              />
-            )}
-            {group.rows.map(cmd => (
-              <TableRow key={cmd.command_name}>
-                <TableCell>
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-mono font-medium">!{cmd.command_name}</span>
-                    {cmd.aliases && (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <span className="cursor-default text-muted-foreground">
-                            <Icon icon="fa-solid fa-tags" wrapperClassName="size-3" />
-                          </span>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <span className="font-mono">
-                            {cmd.aliases
-                              .split(',')
-                              .map(a => `!${a.trim()}`)
-                              .join(' · ')}
-                          </span>
-                        </TooltipContent>
-                      </Tooltip>
-                    )}
-                  </div>
-                </TableCell>
-                <TableCell className="hidden md:table-cell max-w-0 truncate text-sub text-muted-foreground">
-                  {cmd.description}
-                </TableCell>
-                <TableCell className="hidden md:table-cell text-sub text-muted-foreground">
-                  {formatCooldown(cmd.cooldown, defaults)}
-                </TableCell>
-                <TableCell className="hidden md:table-cell text-sub">
-                  {ROLE_LABELS[cmd.min_role] || cmd.min_role}
-                </TableCell>
-                <TableCell className="hidden md:table-cell text-right">{cmd.usage_count}</TableCell>
-                <TableCell className="text-center">
-                  <Switch checked={cmd.enabled} onCheckedChange={() => onToggle(cmd)} />
-                </TableCell>
-                <TableCell className="text-right">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-8"
-                    aria-label={`編輯 !${cmd.command_name}`}
-                    onClick={() => onEdit(cmd)}
-                  >
-                    <Icon icon="fa-solid fa-pen" wrapperClassName="size-3.5" />
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ))}
-          </Fragment>
-        ))}
-      </TableBody>
+      <GroupedTableBody
+        groups={groups}
+        colSpan={COLUMN_COUNT}
+        renderRow={cmd => (
+          <TableRow key={cmd.command_name}>
+            <TableCell>
+              <div className="flex items-center gap-1.5">
+                <span className="font-mono font-medium">!{cmd.command_name}</span>
+                {cmd.aliases && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="cursor-default text-muted-foreground">
+                        <Icon icon="fa-solid fa-tags" wrapperClassName="size-3" />
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <span className="font-mono">
+                        {cmd.aliases
+                          .split(',')
+                          .map(a => `!${a.trim()}`)
+                          .join(' · ')}
+                      </span>
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+              </div>
+            </TableCell>
+            <TableCell className="hidden md:table-cell max-w-0 truncate text-sub text-muted-foreground">
+              {cmd.description}
+            </TableCell>
+            <TableCell className="hidden md:table-cell text-sub text-muted-foreground">
+              {formatCooldown(cmd.cooldown, defaults)}
+            </TableCell>
+            <TableCell className="hidden md:table-cell text-sub">
+              {ROLE_LABELS[cmd.min_role] || cmd.min_role}
+            </TableCell>
+            <TableCell className="hidden md:table-cell text-right">{cmd.usage_count}</TableCell>
+            <TableCell className="text-center">
+              <Switch checked={cmd.enabled} onCheckedChange={() => onToggle(cmd)} />
+            </TableCell>
+            <TableCell className="text-right">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-8"
+                aria-label={`編輯 !${cmd.command_name}`}
+                onClick={() => onEdit(cmd)}
+              >
+                <Icon icon="fa-solid fa-pen" wrapperClassName="size-3.5" />
+              </Button>
+            </TableCell>
+          </TableRow>
+        )}
+      />
     </TableShell>
   )
 }

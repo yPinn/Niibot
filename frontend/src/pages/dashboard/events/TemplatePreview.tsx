@@ -1,3 +1,5 @@
+import { useMemo } from 'react'
+
 import type { EventVariable } from '@/api/events'
 import { Icon } from '@/components/primitives'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui'
@@ -12,7 +14,10 @@ interface TemplatePreviewProps {
 }
 
 export function TemplatePreview({ template, variables }: TemplatePreviewProps) {
-  const samples = Object.fromEntries(variables.map(v => [v.name, v.sample]))
+  const samples = useMemo(
+    () => Object.fromEntries(variables.map(v => [v.name, v.sample])),
+    [variables]
+  )
   const parts = renderTemplateParts(template, samples)
   const length = parts.reduce((n, p) => (p.kind === 'dropped' ? n : n + p.text.length), 0)
   const over = length > TWITCH_MESSAGE_LIMIT
