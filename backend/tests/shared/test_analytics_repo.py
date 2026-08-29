@@ -1422,3 +1422,38 @@ class TestBulkUpsertBanned:
         conn.executemany.assert_not_called()
         conn.execute.assert_awaited_once()
         assert conn.execute.call_args[0][2] == []
+
+
+class TestUpsertViewerSubPrime:
+    pytestmark = pytest.mark.asyncio
+
+    async def test_writes_only_the_prime_flag(self):
+        pool, conn = _make_pool(execute="INSERT 0 1")
+        repo = AnalyticsRepository(pool)
+
+        await repo.upsert_viewer_sub_prime("ch1", "u1", "alice", "Alice", is_prime=True)
+
+        sql, *args = conn.execute.call_args[0]
+        assert args == ["ch1", "u1", "alice", "Alice", True]
+        # narrow upsert — never touches tier / gifted
+        assert "sub_is_prime" in sql
+        assert "sub_tier" not in sql
+        assert "sub_gifted" not in sql
+
+    async def test_missing_table_is_swallowed(self):
+        from asyncpg.exceptions import UndefinedTableError
+
+        pool, conn = _make_pool()
+        conn.execute.side_effect = UndefinedTableError("nope")
+        repo = AnalyticsRepository(pool)
+
+        await repo.upsert_viewer_sub_prime("ch1", "u1", "a", None, is_prime=False)  # no raise
+
+    async def test_subscription_end_nulls_prime(self):
+        pool, conn = _make_pool(execute="INSERT 0 1")
+        repo = AnalyticsRepository(pool)
+
+        await repo.upsert_viewer_subscription_end("ch1", "u1", "a", None)
+
+        sql = conn.execute.call_args[0][0]
+        assert "sub_is_prime  = NULL" in sql

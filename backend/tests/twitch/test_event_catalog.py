@@ -210,6 +210,7 @@ def _driver_component() -> tuple[EventsComponent, MagicMock]:
     for m in (
         "upsert_viewer_follow_status",
         "upsert_viewer_subscription",
+        "upsert_viewer_sub_prime",
         "upsert_viewer_gift_count",
         "record_follow_event",
         "record_subscribe_event",
@@ -251,10 +252,10 @@ def _fake_notification(notice_type: str) -> MagicMock:
     p = MagicMock()
     p.notice_type = notice_type
     p.broadcaster.name, p.broadcaster.id = "bc", "ch"
-    p.chatter.display_name, p.chatter.name = "Chatter", "chatter"
+    p.chatter.display_name, p.chatter.name, p.chatter.id = "Chatter", "chatter", "u1"
     p.anonymous = False
     p.text = "yay"
-    p.sub = p.resub = p.sub_gift = None
+    p.sub = p.resub = p.sub_gift = p.prime_paid_upgrade = None
     if notice_type == "sub":
         p.sub = SimpleNamespace(prime=False, tier="1000", months=1)
     elif notice_type == "resub":
@@ -324,3 +325,54 @@ async def test_gift_bomb_recipient_skipped_by_default():
     await comp.event_chat_notification(payload)
 
     comp._notify.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# Prime flag capture — the only source is channel.chat.notification
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_sub_notice_records_prime_flag():
+    comp, bot = _driver_component()
+    payload = _fake_notification("sub")
+    payload.sub.prime = True
+
+    await comp.event_chat_notification(payload)
+
+    bot.analytics.upsert_viewer_sub_prime.assert_awaited_once()
+    assert bot.analytics.upsert_viewer_sub_prime.await_args.kwargs["is_prime"] is True
+
+
+@pytest.mark.asyncio
+async def test_gifted_resub_does_not_record_prime():
+    comp, bot = _driver_component()
+    payload = _fake_notification("resub")
+    payload.resub.gift = True  # announcing a gifted sub — not the person's own payment
+
+    await comp.event_chat_notification(payload)
+
+    bot.analytics.upsert_viewer_sub_prime.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_prime_paid_upgrade_records_paid():
+    comp, bot = _driver_component()
+    payload = _fake_notification("prime_paid_upgrade")
+    payload.prime_paid_upgrade = SimpleNamespace(tier="1000")
+
+    await comp.event_chat_notification(payload)
+
+    bot.analytics.upsert_viewer_sub_prime.assert_awaited_once()
+    assert bot.analytics.upsert_viewer_sub_prime.await_args.kwargs["is_prime"] is False
+
+
+@pytest.mark.asyncio
+async def test_anonymous_chatter_prime_not_recorded():
+    comp, bot = _driver_component()
+    payload = _fake_notification("sub")
+    payload.anonymous = True
+
+    await comp.event_chat_notification(payload)
+
+    bot.analytics.upsert_viewer_sub_prime.assert_not_awaited()

@@ -276,19 +276,42 @@ class EventsComponent(commands.Component):
         self,
         payload: twitchio.ChatNotification,
     ) -> None:
-        """sub / resub / sub_gift greetings.
+        """sub / resub / sub_gift greetings, plus the Prime flag.
 
         This is the only source carrying ``is_prime``, gifted-resub, and
-        per-recipient gift data. Every other ``notice_type`` is ignored — the
-        dedicated ``channel.subscription.*`` events own analytics.
+        per-recipient gift data. The Prime flag is persisted to
+        ``viewer_channel_status`` for the Plus Program estimate — everything
+        else about a sub's analytics stays owned by ``channel.subscription.*``.
+        Every other ``notice_type`` is ignored.
         """
         nt = payload.notice_type
         if nt == "sub" and payload.sub is not None:
+            await self._record_sub_prime(payload, payload.sub.prime)
             await self._greet_sub(payload, payload.sub)
         elif nt == "resub" and payload.resub is not None:
+            if not payload.resub.gift:
+                await self._record_sub_prime(payload, payload.resub.prime)
             await self._greet_resub(payload, payload.resub)
         elif nt == "sub_gift" and payload.sub_gift is not None:
             await self._greet_gift_recipient(payload, payload.sub_gift)
+        elif nt == "prime_paid_upgrade" and payload.prime_paid_upgrade is not None:
+            await self._record_sub_prime(payload, is_prime=False)
+
+    async def _record_sub_prime(self, payload: twitchio.ChatNotification, is_prime: bool) -> None:
+        """Persist whether the chatter's sub is Prime — unavailable from
+        channel.subscribe / Helix, needed by the Plus Program estimate."""
+        if payload.anonymous or not payload.chatter.id:
+            return
+        try:
+            await self.bot.analytics.upsert_viewer_sub_prime(
+                channel_id=payload.broadcaster.id,
+                user_id=payload.chatter.id,
+                username=payload.chatter.name or "",
+                display_name=payload.chatter.display_name,
+                is_prime=is_prime,
+            )
+        except Exception as e:
+            LOGGER.warning(f"[{payload.broadcaster.name}] sub_is_prime upsert failed: {e}")
 
     async def _greet_sub(self, payload: twitchio.ChatNotification, sub: twitchio.ChatSub) -> None:
         name = payload.chatter.display_name or payload.chatter.name or ""

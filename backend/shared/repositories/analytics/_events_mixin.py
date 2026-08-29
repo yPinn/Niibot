@@ -348,6 +348,41 @@ class _AnalyticsEventsMixin:
             sub_gifted,
         )
 
+    async def upsert_viewer_sub_prime(
+        self,
+        channel_id: str,
+        user_id: str,
+        username: str,
+        display_name: str | None,
+        is_prime: bool,
+    ) -> None:
+        """Record whether a viewer's active sub is a Prime sub.
+
+        Deliberately narrow — touches only ``sub_is_prime`` (and marks the viewer
+        subscribed). ``sub_tier`` / ``sub_gifted`` stay owned by the
+        ``channel.subscribe`` path; the two upserts converge without an ordering
+        dependency.
+        """
+        await self._execute_upsert(
+            """
+            INSERT INTO viewer_channel_status
+                (channel_id, user_id, username, display_name,
+                 is_subscribed, sub_is_prime, updated_at)
+            VALUES ($1, $2, $3, $4, TRUE, $5, NOW())
+            ON CONFLICT (channel_id, user_id) DO UPDATE SET
+                username      = EXCLUDED.username,
+                display_name  = COALESCE(EXCLUDED.display_name, viewer_channel_status.display_name),
+                is_subscribed = TRUE,
+                sub_is_prime  = EXCLUDED.sub_is_prime,
+                updated_at    = NOW()
+            """,
+            channel_id,
+            user_id,
+            username,
+            display_name,
+            is_prime,
+        )
+
     async def upsert_viewer_subscription_end(
         self,
         channel_id: str,
@@ -360,8 +395,8 @@ class _AnalyticsEventsMixin:
             """
             INSERT INTO viewer_channel_status
                 (channel_id, user_id, username, display_name,
-                 is_subscribed, sub_tier, sub_gifted, sub_gifter, updated_at)
-            VALUES ($1, $2, $3, $4, FALSE, NULL, NULL, NULL, NOW())
+                 is_subscribed, sub_tier, sub_gifted, sub_gifter, sub_is_prime, updated_at)
+            VALUES ($1, $2, $3, $4, FALSE, NULL, NULL, NULL, NULL, NOW())
             ON CONFLICT (channel_id, user_id) DO UPDATE SET
                 username      = EXCLUDED.username,
                 display_name  = COALESCE(EXCLUDED.display_name, viewer_channel_status.display_name),
@@ -369,6 +404,7 @@ class _AnalyticsEventsMixin:
                 sub_tier      = NULL,
                 sub_gifted    = NULL,
                 sub_gifter    = NULL,
+                sub_is_prime  = NULL,
                 updated_at    = NOW()
             """,
             channel_id,
