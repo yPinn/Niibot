@@ -15,6 +15,21 @@ LOGGER: logging.Logger = logging.getLogger(__name__)
 
 _TIER_MAP = {"1000": "T1", "2000": "T2", "3000": "T3"}
 
+_MESSAGE_VAR_LIMIT = 200
+
+
+def _clean_message_var(value: str) -> str:
+    """Neutralise a viewer-typed template variable ($(message)).
+
+    Collapses newlines/runs of whitespace, drops a leading command char so the
+    bot never appears to run a /command, and caps length so a long resub note
+    can't push the whole greeting past Twitch's 500-char send limit.
+    """
+    text = " ".join(value.split())
+    if text[:1] in "/.":
+        text = text[1:].lstrip()
+    return text[:_MESSAGE_VAR_LIMIT]
+
 
 class EventComponent(commands.Component):
     """EventSub 事件監聽組件"""
@@ -312,7 +327,7 @@ class EventComponent(commands.Component):
         tier_name = _TIER_MAP.get(payload.tier, payload.tier)
         months = payload.months
         streak = payload.streak_months if payload.streak_months is not None else 0
-        resub_text = getattr(payload, "text", "") or ""
+        resub_text = _clean_message_var(getattr(payload, "text", "") or "")
 
         try:
             message = await self._get_message(
@@ -364,7 +379,7 @@ class EventComponent(commands.Component):
             LOGGER.debug(f"[{broadcaster_name}] Cheer: {user_name} (bot not mod, skipped)")
             return
         bits_amount = payload.bits
-        cheer_message = payload.message or ""
+        cheer_message = _clean_message_var(payload.message or "")
 
         try:
             message = await self._get_message(

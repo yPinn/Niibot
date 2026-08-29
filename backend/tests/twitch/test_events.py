@@ -1,12 +1,26 @@
-"""Unit tests for EventComponent — currently just the fail-closed _get_message."""
+"""Unit tests for EventComponent — _get_message and _clean_message_var."""
 
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-from twitch.components.events import EventComponent
+from twitch.components.events import _MESSAGE_VAR_LIMIT, EventComponent, _clean_message_var
 
-pytestmark = pytest.mark.asyncio
+
+class TestCleanMessageVar:
+    def test_collapses_newlines_and_whitespace(self):
+        assert _clean_message_var("hi\n\nthere   world") == "hi there world"
+
+    def test_drops_leading_command_char(self):
+        assert _clean_message_var("/me waves") == "me waves"
+        assert _clean_message_var(".timeout bob") == "timeout bob"
+        assert _clean_message_var("...anyway") == "..anyway"  # only the first char
+
+    def test_caps_length(self):
+        assert len(_clean_message_var("x" * 999)) == _MESSAGE_VAR_LIMIT
+
+    def test_plain_text_untouched(self):
+        assert _clean_message_var("thanks for the sub!") == "thanks for the sub!"
 
 
 def _component(config=None, *, raises=False):
@@ -19,6 +33,7 @@ def _component(config=None, *, raises=False):
     return EventComponent(bot)
 
 
+@pytest.mark.asyncio
 class TestGetMessage:
     async def test_missing_config_stays_silent(self):
         comp = _component(config=None)
