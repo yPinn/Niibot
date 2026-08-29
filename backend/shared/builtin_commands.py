@@ -12,6 +12,10 @@ grouped so every category's rows are contiguous — the dashboard renders a grou
 header each time "category" changes, it does not sort or bucket. BUILTIN_CATEGORIES
 insertion order is the category display order.
 
+`"min_role"` — optional, defaults to `"everyone"`. Set it (e.g. `"moderator"`)
+for commands that should be gated by default; `_make_virtual` reads it so the
+dashboard shows the real permission and the streamer can loosen it there.
+
 `"enabled": False` — default a command OFF when other chat bots
 (Nightbot / StreamElements / Fossabot / ChiwaBot …) ship the same command
 enabled by default. Two bots answering the same `!command` is worse than the
@@ -43,7 +47,6 @@ BUILTIN_DEFS: list[dict] = [
     },
     # `commands` 別名移除：與 Nightbot 預設 !commands 撞名（兩者都貼指令列表連結）。
     {"command_name": "help", "category": "general", "cooldown": 5, "aliases": "指令"},
-    {"command_name": "condemn", "category": "general", "cooldown": 5, "aliases": "斥責"},
     # ── 頻道資訊 ──────────────────────────────────────────────────────────────
     # uptime 撞 Nightbot / StreamElements / Fossabot 預設指令 → 預設關；
     # rank 語意獨特（觀看時數＋留言活躍度，非點數排名）→ 預設開。
@@ -55,7 +58,15 @@ BUILTIN_DEFS: list[dict] = [
         "enabled": False,
     },
     {"command_name": "rank", "category": "channel", "cooldown": 15, "aliases": "排名"},
-    # ── 觀眾查詢（預設關閉：與 Nightbot / StreamElements / Fossabot /
+    # subcount 是頻道級統計（非「查自己」），與 rank / uptime 同組。
+    {
+        "command_name": "subcount",
+        "category": "channel",
+        "cooldown": 30,
+        "aliases": "訂閱數",
+        "enabled": False,
+    },
+    # ── 觀眾查詢（查自己；預設關閉：與 Nightbot / StreamElements / Fossabot /
     #    ChiwaBot 的同名指令衝突，交由實況主自行啟用）───────────────────────
     {
         "command_name": "followage",
@@ -72,23 +83,26 @@ BUILTIN_DEFS: list[dict] = [
         "enabled": False,
     },
     {
-        "command_name": "subcount",
-        "category": "viewer",
-        "cooldown": 30,
-        "aliases": "訂閱數",
-        "enabled": False,
-    },
-    {
         "command_name": "bits",
         "category": "viewer",
         "cooldown": 15,
         "aliases": "小奇點",
         "enabled": False,
     },
-    # ── 版主工具（預設關閉：!so 常與其他 bot 衝突；僅版主可用）─────────────
+    # ── 版主工具 ──────────────────────────────────────────────────────────────
+    # condemn 會貼一整段頻道立場聲明 → 版主表態，不是觀眾指令。
+    # so 常與其他 bot 衝突且用 bot 的 moderator token 執行 → 預設關 + 版主限定。
+    {
+        "command_name": "condemn",
+        "category": "moderator",
+        "min_role": "moderator",
+        "cooldown": 5,
+        "aliases": "斥責",
+    },
     {
         "command_name": "so",
         "category": "moderator",
+        "min_role": "moderator",
         "cooldown": 5,
         "aliases": "推薦",
         "enabled": False,
@@ -162,7 +176,7 @@ PUBLIC_DESCRIPTIONS: dict[str, str] = {
     "fortune": "運勢占卜",
     "tarot": "塔羅牌占卜，可指定分類：!塔羅 [感情/事業/財運]",
     "condemn": "頻道反惡意言論聲明",
-    "roll": "誰是下一個？抽中禁言 10 分鐘，用法：!roll",
+    "roll": "誰是下一個？抽中禁言 60 秒，用法：!roll",
     "choose": "隨機選擇，用法：!choose 選項1 選項2 ...",
     "rank": "查詢本月個人活躍度排名",
     "followage": "查詢自己追隨頻道多久，用法：!followage",

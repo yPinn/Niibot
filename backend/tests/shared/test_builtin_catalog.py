@@ -18,6 +18,10 @@ from shared.builtin_commands import (
     PUBLIC_DESCRIPTIONS,
 )
 
+# Mirrors twitch.core.guards.ROLE_HIERARCHY (kept local to avoid importing the
+# twitch package — and twitchio — into a shared-layer test).
+_VALID_ROLES = {"everyone", "subscriber", "vip", "moderator", "broadcaster"}
+
 
 def test_every_def_has_a_known_category() -> None:
     for defn in BUILTIN_DEFS:
@@ -51,3 +55,19 @@ def test_public_descriptions_are_a_subset_of_builtins() -> None:
     names = {d["command_name"] for d in BUILTIN_DEFS}
     extra = set(PUBLIC_DESCRIPTIONS) - names
     assert not extra, f"PUBLIC_DESCRIPTIONS names not in BUILTIN_DEFS: {extra}"
+
+
+def test_declared_min_roles_are_valid() -> None:
+    for defn in BUILTIN_DEFS:
+        role = defn.get("min_role", "everyone")
+        assert role in _VALID_ROLES, f"{defn['command_name']}: bad min_role {role!r}"
+
+
+def test_moderator_only_builtins_declare_min_role() -> None:
+    """!so and !condemn act as the streamer/mods and must not default to everyone
+    — the handlers no longer gate on their own."""
+    by_name = {d["command_name"]: d for d in BUILTIN_DEFS}
+    for name in ("so", "condemn"):
+        assert by_name[name].get("min_role") == "moderator", (
+            f"!{name} must declare min_role='moderator'"
+        )
