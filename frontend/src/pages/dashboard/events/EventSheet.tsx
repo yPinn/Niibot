@@ -6,7 +6,6 @@ import { Spinner } from '@/components/primitives'
 import { SettingRow } from '@/components/SettingRow'
 import {
   Button,
-  Input,
   Label,
   Sheet,
   SheetClose,
@@ -16,6 +15,7 @@ import {
   SheetHeader,
   SheetTitle,
   Switch,
+  Textarea,
 } from '@/components/ui'
 import { VariableInserter } from '@/components/VariableInserter'
 import { useInputInsert } from '@/hooks/useInputInsert'
@@ -47,7 +47,7 @@ export function EventSheet({ event, definition, onClose, onSaved }: EventSheetPr
   }, [event])
 
   const { inputRef: templateInputRef, insertText: insertVariable } =
-    useInputInsert<HTMLInputElement>(editTemplate, setEditTemplate)
+    useInputInsert<HTMLTextAreaElement>(editTemplate, setEditTemplate)
 
   const handleSave = async () => {
     if (!event) return
@@ -81,13 +81,14 @@ export function EventSheet({ event, definition, onClose, onSaved }: EventSheetPr
         <div className="flex flex-col gap-card px-page">
           <div className="flex flex-col gap-2">
             <Label htmlFor="event-template">訊息模板</Label>
-            <Input
+            <Textarea
               id="event-template"
               ref={templateInputRef}
               value={editTemplate}
               onChange={e => setEditTemplate(e.target.value)}
               placeholder="輸入回應訊息..."
-              className="font-mono text-sub"
+              rows={2}
+              className="min-h-16 font-mono text-sub"
             />
 
             {variableChips.length > 0 && (

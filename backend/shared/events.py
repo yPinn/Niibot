@@ -107,9 +107,7 @@ class EventDef:
         return names
 
 
-_NOTE = EventVariable(
-    "note", "非基本情境的補充（層級／預付／取得方式），基本情境為空", "（層級 3、Prime）"
-)
+_NOTE = EventVariable("note", "特殊情境的補充說明，一般情境為空", "（層級 3、Prime）")
 
 EVENT_CATALOG: tuple[EventDef, ...] = (
     EventDef(
@@ -147,8 +145,8 @@ EVENT_CATALOG: tuple[EventDef, ...] = (
         variables=(
             EventVariable("user", "訂閱者名稱", "小明", mentionable=True),
             EventVariable("total_months", "累計訂閱總月數", "14"),
-            EventVariable("streak", "連續訂閱月數（觀眾未分享時為空）", "6"),
-            EventVariable("message", "訂閱留言內容（無留言時為空）", "這台真的讚"),
+            EventVariable("streak", "連續訂閱月數（未分享時為空）", "6"),
+            EventVariable("message", "訂閱留言（未留言時為空）", "這台真的讚"),
             _NOTE,
         ),
         subscription_class=None,  # channel.chat.notification (resub notice)
@@ -166,7 +164,7 @@ EVENT_CATALOG: tuple[EventDef, ...] = (
         variables=(
             EventVariable("user", "贈禮者名稱", "大方哥", mentionable=True),
             EventVariable("total", "本次贈禮數量", "10"),
-            EventVariable("cumulative", "累計贈禮總數（匿名或未分享時為空）", "30"),
+            EventVariable("cumulative", "累計贈禮數（未公開時為空）", "30"),
             _NOTE,
         ),
         subscription_class="ChannelSubscriptionGiftSubscription",
@@ -206,7 +204,7 @@ EVENT_CATALOG: tuple[EventDef, ...] = (
         variables=(
             EventVariable("user", "Cheer 者名稱", "小明", mentionable=True),
             EventVariable("amount", "小奇點數量", "500"),
-            EventVariable("message", "Cheer 留言（無留言時為空）", "加油"),
+            EventVariable("message", "Cheer 留言（未留言時為空）", "加油"),
         ),
         subscription_class="ChannelCheerSubscription",
         display_name="Cheer",
