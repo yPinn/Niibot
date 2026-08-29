@@ -20,11 +20,15 @@ fold code consumption and the membership transition into one transaction.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import logging
 import secrets
 from datetime import UTC, datetime, timedelta
 
 import asyncpg
+
+LOGGER: logging.Logger = logging.getLogger(__name__)
 
 _EXPIRES_HOURS = 72
 
@@ -326,3 +330,24 @@ class ActivationCodeRepository:
                  GROUP BY kind
                 """
             )
+
+
+async def activation_grant_cleanup_loop(db_manager) -> None:
+    """Once a day: expire stale grants and hard-delete old terminal rows."""
+    while True:
+        try:
+            await asyncio.sleep(86_400)
+            if not db_manager.is_connected:
+                continue
+            repo = ActivationCodeRepository(db_manager.pool)
+            expired = await repo.mark_expired()
+            scrubbed = await repo.scrub_terminal(90)
+            if expired or scrubbed:
+                LOGGER.info(
+                    "activation_grants_cleaned",
+                    extra={"expired": expired, "scrubbed": scrubbed},
+                )
+        except asyncio.CancelledError:
+            return
+        except Exception:
+            LOGGER.exception("activation_grant_cleanup_failed")
