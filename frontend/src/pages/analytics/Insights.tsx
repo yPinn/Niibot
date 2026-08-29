@@ -14,7 +14,6 @@ import {
 } from '@/api/analytics'
 
 const CHART_BOX = 'aspect-[3/2] min-h-[360px] max-h-[480px]'
-import { AffiliateLockOverlay } from '@/components/AffiliateLockOverlay'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { PageMain } from '@/components/layout/PageMain'
 import {
@@ -458,22 +457,13 @@ export default function Insights() {
 
           {initialized && !insightsLoading && <SuggestedActions suggestions={suggestions} />}
 
-          {isAffiliate ? (
-            <PlusProgramCard
-              estimate={plusEstimate}
-              loading={plusLoading}
-              refreshing={isSyncing}
-              onRefresh={handleSyncRoles}
-            />
-          ) : (
-            <div className="relative rounded-md border px-2.5 py-6 shrink-0 overflow-hidden">
-              <AffiliateLockOverlay
-                message="取得資格後可查看加強版方案積分"
-                className="rounded-[inherit]"
-              />
-              <p className="text-label text-muted-foreground">加強版方案積分（本月試算）</p>
-            </div>
-          )}
+          <PlusProgramCard
+            estimate={plusEstimate}
+            loading={plusLoading}
+            refreshing={isSyncing}
+            locked={!isAffiliate}
+            onRefresh={handleSyncRoles}
+          />
         </div>
 
         {/* ── Right: Viewer list ────────────────────────────────────── */}
