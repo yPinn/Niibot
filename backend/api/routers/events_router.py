@@ -15,6 +15,7 @@ from core.dependencies import (
 )
 from services import ChannelService, CommandConfigService, EventConfigService, TwitchAPIClient
 from shared.errors import AccessDeniedError, AppError, InvalidInputError, NotFoundError
+from shared.events import EVENT_CATALOG
 from shared.repositories.event_config import EVENT_TYPES as VALID_EVENT_TYPES
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -50,9 +51,65 @@ class EventConfigResponse(BaseModel):
     message_template: str
     enabled: bool
     options: dict = Field(default_factory=dict)
-    trigger_count: int
+    # None when the event writes no stream_events row (resub / gift_sub) — the
+    # dashboard shows "—" rather than a misleading 0.
+    trigger_count: int | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
+
+
+class EventVariableResponse(BaseModel):
+    name: str
+    description: str
+    sample: str
+
+
+class EventOptionResponse(BaseModel):
+    key: str
+    type: str
+    label: str
+    description: str
+    default: bool
+
+
+class EventDefinitionResponse(BaseModel):
+    key: str
+    display_name: str
+    category_label: str
+    accent: str
+    requires_affiliate: bool
+    default_template: str
+    default_enabled: bool
+    variables: list[EventVariableResponse]
+    options_schema: list[EventOptionResponse]
+
+
+_CATALOG_PAYLOAD: list[EventDefinitionResponse] = [
+    EventDefinitionResponse(
+        key=e.key,
+        display_name=e.display_name,
+        category_label=e.category_label,
+        accent=e.accent,
+        requires_affiliate=e.requires_affiliate,
+        default_template=e.default_template,
+        default_enabled=e.default_enabled,
+        variables=[
+            EventVariableResponse(name=v.name, description=v.description, sample=v.sample)
+            for v in e.variables
+        ],
+        options_schema=[
+            EventOptionResponse(
+                key=o.key,
+                type=o.type,
+                label=o.label,
+                description=o.description,
+                default=o.default,
+            )
+            for o in e.options_schema
+        ],
+    )
+    for e in EVENT_CATALOG
+]
 
 
 class EventConfigUpdate(BaseModel):
@@ -84,6 +141,17 @@ class RedemptionConfigResponse(BaseModel):
 class RedemptionConfigUpdate(BaseModel):
     reward_name: str
     enabled: bool
+
+
+@router.get("/catalog", response_model=list[EventDefinitionResponse])
+async def get_event_catalog() -> list[EventDefinitionResponse]:
+    """Static definition of every configurable event: template variables (with
+    preview samples), display metadata, and the per-event options schema.
+
+    Drives the dashboard so it stops hand-mirroring ``shared.events``. Returned
+    in display order; the array order *is* the order.
+    """
+    return _CATALOG_PAYLOAD
 
 
 @router.get("/configs", response_model=list[EventConfigResponse])

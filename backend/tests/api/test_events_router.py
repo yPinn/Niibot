@@ -22,6 +22,7 @@ from core.config import get_settings
 from core.dependencies import get_current_channel_id, get_db_pool, get_twitch_api
 from core.error_handlers import register_exception_handlers
 from routers.events_router import router as _events_router
+from shared.events import EVENT_KEYS
 
 CHANNEL_ID = "ch-events"
 
@@ -71,6 +72,31 @@ def _make_client(mock_twitch_api: MagicMock | None = None) -> TestClient:
     mock_api = mock_twitch_api or MagicMock()
     app.dependency_overrides[get_twitch_api] = lambda: mock_api
     return TestClient(app, raise_server_exceptions=False)
+
+
+# ── GET /api/events/catalog ──
+
+
+class TestGetEventCatalog:
+    def test_returns_all_events_in_display_order(self):
+        r = _make_client().get("/api/events/catalog")
+        assert r.status_code == 200
+        keys = [e["key"] for e in r.json()]
+        assert keys == list(EVENT_KEYS)
+        assert keys == ["follow", "subscribe", "resub", "gift_sub", "bits", "raid"]
+
+    def test_every_variable_has_a_preview_sample(self):
+        r = _make_client().get("/api/events/catalog")
+        for event in r.json():
+            assert event["variables"], f"{event['key']}: no variables"
+            for v in event["variables"]:
+                assert v["sample"], f"{event['key']}.{v['name']}: empty sample"
+
+    def test_raid_exposes_auto_shoutout_option_only(self):
+        r = _make_client().get("/api/events/catalog")
+        by_key = {e["key"]: e for e in r.json()}
+        assert [o["key"] for o in by_key["raid"]["options_schema"]] == ["auto_shoutout"]
+        assert by_key["bits"]["options_schema"] == []
 
 
 # ── GET /api/events/configs ──
@@ -128,7 +154,7 @@ class TestUpdateEventConfig:
     def test_all_valid_event_types_accepted(self):
         import services.event_config_service as m
 
-        for event_type in ("follow", "subscribe", "raid", "bits"):
+        for event_type in EVENT_KEYS:
             cfg = {**_EVENT_CONFIG, "event_type": event_type}
             with patch.object(m.EventConfigService, "update_config", AsyncMock(return_value=cfg)):
                 r = _make_client().put(
