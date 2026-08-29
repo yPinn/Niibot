@@ -16,8 +16,8 @@ from twitchio.ext.commands import CommandNotFound
 from twitchio.payloads import TokenRefreshedPayload as _TokenRefreshedPayload
 
 from core._channel_mixin import _ChannelMixin
+from core._message_router_mixin import _MessageRouterMixin
 from core._notify_mixin import _NotifyMixin
-from core._router_mixin import _MessageRouterMixin
 from core._session_mixin import _SessionMixin
 from core.config import COMPONENTS_DIR
 from core.pg_listener import pg_listen
