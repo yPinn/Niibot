@@ -92,6 +92,10 @@ export function EventSheet({ event, definition, onClose, onSaved }: EventSheetPr
             {variableChips.length > 0 && (
               <VariableInserter variables={variableChips} onInsert={insertVariable} />
             )}
+            <p className="text-label text-muted-foreground">
+              用 <span className="font-mono">[[ ]]</span>{' '}
+              包住的內容，若裡面的變數沒有值就整段不顯示。
+            </p>
           </div>
 
           {definition && (
