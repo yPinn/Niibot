@@ -27,6 +27,7 @@ from typing import Any
 
 import asyncpg
 
+from shared.repositories.activation_code import ActivationCodeRepository
 from shared.repositories.membership import (
     Membership,
     MembershipEvent,
@@ -34,6 +35,9 @@ from shared.repositories.membership import (
 )
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
+
+# Operator decisions the system must never silently override.
+_LOCKED_STATUSES = ("suspended", "rejected")
 
 
 @dataclass(frozen=True)
@@ -43,10 +47,24 @@ class AdmissionDecision:
     state_changed: bool
 
 
+class MembershipLockedError(Exception):
+    """A system activation was attempted on an operator-locked membership.
+
+    Raised by grant_via_otp when the membership is suspended or rejected so a
+    router transaction that already consumed a code rolls the consumption back.
+    """
+
+    def __init__(self, user_id: str, status: str) -> None:
+        super().__init__(f"membership {user_id} is {status} — needs operator reinstate")
+        self.user_id = user_id
+        self.status = status
+
+
 class AdmissionService:
     def __init__(self, pool: asyncpg.Pool) -> None:
         self.pool = pool
         self.repo = MembershipRepository(pool)
+        self.grants = ActivationCodeRepository(pool)
 
     # ------------------------------------------------------------------
     # User-initiated actions
@@ -178,6 +196,35 @@ class AdmissionService:
                 )
         return AdmissionDecision(membership=membership, event_id=event_id, state_changed=True)
 
+    async def _activate_system(
+        self,
+        user_id: str,
+        *,
+        event_type: str,
+        reason: str,
+        metadata: dict[str, Any],
+        conn: asyncpg.Connection | None = None,
+    ) -> AdmissionDecision:
+        """UPSERT active + append a system event, on a shared or own transaction."""
+
+        async def _run(c: asyncpg.Connection) -> AdmissionDecision:
+            membership = await self.repo.upsert_status(user_id, "active", reason=reason, conn=c)
+            event_id = await self.repo.insert_event(
+                user_id,
+                event_type,  # type: ignore[arg-type]
+                actor_type="system",
+                reason=reason,
+                metadata=metadata,
+                conn=c,
+            )
+            return AdmissionDecision(membership=membership, event_id=event_id, state_changed=True)
+
+        if conn is not None:
+            return await _run(conn)
+        async with self.pool.acquire() as own:
+            async with own.transaction():
+                return await _run(own)
+
     async def grant_via_otp(
         self,
         user_id: str,
@@ -185,39 +232,81 @@ class AdmissionService:
         platform: str,
         platform_user_id: str,
         code_hash: str,
+        conn: asyncpg.Connection | None = None,
     ) -> AdmissionDecision:
-        """Activate a membership in response to an OTP redemption.
+        """Activate a membership in response to an owner_manual code redemption.
 
-        Caller is expected to have already validated the code (typically the
-        ActivationCodeRepository.redeem call in the auth router).
+        Caller is expected to have already validated + consumed the code
+        (ActivationCodeRepository.redeem). Pass ``conn`` to fold this into the
+        same transaction as that consumption. Raises MembershipLockedError if
+        the membership is suspended/rejected, so the caller's transaction (and
+        the code consumption in it) rolls back.
         """
-        metadata = {
-            "platform": platform,
-            "platform_user_id": platform_user_id,
-            "code_hash": code_hash,
-        }
-
         current = await self.repo.get(user_id)
         if current and current.status == "active":
             return AdmissionDecision(membership=current, event_id=0, state_changed=False)
+        if current and current.status in _LOCKED_STATUSES:
+            raise MembershipLockedError(user_id, current.status)
+
+        return await self._activate_system(
+            user_id,
+            event_type="approved",
+            reason="otp_redeem",
+            metadata={
+                "platform": platform,
+                "platform_user_id": platform_user_id,
+                "code_hash": code_hash,
+            },
+            conn=conn,
+        )
+
+    async def activate_if_entitled(
+        self,
+        user_id: str,
+        *,
+        platform: str,
+        platform_user_id: str,
+    ) -> bool:
+        """OAuth-callback path: consume a channel-points grant and activate.
+
+        Returns True iff the user ends up active. No-op (False) when there is no
+        live grant for this identity, or when the membership is operator-locked
+        (suspended / rejected — those need an explicit reinstate). An already-
+        active user still has any dangling grant consumed so the funnel is
+        accurate. Never creates a pending row.
+        """
+        current = await self.repo.get(user_id)
+        if current and current.status in _LOCKED_STATUSES:
+            return False
+
+        grant = await self.grants.find_unconsumed_grant(platform, platform_user_id)
+
+        if current and current.status == "active":
+            if grant is not None:
+                await self.grants.consume(grant["id"], user_id)
+            return True
+
+        if grant is None:
+            return False
 
         async with self.pool.acquire() as conn:
             async with conn.transaction():
-                membership = await self.repo.upsert_status(
+                await self.grants.consume(grant["id"], user_id, conn=conn)
+                await self._activate_system(
                     user_id,
-                    "active",
-                    reason="otp_redeem",
+                    event_type="auto_admitted",
+                    reason="channel_points_redeem",
+                    metadata={
+                        "platform": platform,
+                        "platform_user_id": platform_user_id,
+                        "grant_id": grant["id"],
+                        "redemption_id": grant["redemption_id"],
+                        "channel_id": grant["channel_id"],
+                        "reward_cost": grant["reward_cost"],
+                    },
                     conn=conn,
                 )
-                event_id = await self.repo.insert_event(
-                    user_id,
-                    "approved",
-                    actor_type="system",
-                    reason="otp_redeem",
-                    metadata=metadata,
-                    conn=conn,
-                )
-        return AdmissionDecision(membership=membership, event_id=event_id, state_changed=True)
+        return True
 
     # ------------------------------------------------------------------
     # Owner / admin actions

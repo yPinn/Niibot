@@ -29,6 +29,7 @@ from fastapi.testclient import TestClient
 
 from core.config import get_settings
 from core.dependencies import (
+    get_admission_service,
     get_auth_service,
     get_current_user_id,
     get_db_pool,
@@ -327,7 +328,7 @@ class TestTwitchOAuthCallbackSuccess:
     Stages exercised:
       1. ChannelService.save_token  — credential persistence
       2. IdentityService.find_or_link — identity binding
-      3. AdmissionService.ensure_pending / auto_admit — admission state
+      3. AdmissionService.activate_if_entitled / auto_admit — admission state
       4. TenantService.ensure_tenant_for_owner — tenant bootstrap
     """
 
@@ -379,7 +380,7 @@ class TestTwitchOAuthCallbackSuccess:
         # AdmissionService mock — track whether each entry point fires so we
         # can assert reauth idempotency (the headline bug).
         mock_admission_svc = MagicMock()
-        mock_admission_svc.ensure_pending = AsyncMock()
+        mock_admission_svc.activate_if_entitled = AsyncMock(return_value=False)
         mock_admission_svc.auto_admit = AsyncMock()
 
         # TenantService mock — bootstrap is unconditional and idempotent.
@@ -419,47 +420,43 @@ class TestTwitchOAuthCallbackSuccess:
         _, kwargs = mock_channel_svc.save_token.call_args
         assert kwargs.get("scopes") is None
 
-    def test_reauth_does_not_touch_admission(self):
+    def test_reauth_does_not_create_pending(self):
         """Regression test for the ghost-pending-request bug.
 
-        Existing user reauthing must NOT trigger ensure_pending or
-        auto_admit. IdentityService returns is_new_user=False; admission
-        service should be left alone.
+        A non-owner login always calls activate_if_entitled (a no-op when the
+        user holds no grant) but never auto_admit and never a pending write.
         """
         _, _, mock_identity, mock_admission, _ = self._run(
             scopes_value="channel:bot",
             is_new_user=False,
         )
         mock_identity.find_or_link.assert_awaited_once()
-        mock_admission.ensure_pending.assert_not_awaited()
+        mock_admission.activate_if_entitled.assert_awaited_once()
         mock_admission.auto_admit.assert_not_awaited()
 
-    def test_new_user_signup_triggers_ensure_pending(self):
-        """First-time signup should queue an admission request."""
+    def test_non_owner_login_attempts_grant_activation(self):
+        """Every non-owner login tries to consume a channel-points grant."""
         _, _, _, mock_admission, _ = self._run(
             scopes_value="channel:bot",
             is_new_user=True,
         )
-        mock_admission.ensure_pending.assert_awaited_once()
-        # ensure_pending receives user_id positionally
-        args, kwargs = mock_admission.ensure_pending.call_args
+        mock_admission.activate_if_entitled.assert_awaited_once()
+        args, kwargs = mock_admission.activate_if_entitled.call_args
         assert args[0] == _USER_UUID
-        assert kwargs.get("reason") == "first_signup"
+        assert kwargs.get("platform_user_id") == _TWITCH_UID
 
     def test_owner_signup_triggers_auto_admit(self):
-        """Owner ID match should bypass admin review via auto_admit('owner')."""
+        """Owner ID match should bypass grant checks via auto_admit('owner')."""
         owner_id = str(get_settings().owner_id)
         _, _, _, mock_admission, _ = self._run(
             scopes_value="channel:bot",
             is_new_user=True,
             twitch_uid=owner_id,
         )
-        # auto_admit fires, ensure_pending does NOT (auto_admit wins the
-        # is_owner branch)
         mock_admission.auto_admit.assert_awaited_once()
         _, kwargs = mock_admission.auto_admit.call_args
         assert kwargs.get("reason") == "owner"
-        mock_admission.ensure_pending.assert_not_awaited()
+        mock_admission.activate_if_entitled.assert_not_awaited()
 
     def test_tenant_bootstrap_always_runs(self):
         """ensure_tenant_for_owner is idempotent and called on every callback."""
@@ -510,17 +507,59 @@ class TestUpdatePreferences:
 # ---------------------------------------------------------------------------
 
 
+class _Membership:
+    def __init__(self, status: str) -> None:
+        self.status = status
+
+
+def _client_with_admission(admission: MagicMock) -> TestClient:
+    client = _make_client(pool=_make_pool())
+    client.app.dependency_overrides[get_admission_service] = lambda: admission
+    client.cookies.set("auth_token", _token())
+    return client
+
+
 class TestActivateRateLimit:
     def test_rate_limit_exceeded_returns_429(self):
         """_otp_rate_limiter.allow() returning False must produce 429 too_many_attempts."""
         from routers.auth_router import _otp_rate_limiter
 
-        pool = _make_pool(fetchval=None)  # fetchval=None → not yet activated
-        client = _make_client(pool=pool)
-        client.cookies.set("auth_token", _token())
+        admission = MagicMock()
+        admission.get = AsyncMock(return_value=None)
+        client = _client_with_admission(admission)
 
         with patch.object(_otp_rate_limiter, "allow", return_value=False):
             r = client.post("/api/auth/activate", json={"code": "123456"})
 
         assert r.status_code == 429
         assert r.json()["error"]["code"] == "AUTH.TOO_MANY_ATTEMPTS"
+
+
+class TestActivateStatusGuards:
+    def test_already_active_short_circuits(self):
+        admission = MagicMock()
+        admission.get = AsyncMock(return_value=_Membership("active"))
+        r = _client_with_admission(admission).post("/api/auth/activate", json={"code": "123456"})
+        assert r.status_code == 200
+        assert r.json() == {"activated": True}
+
+    def test_suspended_returns_403(self):
+        admission = MagicMock()
+        admission.get = AsyncMock(return_value=_Membership("suspended"))
+        r = _client_with_admission(admission).post("/api/auth/activate", json={"code": "123456"})
+        assert r.status_code == 403
+        assert r.json()["error"]["code"] == "AUTH.ACCOUNT_SUSPENDED"
+
+    def test_rejected_returns_403(self):
+        admission = MagicMock()
+        admission.get = AsyncMock(return_value=_Membership("rejected"))
+        r = _client_with_admission(admission).post("/api/auth/activate", json={"code": "123456"})
+        assert r.status_code == 403
+        assert r.json()["error"]["code"] == "AUTH.ACCOUNT_REJECTED"
+
+
+class TestRequestActivationRemoved:
+    def test_endpoint_gone(self):
+        client = _make_client()
+        client.cookies.set("auth_token", _token())
+        assert client.post("/api/auth/request-activation").status_code == 404

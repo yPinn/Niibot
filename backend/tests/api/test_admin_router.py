@@ -74,10 +74,11 @@ def _make_client(
     return TestClient(app, raise_server_exceptions=False)
 
 
-def _make_pool(*, fetchrow=None, fetch=None, execute=None) -> MagicMock:
+def _make_pool(*, fetchrow=None, fetch=None, fetchval=None, execute=None) -> MagicMock:
     conn = AsyncMock()
     conn.fetchrow.return_value = fetchrow
     conn.fetch.return_value = fetch or []
+    conn.fetchval.return_value = fetchval
     conn.execute.return_value = execute or "DELETE 0"
     mock_tx = MagicMock()
     mock_tx.__aenter__ = AsyncMock(return_value=None)
@@ -86,8 +87,9 @@ def _make_pool(*, fetchrow=None, fetch=None, execute=None) -> MagicMock:
     pool = MagicMock()
     pool.acquire.return_value.__aenter__ = AsyncMock(return_value=conn)
     pool.acquire.return_value.__aexit__ = AsyncMock(return_value=None)
-    # activation-codes endpoint calls pool.fetch() directly (not via acquire)
+    # Some endpoints call pool.fetch() / pool.fetchval() directly (not via acquire)
     pool.fetch = AsyncMock(return_value=fetch or [])
+    pool.fetchval = AsyncMock(return_value=fetchval)
     return pool
 
 
@@ -96,58 +98,102 @@ def _make_pool(*, fetchrow=None, fetch=None, execute=None) -> MagicMock:
 
 class TestRequireOwner:
     def test_non_owner_gets_403(self):
-        r = _make_client(channel_id="not-the-owner").get("/api/admin/activation-codes")
+        r = _make_client(channel_id="not-the-owner").get("/api/admin/grants")
         assert r.status_code == 403
 
     def test_owner_passes_guard(self):
-        r = _make_client(mock_pool=_make_pool(fetch=[])).get("/api/admin/activation-codes")
+        r = _make_client(mock_pool=_make_pool(fetch=[])).get("/api/admin/grants")
         assert r.status_code == 200
 
 
-# ── GET /api/admin/activation-codes ─────────────────────────────────────────
+# ── GET /api/admin/grants ──────────────────────────────────────────────────
 
 
-class TestGetPendingActivationCodes:
+_GRANT_ROW = {
+    "id": 1,
+    "kind": "channel_points",
+    "status": "issued",
+    "platform_user_id": "u1",
+    "code_plain": "123456",
+    "reward_cost": 500,
+    "channel_id": "c1",
+    "redemption_id": "r1",
+    "issued_at": _NOW,
+    "expires_at": _NOW,
+    "used_at": None,
+    "attempt_count": 0,
+    "display_name": "Alice",
+    "avatar": None,
+    "username": "alice",
+}
+
+
+class TestListGrants:
     def test_returns_empty_list(self):
-        pool = _make_pool(fetch=[])
-        r = _make_client(mock_pool=pool).get("/api/admin/activation-codes")
+        r = _make_client(mock_pool=_make_pool(fetch=[])).get("/api/admin/grants")
         assert r.status_code == 200
         assert r.json() == []
 
-    def test_returns_pending_codes(self):
-        dict_row = {
-            "platform_user_id": "u1",
-            "expires_at": _NOW,
-            "code_plain": "123456",
-            "display_name": "Alice",
-            "avatar": None,
-            "username": "alice",
-        }
-        pool = _make_pool(fetch=[dict_row])
-        r = _make_client(mock_pool=pool).get("/api/admin/activation-codes")
+    def test_returns_grants(self):
+        r = _make_client(mock_pool=_make_pool(fetch=[_GRANT_ROW])).get("/api/admin/grants")
         assert r.status_code == 200
-        assert len(r.json()) == 1
-        assert r.json()[0]["platform_user_id"] == "u1"
+        body = r.json()
+        assert len(body) == 1
+        assert body[0]["kind"] == "channel_points"
+        assert body[0]["id"] == 1
 
 
-# ── DELETE /api/admin/activation-codes/{platform_user_id} ───────────────────
+# ── POST /api/admin/grants ─────────────────────────────────────────────────
 
 
-class TestRevokeActivationCode:
-    def test_revoke_existing_code(self):
+class TestCreateOwnerGrant:
+    def test_issues_code(self):
         with patch("routers.admin_router.ActivationCodeRepository") as mock_repo:
-            instance = mock_repo.return_value
-            instance.invalidate = AsyncMock(return_value=True)
-            r = _make_client().delete("/api/admin/activation-codes/user1")
+            mock_repo.return_value.create_owner_code = AsyncMock(return_value="654321")
+            r = _make_client().post("/api/admin/grants")
+        assert r.status_code == 200
+        assert r.json() == {"code": "654321"}
+
+
+# ── DELETE /api/admin/grants/{grant_id} ────────────────────────────────────
+
+
+class TestRevokeGrant:
+    def test_revoke_existing(self):
+        with patch("routers.admin_router.ActivationCodeRepository") as mock_repo:
+            mock_repo.return_value.revoke = AsyncMock(return_value=True)
+            r = _make_client().delete("/api/admin/grants/5")
         assert r.status_code == 200
         assert r.json()["revoked"] is True
 
-    def test_revoke_missing_code_returns_404(self):
+    def test_revoke_missing_returns_404(self):
         with patch("routers.admin_router.ActivationCodeRepository") as mock_repo:
-            instance = mock_repo.return_value
-            instance.invalidate = AsyncMock(return_value=False)
-            r = _make_client().delete("/api/admin/activation-codes/unknown")
+            mock_repo.return_value.revoke = AsyncMock(return_value=False)
+            r = _make_client().delete("/api/admin/grants/999")
         assert r.status_code == 404
+
+
+# ── GET /api/admin/onboarding-funnel ──────────────────────────────────────
+
+
+class TestOnboardingFunnel:
+    def test_returns_active_count_and_kind_breakdown(self):
+        kind_row = {
+            "kind": "channel_points",
+            "issued_7d": 3,
+            "consumed_7d": 2,
+            "issued_30d": 10,
+            "consumed_30d": 8,
+            "issued_all": 20,
+            "consumed_all": 15,
+            "outstanding": 5,
+        }
+        pool = _make_pool(fetch=[kind_row], fetchval=42)
+        r = _make_client(mock_pool=pool).get("/api/admin/onboarding-funnel")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["active_members"] == 42
+        assert body["by_kind"][0]["consumed_all"] == 15
 
 
 # ── GET /api/admin/activation-requests ──────────────────────────────────────

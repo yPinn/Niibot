@@ -28,7 +28,6 @@ export const API_ENDPOINTS = {
     logout: join('/api/auth/logout'),
     activate: join('/api/auth/activate'),
     pendingCode: join('/api/auth/pending-code'),
-    requestActivation: join('/api/auth/request-activation'),
     activationRequest: join('/api/auth/activation-request'),
   },
   user: {
@@ -155,9 +154,9 @@ export const API_ENDPOINTS = {
     botEmotes: join('/api/admin/bot-emotes'),
     resyncBotEmotes: (channelId?: string) =>
       join(`/api/admin/bot-emotes/resync${channelId ? `?channel_id=${channelId}` : ''}`),
-    activationCodes: join('/api/admin/activation-codes'),
-    revokeActivationCode: (platformUserId: string) =>
-      join(`/api/admin/activation-codes/${platformUserId}`),
+    grants: (qs: string = '') => join(`/api/admin/grants${qs}`),
+    revokeGrant: (grantId: number) => join(`/api/admin/grants/${grantId}`),
+    onboardingFunnel: join('/api/admin/onboarding-funnel'),
     activationRequests: join('/api/admin/activation-requests'),
     approveRequest: (userId: string) => join(`/api/admin/activation-requests/${userId}/approve`),
     rejectRequest: (userId: string) => join(`/api/admin/activation-requests/${userId}/reject`),

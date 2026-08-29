@@ -67,17 +67,6 @@ export async function activateAccount(code: string): Promise<void> {
   apiCache.patch<User>(CACHE_KEYS.CURRENT_USER, user => ({ ...user, is_activated: true }))
 }
 
-export async function requestActivation(): Promise<void> {
-  const response = await apiFetch(API_ENDPOINTS.auth.requestActivation, {
-    method: 'POST',
-    credentials: 'include',
-  })
-  if (!response.ok) {
-    const data = await response.json().catch(() => ({}))
-    throw new Error((data as { detail?: string }).detail ?? 'request_failed')
-  }
-}
-
 export async function getPendingActivationCode(): Promise<string | null> {
   const response = await apiFetch(API_ENDPOINTS.auth.pendingCode, {
     credentials: 'include',

@@ -29,6 +29,7 @@ from services import (
     TenantService,
     TwitchAPIClient,
 )
+from services.admission_service import MembershipLockedError
 from services.oauth_service import decode_oauth_state, encode_oauth_state
 from shared.errors import AccessDeniedError, AppError, NotFoundError, RateLimitedError
 from shared.repositories.activation_code import ActivationCodeRepository
@@ -61,6 +62,11 @@ class TooManyAttemptsError(RateLimitedError):
 class AccountSuspendedError(AccessDeniedError):
     code = "AUTH.ACCOUNT_SUSPENDED"
     user_message = "你的帳號已被停權"
+
+
+class AccountRejectedError(AccessDeniedError):
+    code = "AUTH.ACCOUNT_REJECTED"
+    user_message = "你的授權申請未通過，請聯繫管理員"
 
 
 class OAuthURLResponse(BaseModel):
@@ -117,16 +123,17 @@ async def twitch_oauth_callback(
 ) -> RedirectResponse:
     """Handle Twitch OAuth callback.
 
-    Splits cleanly into three concerns:
+    Splits cleanly into distinct concerns:
       1. exchange code for token + fetch user info        (identity proof)
       2. IdentityService.find_or_link                     (identity binding)
-      3. AdmissionService.ensure_pending / auto_admit     (admission)
+      3. AdmissionService.activate_if_entitled / auto_admit  (admission)
       4. TenantService.ensure_tenant_for_owner            (tenant setup)
       5. CredentialService persistence (still via channel_service.save_token)
 
     Each layer is idempotent on reauth: an already-active member who reauths
-    just walks through (1), (2), and (5) — no admission row is created or
-    modified.
+    just walks through (1), (2), and (5). Admission never creates a pending
+    row here — a non-owner is activated only if they hold a live channel-points
+    grant (consumed in step 3); otherwise they land on /activate.
     """
     error_redirect = f"{settings.frontend_url}/login"
 
@@ -191,23 +198,19 @@ async def twitch_oauth_callback(
         )
         user_id = link_result.user_id
 
-        # 3. Admission. ONLY new users get a pending membership inserted;
-        #    existing-but-not-active users keep whatever status they have.
-        #    Owner is auto-admitted (replaces the previous SQL bypass).
+        # 3. Admission. The owner is auto-admitted. Everyone else is activated
+        #    iff they hold a live channel-points grant (consumed here in one
+        #    transaction); no pending row is created for users who have not
+        #    redeemed, and suspended/rejected members are left locked.
         admission_svc = AdmissionService(pool)
-        is_owner = platform_user_id == str(settings.owner_id)
-        if is_owner:
+        if platform_user_id == str(settings.owner_id):
             await admission_svc.auto_admit(user_id, reason="owner")
-        elif link_result.is_new_user:
-            await admission_svc.ensure_pending(
+        else:
+            await admission_svc.activate_if_entitled(
                 user_id,
-                reason="first_signup",
-                metadata={
-                    "platform": "twitch",
-                    "platform_user_id": platform_user_id,
-                },
+                platform="twitch",
+                platform_user_id=platform_user_id,
             )
-        # else: reauth / reconciliation paths — membership is left untouched.
 
         # 4. Tenant bootstrap (channel + channel_members owner).
         tenant_svc = TenantService(pool)
@@ -330,76 +333,51 @@ async def activate_account(
     pool: Pool = Depends(get_db_pool),
     admission: AdmissionService = Depends(get_admission_service),
 ) -> dict:
-    """Activate account using an OTP code from the niibot_auth redemption."""
+    """Activate an account by typing an owner_manual code on /activate.
+
+    Channel-points redeemers never reach here — their grant is consumed
+    automatically on login. This path is for codes the owner handed out.
+    Code consumption and the membership transition run in one transaction,
+    so a failure at either step leaves the code unused.
+    """
     payload = get_token_payload(auth_token)
     user_id = str(payload["sub"])
     platform = str(payload["platform"])
     platform_user_id = str(payload["platform_user_id"])
 
-    if await admission.is_active(user_id):
+    membership = await admission.get(user_id)
+    if membership and membership.status == "active":
         return {"activated": True}
+    if membership and membership.status == "suspended":
+        raise AccountSuspendedError()
+    if membership and membership.status == "rejected":
+        raise AccountRejectedError()
 
     if not _otp_rate_limiter.allow(user_id):
         raise TooManyAttemptsError()
 
+    code = body.code.strip()
+    code_hash = hashlib.sha256(code.encode()).hexdigest()
     repo = ActivationCodeRepository(pool)
-    success = await repo.redeem(
-        code=body.code.strip(),
-        platform=platform,
-        platform_user_id=platform_user_id,
-        user_id=user_id,
-    )
-
-    if not success:
-        # Deliberate machine-readable detail: the /activate page branches on
-        # this exact string to show the "code invalid/expired" hint.
-        raise HTTPException(status_code=400, detail="invalid_or_expired_code")
-
-    # Hash the code only for the audit metadata. The plaintext is never persisted.
-    code_hash = hashlib.sha256(body.code.strip().encode()).hexdigest()
-    await admission.grant_via_otp(
-        user_id,
-        platform=platform,
-        platform_user_id=platform_user_id,
-        code_hash=code_hash,
-    )
+    try:
+        async with pool.acquire() as conn, conn.transaction():
+            redeemed = await repo.redeem(code, platform, platform_user_id, user_id, conn=conn)
+            if not redeemed:
+                # Machine-readable detail: the /activate page branches on this
+                # exact string to show the "code invalid/expired" hint.
+                raise HTTPException(status_code=400, detail="invalid_or_expired_code")
+            await admission.grant_via_otp(
+                user_id,
+                platform=platform,
+                platform_user_id=platform_user_id,
+                code_hash=code_hash,
+                conn=conn,
+            )
+    except MembershipLockedError:
+        raise AccountSuspendedError() from None
 
     LOGGER.info(f"Account activated: user {user_id} ({platform}:{platform_user_id})")
     return {"activated": True}
-
-
-@router.post("/auth/request-activation")
-async def request_activation(
-    auth_token: str | None = Cookie(None),
-    admission: AdmissionService = Depends(get_admission_service),
-) -> dict:
-    """Submit (or re-submit after rejection) an activation request.
-
-    Suspended accounts cannot re-apply through this endpoint — suspension is
-    an operator decision and only AdmissionService.reinstate (called from the
-    admin router) can lift it.
-    """
-    payload = get_token_payload(auth_token)
-    user_id = str(payload["sub"])
-
-    current = await admission.get(user_id)
-    if current is None:
-        # Edge case — user pre-dates admission model; create a fresh pending row.
-        decision = await admission.ensure_pending(user_id, reason="explicit_request")
-        return {"status": decision.membership.status}
-
-    if current.status == "active":
-        return {"status": "already_activated"}
-    if current.status == "pending":
-        return {"status": "pending"}
-    if current.status == "suspended":
-        # Operator-imposed; user cannot self-lift.
-        raise AccountSuspendedError()
-
-    # rejected → user explicit re-application
-    decision = await admission.reapply(user_id)
-    LOGGER.info(f"Activation re-request submitted: user {user_id}")
-    return {"status": decision.membership.status}
 
 
 @router.get("/auth/activation-request")
