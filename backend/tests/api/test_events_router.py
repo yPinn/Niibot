@@ -83,7 +83,15 @@ class TestGetEventCatalog:
         assert r.status_code == 200
         keys = [e["key"] for e in r.json()]
         assert keys == list(EVENT_KEYS)
-        assert keys == ["follow", "subscribe", "resub", "gift_sub", "bits", "raid"]
+        assert keys == [
+            "follow",
+            "subscribe",
+            "resub",
+            "gift_sub",
+            "gift_recipient",
+            "bits",
+            "raid",
+        ]
 
     def test_every_variable_has_a_preview_sample(self):
         r = _make_client().get("/api/events/catalog")

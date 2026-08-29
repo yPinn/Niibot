@@ -3,6 +3,7 @@
 from twitch.utils.event_render import (
     MESSAGE_VAR_LIMIT,
     clean_message_var,
+    compose_note,
     mention_vars,
     render_template,
 )
@@ -104,3 +105,24 @@ class TestMentionVars:
 
     def test_empty_name_stays_plain(self):
         assert mention_vars("gifter", "") == {"gifter": "", "@gifter": ""}
+
+
+class TestComposeNote:
+    def test_baseline_is_empty(self):
+        assert compose_note(tier="1000", months=1) == ""
+
+    def test_tier_only(self):
+        assert compose_note(tier="2000") == "（層級 2）"
+        assert compose_note(tier="3000") == "（層級 3）"
+
+    def test_prime_first(self):
+        assert compose_note(prime=True, tier="3000") == "（Prime、層級 3）"
+
+    def test_gifted_wins_over_prime(self):
+        assert compose_note(gifted=True, prime=True) == "（贈送）"
+
+    def test_full_order(self):
+        assert compose_note(gifted=True, tier="2000", months=6) == "（贈送、層級 2、預付 6 個月）"
+
+    def test_multi_month_only(self):
+        assert compose_note(months=3) == "（預付 3 個月）"

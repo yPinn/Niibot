@@ -15,7 +15,7 @@ from core.dependencies import (
 )
 from services import ChannelService, CommandConfigService, EventConfigService, TwitchAPIClient
 from shared.errors import AccessDeniedError, AppError, InvalidInputError, NotFoundError
-from shared.events import EVENT_CATALOG
+from shared.events import EVENT_CATALOG, EventDef
 from shared.repositories.event_config import EVENT_TYPES as VALID_EVENT_TYPES
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -84,6 +84,23 @@ class EventDefinitionResponse(BaseModel):
     options_schema: list[EventOptionResponse]
 
 
+def _variables(e: EventDef) -> list[EventVariableResponse]:
+    """Flatten each catalog variable, expanding a mentionable one into its
+    ``$(name)`` and ``$(@name)`` twins so the dashboard can offer both."""
+    out: list[EventVariableResponse] = []
+    for v in e.variables:
+        out.append(EventVariableResponse(name=v.name, description=v.description, sample=v.sample))
+        if v.mentionable:
+            out.append(
+                EventVariableResponse(
+                    name=f"@{v.name}",
+                    description=f"{v.description}（會 @ 提及）",
+                    sample=f"@{v.sample}",
+                )
+            )
+    return out
+
+
 _CATALOG_PAYLOAD: list[EventDefinitionResponse] = [
     EventDefinitionResponse(
         key=e.key,
@@ -93,10 +110,7 @@ _CATALOG_PAYLOAD: list[EventDefinitionResponse] = [
         requires_affiliate=e.requires_affiliate,
         default_template=e.default_template,
         default_enabled=e.default_enabled,
-        variables=[
-            EventVariableResponse(name=v.name, description=v.description, sample=v.sample)
-            for v in e.variables
-        ],
+        variables=_variables(e),
         options_schema=[
             EventOptionResponse(
                 key=o.key,

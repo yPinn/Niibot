@@ -6,7 +6,7 @@ resub / gift_sub shipped broken). Each catalog entry is checked against:
 
 - the twitchio EventSub factory map in twitch.core.eventsub_catalog
 - the twitchio listener method on EventsComponent
-- the event_configs CHECK constraint (migration 053)
+- the event_configs CHECK constraint (migration 086)
 - the DEFAULT_TEMPLATES / DEFAULT_ENABLED seed dicts
 
 Plus: shared.events must not drag twitchio into the api / discord services, and
@@ -31,22 +31,9 @@ from twitchio import eventsub
 from shared.events import EVENT_CATALOG, EVENT_KEYS
 from shared.repositories.event_config import DEFAULT_ENABLED, DEFAULT_TEMPLATES, EVENT_TYPES
 
-# catalog key -> twitchio dispatch name (the @Component.listener() method)
-_LISTENER_BY_KEY = {
-    "follow": "event_follow",
-    "subscribe": "event_subscription",
-    "resub": "event_subscription_message",
-    "gift_sub": "event_subscription_gift",
-    "raid": "event_raid",
-    "bits": "event_cheer",
-}
-
-_MIGRATION_053 = (
-    Path(__file__).parents[2] / "shared/migrations/versions/053_add_resub_gift_sub_event_types.sql"
-)
-_MIGRATION_044 = (
-    Path(__file__).parents[2] / "shared/migrations/versions/044_stream_events_add_cheer_type.sql"
-)
+_MIGRATIONS = Path(__file__).parents[2] / "shared/migrations/versions"
+_MIGRATION_EVENT_TYPES = _MIGRATIONS / "086_events_catalog_v2.sql"
+_MIGRATION_044 = _MIGRATIONS / "044_stream_events_add_cheer_type.sql"
 
 
 def _check_constraint_values(sql: str) -> set[str]:
@@ -58,21 +45,20 @@ def _check_constraint_values(sql: str) -> set[str]:
 @pytest.mark.parametrize("event", EVENT_CATALOG, ids=lambda e: e.key)
 class TestCatalogConsistency:
     def test_listener_exists(self, event):
-        name = _LISTENER_BY_KEY[event.key]
+        name = _DRIVERS[event.key][0]
         assert callable(getattr(EventsComponent, name, None)), (
             f"{event.key}: EventsComponent.{name} listener missing"
         )
 
     def test_subscription_class_has_factory(self, event):
         if event.subscription_class is None:
-            pytest.skip(f"{event.key}: no live subscription (known gap)")
+            pytest.skip(f"{event.key}: delivered by the fixed chat.notification sub")
         assert event.subscription_class in _CATALOG_FACTORIES
         assert hasattr(eventsub, event.subscription_class)
 
     def test_in_migration_check_constraint(self, event):
-        sql = _MIGRATION_053.read_text(encoding="utf-8")
-        allowed = re.search(r"event_type IN \(([^)]+)\)", sql).group(1)
-        assert f"'{event.key}'" in allowed
+        allowed = _check_constraint_values(_MIGRATION_EVENT_TYPES.read_text(encoding="utf-8"))
+        assert event.key in allowed
 
     def test_seed_dicts_cover_key(self, event):
         assert event.key in DEFAULT_TEMPLATES
@@ -136,9 +122,9 @@ def test_channel_subscription_set():
         eventsub.ChannelVIPAddSubscription(broadcaster_user_id=bc),
         eventsub.ChannelVIPRemoveSubscription(broadcaster_user_id=bc),
         # catalog-derived (subscription_class set)
+        eventsub.ChatNotificationSubscription(broadcaster_user_id=bc, user_id=bot),
         eventsub.ChannelFollowSubscription(broadcaster_user_id=bc, moderator_user_id=bot),
         eventsub.ChannelSubscribeSubscription(broadcaster_user_id=bc),
-        eventsub.ChannelSubscribeMessageSubscription(broadcaster_user_id=bc),
         eventsub.ChannelSubscriptionGiftSubscription(broadcaster_user_id=bc),
         eventsub.ChannelRaidSubscription(to_broadcaster_user_id=bc),
         eventsub.ChannelCheerSubscription(broadcaster_user_id=bc),
@@ -152,15 +138,16 @@ def test_channel_subscription_set():
 # Schema-layer guards — every new facet of EventDef gets a drift check
 # ---------------------------------------------------------------------------
 
-_VAR_RE = re.compile(r"\$\((\w+)\)")
+_VAR_RE = re.compile(r"\$\((@?\w+)\)")
 
 
 @pytest.mark.parametrize("event", EVENT_CATALOG, ids=lambda e: e.key)
 class TestCatalogSchema:
     def test_default_template_uses_only_declared_variables(self, event):
         used = set(_VAR_RE.findall(event.default_template))
-        declared = {v.name for v in event.variables}
-        assert used <= declared, f"{event.key}: template uses undeclared {used - declared}"
+        assert used <= event.variable_names, (
+            f"{event.key}: template uses undeclared {used - event.variable_names}"
+        )
 
     def test_variables_are_unique_snake_case_with_samples(self, event):
         names = [v.name for v in event.variables]
@@ -197,7 +184,15 @@ def test_bits_tiers_option_is_gone():
 
 
 def test_catalog_is_in_display_order():
-    assert list(EVENT_KEYS) == ["follow", "subscribe", "resub", "gift_sub", "bits", "raid"]
+    assert list(EVENT_KEYS) == [
+        "follow",
+        "subscribe",
+        "resub",
+        "gift_sub",
+        "gift_recipient",
+        "bits",
+        "raid",
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -227,30 +222,20 @@ def _driver_component() -> tuple[EventsComponent, MagicMock]:
     return comp, bot
 
 
-def _fake_payload(key: str) -> MagicMock:
+def _fake_dedicated(key: str) -> MagicMock:
+    """A fake payload for an event with its own dedicated EventSub type."""
     p = MagicMock()
+    p.broadcaster.name, p.broadcaster.id = "bc", "ch"
     if key == "follow":
         p.user.display_name, p.user.name, p.user.id = "Follower", "follower", "u1"
-        p.broadcaster.name, p.broadcaster.id = "bc", "ch"
         p.followed_at = datetime.now(UTC)
-    elif key == "subscribe":
-        p.user.display_name, p.user.name, p.user.id = "Sub", "sub", "u1"
-        p.broadcaster.name, p.broadcaster.id = "bc", "ch"
-        p.tier, p.gift = "1000", False
-    elif key == "resub":
-        p.user.display_name, p.user.name, p.user.id = "Re", "re", "u1"
-        p.broadcaster.name, p.broadcaster.id = "bc", "ch"
-        p.tier, p.months, p.streak_months, p.cumulative_months = "2000", 3, 2, 10
-        p.text = "yay"
     elif key == "gift_sub":
-        p.broadcaster.name, p.broadcaster.id = "bc", "ch"
         p.anonymous = False
         p.user.display_name, p.user.name, p.user.id = "Gifter", "gifter", "u1"
         p.tier, p.total, p.cumulative_total = "1000", 5, 20
     elif key == "bits":
         p.anonymous = False
         p.user.display_name, p.user.name, p.user.id = "Cheerer", "cheerer", "u1"
-        p.broadcaster.name, p.broadcaster.id = "bc", "ch"
         p.bits, p.message = 100, "pog"
     elif key == "raid":
         p.from_broadcaster.display_name, p.from_broadcaster.name = "Raider", "raider"
@@ -261,31 +246,81 @@ def _fake_payload(key: str) -> MagicMock:
     return p
 
 
+def _fake_notification(notice_type: str) -> MagicMock:
+    """A fake channel.chat.notification payload (sub / resub / sub_gift)."""
+    p = MagicMock()
+    p.notice_type = notice_type
+    p.broadcaster.name, p.broadcaster.id = "bc", "ch"
+    p.chatter.display_name, p.chatter.name = "Chatter", "chatter"
+    p.anonymous = False
+    p.text = "yay"
+    p.sub = p.resub = p.sub_gift = None
+    if notice_type == "sub":
+        p.sub = SimpleNamespace(prime=False, tier="1000", months=1)
+    elif notice_type == "resub":
+        p.resub = SimpleNamespace(
+            prime=False, gift=False, tier="2000", months=1, cumulative_months=10, streak_months=3
+        )
+    elif notice_type == "sub_gift":
+        p.sub_gift = SimpleNamespace(
+            tier="1000",
+            months=1,
+            community_gift_id=None,
+            recipient=SimpleNamespace(display_name="Rec", name="rec"),
+        )
+    return p
+
+
+# catalog key -> (EventsComponent listener method, fake-payload factory)
+_DRIVERS = {
+    "follow": ("event_follow", lambda: _fake_dedicated("follow")),
+    "subscribe": ("event_chat_notification", lambda: _fake_notification("sub")),
+    "resub": ("event_chat_notification", lambda: _fake_notification("resub")),
+    "gift_sub": ("event_subscription_gift", lambda: _fake_dedicated("gift_sub")),
+    "gift_recipient": ("event_chat_notification", lambda: _fake_notification("sub_gift")),
+    "bits": ("event_cheer", lambda: _fake_dedicated("bits")),
+    "raid": ("event_raid", lambda: _fake_dedicated("raid")),
+}
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("event", EVENT_CATALOG, ids=lambda e: e.key)
 async def test_notify_variables_match_catalog(event):
     comp, _bot = _driver_component()
-    listener = getattr(comp, _LISTENER_BY_KEY[event.key])
+    listener_name, make_payload = _DRIVERS[event.key]
 
-    await listener(_fake_payload(event.key))
+    await getattr(comp, listener_name)(make_payload())
 
     comp._notify.assert_awaited_once()
     args = comp._notify.await_args.args
     assert args[1] == event.key
-    assert set(args[2]) == {v.name for v in event.variables}, (
-        f"{event.key}: listener passed {set(args[2])}, catalog declares "
-        f"{ {v.name for v in event.variables} }"
+    assert set(args[2]) == event.variable_names, (
+        f"{event.key}: listener passed {set(args[2])}, catalog declares {event.variable_names}"
     )
 
 
 @pytest.mark.asyncio
-async def test_gift_recipient_gets_no_subscribe_greeting():
+async def test_channel_subscribe_is_analytics_only():
+    """The greeting moved to event_chat_notification; channel.subscribe now only
+    keeps analytics current (for real subs and gift recipients alike)."""
     comp, bot = _driver_component()
-    payload = _fake_payload("subscribe")
-    payload.gift = True
+    payload = MagicMock()
+    payload.broadcaster.name, payload.broadcaster.id = "bc", "ch"
+    payload.user.display_name, payload.user.name, payload.user.id = "Sub", "sub", "u1"
+    payload.tier, payload.gift = "1000", False
 
     await comp.event_subscription(payload)
 
     comp._notify.assert_not_awaited()
-    # status is still recorded for the recipient
     bot.analytics.upsert_viewer_subscription.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_gift_bomb_recipient_skipped_by_default():
+    comp, _bot = _driver_component()
+    payload = _fake_notification("sub_gift")
+    payload.sub_gift.community_gift_id = "bomb-1"  # part of a community gift
+
+    await comp.event_chat_notification(payload)
+
+    comp._notify.assert_not_awaited()

@@ -25,6 +25,29 @@ def mention_vars(key: str, name: str, *, anonymous: bool = False) -> dict[str, s
     return {key: name, f"@{key}": mention}
 
 
+def compose_note(
+    *, gifted: bool = False, prime: bool = False, tier: str = "1000", months: int = 1
+) -> str:
+    """Build the ``$(note)`` parenthetical — the compact disclosure of anything
+    that deviates from the baseline (Tier 1, single month, ordinary payment).
+
+    Order is fixed by how much it changes the streamer's response:
+    取得方式 → 層級 → 預付. Returns ``""`` when everything is baseline.
+    """
+    parts: list[str] = []
+    if gifted:
+        parts.append("贈送")
+    elif prime:
+        parts.append("Prime")
+    if tier == "2000":
+        parts.append("層級 2")
+    elif tier == "3000":
+        parts.append("層級 3")
+    if months and months > 1:
+        parts.append(f"預付 {months} 個月")
+    return f"（{'、'.join(parts)}）" if parts else ""
+
+
 def clean_message_var(value: str) -> str:
     """Neutralise a viewer-typed ``$(message)`` variable.
 

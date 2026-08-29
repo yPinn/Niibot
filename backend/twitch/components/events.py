@@ -6,7 +6,7 @@ import twitchio
 from twitchio.ext import commands
 
 from shared.events import tier_label
-from utils.event_render import clean_message_var, render_template
+from utils.event_render import clean_message_var, compose_note, mention_vars, render_template
 from utils.reauth import is_scope_error, reauth_notifier
 
 if TYPE_CHECKING:
@@ -161,7 +161,9 @@ class EventsComponent(commands.Component):
             return
 
         label = f"[{broadcaster_name}] Follow: {user_name}"
-        if not await self._notify(channel_id, "follow", {"user": user_name}, label=label):
+        if not await self._notify(
+            channel_id, "follow", mention_vars("user", user_name), label=label
+        ):
             return
 
         try:
@@ -183,44 +185,28 @@ class EventsComponent(commands.Component):
         self,
         payload: twitchio.ChannelSubscribe,
     ) -> None:
-        """訂閱事件
+        """訂閱狀態 / analytics only.
 
-        NOTE: always-on — fires via EventSub regardless of streaming state.
-        Analytics recording is the only part gated behind an active session.
+        The greeting is posted from ``event_chat_notification`` (the ``sub``
+        notice), which — unlike ``channel.subscribe`` — carries the Prime flag.
+        This handler only keeps ``viewer_channel_status`` and ``stream_events``
+        current, including for gifted-sub recipients (``is_gift=True``).
         """
         user_name = payload.user.display_name or payload.user.name or ""
         broadcaster_name = payload.broadcaster.name
         channel_id = payload.broadcaster.id
-        tier_name = tier_label(payload.tier)
 
-        sub_type = "Gift" if payload.gift else "Sub"
-
-        # Always persist subscription status regardless of notification config
         try:
             await self.bot.analytics.upsert_viewer_subscription(
                 channel_id=channel_id,
                 user_id=payload.user.id,
                 username=payload.user.name or user_name,
                 display_name=payload.user.display_name,
-                sub_tier=tier_name,
+                sub_tier=tier_label(payload.tier),
                 sub_gifted=bool(payload.gift),
             )
         except Exception as e:
             LOGGER.warning(f"[{broadcaster_name}] Subscription status upsert failed: {e}")
-
-        label = f"[{broadcaster_name}] {sub_type}: {user_name} ({tier_name})"
-        # A gifted sub fires this event for the *recipient* too. The gifter's
-        # gift_sub greeting already covers it — don't post a second message.
-        # Analytics/status still record below.
-        notified = False
-        if payload.gift:
-            LOGGER.info(f"{label} (gift recipient — greeting handled by gift_sub)")
-        else:
-            notified = await self._notify(
-                channel_id, "subscribe", {"user": user_name, "tier": tier_name}, label=label
-            )
-        if not (payload.gift or notified):
-            return
 
         try:
             session_id = self._session_id(channel_id)
@@ -236,30 +222,29 @@ class EventsComponent(commands.Component):
                     occurred_at=datetime.now(UTC),
                 )
         except Exception as e:
-            LOGGER.warning(f"[{broadcaster_name}] {sub_type} analytics failed: {e}")
+            LOGGER.warning(f"[{broadcaster_name}] Subscribe analytics failed: {e}")
 
     @commands.Component.listener()
     async def event_subscription_gift(
         self,
         payload: twitchio.ChannelSubscriptionGift,
     ) -> None:
-        """贈禮訂閱事件
+        """贈禮訂閱事件 — thanks the gifter once per batch (the per-recipient
+        greeting is ``gift_recipient`` via ``event_chat_notification``).
 
-        Sends a configurable chat message and updates the gifter's cumulative count.
-        Anonymous gifts are handled gracefully (shown as 匿名用戶 in message).
+        Anonymous gifts are handled gracefully (shown as 匿名用戶 in the message).
         """
         channel_id = payload.broadcaster.id
         broadcaster_name = payload.broadcaster.name
 
-        if payload.anonymous or not payload.user:
+        anonymous = payload.anonymous or payload.user is None
+        if payload.user is None:
             user_name = "匿名用戶"
         else:
             user_name = payload.user.display_name or payload.user.name or ""
 
-        tier_name = tier_label(payload.tier)
         total = payload.total
         cumulative = payload.cumulative_total
-        cumulative_str = str(cumulative) if cumulative is not None else "?"
 
         # Analytics — always write, even for a disabled greeting / non-mod bot.
         if not payload.anonymous and payload.user and cumulative is not None:
@@ -278,42 +263,92 @@ class EventsComponent(commands.Component):
             channel_id,
             "gift_sub",
             {
-                "user": user_name,
-                "tier": tier_name,
+                **mention_vars("user", user_name, anonymous=anonymous),
                 "total": str(total),
-                "cumulative": cumulative_str,
+                "cumulative": "" if cumulative is None else str(cumulative),
+                "note": compose_note(tier=payload.tier),
             },
-            label=f"[{broadcaster_name}] GiftSub: {user_name} x{total} ({tier_name})",
+            label=f"[{broadcaster_name}] GiftSub: {user_name} x{total}",
         )
 
     @commands.Component.listener()
-    async def event_subscription_message(
+    async def event_chat_notification(
         self,
-        payload: twitchio.ChannelSubscriptionMessage,
+        payload: twitchio.ChatNotification,
     ) -> None:
-        """重新訂閱事件（含訂閱留言）
+        """sub / resub / sub_gift greetings.
 
-        NOTE: always-on — fires via EventSub regardless of streaming state.
+        This is the only source carrying ``is_prime``, gifted-resub, and
+        per-recipient gift data. Every other ``notice_type`` is ignored — the
+        dedicated ``channel.subscription.*`` events own analytics.
         """
-        user_name = payload.user.display_name or payload.user.name or ""
-        broadcaster_name = payload.broadcaster.name
-        channel_id = payload.broadcaster.id
-        tier_name = tier_label(payload.tier)
-        months = payload.months
-        streak = payload.streak_months if payload.streak_months is not None else 0
+        nt = payload.notice_type
+        if nt == "sub" and payload.sub is not None:
+            await self._greet_sub(payload, payload.sub)
+        elif nt == "resub" and payload.resub is not None:
+            await self._greet_resub(payload, payload.resub)
+        elif nt == "sub_gift" and payload.sub_gift is not None:
+            await self._greet_gift_recipient(payload, payload.sub_gift)
 
+    async def _greet_sub(self, payload: twitchio.ChatNotification, sub: twitchio.ChatSub) -> None:
+        name = payload.chatter.display_name or payload.chatter.name or ""
         await self._notify(
-            channel_id,
+            payload.broadcaster.id,
+            "subscribe",
+            {
+                **mention_vars("user", name),
+                "note": compose_note(prime=sub.prime, tier=sub.tier, months=sub.months),
+            },
+            label=f"[{payload.broadcaster.name}] Sub: {name}",
+        )
+
+    async def _greet_resub(
+        self, payload: twitchio.ChatNotification, resub: twitchio.ChatResub
+    ) -> None:
+        name = payload.chatter.display_name or payload.chatter.name or ""
+        await self._notify(
+            payload.broadcaster.id,
             "resub",
             {
-                "user": user_name,
-                "tier": tier_name,
-                "months": str(months),
-                "streak": str(streak),
-                "total_months": str(payload.cumulative_months),
-                "message": clean_message_var(payload.text),
+                **mention_vars("user", name),
+                "total_months": str(resub.cumulative_months),
+                "streak": "" if resub.streak_months is None else str(resub.streak_months),
+                "message": clean_message_var(payload.text or ""),
+                "note": compose_note(
+                    gifted=resub.gift,
+                    prime=resub.prime,
+                    tier=resub.tier,
+                    months=resub.months,
+                ),
             },
-            label=f"[{broadcaster_name}] Resub: {user_name} ({tier_name} ×{months})",
+            label=f"[{payload.broadcaster.name}] Resub: {name} (x{resub.cumulative_months})",
+        )
+
+    async def _greet_gift_recipient(
+        self, payload: twitchio.ChatNotification, gift: twitchio.ChatSubGift
+    ) -> None:
+        channel_id = payload.broadcaster.id
+        if payload.anonymous:
+            return  # can't mention / thank an anonymous gifter
+        if gift.community_gift_id is not None:
+            # Part of a gift bomb — gift_sub already thanks the gifter once.
+            try:
+                config = await self.event_configs.get_config(channel_id, "gift_recipient")
+            except Exception:
+                config = None
+            if not config or config.options.get("skip_bombs", True):
+                return
+        gifter = payload.chatter.display_name or payload.chatter.name or ""
+        recipient = gift.recipient.display_name or gift.recipient.name or ""
+        await self._notify(
+            channel_id,
+            "gift_recipient",
+            {
+                **mention_vars("gifter", gifter),
+                **mention_vars("user", recipient),
+                "note": compose_note(tier=gift.tier, months=gift.months),
+            },
+            label=f"[{payload.broadcaster.name}] GiftRecipient: {recipient} <- {gifter}",
         )
 
     @commands.Component.listener()
@@ -342,7 +377,7 @@ class EventsComponent(commands.Component):
             channel_id,
             "bits",
             {
-                "user": user_name,
+                **mention_vars("user", user_name, anonymous=payload.anonymous),
                 "amount": str(bits_amount),
                 "message": clean_message_var(payload.message or ""),
             },
@@ -391,7 +426,11 @@ class EventsComponent(commands.Component):
         await self._notify(
             broadcaster_id,
             "raid",
-            {"user": raider_name, "count": str(viewer_count), "url": raider_url},
+            {
+                **mention_vars("user", raider_name),
+                "count": str(viewer_count),
+                "url": raider_url,
+            },
             label=f"[{broadcaster_name}] Raid: {raider_name} ({viewer_count})",
         )
 

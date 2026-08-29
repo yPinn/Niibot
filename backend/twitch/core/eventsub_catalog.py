@@ -28,9 +28,6 @@ _CATALOG_FACTORIES: dict[str, Callable[[str, str], eventsub.SubscriptionPayload]
     "ChannelSubscribeSubscription": lambda bc, _bot: eventsub.ChannelSubscribeSubscription(
         broadcaster_user_id=bc
     ),
-    "ChannelSubscribeMessageSubscription": lambda bc, _bot: (
-        eventsub.ChannelSubscribeMessageSubscription(broadcaster_user_id=bc)
-    ),
     "ChannelSubscriptionGiftSubscription": lambda bc, _bot: (
         eventsub.ChannelSubscriptionGiftSubscription(broadcaster_user_id=bc)
     ),
@@ -49,6 +46,12 @@ def _fixed_subscriptions(
     """Infrastructure subscriptions — not template-driven, no per-channel config."""
     return [
         eventsub.ChatMessageSubscription(broadcaster_user_id=broadcaster_user_id, user_id=bot_id),
+        # Delivers the sub / resub / sub_gift greetings (with is_prime, gifted,
+        # gifter, recipient — data the dedicated channel.subscription.* events
+        # lack). channel.subscribe stays subscribed for analytics only.
+        eventsub.ChatNotificationSubscription(
+            broadcaster_user_id=broadcaster_user_id, user_id=bot_id
+        ),
         eventsub.StreamOnlineSubscription(broadcaster_user_id=broadcaster_user_id),
         eventsub.StreamOfflineSubscription(broadcaster_user_id=broadcaster_user_id),
         eventsub.ChannelPointsRedeemAddSubscription(broadcaster_user_id=broadcaster_user_id),

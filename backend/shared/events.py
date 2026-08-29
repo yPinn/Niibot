@@ -4,11 +4,15 @@ Each channel is a tenant and may customise the chat message the bot posts when
 one of these events fires. Defining "an event" used to mean editing several
 unsynced places; adding ``resub`` / ``gift_sub`` missed the EventSub
 subscription list, so they silently never fired. Each catalog entry binds, per
-event type: the ``event_configs`` DB key (+ migration 053 CHECK), the DB seed
+event type: the ``event_configs`` DB key (+ migration 086 CHECK), the DB seed
 (template / enabled / options), the ``$(name)`` template variables, the display
 metadata the dashboard renders, the per-event options schema, the
 ``stream_events`` bucket its trigger count reads from, and the twitchio EventSub
 class that delivers it.
+
+Subscription-related greetings (``subscribe`` / ``resub`` / ``gift_recipient``)
+are delivered by the single ``channel.chat.notification`` subscription, which is
+fixed infrastructure — those entries carry ``subscription_class=None``.
 
 ``backend/shared/`` is imported by the api and discord services too, so this
 module must NOT import ``twitchio``. ``twitch/core/eventsub_catalog.py`` maps
@@ -21,7 +25,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal, get_args
 
-EventKey = Literal["follow", "subscribe", "resub", "gift_sub", "raid", "bits"]
+EventKey = Literal["follow", "subscribe", "resub", "gift_sub", "gift_recipient", "raid", "bits"]
 
 # Semantic status-token names the dashboard maps to Tailwind classes. Kept as
 # bare strings here so shared/ stays framework-free.
@@ -33,9 +37,8 @@ AccentToken = Literal[
 # by the CHECK in migration 044; ``test_event_catalog.py`` cross-checks this.
 CountSource = Literal["follow", "subscribe", "cheer", "raid"]
 
-# Twitch sub-tier code -> display label. Used both when rendering the $(tier)
-# event variable (twitch service) and when backfilling viewer_channel_status
-# from the Helix subscriptions endpoint (analytics repo).
+# Twitch sub-tier code -> display label. Used when backfilling
+# viewer_channel_status from the Helix subscriptions endpoint (analytics repo).
 TIER_LABELS = {"1000": "T1", "2000": "T2", "3000": "T3"}
 
 
@@ -51,6 +54,9 @@ class EventVariable:
     name: str
     description: str  # shown in the dashboard's variable picker
     sample: str  # stand-in value the dashboard uses to render a live preview
+    # When true a ``$(@name)`` twin is also available — renders the display name
+    # prefixed with ``@`` (a plain name for an anonymous chatter).
+    mentionable: bool = False
 
 
 @dataclass(frozen=True)
@@ -71,7 +77,8 @@ class EventDef:
     default_enabled: bool
     variables: tuple[EventVariable, ...]
     # twitchio ``eventsub`` class name, resolved to a factory in the twitch
-    # service. ``None`` = a listener exists but no live subscription yet.
+    # service. ``None`` = delivered by a fixed infrastructure subscription
+    # (channel.chat.notification) rather than a dedicated one.
     subscription_class: str | None
     display_name: str  # dashboard row title, e.g. "首次訂閱"
     category_label: str  # dashboard type badge, e.g. "訂閱"
@@ -88,13 +95,28 @@ class EventDef:
         so the two can't drift."""
         return {opt.key: opt.default for opt in self.options_schema}
 
+    @property
+    def variable_names(self) -> set[str]:
+        """Every ``$(name)`` a template for this event may reference, including
+        the ``@`` twins of mentionable vars."""
+        names: set[str] = set()
+        for v in self.variables:
+            names.add(v.name)
+            if v.mentionable:
+                names.add(f"@{v.name}")
+        return names
+
+
+_NOTE = EventVariable(
+    "note", "非基本情境的補充（層級／預付／取得方式），基本情境為空", "（層級 3、Prime）"
+)
 
 EVENT_CATALOG: tuple[EventDef, ...] = (
     EventDef(
         key="follow",
         default_template="感謝 $(user) 的追隨！",
         default_enabled=False,
-        variables=(EventVariable("user", "追隨者名稱", "小明"),),
+        variables=(EventVariable("user", "追隨者名稱", "小明", mentionable=True),),
         subscription_class="ChannelFollowSubscription",
         display_name="追隨",
         category_label="追隨",
@@ -103,11 +125,11 @@ EVENT_CATALOG: tuple[EventDef, ...] = (
     ),
     EventDef(
         key="subscribe",
-        default_template="感謝 $(user) 的訂閱！",
+        default_template="感謝 $(@user) 的訂閱$(note)！",
         default_enabled=False,
         variables=(
-            EventVariable("user", "訂閱者名稱", "小明"),
-            EventVariable("tier", "訂閱等級 (T1/T2/T3)", "T1"),
+            EventVariable("user", "訂閱者名稱", "小明", mentionable=True),
+            _NOTE,
         ),
         subscription_class="ChannelSubscribeSubscription",
         display_name="首次訂閱",
@@ -118,17 +140,18 @@ EVENT_CATALOG: tuple[EventDef, ...] = (
     ),
     EventDef(
         key="resub",
-        default_template="感謝 $(user) 訂閱滿 $(total_months) 個月！",
+        default_template=(
+            "感謝 $(@user) 訂閱滿 $(total_months) 個月[[，已連續 $(streak) 個月]]$(note)！"
+        ),
         default_enabled=False,
         variables=(
-            EventVariable("user", "訂閱者名稱", "小明"),
-            EventVariable("tier", "訂閱等級 (T1/T2/T3)", "T2"),
-            EventVariable("months", "本次訂閱期長（月）", "1"),
-            EventVariable("streak", "連續訂閱月數", "6"),
+            EventVariable("user", "訂閱者名稱", "小明", mentionable=True),
             EventVariable("total_months", "累計訂閱總月數", "14"),
-            EventVariable("message", "訂閱留言內容", "這台真的讚"),
+            EventVariable("streak", "連續訂閱月數（觀眾未分享時為空）", "6"),
+            EventVariable("message", "訂閱留言內容（無留言時為空）", "這台真的讚"),
+            _NOTE,
         ),
-        subscription_class="ChannelSubscribeMessageSubscription",
+        subscription_class=None,  # channel.chat.notification (resub notice)
         display_name="重新訂閱",
         category_label="訂閱",
         accent="special",
@@ -136,13 +159,15 @@ EVENT_CATALOG: tuple[EventDef, ...] = (
     ),
     EventDef(
         key="gift_sub",
-        default_template="感謝 $(user) 贈送了 $(total) 個訂閱！",
+        default_template=(
+            "感謝 $(@user) 送出 $(total) 份訂閱$(note)[[，累計已送 $(cumulative) 份]]！"
+        ),
         default_enabled=False,
         variables=(
-            EventVariable("user", "贈禮者名稱", "大方哥"),
-            EventVariable("tier", "訂閱等級 (T1/T2/T3)", "T1"),
-            EventVariable("total", "本次贈禮數量", "5"),
-            EventVariable("cumulative", "累計贈禮總數", "20"),
+            EventVariable("user", "贈禮者名稱", "大方哥", mentionable=True),
+            EventVariable("total", "本次贈禮數量", "10"),
+            EventVariable("cumulative", "累計贈禮總數（匿名或未分享時為空）", "30"),
+            _NOTE,
         ),
         subscription_class="ChannelSubscriptionGiftSubscription",
         display_name="贈禮訂閱",
@@ -151,13 +176,37 @@ EVENT_CATALOG: tuple[EventDef, ...] = (
         requires_affiliate=True,
     ),
     EventDef(
-        key="bits",
-        default_template="感謝 $(user) 投出了 $(amount) 小奇點！",
+        key="gift_recipient",
+        default_template=("感謝 $(@gifter) 送了一份訂閱給 $(@user)$(note)，歡迎加入訂閱行列！"),
         default_enabled=False,
         variables=(
-            EventVariable("user", "Cheer 者名稱", "小明"),
+            EventVariable("gifter", "贈禮者名稱", "大方哥", mentionable=True),
+            EventVariable("user", "收禮者名稱", "小華", mentionable=True),
+            _NOTE,
+        ),
+        subscription_class=None,  # channel.chat.notification (sub_gift notice)
+        display_name="收到贈禮",
+        category_label="訂閱",
+        accent="special",
+        requires_affiliate=True,
+        options_schema=(
+            EventOption(
+                key="skip_bombs",
+                type="boolean",
+                label="略過 gift bomb",
+                description="一次贈送多份時不逐一問候（由「贈禮訂閱」統一感謝贈禮者）",
+                default=True,
+            ),
+        ),
+    ),
+    EventDef(
+        key="bits",
+        default_template="感謝 $(@user) 的 $(amount) 小奇點應援[[（留言：$(message)）]]！",
+        default_enabled=False,
+        variables=(
+            EventVariable("user", "Cheer 者名稱", "小明", mentionable=True),
             EventVariable("amount", "小奇點數量", "500"),
-            EventVariable("message", "Cheer 留言", "加油"),
+            EventVariable("message", "Cheer 留言（無留言時為空）", "加油"),
         ),
         subscription_class="ChannelCheerSubscription",
         display_name="Cheer",
@@ -168,11 +217,11 @@ EVENT_CATALOG: tuple[EventDef, ...] = (
     ),
     EventDef(
         key="raid",
-        default_template="$(user) 帶了 $(count) 個新朋友降落！",
+        default_template="感謝 $(@user) 帶團降落，歡迎 $(count) 位新朋友！",
         default_enabled=True,
         variables=(
-            EventVariable("user", "揪團者名稱", "隔壁棚"),
-            EventVariable("count", "觀眾數量", "42"),
+            EventVariable("user", "揪團者名稱", "隔壁棚", mentionable=True),
+            EventVariable("count", "帶來的觀眾數", "42"),
             EventVariable("url", "揪團者頻道連結", "https://twitch.tv/somestreamer"),
         ),
         subscription_class="ChannelRaidSubscription",
