@@ -269,24 +269,18 @@ export function ActivationCard() {
                         {idx > 0 && <Separator className="opacity-40" />}
                         <div className="flex items-center gap-3 py-3">
                           <Avatar src={req.avatar} label={label} />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sub font-medium truncate">{label}</p>
+                          <button
+                            type="button"
+                            className="flex-1 min-w-0 text-left"
+                            onClick={() => openTimeline(req.id, label)}
+                            title="檢視授權紀錄"
+                          >
+                            <p className="text-sub font-medium truncate hover:underline">{label}</p>
                             <p className="text-label text-muted-foreground font-mono">
                               {formatDateTimeShort(req.created_at)}
                             </p>
-                          </div>
+                          </button>
                           <div className="flex items-center gap-element shrink-0">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              aria-label="授權紀錄"
-                              onClick={() => openTimeline(req.id, label)}
-                            >
-                              <Icon
-                                icon="fa-solid fa-clock-rotate-left"
-                                wrapperClassName="text-muted-foreground"
-                              />
-                            </Button>
                             <Button
                               size="sm"
                               variant="outline"
@@ -461,8 +455,8 @@ export function ActivationCard() {
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-md border bg-muted/30 px-3 py-2">
-      <p className="text-label text-muted-foreground">{label}</p>
-      <p className="text-sub font-bold font-mono">{value}</p>
+      <p className="text-label text-muted-foreground truncate">{label}</p>
+      <p className="text-sub font-bold tabular-nums">{value}</p>
     </div>
   )
 }
