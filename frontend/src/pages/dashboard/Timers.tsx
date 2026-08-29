@@ -19,6 +19,7 @@ import { SettingRow } from '@/components/SettingRow'
 import { SortableHead } from '@/components/SortableHead'
 import { TableEmptyRow } from '@/components/TableEmptyRow'
 import { TableShell } from '@/components/TableShell'
+import { TableSkeletonRows } from '@/components/TableSkeletonRows'
 import {
   Alert,
   AlertDescription,
@@ -39,7 +40,6 @@ import {
   SheetFooter,
   SheetHeader,
   SheetTitle,
-  Skeleton,
   Switch,
   TableBody,
   TableCell,
@@ -56,7 +56,7 @@ import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { useInputInsert } from '@/hooks/useInputInsert'
 import { useOptimisticToggle } from '@/hooks/useOptimisticToggle'
 import { useSortState } from '@/hooks/useSortState'
-import { nameSort } from '@/lib/sort'
+import { applyDir, nameSort } from '@/lib/sort'
 import { toastApiError } from '@/lib/toast-error'
 
 type TimerSortKey = 'name' | 'interval' | 'enabled'
@@ -183,7 +183,7 @@ export default function Timers() {
           cmp = Number(a.enabled) - Number(b.enabled)
           break
       }
-      return sortDir === 'desc' ? -cmp : cmp
+      return applyDir(cmp, sortDir)
     })
   }, [timers, timerSort])
 
@@ -305,28 +305,10 @@ export default function Timers() {
           </CardHeader>
           <CardContent>
             {loading ? (
-              <div className="overflow-x-auto rounded-md border">
-                <div className="divide-y divide-border">
-                  <div className="flex items-center gap-section px-page py-3 bg-muted/50">
-                    <Skeleton className="h-4 w-[20%]" />
-                    <Skeleton className="h-4 w-[6%]" />
-                    <Skeleton className="h-4 flex-1" />
-                    <Skeleton className="h-4 w-[10%]" />
-                    <Skeleton className="h-4 w-[8%]" />
-                    <Skeleton className="h-4 w-[8%]" />
-                  </div>
-                  {Array.from({ length: 5 }).map((_, i) => (
-                    <div key={i} className="flex items-center gap-section px-page py-3">
-                      <Skeleton className="h-4 w-[20%]" />
-                      <Skeleton className="h-4 w-[6%]" />
-                      <Skeleton className="h-4 flex-1" />
-                      <Skeleton className="h-4 w-[10%]" />
-                      <Skeleton className="h-8 w-[8%]" />
-                      <Skeleton className="h-8 w-[8%]" />
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <TableSkeletonRows
+                count={5}
+                columns={['w-[20%]', 'w-[8%]', 'flex-1', 'w-[8%]', 'w-[8%]', 'w-[7%]']}
+              />
             ) : error ? (
               <Alert variant="destructive">
                 <AlertDescription>{error}</AlertDescription>

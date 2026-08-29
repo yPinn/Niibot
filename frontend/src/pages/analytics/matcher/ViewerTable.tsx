@@ -43,6 +43,8 @@ function TierBadge({ score }: { score: number }) {
 
 export function ViewerTable({ data, isLoading }: ViewerTableProps) {
   if (isLoading) {
+    // Bespoke (not TableSkeletonRows): every cell here is two stacked lines,
+    // which the shared column-shaped skeleton can't express.
     return (
       <div className="flex flex-col">
         <div className="flex items-center gap-4 h-10 px-4 border-b">
@@ -72,7 +74,6 @@ export function ViewerTable({ data, isLoading }: ViewerTableProps) {
   if (!data || data.total === 0) {
     return (
       <EmptyState
-        className="py-empty"
         icon="fa-solid fa-users"
         title="尚無潛在觀眾資料"
         description="目前找不到與此頻道重疊的觀眾"
