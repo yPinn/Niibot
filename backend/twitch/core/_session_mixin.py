@@ -77,6 +77,7 @@ class _SessionMixin:
                         ch.channel_id,
                         owner_id=self.owner_id,  # type: ignore[attr-defined]
                     )
+                    await self.event_configs.ensure_defaults(ch.channel_id)  # type: ignore[attr-defined]
                     count = await self.command_configs.warm_cache(ch.channel_id)  # type: ignore[attr-defined]
                     total_warmed += count
                 except Exception as e:

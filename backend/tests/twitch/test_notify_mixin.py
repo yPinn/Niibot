@@ -37,6 +37,8 @@ class _StubMixin(_NotifyMixin):
         self._send_welcome_message = AsyncMock()
         self.redemption_configs = MagicMock()
         self.redemption_configs.ensure_defaults = AsyncMock()
+        self.event_configs = MagicMock()
+        self.event_configs.ensure_defaults = AsyncMock()
         self.command_configs = MagicMock()
         self.command_configs.warm_cache = AsyncMock(return_value=0)
         self.owner_id = "owner-001"
@@ -119,6 +121,7 @@ class TestHandleChannelToggleEnable:
 
         mixin.subscribe_channel_events.assert_awaited_once_with("ch2")
         mixin._check_bot_mod_status.assert_awaited_once_with("ch2")
+        mixin.event_configs.ensure_defaults.assert_awaited_once_with("ch2")
 
     async def test_enable_already_subscribed_skips_subscribe_and_mod_check(self):
         mixin = _StubMixin()

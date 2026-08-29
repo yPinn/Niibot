@@ -72,6 +72,7 @@ class _NotifyMixin:
                             channel_id,
                             owner_id=self.owner_id,  # type: ignore[attr-defined]
                         )
+                        await self.event_configs.ensure_defaults(channel_id)  # type: ignore[attr-defined]
                         count = await self.command_configs.warm_cache(channel_id)  # type: ignore[attr-defined]
                         LOGGER.info(
                             f"[NOTIFY] Warmed cache: {count} configs for {self._ch(channel_id)}"
@@ -205,6 +206,7 @@ class _NotifyMixin:
                             user_id,
                             owner_id=self.owner_id,  # type: ignore[attr-defined]
                         )
+                        await self.event_configs.ensure_defaults(user_id)  # type: ignore[attr-defined]
                         count = await self.command_configs.warm_cache(user_id)  # type: ignore[attr-defined]
                         LOGGER.info(
                             f"[NOTIFY] Warmed cache: {count} configs for {self._ch(user_id)}"

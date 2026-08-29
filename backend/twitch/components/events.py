@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING
 import twitchio
 from twitchio.ext import commands
 
-from shared.repositories.event_config import DEFAULT_TEMPLATES, EventConfigRepository
 from utils.reauth import is_scope_error, reauth_notifier
 
 if TYPE_CHECKING:
@@ -27,11 +26,8 @@ class EventComponent(commands.Component):
         self.bot: Bot = bot  # type: ignore[assignment]
         self._follow_cache: dict[str, datetime] = {}
         self._event_counter = 0
-        # Event config repository (with TTL cache)
-        self.event_configs = EventConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
-
-    def refresh_pool(self, pool) -> None:
-        self.event_configs.pool = pool
+        # Shared with the bot, which seeds defaults on subscribe; one TTL cache.
+        self.event_configs = self.bot.event_configs  # type: ignore[attr-defined]
 
     def _trigger_emote_sync(self, channel_id: str) -> None:
         """Fire emote sync as a background task when bot mod status changes."""
@@ -81,25 +77,21 @@ class EventComponent(commands.Component):
     async def _get_message(
         self, channel_id: str, event_type: str, variables: dict[str, str]
     ) -> str | None:
-        """Fetch template from DB and resolve variables. Returns None if disabled."""
+        """Resolve a channel's template for an event, or None to stay silent.
+
+        Fails closed: a missing config row (channel never seeded / opened the
+        dashboard), a disabled event, or a DB read error all mean "don't post".
+        The bot seeds event_configs on subscribe, so a missing row is rare.
+        """
         try:
             config = await self.event_configs.get_config(channel_id, event_type)
         except Exception as e:
-            LOGGER.warning(
-                f"DB unavailable for event config ({event_type}), using default template: {e}"
-            )
-            config = None
-        if config is None:
-            # No config yet — use hardcoded default
-            template = DEFAULT_TEMPLATES.get(event_type)
-            if template is None:
-                return None
-        else:
-            if not config.enabled:
-                return None
-            template = config.message_template
+            LOGGER.warning(f"[{channel_id}] event config read failed ({event_type}), silent: {e}")
+            return None
+        if config is None or not config.enabled:
+            return None
 
-        message = template
+        message = config.message_template
         for key, value in variables.items():
             message = message.replace(f"$({key})", value)
         return message

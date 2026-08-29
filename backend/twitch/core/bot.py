@@ -29,6 +29,7 @@ from shared.repositories.command_config import (
     CommandConfigRepository,
     RedemptionConfigRepository,
 )
+from shared.repositories.event_config import EventConfigRepository
 from shared.repositories.message_trigger import MessageTriggerRepository
 from shared.repositories.timer import TimerConfigRepository
 from utils.mod_guard import mod_guard_notifier
@@ -83,6 +84,7 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
         self.analytics = AnalyticsRepository(token_database)
         self.command_configs = CommandConfigRepository(token_database)
         self.redemption_configs = RedemptionConfigRepository(token_database)
+        self.event_configs = EventConfigRepository(token_database)
         self.timer_configs = TimerConfigRepository(token_database)
         self.message_trigger_configs = MessageTriggerRepository(token_database)
         self._active_sessions: dict[str, int] = {}
@@ -675,6 +677,7 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
         self.analytics.pool = pool
         self.command_configs.pool = pool
         self.redemption_configs.pool = pool
+        self.event_configs.pool = pool
         self.timer_configs.pool = pool
         self.message_trigger_configs.pool = pool
         for comp in self._components.values():
