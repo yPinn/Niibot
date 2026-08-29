@@ -1,7 +1,8 @@
-import { Fragment } from 'react'
+import { Fragment, Suspense } from 'react'
 import { Outlet } from 'react-router-dom'
 
 import { AppSidebar } from '@/components/layout/app-sidebar'
+import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { OnlineDropdown } from '@/components/OnlineDropdown'
 import {
   Breadcrumb,
@@ -26,7 +27,7 @@ export default function SidebarLayout() {
     <SidebarProvider className="h-svh! min-h-0!">
       <AppSidebar />
       <SidebarInset className="min-h-0!">
-        <header className="flex h-16 shrink-0 items-center justify-between gap-2 border-b px-4 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">
+        <header className="flex h-16 shrink-0 items-center justify-between gap-2 border-b px-page transition-[width,height] duration-slow ease-default group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">
           <div className="flex items-center gap-2">
             <SidebarTrigger className="-ml-1" />
             <Separator orientation="vertical" className="mr-2 data-[orientation=vertical]:h-4" />
@@ -53,8 +54,21 @@ export default function SidebarLayout() {
           </div>
           {user && <OnlineDropdown />}
         </header>
+        {/*
+         * Suspense sits here, not around <Routes>, so a lazy page chunk loading
+         * on navigation swaps only the content area — the sidebar shell (and its
+         * expand/collapse state) never unmounts.
+         */}
         <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
-          <Outlet />
+          <Suspense
+            fallback={
+              <div className="flex flex-1 items-center justify-center">
+                <LoadingSpinner />
+              </div>
+            }
+          >
+            <Outlet />
+          </Suspense>
         </div>
       </SidebarInset>
     </SidebarProvider>
