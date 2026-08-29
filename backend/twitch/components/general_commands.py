@@ -1,9 +1,7 @@
-import asyncio
 import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-import twitchio
 from twitchio.ext import commands
 
 from core.component import BotComponent
@@ -40,10 +38,6 @@ class GeneralCommandsComponent(BotComponent):
     def refresh_pool(self, pool) -> None:
         self.cmd_repo.pool = pool
 
-    @property
-    def _has_analytics(self) -> bool:
-        return hasattr(self.bot, "_active_sessions") and hasattr(self.bot, "analytics")
-
     async def _record_command(self, ctx: commands.Context, command_name: str) -> None:
         # Session analytics gate is intentional — always increments usage_count but
         # only records to session when a stream is live. Do NOT remove the gate.
@@ -52,15 +46,13 @@ class GeneralCommandsComponent(BotComponent):
             # Always increment all-time usage_count regardless of stream status
             await self.cmd_repo.increment_usage_count(channel_id, command_name)
             # Also record to session analytics if a stream is live (intentional gate)
-            if self._has_analytics:
-                session_id = self.bot._active_sessions.get(channel_id)
-                if session_id:
-                    analytics = self.bot.analytics
-                    await analytics.record_command_usage(
-                        session_id=session_id,
-                        channel_id=channel_id,
-                        command_name=f"!{command_name}",
-                    )
+            session_id = self.bot.sessions.session_id(channel_id)
+            if session_id:
+                await self.bot.analytics.record_command_usage(
+                    session_id=session_id,
+                    channel_id=channel_id,
+                    command_name=f"!{command_name}",
+                )
         except Exception as e:
             LOGGER.error(f"Failed to record command usage: {e}")
 
@@ -158,10 +150,6 @@ class GeneralCommandsComponent(BotComponent):
             self.cmd_repo, ctx, channel_repo=self.channel_repo, command_name="rank"
         )
         if not config:
-            return
-
-        if not self._has_analytics:
-            await self._ctx_reply(ctx, "排名資料暫時無法取得")
             return
 
         user_id = ctx.chatter.id
@@ -263,147 +251,6 @@ class GeneralCommandsComponent(BotComponent):
             else:
                 LOGGER.error(f"[{ctx.channel.name}] !so failed: {e}")
                 await self._ctx_reply(ctx, "推薦失敗，請確認機器人是否為版主")
-
-    @commands.Component.listener()
-    async def event_stream_online(self, payload: twitchio.StreamOnline) -> None:
-        LOGGER.info(f"[{payload.broadcaster.name}] Stream online")
-
-        channel_id = payload.broadcaster.id
-
-        # Proactively notify on go-live — don't wait for a chat message to surface the issue
-        if channel_id in self.bot._needs_reauth:
-            from utils.reauth import reauth_notifier
-
-            await reauth_notifier.notify(
-                broadcaster_login=payload.broadcaster.name,
-                channel_id=channel_id,
-                send_fn=lambda msg: payload.broadcaster.send_message(
-                    message=msg,
-                    sender=self.bot.bot_id,
-                ),
-            )
-
-        try:
-            if not self._has_analytics:
-                return
-
-            active_sessions = self.bot._active_sessions
-
-            existing_session = active_sessions.get(channel_id)
-            if existing_session:
-                LOGGER.debug(
-                    f"[{payload.broadcaster.name}] Stream online: session {existing_session} already active, skipping"
-                )
-                return
-
-            if channel_id in self.bot._session_creating:
-                LOGGER.debug(f"[{payload.broadcaster.name}] Session creation in-flight, skipping")
-                return
-            self.bot._session_creating.add(channel_id)
-            try:
-                stream = None
-                for attempt in range(4):
-                    async for s in self.bot.fetch_streams(user_ids=[channel_id]):
-                        stream = s
-                        break
-                    if stream is not None:
-                        break
-                    if attempt < 3:
-                        await asyncio.sleep(3)
-
-                title = stream.title if stream else None
-                game_name = stream.game_name if stream else None
-                game_id = str(stream.game_id) if stream and stream.game_id else None
-                started_at = (
-                    stream.started_at if stream and stream.started_at else None
-                ) or datetime.now(UTC)
-
-                analytics = self.bot.analytics
-                session_id = await analytics.create_session(
-                    channel_id=channel_id,
-                    started_at=started_at,
-                    title=title,
-                    game_name=game_name,
-                    game_id=game_id,
-                )
-                active_sessions[channel_id] = session_id
-                LOGGER.info(f"[{payload.broadcaster.name}] Session {session_id} created")
-            finally:
-                self.bot._session_creating.discard(channel_id)
-        except Exception as e:
-            LOGGER.error(f"[{payload.broadcaster.name}] Failed to create analytics session: {e}")
-
-    @commands.Component.listener()
-    async def event_stream_offline(self, payload: twitchio.StreamOffline) -> None:
-        LOGGER.info(f"[{payload.broadcaster.name}] Stream offline")
-
-        try:
-            if not self._has_analytics:
-                return
-
-            channel_id = payload.broadcaster.id
-            active_sessions = self.bot._active_sessions
-            session_id = active_sessions.get(channel_id)
-
-            if session_id:
-                analytics = self.bot.analytics
-
-                # Flush chatter stats buffer to database
-                if hasattr(self.bot, "_channel_line_counts"):
-                    self.bot._channel_line_counts.pop(channel_id, None)
-                if hasattr(self.bot, "_chatter_buffers"):
-                    chatter_data = self.bot._chatter_buffers.pop(channel_id, {})
-                    if chatter_data:
-                        try:
-                            await analytics.flush_chatter_stats(
-                                session_id=session_id,
-                                channel_id=channel_id,
-                                chatters=chatter_data,
-                            )
-                            LOGGER.info(
-                                f"[{payload.broadcaster.name}] Flushed {len(chatter_data)} chatters for session {session_id}"
-                            )
-                        except Exception as e:
-                            LOGGER.error(
-                                f"[{payload.broadcaster.name}] Failed to flush chatter stats: {e}"
-                            )
-
-                ended_at = datetime.now(UTC)
-                for attempt in range(3):
-                    try:
-                        await analytics.end_session(session_id, ended_at)
-                        break
-                    except Exception as e:
-                        LOGGER.warning(
-                            f"[{payload.broadcaster.name}] end_session attempt {attempt + 1}/3 failed: {e}"
-                        )
-                        if attempt < 2:
-                            await asyncio.sleep(2)
-                else:
-                    LOGGER.error(
-                        f"[{payload.broadcaster.name}] Failed to end session {session_id} after 3 attempts"
-                    )
-                del active_sessions[channel_id]
-                LOGGER.info(f"[{payload.broadcaster.name}] Session {session_id} ended")
-
-                # Fire-and-forget overlap refresh after session ends
-                if hasattr(analytics, "refresh_overlap"):
-                    task = asyncio.create_task(analytics.refresh_overlap(channel_id))
-                    task.add_done_callback(
-                        lambda t: (
-                            LOGGER.warning(
-                                "[%s] Overlap refresh failed: %s",
-                                payload.broadcaster.name,
-                                t.exception(),
-                            )
-                            if not t.cancelled() and t.exception()
-                            else None
-                        )
-                    )
-            else:
-                LOGGER.warning(f"[{payload.broadcaster.name}] Stream offline: no active session")
-        except Exception as e:
-            LOGGER.error(f"[{payload.broadcaster.name}] Failed to end analytics session: {e}")
 
 
 async def setup(bot: commands.Bot) -> None:

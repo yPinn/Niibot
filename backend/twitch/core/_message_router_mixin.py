@@ -1,8 +1,7 @@
 """Message routing mixin — handles message triggers and custom commands.
 
-Extracted from Bot to keep bot.py under 300 lines.
 Depends on attributes defined in Bot.__init__:
-    self.bot_id, self.owner_id
+    self.bot_id, self.owner_id, self.sessions
     self.command_configs, self.redemption_configs
     self.message_trigger_configs, self.channels
 """
@@ -168,7 +167,7 @@ class _MessageRouterMixin:
 
     def _record_custom_command_analytics(self, channel_id: str, cmd_name: str) -> None:
         """Record custom command usage to session analytics if a stream is live."""
-        session_id = self._active_sessions.get(channel_id)  # type: ignore[attr-defined]
+        session_id = self.sessions.session_id(channel_id)  # type: ignore[attr-defined]
         if session_id:
             self._fire_and_forget(
                 self.analytics.record_command_usage(  # type: ignore[attr-defined]

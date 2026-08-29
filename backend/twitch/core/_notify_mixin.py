@@ -1,7 +1,7 @@
 """PG NOTIFY handlers and cache refresh mixin.
 
 Depends on attributes defined in Bot.__init__:
-    self._bot_id, self._active_sessions, self.owner_id, self.subs
+    self._bot_id, self.owner_id, self.subs, self.sessions
     self.channels, self.command_configs, self.redemption_configs
     self.timer_configs, self.message_trigger_configs
 Uses self._ch() defined on Bot.
@@ -12,7 +12,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import twitchio
@@ -212,21 +211,7 @@ class _NotifyMixin:
                     LOGGER.info(f"[NOTIFY] Warmed cache: {count} configs for {self._ch(user_id)}")
 
                     try:
-                        streams = [s async for s in self.fetch_streams(user_ids=[user_id])]  # type: ignore[attr-defined]
-                        if streams:
-                            stream = streams[0]
-                            session_id = await self.analytics.create_session(  # type: ignore[attr-defined]
-                                channel_id=user_id,
-                                started_at=stream.started_at or datetime.now(UTC),
-                                title=stream.title,
-                                game_name=stream.game_name,
-                                game_id=str(stream.game_id) if stream.game_id else None,
-                            )
-                            self._active_sessions[user_id] = session_id  # type: ignore[attr-defined]
-                            LOGGER.info(
-                                f"[NOTIFY] Created recovery session {session_id} "
-                                f"for live channel {user_id}"
-                            )
+                        await self.sessions.ensure_session(user_id)  # type: ignore[attr-defined]
                     except Exception as e:
                         LOGGER.warning(f"[NOTIFY] Failed to check live status for {user_id}: {e}")
 

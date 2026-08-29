@@ -66,17 +66,15 @@ def bot():
     with (
         patch("twitch.core.bot._MessageRouterMixin.__init__", return_value=None),
         patch("twitch.core.bot._NotifyMixin.__init__", return_value=None),
-        patch("twitch.core.bot._SessionMixin.__init__", return_value=None),
         patch("twitch.core.bot.commands.AutoBot.__init__", return_value=None),
     ):
         from twitch.core.bot import Bot
 
         b = Bot.__new__(Bot)
         b.subs = _make_subs({"123"})
+        b.sessions = MagicMock()
+        b.sessions.record_line = MagicMock()
         b._bot_id = "bot-001"
-        b._active_sessions = {}
-        b._chatter_buffers = {}
-        b._channel_line_counts = {}
         b._needs_reauth = set()
         b._bot_is_mod = {"123"}
         b._mod_check_pending = set()
@@ -258,7 +256,6 @@ def _make_bot_for_mod_check():
     with (
         patch("twitch.core.bot._MessageRouterMixin.__init__", return_value=None),
         patch("twitch.core.bot._NotifyMixin.__init__", return_value=None),
-        patch("twitch.core.bot._SessionMixin.__init__", return_value=None),
         patch("twitch.core.bot.commands.AutoBot.__init__", return_value=None),
     ):
         from twitch.core.bot import Bot
@@ -336,7 +333,6 @@ def _make_bot_for_token_refresh(needs_reauth: set[str] | None = None):
     with (
         patch("twitch.core.bot._MessageRouterMixin.__init__", return_value=None),
         patch("twitch.core.bot._NotifyMixin.__init__", return_value=None),
-        patch("twitch.core.bot._SessionMixin.__init__", return_value=None),
         patch("twitch.core.bot.commands.AutoBot.__init__", return_value=None),
     ):
         from twitch.core.bot import Bot
@@ -431,7 +427,6 @@ def _make_shared_chat_bot():
     with (
         patch("twitch.core.bot._MessageRouterMixin.__init__", return_value=None),
         patch("twitch.core.bot._NotifyMixin.__init__", return_value=None),
-        patch("twitch.core.bot._SessionMixin.__init__", return_value=None),
         patch("twitch.core.bot.commands.AutoBot.__init__", return_value=None),
     ):
         from twitch.core.bot import Bot

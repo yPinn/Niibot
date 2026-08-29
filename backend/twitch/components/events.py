@@ -61,7 +61,7 @@ class EventComponent(commands.Component):
         Stream-event analytics (``record_*_event``) only makes sense during a
         session; viewer-state upserts run regardless.
         """
-        return self.bot._active_sessions.get(channel_id)  # type: ignore[attr-defined]
+        return self.bot.sessions.session_id(channel_id)
 
     def _should_notify(self, user_id: str) -> bool:
         """檢查是否應該發送通知（防刷機制，僅用於追隨事件）"""

@@ -17,9 +17,9 @@ from twitchio.payloads import TokenRefreshedPayload as _TokenRefreshedPayload
 
 from core._message_router_mixin import _MessageRouterMixin
 from core._notify_mixin import _NotifyMixin
-from core._session_mixin import _SessionMixin
 from core.config import COMPONENTS_DIR
 from core.pg_listener import pg_listen
+from core.session_service import SessionService
 from core.subscription_manager import SubscriptionManager
 from shared.database import DatabaseManager
 from shared.log_context import bound_log_context
@@ -55,7 +55,7 @@ class SharedChatSession:
     our_channel_ids: tuple[str, ...]
 
 
-class Bot(_MessageRouterMixin, _NotifyMixin, _SessionMixin, commands.AutoBot):
+class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
     token_database: asyncpg.Pool
 
     def __init__(
@@ -84,14 +84,6 @@ class Bot(_MessageRouterMixin, _NotifyMixin, _SessionMixin, commands.AutoBot):
         self.event_configs = EventConfigRepository(token_database)
         self.timer_configs = TimerConfigRepository(token_database)
         self.message_trigger_configs = MessageTriggerRepository(token_database)
-        self._active_sessions: dict[str, int] = {}
-        # Channels currently mid-way through session creation — prevents double-create
-        # between event_stream_online and _session_verify_loop running concurrently.
-        self._session_creating: set[str] = set()
-        # In-memory chatter buffers: {channel_id: {user_id: {"username": str, "count": int, "last_at": datetime}}}
-        self._chatter_buffers: dict[str, dict[str, dict]] = {}
-        # Per-channel cumulative message count during active sessions (for timer min_lines gate)
-        self._channel_line_counts: dict[str, int] = {}
         # Strong references to background tasks to prevent GC collection
         self._background_tasks: set[asyncio.Task] = set()
         # Active Shared Chat sessions keyed by session_id (NOT channel_id), so
@@ -132,6 +124,16 @@ class Bot(_MessageRouterMixin, _NotifyMixin, _SessionMixin, commands.AutoBot):
             multi_subscribe=self.multi_subscribe,
             delete_subscription=self.delete_eventsub_subscription,
             needs_reauth=self._needs_reauth,
+        )
+        # Stream-session ownership (was loose _active_sessions / _session_creating /
+        # _chatter_buffers / _channel_line_counts, mutated from 3 places).
+        self.sessions = SessionService(
+            analytics=self.analytics,
+            channels=self.channels,
+            subs=self.subs,
+            client=self,
+            bot_id=bot_id,
+            client_id=client_id,
         )
 
     # ------------------------------------------------------------------
@@ -219,9 +221,6 @@ class Bot(_MessageRouterMixin, _NotifyMixin, _SessionMixin, commands.AutoBot):
             pg_listen(self._database_url, "token_reauth", self._handle_token_reauth),
             pg_listen(self._database_url, "channel_toggle", self._handle_channel_toggle),
             pg_listen(self._database_url, "config_change", self._handle_config_change),
-            self._recover_active_sessions(),
-            self._session_verify_loop(),
-            self._watch_time_loop(),
             self._pool_heartbeat_loop(),
             self._periodic_cache_refresh(),
         ):
@@ -229,12 +228,37 @@ class Bot(_MessageRouterMixin, _NotifyMixin, _SessionMixin, commands.AutoBot):
             self._background_tasks.add(task)
             task.add_done_callback(self._background_tasks.discard)
 
+        # Session recovery + verify + watch-time loops (owned by SessionService).
+        self.sessions.start()
+
     # ------------------------------------------------------------------
     # Events
     # ------------------------------------------------------------------
 
     async def event_ready(self) -> None:
         LOGGER.info("Successfully logged in as: %s", self.bot_id)
+
+    async def event_stream_online(self, payload: twitchio.StreamOnline) -> None:
+        channel_id = payload.broadcaster.id
+        LOGGER.info("[%s] Stream online", payload.broadcaster.name)
+
+        # Proactively surface a reauth problem on go-live — don't wait for a chat message.
+        if channel_id in self._needs_reauth:
+            from utils.reauth import reauth_notifier
+
+            await reauth_notifier.notify(
+                broadcaster_login=payload.broadcaster.name,
+                channel_id=channel_id,
+                send_fn=lambda msg: payload.broadcaster.send_message(
+                    message=msg, sender=self.bot_id
+                ),
+            )
+
+        await self.sessions.on_stream_online(channel_id)
+
+    async def event_stream_offline(self, payload: twitchio.StreamOffline) -> None:
+        LOGGER.info("[%s] Stream offline", payload.broadcaster.name)
+        await self.sessions.on_stream_offline(payload.broadcaster.id)
 
     async def event_subscription_revoked(self, payload: twitchio.SubscriptionRevoked) -> None:
         """Twitch revoked a subscription — the channel silently stops receiving
@@ -403,21 +427,9 @@ class Bot(_MessageRouterMixin, _NotifyMixin, _SessionMixin, commands.AutoBot):
             )
             return
 
-        if channel_id in self._active_sessions:
-            buf = self._chatter_buffers.setdefault(channel_id, {})
-            if chatter_id in buf:
-                buf[chatter_id]["count"] += 1
-                buf[chatter_id]["last_at"] = datetime.now(UTC)
-                buf[chatter_id]["username"] = payload.chatter.name
-                buf[chatter_id]["display_name"] = payload.chatter.display_name
-            else:
-                buf[chatter_id] = {
-                    "username": payload.chatter.name,
-                    "display_name": payload.chatter.display_name,
-                    "count": 1,
-                    "last_at": datetime.now(UTC),
-                }
-            self._channel_line_counts[channel_id] = self._channel_line_counts.get(channel_id, 0) + 1
+        self.sessions.record_line(
+            channel_id, chatter_id, payload.chatter.name or "", payload.chatter.display_name
+        )
 
         # Mod guard: block all functionality until bot has mod in this channel.
         # Skip notification while the status check is still in-flight.

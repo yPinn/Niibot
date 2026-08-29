@@ -48,6 +48,8 @@ class _StubMixin(_NotifyMixin):
     def __init__(self) -> None:
         self._bot_id = "bot-001"
         self.subs = _FakeSubs()
+        self.sessions = MagicMock()
+        self.sessions.ensure_session = AsyncMock(return_value=None)
         self._bot_is_mod: set[str] = set()
         self._needs_reauth: set[str] = set()
         self._check_bot_mod_status = AsyncMock()
@@ -427,7 +429,6 @@ def mod_bot():
     with (
         patch("twitch.core.bot._MessageRouterMixin.__init__", return_value=None),
         patch("twitch.core.bot._NotifyMixin.__init__", return_value=None),
-        patch("twitch.core.bot._SessionMixin.__init__", return_value=None),
         patch("twitch.core.bot.commands.AutoBot.__init__", return_value=None),
     ):
         from twitch.core.bot import Bot

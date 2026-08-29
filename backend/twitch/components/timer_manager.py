@@ -36,7 +36,7 @@ class TimerManagerComponent(commands.Component):
     """Background component that polls timers every 60 seconds and fires them
     when both the time interval and minimum chat-line threshold are satisfied.
 
-    Timers only fire during active live streams (_active_sessions).
+    Timers only fire during active live streams (bot.sessions.live_channels).
     """
 
     COMMANDS: list[dict] = []
@@ -67,14 +67,15 @@ class TimerManagerComponent(commands.Component):
         now = datetime.now(UTC)
 
         subscribed = self.bot.subs.subscribed
-        live_channels = [c for c in subscribed if c in self.bot._active_sessions]
+        live = self.bot.sessions.live_channels
+        live_channels = [c for c in subscribed if c in live]
         LOGGER.debug(
             f"[timer-poll] subscribed={len(subscribed)} "
-            f"live={len(live_channels)} active_sessions={list(self.bot._active_sessions.keys())}"
+            f"live={len(live_channels)} active_sessions={sorted(live)}"
         )
 
         for channel_id in subscribed:
-            if channel_id not in self.bot._active_sessions:
+            if channel_id not in live:
                 continue  # Only during live streams
 
             if channel_id not in self.bot._bot_is_mod:  # type: ignore[attr-defined]
@@ -86,7 +87,7 @@ class TimerManagerComponent(commands.Component):
                 LOGGER.warning(f"Failed to load timers for {channel_id}: {e}")
                 continue
 
-            current_lines = self.bot._channel_line_counts.get(channel_id, 0)
+            current_lines = self.bot.sessions.line_count(channel_id)
             LOGGER.debug(
                 f"[timer-poll] channel={channel_id} enabled_timers={len(timers)} "
                 f"line_count={current_lines}"
@@ -159,7 +160,7 @@ class TimerManagerComponent(commands.Component):
                 last_fire = self._timer_last_fire.get(timer.id)
                 if _still_on_interval(last_fire, now, timer.interval_seconds):
                     return
-                current_lines = self.bot._channel_line_counts.get(channel_id, 0)
+                current_lines = self.bot.sessions.line_count(channel_id)
                 await self._fire_timer(channel_id, timer, current_lines, now)
                 break
 
