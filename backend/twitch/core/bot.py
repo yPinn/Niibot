@@ -164,14 +164,27 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
     async def event_ready(self) -> None:
         LOGGER.info("Successfully logged in as: %s", self.bot_id)
 
-    async def event_eventsub_notification(self, payload) -> None:
-        LOGGER.debug("EventSub notification received: %s", type(payload).__name__)
+    async def event_subscription_revoked(self, payload: twitchio.SubscriptionRevoked) -> None:
+        """Twitch revoked a subscription — the channel silently stops receiving
+        this event type. Log it (ERROR+ reaches the error webhook) and flag the
+        broadcaster for dashboard reauth if they pulled their token.
+        """
+        condition = payload.raw.get("condition") or {}
+        channel_id = (
+            condition.get("broadcaster_user_id")
+            or condition.get("to_broadcaster_user_id")
+            or condition.get("user_id")
+        )
+        reason = getattr(payload.status, "value", str(payload.status))
+        ch = self._ch(channel_id) if channel_id else "?"
 
-    async def event_eventsub_ready(self) -> None:
-        LOGGER.info("EventSub is ready to receive notifications")
+        log = (
+            LOGGER.warning if reason in ("authorization_revoked", "user_removed") else LOGGER.error
+        )
+        log("EventSub subscription revoked: %s type=%s reason=%s", ch, payload.type, reason)
 
-    async def event_eventsub_error(self, error: Exception) -> None:
-        LOGGER.error("EventSub error: %s", error)
+        if reason == "authorization_revoked" and channel_id and channel_id != self._bot_id:
+            await self._mark_reauth_required(channel_id)
 
     async def event_oauth_authorized(
         self, payload: twitchio.authentication.UserTokenPayload

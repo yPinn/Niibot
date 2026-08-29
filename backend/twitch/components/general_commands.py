@@ -250,11 +250,9 @@ class GeneralCommandsComponent(BotComponent):
             return
 
         try:
-            await ctx.bot._http.post_chat_shoutout(
-                broadcaster_id=channel_id,
-                to_broadcaster_id=target_user.id,
-                moderator_id=ctx.bot.bot_id,
-                token_for=ctx.bot.bot_id,
+            await ctx.broadcaster.send_shoutout(
+                to_broadcaster=target_user,
+                moderator=ctx.bot.bot_id,
             )
             LOGGER.info(f"[{ctx.channel.name}] !so → {login} by {ctx.chatter.name}")
             await self._record_command(ctx, "so")

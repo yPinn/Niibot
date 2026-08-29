@@ -57,7 +57,8 @@ class TimerManagerComponent(commands.Component):
         LOGGER.info("TimerManager component loaded")
 
     async def component_teardown(self) -> None:
-        self._timer_poll_loop.stop()
+        # cancel(), not stop(): stop() blocks teardown for up to one interval (60s).
+        self._timer_poll_loop.cancel()
         LOGGER.info("TimerManager component unloaded")
 
     @routines.routine(delta=timedelta(seconds=60), wait_first=True)

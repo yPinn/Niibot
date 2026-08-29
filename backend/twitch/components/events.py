@@ -449,11 +449,9 @@ class EventComponent(commands.Component):
             shoutout_sent = False
             if auto_shoutout:
                 try:
-                    await self.bot._http.post_chat_shoutout(
-                        broadcaster_id=broadcaster_id,
-                        to_broadcaster_id=raider_id,
-                        moderator_id=self.bot.bot_id,
-                        token_for=self.bot.bot_id,
+                    await payload.to_broadcaster.send_shoutout(
+                        to_broadcaster=raider_id,
+                        moderator=self.bot.bot_id,
                     )
                     shoutout_sent = True
                 except Exception as shoutout_err:

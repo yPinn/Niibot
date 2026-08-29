@@ -31,6 +31,18 @@ def _make_token_refreshed_payload(
     return payload
 
 
+def _make_revoked_payload(
+    reason: str, *, condition: dict | None = None, sub_type: str = "channel.follow"
+) -> MagicMock:
+    payload = MagicMock()
+    payload.raw = {
+        "condition": condition if condition is not None else {"broadcaster_user_id": "ch1"}
+    }
+    payload.status = MagicMock(value=reason)
+    payload.type = sub_type
+    return payload
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -124,6 +136,39 @@ class TestEventTokenRefreshed:
 
         _, kwargs = bot.channels.upsert_token_only.call_args
         assert kwargs["scopes"] == "user:bot user:read:chat user:write:chat"
+
+
+@pytest.mark.asyncio
+class TestEventSubscriptionRevoked:
+    @pytest.fixture()
+    def revoked_bot(self, bot):
+        bot._ch = lambda cid: cid
+        bot._mark_reauth_required = AsyncMock()
+        return bot
+
+    async def test_authorization_revoked_flags_reauth(self, revoked_bot):
+        await revoked_bot.event_subscription_revoked(_make_revoked_payload("authorization_revoked"))
+        revoked_bot._mark_reauth_required.assert_awaited_once_with("ch1")
+
+    async def test_raid_condition_key_resolves_channel(self, revoked_bot):
+        payload = _make_revoked_payload(
+            "authorization_revoked", condition={"to_broadcaster_user_id": "ch2"}
+        )
+        await revoked_bot.event_subscription_revoked(payload)
+        revoked_bot._mark_reauth_required.assert_awaited_once_with("ch2")
+
+    async def test_non_auth_reason_does_not_flag_reauth(self, revoked_bot):
+        await revoked_bot.event_subscription_revoked(
+            _make_revoked_payload("notification_failures_exceeded")
+        )
+        revoked_bot._mark_reauth_required.assert_not_awaited()
+
+    async def test_bot_own_id_does_not_flag_reauth(self, revoked_bot):
+        payload = _make_revoked_payload(
+            "authorization_revoked", condition={"broadcaster_user_id": "bot-001"}
+        )
+        await revoked_bot.event_subscription_revoked(payload)
+        revoked_bot._mark_reauth_required.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------

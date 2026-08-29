@@ -19,8 +19,8 @@ def _build_suppress(level: int) -> dict[str, int]:
         return {
             "twitchio": logging.DEBUG,
             "twitchio.eventsub": logging.DEBUG,
+            "twitchio.eventsub.websockets": logging.DEBUG,
             "twitchio.http": logging.DEBUG,
-            "twitchio.websockets": logging.DEBUG,
             "httpx": logging.INFO,
             "asyncio": logging.ERROR,
             "asyncpg": logging.WARNING,
@@ -31,8 +31,8 @@ def _build_suppress(level: int) -> dict[str, int]:
     return {
         "twitchio": logging.INFO,
         "twitchio.eventsub": logging.INFO,
+        "twitchio.eventsub.websockets": logging.WARNING,
         "twitchio.http": logging.WARNING,
-        "twitchio.websockets": logging.WARNING,
         "asyncio": logging.ERROR,
         "asyncpg": logging.WARNING,
         "openai": logging.WARNING,
