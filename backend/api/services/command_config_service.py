@@ -78,12 +78,18 @@ class CommandConfigService:
             min_role=min_role,
             aliases=aliases,
         )
-        return asdict(cfg)
+        return {
+            **asdict(cfg),
+            "category_label": _builtin_category_label(cfg.command_type, cfg.command_name),
+        }
 
     async def toggle_command(self, channel_id: str, command_name: str, enabled: bool) -> dict:
         """Toggle a command's enabled state."""
         cfg = await self.cmd_repo.upsert_config(channel_id, command_name, enabled=enabled)
-        return asdict(cfg)
+        return {
+            **asdict(cfg),
+            "category_label": _builtin_category_label(cfg.command_type, cfg.command_name),
+        }
 
     async def create_custom_command(
         self,
@@ -106,7 +112,10 @@ class CommandConfigService:
             min_role=min_role,
             aliases=aliases,
         )
-        return asdict(cfg)
+        return {
+            **asdict(cfg),
+            "category_label": _builtin_category_label(cfg.command_type, cfg.command_name),
+        }
 
     async def delete_custom_command(self, channel_id: str, command_name: str) -> bool:
         """Delete a custom command. Returns True if deleted."""
