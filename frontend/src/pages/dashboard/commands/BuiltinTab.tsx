@@ -4,10 +4,10 @@ import type { ChannelDefaults } from '@/api/channels'
 import type { CommandConfig } from '@/api/commands'
 import { Icon } from '@/components/primitives'
 import { SortableHead } from '@/components/SortableHead'
+import { TableShell } from '@/components/TableShell'
 import {
   Button,
   Switch,
-  Table,
   TableBody,
   TableCell,
   TableHead,
@@ -59,94 +59,84 @@ export function BuiltinTab({ commands, sortState, defaults, onToggle, onEdit }: 
   }, [commands, sortKey, sortDir])
 
   return (
-    <div className="overflow-x-auto rounded-md border">
-      <Table className="table-fixed">
-        <TableHeader>
-          <TableRow>
-            <SortableHead className="w-[20%]" sortKey="command_name" sort={sortState}>
-              指令
-            </SortableHead>
-            <TableHead className="hidden md:table-cell">描述</TableHead>
-            <SortableHead
-              className="hidden md:table-cell w-[8%]"
-              sortKey="cooldown"
-              sort={sortState}
-            >
-              冷卻
-            </SortableHead>
-            <SortableHead
-              className="hidden md:table-cell w-[8%]"
-              sortKey="min_role"
-              sort={sortState}
-            >
-              權限
-            </SortableHead>
-            <SortableHead
-              className="hidden md:table-cell w-[10%] text-right"
-              sortKey="usage_count"
-              sort={sortState}
-            >
-              使用次數
-            </SortableHead>
-            <SortableHead className="w-[8%] text-center" sortKey="enabled" sort={sortState}>
-              狀態
-            </SortableHead>
-            <TableHead className="w-[7%] text-right">操作</TableHead>
+    <TableShell>
+      <TableHeader>
+        <TableRow>
+          <SortableHead className="w-[20%]" sortKey="command_name" sort={sortState}>
+            指令
+          </SortableHead>
+          <TableHead className="hidden md:table-cell">描述</TableHead>
+          <SortableHead className="hidden md:table-cell w-[8%]" sortKey="cooldown" sort={sortState}>
+            冷卻
+          </SortableHead>
+          <SortableHead className="hidden md:table-cell w-[8%]" sortKey="min_role" sort={sortState}>
+            權限
+          </SortableHead>
+          <SortableHead
+            className="hidden md:table-cell w-[10%] text-right"
+            sortKey="usage_count"
+            sort={sortState}
+          >
+            使用次數
+          </SortableHead>
+          <SortableHead className="w-[8%] text-center" sortKey="enabled" sort={sortState}>
+            狀態
+          </SortableHead>
+          <TableHead className="w-[7%] text-right">操作</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {sorted.map(cmd => (
+          <TableRow key={cmd.command_name}>
+            <TableCell>
+              <div className="flex items-center gap-1.5">
+                <span className="font-mono font-medium">!{cmd.command_name}</span>
+                {cmd.aliases && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="cursor-default text-muted-foreground">
+                        <Icon icon="fa-solid fa-tags" wrapperClassName="size-3" />
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <span className="font-mono">
+                        {cmd.aliases
+                          .split(',')
+                          .map(a => `!${a.trim()}`)
+                          .join(' · ')}
+                      </span>
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+              </div>
+            </TableCell>
+            <TableCell className="hidden md:table-cell max-w-0 truncate text-sub text-muted-foreground">
+              {cmd.description}
+            </TableCell>
+            <TableCell className="hidden md:table-cell text-sub text-muted-foreground">
+              {formatCooldown(cmd.cooldown, defaults)}
+            </TableCell>
+            <TableCell className="hidden md:table-cell text-sub">
+              {ROLE_LABELS[cmd.min_role] || cmd.min_role}
+            </TableCell>
+            <TableCell className="hidden md:table-cell text-right">{cmd.usage_count}</TableCell>
+            <TableCell className="text-center">
+              <Switch checked={cmd.enabled} onCheckedChange={() => onToggle(cmd)} />
+            </TableCell>
+            <TableCell className="text-right">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-8"
+                aria-label={`編輯 !${cmd.command_name}`}
+                onClick={() => onEdit(cmd)}
+              >
+                <Icon icon="fa-solid fa-pen" wrapperClassName="size-3.5" />
+              </Button>
+            </TableCell>
           </TableRow>
-        </TableHeader>
-        <TableBody>
-          {sorted.map(cmd => (
-            <TableRow key={cmd.command_name}>
-              <TableCell>
-                <div className="flex items-center gap-1.5">
-                  <span className="font-mono font-medium">!{cmd.command_name}</span>
-                  {cmd.aliases && (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span className="cursor-default text-muted-foreground">
-                          <Icon icon="fa-solid fa-tags" wrapperClassName="size-3" />
-                        </span>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <span className="font-mono">
-                          {cmd.aliases
-                            .split(',')
-                            .map(a => `!${a.trim()}`)
-                            .join(' · ')}
-                        </span>
-                      </TooltipContent>
-                    </Tooltip>
-                  )}
-                </div>
-              </TableCell>
-              <TableCell className="hidden md:table-cell max-w-0 truncate text-sub text-muted-foreground">
-                {cmd.description}
-              </TableCell>
-              <TableCell className="hidden md:table-cell text-sub text-muted-foreground">
-                {formatCooldown(cmd.cooldown, defaults)}
-              </TableCell>
-              <TableCell className="hidden md:table-cell text-sub">
-                {ROLE_LABELS[cmd.min_role] || cmd.min_role}
-              </TableCell>
-              <TableCell className="hidden md:table-cell text-right">{cmd.usage_count}</TableCell>
-              <TableCell className="text-center">
-                <Switch checked={cmd.enabled} onCheckedChange={() => onToggle(cmd)} />
-              </TableCell>
-              <TableCell className="text-right">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-8"
-                  aria-label={`編輯 !${cmd.command_name}`}
-                  onClick={() => onEdit(cmd)}
-                >
-                  <Icon icon="fa-solid fa-pen" wrapperClassName="size-3.5" />
-                </Button>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
+        ))}
+      </TableBody>
+    </TableShell>
   )
 }

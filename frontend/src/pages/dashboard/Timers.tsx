@@ -14,9 +14,11 @@ import {
 import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { PageMain } from '@/components/layout/PageMain'
-import { EmptyState, Icon, SlideUp, Spinner } from '@/components/primitives'
+import { Icon, SlideUp, Spinner } from '@/components/primitives'
 import { SettingRow } from '@/components/SettingRow'
 import { SortableHead } from '@/components/SortableHead'
+import { TableEmptyRow } from '@/components/TableEmptyRow'
+import { TableShell } from '@/components/TableShell'
 import {
   Alert,
   AlertDescription,
@@ -39,7 +41,6 @@ import {
   SheetTitle,
   Skeleton,
   Switch,
-  Table,
   TableBody,
   TableCell,
   TableHead,
@@ -331,115 +332,103 @@ export default function Timers() {
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             ) : (
-              <div className="overflow-x-auto rounded-md border">
-                <Table className="table-fixed">
-                  <TableHeader>
-                    <TableRow>
-                      <SortableHead className="w-[20%]" sortKey="name" sort={timerSort}>
-                        名稱
-                      </SortableHead>
-                      <TableHead className="w-[8%]">類型</TableHead>
-                      <TableHead className="hidden md:table-cell">說明</TableHead>
-                      <SortableHead
-                        className="hidden md:table-cell w-[8%]"
-                        sortKey="interval"
-                        sort={timerSort}
-                      >
-                        間隔
-                      </SortableHead>
-                      <SortableHead
-                        className="w-[8%] text-center"
-                        sortKey="enabled"
-                        sort={timerSort}
-                      >
-                        狀態
-                      </SortableHead>
-                      <TableHead className="w-[7%] text-right">操作</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {sorted.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={6}>
-                          <EmptyState
-                            icon="fa-solid fa-clock"
-                            title="尚無計時器"
-                            description="點擊「新增計時器」開始設定"
-                          />
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      sorted.map(timer => {
-                        const isBuiltin = timer.id !== null && timer.id < 0
-                        return (
-                          <TableRow key={timer.timer_name}>
-                            <TableCell className="font-mono font-medium">
-                              <div className="flex items-center gap-1.5">
-                                <span>{timer.timer_name}</span>
-                                {timer.announce && (
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <span className="cursor-default text-muted-foreground">
-                                        <Icon
-                                          icon="fa-solid fa-bullhorn"
-                                          wrapperClassName="size-3"
-                                        />
-                                      </span>
-                                    </TooltipTrigger>
-                                    <TooltipContent>以公告方式發送</TooltipContent>
-                                  </Tooltip>
-                                )}
-                                {timer.command_alias && (
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <span className="cursor-default text-muted-foreground">
-                                        <Icon icon="fa-solid fa-bolt" wrapperClassName="size-3" />
-                                      </span>
-                                    </TooltipTrigger>
-                                    <TooltipContent>
-                                      <span className="font-mono">!{timer.command_alias}</span>
-                                      <span className="ml-1 text-muted-foreground">可手動觸發</span>
-                                    </TooltipContent>
-                                  </Tooltip>
-                                )}
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              {isBuiltin && (
-                                <Badge variant="secondary" className="text-label font-normal">
-                                  內建
-                                </Badge>
+              <TableShell>
+                <TableHeader>
+                  <TableRow>
+                    <SortableHead className="w-[20%]" sortKey="name" sort={timerSort}>
+                      名稱
+                    </SortableHead>
+                    <TableHead className="w-[8%]">類型</TableHead>
+                    <TableHead className="hidden md:table-cell">說明</TableHead>
+                    <SortableHead
+                      className="hidden md:table-cell w-[8%]"
+                      sortKey="interval"
+                      sort={timerSort}
+                    >
+                      間隔
+                    </SortableHead>
+                    <SortableHead className="w-[8%] text-center" sortKey="enabled" sort={timerSort}>
+                      狀態
+                    </SortableHead>
+                    <TableHead className="w-[7%] text-right">操作</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {sorted.length === 0 ? (
+                    <TableEmptyRow
+                      colSpan={6}
+                      icon="fa-solid fa-clock"
+                      title="尚無計時器"
+                      description="點擊「新增計時器」開始設定"
+                    />
+                  ) : (
+                    sorted.map(timer => {
+                      const isBuiltin = timer.id !== null && timer.id < 0
+                      return (
+                        <TableRow key={timer.timer_name}>
+                          <TableCell className="font-mono font-medium">
+                            <div className="flex items-center gap-1.5">
+                              <span>{timer.timer_name}</span>
+                              {timer.announce && (
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="cursor-default text-muted-foreground">
+                                      <Icon icon="fa-solid fa-bullhorn" wrapperClassName="size-3" />
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent>以公告方式發送</TooltipContent>
+                                </Tooltip>
                               )}
-                            </TableCell>
-                            <TableCell className="hidden md:table-cell max-w-0 truncate text-sub text-muted-foreground">
-                              {timer.message_template}
-                            </TableCell>
-                            <TableCell className="hidden md:table-cell text-sub text-muted-foreground">
-                              {formatInterval(timer.interval_seconds)}
-                            </TableCell>
-                            <TableCell className="text-center">
-                              <Switch
-                                checked={timer.enabled}
-                                onCheckedChange={() => handleToggle(timer)}
-                              />
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="size-8"
-                                onClick={() => openEditor(timer)}
-                              >
-                                <Icon icon="fa-solid fa-pen" wrapperClassName="size-3.5" />
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        )
-                      })
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
+                              {timer.command_alias && (
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="cursor-default text-muted-foreground">
+                                      <Icon icon="fa-solid fa-bolt" wrapperClassName="size-3" />
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <span className="font-mono">!{timer.command_alias}</span>
+                                    <span className="ml-1 text-muted-foreground">可手動觸發</span>
+                                  </TooltipContent>
+                                </Tooltip>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {isBuiltin && (
+                              <Badge variant="secondary" className="text-label font-normal">
+                                內建
+                              </Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="hidden md:table-cell max-w-0 truncate text-sub text-muted-foreground">
+                            {timer.message_template}
+                          </TableCell>
+                          <TableCell className="hidden md:table-cell text-sub text-muted-foreground">
+                            {formatInterval(timer.interval_seconds)}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <Switch
+                              checked={timer.enabled}
+                              onCheckedChange={() => handleToggle(timer)}
+                            />
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="size-8"
+                              onClick={() => openEditor(timer)}
+                            >
+                              <Icon icon="fa-solid fa-pen" wrapperClassName="size-3.5" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })
+                  )}
+                </TableBody>
+              </TableShell>
             )}
           </CardContent>
         </Card>

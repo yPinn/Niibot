@@ -6,6 +6,7 @@ import { getTriggerConfigs, toggleTrigger, type TriggerConfig } from '@/api/trig
 import { PageHeader } from '@/components/layout/PageHeader'
 import { PageMain } from '@/components/layout/PageMain'
 import { Icon, SlideUp } from '@/components/primitives'
+import { TableSkeletonRows } from '@/components/TableSkeletonRows'
 import {
   Badge,
   Button,
@@ -192,11 +193,7 @@ export default function Commands() {
             {loading ? (
               <div className="space-y-3">
                 <Skeleton className="h-9 w-48" />
-                <div className="space-y-2">
-                  {Array.from({ length: 6 }).map((_, i) => (
-                    <Skeleton key={i} className="h-10 w-full" />
-                  ))}
-                </div>
+                <TableSkeletonRows count={6} />
               </div>
             ) : error ? (
               <div className="flex items-center justify-center py-empty text-sub text-destructive">
