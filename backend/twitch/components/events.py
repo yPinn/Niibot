@@ -129,7 +129,7 @@ class EventComponent(commands.Component):
         # Always persist follow_since (idempotent COALESCE upsert)
         if hasattr(self.bot, "analytics"):
             try:
-                followed_at = getattr(payload, "followed_at", None) or datetime.now(UTC)
+                followed_at = payload.followed_at
                 await self.bot.analytics.upsert_viewer_follow_status(
                     channel_id=channel_id,
                     user_id=user_id,
@@ -263,7 +263,7 @@ class EventComponent(commands.Component):
 
         tier_name = _TIER_MAP.get(payload.tier, payload.tier)
         total = payload.total
-        cumulative = getattr(payload, "cumulative_total", None)
+        cumulative = payload.cumulative_total
         cumulative_str = str(cumulative) if cumulative is not None else "?"
 
         # Analytics — always write regardless of mod status (before mod guard)
@@ -327,7 +327,7 @@ class EventComponent(commands.Component):
         tier_name = _TIER_MAP.get(payload.tier, payload.tier)
         months = payload.months
         streak = payload.streak_months if payload.streak_months is not None else 0
-        resub_text = _clean_message_var(getattr(payload, "text", "") or "")
+        resub_text = _clean_message_var(payload.text)
 
         try:
             message = await self._get_message(
