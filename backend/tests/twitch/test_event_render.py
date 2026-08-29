@@ -39,3 +39,19 @@ class TestRenderTemplate:
 
     def test_unknown_placeholder_left_as_is(self):
         assert render_template("$(user) $(missing)", {"user": "A"}) == "A $(missing)"
+
+    def test_substituted_value_is_not_rescanned(self):
+        # A viewer typing "$(user)" into their resub note must not expand,
+        # regardless of dict key order.
+        assert (
+            render_template("$(message) $(user)", {"message": "$(user)", "user": "X"})
+            == "$(user) X"
+        )
+
+    def test_backslash_in_value_is_literal(self):
+        # A regex string replacement would treat "\1" as a backref — the callable
+        # repl must not.
+        assert render_template("$(message)", {"message": r"win \1 \g<0>"}) == r"win \1 \g<0>"
+
+    def test_no_placeholders(self):
+        assert render_template("just text", {"user": "A"}) == "just text"

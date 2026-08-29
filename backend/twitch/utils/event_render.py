@@ -5,7 +5,11 @@ trigger responses with a chatter object and its own variable set). These are
 pure functions over a plain ``dict[str, str]`` of event variables.
 """
 
+import re
+
 MESSAGE_VAR_LIMIT = 200
+
+_VAR_RE = re.compile(r"\$\((\w+)\)")
 
 
 def clean_message_var(value: str) -> str:
@@ -22,7 +26,11 @@ def clean_message_var(value: str) -> str:
 
 
 def render_template(template: str, variables: dict[str, str]) -> str:
-    """Substitute ``$(name)`` placeholders. Unknown placeholders are left as-is."""
-    for name, value in variables.items():
-        template = template.replace(f"$({name})", value)
-    return template
+    """Substitute ``$(name)`` placeholders in a single left-to-right pass.
+
+    Unknown placeholders are left as-is, and any ``$(...)`` that appears *inside*
+    a substituted value (e.g. a viewer typing ``$(user)`` into their resub note)
+    is NOT re-expanded — the single-pass regex makes variable injection via the
+    ``$(message)`` value structurally impossible, regardless of dict order.
+    """
+    return _VAR_RE.sub(lambda m: variables.get(m.group(1), m.group(0)), template)

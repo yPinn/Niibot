@@ -209,9 +209,17 @@ class EventsComponent(commands.Component):
             LOGGER.warning(f"[{broadcaster_name}] Subscription status upsert failed: {e}")
 
         label = f"[{broadcaster_name}] {sub_type}: {user_name} ({tier_name})"
-        if not await self._notify(
-            channel_id, "subscribe", {"user": user_name, "tier": tier_name}, label=label
-        ):
+        # A gifted sub fires this event for the *recipient* too. The gifter's
+        # gift_sub greeting already covers it — don't post a second message.
+        # Analytics/status still record below.
+        notified = False
+        if payload.gift:
+            LOGGER.info(f"{label} (gift recipient — greeting handled by gift_sub)")
+        else:
+            notified = await self._notify(
+                channel_id, "subscribe", {"user": user_name, "tier": tier_name}, label=label
+            )
+        if not (payload.gift or notified):
             return
 
         try:
@@ -302,6 +310,7 @@ class EventsComponent(commands.Component):
                 "tier": tier_name,
                 "months": str(months),
                 "streak": str(streak),
+                "total_months": str(payload.cumulative_months),
                 "message": clean_message_var(payload.text),
             },
             label=f"[{broadcaster_name}] Resub: {user_name} ({tier_name} ×{months})",
@@ -368,6 +377,8 @@ class EventsComponent(commands.Component):
         NOTE: always-on — fires via EventSub regardless of streaming state.
         """
         raider_name = payload.from_broadcaster.display_name or payload.from_broadcaster.name or ""
+        raider_login = payload.from_broadcaster.name
+        raider_url = f"https://twitch.tv/{raider_login}" if raider_login else ""
         raider_id = payload.from_broadcaster.id
         broadcaster_name = payload.to_broadcaster.name
         broadcaster_id = payload.to_broadcaster.id
@@ -380,7 +391,7 @@ class EventsComponent(commands.Component):
         await self._notify(
             broadcaster_id,
             "raid",
-            {"user": raider_name, "count": str(viewer_count)},
+            {"user": raider_name, "count": str(viewer_count), "url": raider_url},
             label=f"[{broadcaster_name}] Raid: {raider_name} ({viewer_count})",
         )
 
