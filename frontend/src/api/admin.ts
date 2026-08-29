@@ -33,13 +33,41 @@ export interface BotTokenInfo {
   missing_scopes: string[]
 }
 
-export interface PendingCode {
-  platform_user_id: string
-  display_name: string | null
-  username: string | null
-  avatar: string | null
-  expires_at: string
+export type GrantKind = 'channel_points' | 'owner_manual'
+export type GrantStatus = 'issued' | 'consumed' | 'expired' | 'revoked'
+
+export interface Grant {
+  id: number
+  kind: GrantKind
+  status: GrantStatus
+  platform_user_id: string | null
   code_plain: string | null
+  reward_cost: number | null
+  channel_id: string | null
+  redemption_id: string | null
+  issued_at: string
+  expires_at: string
+  used_at: string | null
+  attempt_count: number
+  display_name: string | null
+  avatar: string | null
+  username: string | null
+}
+
+export interface GrantKindCounts {
+  kind: GrantKind
+  issued_7d: number
+  consumed_7d: number
+  issued_30d: number
+  consumed_30d: number
+  issued_all: number
+  consumed_all: number
+  outstanding: number
+}
+
+export interface OnboardingFunnel {
+  active_members: number
+  by_kind: GrantKindCounts[]
 }
 
 export interface ActivationRequest {
@@ -115,18 +143,40 @@ export async function resyncBotEmotes(channelId?: string): Promise<BotEmoteResyn
   return response.json()
 }
 
-export async function getPendingActivationCodes(): Promise<PendingCode[]> {
-  const response = await apiFetch(API_ENDPOINTS.admin.activationCodes, { credentials: 'include' })
-  if (!response.ok) throw await parseApiError(response, '載入待啟用代碼失敗')
+export async function getGrants(params?: {
+  kind?: GrantKind
+  status?: GrantStatus
+}): Promise<Grant[]> {
+  const qs = new URLSearchParams()
+  if (params?.kind) qs.set('kind', params.kind)
+  if (params?.status) qs.set('status', params.status)
+  const suffix = qs.toString() ? `?${qs}` : ''
+  const response = await apiFetch(API_ENDPOINTS.admin.grants(suffix), { credentials: 'include' })
+  if (!response.ok) throw await parseApiError(response, '載入啟用碼失敗')
   return response.json()
 }
 
-export async function revokeActivationCode(platformUserId: string): Promise<void> {
-  const response = await apiFetch(API_ENDPOINTS.admin.revokeActivationCode(platformUserId), {
+export async function createOwnerCode(): Promise<string> {
+  const response = await apiFetch(API_ENDPOINTS.admin.grants(), {
+    method: 'POST',
+    credentials: 'include',
+  })
+  if (!response.ok) throw await parseApiError(response, '產生啟用碼失敗')
+  return (await response.json()).code
+}
+
+export async function revokeGrant(grantId: number): Promise<void> {
+  const response = await apiFetch(API_ENDPOINTS.admin.revokeGrant(grantId), {
     method: 'DELETE',
     credentials: 'include',
   })
-  if (!response.ok) throw await parseApiError(response, '撤銷代碼失敗')
+  if (!response.ok) throw await parseApiError(response, '撤銷啟用碼失敗')
+}
+
+export async function getOnboardingFunnel(): Promise<OnboardingFunnel> {
+  const response = await apiFetch(API_ENDPOINTS.admin.onboardingFunnel, { credentials: 'include' })
+  if (!response.ok) throw await parseApiError(response, '載入啟用漏斗失敗')
+  return response.json()
 }
 
 export async function getActivationRequests(): Promise<ActivationRequest[]> {
