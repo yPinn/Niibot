@@ -129,6 +129,23 @@ class LoyaltyTiers(BaseModel):
     newcomer: int
 
 
+class PlusTierBreakdown(BaseModel):
+    t1: int = 0
+    t2: int = 0
+    t3: int = 0
+
+
+class PlusProgramEstimate(BaseModel):
+    confirmed_points: int = 0
+    confirmed_subs: int = 0
+    pending_points: int = 0
+    pending_subs: int = 0
+    tier_breakdown: PlusTierBreakdown = PlusTierBreakdown()
+    plan_confirmed: str = "50/50"
+    plan_ceiling: str = "50/50"
+    data_as_of: datetime | None = None
+
+
 class ChannelInsights(BaseModel):
     total_sessions: int
     total_stream_seconds: int
@@ -291,6 +308,21 @@ async def get_insights(
     data = await service.get_insights(channel_id, days)
     response.headers["Cache-Control"] = "private, max-age=300"
     return ChannelInsights(**data)
+
+
+@router.get("/plus-estimate", response_model=PlusProgramEstimate)
+async def get_plus_program_estimate(
+    response: Response,
+    channel_id: str = Depends(get_current_channel_id),
+    service: AnalyticsService = Depends(get_analytics_service),
+) -> PlusProgramEstimate:
+    """Single-month Twitch Plus Program point estimate from the current
+    subscriber roster (refreshed by POST /sync-roles). Prime status is only
+    known for subs observed live via chat notification — the rest are 'pending'.
+    """
+    data = await service.get_plus_program_estimate(channel_id)
+    response.headers["Cache-Control"] = "private, max-age=300"
+    return PlusProgramEstimate(**data)
 
 
 @router.get("/viewers", response_model=list[ViewerSummary])

@@ -1457,3 +1457,61 @@ class TestUpsertViewerSubPrime:
 
         sql = conn.execute.call_args[0][0]
         assert "sub_is_prime  = NULL" in sql
+
+
+class TestGetPlusProgramEstimate:
+    pytestmark = pytest.mark.asyncio
+
+    async def test_shapes_row_and_computes_plans(self):
+        row = {
+            "confirmed_points": 105,
+            "confirmed_subs": 60,
+            "pending_points": 200,
+            "pending_subs": 150,
+            "t1": 40,
+            "t2": 10,
+            "t3": 10,
+            "data_as_of": _NOW,
+        }
+        pool, _conn = _make_pool(fetchrow=row)
+        repo = AnalyticsRepository(pool)
+
+        result = await repo.get_plus_program_estimate("ch1")
+
+        assert result["confirmed_points"] == 105
+        assert result["tier_breakdown"] == {"t1": 40, "t2": 10, "t3": 10}
+        assert result["plan_confirmed"] == "60/40"  # 105 >= 100
+        assert result["plan_ceiling"] == "70/30"  # 305 >= 300
+        assert result["data_as_of"] == _NOW
+
+    async def test_zero_roster_is_50_50(self):
+        row = {
+            "confirmed_points": 0,
+            "confirmed_subs": 0,
+            "pending_points": 0,
+            "pending_subs": 0,
+            "t1": 0,
+            "t2": 0,
+            "t3": 0,
+            "data_as_of": None,
+        }
+        pool, _conn = _make_pool(fetchrow=row)
+        repo = AnalyticsRepository(pool)
+
+        result = await repo.get_plus_program_estimate("ch1")
+
+        assert result["plan_confirmed"] == "50/50"
+        assert result["plan_ceiling"] == "50/50"
+        assert result["data_as_of"] is None
+
+    async def test_missing_column_returns_empty(self):
+        from asyncpg.exceptions import UndefinedColumnError
+
+        pool, conn = _make_pool()
+        conn.fetchrow.side_effect = UndefinedColumnError("no sub_is_prime")
+        repo = AnalyticsRepository(pool)
+
+        result = await repo.get_plus_program_estimate("ch1")
+
+        assert result["confirmed_points"] == 0
+        assert result["plan_confirmed"] == "50/50"

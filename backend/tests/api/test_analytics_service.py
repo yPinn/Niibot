@@ -73,6 +73,15 @@ async def test_get_insights_delegates():
 
 
 @pytest.mark.asyncio
+async def test_get_plus_program_estimate_delegates():
+    svc, repo = _make_svc()
+    repo.get_plus_program_estimate = AsyncMock(return_value={"confirmed_points": 42})
+    result = await svc.get_plus_program_estimate(CHANNEL_ID)
+    repo.get_plus_program_estimate.assert_awaited_once_with(CHANNEL_ID)
+    assert result["confirmed_points"] == 42
+
+
+@pytest.mark.asyncio
 async def test_list_viewers_delegates():
     svc, repo = _make_svc()
     repo.list_viewers = AsyncMock(return_value=[{"user_id": USER_ID}])

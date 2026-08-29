@@ -121,6 +121,49 @@ class TestGetAnalyticsSummary:
         assert "private" in r.headers.get("cache-control", "")
 
 
+# ── GET /api/analytics/plus-estimate ──
+
+_PLUS_ESTIMATE = {
+    "confirmed_points": 105,
+    "confirmed_subs": 60,
+    "pending_points": 200,
+    "pending_subs": 150,
+    "tier_breakdown": {"t1": 40, "t2": 10, "t3": 10},
+    "plan_confirmed": "60/40",
+    "plan_ceiling": "70/30",
+    "data_as_of": None,
+}
+
+
+class TestGetPlusProgramEstimate:
+    def test_returns_200_with_estimate(self):
+        import services.analytics_service as m
+
+        with patch.object(
+            m.AnalyticsService,
+            "get_plus_program_estimate",
+            AsyncMock(return_value=_PLUS_ESTIMATE),
+        ):
+            r = _make_client().get("/api/analytics/plus-estimate")
+        assert r.status_code == 200
+        d = r.json()
+        assert d["confirmed_points"] == 105
+        assert d["tier_breakdown"]["t2"] == 10
+        assert d["plan_ceiling"] == "70/30"
+        assert "private" in r.headers.get("cache-control", "")
+
+    def test_service_exception_returns_500(self):
+        import services.analytics_service as m
+
+        with patch.object(
+            m.AnalyticsService,
+            "get_plus_program_estimate",
+            AsyncMock(side_effect=RuntimeError("db")),
+        ):
+            r = _make_client().get("/api/analytics/plus-estimate")
+        assert r.status_code == 500
+
+
 # ── GET /api/analytics/sessions/{id}/commands ──
 
 
