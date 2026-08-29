@@ -1,7 +1,14 @@
 import type { PlusProgramEstimate } from '@/api/analytics'
 import { AffiliateLockOverlay } from '@/components/AffiliateLockOverlay'
 import { Icon } from '@/components/primitives'
-import { Button, Skeleton, Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui'
+import {
+  Button,
+  Progress,
+  Skeleton,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui'
 import { formatRelativeTime } from '@/lib/format'
 import { PLUS_TIER2_POINTS, plusProgress, subsToClose } from '@/lib/plus-program'
 import { cn } from '@/lib/utils'
@@ -26,8 +33,6 @@ function planLabel(split: string): string {
   if (split === '60/40') return '等級 1（60/40）'
   return '尚未達標（50/50）'
 }
-
-const barPct = (points: number) => Math.min(100, Math.max(0, (points / PLUS_TIER2_POINTS) * 100))
 
 function CardShell({ children }: { children: React.ReactNode }) {
   return (
@@ -60,8 +65,6 @@ export function PlusProgramCard({
   const prog = plusProgress(confirmed_points)
   const gap = subsToClose(prog.remaining)
   const nextTierLabel = prog.nextThreshold === 100 ? '等級 1（60/40）' : '等級 2（70/30）'
-  const confirmedWidth = barPct(confirmed_points)
-  const pendingWidth = Math.max(0, barPct(confirmed_points + pending_points) - confirmedWidth)
 
   return (
     <CardShell>
@@ -114,16 +117,15 @@ export function PlusProgramCard({
       </div>
 
       <div className="flex flex-col gap-1">
-        <div
-          className="h-1.5 w-full flex rounded-full bg-muted overflow-hidden"
-          role="progressbar"
-          aria-valuenow={confirmed_points}
-          aria-valuemin={0}
-          aria-valuemax={PLUS_TIER2_POINTS}
-        >
-          <div className="bg-primary" style={{ width: `${confirmedWidth}%` }} />
-          <div className="bg-primary/30" style={{ width: `${pendingWidth}%` }} />
-        </div>
+        <Progress
+          max={PLUS_TIER2_POINTS}
+          value={confirmed_points}
+          aria-label="加強版方案積分進度"
+          segments={[
+            { value: confirmed_points },
+            { value: pending_points, className: 'bg-primary/30' },
+          ]}
+        />
         <p className="text-label text-muted-foreground">
           {`已確認 ${confirmed_subs} 位付費訂閱`}
           {pending_subs > 0 && `，另 ${pending_subs} 位待確認來源（最高再 +${pending_points} 點）`}

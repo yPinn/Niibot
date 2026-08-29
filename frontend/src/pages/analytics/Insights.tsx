@@ -294,7 +294,7 @@ export default function Insights() {
         className="grid grid-cols-1 lg:grid-cols-2 gap-section flex-1 min-h-0 overflow-y-auto lg:overflow-hidden lg:grid-rows-1"
       >
         {/* ── Left: Chart + Summary tiles ──────────────────────────── */}
-        <div className="rounded-lg border bg-card p-section flex flex-col gap-section min-h-0 lg:self-start">
+        <div className="rounded-lg border bg-card p-section flex flex-col gap-section min-h-0 lg:overflow-y-auto">
           {/* Chart header */}
           <div className="flex items-center justify-between shrink-0">
             <span className="text-sub font-semibold">
