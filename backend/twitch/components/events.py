@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 import twitchio
 from twitchio.ext import commands
 
+from utils.event_render import clean_message_var, render_template, tier_label
 from utils.reauth import is_scope_error, reauth_notifier
 
 if TYPE_CHECKING:
@@ -12,23 +13,6 @@ if TYPE_CHECKING:
 
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
-
-_TIER_MAP = {"1000": "T1", "2000": "T2", "3000": "T3"}
-
-_MESSAGE_VAR_LIMIT = 200
-
-
-def _clean_message_var(value: str) -> str:
-    """Neutralise a viewer-typed template variable ($(message)).
-
-    Collapses newlines/runs of whitespace, drops a leading command char so the
-    bot never appears to run a /command, and caps length so a long resub note
-    can't push the whole greeting past Twitch's 500-char send limit.
-    """
-    text = " ".join(value.split())
-    if text[:1] in "/.":
-        text = text[1:].lstrip()
-    return text[:_MESSAGE_VAR_LIMIT]
 
 
 class EventComponent(commands.Component):
@@ -106,10 +90,7 @@ class EventComponent(commands.Component):
         if config is None or not config.enabled:
             return None
 
-        message = config.message_template
-        for key, value in variables.items():
-            message = message.replace(f"$({key})", value)
-        return message
+        return render_template(config.message_template, variables)
 
     @commands.Component.listener()
     async def event_follow(
@@ -187,7 +168,7 @@ class EventComponent(commands.Component):
         user_name = payload.user.display_name or payload.user.name or ""
         broadcaster_name = payload.broadcaster.name
         channel_id = payload.broadcaster.id
-        tier_name = _TIER_MAP.get(payload.tier, payload.tier)
+        tier_name = tier_label(payload.tier)
 
         sub_type = "Gift" if payload.gift else "Sub"
 
@@ -261,7 +242,7 @@ class EventComponent(commands.Component):
         else:
             user_name = payload.user.display_name or payload.user.name or ""
 
-        tier_name = _TIER_MAP.get(payload.tier, payload.tier)
+        tier_name = tier_label(payload.tier)
         total = payload.total
         cumulative = payload.cumulative_total
         cumulative_str = str(cumulative) if cumulative is not None else "?"
@@ -324,10 +305,10 @@ class EventComponent(commands.Component):
         if not self._bot_has_mod(channel_id):
             LOGGER.debug(f"[{broadcaster_name}] Resub: {user_name} (bot not mod, skipped)")
             return
-        tier_name = _TIER_MAP.get(payload.tier, payload.tier)
+        tier_name = tier_label(payload.tier)
         months = payload.months
         streak = payload.streak_months if payload.streak_months is not None else 0
-        resub_text = _clean_message_var(payload.text)
+        resub_text = clean_message_var(payload.text)
 
         try:
             message = await self._get_message(
@@ -379,7 +360,7 @@ class EventComponent(commands.Component):
             LOGGER.debug(f"[{broadcaster_name}] Cheer: {user_name} (bot not mod, skipped)")
             return
         bits_amount = payload.bits
-        cheer_message = _clean_message_var(payload.message or "")
+        cheer_message = clean_message_var(payload.message or "")
 
         try:
             message = await self._get_message(
