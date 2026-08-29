@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { plusProgress } from './plus-program'
+import { plusProgress, subsToClose } from './plus-program'
 
 describe('plusProgress', () => {
   it('is 50/50 below 100 points, counting toward the first threshold', () => {
@@ -35,5 +35,19 @@ describe('plusProgress', () => {
 
   it('clamps negative input to zero', () => {
     expect(plusProgress(-5).remaining).toBe(100)
+  })
+})
+
+describe('subsToClose', () => {
+  it('converts a point gap into subs per tier, rounding up', () => {
+    expect(subsToClose(45)).toEqual({ points: 45, t1: 45, t2: 23, t3: 8 })
+  })
+
+  it('is all zeros at the threshold', () => {
+    expect(subsToClose(0)).toEqual({ points: 0, t1: 0, t2: 0, t3: 0 })
+  })
+
+  it('clamps negatives', () => {
+    expect(subsToClose(-10).t1).toBe(0)
   })
 })

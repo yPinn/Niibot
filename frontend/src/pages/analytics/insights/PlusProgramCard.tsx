@@ -2,7 +2,7 @@ import type { PlusProgramEstimate } from '@/api/analytics'
 import { Icon, Spinner } from '@/components/primitives'
 import { Skeleton } from '@/components/ui'
 import { formatRelativeTime } from '@/lib/format'
-import { PLUS_TIER2_POINTS, plusProgress } from '@/lib/plus-program'
+import { PLUS_TIER2_POINTS, plusProgress, subsToClose } from '@/lib/plus-program'
 import { cn } from '@/lib/utils'
 
 interface PlusProgramCardProps {
@@ -18,6 +18,13 @@ function splitColor(split: string): string {
   return 'text-muted-foreground'
 }
 
+/** "50/50" -> "未達等級 1（50/50）", "60/40" -> "等級 1（60/40）", "70/30" -> "等級 2（70/30）". */
+function planLabel(split: string): string {
+  if (split === '70/30') return '等級 2（70/30）'
+  if (split === '60/40') return '等級 1（60/40）'
+  return '未達等級 1（50/50）'
+}
+
 const barPct = (points: number) => Math.min(100, Math.max(0, (points / PLUS_TIER2_POINTS) * 100))
 
 export function PlusProgramCard({
@@ -31,6 +38,8 @@ export function PlusProgramCard({
 
   const { confirmed_points, confirmed_subs, pending_points, pending_subs, data_as_of } = estimate
   const prog = plusProgress(confirmed_points)
+  const gap = subsToClose(prog.remaining)
+  const nextTierLabel = prog.nextThreshold === 100 ? '等級 1（60/40）' : '等級 2（70/30）'
   const confirmedWidth = barPct(confirmed_points)
   const pendingWidth = Math.max(0, barPct(confirmed_points + pending_points) - confirmedWidth)
 
@@ -57,7 +66,7 @@ export function PlusProgramCard({
         <span className={cn('text-card-title font-bold tabular-nums', splitColor(prog.split))}>
           {confirmed_points.toLocaleString()}
         </span>
-        <span className="text-label text-muted-foreground">點 · 目前 {prog.split}</span>
+        <span className="text-label text-muted-foreground">點 · 目前 {planLabel(prog.split)}</span>
       </div>
 
       <div
@@ -74,11 +83,19 @@ export function PlusProgramCard({
       <p className="text-label text-muted-foreground">
         確認付費 {confirmed_subs} 位 · 待確認 {pending_subs} 位（最多 +{pending_points} 點）
       </p>
-      <p className="text-label text-muted-foreground">
-        {prog.nextThreshold === null
-          ? '已達最高分潤級距'
-          : `距 ${prog.nextThreshold === 100 ? '60/40' : '70/30'} 還差 ${prog.remaining} 點`}
-      </p>
+
+      {prog.nextThreshold === null ? (
+        <p className="text-label text-status-online">已達等級 2（70/30），持續維持即可</p>
+      ) : (
+        <div className="flex flex-col gap-0.5">
+          <p className="text-label text-muted-foreground">
+            距 {nextTierLabel} 還差 <span className="tabular-nums">{gap.points}</span> 點
+          </p>
+          <p className="text-label text-muted-foreground/70 tabular-nums">
+            ≈ 層級 1 ×{gap.t1} · 層級 2 ×{gap.t2} · 層級 3 ×{gap.t3}
+          </p>
+        </div>
+      )}
 
       {data_as_of && (
         <p className="text-label text-muted-foreground/60">

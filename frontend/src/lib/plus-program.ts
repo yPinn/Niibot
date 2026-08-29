@@ -20,6 +20,28 @@ export interface PlusProgress {
   pctToNext: number
 }
 
+/** Sub tiers earn 1 / 2 / 6 points. */
+export const PLUS_TIER_POINTS = { t1: 1, t2: 2, t3: 6 } as const
+
+export interface PlusShortfall {
+  /** Points still needed for the next split. */
+  points: number
+  /** Subs of each tier that would close the gap on their own. */
+  t1: number
+  t2: number
+  t3: number
+}
+
+export function subsToClose(remainingPoints: number): PlusShortfall {
+  const p = Math.max(0, remainingPoints)
+  return {
+    points: p,
+    t1: p,
+    t2: Math.ceil(p / PLUS_TIER_POINTS.t2),
+    t3: Math.ceil(p / PLUS_TIER_POINTS.t3),
+  }
+}
+
 export function plusProgress(points: number): PlusProgress {
   const p = Math.max(0, points)
   if (p >= PLUS_TIER2_POINTS) {
