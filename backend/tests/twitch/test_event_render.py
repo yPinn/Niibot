@@ -1,6 +1,11 @@
 """Unit tests for twitch.utils.event_render."""
 
-from twitch.utils.event_render import MESSAGE_VAR_LIMIT, clean_message_var, render_template
+from twitch.utils.event_render import (
+    MESSAGE_VAR_LIMIT,
+    clean_message_var,
+    mention_vars,
+    render_template,
+)
 
 from shared.events import tier_label
 
@@ -55,3 +60,47 @@ class TestRenderTemplate:
 
     def test_no_placeholders(self):
         assert render_template("just text", {"user": "A"}) == "just text"
+
+    def test_at_var_resolves_its_own_key(self):
+        out = render_template("感謝 $(@user)！", {"user": "小明", "@user": "@小明"})
+        assert out == "感謝 @小明！"
+
+
+class TestOptionalSegments:
+    TMPL = "感謝 $(user) 訂閱滿 $(total) 個月[[，已連續 $(streak) 個月]][[（$(source)）]]！"
+
+    def test_both_absent_collapse(self):
+        out = render_template(self.TMPL, {"user": "A", "total": "14", "streak": "", "source": ""})
+        assert out == "感謝 A 訂閱滿 14 個月！"
+
+    def test_one_present_one_absent(self):
+        out = render_template(self.TMPL, {"user": "A", "total": "14", "streak": "6", "source": ""})
+        assert out == "感謝 A 訂閱滿 14 個月，已連續 6 個月！"
+
+    def test_both_present(self):
+        out = render_template(
+            self.TMPL, {"user": "A", "total": "3", "streak": "3", "source": "贈訂"}
+        )
+        assert out == "感謝 A 訂閱滿 3 個月，已連續 3 個月（贈訂）！"
+
+    def test_missing_key_counts_as_absent(self):
+        assert render_template("x[[ $(y)]]", {}) == "x"
+
+    def test_segment_markers_from_viewer_value_are_inert(self):
+        # A viewer typing "[[" / "$(x)" in their message must not be processed.
+        out = render_template("$(message)", {"message": "[[$(x)]]", "x": "boom"})
+        assert out == "[[$(x)]]"
+
+
+class TestMentionVars:
+    def test_named_chatter(self):
+        assert mention_vars("user", "小明") == {"user": "小明", "@user": "@小明"}
+
+    def test_anonymous_stays_plain(self):
+        assert mention_vars("user", "匿名用戶", anonymous=True) == {
+            "user": "匿名用戶",
+            "@user": "匿名用戶",
+        }
+
+    def test_empty_name_stays_plain(self):
+        assert mention_vars("gifter", "") == {"gifter": "", "@gifter": ""}

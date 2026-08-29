@@ -9,7 +9,20 @@ import re
 
 MESSAGE_VAR_LIMIT = 200
 
-_VAR_RE = re.compile(r"\$\((\w+)\)")
+# ``$(name)`` or ``$(@name)`` — the ``@`` form is a separate dict key the caller
+# supplies (``@user`` -> ``"@小明"`` or, for an anonymous chatter, the plain name).
+_VAR_RE = re.compile(r"\$\((@?\w+)\)")
+
+# ``[[ ... ]]`` marks an optional segment: dropped entirely when any ``$(var)``
+# inside it has no value, otherwise the brackets are stripped and it renders.
+_SEGMENT_RE = re.compile(r"\[\[(.*?)\]\]", re.DOTALL)
+
+
+def mention_vars(key: str, name: str, *, anonymous: bool = False) -> dict[str, str]:
+    """``{key: name, "@"+key: mention}`` — the mention is ``@name`` unless the
+    chatter is anonymous or nameless, in which case it stays plain."""
+    mention = name if (anonymous or not name) else f"@{name}"
+    return {key: name, f"@{key}": mention}
 
 
 def clean_message_var(value: str) -> str:
@@ -25,12 +38,29 @@ def clean_message_var(value: str) -> str:
     return text[:MESSAGE_VAR_LIMIT]
 
 
-def render_template(template: str, variables: dict[str, str]) -> str:
-    """Substitute ``$(name)`` placeholders in a single left-to-right pass.
+def _resolve_segments(template: str, variables: dict[str, str]) -> str:
+    """Drop each ``[[ ... ]]`` whose referenced vars aren't all populated; strip
+    the brackets from the rest. An absent key and an empty value both count as
+    "no value"."""
 
-    Unknown placeholders are left as-is, and any ``$(...)`` that appears *inside*
-    a substituted value (e.g. a viewer typing ``$(user)`` into their resub note)
-    is NOT re-expanded — the single-pass regex makes variable injection via the
-    ``$(message)`` value structurally impossible, regardless of dict order.
+    def repl(m: re.Match[str]) -> str:
+        segment = m.group(1)
+        if any(not variables.get(name, "") for name in _VAR_RE.findall(segment)):
+            return ""
+        return segment
+
+    return _SEGMENT_RE.sub(repl, template)
+
+
+def render_template(template: str, variables: dict[str, str]) -> str:
+    """Render a channel's greeting template.
+
+    1. ``[[ optional ]]`` segments collapse when a var inside has no value.
+    2. ``$(name)`` / ``$(@name)`` are substituted in a single left-to-right pass:
+       a known key resolves to its value (possibly ``""``); an unknown key is
+       left literal. Any ``$(...)`` inside a substituted value (e.g. a viewer
+       typing ``$(user)`` into their resub note) is NOT re-expanded — injection
+       via the ``$(message)`` value is structurally impossible.
     """
+    template = _resolve_segments(template, variables)
     return _VAR_RE.sub(lambda m: variables.get(m.group(1), m.group(0)), template)
