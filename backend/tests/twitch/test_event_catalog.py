@@ -103,23 +103,31 @@ def _key(sub: eventsub.SubscriptionPayload) -> tuple:
     return (sub.type, sub.version, tuple(sorted(sub.condition.items())))
 
 
-def test_get_channel_subscriptions_is_unchanged():
-    """No-op guard: the derived list must equal the pre-refactor hardcoded 13."""
+def test_channel_subscription_set():
+    """Snapshot of every EventSub subscription created per channel.
+
+    Update this list deliberately when adding/removing a subscription — the
+    friction is the point.
+    """
     bc, bot = "bc-1", "bot-1"
     expected = [
         eventsub.ChatMessageSubscription(broadcaster_user_id=bc, user_id=bot),
         eventsub.StreamOnlineSubscription(broadcaster_user_id=bc),
         eventsub.StreamOfflineSubscription(broadcaster_user_id=bc),
         eventsub.ChannelPointsRedeemAddSubscription(broadcaster_user_id=bc),
-        eventsub.ChannelFollowSubscription(broadcaster_user_id=bc, moderator_user_id=bot),
-        eventsub.ChannelSubscribeSubscription(broadcaster_user_id=bc),
-        eventsub.ChannelCheerSubscription(broadcaster_user_id=bc),
-        eventsub.ChannelRaidSubscription(to_broadcaster_user_id=bc),
+        eventsub.ChannelSubscriptionEndSubscription(broadcaster_user_id=bc),
         eventsub.SharedChatSessionBeginSubscription(broadcaster_user_id=bc),
         eventsub.SharedChatSessionUpdateSubscription(broadcaster_user_id=bc),
         eventsub.SharedChatSessionEndSubscription(broadcaster_user_id=bc),
         eventsub.ChannelModeratorAddSubscription(broadcaster_user_id=bc),
         eventsub.ChannelModeratorRemoveSubscription(broadcaster_user_id=bc),
+        # catalog-derived (subscription_class set)
+        eventsub.ChannelFollowSubscription(broadcaster_user_id=bc, moderator_user_id=bot),
+        eventsub.ChannelSubscribeSubscription(broadcaster_user_id=bc),
+        eventsub.ChannelSubscribeMessageSubscription(broadcaster_user_id=bc),
+        eventsub.ChannelSubscriptionGiftSubscription(broadcaster_user_id=bc),
+        eventsub.ChannelRaidSubscription(to_broadcaster_user_id=bc),
+        eventsub.ChannelCheerSubscription(broadcaster_user_id=bc),
     ]
     got = get_channel_subscriptions(bc, bot)
     assert {_key(s) for s in got} == {_key(s) for s in expected}

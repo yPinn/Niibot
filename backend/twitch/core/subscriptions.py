@@ -25,6 +25,12 @@ _CATALOG_FACTORIES: dict[str, Callable[[str, str], eventsub.SubscriptionPayload]
     "ChannelSubscribeSubscription": lambda bc, _bot: eventsub.ChannelSubscribeSubscription(
         broadcaster_user_id=bc
     ),
+    "ChannelSubscribeMessageSubscription": lambda bc, _bot: (
+        eventsub.ChannelSubscribeMessageSubscription(broadcaster_user_id=bc)
+    ),
+    "ChannelSubscriptionGiftSubscription": lambda bc, _bot: (
+        eventsub.ChannelSubscriptionGiftSubscription(broadcaster_user_id=bc)
+    ),
     "ChannelCheerSubscription": lambda bc, _bot: eventsub.ChannelCheerSubscription(
         broadcaster_user_id=bc
     ),
@@ -43,6 +49,8 @@ def _fixed_subscriptions(
         eventsub.StreamOnlineSubscription(broadcaster_user_id=broadcaster_user_id),
         eventsub.StreamOfflineSubscription(broadcaster_user_id=broadcaster_user_id),
         eventsub.ChannelPointsRedeemAddSubscription(broadcaster_user_id=broadcaster_user_id),
+        # analytics-only: updates viewer sub status, no template / dashboard toggle
+        eventsub.ChannelSubscriptionEndSubscription(broadcaster_user_id=broadcaster_user_id),
         eventsub.SharedChatSessionBeginSubscription(broadcaster_user_id=broadcaster_user_id),
         eventsub.SharedChatSessionUpdateSubscription(broadcaster_user_id=broadcaster_user_id),
         eventsub.SharedChatSessionEndSubscription(broadcaster_user_id=broadcaster_user_id),

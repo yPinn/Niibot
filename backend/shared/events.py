@@ -79,11 +79,7 @@ EVENT_CATALOG: tuple[EventDef, ...] = (
             EventVariable("streak", "連續訂閱月數"),
             EventVariable("message", "訂閱留言內容"),
         ),
-        # KNOWN GAP: event_subscription_message exists but was never wired.
-        # Fix = "ChannelSubscribeMessageSubscription" (scope
-        # channel:read:subscriptions already granted); deferred until
-        # _get_message fails closed for unconfigured channels.
-        subscription_class=None,
+        subscription_class="ChannelSubscribeMessageSubscription",
     ),
     EventDef(
         key="gift_sub",
@@ -95,8 +91,7 @@ EVENT_CATALOG: tuple[EventDef, ...] = (
             EventVariable("total", "本次贈禮數量"),
             EventVariable("cumulative", "累計贈禮總數"),
         ),
-        # KNOWN GAP (see resub). Fix = "ChannelSubscriptionGiftSubscription".
-        subscription_class=None,
+        subscription_class="ChannelSubscriptionGiftSubscription",
     ),
     EventDef(
         key="raid",
