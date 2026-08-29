@@ -58,7 +58,7 @@ class _NotifyMixin:
                     if channel_id not in self._needs_reauth:  # type: ignore[attr-defined]
                         token_obj = await self.channels.get_token(channel_id)  # type: ignore[attr-defined]
                         if token_obj and token_obj.scopes:
-                            from utils.reauth import missing_broadcaster_scopes
+                            from shared.twitch_scopes import missing_broadcaster_scopes
 
                             if missing_broadcaster_scopes(token_obj.scopes.split()):
                                 await self._mark_reauth_required(channel_id)
@@ -167,7 +167,7 @@ class _NotifyMixin:
                 user_info = await self.add_token(token_obj.token, token_obj.refresh)  # type: ignore[attr-defined]
                 LOGGER.info(f"[NOTIFY] Loaded token for new user: {user_info.login} ({user_id})")
 
-                from utils.reauth import missing_broadcaster_scopes
+                from shared.twitch_scopes import missing_broadcaster_scopes
 
                 missing = missing_broadcaster_scopes(user_info.scopes)
                 if missing:

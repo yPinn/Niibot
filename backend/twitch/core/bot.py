@@ -586,7 +586,7 @@ class Bot(_ChannelMixin, _MessageRouterMixin, _NotifyMixin, _SessionMixin, comma
                     LOGGER.info("Bot token has 'user:bot' scope — bot badge enabled.")
                 continue  # bot account does not need a channels row
 
-            from utils.reauth import missing_broadcaster_scopes
+            from shared.twitch_scopes import missing_broadcaster_scopes
 
             missing = missing_broadcaster_scopes(user_info.scopes)
             if missing:
