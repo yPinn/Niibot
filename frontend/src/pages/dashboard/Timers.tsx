@@ -284,8 +284,6 @@ export default function Timers() {
     }
   }
 
-  const { sortKey, sortDir, toggleSort } = timerSort
-
   return (
     <PageMain>
       <PageHeader title="Timers" description="定時訊息 — 直播中定時自動發送設定好的訊息" />
@@ -337,13 +335,7 @@ export default function Timers() {
                 <Table className="table-fixed">
                   <TableHeader>
                     <TableRow>
-                      <SortableHead
-                        className="w-[20%]"
-                        sortKey="name"
-                        currentKey={sortKey}
-                        dir={sortDir}
-                        onSort={toggleSort}
-                      >
+                      <SortableHead className="w-[20%]" sortKey="name" sort={timerSort}>
                         名稱
                       </SortableHead>
                       <TableHead className="w-[8%]">類型</TableHead>
@@ -351,18 +343,14 @@ export default function Timers() {
                       <SortableHead
                         className="hidden md:table-cell w-[8%]"
                         sortKey="interval"
-                        currentKey={sortKey}
-                        dir={sortDir}
-                        onSort={toggleSort}
+                        sort={timerSort}
                       >
                         間隔
                       </SortableHead>
                       <SortableHead
                         className="w-[8%] text-center"
                         sortKey="enabled"
-                        currentKey={sortKey}
-                        dir={sortDir}
-                        onSort={toggleSort}
+                        sort={timerSort}
                       >
                         狀態
                       </SortableHead>

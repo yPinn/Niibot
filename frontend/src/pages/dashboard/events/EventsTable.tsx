@@ -1,6 +1,7 @@
 import type { EventConfig, EventDefinition } from '@/api/events'
-import { Icon, SlideUp } from '@/components/primitives'
+import { EmptyState, Icon, SlideUp } from '@/components/primitives'
 import { SortableHead } from '@/components/SortableHead'
+import { TableSkeletonRows } from '@/components/TableSkeletonRows'
 import {
   Alert,
   AlertDescription,
@@ -11,7 +12,6 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-  Skeleton,
   Switch,
   Table,
   TableBody,
@@ -20,7 +20,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui'
-import type { useSortState } from '@/hooks/useSortState'
+import type { SortState } from '@/hooks/useSortState'
 
 import { accentClass } from './constants'
 import type { EventSortKey } from './types'
@@ -30,7 +30,7 @@ interface EventsTableProps {
   catalog: Map<string, EventDefinition>
   loading: boolean
   error: string | null
-  sort: ReturnType<typeof useSortState<EventSortKey>>
+  sort: SortState<EventSortKey>
   isAffiliate: boolean
   onToggle: (event: EventConfig) => void
   onEdit: (event: EventConfig) => void
@@ -55,11 +55,7 @@ export function EventsTable({
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="flex flex-col gap-2">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <Skeleton key={i} className="h-10 w-full" />
-              ))}
-            </div>
+            <TableSkeletonRows count={4} />
           ) : error ? (
             <Alert variant="destructive">
               <AlertDescription>{error}</AlertDescription>
@@ -69,47 +65,38 @@ export function EventsTable({
               <Table className="table-fixed">
                 <TableHeader>
                   <TableRow>
-                    <SortableHead
-                      className="w-[20%]"
-                      sortKey="event_type"
-                      currentKey={sort.sortKey}
-                      dir={sort.sortDir}
-                      onSort={sort.toggleSort}
-                    >
+                    <SortableHead className="w-[16%]" sortKey="event_type" sort={sort}>
                       事件名稱
                     </SortableHead>
                     <SortableHead
-                      className="hidden md:table-cell w-[12%]"
+                      className="hidden md:table-cell w-[10%]"
                       sortKey="type_label"
-                      currentKey={sort.sortKey}
-                      dir={sort.sortDir}
-                      onSort={sort.toggleSort}
+                      sort={sort}
                     >
                       類型
                     </SortableHead>
                     <TableHead className="hidden md:table-cell">訊息模板</TableHead>
                     <SortableHead
-                      className="hidden md:table-cell w-[12%] text-right"
+                      className="hidden lg:table-cell w-[9%] text-right"
                       sortKey="trigger_count"
-                      currentKey={sort.sortKey}
-                      dir={sort.sortDir}
-                      onSort={sort.toggleSort}
+                      sort={sort}
                     >
                       觸發次數
                     </SortableHead>
-                    <SortableHead
-                      className="w-[10%] text-center"
-                      sortKey="enabled"
-                      currentKey={sort.sortKey}
-                      dir={sort.sortDir}
-                      onSort={sort.toggleSort}
-                    >
+                    <SortableHead className="w-[9%] text-center" sortKey="enabled" sort={sort}>
                       狀態
                     </SortableHead>
                     <TableHead className="w-[8%] text-right">操作</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
+                  {events.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={6}>
+                        <EmptyState icon="fa-solid fa-bell" title="尚無事件設定" />
+                      </TableCell>
+                    </TableRow>
+                  )}
                   {events.map(event => {
                     const defn = catalog.get(event.event_type)
                     const name = defn?.display_name ?? event.event_type
@@ -136,7 +123,7 @@ export function EventsTable({
                             event.message_template
                           )}
                         </TableCell>
-                        <TableCell className="hidden md:table-cell text-right">
+                        <TableCell className="hidden lg:table-cell text-right">
                           {event.trigger_count ?? '—'}
                         </TableCell>
                         <TableCell className="text-center">

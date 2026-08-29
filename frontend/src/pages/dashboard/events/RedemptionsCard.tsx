@@ -2,6 +2,7 @@ import type { RedemptionConfig, TwitchReward } from '@/api/events'
 import { AffiliateLockOverlay } from '@/components/AffiliateLockOverlay'
 import { EmptyState, SlideUp } from '@/components/primitives'
 import { SortableHead } from '@/components/SortableHead'
+import { TableSkeletonRows } from '@/components/TableSkeletonRows'
 import {
   Card,
   CardContent,
@@ -21,7 +22,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui'
-import type { useSortState } from '@/hooks/useSortState'
+import type { SortState } from '@/hooks/useSortState'
 
 import { ACTION_TYPE_LABELS } from './constants'
 import type { RedemptionSortKey } from './types'
@@ -31,7 +32,7 @@ interface RedemptionsCardProps {
   twitchRewards: TwitchReward[]
   redemptionLoading: boolean
   rewardsLoading: boolean
-  sort: ReturnType<typeof useSortState<RedemptionSortKey>>
+  sort: SortState<RedemptionSortKey>
   isAffiliate: boolean
   onToggle: (red: RedemptionConfig) => void
   onRewardSelect: (red: RedemptionConfig, rewardTitle: string) => void
@@ -62,40 +63,19 @@ export function RedemptionsCard({
         </CardHeader>
         <CardContent>
           {redemptionLoading ? (
-            <div className="flex flex-col gap-2">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <Skeleton key={i} className="h-10 w-full" />
-              ))}
-            </div>
+            <TableSkeletonRows />
           ) : (
             <div className="overflow-x-auto rounded-md border">
               <Table className="table-fixed">
                 <TableHeader>
                   <TableRow>
-                    <SortableHead
-                      className="w-[30%]"
-                      sortKey="action_type"
-                      currentKey={sort.sortKey}
-                      dir={sort.sortDir}
-                      onSort={sort.toggleSort}
-                    >
+                    <SortableHead className="w-[30%]" sortKey="action_type" sort={sort}>
                       動作
                     </SortableHead>
-                    <SortableHead
-                      sortKey="reward_name"
-                      currentKey={sort.sortKey}
-                      dir={sort.sortDir}
-                      onSort={sort.toggleSort}
-                    >
+                    <SortableHead sortKey="reward_name" sort={sort}>
                       獎勵名稱
                     </SortableHead>
-                    <SortableHead
-                      className="w-24 text-center"
-                      sortKey="enabled"
-                      currentKey={sort.sortKey}
-                      dir={sort.sortDir}
-                      onSort={sort.toggleSort}
-                    >
+                    <SortableHead className="w-24 text-center" sortKey="enabled" sort={sort}>
                       狀態
                     </SortableHead>
                   </TableRow>

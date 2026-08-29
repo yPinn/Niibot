@@ -212,22 +212,14 @@ export default function PublicCommands() {
                           <Table>
                             <TableHeader>
                               <TableRow>
-                                <SortableHead
-                                  className="w-[25%]"
-                                  sortKey="name"
-                                  currentKey={builtinSort.sortKey}
-                                  dir={builtinSort.sortDir}
-                                  onSort={builtinSort.toggleSort}
-                                >
+                                <SortableHead className="w-[25%]" sortKey="name" sort={builtinSort}>
                                   指令
                                 </SortableHead>
                                 <TableHead className="hidden md:table-cell">說明</TableHead>
                                 <SortableHead
                                   className="w-[15%] text-center"
                                   sortKey="min_role"
-                                  currentKey={builtinSort.sortKey}
-                                  dir={builtinSort.sortDir}
-                                  onSort={builtinSort.toggleSort}
+                                  sort={builtinSort}
                                 >
                                   權限
                                 </SortableHead>
@@ -271,31 +263,17 @@ export default function PublicCommands() {
                           <Table>
                             <TableHeader>
                               <TableRow>
-                                <SortableHead
-                                  className="w-[25%]"
-                                  sortKey="name"
-                                  currentKey={customSort.sortKey}
-                                  dir={customSort.sortDir}
-                                  onSort={customSort.toggleSort}
-                                >
+                                <SortableHead className="w-[25%]" sortKey="name" sort={customSort}>
                                   名稱
                                 </SortableHead>
-                                <SortableHead
-                                  className="w-[12%]"
-                                  sortKey="kind"
-                                  currentKey={customSort.sortKey}
-                                  dir={customSort.sortDir}
-                                  onSort={customSort.toggleSort}
-                                >
+                                <SortableHead className="w-[12%]" sortKey="kind" sort={customSort}>
                                   類型
                                 </SortableHead>
                                 <TableHead className="hidden md:table-cell">說明</TableHead>
                                 <SortableHead
                                   className="w-[15%] text-center"
                                   sortKey="min_role"
-                                  currentKey={customSort.sortKey}
-                                  dir={customSort.sortDir}
-                                  onSort={customSort.toggleSort}
+                                  sort={customSort}
                                 >
                                   權限
                                 </SortableHead>

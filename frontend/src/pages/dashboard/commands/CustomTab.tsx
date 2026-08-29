@@ -29,66 +29,40 @@ export interface CustomTabProps {
 }
 
 export function CustomTab({ customRows, sortState, defaults, onToggle, onEdit }: CustomTabProps) {
-  const { sortKey, sortDir, toggleSort } = sortState
-
   return (
     <div className="overflow-x-auto rounded-md border">
       <Table className="table-fixed">
         <TableHeader>
           <TableRow>
-            <SortableHead
-              className="w-[20%]"
-              sortKey="name"
-              currentKey={sortKey}
-              dir={sortDir}
-              onSort={toggleSort}
-            >
+            <SortableHead className="w-[20%]" sortKey="name" sort={sortState}>
               名稱
             </SortableHead>
-            <SortableHead
-              className="w-[10%]"
-              sortKey="kind"
-              currentKey={sortKey}
-              dir={sortDir}
-              onSort={toggleSort}
-            >
+            <SortableHead className="w-[10%]" sortKey="kind" sort={sortState}>
               類型
             </SortableHead>
             <TableHead className="hidden md:table-cell">回應</TableHead>
             <SortableHead
               className="hidden md:table-cell w-[8%]"
               sortKey="cooldown"
-              currentKey={sortKey}
-              dir={sortDir}
-              onSort={toggleSort}
+              sort={sortState}
             >
               冷卻
             </SortableHead>
             <SortableHead
               className="hidden md:table-cell w-[8%]"
               sortKey="min_role"
-              currentKey={sortKey}
-              dir={sortDir}
-              onSort={toggleSort}
+              sort={sortState}
             >
               權限
             </SortableHead>
             <SortableHead
               className="hidden md:table-cell w-[10%] text-right"
               sortKey="usage_count"
-              currentKey={sortKey}
-              dir={sortDir}
-              onSort={toggleSort}
+              sort={sortState}
             >
               使用次數
             </SortableHead>
-            <SortableHead
-              className="w-[8%] text-center"
-              sortKey="enabled"
-              currentKey={sortKey}
-              dir={sortDir}
-              onSort={toggleSort}
-            >
+            <SortableHead className="w-[8%] text-center" sortKey="enabled" sort={sortState}>
               狀態
             </SortableHead>
             <TableHead className="w-[7%] text-right">操作</TableHead>
