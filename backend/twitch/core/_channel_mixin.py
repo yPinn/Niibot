@@ -17,6 +17,15 @@ from core.subscriptions import get_channel_subscriptions
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
+def _sub_id(success_item) -> str | None:
+    """Subscription id from a ``MultiSubscribeSuccess``: nested in Twitch's raw
+    response at ``response["data"][0]["id"]``, not ``response["id"]``.
+    """
+    data = success_item.response.get("data") or []
+    sid = data[0].get("id") if data else None
+    return sid if isinstance(sid, str) else None
+
+
 class _ChannelMixin:
     # ------------------------------------------------------------------
     # Helpers
@@ -93,11 +102,9 @@ class _ChannelMixin:
                     )
                     self._needs_reauth.add(broadcaster_user_id)  # type: ignore[attr-defined]
 
-            subscription_ids: list[str] = []
-            for success_item in resp.success:
-                sub_id = success_item.response.get("id")
-                if sub_id and isinstance(sub_id, str):
-                    subscription_ids.append(sub_id)
+            subscription_ids: list[str] = [
+                sid for s in resp.success if (sid := _sub_id(s)) is not None
+            ]
 
             if subscription_ids:
                 self._subscription_ids[broadcaster_user_id] = subscription_ids  # type: ignore[attr-defined]
@@ -142,9 +149,7 @@ class _ChannelMixin:
                     )
                 return
 
-            new_ids = [
-                sub_id for s in resp.success if isinstance(sub_id := s.response.get("id"), str)
-            ]
+            new_ids = [sid for s in resp.success if (sid := _sub_id(s)) is not None]
             if new_ids:
                 self._subscription_ids.setdefault(broadcaster_user_id, []).extend(new_ids)  # type: ignore[attr-defined]
                 LOGGER.info(

@@ -38,8 +38,9 @@ def _make_bot():
 
 
 def _resp(success=(), errors=()):
+    # MultiSubscribeSuccess.response is Twitch's raw payload: id at data[0], not top level.
     return SimpleNamespace(
-        success=[SimpleNamespace(response={"id": sid}) for sid in success],
+        success=[SimpleNamespace(response={"data": [{"id": sid}], "total": 1}) for sid in success],
         errors=list(errors),
     )
 
