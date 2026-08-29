@@ -3,9 +3,9 @@ import { toast } from 'sonner'
 
 import { type EventConfig, type EventDefinition, updateEventConfig } from '@/api/events'
 import { Spinner } from '@/components/primitives'
+import { SettingRow } from '@/components/SettingRow'
 import {
   Button,
-  Input,
   Label,
   Sheet,
   SheetClose,
@@ -15,6 +15,7 @@ import {
   SheetHeader,
   SheetTitle,
   Switch,
+  Textarea,
 } from '@/components/ui'
 import { VariableInserter } from '@/components/VariableInserter'
 import { useInputInsert } from '@/hooks/useInputInsert'
@@ -46,7 +47,7 @@ export function EventSheet({ event, definition, onClose, onSaved }: EventSheetPr
   }, [event])
 
   const { inputRef: templateInputRef, insertText: insertVariable } =
-    useInputInsert<HTMLInputElement>(editTemplate, setEditTemplate)
+    useInputInsert<HTMLTextAreaElement>(editTemplate, setEditTemplate)
 
   const handleSave = async () => {
     if (!event) return
@@ -80,52 +81,40 @@ export function EventSheet({ event, definition, onClose, onSaved }: EventSheetPr
         <div className="flex flex-col gap-card px-page">
           <div className="flex flex-col gap-2">
             <Label htmlFor="event-template">訊息模板</Label>
-            <Input
+            <Textarea
               id="event-template"
               ref={templateInputRef}
               value={editTemplate}
               onChange={e => setEditTemplate(e.target.value)}
               placeholder="輸入回應訊息..."
-              className="font-mono text-sub"
+              rows={2}
+              className="min-h-16 font-mono text-sub"
             />
 
             {variableChips.length > 0 && (
               <VariableInserter variables={variableChips} onInsert={insertVariable} />
             )}
-            <p className="text-label text-muted-foreground">
-              用 <span className="font-mono">[[ ]]</span>{' '}
-              包住的內容，若裡面的變數沒有值就整段不顯示。
-            </p>
           </div>
 
           {definition && (
             <TemplatePreview template={editTemplate} variables={definition.variables} />
           )}
 
-          {definition?.options_schema.map(opt => {
-            if (opt.type !== 'boolean') return null
-            return (
-              <div key={opt.key} className="flex items-center justify-between">
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-sub font-medium leading-none">{opt.label}</span>
-                  <span className="text-label text-muted-foreground">{opt.description}</span>
-                </div>
+          {definition?.options_schema.map(opt =>
+            opt.type !== 'boolean' ? null : (
+              <SettingRow key={opt.key} title={opt.label} description={opt.description}>
                 <Switch
                   aria-label={opt.label}
                   checked={(editOptions[opt.key] as boolean) ?? opt.default}
                   onCheckedChange={v => setEditOptions(prev => ({ ...prev, [opt.key]: v }))}
                 />
-              </div>
+              </SettingRow>
             )
-          })}
+          )}
 
-          <div className="flex items-center justify-between">
-            <div className="flex flex-col gap-0.5">
-              <span className="text-sub font-medium leading-none">啟用</span>
-              <span className="text-label text-muted-foreground">關閉後事件觸發時不會發送訊息</span>
-            </div>
+          <SettingRow title="啟用" description="關閉後事件觸發時不會發送訊息">
             <Switch aria-label="啟用" checked={editEnabled} onCheckedChange={setEditEnabled} />
-          </div>
+          </SettingRow>
         </div>
 
         <SheetFooter className="flex-row justify-end gap-2">

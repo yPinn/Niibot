@@ -23,6 +23,8 @@ function DialogOverlay({
   )
 }
 
+// Dialog pads at card scale (`p-card`, 24px) — it floats over the page. A Sheet
+// slides from the viewport edge and pads at page scale (`p-page`, 16px) instead.
 function DialogContent({
   className,
   children,
@@ -33,7 +35,7 @@ function DialogContent({
       <DialogOverlay />
       <DialogPrimitive.Content
         className={cn(
-          'fixed left-1/2 top-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border bg-background p-6 shadow-lg animation-duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 sm:max-w-lg',
+          'fixed left-1/2 top-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-section rounded-lg border bg-background p-card shadow-lg animation-duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 sm:max-w-lg',
           className
         )}
         {...props}
@@ -64,7 +66,9 @@ function DialogFooter({ className, ...props }: React.HTMLAttributes<HTMLDivEleme
 }
 
 function DialogTitle({ className, ...props }: React.ComponentProps<typeof DialogPrimitive.Title>) {
-  return <DialogPrimitive.Title className={cn('text-lg font-semibold', className)} {...props} />
+  return (
+    <DialogPrimitive.Title className={cn('text-card-title font-semibold', className)} {...props} />
+  )
 }
 
 function DialogDescription({
@@ -73,7 +77,7 @@ function DialogDescription({
 }: React.ComponentProps<typeof DialogPrimitive.Description>) {
   return (
     <DialogPrimitive.Description
-      className={cn('text-sm text-muted-foreground', className)}
+      className={cn('text-sub text-muted-foreground', className)}
       {...props}
     />
   )

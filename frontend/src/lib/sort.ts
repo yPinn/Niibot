@@ -2,6 +2,11 @@
 
 export type SortDir = 'asc' | 'desc'
 
+/** Flip an ascending comparison result to match `dir`. */
+export function applyDir(cmp: number, dir: SortDir): number {
+  return dir === 'desc' ? -cmp : cmp
+}
+
 /**
  * Sorts strings so ASCII names (English commands) come before CJK names.
  * A leading '!' prefix is stripped before comparison so command names render

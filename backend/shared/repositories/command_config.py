@@ -69,7 +69,7 @@ def _make_virtual(channel_id: str, defn: dict) -> CommandConfig:
         enabled=defn.get("enabled", True),
         custom_response=defn.get("custom_response"),
         cooldown=defn.get("cooldown"),
-        min_role="everyone",
+        min_role=defn.get("min_role", "everyone"),
         aliases=defn.get("aliases"),
         usage_count=0,
         created_at=None,

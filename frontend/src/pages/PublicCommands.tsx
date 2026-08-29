@@ -3,9 +3,12 @@ import { Link, useParams } from 'react-router-dom'
 
 import { getPublicCommands, type PublicChannelProfile, type PublicCommand } from '@/api/commands'
 import avatarFallback from '@/assets/images/Avatar.png'
+import { GroupedTableBody } from '@/components/GroupedTableBody'
 import { useTheme } from '@/components/layout/theme-provider'
 import { EmptyState, FadeIn, Icon } from '@/components/primitives'
 import { SortableHead } from '@/components/SortableHead'
+import { TableShell } from '@/components/TableShell'
+import { TableSkeletonRows } from '@/components/TableSkeletonRows'
 import {
   Avatar,
   AvatarFallback,
@@ -17,7 +20,6 @@ import {
   CardHeader,
   CardTitle,
   Skeleton,
-  Table,
   TableBody,
   TableCell,
   TableHead,
@@ -30,7 +32,8 @@ import {
 } from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { useSortState } from '@/hooks/useSortState'
-import { nameSort, ROLE_ORDER } from '@/lib/sort'
+import { groupByCategory } from '@/lib/groupByCategory'
+import { applyDir, nameSort, ROLE_ORDER } from '@/lib/sort'
 
 const ROLE_LABELS: Record<string, { label: string; variant: 'default' | 'secondary' | 'outline' }> =
   {
@@ -56,14 +59,17 @@ export default function PublicCommands() {
   const customSort = useSortState<CustomSortKey>('kind')
 
   const { sortKey: builtinSortKey, sortDir: builtinSortDir } = builtinSort
-  const builtinRows = useMemo(() => {
-    const list = commands.filter(c => c.command_type === 'builtin')
-    return [...list].sort((a, b) => {
+  const builtinGroups = useMemo(() => {
+    const compare = (a: PublicCommand, b: PublicCommand) => {
       let cmp = 0
       if (builtinSortKey === 'name') cmp = nameSort(a.name, b.name)
       else cmp = (ROLE_ORDER[a.min_role] ?? 0) - (ROLE_ORDER[b.min_role] ?? 0)
-      return builtinSortDir === 'desc' ? -cmp : cmp
-    })
+      return applyDir(cmp, builtinSortDir)
+    }
+    return groupByCategory(
+      commands.filter(c => c.command_type === 'builtin'),
+      compare
+    )
   }, [commands, builtinSortKey, builtinSortDir])
 
   const { sortKey: customSortKey, sortDir: customSortDir } = customSort
@@ -77,7 +83,7 @@ export default function PublicCommands() {
           (a.command_type === 'custom' ? 0 : 1) - (b.command_type === 'custom' ? 0 : 1)
         cmp = kindCmp !== 0 ? kindCmp : nameSort(a.name, b.name)
       } else cmp = (ROLE_ORDER[a.min_role] ?? 0) - (ROLE_ORDER[b.min_role] ?? 0)
-      return customSortDir === 'desc' ? -cmp : cmp
+      return applyDir(cmp, customSortDir)
     })
   }, [commands, customSortKey, customSortDir])
 
@@ -130,10 +136,8 @@ export default function PublicCommands() {
           <div className="space-y-3">
             <Skeleton className="mx-auto h-24 w-24 rounded-full" />
             <Skeleton className="mx-auto h-6 w-40" />
-            <div className="space-y-2 pt-2">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <Skeleton key={i} className="h-10 w-full" />
-              ))}
+            <div className="pt-2">
+              <TableSkeletonRows count={5} />
             </div>
           </div>
         ) : error ? (
@@ -201,60 +205,52 @@ export default function PublicCommands() {
 
                     {/* ── Builtin Tab ── */}
                     <TabsContent value="builtin">
-                      {builtinRows.length === 0 ? (
+                      {builtinGroups.length === 0 ? (
                         <EmptyState
                           icon="fa-solid fa-terminal"
                           title="尚無內建指令"
                           description="此實況主沒有啟用的內建指令"
                         />
                       ) : (
-                        <div className="overflow-x-auto rounded-md border">
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <SortableHead
-                                  className="w-[25%]"
-                                  sortKey="name"
-                                  currentKey={builtinSort.sortKey}
-                                  dir={builtinSort.sortDir}
-                                  onSort={builtinSort.toggleSort}
-                                >
-                                  指令
-                                </SortableHead>
-                                <TableHead className="hidden md:table-cell">說明</TableHead>
-                                <SortableHead
-                                  className="w-[15%] text-center"
-                                  sortKey="min_role"
-                                  currentKey={builtinSort.sortKey}
-                                  dir={builtinSort.sortDir}
-                                  onSort={builtinSort.toggleSort}
-                                >
-                                  權限
-                                </SortableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {builtinRows.map(cmd => {
-                                const role = ROLE_LABELS[cmd.min_role] ?? ROLE_LABELS.everyone
-                                return (
-                                  <TableRow key={cmd.name}>
-                                    <TableCell className="font-mono font-medium">
-                                      {cmd.name}
-                                    </TableCell>
-                                    <TableCell className="hidden md:table-cell text-muted-foreground">
-                                      {cmd.description}
-                                    </TableCell>
-                                    <TableCell className="text-center">
-                                      <Badge variant={role.variant} className="text-label">
-                                        {role.label}
-                                      </Badge>
-                                    </TableCell>
-                                  </TableRow>
-                                )
-                              })}
-                            </TableBody>
-                          </Table>
-                        </div>
+                        <TableShell fixed={false}>
+                          <TableHeader>
+                            <TableRow>
+                              <SortableHead className="w-[25%]" sortKey="name" sort={builtinSort}>
+                                指令
+                              </SortableHead>
+                              <TableHead className="hidden md:table-cell">說明</TableHead>
+                              <SortableHead
+                                className="w-[15%] text-center"
+                                sortKey="min_role"
+                                sort={builtinSort}
+                              >
+                                權限
+                              </SortableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <GroupedTableBody
+                            groups={builtinGroups}
+                            colSpan={3}
+                            renderRow={cmd => {
+                              const role = ROLE_LABELS[cmd.min_role] ?? ROLE_LABELS.everyone
+                              return (
+                                <TableRow key={cmd.name}>
+                                  <TableCell className="font-mono font-medium">
+                                    {cmd.name}
+                                  </TableCell>
+                                  <TableCell className="hidden md:table-cell text-muted-foreground">
+                                    {cmd.description}
+                                  </TableCell>
+                                  <TableCell className="text-center">
+                                    <Badge variant={role.variant} className="text-label">
+                                      {role.label}
+                                    </Badge>
+                                  </TableCell>
+                                </TableRow>
+                              )
+                            }}
+                          />
+                        </TableShell>
                       )}
                     </TabsContent>
 
@@ -267,69 +263,53 @@ export default function PublicCommands() {
                           description="此實況主尚未建立自訂指令"
                         />
                       ) : (
-                        <div className="overflow-x-auto rounded-md border">
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <SortableHead
-                                  className="w-[25%]"
-                                  sortKey="name"
-                                  currentKey={customSort.sortKey}
-                                  dir={customSort.sortDir}
-                                  onSort={customSort.toggleSort}
-                                >
-                                  名稱
-                                </SortableHead>
-                                <SortableHead
-                                  className="w-[12%]"
-                                  sortKey="kind"
-                                  currentKey={customSort.sortKey}
-                                  dir={customSort.sortDir}
-                                  onSort={customSort.toggleSort}
-                                >
-                                  類型
-                                </SortableHead>
-                                <TableHead className="hidden md:table-cell">說明</TableHead>
-                                <SortableHead
-                                  className="w-[15%] text-center"
-                                  sortKey="min_role"
-                                  currentKey={customSort.sortKey}
-                                  dir={customSort.sortDir}
-                                  onSort={customSort.toggleSort}
-                                >
-                                  權限
-                                </SortableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {customRows.map(cmd => {
-                                const role = ROLE_LABELS[cmd.min_role] ?? ROLE_LABELS.everyone
-                                return (
-                                  <TableRow key={cmd.name}>
-                                    <TableCell className="font-mono font-medium">
-                                      {cmd.name}
-                                    </TableCell>
-                                    <TableCell>
-                                      {cmd.command_type === 'custom' ? (
-                                        <Badge variant="default">指令</Badge>
-                                      ) : (
-                                        <Badge variant="secondary">觸發</Badge>
-                                      )}
-                                    </TableCell>
-                                    <TableCell className="hidden md:table-cell text-muted-foreground">
-                                      {cmd.description}
-                                    </TableCell>
-                                    <TableCell className="text-center">
-                                      <Badge variant={role.variant} className="text-label">
-                                        {role.label}
-                                      </Badge>
-                                    </TableCell>
-                                  </TableRow>
-                                )
-                              })}
-                            </TableBody>
-                          </Table>
-                        </div>
+                        <TableShell fixed={false}>
+                          <TableHeader>
+                            <TableRow>
+                              <SortableHead className="w-[25%]" sortKey="name" sort={customSort}>
+                                名稱
+                              </SortableHead>
+                              <SortableHead className="w-[12%]" sortKey="kind" sort={customSort}>
+                                類型
+                              </SortableHead>
+                              <TableHead className="hidden md:table-cell">說明</TableHead>
+                              <SortableHead
+                                className="w-[15%] text-center"
+                                sortKey="min_role"
+                                sort={customSort}
+                              >
+                                權限
+                              </SortableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {customRows.map(cmd => {
+                              const role = ROLE_LABELS[cmd.min_role] ?? ROLE_LABELS.everyone
+                              return (
+                                <TableRow key={cmd.name}>
+                                  <TableCell className="font-mono font-medium">
+                                    {cmd.name}
+                                  </TableCell>
+                                  <TableCell>
+                                    {cmd.command_type === 'custom' ? (
+                                      <Badge variant="default">指令</Badge>
+                                    ) : (
+                                      <Badge variant="secondary">觸發</Badge>
+                                    )}
+                                  </TableCell>
+                                  <TableCell className="hidden md:table-cell text-muted-foreground">
+                                    {cmd.description}
+                                  </TableCell>
+                                  <TableCell className="text-center">
+                                    <Badge variant={role.variant} className="text-label">
+                                      {role.label}
+                                    </Badge>
+                                  </TableCell>
+                                </TableRow>
+                              )
+                            })}
+                          </TableBody>
+                        </TableShell>
                       )}
                     </TabsContent>
                   </Tabs>

@@ -14,7 +14,7 @@ export interface SortState<K extends string> {
  *
  * Usage:
  *   const sort = useSortState<'name' | 'cooldown'>('name')
- *   <SortableHead sortKey="name" currentKey={sort.sortKey} dir={sort.sortDir} onSort={sort.toggleSort} />
+ *   <SortableHead sortKey="name" sort={sort}>名稱</SortableHead>
  */
 export function useSortState<K extends string>(initialKey: K): SortState<K> {
   const [sortKey, setSortKey] = useState<K>(initialKey)

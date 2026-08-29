@@ -64,7 +64,7 @@ class GamesComponent(BotComponent):
 
     @commands.command(name="roll", aliases=["輪盤"])
     async def roll(self, ctx: commands.Context[Bot]) -> None:
-        """聊天室共用輪盤，中彈 timeout 600 秒。"""
+        """聊天室共用輪盤，中彈 timeout 60 秒。"""
         config = await check_command(self.cmd_repo, ctx, "roll", self.channel_repo)
         if not config:
             return

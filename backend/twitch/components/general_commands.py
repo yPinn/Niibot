@@ -204,15 +204,11 @@ class GeneralCommandsComponent(BotComponent):
         Uses the bot token (moderator:manage:shoutouts) — the bot must be a mod.
         Twitch rate-limits shoutouts to one per 2 min / one per target per 60 min.
         """
+        # Gated by min_role="moderator" (BUILTIN_DEFS); check_command enforces it.
         config = await check_command(
             self.cmd_repo, ctx, channel_repo=self.channel_repo, command_name="so"
         )
         if not config:
-            return
-
-        # Moderator-only — virtual builtin configs are always min_role="everyone",
-        # so gate here. `.moderator` already includes the broadcaster.
-        if not ctx.chatter.moderator:  # type: ignore[attr-defined]
             return
 
         login = (target or "").strip().lstrip("@").lower()

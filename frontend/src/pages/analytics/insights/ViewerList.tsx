@@ -127,7 +127,7 @@ export function ViewerList({
   if (filtered.length === 0) {
     return (
       <EmptyState
-        className="py-empty lg:flex-1"
+        className="lg:flex-1"
         icon={search ? 'fa-solid fa-magnifying-glass' : 'fa-solid fa-users'}
         title={search ? '找不到符合的觀眾' : '尚無觀眾資料'}
         description={search ? undefined : '每場直播結束後會累積觀眾資料，歷史紀錄可在此查閱'}
@@ -157,10 +157,8 @@ export function ViewerList({
               {col.label}
               <Icon
                 icon={`fa-solid ${active ? (sortDir === 'desc' ? 'fa-arrow-down' : 'fa-arrow-up') : 'fa-sort'}`}
-                className={cn(
-                  'text-[9px] transition-opacity',
-                  active ? 'opacity-100' : 'opacity-30'
-                )}
+                size="xs"
+                className={cn('transition-opacity', active ? 'opacity-100' : 'opacity-30')}
               />
             </button>
           )

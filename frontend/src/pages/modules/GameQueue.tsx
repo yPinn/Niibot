@@ -16,6 +16,7 @@ import { PageHeader } from '@/components/layout/PageHeader'
 import { PageMain } from '@/components/layout/PageMain'
 import { OverlayUrlBlock } from '@/components/OverlayUrlBlock'
 import { EmptyState, Icon, SlideUp, Spinner } from '@/components/primitives'
+import { TableSkeletonRows } from '@/components/TableSkeletonRows'
 import {
   Badge,
   Button,
@@ -246,9 +247,7 @@ export default function GameQueue() {
               <CardContent>
                 <div className="flex flex-col gap-element">
                   <Skeleton className="h-9 w-full" />
-                  {Array.from({ length: 7 }).map((_, i) => (
-                    <Skeleton key={i} className="h-10 w-full" />
-                  ))}
+                  <TableSkeletonRows count={7} />
                 </div>
               </CardContent>
             </Card>

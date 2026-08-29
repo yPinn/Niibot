@@ -240,6 +240,19 @@ class TestListConfigs:
         assert all(r.id is None for r in result)  # all virtual
         assert all(r.command_type == "builtin" for r in result)
 
+    async def test_virtual_default_reads_min_role_from_def(self):
+        """_make_virtual honours a def's declared min_role (default 'everyone')."""
+        _clear_caches()
+        pool, _ = _make_pool(fetch=[])
+        repo = CommandConfigRepository(pool)
+
+        result = await repo.list_configs("ch1")
+        by_name = {r.command_name: r for r in result}
+
+        assert by_name["so"].min_role == "moderator"
+        assert by_name["condemn"].min_role == "moderator"
+        assert by_name["help"].min_role == "everyone"
+
     async def test_db_override_replaces_virtual_for_matching_builtin(self):
         """DB row for a known builtin replaces the virtual default."""
         _clear_caches()

@@ -1,12 +1,11 @@
 import { Icon } from '@/components/primitives'
 import { TableHead } from '@/components/ui'
-import type { SortDir } from '@/lib/sort'
+import type { SortState } from '@/hooks/useSortState'
 
 export interface SortableHeadProps<K extends string> {
   sortKey: K
-  currentKey: K
-  dir: SortDir
-  onSort: (key: K) => void
+  /** The whole `useSortState` return value — current column, direction, toggle. */
+  sort: SortState<K>
   children: React.ReactNode
   className?: string
 }
@@ -17,25 +16,23 @@ export interface SortableHeadProps<K extends string> {
  */
 export function SortableHead<K extends string>({
   sortKey: key,
-  currentKey,
-  dir,
-  onSort,
+  sort,
   children,
   className,
 }: SortableHeadProps<K>) {
-  const active = key === currentKey
+  const active = key === sort.sortKey
   return (
     <TableHead className={className}>
       <button
         type="button"
         className="inline-flex items-center gap-1 cursor-pointer transition-colors hover:text-foreground select-none"
-        onClick={() => onSort(key)}
+        onClick={() => sort.toggleSort(key)}
       >
         {children}
         <Icon
           icon={
             active
-              ? dir === 'asc'
+              ? sort.sortDir === 'asc'
                 ? 'fa-solid fa-sort-up'
                 : 'fa-solid fa-sort-down'
               : 'fa-solid fa-sort'

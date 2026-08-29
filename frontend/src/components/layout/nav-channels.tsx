@@ -122,7 +122,7 @@ export function NavChannels({ channels }: { channels: Channel[] }) {
                             {channel.display_name}
                           </span>
                           {channel.game_name && (
-                            <span className="text-[11px] text-muted-foreground truncate leading-none">
+                            <span className="text-label text-muted-foreground truncate leading-none">
                               {channel.game_name}
                             </span>
                           )}

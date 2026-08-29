@@ -12,20 +12,18 @@ export type PlusSplit = '50/50' | '60/40' | '70/30'
 
 export interface PlusProgress {
   split: PlusSplit
+  /** The split unlocked at `nextThreshold`, or null at the top. */
+  nextSplit: PlusSplit | null
   /** Points needed to reach the next split, or null at the top. */
   nextThreshold: number | null
   /** Points still needed for `nextThreshold` (0 at the top). */
   remaining: number
-  /** Progress within the current band, 0–100. */
-  pctToNext: number
 }
 
 /** Sub tiers earn 1 / 2 / 6 points. */
 export const PLUS_TIER_POINTS = { t1: 1, t2: 2, t3: 6 } as const
 
 export interface PlusShortfall {
-  /** Points still needed for the next split. */
-  points: number
   /** Subs of each tier that would close the gap on their own. */
   t1: number
   t2: number
@@ -35,8 +33,7 @@ export interface PlusShortfall {
 export function subsToClose(remainingPoints: number): PlusShortfall {
   const p = Math.max(0, remainingPoints)
   return {
-    points: p,
-    t1: p,
+    t1: Math.ceil(p / PLUS_TIER_POINTS.t1),
     t2: Math.ceil(p / PLUS_TIER_POINTS.t2),
     t3: Math.ceil(p / PLUS_TIER_POINTS.t3),
   }
@@ -45,21 +42,20 @@ export function subsToClose(remainingPoints: number): PlusShortfall {
 export function plusProgress(points: number): PlusProgress {
   const p = Math.max(0, points)
   if (p >= PLUS_TIER2_POINTS) {
-    return { split: '70/30', nextThreshold: null, remaining: 0, pctToNext: 100 }
+    return { split: '70/30', nextSplit: null, nextThreshold: null, remaining: 0 }
   }
   if (p >= PLUS_TIER1_POINTS) {
-    const span = PLUS_TIER2_POINTS - PLUS_TIER1_POINTS
     return {
       split: '60/40',
+      nextSplit: '70/30',
       nextThreshold: PLUS_TIER2_POINTS,
       remaining: PLUS_TIER2_POINTS - p,
-      pctToNext: ((p - PLUS_TIER1_POINTS) / span) * 100,
     }
   }
   return {
     split: '50/50',
+    nextSplit: '60/40',
     nextThreshold: PLUS_TIER1_POINTS,
     remaining: PLUS_TIER1_POINTS - p,
-    pctToNext: (p / PLUS_TIER1_POINTS) * 100,
   }
 }

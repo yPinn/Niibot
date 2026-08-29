@@ -14,7 +14,6 @@ import {
 } from '@/api/analytics'
 
 const CHART_BOX = 'aspect-[3/2] min-h-[360px] max-h-[480px]'
-import { AffiliateLockOverlay } from '@/components/AffiliateLockOverlay'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { PageMain } from '@/components/layout/PageMain'
 import {
@@ -147,13 +146,22 @@ export default function Insights() {
       .catch(() => null)
   }, [isInitialized, user])
 
+  const loadPlusEstimate = useCallback(
+    (forceRefresh = false) => {
+      if (!isAffiliate) return
+      if (forceRefresh) apiCache.delete(CACHE_KEYS.ANALYTICS_PLUS_ESTIMATE)
+      getPlusProgramEstimate()
+        .then(setPlusEstimate)
+        .catch(() => setPlusEstimate(null))
+        .finally(() => setPlusLoading(false))
+    },
+    [isAffiliate]
+  )
+
   useEffect(() => {
-    if (!isInitialized || !user || !isAffiliate) return
-    getPlusProgramEstimate()
-      .then(setPlusEstimate)
-      .catch(() => setPlusEstimate(null))
-      .finally(() => setPlusLoading(false))
-  }, [isInitialized, user, isAffiliate])
+    if (!isInitialized || !user) return
+    loadPlusEstimate()
+  }, [isInitialized, user, loadPlusEstimate])
 
   const handleSyncRoles = useCallback(async () => {
     if (isSyncing) return
@@ -161,16 +169,13 @@ export default function Insights() {
     try {
       await syncChannelRoles()
       void fetchViewers(Number(period), true)
-      apiCache.delete(CACHE_KEYS.ANALYTICS_PLUS_ESTIMATE)
-      getPlusProgramEstimate()
-        .then(setPlusEstimate)
-        .catch(() => null)
+      loadPlusEstimate(true)
     } catch {
       // silent
     } finally {
       setIsSyncing(false)
     }
-  }, [isSyncing, period, fetchViewers])
+  }, [isSyncing, period, fetchViewers, loadPlusEstimate])
 
   const handlePeriodChange = useCallback(
     (value: string) => {
@@ -295,7 +300,7 @@ export default function Insights() {
         className="grid grid-cols-1 lg:grid-cols-2 gap-section flex-1 min-h-0 overflow-y-auto lg:overflow-hidden lg:grid-rows-1"
       >
         {/* ── Left: Chart + Summary tiles ──────────────────────────── */}
-        <div className="rounded-lg border bg-card p-section flex flex-col gap-section min-h-0 lg:self-start">
+        <div className="rounded-lg border bg-card p-section flex flex-col gap-section min-h-0 lg:overflow-y-auto">
           {/* Chart header */}
           <div className="flex items-center justify-between shrink-0">
             <span className="text-sub font-semibold">
@@ -336,7 +341,6 @@ export default function Insights() {
                   <Skeleton className="aspect-[3/2] min-h-[360px] max-h-[480px] rounded-md" />
                 ) : viewers.length === 0 ? (
                   <EmptyState
-                    className="py-empty"
                     icon="fa-solid fa-chart-scatter"
                     title="尚無觀眾資料"
                     description="每場直播結束後會累積觀眾資料"
@@ -365,7 +369,6 @@ export default function Insights() {
                   <Skeleton className="aspect-[3/2] min-h-[360px] max-h-[480px] rounded-md" />
                 ) : viewers.length === 0 ? (
                   <EmptyState
-                    className="py-empty"
                     icon="fa-solid fa-chart-pie"
                     title="尚無觀眾資料"
                     description="每場直播結束後會累積觀眾資料"
@@ -458,22 +461,13 @@ export default function Insights() {
 
           {initialized && !insightsLoading && <SuggestedActions suggestions={suggestions} />}
 
-          {isAffiliate ? (
-            <PlusProgramCard
-              estimate={plusEstimate}
-              loading={plusLoading}
-              refreshing={isSyncing}
-              onRefresh={handleSyncRoles}
-            />
-          ) : (
-            <div className="relative rounded-md border px-2.5 py-6 shrink-0 overflow-hidden">
-              <AffiliateLockOverlay
-                message="取得資格後可查看加強版方案積分"
-                className="rounded-[inherit]"
-              />
-              <p className="text-label text-muted-foreground">加強版方案積分（本月試算）</p>
-            </div>
-          )}
+          <PlusProgramCard
+            estimate={plusEstimate}
+            loading={plusLoading}
+            refreshing={isSyncing}
+            locked={!isAffiliate}
+            onRefresh={handleSyncRoles}
+          />
         </div>
 
         {/* ── Right: Viewer list ────────────────────────────────────── */}
@@ -523,14 +517,12 @@ export default function Insights() {
               >
                 {viewersError ? (
                   <EmptyState
-                    className="py-empty"
                     icon="fa-solid fa-triangle-exclamation"
                     title="載入觀眾資料失敗"
                     description="請重新整理頁面，若問題持續請檢查伺服器狀態"
                   />
                 ) : viewers.length === 0 ? (
                   <EmptyState
-                    className="py-empty"
                     icon="fa-solid fa-users"
                     title="尚無觀眾資料"
                     description="每場直播結束後會累積觀眾資料，歷史紀錄可在此查閱"

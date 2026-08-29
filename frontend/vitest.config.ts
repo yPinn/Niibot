@@ -21,6 +21,7 @@ export default defineConfig({
         // in config.test.ts but coverage tracking is not meaningful here.
         'src/lib/apiCache.ts',
         'src/lib/sort.ts',
+        'src/lib/groupByCategory.ts',
         'src/hooks/useSortState.ts',
         'src/hooks/useDocumentTitle.ts',
         'src/hooks/usePolling.ts',
