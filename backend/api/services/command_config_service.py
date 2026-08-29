@@ -6,7 +6,12 @@ from dataclasses import asdict
 import asyncpg
 
 from core.config import get_settings
-from shared.builtin_commands import BUILTIN_DESCRIPTIONS, PUBLIC_DESCRIPTIONS
+from shared.builtin_commands import (
+    BUILTIN_CATEGORIES,
+    BUILTIN_DESCRIPTIONS,
+    BUILTIN_MAP,
+    PUBLIC_DESCRIPTIONS,
+)
 from shared.repositories.command_config import (
     UNSET as _UNSET,
 )
@@ -18,6 +23,14 @@ from shared.repositories.command_config import (
 from shared.repositories.message_trigger import MessageTriggerRepository
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
+
+
+def _builtin_category_label(command_type: str, command_name: str) -> str | None:
+    """Display label for a builtin command's category; None for custom commands."""
+    if command_type != "builtin":
+        return None
+    defn = BUILTIN_MAP.get(command_name)
+    return BUILTIN_CATEGORIES.get(defn.get("category", "")) if defn else None
 
 
 class CommandConfigService:
@@ -39,6 +52,7 @@ class CommandConfigService:
                 "description": BUILTIN_DESCRIPTIONS.get(cfg.command_name, "")
                 if cfg.command_type == "builtin"
                 else "",
+                "category_label": _builtin_category_label(cfg.command_type, cfg.command_name),
             }
             for cfg in configs
         ]
@@ -113,6 +127,7 @@ class CommandConfigService:
                 ),
                 "min_role": cfg.min_role,
                 "command_type": cfg.command_type,
+                "category_label": _builtin_category_label(cfg.command_type, cfg.command_name),
             }
             for cfg in configs
             if cfg.enabled

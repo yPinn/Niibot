@@ -1,13 +1,16 @@
 """Canonical builtin command definitions — single source of truth for both bot and API.
 
 To add a new builtin command:
-  1. Add it to BUILTIN_DEFS below, in the right category block.
+  1. Add it to BUILTIN_DEFS below with a "category" from BUILTIN_CATEGORIES,
+     placed next to the other entries of that category.
   2. Add its description to BUILTIN_DESCRIPTIONS (+ PUBLIC_DESCRIPTIONS if it
      should appear on the public /commands page).
   3. Implement the handler in the relevant component file.
 
-BUILTIN_DEFS order == display order (dashboard + public page), so keep entries
-grouped by category.
+BUILTIN_DEFS order == display order (dashboard + public page). Entries must stay
+grouped so every category's rows are contiguous — the dashboard renders a group
+header each time "category" changes, it does not sort or bucket. BUILTIN_CATEGORIES
+insertion order is the category display order.
 
 `"enabled": False` — default a command OFF when other chat bots
 (Nightbot / StreamElements / Fossabot / ChiwaBot …) ship the same command
@@ -18,38 +21,104 @@ No database migration or per-channel seeding is required. New builtins
 automatically appear for every channel on the next API or bot call.
 """
 
+# Category key → display label. Insertion order == the order categories appear
+# in the dashboard. Every key must be used by at least one BUILTIN_DEFS entry.
+BUILTIN_CATEGORIES: dict[str, str] = {
+    "general": "通用互動",
+    "channel": "頻道資訊",
+    "viewer": "觀眾查詢",
+    "moderator": "版主工具",
+    "fun": "娛樂",
+    "game": "遊戲",
+}
+
 BUILTIN_DEFS: list[dict] = [
     # ── 通用互動 ──────────────────────────────────────────────────────────────
     {
         "command_name": "ping",
+        "category": "general",
         "cooldown": 5,
         "aliases": "alive",
         "custom_response": "Pong! @$(user)",
     },
     # `commands` 別名移除：與 Nightbot 預設 !commands 撞名（兩者都貼指令列表連結）。
-    {"command_name": "help", "cooldown": 5, "aliases": "指令"},
-    {"command_name": "condemn", "cooldown": 5, "aliases": "斥責"},
+    {"command_name": "help", "category": "general", "cooldown": 5, "aliases": "指令"},
+    {"command_name": "condemn", "category": "general", "cooldown": 5, "aliases": "斥責"},
     # ── 頻道資訊 ──────────────────────────────────────────────────────────────
     # uptime 撞 Nightbot / StreamElements / Fossabot 預設指令 → 預設關；
     # rank 語意獨特（觀看時數＋留言活躍度，非點數排名）→ 預設開。
-    {"command_name": "uptime", "cooldown": 10, "aliases": "開播時間", "enabled": False},
-    {"command_name": "rank", "cooldown": 15, "aliases": "排名"},
+    {
+        "command_name": "uptime",
+        "category": "channel",
+        "cooldown": 10,
+        "aliases": "開播時間",
+        "enabled": False,
+    },
+    {"command_name": "rank", "category": "channel", "cooldown": 15, "aliases": "排名"},
     # ── 觀眾查詢（預設關閉：與 Nightbot / StreamElements / Fossabot /
     #    ChiwaBot 的同名指令衝突，交由實況主自行啟用）───────────────────────
-    {"command_name": "followage", "cooldown": 15, "aliases": "追隨時間", "enabled": False},
-    {"command_name": "subage", "cooldown": 15, "aliases": "訂閱資訊", "enabled": False},
-    {"command_name": "subcount", "cooldown": 30, "aliases": "訂閱數", "enabled": False},
-    {"command_name": "bits", "cooldown": 15, "aliases": "小奇點", "enabled": False},
+    {
+        "command_name": "followage",
+        "category": "viewer",
+        "cooldown": 15,
+        "aliases": "追隨時間",
+        "enabled": False,
+    },
+    {
+        "command_name": "subage",
+        "category": "viewer",
+        "cooldown": 15,
+        "aliases": "訂閱資訊",
+        "enabled": False,
+    },
+    {
+        "command_name": "subcount",
+        "category": "viewer",
+        "cooldown": 30,
+        "aliases": "訂閱數",
+        "enabled": False,
+    },
+    {
+        "command_name": "bits",
+        "category": "viewer",
+        "cooldown": 15,
+        "aliases": "小奇點",
+        "enabled": False,
+    },
     # ── 版主工具（預設關閉：!so 常與其他 bot 衝突；僅版主可用）─────────────
-    {"command_name": "so", "cooldown": 5, "aliases": "推薦", "enabled": False},
+    {
+        "command_name": "so",
+        "category": "moderator",
+        "cooldown": 5,
+        "aliases": "推薦",
+        "enabled": False,
+    },
     # ── 娛樂 ──────────────────────────────────────────────────────────────────
-    {"command_name": "fortune", "cooldown": 5, "aliases": "運勢"},
-    {"command_name": "tarot", "cooldown": 5, "aliases": "塔羅"},
-    # ── 功能型（預設關閉，需手動啟用）────────────────────────────────────────
-    {"command_name": "roll", "cooldown": 5, "aliases": "輪盤"},
-    {"command_name": "choose", "cooldown": 5, "aliases": "選擇", "enabled": False},
-    {"command_name": "tft", "cooldown": 15, "aliases": "戰棋", "enabled": False},
-    {"command_name": "crosshairs", "cooldown": 5, "aliases": "準星", "enabled": False},
+    {"command_name": "fortune", "category": "fun", "cooldown": 5, "aliases": "運勢"},
+    {"command_name": "tarot", "category": "fun", "cooldown": 5, "aliases": "塔羅"},
+    {"command_name": "roll", "category": "fun", "cooldown": 5, "aliases": "輪盤"},
+    {
+        "command_name": "choose",
+        "category": "fun",
+        "cooldown": 5,
+        "aliases": "選擇",
+        "enabled": False,
+    },
+    # ── 遊戲（預設關閉，需手動啟用）──────────────────────────────────────────
+    {
+        "command_name": "tft",
+        "category": "game",
+        "cooldown": 15,
+        "aliases": "戰棋",
+        "enabled": False,
+    },
+    {
+        "command_name": "crosshairs",
+        "category": "game",
+        "cooldown": 5,
+        "aliases": "準星",
+        "enabled": False,
+    },
 ]
 
 BUILTIN_MAP: dict[str, dict] = {d["command_name"]: d for d in BUILTIN_DEFS}
