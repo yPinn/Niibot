@@ -80,12 +80,55 @@ describe('LogRecordRow', () => {
     expect(screen.getByText('http_method=POST')).toBeInTheDocument()
     expect(screen.getByText('http_path=/api/timers')).toBeInTheDocument()
     expect(screen.getByText('retries=2')).toBeInTheDocument()
-    // non-primitive values are skipped
+    // non-primitive values are not chipped as key=value…
     expect(screen.queryByText(/payload=/)).not.toBeInTheDocument()
+    // …but are surfaced behind a toggle so nothing is silently dropped
+    expect(screen.getByRole('button', { name: /payload/ })).toBeInTheDocument()
   })
 
-  it('marks a stderr row with an accent border', () => {
+  it('tints an ERROR row and keeps the message body neutral', () => {
+    const { container } = render(
+      <LogRecordRow record={{ ...base, level: 'ERROR', message: 'boom' }} index={0} />
+    )
+    expect(container.firstChild).toHaveClass('bg-status-offline/8')
+    expect(container.firstChild).toHaveClass('border-status-offline/60')
+    expect(screen.getByText('boom')).toHaveClass('text-log-base')
+  })
+
+  it('gives a non-error stderr row a neutral rule, not a red one', () => {
     const { container } = render(<LogRecordRow record={{ ...base, stream: 'stderr' }} index={0} />)
-    expect(container.firstChild).toHaveClass('border-status-offline/40')
+    expect(container.firstChild).toHaveClass('border-muted-foreground/30')
+    expect(container.firstChild).not.toHaveClass('border-status-offline/60')
+  })
+
+  it('shows a #channel chip when the record carries a channel', () => {
+    render(
+      <LogRecordRow record={{ ...base, channel: 'foo', message: 'plain message' }} index={0} />
+    )
+    expect(screen.getByText('#foo')).toBeInTheDocument()
+  })
+
+  it('renders a console-source record as structured (no ANSI decode)', () => {
+    render(
+      <LogRecordRow
+        record={{
+          ...base,
+          source: 'console',
+          level: 'INFO',
+          mod: 'timers_router',
+          own: true,
+          message: 'Will watch for changes',
+        }}
+        index={0}
+      />
+    )
+    expect(screen.getByText('INFO')).toBeInTheDocument()
+    expect(screen.getByText('Will watch for changes')).toBeInTheDocument()
+    expect(screen.getByText('timers_router')).toBeInTheDocument()
+  })
+
+  it('exposes the raw line via the line-number button', () => {
+    render(<LogRecordRow record={base} index={0} />)
+    expect(screen.getByTitle('複製原始行')).toBeInTheDocument()
   })
 })

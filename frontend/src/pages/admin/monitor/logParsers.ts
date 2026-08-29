@@ -33,6 +33,7 @@ export const stripAnsi = (s: string): string => s.replace(ANSI_RE_G, '')
 export type LevelFilter = 'ALL' | 'DEBUG' | 'INFO' | 'WARNING' | 'ERROR'
 export const LEVEL_FILTER_OPTS: LevelFilter[] = ['ALL', 'DEBUG', 'INFO', 'WARNING', 'ERROR']
 
+/** Colour for the fixed-width LEVEL label column only. */
 export function levelColor(level: LogLevel): string {
   switch (level) {
     case 'ERROR':
@@ -46,6 +47,46 @@ export function levelColor(level: LogLevel): string {
       return 'text-status-info'
     default:
       return 'text-log-muted'
+  }
+}
+
+/** Colour for the message body — kept neutral so importance reads off the row
+ *  tint, not a wall of coloured text. */
+export function levelMessageColor(level: LogLevel): string {
+  if (level === 'DEBUG') return 'text-log-dim'
+  if (level === 'UNKNOWN') return 'text-log-muted'
+  return 'text-log-base'
+}
+
+/** Whole-row treatment: tint + left rule by importance. INFO is the baseline
+ *  (no tint). A stderr line that isn't itself an error gets a neutral rule so
+ *  "came from stderr" stays visible without looking like a failure. */
+export function levelRowClass(level: LogLevel, stream: 'stdout' | 'stderr', isPg: boolean): string {
+  switch (level) {
+    case 'CRITICAL':
+      return 'bg-status-offline/15 border-l-2 border-status-offline'
+    case 'ERROR':
+      return 'bg-status-offline/8 border-l-2 border-status-offline/60'
+    case 'WARNING':
+      return 'bg-status-warning/8 border-l-2 border-status-warning/50'
+    case 'DEBUG':
+      return 'opacity-60'
+    default:
+      return stream === 'stderr' && !isPg ? 'border-l-2 border-muted-foreground/30' : ''
+  }
+}
+
+/** Parse the server `ts` (`"2026-08-28 08:05:19"` — UTC, from docker's
+ *  `timestamps=1`) into local wall-clock parts. Returns null when unparseable
+ *  so the caller can show a placeholder instead of guessing. */
+export function formatLogTime(ts: string): { time: string; date: string } | null {
+  if (!ts) return null
+  const d = new Date(ts.includes('T') ? ts : `${ts.replace(' ', 'T')}Z`)
+  if (Number.isNaN(d.getTime())) return null
+  const p = (n: number): string => String(n).padStart(2, '0')
+  return {
+    time: `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`,
+    date: `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`,
   }
 }
 

@@ -237,7 +237,7 @@ export interface LogRecord {
   stream: 'stdout' | 'stderr'
   ts: string
   level: LogLevel
-  source: 'json' | 'postgres' | 'raw'
+  source: 'json' | 'postgres' | 'raw' | 'console'
   message: string
   logger: string
   mod: string

@@ -4,71 +4,128 @@ import type { LogRecord } from '@/api/admin'
 import { copyToClipboard } from '@/lib/clipboard'
 import { sanitizeAnsiHtml } from '@/lib/sanitize'
 
-import { ansiConverter, hasAnsi, levelColor, stripAnsi, trimChannelPrefix } from './logParsers'
+import {
+  ansiConverter,
+  formatLogTime,
+  hasAnsi,
+  levelColor,
+  levelMessageColor,
+  levelRowClass,
+  stripAnsi,
+  trimChannelPrefix,
+} from './logParsers'
 
-/** Render `extra` entries with a primitive value as `key=value` chips. */
-function extraChips(extra: Record<string, unknown>): [string, string][] {
-  return Object.entries(extra)
-    .filter(([, v]) => typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean')
-    .map(([k, v]) => [k, String(v)])
+/** Split `extra` into `key=value` chips (primitives) and the keys we can't
+ *  chip (objects / arrays) so nothing is silently dropped. */
+function partitionExtra(extra: Record<string, unknown>): {
+  chips: [string, string][]
+  complex: string[]
+} {
+  const chips: [string, string][] = []
+  const complex: string[] = []
+  for (const [k, v] of Object.entries(extra)) {
+    if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+      chips.push([k, String(v)])
+    } else {
+      complex.push(k)
+    }
+  }
+  return { chips, complex }
 }
 
 export function LogRecordRow({ record, index }: { record: LogRecord; index: number }) {
   const [open, setOpen] = useState(false)
+  const [showExtra, setShowExtra] = useState(false)
   const isRaw = record.source === 'raw'
   const isPg = record.source === 'postgres'
-  const message = isRaw ? record.message : trimChannelPrefix(record.message, record.channel)
+  const { level } = record
 
-  const colored = isRaw && hasAnsi(message) ? sanitizeAnsiHtml(ansiConverter.toHtml(message)) : null
-  const chips = extraChips(record.extra)
-  const hasMeta = Boolean(record.request_id || record.code || record.exception || chips.length)
+  let message: string
+  let colored: string | null = null
+  if (isRaw) {
+    message = stripAnsi(record.message)
+    colored = hasAnsi(record.message)
+      ? sanitizeAnsiHtml(ansiConverter.toHtml(record.message))
+      : null
+  } else {
+    message = trimChannelPrefix(record.message, record.channel)
+  }
+
+  const { chips, complex } = partitionExtra(record.extra)
+  const time = formatLogTime(record.ts)
+  const modTitle = [record.logger, record.service].filter(Boolean).join(' · ') || undefined
+  const hasMeta = Boolean(
+    record.channel ||
+    record.request_id ||
+    record.code ||
+    record.exception ||
+    chips.length ||
+    complex.length
+  )
 
   return (
     <div
-      className={`group flex gap-2 px-3 py-px hover:bg-white/5 ${
-        record.stream === 'stderr' && !isPg ? 'border-l-2 border-status-offline/40' : ''
-      }`}
+      className={`group flex gap-2 px-3 py-px hover:bg-white/5 ${levelRowClass(level, record.stream, isPg)}`}
     >
-      {/* Left gutter — fixed columns */}
-      <span className="w-10 shrink-0 select-none text-right tabular-nums text-muted-foreground/50 group-hover:text-muted-foreground/70">
+      {/* Left gutter — click the line number to copy the raw line */}
+      <button
+        type="button"
+        onClick={() => copyToClipboard(record.raw, '已複製原始行')}
+        title="複製原始行"
+        className="w-12 shrink-0 select-none text-right tabular-nums text-muted-foreground/50 group-hover:text-muted-foreground/70 hover:text-foreground"
+      >
         {index + 1}
+      </button>
+      <span
+        className="w-24 shrink-0 tabular-nums text-muted-foreground/70"
+        title={time ? `${time.date} ${time.time}` : record.ts || undefined}
+      >
+        {time ? time.time : '--:--:--'}
       </span>
-      <span className="w-36 shrink-0 tabular-nums text-muted-foreground/70">{record.ts}</span>
 
       {isPg ? (
-        <span className="w-10 shrink-0 select-none text-right tabular-nums text-muted-foreground/35">
+        <span className="w-12 shrink-0 select-none text-right tabular-nums text-muted-foreground/35">
           [{record.pid}]
         </span>
       ) : (
         <span
-          className={`w-16 shrink-0 select-none font-semibold ${
-            record.level === 'UNKNOWN' ? 'text-muted-foreground/40' : levelColor(record.level)
+          className={`w-20 shrink-0 select-none font-semibold ${
+            level === 'UNKNOWN' ? 'text-muted-foreground/40' : levelColor(level)
           }`}
         >
-          {record.level === 'UNKNOWN' ? '' : record.level}
+          {level === 'UNKNOWN' ? '' : level}
         </span>
       )}
 
-      <span
-        className={`w-40 shrink-0 overflow-hidden font-mono ${
-          record.own ? 'text-cyan-400/80' : 'text-muted-foreground/35'
-        }`}
-      >
-        {record.mod}
-      </span>
-
-      {/* Message column — message, meta chips and traceback stack here */}
-      <div className="flex min-w-0 flex-col gap-0.5">
+      {/* Message column — mod tag + message, meta chips and traceback here.
+          `flex-1 min-w-0` + wrapping keeps every line inside the viewport. */}
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         {colored ? (
-          <span className="whitespace-pre" dangerouslySetInnerHTML={{ __html: colored }} />
+          <span
+            className="wrap-break-word whitespace-pre-wrap"
+            dangerouslySetInnerHTML={{ __html: colored }}
+          />
         ) : (
-          <span className={`whitespace-pre ${levelColor(record.level)}`}>
-            {isRaw ? stripAnsi(message) : message}
-          </span>
+          <div className="wrap-break-word whitespace-pre-wrap">
+            {record.mod && (
+              <span
+                className={record.own ? 'text-cyan-400/80' : 'text-muted-foreground/40'}
+                title={modTitle}
+              >
+                {record.mod}{' '}
+              </span>
+            )}
+            <span className={levelMessageColor(level)}>{message}</span>
+          </div>
         )}
 
         {hasMeta && (
           <div className="flex flex-wrap items-center gap-1.5 text-label">
+            {record.channel && (
+              <span className="rounded bg-muted-foreground/10 px-1.5 font-mono text-muted-foreground/70">
+                #{record.channel}
+              </span>
+            )}
             {record.code && (
               <span className="rounded bg-muted-foreground/15 px-1.5 text-muted-foreground">
                 {record.code}
@@ -82,6 +139,14 @@ export function LogRecordRow({ record, index }: { record: LogRecord; index: numb
                 {k}={v}
               </span>
             ))}
+            {complex.length > 0 && (
+              <button
+                onClick={() => setShowExtra(s => !s)}
+                className="rounded bg-muted-foreground/10 px-1.5 font-mono text-muted-foreground/70 hover:text-muted-foreground"
+              >
+                {showExtra ? '隱藏' : `+${complex.length}`} {complex.join(' ')}
+              </button>
+            )}
             {record.request_id && (
               <button
                 onClick={() => copyToClipboard(record.request_id!, '已複製 request id')}
@@ -101,8 +166,14 @@ export function LogRecordRow({ record, index }: { record: LogRecord; index: numb
           </div>
         )}
 
+        {showExtra && complex.length > 0 && (
+          <pre className="overflow-x-auto rounded bg-black/30 p-2 text-sub text-muted-foreground/80">
+            {JSON.stringify(Object.fromEntries(complex.map(k => [k, record.extra[k]])), null, 2)}
+          </pre>
+        )}
+
         {open && record.exception && (
-          <pre className="overflow-x-auto rounded bg-black/30 p-2 text-label text-status-offline/90">
+          <pre className="overflow-x-auto rounded bg-black/30 p-2 text-sub text-status-offline/90">
             {record.exception}
           </pre>
         )}
