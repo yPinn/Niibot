@@ -341,7 +341,6 @@ export default function Releases() {
 
       {!loading && error && (
         <EmptyState
-          className="py-empty"
           icon="fa-solid fa-triangle-exclamation"
           title="載入更新說明失敗"
           description="請稍後再試，若問題持續請檢查網路狀態"
@@ -350,7 +349,6 @@ export default function Releases() {
 
       {!loading && !error && releases.length === 0 && (
         <EmptyState
-          className="py-empty"
           icon="fa-solid fa-tag"
           title="尚無任何版本發佈"
           description="後續更新將會顯示在這裡"

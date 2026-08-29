@@ -31,13 +31,13 @@ export class ErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.error) {
       return (
-        <div className="flex min-h-screen flex-col items-center justify-center gap-4 p-8 text-center">
-          <h1 className="text-2xl font-semibold">發生了一個錯誤</h1>
-          <p className="text-muted-foreground max-w-md text-sm">
+        <div className="flex min-h-screen flex-col items-center justify-center gap-section p-empty text-center">
+          <h1 className="text-page-title font-semibold">發生了一個錯誤</h1>
+          <p className="text-muted-foreground max-w-md text-sub">
             頁面無法載入，請重新整理。如果問題持續發生，請聯絡開發者。
           </p>
           {import.meta.env.DEV && (
-            <pre className="bg-muted max-w-lg overflow-auto rounded p-3 text-left text-xs">
+            <pre className="bg-muted max-w-lg overflow-auto rounded p-3 text-left text-label">
               {this.state.error.message}
             </pre>
           )}

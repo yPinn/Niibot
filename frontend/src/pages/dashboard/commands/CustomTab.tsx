@@ -110,7 +110,7 @@ export function CustomTab({ customRows, sortState, defaults, onToggle, onEdit }:
                         </span>
                       </TooltipTrigger>
                       <TooltipContent className="max-w-80">
-                        <span className="break-all font-mono text-xs">{row.data.pattern}</span>
+                        <span className="break-all font-mono">{row.data.pattern}</span>
                       </TooltipContent>
                     </Tooltip>
                   ) : (

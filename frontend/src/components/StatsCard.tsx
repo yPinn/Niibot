@@ -37,7 +37,7 @@ export default function StatsCard({
           {title}
         </CardTitle>
       </CardHeader>
-      <CardContent className="flex-1 min-h-0 overflow-hidden pb-6">
+      <CardContent className="flex-1 min-h-0 overflow-hidden pb-card">
         {loading ? (
           <div className="space-y-1">
             {Array.from({ length: 5 }).map((_, i) => (
