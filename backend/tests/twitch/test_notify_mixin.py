@@ -23,16 +23,33 @@ from core._notify_mixin import _NotifyMixin
 # ---------------------------------------------------------------------------
 
 
+class _FakeSubs:
+    """Stand-in for Bot.subs (SubscriptionManager) — mutable set + async mocks."""
+
+    def __init__(self) -> None:
+        self._subscribed: set[str] = set()
+        self.subscribe = AsyncMock()
+        self.unsubscribe = AsyncMock()
+
+    def is_subscribed(self, cid: str) -> bool:
+        return cid in self._subscribed
+
+    @property
+    def subscribed(self) -> frozenset[str]:
+        return frozenset(self._subscribed)
+
+    def ch(self, cid: str) -> str:
+        return cid
+
+
 class _StubMixin(_NotifyMixin):
     """Provides the attributes that _NotifyMixin references via self.*."""
 
     def __init__(self) -> None:
         self._bot_id = "bot-001"
-        self._subscribed_channels: set[str] = set()
+        self.subs = _FakeSubs()
         self._bot_is_mod: set[str] = set()
         self._needs_reauth: set[str] = set()
-        self.subscribe_channel_events = AsyncMock()
-        self.unsubscribe_channel_events = AsyncMock()
         self._check_bot_mod_status = AsyncMock()
         self._send_welcome_message = AsyncMock()
         self.redemption_configs = MagicMock()
@@ -53,6 +70,9 @@ class _StubMixin(_NotifyMixin):
         enabled_channel.enabled = True
         self.channels.get_channel = AsyncMock(return_value=enabled_channel)
 
+    def _ch(self, cid: str) -> str:
+        return self.subs.ch(cid)
+
 
 def _payload(channel_id: str, *, enabled: bool) -> str:
     return json.dumps({"channel_id": channel_id, "enabled": enabled})
@@ -68,7 +88,7 @@ class TestHandleChannelToggleDisable:
 
     async def test_disable_discards_bot_is_mod(self):
         mixin = _StubMixin()
-        mixin._subscribed_channels = {"ch1"}
+        mixin.subs._subscribed = {"ch1"}
         mixin._bot_is_mod = {"ch1"}
 
         await mixin._handle_channel_toggle(
@@ -76,31 +96,31 @@ class TestHandleChannelToggleDisable:
         )
 
         assert "ch1" not in mixin._bot_is_mod
-        mixin.unsubscribe_channel_events.assert_awaited_once_with("ch1")
+        mixin.subs.unsubscribe.assert_awaited_once_with("ch1")
 
     async def test_disable_not_subscribed_skips_discard(self):
         """DISABLE for a channel that was already unsubscribed is a no-op."""
         mixin = _StubMixin()
-        mixin._subscribed_channels = set()
+        mixin.subs._subscribed = set()
         mixin._bot_is_mod = {"ch1"}
 
         await mixin._handle_channel_toggle(
             None, None, "channel_toggle", _payload("ch1", enabled=False)
         )
 
-        mixin.unsubscribe_channel_events.assert_not_awaited()
+        mixin.subs.unsubscribe.assert_not_awaited()
         assert "ch1" in mixin._bot_is_mod  # discard not reached, set unchanged
 
     async def test_disable_ignores_bot_own_channel(self):
         mixin = _StubMixin()
-        mixin._subscribed_channels = {"bot-001"}
+        mixin.subs._subscribed = {"bot-001"}
         mixin._bot_is_mod = {"bot-001"}
 
         await mixin._handle_channel_toggle(
             None, None, "channel_toggle", _payload("bot-001", enabled=False)
         )
 
-        mixin.unsubscribe_channel_events.assert_not_awaited()
+        mixin.subs.unsubscribe.assert_not_awaited()
         assert "bot-001" in mixin._bot_is_mod  # early-return, unchanged
 
 
@@ -119,19 +139,19 @@ class TestHandleChannelToggleEnable:
             None, None, "channel_toggle", _payload("ch2", enabled=True)
         )
 
-        mixin.subscribe_channel_events.assert_awaited_once_with("ch2")
+        mixin.subs.subscribe.assert_awaited_once_with("ch2")
         mixin._check_bot_mod_status.assert_awaited_once_with("ch2")
         mixin.event_configs.ensure_defaults.assert_awaited_once_with("ch2")
 
     async def test_enable_already_subscribed_skips_subscribe_and_mod_check(self):
         mixin = _StubMixin()
-        mixin._subscribed_channels = {"ch2"}
+        mixin.subs._subscribed = {"ch2"}
 
         await mixin._handle_channel_toggle(
             None, None, "channel_toggle", _payload("ch2", enabled=True)
         )
 
-        mixin.subscribe_channel_events.assert_not_awaited()
+        mixin.subs.subscribe.assert_not_awaited()
         mixin._check_bot_mod_status.assert_not_awaited()
 
     async def test_enable_ignores_bot_own_channel(self):
@@ -141,7 +161,7 @@ class TestHandleChannelToggleEnable:
             None, None, "channel_toggle", _payload("bot-001", enabled=True)
         )
 
-        mixin.subscribe_channel_events.assert_not_awaited()
+        mixin.subs.subscribe.assert_not_awaited()
         mixin._check_bot_mod_status.assert_not_awaited()
 
     async def test_enable_sets_needs_reauth_when_scopes_missing(self):
@@ -221,7 +241,7 @@ class TestHandleNewTokenReauthRestored:
         mixin._send_reauth_restored_message = AsyncMock()
         mixin.add_token = AsyncMock(return_value=_make_user_info("alice", BROADCASTER_SCOPES))
         mixin.add_channel_to_db = AsyncMock()
-        mixin._subscribed_channels = {"u1"}  # already subscribed, skip subscribe branch
+        mixin.subs._subscribed = {"u1"}  # already subscribed, skip subscribe branch
 
         await mixin._handle_new_token(None, None, "new_token", _new_token_payload("u1"))
 
@@ -237,7 +257,7 @@ class TestHandleNewTokenReauthRestored:
         mixin._send_reauth_restored_message = AsyncMock()
         mixin.add_token = AsyncMock(return_value=_make_user_info("alice", BROADCASTER_SCOPES))
         mixin.add_channel_to_db = AsyncMock()
-        mixin._subscribed_channels = {"u1"}
+        mixin.subs._subscribed = {"u1"}
 
         await mixin._handle_new_token(None, None, "new_token", _new_token_payload("u1"))
 
@@ -250,7 +270,7 @@ class TestHandleNewTokenReauthRestored:
         mixin._send_reauth_restored_message = AsyncMock()
         mixin.add_token = AsyncMock(return_value=_make_user_info("alice", ["user:read:email"]))
         mixin.add_channel_to_db = AsyncMock()
-        mixin._subscribed_channels = {"u1"}
+        mixin.subs._subscribed = {"u1"}
 
         await mixin._handle_new_token(None, None, "new_token", _new_token_payload("u1"))
 
@@ -264,7 +284,7 @@ class TestHandleNewTokenReauthRestored:
 
         mixin = _StubMixin()
         mixin._needs_reauth = {"u1"}
-        mixin._subscribed_channels = {"u1"}  # already subscribed — would normally skip mod check
+        mixin.subs._subscribed = {"u1"}  # already subscribed — would normally skip mod check
         mixin._send_reauth_restored_message = AsyncMock()
         mixin._check_bot_mod_status = AsyncMock()
         mixin.add_token = AsyncMock(return_value=_make_user_info("alice", BROADCASTER_SCOPES))
@@ -289,7 +309,7 @@ class TestHandleNewTokenAdmissionGate:
         from shared.twitch_scopes import BROADCASTER_SCOPES
 
         mixin = _StubMixin()
-        mixin._subscribed_channels = set()  # not yet subscribed
+        mixin.subs._subscribed = set()  # not yet subscribed
         mixin.add_token = AsyncMock(return_value=_make_user_info("alice", BROADCASTER_SCOPES))
         mixin.add_channel_to_db = AsyncMock()
         disabled_channel = MagicMock()
@@ -298,36 +318,36 @@ class TestHandleNewTokenAdmissionGate:
 
         await mixin._handle_new_token(None, None, "new_token", _new_token_payload("u1"))
 
-        mixin.subscribe_channel_events.assert_not_awaited()
-        assert "u1" not in mixin._subscribed_channels
+        mixin.subs.subscribe.assert_not_awaited()
+        assert "u1" not in mixin.subs.subscribed
 
     async def test_does_not_subscribe_when_channel_missing(self):
         """No channels row yet (race during signup) → fail closed, don't join."""
         from shared.twitch_scopes import BROADCASTER_SCOPES
 
         mixin = _StubMixin()
-        mixin._subscribed_channels = set()
+        mixin.subs._subscribed = set()
         mixin.add_token = AsyncMock(return_value=_make_user_info("alice", BROADCASTER_SCOPES))
         mixin.add_channel_to_db = AsyncMock()
         mixin.channels.get_channel = AsyncMock(return_value=None)
 
         await mixin._handle_new_token(None, None, "new_token", _new_token_payload("u1"))
 
-        mixin.subscribe_channel_events.assert_not_awaited()
+        mixin.subs.subscribe.assert_not_awaited()
 
     async def test_subscribes_when_channel_enabled(self):
         """An admitted (enabled) channel that is not yet subscribed gets joined."""
         from shared.twitch_scopes import BROADCASTER_SCOPES
 
         mixin = _StubMixin()
-        mixin._subscribed_channels = set()
+        mixin.subs._subscribed = set()
         mixin.add_token = AsyncMock(return_value=_make_user_info("alice", BROADCASTER_SCOPES))
         mixin.add_channel_to_db = AsyncMock()
         # get_channel defaults to an enabled channel via _StubMixin.
 
         await mixin._handle_new_token(None, None, "new_token", _new_token_payload("u1"))
 
-        mixin.subscribe_channel_events.assert_awaited_once_with("u1")
+        mixin.subs.subscribe.assert_awaited_once_with("u1")
 
 
 # ---------------------------------------------------------------------------
@@ -343,7 +363,7 @@ class TestHandleTokenReauth:
         mixin = _StubMixin()
         mixin.add_token = AsyncMock(return_value=_make_user_info("alice", []))
         mixin.add_channel_to_db = AsyncMock()
-        mixin._subscribed_channels = {"u1"}
+        mixin.subs._subscribed = {"u1"}
 
         with patch("shared.repositories.channel._token_cache") as mock_cache:
             await mixin._handle_token_reauth(None, None, "token_reauth", _new_token_payload("u1"))
@@ -369,7 +389,7 @@ class TestHandleTokenReauth:
         mixin._send_reauth_restored_message = AsyncMock()
         mixin.add_token = AsyncMock(return_value=_make_user_info("alice", BROADCASTER_SCOPES))
         mixin.add_channel_to_db = AsyncMock()
-        mixin._subscribed_channels = {"u1"}
+        mixin.subs._subscribed = {"u1"}
 
         with patch("shared.repositories.channel._token_cache"):
             await mixin._handle_token_reauth(None, None, "token_reauth", _new_token_payload("u1"))
@@ -405,22 +425,26 @@ def _make_httpx_ctx(status_code: int, json_data: dict | None = None, text: str =
 def mod_bot():
     """Minimal Bot instance wired only for _check_bot_mod_status."""
     with (
-        patch("twitch.core.bot._ChannelMixin.__init__", return_value=None),
         patch("twitch.core.bot._MessageRouterMixin.__init__", return_value=None),
         patch("twitch.core.bot._NotifyMixin.__init__", return_value=None),
         patch("twitch.core.bot._SessionMixin.__init__", return_value=None),
         patch("twitch.core.bot.commands.AutoBot.__init__", return_value=None),
     ):
         from twitch.core.bot import Bot
+        from twitch.core.subscription_manager import SubscriptionManager
 
         b = Bot.__new__(Bot)
         b._bot_id = "bot-001"
         b._client_id = "test-client-id"
-        b._channel_names = {}
         b._bot_is_mod = set()
         b._needs_reauth = set()
         b._mod_check_pending = set()
-        b._subscribed_channels = set()
+        b.subs = SubscriptionManager(
+            bot_id="bot-001",
+            multi_subscribe=AsyncMock(),
+            delete_subscription=AsyncMock(),
+            needs_reauth=b._needs_reauth,
+        )
         b.channels = MagicMock()
         return b
 

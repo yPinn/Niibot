@@ -52,13 +52,13 @@ def _make_revoked_payload(
 def bot():
     """Bot instance with heavy deps mocked — minimal surface for token tests."""
     with (
-        patch("twitch.core.bot._ChannelMixin.__init__", return_value=None),
         patch("twitch.core.bot._MessageRouterMixin.__init__", return_value=None),
         patch("twitch.core.bot._NotifyMixin.__init__", return_value=None),
         patch("twitch.core.bot._SessionMixin.__init__", return_value=None),
         patch("twitch.core.bot.commands.AutoBot.__init__", return_value=None),
     ):
         from twitch.core.bot import Bot
+        from twitch.core.subscription_manager import SubscriptionManager
 
         b = Bot.__new__(Bot)
         b.channels = MagicMock()
@@ -72,10 +72,15 @@ def bot():
         b._background_tasks = set()
         b._bot_id = "bot-001"
         b._client_id = "test-client-id"
-        b._channel_names = {}
+        b._needs_reauth = set()
+        b.subs = SubscriptionManager(
+            bot_id="bot-001",
+            multi_subscribe=AsyncMock(),
+            delete_subscription=AsyncMock(),
+            needs_reauth=b._needs_reauth,
+        )
         b._bot_is_mod = set()
         b._mod_check_pending = set()
-        b._needs_reauth = set()
         b._token_refresh_buffer = []
         b._token_refresh_flush_task = None
         return b

@@ -1,10 +1,10 @@
 """PG NOTIFY handlers and cache refresh mixin.
 
-Extracted from Bot to keep bot.py under 300 lines.
 Depends on attributes defined in Bot.__init__:
-    self._bot_id, self._subscribed_channels, self._active_sessions, self.owner_id
+    self._bot_id, self._active_sessions, self.owner_id, self.subs
     self.channels, self.command_configs, self.redemption_configs
     self.timer_configs, self.message_trigger_configs
+Uses self._ch() defined on Bot.
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ import asyncio
 import json
 import logging
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 import twitchio
 
@@ -22,9 +23,9 @@ LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 class _NotifyMixin:
-    def _ch(self, channel_id: str) -> str:
-        """Provided by _ChannelMixin at runtime; falls back to bare id."""
-        return channel_id
+    if TYPE_CHECKING:
+        # Defined on Bot; declared here so mypy resolves the mixin's calls.
+        def _ch(self, channel_id: str) -> str: ...
 
     async def _seed_and_warm_channel(self, channel_id: str) -> int:
         """Seed redemption + event config defaults and warm the command cache
@@ -64,8 +65,8 @@ class _NotifyMixin:
             )
 
             if enabled:
-                if channel_id not in self._subscribed_channels:  # type: ignore[attr-defined]
-                    await self.subscribe_channel_events(channel_id)  # type: ignore[attr-defined]
+                if not self.subs.is_subscribed(channel_id):  # type: ignore[attr-defined]
+                    await self.subs.subscribe(channel_id)  # type: ignore[attr-defined]
                     await self._check_bot_mod_status(channel_id)  # type: ignore[attr-defined]
 
                     # Scope check: mod check catches expired tokens (401/403) but a valid
@@ -94,8 +95,8 @@ class _NotifyMixin:
                         f"[NOTIFY] Channel {self._ch(channel_id)} already subscribed, skipping"
                     )  # type: ignore[attr-defined]
             else:
-                if channel_id in self._subscribed_channels:  # type: ignore[attr-defined]
-                    await self.unsubscribe_channel_events(channel_id)  # type: ignore[attr-defined]
+                if self.subs.is_subscribed(channel_id):  # type: ignore[attr-defined]
+                    await self.subs.unsubscribe(channel_id)  # type: ignore[attr-defined]
                     self._bot_is_mod.discard(channel_id)  # type: ignore[attr-defined]
                     LOGGER.info(
                         f"[NOTIFY] Instantly unsubscribed from channel: {self._ch(channel_id)}"
@@ -203,8 +204,8 @@ class _NotifyMixin:
                     )
                     return
 
-                if user_id not in self._subscribed_channels:  # type: ignore[attr-defined]
-                    await self.subscribe_channel_events(user_id)  # type: ignore[attr-defined]
+                if not self.subs.is_subscribed(user_id):  # type: ignore[attr-defined]
+                    await self.subs.subscribe(user_id)  # type: ignore[attr-defined]
                     await self._check_bot_mod_status(user_id)  # type: ignore[attr-defined]
 
                     count = await self._seed_and_warm_channel(user_id)
@@ -271,7 +272,7 @@ class _NotifyMixin:
                 LOGGER.info("[NOTIFY] module_config updated, global pack cache invalidated")
                 return
 
-            if not channel_id or channel_id not in self._subscribed_channels:  # type: ignore[attr-defined]
+            if not channel_id or not self.subs.is_subscribed(channel_id):  # type: ignore[attr-defined]
                 return
 
             LOGGER.info(
@@ -336,11 +337,10 @@ class _NotifyMixin:
         """
         while True:
             try:
-                for channel_id in list(self._subscribed_channels):  # type: ignore[attr-defined]
+                subscribed = self.subs.subscribed  # type: ignore[attr-defined]
+                for channel_id in subscribed:
                     await self._refresh_channel_cache(channel_id)  # type: ignore[attr-defined]
-                LOGGER.debug(
-                    f"Periodic cache refresh complete for {len(self._subscribed_channels)} channels"  # type: ignore[attr-defined]
-                )
+                LOGGER.debug(f"Periodic cache refresh complete for {len(subscribed)} channels")
             except asyncio.CancelledError:
                 break
             except Exception as e:

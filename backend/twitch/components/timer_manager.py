@@ -66,13 +66,14 @@ class TimerManagerComponent(commands.Component):
         """Main poll loop: checks all channels every 60 seconds."""
         now = datetime.now(UTC)
 
-        live_channels = [c for c in self.bot._subscribed_channels if c in self.bot._active_sessions]
+        subscribed = self.bot.subs.subscribed
+        live_channels = [c for c in subscribed if c in self.bot._active_sessions]
         LOGGER.debug(
-            f"[timer-poll] subscribed={len(self.bot._subscribed_channels)} "
+            f"[timer-poll] subscribed={len(subscribed)} "
             f"live={len(live_channels)} active_sessions={list(self.bot._active_sessions.keys())}"
         )
 
-        for channel_id in list(self.bot._subscribed_channels):
+        for channel_id in subscribed:
             if channel_id not in self.bot._active_sessions:
                 continue  # Only during live streams
 

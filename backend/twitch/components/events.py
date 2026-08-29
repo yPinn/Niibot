@@ -460,7 +460,7 @@ class EventComponent(commands.Component):
             self._trigger_emote_sync(channel_id)
             # channel.follow subscription needs the bot as moderator — it 403s
             # if the channel was added before this grant. (Re)subscribe now.
-            await self.bot.resubscribe_follow(channel_id)  # type: ignore[attr-defined]
+            await self.bot.subs.resubscribe_follow(channel_id)
 
         try:
             await self.bot.analytics.upsert_viewer_mod_status(

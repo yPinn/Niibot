@@ -18,7 +18,7 @@ _CATALOG_FACTORIES: dict[str, Callable[[str, str], eventsub.SubscriptionPayload]
     # moderator_user_id = bot: the bot reads followers as a moderator, so
     # `moderator:read:followers` lives on the bot token, not the broadcaster.
     # Requires the bot to already be a mod — re-subscribed via
-    # `resubscribe_follow` once mod is granted (see _channel_mixin).
+    # `SubscriptionManager.resubscribe_follow` once mod is granted.
     "ChannelFollowSubscription": lambda bc, bot: eventsub.ChannelFollowSubscription(
         broadcaster_user_id=bc, moderator_user_id=bot
     ),

@@ -1,10 +1,8 @@
 """Session lifecycle mixin — stream session recovery, polling, VOD sync.
 
-Extracted from Bot to keep bot.py under 300 lines.
 Depends on attributes defined in Bot.__init__:
-    self._bot_id, self._subscribed_channels
-    self._active_sessions, self._chatter_buffers, self._channel_line_counts
-    self.channels, self.analytics
+    self._bot_id, self._active_sessions, self._chatter_buffers,
+    self._channel_line_counts, self.channels, self.analytics
 """
 
 from __future__ import annotations
@@ -32,53 +30,6 @@ class _SessionMixin:
     # ------------------------------------------------------------------
     # Startup tasks
     # ------------------------------------------------------------------
-
-    async def _subscribe_initial_channels(self) -> None:
-        """Subscribe to EventSub for all enabled channels on startup."""
-        try:
-            await asyncio.sleep(2)
-
-            enabled_channels = await self.channels.list_enabled_channels()  # type: ignore[attr-defined]
-            LOGGER.info(f"Subscribing to {len(enabled_channels)} enabled channels...")
-
-            for ch in enabled_channels:
-                if ch.channel_name:
-                    self._channel_names[ch.channel_id] = ch.channel_name  # type: ignore[attr-defined]
-
-            warmed_channels = self.channels.warm_channel_cache(enabled_channels)  # type: ignore[attr-defined]
-            LOGGER.info(f"Warmed channel cache: {warmed_channels} channels")
-
-            non_bot = [ch for ch in enabled_channels if ch.channel_id != self._bot_id]  # type: ignore[attr-defined]
-
-            # Pre-add to _mod_check_pending before subscribing: asyncio.gather tasks haven't
-            # run their first line yet when the event loop yields, so a message arriving in
-            # that window would fire a spurious mod-guard notification.
-            subscribed_ids: list[str] = []
-            for ch in non_bot:
-                self._mod_check_pending.add(ch.channel_id)  # type: ignore[attr-defined]
-                try:
-                    await self.subscribe_channel_events(ch.channel_id)  # type: ignore[attr-defined]
-                    subscribed_ids.append(ch.channel_id)
-                except Exception as e:
-                    LOGGER.error(
-                        f"Failed to subscribe channel {ch.channel_name or ch.channel_id}: {e}"
-                    )
-                    self._mod_check_pending.discard(ch.channel_id)  # type: ignore[attr-defined]
-
-            await asyncio.gather(
-                *(self._check_bot_mod_status(cid) for cid in subscribed_ids),  # type: ignore[attr-defined]
-                return_exceptions=True,
-            )
-
-            total_warmed = 0
-            for ch in non_bot:
-                total_warmed += await self._seed_and_warm_channel(ch.channel_id)  # type: ignore[attr-defined]
-
-            LOGGER.info(
-                f"Initial channel subscription complete — warmed cache: {total_warmed} configs"
-            )
-        except Exception as e:
-            LOGGER.exception(f"Error subscribing to initial channels: {e}")
 
     async def _recover_active_sessions(self) -> None:
         """Recover sessions for channels that are currently live on bot startup."""

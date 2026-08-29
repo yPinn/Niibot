@@ -12,6 +12,20 @@ import pytest
 # ---------------------------------------------------------------------------
 
 
+def _make_subs(subscribed=(), *, bot_id="bot-001"):
+    """Real SubscriptionManager with mocked transport for Bot.subs."""
+    from twitch.core.subscription_manager import SubscriptionManager
+
+    m = SubscriptionManager(
+        bot_id=bot_id,
+        multi_subscribe=AsyncMock(),
+        delete_subscription=AsyncMock(),
+        needs_reauth=set(),
+    )
+    m._subscribed = set(subscribed)
+    return m
+
+
 def _make_partial_user(user_id: str, name: str):
     u = MagicMock()
     u.id = user_id
@@ -50,7 +64,6 @@ def _make_payload(
 def bot():
     """Return a Bot instance with all heavy deps mocked out."""
     with (
-        patch("twitch.core.bot._ChannelMixin.__init__", return_value=None),
         patch("twitch.core.bot._MessageRouterMixin.__init__", return_value=None),
         patch("twitch.core.bot._NotifyMixin.__init__", return_value=None),
         patch("twitch.core.bot._SessionMixin.__init__", return_value=None),
@@ -59,7 +72,7 @@ def bot():
         from twitch.core.bot import Bot
 
         b = Bot.__new__(Bot)
-        b._subscribed_channels = {"123"}
+        b.subs = _make_subs({"123"})
         b._bot_id = "bot-001"
         b._active_sessions = {}
         b._chatter_buffers = {}
@@ -243,7 +256,6 @@ async def test_reauth_takes_priority_over_mod_guard(bot):
 def _make_bot_for_mod_check():
     """Minimal Bot instance for _check_bot_mod_status tests."""
     with (
-        patch("twitch.core.bot._ChannelMixin.__init__", return_value=None),
         patch("twitch.core.bot._MessageRouterMixin.__init__", return_value=None),
         patch("twitch.core.bot._NotifyMixin.__init__", return_value=None),
         patch("twitch.core.bot._SessionMixin.__init__", return_value=None),
@@ -254,11 +266,10 @@ def _make_bot_for_mod_check():
         b = Bot.__new__(Bot)
         b._bot_id = "bot-001"
         b._client_id = "client-abc"
-        b._channel_names = {}
         b._needs_reauth = set()
         b._bot_is_mod = set()
         b._mod_check_pending = set()
-        b._subscribed_channels = set()
+        b.subs = _make_subs()
         token = MagicMock()
         token.token = "tok"
         b.channels = MagicMock()
@@ -323,7 +334,6 @@ async def test_mod_check_auth_failure_marks_needs_reauth(status_code):
 def _make_bot_for_token_refresh(needs_reauth: set[str] | None = None):
     """Minimal Bot instance for event_token_refreshed tests."""
     with (
-        patch("twitch.core.bot._ChannelMixin.__init__", return_value=None),
         patch("twitch.core.bot._MessageRouterMixin.__init__", return_value=None),
         patch("twitch.core.bot._NotifyMixin.__init__", return_value=None),
         patch("twitch.core.bot._SessionMixin.__init__", return_value=None),
@@ -333,7 +343,7 @@ def _make_bot_for_token_refresh(needs_reauth: set[str] | None = None):
 
         b = Bot.__new__(Bot)
         b._bot_id = "bot-001"
-        b._channel_names = {}
+        b.subs = _make_subs()
         b._needs_reauth = needs_reauth if needs_reauth is not None else set()
         b._bot_is_mod = set()
         b._token_refresh_buffer = []
@@ -419,7 +429,6 @@ async def test_token_refresh_batches_burst_into_single_log_line(caplog):
 def _make_shared_chat_bot():
     """Minimal Bot for shared-chat event tests."""
     with (
-        patch("twitch.core.bot._ChannelMixin.__init__", return_value=None),
         patch("twitch.core.bot._MessageRouterMixin.__init__", return_value=None),
         patch("twitch.core.bot._NotifyMixin.__init__", return_value=None),
         patch("twitch.core.bot._SessionMixin.__init__", return_value=None),
