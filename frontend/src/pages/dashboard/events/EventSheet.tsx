@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 
-import { type EventConfig, updateEventConfig } from '@/api/events'
+import { type EventConfig, type EventDefinition, updateEventConfig } from '@/api/events'
 import { Spinner } from '@/components/primitives'
 import {
-  Badge,
   Button,
   Input,
   Label,
@@ -21,15 +20,16 @@ import { VariableInserter } from '@/components/VariableInserter'
 import { useInputInsert } from '@/hooks/useInputInsert'
 import { toastApiError } from '@/lib/toast-error'
 
-import { EVENT_TYPE_NAMES, TEMPLATE_VARIABLES } from './constants'
+import { TemplatePreview } from './TemplatePreview'
 
 interface EventSheetProps {
   event: EventConfig | null
+  definition: EventDefinition | undefined
   onClose: () => void
   onSaved: (updated: EventConfig) => void
 }
 
-export function EventSheet({ event, onClose, onSaved }: EventSheetProps) {
+export function EventSheet({ event, definition, onClose, onSaved }: EventSheetProps) {
   const [editTemplate, setEditTemplate] = useState('')
   const [editEnabled, setEditEnabled] = useState(true)
   const [editOptions, setEditOptions] = useState<Record<string, unknown>>({})
@@ -66,13 +66,14 @@ export function EventSheet({ event, onClose, onSaved }: EventSheetProps) {
     }
   }
 
+  const variableChips =
+    definition?.variables.map(v => ({ var: `$(${v.name})`, desc: v.description })) ?? []
+
   return (
     <Sheet open={!!event} onOpenChange={open => !open && onClose()}>
       <SheetContent className="gap-section">
         <SheetHeader>
-          <SheetTitle>
-            編輯 {event ? EVENT_TYPE_NAMES[event.event_type] || event.event_type : ''}
-          </SheetTitle>
+          <SheetTitle>編輯 {definition?.display_name ?? event?.event_type ?? ''}</SheetTitle>
           <SheetDescription>設定此事件觸發時的自動回應訊息</SheetDescription>
         </SheetHeader>
 
@@ -88,34 +89,31 @@ export function EventSheet({ event, onClose, onSaved }: EventSheetProps) {
               className="font-mono text-sub"
             />
 
-            {event && TEMPLATE_VARIABLES[event.event_type] && (
-              <VariableInserter
-                variables={TEMPLATE_VARIABLES[event.event_type]}
-                onInsert={insertVariable}
-              />
+            {variableChips.length > 0 && (
+              <VariableInserter variables={variableChips} onInsert={insertVariable} />
             )}
           </div>
 
-          {event?.event_type === 'raid' && (
-            <div className="flex items-center justify-between">
-              <div className="flex flex-col gap-0.5">
-                <span className="flex items-center gap-1.5 text-sub font-medium leading-none">
-                  自動推薦
-                  <Badge variant="secondary" className="text-label">
-                    需要管理員
-                  </Badge>
-                </span>
-                <span className="text-label text-muted-foreground">
-                  揪團時自動執行 /shoutout 展示對方頻道
-                </span>
-              </div>
-              <Switch
-                aria-label="自動推薦"
-                checked={(editOptions.auto_shoutout as boolean) ?? true}
-                onCheckedChange={v => setEditOptions(prev => ({ ...prev, auto_shoutout: v }))}
-              />
-            </div>
+          {definition && (
+            <TemplatePreview template={editTemplate} variables={definition.variables} />
           )}
+
+          {definition?.options_schema.map(opt => {
+            if (opt.type !== 'boolean') return null
+            return (
+              <div key={opt.key} className="flex items-center justify-between">
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-sub font-medium leading-none">{opt.label}</span>
+                  <span className="text-label text-muted-foreground">{opt.description}</span>
+                </div>
+                <Switch
+                  aria-label={opt.label}
+                  checked={(editOptions[opt.key] as boolean) ?? opt.default}
+                  onCheckedChange={v => setEditOptions(prev => ({ ...prev, [opt.key]: v }))}
+                />
+              </div>
+            )
+          })}
 
           <div className="flex items-center justify-between">
             <div className="flex flex-col gap-0.5">

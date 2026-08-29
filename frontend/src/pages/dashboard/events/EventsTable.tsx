@@ -1,4 +1,4 @@
-import type { EventConfig } from '@/api/events'
+import type { EventConfig, EventDefinition } from '@/api/events'
 import { Icon, SlideUp } from '@/components/primitives'
 import { SortableHead } from '@/components/SortableHead'
 import {
@@ -22,11 +22,12 @@ import {
 } from '@/components/ui'
 import type { useSortState } from '@/hooks/useSortState'
 
-import { EVENT_TYPE_COLORS, EVENT_TYPE_LABELS, EVENT_TYPE_NAMES } from './constants'
+import { accentClass } from './constants'
 import type { EventSortKey } from './types'
 
 interface EventsTableProps {
   events: EventConfig[]
+  catalog: Map<string, EventDefinition>
   loading: boolean
   error: string | null
   sort: ReturnType<typeof useSortState<EventSortKey>>
@@ -37,6 +38,7 @@ interface EventsTableProps {
 
 export function EventsTable({
   events,
+  catalog,
   loading,
   error,
   sort,
@@ -109,24 +111,23 @@ export function EventsTable({
                 </TableHeader>
                 <TableBody>
                   {events.map(event => {
-                    const locked =
-                      !isAffiliate &&
-                      (event.event_type === 'subscribe' ||
-                        event.event_type === 'resub' ||
-                        event.event_type === 'gift_sub' ||
-                        event.event_type === 'bits')
+                    const defn = catalog.get(event.event_type)
+                    const name = defn?.display_name ?? event.event_type
+                    const locked = !isAffiliate && (defn?.requires_affiliate ?? false)
                     return (
                       <TableRow key={event.event_type} className={locked ? 'opacity-50' : ''}>
                         <TableCell className="font-medium">
                           <span className="flex items-center gap-1.5">
-                            {EVENT_TYPE_NAMES[event.event_type] || event.event_type}
+                            {name}
                             {locked && <Icon icon="fa-solid fa-lock" wrapperClassName="size-3.5" />}
                           </span>
                         </TableCell>
                         <TableCell className="hidden md:table-cell">
-                          <Badge className={EVENT_TYPE_COLORS[event.event_type] || ''}>
-                            {EVENT_TYPE_LABELS[event.event_type] || event.event_type}
-                          </Badge>
+                          {defn && (
+                            <Badge className={accentClass(defn.accent)}>
+                              {defn.category_label}
+                            </Badge>
+                          )}
                         </TableCell>
                         <TableCell className="hidden md:table-cell max-w-0 truncate font-mono text-label">
                           {locked ? (
@@ -136,11 +137,11 @@ export function EventsTable({
                           )}
                         </TableCell>
                         <TableCell className="hidden md:table-cell text-right">
-                          {event.trigger_count}
+                          {event.trigger_count ?? '—'}
                         </TableCell>
                         <TableCell className="text-center">
                           <Switch
-                            aria-label={`啟用 ${EVENT_TYPE_NAMES[event.event_type] ?? event.event_type}`}
+                            aria-label={`啟用 ${name}`}
                             checked={event.enabled}
                             onCheckedChange={() => onToggle(event)}
                             disabled={locked}

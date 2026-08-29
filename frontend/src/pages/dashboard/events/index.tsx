@@ -3,6 +3,8 @@ import { toast } from 'sonner'
 
 import {
   type EventConfig,
+  type EventDefinition,
+  getEventCatalog,
   getEventConfigs,
   getRedemptionConfigs,
   getTwitchRewards,
@@ -19,7 +21,7 @@ import { useOptimisticToggle } from '@/hooks/useOptimisticToggle'
 import { useSortState } from '@/hooks/useSortState'
 import { toastApiError } from '@/lib/toast-error'
 
-import { ACTION_TYPE_LABELS, EVENT_TYPE_LABELS, EVENT_TYPE_ORDER } from './constants'
+import { ACTION_TYPE_LABELS } from './constants'
 import { EventSheet } from './EventSheet'
 import { EventsTable } from './EventsTable'
 import { RedemptionsCard } from './RedemptionsCard'
@@ -29,6 +31,7 @@ export default function Events() {
   useDocumentTitle('Events')
   const { isAffiliate } = useAuth()
   const [events, setEvents] = useState<EventConfig[]>([])
+  const [catalog, setCatalog] = useState<EventDefinition[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -45,8 +48,11 @@ export default function Events() {
   const fetchEvents = useCallback(async () => {
     try {
       setError(null)
-      const data = await getEventConfigs()
-      setEvents(data)
+      // Both come from the same backend catalog — fail together so the table
+      // never renders without the metadata that drives its labels and locks.
+      const [configs, defs] = await Promise.all([getEventConfigs(), getEventCatalog()])
+      setEvents(configs)
+      setCatalog(defs)
     } catch {
       setError('無法載入事件設定')
     } finally {
@@ -86,24 +92,24 @@ export default function Events() {
     fetchRedemptions()
   }, [fetchEvents, fetchRedemptions])
 
+  const catalogMap = useMemo(() => new Map(catalog.map(d => [d.key, d])), [catalog])
+  const orderIndex = useMemo(() => new Map(catalog.map((d, i) => [d.key, i])), [catalog])
+
   const { sortKey: eventSortKey, sortDir: eventSortDir } = eventSort
   const sortedEvents = useMemo(() => {
     return [...events].sort((a, b) => {
       let cmp = 0
       switch (eventSortKey) {
-        case 'event_type': {
-          const ai = EVENT_TYPE_ORDER.indexOf(a.event_type)
-          const bi = EVENT_TYPE_ORDER.indexOf(b.event_type)
-          cmp = (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi)
+        case 'event_type':
+          cmp = (orderIndex.get(a.event_type) ?? 99) - (orderIndex.get(b.event_type) ?? 99)
           break
-        }
         case 'type_label':
-          cmp = (EVENT_TYPE_LABELS[a.event_type] || a.event_type).localeCompare(
-            EVENT_TYPE_LABELS[b.event_type] || b.event_type
+          cmp = (catalogMap.get(a.event_type)?.category_label ?? a.event_type).localeCompare(
+            catalogMap.get(b.event_type)?.category_label ?? b.event_type
           )
           break
         case 'trigger_count':
-          cmp = a.trigger_count - b.trigger_count
+          cmp = (a.trigger_count ?? -1) - (b.trigger_count ?? -1)
           break
         case 'enabled':
           cmp = Number(a.enabled) - Number(b.enabled)
@@ -111,7 +117,7 @@ export default function Events() {
       }
       return eventSortDir === 'desc' ? -cmp : cmp
     })
-  }, [events, eventSortKey, eventSortDir])
+  }, [events, eventSortKey, eventSortDir, catalogMap, orderIndex])
 
   const { sortKey: redSortKey, sortDir: redSortDir } = redSort
   const sortedRedemptions = useMemo(() => {
@@ -171,6 +177,7 @@ export default function Events() {
       <div className="grid grid-cols-1 items-start gap-section xl:grid-cols-[3fr_2fr]">
         <EventsTable
           events={sortedEvents}
+          catalog={catalogMap}
           loading={loading}
           error={error}
           sort={eventSort}
@@ -193,6 +200,7 @@ export default function Events() {
 
       <EventSheet
         event={editingEvent}
+        definition={editingEvent ? catalogMap.get(editingEvent.event_type) : undefined}
         onClose={() => setEditingEvent(null)}
         onSaved={updated => {
           setEvents(prev => prev.map(e => (e.event_type === updated.event_type ? updated : e)))
