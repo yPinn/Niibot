@@ -49,13 +49,15 @@ def _fixed_subscriptions(
         eventsub.StreamOnlineSubscription(broadcaster_user_id=broadcaster_user_id),
         eventsub.StreamOfflineSubscription(broadcaster_user_id=broadcaster_user_id),
         eventsub.ChannelPointsRedeemAddSubscription(broadcaster_user_id=broadcaster_user_id),
-        # analytics-only: updates viewer sub status, no template / dashboard toggle
-        eventsub.ChannelSubscriptionEndSubscription(broadcaster_user_id=broadcaster_user_id),
         eventsub.SharedChatSessionBeginSubscription(broadcaster_user_id=broadcaster_user_id),
         eventsub.SharedChatSessionUpdateSubscription(broadcaster_user_id=broadcaster_user_id),
         eventsub.SharedChatSessionEndSubscription(broadcaster_user_id=broadcaster_user_id),
+        # analytics-only (viewer status upserts) — no template / dashboard toggle
+        eventsub.ChannelSubscriptionEndSubscription(broadcaster_user_id=broadcaster_user_id),
         eventsub.ChannelModeratorAddSubscription(broadcaster_user_id=broadcaster_user_id),
         eventsub.ChannelModeratorRemoveSubscription(broadcaster_user_id=broadcaster_user_id),
+        eventsub.ChannelVIPAddSubscription(broadcaster_user_id=broadcaster_user_id),
+        eventsub.ChannelVIPRemoveSubscription(broadcaster_user_id=broadcaster_user_id),
     ]
 
 

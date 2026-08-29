@@ -500,91 +500,30 @@ class EventComponent(commands.Component):
         except Exception as e:
             LOGGER.error(f"[{payload.broadcaster.name}] ModRemove: {user_name} (error: {e})")
 
-    @commands.Component.listener()
-    async def event_vip_add(
-        self,
-        payload: twitchio.ChannelVIPAdd,
+    async def _record_vip(
+        self, payload: twitchio.ChannelVIPAdd | twitchio.ChannelVIPRemove, *, is_vip: bool
     ) -> None:
-        """頻道新增 VIP"""
-        channel_id = payload.broadcaster.id
+        verb = "VIPAdd" if is_vip else "VIPRemove"
         user_name = payload.user.display_name or payload.user.name or ""
         try:
-            if hasattr(self.bot, "analytics"):
-                await self.bot.analytics.upsert_viewer_vip_status(
-                    channel_id=channel_id,
-                    user_id=payload.user.id,
-                    username=payload.user.name or user_name,
-                    display_name=payload.user.display_name,
-                    is_vip=True,
-                )
-            LOGGER.info(f"[{payload.broadcaster.name}] VIPAdd: {user_name}")
+            await self.bot.analytics.upsert_viewer_vip_status(
+                channel_id=payload.broadcaster.id,
+                user_id=payload.user.id,
+                username=payload.user.name or user_name,
+                display_name=payload.user.display_name,
+                is_vip=is_vip,
+            )
+            LOGGER.info(f"[{payload.broadcaster.name}] {verb}: {user_name}")
         except Exception as e:
-            LOGGER.error(f"[{payload.broadcaster.name}] VIPAdd: {user_name} (error: {e})")
+            LOGGER.error(f"[{payload.broadcaster.name}] {verb}: {user_name} (error: {e})")
 
     @commands.Component.listener()
-    async def event_vip_remove(
-        self,
-        payload: twitchio.ChannelVIPRemove,
-    ) -> None:
-        """頻道移除 VIP"""
-        channel_id = payload.broadcaster.id
-        user_name = payload.user.display_name or payload.user.name or ""
-        try:
-            if hasattr(self.bot, "analytics"):
-                await self.bot.analytics.upsert_viewer_vip_status(
-                    channel_id=channel_id,
-                    user_id=payload.user.id,
-                    username=payload.user.name or user_name,
-                    display_name=payload.user.display_name,
-                    is_vip=False,
-                )
-            LOGGER.info(f"[{payload.broadcaster.name}] VIPRemove: {user_name}")
-        except Exception as e:
-            LOGGER.error(f"[{payload.broadcaster.name}] VIPRemove: {user_name} (error: {e})")
+    async def event_vip_add(self, payload: twitchio.ChannelVIPAdd) -> None:
+        await self._record_vip(payload, is_vip=True)
 
     @commands.Component.listener()
-    async def event_ban(
-        self,
-        payload: twitchio.ChannelBan,
-    ) -> None:
-        """封禁事件"""
-        channel_id = payload.broadcaster.id
-        user_name = payload.user.display_name or payload.user.name or ""
-        try:
-            if hasattr(self.bot, "analytics"):
-                ends_at: datetime | None = getattr(payload, "ends_at", None)
-                reason: str | None = getattr(payload, "reason", None) or None
-                await self.bot.analytics.upsert_viewer_ban(
-                    channel_id=channel_id,
-                    user_id=payload.user.id,
-                    username=payload.user.name or user_name,
-                    display_name=payload.user.display_name,
-                    ban_expires_at=ends_at,
-                    ban_reason=reason,
-                )
-            LOGGER.info(f"[{payload.broadcaster.name}] Ban: {user_name}")
-        except Exception as e:
-            LOGGER.error(f"[{payload.broadcaster.name}] Ban: {user_name} (error: {e})")
-
-    @commands.Component.listener()
-    async def event_unban(
-        self,
-        payload: twitchio.ChannelUnban,
-    ) -> None:
-        """解除封禁事件"""
-        channel_id = payload.broadcaster.id
-        user_name = payload.user.display_name or payload.user.name or ""
-        try:
-            if hasattr(self.bot, "analytics"):
-                await self.bot.analytics.upsert_viewer_unban(
-                    channel_id=channel_id,
-                    user_id=payload.user.id,
-                    username=payload.user.name or user_name,
-                    display_name=payload.user.display_name,
-                )
-            LOGGER.info(f"[{payload.broadcaster.name}] Unban: {user_name}")
-        except Exception as e:
-            LOGGER.error(f"[{payload.broadcaster.name}] Unban: {user_name} (error: {e})")
+    async def event_vip_remove(self, payload: twitchio.ChannelVIPRemove) -> None:
+        await self._record_vip(payload, is_vip=False)
 
 
 async def setup(bot: commands.Bot) -> None:
