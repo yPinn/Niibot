@@ -39,8 +39,8 @@ describe('PlusProgramCard', () => {
     render(<PlusProgramCard {...base} estimate={ESTIMATE} />)
     expect(screen.getByText('120')).toBeInTheDocument()
     expect(screen.getByText('等級 1（60/40）')).toBeInTheDocument()
-    expect(screen.getByText(/已確認 80 位付費訂閱/)).toBeInTheDocument()
-    expect(screen.getByText(/另 150 位待確認來源（最高再 \+200 點）/)).toBeInTheDocument()
+    expect(screen.getByText('已確認 80 位付費訂閱')).toBeInTheDocument()
+    expect(screen.getByText('待確認 150 位（最多 +200 點）')).toBeInTheDocument()
     // 300 - 120 = 180 more points => Tier 1 x180 / Tier 2 x90 / Tier 3 x30
     expect(screen.getByText('距 等級 2（70/30） 還差 180 點')).toBeInTheDocument()
     expect(screen.getByText('層級 1 ×180')).toBeInTheDocument()
@@ -64,6 +64,6 @@ describe('PlusProgramCard', () => {
         estimate={{ ...ESTIMATE, confirmed_points: 320, plan_confirmed: '70/30' }}
       />
     )
-    expect(screen.getByText('已達等級 2（70/30）')).toBeInTheDocument()
+    expect(screen.getByText('已達最高分潤層級（70/30）')).toBeInTheDocument()
   })
 })

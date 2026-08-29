@@ -27,11 +27,11 @@ function splitColor(split: string): string {
   return 'text-muted-foreground'
 }
 
-/** Twitch calls the plan tiers 等級 1 / 等級 2; 50/50 is the un-qualified default. */
+/** Twitch numbers the plan tiers 等級 0 (50/50) / 等級 1 (60/40) / 等級 2 (70/30). */
 function planLabel(split: string): string {
   if (split === '70/30') return '等級 2（70/30）'
   if (split === '60/40') return '等級 1（60/40）'
-  return '尚未達標（50/50）'
+  return '等級 0（50/50）'
 }
 
 function CardShell({ children }: { children: React.ReactNode }) {
@@ -113,7 +113,7 @@ export function PlusProgramCard({
           {confirmed_points.toLocaleString()}
         </span>
         <span className="text-label text-muted-foreground">點</span>
-        <span className="text-label text-muted-foreground ml-auto">{planLabel(prog.split)}</span>
+        <span className="ml-auto text-label text-muted-foreground">{planLabel(prog.split)}</span>
       </div>
 
       <div className="flex flex-col gap-1">
@@ -126,29 +126,31 @@ export function PlusProgramCard({
             { value: pending_points, className: 'bg-primary/30' },
           ]}
         />
-        <p className="text-label text-muted-foreground">
-          {`已確認 ${confirmed_subs} 位付費訂閱`}
-          {pending_subs > 0 && `，另 ${pending_subs} 位待確認來源（最高再 +${pending_points} 點）`}
-        </p>
+        <div className="flex items-center justify-between gap-2 text-label text-muted-foreground tabular-nums">
+          <span>{`已確認 ${confirmed_subs} 位付費訂閱`}</span>
+          {pending_subs > 0 && (
+            <span>{`待確認 ${pending_subs} 位（最多 +${pending_points} 點）`}</span>
+          )}
+        </div>
       </div>
 
       {prog.nextThreshold === null ? (
-        <p className="text-label text-status-online">已達等級 2（70/30）</p>
+        <p className="text-label text-status-online">已達最高分潤層級（70/30）</p>
       ) : (
-        <div className="flex flex-col gap-1">
-          <p className="text-label text-muted-foreground tabular-nums">
+        <div className="flex flex-col gap-1.5">
+          <p className="text-sub text-foreground tabular-nums">
             {`距 ${nextTierLabel} 還差 ${gap.points} 點`}
           </p>
           <div className="grid grid-cols-3 gap-1 text-label text-muted-foreground/70 tabular-nums">
             <span>{`層級 1 ×${gap.t1}`}</span>
-            <span>{`層級 2 ×${gap.t2}`}</span>
-            <span>{`層級 3 ×${gap.t3}`}</span>
+            <span className="text-center">{`層級 2 ×${gap.t2}`}</span>
+            <span className="text-right">{`層級 3 ×${gap.t3}`}</span>
           </div>
         </div>
       )}
 
       {data_as_of && (
-        <p className="text-label text-muted-foreground/50">
+        <p className="text-label text-muted-foreground/50 tabular-nums">
           更新於 {formatRelativeTime(data_as_of)}
         </p>
       )}
