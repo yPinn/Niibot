@@ -1,11 +1,8 @@
 """Unit tests for twitch.utils.event_render."""
 
-from twitch.utils.event_render import (
-    MESSAGE_VAR_LIMIT,
-    clean_message_var,
-    render_template,
-    tier_label,
-)
+from twitch.utils.event_render import MESSAGE_VAR_LIMIT, clean_message_var, render_template
+
+from shared.events import tier_label
 
 
 class TestTierLabel:
@@ -25,6 +22,9 @@ class TestCleanMessageVar:
         assert clean_message_var("/me waves") == "me waves"
         assert clean_message_var(".timeout bob") == "timeout bob"
         assert clean_message_var("...anyway") == "..anyway"  # only the first char
+
+    def test_empty_string(self):
+        assert clean_message_var("") == ""
 
     def test_caps_length(self):
         assert len(clean_message_var("x" * 999)) == MESSAGE_VAR_LIMIT

@@ -5,7 +5,8 @@ from typing import TYPE_CHECKING
 import twitchio
 from twitchio.ext import commands
 
-from utils.event_render import clean_message_var, render_template, tier_label
+from shared.events import tier_label
+from utils.event_render import clean_message_var, render_template
 from utils.reauth import is_scope_error, reauth_notifier
 
 if TYPE_CHECKING:

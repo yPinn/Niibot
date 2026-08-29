@@ -17,6 +17,16 @@ from shared.events import tier_label
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
+def _parse_iso(value: str | None) -> datetime | None:
+    """Parse a Helix ISO-8601 timestamp (``Z`` suffix and all); None if unparseable."""
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
 class _AnalyticsEventsMixin:
     pool: asyncpg.Pool  # type: ignore[assignment]
 
@@ -433,20 +443,13 @@ class _AnalyticsEventsMixin:
         for b in banned:
             if not b.get("user_id"):
                 continue
-            expires = b.get("expires_at")
-            expires_at = None
-            if expires:
-                try:
-                    expires_at = datetime.fromisoformat(str(expires).replace("Z", "+00:00"))
-                except ValueError:
-                    expires_at = None
             rows.append(
                 (
                     channel_id,
                     b["user_id"],
                     b.get("user_login") or "",
                     b.get("user_name"),
-                    expires_at,
+                    _parse_iso(b.get("expires_at")),
                     b.get("reason") or None,
                 )
             )
@@ -548,9 +551,8 @@ class _AnalyticsEventsMixin:
             return 0
         rows: list[tuple] = []
         for f in followers:
-            try:
-                followed_at = datetime.fromisoformat(f["followed_at"].replace("Z", "+00:00"))
-            except (ValueError, KeyError):
+            followed_at = _parse_iso(f.get("followed_at"))
+            if followed_at is None:
                 continue
             rows.append(
                 (

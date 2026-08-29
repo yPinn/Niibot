@@ -1,25 +1,17 @@
 """Single source of truth for configurable Twitch notification events.
 
-Each Twitch channel is a tenant and may customise the chat message the bot
-posts when one of these events fires. Historically the definition of "an event"
-was smeared across five places that nothing kept in sync — the EventSub
-subscription list, the twitchio listener names, the ``event_configs`` DB keys
-(+ migration CHECK), the default templates, and the frontend variable labels.
-Adding ``resub`` / ``gift_sub`` touched four of them and missed the
-subscription list, so those events silently never fired.
-
-This catalog binds everything one event type needs:
-
-- ``key``                — ``event_configs.event_type`` value, API path segment
-- ``default_template`` / ``default_enabled`` / ``default_options`` — DB seed
-- ``variables``          — ``$(name)`` placeholders a template may use (+ label)
-- ``subscription_class`` — twitchio EventSub class that delivers it, or ``None``
+Each channel is a tenant and may customise the chat message the bot posts when
+one of these events fires. Defining "an event" used to mean editing several
+unsynced places; adding ``resub`` / ``gift_sub`` missed the EventSub
+subscription list, so they silently never fired. Each catalog entry binds, per
+event type: the ``event_configs`` DB key (+ migration 053 CHECK), the DB seed
+(template / enabled / options), the ``$(name)`` template variables, and the
+twitchio EventSub class that delivers it (or ``None``).
 
 ``backend/shared/`` is imported by the api and discord services too, so this
-module must NOT import ``twitchio``. The twitch service maps
-``subscription_class`` (a bare string) to a real ``eventsub`` factory in
-``twitch/core/subscriptions.py``; ``tests/twitch/test_event_catalog.py`` keeps
-the layers consistent so a missing subscription can't merge again.
+module must NOT import ``twitchio``. ``twitch/core/subscriptions.py`` maps
+``subscription_class`` (a bare string) to a real ``eventsub`` factory;
+``tests/twitch/test_event_catalog.py`` keeps the layers consistent.
 """
 
 from __future__ import annotations
@@ -132,9 +124,3 @@ EVENT_KEYS: tuple[EventKey, ...] = tuple(e.key for e in EVENT_CATALOG)
 
 # The Literal and the data must not drift apart.
 assert set(EVENT_KEYS) == set(get_args(EventKey)), "EventKey literal out of sync with EVENT_CATALOG"
-
-_BY_KEY: dict[str, EventDef] = {e.key: e for e in EVENT_CATALOG}
-
-
-def get_event(key: str) -> EventDef | None:
-    return _BY_KEY.get(key)

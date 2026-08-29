@@ -72,18 +72,7 @@ class _SessionMixin:
 
             total_warmed = 0
             for ch in non_bot:
-                try:
-                    await self.redemption_configs.ensure_defaults(  # type: ignore[attr-defined]
-                        ch.channel_id,
-                        owner_id=self.owner_id,  # type: ignore[attr-defined]
-                    )
-                    await self.event_configs.ensure_defaults(ch.channel_id)  # type: ignore[attr-defined]
-                    count = await self.command_configs.warm_cache(ch.channel_id)  # type: ignore[attr-defined]
-                    total_warmed += count
-                except Exception as e:
-                    LOGGER.warning(
-                        f"Failed to ensure defaults for {ch.channel_name or ch.channel_id}: {e}"
-                    )
+                total_warmed += await self._seed_and_warm_channel(ch.channel_id)  # type: ignore[attr-defined]
 
             LOGGER.info(
                 f"Initial channel subscription complete — warmed cache: {total_warmed} configs"

@@ -26,6 +26,22 @@ class _NotifyMixin:
         """Provided by _ChannelMixin at runtime; falls back to bare id."""
         return channel_id
 
+    async def _seed_and_warm_channel(self, channel_id: str) -> int:
+        """Seed redemption + event config defaults and warm the command cache
+        for a newly-subscribed channel. Returns the warmed-config count
+        (0 on failure, which is logged rather than raised).
+        """
+        try:
+            await self.redemption_configs.ensure_defaults(  # type: ignore[attr-defined]
+                channel_id,
+                owner_id=self.owner_id,  # type: ignore[attr-defined]
+            )
+            await self.event_configs.ensure_defaults(channel_id)  # type: ignore[attr-defined]
+            return await self.command_configs.warm_cache(channel_id)  # type: ignore[attr-defined]
+        except Exception as e:
+            LOGGER.warning(f"[NOTIFY] Failed to seed/warm {self._ch(channel_id)}: {e}")
+            return 0
+
     # ------------------------------------------------------------------
     # PG NOTIFY handlers
     # ------------------------------------------------------------------
@@ -67,20 +83,10 @@ class _NotifyMixin:
                                     " after channel toggle — marking for reauth"
                                 )
 
-                    try:
-                        await self.redemption_configs.ensure_defaults(  # type: ignore[attr-defined]
-                            channel_id,
-                            owner_id=self.owner_id,  # type: ignore[attr-defined]
-                        )
-                        await self.event_configs.ensure_defaults(channel_id)  # type: ignore[attr-defined]
-                        count = await self.command_configs.warm_cache(channel_id)  # type: ignore[attr-defined]
-                        LOGGER.info(
-                            f"[NOTIFY] Warmed cache: {count} configs for {self._ch(channel_id)}"
-                        )  # type: ignore[attr-defined]
-                    except Exception as e:
-                        LOGGER.warning(
-                            f"[NOTIFY] Failed to warm cache for {self._ch(channel_id)}: {e}"
-                        )  # type: ignore[attr-defined]
+                    count = await self._seed_and_warm_channel(channel_id)
+                    LOGGER.info(
+                        f"[NOTIFY] Warmed cache: {count} configs for {self._ch(channel_id)}"
+                    )
                     await self._send_welcome_message(channel_id)  # type: ignore[attr-defined]
                     LOGGER.info(f"[NOTIFY] Instantly subscribed to channel: {self._ch(channel_id)}")  # type: ignore[attr-defined]
                 else:
@@ -201,20 +207,8 @@ class _NotifyMixin:
                     await self.subscribe_channel_events(user_id)  # type: ignore[attr-defined]
                     await self._check_bot_mod_status(user_id)  # type: ignore[attr-defined]
 
-                    try:
-                        await self.redemption_configs.ensure_defaults(  # type: ignore[attr-defined]
-                            user_id,
-                            owner_id=self.owner_id,  # type: ignore[attr-defined]
-                        )
-                        await self.event_configs.ensure_defaults(user_id)  # type: ignore[attr-defined]
-                        count = await self.command_configs.warm_cache(user_id)  # type: ignore[attr-defined]
-                        LOGGER.info(
-                            f"[NOTIFY] Warmed cache: {count} configs for {self._ch(user_id)}"
-                        )  # type: ignore[attr-defined]
-                    except Exception as e:
-                        LOGGER.warning(
-                            f"[NOTIFY] Failed to warm cache for {self._ch(user_id)}: {e}"
-                        )  # type: ignore[attr-defined]
+                    count = await self._seed_and_warm_channel(user_id)
+                    LOGGER.info(f"[NOTIFY] Warmed cache: {count} configs for {self._ch(user_id)}")
 
                     try:
                         streams = [s async for s in self.fetch_streams(user_ids=[user_id])]  # type: ignore[attr-defined]

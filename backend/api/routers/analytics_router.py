@@ -459,22 +459,17 @@ async def sync_channel_roles(
 
     # Followers and bans are read with the bot token (bot acts as moderator);
     # both return [] if the bot has no token or is not a mod of this channel.
-    async def _fetch_followers() -> list[dict]:
+    async def _bot_read(fetch) -> list[dict]:
         if not bot_token_row:
             return []
-        return await twitch_api.fetch_all_followers(channel_id, bot_token_row.token, bot_id)
-
-    async def _fetch_banned() -> list[dict]:
-        if not bot_token_row:
-            return []
-        return await twitch_api.fetch_all_banned(channel_id, bot_token_row.token, bot_id)
+        return await fetch(channel_id, bot_token_row.token, bot_id)
 
     mods, vips, subs, followers, banned = await asyncio.gather(
         twitch_api.fetch_all_moderators(channel_id, token),
         twitch_api.fetch_all_vips(channel_id, token),
         twitch_api.fetch_all_subscribers(channel_id, token),
-        _fetch_followers(),
-        _fetch_banned(),
+        _bot_read(twitch_api.fetch_all_followers),
+        _bot_read(twitch_api.fetch_all_banned),
     )
     LOGGER.info(
         "sync_roles_fetched",
