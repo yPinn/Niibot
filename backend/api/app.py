@@ -25,8 +25,10 @@ from routers import (
     auth_router,
     bots_router,
     channels_router,
+    checkin_router,
     client_errors_router,
     commands_router,
+    community_overlay_router,
     crosshairs_router,
     discord_webhook_router,
     donation_router,
@@ -46,6 +48,7 @@ from shared.database import pool_heartbeat_loop
 from shared.errors import build_envelope
 from shared.log_context import bind_log_context, clear_log_context
 from shared.repositories.activation_code import activation_grant_cleanup_loop
+from shared.repositories.community_overlay import community_overlay_cleanup_loop
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -56,6 +59,7 @@ _pool_heartbeat_task: asyncio.Task | None = None
 _db_retry_task: asyncio.Task | None = None
 _client_error_retention_task: asyncio.Task | None = None
 _activation_cleanup_task: asyncio.Task | None = None
+_community_overlay_cleanup_task: asyncio.Task | None = None
 _APP_VERSION = os.getenv("APP_VERSION", "dev")
 _REQUEST_TIMEOUT = 30.0
 
@@ -86,7 +90,7 @@ async def _db_retry_loop(db_manager) -> None:
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Handle startup and shutdown"""
     global _start_time, _started_at, _pool_heartbeat_task, _db_retry_task
-    global _client_error_retention_task, _activation_cleanup_task
+    global _client_error_retention_task, _activation_cleanup_task, _community_overlay_cleanup_task
     _start_time = time.time()
     _started_at = datetime.now(UTC).isoformat()
 
@@ -129,6 +133,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Daily expiry + scrub of stale activation grants
     _activation_cleanup_task = asyncio.create_task(activation_grant_cleanup_loop(db_manager))
 
+    # Daily prune of expired visual events; check-in ledgers remain permanent.
+    _community_overlay_cleanup_task = asyncio.create_task(
+        community_overlay_cleanup_loop(db_manager)
+    )
+
     yield
 
     # Shutdown
@@ -141,6 +150,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         _client_error_retention_task.cancel()
     if _activation_cleanup_task:
         _activation_cleanup_task.cancel()
+    if _community_overlay_cleanup_task:
+        _community_overlay_cleanup_task.cancel()
     try:
         await close_twitch_api()
         await close_bots_http_client()
@@ -252,7 +263,13 @@ def create_app() -> FastAPI:
         allow_origins=settings.cors_origins,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        allow_headers=["Content-Type", "Cookie", "X-Request-ID"],
+        allow_headers=[
+            "Content-Type",
+            "Cookie",
+            "X-Request-ID",
+            "X-Overlay-Key",
+            "X-Niibot-Action",
+        ],
         expose_headers=["X-Request-ID"],
     )
 
@@ -274,6 +291,7 @@ def create_app() -> FastAPI:
     app.include_router(admin_router.router)
     # Fully-private routers — every endpoint requires an activated account
     app.include_router(channels_router.router, dependencies=_activated)
+    app.include_router(checkin_router.router, dependencies=_activated)
     app.include_router(analytics_router.router, dependencies=_activated)
     app.include_router(matcher_router.router, dependencies=_activated)
     app.include_router(stats_router.router, dependencies=_activated)
@@ -289,6 +307,7 @@ def create_app() -> FastAPI:
     app.include_router(game_queue_router.router)
     app.include_router(video_queue_router.router)
     app.include_router(crosshairs_router.router)
+    app.include_router(community_overlay_router.router)
 
     # Root endpoint
     @app.get("/")

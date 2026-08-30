@@ -43,12 +43,23 @@ _REDEMPTION = {
     "channel_id": CHANNEL_ID,
     "action_type": "vip",
     "reward_name": "VIP for a day",
+    "reward_id": "r-1",
     "enabled": True,
     "created_at": None,
     "updated_at": None,
 }
 
-_REWARD = {"id": "r-1", "title": "VIP", "cost": 1000}
+_REWARD = {
+    "id": "r-1",
+    "title": "VIP",
+    "cost": 1000,
+    "is_enabled": True,
+    "is_paused": False,
+    "is_in_stock": True,
+    "should_redemptions_skip_request_queue": True,
+    "max_per_stream": 100,
+    "max_per_user_per_stream": 1,
+}
 
 
 @asynccontextmanager
@@ -245,6 +256,9 @@ class TestGetTwitchRewards:
             r = _make_client(mock_twitch_api=mock_api).get("/api/events/twitch-rewards")
         assert r.status_code == 200
         assert r.json()[0]["title"] == "VIP"
+        assert r.json()[0]["max_per_stream"] == 100
+        assert r.json()[0]["max_per_user_per_stream"] == 1
+        assert r.json()[0]["should_redemptions_skip_request_queue"] is True
 
     def test_returns_rewards_for_partner(self):
         import services.channel_service as cs
@@ -321,16 +335,21 @@ class TestUpdateRedemptionConfig:
     def test_updates_redemption(self):
         import services.command_config_service as m
 
-        updated = {**_REDEMPTION, "reward_name": "New Reward"}
+        updated = {**_REDEMPTION, "reward_name": "New Reward", "reward_id": "r-new"}
         with patch.object(
             m.CommandConfigService, "update_redemption", AsyncMock(return_value=updated)
-        ):
+        ) as service_mock:
             r = _make_client().put(
                 "/api/events/redemptions/vip",
-                json={"reward_name": "New Reward", "enabled": True},
+                json={"reward_name": "New Reward", "reward_id": "r-new", "enabled": True},
             )
         assert r.status_code == 200
         assert r.json()["reward_name"] == "New Reward"
+        assert r.json()["reward_id"] == "r-new"
+
+        service_mock.assert_awaited_once_with(
+            CHANNEL_ID, "vip", "New Reward", True, reward_id="r-new"
+        )
 
     def test_invalid_action_type_returns_400(self):
         r = _make_client().put(
@@ -339,10 +358,24 @@ class TestUpdateRedemptionConfig:
         )
         assert r.status_code == 400
 
+    def test_rejects_oversized_reward_id_before_database_write(self):
+        r = _make_client().put(
+            "/api/events/redemptions/checkin",
+            json={"reward_name": "每日簽到", "reward_id": "r" * 129, "enabled": True},
+        )
+        assert r.status_code == 422
+
     def test_all_valid_action_types_accepted(self):
         import services.command_config_service as m
 
-        for action_type in ("vip", "first", "niibot_auth", "game_queue", "video_queue"):
+        for action_type in (
+            "vip",
+            "first",
+            "niibot_auth",
+            "game_queue",
+            "video_queue",
+            "checkin",
+        ):
             cfg = {**_REDEMPTION, "action_type": action_type}
             with patch.object(
                 m.CommandConfigService, "update_redemption", AsyncMock(return_value=cfg)

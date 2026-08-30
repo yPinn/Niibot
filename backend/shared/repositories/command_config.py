@@ -43,6 +43,7 @@ DEFAULT_REDEMPTIONS: list[dict] = [
     {"action_type": "niibot_auth", "reward_name": "niibot"},
     {"action_type": "game_queue", "reward_name": "game queue"},
     {"action_type": "video_queue", "reward_name": "video queue"},
+    {"action_type": "checkin", "reward_name": "每日簽到"},
 ]
 
 type UnsetType = object
@@ -469,7 +470,7 @@ class RedemptionConfigRepository:
         async def _query():
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(
-                    "SELECT id, channel_id, action_type, reward_name, enabled, "
+                    "SELECT id, channel_id, action_type, reward_name, reward_id, enabled, "
                     "created_at, updated_at "
                     "FROM redemption_configs WHERE channel_id = $1 ORDER BY id",
                     channel_id,
@@ -478,27 +479,47 @@ class RedemptionConfigRepository:
 
         return await _retry_on_db_error(_query)
 
-    @cached(
-        cache=_redemption_cache,
-        key_func=lambda self, channel_id, reward_name: (
-            f"redemption:{channel_id}:{reward_name.lower()}"
-        ),
-    )
     async def find_by_reward_name(
         self, channel_id: str, reward_name: str
     ) -> RedemptionConfig | None:
-        """Find a redemption config by reward name (case-insensitive contains). Bot use."""
+        """Compatibility wrapper for callers that do not have a Twitch reward id."""
+        return await self.find_by_reward(channel_id, None, reward_name)
+
+    @cached(
+        cache=_redemption_cache,
+        key_func=lambda self, channel_id, reward_id, reward_name: (
+            f"redemption:{channel_id}:id:{reward_id}"
+            if reward_id
+            else f"redemption:{channel_id}:title:{reward_name.lower()}"
+        ),
+    )
+    async def find_by_reward(
+        self,
+        channel_id: str,
+        reward_id: str | None,
+        reward_name: str,
+    ) -> RedemptionConfig | None:
+        """Find an enabled config by stable id, with title fallback for legacy rows only."""
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
-                "SELECT id, channel_id, action_type, reward_name, enabled, "
+                "SELECT id, channel_id, action_type, reward_name, reward_id, enabled, "
                 "created_at, updated_at "
                 "FROM redemption_configs WHERE channel_id = $1 AND enabled = TRUE",
                 channel_id,
             )
-            # Match: reward_name is contained in the reward title (case-insensitive)
+
+            configs = [RedemptionConfig(**dict(row)) for row in rows]
+            if reward_id:
+                exact = next((config for config in configs if config.reward_id == reward_id), None)
+                if exact is not None:
+                    return exact
+
+            # Legacy rows have no reward id. Keep the original case-insensitive
+            # title matching until the tenant selects a reward in the new UI.
             reward_lower = reward_name.lower()
-            for row in rows:
-                config = RedemptionConfig(**dict(row))
+            for config in configs:
+                if config.reward_id is not None:
+                    continue
                 if config.reward_name and config.reward_name.lower() in reward_lower:
                     return config
 
@@ -510,6 +531,8 @@ class RedemptionConfigRepository:
         action_type: str,
         reward_name: str,
         enabled: bool = True,
+        *,
+        reward_id: str | None = None,
     ) -> RedemptionConfig:
         """Insert or update a redemption config. Invalidates cache."""
 
@@ -517,17 +540,20 @@ class RedemptionConfigRepository:
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(
                     """
-                    INSERT INTO redemption_configs (channel_id, action_type, reward_name, enabled)
-                    VALUES ($1, $2, $3, $4)
+                    INSERT INTO redemption_configs
+                        (channel_id, action_type, reward_name, reward_id, enabled)
+                    VALUES ($1, $2, $3, $4, $5)
                     ON CONFLICT (channel_id, action_type) DO UPDATE SET
                         reward_name = EXCLUDED.reward_name,
+                        reward_id = EXCLUDED.reward_id,
                         enabled = EXCLUDED.enabled
-                    RETURNING id, channel_id, action_type, reward_name, enabled,
+                    RETURNING id, channel_id, action_type, reward_name, reward_id, enabled,
                               created_at, updated_at
                     """,
                     channel_id,
                     action_type,
                     reward_name,
+                    reward_id.strip() if reward_id and reward_id.strip() else None,
                     enabled,
                 )
                 result = RedemptionConfig(**dict(row))

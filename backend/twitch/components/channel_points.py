@@ -10,6 +10,7 @@ from twitchio.ext import commands
 
 from core.config import get_settings
 from shared.repositories.activation_code import ActivationCodeRepository
+from shared.repositories.attendance import AttendanceRepository
 from shared.repositories.command_config import RedemptionConfigRepository
 from shared.repositories.game_queue import GameQueueRepository, GameQueueSettingsRepository
 from shared.repositories.video_queue import (
@@ -17,6 +18,7 @@ from shared.repositories.video_queue import (
     VideoQueueRepository,
     VideoQueueSettingsRepository,
 )
+from shared.services.attendance import AttendanceService
 from shared.video_sources import (
     extract_twitch_clip_slug,
     extract_youtube_info,
@@ -45,6 +47,7 @@ class ChannelPointsComponent(commands.Component):
         self.settings = get_settings()
         self.redemption_repo = RedemptionConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.activation_repo = ActivationCodeRepository(self.bot.token_database)  # type: ignore[attr-defined]
+        self.attendance = AttendanceService(AttendanceRepository(self.bot.token_database))  # type: ignore[attr-defined]
         self.gq_repo = GameQueueRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.gq_settings_repo = GameQueueSettingsRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.vq_repo = VideoQueueRepository(self.bot.token_database)  # type: ignore[attr-defined]
@@ -59,6 +62,7 @@ class ChannelPointsComponent(commands.Component):
     def refresh_pool(self, pool) -> None:
         self.redemption_repo.pool = pool
         self.activation_repo.pool = pool
+        self.attendance.repository.pool = pool
         self.gq_repo.pool = pool
         self.gq_settings_repo.pool = pool
         self.vq_repo.pool = pool
@@ -139,12 +143,13 @@ class ChannelPointsComponent(commands.Component):
     ) -> None:
         """處理兌換事件（DB 驅動比對）"""
         reward_title = payload.reward.title
+        reward_id = str(payload.reward.id)
         user_name = payload.user.display_name or payload.user.name
         channel_id = payload.broadcaster.id
 
         channel_name = payload.broadcaster.name
 
-        config = await self.redemption_repo.find_by_reward_name(channel_id, reward_title)
+        config = await self.redemption_repo.find_by_reward(channel_id, reward_id, reward_title)
         if not config:
             LOGGER.debug("[%s] No matching redemption config for: %s", channel_name, reward_title)
             return
@@ -165,6 +170,39 @@ class ChannelPointsComponent(commands.Component):
             await self._handle_game_queue_redemption(payload, user_name)
         elif config.action_type == "video_queue" and user_name:
             await self._handle_video_queue_redemption(payload, user_name)
+        elif config.action_type == "checkin" and user_name:
+            await self._handle_checkin_redemption(payload)
+
+    async def _handle_checkin_redemption(
+        self,
+        payload: twitchio.ChannelPointsRedemptionAdd,
+    ) -> None:
+        """Apply a Twitch-managed reward to the shared daily check-in domain."""
+        broadcaster = payload.broadcaster
+        channel_id = str(broadcaster.id)
+        user_id = str(payload.user.id)
+        username = payload.user.name or user_id
+        display_name = payload.user.display_name or None
+        session_id = self.bot.sessions.session_id(channel_id) or None
+
+        try:
+            outcome = await self.attendance.check_in_with_reply(
+                channel_id=channel_id,
+                user_id=user_id,
+                username=username,
+                display_name=display_name,
+                session_id=session_id,
+            )
+            await self._reply(broadcaster, outcome.message)
+        except Exception:
+            LOGGER.exception(
+                "Channel Points check-in failed",
+                extra={"channel_id": channel_id, "user_id": user_id},
+            )
+            try:
+                await self._reply(broadcaster, f"@{display_name or username} 簽到失敗，請稍後再試")
+            except Exception:
+                pass
 
     async def _handle_vip_redemption(
         self,

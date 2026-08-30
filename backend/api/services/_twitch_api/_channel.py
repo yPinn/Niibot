@@ -25,10 +25,34 @@ class _ChannelMixin(_TwitchAPIBase):
                 LOGGER.error(f"Failed to fetch custom rewards: broadcaster={broadcaster_id}")
                 return []
 
-            return [
-                {"id": r["id"], "title": r["title"], "cost": r["cost"]}
-                for r in response.json().get("data", [])
-            ]
+            rewards: list[dict] = []
+            for reward in response.json().get("data", []):
+                stream_limit = reward.get("max_per_stream_setting") or {}
+                user_limit = reward.get("max_per_user_per_stream_setting") or {}
+                rewards.append(
+                    {
+                        "id": reward["id"],
+                        "title": reward["title"],
+                        "cost": reward["cost"],
+                        "is_enabled": bool(reward.get("is_enabled", True)),
+                        "is_paused": bool(reward.get("is_paused", False)),
+                        "is_in_stock": bool(reward.get("is_in_stock", True)),
+                        "should_redemptions_skip_request_queue": bool(
+                            reward.get("should_redemptions_skip_request_queue", False)
+                        ),
+                        "max_per_stream": (
+                            int(stream_limit.get("max_per_stream", 0))
+                            if stream_limit.get("is_enabled")
+                            else None
+                        ),
+                        "max_per_user_per_stream": (
+                            int(user_limit.get("max_per_user_per_stream", 0))
+                            if user_limit.get("is_enabled")
+                            else None
+                        ),
+                    }
+                )
+            return rewards
 
         except Exception:
             LOGGER.exception("Error getting custom rewards for broadcaster %s", broadcaster_id)

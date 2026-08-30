@@ -1,0 +1,32 @@
+.stage {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding: clamp(20px, 4vw, 56px);
+  pointer-events: none;
+  overflow: hidden;
+  background: transparent;
+}
+
+.stage[data-placement='top-left'] {
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+
+.stage[data-placement='top-right'] {
+  align-items: flex-start;
+  justify-content: flex-end;
+}
+
+.stage[data-placement='bottom-left'] {
+  align-items: flex-end;
+  justify-content: flex-start;
+}
+
+@media (max-width: 520px) {
+  .stage {
+    padding: 16px;
+  }
+}

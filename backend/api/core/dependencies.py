@@ -25,6 +25,10 @@ from services.tenant_service import (
 )
 from services.timer_service import TimerService
 from shared.log_context import bind_log_context
+from shared.repositories.attendance import AttendanceRepository
+from shared.repositories.community_overlay import CommunityOverlayRepository
+from shared.services.attendance import AttendanceService
+from shared.services.community_overlay import CommunityOverlayService
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -96,6 +100,16 @@ def get_trigger_service(pool: asyncpg.Pool = Depends(get_db_pool)) -> MessageTri
 
 def get_game_queue_service(pool: asyncpg.Pool = Depends(get_db_pool)) -> GameQueueService:
     return GameQueueService(pool)
+
+
+def get_attendance_service(pool: asyncpg.Pool = Depends(get_db_pool)) -> AttendanceService:
+    return AttendanceService(AttendanceRepository(pool))
+
+
+def get_community_overlay_service(
+    pool: asyncpg.Pool = Depends(get_db_pool),
+) -> CommunityOverlayService:
+    return CommunityOverlayService(CommunityOverlayRepository(pool))
 
 
 def get_token_payload(auth_token: str | None = Cookie(None)) -> dict:

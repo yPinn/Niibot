@@ -51,8 +51,8 @@ export function EventsTable({
     <SlideUp inView>
       <Card>
         <CardHeader>
-          <CardTitle>事件列表</CardTitle>
-          <CardDescription>設定頻道事件觸發時的自動回應訊息</CardDescription>
+          <CardTitle>事件回覆</CardTitle>
+          <CardDescription>設定 Twitch 頻道事件發生時的自動回應訊息。</CardDescription>
         </CardHeader>
         <CardContent>
           {loading ? (

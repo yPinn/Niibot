@@ -76,6 +76,9 @@ export const API_ENDPOINTS = {
     redemptions: join('/api/events/redemptions'),
     updateRedemption: (actionType: string) => join(`/api/events/redemptions/${actionType}`),
   },
+  checkin: {
+    settings: join('/api/checkin/settings'),
+  },
   gameQueue: {
     state: join('/api/game-queue/state'),
     advance: join('/api/game-queue/advance'),
@@ -98,6 +101,16 @@ export const API_ENDPOINTS = {
     playNow: (id: number) => join(`/api/video-queue/entries/${id}/play-now`),
     removeEntry: (id: number) => join(`/api/video-queue/entries/${id}`),
     addEntry: join('/api/video-queue/entries'),
+  },
+  communityOverlay: {
+    events: join('/api/community-overlay/public/events'),
+    theme: join('/api/community-overlay/public/theme'),
+    settings: join('/api/community-overlay/settings'),
+    rotateKey: join('/api/community-overlay/settings/rotate-key'),
+    themeSettings: join('/api/community-overlay/settings/theme'),
+    themeDraft: join('/api/community-overlay/settings/theme/draft'),
+    themePublish: join('/api/community-overlay/settings/theme/publish'),
+    themeResetDraft: join('/api/community-overlay/settings/theme/reset-draft'),
   },
   timers: {
     configs: join('/api/timers/configs'),

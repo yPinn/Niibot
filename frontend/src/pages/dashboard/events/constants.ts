@@ -20,11 +20,3 @@ export const ACCENT_CLASSES: Record<string, string> = {
 export function accentClass(accent: string): string {
   return ACCENT_CLASSES[accent] ?? 'bg-muted text-muted-foreground'
 }
-
-export const ACTION_TYPE_LABELS: Record<string, string> = {
-  vip: 'VIP 授予',
-  first: '本日頭香',
-  niibot_auth: 'Niibot 授權',
-  game_queue: '遊戲排隊券',
-  video_queue: '播放清單',
-}

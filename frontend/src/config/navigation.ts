@@ -42,12 +42,35 @@ export const navigationData: NavigationData = {
           url: '/commands',
         },
         {
-          title: 'Timers',
-          url: '/timers',
+          title: 'Channel Points',
+          url: '/channel-points',
         },
         {
           title: 'Events',
           url: '/events',
+        },
+        {
+          title: 'Timers',
+          url: '/timers',
+        },
+      ],
+    },
+    {
+      title: 'Live Tools',
+      url: '#',
+      icon: 'fa-solid fa-clapperboard',
+      items: [
+        {
+          title: 'Game Queue',
+          url: '/modules/game-queue',
+        },
+        {
+          title: 'Video Queue',
+          url: '/modules/video-queue',
+        },
+        {
+          title: 'Community Overlay',
+          url: '/modules/community-overlay',
         },
       ],
     },
@@ -63,21 +86,6 @@ export const navigationData: NavigationData = {
         {
           title: 'Matcher',
           url: '/analytics/matcher',
-        },
-      ],
-    },
-    {
-      title: 'OBS',
-      url: '#',
-      icon: 'fa-solid fa-clapperboard',
-      items: [
-        {
-          title: 'Game Queue',
-          url: '/modules/game-queue',
-        },
-        {
-          title: 'Video Queue',
-          url: '/modules/video-queue',
         },
       ],
     },

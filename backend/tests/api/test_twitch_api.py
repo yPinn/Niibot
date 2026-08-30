@@ -65,6 +65,82 @@ class TestParseDuration:
         assert TwitchAPIClient.parse_duration("") == 0.0
 
 
+@pytest.mark.asyncio
+class TestGetCustomRewards:
+    async def test_maps_read_only_reward_limits_and_queue_state(self):
+        mock = _MockAPI().route(
+            "GET",
+            "/helix/channel_points/custom_rewards",
+            httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "id": "reward-checkin",
+                            "title": "每日簽到",
+                            "cost": 10,
+                            "is_enabled": True,
+                            "is_paused": False,
+                            "is_in_stock": True,
+                            "should_redemptions_skip_request_queue": True,
+                            "max_per_stream_setting": {"is_enabled": True, "max_per_stream": 100},
+                            "max_per_user_per_stream_setting": {
+                                "is_enabled": True,
+                                "max_per_user_per_stream": 1,
+                            },
+                        }
+                    ]
+                },
+            ),
+        )
+        api = mock.client()
+
+        rewards = await api.get_custom_rewards("channel-1", "broadcaster-token")
+
+        assert rewards == [
+            {
+                "id": "reward-checkin",
+                "title": "每日簽到",
+                "cost": 10,
+                "is_enabled": True,
+                "is_paused": False,
+                "is_in_stock": True,
+                "should_redemptions_skip_request_queue": True,
+                "max_per_stream": 100,
+                "max_per_user_per_stream": 1,
+            }
+        ]
+        assert mock.requests[-1].headers["authorization"] == "Bearer broadcaster-token"
+
+    async def test_disabled_limits_are_returned_as_none(self):
+        mock = _MockAPI().route(
+            "GET",
+            "/helix/channel_points/custom_rewards",
+            httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "id": "reward-1",
+                            "title": "Reward",
+                            "cost": 1,
+                            "max_per_stream_setting": {"is_enabled": False, "max_per_stream": 0},
+                            "max_per_user_per_stream_setting": {
+                                "is_enabled": False,
+                                "max_per_user_per_stream": 0,
+                            },
+                        }
+                    ]
+                },
+            ),
+        )
+
+        reward = (await mock.client().get_custom_rewards("channel-1", "token"))[0]
+
+        assert reward["max_per_stream"] is None
+        assert reward["max_per_user_per_stream"] is None
+
+
 # ---------------------------------------------------------------------------
 # generate_oauth_url
 # ---------------------------------------------------------------------------

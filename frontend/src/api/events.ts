@@ -48,6 +48,12 @@ export interface TwitchReward {
   id: string
   title: string
   cost: number
+  is_enabled: boolean
+  is_paused: boolean
+  is_in_stock: boolean
+  should_redemptions_skip_request_queue: boolean
+  max_per_stream: number | null
+  max_per_user_per_stream: number | null
 }
 
 export interface RedemptionConfig {
@@ -55,11 +61,13 @@ export interface RedemptionConfig {
   channel_id: string
   action_type: string
   reward_name: string
+  reward_id: string | null
   enabled: boolean
 }
 
 export interface RedemptionConfigUpdate {
   reward_name: string
+  reward_id?: string | null
   enabled: boolean
 }
 

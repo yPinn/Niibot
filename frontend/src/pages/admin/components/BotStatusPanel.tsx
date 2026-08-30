@@ -173,7 +173,14 @@ export function BotStatusPanel({
               ) : twitchRewards.length === 0 ? (
                 <span className="text-label text-muted-foreground">請先在 Twitch 建立自訂獎勵</span>
               ) : (
-                <Select value={niibotAuth.reward_name || '__none__'} onValueChange={onRewardSelect}>
+                <Select
+                  value={
+                    niibotAuth.reward_id ??
+                    twitchRewards.find(reward => reward.title === niibotAuth.reward_name)?.id ??
+                    '__none__'
+                  }
+                  onValueChange={onRewardSelect}
+                >
                   <SelectTrigger size="sm" className="flex-1 min-w-0">
                     <SelectValue placeholder="選擇獎勵..." />
                   </SelectTrigger>
@@ -182,7 +189,7 @@ export function BotStatusPanel({
                       未選擇
                     </SelectItem>
                     {twitchRewards.map(reward => (
-                      <SelectItem key={reward.id} value={reward.title}>
+                      <SelectItem key={reward.id} value={reward.id}>
                         {reward.title} ({reward.cost.toLocaleString()} 點)
                       </SelectItem>
                     ))}

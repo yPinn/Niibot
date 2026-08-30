@@ -122,12 +122,14 @@ export default function AdminPage() {
       .finally(() => setRewardsLoading(false))
   }, [])
 
-  const handleRewardSelect = async (rewardTitle: string) => {
+  const handleRewardSelect = async (rewardId: string) => {
     if (!niibotAuth) return
+    const reward = twitchRewards.find(item => item.id === rewardId)
     try {
       const updated = await updateRedemptionConfig('niibot_auth', {
-        reward_name: rewardTitle === '__none__' ? '' : rewardTitle,
-        enabled: niibotAuth.enabled,
+        reward_id: reward?.id ?? null,
+        reward_name: reward?.title ?? '',
+        enabled: reward ? niibotAuth.enabled : false,
       })
       setNiibotAuth(updated)
       toast.success('Niibot 授權獎勵已更新')
@@ -189,6 +191,7 @@ export default function AdminPage() {
     setNiibotAuth(prev => (prev ? { ...prev, enabled: newEnabled } : prev))
     try {
       const updated = await updateRedemptionConfig('niibot_auth', {
+        reward_id: niibotAuth.reward_id,
         reward_name: niibotAuth.reward_name,
         enabled: newEnabled,
       })

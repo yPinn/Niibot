@@ -75,6 +75,7 @@ export function OverlayUrlBlock({ url }: OverlayUrlBlockProps) {
         <TooltipTrigger asChild>
           <Button variant="outline" size="sm" asChild>
             <a href={url} target="_blank" rel="noopener noreferrer">
+              <span className="sr-only">開啟 OBS Overlay</span>
               <Icon icon="fa-solid fa-arrow-up-right-from-square" className="text-xs" />
             </a>
           </Button>
