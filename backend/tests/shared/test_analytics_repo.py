@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math as _math
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
@@ -36,6 +36,10 @@ def _make_pool(
     executemany=_UNSET,
 ) -> tuple[MagicMock, AsyncMock]:
     conn = AsyncMock()
+    transaction = MagicMock()
+    transaction.return_value.__aenter__ = AsyncMock(return_value=None)
+    transaction.return_value.__aexit__ = AsyncMock(return_value=None)
+    conn.transaction = transaction
     if fetch is not _UNSET:
         conn.fetch.return_value = fetch
     if fetchrow is not _UNSET:
@@ -198,14 +202,44 @@ class TestEndSession:
 
 
 # ---------------------------------------------------------------------------
+# Session mixin — attendance streak eligibility
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestAttendanceStreakEligibility:
+    async def test_only_compares_complete_attendance_snapshots(self):
+        pool, conn = _make_pool(execute="UPDATE 0")
+        repo = AnalyticsRepository(pool)
+
+        await repo.update_attendance_streaks("ch123", 10)
+
+        sql = "\n".join(call.args[0] for call in conn.execute.call_args_list)
+        assert "attendance_snapshot_count > 0" in sql
+        assert "ended_at IS NOT NULL" in sql
+        assert "current_session" in sql
+        assert "(s.started_at, s.id) <" in sql
+        assert "es.last_session_id = $2" in sql
+
+
+# ---------------------------------------------------------------------------
 # Session mixin — close_stale_sessions
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 class TestCloseStateSessions:
-    async def test_returns_count_from_execute_result(self):
-        pool, _ = _make_pool(execute="UPDATE 3")
+    async def test_returns_count_from_returned_rows(self):
+        rows = [
+            {
+                "id": session_id,
+                "channel_id": "ch123",
+                "started_at": _NOW,
+                "attendance_snapshot_count": 0,
+            }
+            for session_id in (1, 2, 3)
+        ]
+        pool, _ = _make_pool(fetch=rows)
         repo = AnalyticsRepository(pool)
 
         result = await repo.close_stale_sessions(max_hours=12)
@@ -213,7 +247,7 @@ class TestCloseStateSessions:
         assert result == 3
 
     async def test_returns_zero_on_no_rows_updated(self):
-        pool, _ = _make_pool(execute="UPDATE 0")
+        pool, _ = _make_pool(fetch=[])
         repo = AnalyticsRepository(pool)
 
         result = await repo.close_stale_sessions()
@@ -222,7 +256,7 @@ class TestCloseStateSessions:
 
     async def test_clears_session_cache(self):
         _session_cache.set("active:ch123", {"id": 1})
-        pool, _ = _make_pool(execute="UPDATE 0")
+        pool, _ = _make_pool(fetch=[])
         repo = AnalyticsRepository(pool)
 
         await repo.close_stale_sessions()
@@ -230,6 +264,40 @@ class TestCloseStateSessions:
         from shared.cache import _MISSING
 
         assert _session_cache.get("active:ch123") is _MISSING
+
+    async def test_settles_only_observed_sessions_in_chronological_order(self):
+        rows = [
+            {
+                "id": 30,
+                "channel_id": "ch123",
+                "started_at": _LATER,
+                "attendance_snapshot_count": 1,
+            },
+            {
+                "id": 20,
+                "channel_id": "ch123",
+                "started_at": _NOW,
+                "attendance_snapshot_count": 1,
+            },
+            {
+                "id": 10,
+                "channel_id": "other",
+                "started_at": _NOW,
+                "attendance_snapshot_count": 0,
+            },
+        ]
+        pool, conn = _make_pool(fetch=rows)
+        repo = AnalyticsRepository(pool)
+        repo.update_attendance_streaks = AsyncMock()
+
+        result = await repo.close_stale_sessions()
+
+        assert result == 3
+        conn.fetch.assert_awaited_once()
+        assert repo.update_attendance_streaks.await_args_list == [
+            call("ch123", 20),
+            call("ch123", 30),
+        ]
 
 
 # ---------------------------------------------------------------------------
@@ -421,6 +489,50 @@ class TestFlushChatterStats:
         assert row[4] is None  # display_name (optional, not provided in test data)
         assert row[5] == 10  # count
         assert row[6] == _NOW  # last_at
+
+
+# ---------------------------------------------------------------------------
+# Events mixin — attendance snapshots
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestRecordAttendanceSnapshot:
+    async def test_empty_complete_snapshot_still_marks_session_observed(self):
+        pool, conn = _make_pool(execute="UPDATE 1")
+        repo = AnalyticsRepository(pool)
+
+        recorded = await repo.record_attendance_snapshot(10, "ch123", [], 60)
+
+        assert recorded is True
+        conn.execute.assert_awaited_once()
+        sql = conn.execute.await_args.args[0]
+        assert "attendance_snapshot_count" in sql
+        conn.executemany.assert_not_awaited()
+
+    async def test_snapshot_and_watch_time_share_one_transaction(self):
+        pool, conn = _make_pool(execute="UPDATE 1", executemany=None)
+        repo = AnalyticsRepository(pool)
+        viewers = [{"user_id": "u1", "user_login": "alice", "user_name": "Alice"}]
+
+        recorded = await repo.record_attendance_snapshot(10, "ch123", viewers, 60)
+
+        assert recorded is True
+        conn.transaction.assert_called_once_with()
+        conn.execute.assert_awaited_once()
+        conn.executemany.assert_awaited_once()
+        _, rows = conn.executemany.await_args.args
+        assert rows[0][0:3] == (10, "ch123", "u1")
+
+    async def test_does_not_write_viewers_when_session_is_not_active_for_channel(self):
+        pool, conn = _make_pool(execute="UPDATE 0", executemany=None)
+        repo = AnalyticsRepository(pool)
+        viewers = [{"user_id": "u1", "user_login": "alice", "user_name": "Alice"}]
+
+        recorded = await repo.record_attendance_snapshot(10, "other", viewers, 60)
+
+        assert recorded is False
+        conn.executemany.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------

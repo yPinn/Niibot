@@ -67,24 +67,40 @@ class _AnalyticsSessionMixin:
             return dict(row) if row else None
 
     async def update_attendance_streaks(self, channel_id: str, session_id: int) -> None:
-        """Upsert attendance streaks for all viewers who attended a session.
+        """Update streaks using only sessions with a complete attendance snapshot.
 
         Increments streak_count if the viewer also attended the previous session,
         otherwise resets to 1. Tracks best_streak as the all-time high water mark.
         Viewers who attended the previous session but missed this one have their
-        streak_count reset to 0.
+        streak_count reset to 0. Unobserved sessions do not change the projection.
         """
         async with self.pool.acquire() as conn:
             await conn.execute(
                 """
-                WITH prev_session AS (
-                    SELECT id FROM stream_sessions
-                    WHERE channel_id = $1 AND id < $2
-                    ORDER BY started_at DESC LIMIT 1
+                WITH current_session AS (
+                    SELECT id, started_at
+                    FROM stream_sessions
+                    WHERE channel_id = $1
+                      AND id = $2
+                      AND ended_at IS NOT NULL
+                      AND attendance_snapshot_count > 0
+                ),
+                prev_session AS (
+                    SELECT s.id
+                    FROM stream_sessions s
+                    CROSS JOIN current_session cur
+                    WHERE s.channel_id = $1
+                      AND s.ended_at IS NOT NULL
+                      AND s.attendance_snapshot_count > 0
+                      AND (s.started_at, s.id) < (cur.started_at, cur.id)
+                    ORDER BY s.started_at DESC, s.id DESC
+                    LIMIT 1
                 ),
                 current_attendees AS (
-                    SELECT user_id FROM chatter_stats
-                    WHERE session_id = $2 AND channel_id = $1
+                    SELECT cs.user_id
+                    FROM chatter_stats cs
+                    JOIN current_session cur ON cur.id = cs.session_id
+                    WHERE cs.channel_id = $1
                 ),
                 prev_attendees AS (
                     SELECT user_id FROM chatter_stats
@@ -92,14 +108,16 @@ class _AnalyticsSessionMixin:
                       AND session_id = (SELECT id FROM prev_session)
                 ),
                 existing_streaks AS (
-                    SELECT user_id, streak_count
+                    SELECT user_id, streak_count, last_session_id
                     FROM viewer_attendance_streaks
                     WHERE channel_id = $1
                 ),
                 new_streaks AS (
                     SELECT
                         ca.user_id,
-                        CASE WHEN pa.user_id IS NOT NULL
+                        CASE WHEN es.last_session_id = $2
+                            THEN es.streak_count
+                            WHEN pa.user_id IS NOT NULL
                             THEN COALESCE(es.streak_count, 0) + 1
                             ELSE 1
                         END AS streak_count
@@ -124,17 +142,34 @@ class _AnalyticsSessionMixin:
             # Reset streak for viewers who attended the previous session but missed this one
             await conn.execute(
                 """
+                WITH current_session AS (
+                    SELECT id, started_at
+                    FROM stream_sessions
+                    WHERE channel_id = $1
+                      AND id = $2
+                      AND ended_at IS NOT NULL
+                      AND attendance_snapshot_count > 0
+                ),
+                prev_session AS (
+                    SELECT s.id
+                    FROM stream_sessions s
+                    CROSS JOIN current_session cur
+                    WHERE s.channel_id = $1
+                      AND s.ended_at IS NOT NULL
+                      AND s.attendance_snapshot_count > 0
+                      AND (s.started_at, s.id) < (cur.started_at, cur.id)
+                    ORDER BY s.started_at DESC, s.id DESC
+                    LIMIT 1
+                )
                 UPDATE viewer_attendance_streaks
                 SET streak_count = 0, updated_at = NOW()
                 WHERE channel_id = $1
-                  AND last_session_id = (
-                      SELECT id FROM stream_sessions
-                      WHERE channel_id = $1 AND id < $2
-                      ORDER BY started_at DESC LIMIT 1
-                  )
+                  AND last_session_id = (SELECT id FROM prev_session)
                   AND user_id NOT IN (
-                      SELECT user_id FROM chatter_stats
-                      WHERE session_id = $2 AND channel_id = $1
+                      SELECT cs.user_id
+                      FROM chatter_stats cs
+                      JOIN current_session cur ON cur.id = cs.session_id
+                      WHERE cs.channel_id = $1
                   )
                 """,
                 channel_id,
@@ -164,18 +199,32 @@ class _AnalyticsSessionMixin:
         Returns the number of sessions closed.
         """
         async with self.pool.acquire() as conn:
-            result = await conn.execute(
+            rows = await conn.fetch(
                 """
                 UPDATE stream_sessions
                 SET ended_at = started_at + INTERVAL '1 hour' * $1
                 WHERE ended_at IS NULL
                   AND started_at < NOW() - INTERVAL '1 hour' * $1
+                RETURNING id, channel_id, started_at, attendance_snapshot_count
                 """,
                 float(max_hours),
             )
         _session_cache.clear()
-        count = int(result.split()[-1]) if result else 0
-        return count
+        ordered_rows = sorted(
+            rows, key=lambda row: (row["channel_id"], row["started_at"], row["id"])
+        )
+        for row in ordered_rows:
+            if row["attendance_snapshot_count"] <= 0:
+                continue
+            try:
+                await self.update_attendance_streaks(row["channel_id"], row["id"])
+            except Exception as e:
+                LOGGER.warning(
+                    "Failed to update attendance streaks for stale session %s: %s",
+                    row["id"],
+                    e,
+                )
+        return len(rows)
 
     # ==================== VOD reconciliation ====================
 

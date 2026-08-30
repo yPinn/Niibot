@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Protocol
 
@@ -30,6 +31,14 @@ if TYPE_CHECKING:
     from shared.repositories.channel import ChannelRepository
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class ChatterSnapshot:
+    """A complete chatters response, or an explicit failed observation."""
+
+    viewers: list[dict]
+    complete: bool
 
 
 def parse_twitch_duration(duration: str) -> timedelta:
@@ -346,18 +355,25 @@ class SessionService:
         await asyncio.sleep(self._WATCH_INTERVAL)
 
         async def _process(channel_id: str, session_id: int) -> None:
-            viewers = await self._fetch_chatters(channel_id)
-            if not viewers:
+            snapshot = await self._fetch_chatters(channel_id)
+            if not snapshot.complete:
                 return
             async with sem:
-                await self._analytics.increment_watch_seconds(
+                recorded = await self._analytics.record_attendance_snapshot(
                     session_id=session_id,
                     channel_id=channel_id,
-                    viewers=viewers,
+                    viewers=snapshot.viewers,
                     seconds=self._WATCH_INTERVAL,
                 )
+            if not recorded:
+                LOGGER.debug(
+                    "Skipped snapshot for inactive session %s in channel %s",
+                    session_id,
+                    self._ch(channel_id),
+                )
+                return
             LOGGER.debug(
-                f"Watch time: +{self._WATCH_INTERVAL}s for {len(viewers)} viewers "
+                f"Watch time: +{self._WATCH_INTERVAL}s for {len(snapshot.viewers)} viewers "
                 f"in channel {self._ch(channel_id)}"
             )
 
@@ -379,12 +395,12 @@ class SessionService:
                 LOGGER.warning(f"Watch time loop error: {e}")
             await asyncio.sleep(self._WATCH_INTERVAL)
 
-    async def _fetch_chatters(self, channel_id: str) -> list[dict]:
-        """All current chatroom members via /helix/chat/chatters (bot token, paginated)."""
+    async def _fetch_chatters(self, channel_id: str) -> ChatterSnapshot:
+        """Fetch all chatters, distinguishing a complete empty result from failure."""
         bot_token = await self._channels.get_token(self._bot_id, "bot")
         if not bot_token:
             LOGGER.debug("No bot token, skipping watch time for %s", self._ch(channel_id))
-            return []
+            return ChatterSnapshot(viewers=[], complete=False)
 
         viewers: list[dict] = []
         cursor: str | None = None
@@ -410,13 +426,13 @@ class SessionService:
                         f"fetch_chatters failed for {self._ch(channel_id)}: "
                         f"{resp.status_code} {resp.text[:120]}"
                     )
-                    break
+                    return ChatterSnapshot(viewers=[], complete=False)
                 data = resp.json()
                 viewers.extend(data.get("data", []))
                 cursor = data.get("pagination", {}).get("cursor")
                 if not cursor:
                     break
-        return viewers
+        return ChatterSnapshot(viewers=viewers, complete=True)
 
     # ------------------------------------------------------------------
     # VOD reconciliation
