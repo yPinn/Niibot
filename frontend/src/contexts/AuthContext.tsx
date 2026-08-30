@@ -36,6 +36,7 @@ export function isPublicPath(pathname: string): boolean {
     pathname === '/terms' ||
     pathname === '/privacy' ||
     pathname === '/login' ||
+    (import.meta.env.DEV && pathname === '/dev/activate') ||
     pathname.includes('/overlay') ||
     pathname.startsWith('/donate/') ||
     /^\/[^/]+\/commands$/.test(pathname)

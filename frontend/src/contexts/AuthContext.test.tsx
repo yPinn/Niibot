@@ -51,6 +51,7 @@ describe('isPublicPath', () => {
     ['/login', true],
     ['/terms', true],
     ['/privacy', true],
+    ['/dev/activate', true],
     ['/donate/alice', true],
     ['/donate/alice/extra', true],
     ['/alice/commands', true],

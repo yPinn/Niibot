@@ -85,6 +85,9 @@ function App() {
                   {import.meta.env.DEV && TypographyDemo && (
                     <Route path="/dev/typography" element={<TypographyDemo />} />
                   )}
+                  {import.meta.env.DEV && (
+                    <Route path="/dev/activate" element={<ActivatePage preview />} />
+                  )}
                   <Route element={<PublicOnlyRoute />}>
                     <Route path="/login" element={<LoginPage />} />
                   </Route>
