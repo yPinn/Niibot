@@ -212,8 +212,10 @@ class ChannelRepository:
             )
             return {r["channel_id"] for r in rows}
 
-    async def list_monitored_owner_channel_status(self) -> dict[str, tuple[str, str]]:
-        """channel_id -> (membership status, owner_user_id) for the admin grid.
+    async def list_monitored_owner_channel_status(
+        self,
+    ) -> dict[str, tuple[str, str, str | None]]:
+        """channel_id -> (membership status, owner_user_id, reason) for the admin grid.
 
         Includes active / pending / suspended owners (excludes rejected, which
         has no monitoring value) so the admin UI can surface channels awaiting
@@ -225,13 +227,16 @@ class ChannelRepository:
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
                 """
-                SELECT c.channel_id, m.status, c.owner_user_id::text AS owner_user_id
+                SELECT c.channel_id,
+                       m.status,
+                       c.owner_user_id::text AS owner_user_id,
+                       m.reason
                   FROM channels c
                   JOIN memberships m ON m.user_id = c.owner_user_id
                  WHERE m.status IN ('active', 'pending', 'suspended')
                 """
             )
-            return {r["channel_id"]: (r["status"], r["owner_user_id"]) for r in rows}
+            return {r["channel_id"]: (r["status"], r["owner_user_id"], r["reason"]) for r in rows}
 
     async def upsert_channel(
         self, channel_id: str, channel_name: str, enabled: bool = True

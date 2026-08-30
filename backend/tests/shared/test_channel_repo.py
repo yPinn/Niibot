@@ -370,9 +370,19 @@ class TestListMonitoredOwnerChannelStatus:
     async def test_returns_status_and_owner_by_channel_id(self):
         pool, conn = _make_pool(
             fetch=[
-                {"channel_id": "c1", "status": "active", "owner_user_id": "u1"},
-                {"channel_id": "c2", "status": "pending", "owner_user_id": "u2"},
-                {"channel_id": "c3", "status": "suspended", "owner_user_id": "u3"},
+                {"channel_id": "c1", "status": "active", "owner_user_id": "u1", "reason": None},
+                {
+                    "channel_id": "c2",
+                    "status": "pending",
+                    "owner_user_id": "u2",
+                    "reason": "first_signup",
+                },
+                {
+                    "channel_id": "c3",
+                    "status": "suspended",
+                    "owner_user_id": "u3",
+                    "reason": "abuse",
+                },
             ]
         )
         repo = ChannelRepository(pool)
@@ -380,9 +390,9 @@ class TestListMonitoredOwnerChannelStatus:
         result = await repo.list_monitored_owner_channel_status()
 
         assert result == {
-            "c1": ("active", "u1"),
-            "c2": ("pending", "u2"),
-            "c3": ("suspended", "u3"),
+            "c1": ("active", "u1", None),
+            "c2": ("pending", "u2", "first_signup"),
+            "c3": ("suspended", "u3", "abuse"),
         }
         sql = conn.fetch.call_args[0][0]
         assert "memberships" in sql

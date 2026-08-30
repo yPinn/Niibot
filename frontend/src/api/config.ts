@@ -161,6 +161,7 @@ export const API_ENDPOINTS = {
     approveRequest: (userId: string) => join(`/api/admin/activation-requests/${userId}/approve`),
     rejectRequest: (userId: string) => join(`/api/admin/activation-requests/${userId}/reject`),
     membershipTimeline: (userId: string) => join(`/api/admin/memberships/${userId}/timeline`),
+    suspendMembership: (userId: string) => join(`/api/admin/memberships/${userId}/suspend`),
     reinstateMembership: (userId: string) => join(`/api/admin/memberships/${userId}/reinstate`),
     logContainers: join('/api/admin/logs/containers'),
     containerLogs: (name: string) => join(`/api/admin/logs/${name}`),

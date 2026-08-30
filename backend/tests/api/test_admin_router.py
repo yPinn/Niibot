@@ -394,6 +394,34 @@ class TestSuspendMembership:
         )
         assert r.status_code == 400
 
+    def test_suspend_whitespace_reason_returns_400(self):
+        admission = MagicMock()
+        r = _make_client(mock_admission=admission).post(
+            "/api/admin/memberships/dddd4444-5555-6666-7777-888888888888/suspend",
+            json={"reason": "   "},
+        )
+        assert r.status_code == 400
+        admission.suspend.assert_not_called()
+
+    def test_suspend_trims_reason_before_recording(self):
+        admission = MagicMock()
+        admission.suspend = AsyncMock(return_value=self._decision())
+        r = _make_client(mock_admission=admission).post(
+            "/api/admin/memberships/dddd4444-5555-6666-7777-888888888888/suspend",
+            json={"reason": "  abuse  "},
+        )
+        assert r.status_code == 200
+        assert admission.suspend.call_args.kwargs["reason"] == "abuse"
+
+    def test_suspend_rejects_reason_over_500_characters(self):
+        admission = MagicMock()
+        r = _make_client(mock_admission=admission).post(
+            "/api/admin/memberships/dddd4444-5555-6666-7777-888888888888/suspend",
+            json={"reason": "x" * 501},
+        )
+        assert r.status_code == 422
+        admission.suspend.assert_not_called()
+
 
 # ── POST /api/admin/memberships/{user_id}/reinstate ─────────────────────────
 
@@ -998,7 +1026,7 @@ class TestGetAdminChannels:
                 ]
             )
             cr.return_value.list_monitored_owner_channel_status = AsyncMock(
-                return_value={"ch-other": ("active", "user-other")}
+                return_value={"ch-other": ("active", "user-other", None)}
             )
             cr.return_value.get_token = AsyncMock(return_value=token_obj)
             r = _make_client(mock_twitch_api=mock_twitch, mock_channel_service=mock_cs).get(
@@ -1037,7 +1065,7 @@ class TestGetAdminChannels:
             # Active owner who manually paused the bot: still an admitted tenant,
             # so it must appear (filter is by membership, not by enabled).
             cr.return_value.list_monitored_owner_channel_status = AsyncMock(
-                return_value={"ch-paused": ("active", "user-paused")}
+                return_value={"ch-paused": ("active", "user-paused", None)}
             )
             cr.return_value.get_token = AsyncMock(return_value=token_obj)
             r = _make_client(mock_twitch_api=mock_twitch, mock_channel_service=mock_cs).get(
@@ -1109,7 +1137,7 @@ class TestGetAdminChannels:
                 ]
             )
             cr.return_value.list_monitored_owner_channel_status = AsyncMock(
-                return_value={"ch-pending": ("pending", "user-pending")}
+                return_value={"ch-pending": ("pending", "user-pending", "awaiting_review")}
             )
             cr.return_value.get_token = AsyncMock(return_value=token_obj)
             r = _make_client(mock_twitch_api=mock_twitch, mock_channel_service=mock_cs).get(
@@ -1148,7 +1176,7 @@ class TestGetAdminChannels:
                 ]
             )
             cr.return_value.list_monitored_owner_channel_status = AsyncMock(
-                return_value={"ch-suspended": ("suspended", "user-suspended")}
+                return_value={"ch-suspended": ("suspended", "user-suspended", "abuse")}
             )
             cr.return_value.get_token = AsyncMock(return_value=token_obj)
             r = _make_client(mock_twitch_api=mock_twitch, mock_channel_service=mock_cs).get(
@@ -1160,6 +1188,7 @@ class TestGetAdminChannels:
         assert len(data) == 1
         assert data[0]["name"] == "suspended"
         assert data[0]["membership_status"] == "suspended"
+        assert data[0]["membership_reason"] == "abuse"
         assert data[0]["owner_user_id"] == "user-suspended"
 
 

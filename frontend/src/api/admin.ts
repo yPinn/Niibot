@@ -20,6 +20,7 @@ export interface AdminChannel {
   granted_scopes: string[]
   missing_scopes: string[]
   membership_status: ChannelMembershipStatus
+  membership_reason: string | null
   owner_user_id: string | null
 }
 
@@ -213,6 +214,16 @@ export async function getMembershipTimeline(userId: string): Promise<MembershipE
   })
   if (!response.ok) throw await parseApiError(response, '載入會員紀錄失敗')
   return response.json()
+}
+
+export async function suspendMembership(userId: string, reason: string): Promise<void> {
+  const response = await apiFetch(API_ENDPOINTS.admin.suspendMembership(userId), {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reason }),
+  })
+  if (!response.ok) throw await parseApiError(response, '停權使用者失敗')
 }
 
 export async function reinstateMembership(userId: string, reason: string = ''): Promise<void> {

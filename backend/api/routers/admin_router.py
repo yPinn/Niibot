@@ -10,7 +10,7 @@ from datetime import datetime
 
 from asyncpg import Pool
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from core.config import get_settings
 from core.dependencies import (
@@ -110,6 +110,7 @@ class AdminChannelInfo(BaseModel):
     granted_scopes: list[str]
     missing_scopes: list[str]
     membership_status: str  # 'active' | 'pending' | 'suspended'
+    membership_reason: str | None
     owner_user_id: str | None
 
 
@@ -231,7 +232,9 @@ async def get_admin_channels(
             continue
         u = user_map[cid]
         status, granted, missing = channel_data.get(cid, ("error", [], []))
-        membership_status, owner_user_id = status_map.get(cid, ("active", None))
+        membership_status, owner_user_id, membership_reason = status_map.get(
+            cid, ("active", None, None)
+        )
         result.append(
             AdminChannelInfo(
                 id=cid,
@@ -246,6 +249,7 @@ async def get_admin_channels(
                 granted_scopes=granted,
                 missing_scopes=missing,
                 membership_status=membership_status,
+                membership_reason=membership_reason,
                 owner_user_id=owner_user_id,
             )
         )
@@ -340,7 +344,7 @@ class MembershipEventInfo(BaseModel):
 class MembershipDecisionRequest(BaseModel):
     """Body for approve/reject/suspend/reinstate calls."""
 
-    reason: str = ""
+    reason: str = Field(default="", max_length=500)
 
 
 @router.get("/grants", response_model=list[GrantInfo])
@@ -714,13 +718,14 @@ async def suspend_membership(
     _: str = Depends(require_owner),
     admission: AdmissionService = Depends(get_admission_service),
 ) -> dict:
-    if not body.reason:
+    reason = body.reason.strip()
+    if not reason:
         raise AdminInvalidError(user_message="請填寫停權原因")
     try:
         decision = await admission.suspend(
             user_id=user_id,
             approver_user_id=approver_id,
-            reason=body.reason,
+            reason=reason,
         )
     except ValueError as e:
         raise MembershipNotFoundError(context={"user_id": user_id}) from e
