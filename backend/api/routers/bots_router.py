@@ -7,11 +7,15 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from core.config import Settings, get_settings
-from core.dependencies import get_current_user_id
+from core.dependencies import get_current_user_id, require_activated
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/bots", tags=["bots"])
+router = APIRouter(
+    prefix="/api/bots",
+    tags=["bots"],
+    dependencies=[Depends(require_activated)],
+)
 
 # Shared client — avoids a new TCP connection on every health check poll
 _http_client = httpx.AsyncClient(timeout=10.0)

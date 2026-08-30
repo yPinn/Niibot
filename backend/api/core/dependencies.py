@@ -151,6 +151,7 @@ async def get_current_user_id(
 
 async def get_current_channel_id(
     payload: dict = Depends(get_token_payload),
+    _: None = Depends(require_activated),
 ) -> str:
     """Return platform_user_id — maps to TwitchIO broadcaster.id / Helix broadcaster_id.
 
@@ -174,6 +175,7 @@ async def require_tenant_access(
     channel_id: str = Path(..., description="Tenant channel_id"),
     payload: dict = Depends(get_token_payload),
     tenant: TenantService = Depends(get_tenant_service),
+    _: None = Depends(require_activated),
 ) -> TenantContext:
     """FastAPI dependency: verify caller has at least 'manager' role on the channel.
 
@@ -195,6 +197,7 @@ async def require_tenant_access(
 async def require_self_tenant_access(
     payload: dict = Depends(get_token_payload),
     tenant: TenantService = Depends(get_tenant_service),
+    _: None = Depends(require_activated),
 ) -> TenantContext:
     """Tenant context for the caller's *own* channel.
 

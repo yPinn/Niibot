@@ -134,10 +134,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      const [userData, channelData] = await Promise.all([
-        getCurrentUser({ forceRefresh: true }),
-        getTwitchMonitoredChannels({ forceRefresh: true }),
-      ])
+      const userData = await getCurrentUser({ forceRefresh: true })
+      const canUseProduct = Boolean(userData?.is_activated || userData?.is_owner)
+      const channelData = canUseProduct
+        ? await getTwitchMonitoredChannels({ forceRefresh: true })
+        : []
       setUser(userData)
       setChannels(channelData)
       setIsInitialized(true)
@@ -162,7 +163,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Channels polling: 5 min base; doubles on failure, capped at 30 min
   useEffect(() => {
-    if (!user) return
+    if (!user || (!user.is_activated && !user.is_owner)) return
 
     const BASE_MS = 5 * 60_000
     const MAX_MS = 30 * 60_000
