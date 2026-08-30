@@ -30,6 +30,12 @@ def _tx_cm() -> MagicMock:
     return tx
 
 
+def _event_row(event_id: int) -> MagicMock:
+    row = MagicMock()
+    row.__getitem__ = lambda self, k: event_id if k == "id" else None
+    return row
+
+
 def _membership_row(user_id: str, status: str) -> MagicMock:
     payload = {
         "user_id": user_id,
@@ -249,6 +255,103 @@ class TestOtpGrant:
 
         assert decision.membership.status == "active"
         assert decision.state_changed is True
+
+    async def test_grant_via_otp_raises_when_locked(self):
+        from api.services.admission_service import MembershipLockedError
+
+        user = str(uuid.uuid4())
+        conn = AsyncMock()
+        conn.fetchrow.return_value = _membership_row(user, "suspended")
+        pool = _pool_with(conn)
+        svc = AdmissionService(pool)
+
+        with pytest.raises(MembershipLockedError):
+            await svc.grant_via_otp(
+                user_id=user, platform="twitch", platform_user_id="1", code_hash="h"
+            )
+
+    async def test_grant_via_otp_uses_supplied_conn(self):
+        user = str(uuid.uuid4())
+        event_id_row = MagicMock()
+        event_id_row.__getitem__ = lambda self, k: 3 if k == "id" else None
+        ext = AsyncMock()
+        ext.fetchrow.side_effect = [_membership_row(user, "active"), event_id_row]
+
+        pool_conn = AsyncMock()
+        pool_conn.fetchrow.return_value = None  # get() → no membership
+        pool = _pool_with(pool_conn)
+        svc = AdmissionService(pool)
+
+        await svc.grant_via_otp(
+            user_id=user,
+            platform="twitch",
+            platform_user_id="1",
+            code_hash="h",
+            conn=ext,
+        )
+        # membership writes went to the supplied conn, not a freshly acquired one.
+        assert ext.fetchrow.await_count == 2
+        pool_conn.transaction.assert_not_called()
+
+
+@pytest.mark.asyncio
+class TestActivateIfEntitled:
+    async def test_no_grant_no_op(self):
+        user = str(uuid.uuid4())
+        conn = AsyncMock()
+        conn.fetchrow.return_value = None  # no membership
+        svc = AdmissionService(_pool_with(conn))
+        svc.grants = AsyncMock()
+        svc.grants.find_unconsumed_grant.return_value = None
+
+        assert (
+            await svc.activate_if_entitled(user, platform="twitch", platform_user_id="1") is False
+        )
+
+    async def test_locked_membership_not_reactivated(self):
+        user = str(uuid.uuid4())
+        conn = AsyncMock()
+        conn.fetchrow.return_value = _membership_row(user, "rejected")
+        svc = AdmissionService(_pool_with(conn))
+        svc.grants = AsyncMock()
+
+        assert (
+            await svc.activate_if_entitled(user, platform="twitch", platform_user_id="1") is False
+        )
+        svc.grants.find_unconsumed_grant.assert_not_called()
+
+    async def test_grant_consumed_and_membership_activated(self):
+        user = str(uuid.uuid4())
+        conn = AsyncMock()
+        conn.fetchrow.side_effect = [
+            None,  # get() → no membership
+            _membership_row(user, "active"),  # upsert
+            _event_row(9),  # event
+        ]
+        conn.transaction = MagicMock(return_value=_tx_cm())
+        svc = AdmissionService(_pool_with(conn))
+        svc.grants = AsyncMock()
+        svc.grants.find_unconsumed_grant.return_value = {
+            "id": 5,
+            "redemption_id": "r",
+            "channel_id": "c",
+            "reward_cost": 100,
+        }
+
+        assert await svc.activate_if_entitled(user, platform="twitch", platform_user_id="1") is True
+        svc.grants.consume.assert_awaited_once()
+        assert svc.grants.consume.await_args.args[0] == 5
+
+    async def test_already_active_still_consumes_dangling_grant(self):
+        user = str(uuid.uuid4())
+        conn = AsyncMock()
+        conn.fetchrow.return_value = _membership_row(user, "active")
+        svc = AdmissionService(_pool_with(conn))
+        svc.grants = AsyncMock()
+        svc.grants.find_unconsumed_grant.return_value = {"id": 7}
+
+        assert await svc.activate_if_entitled(user, platform="twitch", platform_user_id="1") is True
+        svc.grants.consume.assert_awaited_once()
 
 
 @pytest.mark.asyncio

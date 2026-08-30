@@ -355,7 +355,7 @@ export default function AnalyticsChart({
 
   return (
     <Card className={`flex flex-col ${className}`}>
-      <CardContent className="px-4 py-1 flex-1 min-h-0 flex flex-col">
+      <CardContent className="px-card py-1 flex-1 min-h-0 flex flex-col">
         <div className="flex flex-col flex-1 min-h-0 gap-3">
           <div className="flex justify-end shrink-0 -mb-1">
             <InfoTooltip>

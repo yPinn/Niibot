@@ -285,7 +285,6 @@ export default function CrosshairModule() {
                   </div>
                 ) : crosshairs.length === 0 ? (
                   <EmptyState
-                    className="py-empty"
                     icon="fa-solid fa-crosshairs"
                     title="尚無準星"
                     description="點擊「新增準星」開始收藏"
@@ -360,7 +359,7 @@ export default function CrosshairModule() {
                             title: '目前尚無任何準星',
                             description: '社群尚未公開任何準星',
                           }
-                    return <EmptyState className="py-empty" {...empty} />
+                    return <EmptyState {...empty} />
                   }
                   return (
                     <>

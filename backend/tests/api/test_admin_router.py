@@ -74,10 +74,11 @@ def _make_client(
     return TestClient(app, raise_server_exceptions=False)
 
 
-def _make_pool(*, fetchrow=None, fetch=None, execute=None) -> MagicMock:
+def _make_pool(*, fetchrow=None, fetch=None, fetchval=None, execute=None) -> MagicMock:
     conn = AsyncMock()
     conn.fetchrow.return_value = fetchrow
     conn.fetch.return_value = fetch or []
+    conn.fetchval.return_value = fetchval
     conn.execute.return_value = execute or "DELETE 0"
     mock_tx = MagicMock()
     mock_tx.__aenter__ = AsyncMock(return_value=None)
@@ -86,8 +87,9 @@ def _make_pool(*, fetchrow=None, fetch=None, execute=None) -> MagicMock:
     pool = MagicMock()
     pool.acquire.return_value.__aenter__ = AsyncMock(return_value=conn)
     pool.acquire.return_value.__aexit__ = AsyncMock(return_value=None)
-    # activation-codes endpoint calls pool.fetch() directly (not via acquire)
+    # Some endpoints call pool.fetch() / pool.fetchval() directly (not via acquire)
     pool.fetch = AsyncMock(return_value=fetch or [])
+    pool.fetchval = AsyncMock(return_value=fetchval)
     return pool
 
 
@@ -96,58 +98,102 @@ def _make_pool(*, fetchrow=None, fetch=None, execute=None) -> MagicMock:
 
 class TestRequireOwner:
     def test_non_owner_gets_403(self):
-        r = _make_client(channel_id="not-the-owner").get("/api/admin/activation-codes")
+        r = _make_client(channel_id="not-the-owner").get("/api/admin/grants")
         assert r.status_code == 403
 
     def test_owner_passes_guard(self):
-        r = _make_client(mock_pool=_make_pool(fetch=[])).get("/api/admin/activation-codes")
+        r = _make_client(mock_pool=_make_pool(fetch=[])).get("/api/admin/grants")
         assert r.status_code == 200
 
 
-# ── GET /api/admin/activation-codes ─────────────────────────────────────────
+# ── GET /api/admin/grants ──────────────────────────────────────────────────
 
 
-class TestGetPendingActivationCodes:
+_GRANT_ROW = {
+    "id": 1,
+    "kind": "channel_points",
+    "status": "issued",
+    "platform_user_id": "u1",
+    "code_plain": "123456",
+    "reward_cost": 500,
+    "channel_id": "c1",
+    "redemption_id": "r1",
+    "issued_at": _NOW,
+    "expires_at": _NOW,
+    "used_at": None,
+    "attempt_count": 0,
+    "display_name": "Alice",
+    "avatar": None,
+    "username": "alice",
+}
+
+
+class TestListGrants:
     def test_returns_empty_list(self):
-        pool = _make_pool(fetch=[])
-        r = _make_client(mock_pool=pool).get("/api/admin/activation-codes")
+        r = _make_client(mock_pool=_make_pool(fetch=[])).get("/api/admin/grants")
         assert r.status_code == 200
         assert r.json() == []
 
-    def test_returns_pending_codes(self):
-        dict_row = {
-            "platform_user_id": "u1",
-            "expires_at": _NOW,
-            "code_plain": "123456",
-            "display_name": "Alice",
-            "avatar": None,
-            "username": "alice",
-        }
-        pool = _make_pool(fetch=[dict_row])
-        r = _make_client(mock_pool=pool).get("/api/admin/activation-codes")
+    def test_returns_grants(self):
+        r = _make_client(mock_pool=_make_pool(fetch=[_GRANT_ROW])).get("/api/admin/grants")
         assert r.status_code == 200
-        assert len(r.json()) == 1
-        assert r.json()[0]["platform_user_id"] == "u1"
+        body = r.json()
+        assert len(body) == 1
+        assert body[0]["kind"] == "channel_points"
+        assert body[0]["id"] == 1
 
 
-# ── DELETE /api/admin/activation-codes/{platform_user_id} ───────────────────
+# ── POST /api/admin/grants ─────────────────────────────────────────────────
 
 
-class TestRevokeActivationCode:
-    def test_revoke_existing_code(self):
+class TestCreateOwnerGrant:
+    def test_issues_code(self):
         with patch("routers.admin_router.ActivationCodeRepository") as mock_repo:
-            instance = mock_repo.return_value
-            instance.invalidate = AsyncMock(return_value=True)
-            r = _make_client().delete("/api/admin/activation-codes/user1")
+            mock_repo.return_value.create_owner_code = AsyncMock(return_value="654321")
+            r = _make_client().post("/api/admin/grants")
+        assert r.status_code == 200
+        assert r.json() == {"code": "654321"}
+
+
+# ── DELETE /api/admin/grants/{grant_id} ────────────────────────────────────
+
+
+class TestRevokeGrant:
+    def test_revoke_existing(self):
+        with patch("routers.admin_router.ActivationCodeRepository") as mock_repo:
+            mock_repo.return_value.revoke = AsyncMock(return_value=True)
+            r = _make_client().delete("/api/admin/grants/5")
         assert r.status_code == 200
         assert r.json()["revoked"] is True
 
-    def test_revoke_missing_code_returns_404(self):
+    def test_revoke_missing_returns_404(self):
         with patch("routers.admin_router.ActivationCodeRepository") as mock_repo:
-            instance = mock_repo.return_value
-            instance.invalidate = AsyncMock(return_value=False)
-            r = _make_client().delete("/api/admin/activation-codes/unknown")
+            mock_repo.return_value.revoke = AsyncMock(return_value=False)
+            r = _make_client().delete("/api/admin/grants/999")
         assert r.status_code == 404
+
+
+# ── GET /api/admin/onboarding-funnel ──────────────────────────────────────
+
+
+class TestOnboardingFunnel:
+    def test_returns_active_count_and_kind_breakdown(self):
+        kind_row = {
+            "kind": "channel_points",
+            "issued_7d": 3,
+            "consumed_7d": 2,
+            "issued_30d": 10,
+            "consumed_30d": 8,
+            "issued_all": 20,
+            "consumed_all": 15,
+            "outstanding": 5,
+        }
+        pool = _make_pool(fetch=[kind_row], fetchval=42)
+        r = _make_client(mock_pool=pool).get("/api/admin/onboarding-funnel")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["active_members"] == 42
+        assert body["by_kind"][0]["consumed_all"] == 15
 
 
 # ── GET /api/admin/activation-requests ──────────────────────────────────────
@@ -348,6 +394,34 @@ class TestSuspendMembership:
         )
         assert r.status_code == 400
 
+    def test_suspend_whitespace_reason_returns_400(self):
+        admission = MagicMock()
+        r = _make_client(mock_admission=admission).post(
+            "/api/admin/memberships/dddd4444-5555-6666-7777-888888888888/suspend",
+            json={"reason": "   "},
+        )
+        assert r.status_code == 400
+        admission.suspend.assert_not_called()
+
+    def test_suspend_trims_reason_before_recording(self):
+        admission = MagicMock()
+        admission.suspend = AsyncMock(return_value=self._decision())
+        r = _make_client(mock_admission=admission).post(
+            "/api/admin/memberships/dddd4444-5555-6666-7777-888888888888/suspend",
+            json={"reason": "  abuse  "},
+        )
+        assert r.status_code == 200
+        assert admission.suspend.call_args.kwargs["reason"] == "abuse"
+
+    def test_suspend_rejects_reason_over_500_characters(self):
+        admission = MagicMock()
+        r = _make_client(mock_admission=admission).post(
+            "/api/admin/memberships/dddd4444-5555-6666-7777-888888888888/suspend",
+            json={"reason": "x" * 501},
+        )
+        assert r.status_code == 422
+        admission.suspend.assert_not_called()
+
 
 # ── POST /api/admin/memberships/{user_id}/reinstate ─────────────────────────
 
@@ -474,16 +548,89 @@ class TestRunDbQuery:
         )
         assert r.status_code == 400
 
-    def test_limit_injected_when_missing(self):
-        """Queries without LIMIT should still succeed (router injects one)."""
+    def test_query_wrapped_in_subquery_with_cap(self):
+        """The router wraps the query in `SELECT * FROM (...) LIMIT cap+1`."""
         pool, conn = self._make_conn(rows=[])
         r = _make_client(mock_pool=pool).post(
             "/api/admin/db/query", json={"sql": "SELECT id FROM channels"}
         )
         assert r.status_code == 200
+        sent = conn.fetch.call_args[0][0]
+        assert sent.startswith("SELECT * FROM (")
+        assert "LIMIT 501" in sent
+
+    def test_sets_console_role_and_statement_timeout(self):
+        pool, conn = self._make_conn(rows=[])
+        _make_client(mock_pool=pool).post("/api/admin/db/query", json={"sql": "SELECT 1"})
+        executed = [c.args[0] for c in conn.execute.call_args_list]
+        assert any("SET LOCAL ROLE niibot_db_console" in s for s in executed)
+        assert any("statement_timeout" in s for s in executed)
+
+    def test_multi_statement_rejected(self):
+        r = _make_client().post("/api/admin/db/query", json={"sql": "SELECT 1; DROP TABLE users"})
+        assert r.status_code == 400
+
+    def test_trailing_semicolon_is_allowed(self):
+        pool, conn = self._make_conn(rows=[])
+        r = _make_client(mock_pool=pool).post(
+            "/api/admin/db/query", json={"sql": "SELECT 1 FROM channels;  "}
+        )
+        assert r.status_code == 200
+
+    def test_console_role_missing_returns_clear_error(self):
+        import asyncpg
+
+        pool, conn = self._make_conn(rows=[])
+
+        def _execute(stmt, *a, **kw):
+            if "SET LOCAL ROLE" in stmt:
+                raise asyncpg.exceptions.UndefinedObjectError("role does not exist")
+            return "SET"
+
+        conn.execute.side_effect = _execute
+        r = _make_client(mock_pool=pool).post("/api/admin/db/query", json={"sql": "SELECT 1"})
+        assert r.status_code == 400
+        assert r.json()["error"]["code"] == "ADMIN.DB_CONSOLE_UNAVAILABLE"
+
+    def test_insufficient_privilege_returns_protected_message(self):
+        import asyncpg
+
+        pool, conn = self._make_conn()
+        conn.fetch.side_effect = asyncpg.exceptions.InsufficientPrivilegeError(
+            "permission denied for table tokens"
+        )
+        r = _make_client(mock_pool=pool).post(
+            "/api/admin/db/query", json={"sql": "SELECT token FROM tokens"}
+        )
+        assert r.status_code == 400
+        assert "permission denied" not in r.text
+
+    def test_truncated_when_over_cap(self):
+        rows = []
+        for _ in range(501):
+            mr = MagicMock()
+            mr.keys.return_value = ["id"]
+            mr.__iter__ = MagicMock(return_value=iter([1]))
+            rows.append(mr)
+        pool, conn = self._make_conn()
+        conn.fetch.return_value = rows
+        r = _make_client(mock_pool=pool).post(
+            "/api/admin/db/query", json={"sql": "SELECT id FROM stream_events"}
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert data["truncated"] is True
+        assert data["row_count"] == 500
+
+    def test_query_is_audit_logged(self, caplog):
+        import logging
+
+        pool, conn = self._make_conn(rows=[])
+        with caplog.at_level(logging.INFO):
+            _make_client(mock_pool=pool).post("/api/admin/db/query", json={"sql": "SELECT 1"})
+        assert "db_console_query" in caplog.text
 
     def test_timeout_returns_408(self):
-
         pool, conn = self._make_conn()
         conn.fetch.side_effect = TimeoutError("query timed out")
         r = _make_client(mock_pool=pool).post(
@@ -491,6 +638,125 @@ class TestRunDbQuery:
             json={"sql": "SELECT id FROM channels LIMIT 10"},
         )
         assert r.status_code == 408
+
+    def test_query_canceled_returns_408(self):
+        import asyncpg
+
+        pool, conn = self._make_conn()
+        conn.fetch.side_effect = asyncpg.exceptions.QueryCanceledError("canceled")
+        r = _make_client(mock_pool=pool).post(
+            "/api/admin/db/query", json={"sql": "SELECT pg_sleep(10)"}
+        )
+        assert r.status_code == 408
+
+
+# ── GET /api/admin/db/schema ────────────────────────────────────────────────
+
+
+class TestDbSchema:
+    def _make_pool_with_rows(self, rows, probe=None):
+        conn = AsyncMock()
+        # 1st fetch = catalog rows; 2nd fetch = the batched EXISTS probe.
+        conn.fetch.side_effect = [rows, probe if probe is not None else []]
+        mock_tx = MagicMock()
+        mock_tx.__aenter__ = AsyncMock(return_value=None)
+        mock_tx.__aexit__ = AsyncMock(return_value=None)
+        conn.transaction = MagicMock(return_value=mock_tx)
+        pool = MagicMock()
+        pool.acquire.return_value.__aenter__ = AsyncMock(return_value=conn)
+        pool.acquire.return_value.__aexit__ = AsyncMock(return_value=None)
+        return pool
+
+    def test_non_owner_gets_403(self):
+        r = _make_client(channel_id="not-the-owner").get("/api/admin/db/schema")
+        assert r.status_code == 403
+
+    @staticmethod
+    def _col(table, relkind, name, dtype, approx, can_select=True):
+        return {
+            "table_name": table,
+            "relkind": relkind,
+            "column_name": name,
+            "data_type": dtype,
+            "approx_rows": approx,
+            "can_select": can_select,
+        }
+
+    def test_groups_columns_by_table(self):
+        rows = [
+            self._col("channels", "r", "channel_id", "text", 12),
+            self._col("channels", "r", "enabled", "boolean", 12),
+            self._col("v_session_summary", "v", "session_id", "integer", None),
+        ]
+        pool = self._make_pool_with_rows(rows)
+        r = _make_client(mock_pool=pool).get("/api/admin/db/schema")
+        assert r.status_code == 200
+        data = r.json()
+        assert [t["name"] for t in data] == ["channels", "v_session_summary"]
+        assert data[0]["kind"] == "table"
+        assert data[0]["approx_rows"] == 12
+        assert len(data[0]["columns"]) == 2
+        assert data[0]["has_hidden_columns"] is False
+        assert data[1]["kind"] == "view"
+
+    def test_hidden_columns_are_dropped_and_flagged(self):
+        rows = [
+            self._col("tokens", "r", "user_id", "text", 9),
+            self._col("tokens", "r", "token", "text", 9, can_select=False),
+            self._col("tokens", "r", "refresh", "text", 9, can_select=False),
+        ]
+        pool = self._make_pool_with_rows(rows)
+        r = _make_client(mock_pool=pool).get("/api/admin/db/schema")
+        data = r.json()
+        assert len(data) == 1
+        assert [c["name"] for c in data[0]["columns"]] == ["user_id"]
+        assert data[0]["has_hidden_columns"] is True
+
+    def test_fully_protected_table_is_omitted(self):
+        rows = [self._col("secret", "r", "k", "text", 1, can_select=False)]
+        pool = self._make_pool_with_rows(rows)
+        r = _make_client(mock_pool=pool).get("/api/admin/db/schema")
+        assert r.json() == []
+
+    def test_empty_tables_flagged_from_probe(self):
+        rows = [
+            self._col("channels", "r", "id", "text", 8),
+            self._col("game_queue_entries", "r", "id", "text", 0),
+        ]
+        probe = [{"idx": 0, "has_rows": True}, {"idx": 1, "has_rows": False}]
+        pool = self._make_pool_with_rows(rows, probe=probe)
+        data = _make_client(mock_pool=pool).get("/api/admin/db/schema").json()
+        by = {t["name"]: t for t in data}
+        assert by["channels"]["is_empty"] is False
+        assert by["game_queue_entries"]["is_empty"] is True
+
+    def test_empty_probe_failure_is_non_fatal(self):
+        import asyncpg
+
+        rows = [self._col("channels", "r", "id", "text", 8)]
+        conn = AsyncMock()
+        conn.fetch.side_effect = [rows, asyncpg.exceptions.QueryCanceledError("slow")]
+        mock_tx = MagicMock()
+        mock_tx.__aenter__ = AsyncMock(return_value=None)
+        mock_tx.__aexit__ = AsyncMock(return_value=None)
+        conn.transaction = MagicMock(return_value=mock_tx)
+        pool = MagicMock()
+        pool.acquire.return_value.__aenter__ = AsyncMock(return_value=conn)
+        pool.acquire.return_value.__aexit__ = AsyncMock(return_value=None)
+        r = _make_client(mock_pool=pool).get("/api/admin/db/schema")
+        assert r.status_code == 200
+        assert r.json()[0]["is_empty"] is False
+
+    def test_missing_console_role_returns_clear_error(self):
+        import asyncpg
+
+        conn = AsyncMock()
+        conn.fetch.side_effect = asyncpg.exceptions.UndefinedObjectError("no role")
+        pool = MagicMock()
+        pool.acquire.return_value.__aenter__ = AsyncMock(return_value=conn)
+        pool.acquire.return_value.__aexit__ = AsyncMock(return_value=None)
+        r = _make_client(mock_pool=pool).get("/api/admin/db/schema")
+        assert r.status_code == 400
 
 
 # ── _parse_docker_stream ────────────────────────────────────────────────────
@@ -760,7 +1026,7 @@ class TestGetAdminChannels:
                 ]
             )
             cr.return_value.list_monitored_owner_channel_status = AsyncMock(
-                return_value={"ch-other": ("active", "user-other")}
+                return_value={"ch-other": ("active", "user-other", None)}
             )
             cr.return_value.get_token = AsyncMock(return_value=token_obj)
             r = _make_client(mock_twitch_api=mock_twitch, mock_channel_service=mock_cs).get(
@@ -799,7 +1065,7 @@ class TestGetAdminChannels:
             # Active owner who manually paused the bot: still an admitted tenant,
             # so it must appear (filter is by membership, not by enabled).
             cr.return_value.list_monitored_owner_channel_status = AsyncMock(
-                return_value={"ch-paused": ("active", "user-paused")}
+                return_value={"ch-paused": ("active", "user-paused", None)}
             )
             cr.return_value.get_token = AsyncMock(return_value=token_obj)
             r = _make_client(mock_twitch_api=mock_twitch, mock_channel_service=mock_cs).get(
@@ -871,7 +1137,7 @@ class TestGetAdminChannels:
                 ]
             )
             cr.return_value.list_monitored_owner_channel_status = AsyncMock(
-                return_value={"ch-pending": ("pending", "user-pending")}
+                return_value={"ch-pending": ("pending", "user-pending", "awaiting_review")}
             )
             cr.return_value.get_token = AsyncMock(return_value=token_obj)
             r = _make_client(mock_twitch_api=mock_twitch, mock_channel_service=mock_cs).get(
@@ -910,7 +1176,7 @@ class TestGetAdminChannels:
                 ]
             )
             cr.return_value.list_monitored_owner_channel_status = AsyncMock(
-                return_value={"ch-suspended": ("suspended", "user-suspended")}
+                return_value={"ch-suspended": ("suspended", "user-suspended", "abuse")}
             )
             cr.return_value.get_token = AsyncMock(return_value=token_obj)
             r = _make_client(mock_twitch_api=mock_twitch, mock_channel_service=mock_cs).get(
@@ -922,6 +1188,7 @@ class TestGetAdminChannels:
         assert len(data) == 1
         assert data[0]["name"] == "suspended"
         assert data[0]["membership_status"] == "suspended"
+        assert data[0]["membership_reason"] == "abuse"
         assert data[0]["owner_user_id"] == "user-suspended"
 
 

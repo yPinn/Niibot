@@ -4,11 +4,38 @@ import { apiJson } from './errors'
 export interface EventConfig {
   id: number
   channel_id: string
-  event_type: 'follow' | 'subscribe' | 'resub' | 'gift_sub' | 'raid' | 'bits'
+  event_type: 'follow' | 'subscribe' | 'resub' | 'gift_sub' | 'gift_recipient' | 'raid' | 'bits'
   message_template: string
   enabled: boolean
   options: Record<string, unknown>
-  trigger_count: number
+  // null when the event writes no stream_events row (resub / gift_sub)
+  trigger_count: number | null
+}
+
+export interface EventVariable {
+  name: string
+  description: string
+  sample: string
+}
+
+export interface EventOption {
+  key: string
+  type: 'boolean'
+  label: string
+  description: string
+  default: boolean
+}
+
+export interface EventDefinition {
+  key: string
+  display_name: string
+  category_label: string
+  accent: string
+  requires_affiliate: boolean
+  default_template: string
+  default_enabled: boolean
+  variables: EventVariable[]
+  options_schema: EventOption[]
 }
 
 export interface EventConfigUpdate {
@@ -34,6 +61,14 @@ export interface RedemptionConfig {
 export interface RedemptionConfigUpdate {
   reward_name: string
   enabled: boolean
+}
+
+export function getEventCatalog(): Promise<EventDefinition[]> {
+  return apiJson(
+    API_ENDPOINTS.events.catalog,
+    { credentials: 'include' },
+    { fallback: '載入事件目錄失敗' }
+  )
 }
 
 export function getEventConfigs(): Promise<EventConfig[]> {

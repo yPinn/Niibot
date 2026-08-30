@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 
 import {
   getClientErrorGroups,
@@ -7,7 +7,7 @@ import {
   type LogRecord,
 } from '@/api/admin'
 import { PageMain } from '@/components/layout/PageMain'
-import { Icon, SlideUp, Spinner } from '@/components/primitives'
+import { Icon, Spinner } from '@/components/primitives'
 import {
   Button,
   Card,
@@ -32,6 +32,7 @@ import { ClientErrorsPanel } from './monitor/ClientErrorsPanel'
 import { DbConsole } from './monitor/DbConsole'
 import {
   DEFAULT_CONTAINERS,
+  formatLogTime,
   LEVEL_FILTER_OPTS,
   type LevelFilter,
   levelPillClass,
@@ -80,21 +81,11 @@ export default function AdminMonitor() {
   const [levelFilter, setLevelFilter] = useState<LevelFilter>('INFO')
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebouncedValue(search.trim(), 300)
-  const [tabOrder, setTabOrder] = useState<string[]>(() => {
-    try {
-      const saved = localStorage.getItem('monitor-tab-order')
-      if (saved) {
-        const parsed: unknown = JSON.parse(saved)
-        if (Array.isArray(parsed) && parsed.every(x => typeof x === 'string')) return parsed
-      }
-    } catch {
-      // ignore malformed localStorage value
-    }
-    return DEFAULT_CONTAINERS.map(c => c.name)
-  })
-  const dragItem = useRef<string | null>(null)
-  const dragOver = useRef<string | null>(null)
-  const [draggingTab, setDraggingTab] = useState<string | null>(null)
+
+  // Bumped by the shared refresh button to force a reload inside the DB / Errors
+  // panels; `panelLoading` mirrors the active panel's loading state for the icon.
+  const [reloadNonce, setReloadNonce] = useState(0)
+  const [panelLoading, setPanelLoading] = useState(false)
 
   useEffect(() => {
     const token = newToken()
@@ -139,6 +130,9 @@ export default function AdminMonitor() {
   const isErrorsMode = selected === '__errors__'
   const isLogMode = !isDbMode && !isStatusMode && !isErrorsMode
 
+  const filtersActive = levelFilter !== 'INFO' || search !== ''
+  const refreshBusy = isLogMode ? loading : isStatusMode ? false : panelLoading
+
   usePolling({ fetchFn: pollFetch, intervalMs: 5_000, enabled: isLogMode, skipInitialCall: true })
 
   useEffect(() => {
@@ -146,34 +140,6 @@ export default function AdminMonitor() {
       termRef.current.scrollTop = termRef.current.scrollHeight
     }
   }, [records, isFollowing])
-
-  const sortedContainers = useMemo(
-    () =>
-      [...containers].sort((a, b) => {
-        const ai = tabOrder.indexOf(a.name)
-        const bi = tabOrder.indexOf(b.name)
-        return (ai === -1 ? Infinity : ai) - (bi === -1 ? Infinity : bi)
-      }),
-    [containers, tabOrder]
-  )
-
-  const handleDragEnd = useCallback(() => {
-    if (dragItem.current && dragOver.current && dragItem.current !== dragOver.current) {
-      setTabOrder(prev => {
-        const fromIdx = prev.indexOf(dragItem.current!)
-        const toIdx = prev.indexOf(dragOver.current!)
-        if (fromIdx === -1 || toIdx === -1) return prev
-        const next = [...prev]
-        next.splice(fromIdx, 1)
-        next.splice(toIdx, 0, dragItem.current!)
-        localStorage.setItem('monitor-tab-order', JSON.stringify(next))
-        return next
-      })
-    }
-    dragItem.current = null
-    dragOver.current = null
-    setDraggingTab(null)
-  }, [])
 
   const handleRefresh = () => {
     const token = newToken()
@@ -248,6 +214,14 @@ export default function AdminMonitor() {
     refreshStatus()
     loadErrSummary()
   }, [refreshStatus, loadErrSummary])
+
+  /** One refresh button for every tab: live logs re-fetch, Status re-polls,
+   *  DB / Errors panels reload via a bumped nonce. */
+  const handleUnifiedRefresh = () => {
+    if (isStatusMode) refreshStatusAll()
+    else if (isLogMode) handleRefresh()
+    else setReloadNonce(n => n + 1)
+  }
 
   const services = useMemo(
     () => [
@@ -325,96 +299,66 @@ export default function AdminMonitor() {
 
   return (
     <PageMain className="gap-0 p-0 lg:p-0 overflow-hidden">
-      <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between gap-3 px-page h-14 lg:px-page-lg border-b border-border/50 shrink-0">
-          <SlideUp>
-            <h1 className="text-page-title font-bold">Monitor</h1>
-          </SlideUp>
-          {isLogMode && (
-            <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={handleRefresh}
-                disabled={loading}
-                aria-label="Refresh"
-              >
-                {loading ? (
-                  <Spinner />
-                ) : (
-                  <Icon icon="fa-solid fa-rotate" wrapperClassName="text-muted-foreground" />
-                )}
-              </Button>
-            </div>
-          )}
-          {isStatusMode && (
-            <div className="flex items-center gap-2">
+      <div className="flex flex-col flex-1 min-h-0 min-w-0 overflow-hidden">
+        {/* Tab bar — modes scroll on the left, refresh/clock pinned right */}
+        <div className="flex items-stretch gap-2 px-page lg:px-page-lg border-b border-border/50 shrink-0">
+          <div className="min-w-0 flex-1 overflow-x-auto">
+            <Tabs
+              value={selected}
+              onValueChange={v => {
+                setSelected(v)
+                setLevelFilter('INFO')
+                setPanelLoading(false)
+                followRef.current = true
+                setIsFollowing(true)
+                if (v === '__status__') refreshStatusAll()
+              }}
+            >
+              <TabsList variant="line" className="h-11 bg-transparent gap-0">
+                <TabsTrigger value="__status__" className="text-content px-3">
+                  <Icon icon="fa-solid fa-gauge" size="sm" />
+                  Status
+                </TabsTrigger>
+                <TabsTrigger value="__errors__" className="text-content px-3">
+                  <Icon icon="fa-solid fa-triangle-exclamation" size="sm" />
+                  Errors
+                </TabsTrigger>
+                <TabsTrigger value="__db__" className="text-content px-3">
+                  <Icon icon="fa-solid fa-database" size="sm" />
+                  DB
+                </TabsTrigger>
+                <div className="mx-2 my-2 w-px shrink-0 bg-border/50" aria-hidden />
+                {containers.map(c => (
+                  <TabsTrigger key={c.name} value={c.name} className="text-content px-3">
+                    <span
+                      className={`size-1.5 rounded-full shrink-0 ${c.running ? 'bg-status-online' : 'bg-muted-foreground/50'}`}
+                    />
+                    {c.label}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            {isStatusMode && (
               <span className="text-label text-muted-foreground font-mono">
                 {lastUpdate.toLocaleTimeString('zh-TW', { hour12: false })}
               </span>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={refreshStatusAll}
-                aria-label="Refresh status"
-              >
+            )}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleUnifiedRefresh}
+              disabled={refreshBusy}
+              aria-label="Refresh"
+            >
+              {refreshBusy ? (
+                <Spinner />
+              ) : (
                 <Icon icon="fa-solid fa-rotate" wrapperClassName="text-muted-foreground" />
-              </Button>
-            </div>
-          )}
-        </div>
-
-        {/* Tabs */}
-        <div className="px-page lg:px-page-lg border-b border-border/50 overflow-x-auto shrink-0">
-          <Tabs
-            value={selected}
-            onValueChange={v => {
-              setSelected(v)
-              setLevelFilter('INFO')
-              followRef.current = true
-              setIsFollowing(true)
-              if (v === '__status__') refreshStatusAll()
-            }}
-          >
-            <TabsList variant="line" className="h-10 bg-transparent gap-0">
-              <TabsTrigger value="__status__" className="text-label px-3">
-                <Icon icon="fa-solid fa-gauge" size="xs" />
-                Status
-              </TabsTrigger>
-              <TabsTrigger value="__errors__" className="text-label px-3">
-                <Icon icon="fa-solid fa-triangle-exclamation" size="xs" />
-                Errors
-              </TabsTrigger>
-              <TabsTrigger value="__db__" className="text-label px-3">
-                <Icon icon="fa-solid fa-database" size="xs" />
-                DB
-              </TabsTrigger>
-              <div className="mx-2 my-2 w-px shrink-0 bg-border/50" aria-hidden />
-              {sortedContainers.map(c => (
-                <TabsTrigger
-                  key={c.name}
-                  value={c.name}
-                  className={`text-label px-3 cursor-grab select-none${draggingTab === c.name ? ' opacity-40' : ''}`}
-                  draggable
-                  onDragStart={() => {
-                    dragItem.current = c.name
-                    setDraggingTab(c.name)
-                  }}
-                  onDragEnter={() => {
-                    dragOver.current = c.name
-                  }}
-                  onDragOver={e => e.preventDefault()}
-                  onDragEnd={handleDragEnd}
-                >
-                  <span
-                    className={`size-1.5 rounded-full shrink-0 ${c.running ? 'bg-status-online' : 'bg-muted-foreground/50'}`}
-                  />
-                  {c.label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
+              )}
+            </Button>
+          </div>
         </div>
 
         {/* Filter row — level pills + server-side search */}
@@ -424,16 +368,27 @@ export default function AdminMonitor() {
               <button
                 key={lvl}
                 onClick={() => setLevelFilter(lvl)}
-                className={`px-2 py-0.5 rounded text-label font-mono transition-colors select-none shrink-0 ${levelPillClass(lvl, levelFilter === lvl)}`}
+                className={`px-2.5 py-1 rounded text-sub font-mono transition-colors select-none shrink-0 ${levelPillClass(lvl, levelFilter === lvl)}`}
               >
                 {lvl === 'WARNING' ? 'WARN' : lvl}
               </button>
             ))}
+            {filtersActive && (
+              <button
+                onClick={() => {
+                  setLevelFilter('INFO')
+                  setSearch('')
+                }}
+                className="shrink-0 rounded px-2.5 py-1 text-sub font-mono text-muted-foreground/60 transition-colors select-none hover:bg-accent/50 hover:text-foreground"
+              >
+                ✕ 清除篩選
+              </button>
+            )}
             <input
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="搜尋…"
-              className="ml-auto min-w-0 shrink rounded border border-border/40 bg-background px-2 py-0.5 font-mono text-label outline-none focus:border-border"
+              className="ml-auto min-w-0 shrink rounded border border-border/40 bg-background px-2 py-1 font-mono text-sub outline-none focus:border-border"
             />
           </div>
         )}
@@ -526,15 +481,19 @@ export default function AdminMonitor() {
             </div>
           </div>
         ) : isDbMode ? (
-          <DbConsole />
+          <DbConsole reloadNonce={reloadNonce} onLoadingChange={setPanelLoading} />
         ) : isErrorsMode ? (
-          <ClientErrorsPanel onTraceRequestId={traceRequestId} />
+          <ClientErrorsPanel
+            onTraceRequestId={traceRequestId}
+            reloadNonce={reloadNonce}
+            onLoadingChange={setPanelLoading}
+          />
         ) : (
-          <div className="dark relative flex flex-col flex-1 min-h-0">
+          <div className="dark relative flex flex-col flex-1 min-h-0 min-w-0">
             <div
               ref={termRef}
               onScroll={handleScroll}
-              className="flex-1 min-h-0 overflow-auto bg-background font-mono text-label leading-5 py-2"
+              className="flex-1 min-h-0 overflow-y-auto bg-background font-mono text-sub leading-6 py-2"
             >
               {loading && records.length === 0 ? (
                 <div className="flex items-center gap-2 px-4 py-3 text-muted-foreground">
@@ -548,10 +507,21 @@ export default function AdminMonitor() {
                   {debouncedSearch || levelFilter !== 'ALL' ? '沒有符合條件的記錄' : '沒有日誌輸出'}
                 </div>
               ) : (
-                <div className="min-w-max">
-                  {records.map((rec, i) => (
-                    <LogRecordRow key={i} record={rec} index={i} />
-                  ))}
+                <div>
+                  {records.map((rec, i) => {
+                    const day = formatLogTime(rec.ts)?.date
+                    const prevDay = i > 0 ? formatLogTime(records[i - 1].ts)?.date : undefined
+                    return (
+                      <Fragment key={i}>
+                        {day && day !== prevDay && (
+                          <div className="select-none px-3 py-1 text-sub text-muted-foreground/40">
+                            ── {day} ──
+                          </div>
+                        )}
+                        <LogRecordRow record={rec} index={i} />
+                      </Fragment>
+                    )
+                  })}
                 </div>
               )}
             </div>
@@ -559,7 +529,7 @@ export default function AdminMonitor() {
             {!isFollowing && records.length > 0 && (
               <button
                 onClick={jumpToLatest}
-                className="absolute bottom-12 right-4 z-10 flex items-center gap-1.5 rounded-full border border-border/50 bg-accent px-3 py-1.5 text-label font-mono text-accent-foreground shadow-lg transition-colors hover:bg-accent/80"
+                className="absolute bottom-12 right-4 z-10 flex items-center gap-1.5 rounded-full border border-border/50 bg-accent px-3 py-1.5 text-sub font-mono text-accent-foreground shadow-lg transition-colors hover:bg-accent/80"
               >
                 <Icon icon="fa-solid fa-arrow-down" size="xs" />
                 最新
@@ -568,11 +538,11 @@ export default function AdminMonitor() {
 
             {/* Status bar */}
             <div className="flex items-center justify-between px-page lg:px-page-lg py-1.5 border-t border-border/20 bg-background shrink-0">
-              <span className="font-mono text-label text-muted-foreground">
-                {records.length === 0 ? '—' : `${records.length} records`}
+              <span className="font-mono text-sub text-muted-foreground">
+                {records.length === 0 ? '—' : `${records.length} records · tail ${tail}`}
               </span>
               {isFollowing && (
-                <span className="font-mono text-label text-status-online flex items-center gap-1.5">
+                <span className="font-mono text-sub text-status-online flex items-center gap-1.5">
                   <span className="size-1.5 rounded-full bg-status-online animate-pulse" />
                   live
                 </span>

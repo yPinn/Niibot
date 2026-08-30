@@ -8,6 +8,7 @@ import logging
 import asyncpg
 
 from shared.cache import AsyncTTLCache, cached
+from shared.events import EVENT_CATALOG, EVENT_KEYS
 from shared.models.event_config import EventConfig
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -17,36 +18,15 @@ _config_cache = AsyncTTLCache(maxsize=64, ttl=3600)
 _config_list_cache = AsyncTTLCache(maxsize=16, ttl=3600)
 _seeded_events: set[str] = set()
 
-DEFAULT_TEMPLATES: dict[str, str] = {
-    "follow": "感謝 $(user) 的追隨！",
-    "subscribe": "感謝 $(user) 的訂閱！",
-    "resub": "感謝 $(user) 連續訂閱 $(months) 個月！",
-    "gift_sub": "感謝 $(user) 贈送了 $(total) 個訂閱！",
-    "raid": "$(user) 帶了 $(count) 個新朋友降落！",
-    "bits": "感謝 $(user) 投出了 $(amount) 小奇點！",
-}
-
-# Only event types with non-empty options need entries here.
+# Seed values for a channel's event_configs rows. Derived from the catalog so
+# templates / enabled / options / valid keys all come from one place.
+DEFAULT_TEMPLATES: dict[str, str] = {e.key: e.default_template for e in EVENT_CATALOG}
+DEFAULT_ENABLED: dict[str, bool] = {e.key: e.default_enabled for e in EVENT_CATALOG}
 DEFAULT_OPTIONS: dict[str, dict] = {
-    "raid": {"auto_shoutout": True},
-    "bits": {"tiers": []},
+    e.key: dict(e.default_options) for e in EVENT_CATALOG if e.default_options
 }
 
-# raid=True: all channels can receive raids. Others default False: require subscription eligibility or conflict with existing bots.
-DEFAULT_ENABLED: dict[str, bool] = {
-    "follow": False,
-    "subscribe": False,
-    "resub": False,
-    "gift_sub": False,
-    "raid": True,
-    "bits": False,
-}
-
-assert DEFAULT_ENABLED.keys() == DEFAULT_TEMPLATES.keys(), (
-    "DEFAULT_ENABLED and DEFAULT_TEMPLATES must have identical keys"
-)
-
-EVENT_TYPES = list(DEFAULT_TEMPLATES.keys())
+EVENT_TYPES = list(EVENT_KEYS)
 
 _SELECT_COLS = (
     "id, channel_id, event_type, message_template, enabled, "

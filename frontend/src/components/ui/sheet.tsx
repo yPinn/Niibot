@@ -77,6 +77,9 @@ function SheetContent({
   )
 }
 
+// Sheet pads at page scale (`p-page`, 16px) — it slides from the viewport edge,
+// so matching the page's own edge padding keeps it visually continuous. Dialog
+// floats and pads at card scale (`p-card`, 24px). Keep the two scales distinct.
 function SheetHeader({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
@@ -136,7 +139,7 @@ function SheetDescription({
   return (
     <SheetPrimitive.Description
       data-slot="sheet-description"
-      className={cn('text-muted-foreground text-sm', className)}
+      className={cn('text-muted-foreground text-sub', className)}
       {...props}
     />
   )

@@ -74,6 +74,7 @@ export { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTi
 export { Input } from './input'
 export { InputOTP, InputOTPGroup, InputOTPSeparator, InputOTPSlot } from './input-otp'
 export { Label } from './label'
+export { Progress } from './progress'
 export {
   Select,
   SelectContent,

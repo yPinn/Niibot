@@ -10,7 +10,6 @@ from twitchio.ext import commands
 
 from core.config import get_settings
 from shared.repositories.activation_code import ActivationCodeRepository
-from shared.repositories.activation_request import ActivationRequestRepository
 from shared.repositories.command_config import RedemptionConfigRepository
 from shared.repositories.game_queue import GameQueueRepository, GameQueueSettingsRepository
 from shared.repositories.video_queue import (
@@ -46,7 +45,6 @@ class ChannelPointsComponent(commands.Component):
         self.settings = get_settings()
         self.redemption_repo = RedemptionConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.activation_repo = ActivationCodeRepository(self.bot.token_database)  # type: ignore[attr-defined]
-        self.activation_request_repo = ActivationRequestRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.gq_repo = GameQueueRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.gq_settings_repo = GameQueueSettingsRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.vq_repo = VideoQueueRepository(self.bot.token_database)  # type: ignore[attr-defined]
@@ -61,7 +59,6 @@ class ChannelPointsComponent(commands.Component):
     def refresh_pool(self, pool) -> None:
         self.redemption_repo.pool = pool
         self.activation_repo.pool = pool
-        self.activation_request_repo.pool = pool
         self.gq_repo.pool = pool
         self.gq_settings_repo.pool = pool
         self.vq_repo.pool = pool
@@ -251,62 +248,38 @@ class ChannelPointsComponent(commands.Component):
         payload: twitchio.ChannelPointsRedemptionAdd,
         user_name: str,
     ) -> None:
-        """處理 Niibot 獎勵兌換：生成啟用碼並透過私訊發送"""
+        """處理 Niibot 獎勵兌換：記錄兌換憑證，登入時自動啟用。"""
         channel_name = payload.broadcaster.name
         broadcaster = payload.broadcaster
         platform_user_id = str(payload.user.id)
 
         try:
-            code = await self.activation_repo.create("twitch", platform_user_id)
-        except Exception as e:
-            LOGGER.error(
-                "[%s] Niibot auth: failed to generate activation code: %s", channel_name, e
+            code = await self.activation_repo.create_channel_points_grant(
+                platform_user_id,
+                redemption_id=str(payload.id),
+                channel_id=str(payload.broadcaster.id),
+                reward_cost=payload.reward.cost,
             )
+        except Exception as e:
+            LOGGER.error("[%s] Niibot auth: failed to record activation grant: %s", channel_name, e)
             try:
-                await self._reply(broadcaster, f"@{user_name} 啟用碼生成失敗，請稍後再試！")
+                await self._reply(broadcaster, f"@{user_name} 兌換失敗，請稍後再試！")
             except Exception:
                 pass
             return
 
-        # Best-effort: queue a pending membership for users who already linked
-        # their Twitch identity but haven't been admitted yet. The repository's
-        # ON CONFLICT clause is idempotent and never demotes an already-active
-        # member, so this is safe to call on every redemption.
         try:
-            row = await self.activation_repo.pool.fetchrow(
-                """
-                SELECT i.user_id::text AS user_id
-                  FROM identities i
-             LEFT JOIN memberships m ON m.user_id = i.user_id
-                 WHERE i.platform = 'twitch'
-                   AND i.platform_user_id = $1
-                   AND (m.status IS NULL OR m.status NOT IN ('active', 'suspended'))
-                """,
-                platform_user_id,
+            await self._reply(
+                broadcaster, f"@{user_name} 登入 Niibot 即可啟用！啟用碼也已私訊給你。"
             )
-            if row:
-                await self.activation_request_repo.create(
-                    row["user_id"],
-                    "twitch",
-                    platform_user_id,
-                )
-                LOGGER.info(
-                    "[%s] Niibot auth: activation request submitted for %s", channel_name, user_name
-                )
-        except Exception as e:
-            LOGGER.warning(
-                "[%s] Niibot auth: could not submit activation request: %s", channel_name, e
-            )
-
-        try:
-            await self._reply(broadcaster, f"@{user_name} 已將啟用碼發送至你的 Twitch 私訊！")
             LOGGER.info("[%s] Niibot auth: confirmation sent to %s", channel_name, user_name)
         except Exception as e:
             LOGGER.warning("[%s] Niibot auth: failed to send public message: %s", channel_name, e)
 
         frontend_url = self.settings.frontend_url
         whisper_message = (
-            f"請前往 {frontend_url} 登入後，於啟用頁面輸入以下啟用碼： {code}（72 小時內有效）"
+            f"前往 {frontend_url} 用 Twitch 登入即會自動啟用。"
+            f"若未生效，可於啟用頁輸入啟用碼： {code}（72 小時內有效）"
         )
         try:
             bot_user = self.bot.create_partialuser(user_id=self.bot.bot_id)

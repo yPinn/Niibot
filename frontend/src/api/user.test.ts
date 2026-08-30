@@ -10,7 +10,6 @@ vi.mock('@/api/config', () => ({
       logout: '/api/auth/logout',
       activate: '/api/auth/activate',
       pendingCode: '/api/auth/pending-code',
-      requestActivation: '/api/auth/request-activation',
       activationRequest: '/api/auth/activation-request',
     },
     user: { preferences: '/api/user/preferences' },
@@ -26,7 +25,6 @@ import {
   getCurrentUser,
   getPendingActivationCode,
   logout,
-  requestActivation,
   updateUserPreferences,
 } from '@/api/user'
 
@@ -240,51 +238,6 @@ describe('activateAccount', () => {
   it('throws the default message when the error body is not valid JSON', async () => {
     mockApiFetch.mockResolvedValue(new Response('not-json', { status: 400 }))
     await expect(activateAccount('BAD')).rejects.toThrow('activation_failed')
-  })
-})
-
-// ---------------------------------------------------------------------------
-// requestActivation
-// ---------------------------------------------------------------------------
-
-describe('requestActivation', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-  })
-
-  it('resolves without error on a 200 response', async () => {
-    mockApiFetch.mockResolvedValue(new Response('{}', { status: 200 }))
-    await expect(requestActivation()).resolves.toBeUndefined()
-  })
-
-  it('sends a POST with no body', async () => {
-    mockApiFetch.mockResolvedValue(new Response('{}', { status: 200 }))
-    await requestActivation()
-    expect(mockApiFetch).toHaveBeenCalledWith(
-      '/api/auth/request-activation',
-      expect.objectContaining({ method: 'POST' })
-    )
-    expect(mockApiFetch).toHaveBeenCalledWith(
-      '/api/auth/request-activation',
-      expect.not.objectContaining({ body: expect.anything() })
-    )
-  })
-
-  it('throws with the server detail on a non-ok response', async () => {
-    mockApiFetch.mockResolvedValue(
-      new Response(JSON.stringify({ detail: 'already_requested' }), { status: 409 })
-    )
-    await expect(requestActivation()).rejects.toThrow('already_requested')
-  })
-
-  it('throws the default message when the error body has no detail field', async () => {
-    mockApiFetch.mockResolvedValue(new Response('{}', { status: 500 }))
-    await expect(requestActivation()).rejects.toThrow('request_failed')
-  })
-
-  it('throws the default message when the error body is not valid JSON', async () => {
-    mockApiFetch.mockResolvedValue(new Response('not-json', { status: 500 }))
-    await expect(requestActivation()).rejects.toThrow('request_failed')
   })
 })
 

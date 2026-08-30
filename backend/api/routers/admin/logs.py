@@ -60,7 +60,7 @@ class LogRecordOut(BaseModel):
     stream: str
     ts: str = ""
     level: str = "UNKNOWN"  # DEBUG|INFO|WARNING|ERROR|CRITICAL|UNKNOWN
-    source: Literal["json", "postgres", "raw"]
+    source: Literal["json", "postgres", "raw", "console"]
     message: str
     logger: str = ""
     mod: str = ""
@@ -109,10 +109,27 @@ _PG_RE = re.compile(
     r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\.\d+ [A-Z]{2,5} \[(\d+)\] ([A-Z]+):\s*(.*)$",
     re.DOTALL,
 )
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
+# structlog's dev ConsoleRenderer line (`console=True`). After ANSI strip:
+#   <iso-ts> [<level>   ] <event> [<logger>] key=value key=value ...
+# `_add_meta` always appends `mod`/`own`/`service`, so a genuine line from our
+# pipeline always ends with a `key=value` block containing `service=`.
+_CONSOLE_RE = re.compile(
+    r"^(\d{4}-\d{2}-\d{2}T[\d:.]+(?:Z|[+-]\d{2}:?\d{2})?) \[([A-Za-z]+)\s*\] (.*)$",
+    re.DOTALL,
+)
+_CONSOLE_TAIL_RE = re.compile(r"^(.*?)\s+\[([\w.]+)\]\s+(\S.*)$", re.DOTALL)
+_KV_RE = re.compile(r"(\w+)=('(?:[^'\\]|\\.)*'|\"(?:[^\"\\]|\\.)*\"|\S+)")
+_CONSOLE_KNOWN = {"mod", "own", "service", "request_id", "channel", "channel_id", "code"}
+
 _LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
-_ERR_KW = re.compile(r"\b(ERROR|CRITICAL|FATAL|EXCEPTION|TRACEBACK)\b", re.IGNORECASE)
-_WARN_KW = re.compile(r"\bWARN(ING)?\b", re.IGNORECASE)
-_DEBUG_KW = re.compile(r"\bDEBUG\b", re.IGNORECASE)
+# `(?<!=)` so a `key=error` / `key=debug` value in a structured tail never trips
+# the heuristic (it only ever runs on genuinely unstructured lines now).
+_ERR_KW = re.compile(r"(?<!=)\b(ERROR|CRITICAL|FATAL|EXCEPTION|TRACEBACK)\b", re.IGNORECASE)
+_WARN_KW = re.compile(r"(?<!=)\bWARN(ING)?\b", re.IGNORECASE)
+_DEBUG_KW = re.compile(r"(?<!=)\bDEBUG\b", re.IGNORECASE)
 
 _LEVEL_ORDER = {"DEBUG": 0, "INFO": 1, "WARNING": 2, "ERROR": 3, "CRITICAL": 3}
 _JSON_KNOWN = {
@@ -156,6 +173,49 @@ def _pg_level(lvl: str) -> str:
     if lvl == "DEBUG":
         return "DEBUG"
     return "INFO"
+
+
+def _unquote(v: str) -> str:
+    if len(v) >= 2 and v[0] == v[-1] and v[0] in "'\"":
+        return v[1:-1]
+    return v
+
+
+def _parse_console(body: str, stream: str, docker_ts: str, raw: str) -> LogRecordOut | None:
+    """Decode a structlog ConsoleRenderer line into a structured record.
+
+    Returns None for anything that isn't one — the caller then falls back to the
+    raw-line heuristic. Dev runs with ``console=True``; without this the whole
+    line (embedded ts, ``[level]`` and the ``key=value`` tail) lands as ``raw``
+    and ``_guess_level`` mis-reads e.g. ``mod=error`` as an ERROR.
+    """
+    m = _CONSOLE_RE.match(_ANSI_RE.sub("", body))
+    if not m:
+        return None
+    iso_ts, level_raw, rest = m.group(1), m.group(2).upper(), m.group(3)
+    tail = _CONSOLE_TAIL_RE.match(rest)
+    if not tail:
+        return None
+    event, logger = tail.group(1), tail.group(2)
+    kv = {k: _unquote(v) for k, v in _KV_RE.findall(tail.group(3))}
+    if "service" not in kv:  # not our pipeline's format — leave it to the raw path
+        return None
+    return LogRecordOut(
+        stream=stream,
+        ts=docker_ts or iso_ts,
+        level=level_raw if level_raw in _LEVELS else "INFO",
+        source="console",
+        message=event,
+        logger=logger,
+        mod=kv.get("mod", ""),
+        own=kv.get("own", "").lower() == "true",
+        service=kv.get("service", ""),
+        request_id=_s(kv.get("request_id")),
+        channel=_s(kv.get("channel") or kv.get("channel_id")),
+        code=_s(kv.get("code")),
+        extra={k: v for k, v in kv.items() if k not in _CONSOLE_KNOWN},
+        raw=raw,
+    )
 
 
 def _record_from_line(line: LogLine) -> LogRecordOut:
@@ -203,6 +263,10 @@ def _record_from_line(line: LogLine) -> LogRecordOut:
             message=pg.group(4),
             raw=raw,
         )
+
+    console = _parse_console(body, line.stream, ts, raw)
+    if console is not None:
+        return console
 
     return LogRecordOut(
         stream=line.stream,

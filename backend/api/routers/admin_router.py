@@ -10,7 +10,7 @@ from datetime import datetime
 
 from asyncpg import Pool
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from core.config import get_settings
 from core.dependencies import (
@@ -51,7 +51,7 @@ class AdminBotNotConfiguredError(NotFoundError):
 
 class ActivationCodeNotFoundError(NotFoundError):
     code = "ADMIN.CODE_NOT_FOUND"
-    user_message = "找不到這名使用者的有效啟用碼"
+    user_message = "找不到可撤銷的啟用碼"
 
 
 class MembershipNotFoundError(NotFoundError):
@@ -110,6 +110,7 @@ class AdminChannelInfo(BaseModel):
     granted_scopes: list[str]
     missing_scopes: list[str]
     membership_status: str  # 'active' | 'pending' | 'suspended'
+    membership_reason: str | None
     owner_user_id: str | None
 
 
@@ -231,7 +232,9 @@ async def get_admin_channels(
             continue
         u = user_map[cid]
         status, granted, missing = channel_data.get(cid, ("error", [], []))
-        membership_status, owner_user_id = status_map.get(cid, ("active", None))
+        membership_status, owner_user_id, membership_reason = status_map.get(
+            cid, ("active", None, None)
+        )
         result.append(
             AdminChannelInfo(
                 id=cid,
@@ -246,6 +249,7 @@ async def get_admin_channels(
                 granted_scopes=granted,
                 missing_scopes=missing,
                 membership_status=membership_status,
+                membership_reason=membership_reason,
                 owner_user_id=owner_user_id,
             )
         )
@@ -271,13 +275,42 @@ async def get_admin_channels(
     return result
 
 
-class PendingCodeInfo(BaseModel):
-    platform_user_id: str
-    display_name: str | None
-    username: str | None
-    avatar: str | None
-    expires_at: datetime
+class GrantInfo(BaseModel):
+    id: int
+    kind: str
+    status: str
+    platform_user_id: str | None
     code_plain: str | None
+    reward_cost: int | None
+    channel_id: str | None
+    redemption_id: str | None
+    issued_at: datetime
+    expires_at: datetime
+    used_at: datetime | None
+    attempt_count: int
+    display_name: str | None
+    avatar: str | None
+    username: str | None
+
+
+class GrantKindCounts(BaseModel):
+    kind: str
+    issued_7d: int
+    consumed_7d: int
+    issued_30d: int
+    consumed_30d: int
+    issued_all: int
+    consumed_all: int
+    outstanding: int
+
+
+class OnboardingFunnel(BaseModel):
+    active_members: int
+    by_kind: list[GrantKindCounts]
+
+
+class OwnerCodeResponse(BaseModel):
+    code: str
 
 
 class ActivationRequestInfo(BaseModel):
@@ -311,42 +344,62 @@ class MembershipEventInfo(BaseModel):
 class MembershipDecisionRequest(BaseModel):
     """Body for approve/reject/suspend/reinstate calls."""
 
-    reason: str = ""
+    reason: str = Field(default="", max_length=500)
 
 
-@router.get("/activation-codes", response_model=list[PendingCodeInfo])
-async def get_pending_activation_codes(
+@router.get("/grants", response_model=list[GrantInfo])
+async def list_activation_grants(
+    kind: str | None = Query(None),
+    status: str | None = Query(None),
     _: str = Depends(require_owner),
     pool: Pool = Depends(get_db_pool),
-) -> list[PendingCodeInfo]:
-    """List unused, non-expired OTP activation codes. Owner-only."""
-    rows = await pool.fetch(
-        """
-        SELECT ac.platform_user_id, ac.expires_at, ac.code_plain,
-               u.display_name, u.avatar, ula.username
-        FROM activation_codes ac
-        LEFT JOIN user_linked_accounts ula
-            ON ula.platform = ac.platform AND ula.platform_user_id = ac.platform_user_id
-        LEFT JOIN users u ON u.id = ula.user_id
-        WHERE ac.used_at IS NULL AND ac.expires_at > NOW()
-        ORDER BY ac.expires_at ASC
-        """
-    )
-    return [PendingCodeInfo(**dict(r)) for r in rows]
+) -> list[GrantInfo]:
+    """All activation grants (any status / kind), newest first. Owner-only."""
+    rows = await ActivationCodeRepository(pool).list_grants(kind=kind, status=status)
+    return [GrantInfo(**dict(r)) for r in rows]
 
 
-@router.delete("/activation-codes/{platform_user_id}")
-async def revoke_activation_code(
-    platform_user_id: str,
+@router.post("/grants", response_model=OwnerCodeResponse)
+async def create_owner_grant(
+    owner_user_id: str = Depends(get_current_user_id),
+    _: str = Depends(require_owner),
+    pool: Pool = Depends(get_db_pool),
+) -> OwnerCodeResponse:
+    """Issue an unbound owner_manual activation code. Owner-only.
+
+    The code is a bearer token — whoever types it on /activate is admitted.
+    TTL (72h), single use and revoke are the controls.
+    """
+    code = await ActivationCodeRepository(pool).create_owner_code(issued_by_user_id=owner_user_id)
+    LOGGER.info("owner_activation_code_issued")
+    return OwnerCodeResponse(code=code)
+
+
+@router.delete("/grants/{grant_id}")
+async def revoke_grant(
+    grant_id: int,
     _: str = Depends(require_owner),
     pool: Pool = Depends(get_db_pool),
 ) -> dict:
-    """Invalidate an unused activation code for a user. Owner-only."""
-    repo = ActivationCodeRepository(pool)
-    if not await repo.invalidate("twitch", platform_user_id):
-        raise ActivationCodeNotFoundError(context={"platform_user_id": platform_user_id})
-    LOGGER.info("activation_code_revoked", extra={"platform_user_id": platform_user_id})
+    """Revoke a live (issued) grant by id. Owner-only."""
+    if not await ActivationCodeRepository(pool).revoke(grant_id):
+        raise ActivationCodeNotFoundError(context={"grant_id": grant_id})
+    LOGGER.info("activation_grant_revoked", extra={"grant_id": grant_id})
     return {"revoked": True}
+
+
+@router.get("/onboarding-funnel", response_model=OnboardingFunnel)
+async def get_onboarding_funnel(
+    _: str = Depends(require_owner),
+    pool: Pool = Depends(get_db_pool),
+) -> OnboardingFunnel:
+    """Redemption→activation conversion per grant kind + active member count."""
+    active = await pool.fetchval("SELECT COUNT(*) FROM memberships WHERE status = 'active'")
+    rows = await ActivationCodeRepository(pool).funnel_counts()
+    return OnboardingFunnel(
+        active_members=active or 0,
+        by_kind=[GrantKindCounts(**dict(r)) for r in rows],
+    )
 
 
 @router.get("/activation-requests", response_model=list[ActivationRequestInfo])
@@ -665,13 +718,14 @@ async def suspend_membership(
     _: str = Depends(require_owner),
     admission: AdmissionService = Depends(get_admission_service),
 ) -> dict:
-    if not body.reason:
+    reason = body.reason.strip()
+    if not reason:
         raise AdminInvalidError(user_message="請填寫停權原因")
     try:
         decision = await admission.suspend(
             user_id=user_id,
             approver_user_id=approver_id,
-            reason=body.reason,
+            reason=reason,
         )
     except ValueError as e:
         raise MembershipNotFoundError(context={"user_id": user_id}) from e

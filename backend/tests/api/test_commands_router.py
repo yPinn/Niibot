@@ -45,6 +45,7 @@ _CMD_CONFIG = {
     "aliases": None,
     "usage_count": 0,
     "description": "",
+    "category_label": None,
     "created_at": None,
     "updated_at": None,
 }
@@ -54,6 +55,7 @@ _PUBLIC_CMD = {
     "description": "Shows help",
     "min_role": "everyone",
     "command_type": "builtin",
+    "category_label": "通用互動",
 }
 
 _USER_INFO = {
@@ -109,6 +111,8 @@ class TestGetCommandConfigs:
         assert r.status_code == 200
         assert len(r.json()) == 1
         assert r.json()[0]["command_name"] == "shoutout"
+        # response_model must pass the derived field through
+        assert "category_label" in r.json()[0]
 
     def test_empty_list_returns_200(self):
         import services.command_config_service as m
@@ -312,6 +316,7 @@ class TestGetPublicCommands:
         assert data["channel"]["display_name"] == "StreamerXYZ"
         assert len(data["commands"]) == 1
         assert data["commands"][0]["name"] == "!help"
+        assert data["commands"][0]["category_label"] == "通用互動"
 
     def test_unknown_username_returns_404(self):
         mock_api = MagicMock()

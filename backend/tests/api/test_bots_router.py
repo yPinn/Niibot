@@ -22,7 +22,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from core.config import get_settings
-from core.dependencies import get_current_user_id
+from core.dependencies import get_current_user_id, require_activated
 from routers.bots_router import router as _bots_router
 
 
@@ -46,6 +46,7 @@ def _make_client() -> TestClient:
     app = FastAPI(lifespan=_no_lifespan)
     app.include_router(_bots_router)
     app.dependency_overrides[get_current_user_id] = lambda: "user-123"
+    app.dependency_overrides[require_activated] = lambda: None
     app.dependency_overrides[get_settings] = lambda: mock_settings
     return TestClient(app, raise_server_exceptions=False)
 

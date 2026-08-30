@@ -2,8 +2,11 @@
 # Niibot Project - Root .gitignore
 # ===================================================================
 
-# Claude Code
-.claude/
+# Claude Code — track shared skills & commands, ignore machine-local bits
+# (settings.local.json, worktrees/ stay ignored via the wildcard)
+.claude/*
+!.claude/skills/
+!.claude/commands/
 
 # Environment Variables (all levels)
 .env*

@@ -16,7 +16,7 @@ const SidebarLayout = lazy(() => import('@/components/layout/SidebarLayout'))
 const Landing = lazy(() => import('@/pages/Landing'))
 const NotFound = lazy(() => import('@/pages/NotFound'))
 const Commands = lazy(() => import('@/pages/dashboard/commands'))
-const Events = lazy(() => import('@/pages/dashboard/Events'))
+const Events = lazy(() => import('@/pages/dashboard/events'))
 const Overview = lazy(() => import('@/pages/dashboard/Overview'))
 const Timers = lazy(() => import('@/pages/dashboard/Timers'))
 const AdminPage = lazy(() => import('@/pages/admin'))
@@ -84,6 +84,9 @@ function App() {
                   />
                   {import.meta.env.DEV && TypographyDemo && (
                     <Route path="/dev/typography" element={<TypographyDemo />} />
+                  )}
+                  {import.meta.env.DEV && (
+                    <Route path="/dev/activate" element={<ActivatePage preview />} />
                   )}
                   <Route element={<PublicOnlyRoute />}>
                     <Route path="/login" element={<LoginPage />} />

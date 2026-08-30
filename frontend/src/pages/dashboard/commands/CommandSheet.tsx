@@ -12,6 +12,7 @@ import {
 import { createTrigger, deleteTrigger, type TriggerConfig, updateTrigger } from '@/api/triggers'
 import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog'
 import { Icon, Spinner } from '@/components/primitives'
+import { SettingRow } from '@/components/SettingRow'
 import {
   Button,
   Input,
@@ -392,17 +393,13 @@ export function CommandSheet({
 
           {/* ── Enabled (edit only) ── */}
           {editing?.mode !== 'create' && (
-            <div className="flex items-center justify-between">
-              <div className="flex flex-col gap-0.5">
-                <span className="text-sub font-medium leading-none">啟用</span>
-                <span className="text-label text-muted-foreground">關閉後不會回應</span>
-              </div>
+            <SettingRow title="啟用" description="關閉後不會回應">
               <Switch
                 aria-label="啟用"
                 checked={form.enabled}
                 onCheckedChange={v => dispatch({ type: 'SET', field: 'enabled', value: v })}
               />
-            </div>
+            </SettingRow>
           )}
 
           <Button
@@ -462,13 +459,7 @@ export function CommandSheet({
 
               {/* Case sensitive — trigger only, hidden for regex (regex handles its own case via flags) */}
               {showTriggerFields && form.matchType !== 'regex' && (
-                <div className="flex items-center justify-between">
-                  <div className="flex flex-col gap-0.5">
-                    <span className="text-sub font-medium leading-none">區分大小寫</span>
-                    <span className="text-label text-muted-foreground">
-                      開啟後 GG 與 gg 視為不同
-                    </span>
-                  </div>
+                <SettingRow title="區分大小寫" description="開啟後 GG 與 gg 視為不同">
                   <Switch
                     aria-label="區分大小寫"
                     checked={form.caseSensitive}
@@ -476,7 +467,7 @@ export function CommandSheet({
                       dispatch({ type: 'SET', field: 'caseSensitive', value: v })
                     }
                   />
-                </div>
+                </SettingRow>
               )}
 
               {/* Priority — trigger only */}

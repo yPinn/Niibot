@@ -17,7 +17,7 @@ from core.config import get_settings
 from core.database import get_database_manager, init_database_manager
 from core.dependencies import close_twitch_api, require_activated
 from core.error_handlers import log_request_failure, register_exception_handlers
-from core.logging import setup_logging
+from core.logging_setup import setup_logging
 from routers import (
     admin_router,
     ai_settings_router,
@@ -45,6 +45,7 @@ from routers.client_errors_router import client_error_retention_loop
 from shared.database import pool_heartbeat_loop
 from shared.errors import build_envelope
 from shared.log_context import bind_log_context, clear_log_context
+from shared.repositories.activation_code import activation_grant_cleanup_loop
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -54,6 +55,7 @@ _started_at: str = ""
 _pool_heartbeat_task: asyncio.Task | None = None
 _db_retry_task: asyncio.Task | None = None
 _client_error_retention_task: asyncio.Task | None = None
+_activation_cleanup_task: asyncio.Task | None = None
 _APP_VERSION = os.getenv("APP_VERSION", "dev")
 _REQUEST_TIMEOUT = 30.0
 
@@ -84,7 +86,7 @@ async def _db_retry_loop(db_manager) -> None:
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Handle startup and shutdown"""
     global _start_time, _started_at, _pool_heartbeat_task, _db_retry_task
-    global _client_error_retention_task
+    global _client_error_retention_task, _activation_cleanup_task
     _start_time = time.time()
     _started_at = datetime.now(UTC).isoformat()
 
@@ -124,6 +126,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Daily prune of the client_errors telemetry table
     _client_error_retention_task = asyncio.create_task(client_error_retention_loop(db_manager))
 
+    # Daily expiry + scrub of stale activation grants
+    _activation_cleanup_task = asyncio.create_task(activation_grant_cleanup_loop(db_manager))
+
     yield
 
     # Shutdown
@@ -134,6 +139,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         _pool_heartbeat_task.cancel()
     if _client_error_retention_task:
         _client_error_retention_task.cancel()
+    if _activation_cleanup_task:
+        _activation_cleanup_task.cancel()
     try:
         await close_twitch_api()
         await close_bots_http_client()

@@ -49,6 +49,7 @@ class CommandConfigResponse(BaseModel):
     aliases: str | None = None
     usage_count: int
     description: str = ""
+    category_label: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -185,6 +186,7 @@ class PublicCommandItem(BaseModel):
     description: str
     min_role: str = "everyone"
     command_type: str = "builtin"
+    category_label: str | None = None
 
 
 class PublicChannelProfile(BaseModel):

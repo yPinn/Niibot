@@ -28,7 +28,6 @@ export const API_ENDPOINTS = {
     logout: join('/api/auth/logout'),
     activate: join('/api/auth/activate'),
     pendingCode: join('/api/auth/pending-code'),
-    requestActivation: join('/api/auth/request-activation'),
     activationRequest: join('/api/auth/activation-request'),
   },
   user: {
@@ -47,6 +46,7 @@ export const API_ENDPOINTS = {
   analytics: {
     summary: join('/api/analytics/summary'),
     insights: join('/api/analytics/insights'),
+    plusEstimate: join('/api/analytics/plus-estimate'),
     viewers: join('/api/analytics/viewers'),
     viewerProfile: (userId: string) => join(`/api/analytics/viewers/${userId}`),
     topCommands: join('/api/analytics/top-commands'),
@@ -68,6 +68,7 @@ export const API_ENDPOINTS = {
     public: (username: string) => join(`/api/commands/public/${username}`),
   },
   events: {
+    catalog: join('/api/events/catalog'),
     configs: join('/api/events/configs'),
     updateConfig: (eventType: string) => join(`/api/events/configs/${eventType}`),
     toggleConfig: (eventType: string) => join(`/api/events/configs/${eventType}/toggle`),
@@ -153,17 +154,19 @@ export const API_ENDPOINTS = {
     botEmotes: join('/api/admin/bot-emotes'),
     resyncBotEmotes: (channelId?: string) =>
       join(`/api/admin/bot-emotes/resync${channelId ? `?channel_id=${channelId}` : ''}`),
-    activationCodes: join('/api/admin/activation-codes'),
-    revokeActivationCode: (platformUserId: string) =>
-      join(`/api/admin/activation-codes/${platformUserId}`),
+    grants: (qs: string = '') => join(`/api/admin/grants${qs}`),
+    revokeGrant: (grantId: number) => join(`/api/admin/grants/${grantId}`),
+    onboardingFunnel: join('/api/admin/onboarding-funnel'),
     activationRequests: join('/api/admin/activation-requests'),
     approveRequest: (userId: string) => join(`/api/admin/activation-requests/${userId}/approve`),
     rejectRequest: (userId: string) => join(`/api/admin/activation-requests/${userId}/reject`),
     membershipTimeline: (userId: string) => join(`/api/admin/memberships/${userId}/timeline`),
+    suspendMembership: (userId: string) => join(`/api/admin/memberships/${userId}/suspend`),
     reinstateMembership: (userId: string) => join(`/api/admin/memberships/${userId}/reinstate`),
     logContainers: join('/api/admin/logs/containers'),
     containerLogs: (name: string) => join(`/api/admin/logs/${name}`),
     dbQuery: join('/api/admin/db/query'),
+    dbSchema: join('/api/admin/db/schema'),
     clientErrors: (qs: string) => join(`/api/admin/client-errors${qs}`),
     clientErrorEvents: (fingerprint: string) =>
       join(`/api/admin/client-errors/${encodeURIComponent(fingerprint)}`),

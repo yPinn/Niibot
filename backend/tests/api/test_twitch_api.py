@@ -462,6 +462,49 @@ class TestUserHelpers:
             }
         ]
 
+    async def test_fetch_all_banned_maps_expiry_and_reason(self):
+        mock = _MockAPI().route(
+            "GET",
+            "/helix/moderation/banned",
+            httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "user_id": "1",
+                            "user_login": "a",
+                            "user_name": "A",
+                            "expires_at": "2021-01-05T00:00:00Z",
+                            "reason": "spam",
+                        },
+                        {"user_id": "2", "user_login": "b", "expires_at": "", "reason": ""},
+                        {"user_login": "c"},
+                    ],
+                    "pagination": {},
+                },
+            ),
+        )
+        api = mock.client()
+
+        banned = await api.fetch_all_banned("b1", "tok", "bot1")
+        assert mock.requests[-1].url.params["moderator_id"] == "bot1"
+        assert banned == [
+            {
+                "user_id": "1",
+                "user_login": "a",
+                "user_name": "A",
+                "expires_at": "2021-01-05T00:00:00Z",
+                "reason": "spam",
+            },
+            {
+                "user_id": "2",
+                "user_login": "b",
+                "user_name": None,
+                "expires_at": None,
+                "reason": None,
+            },
+        ]
+
 
 # ---------------------------------------------------------------------------
 # close

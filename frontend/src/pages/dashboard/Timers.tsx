@@ -14,8 +14,12 @@ import {
 import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { PageMain } from '@/components/layout/PageMain'
-import { EmptyState, Icon, SlideUp, Spinner } from '@/components/primitives'
+import { Icon, SlideUp, Spinner } from '@/components/primitives'
+import { SettingRow } from '@/components/SettingRow'
 import { SortableHead } from '@/components/SortableHead'
+import { TableEmptyRow } from '@/components/TableEmptyRow'
+import { TableShell } from '@/components/TableShell'
+import { TableSkeletonRows } from '@/components/TableSkeletonRows'
 import {
   Alert,
   AlertDescription,
@@ -36,9 +40,7 @@ import {
   SheetFooter,
   SheetHeader,
   SheetTitle,
-  Skeleton,
   Switch,
-  Table,
   TableBody,
   TableCell,
   TableHead,
@@ -54,7 +56,7 @@ import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { useInputInsert } from '@/hooks/useInputInsert'
 import { useOptimisticToggle } from '@/hooks/useOptimisticToggle'
 import { useSortState } from '@/hooks/useSortState'
-import { nameSort } from '@/lib/sort'
+import { applyDir, nameSort } from '@/lib/sort'
 import { toastApiError } from '@/lib/toast-error'
 
 type TimerSortKey = 'name' | 'interval' | 'enabled'
@@ -181,7 +183,7 @@ export default function Timers() {
           cmp = Number(a.enabled) - Number(b.enabled)
           break
       }
-      return sortDir === 'desc' ? -cmp : cmp
+      return applyDir(cmp, sortDir)
     })
   }, [timers, timerSort])
 
@@ -283,8 +285,6 @@ export default function Timers() {
     }
   }
 
-  const { sortKey, sortDir, toggleSort } = timerSort
-
   return (
     <PageMain>
       <PageHeader title="Timers" description="定時訊息 — 直播中定時自動發送設定好的訊息" />
@@ -305,152 +305,112 @@ export default function Timers() {
           </CardHeader>
           <CardContent>
             {loading ? (
-              <div className="overflow-x-auto rounded-md border">
-                <div className="divide-y divide-border">
-                  <div className="flex items-center gap-section px-page py-3 bg-muted/50">
-                    <Skeleton className="h-4 w-[20%]" />
-                    <Skeleton className="h-4 w-[6%]" />
-                    <Skeleton className="h-4 flex-1" />
-                    <Skeleton className="h-4 w-[10%]" />
-                    <Skeleton className="h-4 w-[8%]" />
-                    <Skeleton className="h-4 w-[8%]" />
-                  </div>
-                  {Array.from({ length: 5 }).map((_, i) => (
-                    <div key={i} className="flex items-center gap-section px-page py-3">
-                      <Skeleton className="h-4 w-[20%]" />
-                      <Skeleton className="h-4 w-[6%]" />
-                      <Skeleton className="h-4 flex-1" />
-                      <Skeleton className="h-4 w-[10%]" />
-                      <Skeleton className="h-8 w-[8%]" />
-                      <Skeleton className="h-8 w-[8%]" />
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <TableSkeletonRows
+                count={5}
+                columns={['w-[20%]', 'w-[8%]', 'flex-1', 'w-[8%]', 'w-[8%]', 'w-[7%]']}
+              />
             ) : error ? (
               <Alert variant="destructive">
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             ) : (
-              <div className="overflow-x-auto rounded-md border">
-                <Table className="table-fixed">
-                  <TableHeader>
-                    <TableRow>
-                      <SortableHead
-                        className="w-[20%]"
-                        sortKey="name"
-                        currentKey={sortKey}
-                        dir={sortDir}
-                        onSort={toggleSort}
-                      >
-                        名稱
-                      </SortableHead>
-                      <TableHead className="w-[8%]">類型</TableHead>
-                      <TableHead className="hidden md:table-cell">說明</TableHead>
-                      <SortableHead
-                        className="hidden md:table-cell w-[8%]"
-                        sortKey="interval"
-                        currentKey={sortKey}
-                        dir={sortDir}
-                        onSort={toggleSort}
-                      >
-                        間隔
-                      </SortableHead>
-                      <SortableHead
-                        className="w-[8%] text-center"
-                        sortKey="enabled"
-                        currentKey={sortKey}
-                        dir={sortDir}
-                        onSort={toggleSort}
-                      >
-                        狀態
-                      </SortableHead>
-                      <TableHead className="w-[7%] text-right">操作</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {sorted.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={6}>
-                          <EmptyState
-                            icon="fa-solid fa-clock"
-                            title="尚無計時器"
-                            description="點擊「新增計時器」開始設定"
-                          />
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      sorted.map(timer => {
-                        const isBuiltin = timer.id !== null && timer.id < 0
-                        return (
-                          <TableRow key={timer.timer_name}>
-                            <TableCell className="font-mono font-medium">
-                              <div className="flex items-center gap-1.5">
-                                <span>{timer.timer_name}</span>
-                                {timer.announce && (
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <span className="cursor-default text-muted-foreground">
-                                        <Icon
-                                          icon="fa-solid fa-bullhorn"
-                                          wrapperClassName="size-3"
-                                        />
-                                      </span>
-                                    </TooltipTrigger>
-                                    <TooltipContent>以公告方式發送</TooltipContent>
-                                  </Tooltip>
-                                )}
-                                {timer.command_alias && (
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <span className="cursor-default text-muted-foreground">
-                                        <Icon icon="fa-solid fa-bolt" wrapperClassName="size-3" />
-                                      </span>
-                                    </TooltipTrigger>
-                                    <TooltipContent>
-                                      <span className="font-mono">!{timer.command_alias}</span>
-                                      <span className="ml-1 text-muted-foreground">可手動觸發</span>
-                                    </TooltipContent>
-                                  </Tooltip>
-                                )}
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              {isBuiltin && (
-                                <Badge variant="secondary" className="text-label font-normal">
-                                  內建
-                                </Badge>
+              <TableShell>
+                <TableHeader>
+                  <TableRow>
+                    <SortableHead className="w-[20%]" sortKey="name" sort={timerSort}>
+                      名稱
+                    </SortableHead>
+                    <TableHead className="w-[8%]">類型</TableHead>
+                    <TableHead className="hidden md:table-cell">說明</TableHead>
+                    <SortableHead
+                      className="hidden md:table-cell w-[8%]"
+                      sortKey="interval"
+                      sort={timerSort}
+                    >
+                      間隔
+                    </SortableHead>
+                    <SortableHead className="w-[8%] text-center" sortKey="enabled" sort={timerSort}>
+                      狀態
+                    </SortableHead>
+                    <TableHead className="w-[7%] text-right">操作</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {sorted.length === 0 ? (
+                    <TableEmptyRow
+                      colSpan={6}
+                      icon="fa-solid fa-clock"
+                      title="尚無計時器"
+                      description="點擊「新增計時器」開始設定"
+                    />
+                  ) : (
+                    sorted.map(timer => {
+                      const isBuiltin = timer.id !== null && timer.id < 0
+                      return (
+                        <TableRow key={timer.timer_name}>
+                          <TableCell className="font-mono font-medium">
+                            <div className="flex items-center gap-1.5">
+                              <span>{timer.timer_name}</span>
+                              {timer.announce && (
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="cursor-default text-muted-foreground">
+                                      <Icon icon="fa-solid fa-bullhorn" wrapperClassName="size-3" />
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent>以公告方式發送</TooltipContent>
+                                </Tooltip>
                               )}
-                            </TableCell>
-                            <TableCell className="hidden md:table-cell max-w-0 truncate text-sub text-muted-foreground">
-                              {timer.message_template}
-                            </TableCell>
-                            <TableCell className="hidden md:table-cell text-sub text-muted-foreground">
-                              {formatInterval(timer.interval_seconds)}
-                            </TableCell>
-                            <TableCell className="text-center">
-                              <Switch
-                                checked={timer.enabled}
-                                onCheckedChange={() => handleToggle(timer)}
-                              />
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="size-8"
-                                onClick={() => openEditor(timer)}
-                              >
-                                <Icon icon="fa-solid fa-pen" wrapperClassName="size-3.5" />
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        )
-                      })
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
+                              {timer.command_alias && (
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="cursor-default text-muted-foreground">
+                                      <Icon icon="fa-solid fa-bolt" wrapperClassName="size-3" />
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <span className="font-mono">!{timer.command_alias}</span>
+                                    <span className="ml-1 text-muted-foreground">可手動觸發</span>
+                                  </TooltipContent>
+                                </Tooltip>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {isBuiltin && (
+                              <Badge variant="secondary" className="text-label font-normal">
+                                內建
+                              </Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="hidden md:table-cell max-w-0 truncate text-sub text-muted-foreground">
+                            {timer.message_template}
+                          </TableCell>
+                          <TableCell className="hidden md:table-cell text-sub text-muted-foreground">
+                            {formatInterval(timer.interval_seconds)}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <Switch
+                              checked={timer.enabled}
+                              onCheckedChange={() => handleToggle(timer)}
+                            />
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="size-8"
+                              onClick={() => openEditor(timer)}
+                            >
+                              <Icon icon="fa-solid fa-pen" wrapperClassName="size-3.5" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })
+                  )}
+                </TableBody>
+              </TableShell>
             )}
           </CardContent>
         </Card>
@@ -518,17 +478,13 @@ export default function Timers() {
             </div>
 
             {editing?.mode === 'edit' && (
-              <div className="flex items-center justify-between">
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-sub font-medium leading-none">啟用</span>
-                  <span className="text-label text-muted-foreground">關閉後不會觸發</span>
-                </div>
+              <SettingRow title="啟用" description="關閉後不會觸發">
                 <Switch
                   aria-label="啟用"
                   checked={form.enabled}
                   onCheckedChange={v => dispatch({ type: 'SET', field: 'enabled', value: v })}
                 />
-              </div>
+              </SettingRow>
             )}
 
             <Button
@@ -581,24 +537,23 @@ export default function Timers() {
                   </span>
                 </div>
 
-                <div className="flex items-center justify-between">
-                  <div className="flex flex-col gap-0.5">
-                    <span className="flex items-center gap-1.5 text-sub font-medium leading-none">
+                <SettingRow
+                  title={
+                    <>
                       公告模式
                       <Badge variant="secondary" className="text-label">
                         需要管理員
                       </Badge>
-                    </span>
-                    <span className="text-label text-muted-foreground">
-                      以聊天室公告方式發送，訊息會被高亮顯示
-                    </span>
-                  </div>
+                    </>
+                  }
+                  description="以聊天室公告方式發送，訊息會被高亮顯示"
+                >
                   <Switch
                     aria-label="公告模式"
                     checked={form.announce}
                     onCheckedChange={v => dispatch({ type: 'SET', field: 'announce', value: v })}
                   />
-                </div>
+                </SettingRow>
               </div>
             )}
 

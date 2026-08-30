@@ -153,6 +153,31 @@ export async function getInsights(days: number = 30): Promise<ChannelInsights> {
   )
 }
 
+export interface PlusProgramEstimate {
+  confirmed_points: number
+  confirmed_subs: number
+  pending_points: number
+  pending_subs: number
+  tier_breakdown: { t1: number; t2: number; t3: number }
+  plan_confirmed: string
+  plan_ceiling: string
+  data_as_of: string | null
+}
+
+export async function getPlusProgramEstimate(): Promise<PlusProgramEstimate> {
+  return apiCache.fetch(
+    CACHE_KEYS.ANALYTICS_PLUS_ESTIMATE,
+    async () => {
+      const response = await apiFetch(API_ENDPOINTS.analytics.plusEstimate, {
+        credentials: 'include',
+      })
+      if (!response.ok) throw await parseApiError(response, '載入加強版方案積分失敗')
+      return response.json() as Promise<PlusProgramEstimate>
+    },
+    { ttl: ANALYTICS_TTL }
+  )
+}
+
 export interface ViewerSummary {
   user_id: string
   username: string
@@ -298,6 +323,7 @@ export interface RoleSyncResult {
   vips_synced: number
   subs_synced: number
   follows_synced: number
+  bans_synced: number
 }
 
 export async function syncChannelRoles(): Promise<RoleSyncResult> {

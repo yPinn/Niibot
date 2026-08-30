@@ -20,6 +20,7 @@ export interface AdminChannel {
   granted_scopes: string[]
   missing_scopes: string[]
   membership_status: ChannelMembershipStatus
+  membership_reason: string | null
   owner_user_id: string | null
 }
 
@@ -33,13 +34,41 @@ export interface BotTokenInfo {
   missing_scopes: string[]
 }
 
-export interface PendingCode {
-  platform_user_id: string
-  display_name: string | null
-  username: string | null
-  avatar: string | null
-  expires_at: string
+export type GrantKind = 'channel_points' | 'owner_manual'
+export type GrantStatus = 'issued' | 'consumed' | 'expired' | 'revoked'
+
+export interface Grant {
+  id: number
+  kind: GrantKind
+  status: GrantStatus
+  platform_user_id: string | null
   code_plain: string | null
+  reward_cost: number | null
+  channel_id: string | null
+  redemption_id: string | null
+  issued_at: string
+  expires_at: string
+  used_at: string | null
+  attempt_count: number
+  display_name: string | null
+  avatar: string | null
+  username: string | null
+}
+
+export interface GrantKindCounts {
+  kind: GrantKind
+  issued_7d: number
+  consumed_7d: number
+  issued_30d: number
+  consumed_30d: number
+  issued_all: number
+  consumed_all: number
+  outstanding: number
+}
+
+export interface OnboardingFunnel {
+  active_members: number
+  by_kind: GrantKindCounts[]
 }
 
 export interface ActivationRequest {
@@ -115,18 +144,40 @@ export async function resyncBotEmotes(channelId?: string): Promise<BotEmoteResyn
   return response.json()
 }
 
-export async function getPendingActivationCodes(): Promise<PendingCode[]> {
-  const response = await apiFetch(API_ENDPOINTS.admin.activationCodes, { credentials: 'include' })
-  if (!response.ok) throw await parseApiError(response, '載入待啟用代碼失敗')
+export async function getGrants(params?: {
+  kind?: GrantKind
+  status?: GrantStatus
+}): Promise<Grant[]> {
+  const qs = new URLSearchParams()
+  if (params?.kind) qs.set('kind', params.kind)
+  if (params?.status) qs.set('status', params.status)
+  const suffix = qs.toString() ? `?${qs}` : ''
+  const response = await apiFetch(API_ENDPOINTS.admin.grants(suffix), { credentials: 'include' })
+  if (!response.ok) throw await parseApiError(response, '載入啟用碼失敗')
   return response.json()
 }
 
-export async function revokeActivationCode(platformUserId: string): Promise<void> {
-  const response = await apiFetch(API_ENDPOINTS.admin.revokeActivationCode(platformUserId), {
+export async function createOwnerCode(): Promise<string> {
+  const response = await apiFetch(API_ENDPOINTS.admin.grants(), {
+    method: 'POST',
+    credentials: 'include',
+  })
+  if (!response.ok) throw await parseApiError(response, '產生啟用碼失敗')
+  return (await response.json()).code
+}
+
+export async function revokeGrant(grantId: number): Promise<void> {
+  const response = await apiFetch(API_ENDPOINTS.admin.revokeGrant(grantId), {
     method: 'DELETE',
     credentials: 'include',
   })
-  if (!response.ok) throw await parseApiError(response, '撤銷代碼失敗')
+  if (!response.ok) throw await parseApiError(response, '撤銷啟用碼失敗')
+}
+
+export async function getOnboardingFunnel(): Promise<OnboardingFunnel> {
+  const response = await apiFetch(API_ENDPOINTS.admin.onboardingFunnel, { credentials: 'include' })
+  if (!response.ok) throw await parseApiError(response, '載入啟用漏斗失敗')
+  return response.json()
 }
 
 export async function getActivationRequests(): Promise<ActivationRequest[]> {
@@ -165,6 +216,16 @@ export async function getMembershipTimeline(userId: string): Promise<MembershipE
   return response.json()
 }
 
+export async function suspendMembership(userId: string, reason: string): Promise<void> {
+  const response = await apiFetch(API_ENDPOINTS.admin.suspendMembership(userId), {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reason }),
+  })
+  if (!response.ok) throw await parseApiError(response, '停權使用者失敗')
+}
+
 export async function reinstateMembership(userId: string, reason: string = ''): Promise<void> {
   const response = await apiFetch(API_ENDPOINTS.admin.reinstateMembership(userId), {
     method: 'POST',
@@ -187,7 +248,7 @@ export interface LogRecord {
   stream: 'stdout' | 'stderr'
   ts: string
   level: LogLevel
-  source: 'json' | 'postgres' | 'raw'
+  source: 'json' | 'postgres' | 'raw' | 'console'
   message: string
   logger: string
   mod: string
@@ -218,6 +279,27 @@ export interface DbQueryResult {
   rows: (string | number | boolean | null)[][]
   row_count: number
   duration_ms: number
+  truncated: boolean
+}
+
+export interface DbColumn {
+  name: string
+  type: string
+}
+
+export interface DbTable {
+  name: string
+  kind: 'table' | 'view' | 'matview'
+  approx_rows: number | null
+  has_hidden_columns: boolean
+  is_empty: boolean
+  columns: DbColumn[]
+}
+
+export async function getDbSchema(): Promise<DbTable[]> {
+  const response = await apiFetch(API_ENDPOINTS.admin.dbSchema, { credentials: 'include' })
+  if (!response.ok) throw await parseApiError(response, '載入資料庫結構失敗')
+  return response.json()
 }
 
 export async function getModuleAIPacks(): Promise<string[]> {

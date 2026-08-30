@@ -39,6 +39,8 @@ const TWITCH_USER = {
   platform: 'twitch' as const,
   theme: 'dark' as const,
   broadcaster_type: '',
+  is_activated: true,
+  is_owner: false,
 }
 
 // ---------------------------------------------------------------------------
@@ -51,6 +53,7 @@ describe('isPublicPath', () => {
     ['/login', true],
     ['/terms', true],
     ['/privacy', true],
+    ['/dev/activate', true],
     ['/donate/alice', true],
     ['/donate/alice/extra', true],
     ['/alice/commands', true],
@@ -103,6 +106,17 @@ describe('AuthProvider', () => {
     await waitFor(() => expect(result.current.isInitialized).toBe(true))
     expect(result.current.isAuthenticated).toBe(false)
     expect(result.current.user).toBeNull()
+  })
+
+  it('does not fetch product channels for a suspended user', async () => {
+    mockGetCurrentUser.mockResolvedValue({ ...TWITCH_USER, is_activated: false })
+    const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider })
+
+    await waitFor(() => expect(result.current.isInitialized).toBe(true))
+
+    expect(result.current.user?.is_activated).toBe(false)
+    expect(mockGetChannels).not.toHaveBeenCalled()
+    expect(result.current.channels).toEqual([])
   })
 
   it('sets isInitError when the API throws a network error', async () => {

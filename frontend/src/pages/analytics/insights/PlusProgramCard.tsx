@@ -1,0 +1,157 @@
+import type { PlusProgramEstimate } from '@/api/analytics'
+import { AffiliateLockOverlay } from '@/components/AffiliateLockOverlay'
+import { Icon } from '@/components/primitives'
+import {
+  Button,
+  Progress,
+  Skeleton,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui'
+import { formatRelativeTime } from '@/lib/format'
+import { PLUS_TIER2_POINTS, plusProgress, type PlusSplit, subsToClose } from '@/lib/plus-program'
+import { cn } from '@/lib/utils'
+
+interface PlusProgramCardProps {
+  estimate: PlusProgramEstimate | null
+  loading: boolean
+  refreshing: boolean
+  locked: boolean
+  onRefresh: () => void
+}
+
+function splitColor(split: PlusSplit): string {
+  if (split === '70/30') return 'text-status-online'
+  if (split === '60/40') return 'text-status-info'
+  return 'text-muted-foreground'
+}
+
+/** Twitch numbers the plan tiers 等級 0 (50/50) / 等級 1 (60/40) / 等級 2 (70/30). */
+function planLabel(split: PlusSplit): string {
+  if (split === '70/30') return '等級 2（70/30）'
+  if (split === '60/40') return '等級 1（60/40）'
+  return '等級 0（50/50）'
+}
+
+function CardShell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="relative rounded-md border px-2.5 py-2 flex flex-col gap-2 shrink-0 overflow-hidden">
+      {children}
+    </div>
+  )
+}
+
+export function PlusProgramCard({
+  estimate,
+  loading,
+  refreshing,
+  locked,
+  onRefresh,
+}: PlusProgramCardProps) {
+  if (locked) {
+    return (
+      <CardShell>
+        <AffiliateLockOverlay message="取得實況盟友資格後可查看" className="rounded-[inherit]" />
+        <p className="text-label text-muted-foreground">加強版方案積分（試算）</p>
+        <p className="text-card-title font-bold text-muted-foreground/40">—</p>
+      </CardShell>
+    )
+  }
+  if (loading) return <Skeleton className="h-36 rounded-md shrink-0" />
+  if (!estimate) return null
+
+  const { confirmed_points, confirmed_subs, pending_points, pending_subs, data_as_of } = estimate
+  const prog = plusProgress(confirmed_points)
+  const gap = subsToClose(prog.remaining)
+
+  return (
+    <CardShell>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5">
+          <p className="text-label text-muted-foreground">加強版方案積分（試算）</p>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="inline-flex cursor-help">
+                <Icon
+                  icon="fa-solid fa-circle-info"
+                  size="xs"
+                  wrapperClassName="text-muted-foreground/50"
+                />
+              </span>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-60 text-label leading-relaxed">
+              層級 1／2／3 訂閱各得 1／2／6 點，Prime
+              與贈禮訂閱不計入。尚未確認來源的訂閱會在下次續訂時補上。取得資格另需連續 3 個月達標。
+            </TooltipContent>
+          </Tooltip>
+        </div>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="outline"
+              size="icon-sm"
+              aria-label="重新整理訂閱資料"
+              onClick={onRefresh}
+              disabled={refreshing}
+              className="text-muted-foreground"
+            >
+              <Icon
+                icon="fa-solid fa-rotate"
+                size="2xs"
+                className={cn(refreshing && 'animate-spin')}
+              />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>重新整理訂閱資料</TooltipContent>
+        </Tooltip>
+      </div>
+
+      <div className="flex items-baseline gap-1.5">
+        <span className={cn('text-card-title font-bold tabular-nums', splitColor(prog.split))}>
+          {confirmed_points.toLocaleString()}
+        </span>
+        <span className="text-label text-muted-foreground">點</span>
+        <span className="ml-auto text-label text-muted-foreground">{planLabel(prog.split)}</span>
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <Progress
+          max={PLUS_TIER2_POINTS}
+          aria-label="加強版方案積分進度"
+          segments={[
+            { value: confirmed_points },
+            { value: pending_points, className: 'bg-primary/30' },
+          ]}
+        />
+        <div className="flex items-center justify-between gap-2 text-label text-muted-foreground tabular-nums">
+          <span>{`已確認 ${confirmed_subs} 位付費訂閱`}</span>
+          {pending_subs > 0 && (
+            <span>{`待確認 ${pending_subs} 位（最多 +${pending_points} 點）`}</span>
+          )}
+        </div>
+      </div>
+
+      {prog.nextSplit === null ? (
+        <p className="text-label text-status-online">已達最高分潤層級（70/30）</p>
+      ) : (
+        <div className="flex flex-col gap-1.5">
+          <p className="text-sub text-foreground tabular-nums">
+            {`距 ${planLabel(prog.nextSplit)} 還差 ${prog.remaining} 點`}
+          </p>
+          <div className="grid grid-cols-3 gap-1 text-label text-muted-foreground/70 tabular-nums">
+            <span>{`層級 1 ×${gap.t1}`}</span>
+            <span className="text-center">{`層級 2 ×${gap.t2}`}</span>
+            <span className="text-right">{`層級 3 ×${gap.t3}`}</span>
+          </div>
+        </div>
+      )}
+
+      {data_as_of && (
+        <p className="text-label text-muted-foreground/50 tabular-nums">
+          更新於 {formatRelativeTime(data_as_of)}
+        </p>
+      )}
+    </CardShell>
+  )
+}

@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils'
 
 import { Icon } from './Icon'
 
-interface EmptyStateProps extends Omit<React.ComponentProps<'div'>, 'title'> {
+export interface EmptyStateProps extends Omit<React.ComponentProps<'div'>, 'title'> {
   icon: string
   title: React.ReactNode
   description?: React.ReactNode

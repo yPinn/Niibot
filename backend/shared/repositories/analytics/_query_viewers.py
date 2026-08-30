@@ -22,6 +22,52 @@ from shared.repositories.analytics._query_common import (
 
 LOGGER = logging.getLogger(__name__)
 
+# Twitch Plus Program: 100 pts -> 60/40 split, 300 pts -> 70/30.
+_PLUS_TIER1_POINTS = 100
+_PLUS_TIER2_POINTS = 300
+
+
+def _plus_plan(points: int) -> str:
+    if points >= _PLUS_TIER2_POINTS:
+        return "70/30"
+    if points >= _PLUS_TIER1_POINTS:
+        return "60/40"
+    return "50/50"
+
+
+# sub_tier is not guaranteed to be T1/T2/T3 — the dev seed writes "2", tier_label
+# lets unknown codes through, so legacy rows may hold "1000". Cover every form;
+# an unrecognised tier falls to Tier 1 weight.
+_PLUS_ESTIMATE_SQL = """
+SELECT
+    COALESCE(SUM(pts) FILTER (WHERE paid_known), 0)::int AS confirmed_points,
+    COUNT(*) FILTER (WHERE paid_known)                   AS confirmed_subs,
+    COALESCE(SUM(pts) FILTER (WHERE pending), 0)::int    AS pending_points,
+    COUNT(*) FILTER (WHERE pending)                      AS pending_subs,
+    COUNT(*) FILTER (WHERE paid_known AND tier = 1)      AS t1,
+    COUNT(*) FILTER (WHERE paid_known AND tier = 2)      AS t2,
+    COUNT(*) FILTER (WHERE paid_known AND tier = 3)      AS t3,
+    MAX(updated_at)                                      AS data_as_of
+FROM (
+    SELECT
+        CASE
+            WHEN sub_tier IN ('T3', '3000', '3') THEN 3
+            WHEN sub_tier IN ('T2', '2000', '2') THEN 2
+            ELSE 1
+        END AS tier,
+        CASE
+            WHEN sub_tier IN ('T3', '3000', '3') THEN 6
+            WHEN sub_tier IN ('T2', '2000', '2') THEN 2
+            ELSE 1
+        END AS pts,
+        (COALESCE(sub_gifted, FALSE) = FALSE AND sub_is_prime = FALSE)  AS paid_known,
+        (COALESCE(sub_gifted, FALSE) = FALSE AND sub_is_prime IS NULL)  AS pending,
+        updated_at
+    FROM viewer_channel_status
+    WHERE channel_id = $1 AND is_subscribed = TRUE
+) t
+"""
+
 
 class _ViewerQueryMixin:
     pool: asyncpg.Pool  # type: ignore[assignment]
@@ -468,3 +514,47 @@ class _ViewerQueryMixin:
                 return dict(row) if row else None
         except UndefinedTableError:
             return None
+
+    async def get_plus_program_estimate(self, channel_id: str) -> dict:
+        """Single-month Twitch Plus Program point estimate from the current
+        subscriber roster.
+
+        Gifted and Prime subs earn no points. A sub whose Prime status has never
+        been observed via ``channel.chat.notification`` (``sub_is_prime IS NULL``)
+        is reported as *pending* rather than assumed paid, so ``confirmed_points``
+        is a floor and ``confirmed + pending`` a ceiling.
+        """
+        empty: dict = {
+            "confirmed_points": 0,
+            "confirmed_subs": 0,
+            "pending_points": 0,
+            "pending_subs": 0,
+            "tier_breakdown": {"t1": 0, "t2": 0, "t3": 0},
+            "plan_confirmed": "50/50",
+            "plan_ceiling": "50/50",
+            "data_as_of": None,
+        }
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(_PLUS_ESTIMATE_SQL, channel_id)
+        except (UndefinedTableError, asyncpg.exceptions.UndefinedColumnError):
+            return empty
+        if row is None:
+            return empty
+
+        confirmed = int(row["confirmed_points"])
+        pending = int(row["pending_points"])
+        return {
+            "confirmed_points": confirmed,
+            "confirmed_subs": int(row["confirmed_subs"]),
+            "pending_points": pending,
+            "pending_subs": int(row["pending_subs"]),
+            "tier_breakdown": {
+                "t1": int(row["t1"]),
+                "t2": int(row["t2"]),
+                "t3": int(row["t3"]),
+            },
+            "plan_confirmed": _plus_plan(confirmed),
+            "plan_ceiling": _plus_plan(confirmed + pending),
+            "data_as_of": row["data_as_of"],
+        }

@@ -76,6 +76,39 @@ class _ModerationMixin(_TwitchAPIBase):
             LOGGER.exception("Error fetching all followers for %s", broadcaster_id)
             return []
 
+    async def fetch_all_banned(
+        self, broadcaster_id: str, token: str, moderator_id: str
+    ) -> list[dict]:
+        """Return the channel's currently banned + timed-out users.
+
+        Read with the bot's token as a moderator (`moderator:manage:banned_users`
+        lives on the bot). Requires the bot to be a mod of the channel; returns
+        an empty list on error, missing scope, or 403.
+
+        Each dict has user_id, user_login, user_name, expires_at (ISO string or
+        None for a permanent ban), reason.
+        """
+        try:
+            results = await self._fetch_paginated(
+                "moderation/banned",
+                {"broadcaster_id": broadcaster_id, "moderator_id": moderator_id},
+                token=token,
+            )
+            return [
+                {
+                    "user_id": r["user_id"],
+                    "user_login": r.get("user_login", ""),
+                    "user_name": r.get("user_name"),
+                    "expires_at": r.get("expires_at") or None,
+                    "reason": r.get("reason") or None,
+                }
+                for r in results
+                if r.get("user_id")
+            ]
+        except Exception:
+            LOGGER.exception("Error fetching banned users for %s", broadcaster_id)
+            return []
+
     async def check_bot_is_moderator(
         self, broadcaster_id: str, bot_id: str, access_token: str
     ) -> bool:

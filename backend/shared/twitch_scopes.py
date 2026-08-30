@@ -42,3 +42,8 @@ BROADCASTER_SCOPES: list[str] = [
     # revenue (Bits API + channel.cheer EventSub require the broadcaster)
     "bits:read",
 ]
+
+
+def missing_broadcaster_scopes(scopes: list[str] | set[str]) -> list[str]:
+    """``BROADCASTER_SCOPES`` entries absent from *scopes* (empty = all granted)."""
+    return [s for s in BROADCASTER_SCOPES if s not in scopes]

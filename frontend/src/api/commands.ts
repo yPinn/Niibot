@@ -14,6 +14,8 @@ export interface CommandConfig {
   aliases: string | null
   usage_count: number
   description: string
+  /** Display label for the builtin's category; null for custom commands. */
+  category_label: string | null
 }
 
 export interface CommandConfigUpdate {
@@ -99,6 +101,8 @@ export interface PublicCommand {
   description: string
   min_role: string
   command_type: 'builtin' | 'custom' | 'trigger'
+  /** Display label for the builtin's category. Null for custom commands; absent for triggers. */
+  category_label?: string | null
 }
 
 export interface PublicChannelProfile {

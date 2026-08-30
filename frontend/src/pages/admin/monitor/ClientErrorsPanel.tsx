@@ -8,7 +8,6 @@ import {
   getClientErrorGroups,
 } from '@/api/admin'
 import { Icon, Spinner } from '@/components/primitives'
-import { Button } from '@/components/ui'
 import { formatRelativeTime } from '@/lib/format'
 
 const KIND_OPTS: { value: ClientErrorKind | 'all'; label: string }[] = [
@@ -154,8 +153,13 @@ function GroupRow({
 
 export function ClientErrorsPanel({
   onTraceRequestId,
+  reloadNonce,
+  onLoadingChange,
 }: {
   onTraceRequestId: (requestId: string) => void
+  /** Bump to force a reload from the parent's shared refresh button. */
+  reloadNonce?: number
+  onLoadingChange?: (loading: boolean) => void
 }) {
   const [kind, setKind] = useState<ClientErrorKind | 'all'>('all')
   const [sinceHours, setSinceHours] = useState(168)
@@ -175,7 +179,12 @@ export function ClientErrorsPanel({
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     load()
-  }, [load])
+  }, [load, reloadNonce])
+
+  useEffect(() => {
+    onLoadingChange?.(loading)
+    return () => onLoadingChange?.(false)
+  }, [loading, onLoadingChange])
 
   return (
     <div className="flex flex-1 flex-col min-h-0 overflow-hidden bg-background">
@@ -212,20 +221,6 @@ export function ClientErrorsPanel({
             </button>
           ))}
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={load}
-          disabled={loading}
-          aria-label="Refresh"
-          className="ml-auto"
-        >
-          {loading ? (
-            <Spinner />
-          ) : (
-            <Icon icon="fa-solid fa-rotate" wrapperClassName="text-muted-foreground" />
-          )}
-        </Button>
       </div>
 
       {/* List */}
