@@ -268,6 +268,27 @@ export interface DbQueryResult {
   rows: (string | number | boolean | null)[][]
   row_count: number
   duration_ms: number
+  truncated: boolean
+}
+
+export interface DbColumn {
+  name: string
+  type: string
+}
+
+export interface DbTable {
+  name: string
+  kind: 'table' | 'view' | 'matview'
+  approx_rows: number | null
+  has_hidden_columns: boolean
+  is_empty: boolean
+  columns: DbColumn[]
+}
+
+export async function getDbSchema(): Promise<DbTable[]> {
+  const response = await apiFetch(API_ENDPOINTS.admin.dbSchema, { credentials: 'include' })
+  if (!response.ok) throw await parseApiError(response, '載入資料庫結構失敗')
+  return response.json()
 }
 
 export async function getModuleAIPacks(): Promise<string[]> {

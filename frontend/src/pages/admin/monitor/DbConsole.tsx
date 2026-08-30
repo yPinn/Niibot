@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { type DbQueryResult, runDbQuery } from '@/api/admin'
+import { type DbQueryResult, type DbTable, getDbSchema, runDbQuery } from '@/api/admin'
 import { Icon, Spinner } from '@/components/primitives'
 import {
   Button,
@@ -12,158 +12,25 @@ import {
   TableRow,
   Textarea,
 } from '@/components/ui'
+import { useInputInsert } from '@/hooks/useInputInsert'
 
-interface DbPreset {
-  label: string
-  sql: string
+const STARTER_SQL = 'SELECT channel_id, channel_name, enabled\nFROM channels\nLIMIT 50;'
+
+/** The query a table click runs. Tables with columns the console role cannot
+ *  read get an explicit column list so `SELECT *` doesn't error on the hidden
+ *  ones; everything else stays `SELECT *`. */
+function tablePeek(t: DbTable): string {
+  const cols = t.has_hidden_columns ? t.columns.map(c => c.name).join(', ') : '*'
+  return `SELECT ${cols}\nFROM ${t.name}\nLIMIT 50;`
 }
 
-interface DbPresetGroup {
-  group: string
-  items: DbPreset[]
+/** Compact row estimate. `reltuples` is -1 (never analyzed) or 0 → unknown. */
+function fmtRows(n: number | null): string | null {
+  if (n == null || n <= 0) return null
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`
+  return String(n)
 }
-
-const DB_PRESETS: DbPresetGroup[] = [
-  {
-    group: 'Core',
-    items: [
-      {
-        label: 'Channels',
-        sql: 'SELECT channel_id, channel_name, display_name, enabled, created_at\nFROM channels\nORDER BY enabled DESC, channel_name\nLIMIT 100;',
-      },
-      {
-        label: 'Tokens',
-        sql: 'SELECT user_id, token_type, scopes, created_at, updated_at\nFROM tokens\nORDER BY updated_at DESC\nLIMIT 50;',
-      },
-      {
-        label: 'Users',
-        sql: 'SELECT id, display_name, avatar, created_at\nFROM users\nORDER BY created_at DESC\nLIMIT 50;',
-      },
-      {
-        label: 'Linked Accounts',
-        sql: 'SELECT platform, platform_user_id, username, created_at\nFROM user_linked_accounts\nORDER BY created_at DESC\nLIMIT 50;',
-      },
-    ],
-  },
-  {
-    group: 'Bot Config',
-    items: [
-      {
-        label: 'Commands',
-        sql: 'SELECT channel_id, command_name, command_type, enabled,\n       custom_response, min_role, usage_count\nFROM command_configs\nORDER BY channel_id, command_name\nLIMIT 200;',
-      },
-      {
-        label: 'Cmd Aliases',
-        sql: 'SELECT cc.channel_id, ca.alias, cc.command_name AS target_command, cc.command_type\nFROM command_aliases ca\nJOIN command_configs cc ON ca.command_id = cc.id\nORDER BY cc.channel_id, ca.alias\nLIMIT 100;',
-      },
-      {
-        label: 'Cmd Stats',
-        sql: 'SELECT channel_id, command_name, SUM(usage_count) AS total_uses\nFROM command_stats\nGROUP BY channel_id, command_name\nORDER BY total_uses DESC\nLIMIT 100;',
-      },
-      {
-        label: 'Redemptions',
-        sql: 'SELECT channel_id, action_type, reward_name, enabled\nFROM redemption_configs\nORDER BY channel_id\nLIMIT 100;',
-      },
-      {
-        label: 'Event Configs',
-        sql: 'SELECT channel_id, event_type, enabled\nFROM event_configs\nORDER BY channel_id, event_type\nLIMIT 100;',
-      },
-      {
-        label: 'Timers',
-        sql: 'SELECT channel_id, timer_name AS name, enabled, interval_seconds, message_template\nFROM timers\nORDER BY channel_id\nLIMIT 100;',
-      },
-      {
-        label: 'Triggers',
-        sql: 'SELECT channel_id, trigger_name AS name, enabled, pattern, response, usage_count\nFROM message_triggers\nORDER BY channel_id\nLIMIT 100;',
-      },
-    ],
-  },
-  {
-    group: 'Analytics',
-    items: [
-      {
-        label: 'Sessions',
-        sql: 'SELECT * FROM v_session_summary\nORDER BY session_id DESC\nLIMIT 50;',
-      },
-      {
-        label: 'Stream Events',
-        sql: 'SELECT session_id, channel_id, event_type, username, display_name, occurred_at\nFROM stream_events\nORDER BY occurred_at DESC\nLIMIT 100;',
-      },
-      {
-        label: 'Chatters',
-        sql: 'SELECT channel_id, username, display_name, message_count, watch_seconds, last_message_at\nFROM chatter_stats\nORDER BY message_count DESC\nLIMIT 100;',
-      },
-      {
-        label: 'Viewer Status',
-        sql: 'SELECT channel_id, username, display_name,\n       is_subscribed, sub_tier, is_mod, is_vip, is_banned, follow_since\nFROM viewer_channel_status\nORDER BY channel_id\nLIMIT 100;',
-      },
-      {
-        label: 'Attend. Streaks',
-        sql: 'SELECT channel_id, user_id, streak_count, updated_at\nFROM viewer_attendance_streaks\nORDER BY streak_count DESC\nLIMIT 50;',
-      },
-    ],
-  },
-  {
-    group: 'Features',
-    items: [
-      {
-        label: 'Game Queue',
-        sql: 'SELECT e.*,\n       s.enabled AS queue_open, s.group_size\nFROM game_queue_entries e\nLEFT JOIN game_queue_settings s ON e.channel_id = s.channel_id\nORDER BY e.channel_id, e.redeemed_at\nLIMIT 100;',
-      },
-      {
-        label: 'Video Queue',
-        sql: 'SELECT q.id, q.channel_id, q.video_type, q.video_id, q.title,\n       q.requested_by, q.status, q.created_at,\n       s.enabled AS queue_open, s.max_queue_size, s.max_duration_redemption\nFROM video_queue q\nLEFT JOIN video_queue_settings s ON q.channel_id = s.channel_id\nORDER BY q.created_at DESC\nLIMIT 50;',
-      },
-      {
-        label: 'Crosshairs',
-        sql: 'SELECT id, channel_id, game, name, code, copy_count, created_at\nFROM crosshairs\nORDER BY copy_count DESC\nLIMIT 100;',
-      },
-    ],
-  },
-  {
-    group: 'Activation',
-    items: [
-      {
-        label: 'Codes',
-        sql: 'SELECT platform_user_id, platform, expires_at, used_at\nFROM activation_codes\nORDER BY expires_at DESC\nLIMIT 50;',
-      },
-      {
-        label: 'Requests',
-        sql: 'SELECT ar.id, ar.platform, ar.platform_user_id, u.display_name,\n       ar.status, ar.note, ar.created_at\nFROM activation_requests ar\nLEFT JOIN users u ON ar.user_id = u.id\nORDER BY ar.created_at DESC\nLIMIT 50;',
-      },
-    ],
-  },
-  {
-    group: 'Payments',
-    items: [
-      {
-        label: 'Donations',
-        sql: 'SELECT id, channel_id, amount, platform, status, message, created_at\nFROM donation_orders\nORDER BY created_at DESC\nLIMIT 50;',
-      },
-      {
-        label: 'Pay Configs',
-        sql: 'SELECT * FROM user_payment_configs\nLIMIT 50;',
-      },
-    ],
-  },
-  {
-    group: 'Discord',
-    items: [
-      {
-        label: 'Discord Users',
-        sql: 'SELECT user_id, username, display_name, created_at\nFROM discord_users\nORDER BY created_at DESC\nLIMIT 50;',
-      },
-      {
-        label: 'Birthdays',
-        sql: 'SELECT user_id, month, day, year\nFROM discord_birthdays\nORDER BY month, day\nLIMIT 100;',
-      },
-      {
-        label: 'BD Settings',
-        sql: 'SELECT * FROM discord_birthday_settings\nLIMIT 50;',
-      },
-    ],
-  },
-]
 
 export function DbConsole({
   reloadNonce,
@@ -173,8 +40,7 @@ export function DbConsole({
   reloadNonce?: number
   onLoadingChange?: (loading: boolean) => void
 } = {}) {
-  const [sql, setSql] = useState(DB_PRESETS[0].items[0].sql)
-  const [activePreset, setActivePreset] = useState<string>('Channels')
+  const [sql, setSql] = useState(STARTER_SQL)
   const [result, setResult] = useState<DbQueryResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -182,6 +48,47 @@ export function DbConsole({
   const [sortCol, setSortCol] = useState<number | null>(null)
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
 
+  // ── Schema browser ──────────────────────────────────────────────────────────
+  const [schema, setSchema] = useState<DbTable[] | null>(null)
+  const [schemaError, setSchemaError] = useState<string | null>(null)
+  const [tableFilter, setTableFilter] = useState('')
+  const [expandedTables, setExpandedTables] = useState<Set<string>>(new Set())
+  const [showSchema, setShowSchema] = useState(false) // mobile panel toggle
+  const [showEmpty, setShowEmpty] = useState(false) // include empty relations
+
+  const { inputRef, insertText } = useInputInsert<HTMLTextAreaElement>(sql, setSql)
+
+  useEffect(() => {
+    getDbSchema()
+      .then(setSchema)
+      .catch(e => setSchemaError(e instanceof Error ? e.message : String(e)))
+  }, [])
+
+  const hiddenEmptyCount = useMemo(
+    () => (schema && !showEmpty ? schema.filter(t => t.is_empty).length : 0),
+    [schema, showEmpty]
+  )
+
+  const filteredTables = useMemo(() => {
+    if (!schema) return []
+    const q = tableFilter.trim().toLowerCase()
+    // A search term reveals empty relations too — otherwise they stay hidden.
+    return schema.filter(t => {
+      if (q) return t.name.toLowerCase().includes(q)
+      return showEmpty || !t.is_empty
+    })
+  }, [schema, tableFilter, showEmpty])
+
+  const toggleTable = useCallback((name: string) => {
+    setExpandedTables(prev => {
+      const next = new Set(prev)
+      if (next.has(name)) next.delete(name)
+      else next.add(name)
+      return next
+    })
+  }, [])
+
+  // ── Query execution ─────────────────────────────────────────────────────────
   const sortedRows = useMemo(() => {
     if (!result || sortCol === null) return result?.rows ?? []
     return [...result.rows].sort((a, b) => {
@@ -196,6 +103,21 @@ export function DbConsole({
       return sortDir === 'asc' ? cmp : -cmp
     })
   }, [result, sortCol, sortDir])
+
+  /** Columns whose every non-null value is a number → right-align + tabular-nums. */
+  const numericCols = useMemo(() => {
+    if (!result) return []
+    return result.columns.map((_, j) => {
+      let sawValue = false
+      for (const r of result.rows) {
+        const v = r[j]
+        if (v === null) continue
+        if (typeof v === 'boolean' || v === '' || isNaN(Number(v))) return false
+        sawValue = true
+      }
+      return sawValue
+    })
+  }, [result])
 
   const handleSortClick = useCallback(
     (colIdx: number) => {
@@ -226,13 +148,14 @@ export function DbConsole({
     }
   }
 
-  const handlePreset = (preset: DbPreset) => {
-    setSql(preset.sql)
-    setActivePreset(preset.label)
-    runQuery(preset.sql)
-  }
-
   const handleRun = () => runQuery(sql)
+
+  const runTable = (t: DbTable) => {
+    const q = tablePeek(t)
+    setSql(q)
+    setShowSchema(false)
+    runQuery(q)
+  }
 
   // Parent's shared refresh button bumps `reloadNonce` — re-run whatever is in
   // the editor. Skip the initial render (nothing has been run yet).
@@ -261,7 +184,8 @@ export function DbConsole({
   const statusText = error
     ? error
     : result
-      ? `${result.row_count} ${result.row_count === 1 ? 'row' : 'rows'} · ${result.duration_ms.toFixed(1)}ms`
+      ? `${result.row_count} ${result.row_count === 1 ? 'row' : 'rows'}` +
+        `${result.truncated ? '（已截斷至 500 列）' : ''} · ${result.duration_ms.toFixed(1)}ms`
       : 'SELECT only · 500 row cap · 5s timeout'
 
   const statusColor = error
@@ -270,75 +194,182 @@ export function DbConsole({
       ? 'text-muted-foreground'
       : 'text-muted-foreground/50'
 
+  // ── Schema panel (shared between mobile drawer and desktop sidebar) ──────────
+  const schemaPanel = (
+    <div className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden">
+      <div className="shrink-0 border-b border-border/30 px-2 pb-2 pt-2">
+        <div className="relative">
+          <Icon
+            icon="fa-solid fa-magnifying-glass"
+            size="xs"
+            wrapperClassName="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground/40"
+          />
+          <input
+            value={tableFilter}
+            onChange={e => setTableFilter(e.target.value)}
+            placeholder="搜尋資料表…"
+            spellCheck={false}
+            className="w-full rounded border border-border/40 bg-background py-1.5 pl-7 pr-2 font-mono text-sub outline-none focus:border-border"
+          />
+        </div>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden py-1">
+        {schemaError ? (
+          <p className="px-3 py-2 text-sub text-destructive">{schemaError}</p>
+        ) : !schema ? (
+          <div className="flex items-center gap-2 px-3 py-2 text-muted-foreground">
+            <Spinner className="size-3" />
+            <span className="font-mono text-sub">載入結構…</span>
+          </div>
+        ) : filteredTables.length === 0 ? (
+          <p className="px-3 py-2 text-sub text-muted-foreground/60">沒有符合的資料表</p>
+        ) : (
+          filteredTables.map(t => {
+            const open = expandedTables.has(t.name)
+            const rows = fmtRows(t.approx_rows)
+            return (
+              <div key={t.name} className="min-w-0">
+                <div className="flex min-w-0 items-center">
+                  <button
+                    onClick={() => toggleTable(t.name)}
+                    aria-label={open ? '收合欄位' : '展開欄位'}
+                    className="flex w-9 shrink-0 items-center justify-center self-stretch text-muted-foreground/40 transition-colors hover:text-foreground"
+                  >
+                    <Icon icon={`fa-solid fa-chevron-${open ? 'down' : 'right'}`} size="xs" />
+                  </button>
+                  <button
+                    onClick={() => runTable(t)}
+                    title={tablePeek(t).replace(/\n/g, ' ')}
+                    className="flex min-w-0 flex-1 items-center gap-2 py-1.5 pr-2 text-left text-sub text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    <span className="min-w-0 flex-1 truncate font-mono">{t.name}</span>
+                    {t.kind === 'view' && (
+                      <span className="shrink-0 rounded bg-muted px-1 text-label text-muted-foreground/50">
+                        view
+                      </span>
+                    )}
+                    {rows && (
+                      <span className="shrink-0 tabular-nums text-label text-muted-foreground/30">
+                        {rows}
+                      </span>
+                    )}
+                  </button>
+                </div>
+                {open && (
+                  <ul className="min-w-0 pb-1 pl-10 pr-2">
+                    {t.columns.map(c => (
+                      <li key={c.name} className="min-w-0">
+                        <button
+                          onClick={() => insertText(c.name)}
+                          title={`插入「${c.name}」`}
+                          className="flex w-full min-w-0 items-baseline gap-3 rounded px-1 py-1 text-left font-mono text-sub hover:bg-accent hover:text-accent-foreground"
+                        >
+                          <span className="min-w-0 flex-1 truncate text-foreground/70">
+                            {c.name}
+                          </span>
+                          <span className="shrink-0 truncate text-label text-muted-foreground/40">
+                            {c.type}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )
+          })
+        )}
+      </div>
+      {schema && (hiddenEmptyCount > 0 || showEmpty) && (
+        <button
+          onClick={() => setShowEmpty(s => !s)}
+          className="shrink-0 border-t border-border/30 px-3 py-1.5 text-left text-label text-muted-foreground/50 transition-colors hover:text-foreground"
+        >
+          {showEmpty ? '隱藏空資料表' : `顯示 ${hiddenEmptyCount} 張空資料表`}
+        </button>
+      )}
+    </div>
+  )
+
   return (
     <div className="flex flex-col md:flex-row flex-1 min-h-0 overflow-hidden bg-background">
-      {/* ── Preset sidebar / mobile strip ── */}
-      <div className="flex flex-row overflow-x-auto shrink-0 border-b border-border/30 md:flex-col md:w-44 md:border-b-0 md:border-r md:overflow-x-hidden md:overflow-y-auto md:py-1">
-        {DB_PRESETS.map(group => (
-          <div key={group.group} className="flex flex-row md:flex-col">
-            <div className="hidden md:block px-3 pt-3 pb-1 text-muted-foreground/60 font-medium uppercase tracking-wide text-label select-none">
-              {group.group}
-            </div>
-            {group.items.map(item => (
-              <button
-                key={item.label}
-                onClick={() => handlePreset(item)}
-                className={`whitespace-nowrap md:w-full text-left px-3 py-2 md:py-1 text-label truncate transition-colors ${
-                  activePreset === item.label
-                    ? 'bg-accent text-accent-foreground'
-                    : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
-                }`}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
-        ))}
-      </div>
+      {/* ── Desktop schema sidebar ── */}
+      <div className="hidden md:flex md:w-72 shrink-0 border-r border-border/40">{schemaPanel}</div>
 
       {/* ── Main area ── */}
       <div className="flex flex-col flex-1 min-h-0 min-w-0">
         {/* SQL input */}
-        <div className="flex gap-2 p-3 border-b border-border/30 shrink-0">
+        <div className="flex gap-3 p-3 border-b border-border/30 shrink-0">
           <Textarea
+            ref={inputRef}
             value={sql}
-            onChange={e => {
-              setSql(e.target.value)
-              setActivePreset('')
-            }}
+            onChange={e => setSql(e.target.value)}
             onKeyDown={handleKeyDown}
             rows={4}
-            className="flex-1 font-mono text-label text-foreground bg-muted border-border resize-y min-h-18 max-h-48 focus-visible:ring-1 focus-visible:ring-ring"
+            className="flex-1 font-mono text-sub leading-relaxed resize-y min-h-20 max-h-52"
             placeholder="SELECT ..."
             spellCheck={false}
           />
-          <Button
-            size="sm"
-            onClick={handleRun}
-            disabled={loading || !sql.trim()}
-            className="self-end shrink-0"
-            title="Run (Ctrl+Enter)"
-          >
-            {loading ? <Spinner className="size-3" /> : <Icon icon="fa-solid fa-play" size="xs" />}
-          </Button>
+          <div className="flex flex-col gap-2 self-end shrink-0">
+            <Button
+              size="icon"
+              variant="outline"
+              className="md:hidden"
+              onClick={() => setShowSchema(s => !s)}
+              title="資料表結構"
+            >
+              <Icon icon="fa-solid fa-database" size="sm" />
+            </Button>
+            <Button
+              size="icon"
+              onClick={handleRun}
+              disabled={loading || !sql.trim()}
+              title="執行 (Ctrl+Enter)"
+            >
+              {loading ? (
+                <Spinner className="size-4" />
+              ) : (
+                <Icon icon="fa-solid fa-play" size="sm" />
+              )}
+            </Button>
+          </div>
         </div>
+
+        {/* Mobile schema drawer */}
+        {showSchema && (
+          <div className="md:hidden shrink-0 max-h-64 border-b border-border/30">{schemaPanel}</div>
+        )}
 
         {/* Results */}
         <div className="flex-1 min-h-0 min-w-0 overflow-auto">
-          {result && result.row_count > 0 && (
-            <Table>
+          {error && (
+            <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
+              <Icon
+                icon="fa-solid fa-triangle-exclamation"
+                size="lg"
+                wrapperClassName="text-destructive/70"
+              />
+              <span className="max-w-md font-mono text-sub text-destructive">{error}</span>
+            </div>
+          )}
+          {!error && result && result.columns.length > 0 && (
+            <Table className="w-auto">
               <TableHeader>
                 <TableRow className="hover:bg-transparent border-border">
-                  <TableHead className="sticky top-0 bg-muted text-muted-foreground/50 font-medium w-10 text-right tabular-nums select-none">
+                  <TableHead className="sticky top-0 z-10 w-12 select-none bg-muted pr-3 text-right font-medium tabular-nums text-muted-foreground/50">
                     #
                   </TableHead>
                   {result.columns.map((col, j) => (
                     <TableHead
                       key={col}
-                      className="sticky top-0 bg-muted text-muted-foreground whitespace-pre font-medium cursor-pointer select-none hover:text-foreground transition-colors"
+                      className={`sticky top-0 z-10 cursor-pointer select-none whitespace-pre bg-muted font-medium text-muted-foreground transition-colors hover:text-foreground ${
+                        numericCols[j] ? 'text-right' : ''
+                      }`}
                       onClick={() => handleSortClick(j)}
                     >
-                      <div className="flex items-center gap-1.5">
+                      <div
+                        className={`flex items-center gap-1.5 ${numericCols[j] ? 'justify-end' : ''}`}
+                      >
                         {col}
                         {sortCol === j && (
                           <Icon
@@ -349,15 +380,18 @@ export function DbConsole({
                       </div>
                     </TableHead>
                   ))}
+                  {/* spacer so the header bg + zebra span the full width while
+                      real columns stay content-sized */}
+                  <TableHead className="sticky top-0 z-10 w-full bg-muted p-0" />
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {sortedRows.map((row, i) => (
                   <TableRow
                     key={i}
-                    className="hover:bg-accent border-border/50 font-mono text-label"
+                    className="border-border/40 font-mono text-sub odd:bg-muted/30 hover:bg-accent"
                   >
-                    <TableCell className="text-muted-foreground/40 text-right py-1 tabular-nums select-none">
+                    <TableCell className="select-none py-1.5 pr-3 text-right align-top tabular-nums text-muted-foreground/40">
                       {i + 1}
                     </TableCell>
                     {row.map((cell, j) => {
@@ -366,14 +400,14 @@ export function DbConsole({
                       return (
                         <TableCell
                           key={j}
-                          className={`py-1 ${cell !== null ? 'cursor-pointer' : ''}`}
+                          className={`py-1.5 align-top ${numericCols[j] ? 'text-right tabular-nums' : ''} ${cell !== null ? 'cursor-pointer' : ''}`}
                           onClick={() => cell !== null && setExpandedCell(expanded ? null : key)}
                         >
                           <div
                             className={
                               expanded
-                                ? 'max-h-48 overflow-y-auto whitespace-pre-wrap break-all text-foreground/90 max-w-[60ch] transition-all duration-150'
-                                : `max-h-6 overflow-hidden truncate max-w-[36ch] transition-all duration-150 ${cell === null ? 'text-muted-foreground/50 italic' : 'text-foreground/80'}`
+                                ? 'max-h-48 max-w-[72ch] overflow-y-auto whitespace-pre-wrap break-all text-foreground/90 transition-all duration-150'
+                                : `max-h-6 max-w-[44ch] overflow-hidden truncate transition-all duration-150 ${cell === null ? 'italic text-muted-foreground/50' : 'text-foreground/80'}`
                             }
                             title={!expanded && cell !== null ? String(cell) : undefined}
                           >
@@ -382,28 +416,34 @@ export function DbConsole({
                         </TableCell>
                       )
                     })}
+                    <TableCell className="p-0" />
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           )}
-          {result && result.row_count === 0 && !error && (
-            <div className="flex flex-col items-center justify-center h-full gap-2 text-muted-foreground">
+          {!error && result && result.columns.length > 0 && result.row_count === 0 && (
+            <div className="border-t border-border/40 px-3 py-2 font-mono text-sub text-muted-foreground/60">
+              查詢沒有回傳任何列
+            </div>
+          )}
+          {!error && result && result.columns.length === 0 && (
+            <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
               <Icon icon="fa-solid fa-inbox" size="lg" />
-              <span className="font-mono text-label">No rows returned.</span>
+              <span className="font-mono text-sub">此資料表目前沒有資料</span>
             </div>
           )}
           {!result && !error && !loading && (
             <div className="flex flex-col items-center justify-center h-full gap-2 text-muted-foreground/60">
               <Icon icon="fa-solid fa-terminal" size="lg" />
-              <span className="font-mono text-label">Select a preset or run a query.</span>
+              <span className="font-mono text-sub">選一張資料表，或直接執行查詢。</span>
             </div>
           )}
         </div>
 
         {/* Status bar */}
         <div className="flex items-center px-3 py-1.5 border-t border-border/20 bg-background shrink-0">
-          <span className={`font-mono text-label truncate ${statusColor}`}>{statusText}</span>
+          <span className={`font-mono text-sub truncate ${statusColor}`}>{statusText}</span>
         </div>
       </div>
     </div>
