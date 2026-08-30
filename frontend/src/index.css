@@ -99,6 +99,10 @@
   --text-content: var(--text-content);
   --text-sub: var(--text-sub);
   --text-label: var(--text-label);
+  --text-display: var(--text-display);
+  --text-display--line-height: var(--text-display-line-height);
+  --text-marketing-title: var(--text-marketing-title);
+  --text-marketing-title--line-height: var(--text-marketing-title-line-height);
 
   /* ── Semantic Spacing Utilities ── */
   --spacing-page: var(--spacing-page);
@@ -149,6 +153,10 @@
   --text-content: var(--text-base); /* body: 16px */
   --text-sub: var(--text-sm); /* secondary: 14px */
   --text-label: var(--text-xs); /* badge/timestamp: 12px */
+  --text-display: clamp(2.5rem, 7vw, 4.5rem); /* marketing h1: 40–72px */
+  --text-display-line-height: 1.08;
+  --text-marketing-title: clamp(1.75rem, 4vw, 2.5rem); /* marketing h2: 28–40px */
+  --text-marketing-title-line-height: 1.2;
 
   /* ── Semantic Text Colors ── */
   --text-color-heading: var(--foreground); /* page / section / card titles */
@@ -329,6 +337,11 @@
     font-family: var(--font-mono);
     font-size: 0.875rem; /* 14px base for dashboard UI */
     line-height: 1.5;
+  }
+
+  ::selection {
+    background: color-mix(in oklch, var(--primary) 28%, transparent);
+    color: var(--foreground);
   }
 
   /* ── Focus Visible (a11y) ── */

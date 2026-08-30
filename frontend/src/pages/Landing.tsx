@@ -1,268 +1,409 @@
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
+import { MotionConfig } from 'motion/react'
 
 import avatarSrc from '@/assets/images/Avatar.png'
 import { useTheme } from '@/components/layout/theme-provider'
-import { Icon } from '@/components/primitives'
+import { FadeIn, FadeInZoom, Icon, SlideUp, SlideUpSm } from '@/components/primitives'
 import {
-  FadeIn,
-  FadeInZoom,
-  SlideUp,
-  SlideUpSm,
-  Stagger,
-  StaggerItem,
-} from '@/components/primitives'
-import { Badge, Button } from '@/components/ui'
+  Badge,
+  Button,
+  Card,
+  CardAction,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
-const FEATURES = [
+import overlayStyles from './VideoQueueOverlay.module.css'
+
+const CAPABILITY_GROUPS = [
   {
     icon: 'fa-solid fa-terminal',
-    title: '自訂指令與觸發器',
-    desc: '設好指令，觀眾直接呼叫。支援關鍵字自動回應、使用間隔與開放對象設定，你專心直播就好。',
-  },
-  {
-    icon: 'fa-solid fa-bolt',
-    title: '事件自動回應',
-    desc: '有人追蹤、訂閱、突襲或兌換點數時，自動發出你設定好的訊息，一個都不漏。',
-  },
-  {
-    icon: 'fa-solid fa-clock',
-    title: '定時訊息',
-    desc: '定時廣播頻道資訊或活動公告，沒人聊天時不打擾。',
+    title: '聊天室互動',
+    description: '處理觀眾指令與自動回應。',
+    items: ['自訂指令與觸發器', '事件自動回應', '定時訊息', 'AI 聊天助理'],
   },
   {
     icon: 'fa-solid fa-gamepad',
-    title: '遊戲排隊系統',
-    desc: '管理觀眾排隊上下車、批次叫號，隊伍狀況同步顯示在直播畫面上。',
-    badge: 'OBS',
+    title: '直播流程',
+    description: '管理直播中會反覆使用的工具。',
+    items: ['遊戲排隊', '互動數據分析', '準星收藏', '贊助斗內'],
   },
   {
-    icon: 'fa-solid fa-film',
-    title: '影片排隊系統',
-    desc: '支援 YouTube、Bilibili、Twitch Clip，觀眾投稿後自動排隊依序播放。',
-    badge: 'OBS',
-  },
-  {
-    icon: 'fa-solid fa-chart-line',
-    title: '數據分析',
-    desc: '依時間區間查看聊天量趨勢與最活躍觀眾排名，掌握頻道互動概況。',
-  },
-  {
-    icon: 'fa-solid fa-robot',
-    title: 'AI 聊天助理',
-    desc: '串接 AI 回答觀眾問題，可自訂人設與貼圖權限，聊天室不冷場。',
-  },
-  {
-    icon: 'fa-solid fa-crosshairs',
-    title: '準星收藏',
-    desc: '收藏並展示準星設定，觀眾一鍵複製套用，FPS 實況主必備。',
-  },
-  {
-    icon: 'fa-solid fa-hand-holding-heart',
-    title: '贊助斗內',
-    desc: '提供專屬贊助頁面與金流串接，觀眾可以直接支持你的直播。',
-  },
-]
-
-const DISCORD_FEATURES = [
-  {
-    icon: 'fa-brands fa-instagram',
-    title: '社群連結預覽',
-    desc: '有人分享 Instagram、Bilibili、TikTok、Threads 或 Twitch 連結，Bot 自動顯示預覽。',
-  },
-  {
-    icon: 'fa-solid fa-scroll',
-    title: '伺服器事件日誌',
-    desc: '誰刪了訊息、誰的身份被調整，全部自動記錄在你指定的頻道裡。',
-  },
-  {
-    icon: 'fa-solid fa-stars',
-    title: '娛樂與占卜',
-    desc: '每日運勢、塔羅牌、TFT 戰棋段位查詢、AI 對話，讓伺服器氣氛活絡起來。',
-  },
-  {
-    icon: 'fa-solid fa-gift',
-    title: '生日追蹤 & 抽獎',
-    desc: '成員登錄生日後 Bot 在當天自動送出祝賀，搭配抽獎功能讓活動更熱鬧。',
+    icon: 'fa-brands fa-discord',
+    title: '社群延伸',
+    description: '讓 Discord 在直播之外繼續運作。',
+    items: ['社群連結預覽', '伺服器事件日誌', '生日提醒與抽獎', '娛樂與占卜'],
   },
 ]
 
 const BUILTIN_COMMANDS = [
-  { name: '!hi', desc: '確認機器人目前上線並回應' },
-  { name: '!help', desc: '顯示頻道所有可用指令' },
-  { name: '!ai', desc: '向 AI 提問，例：!ai 今天吃什麼' },
-  { name: '!tft', desc: '查詢聯盟戰棋排名' },
-  { name: '!運勢', desc: '抽取今日運勢' },
-  { name: '!塔羅', desc: '塔羅牌占卜，可指定感情 / 事業 / 財運' },
-  { name: '!開播時間', desc: '查看目前已開播多久' },
-  { name: '!斥責', desc: '宣讀頻道對惡意言論的立場聲明' },
+  { name: '!ai 今天吃什麼', response: '今天適合吃一碗不加班的牛肉麵。' },
+  { name: '!開播時間', response: '這場直播已經進行 2 小時 18 分鐘。' },
 ]
 
-export default function Home() {
-  useDocumentTitle('泥爸')
-  const navigate = useNavigate()
-  const { resolvedTheme, setTheme } = useTheme()
+const QUEUE_ITEMS = [
+  { title: '下班後的深夜歌單', requester: 'momo', source: '聊天', duration: '3:42' },
+  { title: '本週精彩 Twitch Clip', requester: 'yuki', source: '兌換', duration: '0:38' },
+]
+
+const SLIDE_CLASS = 'min-h-full snap-start snap-always'
+
+function FlowItem({ icon, title }: { icon: string; title: string }) {
+  return (
+    <li className="grid grid-cols-1 place-items-center gap-element text-center sm:grid-cols-[2rem_minmax(0,1fr)] sm:justify-items-start sm:text-left">
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+        <Icon icon={icon} size="sm" />
+      </span>
+      <span className="text-label leading-tight font-semibold text-foreground sm:text-sub">
+        {title}
+      </span>
+    </li>
+  )
+}
+
+function OverlayPreview() {
+  const remaining = '03:42'
 
   return (
-    <div className="min-h-screen overflow-x-hidden bg-background text-foreground select-none">
-      {/* Theme toggle */}
-      <Button
-        variant="ghost"
-        size="icon"
-        className="fixed right-4 top-4 z-raised"
-        onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
-      >
-        <Icon
-          icon={resolvedTheme === 'dark' ? 'fa-solid fa-sun' : 'fa-solid fa-moon'}
-          wrapperClassName=""
-        />
-      </Button>
-
-      <div className="mx-auto max-w-screen-2xl">
-        {/* Hero — stacked on mobile/sm, side-by-side from md */}
-        <section className="flex min-h-[60vh] flex-col items-center justify-center gap-8 px-6 py-12 text-center sm:gap-10 sm:px-10 sm:py-20 md:flex-row md:items-center md:gap-16 md:text-left lg:px-16 lg:py-24">
-          {/* Avatar */}
-          <FadeInZoom className="shrink-0">
-            <div className="h-40 w-40 overflow-hidden rounded-full border-4 border-primary shadow-2xl sm:h-48 sm:w-48 lg:h-56 lg:w-56">
-              <img
-                src={avatarSrc}
-                alt="Niibot 頭像"
-                draggable="false"
-                className="h-full w-full object-cover"
-              />
-            </div>
-          </FadeInZoom>
-
-          {/* Text */}
-          <SlideUp delay={0.15} className="flex flex-col items-center md:items-start">
-            <h1 className="text-4xl font-bold tracking-tight sm:text-5xl lg:text-7xl">Niibot</h1>
-            <p className="mt-3 text-section-title text-muted-foreground">
-              Twitch 直播小幫手 | 泥爸
-            </p>
-            <p className="mt-6 max-w-xl text-content leading-relaxed text-muted-foreground sm:text-lg">
-              大家好，我是 Niibot，一名沒有勞基法保障的虛擬社畜。
-            </p>
-            <p className="mt-2 max-w-xl text-content leading-relaxed text-muted-foreground sm:text-lg">
-              我沒有薪水，沒有休假，只有一個使命：
-              <strong className="text-foreground">讓你的聊天室繼續活著。</strong>
-            </p>
-            <Button className="mt-8 h-12 px-10 text-content" onClick={() => navigate('/login')}>
-              開始使用
-            </Button>
-          </SlideUp>
-        </section>
-
-        <div className="border-t border-border" />
-
-        {/* Features */}
-        <section className="px-6 py-10 sm:px-10 sm:py-16 lg:px-16">
-          <SlideUpSm inView className="mb-3 text-page-title font-semibold sm:text-3xl">
-            我能幫你做什麼
-          </SlideUpSm>
-          <FadeIn inView delay={0.1} className="mb-10 text-card-title text-muted-foreground">
-            讓你專心直播，雜事交給我。
-          </FadeIn>
-
-          <Stagger inView className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {FEATURES.map(item => (
-              <StaggerItem
-                key={item.title}
-                className="flex flex-col gap-3 rounded-xl border bg-card p-4 shadow-sm sm:p-6"
+    <div aria-label="OBS Overlay 外觀示意" className="min-w-0">
+      <div className={overlayStyles.overlay} style={{ width: '100%', animation: 'none' }}>
+        <div className={overlayStyles.titleBar} style={{ animation: 'none' }}>
+          <div className={overlayStyles.titleLeft}>
+            <span className={overlayStyles.titleName}>@ momo</span>
+          </div>
+          <div className={overlayStyles.controls} aria-label={`剩餘時間 ${remaining}`}>
+            {Array.from(remaining).map((char, index) => (
+              <span
+                key={`${char}-${index}`}
+                aria-hidden="true"
+                className={char === ':' ? overlayStyles.charBoxNarrow : overlayStyles.charBox}
               >
-                <div className="flex items-center gap-3">
-                  <Icon icon={item.icon} wrapperClassName="size-5 text-primary shrink-0" />
-                  <span className="text-content font-semibold text-foreground">{item.title}</span>
-                  {item.badge && (
-                    <Badge variant="secondary" className="ml-auto text-label">
-                      {item.badge}
-                    </Badge>
-                  )}
-                </div>
-                <p className="text-sub leading-relaxed text-muted-foreground">{item.desc}</p>
-              </StaggerItem>
+                {char}
+              </span>
             ))}
-          </Stagger>
-        </section>
-
-        <div className="border-t border-border" />
-
-        {/* Commands + usage + CTA */}
-        <section className="space-y-10 px-6 py-10 sm:px-10 sm:py-14 lg:px-16">
-          <div>
-            <SlideUpSm inView className="mb-2 text-section-title font-semibold sm:text-2xl">
-              內建指令
-            </SlideUpSm>
-            <FadeIn inView delay={0.1} className="mb-6 text-content text-muted-foreground">
-              開箱即用，無需設定。
-            </FadeIn>
-
-            <Stagger
-              inView
-              staggerChildren={0.05}
-              className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"
-            >
-              {BUILTIN_COMMANDS.map(cmd => (
-                <StaggerItem
-                  key={cmd.name}
-                  className="flex flex-col gap-1.5 rounded-xl border bg-card px-4 py-3"
-                >
-                  <span className="font-mono text-sub font-semibold text-primary">{cmd.name}</span>
-                  <span className="text-label leading-relaxed text-muted-foreground">
-                    {cmd.desc}
-                  </span>
-                </StaggerItem>
-              ))}
-            </Stagger>
           </div>
-        </section>
-
-        <div className="border-t border-border" />
-
-        {/* Discord */}
-        <section className="px-6 py-10 sm:px-10 sm:py-16 lg:px-16">
-          <div className="mb-3 flex items-center gap-3">
-            <SlideUpSm inView className="text-page-title font-semibold sm:text-3xl">
-              Discord 也顧到了
-            </SlideUpSm>
-            <FadeIn inView delay={0.1}>
-              <Icon icon="fa-brands fa-discord" wrapperClassName="size-6 text-discord" />
-            </FadeIn>
+        </div>
+        <div className={overlayStyles.videoPanel}>
+          <div className={overlayStyles.progressBar}>
+            <div className={overlayStyles.progressFill} style={{ width: '38%' }} />
           </div>
-          <FadeIn inView delay={0.15} className="mb-10 text-card-title text-muted-foreground">
-            同一套系統，同時服務你的 Discord 伺服器。
-          </FadeIn>
-
-          <Stagger inView className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {DISCORD_FEATURES.map(item => (
-              <StaggerItem
-                key={item.title}
-                className="flex flex-col gap-3 rounded-xl border bg-card p-4 shadow-sm sm:p-6"
-              >
-                <div className="flex items-center gap-3">
-                  <Icon icon={item.icon} wrapperClassName="size-5 text-discord shrink-0" />
-                  <span className="text-content font-semibold text-foreground">{item.title}</span>
-                </div>
-                <p className="text-sub leading-relaxed text-muted-foreground">{item.desc}</p>
-              </StaggerItem>
-            ))}
-          </Stagger>
-        </section>
-
-        {/* Footer */}
-        <div className="border-t border-border px-6 py-4 sm:px-10 sm:py-6 lg:px-16">
-          <div className="flex flex-wrap items-center justify-between gap-4 text-label text-muted-foreground">
-            <span>© {new Date().getFullYear()} Niibot</span>
-            <div className="flex gap-4">
-              <Link to="/terms" className="hover:text-foreground hover:underline">
-                服務條款
-              </Link>
-              <Link to="/privacy" className="hover:text-foreground hover:underline">
-                隱私權政策
-              </Link>
-            </div>
-          </div>
+          <img
+            src="/images/valorant_map.jpg"
+            alt="OBS Overlay 影片內容示意"
+            className={`${overlayStyles.videoContainer} h-full w-full object-cover`}
+          />
+          <div className={overlayStyles.sunkenOverlay} />
         </div>
       </div>
     </div>
+  )
+}
+
+function VideoQueueSlide() {
+  return (
+    <section
+      id="video-queue"
+      data-testid="landing-slide"
+      aria-label="Video Queue 功能展示"
+      className={`${SLIDE_CLASS} flex items-center border-t`}
+    >
+      <div className="mx-auto w-full max-w-6xl px-page py-card sm:py-empty lg:px-page-lg">
+        <SlideUpSm
+          inView
+          className="grid gap-section md:grid-cols-[minmax(0,1fr)_auto] md:items-end"
+        >
+          <div>
+            <h2 className="text-marketing-title font-semibold tracking-tight">Video Queue</h2>
+            <p className="mt-element max-w-[65ch] text-content leading-relaxed text-muted-foreground">
+              觀眾可透過聊天連結、忠誠點數兌換或由主播手動加入影片。Dashboard 負責排序與限制，OBS
+              overlay 依序播放。
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-element md:justify-end">
+            <Badge variant="secondary">YouTube</Badge>
+            <Badge variant="secondary">Bilibili</Badge>
+            <Badge variant="secondary">Twitch Clip</Badge>
+          </div>
+        </SlideUpSm>
+
+        <SlideUpSm inView delay={0.05} className="mt-card">
+          <ol className="grid grid-cols-3 gap-element border-y py-section sm:gap-card">
+            <FlowItem icon="fa-solid fa-bolt" title="觀眾投稿" />
+            <FlowItem icon="fa-solid fa-sliders" title="Dashboard 管理" />
+            <FlowItem icon="fa-solid fa-display" title="OBS 播放" />
+          </ol>
+        </SlideUpSm>
+
+        <FadeIn inView delay={0.1} className="mt-card">
+          <Card className="overflow-hidden py-0 shadow-lg">
+            <CardHeader className="items-center border-b py-section">
+              <CardTitle className="flex min-w-0 items-center gap-element">
+                等待佇列
+                <Badge variant="outline" className="h-5 py-0 leading-none">
+                  示意畫面
+                </Badge>
+              </CardTitle>
+              <CardAction className="self-center">
+                <span className="text-label leading-none text-muted-foreground">
+                  待播 2 首 · 4:20
+                </span>
+              </CardAction>
+            </CardHeader>
+            <CardContent
+              data-testid="video-queue-layout"
+              className="grid gap-0 p-0 lg:grid-cols-[minmax(0,1.2fr)_minmax(22rem,0.8fr)]"
+            >
+              <div aria-label="等待佇列示意" className="min-w-0 px-card">
+                <div className="divide-y">
+                  {QUEUE_ITEMS.map((item, index) => (
+                    <div
+                      key={item.title}
+                      className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-section py-section"
+                    >
+                      <Badge
+                        variant={index === 0 ? 'default' : 'outline'}
+                        className="size-6 p-0 leading-none tabular-nums"
+                      >
+                        {index + 1}
+                      </Badge>
+                      <div className="min-w-0">
+                        <p className="truncate text-content font-medium">{item.title}</p>
+                        <p className="mt-1 truncate text-label text-muted-foreground">
+                          {item.requester} · {item.source}
+                        </p>
+                      </div>
+                      <span className="text-sub tabular-nums text-muted-foreground">
+                        {item.duration}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-section border-t bg-muted/40 p-section lg:grid-cols-1 lg:border-t-0 lg:border-l lg:p-card">
+                <OverlayPreview />
+                <div className="min-w-0 lg:mt-section">
+                  <p className="text-label text-muted-foreground">正在播放</p>
+                  <p className="mt-1 truncate text-sub font-semibold">深夜聊天室精華</p>
+                  <p className="mt-1 text-label text-muted-foreground">momo · 03:42</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </FadeIn>
+      </div>
+    </section>
+  )
+}
+
+function ChatSlide() {
+  return (
+    <section data-testid="landing-slide" className={`${SLIDE_CLASS} flex items-center border-t`}>
+      <div className="mx-auto grid w-full max-w-6xl gap-card px-page py-card sm:py-empty lg:grid-cols-2 lg:items-center lg:gap-empty lg:px-page-lg">
+        <SlideUpSm inView>
+          <h2 className="text-marketing-title font-semibold tracking-tight">聊天室互動</h2>
+          <p className="mt-element max-w-[60ch] text-content leading-relaxed text-muted-foreground">
+            設定自訂指令、關鍵字與事件回應。追蹤、訂閱、突襲或點數兌換發生時，Bot 依照設定內容回覆。
+          </p>
+          <div className="mt-section flex flex-wrap gap-element">
+            <Badge variant="outline">使用間隔</Badge>
+            <Badge variant="outline">開放對象</Badge>
+            <Badge variant="outline">事件模板</Badge>
+            <Badge variant="outline">AI 人設</Badge>
+          </div>
+        </SlideUpSm>
+
+        <FadeIn inView delay={0.1}>
+          <Card className="overflow-hidden py-0 shadow-md">
+            <CardHeader className="items-center border-b py-section">
+              <CardTitle className="flex min-w-0 items-center gap-element">
+                <Icon icon="fa-solid fa-terminal" size="sm" wrapperClassName="text-primary" />
+                回應示意
+              </CardTitle>
+              <CardAction className="self-center">
+                <Badge variant="secondary" className="h-5 py-0 leading-none">
+                  即時
+                </Badge>
+              </CardAction>
+            </CardHeader>
+            <CardContent className="divide-y p-0">
+              {BUILTIN_COMMANDS.map(command => (
+                <div
+                  key={command.name}
+                  className="grid items-baseline gap-element p-card sm:grid-cols-[8.5rem_1fr]"
+                >
+                  <code className="text-sub leading-relaxed font-semibold text-primary">
+                    {command.name}
+                  </code>
+                  <p className="text-sub leading-relaxed text-muted-foreground">
+                    {command.response}
+                  </p>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        </FadeIn>
+      </div>
+    </section>
+  )
+}
+
+function OtherFeaturesSlide() {
+  return (
+    <section data-testid="landing-slide" className={`${SLIDE_CLASS} flex flex-col border-t`}>
+      <div className="mx-auto flex w-full max-w-6xl flex-1 items-center px-page py-card sm:py-empty lg:px-page-lg">
+        <div className="w-full">
+          <SlideUpSm inView>
+            <h2 className="text-marketing-title font-semibold tracking-tight">其他功能</h2>
+            <p className="mt-element max-w-[60ch] text-content leading-relaxed text-muted-foreground">
+              依頻道需求啟用，不需要一次設定全部。
+            </p>
+          </SlideUpSm>
+
+          <FadeIn inView delay={0.08} className="mt-card grid border-y lg:grid-cols-3">
+            {CAPABILITY_GROUPS.map((group, index) => (
+              <article
+                key={group.title}
+                className={`py-card lg:px-card ${index > 0 ? 'border-t lg:border-t-0 lg:border-l' : ''}`}
+              >
+                <div className="flex items-center gap-section">
+                  <Icon
+                    icon={group.icon}
+                    size="xl"
+                    wrapperClassName={group.title === '社群延伸' ? 'text-discord' : 'text-primary'}
+                  />
+                  <div>
+                    <h3 className="text-section-title font-semibold">{group.title}</h3>
+                    <p className="mt-1 text-sub text-muted-foreground">{group.description}</p>
+                  </div>
+                </div>
+                <ul className="mt-section grid grid-cols-2 gap-x-section gap-y-element lg:grid-cols-1">
+                  {group.items.map(item => (
+                    <li key={item} className="flex items-center gap-element text-sub">
+                      <span
+                        className="size-1.5 shrink-0 rounded-full bg-primary"
+                        aria-hidden="true"
+                      />
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </article>
+            ))}
+          </FadeIn>
+        </div>
+      </div>
+
+      <footer className="border-t">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-section px-page py-section text-label text-muted-foreground lg:px-page-lg">
+          <span>© {new Date().getFullYear()} Niibot</span>
+          <div className="flex gap-card">
+            <Link to="/terms" className="underline-offset-4 hover:text-foreground hover:underline">
+              服務條款
+            </Link>
+            <Link
+              to="/privacy"
+              className="underline-offset-4 hover:text-foreground hover:underline"
+            >
+              隱私權政策
+            </Link>
+          </div>
+        </div>
+      </footer>
+    </section>
+  )
+}
+
+export default function Landing() {
+  useDocumentTitle('泥爸')
+  const { resolvedTheme, setTheme } = useTheme()
+  const nextTheme = resolvedTheme === 'dark' ? 'light' : 'dark'
+
+  return (
+    <MotionConfig reducedMotion="user">
+      <div className="flex h-svh flex-col overflow-hidden bg-background text-content text-foreground">
+        <header className="z-sticky shrink-0 border-b bg-background">
+          <nav
+            aria-label="主要導覽"
+            className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-section px-page lg:px-page-lg"
+          >
+            <Link
+              to="/"
+              className="flex min-w-0 items-center gap-element rounded-md focus-visible:ring-2"
+            >
+              <img
+                src={avatarSrc}
+                alt=""
+                draggable="false"
+                className="size-8 rounded-full border object-cover"
+              />
+              <span className="truncate text-content font-semibold">Niibot</span>
+            </Link>
+            <div className="flex items-center gap-element">
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={`切換至${nextTheme === 'light' ? '淺色' : '深色'}主題`}
+                onClick={() => setTheme(nextTheme)}
+              >
+                <Icon icon={resolvedTheme === 'dark' ? 'fa-solid fa-sun' : 'fa-solid fa-moon'} />
+              </Button>
+              <Button asChild>
+                <Link to="/login">
+                  開始使用
+                  <Icon icon="fa-solid fa-arrow-right" size="sm" />
+                </Link>
+              </Button>
+            </div>
+          </nav>
+        </header>
+
+        <main
+          data-testid="landing-deck"
+          className="min-h-0 flex-1 snap-y snap-mandatory overflow-y-auto overscroll-y-contain"
+        >
+          <section data-testid="landing-slide" className={`${SLIDE_CLASS} flex items-center`}>
+            <div className="mx-auto grid w-full max-w-6xl items-center gap-card px-page py-card md:grid-cols-[minmax(0,1fr)_auto] lg:gap-empty lg:px-page-lg">
+              <SlideUp className="max-w-2xl">
+                <h1 className="text-display font-bold tracking-tight">Niibot</h1>
+                <p className="mt-element text-section-title text-muted-foreground">
+                  Twitch 直播小幫手｜泥爸
+                </p>
+                <p className="mt-card max-w-[46ch] text-content leading-relaxed text-muted-foreground sm:text-card-title">
+                  <span className="block">沒有勞基法保障的虛擬社畜。</span>
+                  <span className="mt-element block">沒有薪水，沒有休假，只有一個使命：</span>
+                  <strong className="mt-1 block font-semibold text-foreground">
+                    讓你的聊天室繼續活著。
+                  </strong>
+                </p>
+                <Button asChild size="lg" className="mt-card">
+                  <Link to="/login">
+                    開始使用
+                    <Icon icon="fa-solid fa-arrow-right" size="sm" />
+                  </Link>
+                </Button>
+              </SlideUp>
+
+              <FadeInZoom delay={0.15} className="mx-auto md:mx-0">
+                <div className="size-40 overflow-hidden rounded-full border-4 border-primary shadow-lg sm:size-52 lg:size-72">
+                  <img
+                    src={avatarSrc}
+                    alt="Niibot 泥爸頭像"
+                    draggable="false"
+                    className="h-full w-full object-cover"
+                  />
+                </div>
+              </FadeInZoom>
+            </div>
+          </section>
+
+          <VideoQueueSlide />
+          <ChatSlide />
+          <OtherFeaturesSlide />
+        </main>
+      </div>
+    </MotionConfig>
   )
 }
