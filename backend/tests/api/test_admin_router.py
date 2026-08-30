@@ -520,16 +520,89 @@ class TestRunDbQuery:
         )
         assert r.status_code == 400
 
-    def test_limit_injected_when_missing(self):
-        """Queries without LIMIT should still succeed (router injects one)."""
+    def test_query_wrapped_in_subquery_with_cap(self):
+        """The router wraps the query in `SELECT * FROM (...) LIMIT cap+1`."""
         pool, conn = self._make_conn(rows=[])
         r = _make_client(mock_pool=pool).post(
             "/api/admin/db/query", json={"sql": "SELECT id FROM channels"}
         )
         assert r.status_code == 200
+        sent = conn.fetch.call_args[0][0]
+        assert sent.startswith("SELECT * FROM (")
+        assert "LIMIT 501" in sent
+
+    def test_sets_console_role_and_statement_timeout(self):
+        pool, conn = self._make_conn(rows=[])
+        _make_client(mock_pool=pool).post("/api/admin/db/query", json={"sql": "SELECT 1"})
+        executed = [c.args[0] for c in conn.execute.call_args_list]
+        assert any("SET LOCAL ROLE niibot_db_console" in s for s in executed)
+        assert any("statement_timeout" in s for s in executed)
+
+    def test_multi_statement_rejected(self):
+        r = _make_client().post("/api/admin/db/query", json={"sql": "SELECT 1; DROP TABLE users"})
+        assert r.status_code == 400
+
+    def test_trailing_semicolon_is_allowed(self):
+        pool, conn = self._make_conn(rows=[])
+        r = _make_client(mock_pool=pool).post(
+            "/api/admin/db/query", json={"sql": "SELECT 1 FROM channels;  "}
+        )
+        assert r.status_code == 200
+
+    def test_console_role_missing_returns_clear_error(self):
+        import asyncpg
+
+        pool, conn = self._make_conn(rows=[])
+
+        def _execute(stmt, *a, **kw):
+            if "SET LOCAL ROLE" in stmt:
+                raise asyncpg.exceptions.UndefinedObjectError("role does not exist")
+            return "SET"
+
+        conn.execute.side_effect = _execute
+        r = _make_client(mock_pool=pool).post("/api/admin/db/query", json={"sql": "SELECT 1"})
+        assert r.status_code == 400
+        assert r.json()["error"]["code"] == "ADMIN.DB_CONSOLE_UNAVAILABLE"
+
+    def test_insufficient_privilege_returns_protected_message(self):
+        import asyncpg
+
+        pool, conn = self._make_conn()
+        conn.fetch.side_effect = asyncpg.exceptions.InsufficientPrivilegeError(
+            "permission denied for table tokens"
+        )
+        r = _make_client(mock_pool=pool).post(
+            "/api/admin/db/query", json={"sql": "SELECT token FROM tokens"}
+        )
+        assert r.status_code == 400
+        assert "permission denied" not in r.text
+
+    def test_truncated_when_over_cap(self):
+        rows = []
+        for _ in range(501):
+            mr = MagicMock()
+            mr.keys.return_value = ["id"]
+            mr.__iter__ = MagicMock(return_value=iter([1]))
+            rows.append(mr)
+        pool, conn = self._make_conn()
+        conn.fetch.return_value = rows
+        r = _make_client(mock_pool=pool).post(
+            "/api/admin/db/query", json={"sql": "SELECT id FROM stream_events"}
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert data["truncated"] is True
+        assert data["row_count"] == 500
+
+    def test_query_is_audit_logged(self, caplog):
+        import logging
+
+        pool, conn = self._make_conn(rows=[])
+        with caplog.at_level(logging.INFO):
+            _make_client(mock_pool=pool).post("/api/admin/db/query", json={"sql": "SELECT 1"})
+        assert "db_console_query" in caplog.text
 
     def test_timeout_returns_408(self):
-
         pool, conn = self._make_conn()
         conn.fetch.side_effect = TimeoutError("query timed out")
         r = _make_client(mock_pool=pool).post(
@@ -537,6 +610,125 @@ class TestRunDbQuery:
             json={"sql": "SELECT id FROM channels LIMIT 10"},
         )
         assert r.status_code == 408
+
+    def test_query_canceled_returns_408(self):
+        import asyncpg
+
+        pool, conn = self._make_conn()
+        conn.fetch.side_effect = asyncpg.exceptions.QueryCanceledError("canceled")
+        r = _make_client(mock_pool=pool).post(
+            "/api/admin/db/query", json={"sql": "SELECT pg_sleep(10)"}
+        )
+        assert r.status_code == 408
+
+
+# ── GET /api/admin/db/schema ────────────────────────────────────────────────
+
+
+class TestDbSchema:
+    def _make_pool_with_rows(self, rows, probe=None):
+        conn = AsyncMock()
+        # 1st fetch = catalog rows; 2nd fetch = the batched EXISTS probe.
+        conn.fetch.side_effect = [rows, probe if probe is not None else []]
+        mock_tx = MagicMock()
+        mock_tx.__aenter__ = AsyncMock(return_value=None)
+        mock_tx.__aexit__ = AsyncMock(return_value=None)
+        conn.transaction = MagicMock(return_value=mock_tx)
+        pool = MagicMock()
+        pool.acquire.return_value.__aenter__ = AsyncMock(return_value=conn)
+        pool.acquire.return_value.__aexit__ = AsyncMock(return_value=None)
+        return pool
+
+    def test_non_owner_gets_403(self):
+        r = _make_client(channel_id="not-the-owner").get("/api/admin/db/schema")
+        assert r.status_code == 403
+
+    @staticmethod
+    def _col(table, relkind, name, dtype, approx, can_select=True):
+        return {
+            "table_name": table,
+            "relkind": relkind,
+            "column_name": name,
+            "data_type": dtype,
+            "approx_rows": approx,
+            "can_select": can_select,
+        }
+
+    def test_groups_columns_by_table(self):
+        rows = [
+            self._col("channels", "r", "channel_id", "text", 12),
+            self._col("channels", "r", "enabled", "boolean", 12),
+            self._col("v_session_summary", "v", "session_id", "integer", None),
+        ]
+        pool = self._make_pool_with_rows(rows)
+        r = _make_client(mock_pool=pool).get("/api/admin/db/schema")
+        assert r.status_code == 200
+        data = r.json()
+        assert [t["name"] for t in data] == ["channels", "v_session_summary"]
+        assert data[0]["kind"] == "table"
+        assert data[0]["approx_rows"] == 12
+        assert len(data[0]["columns"]) == 2
+        assert data[0]["has_hidden_columns"] is False
+        assert data[1]["kind"] == "view"
+
+    def test_hidden_columns_are_dropped_and_flagged(self):
+        rows = [
+            self._col("tokens", "r", "user_id", "text", 9),
+            self._col("tokens", "r", "token", "text", 9, can_select=False),
+            self._col("tokens", "r", "refresh", "text", 9, can_select=False),
+        ]
+        pool = self._make_pool_with_rows(rows)
+        r = _make_client(mock_pool=pool).get("/api/admin/db/schema")
+        data = r.json()
+        assert len(data) == 1
+        assert [c["name"] for c in data[0]["columns"]] == ["user_id"]
+        assert data[0]["has_hidden_columns"] is True
+
+    def test_fully_protected_table_is_omitted(self):
+        rows = [self._col("secret", "r", "k", "text", 1, can_select=False)]
+        pool = self._make_pool_with_rows(rows)
+        r = _make_client(mock_pool=pool).get("/api/admin/db/schema")
+        assert r.json() == []
+
+    def test_empty_tables_flagged_from_probe(self):
+        rows = [
+            self._col("channels", "r", "id", "text", 8),
+            self._col("game_queue_entries", "r", "id", "text", 0),
+        ]
+        probe = [{"idx": 0, "has_rows": True}, {"idx": 1, "has_rows": False}]
+        pool = self._make_pool_with_rows(rows, probe=probe)
+        data = _make_client(mock_pool=pool).get("/api/admin/db/schema").json()
+        by = {t["name"]: t for t in data}
+        assert by["channels"]["is_empty"] is False
+        assert by["game_queue_entries"]["is_empty"] is True
+
+    def test_empty_probe_failure_is_non_fatal(self):
+        import asyncpg
+
+        rows = [self._col("channels", "r", "id", "text", 8)]
+        conn = AsyncMock()
+        conn.fetch.side_effect = [rows, asyncpg.exceptions.QueryCanceledError("slow")]
+        mock_tx = MagicMock()
+        mock_tx.__aenter__ = AsyncMock(return_value=None)
+        mock_tx.__aexit__ = AsyncMock(return_value=None)
+        conn.transaction = MagicMock(return_value=mock_tx)
+        pool = MagicMock()
+        pool.acquire.return_value.__aenter__ = AsyncMock(return_value=conn)
+        pool.acquire.return_value.__aexit__ = AsyncMock(return_value=None)
+        r = _make_client(mock_pool=pool).get("/api/admin/db/schema")
+        assert r.status_code == 200
+        assert r.json()[0]["is_empty"] is False
+
+    def test_missing_console_role_returns_clear_error(self):
+        import asyncpg
+
+        conn = AsyncMock()
+        conn.fetch.side_effect = asyncpg.exceptions.UndefinedObjectError("no role")
+        pool = MagicMock()
+        pool.acquire.return_value.__aenter__ = AsyncMock(return_value=conn)
+        pool.acquire.return_value.__aexit__ = AsyncMock(return_value=None)
+        r = _make_client(mock_pool=pool).get("/api/admin/db/schema")
+        assert r.status_code == 400
 
 
 # ── _parse_docker_stream ────────────────────────────────────────────────────
