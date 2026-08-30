@@ -114,11 +114,25 @@ async def test_followage_disabled_command_is_silent(comp):
 
 async def test_subage_reports_tier(comp):
     ctx = _make_ctx()
+    ctx.chatter.badges = [MagicMock(set_id="subscriber", info="14")]
     comp._helix_get.return_value = _resp(200, {"data": [{"tier": "2000", "is_gift": False}]})
     with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
         await _call("subage", comp, ctx)
     comp.bot.channels.get_token.assert_awaited_with("chan-1")
-    assert "T2" in comp._ctx_reply.await_args[0][1]
+    msg = comp._ctx_reply.await_args[0][1]
+    assert "累積訂閱 14 個月" in msg
+    assert "T2" in msg
+
+
+async def test_subage_keeps_status_without_a_month_badge(comp):
+    ctx = _make_ctx()
+    ctx.chatter.badges = []
+    comp._helix_get.return_value = _resp(200, {"data": [{"tier": "1000", "is_gift": True}]})
+    with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+        await _call("subage", comp, ctx)
+    msg = comp._ctx_reply.await_args[0][1]
+    assert "T1" in msg and "禮物訂閱" in msg
+    assert "0 個月" not in msg
 
 
 async def test_subage_401_triggers_reauth(comp):

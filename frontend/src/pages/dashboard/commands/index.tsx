@@ -42,7 +42,7 @@ export default function Commands() {
   const [error, setError] = useState<string | null>(null)
   const [editing, setEditing] = useState<EditingState | null>(null)
 
-  const builtinSort = useSortState<SortKey>('command_name')
+  const builtinSort = useSortState<SortKey>('catalog_order')
   const customSort = useSortState<CustomSortKey>('kind')
 
   const { toggle: toggleCommand } = useOptimisticToggle<CommandConfig>({

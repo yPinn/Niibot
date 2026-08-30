@@ -51,6 +51,19 @@ def _humanise_since(start: datetime) -> str:
     return " ".join(parts)
 
 
+def _subscriber_months(ctx: commands.Context) -> int | None:
+    """Read Twitch's cumulative subscription months from the invoking chat badge."""
+    for badge in getattr(ctx.chatter, "badges", []):
+        if badge.set_id != "subscriber":
+            continue
+        try:
+            months = int(badge.info)
+        except (TypeError, ValueError):
+            return None
+        return months if months > 0 else None
+    return None
+
+
 class ViewerStatsComponent(BotComponent):
     """Follow / subscription / bits lookup commands."""
 
@@ -161,7 +174,7 @@ class ViewerStatsComponent(BotComponent):
 
     @commands.command(name="subage", aliases=["訂閱資訊"])
     async def subage(self, ctx: commands.Context) -> None:
-        """查詢自己在這個頻道的訂閱狀態。用法: !subage / !訂閱資訊"""
+        """查詢自己的累積訂閱月數與目前方案。用法: !subage / !訂閱資訊"""
         if not await self._guard(ctx, "subage"):
             return
 
@@ -204,7 +217,9 @@ class ViewerStatsComponent(BotComponent):
             sub = data[0]
             tier = _TIER_NAMES.get(sub.get("tier", ""), sub.get("tier", "?"))
             gifted = "（禮物訂閱）" if sub.get("is_gift") else ""
-            await self._ctx_reply(ctx, f"@{name} 目前是 {tier} 訂閱者{gifted}")
+            months = _subscriber_months(ctx)
+            month_text = f"累積訂閱 {months} 個月，" if months is not None else ""
+            await self._ctx_reply(ctx, f"@{name} {month_text}目前是 {tier} 訂閱者{gifted}")
         await self._record(ctx, "subage")
 
     # ------------------------------------------------------------------

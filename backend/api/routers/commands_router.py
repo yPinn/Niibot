@@ -49,6 +49,13 @@ class CommandConfigResponse(BaseModel):
     aliases: str | None = None
     usage_count: int
     description: str = ""
+    detail: str = ""
+    usage: str = ""
+    preview_input: str = ""
+    preview_output: str = ""
+    audience: str | None = None
+    public_visible: bool = False
+    display_order: int = 0
     category_label: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
