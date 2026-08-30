@@ -2,7 +2,9 @@
 
 > Covers migrations 076–084 and the IdentityService / AdmissionService /
 > TenantService introduced in the 076–083 release; 084 wired admission into
-> `channels.enabled` (see "Admission gates channel monitoring" below).
+> `channels.enabled` (see "Admission gates channel monitoring" below). Planned
+> Bot credential and collaborator extensions are specified separately in
+> [bot-accounts-and-collaboration.md](bot-accounts-and-collaboration.md).
 
 This document is the source of truth for how identity, admission (approval to
 use the bot), and tenancy (per-channel isolation) work in Niibot. Read this
@@ -283,8 +285,11 @@ keep in sync.
   is allowed; rebuilding the table from it on every boot is not.
 - **No tenant-level billing / metering.** No payment flow exists; revisit when
   it does.
-- **No automatic mod delegation.** `channel_members` is schema-ready but no UI
-  exists yet. Adding the UI does NOT require schema changes.
+- **No automatic mod delegation in the current release.** The target design is an
+  Owner-only, default-off Twitch MOD sync. It requires a grant-source table,
+  collaborator-only login, expiry/reconcile semantics and UI; adding only a
+  `channel_members` row is insufficient. See
+  [bot-accounts-and-collaboration.md](bot-accounts-and-collaboration.md).
 - **No RLS enabled by default.** Policies exist but `ALTER TABLE ... ENABLE
 ROW LEVEL SECURITY` is left to the operator after they confirm
   `TenantService.bind_session` is wired into every request handler.
@@ -302,3 +307,5 @@ ROW LEVEL SECURITY` is left to the operator after they confirm
   releases on the new model.
 - Add the "Link Discord" account-linking flow (the `IdentityService.find_or_link`
   `link_to_user_id` argument is already wired).
+- Implement the separately planned Owner／MOD Dashboard and Bot account registry;
+  until then `channel_members.manager` remains schema-ready only.

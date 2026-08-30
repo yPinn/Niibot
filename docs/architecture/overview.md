@@ -4,6 +4,8 @@ Niibot 是多平台直播整合系統，由三個 Python 服務 + 一個前端�
 另有一個選用的 Threads 抓取 sidecar（scrapling）。本文串起全貌；子系統細節見各自文件。
 
 - 多租戶 / 入會狀態機：[admission-and-tenancy.md](admission-and-tenancy.md)
+- Bot 帳號 / Owner／MOD 協作（目標架構）：[bot-accounts-and-collaboration.md](bot-accounts-and-collaboration.md)
+- 出席 / 簽到 / 社群 Overlay：[attendance-and-community-overlays.md](attendance-and-community-overlays.md)
 - 後端結構：[backend/README.md](../../backend/README.md) · API 端點：[api-endpoints.md](../reference/api-endpoints.md)
 - 版本規範：[versioning.md](../reference/versioning.md)
 
@@ -59,7 +61,8 @@ JS 算圖的 Threads 內容。不共用 `backend/shared/`、不在 `docker-compo
 - **AdmissionService** — `memberships.status` 狀態機 + `membership_events` 稽核軌跡
 - **TenantService** — 頻道擁有權 + per-channel RBAC（`channel_members`）
 
-channel-scoped 資料表一律以 `channel_id` 過濾；migration 083 的 Postgres RLS 為第二道防線。
+channel-scoped 資料表一律以 `channel_id` 過濾；migration 083 已定義 Postgres RLS policies，
+但目前尚未 enable，也尚未在所有 repository transaction 綁定 tenant GUC，因此現行第二道防線仍在 rollout 中。
 完整設計見 [admission-and-tenancy.md](admission-and-tenancy.md)。
 
 ---
@@ -155,6 +158,7 @@ OpenRouter 的 free-tier 備援名單來自 `backend/data/free_models.json`，�
 ## 延伸閱讀
 
 - 多租戶 / Admission：[admission-and-tenancy.md](admission-and-tenancy.md)
+- 出席 / 簽到 / 社群 Overlay：[attendance-and-community-overlays.md](attendance-and-community-overlays.md)
 - 後端結構：[backend/README.md](../../backend/README.md)
 - API 端點：[api-endpoints.md](../reference/api-endpoints.md)
 - 靜態資料 / AI 知識包：[static-data.md](../reference/static-data.md)
