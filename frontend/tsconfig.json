@@ -6,7 +6,6 @@
     { "path": "./tsconfig.functions.json" }
   ],
   "compilerOptions": {
-    "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"]
     }
