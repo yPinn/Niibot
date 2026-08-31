@@ -12,8 +12,6 @@ from utils.substitution import substitute_variables
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
-FRONTEND_URL = get_settings().frontend_url.rstrip("/")
-
 # 依語氣由輕到重排列，slot = min(int(rank / total * 5), 4)
 _RANK_TEMPLATES = [
     "每當點名你都在！能在 {total} 人中排到【第 {rank} 名】，這 {watch} 的陪伴加上 {messages} 則留言，絕對是真愛 GivePLZ ",  # 前 20%
@@ -90,7 +88,8 @@ class GeneralCommandsComponent(BotComponent):
             return
 
         channel_name = ctx.channel.name
-        await self._ctx_reply(ctx, f"指令列表： {FRONTEND_URL}/{channel_name}/commands")
+        frontend_url = get_settings().frontend_url.rstrip("/")
+        await self._ctx_reply(ctx, f"指令列表： {frontend_url}/{channel_name}/commands")
         await self._record_command(ctx, "help")
 
     @commands.command(aliases=["開播時間"])

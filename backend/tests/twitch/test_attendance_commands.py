@@ -2,23 +2,13 @@
 
 from __future__ import annotations
 
-import os
+from datetime import UTC, date, datetime
+from unittest.mock import AsyncMock, MagicMock, patch
 
-os.environ.setdefault("TWITCH_CLIENT_ID", "test-client-id")
-os.environ.setdefault("TWITCH_CLIENT_SECRET", "test-client-secret")
-os.environ.setdefault("BOT_ID", "999")
-os.environ.setdefault("OWNER_ID", "111")
-os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost/test")
-os.environ.setdefault("FRONTEND_URL", "https://niibot.tv")
-os.environ.setdefault("ENVIRONMENT", "production")
+import pytest
+from twitch.components.attendance import AttendanceComponent
 
-from datetime import UTC, date, datetime  # noqa: E402
-from unittest.mock import AsyncMock, MagicMock, patch  # noqa: E402
-
-import pytest  # noqa: E402
-from twitch.components.attendance import AttendanceComponent  # noqa: E402
-
-from shared.models.attendance import (  # noqa: E402
+from shared.models.attendance import (
     CheckinReply,
     CheckinResult,
     CheckinStatus,
@@ -26,6 +16,13 @@ from shared.models.attendance import (  # noqa: E402
 
 PATCH_CHECK = "twitch.components.attendance.check_command"
 _NOW = datetime(2026, 8, 31, 10, 0, tzinfo=UTC)
+
+
+@pytest.fixture(autouse=True)
+def _attendance_settings():
+    with patch("twitch.components.attendance.get_settings") as settings:
+        settings.return_value.is_development = False
+        yield
 
 
 def _result(status: CheckinStatus = CheckinStatus.RECORDED) -> CheckinResult:
