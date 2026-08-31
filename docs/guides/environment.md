@@ -51,6 +51,7 @@ api、twitch-bot、discord-bot 三服務共用。至少設一組 AI key；空的
 | `OWNER_ID` | 擁有者的 Twitch user ID |
 | `TWITCH_CLIENT_ID` | Twitch App Client ID（dev.twitch.tv/console） |
 | `TWITCH_CLIENT_SECRET` | Twitch App Client Secret |
+| `TWITCH_TOKEN_ENCRYPTION_KEY` | Twitch OAuth access／refresh token 的版本化 Fernet 加密金鑰 |
 | `YOUTUBE_API_KEY` | 影片佇列查片長／觀看數 |
 
 ### `backend/api/.env`

@@ -7,6 +7,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from cryptography.fernet import Fernet
 
 from shared.repositories.channel import (
     ChannelRepository,
@@ -21,6 +22,7 @@ from shared.repositories.channel import (
 # ---------------------------------------------------------------------------
 
 _NOW = datetime(2024, 1, 1, tzinfo=UTC)
+_TOKEN_KEY = Fernet.generate_key().decode()
 
 _TOKEN_ROW = {
     "user_id": "u1",
@@ -123,6 +125,27 @@ class TestGetToken:
 
         assert conn.fetchrow.call_count == 1
 
+    async def test_decrypts_versioned_token_before_returning_model(self):
+        from shared.twitch_token_crypto import encrypt_twitch_token
+
+        _clear_caches()
+        encrypted_token, version = encrypt_twitch_token("tok", _TOKEN_KEY)
+        encrypted_refresh, _ = encrypt_twitch_token("ref", _TOKEN_KEY)
+        row = {
+            **_TOKEN_ROW,
+            "token": encrypted_token,
+            "refresh": encrypted_refresh,
+            "encryption_version": version,
+        }
+        pool, _ = _make_pool(fetchrow=row)
+        repo = ChannelRepository(pool, token_encryption_key=_TOKEN_KEY)
+
+        result = await repo.get_token("u1")
+
+        assert result is not None
+        assert result.token == "tok"
+        assert result.refresh == "ref"
+
 
 @pytest.mark.asyncio
 class TestUpsertTokenOnly:
@@ -158,6 +181,20 @@ class TestUpsertTokenOnly:
 
         args = conn.execute.call_args[0]
         assert "channel:bot bits:read" in args
+
+    async def test_encrypts_token_and_refresh_when_key_is_configured(self):
+        pool, conn = _make_pool(execute="INSERT 0 1")
+        repo = ChannelRepository(pool, token_encryption_key=_TOKEN_KEY)
+
+        await repo.upsert_token_only("u1", "tok", "ref")
+
+        args = conn.execute.call_args[0]
+        assert "tok" not in args[1:]
+        assert "ref" not in args[1:]
+        assert str(args[2]).startswith("v1:")
+        assert str(args[3]).startswith("v1:")
+        assert 1 in args
+        assert "encryption_version" in args[0]
 
 
 @pytest.mark.asyncio

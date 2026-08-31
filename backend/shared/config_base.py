@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -47,6 +47,12 @@ class BaseServiceSettings(BaseSettings):
     # Error reporting
     error_webhook_url: str = Field(default="", description="Discord webhook URL for error alerts")
 
+    # Twitch credentials are shared by API OAuth callbacks and the Twitch runtime.
+    twitch_token_encryption_key: str = Field(
+        default="",
+        description="Fernet key for versioned Twitch OAuth token encryption at rest",
+    )
+
     @property
     def is_development(self) -> bool:
         return self.environment.lower() == "development"
@@ -71,3 +77,22 @@ class BaseServiceSettings(BaseSettings):
             LOGGER.warning("Invalid log level %r, defaulting to INFO", v)
             return "INFO"
         return v_upper
+
+    @field_validator("twitch_token_encryption_key")
+    @classmethod
+    def validate_twitch_token_encryption_key(cls, v: str) -> str:
+        if not v:
+            return v
+        try:
+            from cryptography.fernet import Fernet
+
+            Fernet(v.encode())
+        except Exception as exc:
+            raise ValueError("TWITCH_TOKEN_ENCRYPTION_KEY must be a valid Fernet key") from exc
+        return v
+
+    @model_validator(mode="after")
+    def require_twitch_token_encryption_in_production(self) -> BaseServiceSettings:
+        if self.is_production and not self.twitch_token_encryption_key:
+            raise ValueError("TWITCH_TOKEN_ENCRYPTION_KEY is required in production")
+        return self
