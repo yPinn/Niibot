@@ -16,7 +16,7 @@ dependencies = [
     # source. Pin them to the 48.x line (last with a universal2 wheel); every
     # other platform (Linux prod, CI, Apple Silicon) tracks the latest.
     "cryptography>=48,<49; sys_platform == 'darwin' and platform_machine == 'x86_64'",
-    "cryptography>=48,<51; sys_platform != 'darwin' or platform_machine != 'x86_64'",
+    "cryptography>=50,<51; sys_platform != 'darwin' or platform_machine != 'x86_64'",
     "openai>=2.44.0,<3.0.0",
     "pydantic-settings>=2.13.0,<3.0.0",
     "python-dotenv>=1.2.0,<2.0.0",
