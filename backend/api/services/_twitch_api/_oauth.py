@@ -26,10 +26,19 @@ class _OAuthMixin(_TwitchAPIBase):
     # OAuth flow
     # ------------------------------------------------------------------
 
-    def generate_oauth_url(self, state: str | None = None) -> str:
+    def generate_oauth_url(
+        self,
+        state: str | None = None,
+        *,
+        scopes: list[str] | None = None,
+        redirect_path: str = "/api/auth/twitch/callback",
+    ) -> str:
         """Generate Twitch OAuth authorization URL."""
-        redirect_uri = f"{self.api_url}/api/auth/twitch/callback"
-        scope_string = "+".join(s.replace(":", "%3A") for s in self.BROADCASTER_SCOPES)
+        if not redirect_path.startswith("/api/auth/twitch/") or "?" in redirect_path:
+            raise ValueError("redirect_path must be an internal Twitch auth callback")
+        redirect_uri = f"{self.api_url}{redirect_path}"
+        requested_scopes = self.BROADCASTER_SCOPES if scopes is None else scopes
+        scope_string = "+".join(s.replace(":", "%3A") for s in requested_scopes)
         encoded_redirect_uri = quote(redirect_uri, safe="")
 
         url = (
@@ -37,15 +46,19 @@ class _OAuthMixin(_TwitchAPIBase):
             f"?client_id={self.client_id}"
             f"&redirect_uri={encoded_redirect_uri}"
             f"&response_type=code"
-            f"&scope={scope_string}"
             f"&force_verify=true"
         )
+        if scope_string:
+            url += f"&scope={scope_string}"
         if state:
             url += f"&state={quote(state, safe='')}"
         return url
 
     async def exchange_code_for_token(
-        self, code: str
+        self,
+        code: str,
+        *,
+        redirect_path: str = "/api/auth/twitch/callback",
     ) -> tuple[bool, str | None, dict[str, str] | None]:
         """Exchange OAuth code for access token.
 
@@ -54,7 +67,9 @@ class _OAuthMixin(_TwitchAPIBase):
             token_data contains: access_token, refresh_token, user_id
         """
         try:
-            redirect_uri = f"{self.api_url}/api/auth/twitch/callback"
+            if not redirect_path.startswith("/api/auth/twitch/") or "?" in redirect_path:
+                raise ValueError("redirect_path must be an internal Twitch auth callback")
+            redirect_uri = f"{self.api_url}{redirect_path}"
 
             token_response = await self._http.post(
                 f"{OAUTH_BASE}/token",

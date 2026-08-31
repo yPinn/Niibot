@@ -37,6 +37,7 @@ def _analytics() -> MagicMock:
     a.end_session = AsyncMock()
     a.close_stale_sessions = AsyncMock(return_value=0)
     a.increment_watch_seconds = AsyncMock()
+    a.record_attendance_snapshot = AsyncMock(return_value=True)
     a.refresh_overlap = AsyncMock()
     return a
 
@@ -193,9 +194,34 @@ class TestWatchTimeTokenFlow:
     async def test_calls_fetch_chatters_per_active_channel(self):
         svc = _make_service()
         svc._active = {"ch1": 1}
-        svc._fetch_chatters = AsyncMock(return_value=[])
+        svc._fetch_chatters = AsyncMock(return_value=SimpleNamespace(viewers=[], complete=False))
         await self._run_one_iteration(svc)
         svc._fetch_chatters.assert_awaited_once_with("ch1")
+
+    async def test_records_a_successful_empty_snapshot(self):
+        analytics = _analytics()
+        svc = _make_service(analytics=analytics)
+        svc._active = {"ch1": 1}
+        svc._fetch_chatters = AsyncMock(return_value=SimpleNamespace(viewers=[], complete=True))
+
+        await self._run_one_iteration(svc)
+
+        analytics.record_attendance_snapshot.assert_awaited_once_with(
+            session_id=1,
+            channel_id="ch1",
+            viewers=[],
+            seconds=svc._WATCH_INTERVAL,
+        )
+
+    async def test_does_not_record_an_incomplete_snapshot(self):
+        analytics = _analytics()
+        svc = _make_service(analytics=analytics)
+        svc._active = {"ch1": 1}
+        svc._fetch_chatters = AsyncMock(return_value=SimpleNamespace(viewers=[], complete=False))
+
+        await self._run_one_iteration(svc)
+
+        analytics.record_attendance_snapshot.assert_not_awaited()
 
     async def test_fetch_chatters_uses_bot_token_and_moderator_id(self):
         from shared.models.channel import Token
@@ -215,9 +241,11 @@ class TestWatchTimeTokenFlow:
         ctx.__aexit__ = AsyncMock(return_value=False)
 
         with patch("core.session_service.httpx.AsyncClient", return_value=ctx):
-            await svc._fetch_chatters("ch1")
+            snapshot = await svc._fetch_chatters("ch1")
 
         channels.get_token.assert_awaited_once_with("bot-001", "bot")
+        assert snapshot.complete is True
+        assert snapshot.viewers == []
         _, kwargs = client.get.call_args
         assert kwargs["params"]["moderator_id"] == "bot-001"
         assert kwargs["params"]["broadcaster_id"] == "ch1"
@@ -228,5 +256,34 @@ class TestWatchTimeTokenFlow:
         channels.get_token = AsyncMock(return_value=None)
         svc = _make_service(channels=channels)
         with patch("core.session_service.httpx.AsyncClient") as mock_client:
-            assert await svc._fetch_chatters("ch1") == []
+            snapshot = await svc._fetch_chatters("ch1")
+        assert snapshot.complete is False
+        assert snapshot.viewers == []
         mock_client.assert_not_called()
+
+    async def test_fetch_chatters_discards_partial_pages_after_api_failure(self):
+        from shared.models.channel import Token
+
+        channels = MagicMock()
+        channels.get_token = AsyncMock(
+            return_value=Token(user_id="bot-001", token="BOT_TOK", refresh="ref")
+        )
+        svc = _make_service(channels=channels)
+
+        first = MagicMock(status_code=200)
+        first.json.return_value = {
+            "data": [{"user_id": "u1", "user_login": "alice", "user_name": "Alice"}],
+            "pagination": {"cursor": "next"},
+        }
+        second = MagicMock(status_code=503, text="unavailable")
+        client = MagicMock()
+        client.get = AsyncMock(side_effect=[first, second])
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=client)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("core.session_service.httpx.AsyncClient", return_value=ctx):
+            snapshot = await svc._fetch_chatters("ch1")
+
+        assert snapshot.complete is False
+        assert snapshot.viewers == []

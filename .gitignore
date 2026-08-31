@@ -67,6 +67,7 @@ htmlcov/
 *.cover
 .hypothesis/
 frontend/coverage/
+.impeccable/review/
 
 # Node.js / Frontend
 node_modules/

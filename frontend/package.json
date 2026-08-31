@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "vite",
     "preview": "vite preview",
-    "build": "npm run fa:subset && tsc -b && vite build",
+    "build": "npm run assets:tarot:check && npm run fa:subset && tsc -b && vite build",
+    "assets:tarot:check": "node scripts/validate-tarot-assets.mjs",
     "fa:subset": "node scripts/build-fa-subset.mjs",
     "lint": "eslint .",
     "lint:fix": "eslint --fix .",

@@ -6,7 +6,7 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
+      '@': path.resolve(import.meta.dirname, './src'),
     },
   },
   test: {
@@ -27,7 +27,10 @@ export default defineConfig({
         'src/hooks/usePolling.ts',
         'src/components/ProtectedRoute.tsx',
         'src/api/user.ts',
+        'src/api/communityOverlay.ts',
         'src/contexts/AuthContext.tsx',
+        'src/pages/CommunityOverlay.tsx',
+        'src/pages/modules/CommunityOverlaySettings.tsx',
         'src/pages/dashboard/events/renderTemplate.ts',
         'src/lib/plus-program.ts',
       ],

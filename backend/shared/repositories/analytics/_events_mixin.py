@@ -207,20 +207,24 @@ class _AnalyticsEventsMixin:
 
         LOGGER.info("Flushed chatter stats for session %s: %d chatters", session_id, len(rows))
 
-    async def increment_watch_seconds(
+    async def record_attendance_snapshot(
         self,
         session_id: int,
         channel_id: str,
         viewers: list[dict],
         seconds: int,
-    ) -> None:
-        """Upsert watch_seconds for all current chatroom viewers.
+    ) -> bool:
+        """Atomically mark a complete snapshot and add viewer watch time.
 
         Args:
             viewers: list of {"user_id", "user_login", "user_name"} from /helix/chat/chatters
+
+        Returns:
+            True when the channel's active session accepted the snapshot. A complete
+            empty snapshot still returns True and makes the session streak-eligible.
         """
-        if not viewers:
-            return
+        if seconds <= 0:
+            raise ValueError("seconds must be positive")
 
         rows = [
             (
@@ -235,19 +239,48 @@ class _AnalyticsEventsMixin:
         ]
 
         async with self.pool.acquire() as conn:
-            await conn.executemany(
-                """
-                INSERT INTO chatter_stats
-                    (session_id, channel_id, user_id, username, display_name,
-                     message_count, watch_seconds, last_message_at)
-                VALUES ($1, $2, $3, $4, $5, 0, $6, NOW())
-                ON CONFLICT (session_id, user_id) DO UPDATE SET
-                    username      = EXCLUDED.username,
-                    display_name  = COALESCE(EXCLUDED.display_name, chatter_stats.display_name),
-                    watch_seconds = chatter_stats.watch_seconds + EXCLUDED.watch_seconds
-                """,
-                rows,
-            )
+            async with conn.transaction():
+                result = await conn.execute(
+                    """
+                    UPDATE stream_sessions
+                    SET attendance_snapshot_count = attendance_snapshot_count + 1
+                    WHERE id = $1
+                      AND channel_id = $2
+                      AND ended_at IS NULL
+                    """,
+                    session_id,
+                    channel_id,
+                )
+                if result != "UPDATE 1":
+                    return False
+
+                if rows:
+                    await conn.executemany(
+                        """
+                        INSERT INTO chatter_stats
+                            (session_id, channel_id, user_id, username, display_name,
+                             message_count, watch_seconds, last_message_at)
+                        VALUES ($1, $2, $3, $4, $5, 0, $6, NOW())
+                        ON CONFLICT (session_id, user_id) DO UPDATE SET
+                            username      = EXCLUDED.username,
+                            display_name  = COALESCE(EXCLUDED.display_name,
+                                                     chatter_stats.display_name),
+                            watch_seconds = chatter_stats.watch_seconds
+                                            + EXCLUDED.watch_seconds
+                        """,
+                        rows,
+                    )
+        return True
+
+    async def increment_watch_seconds(
+        self,
+        session_id: int,
+        channel_id: str,
+        viewers: list[dict],
+        seconds: int,
+    ) -> None:
+        """Compatibility wrapper for callers that provide a complete snapshot."""
+        await self.record_attendance_snapshot(session_id, channel_id, viewers, seconds)
 
     async def _execute_upsert(self, sql: str, *args: object) -> None:
         try:

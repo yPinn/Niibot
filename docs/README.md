@@ -5,10 +5,12 @@
 
 ## architecture/ — 系統設計
 
-| 文件                                                              | 內容                                                                    |
-| ----------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| [overview.md](architecture/overview.md)                           | 服務拓樸、跨程序訊號、AI provider 鏈、部署拓樸、資料流範例              |
-| [admission-and-tenancy.md](architecture/admission-and-tenancy.md) | 身分／入會／多租戶三層拆分、狀態機、schema rollout（migration 076–084） |
+| 文件                                                                                      | 內容                                                                    |
+| ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| [overview.md](architecture/overview.md)                                                   | 服務拓樸、跨程序訊號、AI provider 鏈、部署拓樸、資料流範例              |
+| [admission-and-tenancy.md](architecture/admission-and-tenancy.md)                         | 身分／入會／多租戶三層拆分、狀態機、schema rollout（migration 076–084） |
+| [bot-accounts-and-collaboration.md](architecture/bot-accounts-and-collaboration.md)       | Bot OAuth、租戶私有帳號、Owner／MOD、Twitch MOD 同步的目標架構          |
+| [attendance-and-community-overlays.md](architecture/attendance-and-community-overlays.md) | 被動出席、主動簽到與社群 Overlay 的資料邊界                             |
 
 ## guides/ — 操作步驟
 

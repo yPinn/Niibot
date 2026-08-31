@@ -3,10 +3,8 @@ import { Link, useParams } from 'react-router-dom'
 
 import { getPublicCommands, type PublicChannelProfile, type PublicCommand } from '@/api/commands'
 import avatarFallback from '@/assets/images/Avatar.png'
-import { GroupedTableBody } from '@/components/GroupedTableBody'
 import { useTheme } from '@/components/layout/theme-provider'
 import { EmptyState, FadeIn, Icon } from '@/components/primitives'
-import { SortableHead } from '@/components/SortableHead'
 import { TableShell } from '@/components/TableShell'
 import { TableSkeletonRows } from '@/components/TableSkeletonRows'
 import {
@@ -25,27 +23,26 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
 } from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
-import { useSortState } from '@/hooks/useSortState'
-import { groupByCategory } from '@/lib/groupByCategory'
-import { applyDir, nameSort, ROLE_ORDER } from '@/lib/sort'
 
-const ROLE_LABELS: Record<string, { label: string; variant: 'default' | 'secondary' | 'outline' }> =
-  {
-    everyone: { label: '所有人', variant: 'secondary' },
-    subscriber: { label: '訂閱者', variant: 'outline' },
-    vip: { label: 'VIP', variant: 'outline' },
-    moderator: { label: '管理員', variant: 'default' },
-    broadcaster: { label: '實況主', variant: 'default' },
-  }
+type ViewerRole = 'everyone' | 'subscriber' | 'vip'
 
-type BuiltinSortKey = 'name' | 'min_role'
-type CustomSortKey = 'name' | 'kind' | 'min_role'
+const VIEWER_ROLE_GROUPS: ReadonlyArray<{
+  role: ViewerRole
+  label: string
+  description: string
+}> = [
+  { role: 'everyone', label: 'For everyone', description: '所有觀眾都能使用' },
+  { role: 'subscriber', label: 'Subscribers', description: '最低權限為 Subscriber' },
+  { role: 'vip', label: 'VIPs', description: '最低權限為 VIP' },
+]
+
+const COMMAND_TYPE_LABELS: Record<PublicCommand['command_type'], string> = {
+  builtin: '內建',
+  custom: '自訂',
+  trigger: '自動回應',
+}
 
 export default function PublicCommands() {
   const { username } = useParams<{ username: string }>()
@@ -55,37 +52,14 @@ export default function PublicCommands() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const builtinSort = useSortState<BuiltinSortKey>('name')
-  const customSort = useSortState<CustomSortKey>('kind')
-
-  const { sortKey: builtinSortKey, sortDir: builtinSortDir } = builtinSort
-  const builtinGroups = useMemo(() => {
-    const compare = (a: PublicCommand, b: PublicCommand) => {
-      let cmp = 0
-      if (builtinSortKey === 'name') cmp = nameSort(a.name, b.name)
-      else cmp = (ROLE_ORDER[a.min_role] ?? 0) - (ROLE_ORDER[b.min_role] ?? 0)
-      return applyDir(cmp, builtinSortDir)
-    }
-    return groupByCategory(
-      commands.filter(c => c.command_type === 'builtin'),
-      compare
-    )
-  }, [commands, builtinSortKey, builtinSortDir])
-
-  const { sortKey: customSortKey, sortDir: customSortDir } = customSort
-  const customRows = useMemo(() => {
-    const list = commands.filter(c => c.command_type === 'custom' || c.command_type === 'trigger')
-    return [...list].sort((a, b) => {
-      let cmp = 0
-      if (customSortKey === 'name') cmp = nameSort(a.name, b.name)
-      else if (customSortKey === 'kind') {
-        const kindCmp =
-          (a.command_type === 'custom' ? 0 : 1) - (b.command_type === 'custom' ? 0 : 1)
-        cmp = kindCmp !== 0 ? kindCmp : nameSort(a.name, b.name)
-      } else cmp = (ROLE_ORDER[a.min_role] ?? 0) - (ROLE_ORDER[b.min_role] ?? 0)
-      return applyDir(cmp, customSortDir)
-    })
-  }, [commands, customSortKey, customSortDir])
+  const commandGroups = useMemo(
+    () =>
+      VIEWER_ROLE_GROUPS.map(group => ({
+        ...group,
+        commands: commands.filter(command => command.min_role === group.role),
+      })).filter(group => group.commands.length > 0),
+    [commands]
+  )
 
   useEffect(() => {
     if (!username) return
@@ -114,7 +88,7 @@ export default function PublicCommands() {
   return (
     <div className="relative flex min-h-screen flex-col items-center justify-center bg-background px-page py-12">
       <Button variant="ghost" size="icon" className="absolute left-4 top-4" asChild>
-        <Link to="/">
+        <Link to="/" aria-label="返回首頁">
           <Icon icon="fa-solid fa-house" wrapperClassName="" />
         </Link>
       </Button>
@@ -123,6 +97,7 @@ export default function PublicCommands() {
         variant="ghost"
         size="icon"
         className="absolute right-4 top-4"
+        aria-label="切換顯示主題"
         onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
       >
         <Icon
@@ -131,7 +106,7 @@ export default function PublicCommands() {
         />
       </Button>
 
-      <div className="w-full max-w-2xl">
+      <div className="w-full max-w-3xl">
         {loading ? (
           <div className="space-y-3">
             <Skeleton className="mx-auto h-24 w-24 rounded-full" />
@@ -152,6 +127,7 @@ export default function PublicCommands() {
                     target="_blank"
                     rel="noopener noreferrer"
                     className="group relative mb-4"
+                    aria-label={`前往 ${displayName} 的 Twitch 頻道`}
                   >
                     <Avatar className="h-24 w-24 border-4 border-primary shadow-lg">
                       <AvatarImage
@@ -173,146 +149,70 @@ export default function PublicCommands() {
                   <CardTitle className="text-center text-page-title">
                     {displayName}'s Commands
                   </CardTitle>
+                  <p className="mt-2 max-w-lg text-center text-sub text-muted-foreground">
+                    依 Twitch 使用身分整理目前已啟用、可由觀眾使用的指令。
+                  </p>
                 </div>
               </CardHeader>
-              <CardContent>
-                {commands.length === 0 ? (
+
+              <CardContent className="space-y-section">
+                {commandGroups.length === 0 ? (
                   <EmptyState
                     icon="fa-solid fa-terminal"
-                    title="尚無指令"
-                    description="此實況主尚未設定任何指令"
+                    title="尚無公開指令"
+                    description="此實況主尚未啟用觀眾可用的指令"
                   />
                 ) : (
-                  <Tabs defaultValue="builtin">
-                    <TabsList>
-                      <TabsTrigger value="builtin">
-                        內建
-                        <Badge variant="secondary" className="ml-1.5 px-1.5 text-label">
-                          {commands.filter(c => c.command_type === 'builtin').length}
-                        </Badge>
-                      </TabsTrigger>
-                      <TabsTrigger value="custom">
-                        自訂
-                        <Badge variant="secondary" className="ml-1.5 px-1.5 text-label">
-                          {
-                            commands.filter(
-                              c => c.command_type === 'custom' || c.command_type === 'trigger'
-                            ).length
-                          }
-                        </Badge>
-                      </TabsTrigger>
-                    </TabsList>
+                  commandGroups.map(group => {
+                    const headingId = `commands-${group.role}`
+                    return (
+                      <section key={group.role} aria-labelledby={headingId} className="space-y-2">
+                        <div className="flex items-end justify-between gap-3">
+                          <div>
+                            <h2 id={headingId} className="font-semibold">
+                              {group.label}
+                            </h2>
+                            <p className="text-label text-muted-foreground">{group.description}</p>
+                          </div>
+                          <span className="text-label tabular-nums text-muted-foreground">
+                            {group.commands.length} 個
+                          </span>
+                        </div>
 
-                    {/* ── Builtin Tab ── */}
-                    <TabsContent value="builtin">
-                      {builtinGroups.length === 0 ? (
-                        <EmptyState
-                          icon="fa-solid fa-terminal"
-                          title="尚無內建指令"
-                          description="此實況主沒有啟用的內建指令"
-                        />
-                      ) : (
                         <TableShell fixed={false}>
                           <TableHeader>
                             <TableRow>
-                              <SortableHead className="w-[25%]" sortKey="name" sort={builtinSort}>
-                                指令
-                              </SortableHead>
-                              <TableHead className="hidden md:table-cell">說明</TableHead>
-                              <SortableHead
-                                className="w-[15%] text-center"
-                                sortKey="min_role"
-                                sort={builtinSort}
-                              >
-                                權限
-                              </SortableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <GroupedTableBody
-                            groups={builtinGroups}
-                            colSpan={3}
-                            renderRow={cmd => {
-                              const role = ROLE_LABELS[cmd.min_role] ?? ROLE_LABELS.everyone
-                              return (
-                                <TableRow key={cmd.name}>
-                                  <TableCell className="font-mono font-medium">
-                                    {cmd.name}
-                                  </TableCell>
-                                  <TableCell className="hidden md:table-cell text-muted-foreground">
-                                    {cmd.description}
-                                  </TableCell>
-                                  <TableCell className="text-center">
-                                    <Badge variant={role.variant} className="text-label">
-                                      {role.label}
-                                    </Badge>
-                                  </TableCell>
-                                </TableRow>
-                              )
-                            }}
-                          />
-                        </TableShell>
-                      )}
-                    </TabsContent>
-
-                    {/* ── Custom Tab (commands + triggers mixed) ── */}
-                    <TabsContent value="custom">
-                      {customRows.length === 0 ? (
-                        <EmptyState
-                          icon="fa-solid fa-terminal"
-                          title="尚無自訂指令或自動回應"
-                          description="此實況主尚未建立自訂指令"
-                        />
-                      ) : (
-                        <TableShell fixed={false}>
-                          <TableHeader>
-                            <TableRow>
-                              <SortableHead className="w-[25%]" sortKey="name" sort={customSort}>
-                                名稱
-                              </SortableHead>
-                              <SortableHead className="w-[12%]" sortKey="kind" sort={customSort}>
-                                類型
-                              </SortableHead>
-                              <TableHead className="hidden md:table-cell">說明</TableHead>
-                              <SortableHead
-                                className="w-[15%] text-center"
-                                sortKey="min_role"
-                                sort={customSort}
-                              >
-                                權限
-                              </SortableHead>
+                              <TableHead className="w-[28%]">指令</TableHead>
+                              <TableHead className="w-[18%]">類型</TableHead>
+                              <TableHead>說明</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {customRows.map(cmd => {
-                              const role = ROLE_LABELS[cmd.min_role] ?? ROLE_LABELS.everyone
-                              return (
-                                <TableRow key={cmd.name}>
-                                  <TableCell className="font-mono font-medium">
-                                    {cmd.name}
-                                  </TableCell>
-                                  <TableCell>
-                                    {cmd.command_type === 'custom' ? (
-                                      <Badge variant="default">指令</Badge>
-                                    ) : (
-                                      <Badge variant="secondary">觸發</Badge>
-                                    )}
-                                  </TableCell>
-                                  <TableCell className="hidden md:table-cell text-muted-foreground">
-                                    {cmd.description}
-                                  </TableCell>
-                                  <TableCell className="text-center">
-                                    <Badge variant={role.variant} className="text-label">
-                                      {role.label}
-                                    </Badge>
-                                  </TableCell>
-                                </TableRow>
-                              )
-                            })}
+                            {group.commands.map(command => (
+                              <TableRow key={`${command.command_type}:${command.name}`}>
+                                <TableCell className="font-mono font-medium">
+                                  {command.name}
+                                </TableCell>
+                                <TableCell>
+                                  <Badge
+                                    variant={
+                                      command.command_type === 'builtin' ? 'secondary' : 'outline'
+                                    }
+                                    className="text-label"
+                                  >
+                                    {COMMAND_TYPE_LABELS[command.command_type]}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="whitespace-normal text-sub text-muted-foreground">
+                                  {command.description}
+                                </TableCell>
+                              </TableRow>
+                            ))}
                           </TableBody>
                         </TableShell>
-                      )}
-                    </TabsContent>
-                  </Tabs>
+                      </section>
+                    )
+                  })
                 )}
               </CardContent>
             </Card>

@@ -1,14 +1,20 @@
 import logging
-import random
-from datetime import UTC, datetime
-from hashlib import md5
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
-from core import DATA_DIR, load_json
+from core import DATA_DIR, get_settings, load_json
 from core.embed_factory import EmbedFactory
+from shared.tarot_assets import (
+    get_tarot_card_asset_url,
+    load_tarot_deck_catalog,
+)
+from shared.tarot_reading import (
+    TAROT_CATEGORY_LABELS,
+    get_daily_tarot_draw,
+    normalize_tarot_category,
+)
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -20,7 +26,15 @@ class TarotCog(commands.Cog):
 
     def _load_data(self) -> None:
         self.tarot_data = load_json(DATA_DIR / "tarot.json")
+        self.tarot_decks = load_tarot_deck_catalog(
+            DATA_DIR / "tarot_decks.json",
+            expected_card_ids=set(self.tarot_data["cards"]),
+        )
+        self.frontend_url = get_settings().frontend_url
         self._embed = EmbedFactory.default()
+
+    def _card_image_url(self, card_id: str) -> str:
+        return get_tarot_card_asset_url(self.tarot_decks, card_id, self.frontend_url)
 
     def _format_quote(self, text: str) -> str:
         """
@@ -32,32 +46,28 @@ class TarotCog(commands.Cog):
         # 移除空行並在每行前加上引用符號
         return "\n".join([f"> {line.strip()}" for line in lines if line.strip()])
 
-    def _get_daily_card(self, user_id: int) -> tuple[str, bool]:
-        today = datetime.now(UTC).strftime("%Y-%m-%d")
-        seed_string = f"{user_id}-{today}"
-        seed = int(md5(seed_string.encode()).hexdigest(), 16)
+    def _get_daily_card(self, user_id: int, category: str) -> tuple[str, bool]:
+        return get_daily_tarot_draw(
+            self.tarot_data["cards"],
+            user_id=user_id,
+            category=category,
+        )
 
-        rng = random.Random(seed)
-        card_ids = list(self.tarot_data["cards"].keys())
-        card_id = rng.choice(card_ids)
-        is_reversed = rng.choice([True, False])
-
-        return card_id, is_reversed
-
-    @app_commands.command(name="tarot", description="塔羅占卜")
-    @app_commands.describe(category="想詢問的主題（可選）")
+    @app_commands.command(name="tarot", description="抽取每日塔羅牌")
+    @app_commands.describe(category="選擇解讀主題；同一主題每天結果固定")
     @app_commands.choices(
         category=[
-            app_commands.Choice(name="綜合運勢", value="general"),
-            app_commands.Choice(name="感情發展", value="love"),
-            app_commands.Choice(name="事業學業", value="career"),
-            app_commands.Choice(name="財務運勢", value="finance"),
+            app_commands.Choice(name="綜合", value="general"),
+            app_commands.Choice(name="感情／愛情", value="love"),
+            app_commands.Choice(name="事業／工作／學業", value="career"),
+            app_commands.Choice(name="財運／金錢", value="finance"),
         ]
     )
     async def tarot(self, interaction: discord.Interaction, category: str = "general") -> None:
         try:
+            normalized_category = normalize_tarot_category(category) or "general"
             user_id = interaction.user.id
-            card_id, is_reversed = self._get_daily_card(user_id)
+            card_id, is_reversed = self._get_daily_card(user_id, normalized_category)
 
             card_data = self.tarot_data["cards"][card_id]
             card_name = card_data["name"]
@@ -74,7 +84,9 @@ class TarotCog(commands.Cog):
                 color_hex = self.tarot_data["colors"]["upright"]
 
             # 抓取對應主題的牌義 (如果主題不存在則回退到綜合解析)
-            meaning_raw = card_info["meanings"].get(category, card_info["meanings"]["general"])
+            meaning_raw = card_info["meanings"].get(
+                normalized_category, card_info["meanings"]["general"]
+            )
             keywords = "、".join(card_info["keywords"])
             advice_raw = card_info.get("advice", "靜心思考這張牌對你今天的意義。")
 
@@ -89,16 +101,11 @@ class TarotCog(commands.Cog):
                 title=f"{card_name} ({orientation})",
                 description=f"*{card_name_en} - {orientation_en}*",
                 color=color,
-                image=card_data.get("image_url"),
+                image=self._card_image_url(card_id),
             )
 
             # 主題標籤轉換
-            cat_label = {
-                "general": "綜合",
-                "love": "感情",
-                "career": "事業",
-                "finance": "財運",
-            }.get(category, "綜合")
+            cat_label = TAROT_CATEGORY_LABELS[normalized_category]
 
             # Field 設置
             embed.add_field(name="**關鍵字**", value=f"> {keywords}", inline=False)
@@ -109,7 +116,7 @@ class TarotCog(commands.Cog):
 
         except Exception as e:
             LOGGER.exception(f"Tarot command error: {e}")
-            await interaction.response.send_message("塔羅牌抽取過程中發生神秘干擾", ephemeral=True)
+            await interaction.response.send_message("抽牌暫時失敗，請稍後再試。", ephemeral=True)
 
 
 async def setup(bot: commands.Bot) -> None:

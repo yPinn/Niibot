@@ -9,23 +9,10 @@ min_role="moderator" and check_command enforces it, so the handler must rely
 on check_command's return alone — no second gate.
 """
 
-import os
+from unittest.mock import AsyncMock, MagicMock, patch
 
-# general_commands.py reads get_settings() at import time (FRONTEND_URL), which
-# caches settings. Seed the same env other twitch tests rely on before importing,
-# so collection order can't leave settings cached without them (see test_reauth).
-os.environ.setdefault("TWITCH_CLIENT_ID", "test-client-id")
-os.environ.setdefault("TWITCH_CLIENT_SECRET", "test-client-secret")
-os.environ.setdefault("BOT_ID", "999")
-os.environ.setdefault("OWNER_ID", "111")
-os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost/test")
-os.environ.setdefault("FRONTEND_URL", "https://niibot.tv")
-os.environ.setdefault("ENVIRONMENT", "production")
-
-from unittest.mock import AsyncMock, MagicMock, patch  # noqa: E402
-
-import pytest  # noqa: E402
-from twitch.components.general_commands import GeneralCommandsComponent  # noqa: E402
+import pytest
+from twitch.components.general_commands import GeneralCommandsComponent
 
 PATCH_CHECK = "twitch.components.general_commands.check_command"
 
@@ -54,6 +41,24 @@ def _make_ctx(*, moderator: bool = False, channel_id: str = "ch_test") -> MagicM
 
 async def _shoutout(comp: GeneralCommandsComponent, ctx: MagicMock, target: str | None) -> None:
     await GeneralCommandsComponent.shoutout.callback(comp, ctx, target=target)  # type: ignore[attr-defined]
+
+
+async def _help(comp: GeneralCommandsComponent, ctx: MagicMock) -> None:
+    await GeneralCommandsComponent.help.callback(comp, ctx)  # type: ignore[attr-defined]
+
+
+@pytest.mark.asyncio
+async def test_help_loads_frontend_url_at_command_time() -> None:
+    comp = _make_component()
+    ctx = _make_ctx()
+    with (
+        patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())),
+        patch("twitch.components.general_commands.get_settings") as settings,
+    ):
+        settings.return_value.frontend_url = "https://niibot.tv/"
+        await _help(comp, ctx)
+
+    comp._ctx_reply.assert_awaited_once_with(ctx, "指令列表： https://niibot.tv/streamer/commands")
 
 
 @pytest.mark.asyncio

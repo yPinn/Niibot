@@ -43,6 +43,9 @@ export function BuiltinTab({ commands, sortState, defaults, onToggle, onEdit }: 
     const compare = (a: CommandConfig, b: CommandConfig) => {
       let cmp = 0
       switch (sortKey) {
+        case 'catalog_order':
+          cmp = a.display_order - b.display_order
+          break
         case 'command_name':
           cmp = nameSort(a.command_name, b.command_name)
           break

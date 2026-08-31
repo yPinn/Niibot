@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -76,6 +76,51 @@ const SUSPENDED_CHANNEL: AdminChannel = {
   owner_user_id: 'user-2',
 }
 
+const ISSUE_CHANNEL: AdminChannel = {
+  ...ACTIVE_CHANNEL,
+  id: 'channel-issue',
+  name: 'scopeissue',
+  display_name: 'Scope Issue',
+  missing_scopes: ['moderator:read:followers'],
+  owner_user_id: 'user-issue',
+}
+
+const PAUSED_CHANNEL: AdminChannel = {
+  ...ACTIVE_CHANNEL,
+  id: 'channel-paused',
+  name: 'paused',
+  display_name: 'Paused',
+  is_enabled: false,
+  owner_user_id: 'user-paused',
+}
+
+const PENDING_CHANNEL: AdminChannel = {
+  ...ACTIVE_CHANNEL,
+  id: 'channel-pending',
+  name: 'pending',
+  display_name: 'Pending',
+  is_enabled: false,
+  membership_status: 'pending',
+  owner_user_id: 'user-pending',
+}
+
+const LIVE_HEALTHY_CHANNEL: AdminChannel = {
+  ...ACTIVE_CHANNEL,
+  id: 'channel-live',
+  name: 'livehealthy',
+  display_name: 'Live Healthy',
+  is_live: true,
+  owner_user_id: 'user-live',
+}
+
+const ALPHA_HEALTHY_CHANNEL: AdminChannel = {
+  ...ACTIVE_CHANNEL,
+  id: 'channel-alpha',
+  name: 'alphahealthy',
+  display_name: 'Alpha Healthy',
+  owner_user_id: 'user-alpha',
+}
+
 const BOT_CHANNEL: AdminChannel = {
   ...ACTIVE_CHANNEL,
   id: 'channel-bot',
@@ -101,7 +146,9 @@ describe('AdminPage membership suspension', () => {
   it('uses an operator-first reading order with a full-width authorization region', async () => {
     render(<AdminPage />)
 
-    expect(await screen.findByText('使用者與頻道')).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', { name: '使用者與頻道', level: 2 })
+    ).toBeInTheDocument()
     expect(screen.getByText('Bot 設定內容')).toBeInTheDocument()
     expect(screen.getByRole('region', { name: '授權管理' })).toHaveTextContent('授權管理內容')
   })
@@ -121,6 +168,56 @@ describe('AdminPage membership suspension', () => {
 
     expect(screen.queryByTestId('channel-channel-1')).not.toBeInTheDocument()
     expect(screen.getByTestId('channel-channel-2')).toBeInTheDocument()
+  })
+
+  it('groups channels in a stable frequency-first category order', async () => {
+    mockGetChannels.mockReset()
+    mockGetChannels.mockResolvedValueOnce([
+      SUSPENDED_CHANNEL,
+      ACTIVE_CHANNEL,
+      PAUSED_CHANNEL,
+      ISSUE_CHANNEL,
+      PENDING_CHANNEL,
+      LIVE_HEALTHY_CHANNEL,
+      ALPHA_HEALTHY_CHANNEL,
+    ])
+    render(<AdminPage />)
+
+    await screen.findByTestId('channel-channel-1')
+
+    expect(
+      screen.getAllByRole('heading', { level: 3 }).map(heading => heading.textContent)
+    ).toEqual(['正常監聽', '需處理', '待審核', '監控暫停', '已停權'])
+
+    const healthyGroup = screen.getByRole('region', { name: '正常監聽' })
+    const channelNames = (regionName: string) =>
+      within(screen.getByRole('region', { name: regionName }))
+        .getAllByTestId(/^channel-/)
+        .map(channel => channel.textContent)
+
+    expect(
+      within(healthyGroup)
+        .getAllByTestId(/^channel-/)
+        .map(channel => channel.textContent)
+    ).toEqual(['Live Healthy', 'Alpha Healthy', 'Streamer'])
+    expect(channelNames('需處理')).toEqual(['Scope Issue'])
+    expect(channelNames('待審核')).toEqual(['Pending'])
+    expect(channelNames('監控暫停')).toEqual(['Paused'])
+    expect(channelNames('已停權')).toEqual(['Suspended'])
+  })
+
+  it('omits empty groups from the all view but keeps their filters available', async () => {
+    const user = userEvent.setup()
+    render(<AdminPage />)
+
+    await screen.findByTestId('channel-channel-1')
+
+    expect(screen.getByRole('region', { name: '正常監聽' })).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: '已停權' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /已停權\s*0/ }))
+
+    expect(screen.getByRole('region', { name: '已停權' })).toHaveTextContent('目前沒有已停權的頻道')
   })
 
   it('keeps the user cards in the established responsive auto-fill grid', async () => {

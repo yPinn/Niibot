@@ -414,8 +414,9 @@ async def seed_test_data(channel_id: str | None = None, n_sessions: int = 15) ->
             row = await conn.fetchrow(
                 """
                 INSERT INTO stream_sessions
-                    (channel_id, started_at, ended_at, title, game_id, game_name)
-                VALUES ($1, $2, $3, $4, $5, $6)
+                    (channel_id, started_at, ended_at, title, game_id, game_name,
+                     attendance_snapshot_count)
+                VALUES ($1, $2, $3, $4, $5, $6, 1)
                 RETURNING id
                 """,
                 channel_id,
@@ -645,7 +646,9 @@ async def seed_test_data(channel_id: str | None = None, n_sessions: int = 15) ->
                 SELECT id,
                        ROW_NUMBER() OVER (ORDER BY started_at ASC) AS n
                 FROM stream_sessions
-                WHERE ended_at IS NOT NULL AND channel_id = $1
+                WHERE ended_at IS NOT NULL
+                  AND channel_id = $1
+                  AND attendance_snapshot_count > 0
             ),
             attendance AS (
                 SELECT cs.user_id, cs.session_id, sr.n
@@ -694,6 +697,24 @@ async def seed_test_data(channel_id: str | None = None, n_sessions: int = 15) ->
                 best_streak     = GREATEST(viewer_attendance_streaks.best_streak, EXCLUDED.best_streak),
                 last_session_id = EXCLUDED.last_session_id,
                 updated_at      = NOW()
+            """,
+            channel_id,
+        )
+        await conn.execute(
+            """
+            UPDATE viewer_attendance_streaks
+            SET streak_count = 0,
+                updated_at = NOW()
+            WHERE channel_id = $1
+              AND last_session_id IS DISTINCT FROM (
+                  SELECT id
+                  FROM stream_sessions
+                  WHERE channel_id = $1
+                    AND ended_at IS NOT NULL
+                    AND attendance_snapshot_count > 0
+                  ORDER BY started_at DESC, id DESC
+                  LIMIT 1
+              )
             """,
             channel_id,
         )

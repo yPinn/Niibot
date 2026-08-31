@@ -7,9 +7,14 @@ import asyncpg
 
 from core.config import get_settings
 from shared.builtin_commands import (
+    BUILTIN_AUDIENCES,
     BUILTIN_CATEGORIES,
+    BUILTIN_DEFS,
     BUILTIN_DESCRIPTIONS,
+    BUILTIN_DETAILS,
     BUILTIN_MAP,
+    BUILTIN_PREVIEWS,
+    BUILTIN_USAGE,
     PUBLIC_DESCRIPTIONS,
 )
 from shared.repositories.command_config import (
@@ -24,6 +29,9 @@ from shared.repositories.message_trigger import MessageTriggerRepository
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
+_VIEWER_ROLES = frozenset({"everyone", "subscriber", "vip"})
+_BUILTIN_ORDER = {defn["command_name"]: index for index, defn in enumerate(BUILTIN_DEFS)}
+
 
 def _builtin_category_label(command_type: str, command_name: str) -> str | None:
     """Display label for a builtin command's category; None for custom commands."""
@@ -31,6 +39,47 @@ def _builtin_category_label(command_type: str, command_name: str) -> str | None:
         return None
     defn = BUILTIN_MAP.get(command_name)
     return BUILTIN_CATEGORIES.get(defn.get("category", "")) if defn else None
+
+
+def _command_metadata(command_type: str, command_name: str, min_role: str) -> dict:
+    """Return immutable catalog metadata separately from mutable channel settings."""
+    if command_type != "builtin":
+        return {
+            "description": "",
+            "detail": "",
+            "usage": f"!{command_name}",
+            "preview_input": "",
+            "preview_output": "",
+            "audience": None,
+            "public_visible": min_role in _VIEWER_ROLES,
+            "display_order": len(BUILTIN_DEFS),
+            "category_label": None,
+        }
+
+    audience = BUILTIN_AUDIENCES[command_name]
+    preview = BUILTIN_PREVIEWS[command_name]
+    return {
+        "description": BUILTIN_DESCRIPTIONS[command_name],
+        "detail": BUILTIN_DETAILS[command_name],
+        "usage": BUILTIN_USAGE[command_name],
+        "preview_input": preview["input"],
+        "preview_output": preview["output"],
+        "audience": audience,
+        "public_visible": (
+            audience == "viewer"
+            and min_role in _VIEWER_ROLES
+            and command_name in PUBLIC_DESCRIPTIONS
+        ),
+        "display_order": _BUILTIN_ORDER[command_name],
+        "category_label": _builtin_category_label(command_type, command_name),
+    }
+
+
+def _serialize_command(cfg) -> dict:
+    return {
+        **asdict(cfg),
+        **_command_metadata(cfg.command_type, cfg.command_name, cfg.min_role),
+    }
 
 
 class CommandConfigService:
@@ -46,16 +95,7 @@ class CommandConfigService:
     async def list_commands(self, channel_id: str) -> list[dict]:
         """Get command configs with all-time usage counts from command_configs."""
         configs = await self.cmd_repo.list_configs(channel_id)
-        return [
-            {
-                **asdict(cfg),
-                "description": BUILTIN_DESCRIPTIONS.get(cfg.command_name, "")
-                if cfg.command_type == "builtin"
-                else "",
-                "category_label": _builtin_category_label(cfg.command_type, cfg.command_name),
-            }
-            for cfg in configs
-        ]
+        return [_serialize_command(cfg) for cfg in configs]
 
     async def update_command(
         self,
@@ -78,18 +118,12 @@ class CommandConfigService:
             min_role=min_role,
             aliases=aliases,
         )
-        return {
-            **asdict(cfg),
-            "category_label": _builtin_category_label(cfg.command_type, cfg.command_name),
-        }
+        return _serialize_command(cfg)
 
     async def toggle_command(self, channel_id: str, command_name: str, enabled: bool) -> dict:
         """Toggle a command's enabled state."""
         cfg = await self.cmd_repo.upsert_config(channel_id, command_name, enabled=enabled)
-        return {
-            **asdict(cfg),
-            "category_label": _builtin_category_label(cfg.command_type, cfg.command_name),
-        }
+        return _serialize_command(cfg)
 
     async def create_custom_command(
         self,
@@ -112,10 +146,7 @@ class CommandConfigService:
             min_role=min_role,
             aliases=aliases,
         )
-        return {
-            **asdict(cfg),
-            "category_label": _builtin_category_label(cfg.command_type, cfg.command_name),
-        }
+        return _serialize_command(cfg)
 
     async def delete_custom_command(self, channel_id: str, command_name: str) -> bool:
         """Delete a custom command. Returns True if deleted."""
@@ -140,7 +171,14 @@ class CommandConfigService:
             }
             for cfg in configs
             if cfg.enabled
-            and (cfg.command_type == "custom" or cfg.command_name in PUBLIC_DESCRIPTIONS)
+            and cfg.min_role in _VIEWER_ROLES
+            and (
+                cfg.command_type == "custom"
+                or (
+                    BUILTIN_AUDIENCES.get(cfg.command_name) == "viewer"
+                    and cfg.command_name in PUBLIC_DESCRIPTIONS
+                )
+            )
         ]
         trigger_configs = await MessageTriggerRepository(self.pool).list_enabled(channel_id)
         triggers = [
@@ -151,6 +189,7 @@ class CommandConfigService:
                 "command_type": "trigger",
             }
             for cfg in trigger_configs
+            if cfg.min_role in _VIEWER_ROLES
         ]
         return commands + triggers
 
@@ -175,9 +214,15 @@ class CommandConfigService:
         action_type: str,
         reward_name: str,
         enabled: bool,
+        *,
+        reward_id: str | None = None,
     ) -> dict:
         """Update a redemption config."""
         cfg = await self.redemption_repo.upsert_config(
-            channel_id, action_type, reward_name, enabled
+            channel_id,
+            action_type,
+            reward_name,
+            enabled,
+            reward_id=reward_id,
         )
         return asdict(cfg)

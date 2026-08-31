@@ -16,6 +16,7 @@ from services import (
     TwitchAPIClient,
 )
 from services.admission_service import AdmissionService
+from services.bot_account_service import BotAccountService
 from services.game_queue_service import GameQueueService
 from services.identity_service import IdentityService
 from services.message_trigger_service import MessageTriggerService
@@ -25,6 +26,12 @@ from services.tenant_service import (
 )
 from services.timer_service import TimerService
 from shared.log_context import bind_log_context
+from shared.repositories.attendance import AttendanceRepository
+from shared.repositories.community_overlay import CommunityOverlayRepository
+from shared.repositories.vip import VipRepository
+from shared.services.attendance import AttendanceService
+from shared.services.community_overlay import CommunityOverlayService
+from shared.services.vip import VipService
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -98,6 +105,20 @@ def get_game_queue_service(pool: asyncpg.Pool = Depends(get_db_pool)) -> GameQue
     return GameQueueService(pool)
 
 
+def get_attendance_service(pool: asyncpg.Pool = Depends(get_db_pool)) -> AttendanceService:
+    return AttendanceService(AttendanceRepository(pool))
+
+
+def get_community_overlay_service(
+    pool: asyncpg.Pool = Depends(get_db_pool),
+) -> CommunityOverlayService:
+    return CommunityOverlayService(CommunityOverlayRepository(pool))
+
+
+def get_vip_service(pool: asyncpg.Pool = Depends(get_db_pool)) -> VipService:
+    return VipService(VipRepository(pool))
+
+
 def get_token_payload(auth_token: str | None = Cookie(None)) -> dict:
     """Verify JWT and return full payload"""
     auth_service = get_auth_service()
@@ -126,6 +147,16 @@ def get_admission_service(pool: asyncpg.Pool = Depends(get_db_pool)) -> Admissio
 
 def get_tenant_service(pool: asyncpg.Pool = Depends(get_db_pool)) -> TenantService:
     return TenantService(pool)
+
+
+def get_bot_account_service(
+    pool: asyncpg.Pool = Depends(get_db_pool),
+) -> BotAccountService:
+    settings = get_settings()
+    return BotAccountService(
+        pool,
+        token_encryption_key=settings.twitch_token_encryption_key,
+    )
 
 
 async def require_activated(
@@ -175,12 +206,14 @@ async def require_tenant_access(
     channel_id: str = Path(..., description="Tenant channel_id"),
     payload: dict = Depends(get_token_payload),
     tenant: TenantService = Depends(get_tenant_service),
-    _: None = Depends(require_activated),
 ) -> TenantContext:
     """FastAPI dependency: verify caller has at least 'manager' role on the channel.
 
     Use as ``ctx: TenantContext = Depends(require_tenant_access)`` in any
-    router that accepts ``{channel_id}`` in its path. For endpoints scoped
+    router that accepts ``{channel_id}`` in its path. This intentionally does
+    not depend on broadcaster admission: a collaborator may have no membership
+    for their own channel. TenantService still rejects globally locked accounts
+    and workspaces whose owner is not active. For endpoints scoped
     to the caller's own channel without a path parameter, prefer
     ``require_self_tenant_access`` below.
     """
@@ -189,6 +222,22 @@ async def require_tenant_access(
     # in app.py turns them into the standard envelope with the right status.
     ctx = await tenant.assert_access(
         channel_id=channel_id, user_id=user_id, required_role="manager"
+    )
+    bind_log_context(channel_id=ctx.channel_id, role=ctx.role)
+    return ctx
+
+
+async def require_tenant_owner(
+    channel_id: str = Path(..., description="Tenant channel_id"),
+    payload: dict = Depends(get_token_payload),
+    tenant: TenantService = Depends(get_tenant_service),
+) -> TenantContext:
+    """Verify the caller owns the requested tenant."""
+    user_id = str(payload["sub"])
+    ctx = await tenant.assert_access(
+        channel_id=channel_id,
+        user_id=user_id,
+        required_role="owner",
     )
     bind_log_context(channel_id=ctx.channel_id, role=ctx.role)
     return ctx

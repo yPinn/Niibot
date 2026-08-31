@@ -1,0 +1,151 @@
+.card {
+  width: min(430px, calc(100vw - 40px));
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 22px;
+  border: 2px solid color-mix(in srgb, var(--overlay-text) 14%, white 76%);
+  border-radius: var(--overlay-radius);
+  color: var(--overlay-text);
+  background-color: var(--overlay-surface);
+  background-image:
+    radial-gradient(
+      circle at 88% 12%,
+      color-mix(in srgb, var(--overlay-accent) 16%, transparent),
+      transparent 24%
+    ),
+    linear-gradient(
+      145deg,
+      var(--overlay-surface) 0%,
+      color-mix(in srgb, var(--overlay-surface) 76%, var(--overlay-accent)) 58%,
+      color-mix(in srgb, var(--overlay-surface) 88%, var(--overlay-accent)) 100%
+    );
+  box-shadow:
+    0 22px 60px color-mix(in srgb, var(--overlay-text) 28%, transparent),
+    inset 0 1px 0 rgb(255 255 255 / 0.72);
+  font-family: 'Gen Sen Rounded', system-ui, sans-serif;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.identity {
+  min-width: 0;
+}
+
+.eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  color: var(--overlay-text);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+
+.previewBadge {
+  padding: 3px 6px;
+  border: 1px solid color-mix(in srgb, var(--overlay-text) 24%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--overlay-surface) 46%, transparent);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+}
+
+.actor {
+  max-width: 230px;
+  overflow: hidden;
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.total {
+  display: flex;
+  flex-shrink: 0;
+  align-items: baseline;
+  gap: 4px;
+  color: var(--overlay-text);
+  font-size: 12px;
+}
+
+.total strong {
+  color: var(--overlay-accent);
+  font-family: 'Fira Code', monospace;
+  font-size: 28px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.stamps {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 22px;
+}
+
+.stamp {
+  display: grid;
+  aspect-ratio: 1;
+  place-items: center;
+  border: 2px dashed color-mix(in srgb, var(--overlay-text) 24%, transparent);
+  border-radius: 50%;
+  color: var(--overlay-text);
+  background: color-mix(in srgb, var(--overlay-surface) 90%, var(--overlay-accent));
+  font-family: 'Fira Code', monospace;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.stampFilled {
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--overlay-accent) 74%, var(--overlay-text));
+  color: var(--overlay-text);
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--overlay-accent) 82%, var(--overlay-surface)),
+    var(--overlay-accent)
+  );
+  box-shadow: 0 5px 12px color-mix(in srgb, var(--overlay-accent) 28%, transparent);
+  font-size: 17px;
+}
+
+.footer {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 14px;
+  color: var(--overlay-text);
+  font-family: 'Fira Code', monospace;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+
+@media (max-width: 520px) {
+  .card {
+    width: calc(100vw - 32px);
+    padding: 18px;
+  }
+
+  .actor {
+    max-width: 180px;
+    font-size: 22px;
+  }
+
+  .stamps {
+    gap: 5px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card,
+  .stamp {
+    animation: none !important;
+    transition: none !important;
+  }
+}

@@ -140,6 +140,12 @@ class TwitchRewardResponse(BaseModel):
     id: str
     title: str
     cost: int
+    is_enabled: bool = True
+    is_paused: bool = False
+    is_in_stock: bool = True
+    should_redemptions_skip_request_queue: bool = False
+    max_per_stream: int | None = None
+    max_per_user_per_stream: int | None = None
 
 
 class RedemptionConfigResponse(BaseModel):
@@ -147,13 +153,15 @@ class RedemptionConfigResponse(BaseModel):
     channel_id: str
     action_type: str
     reward_name: str
+    reward_id: str | None = None
     enabled: bool
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
 
 class RedemptionConfigUpdate(BaseModel):
-    reward_name: str
+    reward_name: str = Field(max_length=256)
+    reward_id: str | None = Field(default=None, min_length=1, max_length=128)
     enabled: bool
 
 
@@ -233,7 +241,7 @@ async def get_twitch_rewards(
     return [TwitchRewardResponse(**r) for r in rewards]
 
 
-VALID_ACTION_TYPES = {"vip", "first", "niibot_auth", "game_queue", "video_queue"}
+VALID_ACTION_TYPES = {"vip", "first", "niibot_auth", "game_queue", "video_queue", "checkin"}
 
 
 @router.get("/redemptions", response_model=list[RedemptionConfigResponse])
@@ -258,7 +266,13 @@ async def update_redemption_config(
         raise EventInvalidError(
             user_message="兑換動作類型不正確", context={"action_type": action_type}
         )
-    cfg = await service.update_redemption(channel_id, action_type, body.reward_name, body.enabled)
+    cfg = await service.update_redemption(
+        channel_id,
+        action_type,
+        body.reward_name,
+        body.enabled,
+        reward_id=body.reward_id,
+    )
     if cfg is None:
         raise EventConfigNotFoundError(
             user_message="找不到這個兑換設定", context={"action_type": action_type}

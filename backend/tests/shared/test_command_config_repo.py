@@ -76,9 +76,17 @@ _REDEMPTION_ROW = {
     "channel_id": "ch1",
     "action_type": "vip",
     "reward_name": "vip",
+    "reward_id": None,
     "enabled": True,
     "created_at": _NOW,
     "updated_at": _NOW,
+}
+
+_ID_BOUND_REDEMPTION_ROW = {
+    **_REDEMPTION_ROW,
+    "action_type": "checkin",
+    "reward_name": "每日簽到",
+    "reward_id": "reward-checkin",
 }
 
 _UNSET = object()
@@ -547,6 +555,38 @@ class TestFindByRewardName:
 
 
 @pytest.mark.asyncio
+class TestFindByReward:
+    async def test_matches_bound_reward_by_stable_id_after_title_changes(self):
+        _clear_caches()
+        pool, _ = _make_pool(fetch=[_ID_BOUND_REDEMPTION_ROW])
+        repo = RedemptionConfigRepository(pool)
+
+        result = await repo.find_by_reward("ch1", "reward-checkin", "全新名稱")
+
+        assert result is not None
+        assert result.action_type == "checkin"
+
+    async def test_does_not_fall_back_to_title_for_an_id_bound_config(self):
+        _clear_caches()
+        pool, _ = _make_pool(fetch=[_ID_BOUND_REDEMPTION_ROW])
+        repo = RedemptionConfigRepository(pool)
+
+        result = await repo.find_by_reward("ch1", "different-id", "每日簽到")
+
+        assert result is None
+
+    async def test_legacy_config_without_reward_id_keeps_title_fallback(self):
+        _clear_caches()
+        pool, _ = _make_pool(fetch=[_REDEMPTION_ROW])
+        repo = RedemptionConfigRepository(pool)
+
+        result = await repo.find_by_reward("ch1", "reward-vip", "VIP Crown")
+
+        assert result is not None
+        assert result.action_type == "vip"
+
+
+@pytest.mark.asyncio
 class TestRedemptionUpsertConfig:
     async def test_returns_inserted_config(self):
         pool, _ = _make_pool(fetchrow=_REDEMPTION_ROW)
@@ -555,6 +595,18 @@ class TestRedemptionUpsertConfig:
         result = await repo.upsert_config("ch1", "vip", "vip")
 
         assert result.action_type == "vip"
+
+    async def test_persists_stable_reward_id(self):
+        pool, conn = _make_pool(fetchrow=_ID_BOUND_REDEMPTION_ROW)
+        repo = RedemptionConfigRepository(pool)
+
+        result = await repo.upsert_config(
+            "ch1", "checkin", "每日簽到", reward_id="reward-checkin", enabled=True
+        )
+
+        assert result.reward_id == "reward-checkin"
+        assert "reward_id" in conn.fetchrow.call_args.args[0]
+        assert "reward-checkin" in conn.fetchrow.call_args.args
 
     async def test_clears_redemption_cache(self):
         _redemption_cache.set("redemption:ch1:vip", _REDEMPTION_ROW)
@@ -626,6 +678,7 @@ class TestRedemptionEnsureDefaults:
         # niibot_auth should not be inserted
         inserted_types = [call[0][2] for call in conn.execute.call_args_list]
         assert "niibot_auth" not in inserted_types
+        assert "checkin" in inserted_types
 
     async def test_seeds_niibot_auth_for_owner(self):
         _clear_caches()

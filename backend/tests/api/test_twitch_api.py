@@ -65,6 +65,127 @@ class TestParseDuration:
         assert TwitchAPIClient.parse_duration("") == 0.0
 
 
+@pytest.mark.asyncio
+class TestGetCustomRewards:
+    async def test_maps_read_only_reward_limits_and_queue_state(self):
+        mock = _MockAPI().route(
+            "GET",
+            "/helix/channel_points/custom_rewards",
+            httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "id": "reward-checkin",
+                            "title": "每日簽到",
+                            "cost": 10,
+                            "is_enabled": True,
+                            "is_paused": False,
+                            "is_in_stock": True,
+                            "should_redemptions_skip_request_queue": True,
+                            "max_per_stream_setting": {"is_enabled": True, "max_per_stream": 100},
+                            "max_per_user_per_stream_setting": {
+                                "is_enabled": True,
+                                "max_per_user_per_stream": 1,
+                            },
+                        }
+                    ]
+                },
+            ),
+        )
+        api = mock.client()
+
+        rewards = await api.get_custom_rewards("channel-1", "broadcaster-token")
+
+        assert rewards == [
+            {
+                "id": "reward-checkin",
+                "title": "每日簽到",
+                "cost": 10,
+                "is_enabled": True,
+                "is_paused": False,
+                "is_in_stock": True,
+                "should_redemptions_skip_request_queue": True,
+                "max_per_stream": 100,
+                "max_per_user_per_stream": 1,
+            }
+        ]
+        assert mock.requests[-1].headers["authorization"] == "Bearer broadcaster-token"
+
+    async def test_disabled_limits_are_returned_as_none(self):
+        mock = _MockAPI().route(
+            "GET",
+            "/helix/channel_points/custom_rewards",
+            httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "id": "reward-1",
+                            "title": "Reward",
+                            "cost": 1,
+                            "max_per_stream_setting": {"is_enabled": False, "max_per_stream": 0},
+                            "max_per_user_per_stream_setting": {
+                                "is_enabled": False,
+                                "max_per_user_per_stream": 0,
+                            },
+                        }
+                    ]
+                },
+            ),
+        )
+
+        reward = (await mock.client().get_custom_rewards("channel-1", "token"))[0]
+
+        assert reward["max_per_stream"] is None
+        assert reward["max_per_user_per_stream"] is None
+
+
+@pytest.mark.asyncio
+class TestGetVips:
+    async def test_requires_every_page_before_returning_snapshot(self):
+        mock = _MockAPI().route(
+            "GET",
+            "/helix/channels/vips",
+            httpx.Response(
+                200,
+                json={
+                    "data": [{"user_id": "u1", "user_login": "alice"}],
+                    "pagination": {"cursor": "next-page"},
+                },
+            ),
+            httpx.Response(
+                200,
+                json={
+                    "data": [{"user_id": "u2", "user_login": "bob"}],
+                    "pagination": {},
+                },
+            ),
+        )
+
+        result = await mock.client().get_vips("channel-1", "token")
+
+        assert [row["user_id"] for row in result] == ["u1", "u2"]
+        assert mock.requests[1].url.params["after"] == "next-page"
+
+    async def test_partial_snapshot_raises_instead_of_returning_first_page(self):
+        mock = _MockAPI().route(
+            "GET",
+            "/helix/channels/vips",
+            httpx.Response(
+                200,
+                json={
+                    "data": [{"user_id": "u1", "user_login": "alice"}],
+                    "pagination": {"cursor": "next-page"},
+                },
+            ),
+            httpx.Response(503, json={"message": "unavailable"}),
+        )
+
+        with pytest.raises(RuntimeError, match="snapshot unavailable"):
+            await mock.client().get_vips("channel-1", "token")
+
+
 # ---------------------------------------------------------------------------
 # generate_oauth_url
 # ---------------------------------------------------------------------------
@@ -90,6 +211,17 @@ class TestGenerateOAuthUrl:
     def test_state_absent_when_omitted(self):
         api = _MockAPI().client()
         assert "state=" not in api.generate_oauth_url()
+
+    def test_collaborator_url_can_use_identity_only_scope_and_callback(self):
+        api = _MockAPI().client()
+        url = api.generate_oauth_url(
+            "signed-state",
+            scopes=[],
+            redirect_path="/api/auth/twitch/collaborator/callback",
+        )
+
+        assert "scope=" not in url
+        assert "%2Fapi%2Fauth%2Ftwitch%2Fcollaborator%2Fcallback" in url
 
 
 # ---------------------------------------------------------------------------
@@ -211,6 +343,29 @@ class TestExchangeCodeForToken:
             "user_id": "12345",
             "scopes": "channel:bot channel:read:redemptions",
         }
+
+    async def test_exchange_uses_explicit_callback_path(self):
+        mock = _MockAPI().route(
+            "POST",
+            "/oauth2/token",
+            httpx.Response(
+                200,
+                json={"access_token": "user-at", "refresh_token": "user-rt", "scope": []},
+            ),
+        )
+        mock.route("GET", "/helix/users", httpx.Response(200, json={"data": [{"id": "12345"}]}))
+        api = mock.client()
+
+        ok, _, _ = await api.exchange_code_for_token(
+            "the-code", redirect_path="/api/auth/twitch/collaborator/callback"
+        )
+
+        assert ok is True
+        token_request = next(r for r in mock.requests if r.method == "POST")
+        assert (
+            b"redirect_uri=https%3A%2F%2Fapi.example.com%2Fapi%2Fauth%2Ftwitch%2Fcollaborator%2Fcallback"
+            in token_request.content
+        )
 
     async def test_token_endpoint_non_200(self):
         mock = _MockAPI().route(

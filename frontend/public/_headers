@@ -14,6 +14,20 @@ Permissions-Policy: camera=(), microphone=(), geolocation=()
 X-Content-Type-Options: nosniff
 X-Frame-Options: SAMEORIGIN
 
+/images/tarot/decks/*
+
+# Deck versions are immutable; changing artwork requires a new deck id or version directory.
+
+Cache-Control: public, max-age=31536000, immutable
+
+/live-display
+
+# Community Overlay carries its capability in the fragment so it never reaches request logs.
+
+Referrer-Policy: no-referrer
+Content-Security-Policy: default-src 'self'; script-src 'self' https://static.cloudflareinsights.com; frame-ancestors *; img-src 'self' data:; connect-src 'self' https://niibot-api.llazypilot.com https://cloudflareinsights.com; style-src 'self' 'unsafe-inline'; font-src 'self'; object-src 'none'; base-uri 'self'
+! X-Frame-Options
+
 /\*/video-queue/overlay
 
 # Overlay pages must be embeddable in OBS Browser Source and the dashboard preview iframe.

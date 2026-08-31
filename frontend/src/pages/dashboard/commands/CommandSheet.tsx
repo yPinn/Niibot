@@ -36,7 +36,7 @@ import { VariableInserter } from '@/components/VariableInserter'
 import { useInputInsert } from '@/hooks/useInputInsert'
 import { toastApiError } from '@/lib/toast-error'
 
-import { EDITABLE_COMMANDS, ROLE_LABELS } from './constants'
+import { AUDIENCE_LABELS, EDITABLE_COMMANDS, PUBLIC_ROLE_LABELS, ROLE_LABELS } from './constants'
 import type { EditingState } from './types'
 
 interface FormState {
@@ -311,6 +311,13 @@ export function CommandSheet({
         EDITABLE_COMMANDS.includes(editing.command.command_name))) ||
     isEditingTrigger
 
+  const builtinCommand =
+    editing?.mode === 'edit-command' && editing.command.command_type === 'builtin'
+      ? editing.command
+      : null
+  const publicRoleLabel = PUBLIC_ROLE_LABELS[form.role]
+  const showsOnPublicPage = builtinCommand?.audience === 'viewer' && publicRoleLabel
+
   return (
     <Sheet open={open} onOpenChange={o => !o && onClose()}>
       <SheetContent className="gap-section">
@@ -328,6 +335,73 @@ export function CommandSheet({
         </SheetHeader>
 
         <div className="flex flex-1 flex-col gap-card overflow-y-auto px-page">
+          {builtinCommand && (
+            <section
+              aria-labelledby="command-feature-title"
+              className="space-y-3 rounded-lg bg-muted/40 p-page"
+            >
+              <div className="space-y-1">
+                <h3 id="command-feature-title" className="text-sub font-semibold">
+                  指令功能
+                </h3>
+                <p className="text-sub leading-relaxed text-muted-foreground">
+                  {builtinCommand.detail}
+                </p>
+              </div>
+
+              <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-label">
+                <dt className="text-muted-foreground">用途</dt>
+                <dd>{builtinCommand.description}</dd>
+
+                <dt className="text-muted-foreground">使用方式</dt>
+                <dd className="font-mono">
+                  {builtinCommand.usage}
+                  {builtinCommand.aliases &&
+                    ` · ${builtinCommand.aliases
+                      .split(',')
+                      .map(alias => `!${alias.trim()}`)
+                      .join(' · ')}`}
+                </dd>
+
+                <dt className="text-muted-foreground">適用身分</dt>
+                <dd>
+                  {builtinCommand.audience
+                    ? AUDIENCE_LABELS[builtinCommand.audience]
+                    : ROLE_LABELS[form.role]}
+                </dd>
+
+                <dt className="text-muted-foreground">公開指令頁</dt>
+                <dd>
+                  {showsOnPublicPage
+                    ? `顯示於公開指令頁 · ${publicRoleLabel}`
+                    : '不顯示於公開指令頁'}
+                </dd>
+              </dl>
+
+              {builtinCommand.preview_input && builtinCommand.preview_output && (
+                <div className="space-y-2 border-t border-border/70 pt-3">
+                  <div>
+                    <h4 className="text-label font-semibold">效果預覽</h4>
+                    <p className="text-label text-muted-foreground">示意內容，不會實際執行指令</p>
+                  </div>
+
+                  <div aria-label="聊天室效果預覽" className="divide-y divide-border/60">
+                    <div className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-3 py-2 text-label">
+                      <span className="font-semibold text-muted-foreground">小霓</span>
+                      <code className="break-words text-foreground">
+                        {builtinCommand.preview_input}
+                      </code>
+                    </div>
+                    <div className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-3 py-2 text-label">
+                      <span className="font-semibold text-primary">Niibot</span>
+                      <p className="break-words leading-relaxed">{builtinCommand.preview_output}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </section>
+          )}
+
           {/* ── Name / Pattern ── */}
           {(editing?.mode === 'create' || editing?.mode === 'edit-trigger') && (
             <div className="flex flex-col gap-2">

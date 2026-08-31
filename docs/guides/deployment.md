@@ -52,6 +52,27 @@ Profile：`api` / `twitch` / `discord` / `bots` / `full`（見 [development.md](
 
 `migrate` 容器在每次部署啟動時自動跑 DB migration。
 
+## Twitch token encryption 與 Bot OAuth rollout
+
+1. 先為 API 與 Twitch runtime 設定同一份長期保存的 `TWITCH_TOKEN_ENCRYPTION_KEY`；可用
+   `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` 產生。不要在重新部署時重生。
+2. 在 Twitch Developer Console 登記精確 callback：`<API_URL>/api/auth/twitch/bot/callback` 與
+   `<API_URL>/api/auth/twitch/collaborator/callback`。
+3. 備份資料庫後套用 migration 100–102；舊 token 暫時保持 `encryption_version=0`，服務仍可讀取。
+4. 在含 `DATABASE_URL` 與 encryption key 的 backend 環境先執行：
+
+   ```bash
+   python scripts/encrypt_twitch_tokens.py --dry-run
+   python scripts/encrypt_twitch_tokens.py --batch-size 100
+   ```
+
+5. 確認輸出 `remaining=0`，再依序重啟 API 與 Twitch bot。不可刪除舊 key；key rotation 需另做逐列 re-encrypt migration。
+6. 由 `/admin` 建立 Niibot reset invite，使用指定 `BOT_ID` 帳號完成授權；callback 成功後 runtime 透過
+   `bot_token_updated` 即時換 token。不要再以 `scripts/twitch_oauth.py --role bot` 作正式環境主要流程。
+
+Rollback：Phase 2 schema 是 expand-only，可先關閉前端入口並回滾 application；不要回滾已加密資料欄位或換掉 key。
+在同一 Twitch identity 同時作 broadcaster 與 Bot 前，授權 scopes 必須符合 union-scope 契約。
+
 ## Staging 管理
 
 `nb staging` (alias for `scripts/staging.sh`) 包好上面的長指令：

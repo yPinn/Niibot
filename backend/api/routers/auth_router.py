@@ -112,6 +112,111 @@ async def get_twitch_oauth_url(
     )
 
 
+@router.get("/auth/twitch/collaborator/oauth", response_model=OAuthURLResponse)
+async def get_twitch_collaborator_oauth_url(
+    twitch_api: TwitchAPIClient = Depends(get_twitch_api),
+    settings: Settings = Depends(get_settings),
+) -> OAuthURLResponse:
+    """Start identity-only OAuth for a user managing someone else's tenant."""
+    redirect_path = "/api/auth/twitch/collaborator/callback"
+    state = encode_oauth_state("collaborator_login", secret=settings.jwt_secret_key)
+    oauth_url = twitch_api.generate_oauth_url(
+        state=state,
+        scopes=[],
+        redirect_path=redirect_path,
+    )
+    return OAuthURLResponse(
+        oauth_url=oauth_url,
+        redirect_uri=f"{settings.api_url}{redirect_path}",
+    )
+
+
+@router.get("/auth/twitch/collaborator/callback")
+async def twitch_collaborator_oauth_callback(
+    code: str | None = None,
+    error: str | None = None,
+    state: str | None = None,
+    twitch_api: TwitchAPIClient = Depends(get_twitch_api),
+    auth_service: AuthService = Depends(get_auth_service),
+    settings: Settings = Depends(get_settings),
+) -> RedirectResponse:
+    """Create a session for an existing tenant collaborator grant.
+
+    This flow proves identity only. It never persists the returned OAuth token,
+    creates a channel, runs broadcaster admission, or grants tenant access.
+    """
+    error_redirect = f"{settings.frontend_url}/login"
+    if error:
+        return RedirectResponse(url=f"{error_redirect}?error={_url_quote(error, safe='')}")
+
+    decoded_state = decode_oauth_state(state, secret=settings.jwt_secret_key)
+    if decoded_state.get("mode") != "collaborator_login":
+        return RedirectResponse(url=f"{error_redirect}?error=invalid_state")
+    if not code:
+        return RedirectResponse(url=f"{error_redirect}?error=no_code")
+
+    try:
+        pool = get_database_manager().pool
+    except RuntimeError:
+        return RedirectResponse(url=f"{error_redirect}?error=db_not_ready")
+
+    redirect_path = "/api/auth/twitch/collaborator/callback"
+    success, error_msg, token_data = await twitch_api.exchange_code_for_token(
+        code, redirect_path=redirect_path
+    )
+    if not success or not token_data:
+        safe_error = _url_quote(error_msg or "token_exchange_failed", safe="")
+        return RedirectResponse(url=f"{error_redirect}?error={safe_error}")
+
+    platform_user_id = token_data["user_id"]
+    user_info = await twitch_api.get_user_info(platform_user_id)
+    if not user_info:
+        return RedirectResponse(url=f"{error_redirect}?error=user_fetch_failed")
+    username = user_info.get("name") or user_info.get("display_name") or platform_user_id
+
+    try:
+        identity_result = await IdentityService(pool).find_or_link(
+            platform="twitch",
+            platform_user_id=platform_user_id,
+            username=username,
+            display_name=user_info.get("display_name"),
+            avatar=user_info.get("avatar"),
+        )
+        user_id = identity_result.user_id
+
+        membership = await AdmissionService(pool).get(user_id)
+        if membership is not None and membership.status in {"suspended", "rejected"}:
+            return RedirectResponse(url=f"{error_redirect}?error=account_locked")
+
+        tenants = await TenantService(pool).list_user_tenants(user_id)
+        if not tenants:
+            return RedirectResponse(url=f"{error_redirect}?error=no_tenant_access")
+    except Exception as exc:
+        LOGGER.error(
+            "DB error during collaborator OAuth for %s: %s",
+            platform_user_id,
+            type(exc).__name__,
+        )
+        return RedirectResponse(url=f"{error_redirect}?error=db_timeout")
+
+    jwt_token = auth_service.create_access_token(
+        user_id=user_id,
+        platform="twitch",
+        platform_user_id=platform_user_id,
+    )
+    response = RedirectResponse(url=f"{settings.frontend_url}/dashboard/{tenants[0].channel_id}")
+    response.set_cookie(
+        key="auth_token",
+        value=jwt_token,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        max_age=settings.jwt_expire_days * 24 * 60 * 60,
+    )
+    LOGGER.info("Collaborator logged in: twitch:%s", platform_user_id)
+    return response
+
+
 @router.get("/auth/twitch/callback")
 async def twitch_oauth_callback(
     code: str | None = None,

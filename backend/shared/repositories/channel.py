@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import logging
+import os
 
 import asyncpg
 
 from shared.cache import AsyncTTLCache, cached
 from shared.models.channel import Channel, DiscordUser, Token
+from shared.twitch_token_crypto import decrypt_twitch_token, encrypt_twitch_token
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -22,8 +24,33 @@ _discord_user_cache = AsyncTTLCache(maxsize=64, ttl=300)
 class ChannelRepository:
     """Pure SQL operations for tokens / channels / discord_users."""
 
-    def __init__(self, pool: asyncpg.Pool) -> None:
+    def __init__(self, pool: asyncpg.Pool, *, token_encryption_key: str | None = None) -> None:
         self.pool = pool
+        self._token_encryption_key = token_encryption_key or os.getenv(
+            "TWITCH_TOKEN_ENCRYPTION_KEY"
+        )
+
+    def _encode_token_pair(self, token: str, refresh: str) -> tuple[str, str, int]:
+        if not self._token_encryption_key:
+            return token, refresh, 0
+        encrypted_token, version = encrypt_twitch_token(token, self._token_encryption_key)
+        encrypted_refresh, refresh_version = encrypt_twitch_token(
+            refresh, self._token_encryption_key
+        )
+        if refresh_version != version:  # pragma: no cover - defensive future-version guard
+            raise RuntimeError("Twitch token and refresh encryption versions diverged")
+        return encrypted_token, encrypted_refresh, version
+
+    def _decode_token_row(self, row: asyncpg.Record | dict) -> Token:
+        data = dict(row)
+        version = int(data.pop("encryption_version", 0))
+        data["token"] = decrypt_twitch_token(
+            data["token"], version=version, key=self._token_encryption_key
+        )
+        data["refresh"] = decrypt_twitch_token(
+            data["refresh"], version=version, key=self._token_encryption_key
+        )
+        return Token(**data)
 
     # ==================== Token Operations ====================
 
@@ -35,14 +62,15 @@ class ChannelRepository:
         """Get a user's OAuth token by type ('broadcaster' or 'bot')."""
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT user_id, token, refresh, token_type, scopes, created_at, updated_at "
+                "SELECT user_id, token, refresh, token_type, scopes, encryption_version, "
+                "created_at, updated_at "
                 "FROM tokens WHERE user_id = $1 AND token_type = $2",
                 user_id,
                 token_type,
             )
             if not row:
                 return None
-            return Token(**dict(row))
+            return self._decode_token_row(row)
 
     async def upsert_token_only(
         self,
@@ -53,23 +81,30 @@ class ChannelRepository:
         token_type: str = "broadcaster",
     ) -> None:
         """Insert or update an OAuth token (without touching the channels table)."""
+        encrypted_token, encrypted_refresh, encryption_version = self._encode_token_pair(
+            token, refresh
+        )
         async with self.pool.acquire() as conn:
             await conn.execute(
                 """
-                INSERT INTO tokens (user_id, token, refresh, scopes, token_type)
-                VALUES ($1, $2, $3, $4, $5)
+                INSERT INTO tokens (
+                    user_id, token, refresh, scopes, token_type, encryption_version
+                )
+                VALUES ($1, $2, $3, $4, $5, $6)
                 ON CONFLICT (user_id, token_type) DO UPDATE SET
                     token           = EXCLUDED.token,
                     refresh         = EXCLUDED.refresh,
                     scopes          = COALESCE(EXCLUDED.scopes, tokens.scopes),
+                    encryption_version = EXCLUDED.encryption_version,
                     requires_reauth = FALSE,
                     updated_at      = NOW()
                 """,
                 user_id,
-                token,
-                refresh,
+                encrypted_token,
+                encrypted_refresh,
                 scopes,
                 token_type,
+                encryption_version,
             )
         _token_cache.invalidate(f"token:{user_id}:{token_type}")
 
@@ -87,10 +122,11 @@ class ChannelRepository:
         """Return all tokens (both types)."""
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
-                "SELECT user_id, token, refresh, token_type, scopes, created_at, updated_at "
+                "SELECT user_id, token, refresh, token_type, scopes, encryption_version, "
+                "created_at, updated_at "
                 "FROM tokens"
             )
-            return [Token(**dict(r)) for r in rows]
+            return [self._decode_token_row(r) for r in rows]
 
     async def upsert_token(
         self,
@@ -106,24 +142,31 @@ class ChannelRepository:
 
         This is a single transaction: tokens upsert + channels upsert.
         """
+        encrypted_token, encrypted_refresh, encryption_version = self._encode_token_pair(
+            token, refresh
+        )
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 await conn.execute(
                     """
-                    INSERT INTO tokens (user_id, token, refresh, scopes, token_type)
-                    VALUES ($1, $2, $3, $4, $5)
+                    INSERT INTO tokens (
+                        user_id, token, refresh, scopes, token_type, encryption_version
+                    )
+                    VALUES ($1, $2, $3, $4, $5, $6)
                     ON CONFLICT (user_id, token_type) DO UPDATE SET
                         token           = EXCLUDED.token,
                         refresh         = EXCLUDED.refresh,
                         scopes          = COALESCE(EXCLUDED.scopes, tokens.scopes),
+                        encryption_version = EXCLUDED.encryption_version,
                         requires_reauth = FALSE,
                         updated_at      = NOW()
                     """,
                     user_id,
-                    token,
-                    refresh,
+                    encrypted_token,
+                    encrypted_refresh,
                     scopes,
                     token_type,
+                    encryption_version,
                 )
                 # enabled is intentionally omitted so the row uses the column
                 # default (FALSE). Admission — not signup — turns a channel on

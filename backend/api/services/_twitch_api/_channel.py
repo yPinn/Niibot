@@ -25,14 +25,56 @@ class _ChannelMixin(_TwitchAPIBase):
                 LOGGER.error(f"Failed to fetch custom rewards: broadcaster={broadcaster_id}")
                 return []
 
-            return [
-                {"id": r["id"], "title": r["title"], "cost": r["cost"]}
-                for r in response.json().get("data", [])
-            ]
+            rewards: list[dict] = []
+            for reward in response.json().get("data", []):
+                stream_limit = reward.get("max_per_stream_setting") or {}
+                user_limit = reward.get("max_per_user_per_stream_setting") or {}
+                rewards.append(
+                    {
+                        "id": reward["id"],
+                        "title": reward["title"],
+                        "cost": reward["cost"],
+                        "is_enabled": bool(reward.get("is_enabled", True)),
+                        "is_paused": bool(reward.get("is_paused", False)),
+                        "is_in_stock": bool(reward.get("is_in_stock", True)),
+                        "should_redemptions_skip_request_queue": bool(
+                            reward.get("should_redemptions_skip_request_queue", False)
+                        ),
+                        "max_per_stream": (
+                            int(stream_limit.get("max_per_stream", 0))
+                            if stream_limit.get("is_enabled")
+                            else None
+                        ),
+                        "max_per_user_per_stream": (
+                            int(user_limit.get("max_per_user_per_stream", 0))
+                            if user_limit.get("is_enabled")
+                            else None
+                        ),
+                    }
+                )
+            return rewards
 
         except Exception:
             LOGGER.exception("Error getting custom rewards for broadcaster %s", broadcaster_id)
             return []
+
+    async def get_vips(self, broadcaster_id: str, access_token: str) -> list[dict]:
+        """Fetch a complete VIP snapshot or fail without returning partial data."""
+        results: list[dict] = []
+        cursor: str | None = None
+        while True:
+            params = {"broadcaster_id": broadcaster_id, "first": 100}
+            if cursor:
+                params["after"] = cursor
+            response = await self._helix_get("channels/vips", params, token=access_token)
+            if response is None or response.status_code != 200:
+                LOGGER.warning("Complete VIP snapshot failed for broadcaster %s", broadcaster_id)
+                raise RuntimeError("Twitch VIP snapshot unavailable")
+            body = response.json()
+            results.extend(body.get("data", []))
+            cursor = body.get("pagination", {}).get("cursor")
+            if not cursor:
+                return results
 
     # ------------------------------------------------------------------
     # Videos / VODs

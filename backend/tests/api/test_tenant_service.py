@@ -13,8 +13,10 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from api.services.tenant_service import (
     TenantAccessDeniedError,
+    TenantAccountLockedError,
     TenantNotFoundError,
     TenantService,
+    TenantSummary,
     TenantSuspendedError,
 )
 
@@ -33,10 +35,20 @@ def _tx_cm() -> MagicMock:
     return tx
 
 
-def _channel_row(channel_id: str = "12345", *, suspended: bool = False) -> MagicMock:
+def _access_row(
+    channel_id: str = "12345",
+    *,
+    role: str | None = "owner",
+    suspended: bool = False,
+    caller_status: str | None = "active",
+    owner_status: str | None = "active",
+) -> MagicMock:
     payload = {
         "channel_id": channel_id,
         "suspended_at": datetime(2026, 1, 1) if suspended else None,
+        "role": role,
+        "caller_membership_status": caller_status,
+        "owner_membership_status": owner_status,
     }
     row = MagicMock()
     row.__getitem__ = lambda self, k: payload[k]
@@ -62,10 +74,7 @@ class TestAssertAccess:
     async def test_owner_role_satisfies_manager_requirement(self):
         user = str(uuid.uuid4())
         conn = AsyncMock()
-        conn.fetchrow.side_effect = [
-            _channel_row(),  # channels lookup
-            _member_row("12345", user, "owner"),  # channel_members.get
-        ]
+        conn.fetchrow.return_value = _access_row(role="owner")
         pool = _pool_with(conn)
         svc = TenantService(pool)
 
@@ -79,10 +88,7 @@ class TestAssertAccess:
     async def test_viewer_role_insufficient_for_manager(self):
         user = str(uuid.uuid4())
         conn = AsyncMock()
-        conn.fetchrow.side_effect = [
-            _channel_row(),
-            _member_row("12345", user, "viewer"),
-        ]
+        conn.fetchrow.return_value = _access_row(role="viewer")
         pool = _pool_with(conn)
         svc = TenantService(pool)
 
@@ -95,14 +101,11 @@ class TestAssertAccess:
 
     async def test_non_member_denied(self):
         conn = AsyncMock()
-        conn.fetchrow.side_effect = [
-            _channel_row(),
-            None,  # not a member
-        ]
+        conn.fetchrow.return_value = _access_row(role=None)
         pool = _pool_with(conn)
         svc = TenantService(pool)
 
-        with pytest.raises(TenantAccessDeniedError):
+        with pytest.raises(TenantNotFoundError):
             await svc.assert_access(
                 channel_id="12345",
                 user_id=str(uuid.uuid4()),
@@ -123,9 +126,44 @@ class TestAssertAccess:
 
     async def test_suspended_channel_raises(self):
         conn = AsyncMock()
-        conn.fetchrow.return_value = _channel_row(suspended=True)
+        conn.fetchrow.return_value = _access_row(suspended=True)
         pool = _pool_with(conn)
         svc = TenantService(pool)
+
+        with pytest.raises(TenantSuspendedError):
+            await svc.assert_access(
+                channel_id="12345",
+                user_id=str(uuid.uuid4()),
+            )
+
+    @pytest.mark.parametrize("status", ["suspended", "rejected"])
+    async def test_globally_locked_collaborator_is_denied(self, status: str):
+        conn = AsyncMock()
+        conn.fetchrow.return_value = _access_row(role="manager", caller_status=status)
+        svc = TenantService(_pool_with(conn))
+
+        with pytest.raises(TenantAccountLockedError):
+            await svc.assert_access(
+                channel_id="12345",
+                user_id=str(uuid.uuid4()),
+            )
+
+    async def test_collaborator_without_broadcaster_membership_is_allowed(self):
+        user = str(uuid.uuid4())
+        conn = AsyncMock()
+        conn.fetchrow.return_value = _access_row(role="manager", caller_status=None)
+        svc = TenantService(_pool_with(conn))
+
+        ctx = await svc.assert_access(channel_id="12345", user_id=user)
+
+        assert ctx.role == "manager"
+
+    async def test_inactive_owner_suspends_workspace_for_mods(self):
+        conn = AsyncMock()
+        conn.fetchrow.return_value = _access_row(
+            role="manager", caller_status=None, owner_status="suspended"
+        )
+        svc = TenantService(_pool_with(conn))
 
         with pytest.raises(TenantSuspendedError):
             await svc.assert_access(
@@ -161,3 +199,45 @@ class TestEnsureTenantForOwner:
             c for c in conn.fetchrow.await_args_list if "INSERT INTO channel_members" in c.args[0]
         ]
         assert member_inserts, "expected channel_members upsert"
+
+
+@pytest.mark.asyncio
+class TestListAccessibleTenants:
+    async def test_returns_channel_metadata_and_role_for_workspace_picker(self):
+        user = str(uuid.uuid4())
+        conn = AsyncMock()
+        conn.fetchval.return_value = None
+        conn.fetch.return_value = [
+            {
+                "channel_id": "12345",
+                "channel_name": "alice",
+                "display_name": "Alice",
+                "enabled": True,
+                "role": "manager",
+            }
+        ]
+        svc = TenantService(_pool_with(conn))
+
+        tenants = await svc.list_accessible_tenants(user)
+
+        assert tenants == [
+            TenantSummary(
+                channel_id="12345",
+                channel_name="alice",
+                display_name="Alice",
+                enabled=True,
+                role="manager",
+            )
+        ]
+        assert "owner_membership.status = 'active'" in conn.fetch.await_args.args[0]
+
+    @pytest.mark.parametrize("status", ["suspended", "rejected"])
+    async def test_locked_account_cannot_list_workspaces(self, status: str):
+        conn = AsyncMock()
+        conn.fetchval.return_value = status
+        svc = TenantService(_pool_with(conn))
+
+        with pytest.raises(TenantAccountLockedError):
+            await svc.list_accessible_tenants(str(uuid.uuid4()))
+
+        conn.fetch.assert_not_awaited()

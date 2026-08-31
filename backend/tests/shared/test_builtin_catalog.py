@@ -12,9 +12,13 @@ from __future__ import annotations
 from itertools import groupby
 
 from shared.builtin_commands import (
+    BUILTIN_AUDIENCES,
     BUILTIN_CATEGORIES,
     BUILTIN_DEFS,
     BUILTIN_DESCRIPTIONS,
+    BUILTIN_DETAILS,
+    BUILTIN_PREVIEWS,
+    BUILTIN_USAGE,
     PUBLIC_DESCRIPTIONS,
 )
 
@@ -57,10 +61,42 @@ def test_public_descriptions_are_a_subset_of_builtins() -> None:
     assert not extra, f"PUBLIC_DESCRIPTIONS names not in BUILTIN_DEFS: {extra}"
 
 
+def test_every_viewer_builtin_has_a_public_description() -> None:
+    viewer_names = {name for name, audience in BUILTIN_AUDIENCES.items() if audience == "viewer"}
+    assert set(PUBLIC_DESCRIPTIONS) == viewer_names
+
+
 def test_declared_min_roles_are_valid() -> None:
     for defn in BUILTIN_DEFS:
         role = defn.get("min_role", "everyone")
         assert role in _VALID_ROLES, f"{defn['command_name']}: bad min_role {role!r}"
+
+
+def test_every_builtin_has_audience_usage_and_detail() -> None:
+    names = {d["command_name"] for d in BUILTIN_DEFS}
+    assert set(BUILTIN_AUDIENCES) == names
+    assert set(BUILTIN_USAGE) == names
+    assert set(BUILTIN_DETAILS) == names
+    assert set(BUILTIN_PREVIEWS) == names
+    assert set(BUILTIN_AUDIENCES.values()) <= {"viewer", "broadcaster", "moderator"}
+
+
+def test_builtin_previews_are_safe_static_examples() -> None:
+    for name, preview in BUILTIN_PREVIEWS.items():
+        assert preview["input"].startswith("!")
+        assert preview["output"].strip(), f"{name}: missing preview output"
+
+
+def test_catalog_orders_frequent_viewer_tasks_before_privileged_tools() -> None:
+    category_runs = [cat for cat, _ in groupby(d["category"] for d in BUILTIN_DEFS)]
+    assert category_runs == ["common", "viewer", "fun", "game", "broadcaster", "moderator"]
+
+
+def test_subcount_is_a_broadcaster_tool() -> None:
+    by_name = {d["command_name"]: d for d in BUILTIN_DEFS}
+    assert BUILTIN_AUDIENCES["subcount"] == "broadcaster"
+    assert by_name["subcount"]["category"] == "broadcaster"
+    assert by_name["subcount"]["min_role"] == "broadcaster"
 
 
 def test_moderator_only_builtins_declare_min_role() -> None:

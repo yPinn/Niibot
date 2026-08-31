@@ -242,6 +242,31 @@ class _NotifyMixin:
         except Exception as e:
             LOGGER.exception(f"[NOTIFY] Error handling token_reauth: {e}")
 
+    async def _handle_bot_token_updated(self, connection, pid, channel, payload) -> None:
+        """Atomically replace the running system Bot credential after web OAuth."""
+        try:
+            data = json.loads(payload)
+            user_id = data["user_id"]
+            # Phase 2 hot-reloads only the process-default Niibot credential.
+            # Tenant-selected custom accounts are loaded by the Phase 3 resolver,
+            # avoiding an unscoped external token entering the global store.
+            if user_id != self._bot_id:  # type: ignore[attr-defined]
+                LOGGER.debug("[NOTIFY] Custom Bot credential persisted for future tenant use")
+                return
+
+            from shared.repositories.channel import _token_cache
+
+            _token_cache.invalidate(f"token:{user_id}:bot")
+            token_obj = await self.channels.get_token(user_id, "bot")  # type: ignore[attr-defined]
+            if token_obj is None:
+                LOGGER.error("[NOTIFY] Updated system Bot credential is unavailable")
+                return
+
+            await self.add_token(token_obj.token, token_obj.refresh)  # type: ignore[attr-defined]
+            LOGGER.info("[NOTIFY] System Bot credential hot reload completed")
+        except Exception:
+            LOGGER.exception("[NOTIFY] System Bot credential hot reload failed")
+
     async def _handle_config_change(self, connection, pid, channel, payload) -> None:
         """Reload in-memory cache for the affected channel on config writes."""
         try:

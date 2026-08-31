@@ -3,12 +3,14 @@ import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/contexts/AuthContext'
+import { useTenant } from '@/contexts/TenantContext'
 
 export function ProtectedRoute() {
   const { user, isAuthenticated, isInitialized, isInitError, retryInit } = useAuth()
+  const { tenants, isInitialized: isTenantInitialized } = useTenant()
   const location = useLocation()
 
-  if (!isInitialized) {
+  if (!isInitialized || (isAuthenticated && !isTenantInitialized)) {
     return <LoadingSpinner fullScreen text="Loading..." />
   }
 
@@ -25,7 +27,7 @@ export function ProtectedRoute() {
     return <Navigate to="/login" state={{ from: location }} replace />
   }
 
-  if (!user?.is_activated && !user?.is_owner) {
+  if (!user?.is_activated && !user?.is_owner && tenants.length === 0) {
     return <Navigate to="/activate" replace />
   }
 

@@ -1,11 +1,24 @@
 import type { ChannelDefaults } from '@/api/channels'
+import type { CommandConfig } from '@/api/commands'
 
 export const ROLE_LABELS: Record<string, string> = {
   everyone: '所有人',
   subscriber: '訂閱者',
   vip: 'VIP',
-  moderator: '管理員',
-  broadcaster: '頻道主',
+  moderator: 'Mod',
+  broadcaster: '實況主',
+}
+
+export const PUBLIC_ROLE_LABELS: Record<string, string> = {
+  everyone: 'For everyone',
+  subscriber: 'Subscribers',
+  vip: 'VIPs',
+}
+
+export const AUDIENCE_LABELS: Record<NonNullable<CommandConfig['audience']>, string> = {
+  viewer: '觀眾',
+  moderator: 'Mod',
+  broadcaster: '實況主',
 }
 
 /** Commands whose response text is editable even though they are "builtin". */

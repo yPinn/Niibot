@@ -33,6 +33,31 @@ export const API_ENDPOINTS = {
   user: {
     preferences: join('/api/user/preferences'),
   },
+  tenants: {
+    list: join('/api/tenants'),
+    botAccounts: (channelId: string) =>
+      join(`/api/tenants/${encodeURIComponent(channelId)}/bot-accounts`),
+    botInvites: (channelId: string) =>
+      join(`/api/tenants/${encodeURIComponent(channelId)}/bot-accounts/invites`),
+    botInviteStatus: (channelId: string, inviteId: string) =>
+      join(
+        `/api/tenants/${encodeURIComponent(channelId)}/bot-accounts/invites/${encodeURIComponent(inviteId)}`
+      ),
+    reauthorizeBot: (channelId: string, botUserId: string) =>
+      join(
+        `/api/tenants/${encodeURIComponent(channelId)}/bot-accounts/${encodeURIComponent(botUserId)}/reauthorize-invite`
+      ),
+  },
+  publicBotInvites: {
+    get: (publicToken: string, nonce: string) =>
+      join(
+        `/api/public/bot-invites/${encodeURIComponent(publicToken)}?${new URLSearchParams({ nonce })}`
+      ),
+    decline: (publicToken: string, nonce: string) =>
+      join(
+        `/api/public/bot-invites/${encodeURIComponent(publicToken)}/decline?${new URLSearchParams({ nonce })}`
+      ),
+  },
   channels: {
     twitch: {
       monitored: join('/api/channels/twitch/monitored'),
@@ -76,6 +101,22 @@ export const API_ENDPOINTS = {
     redemptions: join('/api/events/redemptions'),
     updateRedemption: (actionType: string) => join(`/api/events/redemptions/${actionType}`),
   },
+  checkin: {
+    settings: join('/api/checkin/settings'),
+  },
+  vip: {
+    state: join('/api/vip/state'),
+    settings: join('/api/vip/settings'),
+    initialize: join('/api/vip/initialize'),
+    sync: join('/api/vip/sync'),
+    rule: (rewardId: string) => join(`/api/vip/rules/${encodeURIComponent(rewardId)}`),
+    rulesEnabled: join('/api/vip/rules/enabled'),
+    adopt: (redemptionId: string) =>
+      join(`/api/vip/reviews/${encodeURIComponent(redemptionId)}/adopt`),
+    keepExternal: (redemptionId: string) =>
+      join(`/api/vip/reviews/${encodeURIComponent(redemptionId)}/keep-external`),
+    entitlement: (userId: string) => join(`/api/vip/entitlements/${encodeURIComponent(userId)}`),
+  },
   gameQueue: {
     state: join('/api/game-queue/state'),
     advance: join('/api/game-queue/advance'),
@@ -98,6 +139,21 @@ export const API_ENDPOINTS = {
     playNow: (id: number) => join(`/api/video-queue/entries/${id}/play-now`),
     removeEntry: (id: number) => join(`/api/video-queue/entries/${id}`),
     addEntry: join('/api/video-queue/entries'),
+  },
+  communityOverlay: {
+    events: join('/api/live-display/public/events'),
+    theme: join('/api/live-display/public/theme'),
+    settings: join('/api/live-display/settings'),
+    rotateKey: join('/api/live-display/settings/rotate-key'),
+    preview: join('/api/live-display/settings/preview'),
+    themeSettings: (blockType: string) =>
+      join(`/api/live-display/settings/blocks/${encodeURIComponent(blockType)}/theme`),
+    themeDraft: (blockType: string) =>
+      join(`/api/live-display/settings/blocks/${encodeURIComponent(blockType)}/theme/draft`),
+    themePublish: (blockType: string) =>
+      join(`/api/live-display/settings/blocks/${encodeURIComponent(blockType)}/theme/publish`),
+    themeResetDraft: (blockType: string) =>
+      join(`/api/live-display/settings/blocks/${encodeURIComponent(blockType)}/theme/reset-draft`),
   },
   timers: {
     configs: join('/api/timers/configs'),
@@ -151,6 +207,7 @@ export const API_ENDPOINTS = {
     channels: join('/api/admin/channels'),
     moduleAiPacks: join('/api/admin/modules/ai-packs'),
     botStatus: join('/api/admin/bot-status'),
+    resetSystemBot: join('/api/admin/bot-accounts/system-default/reset-invite'),
     botEmotes: join('/api/admin/bot-emotes'),
     resyncBotEmotes: (channelId?: string) =>
       join(`/api/admin/bot-emotes/resync${channelId ? `?channel_id=${channelId}` : ''}`),

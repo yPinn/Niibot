@@ -3,7 +3,6 @@
     "0": {
       "name": "愚者",
       "name_en": "The Fool",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/ar00.jpg",
       "upright": {
         "keywords": ["新開始", "冒險", "自由"],
         "meanings": {
@@ -28,7 +27,6 @@
     "1": {
       "name": "魔術師",
       "name_en": "The Magician",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/ar01.jpg",
       "upright": {
         "keywords": ["創造力", "技能", "行動力"],
         "meanings": {
@@ -53,7 +51,6 @@
     "2": {
       "name": "女祭司",
       "name_en": "The High Priestess",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/ar02.jpg",
       "upright": {
         "keywords": ["直覺", "內在智慧", "神秘"],
         "meanings": {
@@ -78,7 +75,6 @@
     "3": {
       "name": "皇后",
       "name_en": "The Empress",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/ar03.jpg",
       "upright": {
         "keywords": ["豐收", "母性", "自然"],
         "meanings": {
@@ -103,7 +99,6 @@
     "4": {
       "name": "皇帝",
       "name_en": "The Emperor",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/ar04.jpg",
       "upright": {
         "keywords": ["權威", "結構", "穩定"],
         "meanings": {
@@ -128,7 +123,6 @@
     "5": {
       "name": "教皇",
       "name_en": "The Hierophant",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/ar05.jpg",
       "upright": {
         "keywords": ["傳統", "教導", "信守規則"],
         "meanings": {
@@ -153,7 +147,6 @@
     "6": {
       "name": "戀人",
       "name_en": "The Lovers",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/ar06.jpg",
       "upright": {
         "keywords": ["選擇", "結合", "價值觀"],
         "meanings": {
@@ -178,7 +171,6 @@
     "7": {
       "name": "戰車",
       "name_en": "The Chariot",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/ar07.jpg",
       "upright": {
         "keywords": ["勝利", "自律", "意志"],
         "meanings": {
@@ -203,7 +195,6 @@
     "8": {
       "name": "力量",
       "name_en": "Strength",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/ar08.jpg",
       "upright": {
         "keywords": ["勇氣", "耐心", "內在力量"],
         "meanings": {
@@ -228,7 +219,6 @@
     "9": {
       "name": "隱士",
       "name_en": "The Hermit",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/ar09.jpg",
       "upright": {
         "keywords": ["孤獨", "內省", "引導"],
         "meanings": {
@@ -253,7 +243,6 @@
     "10": {
       "name": "命運之輪",
       "name_en": "Wheel of Fortune",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/ar10.jpg",
       "upright": {
         "keywords": ["改變", "循環", "契機"],
         "meanings": {
@@ -278,7 +267,6 @@
     "11": {
       "name": "正義",
       "name_en": "Justice",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/ar11.jpg",
       "upright": {
         "keywords": ["公平", "真相", "法律"],
         "meanings": {
@@ -303,7 +291,6 @@
     "12": {
       "name": "倒吊人",
       "name_en": "The Hanged Man",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/ar12.jpg",
       "upright": {
         "keywords": ["換位思考", "犧牲", "暫停"],
         "meanings": {
@@ -328,7 +315,6 @@
     "13": {
       "name": "死神",
       "name_en": "Death",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/ar13.jpg",
       "upright": {
         "keywords": ["結束", "轉變", "新生"],
         "meanings": {
@@ -353,7 +339,6 @@
     "14": {
       "name": "節制",
       "name_en": "Temperance",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/ar14.jpg",
       "upright": {
         "keywords": ["平衡", "和諧", "融合"],
         "meanings": {
@@ -378,7 +363,6 @@
     "15": {
       "name": "惡魔",
       "name_en": "The Devil",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/ar15.jpg",
       "upright": {
         "keywords": ["束縛", "慾望", "物質享受"],
         "meanings": {
@@ -403,7 +387,6 @@
     "16": {
       "name": "高塔",
       "name_en": "The Tower",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/ar16.jpg",
       "upright": {
         "keywords": ["劇變", "崩塌", "真相大白"],
         "meanings": {
@@ -428,7 +411,6 @@
     "17": {
       "name": "星星",
       "name_en": "The Star",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/ar17.jpg",
       "upright": {
         "keywords": ["希望", "療癒", "平靜"],
         "meanings": {
@@ -453,7 +435,6 @@
     "18": {
       "name": "月亮",
       "name_en": "The Moon",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/ar18.jpg",
       "upright": {
         "keywords": ["不安", "幻覺", "隱藏的恐懼"],
         "meanings": {
@@ -478,7 +459,6 @@
     "19": {
       "name": "太陽",
       "name_en": "The Sun",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/ar19.jpg",
       "upright": {
         "keywords": ["喜悅", "成功", "活力"],
         "meanings": {
@@ -503,7 +483,6 @@
     "20": {
       "name": "審判",
       "name_en": "Judgement",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/ar20.jpg",
       "upright": {
         "keywords": ["召喚", "重生", "因果"],
         "meanings": {
@@ -528,7 +507,6 @@
     "21": {
       "name": "世界",
       "name_en": "The World",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/ar21.jpg",
       "upright": {
         "keywords": ["圓滿", "達成", "旅行"],
         "meanings": {
@@ -553,7 +531,6 @@
     "w01": {
       "name": "權杖王牌",
       "name_en": "Ace of Wands",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/waac.jpg",
       "upright": {
         "keywords": ["靈感", "新機會", "創造力"],
         "meanings": {
@@ -578,7 +555,6 @@
     "w02": {
       "name": "權杖二",
       "name_en": "Two of Wands",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/wa02.jpg",
       "upright": {
         "keywords": ["規劃", "遠見", "決策"],
         "meanings": {
@@ -603,7 +579,6 @@
     "w03": {
       "name": "權杖三",
       "name_en": "Three of Wands",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/wa03.jpg",
       "upright": {
         "keywords": ["展望", "拓展", "進展"],
         "meanings": {
@@ -628,7 +603,6 @@
     "w04": {
       "name": "權杖四",
       "name_en": "Four of Wands",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/wa04.jpg",
       "upright": {
         "keywords": ["慶祝", "和諧", "穩固基礎"],
         "meanings": {
@@ -653,7 +627,6 @@
     "w05": {
       "name": "權杖五",
       "name_en": "Five of Wands",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/wa05.jpg",
       "upright": {
         "keywords": ["競爭", "衝突", "挑戰"],
         "meanings": {
@@ -678,7 +651,6 @@
     "w06": {
       "name": "權杖六",
       "name_en": "Six of Wands",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/wa06.jpg",
       "upright": {
         "keywords": ["勝利", "認可", "自信"],
         "meanings": {
@@ -703,7 +675,6 @@
     "w07": {
       "name": "權杖七",
       "name_en": "Seven of Wands",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/wa07.jpg",
       "upright": {
         "keywords": ["堅守", "防衛", "毅力"],
         "meanings": {
@@ -728,7 +699,6 @@
     "w08": {
       "name": "權杖八",
       "name_en": "Eight of Wands",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/wa08.jpg",
       "upright": {
         "keywords": ["迅速", "行動", "訊息"],
         "meanings": {
@@ -753,7 +723,6 @@
     "w09": {
       "name": "權杖九",
       "name_en": "Nine of Wands",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/wa09.jpg",
       "upright": {
         "keywords": ["堅韌", "最後防線", "警覺"],
         "meanings": {
@@ -778,7 +747,6 @@
     "w10": {
       "name": "權杖十",
       "name_en": "Ten of Wands",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/wa10.jpg",
       "upright": {
         "keywords": ["重擔", "責任", "過勞"],
         "meanings": {
@@ -803,7 +771,6 @@
     "w11": {
       "name": "權杖侍者",
       "name_en": "Page of Wands",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/wapa.jpg",
       "upright": {
         "keywords": ["探索", "熱忱", "好奇心"],
         "meanings": {
@@ -828,7 +795,6 @@
     "w12": {
       "name": "權杖騎士",
       "name_en": "Knight of Wands",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/wakn.jpg",
       "upright": {
         "keywords": ["衝勁", "冒險", "自信"],
         "meanings": {
@@ -853,7 +819,6 @@
     "w13": {
       "name": "權杖王后",
       "name_en": "Queen of Wands",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/waqu.jpg",
       "upright": {
         "keywords": ["魅力", "自信", "溫暖"],
         "meanings": {
@@ -878,7 +843,6 @@
     "w14": {
       "name": "權杖國王",
       "name_en": "King of Wands",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/waki.jpg",
       "upright": {
         "keywords": ["領導力", "願景", "果斷"],
         "meanings": {
@@ -903,7 +867,6 @@
     "c01": {
       "name": "聖杯王牌",
       "name_en": "Ace of Cups",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/cuac.jpg",
       "upright": {
         "keywords": ["新感情", "直覺", "溢滿的愛"],
         "meanings": {
@@ -928,7 +891,6 @@
     "c02": {
       "name": "聖杯二",
       "name_en": "Two of Cups",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/cu02.jpg",
       "upright": {
         "keywords": ["連結", "合作", "吸引力"],
         "meanings": {
@@ -953,7 +915,6 @@
     "c03": {
       "name": "聖杯三",
       "name_en": "Three of Cups",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/cu03.jpg",
       "upright": {
         "keywords": ["慶祝", "友誼", "社交"],
         "meanings": {
@@ -978,7 +939,6 @@
     "c04": {
       "name": "聖杯四",
       "name_en": "Four of Cups",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/cu04.jpg",
       "upright": {
         "keywords": ["倦怠", "冷漠", "沉思"],
         "meanings": {
@@ -1003,7 +963,6 @@
     "c05": {
       "name": "聖杯五",
       "name_en": "Five of Cups",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/cu05.jpg",
       "upright": {
         "keywords": ["悲傷", "失去", "遺憾"],
         "meanings": {
@@ -1028,7 +987,6 @@
     "c06": {
       "name": "聖杯六",
       "name_en": "Six of Cups",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/cu06.jpg",
       "upright": {
         "keywords": ["回憶", "純真", "舊緣"],
         "meanings": {
@@ -1053,7 +1011,6 @@
     "c07": {
       "name": "聖杯七",
       "name_en": "Seven of Cups",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/cu07.jpg",
       "upright": {
         "keywords": ["幻想", "選擇過多", "白日夢"],
         "meanings": {
@@ -1078,7 +1035,6 @@
     "c08": {
       "name": "聖杯八",
       "name_en": "Eight of Cups",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/cu08.jpg",
       "upright": {
         "keywords": ["離開", "放下", "追尋意義"],
         "meanings": {
@@ -1103,7 +1059,6 @@
     "c09": {
       "name": "聖杯九",
       "name_en": "Nine of Cups",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/cu09.jpg",
       "upright": {
         "keywords": ["願望成真", "滿足", "幸福"],
         "meanings": {
@@ -1128,7 +1083,6 @@
     "c10": {
       "name": "聖杯十",
       "name_en": "Ten of Cups",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/cu10.jpg",
       "upright": {
         "keywords": ["圓滿", "家庭幸福", "和諧"],
         "meanings": {
@@ -1153,7 +1107,6 @@
     "c11": {
       "name": "聖杯侍者",
       "name_en": "Page of Cups",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/cupa.jpg",
       "upright": {
         "keywords": ["浪漫", "直覺", "創意"],
         "meanings": {
@@ -1178,7 +1131,6 @@
     "c12": {
       "name": "聖杯騎士",
       "name_en": "Knight of Cups",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/cukn.jpg",
       "upright": {
         "keywords": ["浪漫使者", "理想主義", "邀請"],
         "meanings": {
@@ -1203,7 +1155,6 @@
     "c13": {
       "name": "聖杯王后",
       "name_en": "Queen of Cups",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/cuqu.jpg",
       "upright": {
         "keywords": ["同理心", "直覺力", "溫柔"],
         "meanings": {
@@ -1228,7 +1179,6 @@
     "c14": {
       "name": "聖杯國王",
       "name_en": "King of Cups",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/cuki.jpg",
       "upright": {
         "keywords": ["情緒成熟", "平衡", "智慧"],
         "meanings": {
@@ -1253,7 +1203,6 @@
     "s01": {
       "name": "寶劍王牌",
       "name_en": "Ace of Swords",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/swac.jpg",
       "upright": {
         "keywords": ["真相", "突破", "清晰"],
         "meanings": {
@@ -1278,7 +1227,6 @@
     "s02": {
       "name": "寶劍二",
       "name_en": "Two of Swords",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/sw02.jpg",
       "upright": {
         "keywords": ["僵局", "抉擇", "逃避"],
         "meanings": {
@@ -1303,7 +1251,6 @@
     "s03": {
       "name": "寶劍三",
       "name_en": "Three of Swords",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/sw03.jpg",
       "upright": {
         "keywords": ["心碎", "痛苦", "背叛"],
         "meanings": {
@@ -1328,7 +1275,6 @@
     "s04": {
       "name": "寶劍四",
       "name_en": "Four of Swords",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/sw04.jpg",
       "upright": {
         "keywords": ["休息", "恢復", "靜養"],
         "meanings": {
@@ -1353,7 +1299,6 @@
     "s05": {
       "name": "寶劍五",
       "name_en": "Five of Swords",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/sw05.jpg",
       "upright": {
         "keywords": ["衝突", "贏了但輸了", "代價"],
         "meanings": {
@@ -1378,7 +1323,6 @@
     "s06": {
       "name": "寶劍六",
       "name_en": "Six of Swords",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/sw06.jpg",
       "upright": {
         "keywords": ["過渡", "離開困境", "平靜的旅程"],
         "meanings": {
@@ -1403,7 +1347,6 @@
     "s07": {
       "name": "寶劍七",
       "name_en": "Seven of Swords",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/sw07.jpg",
       "upright": {
         "keywords": ["策略", "隱瞞", "單獨行動"],
         "meanings": {
@@ -1428,7 +1371,6 @@
     "s08": {
       "name": "寶劍八",
       "name_en": "Eight of Swords",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/sw08.jpg",
       "upright": {
         "keywords": ["受困", "自我限制", "無力感"],
         "meanings": {
@@ -1453,7 +1395,6 @@
     "s09": {
       "name": "寶劍九",
       "name_en": "Nine of Swords",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/sw09.jpg",
       "upright": {
         "keywords": ["焦慮", "噩夢", "過度擔憂"],
         "meanings": {
@@ -1478,7 +1419,6 @@
     "s10": {
       "name": "寶劍十",
       "name_en": "Ten of Swords",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/sw10.jpg",
       "upright": {
         "keywords": ["谷底", "結束", "背叛"],
         "meanings": {
@@ -1503,7 +1443,6 @@
     "s11": {
       "name": "寶劍侍者",
       "name_en": "Page of Swords",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/swpa.jpg",
       "upright": {
         "keywords": ["好奇", "敏銳", "新觀點"],
         "meanings": {
@@ -1528,7 +1467,6 @@
     "s12": {
       "name": "寶劍騎士",
       "name_en": "Knight of Swords",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/swkn.jpg",
       "upright": {
         "keywords": ["果斷", "衝鋒", "直言不諱"],
         "meanings": {
@@ -1553,7 +1491,6 @@
     "s13": {
       "name": "寶劍王后",
       "name_en": "Queen of Swords",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/swqu.jpg",
       "upright": {
         "keywords": ["獨立", "清醒", "直覺智慧"],
         "meanings": {
@@ -1578,7 +1515,6 @@
     "s14": {
       "name": "寶劍國王",
       "name_en": "King of Swords",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/swki.jpg",
       "upright": {
         "keywords": ["權威", "理性", "公正"],
         "meanings": {
@@ -1603,7 +1539,6 @@
     "p01": {
       "name": "錢幣王牌",
       "name_en": "Ace of Pentacles",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/peac.jpg",
       "upright": {
         "keywords": ["新機遇", "繁榮", "物質基礎"],
         "meanings": {
@@ -1628,7 +1563,6 @@
     "p02": {
       "name": "錢幣二",
       "name_en": "Two of Pentacles",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/pe02.jpg",
       "upright": {
         "keywords": ["平衡", "彈性", "多工"],
         "meanings": {
@@ -1653,7 +1587,6 @@
     "p03": {
       "name": "錢幣三",
       "name_en": "Three of Pentacles",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/pe03.jpg",
       "upright": {
         "keywords": ["合作", "技藝", "學習"],
         "meanings": {
@@ -1678,7 +1611,6 @@
     "p04": {
       "name": "錢幣四",
       "name_en": "Four of Pentacles",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/pe04.jpg",
       "upright": {
         "keywords": ["守財", "穩定", "控制"],
         "meanings": {
@@ -1703,7 +1635,6 @@
     "p05": {
       "name": "錢幣五",
       "name_en": "Five of Pentacles",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/pe05.jpg",
       "upright": {
         "keywords": ["困頓", "匱乏", "孤立"],
         "meanings": {
@@ -1728,7 +1659,6 @@
     "p06": {
       "name": "錢幣六",
       "name_en": "Six of Pentacles",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/pe06.jpg",
       "upright": {
         "keywords": ["慷慨", "分享", "施與受"],
         "meanings": {
@@ -1753,7 +1683,6 @@
     "p07": {
       "name": "錢幣七",
       "name_en": "Seven of Pentacles",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/pe07.jpg",
       "upright": {
         "keywords": ["耐心", "等待收穫", "評估"],
         "meanings": {
@@ -1778,7 +1707,6 @@
     "p08": {
       "name": "錢幣八",
       "name_en": "Eight of Pentacles",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/pe08.jpg",
       "upright": {
         "keywords": ["精進", "專注", "工匠精神"],
         "meanings": {
@@ -1803,7 +1731,6 @@
     "p09": {
       "name": "錢幣九",
       "name_en": "Nine of Pentacles",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/pe09.jpg",
       "upright": {
         "keywords": ["獨立", "豐足", "自給自足"],
         "meanings": {
@@ -1828,7 +1755,6 @@
     "p10": {
       "name": "錢幣十",
       "name_en": "Ten of Pentacles",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/pe10.jpg",
       "upright": {
         "keywords": ["傳承", "家族財富", "長久穩定"],
         "meanings": {
@@ -1853,7 +1779,6 @@
     "p11": {
       "name": "錢幣侍者",
       "name_en": "Page of Pentacles",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/pepa.jpg",
       "upright": {
         "keywords": ["學習", "踏實", "新計劃"],
         "meanings": {
@@ -1878,7 +1803,6 @@
     "p12": {
       "name": "錢幣騎士",
       "name_en": "Knight of Pentacles",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/pekn.jpg",
       "upright": {
         "keywords": ["穩健", "勤奮", "負責"],
         "meanings": {
@@ -1903,7 +1827,6 @@
     "p13": {
       "name": "錢幣王后",
       "name_en": "Queen of Pentacles",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/pequ.jpg",
       "upright": {
         "keywords": ["豐盛", "務實", "照顧"],
         "meanings": {
@@ -1928,7 +1851,6 @@
     "p14": {
       "name": "錢幣國王",
       "name_en": "King of Pentacles",
-      "image_url": "https://sacred-texts.com/tarot/pkt/img/peki.jpg",
       "upright": {
         "keywords": ["富足", "商業頭腦", "穩定"],
         "meanings": {

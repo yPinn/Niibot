@@ -2,16 +2,6 @@
 
 from __future__ import annotations
 
-import os
-
-os.environ.setdefault("TWITCH_CLIENT_ID", "test-client-id")
-os.environ.setdefault("TWITCH_CLIENT_SECRET", "test-client-secret")
-os.environ.setdefault("BOT_ID", "999")
-os.environ.setdefault("OWNER_ID", "111")
-os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost/test")
-os.environ.setdefault("FRONTEND_URL", "https://niibot.tv")
-os.environ.setdefault("ENVIRONMENT", "production")
-
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
@@ -22,6 +12,12 @@ from utils.mod_guard import ModGuardNotifier
 
 class TestModGuardNotifier:
     pytestmark = pytest.mark.asyncio
+
+    @pytest.fixture(autouse=True)
+    def _production_settings(self):
+        with patch("utils.mod_guard.get_settings") as settings:
+            settings.return_value.is_production = True
+            yield
 
     def _notifier(self) -> ModGuardNotifier:
         return ModGuardNotifier()

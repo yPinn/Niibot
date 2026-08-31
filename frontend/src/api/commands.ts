@@ -14,6 +14,13 @@ export interface CommandConfig {
   aliases: string | null
   usage_count: number
   description: string
+  detail: string
+  usage: string
+  preview_input: string
+  preview_output: string
+  audience: 'viewer' | 'broadcaster' | 'moderator' | null
+  public_visible: boolean
+  display_order: number
   /** Display label for the builtin's category; null for custom commands. */
   category_label: string | null
 }

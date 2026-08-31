@@ -219,6 +219,11 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
             self._bootstrap_channels(),
             pg_listen(self._database_url, "new_token", self._handle_new_token),
             pg_listen(self._database_url, "token_reauth", self._handle_token_reauth),
+            pg_listen(
+                self._database_url,
+                "bot_token_updated",
+                self._handle_bot_token_updated,
+            ),
             pg_listen(self._database_url, "channel_toggle", self._handle_channel_toggle),
             pg_listen(self._database_url, "config_change", self._handle_config_change),
             self._pool_heartbeat_loop(),

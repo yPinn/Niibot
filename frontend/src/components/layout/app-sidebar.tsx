@@ -33,7 +33,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       </SidebarContent>
       <SidebarFooter>
         {user ? (
-          <NavUser user={user} />
+          <NavUser user={user} showWorkspaces={activeBot === 'twitch'} />
         ) : (
           <div className="flex items-center justify-center p-4">
             <Link to="/login" className="text-sm text-primary hover:underline">
