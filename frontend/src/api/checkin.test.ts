@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { requestUrl } from '@/test/requestUrl'
+
 import { getCheckinSettings, updateCheckinSettings } from './checkin'
 
 describe('check-in settings API', () => {
@@ -15,7 +17,7 @@ describe('check-in settings API', () => {
 
     await getCheckinSettings()
 
-    expect(new URL(String(fetchMock.mock.calls[0][0])).pathname).toBe('/api/checkin/settings')
+    expect(requestUrl(fetchMock.mock.calls[0][0]).pathname).toBe('/api/checkin/settings')
     expect(fetchMock.mock.calls[0][1]).toEqual({ credentials: 'include' })
   })
 
@@ -34,7 +36,7 @@ describe('check-in settings API', () => {
 
     await updateCheckinSettings(update)
 
-    expect(new URL(String(fetchMock.mock.calls[0][0])).pathname).toBe('/api/checkin/settings')
+    expect(requestUrl(fetchMock.mock.calls[0][0]).pathname).toBe('/api/checkin/settings')
     expect(fetchMock.mock.calls[0][1]).toEqual({
       method: 'PATCH',
       credentials: 'include',

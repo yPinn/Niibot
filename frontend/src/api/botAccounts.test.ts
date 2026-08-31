@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { requestUrl } from '@/test/requestUrl'
+
 import {
   createBotInvite,
   declineBotInvite,
@@ -46,7 +48,7 @@ describe('bot account APIs', () => {
     await createBotInvite('channel-a')
     await getBotInviteStatus('channel-a', 'invite-1')
 
-    expect(fetchMock.mock.calls.map(call => new URL(String(call[0])).pathname)).toEqual([
+    expect(fetchMock.mock.calls.map(call => requestUrl(call[0]).pathname)).toEqual([
       '/api/tenants/channel-a/bot-accounts',
       '/api/tenants/channel-a/bot-accounts/invites',
       '/api/tenants/channel-a/bot-accounts/invites/invite-1',
@@ -78,7 +80,7 @@ describe('bot account APIs', () => {
     await declineBotInvite('opaque', 'state-nonce')
 
     expect(invite.channel_name).toBe('alice')
-    const urls = fetchMock.mock.calls.map(call => new URL(String(call[0])))
+    const urls = fetchMock.mock.calls.map(call => requestUrl(call[0]))
     expect(urls[0].pathname).toBe('/api/public/bot-invites/opaque')
     expect(urls[0].searchParams.get('nonce')).toBe('state-nonce')
     expect(urls[1].pathname).toBe('/api/public/bot-invites/opaque/decline')

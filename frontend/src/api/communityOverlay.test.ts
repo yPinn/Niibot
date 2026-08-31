@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { requestUrl } from '@/test/requestUrl'
+
 import {
   DEFAULT_COMMUNITY_OVERLAY_THEME,
   DEFAULT_TAROT_OVERLAY_THEME,
@@ -44,7 +46,7 @@ describe('getCommunityOverlayFeed', () => {
     await getCommunityOverlayFeed('11111111-1111-4111-8111-111111111111', 12)
 
     expect(fetchMock).toHaveBeenCalledOnce()
-    const url = new URL(String(fetchMock.mock.calls[0][0]), 'https://niibot.tv')
+    const url = requestUrl(fetchMock.mock.calls[0][0])
     expect(url.pathname).toBe('/api/live-display/public/events')
     expect(url.searchParams.has('key')).toBe(false)
     expect(url.searchParams.get('after_id')).toBe('12')
@@ -62,7 +64,7 @@ describe('getCommunityOverlayFeed', () => {
 
     await getCommunityOverlayFeed('key-only')
 
-    const url = new URL(String(fetchMock.mock.calls[0][0]), 'https://niibot.tv')
+    const url = requestUrl(fetchMock.mock.calls[0][0])
     expect(url.searchParams.has('after_id')).toBe(false)
     expect(url.searchParams.has('key')).toBe(false)
   })
@@ -81,7 +83,7 @@ describe('community overlay settings', () => {
 
     await getCommunityOverlaySettings()
 
-    expect(new URL(String(fetchMock.mock.calls[0][0])).pathname).toBe('/api/live-display/settings')
+    expect(requestUrl(fetchMock.mock.calls[0][0]).pathname).toBe('/api/live-display/settings')
     expect(fetchMock.mock.calls[0][1]).toEqual({ credentials: 'include' })
   })
 
@@ -95,7 +97,7 @@ describe('community overlay settings', () => {
 
     await updateCommunityOverlaySettings(false)
 
-    expect(new URL(String(fetchMock.mock.calls[0][0])).pathname).toBe('/api/live-display/settings')
+    expect(requestUrl(fetchMock.mock.calls[0][0]).pathname).toBe('/api/live-display/settings')
     expect(fetchMock.mock.calls[0][1]).toEqual({
       method: 'PATCH',
       credentials: 'include',
@@ -114,7 +116,7 @@ describe('community overlay settings', () => {
 
     await rotateCommunityOverlayKey()
 
-    expect(new URL(String(fetchMock.mock.calls[0][0])).pathname).toBe(
+    expect(requestUrl(fetchMock.mock.calls[0][0]).pathname).toBe(
       '/api/live-display/settings/rotate-key'
     )
     expect(fetchMock.mock.calls[0][1]).toEqual({
@@ -134,7 +136,7 @@ describe('community overlay settings', () => {
 
     await triggerCommunityOverlayPreview('checkin')
 
-    expect(new URL(String(fetchMock.mock.calls[0][0])).pathname).toBe(
+    expect(requestUrl(fetchMock.mock.calls[0][0]).pathname).toBe(
       '/api/live-display/settings/preview'
     )
     expect(fetchMock.mock.calls[0][1]).toEqual({
@@ -161,7 +163,7 @@ describe('community overlay tenant theme', () => {
 
     await getCommunityOverlayTheme('key with spaces', 'checkin')
 
-    const url = new URL(String(fetchMock.mock.calls[0][0]), 'https://niibot.tv')
+    const url = requestUrl(fetchMock.mock.calls[0][0])
     expect(url.pathname).toBe('/api/live-display/public/theme')
     expect(url.searchParams.get('block_type')).toBe('checkin')
     expect(url.searchParams.has('key')).toBe(false)
@@ -180,7 +182,7 @@ describe('community overlay tenant theme', () => {
 
     await getCommunityOverlayThemeSettings('checkin')
 
-    expect(new URL(String(fetchMock.mock.calls[0][0])).pathname).toBe(
+    expect(requestUrl(fetchMock.mock.calls[0][0]).pathname).toBe(
       '/api/live-display/settings/blocks/checkin/theme'
     )
     expect(fetchMock.mock.calls[0][1]).toEqual({ credentials: 'include' })
@@ -196,7 +198,7 @@ describe('community overlay tenant theme', () => {
 
     await updateCommunityOverlayThemeDraft('checkin', DEFAULT_COMMUNITY_OVERLAY_THEME, 3)
 
-    expect(new URL(String(fetchMock.mock.calls[0][0])).pathname).toBe(
+    expect(requestUrl(fetchMock.mock.calls[0][0]).pathname).toBe(
       '/api/live-display/settings/blocks/checkin/theme/draft'
     )
     expect(fetchMock.mock.calls[0][1]).toEqual({
@@ -226,7 +228,7 @@ describe('community overlay tenant theme', () => {
 
     await action('checkin', 3)
 
-    expect(new URL(String(fetchMock.mock.calls[0][0])).pathname).toBe(path)
+    expect(requestUrl(fetchMock.mock.calls[0][0]).pathname).toBe(path)
     expect(fetchMock.mock.calls[0][1]).toEqual({
       method: 'POST',
       credentials: 'include',

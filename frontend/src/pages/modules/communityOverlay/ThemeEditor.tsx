@@ -298,16 +298,16 @@ export function ThemeEditor({
             />
           </div>
           {lowContrast && (
-            <p role="status" className="flex items-start gap-2 text-label text-destructive">
+            <div role="status" className="flex items-start gap-2 text-label text-destructive">
               <Icon icon="fa-solid fa-circle-exclamation" className="mt-0.5" />
               文字色需與背景色及強調色皆達 4.5:1 對比，調整後才能儲存。
-            </p>
+            </div>
           )}
           {lowAccentSeparation && (
-            <p role="status" className="flex items-start gap-2 text-label text-destructive">
+            <div role="status" className="flex items-start gap-2 text-label text-destructive">
               <Icon icon="fa-solid fa-circle-exclamation" className="mt-0.5" />
               強調色與背景色需達 3:1 對比，調整後才能儲存。
-            </p>
+            </div>
           )}
         </fieldset>
 

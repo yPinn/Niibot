@@ -238,7 +238,9 @@ describe('CommunityOverlaySettings', () => {
     await user.clear(surface)
     await user.type(surface, '#241B34')
 
-    expect(screen.getByText(/皆達 4.5:1 對比/)).toBeInTheDocument()
+    const textContrastStatus = screen.getByText(/皆達 4.5:1 對比/).closest('[role="status"]')
+    expect(textContrastStatus).toBeInTheDocument()
+    expect(textContrastStatus?.tagName).toBe('DIV')
     expect(screen.getByRole('button', { name: '儲存草稿' })).toBeDisabled()
 
     await user.clear(surface)
