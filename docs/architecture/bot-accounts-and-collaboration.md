@@ -1,8 +1,19 @@
 # Bot Accounts、租戶協作與 Twitch MOD 同步
 
-> 狀態：**目標架構，尚未實作**。
+> 狀態：**Phase 0–2 已實作；Phase 3–6 仍為目標架構**（2026-08-31）。
 > 本文件承接現行 [Admission & Tenancy Model](admission-and-tenancy.md)，定義 Bot OAuth 邀請、
 > 租戶私有 Bot 帳號、per-tenant sender、Owner／MOD Dashboard 與可選 Twitch MOD 同步。
+
+## 目前已交付的邊界
+
+- Phase 0：`tokens.encryption_version`、Fernet envelope、bounded backfill、`identity_id ON DELETE SET NULL`，
+  以及 TwitchIO 同 identity token store spike；同一 identity 的 broadcaster／Bot credential 採 scope union 契約。
+- Phase 1：identity-only collaborator login、server-resolved tenant list、Owner／MOD capability、
+  `TenantContext` 與 workspace selector foundation。
+- Phase 2：`bot_accounts`、`channel_bot_accounts`、一次性 OAuth invite、tenant audit、Owner Settings card、
+  public consent/result page、Admin Niibot reset 與 `bot_token_updated` runtime hot reload。
+- 尚未交付：sender selection／unlink active guard、manual MOD invite source model、Twitch MOD sync、完整 private API
+  tenant-path migration，以及 RLS enable。這些仍依 Phase 3–6 go/no-go 執行。
 
 ## 目標
 
@@ -52,21 +63,22 @@
 | MOD 權限        | 營運設定可編輯；credential、成員、金流與安全設定不可操作            |
 | 授權來源        | `manual` 與 `twitch_mod_sync` 是 grant source，不是兩種角色         |
 
-## 現況缺口
+## 剩餘缺口與已完成基礎
 
-### 登入與 admission 尚未支援 collaborator
+### Collaborator 登入基礎已完成，grant source 尚待 Phase 4–5
 
-現行 Twitch callback 一律保存 broadcaster token、建立自己的 channel、處理 admission，最後把登入者設為
-該 channel owner。`require_tenant_access` 又無條件依賴 `require_activated`。
+原本 Twitch callback 一律保存 broadcaster token、建立自己的 channel、處理 admission，最後把登入者設為
+該 channel owner；`require_tenant_access` 也無條件依賴 `require_activated`。Phase 1 已加入獨立
+`collaborator_login` callback、server-resolved tenant access 與 membership lock 語意，且不保存 broadcaster token
+或建立自己的 tenant。
 
-因此直接新增 `channel_members(role='manager')` 仍無法讓未啟用 Niibot 的 MOD 進入 A：
+但在 Phase 4 的 manual grant 與 Phase 5 的 Twitch sync source model 完成前，仍不能正式開放未登入 MOD 的邀請：
 
 - 不啟用時會被 `require_activated` 擋住。
 - 若為了通過而把他設成 active，migration 084 會連帶啟用他自己的 channel。
 
-目標設計必須新增 `collaborator_login` OAuth purpose；它只證明 Twitch identity、建立／連結
-User/Identity、解析 pending grants 並建立 session，不保存 broadcaster token、不建立 channel、
-不建立 owner membership，也不修改 admission。
+已交付 callback 只證明 Twitch identity、建立／連結 User/Identity，並只在已有 effective tenant access 時建立
+session；pending external identity grant 的 materialize 仍待 `channel_member_grants`。
 
 ### `channel_members` 無法保存多重來源
 
@@ -369,8 +381,8 @@ subscription 失敗時整個切換失敗，不能因其他 subscription 成功�
 ### TwitchIO 前置 spike
 
 同一 Twitch user ID 可能同時有 broadcaster 與 Bot token。DB 可保存兩列不代表 TwitchIO runtime 能同時選對
-兩種 token。Phase 2 開始前必須驗證 TwitchIO token store、`add_token()` 與 `multi_subscribe()` 的選 token
-規則；若 user ID 是唯一 key，需引入 CredentialBroker／union-scope upgrade 或其他明確策略，不能靜默覆寫。
+兩種 token。Phase 0 spike 已確認 TwitchIO token store 以 user ID 為 credential key，因此同 identity 走
+union-scope 契約；Phase 3 sender selection 必須在寫入 desired selection 前強制驗證 union scopes，不能靜默覆寫。
 
 ## Frontend
 
@@ -483,6 +495,11 @@ Owner-only card 未載入資料前不得先呼叫對應 API；後端仍需完整
 - Admin system-default Niibot reset，正式取代 local script。
 - Runtime hot reload credential，但此階段所有 tenant仍使用 Niibot。
 - **Go/no-go：** callback原子性、replay防護、token加密與名單隔離通過。
+
+實作結果：migration 100–102、owner/public/admin API、callback transaction、Settings/public UI 與 system Bot hot reload
+已完成；本機 PostgreSQL migration smoke、完整 backend/frontend suites、lint、typecheck 與 production build 均已驗證，
+細節記錄於 `tasks/todo.md` Review。
+真正 per-tenant sender 尚未啟用，因此自訂 credential 在 Phase 2 只登錄，不會進入全域 TwitchIO token store。
 
 ### Phase 3 — Per-tenant sender
 

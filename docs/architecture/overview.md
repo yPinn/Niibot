@@ -4,7 +4,7 @@ Niibot 是多平台直播整合系統，由三個 Python 服務 + 一個前端�
 另有一個選用的 Threads 抓取 sidecar（scrapling）。本文串起全貌；子系統細節見各自文件。
 
 - 多租戶 / 入會狀態機：[admission-and-tenancy.md](admission-and-tenancy.md)
-- Bot 帳號 / Owner／MOD 協作（目標架構）：[bot-accounts-and-collaboration.md](bot-accounts-and-collaboration.md)
+- Bot 帳號 / Owner／MOD 協作（Phase 0–2 已交付）：[bot-accounts-and-collaboration.md](bot-accounts-and-collaboration.md)
 - 出席 / 簽到 / 社群 Overlay：[attendance-and-community-overlays.md](attendance-and-community-overlays.md)
 - 後端結構：[backend/README.md](../../backend/README.md) · API 端點：[api-endpoints.md](../reference/api-endpoints.md)
 - 版本規範：[versioning.md](../reference/versioning.md)
@@ -80,12 +80,13 @@ Dashboard 改設定 ──▶ API 寫入 DB ──▶ pg_notify(channel, payload
                           重載對應記憶體狀態（免重啟）
 ```
 
-| NOTIFY 頻道      | 觸發來源                  | Bot 反應                            |
-| ---------------- | ------------------------- | ----------------------------------- |
-| `config_change`  | 指令 / 觸發 / 計時器 CRUD | 重載該頻道設定                      |
-| `channel_toggle` | 頻道啟停 Bot              | 訂閱 / 取消 EventSub、檢查 mod 權限 |
-| `new_token`      | OAuth 新 token            | 載入新 broadcaster token            |
-| `token_reauth`   | token 失效                | 標記頻道需重新授權                  |
+| NOTIFY 頻道         | 觸發來源                  | Bot 反應                             |
+| ------------------- | ------------------------- | ------------------------------------ |
+| `config_change`     | 指令 / 觸發 / 計時器 CRUD | 重載該頻道設定                       |
+| `channel_toggle`    | 頻道啟停 Bot              | 訂閱 / 取消 EventSub、檢查 mod 權限  |
+| `new_token`         | OAuth 新 token            | 載入新 broadcaster token             |
+| `token_reauth`      | token 失效                | 標記頻道需重新授權                   |
+| `bot_token_updated` | Web Bot OAuth callback    | 清除 system Bot token cache 並熱載入 |
 
 實作：Twitch Bot 用 `pg_listen()`（`twitch/core/pg_listener.py`）開**專用連線**做
 LISTEN（不佔用 pool），斷線自動重連。
@@ -138,6 +139,18 @@ OpenRouter 的 free-tier 備援名單來自 `backend/data/free_models.json`，�
 前端 ─▶ /api/auth/login ─▶ Twitch OAuth ─▶ /api/auth/callback
   └─ IdentityService.find_or_link ─▶ 簽發 JWT httponly cookie（HS256）
 ```
+
+### Bot OAuth 邀請
+
+```text
+Owner Settings ─▶ 建立 30 分鐘 invite URL ─▶ 朋友以 Bot Twitch 帳號授權
+  └─ HMAC state + DB nonce／expiry／row lock
+      └─ encrypted bot token + tenant mapping + audit（單一 transaction）
+          └─ system Niibot reset 時 pg_notify('bot_token_updated') 熱載入
+```
+
+Bot callback 永不建立 Dashboard session／membership／tenant；自訂 Bot 只透過
+`channel_bot_accounts` 對邀請 tenant 可見。Per-tenant sender 仍待 Phase 3。
 
 ### 聊天指令觸發
 
