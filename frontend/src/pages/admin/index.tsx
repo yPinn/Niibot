@@ -36,61 +36,105 @@ import { ActivationCard } from './components/ActivationCard'
 import { BotStatusPanel } from './components/BotStatusPanel'
 import { ChannelCard } from './components/ChannelCard'
 
+type ChannelCategoryValue = 'healthy' | 'issues' | 'pending' | 'paused' | 'suspended'
+type ChannelFilterValue = 'all' | ChannelCategoryValue
+
+interface ChannelCategoryDefinition {
+  value: ChannelCategoryValue
+  label: string
+  description: string
+  icon: string
+  toneClassName: string
+}
+
+const CHANNEL_CATEGORY_DEFINITIONS: ChannelCategoryDefinition[] = [
+  {
+    value: 'healthy',
+    label: '正常監聽',
+    description: '授權與 Bot 狀態正常',
+    icon: 'fa-solid fa-shield-check',
+    toneClassName: 'text-status-online',
+  },
+  {
+    value: 'issues',
+    label: '需處理',
+    description: '缺少授權、Token 或 Mod 狀態異常',
+    icon: 'fa-solid fa-triangle-exclamation',
+    toneClassName: 'text-status-warning',
+  },
+  {
+    value: 'pending',
+    label: '待審核',
+    description: '等待管理員確認使用資格',
+    icon: 'fa-solid fa-hourglass-half',
+    toneClassName: 'text-status-info',
+  },
+  {
+    value: 'paused',
+    label: '監控暫停',
+    description: '授權有效，但 Bot 目前未監控',
+    icon: 'fa-solid fa-circle-pause',
+    toneClassName: 'text-muted-foreground',
+  },
+  {
+    value: 'suspended',
+    label: '已停權',
+    description: '使用權限與 Bot 監控皆已停止',
+    icon: 'fa-solid fa-ban',
+    toneClassName: 'text-destructive',
+  },
+]
+
+function getChannelCategory(ch: AdminChannel): ChannelCategoryValue {
+  if (ch.membership_status === 'pending') return 'pending'
+  if (ch.membership_status === 'suspended') return 'suspended'
+  if (!ch.is_enabled) return 'paused'
+  if (ch.mod_status !== 'mod' || ch.missing_scopes.length > 0) return 'issues'
+  return 'healthy'
+}
+
+function sortCategoryChannels(channels: AdminChannel[]): AdminChannel[] {
+  return [...channels].sort((a, b) => {
+    if (a.is_live !== b.is_live) return a.is_live ? -1 : 1
+    return a.display_name.localeCompare(b.display_name, 'zh-Hant', { sensitivity: 'base' })
+  })
+}
+
 export default function AdminPage() {
   useDocumentTitle('Admin')
 
   const [channels, setChannels] = useState<AdminChannel[]>([])
   const [channelsLoading, setChannelsLoading] = useState(true)
-  const [channelFilter, setChannelFilter] = useState<
-    'all' | 'issues' | 'suspended' | 'healthy' | 'paused' | 'pending'
-  >('all')
+  const [channelFilter, setChannelFilter] = useState<ChannelFilterValue>('all')
 
-  const { healthyChannels, issueChannels, pausedChannels, pendingChannels, suspendedChannels } =
-    useMemo(() => {
-      const sortByLive = (chs: AdminChannel[]) =>
-        [...chs].sort((a, b) => (b.is_live ? 1 : 0) - (a.is_live ? 1 : 0))
-      const nonBots = channels.filter(ch => !ch.is_bot)
-      // Pending/suspended owners are always disabled (084's trigger), so they
-      // must be bucketed by membership_status before the is_enabled split —
-      // otherwise they'd be indistinguishable from an active owner who
-      // manually paused the bot.
-      const activeMembers = nonBots.filter(ch => ch.membership_status === 'active')
-      const active = activeMembers.filter(ch => ch.is_enabled)
-      const paused = activeMembers.filter(ch => !ch.is_enabled)
-      return {
-        healthyChannels: sortByLive(
-          active.filter(ch => ch.mod_status === 'mod' && ch.missing_scopes.length === 0)
-        ),
-        issueChannels: sortByLive(
-          active.filter(ch => ch.mod_status !== 'mod' || ch.missing_scopes.length > 0)
-        ),
-        pausedChannels: sortByLive(paused),
-        pendingChannels: sortByLive(nonBots.filter(ch => ch.membership_status === 'pending')),
-        suspendedChannels: sortByLive(nonBots.filter(ch => ch.membership_status === 'suspended')),
-      }
-    }, [channels])
+  const channelCategories = useMemo(() => {
+    const buckets = new Map<ChannelCategoryValue, AdminChannel[]>(
+      CHANNEL_CATEGORY_DEFINITIONS.map(category => [category.value, []])
+    )
 
+    channels.forEach(channel => {
+      if (!channel.is_bot) buckets.get(getChannelCategory(channel))?.push(channel)
+    })
+
+    return CHANNEL_CATEGORY_DEFINITIONS.map(category => ({
+      ...category,
+      channels: sortCategoryChannels(buckets.get(category.value) ?? []),
+    }))
+  }, [channels])
+
+  const allUserChannels = channelCategories.flatMap(category => category.channels)
+  const visibleCategories =
+    channelFilter === 'all'
+      ? channelCategories.filter(category => category.channels.length > 0)
+      : channelCategories.filter(category => category.value === channelFilter)
   const channelFilters = [
-    {
-      value: 'all' as const,
-      label: '全部',
-      channels: [
-        ...issueChannels,
-        ...pendingChannels,
-        ...suspendedChannels,
-        ...pausedChannels,
-        ...healthyChannels,
-      ],
-    },
-    { value: 'issues' as const, label: '需處理', channels: issueChannels },
-    { value: 'pending' as const, label: '待審核', channels: pendingChannels },
-    { value: 'suspended' as const, label: '已停權', channels: suspendedChannels },
-    { value: 'paused' as const, label: '監控暫停', channels: pausedChannels },
-    { value: 'healthy' as const, label: '正常', channels: healthyChannels },
+    { value: 'all' as const, label: '全部', count: allUserChannels.length },
+    ...channelCategories.map(category => ({
+      value: category.value,
+      label: category.label,
+      count: category.channels.length,
+    })),
   ]
-  const allUserChannels = channelFilters[0].channels
-  const visibleChannels =
-    channelFilters.find(filter => filter.value === channelFilter)?.channels ?? []
 
   const [botStatus, setBotStatus] = useState<BotTokenInfo | null>(null)
   const [botLoading, setBotLoading] = useState(true)
@@ -216,7 +260,9 @@ export default function AdminPage() {
                   size="sm"
                   wrapperClassName="text-muted-foreground"
                 />
-                <CardTitle className="text-card-title">使用者與頻道</CardTitle>
+                <CardTitle role="heading" aria-level={2} className="text-card-title">
+                  使用者與頻道
+                </CardTitle>
               </div>
               <CardAction>
                 <Badge variant="outline" className="font-mono text-label">
@@ -255,24 +301,69 @@ export default function AdminPage() {
                         aria-pressed={channelFilter === filter.value}
                       >
                         {filter.label}
-                        <span className="font-mono text-label opacity-75">
-                          {filter.channels.length}
-                        </span>
+                        <span className="font-mono text-label opacity-75">{filter.count}</span>
                       </Button>
                     ))}
                   </div>
 
-                  <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3">
-                    {visibleChannels.map(ch => (
-                      <ChannelCard
-                        key={ch.id}
-                        ch={ch}
-                        onSuspend={ch.membership_status === 'active' ? handleSuspend : undefined}
-                        onReinstate={
-                          ch.membership_status === 'suspended' ? handleReinstate : undefined
-                        }
-                      />
-                    ))}
+                  <div className="space-y-card">
+                    {visibleCategories.map(category => {
+                      const headingId = `channel-category-${category.value}`
+                      return (
+                        <section
+                          key={category.value}
+                          aria-labelledby={headingId}
+                          className="space-y-section"
+                        >
+                          <div className="flex items-start justify-between gap-section border-b pb-element">
+                            <div className="flex min-w-0 items-start gap-element">
+                              <Icon
+                                icon={category.icon}
+                                size="xs"
+                                wrapperClassName={`mt-0.5 ${category.toneClassName}`}
+                              />
+                              <div className="min-w-0">
+                                <h3 id={headingId} className="text-sub font-semibold">
+                                  {category.label}
+                                </h3>
+                                <p className="text-label text-muted-foreground">
+                                  {category.description}
+                                </p>
+                              </div>
+                            </div>
+                            <Badge
+                              variant="outline"
+                              className={`font-mono text-label ${category.toneClassName}`}
+                            >
+                              {category.channels.length}
+                            </Badge>
+                          </div>
+
+                          {category.channels.length === 0 ? (
+                            <div className="rounded-lg border border-dashed px-4 py-6 text-center">
+                              <p className="text-sub font-medium">目前沒有{category.label}的頻道</p>
+                            </div>
+                          ) : (
+                            <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3">
+                              {category.channels.map(ch => (
+                                <ChannelCard
+                                  key={ch.id}
+                                  ch={ch}
+                                  onSuspend={
+                                    ch.membership_status === 'active' ? handleSuspend : undefined
+                                  }
+                                  onReinstate={
+                                    ch.membership_status === 'suspended'
+                                      ? handleReinstate
+                                      : undefined
+                                  }
+                                />
+                              ))}
+                            </div>
+                          )}
+                        </section>
+                      )
+                    })}
                   </div>
                 </div>
               )}
