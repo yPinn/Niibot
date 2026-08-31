@@ -22,6 +22,7 @@ from . import (
     stats_router,
     timers_router,
     video_queue_router,
+    vip_router,
 )
 
 __all__ = [
@@ -46,4 +47,5 @@ __all__ = [
     "bots_router",
     "client_errors_router",
     "video_queue_router",
+    "vip_router",
 ]

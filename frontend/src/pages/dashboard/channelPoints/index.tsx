@@ -8,6 +8,7 @@ import {
   type TwitchReward,
   updateRedemptionConfig,
 } from '@/api/events'
+import { getVipState, setVipRulesEnabled, type VipRewardRule } from '@/api/vip'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { PageMain } from '@/components/layout/PageMain'
 import { SlideUp } from '@/components/primitives'
@@ -22,6 +23,7 @@ import { toastApiError } from '@/lib/toast-error'
 import { ChannelPointActionsTable, type ChannelPointSortKey } from './ChannelPointActionsTable'
 import { CheckinSettingsSheet } from './CheckinSettingsSheet'
 import { ACTION_TYPE_DEFAULT_ORDER, ACTION_TYPE_LABELS } from './constants'
+import { VipSettingsSheet } from './VipSettingsSheet'
 
 const ACTION_TYPE_ORDER = new Map<string, number>(
   ACTION_TYPE_DEFAULT_ORDER.map((actionType, index) => [actionType, index])
@@ -36,6 +38,8 @@ export default function ChannelPoints() {
   const [rewardsLoading, setRewardsLoading] = useState(true)
   const [loadFailed, setLoadFailed] = useState(false)
   const [checkinSettingsOpen, setCheckinSettingsOpen] = useState(false)
+  const [vipSettingsOpen, setVipSettingsOpen] = useState(false)
+  const [vipRules, setVipRules] = useState<VipRewardRule[]>([])
   const sort = useSortState<ChannelPointSortKey>('action_type')
 
   const loadChannelPoints = useCallback(async () => {
@@ -44,6 +48,7 @@ export default function ChannelPoints() {
     setRewardsLoading(true)
     const configsPromise = getRedemptionConfigs()
     const rewardsPromise = isAffiliate ? getTwitchRewards() : Promise.resolve([] as TwitchReward[])
+    const vipStatePromise = isAffiliate ? getVipState() : Promise.resolve(null)
 
     try {
       const configs = await configsPromise
@@ -61,6 +66,13 @@ export default function ChannelPoints() {
       setLoadFailed(true)
     } finally {
       setRewardsLoading(false)
+    }
+
+    try {
+      const vipState = await vipStatePromise
+      setVipRules(vipState?.rules ?? [])
+    } catch {
+      setLoadFailed(true)
     }
   }, [isAffiliate])
 
@@ -85,12 +97,18 @@ export default function ChannelPoints() {
           comparison = left.reward_name.localeCompare(right.reward_name)
           break
         case 'enabled':
-          comparison = Number(left.enabled) - Number(right.enabled)
+          comparison =
+            Number(
+              left.action_type === 'vip' ? vipRules.some(rule => rule.enabled) : left.enabled
+            ) -
+            Number(
+              right.action_type === 'vip' ? vipRules.some(rule => rule.enabled) : right.enabled
+            )
           break
       }
       return applyDir(comparison, sort.sortDir)
     })
-  }, [redemptions, sort.sortDir, sort.sortKey])
+  }, [redemptions, sort.sortDir, sort.sortKey, vipRules])
 
   const { toggle: handleToggle } = useOptimisticToggle<RedemptionConfig>({
     setState: setRedemptions,
@@ -125,6 +143,19 @@ export default function ChannelPoints() {
     }
   }
 
+  const handleVipToggle = async () => {
+    const nextEnabled = !vipRules.some(rule => rule.enabled)
+    const previous = vipRules
+    setVipRules(current => current.map(rule => ({ ...rule, enabled: nextEnabled })))
+    try {
+      setVipRules(await setVipRulesEnabled(nextEnabled))
+      toast.success(nextEnabled ? 'VIP Reward 規則已啟用' : 'VIP Reward 規則已停用')
+    } catch (error) {
+      setVipRules(previous)
+      toastApiError(error, '切換 VIP Reward 規則失敗')
+    }
+  }
+
   return (
     <PageMain>
       <PageHeader
@@ -155,10 +186,19 @@ export default function ChannelPoints() {
           onToggle={handleToggle}
           onRewardSelect={(redemption, rewardId) => void handleRewardSelect(redemption, rewardId)}
           onEditCheckinSettings={() => setCheckinSettingsOpen(true)}
+          onEditVipSettings={() => setVipSettingsOpen(true)}
+          vipRules={vipRules}
+          onToggleVip={() => void handleVipToggle()}
         />
       </SlideUp>
 
       <CheckinSettingsSheet open={checkinSettingsOpen} onOpenChange={setCheckinSettingsOpen} />
+      <VipSettingsSheet
+        open={vipSettingsOpen}
+        onOpenChange={setVipSettingsOpen}
+        twitchRewards={twitchRewards}
+        onRulesChanged={setVipRules}
+      />
     </PageMain>
   )
 }

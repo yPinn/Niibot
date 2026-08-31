@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -9,6 +10,12 @@ from cachetools import TTLCache  # type: ignore[import-untyped]
 from twitchio.ext import commands
 
 from core.config import get_settings
+from shared.models.vip import (
+    VipRedemptionDecision,
+    VipRedemptionStatus,
+    VipRewardRule,
+    VipSnapshotMember,
+)
 from shared.repositories.activation_code import ActivationCodeRepository
 from shared.repositories.attendance import AttendanceRepository
 from shared.repositories.command_config import RedemptionConfigRepository
@@ -18,7 +25,9 @@ from shared.repositories.video_queue import (
     VideoQueueRepository,
     VideoQueueSettingsRepository,
 )
+from shared.repositories.vip import VipRepository
 from shared.services.attendance import AttendanceService
+from shared.services.vip import VipService, add_calendar_months
 from shared.video_sources import (
     extract_twitch_clip_slug,
     extract_youtube_info,
@@ -52,7 +61,11 @@ class ChannelPointsComponent(commands.Component):
         self.gq_settings_repo = GameQueueSettingsRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.vq_repo = VideoQueueRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.vq_settings_repo = VideoQueueSettingsRepository(self.bot.token_database)  # type: ignore[attr-defined]
+        self.vip_repo = VipRepository(self.bot.token_database)  # type: ignore[attr-defined]
+        self.vip_policy = VipService()
         self._session: aiohttp.ClientSession | None = None
+        self._vip_channel_locks: dict[str, asyncio.Lock] = {}
+        self._vip_expiry_task: asyncio.Task[None] | None = None
         # EventSub delivers at-least-once; dedupe redemptions by id so a
         # redelivery (e.g. around conduit shard reassociation/reconnect) is
         # neither re-logged nor reprocessed. TTL comfortably exceeds Twitch's
@@ -67,12 +80,21 @@ class ChannelPointsComponent(commands.Component):
         self.gq_settings_repo.pool = pool
         self.vq_repo.pool = pool
         self.vq_settings_repo.pool = pool
+        self.vip_repo.pool = pool
 
     async def component_load(self) -> None:
         self._session = aiohttp.ClientSession()
+        self._vip_expiry_task = asyncio.create_task(self._vip_expiry_loop())
         LOGGER.info("ChannelPoints component loaded")
 
     async def component_teardown(self) -> None:
+        if self._vip_expiry_task is not None:
+            self._vip_expiry_task.cancel()
+            try:
+                await self._vip_expiry_task
+            except asyncio.CancelledError:
+                pass
+            self._vip_expiry_task = None
         if self._session:
             await self._session.close()
             self._session = None
@@ -148,6 +170,16 @@ class ChannelPointsComponent(commands.Component):
         channel_id = payload.broadcaster.id
 
         channel_name = payload.broadcaster.name
+
+        vip_rule = await self.vip_repo.get_reward_rule(
+            channel_id=str(channel_id), reward_id=reward_id
+        )
+        if vip_rule is not None:
+            if not vip_rule.enabled:
+                LOGGER.debug("[%s] Timed VIP reward is disabled: %s", channel_name, reward_title)
+                return
+            await self._handle_timed_vip_redemption(payload, vip_rule)
+            return
 
         config = await self.redemption_repo.find_by_reward(channel_id, reward_id, reward_title)
         if not config:
@@ -251,6 +283,362 @@ class ChannelPointsComponent(commands.Component):
                 await self._reply(broadcaster, error_message)
             except Exception:
                 pass
+
+    async def _fetch_vip_snapshot(
+        self, broadcaster: twitchio.PartialUser
+    ) -> tuple[VipSnapshotMember, ...]:
+        members: list[VipSnapshotMember] = []
+        async for user in broadcaster.fetch_vips(first=100):
+            user_id = str(user.id)
+            members.append(
+                VipSnapshotMember(
+                    user_id=user_id,
+                    user_login=user.name or user_id,
+                    display_name=user.display_name or None,
+                )
+            )
+        return tuple(members)
+
+    async def _is_current_vip(self, broadcaster: twitchio.PartialUser, user_id: str) -> bool:
+        async for _user in broadcaster.fetch_vips(user_ids=[user_id], first=1, max_results=1):
+            return True
+        return False
+
+    async def _vip_expiry_loop(self) -> None:
+        while True:
+            try:
+                await self._recover_granting_vips()
+                await self._expire_due_vips()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                LOGGER.exception("Timed VIP expiry loop failed")
+            await asyncio.sleep(60)
+
+    async def _recover_granting_vips(self) -> None:
+        """Repair Add-VIP success followed by a local persistence interruption."""
+        now = datetime.now(UTC)
+        granting = await self.vip_repo.list_stale_granting(now=now, limit=50)
+        for event in granting:
+            if event.rule_id is None:
+                await self.vip_repo.transition_redemption(
+                    channel_id=event.channel_id,
+                    redemption_id=event.redemption_id,
+                    status=VipRedemptionStatus.FAILED,
+                    error_code="vip_rule_missing_during_recovery",
+                )
+                continue
+            broadcaster = self.bot.create_partialuser(user_id=event.channel_id)
+            lock = self._vip_channel_locks.setdefault(event.channel_id, asyncio.Lock())
+            async with lock:
+                try:
+                    if not await self._is_current_vip(broadcaster, event.user_id):
+                        await self.vip_repo.transition_redemption(
+                            channel_id=event.channel_id,
+                            redemption_id=event.redemption_id,
+                            status=VipRedemptionStatus.FAILED,
+                            error_code="twitch_vip_grant_not_observed",
+                        )
+                        continue
+                    if event.is_permanent_snapshot:
+                        expires_at = None
+                    elif event.duration_months_snapshot is None:
+                        await self.vip_repo.transition_redemption(
+                            channel_id=event.channel_id,
+                            redemption_id=event.redemption_id,
+                            status=VipRedemptionStatus.FAILED,
+                            error_code="vip_duration_missing_during_recovery",
+                        )
+                        continue
+                    else:
+                        expires_at = add_calendar_months(
+                            event.occurred_at,
+                            event.duration_months_snapshot,
+                        )
+                    await self.vip_repo.apply_managed_entitlement(
+                        channel_id=event.channel_id,
+                        user_id=event.user_id,
+                        user_login=event.user_login,
+                        display_name=event.display_name,
+                        granted_at=event.occurred_at,
+                        expires_at=expires_at,
+                        is_permanent=event.is_permanent_snapshot,
+                        reward_rule_id=event.rule_id,
+                        synced_at=now,
+                    )
+                    await self.vip_repo.transition_redemption(
+                        channel_id=event.channel_id,
+                        redemption_id=event.redemption_id,
+                        status=VipRedemptionStatus.GRANTED,
+                        error_code=None,
+                    )
+                except Exception:
+                    LOGGER.exception(
+                        "Timed VIP granting recovery failed",
+                        extra={
+                            "channel_id": event.channel_id,
+                            "redemption_id": event.redemption_id,
+                        },
+                    )
+
+    async def _expire_due_vips(self) -> None:
+        now = datetime.now(UTC)
+        due = await self.vip_repo.claim_due_entitlements(now=now, limit=50)
+        for entitlement in due:
+            broadcaster = self.bot.create_partialuser(user_id=entitlement.channel_id)
+            lock = self._vip_channel_locks.setdefault(entitlement.channel_id, asyncio.Lock())
+            async with lock:
+                try:
+                    if not await self._is_current_vip(broadcaster, entitlement.user_id):
+                        await self.vip_repo.finish_expiry(
+                            channel_id=entitlement.channel_id,
+                            entitlement_id=entitlement.id,
+                            removed_at=now,
+                            externally_removed=True,
+                        )
+                        continue
+                    user = self.bot.create_partialuser(user_id=entitlement.user_id)
+                    await broadcaster.remove_vip(user=user)
+                    await self.vip_repo.finish_expiry(
+                        channel_id=entitlement.channel_id,
+                        entitlement_id=entitlement.id,
+                        removed_at=now,
+                        externally_removed=False,
+                    )
+                    # Twitch allows 10 VIP mutations per 10 seconds. A small
+                    # per-operation delay keeps this worker below that ceiling.
+                    await asyncio.sleep(1.05)
+                except Exception:
+                    await self.vip_repo.release_expiry_claim(
+                        channel_id=entitlement.channel_id,
+                        entitlement_id=entitlement.id,
+                    )
+                    LOGGER.exception(
+                        "Timed VIP expiry failed",
+                        extra={
+                            "channel_id": entitlement.channel_id,
+                            "user_id": entitlement.user_id,
+                        },
+                    )
+
+    @commands.Component.listener()
+    async def event_vip_add(self, payload: twitchio.ChannelVIPAdd) -> None:
+        """Track manual Twitch VIP additions as external ownership."""
+        user_id = str(payload.user.id)
+        await self.vip_repo.observe_vip_added(
+            channel_id=str(payload.broadcaster.id),
+            member=VipSnapshotMember(
+                user_id=user_id,
+                user_login=payload.user.name or user_id,
+                display_name=payload.user.display_name or None,
+            ),
+            observed_at=datetime.now(UTC),
+        )
+
+    @commands.Component.listener()
+    async def event_vip_remove(self, payload: twitchio.ChannelVIPRemove) -> None:
+        """Treat Twitch removal as authoritative and close local scheduling."""
+        await self.vip_repo.mark_removed_external(
+            channel_id=str(payload.broadcaster.id),
+            user_id=str(payload.user.id),
+            synced_at=datetime.now(UTC),
+        )
+
+    async def _handle_timed_vip_redemption(
+        self,
+        payload: twitchio.ChannelPointsRedemptionAdd,
+        rule: VipRewardRule,
+    ) -> None:
+        """Reconcile Twitch state and process a durable timed VIP redemption."""
+        broadcaster = payload.broadcaster
+        channel_id = str(broadcaster.id)
+        redemption_id = str(payload.id)
+        user_id = str(payload.user.id)
+        user_login = payload.user.name or user_id
+        display_name = payload.user.display_name or None
+        occurred = getattr(payload, "redeemed_at", None)
+        occurred_at = occurred if isinstance(occurred, datetime) else datetime.now(UTC)
+
+        receipt = await self.vip_repo.record_redemption(
+            channel_id=channel_id,
+            redemption_id=redemption_id,
+            rule_id=rule.id,
+            reward_id=rule.reward_id,
+            reward_name=rule.reward_name_snapshot,
+            user_id=user_id,
+            user_login=user_login,
+            display_name=display_name,
+            duration_months=rule.duration_months,
+            is_permanent=rule.is_permanent,
+            occurred_at=occurred_at,
+        )
+        if receipt.status is not VipRedemptionStatus.RECEIVED:
+            LOGGER.info(
+                "[%s] VIP redemption %s already processed as %s",
+                broadcaster.name,
+                redemption_id,
+                receipt.status,
+            )
+            return
+
+        settings = await self.vip_repo.get_or_create_settings(channel_id)
+        if settings.tracking_started_at is None or settings.slot_limit is None:
+            await self.vip_repo.transition_redemption(
+                channel_id=channel_id,
+                redemption_id=redemption_id,
+                status=VipRedemptionStatus.NOT_INITIALIZED,
+                error_code="vip_tracking_not_initialized",
+            )
+            await self._reply(
+                broadcaster,
+                f"@{display_name or user_login} VIP 管理尚未完成初次清點，請通知主播人工退款。",
+            )
+            return
+
+        lock = self._vip_channel_locks.setdefault(channel_id, asyncio.Lock())
+        async with lock:
+            remote_granted = False
+            try:
+                snapshot = await self._fetch_vip_snapshot(broadcaster)
+                await self.vip_repo.reconcile_snapshot(
+                    channel_id=channel_id,
+                    members=snapshot,
+                    synced_at=occurred_at,
+                )
+                entitlement = await self.vip_repo.get_entitlement(
+                    channel_id=channel_id, user_id=user_id
+                )
+                plan = self.vip_policy.plan_redemption(
+                    entitlement=entitlement,
+                    rule=rule,
+                    redeemed_at=occurred_at,
+                )
+
+                if plan.action is VipRedemptionDecision.NEEDS_REVIEW:
+                    await self.vip_repo.transition_redemption(
+                        channel_id=channel_id,
+                        redemption_id=redemption_id,
+                        status=VipRedemptionStatus.NEEDS_REVIEW_EXTERNAL_VIP,
+                        error_code="external_vip_requires_review",
+                    )
+                    await self._reply(
+                        broadcaster,
+                        f"@{display_name or user_login} 已是外部 VIP，需由主播人工確認是否納入期限管理與退款。",
+                    )
+                    return
+
+                if plan.action is VipRedemptionDecision.NOOP_PERMANENT:
+                    await self.vip_repo.transition_redemption(
+                        channel_id=channel_id,
+                        redemption_id=redemption_id,
+                        status=VipRedemptionStatus.EXTENDED,
+                        error_code=None,
+                    )
+                    await self._reply(
+                        broadcaster,
+                        f"@{display_name or user_login} 已是永久 VIP，現有資格不會被縮短。",
+                    )
+                    return
+
+                is_current_vip = any(member.user_id == user_id for member in snapshot)
+                if not is_current_vip:
+                    active_count = await self.vip_repo.count_active(channel_id)
+                    if active_count >= settings.slot_limit:
+                        await self.vip_repo.transition_redemption(
+                            channel_id=channel_id,
+                            redemption_id=redemption_id,
+                            status=VipRedemptionStatus.CAPACITY_FULL,
+                            error_code="vip_capacity_full",
+                        )
+                        await self._reply(
+                            broadcaster,
+                            f"@{display_name or user_login} VIP 名額已滿，請通知主播或 Mod 人工退款。",
+                        )
+                        return
+                    await self.vip_repo.transition_redemption(
+                        channel_id=channel_id,
+                        redemption_id=redemption_id,
+                        status=VipRedemptionStatus.GRANTING,
+                        error_code=None,
+                    )
+                    await broadcaster.add_vip(user=payload.user)
+                    remote_granted = True
+
+                if rule.id is None:
+                    raise RuntimeError("Persisted VIP reward rule is missing its id")
+                await self.vip_repo.apply_managed_entitlement(
+                    channel_id=channel_id,
+                    user_id=user_id,
+                    user_login=user_login,
+                    display_name=display_name,
+                    granted_at=plan.granted_at,
+                    expires_at=plan.expires_at,
+                    is_permanent=plan.is_permanent,
+                    reward_rule_id=rule.id,
+                    synced_at=occurred_at,
+                )
+                final_status = (
+                    VipRedemptionStatus.GRANTED
+                    if plan.action is VipRedemptionDecision.GRANT
+                    else VipRedemptionStatus.EXTENDED
+                )
+                await self.vip_repo.transition_redemption(
+                    channel_id=channel_id,
+                    redemption_id=redemption_id,
+                    status=final_status,
+                    error_code=None,
+                )
+                verb = "授予" if final_status is VipRedemptionStatus.GRANTED else "延長"
+                await self._reply(
+                    broadcaster,
+                    f"@{display_name or user_login} VIP 已{verb}；期限以 Niibot 後台顯示的預計到期為準。",
+                )
+            except Exception as exc:
+                if remote_granted:
+                    # Keep the durable row in GRANTING. The recovery pass will
+                    # verify Twitch state and finish the local entitlement.
+                    LOGGER.exception(
+                        "Timed VIP granted remotely; local persistence deferred",
+                        extra={
+                            "channel_id": channel_id,
+                            "redemption_id": redemption_id,
+                        },
+                    )
+                    return
+                if is_scope_error(exc):
+                    await reauth_notifier.notify(
+                        broadcaster_login=broadcaster.name or "",
+                        channel_id=channel_id,
+                        send_fn=lambda msg: self._reply(broadcaster, msg),
+                    )
+                    return
+                status_code = getattr(exc, "status", None) or getattr(exc, "status_code", None)
+                if status_code == 409:
+                    status = VipRedemptionStatus.CAPACITY_FULL
+                    error_code = "twitch_vip_capacity_full"
+                elif status_code == 422 and "moderator" in str(exc).lower():
+                    status = VipRedemptionStatus.MODERATOR_CONFLICT
+                    error_code = "twitch_user_is_moderator"
+                else:
+                    status = VipRedemptionStatus.FAILED
+                    error_code = "twitch_vip_grant_failed"
+                await self.vip_repo.transition_redemption(
+                    channel_id=channel_id,
+                    redemption_id=redemption_id,
+                    status=status,
+                    error_code=error_code,
+                )
+                LOGGER.exception(
+                    "Timed VIP redemption failed",
+                    extra={"channel_id": channel_id, "redemption_id": redemption_id},
+                )
+                try:
+                    await self._reply(
+                        broadcaster,
+                        f"@{display_name or user_login} VIP 兌換失敗，請通知主播或 Mod 查明原因並人工退款。",
+                    )
+                except Exception:
+                    pass
 
     async def _handle_first_redemption(
         self,

@@ -41,6 +41,7 @@ from routers import (
     stats_router,
     timers_router,
     video_queue_router,
+    vip_router,
 )
 from routers.bots_router import close_bots_http_client
 from routers.client_errors_router import client_error_retention_loop
@@ -292,6 +293,7 @@ def create_app() -> FastAPI:
     # Fully-private routers — every endpoint requires an activated account
     app.include_router(channels_router.router, dependencies=_activated)
     app.include_router(checkin_router.router, dependencies=_activated)
+    app.include_router(vip_router.router, dependencies=_activated)
     app.include_router(analytics_router.router, dependencies=_activated)
     app.include_router(matcher_router.router, dependencies=_activated)
     app.include_router(stats_router.router, dependencies=_activated)

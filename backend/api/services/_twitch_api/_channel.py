@@ -58,6 +58,24 @@ class _ChannelMixin(_TwitchAPIBase):
             LOGGER.exception("Error getting custom rewards for broadcaster %s", broadcaster_id)
             return []
 
+    async def get_vips(self, broadcaster_id: str, access_token: str) -> list[dict]:
+        """Fetch a complete VIP snapshot or fail without returning partial data."""
+        results: list[dict] = []
+        cursor: str | None = None
+        while True:
+            params = {"broadcaster_id": broadcaster_id, "first": 100}
+            if cursor:
+                params["after"] = cursor
+            response = await self._helix_get("channels/vips", params, token=access_token)
+            if response is None or response.status_code != 200:
+                LOGGER.warning("Complete VIP snapshot failed for broadcaster %s", broadcaster_id)
+                raise RuntimeError("Twitch VIP snapshot unavailable")
+            body = response.json()
+            results.extend(body.get("data", []))
+            cursor = body.get("pagination", {}).get("cursor")
+            if not cursor:
+                return results
+
     # ------------------------------------------------------------------
     # Videos / VODs
     # ------------------------------------------------------------------

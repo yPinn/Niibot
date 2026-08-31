@@ -1,4 +1,5 @@
 import type { RedemptionConfig, TwitchReward } from '@/api/events'
+import type { VipRewardRule } from '@/api/vip'
 import { AffiliateLockOverlay } from '@/components/AffiliateLockOverlay'
 import { SortableHead } from '@/components/SortableHead'
 import { TableEmptyRow } from '@/components/TableEmptyRow'
@@ -41,6 +42,9 @@ interface ChannelPointActionsTableProps {
   onToggle: (redemption: RedemptionConfig) => void
   onRewardSelect: (redemption: RedemptionConfig, rewardId: string) => void
   onEditCheckinSettings: () => void
+  onEditVipSettings: () => void
+  vipRules: VipRewardRule[]
+  onToggleVip: () => void
 }
 
 export function ChannelPointActionsTable({
@@ -53,6 +57,9 @@ export function ChannelPointActionsTable({
   onToggle,
   onRewardSelect,
   onEditCheckinSettings,
+  onEditVipSettings,
+  vipRules,
+  onToggleVip,
 }: ChannelPointActionsTableProps) {
   return (
     <Card className="relative w-full max-w-7xl overflow-hidden">
@@ -111,7 +118,20 @@ export function ChannelPointActionsTable({
                         </p>
                       </TableCell>
                       <TableCell>
-                        {rewardsLoading ? (
+                        {redemption.action_type === 'vip' ? (
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-sub font-medium">
+                              {vipRules.length > 0
+                                ? `${vipRules.length} 個 Reward 規則`
+                                : '尚未設定 VIP Reward'}
+                            </span>
+                            {vipRules.length > 0 && (
+                              <span className="text-label text-muted-foreground">
+                                {vipRules.filter(rule => rule.enabled).length} 個啟用
+                              </span>
+                            )}
+                          </div>
+                        ) : rewardsLoading ? (
                           <Skeleton className="h-8 w-full max-w-sm" />
                         ) : twitchRewards.length === 0 ? (
                           <span className="text-sub text-muted-foreground">
@@ -150,9 +170,19 @@ export function ChannelPointActionsTable({
                       <TableCell className="text-center">
                         <Switch
                           aria-label={`啟用 ${actionLabel}`}
-                          checked={redemption.enabled}
-                          disabled={!redemption.reward_id}
-                          onCheckedChange={() => onToggle(redemption)}
+                          checked={
+                            redemption.action_type === 'vip'
+                              ? vipRules.some(rule => rule.enabled)
+                              : redemption.enabled
+                          }
+                          disabled={
+                            redemption.action_type === 'vip'
+                              ? vipRules.length === 0
+                              : !redemption.reward_id
+                          }
+                          onCheckedChange={() =>
+                            redemption.action_type === 'vip' ? onToggleVip() : onToggle(redemption)
+                          }
                         />
                       </TableCell>
                       <TableCell className="text-right">
@@ -164,6 +194,16 @@ export function ChannelPointActionsTable({
                             onClick={onEditCheckinSettings}
                           >
                             設定
+                          </Button>
+                        )}
+                        {redemption.action_type === 'vip' && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            aria-label={`管理${actionLabel}設定`}
+                            onClick={onEditVipSettings}
+                          >
+                            管理
                           </Button>
                         )}
                       </TableCell>

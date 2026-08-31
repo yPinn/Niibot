@@ -141,6 +141,51 @@ class TestGetCustomRewards:
         assert reward["max_per_user_per_stream"] is None
 
 
+@pytest.mark.asyncio
+class TestGetVips:
+    async def test_requires_every_page_before_returning_snapshot(self):
+        mock = _MockAPI().route(
+            "GET",
+            "/helix/channels/vips",
+            httpx.Response(
+                200,
+                json={
+                    "data": [{"user_id": "u1", "user_login": "alice"}],
+                    "pagination": {"cursor": "next-page"},
+                },
+            ),
+            httpx.Response(
+                200,
+                json={
+                    "data": [{"user_id": "u2", "user_login": "bob"}],
+                    "pagination": {},
+                },
+            ),
+        )
+
+        result = await mock.client().get_vips("channel-1", "token")
+
+        assert [row["user_id"] for row in result] == ["u1", "u2"]
+        assert mock.requests[1].url.params["after"] == "next-page"
+
+    async def test_partial_snapshot_raises_instead_of_returning_first_page(self):
+        mock = _MockAPI().route(
+            "GET",
+            "/helix/channels/vips",
+            httpx.Response(
+                200,
+                json={
+                    "data": [{"user_id": "u1", "user_login": "alice"}],
+                    "pagination": {"cursor": "next-page"},
+                },
+            ),
+            httpx.Response(503, json={"message": "unavailable"}),
+        )
+
+        with pytest.raises(RuntimeError, match="snapshot unavailable"):
+            await mock.client().get_vips("channel-1", "token")
+
+
 # ---------------------------------------------------------------------------
 # generate_oauth_url
 # ---------------------------------------------------------------------------

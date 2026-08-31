@@ -79,6 +79,19 @@ export const API_ENDPOINTS = {
   checkin: {
     settings: join('/api/checkin/settings'),
   },
+  vip: {
+    state: join('/api/vip/state'),
+    settings: join('/api/vip/settings'),
+    initialize: join('/api/vip/initialize'),
+    sync: join('/api/vip/sync'),
+    rule: (rewardId: string) => join(`/api/vip/rules/${encodeURIComponent(rewardId)}`),
+    rulesEnabled: join('/api/vip/rules/enabled'),
+    adopt: (redemptionId: string) =>
+      join(`/api/vip/reviews/${encodeURIComponent(redemptionId)}/adopt`),
+    keepExternal: (redemptionId: string) =>
+      join(`/api/vip/reviews/${encodeURIComponent(redemptionId)}/keep-external`),
+    entitlement: (userId: string) => join(`/api/vip/entitlements/${encodeURIComponent(userId)}`),
+  },
   gameQueue: {
     state: join('/api/game-queue/state'),
     advance: join('/api/game-queue/advance'),

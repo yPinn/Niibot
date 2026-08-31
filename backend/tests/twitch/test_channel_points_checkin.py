@@ -11,6 +11,7 @@ def _make_component() -> tuple[ChannelPointsComponent, MagicMock]:
     bot.token_database = MagicMock()
     bot.sessions.session_id.return_value = 42
     component = ChannelPointsComponent(bot)
+    component.vip_repo.get_reward_rule = AsyncMock(return_value=None)
     component.redemption_repo.find_by_reward = AsyncMock(
         return_value=MagicMock(action_type="checkin")
     )

@@ -27,8 +27,10 @@ from services.timer_service import TimerService
 from shared.log_context import bind_log_context
 from shared.repositories.attendance import AttendanceRepository
 from shared.repositories.community_overlay import CommunityOverlayRepository
+from shared.repositories.vip import VipRepository
 from shared.services.attendance import AttendanceService
 from shared.services.community_overlay import CommunityOverlayService
+from shared.services.vip import VipService
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -110,6 +112,10 @@ def get_community_overlay_service(
     pool: asyncpg.Pool = Depends(get_db_pool),
 ) -> CommunityOverlayService:
     return CommunityOverlayService(CommunityOverlayRepository(pool))
+
+
+def get_vip_service(pool: asyncpg.Pool = Depends(get_db_pool)) -> VipService:
+    return VipService(VipRepository(pool))
 
 
 def get_token_payload(auth_token: str | None = Cookie(None)) -> dict:

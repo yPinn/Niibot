@@ -13,6 +13,17 @@ vi.mock('@/api/checkin', () => ({
   getCheckinSettings: vi.fn(),
   updateCheckinSettings: vi.fn(),
 }))
+vi.mock('@/api/vip', () => ({
+  getVipState: vi.fn(),
+  initializeVipTracking: vi.fn(),
+  updateVipSlotLimit: vi.fn(),
+  syncVipState: vi.fn(),
+  upsertVipRule: vi.fn(),
+  adoptExternalVip: vi.fn(),
+  keepExternalVip: vi.fn(),
+  adjustVipEntitlement: vi.fn(),
+  setVipRulesEnabled: vi.fn(),
+}))
 vi.mock('@/contexts/AuthContext', () => ({
   useAuth: () => ({ isAffiliate: true }),
 }))
@@ -28,6 +39,7 @@ import {
   getTwitchRewards,
   updateRedemptionConfig,
 } from '@/api/events'
+import { getVipState, upsertVipRule } from '@/api/vip'
 
 import ChannelPoints from './index'
 
@@ -106,6 +118,30 @@ const CHECKIN_SETTINGS = {
   updated_at: '2026-08-31T00:00:00Z',
 }
 
+const VIP_STATE = {
+  settings: {
+    channel_id: 'channel-1',
+    slot_limit: 10,
+    tracking_started_at: '2026-08-31T00:00:00Z',
+    last_full_sync_at: '2026-08-31T00:00:00Z',
+    created_at: '2026-08-31T00:00:00Z',
+    updated_at: '2026-08-31T00:00:00Z',
+  },
+  rules: [
+    {
+      id: 1,
+      channel_id: 'channel-1',
+      reward_id: 'reward-vip',
+      reward_name_snapshot: '酷酷的俗頭',
+      duration_months: 3,
+      is_permanent: false,
+      enabled: true,
+    },
+  ],
+  entitlements: [],
+  redemptions: [],
+}
+
 describe('Channel Points page', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -118,6 +154,11 @@ describe('Channel Points page', () => {
     vi.mocked(getCheckinSettings).mockResolvedValue(CHECKIN_SETTINGS)
     vi.mocked(updateCheckinSettings).mockImplementation(async update => ({
       ...CHECKIN_SETTINGS,
+      ...update,
+    }))
+    vi.mocked(getVipState).mockResolvedValue(VIP_STATE)
+    vi.mocked(upsertVipRule).mockImplementation(async (_rewardId, update) => ({
+      ...VIP_STATE.rules[0],
       ...update,
     }))
   })
@@ -211,6 +252,48 @@ describe('Channel Points page', () => {
         timezone: 'Asia/Tokyo',
         success_template: CHECKIN_SETTINGS.success_template,
         duplicate_template: CHECKIN_SETTINGS.duplicate_template,
+      })
+    )
+  })
+
+  it('opens the timed VIP workflow from the separate operation column', async () => {
+    const user = userEvent.setup()
+    vi.mocked(getRedemptionConfigs).mockResolvedValueOnce([VIP, CHECKIN])
+    render(<ChannelPoints />)
+
+    const vipRow = await screen.findByRole('row', { name: /VIP 授予/ })
+    await user.click(within(vipRow).getByRole('button', { name: '管理VIP 授予設定' }))
+
+    expect(await screen.findByRole('heading', { name: 'VIP management' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '容量與同步' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Reward 期限規則' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '當前 VIP 名單' })).toBeInTheDocument()
+    expect(getVipState).toHaveBeenCalledTimes(2)
+  })
+
+  it('edits an existing VIP reward duration and enabled state', async () => {
+    const user = userEvent.setup()
+    vi.mocked(getRedemptionConfigs).mockResolvedValueOnce([VIP])
+    render(<ChannelPoints />)
+
+    await user.click(await screen.findByRole('button', { name: '管理VIP 授予設定' }))
+
+    await user.click(await screen.findByRole('combobox', { name: '酷酷的俗頭 的期限' }))
+    await user.click(screen.getByRole('option', { name: '6 個月' }))
+    await waitFor(() =>
+      expect(upsertVipRule).toHaveBeenCalledWith('reward-vip', {
+        duration_months: 6,
+        is_permanent: false,
+        enabled: true,
+      })
+    )
+
+    await user.click(screen.getByRole('switch', { name: '啟用 酷酷的俗頭' }))
+    await waitFor(() =>
+      expect(upsertVipRule).toHaveBeenCalledWith('reward-vip', {
+        duration_months: 3,
+        is_permanent: false,
+        enabled: false,
       })
     )
   })
