@@ -251,6 +251,16 @@ class TestTwitchOAuthUrl:
         assert "redirect_uri" in data
         assert "twitch" in data["oauth_url"]
 
+    def test_collaborator_mode_requests_identity_only_oauth(self):
+        twitch_api = _make_twitch_api()
+
+        r = _make_client(twitch_api=twitch_api).get("/api/auth/twitch/collaborator/oauth")
+
+        assert r.status_code == 200
+        _, kwargs = twitch_api.generate_oauth_url.call_args
+        assert kwargs["scopes"] == []
+        assert kwargs["redirect_path"] == "/api/auth/twitch/collaborator/callback"
+
 
 # ---------------------------------------------------------------------------
 # GET /api/auth/twitch/callback — CSRF / state validation
@@ -468,6 +478,83 @@ class TestTwitchOAuthCallbackSuccess:
         _, kwargs = mock_tenant.ensure_tenant_for_owner.call_args
         assert kwargs.get("channel_id") == _TWITCH_UID
         assert kwargs.get("owner_user_id") == _USER_UUID
+
+
+class TestCollaboratorOAuthCallback:
+    def _run(self, *, tenants: list | None = None, membership_status: str | None = None):
+        from services.oauth_service import encode_oauth_state
+
+        settings = get_settings()
+        state = encode_oauth_state("collaborator_login", secret=settings.jwt_secret_key)
+        twitch_api = _make_twitch_api()
+        twitch_api.exchange_code_for_token = AsyncMock(
+            return_value=(
+                True,
+                None,
+                {
+                    "access_token": "identity-proof-only",
+                    "refresh_token": "unused",
+                    "user_id": _TWITCH_UID,
+                    "scopes": None,
+                },
+            )
+        )
+        identity_svc = MagicMock()
+        identity_svc.find_or_link = AsyncMock(
+            return_value=MagicMock(user_id=_USER_UUID, identity=MagicMock(id="identity-id"))
+        )
+        tenant_svc = MagicMock()
+        tenant_svc.list_user_tenants = AsyncMock(
+            return_value=tenants
+            if tenants is not None
+            else [MagicMock(channel_id="channel-a", role="manager")]
+        )
+        admission_svc = MagicMock()
+        admission_svc.get = AsyncMock(
+            return_value=MagicMock(status=membership_status) if membership_status else None
+        )
+
+        with (
+            patch("routers.auth_router.get_database_manager") as dbm,
+            patch("routers.auth_router.IdentityService", return_value=identity_svc),
+            patch("routers.auth_router.TenantService", return_value=tenant_svc),
+            patch("routers.auth_router.AdmissionService", return_value=admission_svc),
+            patch("routers.auth_router.get_channel_service") as channel_service,
+        ):
+            dbm.return_value.pool = _make_pool()
+            response = _make_client(twitch_api=twitch_api).get(
+                "/api/auth/twitch/collaborator/callback",
+                params={"code": "valid", "state": state},
+                follow_redirects=False,
+            )
+
+        return response, twitch_api, identity_svc, tenant_svc, channel_service
+
+    def test_logs_into_existing_manager_workspace_without_broadcaster_side_effects(self):
+        response, twitch_api, identity, tenant, channel_service = self._run()
+
+        assert response.status_code in (302, 307)
+        assert response.headers["location"].endswith("/dashboard/channel-a")
+        assert "auth_token=" in response.headers["set-cookie"]
+        twitch_api.exchange_code_for_token.assert_awaited_once_with(
+            "valid", redirect_path="/api/auth/twitch/collaborator/callback"
+        )
+        identity.find_or_link.assert_awaited_once()
+        tenant.list_user_tenants.assert_awaited_once_with(_USER_UUID)
+        channel_service.assert_not_called()
+
+    def test_without_tenant_grant_does_not_create_session(self):
+        response, *_ = self._run(tenants=[])
+
+        assert "no_tenant_access" in response.headers["location"]
+        assert "auth_token=" not in response.headers.get("set-cookie", "")
+
+    @pytest.mark.parametrize("status", ["suspended", "rejected"])
+    def test_global_account_lock_cannot_be_bypassed(self, status: str):
+        response, *_ = self._run(membership_status=status)
+
+        assert "account_locked" in response.headers["location"]
+        assert "auth_token=" not in response.headers.get("set-cookie", "")
 
 
 # ---------------------------------------------------------------------------

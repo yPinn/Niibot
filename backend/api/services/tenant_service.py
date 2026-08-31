@@ -45,6 +45,17 @@ class TenantContext:
     role: TenantRole
 
 
+@dataclass(frozen=True)
+class TenantSummary:
+    """Safe workspace metadata returned by the tenant picker API."""
+
+    channel_id: str
+    channel_name: str
+    display_name: str | None
+    enabled: bool
+    role: TenantRole
+
+
 class TenantNotFoundError(NotFoundError):
     """Raised when channel_id does not exist."""
 
@@ -66,6 +77,13 @@ class TenantAccessDeniedError(AccessDeniedError):
 
     code = "TENANT.ACCESS_DENIED"
     user_message = "你不是這個頻道的成員"
+
+
+class TenantAccountLockedError(AccessDeniedError):
+    """The identity is globally suspended/rejected despite a tenant grant."""
+
+    code = "TENANT.ACCOUNT_LOCKED"
+    user_message = "你的帳號目前無法使用協作功能"
 
 
 class TenantService:
@@ -151,22 +169,77 @@ class TenantService:
         """
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT channel_id, suspended_at FROM channels WHERE channel_id = $1",
+                """
+                SELECT c.channel_id,
+                       c.suspended_at,
+                       cm.role,
+                       caller_membership.status AS caller_membership_status,
+                       owner_membership.status AS owner_membership_status
+                  FROM channels c
+                  LEFT JOIN channel_members cm
+                    ON cm.channel_id = c.channel_id
+                   AND cm.user_id = $2::uuid
+                  LEFT JOIN memberships caller_membership
+                    ON caller_membership.user_id = $2::uuid
+                  LEFT JOIN memberships owner_membership
+                    ON owner_membership.user_id = c.owner_user_id
+                 WHERE c.channel_id = $1
+                """,
                 channel_id,
+                user_id,
             )
-        if row is None:
+        # Deliberately return the same 404 for a missing tenant and a caller
+        # who is not a member, preventing channel-id enumeration.
+        if row is None or row["role"] is None:
             raise TenantNotFoundError(context={"channel_id": channel_id})
+        if row["caller_membership_status"] in {"suspended", "rejected"}:
+            raise TenantAccountLockedError(context={"user_id": user_id})
         if row["suspended_at"] is not None:
             raise TenantSuspendedError(context={"channel_id": channel_id})
+        if row["owner_membership_status"] != "active":
+            raise TenantSuspendedError(context={"channel_id": channel_id})
 
-        member = await self.members.get(channel_id, user_id)
-        if member is None or not role_satisfies(member.role, required_role):
+        role = str(row["role"])
+        if not role_satisfies(role, required_role):
             raise TenantAccessDeniedError(context={"channel_id": channel_id, "user_id": user_id})
-        return TenantContext(channel_id=channel_id, user_id=user_id, role=member.role)
+        return TenantContext(channel_id=channel_id, user_id=user_id, role=role)  # type: ignore[arg-type]
 
     async def list_user_tenants(self, user_id: str) -> list[ChannelMember]:
         """Every channel the user has any role in (dashboard tenant picker)."""
         return await self.members.list_for_user(user_id)
+
+    async def list_accessible_tenants(self, user_id: str) -> list[TenantSummary]:
+        """Return non-suspended workspaces whose owner remains admitted."""
+        async with self.pool.acquire() as conn:
+            caller_status = await conn.fetchval(
+                "SELECT status FROM memberships WHERE user_id = $1::uuid",
+                user_id,
+            )
+            if caller_status in {"suspended", "rejected"}:
+                raise TenantAccountLockedError(context={"user_id": user_id})
+
+            rows = await conn.fetch(
+                """
+                SELECT c.channel_id,
+                       c.channel_name,
+                       c.display_name,
+                       c.enabled,
+                       cm.role
+                  FROM channel_members cm
+                  JOIN channels c
+                    ON c.channel_id = cm.channel_id
+                  JOIN memberships owner_membership
+                    ON owner_membership.user_id = c.owner_user_id
+                 WHERE cm.user_id = $1::uuid
+                   AND c.suspended_at IS NULL
+                   AND owner_membership.status = 'active'
+                 ORDER BY CASE cm.role WHEN 'owner' THEN 0 ELSE 1 END,
+                          cm.granted_at ASC,
+                          c.channel_id ASC
+                """,
+                user_id,
+            )
+        return [TenantSummary(**dict(row)) for row in rows]
 
     # ------------------------------------------------------------------
     # Postgres RLS binding (Phase 3)

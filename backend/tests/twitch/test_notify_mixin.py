@@ -401,6 +401,42 @@ class TestHandleTokenReauth:
         mixin._send_reauth_restored_message.assert_awaited_once_with("u1", "alice")
 
 
+class TestHandleBotTokenUpdated:
+    pytestmark = pytest.mark.asyncio
+
+    async def test_invalidates_bot_cache_and_hot_reloads_credential(self):
+        mixin = _StubMixin()
+        token = MagicMock(token="encrypted-access", refresh="encrypted-refresh")
+        mixin.channels.get_token = AsyncMock(return_value=token)
+        mixin.add_token = AsyncMock(return_value=_make_user_info("niibot", []))
+
+        with patch("shared.repositories.channel._token_cache") as mock_cache:
+            await mixin._handle_bot_token_updated(
+                None,
+                None,
+                "bot_token_updated",
+                _new_token_payload("bot-001"),
+            )
+
+        mock_cache.invalidate.assert_called_once_with("token:bot-001:bot")
+        mixin.channels.get_token.assert_awaited_once_with("bot-001", "bot")
+        mixin.add_token.assert_awaited_once_with("encrypted-access", "encrypted-refresh")
+
+    async def test_missing_updated_credential_fails_closed(self):
+        mixin = _StubMixin()
+        mixin.channels.get_token = AsyncMock(return_value=None)
+        mixin.add_token = AsyncMock()
+
+        await mixin._handle_bot_token_updated(
+            None,
+            None,
+            "bot_token_updated",
+            _new_token_payload("bot-001"),
+        )
+
+        mixin.add_token.assert_not_awaited()
+
+
 # ---------------------------------------------------------------------------
 # Bot._check_bot_mod_status
 # ---------------------------------------------------------------------------

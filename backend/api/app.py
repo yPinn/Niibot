@@ -23,6 +23,7 @@ from routers import (
     ai_settings_router,
     analytics_router,
     auth_router,
+    bot_accounts_router,
     bots_router,
     channels_router,
     checkin_router,
@@ -39,6 +40,7 @@ from routers import (
     payment_config_router,
     releases_router,
     stats_router,
+    tenants_router,
     timers_router,
     video_queue_router,
     vip_router,
@@ -286,6 +288,8 @@ def create_app() -> FastAPI:
     # Public / webhook routers — no activation gate
     app.include_router(discord_webhook_router.router)
     app.include_router(auth_router.router)
+    app.include_router(bot_accounts_router.router)
+    app.include_router(tenants_router.router)
     app.include_router(donation_router.router)
     app.include_router(client_errors_router.router)
     # Admin router — gated by stricter require_owner inside the router itself

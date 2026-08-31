@@ -212,6 +212,17 @@ class TestGenerateOAuthUrl:
         api = _MockAPI().client()
         assert "state=" not in api.generate_oauth_url()
 
+    def test_collaborator_url_can_use_identity_only_scope_and_callback(self):
+        api = _MockAPI().client()
+        url = api.generate_oauth_url(
+            "signed-state",
+            scopes=[],
+            redirect_path="/api/auth/twitch/collaborator/callback",
+        )
+
+        assert "scope=" not in url
+        assert "%2Fapi%2Fauth%2Ftwitch%2Fcollaborator%2Fcallback" in url
+
 
 # ---------------------------------------------------------------------------
 # _ensure_app_token
@@ -332,6 +343,29 @@ class TestExchangeCodeForToken:
             "user_id": "12345",
             "scopes": "channel:bot channel:read:redemptions",
         }
+
+    async def test_exchange_uses_explicit_callback_path(self):
+        mock = _MockAPI().route(
+            "POST",
+            "/oauth2/token",
+            httpx.Response(
+                200,
+                json={"access_token": "user-at", "refresh_token": "user-rt", "scope": []},
+            ),
+        )
+        mock.route("GET", "/helix/users", httpx.Response(200, json={"data": [{"id": "12345"}]}))
+        api = mock.client()
+
+        ok, _, _ = await api.exchange_code_for_token(
+            "the-code", redirect_path="/api/auth/twitch/collaborator/callback"
+        )
+
+        assert ok is True
+        token_request = next(r for r in mock.requests if r.method == "POST")
+        assert (
+            b"redirect_uri=https%3A%2F%2Fapi.example.com%2Fapi%2Fauth%2Ftwitch%2Fcollaborator%2Fcallback"
+            in token_request.content
+        )
 
     async def test_token_endpoint_non_200(self):
         mock = _MockAPI().route(
