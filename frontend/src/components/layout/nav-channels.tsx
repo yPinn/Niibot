@@ -43,6 +43,8 @@ export function NavChannels({ channels }: { channels: Channel[] }) {
     })
   }, [channels, sortType])
 
+  if (sortedChannels.length === 0) return null
+
   return (
     <SidebarGroup className="group-data-[collapsible=icon]:hidden">
       <div className="flex items-center justify-between">
@@ -82,11 +84,6 @@ export function NavChannels({ channels }: { channels: Channel[] }) {
         </DropdownMenu>
       </div>
       <SidebarMenu>
-        {sortedChannels.length === 0 && (
-          <SidebarMenuItem>
-            <div className="px-2 py-1.5 text-sm text-muted-foreground">No channels found</div>
-          </SidebarMenuItem>
-        )}
         <TooltipProvider delayDuration={400}>
           {sortedChannels.map(channel => (
             <SidebarMenuItem key={channel.id}>

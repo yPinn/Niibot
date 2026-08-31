@@ -6,7 +6,6 @@ import { NavChannels } from '@/components/layout/nav-channels'
 import { NavMain } from '@/components/layout/nav-main'
 import { NavSecondary } from '@/components/layout/nav-secondary'
 import { NavUser } from '@/components/layout/nav-user'
-import { WorkspaceSwitcher } from '@/components/layout/workspace-switcher'
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader } from '@/components/ui'
 import { discordNavigationData, navigationData } from '@/config/navigation'
 import { useAuth } from '@/contexts/AuthContext'
@@ -24,7 +23,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     <Sidebar variant="inset" collapsible="icon" {...props}>
       <SidebarHeader>
         <BotSwitcher />
-        {activeBot === 'twitch' && <WorkspaceSwitcher />}
       </SidebarHeader>
       <SidebarContent className="overflow-hidden">
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
@@ -35,7 +33,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       </SidebarContent>
       <SidebarFooter>
         {user ? (
-          <NavUser user={user} />
+          <NavUser user={user} showWorkspaces={activeBot === 'twitch'} />
         ) : (
           <div className="flex items-center justify-center p-4">
             <Link to="/login" className="text-sm text-primary hover:underline">

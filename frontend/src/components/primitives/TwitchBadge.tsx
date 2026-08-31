@@ -159,6 +159,8 @@ export function TwitchBadgeGroup({ badges, size = 18, className }: TwitchBadgeGr
 
 interface TwitchRoleBadgeProps {
   role: TwitchRole
+  /** Override the role name used by the image alt text and tooltip. */
+  label?: string
   /** Override the static file with an explicit URL (channel-specific badges). */
   src?: string | null
   /** Version for tiered badges (bits, gift_leader, sub_gifter). Resolves to /twitch-badges/{role}/{version}/{size}.png */
@@ -169,11 +171,13 @@ interface TwitchRoleBadgeProps {
 
 export function TwitchRoleBadge({
   role,
+  label,
   src,
   version,
   size = 18,
   className,
 }: TwitchRoleBadgeProps) {
+  const accessibleLabel = label ?? getRoleTooltip(role, version)
   const resolvedSrc =
     src ??
     (version
@@ -184,14 +188,14 @@ export function TwitchRoleBadge({
       <TooltipTrigger asChild>
         <img
           src={resolvedSrc}
-          alt={getRoleTooltip(role, version)}
+          alt={accessibleLabel}
           width={size}
           height={size}
           draggable={false}
           className={cn('object-contain shrink-0 rounded-[3px]', SIZE_CONFIG[size].img, className)}
         />
       </TooltipTrigger>
-      <TooltipContent>{getRoleTooltip(role, version)}</TooltipContent>
+      <TooltipContent>{accessibleLabel}</TooltipContent>
     </Tooltip>
   )
 }
