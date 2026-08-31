@@ -7,13 +7,13 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, Query, Request, Response
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
+from pydantic import BaseModel, ConfigDict, Field
 
 from core.dependencies import get_community_overlay_service, require_self_tenant_access
 from core.rate_limit import RateLimiter
 from services.tenant_service import TenantContext
-from shared.community_overlay_themes import validate_overlay_theme
+from shared.community_overlay_blocks import get_community_overlay_block
 from shared.errors import NotFoundError
 from shared.models.attendance import CommunityOverlayThemePublished, CommunityOverlayThemeState
 from shared.services.community_overlay import CommunityOverlayService
@@ -22,6 +22,7 @@ router = APIRouter(prefix="/api/community-overlay", tags=["community-overlay"])
 _feed_limiter = RateLimiter(max_calls=240, period=60.0)
 _public_theme_limiter = RateLimiter(max_calls=120, period=60.0)
 _public_ip_limiter = RateLimiter(max_calls=600, period=60.0)
+_preview_limiter = RateLimiter(max_calls=10, period=60.0)
 
 
 class CommunityOverlayNotFoundError(NotFoundError):
@@ -56,27 +57,21 @@ class OverlayAccessUpdate(BaseModel):
     enabled: bool
 
 
-class OverlayThemeDefinition(BaseModel):
+class OverlayPreviewRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
-    surface_color: str = Field(pattern=r"^#[0-9a-fA-F]{6}$")
-    accent_color: str = Field(pattern=r"^#[0-9a-fA-F]{6}$")
-    text_color: str = Field(pattern=r"^#[0-9a-fA-F]{6}$")
-    placement: Literal["top-left", "top-right", "bottom-left", "bottom-right"]
-    radius_px: int = Field(ge=0, le=40)
-    display_ms: int = Field(ge=2_000, le=15_000)
-    motion: Literal["standard", "subtle", "none"]
+    content_type: Literal["checkin"]
 
-    @model_validator(mode="after")
-    def validate_renderer_contract(self) -> OverlayThemeDefinition:
-        validate_overlay_theme(self.model_dump())
-        return self
+
+class OverlayPreviewResponse(BaseModel):
+    content_type: Literal["checkin"]
+    event_id: int
 
 
 class OverlayThemeDraftUpdate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
-    theme: OverlayThemeDefinition
+    theme: dict[str, object]
     expected_draft_version: int = Field(strict=True, ge=1)
 
 
@@ -90,15 +85,16 @@ class OverlayThemePublishedResponse(BaseModel):
     revision_id: int | None
     renderer: str
     schema_version: int
-    theme: OverlayThemeDefinition
+    theme: dict[str, object]
     created_at: datetime | None
 
 
 class OverlayThemeStateResponse(BaseModel):
+    block_type: str
     renderer: str
     schema_version: int
     draft_version: int
-    draft: OverlayThemeDefinition
+    draft: dict[str, object]
     published: OverlayThemePublishedResponse
     has_unpublished_changes: bool
     updated_at: datetime
@@ -111,7 +107,7 @@ def _published_theme_response(
         revision_id=published.revision_id,
         renderer=published.renderer,
         schema_version=published.schema_version,
-        theme=OverlayThemeDefinition.model_validate(published.theme),
+        theme=dict(published.theme),
         created_at=published.created_at,
     )
 
@@ -132,10 +128,11 @@ def _protect_capability_response(response: Response) -> None:
 
 def _theme_state_response(state: CommunityOverlayThemeState) -> OverlayThemeStateResponse:
     return OverlayThemeStateResponse(
+        block_type=state.block_type,
         renderer=state.renderer,
         schema_version=state.schema_version,
         draft_version=state.draft_version,
-        draft=OverlayThemeDefinition.model_validate(state.draft_theme),
+        draft=dict(state.draft_theme),
         published=_published_theme_response(state.published),
         has_unpublished_changes=state.has_unpublished_changes,
         updated_at=state.updated_at,
@@ -171,13 +168,15 @@ async def get_public_theme(
     request: Request,
     response: Response,
     overlay_key: str = Header(alias="X-Overlay-Key"),
+    block_type: str = Query(default="checkin"),
     service: CommunityOverlayService = Depends(get_community_overlay_service),
 ) -> OverlayThemePublishedResponse:
     """Return only the published renderer snapshot for a valid capability key."""
     public_key = _public_key_from_header(request, overlay_key)
     client_host = request.client.host if request.client else "unknown"
-    _public_theme_limiter.require(f"{client_host}:{public_key}")
-    published = await service.get_public_theme(public_key)
+    selected_block = _require_theme_block(block_type)
+    _public_theme_limiter.require(f"{client_host}:{public_key}:{selected_block}")
+    published = await service.get_public_theme(public_key, selected_block)
     if published is None:
         raise CommunityOverlayNotFoundError()
     response.headers["Cache-Control"] = "no-store"
@@ -220,47 +219,96 @@ async def rotate_overlay_key(
     return OverlayAccessResponse(**asdict(access))
 
 
-@router.get("/settings/theme", response_model=OverlayThemeStateResponse)
+@router.post("/settings/preview", response_model=OverlayPreviewResponse)
+async def publish_overlay_preview(
+    body: OverlayPreviewRequest,
+    response: Response,
+    _action: Literal["community-overlay"] = Header(alias="X-Niibot-Action"),
+    ctx: TenantContext = Depends(require_self_tenant_access),
+    service: CommunityOverlayService = Depends(get_community_overlay_service),
+) -> OverlayPreviewResponse:
+    """Send a synthetic display event without executing its feature workflow."""
+    _preview_limiter.require(f"{ctx.channel_id}:{ctx.user_id}")
+    _protect_capability_response(response)
+    event_id = await service.publish_preview(
+        channel_id=ctx.channel_id,
+        actor_user_id=ctx.user_id,
+        content_type=body.content_type,
+    )
+    return OverlayPreviewResponse(content_type=body.content_type, event_id=event_id)
+
+
+def _require_theme_block(block_type: str) -> str:
+    try:
+        get_community_overlay_block(block_type)
+    except ValueError:
+        raise CommunityOverlayNotFoundError() from None
+    return block_type
+
+
+def _validate_theme_input(block_type: str, theme: dict[str, object]) -> dict[str, object]:
+    try:
+        return get_community_overlay_block(block_type).validate_theme(theme)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+
+
+@router.get("/settings/blocks/{block_type}/theme", response_model=OverlayThemeStateResponse)
 async def get_overlay_theme(
+    block_type: str,
     ctx: TenantContext = Depends(require_self_tenant_access),
     service: CommunityOverlayService = Depends(get_community_overlay_service),
 ) -> OverlayThemeStateResponse:
-    return _theme_state_response(await service.get_theme_state(ctx.channel_id))
+    selected_block = _require_theme_block(block_type)
+    return _theme_state_response(await service.get_theme_state(ctx.channel_id, selected_block))
 
 
-@router.patch("/settings/theme/draft", response_model=OverlayThemeStateResponse)
+@router.patch("/settings/blocks/{block_type}/theme/draft", response_model=OverlayThemeStateResponse)
 async def update_overlay_theme_draft(
+    block_type: str,
     body: OverlayThemeDraftUpdate,
     ctx: TenantContext = Depends(require_self_tenant_access),
     service: CommunityOverlayService = Depends(get_community_overlay_service),
 ) -> OverlayThemeStateResponse:
+    selected_block = _require_theme_block(block_type)
+    validated_theme = _validate_theme_input(selected_block, body.theme)
     state = await service.update_theme_draft(
         ctx.channel_id,
-        body.theme.model_dump(),
+        selected_block,
+        validated_theme,
         body.expected_draft_version,
     )
     return _theme_state_response(state)
 
 
-@router.post("/settings/theme/publish", response_model=OverlayThemeStateResponse)
+@router.post(
+    "/settings/blocks/{block_type}/theme/publish", response_model=OverlayThemeStateResponse
+)
 async def publish_overlay_theme(
+    block_type: str,
     body: OverlayThemeActionRequest,
     _action: Literal["community-overlay"] = Header(alias="X-Niibot-Action"),
     ctx: TenantContext = Depends(require_self_tenant_access),
     service: CommunityOverlayService = Depends(get_community_overlay_service),
 ) -> OverlayThemeStateResponse:
+    selected_block = _require_theme_block(block_type)
     return _theme_state_response(
-        await service.publish_theme(ctx.channel_id, body.expected_draft_version)
+        await service.publish_theme(ctx.channel_id, selected_block, body.expected_draft_version)
     )
 
 
-@router.post("/settings/theme/reset-draft", response_model=OverlayThemeStateResponse)
+@router.post(
+    "/settings/blocks/{block_type}/theme/reset-draft",
+    response_model=OverlayThemeStateResponse,
+)
 async def reset_overlay_theme_draft(
+    block_type: str,
     body: OverlayThemeActionRequest,
     _action: Literal["community-overlay"] = Header(alias="X-Niibot-Action"),
     ctx: TenantContext = Depends(require_self_tenant_access),
     service: CommunityOverlayService = Depends(get_community_overlay_service),
 ) -> OverlayThemeStateResponse:
+    selected_block = _require_theme_block(block_type)
     return _theme_state_response(
-        await service.reset_theme_draft(ctx.channel_id, body.expected_draft_version)
+        await service.reset_theme_draft(ctx.channel_id, selected_block, body.expected_draft_version)
     )

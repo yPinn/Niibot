@@ -114,7 +114,7 @@ describe('CommunityOverlay', () => {
     renderOverlay(`#key=${KEY}&preview=1`)
 
     const card = await screen.findByLabelText('Alice 的簽到集點卡')
-    expect(getCommunityOverlayTheme).toHaveBeenCalledWith(KEY)
+    expect(getCommunityOverlayTheme).toHaveBeenCalledWith(KEY, 'checkin')
     expect(card.closest('main')).toHaveAttribute('data-placement', 'top-left')
     expect(card).toHaveStyle({
       '--overlay-surface': '#112233',

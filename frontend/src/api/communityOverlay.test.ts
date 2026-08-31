@@ -9,6 +9,7 @@ import {
   publishCommunityOverlayTheme,
   resetCommunityOverlayThemeDraft,
   rotateCommunityOverlayKey,
+  triggerCommunityOverlayPreview,
   updateCommunityOverlaySettings,
   updateCommunityOverlayThemeDraft,
 } from './communityOverlay'
@@ -109,6 +110,30 @@ describe('community overlay settings', () => {
       headers: { 'X-Niibot-Action': 'community-overlay' },
     })
   })
+
+  it('triggers a tenant-scoped preview without using the feature command', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue({ content_type: 'checkin', event_id: 91 }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await triggerCommunityOverlayPreview('checkin')
+
+    expect(new URL(String(fetchMock.mock.calls[0][0])).pathname).toBe(
+      '/api/community-overlay/settings/preview'
+    )
+    expect(fetchMock.mock.calls[0][1]).toEqual({
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'X-Niibot-Action': 'community-overlay',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ content_type: 'checkin' }),
+    })
+  })
 })
 
 describe('community overlay tenant theme', () => {
@@ -121,10 +146,11 @@ describe('community overlay tenant theme', () => {
     })
     vi.stubGlobal('fetch', fetchMock)
 
-    await getCommunityOverlayTheme('key with spaces')
+    await getCommunityOverlayTheme('key with spaces', 'checkin')
 
     const url = new URL(String(fetchMock.mock.calls[0][0]), 'https://niibot.tv')
     expect(url.pathname).toBe('/api/community-overlay/public/theme')
+    expect(url.searchParams.get('block_type')).toBe('checkin')
     expect(url.searchParams.has('key')).toBe(false)
     expect(fetchMock.mock.calls[0][1]).toEqual({
       headers: { 'X-Overlay-Key': 'key with spaces' },
@@ -139,10 +165,10 @@ describe('community overlay tenant theme', () => {
     })
     vi.stubGlobal('fetch', fetchMock)
 
-    await getCommunityOverlayThemeSettings()
+    await getCommunityOverlayThemeSettings('checkin')
 
     expect(new URL(String(fetchMock.mock.calls[0][0])).pathname).toBe(
-      '/api/community-overlay/settings/theme'
+      '/api/community-overlay/settings/blocks/checkin/theme'
     )
     expect(fetchMock.mock.calls[0][1]).toEqual({ credentials: 'include' })
   })
@@ -155,10 +181,10 @@ describe('community overlay tenant theme', () => {
     })
     vi.stubGlobal('fetch', fetchMock)
 
-    await updateCommunityOverlayThemeDraft(DEFAULT_COMMUNITY_OVERLAY_THEME, 3)
+    await updateCommunityOverlayThemeDraft('checkin', DEFAULT_COMMUNITY_OVERLAY_THEME, 3)
 
     expect(new URL(String(fetchMock.mock.calls[0][0])).pathname).toBe(
-      '/api/community-overlay/settings/theme/draft'
+      '/api/community-overlay/settings/blocks/checkin/theme/draft'
     )
     expect(fetchMock.mock.calls[0][1]).toEqual({
       method: 'PATCH',
@@ -172,8 +198,11 @@ describe('community overlay tenant theme', () => {
   })
 
   it.each([
-    [publishCommunityOverlayTheme, '/api/community-overlay/settings/theme/publish'],
-    [resetCommunityOverlayThemeDraft, '/api/community-overlay/settings/theme/reset-draft'],
+    [publishCommunityOverlayTheme, '/api/community-overlay/settings/blocks/checkin/theme/publish'],
+    [
+      resetCommunityOverlayThemeDraft,
+      '/api/community-overlay/settings/blocks/checkin/theme/reset-draft',
+    ],
   ] as const)('posts a theme lifecycle action', async (action, path) => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -182,7 +211,7 @@ describe('community overlay tenant theme', () => {
     })
     vi.stubGlobal('fetch', fetchMock)
 
-    await action(3)
+    await action('checkin', 3)
 
     expect(new URL(String(fetchMock.mock.calls[0][0])).pathname).toBe(path)
     expect(fetchMock.mock.calls[0][1]).toEqual({

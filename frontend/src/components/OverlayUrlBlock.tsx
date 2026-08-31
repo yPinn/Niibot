@@ -7,13 +7,19 @@ import { copyToClipboard } from '@/lib/clipboard'
 export interface OverlayUrlBlockProps {
   /** Full overlay URL. When falsy, renders nothing. */
   url: string | undefined
+  copyLabel?: string
+  openLabel?: string
 }
 
 /**
  * OBS overlay URL display — mirrors Streamlabs widget URL UX.
  * [icon + label | blurred-URL / hint (click to copy) | eye toggle] | [open btn]
  */
-export function OverlayUrlBlock({ url }: OverlayUrlBlockProps) {
+export function OverlayUrlBlock({
+  url,
+  copyLabel = '點擊以複製 Overlay 連結',
+  openLabel = '開啟 OBS Overlay',
+}: OverlayUrlBlockProps) {
   const [revealed, setRevealed] = useState(false)
 
   if (!url) return null
@@ -44,7 +50,7 @@ export function OverlayUrlBlock({ url }: OverlayUrlBlockProps) {
           </code>
           {!revealed && (
             <span className="absolute inset-0 flex items-center justify-center text-xs font-medium">
-              點擊以複製 Overlay 連結
+              {copyLabel}
             </span>
           )}
         </div>
@@ -75,7 +81,7 @@ export function OverlayUrlBlock({ url }: OverlayUrlBlockProps) {
         <TooltipTrigger asChild>
           <Button variant="outline" size="sm" asChild>
             <a href={url} target="_blank" rel="noopener noreferrer">
-              <span className="sr-only">開啟 OBS Overlay</span>
+              <span className="sr-only">{openLabel}</span>
               <Icon icon="fa-solid fa-arrow-up-right-from-square" className="text-xs" />
             </a>
           </Button>

@@ -74,7 +74,7 @@ function ScopedCommunityOverlay({ publicKey, preview }: { publicKey: string; pre
     if (!publicKey || themeFetchingRef.current) return
     themeFetchingRef.current = true
     try {
-      const published = await getCommunityOverlayTheme(publicKey)
+      const published = await getCommunityOverlayTheme(publicKey, 'checkin')
       if (
         published.renderer === 'checkin-card' &&
         published.schema_version === 1 &&
@@ -145,7 +145,7 @@ export default function CommunityOverlay() {
   const preview = overlayParams.get('preview') === '1'
   const scope = `${publicKey}:${preview ? 'preview' : 'live'}`
 
-  useDocumentTitle('Community Overlay')
+  useDocumentTitle('Live Display')
 
   return <ScopedCommunityOverlay key={scope} publicKey={publicKey} preview={preview} />
 }

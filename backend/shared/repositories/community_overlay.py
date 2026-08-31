@@ -10,12 +10,9 @@ from uuid import UUID
 
 import asyncpg
 
+from shared.community_overlay_blocks import get_community_overlay_block
 from shared.community_overlay_themes import (
-    DEFAULT_OVERLAY_THEME,
-    OVERLAY_RENDERER,
-    OVERLAY_THEME_SCHEMA_VERSION,
     CommunityOverlayThemeVersionConflictError,
-    validate_overlay_theme,
 )
 from shared.models.attendance import (
     CommunityOverlayAccess,
@@ -33,6 +30,7 @@ _EVENT_COLUMNS = (
 LOGGER: logging.Logger = logging.getLogger(__name__)
 _THEME_STATE_SELECT = """
     SELECT profile.channel_id,
+           profile.block_type,
            profile.renderer,
            profile.schema_version,
            profile.draft_theme,
@@ -46,8 +44,10 @@ _THEME_STATE_SELECT = """
     FROM community_overlay_profiles profile
     LEFT JOIN community_overlay_revisions revision
       ON revision.channel_id = profile.channel_id
+     AND revision.block_type = profile.block_type
      AND revision.id = profile.published_revision_id
     WHERE profile.channel_id = $1
+      AND profile.block_type = $2
 """
 
 
@@ -61,23 +61,26 @@ def _to_access(row: asyncpg.Record) -> CommunityOverlayAccess:
     )
 
 
-def _to_published_theme(row: asyncpg.Record) -> CommunityOverlayThemePublished:
+def _to_published_theme(row: asyncpg.Record, block_type: str) -> CommunityOverlayThemePublished:
+    definition = get_community_overlay_block(block_type)
     return CommunityOverlayThemePublished(
         revision_id=row["published_revision_id"],
         renderer=row["published_renderer"],
         schema_version=row["published_schema_version"],
-        theme=validate_overlay_theme(row["published_theme"]),
+        theme=definition.validate_theme(row["published_theme"]),
         created_at=row["published_created_at"],
     )
 
 
 def _to_theme_state(row: asyncpg.Record) -> CommunityOverlayThemeState:
+    definition = get_community_overlay_block(row["block_type"])
     return CommunityOverlayThemeState(
         channel_id=row["channel_id"],
+        block_type=row["block_type"],
         renderer=row["renderer"],
         schema_version=row["schema_version"],
-        draft_theme=validate_overlay_theme(row["draft_theme"]),
-        published=_to_published_theme(row),
+        draft_theme=definition.validate_theme(row["draft_theme"]),
+        published=_to_published_theme(row, row["block_type"]),
         updated_at=row["updated_at"],
         draft_version=row["draft_version"],
     )
@@ -148,17 +151,25 @@ class CommunityOverlayRepository:
         return _to_access(row)
 
     async def _lock_theme_state(
-        self, conn: asyncpg.Connection, channel_id: str
+        self, conn: asyncpg.Connection, channel_id: str, block_type: str
     ) -> CommunityOverlayThemeState:
+        definition = get_community_overlay_block(block_type)
         await conn.execute(
             """
-            INSERT INTO community_overlay_profiles (channel_id)
-            VALUES ($1)
-            ON CONFLICT (channel_id) DO NOTHING
+            INSERT INTO community_overlay_profiles
+                (channel_id, block_type, renderer, schema_version, draft_theme)
+            VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (channel_id, block_type) DO NOTHING
             """,
             channel_id,
+            block_type,
+            definition.renderer,
+            definition.schema_version,
+            dict(definition.default_theme),
         )
-        row = await conn.fetchrow(f"{_THEME_STATE_SELECT} FOR UPDATE OF profile", channel_id)
+        row = await conn.fetchrow(
+            f"{_THEME_STATE_SELECT} FOR UPDATE OF profile", channel_id, block_type
+        )
         if row is None:
             raise ValueError(f"Failed to load overlay theme for channel {channel_id}")
 
@@ -166,63 +177,76 @@ class CommunityOverlayRepository:
             revision_id = await conn.fetchval(
                 """
                 INSERT INTO community_overlay_revisions
-                    (channel_id, revision_number, renderer, schema_version, theme)
+                    (channel_id, block_type, revision_number, renderer, schema_version, theme)
                 SELECT profile.channel_id,
+                       profile.block_type,
                        COALESCE(MAX(revision.revision_number), 0) + 1,
                        profile.renderer,
                        profile.schema_version,
-                       $2
+                       $3
                 FROM community_overlay_profiles profile
                 LEFT JOIN community_overlay_revisions revision
                   ON revision.channel_id = profile.channel_id
+                 AND revision.block_type = profile.block_type
                 WHERE profile.channel_id = $1
-                GROUP BY profile.channel_id, profile.renderer, profile.schema_version
+                  AND profile.block_type = $2
+                GROUP BY profile.channel_id, profile.block_type, profile.renderer,
+                         profile.schema_version
                 RETURNING id
                 """,
                 channel_id,
-                dict(DEFAULT_OVERLAY_THEME),
+                block_type,
+                dict(definition.default_theme),
             )
             if revision_id is None:
                 raise RuntimeError("Failed to create initial overlay theme revision")
             await conn.execute(
                 """
                 UPDATE community_overlay_profiles
-                SET published_revision_id = $2
+                SET published_revision_id = $3
                 WHERE channel_id = $1
+                  AND block_type = $2
                 """,
                 channel_id,
+                block_type,
                 revision_id,
             )
-            row = await conn.fetchrow(_THEME_STATE_SELECT, channel_id)
+            row = await conn.fetchrow(_THEME_STATE_SELECT, channel_id, block_type)
             if row is None:
                 raise RuntimeError("Failed to reload initial overlay theme revision")
 
         return _to_theme_state(row)
 
-    async def get_theme_state(self, channel_id: str) -> CommunityOverlayThemeState:
+    async def get_theme_state(self, channel_id: str, block_type: str) -> CommunityOverlayThemeState:
         async with self.pool.acquire() as conn:
             async with conn.transaction():
-                return await self._lock_theme_state(conn, channel_id)
+                return await self._lock_theme_state(conn, channel_id, block_type)
 
     async def update_theme_draft(
-        self, channel_id: str, theme: dict[str, object], expected_draft_version: int
+        self,
+        channel_id: str,
+        block_type: str,
+        theme: dict[str, object],
+        expected_draft_version: int,
     ) -> CommunityOverlayThemeState:
         async with self.pool.acquire() as conn:
             async with conn.transaction():
-                current = await self._lock_theme_state(conn, channel_id)
+                current = await self._lock_theme_state(conn, channel_id, block_type)
                 if current.draft_version != expected_draft_version:
                     raise CommunityOverlayThemeVersionConflictError()
                 row = await conn.fetchrow(
                     """
                     WITH updated AS (
                         UPDATE community_overlay_profiles
-                        SET draft_theme = $2,
+                        SET draft_theme = $3,
                             draft_version = draft_version + 1
                         WHERE channel_id = $1
-                        RETURNING channel_id, renderer, schema_version, draft_theme, draft_version,
+                          AND block_type = $2
+                        RETURNING channel_id, block_type, renderer, schema_version, draft_theme, draft_version,
                                   published_revision_id, updated_at
                     )
                     SELECT updated.channel_id,
+                           updated.block_type,
                            updated.renderer,
                            updated.schema_version,
                            updated.draft_theme,
@@ -236,9 +260,11 @@ class CommunityOverlayRepository:
                     FROM updated
                     JOIN community_overlay_revisions revision
                       ON revision.channel_id = updated.channel_id
+                     AND revision.block_type = updated.block_type
                      AND revision.id = updated.published_revision_id
                     """,
                     channel_id,
+                    block_type,
                     theme,
                 )
         if row is None:
@@ -246,11 +272,11 @@ class CommunityOverlayRepository:
         return _to_theme_state(row)
 
     async def publish_theme(
-        self, channel_id: str, expected_draft_version: int
+        self, channel_id: str, block_type: str, expected_draft_version: int
     ) -> CommunityOverlayThemeState:
         async with self.pool.acquire() as conn:
             async with conn.transaction():
-                current = await self._lock_theme_state(conn, channel_id)
+                current = await self._lock_theme_state(conn, channel_id, block_type)
                 if current.draft_version != expected_draft_version:
                     raise CommunityOverlayThemeVersionConflictError()
                 if not current.has_unpublished_changes:
@@ -259,20 +285,25 @@ class CommunityOverlayRepository:
                 revision_id = await conn.fetchval(
                     """
                     INSERT INTO community_overlay_revisions
-                        (channel_id, revision_number, renderer, schema_version, theme)
+                        (channel_id, block_type, revision_number, renderer, schema_version, theme)
                     SELECT profile.channel_id,
+                           profile.block_type,
                            COALESCE(MAX(revision.revision_number), 0) + 1,
                            profile.renderer,
                            profile.schema_version,
-                           $2
+                           $3
                     FROM community_overlay_profiles profile
                     LEFT JOIN community_overlay_revisions revision
                       ON revision.channel_id = profile.channel_id
+                     AND revision.block_type = profile.block_type
                     WHERE profile.channel_id = $1
-                    GROUP BY profile.channel_id, profile.renderer, profile.schema_version
+                      AND profile.block_type = $2
+                    GROUP BY profile.channel_id, profile.block_type, profile.renderer,
+                             profile.schema_version
                     RETURNING id
                     """,
                     channel_id,
+                    block_type,
                     current.draft_theme,
                 )
                 if revision_id is None:
@@ -280,23 +311,25 @@ class CommunityOverlayRepository:
                 await conn.execute(
                     """
                     UPDATE community_overlay_profiles
-                    SET published_revision_id = $2
+                    SET published_revision_id = $3
                     WHERE channel_id = $1
+                      AND block_type = $2
                     """,
                     channel_id,
+                    block_type,
                     revision_id,
                 )
-                row = await conn.fetchrow(_THEME_STATE_SELECT, channel_id)
+                row = await conn.fetchrow(_THEME_STATE_SELECT, channel_id, block_type)
         if row is None:
             raise RuntimeError("Failed to reload published overlay theme")
         return _to_theme_state(row)
 
     async def reset_theme_draft(
-        self, channel_id: str, expected_draft_version: int
+        self, channel_id: str, block_type: str, expected_draft_version: int
     ) -> CommunityOverlayThemeState:
         async with self.pool.acquire() as conn:
             async with conn.transaction():
-                current = await self._lock_theme_state(conn, channel_id)
+                current = await self._lock_theme_state(conn, channel_id, block_type)
                 if current.draft_version != expected_draft_version:
                     raise CommunityOverlayThemeVersionConflictError()
                 if not current.has_unpublished_changes:
@@ -309,14 +342,17 @@ class CommunityOverlayRepository:
                             draft_version = profile.draft_version + 1
                         FROM community_overlay_revisions revision
                         WHERE profile.channel_id = $1
+                          AND profile.block_type = $2
                           AND revision.channel_id = profile.channel_id
+                          AND revision.block_type = profile.block_type
                           AND revision.id = profile.published_revision_id
-                        RETURNING profile.channel_id, profile.renderer, profile.schema_version,
+                        RETURNING profile.channel_id, profile.block_type, profile.renderer, profile.schema_version,
                                   profile.draft_theme, profile.draft_version,
                                   profile.published_revision_id,
                                   profile.updated_at
                     )
                     SELECT updated.channel_id,
+                           updated.block_type,
                            updated.renderer,
                            updated.schema_version,
                            updated.draft_theme,
@@ -330,15 +366,20 @@ class CommunityOverlayRepository:
                     FROM updated
                     JOIN community_overlay_revisions revision
                       ON revision.channel_id = updated.channel_id
+                     AND revision.block_type = updated.block_type
                      AND revision.id = updated.published_revision_id
                     """,
                     channel_id,
+                    block_type,
                 )
         if row is None:
             raise RuntimeError("Failed to reset overlay theme draft")
         return _to_theme_state(row)
 
-    async def get_public_theme(self, public_key: UUID) -> CommunityOverlayThemePublished | None:
+    async def get_public_theme(
+        self, public_key: UUID, block_type: str
+    ) -> CommunityOverlayThemePublished | None:
+        definition = get_community_overlay_block(block_type)
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
@@ -350,16 +391,19 @@ class CommunityOverlayRepository:
                 FROM community_overlay_channels access
                 LEFT JOIN community_overlay_profiles profile
                   ON profile.channel_id = access.channel_id
+                 AND profile.block_type = $5
                 LEFT JOIN community_overlay_revisions revision
                   ON revision.channel_id = profile.channel_id
+                 AND revision.block_type = profile.block_type
                  AND revision.id = profile.published_revision_id
                 WHERE access.public_key = $1
                   AND access.enabled = TRUE
                 """,
                 public_key,
-                OVERLAY_RENDERER,
-                OVERLAY_THEME_SCHEMA_VERSION,
-                dict(DEFAULT_OVERLAY_THEME),
+                definition.renderer,
+                definition.schema_version,
+                dict(definition.default_theme),
+                block_type,
             )
         if row is None:
             return None
@@ -367,7 +411,7 @@ class CommunityOverlayRepository:
             revision_id=row["revision_id"],
             renderer=row["renderer"],
             schema_version=row["schema_version"],
-            theme=validate_overlay_theme(row["theme"]),
+            theme=definition.validate_theme(row["theme"]),
             created_at=row["created_at"],
         )
 

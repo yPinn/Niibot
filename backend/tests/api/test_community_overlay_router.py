@@ -84,6 +84,7 @@ def _published_theme() -> CommunityOverlayThemePublished:
 def _theme_state(*, draft: dict[str, object] | None = None) -> CommunityOverlayThemeState:
     return CommunityOverlayThemeState(
         channel_id="ch1",
+        block_type="checkin",
         renderer="checkin-card",
         schema_version=1,
         draft_theme=draft or DEFAULT_OVERLAY_THEME,
@@ -97,7 +98,9 @@ def _client(service: MagicMock) -> TestClient:
     register_exception_handlers(app)
     app.include_router(router)
     app.dependency_overrides[get_community_overlay_service] = lambda: service
-    app.dependency_overrides[require_self_tenant_access] = lambda: SimpleNamespace(channel_id="ch1")
+    app.dependency_overrides[require_self_tenant_access] = lambda: SimpleNamespace(
+        channel_id="ch1", user_id="owner1"
+    )
     return TestClient(app, raise_server_exceptions=False)
 
 
@@ -112,6 +115,7 @@ def _service() -> MagicMock:
     service.publish_theme = AsyncMock(return_value=_theme_state())
     service.reset_theme_draft = AsyncMock(return_value=_theme_state())
     service.get_public_theme = AsyncMock(return_value=_published_theme())
+    service.publish_preview = AsyncMock(return_value=91)
     return service
 
 
@@ -194,7 +198,19 @@ class TestPublicTheme:
         }
         assert response.headers["cache-control"] == "no-store"
         assert response.headers["referrer-policy"] == "no-referrer"
-        service.get_public_theme.assert_awaited_once_with(_KEY)
+        service.get_public_theme.assert_awaited_once_with(_KEY, "checkin")
+
+    def test_rejects_unknown_block_before_public_lookup(self):
+        service = _service()
+        client = _client(service)
+
+        response = client.get(
+            "/api/community-overlay/public/theme?block_type=tarot",
+            headers=_PUBLIC_HEADERS,
+        )
+
+        assert response.status_code == 404
+        service.get_public_theme.assert_not_awaited()
 
     def test_unknown_or_disabled_key_does_not_expose_tenant(self):
         service = _service()
@@ -248,16 +264,83 @@ class TestOverlayAccessManagement:
         service.set_enabled.assert_awaited_once_with("ch1", False)
 
 
+class TestOverlayPreview:
+    def test_publishes_a_tenant_scoped_checkin_preview(self):
+        service = _service()
+        client = _client(service)
+
+        response = client.post(
+            "/api/community-overlay/settings/preview",
+            headers=_ACTION_HEADERS,
+            json={"content_type": "checkin"},
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"content_type": "checkin", "event_id": 91}
+        service.publish_preview.assert_awaited_once_with(
+            channel_id="ch1", actor_user_id="owner1", content_type="checkin"
+        )
+
+    def test_rejects_unknown_content_type_before_service_call(self):
+        service = _service()
+        client = _client(service)
+
+        response = client.post(
+            "/api/community-overlay/settings/preview",
+            headers=_ACTION_HEADERS,
+            json={"content_type": "tarot"},
+        )
+
+        assert response.status_code == 422
+        service.publish_preview.assert_not_awaited()
+
+    def test_requires_action_header(self):
+        service = _service()
+        client = _client(service)
+
+        response = client.post(
+            "/api/community-overlay/settings/preview", json={"content_type": "checkin"}
+        )
+
+        assert response.status_code == 422
+        service.publish_preview.assert_not_awaited()
+
+    def test_limits_repeated_preview_events_per_tenant_user(self, monkeypatch):
+        monkeypatch.setattr(
+            community_overlay_router,
+            "_preview_limiter",
+            RateLimiter(max_calls=1, period=60.0),
+        )
+        service = _service()
+        client = _client(service)
+
+        first = client.post(
+            "/api/community-overlay/settings/preview",
+            headers=_ACTION_HEADERS,
+            json={"content_type": "checkin"},
+        )
+        second = client.post(
+            "/api/community-overlay/settings/preview",
+            headers=_ACTION_HEADERS,
+            json={"content_type": "checkin"},
+        )
+
+        assert first.status_code == 200
+        assert second.status_code == 429
+        service.publish_preview.assert_awaited_once()
+
+
 class TestOverlayThemeManagement:
     def test_get_theme_uses_authenticated_tenant(self):
         service = _service()
         client = _client(service)
 
-        response = client.get("/api/community-overlay/settings/theme")
+        response = client.get("/api/community-overlay/settings/blocks/checkin/theme")
 
         assert response.status_code == 200
+        assert response.json()["block_type"] == "checkin"
         assert response.json()["has_unpublished_changes"] is False
-        service.get_theme_state.assert_awaited_once_with("ch1")
+        service.get_theme_state.assert_awaited_once_with("ch1", "checkin")
 
     def test_update_draft_uses_authenticated_tenant_and_complete_theme(self):
         service = _service()
@@ -266,12 +349,12 @@ class TestOverlayThemeManagement:
         client = _client(service)
 
         response = client.patch(
-            "/api/community-overlay/settings/theme/draft",
+            "/api/community-overlay/settings/blocks/checkin/theme/draft",
             json={"theme": theme, "expected_draft_version": 1},
         )
 
         assert response.status_code == 200
-        service.update_theme_draft.assert_awaited_once_with("ch1", theme, 1)
+        service.update_theme_draft.assert_awaited_once_with("ch1", "checkin", theme, 1)
 
     @pytest.mark.parametrize(
         "theme",
@@ -289,7 +372,7 @@ class TestOverlayThemeManagement:
         client = _client(service)
 
         response = client.patch(
-            "/api/community-overlay/settings/theme/draft",
+            "/api/community-overlay/settings/blocks/checkin/theme/draft",
             json={"theme": theme, "expected_draft_version": 1},
         )
 
@@ -308,10 +391,19 @@ class TestOverlayThemeManagement:
         client = _client(service)
 
         response = client.post(
-            f"/api/community-overlay/settings/theme/{path}",
+            f"/api/community-overlay/settings/blocks/checkin/theme/{path}",
             headers=_ACTION_HEADERS,
             json={"expected_draft_version": 1},
         )
 
         assert response.status_code == 200
-        getattr(service, method_name).assert_awaited_once_with("ch1", 1)
+        getattr(service, method_name).assert_awaited_once_with("ch1", "checkin", 1)
+
+    def test_rejects_unregistered_theme_block(self):
+        service = _service()
+        client = _client(service)
+
+        response = client.get("/api/community-overlay/settings/blocks/tarot/theme")
+
+        assert response.status_code == 404
+        service.get_theme_state.assert_not_awaited()

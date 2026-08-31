@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 
 import {
   type CommunityOverlayAccess,
+  type CommunityOverlayContentType,
   type CommunityOverlayTheme,
   type CommunityOverlayThemeState,
   DEFAULT_COMMUNITY_OVERLAY_THEME,
@@ -11,6 +12,7 @@ import {
   publishCommunityOverlayTheme,
   resetCommunityOverlayThemeDraft,
   rotateCommunityOverlayKey,
+  triggerCommunityOverlayPreview,
   updateCommunityOverlaySettings,
   updateCommunityOverlayThemeDraft,
 } from '@/api/communityOverlay'
@@ -47,13 +49,16 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
   Skeleton,
   Switch,
 } from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { toastApiError } from '@/lib/toast-error'
 
-import { CheckinTriggerCard } from './communityOverlay/CheckinTriggerCard'
+import { CheckinBlockCard } from './communityOverlay/CheckinBlockCard'
 import { ThemeEditor } from './communityOverlay/ThemeEditor'
 
 function SettingsSkeleton() {
@@ -74,6 +79,7 @@ const DEV_PREVIEW_ACCESS: CommunityOverlayAccess = {
 }
 
 const DEV_PREVIEW_THEME_STATE: CommunityOverlayThemeState = {
+  block_type: 'checkin',
   renderer: 'checkin-card',
   schema_version: 1,
   draft_version: 1,
@@ -148,7 +154,7 @@ function SettingsSectionHeader({
 export default function CommunityOverlaySettings({
   preview = false,
 }: CommunityOverlaySettingsProps) {
-  useDocumentTitle('Community Overlay')
+  useDocumentTitle('Live Display')
 
   const [access, setAccess] = useState<CommunityOverlayAccess | null>(
     preview ? DEV_PREVIEW_ACCESS : null
@@ -163,6 +169,11 @@ export default function CommunityOverlaySettings({
   const mutationLocked = useRef(false)
   const [themeMutation, setThemeMutation] = useState<'save' | 'publish' | 'reset' | null>(null)
   const themeMutationLocked = useRef(false)
+  const [previewMutation, setPreviewMutation] = useState(false)
+  const previewMutationLocked = useRef(false)
+  const [expandedBlock, setExpandedBlock] = useState<CommunityOverlayContentType | null>('checkin')
+  const [previewMode, setPreviewMode] = useState<'draft' | 'live'>('draft')
+  const [connectionOpen, setConnectionOpen] = useState(false)
   const [checkinConfig, setCheckinConfig] = useState<RedemptionConfig | null>(
     preview ? DEV_PREVIEW_CHECKIN_CONFIG : null
   )
@@ -179,14 +190,14 @@ export default function CommunityOverlaySettings({
     try {
       const [nextAccess, nextTheme] = await Promise.all([
         getCommunityOverlaySettings(),
-        getCommunityOverlayThemeSettings(),
+        getCommunityOverlayThemeSettings('checkin'),
       ])
       setAccess(nextAccess)
       setThemeState(nextTheme)
       setDraftTheme(nextTheme.draft)
     } catch (error) {
       setLoadFailed(true)
-      toastApiError(error, 'Community Overlay 載入失敗')
+      toastApiError(error, 'Live Display 載入失敗')
     } finally {
       setLoading(false)
     }
@@ -197,7 +208,7 @@ export default function CommunityOverlaySettings({
 
     let active = true
 
-    void Promise.all([getCommunityOverlaySettings(), getCommunityOverlayThemeSettings()])
+    void Promise.all([getCommunityOverlaySettings(), getCommunityOverlayThemeSettings('checkin')])
       .then(([settings, theme]) => {
         if (!active) return
         setAccess(settings)
@@ -207,7 +218,7 @@ export default function CommunityOverlaySettings({
       .catch(error => {
         if (!active) return
         setLoadFailed(true)
-        toastApiError(error, 'Community Overlay 載入失敗')
+        toastApiError(error, 'Live Display 載入失敗')
       })
       .finally(() => {
         if (active) setLoading(false)
@@ -263,6 +274,12 @@ export default function CommunityOverlaySettings({
     [access]
   )
   const previewUrl = overlayUrl ? `${overlayUrl}&preview=1` : undefined
+  const localThemeDirty = themeState ? !themesEqual(draftTheme, themeState.draft) : false
+  const themeStatus = localThemeDirty
+    ? '尚未儲存'
+    : themeState?.has_unpublished_changes
+      ? '草稿未發布'
+      : '已發布'
 
   const handleEnabledChange = async (enabled: boolean) => {
     if (!access || mutationLocked.current) return
@@ -273,9 +290,9 @@ export default function CommunityOverlaySettings({
         ? { ...access, enabled, updated_at: new Date().toISOString() }
         : await updateCommunityOverlaySettings(enabled)
       setAccess(next)
-      toast.success(`共用 Overlay 已${next.enabled ? '啟用' : '停用'}`)
+      toast.success(`直播畫面顯示已${next.enabled ? '啟用' : '停用'}`)
     } catch (error) {
-      toastApiError(error, '更新共用 Overlay 失敗')
+      toastApiError(error, '更新直播畫面顯示失敗')
     } finally {
       mutationLocked.current = false
       setMutation(null)
@@ -296,9 +313,9 @@ export default function CommunityOverlaySettings({
           }
         : await rotateCommunityOverlayKey()
       setAccess(next)
-      toast.success('Overlay 連結已輪替，請更新 OBS Browser Source')
+      toast.success('OBS 顯示連結已更新，請貼回 Browser Source')
     } catch (error) {
-      toastApiError(error, '輪替 Overlay 連結失敗')
+      toastApiError(error, '更新 OBS 顯示連結失敗')
     } finally {
       mutationLocked.current = false
       setMutation(null)
@@ -313,7 +330,7 @@ export default function CommunityOverlaySettings({
   const refreshThemeAfterConflict = async (error: unknown) => {
     if (!(error instanceof ApiError) || error.code !== 'COMMUNITY_OVERLAY.THEME_CONFLICT') return
     try {
-      applyThemeState(await getCommunityOverlayThemeSettings())
+      applyThemeState(await getCommunityOverlayThemeSettings('checkin'))
     } catch {
       // Keep the local draft visible if the conflict refresh also fails.
     }
@@ -333,7 +350,7 @@ export default function CommunityOverlaySettings({
         })
       } else {
         applyThemeState(
-          await updateCommunityOverlayThemeDraft(draftTheme, themeState.draft_version)
+          await updateCommunityOverlayThemeDraft('checkin', draftTheme, themeState.draft_version)
         )
       }
       toast.success('Overlay 樣式草稿已儲存')
@@ -358,7 +375,7 @@ export default function CommunityOverlaySettings({
           has_unpublished_changes: false,
         })
       } else {
-        applyThemeState(await publishCommunityOverlayTheme(themeState.draft_version))
+        applyThemeState(await publishCommunityOverlayTheme('checkin', themeState.draft_version))
       }
       toast.success('Overlay 樣式已發布至 OBS')
     } catch (error) {
@@ -384,7 +401,7 @@ export default function CommunityOverlaySettings({
         }
         applyThemeState(next)
       } else {
-        applyThemeState(await resetCommunityOverlayThemeDraft(themeState.draft_version))
+        applyThemeState(await resetCommunityOverlayThemeDraft('checkin', themeState.draft_version))
       }
       toast.success('草稿已還原為目前發布版本')
     } catch (error) {
@@ -396,227 +413,183 @@ export default function CommunityOverlaySettings({
     }
   }
 
+  const handlePreview = async () => {
+    if (previewMutationLocked.current) return
+    previewMutationLocked.current = true
+    setPreviewMode('live')
+    setPreviewMutation(true)
+    try {
+      if (!preview) await triggerCommunityOverlayPreview('checkin')
+      toast.success('測試動畫已送出')
+    } catch (error) {
+      toastApiError(error, '測試動畫送出失敗')
+      setPreviewMode('draft')
+    } finally {
+      previewMutationLocked.current = false
+      setPreviewMutation(false)
+    }
+  }
+
   return (
-    <PageMain>
-      <PageHeader
-        title="Community Overlay"
-        description="管理簽到方式、OBS 連線、樣式發布與社群事件預覽"
-      />
+    <PageMain className="w-full min-w-0">
+      <PageHeader title="Live Display" description="管理會顯示在直播畫面上的互動卡片。" />
 
       {loading ? (
         <SettingsSkeleton />
       ) : loadFailed || !access || !themeState ? (
         <Alert variant="destructive">
           <Icon icon="fa-solid fa-circle-exclamation" />
-          <AlertTitle>Community Overlay 載入失敗</AlertTitle>
+          <AlertTitle>Live Display 載入失敗</AlertTitle>
           <AlertDescription>
-            <p>目前無法取得這個頻道的 Overlay 設定。</p>
+            <p>目前無法取得這個頻道的顯示設定。</p>
             <Button size="sm" variant="outline" onClick={() => void loadSettings()}>
               重新載入
             </Button>
           </AlertDescription>
         </Alert>
       ) : (
-        <div className="flex flex-col gap-8">
+        <div className="flex min-w-0 flex-col gap-8">
           <section
-            aria-labelledby="community-overlay-checkin-title"
-            className="flex flex-col gap-3"
+            aria-labelledby="live-display-content-title"
+            className="flex min-w-0 flex-col gap-3"
           >
             <SettingsSectionHeader
-              id="community-overlay-checkin-title"
-              title="簽到方式"
-              description="保留聊天指令簽到，並可另外綁定由 Twitch 管理的頻道點數獎勵。"
+              id="live-display-content-title"
+              title="顯示內容"
+              description="選擇要出現在直播畫面的內容；每項都能直接測試，不會增加正式紀錄。"
             />
             <SlideUp>
-              <CheckinTriggerCard
+              <CheckinBlockCard
                 config={checkinConfig}
                 rewards={twitchRewards}
                 loading={checkinLoading}
                 loadFailed={checkinLoadFailed}
                 isAffiliate={isAffiliate}
+                testing={previewMutation}
+                open={expandedBlock === 'checkin'}
+                themeStatus={themeStatus}
+                themeChanged={localThemeDirty || themeState.has_unpublished_changes}
+                onOpenChange={open => setExpandedBlock(open ? 'checkin' : null)}
                 onRetry={() => void loadCheckinTrigger()}
-              />
+                onTest={() => void handlePreview()}
+              >
+                <ThemeEditor
+                  theme={draftTheme}
+                  localDirty={localThemeDirty}
+                  hasUnpublishedChanges={themeState.has_unpublished_changes}
+                  busy={themeMutation}
+                  previewUrl={previewUrl}
+                  previewMode={previewMode}
+                  onChange={setDraftTheme}
+                  onPreviewModeChange={setPreviewMode}
+                  onSave={() => void handleSaveTheme()}
+                  onPublish={() => void handlePublishTheme()}
+                  onReset={() => void handleResetTheme()}
+                />
+              </CheckinBlockCard>
             </SlideUp>
           </section>
 
           <section
-            aria-labelledby="community-overlay-connection-title"
-            className="flex flex-col gap-3"
+            aria-labelledby="live-display-connection-title"
+            className="flex min-w-0 flex-col gap-3"
           >
             <SettingsSectionHeader
-              id="community-overlay-connection-title"
-              title="OBS 連線"
-              description="設定 Browser Source、控制事件顯示，並管理這個頻道專屬的存取連結。"
+              id="live-display-connection-title"
+              title="加入直播畫面"
+              description="初次使用時，將頻道專屬連結加入 OBS Browser Source。"
             />
             <SlideUp>
-              <Card className="min-w-0">
-                <CardHeader>
-                  <CardTitle className="flex flex-wrap items-center gap-2">
-                    OBS Browser Source
-                    <Badge variant={access.enabled ? 'default' : 'outline'}>
-                      {access.enabled ? '已啟用' : '已停用'}
-                    </Badge>
-                  </CardTitle>
-                  <CardDescription>
-                    將網址加入 OBS；簽到與後續社群事件會共用同一個透明畫面來源。
-                  </CardDescription>
-                  <CardAction className="flex items-center gap-2">
-                    <span className="hidden text-label text-muted-foreground sm:inline">
-                      顯示事件
-                    </span>
-                    <Switch
-                      aria-label="啟用共用 Overlay"
-                      checked={access.enabled}
-                      disabled={mutation !== null}
-                      onCheckedChange={value => void handleEnabledChange(value)}
-                    />
-                  </CardAction>
-                </CardHeader>
-                <CardContent className="grid min-w-0 gap-section xl:grid-cols-[minmax(0,1.35fr)_minmax(18rem,0.65fr)] xl:items-start">
-                  <div className="flex min-w-0 flex-col gap-2">
-                    <p className="text-content font-semibold">頻道專屬網址</p>
-                    <p className="text-sub text-muted-foreground">
-                      建議設為 1920 × 1080，背景保持透明。網址內含頻道存取 key，請勿公開分享。
-                    </p>
-                    <OverlayUrlBlock url={overlayUrl} />
-                  </div>
-
-                  <div className="flex min-w-0 flex-col gap-2 rounded-lg bg-muted p-section sm:flex-row sm:items-center sm:justify-between">
-                    <div className="min-w-0">
-                      <p className="text-content font-semibold">需要撤銷舊連結？</p>
-                      <p className="text-label text-muted-foreground">
-                        輪替後，舊 Browser Source 會立即停止取得事件。
-                      </p>
-                    </div>
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button
-                          variant="outline"
-                          className="shrink-0 self-start sm:self-auto"
-                          disabled={mutation !== null}
-                        >
-                          {mutation === 'key' ? (
-                            <Spinner className="mr-1.5" />
-                          ) : (
-                            <Icon icon="fa-solid fa-key" className="mr-1.5 text-label" />
-                          )}
-                          輪替 Overlay 連結
-                        </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>輪替 Overlay 連結？</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            舊網址會立即失效。完成後必須把新網址貼回 OBS Browser Source。
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>取消</AlertDialogCancel>
-                          <AlertDialogAction onClick={() => void handleRotateKey()}>
-                            確認輪替
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                  </div>
-                </CardContent>
-              </Card>
-            </SlideUp>
-          </section>
-
-          <section
-            aria-labelledby="community-overlay-appearance-title"
-            className="flex flex-col gap-3"
-          >
-            <SettingsSectionHeader
-              id="community-overlay-appearance-title"
-              title="樣式與發布"
-              description="調整此頻道的集點卡草稿，確認預覽後再發布到 OBS。"
-            />
-            <SlideUp>
-              <Card>
-                <CardContent>
-                  <ThemeEditor
-                    theme={draftTheme}
-                    localDirty={!themesEqual(draftTheme, themeState.draft)}
-                    hasUnpublishedChanges={themeState.has_unpublished_changes}
-                    busy={themeMutation}
-                    onChange={setDraftTheme}
-                    onSave={() => void handleSaveTheme()}
-                    onPublish={() => void handlePublishTheme()}
-                    onReset={() => void handleResetTheme()}
-                  />
-                </CardContent>
-              </Card>
-            </SlideUp>
-          </section>
-
-          <section
-            aria-labelledby="community-overlay-testing-title"
-            className="flex flex-col gap-3"
-          >
-            <SettingsSectionHeader
-              id="community-overlay-testing-title"
-              title="預覽與測試"
-              description="確認已發布效果；開發環境可從 Twitch 送出不影響正式紀錄的測試事件。"
-            />
-            <SlideUp className="grid grid-cols-1 gap-section lg:grid-cols-12">
-              <Card className={import.meta.env.DEV ? 'lg:col-span-7' : 'lg:col-span-12'}>
-                <CardHeader>
-                  <CardTitle>已發布事件預覽</CardTitle>
-                  <CardDescription>預覽會重播尚未過期的開發測試事件。</CardDescription>
-                </CardHeader>
-                <CardContent className="flex flex-col gap-3">
-                  <div className="relative aspect-video overflow-hidden rounded-lg border bg-muted/40">
-                    <div
-                      aria-hidden="true"
-                      className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-muted-foreground"
-                    >
-                      <Icon icon="fa-solid fa-clapperboard" wrapperClassName="size-6" />
-                      <span className="text-label">等待 Overlay 事件</span>
-                    </div>
-                    {previewUrl && (
-                      <iframe
-                        src={previewUrl}
-                        title="共用 Overlay 預覽"
-                        referrerPolicy="no-referrer"
-                        className="absolute inset-0 block h-full w-full"
-                      />
-                    )}
-                  </div>
-                  <p className="text-label text-muted-foreground">
-                    正式 OBS 網址不帶 preview 參數，因此重新連線時不會重播舊事件。
-                  </p>
-                </CardContent>
-              </Card>
-
-              {import.meta.env.DEV && (
-                <Card className="lg:col-span-5">
-                  <CardHeader>
-                    <CardTitle>開發測試</CardTitle>
+              <Collapsible open={connectionOpen} onOpenChange={setConnectionOpen}>
+                <Card className="min-w-0">
+                  <CardHeader className="has-data-[slot=card-action]:grid-cols-1 sm:has-data-[slot=card-action]:grid-cols-[1fr_auto]">
+                    <CardTitle className="flex flex-wrap items-center gap-2">
+                      OBS 連線
+                      <Badge variant={access.enabled ? 'default' : 'outline'}>
+                        {access.enabled ? '已啟用' : '已停用'}
+                      </Badge>
+                    </CardTitle>
                     <CardDescription>
-                      確認 Twitch 指令、事件 feed 與 OBS 動畫整段串接。
+                      所有互動卡片共用這個透明畫面來源；通常只需設定一次。
                     </CardDescription>
+                    <CardAction className="col-start-1 row-span-1 row-start-3 flex flex-wrap items-center justify-start gap-2 justify-self-stretch sm:col-start-2 sm:row-span-2 sm:row-start-1 sm:justify-end sm:justify-self-end">
+                      <Switch
+                        aria-label="啟用直播畫面顯示"
+                        checked={access.enabled}
+                        disabled={mutation !== null}
+                        onCheckedChange={value => void handleEnabledChange(value)}
+                      />
+                      <CollapsibleTrigger asChild>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          aria-label={connectionOpen ? '收合 OBS 連線設定' : '顯示 OBS 連線設定'}
+                        >
+                          <Icon
+                            icon="fa-solid fa-chevron-down"
+                            className={`text-label transition-transform ${connectionOpen ? 'rotate-180' : ''}`}
+                          />
+                          {connectionOpen ? '收合設定' : '連線設定'}
+                        </Button>
+                      </CollapsibleTrigger>
+                    </CardAction>
                   </CardHeader>
-                  <CardContent className="grid gap-section md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-                    <ol className="flex flex-col gap-2 text-sub text-muted-foreground">
-                      <li>1. 保持上方預覽開啟，並確認共用 Overlay 為啟用狀態。</li>
-                      <li>
-                        2. 由頻道主播在 Twitch 聊天室輸入{' '}
-                        <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-foreground">
-                          !ovltest 8
-                        </code>
-                        。
-                      </li>
-                      <li>3. 預覽應顯示第 8 天集點卡動畫；事件約 10 分鐘後失效。</li>
-                    </ol>
-                    <div className="rounded-lg border border-dashed px-section py-3 text-label text-muted-foreground md:max-w-72">
-                      <Icon icon="fa-solid fa-flask" className="mr-2 text-primary" />
-                      測試事件只送到 Overlay，不會寫入正式簽到紀錄或增加天數。
-                    </div>
-                  </CardContent>
+                  <CollapsibleContent>
+                    <CardContent className="grid min-w-0 gap-section border-t pt-card xl:grid-cols-[minmax(0,1.35fr)_minmax(18rem,0.65fr)] xl:items-start">
+                      <div className="flex min-w-0 flex-col gap-2">
+                        <p className="text-content font-semibold">頻道專屬網址</p>
+                        <p className="text-sub text-muted-foreground">
+                          建議設為 1920 × 1080 並保持透明背景。此連結只供 OBS 使用，請勿公開分享。
+                        </p>
+                        <OverlayUrlBlock
+                          url={overlayUrl}
+                          copyLabel="點擊以複製 OBS 顯示連結"
+                          openLabel="開啟 OBS 顯示畫面"
+                        />
+                      </div>
+
+                      <div className="flex min-w-0 flex-col gap-2 rounded-lg bg-muted p-section sm:flex-row sm:items-center sm:justify-between">
+                        <div className="min-w-0">
+                          <p className="text-content font-semibold">需要撤銷舊連結？</p>
+                          <p className="text-label text-muted-foreground">
+                            更新後，OBS 內的舊連結會立即停止顯示內容。
+                          </p>
+                        </div>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              variant="outline"
+                              className="shrink-0 self-start sm:self-auto"
+                              disabled={mutation !== null}
+                            >
+                              {mutation === 'key' ? (
+                                <Spinner className="mr-1.5" />
+                              ) : (
+                                <Icon icon="fa-solid fa-key" className="mr-1.5 text-label" />
+                              )}
+                              更新 OBS 顯示連結
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>更新 OBS 顯示連結？</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                舊連結會立即失效。完成後請把新連結貼回 OBS Browser Source。
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>取消</AlertDialogCancel>
+                              <AlertDialogAction onClick={() => void handleRotateKey()}>
+                                確認更新
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </div>
+                    </CardContent>
+                  </CollapsibleContent>
                 </Card>
-              )}
+              </Collapsible>
             </SlideUp>
           </section>
         </div>

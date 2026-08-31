@@ -88,6 +88,7 @@ class CommunityOverlayThemePublished:
 @dataclass(frozen=True, slots=True)
 class CommunityOverlayThemeState:
     channel_id: str
+    block_type: str
     renderer: str
     schema_version: int
     draft_theme: dict[str, object]

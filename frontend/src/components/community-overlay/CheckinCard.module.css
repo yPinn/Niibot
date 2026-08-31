@@ -1,5 +1,7 @@
 .card {
   width: min(430px, calc(100vw - 40px));
+  max-width: 100%;
+  box-sizing: border-box;
   padding: 22px;
   border: 2px solid color-mix(in srgb, var(--overlay-text) 14%, white 76%);
   border-radius: var(--overlay-radius);

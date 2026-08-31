@@ -19,5 +19,5 @@ export const ACTION_TYPE_DESCRIPTIONS: Record<string, string> = {
   first: '記錄當日第一位完成兌換的觀眾。',
   game_queue: '將觀眾加入 Game Queue。',
   video_queue: '將觀眾輸入的影片加入 Video Queue。',
-  checkin: '與聊天指令共用每日簽到紀錄，成功時可顯示 Community Overlay。',
+  checkin: '與聊天指令共用每日簽到紀錄，成功時可顯示 Live Display 動畫。',
 }

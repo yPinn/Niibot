@@ -65,6 +65,7 @@ def _theme_state(
 ) -> dict:
     return {
         "channel_id": "ch1",
+        "block_type": "checkin",
         "renderer": "checkin-card",
         "schema_version": 1,
         "draft_theme": draft or DEFAULT_OVERLAY_THEME,
@@ -196,17 +197,19 @@ class TestCommunityOverlayThemes:
         conn.fetchval.return_value = 41
         repo = CommunityOverlayRepository(pool)
 
-        state = await repo.get_theme_state("ch1")
+        state = await repo.get_theme_state("ch1", "checkin")
 
         assert state.channel_id == "ch1"
+        assert state.block_type == "checkin"
         assert state.published.revision_id == 41
         assert state.has_unpublished_changes is False
         assert "community_overlay_profiles" in conn.execute.await_args_list[0].args[0]
         assert "community_overlay_revisions" in conn.fetchval.await_args.args[0]
         assert conn.fetchval.await_args.args[1] == "ch1"
         pointer_sql = conn.execute.await_args_list[-1].args[0]
-        assert "published_revision_id = $2" in pointer_sql
+        assert "published_revision_id = $3" in pointer_sql
         assert "WHERE channel_id = $1" in pointer_sql
+        assert "block_type = $2" in pointer_sql
 
     async def test_update_draft_is_scoped_to_requested_channel(self):
         pool, conn = _pool()
@@ -217,14 +220,16 @@ class TestCommunityOverlayThemes:
         ]
         repo = CommunityOverlayRepository(pool)
 
-        state = await repo.update_theme_draft("ch1", next_theme, 1)
+        state = await repo.update_theme_draft("ch1", "checkin", next_theme, 1)
 
         assert state.draft_theme == next_theme
         assert state.draft_version == 2
-        sql, channel_id, theme = conn.fetchrow.await_args.args
+        sql, channel_id, block_type, theme = conn.fetchrow.await_args.args
         assert "UPDATE community_overlay_profiles" in sql
         assert "WHERE channel_id = $1" in sql
+        assert "block_type = $2" in sql
         assert channel_id == "ch1"
+        assert block_type == "checkin"
         assert theme == next_theme
 
     async def test_publish_inserts_snapshot_and_switches_pointer_in_one_transaction(self):
@@ -237,14 +242,14 @@ class TestCommunityOverlayThemes:
         conn.fetchval.return_value = 42
         repo = CommunityOverlayRepository(pool)
 
-        state = await repo.publish_theme("ch1", 1)
+        state = await repo.publish_theme("ch1", "checkin", 1)
 
         assert state.published.revision_id == 42
         assert state.published.theme == draft
         assert state.has_unpublished_changes is False
         insert_sql = conn.fetchval.await_args.args[0]
         assert "INSERT INTO community_overlay_revisions" in insert_sql
-        assert conn.fetchval.await_args.args[1:3] == ("ch1", draft)
+        assert conn.fetchval.await_args.args[1:4] == ("ch1", "checkin", draft)
         assert "WHERE channel_id = $1" in conn.execute.await_args_list[-1].args[0]
 
     async def test_publish_without_changes_reuses_current_revision(self):
@@ -252,7 +257,7 @@ class TestCommunityOverlayThemes:
         conn.fetchrow.return_value = _theme_state()
         repo = CommunityOverlayRepository(pool)
 
-        state = await repo.publish_theme("ch1", 1)
+        state = await repo.publish_theme("ch1", "checkin", 1)
 
         assert state.published.revision_id == 41
         conn.fetchval.assert_not_awaited()
@@ -266,15 +271,16 @@ class TestCommunityOverlayThemes:
         ]
         repo = CommunityOverlayRepository(pool)
 
-        state = await repo.reset_theme_draft("ch1", 1)
+        state = await repo.reset_theme_draft("ch1", "checkin", 1)
 
         assert state.has_unpublished_changes is False
         assert state.draft_version == 2
-        sql, channel_id = conn.fetchrow.await_args.args
+        sql, channel_id, block_type = conn.fetchrow.await_args.args
         assert "published_revision_id" in sql
         assert "revision.channel_id = profile.channel_id" in sql
         assert "WHERE profile.channel_id = $1" in sql
         assert channel_id == "ch1"
+        assert block_type == "checkin"
 
     async def test_stale_draft_version_cannot_overwrite_newer_state(self):
         pool, conn = _pool()
@@ -282,7 +288,7 @@ class TestCommunityOverlayThemes:
         repo = CommunityOverlayRepository(pool)
 
         with pytest.raises(CommunityOverlayThemeVersionConflictError):
-            await repo.update_theme_draft("ch1", dict(DEFAULT_OVERLAY_THEME), 2)
+            await repo.update_theme_draft("ch1", "checkin", dict(DEFAULT_OVERLAY_THEME), 2)
 
         assert conn.fetchrow.await_count == 1
 
@@ -297,13 +303,14 @@ class TestCommunityOverlayThemes:
         }
         repo = CommunityOverlayRepository(pool)
 
-        published = await repo.get_public_theme(_KEY)
+        published = await repo.get_public_theme(_KEY, "checkin")
 
         assert published is not None
         assert published.theme == DEFAULT_OVERLAY_THEME
         sql = conn.fetchrow.await_args.args[0]
         assert "access.public_key = $1" in sql
         assert "access.enabled = TRUE" in sql
+        assert conn.fetchrow.await_args.args[5] == "checkin"
         assert "draft_theme" not in sql
 
     async def test_unknown_public_key_returns_none(self):
@@ -311,7 +318,7 @@ class TestCommunityOverlayThemes:
         conn.fetchrow.return_value = None
         repo = CommunityOverlayRepository(pool)
 
-        assert await repo.get_public_theme(_KEY) is None
+        assert await repo.get_public_theme(_KEY, "checkin") is None
 
 
 @pytest.mark.asyncio

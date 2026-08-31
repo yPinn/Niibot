@@ -16,6 +16,48 @@ _NOW = datetime(2026, 8, 31, 10, 0, tzinfo=UTC)
 
 @pytest.mark.asyncio
 class TestPublishCheckinPreview:
+    async def test_generic_preview_registry_builds_a_valid_checkin_sample(self) -> None:
+        repo = MagicMock()
+        repo.get_or_create_channel = AsyncMock()
+        repo.publish_event = AsyncMock(return_value=91)
+        service = CommunityOverlayService(repo)
+
+        event_id = await service.publish_preview(
+            channel_id="ch1",
+            actor_user_id="owner1",
+            content_type="checkin",
+            occurred_at=_NOW,
+        )
+
+        assert event_id == 91
+        kwargs = repo.publish_event.await_args.kwargs
+        assert kwargs["channel_id"] == "ch1"
+        assert kwargs["event_type"] == "checkin.recorded"
+        assert kwargs["source"] == "system"
+        assert kwargs["actor_user_id"] == "owner1"
+        assert kwargs["actor_display_name"] == "測試觀眾"
+        assert kwargs["payload"] == {
+            "total_days": 8,
+            "checkin_date": "2026-08-31",
+            "preview": True,
+        }
+        assert kwargs["idempotency_key"].startswith("preview-checkin:")
+
+    async def test_generic_preview_rejects_unregistered_content(self) -> None:
+        repo = MagicMock()
+        repo.publish_event = AsyncMock()
+        service = CommunityOverlayService(repo)
+
+        with pytest.raises(ValueError, match="Unsupported overlay block"):
+            await service.publish_preview(
+                channel_id="ch1",
+                actor_user_id="owner1",
+                content_type="tarot",
+                occurred_at=_NOW,
+            )
+
+        repo.publish_event.assert_not_awaited()
+
     async def test_publishes_short_lived_event_without_checkin_ledger(self) -> None:
         repo = MagicMock()
         repo.get_or_create_channel = AsyncMock()
@@ -43,7 +85,7 @@ class TestPublishCheckinPreview:
             "preview": True,
         }
         assert kwargs["expires_at"] == _NOW + timedelta(minutes=10)
-        assert kwargs["idempotency_key"].startswith("dev-checkin:")
+        assert kwargs["idempotency_key"].startswith("preview-checkin:")
 
     @pytest.mark.parametrize("count", [0, 10_000])
     async def test_rejects_unreasonable_preview_count(self, count: int) -> None:
@@ -110,16 +152,20 @@ class TestCommunityOverlayThemes:
         repo.get_public_theme = AsyncMock(return_value="public")
         service = CommunityOverlayService(repo)
 
-        assert await service.get_theme_state("ch1") == "state"
-        assert await service.publish_theme("ch1", 7) == "published"
-        assert await service.reset_theme_draft("ch1", 7) == "reset"
+        assert await service.get_theme_state("ch1", "checkin") == "state"
+        assert await service.publish_theme("ch1", "checkin", 7) == "published"
+        assert await service.reset_theme_draft("ch1", "checkin", 7) == "reset"
         assert (
-            await service.get_public_theme(UUID("11111111-1111-4111-8111-111111111111")) == "public"
+            await service.get_public_theme(UUID("11111111-1111-4111-8111-111111111111"), "checkin")
+            == "public"
         )
 
-        repo.get_theme_state.assert_awaited_once_with("ch1")
-        repo.publish_theme.assert_awaited_once_with("ch1", 7)
-        repo.reset_theme_draft.assert_awaited_once_with("ch1", 7)
+        repo.get_theme_state.assert_awaited_once_with("ch1", "checkin")
+        repo.publish_theme.assert_awaited_once_with("ch1", "checkin", 7)
+        repo.reset_theme_draft.assert_awaited_once_with("ch1", "checkin", 7)
+        repo.get_public_theme.assert_awaited_once_with(
+            UUID("11111111-1111-4111-8111-111111111111"), "checkin"
+        )
 
     async def test_update_draft_validates_and_normalizes_before_persistence(self) -> None:
         repo = MagicMock()
@@ -127,12 +173,12 @@ class TestCommunityOverlayThemes:
         service = CommunityOverlayService(repo)
 
         result = await service.update_theme_draft(
-            "ch1", {**DEFAULT_OVERLAY_THEME, "accent_color": "#ef4d88"}, 5
+            "ch1", "checkin", {**DEFAULT_OVERLAY_THEME, "accent_color": "#ef4d88"}, 5
         )
 
         assert result == "updated"
         repo.update_theme_draft.assert_awaited_once_with(
-            "ch1", {**DEFAULT_OVERLAY_THEME, "accent_color": "#EF4D88"}, 5
+            "ch1", "checkin", {**DEFAULT_OVERLAY_THEME, "accent_color": "#EF4D88"}, 5
         )
 
     async def test_update_draft_rejects_unknown_fields_before_repository_call(self) -> None:
@@ -143,6 +189,7 @@ class TestCommunityOverlayThemes:
         with pytest.raises(ValueError, match="Unsupported theme fields"):
             await service.update_theme_draft(
                 "ch1",
+                "checkin",
                 {**DEFAULT_OVERLAY_THEME, "external_url": "https://example.com"},
                 5,
             )

@@ -145,10 +145,17 @@ export const API_ENDPOINTS = {
     theme: join('/api/community-overlay/public/theme'),
     settings: join('/api/community-overlay/settings'),
     rotateKey: join('/api/community-overlay/settings/rotate-key'),
-    themeSettings: join('/api/community-overlay/settings/theme'),
-    themeDraft: join('/api/community-overlay/settings/theme/draft'),
-    themePublish: join('/api/community-overlay/settings/theme/publish'),
-    themeResetDraft: join('/api/community-overlay/settings/theme/reset-draft'),
+    preview: join('/api/community-overlay/settings/preview'),
+    themeSettings: (blockType: string) =>
+      join(`/api/community-overlay/settings/blocks/${encodeURIComponent(blockType)}/theme`),
+    themeDraft: (blockType: string) =>
+      join(`/api/community-overlay/settings/blocks/${encodeURIComponent(blockType)}/theme/draft`),
+    themePublish: (blockType: string) =>
+      join(`/api/community-overlay/settings/blocks/${encodeURIComponent(blockType)}/theme/publish`),
+    themeResetDraft: (blockType: string) =>
+      join(
+        `/api/community-overlay/settings/blocks/${encodeURIComponent(blockType)}/theme/reset-draft`
+      ),
   },
   timers: {
     configs: join('/api/timers/configs'),

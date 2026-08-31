@@ -17,6 +17,7 @@ vi.mock('@/api/communityOverlay', () => ({
   publishCommunityOverlayTheme: vi.fn(),
   resetCommunityOverlayThemeDraft: vi.fn(),
   rotateCommunityOverlayKey: vi.fn(),
+  triggerCommunityOverlayPreview: vi.fn(),
   updateCommunityOverlayThemeDraft: vi.fn(),
   updateCommunityOverlaySettings: vi.fn(),
 }))
@@ -44,6 +45,7 @@ import {
   publishCommunityOverlayTheme,
   resetCommunityOverlayThemeDraft,
   rotateCommunityOverlayKey,
+  triggerCommunityOverlayPreview,
   updateCommunityOverlaySettings,
   updateCommunityOverlayThemeDraft,
 } from '@/api/communityOverlay'
@@ -67,6 +69,7 @@ const ACCESS: CommunityOverlayAccess = {
   updated_at: '2026-08-31T10:00:00Z',
 }
 const THEME_STATE: CommunityOverlayThemeState = {
+  block_type: 'checkin',
   renderer: 'checkin-card',
   schema_version: 1,
   draft_version: 1,
@@ -109,6 +112,10 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
+async function openConnectionSettings(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(await screen.findByRole('button', { name: '顯示 OBS 連線設定' }))
+}
+
 describe('CommunityOverlaySettings', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -128,6 +135,10 @@ describe('CommunityOverlaySettings', () => {
       ...ACCESS,
       public_key: NEW_KEY,
     })
+    vi.mocked(triggerCommunityOverlayPreview).mockResolvedValue({
+      content_type: 'checkin',
+      event_id: 91,
+    })
     vi.mocked(getRedemptionConfigs).mockResolvedValue([CHECKIN_REDEMPTION])
     vi.mocked(getTwitchRewards).mockResolvedValue([CHECKIN_REWARD])
     vi.mocked(updateRedemptionConfig).mockResolvedValue(CHECKIN_REDEMPTION)
@@ -137,11 +148,11 @@ describe('CommunityOverlaySettings', () => {
     const user = userEvent.setup()
     render(<CommunityOverlaySettings preview />)
 
-    expect(screen.getByRole('heading', { name: 'Community Overlay' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Live Display' })).toBeInTheDocument()
     expect(getCommunityOverlaySettings).not.toHaveBeenCalled()
     expect(getCommunityOverlayThemeSettings).not.toHaveBeenCalled()
 
-    await user.click(screen.getByRole('switch', { name: '啟用共用 Overlay' }))
+    await user.click(screen.getByRole('switch', { name: '啟用直播畫面顯示' }))
     expect(updateCommunityOverlaySettings).not.toHaveBeenCalled()
     expect(screen.getByText('已停用')).toBeInTheDocument()
   })
@@ -208,13 +219,14 @@ describe('CommunityOverlaySettings', () => {
     })
     render(<CommunityOverlaySettings />)
 
-    await screen.findByText('與已發布同步')
+    await screen.findByText('已發布')
     const radius = screen.getByRole('slider', { name: '卡片圓角' })
     fireEvent.change(radius, { target: { value: '12' } })
     await user.click(screen.getByRole('button', { name: '儲存草稿' }))
 
     await waitFor(() => expect(updateCommunityOverlayThemeDraft).toHaveBeenCalled())
     expect(updateCommunityOverlayThemeDraft).toHaveBeenCalledWith(
+      'checkin',
       expect.objectContaining({ radius_px: expect.any(Number) }),
       1
     )
@@ -233,35 +245,45 @@ describe('CommunityOverlaySettings', () => {
 
     await user.click(await screen.findByRole('button', { name: '發布至 OBS' }))
     await waitFor(() => expect(publishCommunityOverlayTheme).toHaveBeenCalledOnce())
-    expect(publishCommunityOverlayTheme).toHaveBeenCalledWith(1)
-    expect(screen.getByText('與已發布同步')).toBeInTheDocument()
+    expect(publishCommunityOverlayTheme).toHaveBeenCalledWith('checkin', 1)
+    expect(screen.getByText('已發布')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: '左上' }))
     await user.click(screen.getByRole('button', { name: '還原已發布版本' }))
     await waitFor(() => expect(resetCommunityOverlayThemeDraft).toHaveBeenCalledOnce())
-    expect(resetCommunityOverlayThemeDraft).toHaveBeenCalledWith(1)
+    expect(resetCommunityOverlayThemeDraft).toHaveBeenCalledWith('checkin', 1)
   })
 
-  it('loads the tenant URL, preview, and development trigger guide', async () => {
+  it('loads the tenant URL and uses a direct test action instead of a chat command', async () => {
     const user = userEvent.setup()
     render(<CommunityOverlaySettings />)
 
-    expect(await screen.findByRole('heading', { name: 'Community Overlay' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Live Display' })).toBeInTheDocument()
     expect(screen.getAllByText('已啟用').length).toBeGreaterThan(0)
-    expect(screen.getByText('!ovltest 8')).toBeInTheDocument()
-    expect(screen.getByText(/不會寫入正式簽到紀錄/)).toBeInTheDocument()
+    expect(screen.queryByText('!ovltest 8')).not.toBeInTheDocument()
+    expect(screen.queryByTitle('每日簽到實際播放')).not.toBeInTheDocument()
 
-    const preview = screen.getByTitle('共用 Overlay 預覽')
+    await user.click(screen.getByRole('button', { name: '測試每日簽到動畫' }))
+    await waitFor(() => expect(triggerCommunityOverlayPreview).toHaveBeenCalledWith('checkin'))
+    expect(toast.success).toHaveBeenCalledWith('測試動畫已送出')
+
+    const preview = screen.getByTitle('每日簽到實際播放')
     expect(preview).toHaveAttribute(
       'src',
       `${window.location.origin}/community-overlay#key=${KEY}&preview=1`
     )
-    expect(screen.getByRole('link', { name: '開啟 OBS Overlay' })).toHaveAttribute(
+
+    await user.click(screen.getByRole('button', { name: '草稿預覽' }))
+    expect(screen.getByLabelText('NiibotFan 的簽到集點卡')).toBeInTheDocument()
+    expect(screen.queryByTitle('每日簽到實際播放')).not.toBeInTheDocument()
+
+    await openConnectionSettings(user)
+    expect(screen.getByRole('link', { name: '開啟 OBS 顯示畫面' })).toHaveAttribute(
       'href',
       `${window.location.origin}/community-overlay#key=${KEY}`
     )
 
-    await user.click(screen.getByRole('button', { name: /點擊以複製 Overlay 連結/ }))
+    await user.click(screen.getByRole('button', { name: /點擊以複製 OBS 顯示連結/ }))
     expect(copyToClipboard).toHaveBeenCalledWith(
       `${window.location.origin}/community-overlay#key=${KEY}`,
       '已複製',
@@ -269,48 +291,91 @@ describe('CommunityOverlaySettings', () => {
     )
   })
 
-  it('groups connection, appearance, and testing tasks into named regions', async () => {
+  it('keeps the test action available after a recoverable preview failure', async () => {
+    const user = userEvent.setup()
+    const error = new Error('preview unavailable')
+    vi.mocked(triggerCommunityOverlayPreview).mockRejectedValueOnce(error)
     render(<CommunityOverlaySettings />)
 
-    const connection = await screen.findByRole('region', { name: 'OBS 連線' })
-    expect(within(connection).getByRole('switch', { name: '啟用共用 Overlay' })).toBeInTheDocument()
-    expect(within(connection).getByText('OBS Browser Source')).toBeInTheDocument()
-    expect(
-      within(connection).getByRole('button', { name: '輪替 Overlay 連結' })
-    ).toBeInTheDocument()
+    const button = await screen.findByRole('button', { name: '測試每日簽到動畫' })
+    await user.click(button)
 
-    const appearance = screen.getByRole('region', { name: '樣式與發布' })
-    expect(within(appearance).getByText('簽到集點卡')).toBeInTheDocument()
-    expect(within(appearance).getByRole('button', { name: '儲存草稿' })).toBeInTheDocument()
-    expect(within(appearance).getAllByText('草稿預覽')).not.toHaveLength(0)
-
-    const testing = screen.getByRole('region', { name: '預覽與測試' })
-    expect(within(testing).getByTitle('共用 Overlay 預覽')).toBeInTheDocument()
-    expect(within(testing).getByText('!ovltest 8')).toBeInTheDocument()
+    await waitFor(() => expect(toastApiError).toHaveBeenCalledWith(error, '測試動畫送出失敗'))
+    expect(button).toBeEnabled()
   })
 
-  it('shows the bound Twitch check-in reward as a read-only summary', async () => {
+  it('keeps each display block as one workspace and progressively reveals global OBS setup', async () => {
+    const user = userEvent.setup()
     render(<CommunityOverlaySettings />)
 
-    const trigger = await screen.findByRole('region', { name: '簽到方式' })
-    expect(within(trigger).getByText('唯讀監聽')).toBeInTheDocument()
-    expect(within(trigger).getByText('10 點')).toBeInTheDocument()
-    expect(within(trigger).getByText('每人每場 1 次')).toBeInTheDocument()
-    expect(within(trigger).getByText('單場總量 100 次')).toBeInTheDocument()
-    expect(within(trigger).getByText(/Niibot 不會建立、修改或退款/)).toBeInTheDocument()
+    const content = await screen.findByRole('region', { name: '顯示內容' })
+    expect(within(content).getAllByRole('heading', { name: '每日簽到' })).toHaveLength(1)
+    expect(within(content).getByRole('button', { name: '測試每日簽到動畫' })).toBeInTheDocument()
+    expect(within(content).getByRole('button', { name: '儲存草稿' })).toBeInTheDocument()
+    expect(within(content).getByRole('button', { name: '草稿預覽' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    )
+    expect(screen.queryByRole('region', { name: '卡片樣式' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: '預覽與測試' })).not.toBeInTheDocument()
+
+    const connection = screen.getByRole('region', { name: '加入直播畫面' })
+    expect(within(connection).getByRole('switch', { name: '啟用直播畫面顯示' })).toBeInTheDocument()
+    expect(within(connection).getByText('OBS 連線')).toBeInTheDocument()
+    expect(within(connection).queryByText('頻道專屬網址')).not.toBeInTheDocument()
+    await user.click(within(connection).getByRole('button', { name: '顯示 OBS 連線設定' }))
+    expect(within(connection).getByText('頻道專屬網址')).toBeInTheDocument()
+    expect(
+      within(connection).getByRole('button', { name: '更新 OBS 顯示連結' })
+    ).toBeInTheDocument()
+
+    const pageRegions = screen
+      .getAllByRole('region')
+      .filter(region => region.getAttribute('aria-labelledby')?.startsWith('live-display-'))
+    expect(
+      pageRegions.map(region => within(region).getByRole('heading', { level: 2 }).textContent)
+    ).toEqual(['顯示內容', '加入直播畫面'])
+    expect(screen.queryByRole('button', { name: /上移|下移/ })).not.toBeInTheDocument()
+    expect(getCommunityOverlayThemeSettings).toHaveBeenCalledWith('checkin')
+  })
+
+  it('can collapse a block without hiding its status or test action', async () => {
+    const user = userEvent.setup()
+    render(<CommunityOverlaySettings />)
+
+    const content = await screen.findByRole('region', { name: '顯示內容' })
+    await user.click(within(content).getByRole('button', { name: '收合每日簽到設定' }))
+
+    expect(within(content).getByRole('heading', { name: '每日簽到' })).toBeInTheDocument()
+    expect(within(content).getByText('已發布')).toBeInTheDocument()
+    expect(within(content).getByRole('button', { name: '測試每日簽到動畫' })).toBeInTheDocument()
+    expect(within(content).queryByRole('button', { name: '儲存草稿' })).not.toBeInTheDocument()
+    expect(within(content).getByRole('button', { name: '展開每日簽到設定' })).toBeInTheDocument()
+  })
+
+  it('shows only the necessary check-in entry summary', async () => {
+    render(<CommunityOverlaySettings />)
+
+    const trigger = await screen.findByRole('region', { name: '顯示內容' })
+    expect(within(trigger).getByText('!簽到')).toBeInTheDocument()
+    expect(within(trigger).getByText('每天每人記錄一次')).toBeInTheDocument()
+    expect(within(trigger).getAllByText(/每日簽到/).length).toBeGreaterThan(0)
+    expect(within(trigger).getByText(/10 點/)).toBeInTheDocument()
+    expect(within(trigger).getByText('由 Twitch 管理獎勵')).toBeInTheDocument()
     expect(within(trigger).getByText('已啟用')).toBeInTheDocument()
     expect(within(trigger).queryByRole('combobox')).not.toBeInTheDocument()
     expect(within(trigger).queryByRole('switch')).not.toBeInTheDocument()
-    expect(within(trigger).getByRole('link', { name: '前往 Channel Points' })).toHaveAttribute(
+    expect(within(trigger).getByRole('link', { name: '管理簽到入口' })).toHaveAttribute(
       'href',
       '/channel-points'
     )
+    expect(within(trigger).queryByText(/Niibot 不會建立/)).not.toBeInTheDocument()
   })
 
   it('keeps Channel Points as the only reward-binding editor', async () => {
     render(<CommunityOverlaySettings />)
 
-    await screen.findByRole('link', { name: '前往 Channel Points' })
+    await screen.findByRole('link', { name: '管理簽到入口' })
     expect(updateRedemptionConfig).not.toHaveBeenCalled()
   })
 
@@ -328,15 +393,16 @@ describe('CommunityOverlaySettings', () => {
     render(<CommunityOverlaySettings />)
 
     expect(await screen.findByText('無法載入 Twitch 簽到設定')).toBeInTheDocument()
-    expect(screen.getByRole('region', { name: 'OBS 連線' })).toBeInTheDocument()
-    expect(screen.getByRole('region', { name: '樣式與發布' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: '加入直播畫面' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: '顯示內容' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '儲存草稿' })).toBeInTheDocument()
   })
 
   it('updates the feed state and keeps the returned server state', async () => {
     const user = userEvent.setup()
     render(<CommunityOverlaySettings />)
 
-    const toggle = await screen.findByRole('switch', { name: '啟用共用 Overlay' })
+    const toggle = await screen.findByRole('switch', { name: '啟用直播畫面顯示' })
     await user.click(toggle)
 
     await waitFor(() => {
@@ -344,7 +410,7 @@ describe('CommunityOverlaySettings', () => {
       expect(toggle).not.toBeChecked()
       expect(screen.getByText('已停用')).toBeInTheDocument()
     })
-    expect(toast.success).toHaveBeenCalledWith('共用 Overlay 已停用')
+    expect(toast.success).toHaveBeenCalledWith('直播畫面顯示已停用')
   })
 
   it('keeps the previous enabled state when the update fails', async () => {
@@ -353,11 +419,11 @@ describe('CommunityOverlaySettings', () => {
     vi.mocked(updateCommunityOverlaySettings).mockRejectedValueOnce(error)
     render(<CommunityOverlaySettings />)
 
-    const toggle = await screen.findByRole('switch', { name: '啟用共用 Overlay' })
+    const toggle = await screen.findByRole('switch', { name: '啟用直播畫面顯示' })
     await user.click(toggle)
 
     await waitFor(() => {
-      expect(toastApiError).toHaveBeenCalledWith(error, '更新共用 Overlay 失敗')
+      expect(toastApiError).toHaveBeenCalledWith(error, '更新直播畫面顯示失敗')
       expect(toggle).toBeChecked()
     })
   })
@@ -368,8 +434,9 @@ describe('CommunityOverlaySettings', () => {
     vi.mocked(updateCommunityOverlaySettings).mockReturnValueOnce(pending.promise)
     render(<CommunityOverlaySettings />)
 
-    await user.click(await screen.findByRole('switch', { name: '啟用共用 Overlay' }))
-    const rotate = screen.getByRole('button', { name: '輪替 Overlay 連結' })
+    await openConnectionSettings(user)
+    await user.click(await screen.findByRole('switch', { name: '啟用直播畫面顯示' }))
+    const rotate = screen.getByRole('button', { name: '更新 OBS 顯示連結' })
 
     expect(rotate).toBeDisabled()
     await user.click(rotate)
@@ -383,16 +450,18 @@ describe('CommunityOverlaySettings', () => {
     const user = userEvent.setup()
     render(<CommunityOverlaySettings />)
 
-    await user.click(await screen.findByRole('button', { name: '輪替 Overlay 連結' }))
+    await openConnectionSettings(user)
+    await user.click(await screen.findByRole('button', { name: '更新 OBS 顯示連結' }))
     expect(rotateCommunityOverlayKey).not.toHaveBeenCalled()
-    await user.click(screen.getByRole('button', { name: '確認輪替' }))
+    await user.click(screen.getByRole('button', { name: '確認更新' }))
 
     await waitFor(() => expect(rotateCommunityOverlayKey).toHaveBeenCalledOnce())
-    expect(screen.getByTitle('共用 Overlay 預覽')).toHaveAttribute(
+    await user.click(screen.getByRole('button', { name: '測試每日簽到動畫' }))
+    expect(screen.getByTitle('每日簽到實際播放')).toHaveAttribute(
       'src',
       `${window.location.origin}/community-overlay#key=${NEW_KEY}&preview=1`
     )
-    expect(screen.getByRole('link', { name: '開啟 OBS Overlay' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: '開啟 OBS 顯示畫面' })).toHaveAttribute(
       'href',
       `${window.location.origin}/community-overlay#key=${NEW_KEY}`
     )
@@ -404,11 +473,13 @@ describe('CommunityOverlaySettings', () => {
     vi.mocked(rotateCommunityOverlayKey).mockRejectedValueOnce(error)
     render(<CommunityOverlaySettings />)
 
-    await user.click(await screen.findByRole('button', { name: '輪替 Overlay 連結' }))
-    await user.click(screen.getByRole('button', { name: '確認輪替' }))
+    await openConnectionSettings(user)
+    await user.click(await screen.findByRole('button', { name: '更新 OBS 顯示連結' }))
+    await user.click(screen.getByRole('button', { name: '確認更新' }))
 
-    await waitFor(() => expect(toastApiError).toHaveBeenCalledWith(error, '輪替 Overlay 連結失敗'))
-    expect(screen.getByTitle('共用 Overlay 預覽')).toHaveAttribute(
+    await waitFor(() => expect(toastApiError).toHaveBeenCalledWith(error, '更新 OBS 顯示連結失敗'))
+    await user.click(screen.getByRole('button', { name: '測試每日簽到動畫' }))
+    expect(screen.getByTitle('每日簽到實際播放')).toHaveAttribute(
       'src',
       `${window.location.origin}/community-overlay#key=${KEY}&preview=1`
     )
@@ -420,9 +491,10 @@ describe('CommunityOverlaySettings', () => {
     vi.mocked(rotateCommunityOverlayKey).mockReturnValueOnce(pending.promise)
     render(<CommunityOverlaySettings />)
 
-    await user.click(await screen.findByRole('button', { name: '輪替 Overlay 連結' }))
-    await user.click(screen.getByRole('button', { name: '確認輪替' }))
-    const toggle = screen.getByRole('switch', { name: '啟用共用 Overlay' })
+    await openConnectionSettings(user)
+    await user.click(await screen.findByRole('button', { name: '更新 OBS 顯示連結' }))
+    await user.click(screen.getByRole('button', { name: '確認更新' }))
+    const toggle = screen.getByRole('switch', { name: '啟用直播畫面顯示' })
 
     expect(toggle).toBeDisabled()
     await user.click(toggle)
@@ -440,8 +512,8 @@ describe('CommunityOverlaySettings', () => {
 
     render(<CommunityOverlaySettings />)
 
-    expect(await screen.findByText('Community Overlay 載入失敗')).toBeInTheDocument()
-    expect(toastApiError).toHaveBeenCalledWith(expect.any(Error), 'Community Overlay 載入失敗')
+    expect(await screen.findByText('Live Display 載入失敗')).toBeInTheDocument()
+    expect(toastApiError).toHaveBeenCalledWith(expect.any(Error), 'Live Display 載入失敗')
 
     await user.click(screen.getByRole('button', { name: '重新載入' }))
     expect((await screen.findAllByText('已啟用')).length).toBeGreaterThan(0)

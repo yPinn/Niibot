@@ -69,7 +69,7 @@ export const navigationData: NavigationData = {
           url: '/modules/video-queue',
         },
         {
-          title: 'Community Overlay',
+          title: 'Live Display',
           url: '/modules/community-overlay',
         },
       ],

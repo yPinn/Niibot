@@ -62,6 +62,12 @@ def test_overlay_theme_schema_keeps_drafts_tenant_scoped_and_revisions_immutable
     )
     assert "TG_OP = 'DELETE' AND pg_trigger_depth() > 1" in cascade_sql
 
+    block_sql = (_VERSIONS / "103_scope_overlay_themes_by_block.sql").read_text(encoding="utf-8")
+    assert "ADD COLUMN block_type TEXT NOT NULL DEFAULT 'checkin'" in block_sql
+    assert "PRIMARY KEY (channel_id, block_type)" in block_sql
+    assert "UNIQUE (channel_id, block_type, revision_number)" in block_sql
+    assert "FOREIGN KEY (channel_id, block_type, published_revision_id)" in block_sql
+
 
 def test_read_only_checkin_redemption_expands_schema_without_manage_scope():
     sql = (_VERSIONS / "098_add_checkin_redemption_binding.sql").read_text(encoding="utf-8")

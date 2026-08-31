@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 from shared.community_events import CHECKIN_RECORDED, validate_community_event
-from shared.community_overlay_themes import validate_overlay_theme
+from shared.community_overlay_blocks import get_community_overlay_block
 from shared.models.attendance import (
     CommunityOverlayAccess,
     CommunityOverlayFeed,
@@ -29,33 +29,81 @@ class CommunityOverlayService:
     async def set_enabled(self, channel_id: str, enabled: bool) -> CommunityOverlayAccess:
         return await self.repository.set_enabled(channel_id, enabled)
 
-    async def get_theme_state(self, channel_id: str) -> CommunityOverlayThemeState:
-        return await self.repository.get_theme_state(channel_id)
+    async def get_theme_state(self, channel_id: str, block_type: str) -> CommunityOverlayThemeState:
+        self._require_theme_block(block_type)
+        return await self.repository.get_theme_state(channel_id, block_type)
 
     async def update_theme_draft(
         self,
         channel_id: str,
+        block_type: str,
         theme: dict[str, object],
         expected_draft_version: int,
     ) -> CommunityOverlayThemeState:
+        definition = get_community_overlay_block(block_type)
         return await self.repository.update_theme_draft(
             channel_id,
-            validate_overlay_theme(theme),
+            block_type,
+            definition.validate_theme(theme),
             expected_draft_version,
         )
 
     async def publish_theme(
-        self, channel_id: str, expected_draft_version: int
+        self, channel_id: str, block_type: str, expected_draft_version: int
     ) -> CommunityOverlayThemeState:
-        return await self.repository.publish_theme(channel_id, expected_draft_version)
+        self._require_theme_block(block_type)
+        return await self.repository.publish_theme(channel_id, block_type, expected_draft_version)
 
     async def reset_theme_draft(
-        self, channel_id: str, expected_draft_version: int
+        self, channel_id: str, block_type: str, expected_draft_version: int
     ) -> CommunityOverlayThemeState:
-        return await self.repository.reset_theme_draft(channel_id, expected_draft_version)
+        self._require_theme_block(block_type)
+        return await self.repository.reset_theme_draft(
+            channel_id, block_type, expected_draft_version
+        )
 
-    async def get_public_theme(self, public_key: UUID) -> CommunityOverlayThemePublished | None:
-        return await self.repository.get_public_theme(public_key)
+    @staticmethod
+    def _require_theme_block(block_type: str) -> None:
+        get_community_overlay_block(block_type)
+
+    async def get_public_theme(
+        self, public_key: UUID, block_type: str
+    ) -> CommunityOverlayThemePublished | None:
+        self._require_theme_block(block_type)
+        return await self.repository.get_public_theme(public_key, block_type)
+
+    async def publish_preview(
+        self,
+        *,
+        channel_id: str,
+        actor_user_id: str,
+        content_type: str,
+        occurred_at: datetime | None = None,
+    ) -> int:
+        """Publish a registered synthetic event without touching feature state."""
+        definition = get_community_overlay_block(content_type)
+        now = occurred_at or datetime.now(UTC)
+        if now.tzinfo is None or now.utcoffset() is None:
+            raise ValueError("occurred_at must be timezone-aware")
+        payload = definition.build_preview_payload(now)
+        validate_community_event(
+            definition.preview_event_type,
+            definition.preview_event_schema_version,
+            payload,
+        )
+        await self.repository.get_or_create_channel(channel_id)
+        return await self.repository.publish_event(
+            channel_id=channel_id,
+            event_type=definition.preview_event_type,
+            schema_version=definition.preview_event_schema_version,
+            source="system",
+            actor_user_id=actor_user_id,
+            actor_display_name=definition.preview_actor_display_name,
+            payload=payload,
+            occurred_at=now,
+            expires_at=now + timedelta(minutes=10),
+            idempotency_key=f"preview-{content_type}:{uuid4()}",
+        )
 
     async def publish_checkin_preview(
         self,
@@ -93,7 +141,7 @@ class CommunityOverlayService:
             payload=payload,
             occurred_at=now,
             expires_at=now + timedelta(minutes=10),
-            idempotency_key=f"dev-checkin:{uuid4()}",
+            idempotency_key=f"preview-checkin:{uuid4()}",
         )
 
     async def get_feed(

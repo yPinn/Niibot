@@ -1,7 +1,7 @@
 import type { CommunityOverlayPlacement, CommunityOverlayTheme } from '@/api/communityOverlay'
 import { CheckinCard } from '@/components/community-overlay/CheckinCard'
 import { Icon, Spinner } from '@/components/primitives'
-import { Badge, Button, Input } from '@/components/ui'
+import { Button, Input } from '@/components/ui'
 
 const SAMPLE_EVENT = {
   actor_display_name: 'NiibotFan',
@@ -114,7 +114,10 @@ interface ThemeEditorProps {
   localDirty: boolean
   hasUnpublishedChanges: boolean
   busy: 'save' | 'publish' | 'reset' | null
+  previewUrl?: string
+  previewMode: 'draft' | 'live'
   onChange: (theme: CommunityOverlayTheme) => void
+  onPreviewModeChange: (mode: 'draft' | 'live') => void
   onSave: () => void
   onPublish: () => void
   onReset: () => void
@@ -125,7 +128,10 @@ export function ThemeEditor({
   localDirty,
   hasUnpublishedChanges,
   busy,
+  previewUrl,
+  previewMode,
   onChange,
+  onPreviewModeChange,
   onSave,
   onPublish,
   onReset,
@@ -149,20 +155,80 @@ export function ThemeEditor({
     accentContrast >= 4.5 &&
     accentSurfaceContrast !== null &&
     accentSurfaceContrast >= 3
-  const status = localDirty ? '尚未儲存' : hasUnpublishedChanges ? '草稿未發布' : '與已發布同步'
-
   return (
     <div className="grid gap-card xl:grid-cols-[minmax(20rem,0.82fr)_minmax(32rem,1.18fr)]">
-      <div className="flex min-w-0 flex-col gap-section">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h3 className="text-content font-semibold">簽到集點卡</h3>
-            <p className="text-label text-muted-foreground">修改只會影響這個頻道。</p>
+      <div className="min-w-0 xl:col-start-2 xl:row-start-1">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-1 rounded-lg bg-muted p-1">
+            <Button
+              type="button"
+              size="sm"
+              variant={previewMode === 'draft' ? 'secondary' : 'ghost'}
+              aria-pressed={previewMode === 'draft'}
+              onClick={() => onPreviewModeChange('draft')}
+            >
+              草稿預覽
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={previewMode === 'live' ? 'secondary' : 'ghost'}
+              aria-pressed={previewMode === 'live'}
+              onClick={() => onPreviewModeChange('live')}
+            >
+              實際播放
+            </Button>
           </div>
-          <Badge variant={localDirty || hasUnpublishedChanges ? 'secondary' : 'outline'}>
-            {status}
-          </Badge>
+          <p className="text-label text-muted-foreground">
+            {previewMode === 'draft' ? '示意 1920 × 1080 安全區' : '顯示目前已發布版本'}
+          </p>
         </div>
+
+        {previewMode === 'draft' ? (
+          <div
+            data-theme-preview
+            data-placement={theme.placement}
+            className={`flex h-72 overflow-hidden rounded-xl bg-muted/40 p-4 sm:h-auto sm:aspect-video sm:min-h-72 sm:p-6 ${PREVIEW_ALIGNMENT[theme.placement]}`}
+          >
+            <div
+              className={`${PREVIEW_ORIGIN[theme.placement]} scale-[0.68] sm:scale-[0.78] lg:scale-[0.84] 2xl:scale-100`}
+            >
+              <CheckinCard
+                key={theme.motion}
+                event={SAMPLE_EVENT}
+                theme={theme}
+                previewLabel="草稿預覽"
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="relative h-72 overflow-hidden rounded-xl border bg-black sm:h-auto sm:aspect-video sm:min-h-72">
+            <div
+              aria-hidden="true"
+              className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-muted-foreground"
+            >
+              <Icon icon="fa-solid fa-clapperboard" wrapperClassName="size-6" />
+              <span className="text-label">等待測試動畫</span>
+            </div>
+            {previewUrl && (
+              <iframe
+                src={previewUrl}
+                title="每日簽到實際播放"
+                referrerPolicy="no-referrer"
+                className="absolute inset-0 block h-full w-full"
+              />
+            )}
+          </div>
+        )}
+        <p className="mt-2 text-label text-muted-foreground">
+          {previewMode === 'draft'
+            ? '修改會先顯示在這裡，儲存並發布後才影響 OBS。'
+            : '測試只播放動畫，不會執行簽到或增加累積天數。'}
+        </p>
+      </div>
+
+      <div className="flex min-w-0 flex-col gap-section xl:col-start-1 xl:row-start-1">
+        <p className="text-label text-muted-foreground">外觀修改只會影響這個頻道。</p>
 
         <fieldset className="grid gap-3" disabled={disabled}>
           <legend className="mb-2 text-label font-semibold">配色</legend>
@@ -297,29 +363,6 @@ export function ThemeEditor({
             {busy === 'reset' && <Spinner className="mr-1.5" />}
             還原已發布版本
           </Button>
-        </div>
-      </div>
-
-      <div className="min-w-0">
-        <div className="mb-2 flex items-center justify-between gap-3">
-          <p className="text-label font-semibold">草稿預覽</p>
-          <p className="text-label text-muted-foreground">示意 1920 × 1080 安全區</p>
-        </div>
-        <div
-          data-theme-preview
-          data-placement={theme.placement}
-          className={`flex h-72 overflow-hidden rounded-xl bg-muted/40 p-4 sm:h-auto sm:aspect-video sm:min-h-72 sm:p-6 ${PREVIEW_ALIGNMENT[theme.placement]}`}
-        >
-          <div
-            className={`${PREVIEW_ORIGIN[theme.placement]} scale-[0.68] sm:scale-[0.78] lg:scale-[0.84] 2xl:scale-100`}
-          >
-            <CheckinCard
-              key={theme.motion}
-              event={SAMPLE_EVENT}
-              theme={theme}
-              previewLabel="草稿預覽"
-            />
-          </div>
         </div>
       </div>
     </div>
