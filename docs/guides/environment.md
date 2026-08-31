@@ -23,103 +23,103 @@
 
 Docker Compose 變數替換用。
 
-| 變數 | 說明 |
-| --- | --- |
+| 變數                  | 說明                                                             |
+| --------------------- | ---------------------------------------------------------------- |
 | `DOCKER_DATABASE_URL` | 容器內連線字串，格式 postgresql://USER:PASSWORD@postgres:5432/DB |
-| `POSTGRES_DB` | Postgres 容器初始資料庫名 |
-| `POSTGRES_PASSWORD` | Postgres 容器初始密碼 |
-| `POSTGRES_USER` | Postgres 容器初始帳號 |
+| `POSTGRES_DB`         | Postgres 容器初始資料庫名                                        |
+| `POSTGRES_PASSWORD`   | Postgres 容器初始密碼                                            |
+| `POSTGRES_USER`       | Postgres 容器初始帳號                                            |
 
 ### `backend/shared.env`
 
 api、twitch-bot、discord-bot 三服務共用。至少設一組 AI key；空的自動跳過。
 
-| 變數 | 說明 |
-| --- | --- |
-| `BOT_ID` | Bot 的 Twitch user ID（id.twitch.tv） |
-| `DATABASE_URL` | 本機直跑時的連線字串（Docker 內由 DOCKER_DATABASE_URL 覆蓋） |
-| `ENVIRONMENT` | production / development（api/twitch/discord 共用，經 config_base） |
-| `ERROR_WEBHOOK_URL` | (選用) ERROR 以上 log 推送的 Discord webhook（於 shared.env 設一次，三服務共用） |
-| `FRONTEND_URL` | OAuth redirect origin 與 CORS allow-list（api 與 twitch-bot 共用） |
-| `GEMINI_API_KEY` | AI provider（AI Studio key，非 GCP service account） |
-| `GEMINI_MODEL` | (選用) Gemini 模型；空值走程式預設 |
-| `GROQ_API_KEY` | AI provider（速度優先，Twitch 預設首選） |
-| `GROQ_MODEL` | (選用) Groq 模型；空值走程式預設 |
-| `LOG_LEVEL` | log 等級，預設 INFO（api/twitch/discord 共用） |
-| `OPENROUTER_API_KEY` | AI provider（free-tier 備援） |
-| `OPENROUTER_MODEL` | (選用) OpenRouter 模型 |
-| `OWNER_ID` | 擁有者的 Twitch user ID |
-| `TWITCH_CLIENT_ID` | Twitch App Client ID（dev.twitch.tv/console） |
-| `TWITCH_CLIENT_SECRET` | Twitch App Client Secret |
-| `TWITCH_TOKEN_ENCRYPTION_KEY` | Twitch OAuth access／refresh token 的版本化 Fernet 加密金鑰 |
-| `YOUTUBE_API_KEY` | 影片佇列查片長／觀看數 |
+| 變數                          | 說明                                                                                                              |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `BOT_ID`                      | Bot 的 Twitch user ID（id.twitch.tv）                                                                             |
+| `DATABASE_URL`                | 本機直跑時的連線字串（Docker 內由 DOCKER_DATABASE_URL 覆蓋）                                                      |
+| `ENVIRONMENT`                 | production / development（api/twitch/discord 共用，經 config_base）                                               |
+| `ERROR_WEBHOOK_URL`           | (選用) ERROR 以上 log 推送的 Discord webhook（於 shared.env 設一次，三服務共用）                                  |
+| `FRONTEND_URL`                | OAuth redirect origin、CORS allow-list，以及 Discord Tarot embed 的公開牌圖 base URL（api／twitch／discord 共用） |
+| `GEMINI_API_KEY`              | AI provider（AI Studio key，非 GCP service account）                                                              |
+| `GEMINI_MODEL`                | (選用) Gemini 模型；空值走程式預設                                                                                |
+| `GROQ_API_KEY`                | AI provider（速度優先，Twitch 預設首選）                                                                          |
+| `GROQ_MODEL`                  | (選用) Groq 模型；空值走程式預設                                                                                  |
+| `LOG_LEVEL`                   | log 等級，預設 INFO（api/twitch/discord 共用）                                                                    |
+| `OPENROUTER_API_KEY`          | AI provider（free-tier 備援）                                                                                     |
+| `OPENROUTER_MODEL`            | (選用) OpenRouter 模型                                                                                            |
+| `OWNER_ID`                    | 擁有者的 Twitch user ID                                                                                           |
+| `TWITCH_CLIENT_ID`            | Twitch App Client ID（dev.twitch.tv/console）                                                                     |
+| `TWITCH_CLIENT_SECRET`        | Twitch App Client Secret                                                                                          |
+| `TWITCH_TOKEN_ENCRYPTION_KEY` | Twitch OAuth access／refresh token 的版本化 Fernet 加密金鑰                                                       |
+| `YOUTUBE_API_KEY`             | 影片佇列查片長／觀看數                                                                                            |
 
 ### `backend/api/.env`
 
 App 憑證走 `shared.env`。
 
-| 變數 | 說明 |
-| --- | --- |
-| `API_URL` | 對外 URL，用於 OAuth redirect 與 webhook callback |
-| `DISCORD_PUBLIC_KEY` | Discord 互動 webhook 簽章驗證（Developer Portal → General Information） |
-| `JWT_ALGORITHM` | (選用) 預設 HS256 |
-| `JWT_EXPIRE_DAYS` | (選用) 預設 7 |
-| `JWT_SECRET_KEY` | JWT 簽章密鑰 |
-| `PAYMENT_ENCRYPTION_KEY` | 金流設定加密（Fernet key） |
-| `RELEASES_GITHUB_TOKEN` | (選用) 讀 private repo release，read:contents scope |
+| 變數                     | 說明                                                                    |
+| ------------------------ | ----------------------------------------------------------------------- |
+| `API_URL`                | 對外 URL，用於 OAuth redirect 與 webhook callback                       |
+| `DISCORD_PUBLIC_KEY`     | Discord 互動 webhook 簽章驗證（Developer Portal → General Information） |
+| `JWT_ALGORITHM`          | (選用) 預設 HS256                                                       |
+| `JWT_EXPIRE_DAYS`        | (選用) 預設 7                                                           |
+| `JWT_SECRET_KEY`         | JWT 簽章密鑰                                                            |
+| `PAYMENT_ENCRYPTION_KEY` | 金流設定加密（Fernet key）                                              |
+| `RELEASES_GITHUB_TOKEN`  | (選用) 讀 private repo release，read:contents scope                     |
 
 ### `backend/twitch/.env`
 
 App 憑證與 `BOT_ID` / `OWNER_ID` 走 `shared.env`。
 
-| 變數 | 說明 |
-| --- | --- |
-| `CONDUIT_ID` | (選用) 重用既有 EventSub conduit |
-| `PORT` | (dev) twitch-bot health server，預設 4344 |
+| 變數         | 說明                                      |
+| ------------ | ----------------------------------------- |
+| `CONDUIT_ID` | (選用) 重用既有 EventSub conduit          |
+| `PORT`       | (dev) twitch-bot health server，預設 4344 |
 
 ### `backend/discord/.env`
 
 App 憑證走 `shared.env`。
 
-| 變數 | 說明 |
-| --- | --- |
-| `DISCORD_ACTIVITY_NAME` | 狀態文字 |
+| 變數                    | 說明                                                            |
+| ----------------------- | --------------------------------------------------------------- |
+| `DISCORD_ACTIVITY_NAME` | 狀態文字                                                        |
 | `DISCORD_ACTIVITY_TYPE` | playing / listening / watching / competing / streaming / custom |
-| `DISCORD_ACTIVITY_URL` | (選用) streaming 型態限定，須為 twitch.tv URL |
-| `DISCORD_BOT_TOKEN` | Bot token |
-| `DISCORD_DESCRIPTION` | (選用) 覆蓋 Developer Portal 的 bio，上限 400 字 |
-| `DISCORD_GUILD_ID` | (選用) 指定 guild 同步，較快 |
-| `DISCORD_STATUS` | online / idle / dnd / invisible |
-| `DISCORD_SYNC_COMMANDS` | (選用) 增改 slash command 後設一次 true |
-| `INSTAFIX_HOST` | (dev) Instagram OG proxy，Docker 由 compose 設定 |
-| `INSTAGRAM_SESSION_ID` | (選用) Instagram 個人頁 embed，約 90 天效期 |
-| `PORT` | (dev) discord-bot health server，預設 8080 |
-| `SCRAPLING_HOST` | (選用) Threads sidecar；空值＝停用 |
+| `DISCORD_ACTIVITY_URL`  | (選用) streaming 型態限定，須為 twitch.tv URL                   |
+| `DISCORD_BOT_TOKEN`     | Bot token                                                       |
+| `DISCORD_DESCRIPTION`   | (選用) 覆蓋 Developer Portal 的 bio，上限 400 字                |
+| `DISCORD_GUILD_ID`      | (選用) 指定 guild 同步，較快                                    |
+| `DISCORD_STATUS`        | online / idle / dnd / invisible                                 |
+| `DISCORD_SYNC_COMMANDS` | (選用) 增改 slash command 後設一次 true                         |
+| `INSTAFIX_HOST`         | (dev) Instagram OG proxy，Docker 由 compose 設定                |
+| `INSTAGRAM_SESSION_ID`  | (選用) Instagram 個人頁 embed，約 90 天效期                     |
+| `PORT`                  | (dev) discord-bot health server，預設 8080                      |
+| `SCRAPLING_HOST`        | (選用) Threads sidecar；空值＝停用                              |
 
 ### `backend/scrapling/.env`
 
 獨立 sidecar，不在 docker-compose 內；見 [integrations/scrapling.md](../integrations/scrapling.md)。
 
-| 變數 | 說明 |
-| --- | --- |
-| `ENVIRONMENT` | production 才啟用 ERROR_WEBHOOK_URL |
-| `ERROR_WEBHOOK_URL` | (選用) ENVIRONMENT=production 時的錯誤推送 webhook |
-| `LOG_LEVEL` | 預設 INFO |
-| `PORT` | scrapling 服務埠，預設 3001 |
-| `THREADS_SESSION_ID` | threads.com 的 sessionid cookie，約 90 天效期 |
+| 變數                 | 說明                                               |
+| -------------------- | -------------------------------------------------- |
+| `ENVIRONMENT`        | production 才啟用 ERROR_WEBHOOK_URL                |
+| `ERROR_WEBHOOK_URL`  | (選用) ENVIRONMENT=production 時的錯誤推送 webhook |
+| `LOG_LEVEL`          | 預設 INFO                                          |
+| `PORT`               | scrapling 服務埠，預設 3001                        |
+| `THREADS_SESSION_ID` | threads.com 的 sessionid cookie，約 90 天效期      |
 
 ### `frontend/.env`
 
 build 時注入。Cloudflare Pages 另需在專案設定加 `API_BACKEND`（後端位址，由 Cloudflare Tunnel 提供）。
 
-| 變數 | 說明 |
-| --- | --- |
-| `VITE_API_URL` | (dev) 開發伺服器代理目標；正式部署不設 |
-| `VITE_BOT_USERNAME` | Bot 帳號名，抑制自身的「授予 Mod」提示 |
-| `VITE_DISCORD_BOT_INVITE_URL` | 把 Bot 加入自己伺服器的 OAuth 連結 |
-| `VITE_DISCORD_COMMUNITY_URL` | Discord 社群邀請連結（側欄／說明橫幅／條款頁） |
-| `VITE_ENVIRONMENT` | (選用) production 鎖定 WIP 頁面；staging / dev 不鎖 |
-| `VITE_SUPPORT_ECPAY_URL` | 贊助頁 ECPay 連結 |
+| 變數                          | 說明                                                |
+| ----------------------------- | --------------------------------------------------- |
+| `VITE_API_URL`                | (dev) 開發伺服器代理目標；正式部署不設              |
+| `VITE_BOT_USERNAME`           | Bot 帳號名，抑制自身的「授予 Mod」提示              |
+| `VITE_DISCORD_BOT_INVITE_URL` | 把 Bot 加入自己伺服器的 OAuth 連結                  |
+| `VITE_DISCORD_COMMUNITY_URL`  | Discord 社群邀請連結（側欄／說明橫幅／條款頁）      |
+| `VITE_ENVIRONMENT`            | (選用) production 鎖定 WIP 頁面；staging / dev 不鎖 |
+| `VITE_SUPPORT_ECPAY_URL`      | 贊助頁 ECPay 連結                                   |
 
 <!-- env:end -->
 

@@ -52,11 +52,37 @@ class TestPublishCheckinPreview:
             await service.publish_preview(
                 channel_id="ch1",
                 actor_user_id="owner1",
-                content_type="tarot",
+                content_type="fortune",
                 occurred_at=_NOW,
             )
 
         repo.publish_event.assert_not_awaited()
+
+    async def test_generic_preview_builds_a_local_versioned_tarot_sample(self) -> None:
+        repo = MagicMock()
+        repo.get_or_create_channel = AsyncMock()
+        repo.publish_event = AsyncMock(return_value=92)
+        service = CommunityOverlayService(repo)
+
+        event_id = await service.publish_preview(
+            channel_id="ch1",
+            actor_user_id="owner1",
+            content_type="tarot",
+            occurred_at=_NOW,
+        )
+
+        assert event_id == 92
+        kwargs = repo.publish_event.await_args.kwargs
+        assert kwargs["event_type"] == "tarot.drawn"
+        assert kwargs["actor_display_name"] == "測試觀眾"
+        assert kwargs["payload"]["card_id"] == "0"
+        assert kwargs["payload"]["card_name"] == "愚者"
+        assert kwargs["payload"]["orientation"] == "upright"
+        assert kwargs["payload"]["deck_id"] == "rider-waite-smith-pkt"
+        assert kwargs["payload"]["deck_version"] == 1
+        assert kwargs["payload"]["image_path"].endswith("/major-00-the-fool.jpg")
+        assert kwargs["payload"]["preview"] is True
+        assert kwargs["idempotency_key"].startswith("preview-tarot:")
 
     async def test_publishes_short_lived_event_without_checkin_ledger(self) -> None:
         repo = MagicMock()
@@ -140,6 +166,47 @@ async def test_access_and_feed_methods_delegate_to_repository() -> None:
     repo.set_enabled.assert_awaited_once_with("ch1", False)
     assert repo.get_feed.await_args.kwargs["after_id"] == 7
     assert repo.get_feed.await_args.kwargs["limit"] == 25
+
+
+@pytest.mark.asyncio
+async def test_publishes_validated_tarot_event_without_blocking_feature_state() -> None:
+    repo = MagicMock()
+    repo.get_or_create_channel = AsyncMock()
+    repo.publish_event = AsyncMock(return_value=93)
+    service = CommunityOverlayService(repo)
+    payload = {
+        "card_id": "0",
+        "card_name": "愚者",
+        "card_name_en": "The Fool",
+        "orientation": "upright",
+        "orientation_label": "正位",
+        "category": "general",
+        "category_label": "綜合",
+        "keywords": ["新開始"],
+        "meaning": "進入全新階段。",
+        "advice": "保持開放心態。",
+        "image_path": "/images/tarot/decks/example/v1/cards/major-00-the-fool.jpg",
+        "deck_id": "example",
+        "deck_version": 1,
+    }
+
+    event_id = await service.publish_tarot(
+        channel_id="ch1",
+        actor_user_id="u1",
+        actor_display_name="Alice",
+        payload=payload,
+        occurred_at=_NOW,
+    )
+
+    assert event_id == 93
+    repo.get_or_create_channel.assert_awaited_once_with("ch1")
+    kwargs = repo.publish_event.await_args.kwargs
+    assert kwargs["event_type"] == "tarot.drawn"
+    assert kwargs["schema_version"] == 1
+    assert kwargs["source"] == "twitch"
+    assert kwargs["payload"] == payload
+    assert kwargs["expires_at"] == _NOW + timedelta(minutes=10)
+    assert kwargs["idempotency_key"].startswith("tarot:")
 
 
 @pytest.mark.asyncio

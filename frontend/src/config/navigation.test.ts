@@ -32,7 +32,7 @@ describe('Twitch navigation', () => {
     expect(liveTools?.items).toEqual([
       { title: 'Game Queue', url: '/modules/game-queue' },
       { title: 'Video Queue', url: '/modules/video-queue' },
-      { title: 'Live Display', url: '/modules/community-overlay' },
+      { title: 'Live Display', url: '/modules/live-display' },
     ])
   })
 

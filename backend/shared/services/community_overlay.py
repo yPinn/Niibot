@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
-from shared.community_events import CHECKIN_RECORDED, validate_community_event
+from shared.community_events import CHECKIN_RECORDED, TAROT_DRAWN, validate_community_event
 from shared.community_overlay_blocks import get_community_overlay_block
 from shared.models.attendance import (
     CommunityOverlayAccess,
@@ -142,6 +142,34 @@ class CommunityOverlayService:
             occurred_at=now,
             expires_at=now + timedelta(minutes=10),
             idempotency_key=f"preview-checkin:{uuid4()}",
+        )
+
+    async def publish_tarot(
+        self,
+        *,
+        channel_id: str,
+        actor_user_id: str,
+        actor_display_name: str,
+        payload: dict[str, object],
+        occurred_at: datetime | None = None,
+    ) -> int:
+        """Publish one completed Tarot draw as a short-lived visual event."""
+        now = occurred_at or datetime.now(UTC)
+        if now.tzinfo is None or now.utcoffset() is None:
+            raise ValueError("occurred_at must be timezone-aware")
+        validate_community_event(TAROT_DRAWN.event_type, TAROT_DRAWN.schema_version, payload)
+        await self.repository.get_or_create_channel(channel_id)
+        return await self.repository.publish_event(
+            channel_id=channel_id,
+            event_type=TAROT_DRAWN.event_type,
+            schema_version=TAROT_DRAWN.schema_version,
+            source="twitch",
+            actor_user_id=actor_user_id,
+            actor_display_name=actor_display_name,
+            payload=payload,
+            occurred_at=now,
+            expires_at=now + timedelta(minutes=10),
+            idempotency_key=f"tarot:{uuid4()}",
         )
 
     async def get_feed(

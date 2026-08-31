@@ -34,7 +34,7 @@ const FEATURES = [
   {
     icon: 'fa-solid fa-stars',
     title: '占卜 & 戰棋',
-    desc: '每日運勢、塔羅牌占卜、TFT 當季排行門檻查詢與玩家段位搜尋。',
+    desc: '每日運勢、每日塔羅、TFT 當季排行門檻查詢與玩家段位搜尋。',
     tags: [],
   },
   {
@@ -50,7 +50,7 @@ const COMMANDS = [
   { cmd: '/bday menu', desc: '登錄、查詢或訂閱成員生日通知' },
   { cmd: '/giveaway', desc: '建立與管理抽獎活動' },
   { cmd: '/fortune', desc: '今日運勢' },
-  { cmd: '/tarot', desc: '塔羅牌占卜' },
+  { cmd: '/tarot', desc: '依主題抽取每日塔羅' },
   { cmd: '/tft [名稱#TAG]', desc: '查詢 TFT 當季排行門檻，或輸入玩家名稱查段位' },
   { cmd: '/ai <問題>', desc: '向 AI 提問' },
   { cmd: '/eat', desc: '隨機推薦今天吃什麼' },

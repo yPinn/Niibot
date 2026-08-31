@@ -5,10 +5,13 @@ from __future__ import annotations
 import pytest
 
 from shared.community_overlay_themes import DEFAULT_OVERLAY_THEME, validate_overlay_theme
+from shared.tarot_overlay_themes import DEFAULT_TAROT_OVERLAY_THEME
 
 
 def test_default_theme_is_a_valid_complete_schema() -> None:
     assert validate_overlay_theme(DEFAULT_OVERLAY_THEME) == DEFAULT_OVERLAY_THEME
+    assert DEFAULT_OVERLAY_THEME["placement"] == "bottom-left"
+    assert DEFAULT_OVERLAY_THEME["display_ms"] == 4_000
     assert set(DEFAULT_OVERLAY_THEME) == {
         "surface_color",
         "accent_color",
@@ -17,6 +20,15 @@ def test_default_theme_is_a_valid_complete_schema() -> None:
         "radius_px",
         "display_ms",
         "motion",
+    }
+
+
+def test_tarot_default_keeps_the_card_visible_after_its_reveal() -> None:
+    assert validate_overlay_theme(DEFAULT_TAROT_OVERLAY_THEME) == DEFAULT_TAROT_OVERLAY_THEME
+    assert DEFAULT_TAROT_OVERLAY_THEME == {
+        **DEFAULT_OVERLAY_THEME,
+        "radius_px": 16,
+        "display_ms": 5_000,
     }
 
 

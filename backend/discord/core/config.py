@@ -50,6 +50,10 @@ class DiscordBotSettings(BaseServiceSettings):
 
     # Discord
     discord_bot_token: str = Field(..., description="Discord bot token")
+    frontend_url: str = Field(
+        default="http://localhost:3000",
+        description="Public frontend URL used for static assets in Discord embeds",
+    )
 
     # Server
     port: int = Field(default=8080, description="Health server port")

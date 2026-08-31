@@ -13,8 +13,25 @@ the next deploy ships it.
 | `free_models.json` | shared AI provider chain | OpenRouter free-tier roster              |
 | `games.json`       | discord games cog        | Game catalog                             |
 | `giveaway.json`    | discord giveaway cog     | Static config (not active state)         |
-| `tarot.json`       | twitch + discord tarot   | 78-card deck                             |
+| `tarot.json`       | twitch + discord tarot   | 78 card ids, names, meanings and advice  |
+| `tarot_decks.json` | discord + Live Display   | Versioned visual deck catalog and source |
 | `packs/<pack>/`    | twitch AI                | Skill-style pack directories (see below) |
+
+## Tarot visual decks
+
+Tarot meaning data and artwork have separate lifecycles:
+
+- `tarot.json` owns stable card ids and localized reading content. It must not contain deploy-host
+  image URLs.
+- `tarot_decks.json` maps every stable card id to a versioned asset key and selects one active deck.
+- Binary artwork lives under
+  `frontend/public/images/tarot/decks/<deck-id>/v<version>/cards/`, because the frontend static host
+  serves both same-origin OBS images and public absolute URLs for Discord embeds.
+- Released version directories are immutable. A redesign adds a new deck/version and updates the
+  active reference; it never overwrites existing files.
+
+Run `npm run assets:tarot:check` from `frontend/` to verify the active catalog has exactly 78 unique,
+valid image files.
 
 ## Packs (`packs/`)
 

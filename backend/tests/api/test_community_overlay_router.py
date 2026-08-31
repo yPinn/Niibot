@@ -38,7 +38,15 @@ from shared.models.attendance import (
 _KEY = UUID("11111111-1111-4111-8111-111111111111")
 _NOW = datetime(2026, 8, 30, 10, 0, tzinfo=UTC)
 _PUBLIC_HEADERS = {"X-Overlay-Key": str(_KEY)}
-_ACTION_HEADERS = {"X-Niibot-Action": "community-overlay"}
+_ACTION_HEADERS = {"X-Niibot-Action": "live-display"}
+
+
+def test_router_uses_only_the_live_display_api_prefix() -> None:
+    assert router.prefix == "/api/live-display"
+    paths = {route.path for route in router.routes}
+    assert all(path.startswith("/api/live-display/") for path in paths)
+    assert not any(path.startswith("/api/community-overlay/") for path in paths)
+    assert _client(_service()).get("/api/community-overlay/settings").status_code == 404
 
 
 @asynccontextmanager
@@ -125,7 +133,7 @@ class TestPublicFeed:
         client = _client(service)
 
         response = client.get(
-            "/api/community-overlay/public/events?after_id=12&limit=25",
+            "/api/live-display/public/events?after_id=12&limit=25",
             headers=_PUBLIC_HEADERS,
         )
 
@@ -144,7 +152,7 @@ class TestPublicFeed:
         client = _client(_service())
 
         response = client.get(
-            f"/api/community-overlay/public/events?limit={limit}", headers=_PUBLIC_HEADERS
+            f"/api/live-display/public/events?limit={limit}", headers=_PUBLIC_HEADERS
         )
 
         assert response.status_code == 422
@@ -154,7 +162,7 @@ class TestPublicFeed:
         service.get_feed = AsyncMock(return_value=None)
         client = _client(service)
 
-        response = client.get("/api/community-overlay/public/events", headers=_PUBLIC_HEADERS)
+        response = client.get("/api/live-display/public/events", headers=_PUBLIC_HEADERS)
 
         assert response.status_code == 404
         assert "ch1" not in response.text
@@ -168,11 +176,11 @@ class TestPublicFeed:
         client = _client(_service())
 
         invalid = client.get(
-            "/api/community-overlay/public/events", headers={"X-Overlay-Key": "invalid"}
+            "/api/live-display/public/events", headers={"X-Overlay-Key": "invalid"}
         )
-        first_valid = client.get("/api/community-overlay/public/events", headers=_PUBLIC_HEADERS)
+        first_valid = client.get("/api/live-display/public/events", headers=_PUBLIC_HEADERS)
         rotated = client.get(
-            "/api/community-overlay/public/events",
+            "/api/live-display/public/events",
             headers={"X-Overlay-Key": "22222222-2222-4222-8222-222222222222"},
         )
 
@@ -186,7 +194,7 @@ class TestPublicTheme:
         service = _service()
         client = _client(service)
 
-        response = client.get("/api/community-overlay/public/theme", headers=_PUBLIC_HEADERS)
+        response = client.get("/api/live-display/public/theme", headers=_PUBLIC_HEADERS)
 
         assert response.status_code == 200
         assert response.json() == {
@@ -205,7 +213,7 @@ class TestPublicTheme:
         client = _client(service)
 
         response = client.get(
-            "/api/community-overlay/public/theme?block_type=tarot",
+            "/api/live-display/public/theme?block_type=fortune",
             headers=_PUBLIC_HEADERS,
         )
 
@@ -217,7 +225,7 @@ class TestPublicTheme:
         service.get_public_theme = AsyncMock(return_value=None)
         client = _client(service)
 
-        response = client.get("/api/community-overlay/public/theme", headers=_PUBLIC_HEADERS)
+        response = client.get("/api/live-display/public/theme", headers=_PUBLIC_HEADERS)
 
         assert response.status_code == 404
         assert "ch1" not in response.text
@@ -228,7 +236,7 @@ class TestOverlayAccessManagement:
         service = _service()
         client = _client(service)
 
-        response = client.get("/api/community-overlay/settings")
+        response = client.get("/api/live-display/settings")
 
         assert response.status_code == 200
         assert response.headers["cache-control"] == "private, no-store"
@@ -238,9 +246,7 @@ class TestOverlayAccessManagement:
         service = _service()
         client = _client(service)
 
-        response = client.post(
-            "/api/community-overlay/settings/rotate-key", headers=_ACTION_HEADERS
-        )
+        response = client.post("/api/live-display/settings/rotate-key", headers=_ACTION_HEADERS)
 
         assert response.status_code == 200
         service.rotate_public_key.assert_awaited_once_with("ch1")
@@ -249,7 +255,7 @@ class TestOverlayAccessManagement:
         service = _service()
         client = _client(service)
 
-        response = client.post("/api/community-overlay/settings/rotate-key")
+        response = client.post("/api/live-display/settings/rotate-key")
 
         assert response.status_code == 422
         service.rotate_public_key.assert_not_awaited()
@@ -258,7 +264,7 @@ class TestOverlayAccessManagement:
         service = _service()
         client = _client(service)
 
-        response = client.patch("/api/community-overlay/settings", json={"enabled": False})
+        response = client.patch("/api/live-display/settings", json={"enabled": False})
 
         assert response.status_code == 200
         service.set_enabled.assert_awaited_once_with("ch1", False)
@@ -270,7 +276,7 @@ class TestOverlayPreview:
         client = _client(service)
 
         response = client.post(
-            "/api/community-overlay/settings/preview",
+            "/api/live-display/settings/preview",
             headers=_ACTION_HEADERS,
             json={"content_type": "checkin"},
         )
@@ -286,20 +292,36 @@ class TestOverlayPreview:
         client = _client(service)
 
         response = client.post(
-            "/api/community-overlay/settings/preview",
+            "/api/live-display/settings/preview",
             headers=_ACTION_HEADERS,
-            json={"content_type": "tarot"},
+            json={"content_type": "fortune"},
         )
 
         assert response.status_code == 422
         service.publish_preview.assert_not_awaited()
+
+    def test_publishes_a_tenant_scoped_tarot_preview(self):
+        service = _service()
+        client = _client(service)
+
+        response = client.post(
+            "/api/live-display/settings/preview",
+            headers=_ACTION_HEADERS,
+            json={"content_type": "tarot"},
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"content_type": "tarot", "event_id": 91}
+        service.publish_preview.assert_awaited_once_with(
+            channel_id="ch1", actor_user_id="owner1", content_type="tarot"
+        )
 
     def test_requires_action_header(self):
         service = _service()
         client = _client(service)
 
         response = client.post(
-            "/api/community-overlay/settings/preview", json={"content_type": "checkin"}
+            "/api/live-display/settings/preview", json={"content_type": "checkin"}
         )
 
         assert response.status_code == 422
@@ -315,12 +337,12 @@ class TestOverlayPreview:
         client = _client(service)
 
         first = client.post(
-            "/api/community-overlay/settings/preview",
+            "/api/live-display/settings/preview",
             headers=_ACTION_HEADERS,
             json={"content_type": "checkin"},
         )
         second = client.post(
-            "/api/community-overlay/settings/preview",
+            "/api/live-display/settings/preview",
             headers=_ACTION_HEADERS,
             json={"content_type": "checkin"},
         )
@@ -335,7 +357,7 @@ class TestOverlayThemeManagement:
         service = _service()
         client = _client(service)
 
-        response = client.get("/api/community-overlay/settings/blocks/checkin/theme")
+        response = client.get("/api/live-display/settings/blocks/checkin/theme")
 
         assert response.status_code == 200
         assert response.json()["block_type"] == "checkin"
@@ -349,7 +371,7 @@ class TestOverlayThemeManagement:
         client = _client(service)
 
         response = client.patch(
-            "/api/community-overlay/settings/blocks/checkin/theme/draft",
+            "/api/live-display/settings/blocks/checkin/theme/draft",
             json={"theme": theme, "expected_draft_version": 1},
         )
 
@@ -372,7 +394,7 @@ class TestOverlayThemeManagement:
         client = _client(service)
 
         response = client.patch(
-            "/api/community-overlay/settings/blocks/checkin/theme/draft",
+            "/api/live-display/settings/blocks/checkin/theme/draft",
             json={"theme": theme, "expected_draft_version": 1},
         )
 
@@ -391,7 +413,7 @@ class TestOverlayThemeManagement:
         client = _client(service)
 
         response = client.post(
-            f"/api/community-overlay/settings/blocks/checkin/theme/{path}",
+            f"/api/live-display/settings/blocks/checkin/theme/{path}",
             headers=_ACTION_HEADERS,
             json={"expected_draft_version": 1},
         )
@@ -403,7 +425,7 @@ class TestOverlayThemeManagement:
         service = _service()
         client = _client(service)
 
-        response = client.get("/api/community-overlay/settings/blocks/tarot/theme")
+        response = client.get("/api/live-display/settings/blocks/fortune/theme")
 
         assert response.status_code == 404
         service.get_theme_state.assert_not_awaited()

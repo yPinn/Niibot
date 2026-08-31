@@ -15,9 +15,18 @@ vi.mock('@/api/communityOverlay', () => ({
     surface_color: '#FFF7CF',
     accent_color: '#EF4D88',
     text_color: '#241B34',
-    placement: 'bottom-right',
+    placement: 'bottom-left',
     radius_px: 24,
-    display_ms: 5500,
+    display_ms: 4000,
+    motion: 'standard',
+  },
+  DEFAULT_TAROT_OVERLAY_THEME: {
+    surface_color: '#FFF7CF',
+    accent_color: '#EF4D88',
+    text_color: '#241B34',
+    placement: 'bottom-left',
+    radius_px: 16,
+    display_ms: 5000,
     motion: 'standard',
   },
   getCommunityOverlayFeed: vi.fn(),
@@ -39,9 +48,36 @@ function event(id: number, totalDays = 8, actor = 'Alice') {
   }
 }
 
+function tarotEvent(id: number, actor = 'Alice') {
+  return {
+    id,
+    event_type: 'tarot.drawn' as const,
+    schema_version: 1,
+    source: 'twitch',
+    actor_display_name: actor,
+    payload: {
+      card_id: '0',
+      card_name: '愚者',
+      card_name_en: 'The Fool',
+      orientation: 'upright',
+      orientation_label: '正位',
+      category: 'general',
+      category_label: '綜合',
+      keywords: ['新開始', '冒險', '自由'],
+      meaning: '進入全新階段，無限可能展開。',
+      advice: '保持開放心態。',
+      image_path: '/images/tarot/decks/rider-waite-smith-pkt/v1/cards/major-00-the-fool.jpg',
+      deck_id: 'rider-waite-smith-pkt',
+      deck_version: 1,
+    },
+    occurred_at: '2026-08-31T10:00:00Z',
+    expires_at: '2026-08-31T10:10:00Z',
+  }
+}
+
 function renderOverlay(query: string) {
   return render(
-    <MemoryRouter initialEntries={[`/community-overlay${query}`]}>
+    <MemoryRouter initialEntries={[`/live-display${query}`]}>
       <CommunityOverlay />
     </MemoryRouter>
   )
@@ -61,9 +97,7 @@ function SwitchingOverlay() {
     <>
       <button
         type="button"
-        onClick={() =>
-          navigate('/community-overlay#key=22222222-2222-4222-8222-222222222222&preview=1')
-        }
+        onClick={() => navigate('/live-display#key=22222222-2222-4222-8222-222222222222&preview=1')}
       >
         切換租戶
       </button>
@@ -148,6 +182,29 @@ describe('CommunityOverlay', () => {
     ).toHaveLength(1)
   })
 
+  it('renders a Tarot event from the same ordered feed with its own published theme', async () => {
+    vi.mocked(getCommunityOverlayTheme).mockImplementation(async (_key, blockType) => ({
+      revision_id: 42,
+      renderer: blockType === 'tarot' ? 'tarot-card' : 'checkin-card',
+      schema_version: 1,
+      theme: DEFAULT_COMMUNITY_OVERLAY_THEME,
+      created_at: '2026-08-31T10:05:00Z',
+    }))
+    vi.mocked(getCommunityOverlayFeed).mockResolvedValue({
+      cursor: 22,
+      events: [tarotEvent(22)],
+    })
+
+    renderOverlay(`#key=${KEY}&preview=1`)
+
+    expect(await screen.findByLabelText('Alice 的每日塔羅：愚者正位')).toBeInTheDocument()
+    expect(getCommunityOverlayTheme).toHaveBeenCalledWith(KEY, 'tarot')
+    expect(screen.getByRole('img', { name: '愚者正位' })).toHaveAttribute(
+      'src',
+      tarotEvent(22).payload.image_path
+    )
+  })
+
   it('polls from the handshake cursor and renders a new event', async () => {
     vi.mocked(getCommunityOverlayFeed)
       .mockResolvedValueOnce({ cursor: 10, events: [] })
@@ -200,7 +257,9 @@ describe('CommunityOverlay', () => {
         await vi.advanceTimersByTimeAsync(5_000)
       })
 
-      expect(getCommunityOverlayTheme).toHaveBeenCalledTimes(2)
+      expect(getCommunityOverlayTheme).toHaveBeenCalledTimes(4)
+      expect(getCommunityOverlayTheme).toHaveBeenCalledWith(KEY, 'checkin')
+      expect(getCommunityOverlayTheme).toHaveBeenCalledWith(KEY, 'tarot')
       expect(document.querySelector('main')).toHaveAttribute('data-placement', 'top-left')
     } finally {
       vi.useRealTimers()
@@ -215,7 +274,7 @@ describe('CommunityOverlay', () => {
     })
 
     render(
-      <MemoryRouter initialEntries={[`/community-overlay#key=${KEY}&preview=1`]}>
+      <MemoryRouter initialEntries={[`/live-display#key=${KEY}&preview=1`]}>
         <SwitchingOverlay />
       </MemoryRouter>
     )

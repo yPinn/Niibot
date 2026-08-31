@@ -18,7 +18,7 @@ from shared.errors import NotFoundError
 from shared.models.attendance import CommunityOverlayThemePublished, CommunityOverlayThemeState
 from shared.services.community_overlay import CommunityOverlayService
 
-router = APIRouter(prefix="/api/community-overlay", tags=["community-overlay"])
+router = APIRouter(prefix="/api/live-display", tags=["live-display"])
 _feed_limiter = RateLimiter(max_calls=240, period=60.0)
 _public_theme_limiter = RateLimiter(max_calls=120, period=60.0)
 _public_ip_limiter = RateLimiter(max_calls=600, period=60.0)
@@ -60,11 +60,11 @@ class OverlayAccessUpdate(BaseModel):
 class OverlayPreviewRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
-    content_type: Literal["checkin"]
+    content_type: Literal["checkin", "tarot"]
 
 
 class OverlayPreviewResponse(BaseModel):
-    content_type: Literal["checkin"]
+    content_type: Literal["checkin", "tarot"]
     event_id: int
 
 
@@ -210,7 +210,7 @@ async def update_overlay_access(
 @router.post("/settings/rotate-key", response_model=OverlayAccessResponse)
 async def rotate_overlay_key(
     response: Response,
-    _action: Literal["community-overlay"] = Header(alias="X-Niibot-Action"),
+    _action: Literal["live-display"] = Header(alias="X-Niibot-Action"),
     ctx: TenantContext = Depends(require_self_tenant_access),
     service: CommunityOverlayService = Depends(get_community_overlay_service),
 ) -> OverlayAccessResponse:
@@ -223,7 +223,7 @@ async def rotate_overlay_key(
 async def publish_overlay_preview(
     body: OverlayPreviewRequest,
     response: Response,
-    _action: Literal["community-overlay"] = Header(alias="X-Niibot-Action"),
+    _action: Literal["live-display"] = Header(alias="X-Niibot-Action"),
     ctx: TenantContext = Depends(require_self_tenant_access),
     service: CommunityOverlayService = Depends(get_community_overlay_service),
 ) -> OverlayPreviewResponse:
@@ -287,7 +287,7 @@ async def update_overlay_theme_draft(
 async def publish_overlay_theme(
     block_type: str,
     body: OverlayThemeActionRequest,
-    _action: Literal["community-overlay"] = Header(alias="X-Niibot-Action"),
+    _action: Literal["live-display"] = Header(alias="X-Niibot-Action"),
     ctx: TenantContext = Depends(require_self_tenant_access),
     service: CommunityOverlayService = Depends(get_community_overlay_service),
 ) -> OverlayThemeStateResponse:
@@ -304,7 +304,7 @@ async def publish_overlay_theme(
 async def reset_overlay_theme_draft(
     block_type: str,
     body: OverlayThemeActionRequest,
-    _action: Literal["community-overlay"] = Header(alias="X-Niibot-Action"),
+    _action: Literal["live-display"] = Header(alias="X-Niibot-Action"),
     ctx: TenantContext = Depends(require_self_tenant_access),
     service: CommunityOverlayService = Depends(get_community_overlay_service),
 ) -> OverlayThemeStateResponse:

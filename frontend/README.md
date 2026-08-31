@@ -47,18 +47,19 @@ VITE_ENVIRONMENT=                   # 部署環境：production 鎖定 WIP 頁�
 
 ## 指令
 
-| 指令                   | 說明                                       |
-| ---------------------- | ------------------------------------------ |
-| `npm run build`        | 打包正式版本（先跑 fa:subset，含型別檢查） |
-| `npm run fa:subset`    | 重建 Font Awesome 子集 CSS                 |
-| `npm run preview`      | 本機預覽打包結果                           |
-| `npm run lint`         | 掃描程式碼問題                             |
-| `npm run lint:fix`     | 自動修正程式碼問題                         |
-| `npm run format`       | 修正排版格式                               |
-| `npm run format:check` | 只檢查格式，不修改（CI 用）                |
-| `npm run typecheck`    | 只執行型別檢查，不打包                     |
-| `npm run test`         | 執行測試（存檔自動重跑）                   |
-| `npm run test:cov`     | 測試＋覆蓋率報告（目標 80%+）              |
+| 指令                         | 說明                                                        |
+| ---------------------------- | ----------------------------------------------------------- |
+| `npm run build`              | 打包正式版本（先驗證 Tarot 資產、跑 fa:subset，含型別檢查） |
+| `npm run assets:tarot:check` | 驗證 78 張本地牌圖、命名與 SHA-256 版本鎖                   |
+| `npm run fa:subset`          | 重建 Font Awesome 子集 CSS                                  |
+| `npm run preview`            | 本機預覽打包結果                                            |
+| `npm run lint`               | 掃描程式碼問題                                              |
+| `npm run lint:fix`           | 自動修正程式碼問題                                          |
+| `npm run format`             | 修正排版格式                                                |
+| `npm run format:check`       | 只檢查格式，不修改（CI 用）                                 |
+| `npm run typecheck`          | 只執行型別檢查，不打包                                      |
+| `npm run test`               | 執行測試（存檔自動重跑）                                    |
+| `npm run test:cov`           | 測試＋覆蓋率報告（目標 80%+）                               |
 
 ## 結構
 
@@ -114,6 +115,7 @@ functions/          # CF Pages Functions — /api/*、/health、/status 反向�
   /donate/:username              DonatePage
   /:username/game-queue/overlay  GameQueueOverlay（OBS browser source）
   /:username/video-queue/overlay VideoQueueOverlay（OBS browser source）
+  /live-display                 CommunityOverlay（Live Display OBS browser source）
   /activate                      ActivatePage（啟用碼）
   /support                       Support（贊助頁）
   /login                         LoginPage（PublicOnlyRoute，已登入者重導）
@@ -129,6 +131,7 @@ ProtectedRoute → SidebarLayout（需登入）
   /timers                        Timers
   /modules/game-queue            GameQueue（遊戲排隊管理）
   /modules/video-queue           VideoQueue（YouTube 點播管理）
+  /modules/live-display          Live Display（簽到／Tarot 卡片、樣式與 OBS 設定）
   /modules/crosshairs            CrosshairModule（準星管理）
   /modules/ai                    AIModule（AI 助手設定）
   /discord                       DiscordDashboard

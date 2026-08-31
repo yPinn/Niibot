@@ -70,7 +70,7 @@ export const navigationData: NavigationData = {
         },
         {
           title: 'Live Display',
-          url: '/modules/community-overlay',
+          url: '/modules/live-display',
         },
       ],
     },

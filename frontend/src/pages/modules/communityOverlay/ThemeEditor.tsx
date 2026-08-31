@@ -1,13 +1,37 @@
-import type { CommunityOverlayPlacement, CommunityOverlayTheme } from '@/api/communityOverlay'
+import type {
+  CommunityOverlayContentType,
+  CommunityOverlayPlacement,
+  CommunityOverlayTheme,
+} from '@/api/communityOverlay'
 import { CheckinCard } from '@/components/community-overlay/CheckinCard'
+import { TarotCard } from '@/components/community-overlay/TarotCard'
 import { Icon, Spinner } from '@/components/primitives'
 import { Button, Input } from '@/components/ui'
 
-const SAMPLE_EVENT = {
+const SAMPLE_CHECKIN_EVENT = {
   actor_display_name: 'NiibotFan',
   payload: {
     total_days: 8,
     checkin_date: '2026-08-31',
+  },
+}
+
+const SAMPLE_TAROT_EVENT = {
+  actor_display_name: 'NiibotFan',
+  payload: {
+    card_id: '0',
+    card_name: '愚者',
+    card_name_en: 'The Fool',
+    orientation: 'upright' as const,
+    orientation_label: '正位',
+    category: 'general',
+    category_label: '綜合',
+    keywords: ['新開始', '冒險', '自由'],
+    meaning: '進入全新階段，無限可能正在展開。',
+    advice: '保持開放心態，先踏出真誠的一步。',
+    image_path: '/images/tarot/decks/rider-waite-smith-pkt/v1/cards/major-00-the-fool.jpg',
+    deck_id: 'rider-waite-smith-pkt',
+    deck_version: 1,
   },
 }
 
@@ -39,6 +63,11 @@ const PREVIEW_ORIGIN: Record<CommunityOverlayPlacement, string> = {
 }
 
 const HEX_COLOR = /^#[0-9A-Fa-f]{6}$/
+
+function formatDisplaySeconds(displayMs: number) {
+  const seconds = displayMs / 1000
+  return Number.isInteger(seconds) ? String(seconds) : seconds.toFixed(1)
+}
 
 function luminance(hex: string): number | null {
   if (!HEX_COLOR.test(hex)) return null
@@ -110,6 +139,7 @@ function ColorControl({
 }
 
 interface ThemeEditorProps {
+  contentType: CommunityOverlayContentType
   theme: CommunityOverlayTheme
   localDirty: boolean
   hasUnpublishedChanges: boolean
@@ -124,6 +154,7 @@ interface ThemeEditorProps {
 }
 
 export function ThemeEditor({
+  contentType,
   theme,
   localDirty,
   hasUnpublishedChanges,
@@ -193,12 +224,21 @@ export function ThemeEditor({
             <div
               className={`${PREVIEW_ORIGIN[theme.placement]} scale-[0.68] sm:scale-[0.78] lg:scale-[0.84] 2xl:scale-100`}
             >
-              <CheckinCard
-                key={theme.motion}
-                event={SAMPLE_EVENT}
-                theme={theme}
-                previewLabel="草稿預覽"
-              />
+              {contentType === 'checkin' ? (
+                <CheckinCard
+                  key={theme.motion}
+                  event={SAMPLE_CHECKIN_EVENT}
+                  theme={theme}
+                  previewLabel="草稿預覽"
+                />
+              ) : (
+                <TarotCard
+                  key={theme.motion}
+                  event={SAMPLE_TAROT_EVENT}
+                  theme={theme}
+                  previewLabel="草稿預覽"
+                />
+              )}
             </div>
           </div>
         ) : (
@@ -213,7 +253,7 @@ export function ThemeEditor({
             {previewUrl && (
               <iframe
                 src={previewUrl}
-                title="每日簽到實際播放"
+                title={`${contentType === 'checkin' ? '每日簽到' : '每日塔羅'}實際播放`}
                 referrerPolicy="no-referrer"
                 className="absolute inset-0 block h-full w-full"
               />
@@ -223,7 +263,9 @@ export function ThemeEditor({
         <p className="mt-2 text-label text-muted-foreground">
           {previewMode === 'draft'
             ? '修改會先顯示在這裡，儲存並發布後才影響 OBS。'
-            : '測試只播放動畫，不會執行簽到或增加累積天數。'}
+            : contentType === 'checkin'
+              ? '測試只播放動畫，不會執行簽到或增加累積天數。'
+              : '測試只播放動畫，不會產生或覆寫觀眾的每日抽牌紀錄。'}
         </p>
       </div>
 
@@ -285,12 +327,16 @@ export function ThemeEditor({
               </Button>
             ))}
           </div>
+          <p className="mt-2 text-label text-muted-foreground">
+            預設左下，通常可避開右下角的實況視訊。
+          </p>
         </fieldset>
 
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
           <label className="grid gap-2 text-label font-semibold">
             <span className="flex justify-between gap-3">
-              卡片圓角 <output>{theme.radius_px}px</output>
+              {contentType === 'tarot' ? '牌框圓角' : '卡片圓角'}{' '}
+              <output>{theme.radius_px}px</output>
             </span>
             <input
               type="range"
@@ -306,7 +352,7 @@ export function ThemeEditor({
           </label>
           <label className="grid gap-2 text-label font-semibold">
             <span className="flex justify-between gap-3">
-              顯示時間 <output>{(theme.display_ms / 1000).toFixed(1)} 秒</output>
+              顯示時間 <output>{formatDisplaySeconds(theme.display_ms)} 秒</output>
             </span>
             <input
               type="range"

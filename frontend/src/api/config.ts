@@ -141,21 +141,19 @@ export const API_ENDPOINTS = {
     addEntry: join('/api/video-queue/entries'),
   },
   communityOverlay: {
-    events: join('/api/community-overlay/public/events'),
-    theme: join('/api/community-overlay/public/theme'),
-    settings: join('/api/community-overlay/settings'),
-    rotateKey: join('/api/community-overlay/settings/rotate-key'),
-    preview: join('/api/community-overlay/settings/preview'),
+    events: join('/api/live-display/public/events'),
+    theme: join('/api/live-display/public/theme'),
+    settings: join('/api/live-display/settings'),
+    rotateKey: join('/api/live-display/settings/rotate-key'),
+    preview: join('/api/live-display/settings/preview'),
     themeSettings: (blockType: string) =>
-      join(`/api/community-overlay/settings/blocks/${encodeURIComponent(blockType)}/theme`),
+      join(`/api/live-display/settings/blocks/${encodeURIComponent(blockType)}/theme`),
     themeDraft: (blockType: string) =>
-      join(`/api/community-overlay/settings/blocks/${encodeURIComponent(blockType)}/theme/draft`),
+      join(`/api/live-display/settings/blocks/${encodeURIComponent(blockType)}/theme/draft`),
     themePublish: (blockType: string) =>
-      join(`/api/community-overlay/settings/blocks/${encodeURIComponent(blockType)}/theme/publish`),
+      join(`/api/live-display/settings/blocks/${encodeURIComponent(blockType)}/theme/publish`),
     themeResetDraft: (blockType: string) =>
-      join(
-        `/api/community-overlay/settings/blocks/${encodeURIComponent(blockType)}/theme/reset-draft`
-      ),
+      join(`/api/live-display/settings/blocks/${encodeURIComponent(blockType)}/theme/reset-draft`),
   },
   timers: {
     configs: join('/api/timers/configs'),

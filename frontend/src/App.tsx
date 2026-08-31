@@ -92,7 +92,7 @@ function App() {
                       }
                     />
                     <Route
-                      path="/community-overlay"
+                      path="/live-display"
                       element={
                         <Suspense fallback={null}>
                           <CommunityOverlay />
@@ -107,7 +107,7 @@ function App() {
                     )}
                     {import.meta.env.DEV && (
                       <Route
-                        path="/dev/community-overlay"
+                        path="/dev/live-display"
                         element={<CommunityOverlaySettings preview />}
                       />
                     )}
@@ -131,7 +131,7 @@ function App() {
                         <Route path="/modules/game-queue" element={<GameQueue />} />
                         <Route path="/modules/video-queue" element={<VideoQueue />} />
                         <Route
-                          path="/modules/community-overlay"
+                          path="/modules/live-display"
                           element={<CommunityOverlaySettings />}
                         />
                         <Route path="/modules/crosshairs" element={<CrosshairModule />} />

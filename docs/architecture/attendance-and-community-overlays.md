@@ -84,6 +84,13 @@ Live Display 樣式以 `(channel_id, block_type)` 隔離。後台編輯的是該
 目前 `checkin` block 的 schema v1 固定 renderer 為 `checkin-card`，只允許三個色票、四角位置、圓角、顯示秒數與動態強度；
 server 與 client 都不接受任意 HTML、CSS 或 JavaScript。圖片資產與整包匯入／匯出留待後續版本，
 屆時需先定義媒體儲存、掃描、配額與相容性契約，不能把外部 URL 或自訂程式碼直接塞入 theme JSON。
+新 block 預設放在左下角，避開直播常見的右下視訊區；頻道仍可在四角位置中自行調整。一般 Live Display
+預設顯示 4 秒；`tarot` block 預設顯示 5 秒、牌框圓角 16px。約 2.2 秒的揭牌動畫包含在顯示時間內，
+完成後仍保留約 2.8 秒辨識牌面，同時避免連續事件在播放佇列累積過久。
+
+每日塔羅以 Twitch 使用者、UTC 日期與正規化主題組成 deterministic slot。未填主題使用綜合；綜合、感情、
+事業與財運各自保存當天穩定結果，因此重複查詢同一主題不會重抽，不同主題則可得到不同牌面與對應牌義。
+未知主題會回覆可用選項，不會靜默套用綜合。
 
 ## 交付順序
 
@@ -118,15 +125,15 @@ server 與 client 都不接受任意 HTML、CSS 或 JavaScript。圖片資產與
   `Live Display` 只呈現顯示內容、各 block 外觀、測試與 OBS 連結；簽到入口細節仍導向 `/channel-points`。
 - 模板只允許 `$(@user)`、`$(user)`、`$(count)`、`$(date)`，renderer 不解譯 HTML、CSS、JS
   或通用 command substitution。
-- OBS route 為 `/community-overlay#key=<uuid>`；capability 留在 URL fragment，不進入瀏覽器／CDN request log，
+- OBS route 為 `/live-display#key=<uuid>`；capability 留在 URL fragment，不進入瀏覽器／CDN request log，
   前端以 `X-Overlay-Key` header 呼叫公開 API。正常啟動先取得 latest cursor、不重播歷史，之後每秒讀取
   增量 event，以 FIFO 播放 7 格循環集點卡；每 5 秒檢查 published revision，發布後不必重載 OBS。
-- Dashboard 的 `Live Display` 頁位於相容路由 `/modules/community-overlay`，依「顯示內容、卡片樣式、
+- Dashboard 的 `Live Display` 頁位於 `/modules/live-display`，依「顯示內容、卡片樣式、
   預覽與測試、加入直播畫面」排序；每個 block 都提供不執行正式功能流程的測試動畫。頁面可啟停 feed、
   複製／輪替 capability URL、編輯／預覽／發布該 block 的頻道樣式；設定 mutation
   分別使用操作鎖，避免重複提交或舊 response 覆蓋新狀態。
-- `/community-overlay#key=<uuid>&preview=1` 會從 cursor 0 讀取仍未過期事件，只供設定預覽／開發驗證。
-- Vite development 另提供 `/dev/community-overlay` 隔離頁面預覽；production bundle 不包含此路由，
+- `/live-display#key=<uuid>&preview=1` 會從 cursor 0 讀取仍未過期事件，只供設定預覽／開發驗證。
+- Vite development 另提供 `/dev/live-display` 隔離頁面預覽；production bundle 不包含此路由，
   正式 Dashboard 頁仍需登入並只存取目前租戶設定。
 - `!ovltest [1-9999]` 僅在 `ENVIRONMENT=development` 且 chatter 就是該頻道 broadcaster 時生效；
   它只寫一筆 10 分鐘的 `system` preview event，不寫 `viewer_checkins`、不增加正式 count。

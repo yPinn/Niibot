@@ -7,7 +7,7 @@ CREATE TABLE community_overlay_profiles (
                           CHECK (renderer = 'checkin-card'),
     schema_version        SMALLINT NOT NULL DEFAULT 1 CHECK (schema_version = 1),
     draft_theme           JSONB NOT NULL
-                          DEFAULT '{"surface_color":"#FFF7CF","accent_color":"#EF4D88","text_color":"#241B34","placement":"bottom-right","radius_px":24,"display_ms":5500,"motion":"standard"}'::JSONB
+                          DEFAULT '{"surface_color":"#FFF7CF","accent_color":"#EF4D88","text_color":"#241B34","placement":"bottom-left","radius_px":24,"display_ms":4000,"motion":"standard"}'::JSONB
                           CHECK (jsonb_typeof(draft_theme) = 'object'),
     published_revision_id BIGINT,
     created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),

@@ -41,10 +41,16 @@ export const DEFAULT_COMMUNITY_OVERLAY_THEME: CommunityOverlayTheme = {
   surface_color: '#FFF7CF',
   accent_color: '#EF4D88',
   text_color: '#241B34',
-  placement: 'bottom-right',
+  placement: 'bottom-left',
   radius_px: 24,
-  display_ms: 5_500,
+  display_ms: 4_000,
   motion: 'standard',
+}
+
+export const DEFAULT_TAROT_OVERLAY_THEME: CommunityOverlayTheme = {
+  ...DEFAULT_COMMUNITY_OVERLAY_THEME,
+  radius_px: 16,
+  display_ms: 5_000,
 }
 
 export interface CommunityOverlayPublishedTheme<TTheme = CommunityOverlayTheme> {
@@ -66,7 +72,7 @@ export interface CommunityOverlayThemeState<TTheme = CommunityOverlayTheme> {
   updated_at: string
 }
 
-export type CommunityOverlayContentType = 'checkin'
+export type CommunityOverlayContentType = 'checkin' | 'tarot'
 
 export interface CommunityOverlayPreviewResult {
   content_type: CommunityOverlayContentType
@@ -74,7 +80,7 @@ export interface CommunityOverlayPreviewResult {
 }
 
 const authed = { credentials: 'include' } as const
-const actionHeaders = { 'X-Niibot-Action': 'community-overlay' } as const
+const actionHeaders = { 'X-Niibot-Action': 'live-display' } as const
 
 export async function getCommunityOverlayFeed(
   publicKey: string,

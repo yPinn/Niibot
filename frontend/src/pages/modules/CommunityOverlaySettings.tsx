@@ -7,6 +7,7 @@ import {
   type CommunityOverlayTheme,
   type CommunityOverlayThemeState,
   DEFAULT_COMMUNITY_OVERLAY_THEME,
+  DEFAULT_TAROT_OVERLAY_THEME,
   getCommunityOverlaySettings,
   getCommunityOverlayThemeSettings,
   publishCommunityOverlayTheme,
@@ -59,7 +60,10 @@ import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { toastApiError } from '@/lib/toast-error'
 
 import { CheckinBlockCard } from './communityOverlay/CheckinBlockCard'
+import { TarotBlockCard } from './communityOverlay/TarotBlockCard'
 import { ThemeEditor } from './communityOverlay/ThemeEditor'
+
+const CONTENT_TYPES: CommunityOverlayContentType[] = ['checkin', 'tarot']
 
 function SettingsSkeleton() {
   return (
@@ -93,6 +97,18 @@ const DEV_PREVIEW_THEME_STATE: CommunityOverlayThemeState = {
   },
   has_unpublished_changes: false,
   updated_at: '2026-08-31T00:00:00Z',
+}
+
+const DEV_PREVIEW_TAROT_THEME_STATE: CommunityOverlayThemeState = {
+  ...DEV_PREVIEW_THEME_STATE,
+  block_type: 'tarot',
+  renderer: 'tarot-card',
+  draft: DEFAULT_TAROT_OVERLAY_THEME,
+  published: {
+    ...DEV_PREVIEW_THEME_STATE.published,
+    renderer: 'tarot-card',
+    theme: DEFAULT_TAROT_OVERLAY_THEME,
+  },
 }
 
 const DEV_PREVIEW_CHECKIN_CONFIG: RedemptionConfig = {
@@ -159,20 +175,33 @@ export default function CommunityOverlaySettings({
   const [access, setAccess] = useState<CommunityOverlayAccess | null>(
     preview ? DEV_PREVIEW_ACCESS : null
   )
-  const [themeState, setThemeState] = useState<CommunityOverlayThemeState | null>(
-    preview ? DEV_PREVIEW_THEME_STATE : null
-  )
-  const [draftTheme, setDraftTheme] = useState<CommunityOverlayTheme>(DEV_PREVIEW_THEME_STATE.draft)
+  const [themeStates, setThemeStates] = useState<
+    Record<CommunityOverlayContentType, CommunityOverlayThemeState | null>
+  >({
+    checkin: preview ? DEV_PREVIEW_THEME_STATE : null,
+    tarot: preview ? DEV_PREVIEW_TAROT_THEME_STATE : null,
+  })
+  const [draftThemes, setDraftThemes] = useState<
+    Record<CommunityOverlayContentType, CommunityOverlayTheme>
+  >({
+    checkin: DEV_PREVIEW_THEME_STATE.draft,
+    tarot: DEV_PREVIEW_TAROT_THEME_STATE.draft,
+  })
   const [loading, setLoading] = useState(!preview)
   const [loadFailed, setLoadFailed] = useState(false)
   const [mutation, setMutation] = useState<'enabled' | 'key' | null>(null)
   const mutationLocked = useRef(false)
-  const [themeMutation, setThemeMutation] = useState<'save' | 'publish' | 'reset' | null>(null)
+  const [themeMutation, setThemeMutation] = useState<{
+    blockType: CommunityOverlayContentType
+    action: 'save' | 'publish' | 'reset'
+  } | null>(null)
   const themeMutationLocked = useRef(false)
-  const [previewMutation, setPreviewMutation] = useState(false)
+  const [previewMutation, setPreviewMutation] = useState<CommunityOverlayContentType | null>(null)
   const previewMutationLocked = useRef(false)
   const [expandedBlock, setExpandedBlock] = useState<CommunityOverlayContentType | null>('checkin')
-  const [previewMode, setPreviewMode] = useState<'draft' | 'live'>('draft')
+  const [previewModes, setPreviewModes] = useState<
+    Record<CommunityOverlayContentType, 'draft' | 'live'>
+  >({ checkin: 'draft', tarot: 'draft' })
   const [connectionOpen, setConnectionOpen] = useState(false)
   const [checkinConfig, setCheckinConfig] = useState<RedemptionConfig | null>(
     preview ? DEV_PREVIEW_CHECKIN_CONFIG : null
@@ -188,13 +217,14 @@ export default function CommunityOverlaySettings({
     setLoading(true)
     setLoadFailed(false)
     try {
-      const [nextAccess, nextTheme] = await Promise.all([
+      const [nextAccess, checkinTheme, tarotTheme] = await Promise.all([
         getCommunityOverlaySettings(),
         getCommunityOverlayThemeSettings('checkin'),
+        getCommunityOverlayThemeSettings('tarot'),
       ])
       setAccess(nextAccess)
-      setThemeState(nextTheme)
-      setDraftTheme(nextTheme.draft)
+      setThemeStates({ checkin: checkinTheme, tarot: tarotTheme })
+      setDraftThemes({ checkin: checkinTheme.draft, tarot: tarotTheme.draft })
     } catch (error) {
       setLoadFailed(true)
       toastApiError(error, 'Live Display 載入失敗')
@@ -208,12 +238,16 @@ export default function CommunityOverlaySettings({
 
     let active = true
 
-    void Promise.all([getCommunityOverlaySettings(), getCommunityOverlayThemeSettings('checkin')])
-      .then(([settings, theme]) => {
+    void Promise.all([
+      getCommunityOverlaySettings(),
+      getCommunityOverlayThemeSettings('checkin'),
+      getCommunityOverlayThemeSettings('tarot'),
+    ])
+      .then(([settings, checkinTheme, tarotTheme]) => {
         if (!active) return
         setAccess(settings)
-        setThemeState(theme)
-        setDraftTheme(theme.draft)
+        setThemeStates({ checkin: checkinTheme, tarot: tarotTheme })
+        setDraftThemes({ checkin: checkinTheme.draft, tarot: tarotTheme.draft })
       })
       .catch(error => {
         if (!active) return
@@ -269,18 +303,11 @@ export default function CommunityOverlaySettings({
   const overlayUrl = useMemo(
     () =>
       access
-        ? `${window.location.origin}/community-overlay#key=${encodeURIComponent(access.public_key)}`
+        ? `${window.location.origin}/live-display#key=${encodeURIComponent(access.public_key)}`
         : undefined,
     [access]
   )
   const previewUrl = overlayUrl ? `${overlayUrl}&preview=1` : undefined
-  const localThemeDirty = themeState ? !themesEqual(draftTheme, themeState.draft) : false
-  const themeStatus = localThemeDirty
-    ? '尚未儲存'
-    : themeState?.has_unpublished_changes
-      ? '草稿未發布'
-      : '已發布'
-
   const handleEnabledChange = async (enabled: boolean) => {
     if (!access || mutationLocked.current) return
     mutationLocked.current = true
@@ -322,27 +349,35 @@ export default function CommunityOverlaySettings({
     }
   }
 
-  const applyThemeState = (next: CommunityOverlayThemeState) => {
-    setThemeState(next)
-    setDraftTheme(next.draft)
+  const applyThemeState = (
+    blockType: CommunityOverlayContentType,
+    next: CommunityOverlayThemeState
+  ) => {
+    setThemeStates(current => ({ ...current, [blockType]: next }))
+    setDraftThemes(current => ({ ...current, [blockType]: next.draft }))
   }
 
-  const refreshThemeAfterConflict = async (error: unknown) => {
+  const refreshThemeAfterConflict = async (
+    blockType: CommunityOverlayContentType,
+    error: unknown
+  ) => {
     if (!(error instanceof ApiError) || error.code !== 'COMMUNITY_OVERLAY.THEME_CONFLICT') return
     try {
-      applyThemeState(await getCommunityOverlayThemeSettings('checkin'))
+      applyThemeState(blockType, await getCommunityOverlayThemeSettings(blockType))
     } catch {
       // Keep the local draft visible if the conflict refresh also fails.
     }
   }
 
-  const handleSaveTheme = async () => {
+  const handleSaveTheme = async (blockType: CommunityOverlayContentType) => {
+    const themeState = themeStates[blockType]
+    const draftTheme = draftThemes[blockType]
     if (!themeState || themeMutationLocked.current) return
     themeMutationLocked.current = true
-    setThemeMutation('save')
+    setThemeMutation({ blockType, action: 'save' })
     try {
       if (preview) {
-        applyThemeState({
+        applyThemeState(blockType, {
           ...themeState,
           draft: draftTheme,
           draft_version: themeState.draft_version + 1,
@@ -350,47 +385,53 @@ export default function CommunityOverlaySettings({
         })
       } else {
         applyThemeState(
-          await updateCommunityOverlayThemeDraft('checkin', draftTheme, themeState.draft_version)
+          blockType,
+          await updateCommunityOverlayThemeDraft(blockType, draftTheme, themeState.draft_version)
         )
       }
       toast.success('Overlay 樣式草稿已儲存')
     } catch (error) {
       toastApiError(error, '儲存 Overlay 樣式草稿失敗')
-      await refreshThemeAfterConflict(error)
+      await refreshThemeAfterConflict(blockType, error)
     } finally {
       themeMutationLocked.current = false
       setThemeMutation(null)
     }
   }
 
-  const handlePublishTheme = async () => {
+  const handlePublishTheme = async (blockType: CommunityOverlayContentType) => {
+    const themeState = themeStates[blockType]
     if (!themeState || themeMutationLocked.current) return
     themeMutationLocked.current = true
-    setThemeMutation('publish')
+    setThemeMutation({ blockType, action: 'publish' })
     try {
       if (preview) {
-        applyThemeState({
+        applyThemeState(blockType, {
           ...themeState,
           published: { ...themeState.published, theme: themeState.draft },
           has_unpublished_changes: false,
         })
       } else {
-        applyThemeState(await publishCommunityOverlayTheme('checkin', themeState.draft_version))
+        applyThemeState(
+          blockType,
+          await publishCommunityOverlayTheme(blockType, themeState.draft_version)
+        )
       }
       toast.success('Overlay 樣式已發布至 OBS')
     } catch (error) {
       toastApiError(error, '發布 Overlay 樣式失敗')
-      await refreshThemeAfterConflict(error)
+      await refreshThemeAfterConflict(blockType, error)
     } finally {
       themeMutationLocked.current = false
       setThemeMutation(null)
     }
   }
 
-  const handleResetTheme = async () => {
+  const handleResetTheme = async (blockType: CommunityOverlayContentType) => {
+    const themeState = themeStates[blockType]
     if (!themeState || themeMutationLocked.current) return
     themeMutationLocked.current = true
-    setThemeMutation('reset')
+    setThemeMutation({ blockType, action: 'reset' })
     try {
       if (preview) {
         const next = {
@@ -399,44 +440,81 @@ export default function CommunityOverlaySettings({
           draft_version: themeState.draft_version + 1,
           has_unpublished_changes: false,
         }
-        applyThemeState(next)
+        applyThemeState(blockType, next)
       } else {
-        applyThemeState(await resetCommunityOverlayThemeDraft('checkin', themeState.draft_version))
+        applyThemeState(
+          blockType,
+          await resetCommunityOverlayThemeDraft(blockType, themeState.draft_version)
+        )
       }
       toast.success('草稿已還原為目前發布版本')
     } catch (error) {
       toastApiError(error, '還原 Overlay 樣式草稿失敗')
-      await refreshThemeAfterConflict(error)
+      await refreshThemeAfterConflict(blockType, error)
     } finally {
       themeMutationLocked.current = false
       setThemeMutation(null)
     }
   }
 
-  const handlePreview = async () => {
+  const handlePreview = async (blockType: CommunityOverlayContentType) => {
     if (previewMutationLocked.current) return
     previewMutationLocked.current = true
-    setPreviewMode('live')
-    setPreviewMutation(true)
+    setPreviewModes(current => ({ ...current, [blockType]: 'live' }))
+    setPreviewMutation(blockType)
     try {
-      if (!preview) await triggerCommunityOverlayPreview('checkin')
+      if (!preview) await triggerCommunityOverlayPreview(blockType)
       toast.success('測試動畫已送出')
     } catch (error) {
       toastApiError(error, '測試動畫送出失敗')
-      setPreviewMode('draft')
+      setPreviewModes(current => ({ ...current, [blockType]: 'draft' }))
     } finally {
       previewMutationLocked.current = false
-      setPreviewMutation(false)
+      setPreviewMutation(null)
     }
+  }
+
+  const getThemePresentation = (blockType: CommunityOverlayContentType) => {
+    const themeState = themeStates[blockType]
+    const localDirty = themeState ? !themesEqual(draftThemes[blockType], themeState.draft) : false
+    const status = localDirty
+      ? '尚未儲存'
+      : themeState?.has_unpublished_changes
+        ? '草稿未發布'
+        : '已發布'
+    return { themeState, localDirty, status }
+  }
+
+  const renderThemeEditor = (blockType: CommunityOverlayContentType) => {
+    const { themeState, localDirty } = getThemePresentation(blockType)
+    if (!themeState) return null
+    return (
+      <ThemeEditor
+        contentType={blockType}
+        theme={draftThemes[blockType]}
+        localDirty={localDirty}
+        hasUnpublishedChanges={themeState.has_unpublished_changes}
+        busy={themeMutation?.blockType === blockType ? themeMutation.action : null}
+        previewUrl={previewUrl}
+        previewMode={previewModes[blockType]}
+        onChange={next => setDraftThemes(current => ({ ...current, [blockType]: next }))}
+        onPreviewModeChange={mode =>
+          setPreviewModes(current => ({ ...current, [blockType]: mode }))
+        }
+        onSave={() => void handleSaveTheme(blockType)}
+        onPublish={() => void handlePublishTheme(blockType)}
+        onReset={() => void handleResetTheme(blockType)}
+      />
+    )
   }
 
   return (
     <PageMain className="w-full min-w-0">
-      <PageHeader title="Live Display" description="管理會顯示在直播畫面上的互動卡片。" />
+      <PageHeader title="Live Display" description="設定直播畫面要播放的內容與 OBS 連線。" />
 
       {loading ? (
         <SettingsSkeleton />
-      ) : loadFailed || !access || !themeState ? (
+      ) : loadFailed || !access || CONTENT_TYPES.some(type => !themeStates[type]) ? (
         <Alert variant="destructive">
           <Icon icon="fa-solid fa-circle-exclamation" />
           <AlertTitle>Live Display 載入失敗</AlertTitle>
@@ -456,37 +534,44 @@ export default function CommunityOverlaySettings({
             <SettingsSectionHeader
               id="live-display-content-title"
               title="顯示內容"
-              description="選擇要出現在直播畫面的內容；每項都能直接測試，不會增加正式紀錄。"
+              description="管理直播畫面要播放的內容；每項都能直接測試，不會寫入正式紀錄。"
             />
             <SlideUp>
-              <CheckinBlockCard
-                config={checkinConfig}
-                rewards={twitchRewards}
-                loading={checkinLoading}
-                loadFailed={checkinLoadFailed}
-                isAffiliate={isAffiliate}
-                testing={previewMutation}
-                open={expandedBlock === 'checkin'}
-                themeStatus={themeStatus}
-                themeChanged={localThemeDirty || themeState.has_unpublished_changes}
-                onOpenChange={open => setExpandedBlock(open ? 'checkin' : null)}
-                onRetry={() => void loadCheckinTrigger()}
-                onTest={() => void handlePreview()}
-              >
-                <ThemeEditor
-                  theme={draftTheme}
-                  localDirty={localThemeDirty}
-                  hasUnpublishedChanges={themeState.has_unpublished_changes}
-                  busy={themeMutation}
-                  previewUrl={previewUrl}
-                  previewMode={previewMode}
-                  onChange={setDraftTheme}
-                  onPreviewModeChange={setPreviewMode}
-                  onSave={() => void handleSaveTheme()}
-                  onPublish={() => void handlePublishTheme()}
-                  onReset={() => void handleResetTheme()}
-                />
-              </CheckinBlockCard>
+              <div className="flex min-w-0 flex-col gap-3">
+                <CheckinBlockCard
+                  config={checkinConfig}
+                  rewards={twitchRewards}
+                  loading={checkinLoading}
+                  loadFailed={checkinLoadFailed}
+                  isAffiliate={isAffiliate}
+                  testing={previewMutation === 'checkin'}
+                  open={expandedBlock === 'checkin'}
+                  themeStatus={getThemePresentation('checkin').status}
+                  themeChanged={
+                    getThemePresentation('checkin').localDirty ||
+                    Boolean(themeStates.checkin?.has_unpublished_changes)
+                  }
+                  onOpenChange={open => setExpandedBlock(open ? 'checkin' : null)}
+                  onRetry={() => void loadCheckinTrigger()}
+                  onTest={() => void handlePreview('checkin')}
+                >
+                  {renderThemeEditor('checkin')}
+                </CheckinBlockCard>
+
+                <TarotBlockCard
+                  testing={previewMutation === 'tarot'}
+                  open={expandedBlock === 'tarot'}
+                  themeStatus={getThemePresentation('tarot').status}
+                  themeChanged={
+                    getThemePresentation('tarot').localDirty ||
+                    Boolean(themeStates.tarot?.has_unpublished_changes)
+                  }
+                  onOpenChange={open => setExpandedBlock(open ? 'tarot' : null)}
+                  onTest={() => void handlePreview('tarot')}
+                >
+                  {renderThemeEditor('tarot')}
+                </TarotBlockCard>
+              </div>
             </SlideUp>
           </section>
 

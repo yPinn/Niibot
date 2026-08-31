@@ -20,8 +20,31 @@ CHECKIN_RECORDED = CommunityEventSpec(
     required_payload=frozenset({"total_days", "checkin_date"}),
 )
 
+TAROT_DRAWN = CommunityEventSpec(
+    event_type="tarot.drawn",
+    schema_version=1,
+    required_payload=frozenset(
+        {
+            "card_id",
+            "card_name",
+            "card_name_en",
+            "orientation",
+            "orientation_label",
+            "category",
+            "category_label",
+            "keywords",
+            "meaning",
+            "advice",
+            "image_path",
+            "deck_id",
+            "deck_version",
+        }
+    ),
+)
+
 COMMUNITY_EVENT_CATALOG = {
-    (CHECKIN_RECORDED.event_type, CHECKIN_RECORDED.schema_version): CHECKIN_RECORDED
+    (CHECKIN_RECORDED.event_type, CHECKIN_RECORDED.schema_version): CHECKIN_RECORDED,
+    (TAROT_DRAWN.event_type, TAROT_DRAWN.schema_version): TAROT_DRAWN,
 }
 
 

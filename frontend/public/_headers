@@ -14,7 +14,13 @@ Permissions-Policy: camera=(), microphone=(), geolocation=()
 X-Content-Type-Options: nosniff
 X-Frame-Options: SAMEORIGIN
 
-/community-overlay
+/images/tarot/decks/*
+
+# Deck versions are immutable; changing artwork requires a new deck id or version directory.
+
+Cache-Control: public, max-age=31536000, immutable
+
+/live-display
 
 # Community Overlay carries its capability in the fragment so it never reaches request logs.
 

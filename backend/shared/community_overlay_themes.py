@@ -15,9 +15,9 @@ DEFAULT_OVERLAY_THEME: Final[dict[str, object]] = {
     "surface_color": "#FFF7CF",
     "accent_color": "#EF4D88",
     "text_color": "#241B34",
-    "placement": "bottom-right",
+    "placement": "bottom-left",
     "radius_px": 24,
-    "display_ms": 5_500,
+    "display_ms": 4_000,
     "motion": "standard",
 }
 

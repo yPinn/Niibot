@@ -22,7 +22,7 @@ FastAPI 服務（`backend/api/`）提供的路由前綴。開發環境互動式�
 | `/api/timers`                   | `timers_router`              | 定時訊息 CRUD                                                                      |
 | `/api/triggers`                 | `message_triggers_router`    | 關鍵字觸發 CRUD                                                                    |
 | `/api/crosshairs`               | `crosshairs_router`          | 準星管理、公開庫                                                                   |
-| `/api/community-overlay`        | `community_overlay_router`   | 公開 cursor event feed、租戶 Overlay key 啟用／輪替                                |
+| `/api/live-display`             | `community_overlay_router`   | 公開 cursor event feed、租戶 Live Display key 啟用／輪替                           |
 | `/api/ai`                       | `ai_settings_router`         | AI 助手設定（角色、enabled、cooldown、min_role、貼圖）                             |
 | `/api/donate`                   | `donation_router`            | 贊助結帳（ECPay／OPay／NewebPay／PayPal）、webhook                                 |
 | `/api/payment-configs`          | `payment_config_router`      | 金流平台設定                                                                       |
@@ -67,39 +67,41 @@ FastAPI 服務（`backend/api/`）提供的路由前綴。開發環境互動式�
 
 ## Community Overlay feed
 
-- `GET /api/community-overlay/public/events`：以 `X-Overlay-Key: <uuid>` 驗證；初次只回目前 `cursor`，不重播歷史。
-- `GET /api/community-overlay/public/events?after_id=<cursor>`：同樣以 header 驗證，依 id 回傳未過期事件。
-- `GET/PATCH /api/community-overlay/settings`：已啟用租戶讀取 key／啟停 feed。
-- `POST /api/community-overlay/settings/rotate-key`：輪替 capability key，舊 OBS URL 立即失效。
-- `GET /api/community-overlay/settings/theme`：取得目前租戶草稿與已發布 revision。
-- `PATCH /api/community-overlay/settings/theme/draft`：完整覆寫目前租戶草稿，不影響 OBS；body 需帶
+- `GET /api/live-display/public/events`：以 `X-Overlay-Key: <uuid>` 驗證；初次只回目前 `cursor`，不重播歷史。
+- `GET /api/live-display/public/events?after_id=<cursor>`：同樣以 header 驗證，依 id 回傳未過期事件。
+- `GET/PATCH /api/live-display/settings`：已啟用租戶讀取 key／啟停 feed。
+- `POST /api/live-display/settings/rotate-key`：輪替 capability key，舊 OBS URL 立即失效。
+- `GET /api/live-display/settings/blocks/<block_type>/theme`：取得目前租戶草稿與已發布 revision。
+- `PATCH /api/live-display/settings/blocks/<block_type>/theme/draft`：完整覆寫目前租戶草稿，不影響 OBS；body 需帶
   `expected_draft_version`。
-- `POST /api/community-overlay/settings/theme/publish`：body 需帶 `expected_draft_version`；發布草稿為不可變
+- `POST /api/live-display/settings/blocks/<block_type>/theme/publish`：body 需帶 `expected_draft_version`；發布草稿為不可變
   revision，內容未變時不重複建版。
-- `POST /api/community-overlay/settings/theme/reset-draft`：body 需帶 `expected_draft_version`，以已發布 revision
+- `POST /api/live-display/settings/blocks/<block_type>/theme/reset-draft`：body 需帶 `expected_draft_version`，以已發布 revision
   重設目前租戶草稿。
-- `GET /api/community-overlay/public/theme`：以 `X-Overlay-Key: <uuid>` 只回啟用中的已發布樣式。
+- `GET /api/live-display/public/theme`：以 `X-Overlay-Key: <uuid>` 只回啟用中的已發布樣式。
 
 OBS URL 將 public key 放在 fragment，瀏覽器不會把 fragment 傳到 server；公開 API 再以
 `X-Overlay-Key` header 驗證，避免 key 出現在 request path、query、history referrer 與一般 access log。
 Feed 與 theme 都不回傳 `channel_id` 或穩定的 actor user id、不接受 client 指定 tenant，且回應使用
 `Cache-Control: no-store`。公開端點同時套 IP-only 與 IP+capability 限流，隨機輪替 UUID 不能重開額度。
 私有 mutation 需使用 JSON request body（輪替 key 除外）並帶
-`X-Niibot-Action: community-overlay`；自訂 header 會觸發 CORS preflight，阻止一般 HTML form 跨站送出。
+`X-Niibot-Action: live-display`；自訂 header 會觸發 CORS preflight，阻止一般 HTML form 跨站送出。
 
 Theme schema v1 固定為 `checkin-card` allowlist：`surface_color`、`accent_color`、`text_color`、
 `placement`、`radius_px`、`display_ms`、`motion`。未知／缺漏欄位與型別轉換一律拒絕；目前不接受圖片、
 外部資源、HTML、CSS 或 JavaScript；文字色對背景／強調色皆需至少 4.5:1，強調色對背景需至少 3:1。
 草稿僅由同租戶私有端點讀寫，公開 renderer 永遠只讀已發布版本。
+新 profile 的共用預設位置為 `bottom-left`、顯示時間為 4000ms；Tarot 使用相同 schema，但 block 預設另設為
+16px 圓角與 5000ms 顯示時間。時間從事件開始播放時計算；四角位置與其他 allowlisted 欄位仍可由頻道草稿調整後發布。
 
-前端 OBS source 使用 `/community-overlay#key=<uuid>`，初次 handshake 不重播；只有 fragment 明確加入
+前端 OBS source 使用 `/live-display#key=<uuid>`，初次 handshake 不重播；只有 fragment 明確加入
 `preview=1` 才會以 `after_id=0` 讀取仍未過期事件。renderer 每 5 秒檢查 published revision，並在
 capability／preview 改變時清除 cursor、去重集合、播放佇列與 theme，舊請求不得跨租戶落地。
 開發環境可由 broadcaster 在聊天室輸入
 `!ovltest [1-9999]` 產生短效 preview event；此指令不修改正式簽到 ledger。
 
-登入後可從 OBS／`Community Overlay`（`/modules/community-overlay`）管理上述設定與網址；Vite development
-另有不呼叫租戶 settings API 的 `/dev/community-overlay` 視覺預覽，production build 會移除該路由。
+登入後可從 `Live Display`（`/modules/live-display`）管理上述設定與網址；Vite development
+另有不呼叫租戶 settings API 的 `/dev/live-display` 視覺預覽，production build 會移除該路由。
 
 ## Events 與 Twitch 頻道點數
 

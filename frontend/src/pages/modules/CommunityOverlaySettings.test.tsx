@@ -7,9 +7,18 @@ vi.mock('@/api/communityOverlay', () => ({
     surface_color: '#FFF7CF',
     accent_color: '#EF4D88',
     text_color: '#241B34',
-    placement: 'bottom-right',
+    placement: 'bottom-left',
     radius_px: 24,
-    display_ms: 5500,
+    display_ms: 4000,
+    motion: 'standard',
+  },
+  DEFAULT_TAROT_OVERLAY_THEME: {
+    surface_color: '#FFF7CF',
+    accent_color: '#EF4D88',
+    text_color: '#241B34',
+    placement: 'bottom-left',
+    radius_px: 16,
+    display_ms: 5000,
     motion: 'standard',
   },
   getCommunityOverlaySettings: vi.fn(),
@@ -40,6 +49,7 @@ import {
   type CommunityOverlayAccess,
   type CommunityOverlayThemeState,
   DEFAULT_COMMUNITY_OVERLAY_THEME,
+  DEFAULT_TAROT_OVERLAY_THEME,
   getCommunityOverlaySettings,
   getCommunityOverlayThemeSettings,
   publishCommunityOverlayTheme,
@@ -84,6 +94,17 @@ const THEME_STATE: CommunityOverlayThemeState = {
   has_unpublished_changes: false,
   updated_at: '2026-08-31T10:00:00Z',
 }
+const TAROT_THEME_STATE: CommunityOverlayThemeState = {
+  ...THEME_STATE,
+  block_type: 'tarot',
+  renderer: 'tarot-card',
+  draft: DEFAULT_TAROT_OVERLAY_THEME,
+  published: {
+    ...THEME_STATE.published,
+    renderer: 'tarot-card',
+    theme: DEFAULT_TAROT_OVERLAY_THEME,
+  },
+}
 const CHECKIN_REDEMPTION = {
   id: 8,
   channel_id: 'channel-1',
@@ -120,7 +141,9 @@ describe('CommunityOverlaySettings', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(getCommunityOverlaySettings).mockResolvedValue(ACCESS)
-    vi.mocked(getCommunityOverlayThemeSettings).mockResolvedValue(THEME_STATE)
+    vi.mocked(getCommunityOverlayThemeSettings).mockImplementation(async blockType =>
+      blockType === 'tarot' ? TAROT_THEME_STATE : THEME_STATE
+    )
     vi.mocked(updateCommunityOverlayThemeDraft).mockResolvedValue({
       ...THEME_STATE,
       has_unpublished_changes: true,
@@ -135,10 +158,10 @@ describe('CommunityOverlaySettings', () => {
       ...ACCESS,
       public_key: NEW_KEY,
     })
-    vi.mocked(triggerCommunityOverlayPreview).mockResolvedValue({
-      content_type: 'checkin',
+    vi.mocked(triggerCommunityOverlayPreview).mockImplementation(async contentType => ({
+      content_type: contentType,
       event_id: 91,
-    })
+    }))
     vi.mocked(getRedemptionConfigs).mockResolvedValue([CHECKIN_REDEMPTION])
     vi.mocked(getTwitchRewards).mockResolvedValue([CHECKIN_REWARD])
     vi.mocked(updateRedemptionConfig).mockResolvedValue(CHECKIN_REDEMPTION)
@@ -155,6 +178,32 @@ describe('CommunityOverlaySettings', () => {
     await user.click(screen.getByRole('switch', { name: '啟用直播畫面顯示' }))
     expect(updateCommunityOverlaySettings).not.toHaveBeenCalled()
     expect(screen.getByText('已停用')).toBeInTheDocument()
+  })
+
+  it('uses left-bottom defaults and explains the Tarot topic slots', async () => {
+    const user = userEvent.setup()
+    render(<CommunityOverlaySettings preview />)
+
+    expect(document.querySelector('[data-theme-preview]')).toHaveAttribute(
+      'data-placement',
+      'bottom-left'
+    )
+    expect(screen.getByText('4 秒')).toBeInTheDocument()
+    fireEvent.change(screen.getByRole('slider', { name: '顯示時間' }), {
+      target: { value: '4500' },
+    })
+    expect(screen.getByText('4.5 秒')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '展開每日塔羅設定' }))
+
+    expect(screen.getByText('每個主題每天固定一張')).toBeInTheDocument()
+    expect(screen.getByText('同一主題重查結果不變')).toBeInTheDocument()
+    expect(screen.getByText('未填為綜合；另有感情、事業、財運')).toBeInTheDocument()
+    expect(screen.getByText('16px')).toBeInTheDocument()
+    expect(screen.getByText('5 秒')).toBeInTheDocument()
+    expect(document.querySelector('[data-theme-preview]')).toHaveAttribute(
+      'data-placement',
+      'bottom-left'
+    )
   })
 
   it('previews local tenant style changes before saving or publishing', async () => {
@@ -219,7 +268,7 @@ describe('CommunityOverlaySettings', () => {
     })
     render(<CommunityOverlaySettings />)
 
-    await screen.findByText('已發布')
+    expect(await screen.findAllByText('已發布')).toHaveLength(2)
     const radius = screen.getByRole('slider', { name: '卡片圓角' })
     fireEvent.change(radius, { target: { value: '12' } })
     await user.click(screen.getByRole('button', { name: '儲存草稿' }))
@@ -246,7 +295,7 @@ describe('CommunityOverlaySettings', () => {
     await user.click(await screen.findByRole('button', { name: '發布至 OBS' }))
     await waitFor(() => expect(publishCommunityOverlayTheme).toHaveBeenCalledOnce())
     expect(publishCommunityOverlayTheme).toHaveBeenCalledWith('checkin', 1)
-    expect(screen.getByText('已發布')).toBeInTheDocument()
+    expect(screen.getAllByText('已發布')).toHaveLength(2)
 
     await user.click(screen.getByRole('button', { name: '左上' }))
     await user.click(screen.getByRole('button', { name: '還原已發布版本' }))
@@ -270,7 +319,7 @@ describe('CommunityOverlaySettings', () => {
     const preview = screen.getByTitle('每日簽到實際播放')
     expect(preview).toHaveAttribute(
       'src',
-      `${window.location.origin}/community-overlay#key=${KEY}&preview=1`
+      `${window.location.origin}/live-display#key=${KEY}&preview=1`
     )
 
     await user.click(screen.getByRole('button', { name: '草稿預覽' }))
@@ -280,12 +329,12 @@ describe('CommunityOverlaySettings', () => {
     await openConnectionSettings(user)
     expect(screen.getByRole('link', { name: '開啟 OBS 顯示畫面' })).toHaveAttribute(
       'href',
-      `${window.location.origin}/community-overlay#key=${KEY}`
+      `${window.location.origin}/live-display#key=${KEY}`
     )
 
     await user.click(screen.getByRole('button', { name: /點擊以複製 OBS 顯示連結/ }))
     expect(copyToClipboard).toHaveBeenCalledWith(
-      `${window.location.origin}/community-overlay#key=${KEY}`,
+      `${window.location.origin}/live-display#key=${KEY}`,
       '已複製',
       '複製失敗，請手動選取網址'
     )
@@ -310,6 +359,7 @@ describe('CommunityOverlaySettings', () => {
 
     const content = await screen.findByRole('region', { name: '顯示內容' })
     expect(within(content).getAllByRole('heading', { name: '每日簽到' })).toHaveLength(1)
+    expect(within(content).getAllByRole('heading', { name: '每日塔羅' })).toHaveLength(1)
     expect(within(content).getByRole('button', { name: '測試每日簽到動畫' })).toBeInTheDocument()
     expect(within(content).getByRole('button', { name: '儲存草稿' })).toBeInTheDocument()
     expect(within(content).getByRole('button', { name: '草稿預覽' })).toHaveAttribute(
@@ -337,6 +387,23 @@ describe('CommunityOverlaySettings', () => {
     ).toEqual(['顯示內容', '加入直播畫面'])
     expect(screen.queryByRole('button', { name: /上移|下移/ })).not.toBeInTheDocument()
     expect(getCommunityOverlayThemeSettings).toHaveBeenCalledWith('checkin')
+    expect(getCommunityOverlayThemeSettings).toHaveBeenCalledWith('tarot')
+  })
+
+  it('opens Tarot as an independent workspace and sends a Tarot preview event', async () => {
+    const user = userEvent.setup()
+    render(<CommunityOverlaySettings />)
+
+    await user.click(await screen.findByRole('button', { name: '展開每日塔羅設定' }))
+
+    expect(screen.getByRole('button', { name: '收合每日塔羅設定' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '展開每日簽到設定' })).toBeInTheDocument()
+    expect(screen.getByLabelText('NiibotFan 的每日塔羅：愚者正位')).toBeInTheDocument()
+    expect(screen.queryByLabelText('NiibotFan 的簽到集點卡')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '測試每日塔羅動畫' }))
+    await waitFor(() => expect(triggerCommunityOverlayPreview).toHaveBeenCalledWith('tarot'))
+    expect(screen.getByTitle('每日塔羅實際播放')).toBeInTheDocument()
   })
 
   it('can collapse a block without hiding its status or test action', async () => {
@@ -347,7 +414,7 @@ describe('CommunityOverlaySettings', () => {
     await user.click(within(content).getByRole('button', { name: '收合每日簽到設定' }))
 
     expect(within(content).getByRole('heading', { name: '每日簽到' })).toBeInTheDocument()
-    expect(within(content).getByText('已發布')).toBeInTheDocument()
+    expect(within(content).getAllByText('已發布')).toHaveLength(2)
     expect(within(content).getByRole('button', { name: '測試每日簽到動畫' })).toBeInTheDocument()
     expect(within(content).queryByRole('button', { name: '儲存草稿' })).not.toBeInTheDocument()
     expect(within(content).getByRole('button', { name: '展開每日簽到設定' })).toBeInTheDocument()
@@ -459,11 +526,11 @@ describe('CommunityOverlaySettings', () => {
     await user.click(screen.getByRole('button', { name: '測試每日簽到動畫' }))
     expect(screen.getByTitle('每日簽到實際播放')).toHaveAttribute(
       'src',
-      `${window.location.origin}/community-overlay#key=${NEW_KEY}&preview=1`
+      `${window.location.origin}/live-display#key=${NEW_KEY}&preview=1`
     )
     expect(screen.getByRole('link', { name: '開啟 OBS 顯示畫面' })).toHaveAttribute(
       'href',
-      `${window.location.origin}/community-overlay#key=${NEW_KEY}`
+      `${window.location.origin}/live-display#key=${NEW_KEY}`
     )
   })
 
@@ -481,7 +548,7 @@ describe('CommunityOverlaySettings', () => {
     await user.click(screen.getByRole('button', { name: '測試每日簽到動畫' }))
     expect(screen.getByTitle('每日簽到實際播放')).toHaveAttribute(
       'src',
-      `${window.location.origin}/community-overlay#key=${KEY}&preview=1`
+      `${window.location.origin}/live-display#key=${KEY}&preview=1`
     )
   })
 
