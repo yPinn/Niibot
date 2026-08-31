@@ -15,6 +15,7 @@ import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { PageMain } from '@/components/layout/PageMain'
 import { Icon, SlideUp, Spinner, Stagger, StaggerItem } from '@/components/primitives'
+import { BotAccountsCard } from '@/components/settings/BotAccountsCard'
 import {
   Badge,
   Button,
@@ -34,6 +35,7 @@ import {
 import { WipLockOverlay } from '@/components/WipLockOverlay'
 import { SHOW_WIP_LOCK } from '@/config/env'
 import { useAuth } from '@/contexts/AuthContext'
+import { useTenant } from '@/contexts/TenantContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { toastApiError } from '@/lib/toast-error'
 
@@ -73,6 +75,8 @@ function configToForm(c: PaymentConfigResponse): PaymentFormState {
 export default function Settings() {
   useDocumentTitle('Settings')
   const { user, isAffiliate } = useAuth()
+  const { activeTenant } = useTenant()
+  const canManageBilling = activeTenant?.capabilities.includes('manage_billing') ?? false
 
   const [paymentConfigs, setPaymentConfigs] = useState<PaymentConfigResponse[]>([])
   const [paymentLoading, setPaymentLoading] = useState(true)
@@ -122,9 +126,10 @@ export default function Settings() {
   }, [])
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    fetchPaymentConfigs()
-  }, [fetchPaymentConfigs])
+    if (!canManageBilling) return
+    const timeoutId = window.setTimeout(() => void fetchPaymentConfigs(), 0)
+    return () => window.clearTimeout(timeoutId)
+  }, [canManageBilling, fetchPaymentConfigs])
 
   const handleSavePaymentConfig = async (platform: DonationPlatform) => {
     const form = paymentForms[platform]
@@ -172,327 +177,337 @@ export default function Settings() {
       <PageHeader title="Settings" description="帳號、金流與系統設定" />
 
       <SlideUp inView>
-        <Card className="relative overflow-hidden">
-          {locked && (
-            <AffiliateLockOverlay
-              message="取得資格後可設定金流方式"
-              className="rounded-[inherit]"
-            />
-          )}
-          <CardHeader>
-            <CardTitle>斗內金流設定</CardTitle>
-            <CardDescription>
-              設定收款帳號以啟用斗內功能，觀眾可透過{' '}
-              <a
-                href={`/donate/${user?.name}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="font-mono text-foreground underline-offset-2 hover:underline"
-              >
-                /donate/{user?.name}
-              </a>{' '}
-              贊助
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-section">
-            {paymentLoading ? (
-              <div className="flex flex-col gap-section">
-                <Skeleton className="h-32 w-full" />
-                <Skeleton className="h-32 w-full" />
-              </div>
-            ) : (
-              <Stagger inView className="grid grid-cols-1 sm:grid-cols-2 gap-section items-start">
-                {ALL_PLATFORMS.map(platform => {
-                  const form = paymentForms[platform]
-                  const existing = paymentConfigs.find(c => c.platform === platform)
-                  const needsHash = NEEDS_HASH[platform]
-                  const label = PLATFORM_LABELS[platform]
-                  const isSaving = paymentSaving === platform
-                  const isDeleting = paymentDeleting === platform
+        <BotAccountsCard />
+      </SlideUp>
 
-                  const isOpen = openPlatforms[platform]
+      {canManageBilling && (
+        <SlideUp inView>
+          <Card className="relative overflow-hidden">
+            {locked && (
+              <AffiliateLockOverlay
+                message="取得資格後可設定金流方式"
+                className="rounded-[inherit]"
+              />
+            )}
+            <CardHeader>
+              <CardTitle>斗內金流設定</CardTitle>
+              <CardDescription>
+                設定收款帳號以啟用斗內功能，觀眾可透過{' '}
+                <a
+                  href={`/donate/${user?.name}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-mono text-foreground underline-offset-2 hover:underline"
+                >
+                  /donate/{user?.name}
+                </a>{' '}
+                贊助
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-section">
+              {paymentLoading ? (
+                <div className="flex flex-col gap-section">
+                  <Skeleton className="h-32 w-full" />
+                  <Skeleton className="h-32 w-full" />
+                </div>
+              ) : (
+                <Stagger inView className="grid grid-cols-1 sm:grid-cols-2 gap-section items-start">
+                  {ALL_PLATFORMS.map(platform => {
+                    const form = paymentForms[platform]
+                    const existing = paymentConfigs.find(c => c.platform === platform)
+                    const needsHash = NEEDS_HASH[platform]
+                    const label = PLATFORM_LABELS[platform]
+                    const isSaving = paymentSaving === platform
+                    const isDeleting = paymentDeleting === platform
 
-                  return (
-                    <StaggerItem key={platform}>
-                      <Card>
-                        <CardHeader
-                          className="cursor-pointer select-none"
-                          onClick={() =>
-                            setOpenPlatforms(prev => ({ ...prev, [platform]: !prev[platform] }))
-                          }
-                        >
-                          <div className="flex items-center gap-element">
-                            <CardTitle className="text-sub">{label}</CardTitle>
-                            {existing && (
-                              <Badge variant="secondary" className="text-label">
-                                已設定
-                              </Badge>
-                            )}
-                          </div>
-                          <CardAction>
-                            <div className="flex items-center gap-2">
+                    const isOpen = openPlatforms[platform]
+
+                    return (
+                      <StaggerItem key={platform}>
+                        <Card>
+                          <CardHeader
+                            className="cursor-pointer select-none"
+                            onClick={() =>
+                              setOpenPlatforms(prev => ({ ...prev, [platform]: !prev[platform] }))
+                            }
+                          >
+                            <div className="flex items-center gap-element">
+                              <CardTitle className="text-sub">{label}</CardTitle>
                               {existing && (
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  onClick={e => {
-                                    e.stopPropagation()
-                                    setPendingDeletePlatform(platform)
-                                  }}
-                                  disabled={isSaving || isDeleting || locked}
-                                  className="text-muted-foreground hover:text-destructive"
-                                  aria-label={`刪除 ${label} 設定`}
-                                >
-                                  {isDeleting ? (
-                                    <Spinner />
-                                  ) : (
-                                    <Icon icon="fa-solid fa-trash" wrapperClassName="size-3.5" />
-                                  )}
-                                </Button>
+                                <Badge variant="secondary" className="text-label">
+                                  已設定
+                                </Badge>
                               )}
-                              <Switch
-                                id={`${platform}-enabled`}
-                                aria-label="啟用"
-                                checked={form.enabled}
-                                disabled={locked}
-                                onCheckedChange={checked => {
-                                  setPaymentForms(prev => ({
-                                    ...prev,
-                                    [platform]: { ...prev[platform], enabled: checked },
-                                  }))
-                                  if (checked) {
-                                    setOpenPlatforms(prev => ({ ...prev, [platform]: true }))
-                                  }
-                                }}
-                                onClick={e => e.stopPropagation()}
-                              />
-                              <Icon
-                                icon="fa-solid fa-chevron-down"
-                                wrapperClassName="size-3.5"
-                                className={`text-muted-foreground transition-transform duration-slow ease-default ${isOpen ? 'rotate-180' : ''}`}
-                              />
                             </div>
-                          </CardAction>
-                        </CardHeader>
-
-                        <Collapsible open={isOpen}>
-                          <CollapsibleContent>
-                            <CardContent className="flex flex-col gap-3 pt-0">
-                              {/* MerchantID (full width) */}
-                              <div className="flex flex-col gap-1">
-                                <Label
-                                  className="text-label text-muted-foreground"
-                                  htmlFor={`${platform}-merchant`}
-                                >
-                                  {platform === 'paypal' ? 'PayPal.me URL' : '商店代號'}
-                                </Label>
-                                <Input
-                                  id={`${platform}-merchant`}
-                                  value={form.merchant_id}
+                            <CardAction>
+                              <div className="flex items-center gap-2">
+                                {existing && (
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    onClick={e => {
+                                      e.stopPropagation()
+                                      setPendingDeletePlatform(platform)
+                                    }}
+                                    disabled={isSaving || isDeleting || locked}
+                                    className="text-muted-foreground hover:text-destructive"
+                                    aria-label={`刪除 ${label} 設定`}
+                                  >
+                                    {isDeleting ? (
+                                      <Spinner />
+                                    ) : (
+                                      <Icon icon="fa-solid fa-trash" wrapperClassName="size-3.5" />
+                                    )}
+                                  </Button>
+                                )}
+                                <Switch
+                                  id={`${platform}-enabled`}
+                                  aria-label="啟用"
+                                  checked={form.enabled}
                                   disabled={locked}
-                                  onChange={e =>
+                                  onCheckedChange={checked => {
                                     setPaymentForms(prev => ({
                                       ...prev,
-                                      [platform]: {
-                                        ...prev[platform],
-                                        merchant_id: e.target.value,
-                                      },
+                                      [platform]: { ...prev[platform], enabled: checked },
                                     }))
-                                  }
-                                  placeholder={
-                                    platform === 'paypal' ? 'paypal.me/yourname' : '商店代號'
-                                  }
-                                  className="h-8 text-sub"
+                                    if (checked) {
+                                      setOpenPlatforms(prev => ({ ...prev, [platform]: true }))
+                                    }
+                                  }}
+                                  onClick={e => e.stopPropagation()}
+                                />
+                                <Icon
+                                  icon="fa-solid fa-chevron-down"
+                                  wrapperClassName="size-3.5"
+                                  className={`text-muted-foreground transition-transform duration-slow ease-default ${isOpen ? 'rotate-180' : ''}`}
                                 />
                               </div>
+                            </CardAction>
+                          </CardHeader>
 
-                              {/* HashKey + HashIV (2 cols) */}
-                              {needsHash && (
-                                <div className="flex flex-col gap-2">
-                                  {existing?.has_hash && (
-                                    <div className="flex items-center gap-1.5 text-label text-muted-foreground">
-                                      <Icon icon="fa-solid fa-lock" wrapperClassName="size-3" />
-                                      <span>金鑰已加密儲存，留空則保留原設定</span>
-                                    </div>
-                                  )}
-                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-element">
-                                    <div className="flex flex-col gap-1">
-                                      <Label
-                                        className="text-label text-muted-foreground"
-                                        htmlFor={`${platform}-hashkey`}
-                                      >
-                                        HashKey
-                                      </Label>
-                                      <div className="relative">
-                                        <Input
-                                          id={`${platform}-hashkey`}
-                                          type={showHash[platform] ? 'text' : 'password'}
-                                          value={form.hash_key}
-                                          disabled={locked}
-                                          onChange={e =>
-                                            setPaymentForms(prev => ({
-                                              ...prev,
-                                              [platform]: {
-                                                ...prev[platform],
-                                                hash_key: e.target.value,
-                                              },
-                                            }))
-                                          }
-                                          placeholder={
-                                            existing?.has_hash ? '留空保留原設定' : 'HashKey'
-                                          }
-                                          className="h-8 text-sub pr-8"
-                                        />
-                                        <button
-                                          type="button"
-                                          aria-label={showHash[platform] ? '隱藏金鑰' : '顯示金鑰'}
-                                          onClick={() =>
-                                            setShowHash(prev => ({
-                                              ...prev,
-                                              [platform]: !prev[platform],
-                                            }))
-                                          }
-                                          className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                                        >
-                                          <Icon
-                                            icon={
-                                              showHash[platform]
-                                                ? 'fa-solid fa-eye-slash'
-                                                : 'fa-solid fa-eye'
-                                            }
-                                            wrapperClassName="size-3.5"
-                                          />
-                                        </button>
+                          <Collapsible open={isOpen}>
+                            <CollapsibleContent>
+                              <CardContent className="flex flex-col gap-3 pt-0">
+                                {/* MerchantID (full width) */}
+                                <div className="flex flex-col gap-1">
+                                  <Label
+                                    className="text-label text-muted-foreground"
+                                    htmlFor={`${platform}-merchant`}
+                                  >
+                                    {platform === 'paypal' ? 'PayPal.me URL' : '商店代號'}
+                                  </Label>
+                                  <Input
+                                    id={`${platform}-merchant`}
+                                    value={form.merchant_id}
+                                    disabled={locked}
+                                    onChange={e =>
+                                      setPaymentForms(prev => ({
+                                        ...prev,
+                                        [platform]: {
+                                          ...prev[platform],
+                                          merchant_id: e.target.value,
+                                        },
+                                      }))
+                                    }
+                                    placeholder={
+                                      platform === 'paypal' ? 'paypal.me/yourname' : '商店代號'
+                                    }
+                                    className="h-8 text-sub"
+                                  />
+                                </div>
+
+                                {/* HashKey + HashIV (2 cols) */}
+                                {needsHash && (
+                                  <div className="flex flex-col gap-2">
+                                    {existing?.has_hash && (
+                                      <div className="flex items-center gap-1.5 text-label text-muted-foreground">
+                                        <Icon icon="fa-solid fa-lock" wrapperClassName="size-3" />
+                                        <span>金鑰已加密儲存，留空則保留原設定</span>
                                       </div>
-                                    </div>
-                                    <div className="flex flex-col gap-1">
-                                      <Label
-                                        className="text-label text-muted-foreground"
-                                        htmlFor={`${platform}-hashiv`}
-                                      >
-                                        HashIV
-                                      </Label>
-                                      <div className="relative">
-                                        <Input
-                                          id={`${platform}-hashiv`}
-                                          type={showHash[platform] ? 'text' : 'password'}
-                                          value={form.hash_iv}
-                                          disabled={locked}
-                                          onChange={e =>
-                                            setPaymentForms(prev => ({
-                                              ...prev,
-                                              [platform]: {
-                                                ...prev[platform],
-                                                hash_iv: e.target.value,
-                                              },
-                                            }))
-                                          }
-                                          placeholder={
-                                            existing?.has_hash ? '留空保留原設定' : 'HashIV'
-                                          }
-                                          className="h-8 text-sub pr-8"
-                                        />
-                                        <button
-                                          type="button"
-                                          aria-label={showHash[platform] ? '隱藏金鑰' : '顯示金鑰'}
-                                          onClick={() =>
-                                            setShowHash(prev => ({
-                                              ...prev,
-                                              [platform]: !prev[platform],
-                                            }))
-                                          }
-                                          className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                                    )}
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-element">
+                                      <div className="flex flex-col gap-1">
+                                        <Label
+                                          className="text-label text-muted-foreground"
+                                          htmlFor={`${platform}-hashkey`}
                                         >
-                                          <Icon
-                                            icon={
-                                              showHash[platform]
-                                                ? 'fa-solid fa-eye-slash'
-                                                : 'fa-solid fa-eye'
+                                          HashKey
+                                        </Label>
+                                        <div className="relative">
+                                          <Input
+                                            id={`${platform}-hashkey`}
+                                            type={showHash[platform] ? 'text' : 'password'}
+                                            value={form.hash_key}
+                                            disabled={locked}
+                                            onChange={e =>
+                                              setPaymentForms(prev => ({
+                                                ...prev,
+                                                [platform]: {
+                                                  ...prev[platform],
+                                                  hash_key: e.target.value,
+                                                },
+                                              }))
                                             }
-                                            wrapperClassName="size-3.5"
+                                            placeholder={
+                                              existing?.has_hash ? '留空保留原設定' : 'HashKey'
+                                            }
+                                            className="h-8 text-sub pr-8"
                                           />
-                                        </button>
+                                          <button
+                                            type="button"
+                                            aria-label={
+                                              showHash[platform] ? '隱藏金鑰' : '顯示金鑰'
+                                            }
+                                            onClick={() =>
+                                              setShowHash(prev => ({
+                                                ...prev,
+                                                [platform]: !prev[platform],
+                                              }))
+                                            }
+                                            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                                          >
+                                            <Icon
+                                              icon={
+                                                showHash[platform]
+                                                  ? 'fa-solid fa-eye-slash'
+                                                  : 'fa-solid fa-eye'
+                                              }
+                                              wrapperClassName="size-3.5"
+                                            />
+                                          </button>
+                                        </div>
+                                      </div>
+                                      <div className="flex flex-col gap-1">
+                                        <Label
+                                          className="text-label text-muted-foreground"
+                                          htmlFor={`${platform}-hashiv`}
+                                        >
+                                          HashIV
+                                        </Label>
+                                        <div className="relative">
+                                          <Input
+                                            id={`${platform}-hashiv`}
+                                            type={showHash[platform] ? 'text' : 'password'}
+                                            value={form.hash_iv}
+                                            disabled={locked}
+                                            onChange={e =>
+                                              setPaymentForms(prev => ({
+                                                ...prev,
+                                                [platform]: {
+                                                  ...prev[platform],
+                                                  hash_iv: e.target.value,
+                                                },
+                                              }))
+                                            }
+                                            placeholder={
+                                              existing?.has_hash ? '留空保留原設定' : 'HashIV'
+                                            }
+                                            className="h-8 text-sub pr-8"
+                                          />
+                                          <button
+                                            type="button"
+                                            aria-label={
+                                              showHash[platform] ? '隱藏金鑰' : '顯示金鑰'
+                                            }
+                                            onClick={() =>
+                                              setShowHash(prev => ({
+                                                ...prev,
+                                                [platform]: !prev[platform],
+                                              }))
+                                            }
+                                            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                                          >
+                                            <Icon
+                                              icon={
+                                                showHash[platform]
+                                                  ? 'fa-solid fa-eye-slash'
+                                                  : 'fa-solid fa-eye'
+                                              }
+                                              wrapperClassName="size-3.5"
+                                            />
+                                          </button>
+                                        </div>
                                       </div>
                                     </div>
                                   </div>
-                                </div>
-                              )}
+                                )}
 
-                              {/* Bottom: min amount + media toggle + save */}
-                              <div className="flex flex-wrap items-center gap-x-element gap-y-2 border-t border-border/50 pt-2">
-                                {needsHash && (
-                                  <>
-                                    <span className="text-label text-muted-foreground shrink-0">
-                                      最低
-                                    </span>
-                                    <Input
-                                      id={`${platform}-minamount`}
-                                      type="number"
-                                      min={1}
-                                      value={form.min_amount}
-                                      disabled={locked}
-                                      onChange={e =>
-                                        setPaymentForms(prev => ({
-                                          ...prev,
-                                          [platform]: {
-                                            ...prev[platform],
-                                            min_amount: e.target.value,
-                                          },
-                                        }))
-                                      }
-                                      className="h-7 w-16 text-label"
-                                    />
-                                    <span className="text-label text-muted-foreground shrink-0">
-                                      NT$
-                                    </span>
-                                    <div className="flex items-center gap-1 ml-1">
-                                      <Switch
-                                        id={`${platform}-media`}
-                                        checked={form.media_share_enabled}
+                                {/* Bottom: min amount + media toggle + save */}
+                                <div className="flex flex-wrap items-center gap-x-element gap-y-2 border-t border-border/50 pt-2">
+                                  {needsHash && (
+                                    <>
+                                      <span className="text-label text-muted-foreground shrink-0">
+                                        最低
+                                      </span>
+                                      <Input
+                                        id={`${platform}-minamount`}
+                                        type="number"
+                                        min={1}
+                                        value={form.min_amount}
                                         disabled={locked}
-                                        onCheckedChange={checked =>
+                                        onChange={e =>
                                           setPaymentForms(prev => ({
                                             ...prev,
                                             [platform]: {
                                               ...prev[platform],
-                                              media_share_enabled: checked,
+                                              min_amount: e.target.value,
                                             },
                                           }))
                                         }
+                                        className="h-7 w-16 text-label"
                                       />
-                                      <Label
-                                        htmlFor={`${platform}-media`}
-                                        className="text-label cursor-pointer whitespace-nowrap"
-                                      >
-                                        影片點播
-                                      </Label>
-                                    </div>
-                                  </>
-                                )}
-                                <div className="flex gap-1.5 ml-auto">
-                                  <Button
-                                    size="sm"
-                                    onClick={() => handleSavePaymentConfig(platform)}
-                                    disabled={isSaving || isDeleting || locked}
-                                    className="h-7 px-3 text-label"
-                                  >
-                                    {isSaving && <Spinner className="mr-1" />}
-                                    儲存
-                                  </Button>
+                                      <span className="text-label text-muted-foreground shrink-0">
+                                        NT$
+                                      </span>
+                                      <div className="flex items-center gap-1 ml-1">
+                                        <Switch
+                                          id={`${platform}-media`}
+                                          checked={form.media_share_enabled}
+                                          disabled={locked}
+                                          onCheckedChange={checked =>
+                                            setPaymentForms(prev => ({
+                                              ...prev,
+                                              [platform]: {
+                                                ...prev[platform],
+                                                media_share_enabled: checked,
+                                              },
+                                            }))
+                                          }
+                                        />
+                                        <Label
+                                          htmlFor={`${platform}-media`}
+                                          className="text-label cursor-pointer whitespace-nowrap"
+                                        >
+                                          影片點播
+                                        </Label>
+                                      </div>
+                                    </>
+                                  )}
+                                  <div className="flex gap-1.5 ml-auto">
+                                    <Button
+                                      size="sm"
+                                      onClick={() => handleSavePaymentConfig(platform)}
+                                      disabled={isSaving || isDeleting || locked}
+                                      className="h-7 px-3 text-label"
+                                    >
+                                      {isSaving && <Spinner className="mr-1" />}
+                                      儲存
+                                    </Button>
+                                  </div>
                                 </div>
-                              </div>
-                            </CardContent>
-                          </CollapsibleContent>
-                        </Collapsible>
-                      </Card>
-                    </StaggerItem>
-                  )
-                })}
-              </Stagger>
-            )}
-          </CardContent>
-        </Card>
-      </SlideUp>
+                              </CardContent>
+                            </CollapsibleContent>
+                          </Collapsible>
+                        </Card>
+                      </StaggerItem>
+                    )
+                  })}
+                </Stagger>
+              )}
+            </CardContent>
+          </Card>
+        </SlideUp>
+      )}
 
       <DeleteConfirmDialog
         open={!!pendingDeletePlatform}

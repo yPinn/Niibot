@@ -1,7 +1,12 @@
+import { useState } from 'react'
+import { toast } from 'sonner'
+
 import type { BotTokenInfo } from '@/api/admin'
+import { type BotInviteCreated, createSystemBotResetInvite } from '@/api/botAccounts'
 import type { RedemptionConfig, TwitchReward } from '@/api/events'
-import { Icon, TwitchRoleBadge } from '@/components/primitives'
+import { Icon, Spinner, TwitchRoleBadge } from '@/components/primitives'
 import {
+  Button,
   Card,
   CardContent,
   CardHeader,
@@ -12,6 +17,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  Input,
   Select,
   SelectContent,
   SelectItem,
@@ -65,6 +71,19 @@ export function BotStatusPanel({
   onAuthToggle: () => void
 }) {
   const botCfg = bot ? BOT_STATUS_CONFIG[bot.status] : null
+  const [resetting, setResetting] = useState(false)
+  const [resetInvite, setResetInvite] = useState<BotInviteCreated | null>(null)
+
+  const createResetInvite = async () => {
+    setResetting(true)
+    try {
+      setResetInvite(await createSystemBotResetInvite())
+    } catch {
+      toast.error('建立 Niibot reset 邀請失敗')
+    } finally {
+      setResetting(false)
+    }
+  }
 
   return (
     <Card className="lg:h-full">
@@ -152,6 +171,35 @@ export function BotStatusPanel({
               </DropdownMenuContent>
             </DropdownMenu>
             <ScopeSection granted={bot.granted_scopes} missing={bot.missing_scopes} />
+            <div className="space-y-2 rounded-md border p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="text-label font-medium">Bot Token</p>
+                  <p className="text-label text-muted-foreground">
+                    建立限定 {bot.display_name || bot.name} 的一次性授權連結。
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void createResetInvite()}
+                  disabled={resetting}
+                >
+                  {resetting && <Spinner className="mr-1" />}
+                  更新 Niibot Token
+                </Button>
+              </div>
+              {resetInvite && (
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Input value={resetInvite.public_url} readOnly aria-label="Niibot reset URL" />
+                  <Button size="sm" variant="outline" asChild>
+                    <a href={resetInvite.public_url} target="_blank" rel="noopener noreferrer">
+                      開啟
+                    </a>
+                  </Button>
+                </div>
+              )}
+            </div>
           </>
         ) : null}
 

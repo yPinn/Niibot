@@ -5,13 +5,16 @@ import { beforeEach, describe, expect, it, type MockedFunction, vi } from 'vites
 import type { User } from '@/api/user'
 import { OwnerRoute, ProtectedRoute, PublicOnlyRoute } from '@/components/ProtectedRoute'
 import { useAuth } from '@/contexts/AuthContext'
+import { useTenant } from '@/contexts/TenantContext'
 
 vi.mock('@/contexts/AuthContext')
+vi.mock('@/contexts/TenantContext')
 vi.mock('@/components/LoadingSpinner', () => ({
   LoadingSpinner: () => <div data-testid="loading-spinner">Loading...</div>,
 }))
 
 const mockUseAuth = useAuth as MockedFunction<typeof useAuth>
+const mockUseTenant = useTenant as MockedFunction<typeof useTenant>
 
 const TWITCH_USER: User = {
   id: 'u1',
@@ -96,6 +99,15 @@ function renderPublicOnly(
 describe('ProtectedRoute', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockUseTenant.mockReturnValue({
+      tenants: [],
+      activeTenant: null,
+      isInitialized: true,
+      isLoading: false,
+      error: null,
+      refreshTenants: vi.fn(),
+      selectTenant: vi.fn(),
+    })
   })
 
   it('shows loading spinner when not yet initialized', () => {
@@ -137,6 +149,34 @@ describe('ProtectedRoute', () => {
     })
     expect(screen.getByText('Activate Page')).toBeInTheDocument()
     expect(screen.queryByText('Protected Content')).not.toBeInTheDocument()
+  })
+
+  it('allows an unactivated broadcaster identity with a collaborator tenant grant', () => {
+    mockUseTenant.mockReturnValue({
+      tenants: [
+        {
+          channel_id: 'channel-a',
+          channel_name: 'alice',
+          display_name: 'Alice',
+          enabled: true,
+          role: 'manager',
+          capabilities: ['edit_operations'],
+        },
+      ],
+      activeTenant: null,
+      isInitialized: true,
+      isLoading: false,
+      error: null,
+      refreshTenants: vi.fn(),
+      selectTenant: vi.fn(),
+    })
+    renderProtected({
+      isInitialized: true,
+      isAuthenticated: true,
+      user: { ...TWITCH_USER, is_activated: false },
+    })
+
+    expect(screen.getByText('Protected Content')).toBeInTheDocument()
   })
 })
 

@@ -9,6 +9,7 @@ import { Toaster } from '@/components/ui'
 import { AuthProvider } from '@/contexts/AuthContext'
 import { BotProvider } from '@/contexts/BotContext'
 import { ServiceStatusProvider } from '@/contexts/ServiceStatusContext'
+import { TenantProvider } from '@/contexts/TenantContext'
 // Lazy-loaded: all pages including Landing and NotFound to keep motion out of main bundle.
 // SidebarLayout is lazy too — it pulls the full radix sidebar/nav tree that public
 // routes (landing, login, overlays) never render.
@@ -45,6 +46,8 @@ const CommunityOverlay = lazy(() => import('@/pages/CommunityOverlay'))
 const CommunityOverlaySettings = lazy(() => import('@/pages/modules/CommunityOverlaySettings'))
 const ActivatePage = lazy(() => import('@/pages/activate'))
 const SupportPage = lazy(() => import('@/pages/Support'))
+const BotInvite = lazy(() => import('@/pages/BotInvite'))
+const BotAuthorizationResult = lazy(() => import('@/pages/BotAuthorizationResult'))
 
 // Dev-only: excluded from production bundle via dead-code elimination
 const TypographyDemo = import.meta.env.DEV ? lazy(() => import('@/pages/TypographyDemo')) : null
@@ -52,104 +55,109 @@ const TypographyDemo = import.meta.env.DEV ? lazy(() => import('@/pages/Typograp
 function App() {
   return (
     <AuthProvider>
-      <ThemeProvider storageKey="vite-ui-theme">
-        <ServiceStatusProvider>
-          <BotProvider>
-            <ErrorBoundary>
-              {/*
-               * Outer Suspense: spinner for all lazy routes (login, dashboard, etc.)
-               * Overlay routes override with fallback={null} via their own inner Suspense
-               * so OBS browser sources see a transparent frame while the chunk loads.
-               */}
-              <Suspense fallback={<LoadingSpinner fullScreen />}>
-                <Routes>
-                  <Route path="/" element={<Landing />} />
-                  <Route path="/terms" element={<Terms />} />
-                  <Route path="/privacy" element={<Privacy />} />
-                  <Route path="/:username/commands" element={<PublicCommands />} />
-                  <Route path="/:username/crosshairs" element={<CrosshairRepo />} />
-                  <Route path="/donate/:username" element={<DonatePage />} />
-                  <Route
-                    path="/:username/game-queue/overlay"
-                    element={
-                      <Suspense fallback={null}>
-                        <GameQueueOverlay />
-                      </Suspense>
-                    }
-                  />
-                  <Route
-                    path="/:username/video-queue/overlay"
-                    element={
-                      <Suspense fallback={null}>
-                        <VideoQueueOverlay />
-                      </Suspense>
-                    }
-                  />
-                  <Route
-                    path="/community-overlay"
-                    element={
-                      <Suspense fallback={null}>
-                        <CommunityOverlay />
-                      </Suspense>
-                    }
-                  />
-                  {import.meta.env.DEV && TypographyDemo && (
-                    <Route path="/dev/typography" element={<TypographyDemo />} />
-                  )}
-                  {import.meta.env.DEV && (
-                    <Route path="/dev/activate" element={<ActivatePage preview />} />
-                  )}
-                  {import.meta.env.DEV && (
+      <TenantProvider>
+        <ThemeProvider storageKey="vite-ui-theme">
+          <ServiceStatusProvider>
+            <BotProvider>
+              <ErrorBoundary>
+                {/*
+                 * Outer Suspense: spinner for all lazy routes (login, dashboard, etc.)
+                 * Overlay routes override with fallback={null} via their own inner Suspense
+                 * so OBS browser sources see a transparent frame while the chunk loads.
+                 */}
+                <Suspense fallback={<LoadingSpinner fullScreen />}>
+                  <Routes>
+                    <Route path="/" element={<Landing />} />
+                    <Route path="/terms" element={<Terms />} />
+                    <Route path="/privacy" element={<Privacy />} />
+                    <Route path="/bot-invite/:publicToken" element={<BotInvite />} />
+                    <Route path="/bot-auth/result" element={<BotAuthorizationResult />} />
+                    <Route path="/:username/commands" element={<PublicCommands />} />
+                    <Route path="/:username/crosshairs" element={<CrosshairRepo />} />
+                    <Route path="/donate/:username" element={<DonatePage />} />
                     <Route
-                      path="/dev/community-overlay"
-                      element={<CommunityOverlaySettings preview />}
+                      path="/:username/game-queue/overlay"
+                      element={
+                        <Suspense fallback={null}>
+                          <GameQueueOverlay />
+                        </Suspense>
+                      }
                     />
-                  )}
-                  <Route element={<PublicOnlyRoute />}>
-                    <Route path="/login" element={<LoginPage />} />
-                  </Route>
-                  <Route path="/activate" element={<ActivatePage />} />
-                  <Route element={<ProtectedRoute />}>
-                    <Route element={<SidebarLayout />}>
-                      {/* Twitch Bot Routes */}
-                      <Route path="/dashboard" element={<Overview />} />
-                      <Route path="/commands" element={<Commands />} />
-                      <Route path="/events" element={<Events />} />
-                      <Route path="/channel-points" element={<ChannelPoints />} />
-                      <Route path="/analytics/insights" element={<Insights />} />
-                      <Route path="/analytics/matcher" element={<Matcher />} />
-                      <Route path="/settings" element={<Settings />} />
-                      {/* Module Routes */}
-                      <Route path="/timers" element={<Timers />} />
-                      <Route path="/modules/game-queue" element={<GameQueue />} />
-                      <Route path="/modules/video-queue" element={<VideoQueue />} />
+                    <Route
+                      path="/:username/video-queue/overlay"
+                      element={
+                        <Suspense fallback={null}>
+                          <VideoQueueOverlay />
+                        </Suspense>
+                      }
+                    />
+                    <Route
+                      path="/community-overlay"
+                      element={
+                        <Suspense fallback={null}>
+                          <CommunityOverlay />
+                        </Suspense>
+                      }
+                    />
+                    {import.meta.env.DEV && TypographyDemo && (
+                      <Route path="/dev/typography" element={<TypographyDemo />} />
+                    )}
+                    {import.meta.env.DEV && (
+                      <Route path="/dev/activate" element={<ActivatePage preview />} />
+                    )}
+                    {import.meta.env.DEV && (
                       <Route
-                        path="/modules/community-overlay"
-                        element={<CommunityOverlaySettings />}
+                        path="/dev/community-overlay"
+                        element={<CommunityOverlaySettings preview />}
                       />
-                      <Route path="/modules/crosshairs" element={<CrosshairModule />} />
-                      <Route path="/modules/ai" element={<AIModule />} />
-                      <Route path="/support" element={<SupportPage />} />
-                      {/* Discord Bot Routes */}
-                      <Route path="/docs/get-started" element={<GetStarted />} />
-                      <Route path="/docs/releases" element={<Releases />} />
-                      <Route path="/discord" element={<DiscordDashboard />} />
-                      {/* Owner-only Routes */}
-                      <Route element={<OwnerRoute />}>
-                        <Route path="/admin" element={<AdminPage />} />
-                        <Route path="/admin/monitor" element={<AdminMonitor />} />
-                        <Route path="/admin/modules" element={<AdminModules />} />
+                    )}
+                    <Route element={<PublicOnlyRoute />}>
+                      <Route path="/login" element={<LoginPage />} />
+                    </Route>
+                    <Route path="/activate" element={<ActivatePage />} />
+                    <Route element={<ProtectedRoute />}>
+                      <Route element={<SidebarLayout />}>
+                        {/* Twitch Bot Routes */}
+                        <Route path="/dashboard" element={<Overview />} />
+                        <Route path="/dashboard/:channelId" element={<Overview />} />
+                        <Route path="/commands" element={<Commands />} />
+                        <Route path="/events" element={<Events />} />
+                        <Route path="/channel-points" element={<ChannelPoints />} />
+                        <Route path="/analytics/insights" element={<Insights />} />
+                        <Route path="/analytics/matcher" element={<Matcher />} />
+                        <Route path="/settings" element={<Settings />} />
+                        {/* Module Routes */}
+                        <Route path="/timers" element={<Timers />} />
+                        <Route path="/modules/game-queue" element={<GameQueue />} />
+                        <Route path="/modules/video-queue" element={<VideoQueue />} />
+                        <Route
+                          path="/modules/community-overlay"
+                          element={<CommunityOverlaySettings />}
+                        />
+                        <Route path="/modules/crosshairs" element={<CrosshairModule />} />
+                        <Route path="/modules/ai" element={<AIModule />} />
+                        <Route path="/support" element={<SupportPage />} />
+                        {/* Discord Bot Routes */}
+                        <Route path="/docs/get-started" element={<GetStarted />} />
+                        <Route path="/docs/releases" element={<Releases />} />
+                        <Route path="/discord" element={<DiscordDashboard />} />
+                        {/* Owner-only Routes */}
+                        <Route element={<OwnerRoute />}>
+                          <Route path="/admin" element={<AdminPage />} />
+                          <Route path="/admin/monitor" element={<AdminMonitor />} />
+                          <Route path="/admin/modules" element={<AdminModules />} />
+                        </Route>
                       </Route>
                     </Route>
-                  </Route>
-                  <Route path="*" element={<NotFound />} />
-                </Routes>
-              </Suspense>
-            </ErrorBoundary>
-            <Toaster position="bottom-right" richColors />
-          </BotProvider>
-        </ServiceStatusProvider>
-      </ThemeProvider>
+                    <Route path="*" element={<NotFound />} />
+                  </Routes>
+                </Suspense>
+              </ErrorBoundary>
+              <Toaster position="bottom-right" richColors />
+            </BotProvider>
+          </ServiceStatusProvider>
+        </ThemeProvider>
+      </TenantProvider>
     </AuthProvider>
   )
 }
