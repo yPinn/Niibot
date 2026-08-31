@@ -39,7 +39,7 @@ import {
   getTwitchRewards,
   updateRedemptionConfig,
 } from '@/api/events'
-import { getVipState, upsertVipRule } from '@/api/vip'
+import { adjustVipEntitlement, getVipState, upsertVipRule } from '@/api/vip'
 
 import ChannelPoints from './index'
 
@@ -161,6 +161,20 @@ describe('Channel Points page', () => {
       ...VIP_STATE.rules[0],
       ...update,
     }))
+    vi.mocked(adjustVipEntitlement).mockImplementation(async (_userId, _months, isPermanent) => ({
+      id: 1,
+      channel_id: 'channel-1',
+      user_id: 'user-1',
+      user_login: 'alice',
+      display_name: 'Alice',
+      source: 'managed',
+      status: 'active',
+      granted_at: '2026-08-31T00:00:00Z',
+      expires_at: isPermanent ? null : '2099-01-01T00:00:00Z',
+      is_permanent: isPermanent,
+      last_reward_rule_id: 1,
+      last_synced_at: '2026-08-31T00:00:00Z',
+    }))
   })
 
   it('owns reward-to-action mappings and includes daily check-in', async () => {
@@ -265,7 +279,7 @@ describe('Channel Points page', () => {
     await user.click(within(vipRow).getByRole('button', { name: '管理VIP 授予設定' }))
 
     expect(await screen.findByRole('heading', { name: 'VIP management' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: '容量與同步' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'VIP 使用量' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Reward 期限規則' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: '當前 VIP 名單' })).toBeInTheDocument()
     expect(getVipState).toHaveBeenCalledTimes(2)
@@ -296,5 +310,64 @@ describe('Channel Points page', () => {
         enabled: false,
       })
     )
+  })
+
+  it('keeps VIP status concise and reveals per-user adjustment only when requested', async () => {
+    const user = userEvent.setup()
+    vi.mocked(getRedemptionConfigs).mockResolvedValueOnce([VIP])
+    vi.mocked(getVipState).mockResolvedValue({
+      ...VIP_STATE,
+      entitlements: [
+        {
+          id: 1,
+          channel_id: 'channel-1',
+          user_id: 'user-1',
+          user_login: 'alice',
+          display_name: 'Alice',
+          source: 'managed',
+          status: 'active',
+          granted_at: '2026-08-31T00:00:00Z',
+          expires_at: '2099-01-01T00:00:00Z',
+          is_permanent: false,
+          last_reward_rule_id: 1,
+          last_synced_at: '2026-08-31T00:00:00Z',
+        },
+        {
+          id: 2,
+          channel_id: 'channel-1',
+          user_id: 'user-2',
+          user_login: 'bob',
+          display_name: 'Bob',
+          source: 'external_baseline',
+          status: 'active',
+          granted_at: null,
+          expires_at: null,
+          is_permanent: false,
+          last_reward_rule_id: null,
+          last_synced_at: '2026-08-31T00:00:00Z',
+        },
+      ],
+    })
+    render(<ChannelPoints />)
+
+    await user.click(await screen.findByRole('button', { name: '管理VIP 授予設定' }))
+
+    const usage = await screen.findByRole('region', { name: 'VIP 使用量' })
+    expect(usage).toHaveTextContent(/目前\s*2\s*位 VIP/)
+    expect(screen.queryByText('可用')).not.toBeInTheDocument()
+    expect(screen.queryByText('Managed')).not.toBeInTheDocument()
+    expect(screen.queryByText('External')).not.toBeInTheDocument()
+    expect(screen.queryByText(/上次完整同步/)).not.toBeInTheDocument()
+    expect(screen.getByText('獎勵')).toBeInTheDocument()
+    expect(screen.getByText('外部')).toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: '調整 Alice 期限' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '調整 Alice 期限' }))
+    const duration = screen.getByRole('combobox', { name: '調整 Alice 期限' })
+    await user.click(duration)
+    await user.click(screen.getByRole('option', { name: '6 個月' }))
+    await user.click(screen.getByRole('button', { name: '套用' }))
+
+    await waitFor(() => expect(adjustVipEntitlement).toHaveBeenCalledWith('user-1', 6, false))
   })
 })

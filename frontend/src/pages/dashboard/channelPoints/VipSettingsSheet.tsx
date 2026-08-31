@@ -53,17 +53,6 @@ const DURATION_OPTIONS = [
   { value: 'permanent', label: '永久' },
 ] as const
 
-function formatDate(value: string | null): string {
-  if (!value) return '—'
-  return new Intl.DateTimeFormat('zh-TW', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(new Date(value))
-}
-
 function durationPayload(value: string) {
   return value === 'permanent'
     ? { months: null, permanent: true }
@@ -117,9 +106,13 @@ function failureLabel(errorCode: string | null, status: string): string {
 }
 
 function sourceLabel(entitlement: VipEntitlement): string {
-  if (entitlement.source === 'managed') return 'Niibot 管理'
-  if (entitlement.source === 'external_baseline') return '初次清點'
-  return 'Twitch 外部'
+  return entitlement.source === 'managed' ? '獎勵' : '外部'
+}
+
+function entitlementTermLabel(entitlement: VipEntitlement): string {
+  if (entitlement.source !== 'managed') return '未納入期限管理'
+  if (entitlement.is_permanent) return '永久'
+  return formatRemaining(entitlement.expires_at)
 }
 
 export function VipSettingsSheet({
@@ -135,7 +128,8 @@ export function VipSettingsSheet({
   const [slotLimit, setSlotLimit] = useState('')
   const [rewardId, setRewardId] = useState('')
   const [ruleDuration, setRuleDuration] = useState('3')
-  const [adjustments, setAdjustments] = useState<Record<string, string>>({})
+  const [adjustingUserId, setAdjustingUserId] = useState<string | null>(null)
+  const [adjustmentDuration, setAdjustmentDuration] = useState('3')
 
   const loadState = useCallback(async () => {
     setLoading(true)
@@ -163,12 +157,6 @@ export function VipSettingsSheet({
     () => state?.entitlements.filter(item => item.status === 'active') ?? [],
     [state]
   )
-  const managedCount = active.filter(item => item.source === 'managed').length
-  const externalCount = active.length - managedCount
-  const available =
-    state?.settings.slot_limit == null
-      ? null
-      : Math.max(state.settings.slot_limit - active.length, 0)
   const pending =
     state?.redemptions.filter(item => item.status === 'needs_review_external_vip') ?? []
   const failures =
@@ -201,18 +189,22 @@ export function VipSettingsSheet({
   const validLimit = Number.isInteger(parsedLimit) && parsedLimit >= 1 && parsedLimit <= 500
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="gap-section sm:max-w-5xl">
+    <Sheet
+      open={open}
+      onOpenChange={nextOpen => {
+        if (!nextOpen) setAdjustingUserId(null)
+        onOpenChange(nextOpen)
+      }}
+    >
+      <SheetContent className="gap-section sm:max-w-4xl">
         <SheetHeader>
           <SheetTitle>VIP management</SheetTitle>
-          <SheetDescription>
-            清點 Twitch 真實 VIP、管理多個 Reward 的計畫期限，並處理外部 VIP 與失敗兌換。
-          </SheetDescription>
+          <SheetDescription>設定 Reward 期限與管理目前的 VIP 名單。</SheetDescription>
         </SheetHeader>
 
         <div className="flex flex-1 flex-col overflow-y-auto px-page pb-page">
           {loading ? (
-            <div className="grid gap-card lg:grid-cols-[minmax(18rem,0.9fr)_minmax(24rem,1.4fr)]">
+            <div className="grid gap-card lg:grid-cols-2">
               <Skeleton className="h-96 w-full" />
               <Skeleton className="h-96 w-full" />
             </div>
@@ -227,30 +219,33 @@ export function VipSettingsSheet({
               </AlertDescription>
             </Alert>
           ) : (
-            <div className="grid items-start gap-section lg:grid-cols-[minmax(18rem,0.9fr)_minmax(24rem,1.4fr)]">
+            <div className="grid items-start gap-section lg:grid-cols-2">
               <div className="space-y-section">
                 <section className="space-y-4" aria-labelledby="vip-capacity-title">
-                  <div className="space-y-1">
+                  <div className="flex items-center justify-between gap-3">
                     <h3 id="vip-capacity-title" className="font-semibold">
-                      容量與同步
+                      VIP 使用量
                     </h3>
-                    <p className="text-label text-muted-foreground">
-                      上限為人工設定的預檢值；Twitch Grant 結果仍是最終判定。
-                    </p>
+                    {state.settings.tracking_started_at && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={saving}
+                        onClick={() =>
+                          void runMutation(() => syncVipState(), 'Twitch VIP 名單已重新清點')
+                        }
+                      >
+                        重新清點
+                      </Button>
+                    )}
                   </div>
-                  <div className="grid grid-cols-2 gap-3 text-sub sm:grid-cols-4 lg:grid-cols-2 xl:grid-cols-4">
-                    {[
-                      ['實際', active.length],
-                      ['可用', available ?? '—'],
-                      ['Managed', managedCount],
-                      ['External', externalCount],
-                    ].map(([label, value]) => (
-                      <div key={label} className="rounded-md border bg-muted/30 px-3 py-2">
-                        <p className="text-label text-muted-foreground">{label}</p>
-                        <p className="mt-1 font-medium tabular-nums">{value}</p>
-                      </div>
-                    ))}
-                  </div>
+                  <p className="text-sub text-muted-foreground">
+                    目前{' '}
+                    <span className="font-medium text-foreground tabular-nums">
+                      {active.length}
+                    </span>{' '}
+                    位 VIP
+                  </p>
                   <div className="space-y-2">
                     <Label htmlFor="vip-slot-limit">VIP 上限</Label>
                     <div className="flex gap-2">
@@ -275,25 +270,8 @@ export function VipSettingsSheet({
                         }
                       >
                         {saving && <Spinner className="mr-1.5" />}
-                        {state.settings.tracking_started_at ? '更新' : '清點並啟用'}
+                        {state.settings.tracking_started_at ? '儲存' : '清點並啟用'}
                       </Button>
-                    </div>
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-label text-muted-foreground">
-                        上次完整同步：{formatDate(state.settings.last_full_sync_at)}
-                      </p>
-                      {state.settings.tracking_started_at && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          disabled={saving}
-                          onClick={() =>
-                            void runMutation(() => syncVipState(), 'Twitch VIP 名單已重新清點')
-                          }
-                        >
-                          重新清點
-                        </Button>
-                      )}
                     </div>
                   </div>
                 </section>
@@ -306,72 +284,72 @@ export function VipSettingsSheet({
                     <h3 id="vip-rules-title" className="font-semibold">
                       Reward 期限規則
                     </h3>
-                    <p className="text-label text-muted-foreground">
-                      新規則預設三個 calendar months；修改只影響後續兌換。
-                    </p>
+                    <p className="text-label text-muted-foreground">修改期限只影響後續兌換。</p>
                   </div>
-                  <div className="space-y-2">
+                  <div>
                     {state.rules.length === 0 ? (
                       <p className="rounded-md border border-dashed px-3 py-4 text-sub text-muted-foreground">
                         尚未設定 VIP Reward。
                       </p>
                     ) : (
-                      state.rules.map(rule => {
-                        const currentDuration = ruleDurationValue(rule)
-                        return (
-                          <div
-                            key={rule.reward_id}
-                            className="grid items-center gap-2 rounded-md border px-3 py-2 sm:grid-cols-[minmax(0,1fr)_8rem_auto]"
-                          >
-                            <p className="min-w-0 truncate text-sub font-medium">
-                              {rule.reward_name_snapshot}
-                            </p>
-                            <Select
-                              value={currentDuration}
-                              disabled={saving}
-                              onValueChange={value => {
-                                const duration = durationPayload(value)
-                                void runMutation(
-                                  () =>
-                                    upsertVipRule(rule.reward_id, {
-                                      duration_months: duration.months,
-                                      is_permanent: duration.permanent,
-                                      enabled: rule.enabled,
-                                    }),
-                                  'VIP Reward 期限已更新'
-                                )
-                              }}
+                      <div className="divide-y rounded-md border">
+                        {state.rules.map(rule => {
+                          const currentDuration = ruleDurationValue(rule)
+                          return (
+                            <div
+                              key={rule.reward_id}
+                              className="grid items-center gap-2 px-3 py-2 sm:grid-cols-[minmax(0,1fr)_8rem_auto]"
                             >
-                              <SelectTrigger aria-label={`${rule.reward_name_snapshot} 的期限`}>
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {durationOptions(currentDuration).map(option => (
-                                  <SelectItem key={option.value} value={option.value}>
-                                    {option.label}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            <Switch
-                              checked={rule.enabled}
-                              disabled={saving}
-                              aria-label={`啟用 ${rule.reward_name_snapshot}`}
-                              onCheckedChange={enabled =>
-                                void runMutation(
-                                  () =>
-                                    upsertVipRule(rule.reward_id, {
-                                      duration_months: rule.duration_months,
-                                      is_permanent: rule.is_permanent,
-                                      enabled,
-                                    }),
-                                  enabled ? 'VIP Reward 規則已啟用' : 'VIP Reward 規則已停用'
-                                )
-                              }
-                            />
-                          </div>
-                        )
-                      })
+                              <p className="min-w-0 truncate text-sub font-medium">
+                                {rule.reward_name_snapshot}
+                              </p>
+                              <Select
+                                value={currentDuration}
+                                disabled={saving}
+                                onValueChange={value => {
+                                  const duration = durationPayload(value)
+                                  void runMutation(
+                                    () =>
+                                      upsertVipRule(rule.reward_id, {
+                                        duration_months: duration.months,
+                                        is_permanent: duration.permanent,
+                                        enabled: rule.enabled,
+                                      }),
+                                    'VIP Reward 期限已更新'
+                                  )
+                                }}
+                              >
+                                <SelectTrigger aria-label={`${rule.reward_name_snapshot} 的期限`}>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {durationOptions(currentDuration).map(option => (
+                                    <SelectItem key={option.value} value={option.value}>
+                                      {option.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <Switch
+                                checked={rule.enabled}
+                                disabled={saving}
+                                aria-label={`啟用 ${rule.reward_name_snapshot}`}
+                                onCheckedChange={enabled =>
+                                  void runMutation(
+                                    () =>
+                                      upsertVipRule(rule.reward_id, {
+                                        duration_months: rule.duration_months,
+                                        is_permanent: rule.is_permanent,
+                                        enabled,
+                                      }),
+                                    enabled ? 'VIP Reward 規則已啟用' : 'VIP Reward 規則已停用'
+                                  )
+                                }
+                              />
+                            </div>
+                          )
+                        })}
+                      </div>
                     )}
                   </div>
                   <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_8rem_auto] lg:grid-cols-1 xl:grid-cols-[minmax(0,1fr)_8rem_auto]">
@@ -430,65 +408,62 @@ export function VipSettingsSheet({
                         待人工確認
                       </h3>
                       <p className="text-label text-muted-foreground">
-                        使用者原本已是外部 VIP；納入後將從現在起算完整期限並於到期自動移除。
+                        納入後會從現在起算期限，並於到期移除。
                       </p>
                     </div>
-                    {pending.map(item => (
-                      <div key={item.redemption_id} className="rounded-md border p-3">
-                        <div className="flex flex-wrap items-start justify-between gap-2">
-                          <div>
-                            <p className="font-medium">{item.display_name || item.user_login}</p>
-                            <p className="text-label text-muted-foreground">
-                              {item.reward_name_snapshot}
-                            </p>
-                          </div>
-                          <div className="flex gap-2">
-                            <Button
-                              size="sm"
-                              disabled={saving}
-                              onClick={() =>
-                                void runMutation(
-                                  () =>
-                                    adoptExternalVip(
-                                      item.redemption_id,
-                                      item.duration_months_snapshot,
-                                      item.is_permanent_snapshot
-                                    ),
-                                  '外部 VIP 已納入期限管理'
-                                )
-                              }
-                            >
-                              納入管理
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={saving}
-                              onClick={() =>
-                                void runMutation(
-                                  () => keepExternalVip(item.redemption_id),
-                                  '已保留為外部 VIP，請至 Twitch 人工退款'
-                                )
-                              }
-                            >
-                              保持外部
-                            </Button>
+                    <div className="divide-y rounded-md border">
+                      {pending.map(item => (
+                        <div key={item.redemption_id} className="p-3">
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div>
+                              <p className="font-medium">{item.display_name || item.user_login}</p>
+                              <p className="text-label text-muted-foreground">
+                                {item.reward_name_snapshot}
+                              </p>
+                            </div>
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                disabled={saving}
+                                onClick={() =>
+                                  void runMutation(
+                                    () =>
+                                      adoptExternalVip(
+                                        item.redemption_id,
+                                        item.duration_months_snapshot,
+                                        item.is_permanent_snapshot
+                                      ),
+                                    '外部 VIP 已納入期限管理'
+                                  )
+                                }
+                              >
+                                納入管理
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={saving}
+                                onClick={() =>
+                                  void runMutation(
+                                    () => keepExternalVip(item.redemption_id),
+                                    '已保留為外部 VIP，請至 Twitch 人工退款'
+                                  )
+                                }
+                              >
+                                保持外部
+                              </Button>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </section>
                 )}
 
                 <section className="space-y-3" aria-labelledby="vip-list-title">
-                  <div className="space-y-1">
-                    <h3 id="vip-list-title" className="font-semibold">
-                      當前 VIP 名單
-                    </h3>
-                    <p className="text-label text-muted-foreground">
-                      顯示 Twitch 實際狀態、來源與 Niibot 計畫期限；手動移除會在下次同步清理。
-                    </p>
-                  </div>
+                  <h3 id="vip-list-title" className="font-semibold">
+                    當前 VIP 名單
+                  </h3>
                   {active.length === 0 ? (
                     <p className="rounded-md border border-dashed px-3 py-6 text-center text-sub text-muted-foreground">
                       Twitch 目前沒有 VIP，或尚未完成初次清點。
@@ -496,68 +471,83 @@ export function VipSettingsSheet({
                   ) : (
                     <div className="divide-y rounded-md border">
                       {active.map(item => {
-                        const selection = adjustments[item.user_id] ?? '3'
+                        const displayName = item.display_name || item.user_login
+                        const isAdjusting = adjustingUserId === item.user_id
                         return (
-                          <div
-                            key={item.user_id}
-                            className="grid gap-2 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_9rem_auto] sm:items-center"
-                          >
-                            <div className="min-w-0">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <p className="truncate text-sub font-medium">
-                                  {item.display_name || item.user_login}
+                          <div key={item.user_id} className="px-3 py-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <p className="truncate text-sub font-medium">{displayName}</p>
+                                  <Badge variant="outline">{sourceLabel(item)}</Badge>
+                                </div>
+                                <p className="mt-1 text-label text-muted-foreground">
+                                  {entitlementTermLabel(item)}
                                 </p>
-                                <Badge variant="outline">{sourceLabel(item)}</Badge>
                               </div>
-                              <p className="mt-1 text-label text-muted-foreground">
-                                預計到期：
-                                {item.is_permanent ? '永久' : formatDate(item.expires_at)}
-                                {!item.is_permanent && `（${formatRemaining(item.expires_at)}）`}
-                              </p>
-                            </div>
-                            {item.source === 'managed' ? (
-                              <Select
-                                value={selection}
-                                onValueChange={value =>
-                                  setAdjustments(current => ({ ...current, [item.user_id]: value }))
-                                }
-                              >
-                                <SelectTrigger
-                                  aria-label={`調整 ${item.display_name || item.user_login} 期限`}
+                              {item.source === 'managed' && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  disabled={saving}
+                                  aria-label={`調整 ${displayName} 期限`}
+                                  onClick={() => {
+                                    setAdjustingUserId(isAdjusting ? null : item.user_id)
+                                    setAdjustmentDuration('3')
+                                  }}
                                 >
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {DURATION_OPTIONS.map(option => (
-                                    <SelectItem key={option.value} value={option.value}>
-                                      {option.label}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            ) : (
-                              <span />
-                            )}
-                            {item.source === 'managed' && (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                disabled={saving}
-                                onClick={() => {
-                                  const duration = durationPayload(selection)
-                                  void runMutation(
-                                    () =>
-                                      adjustVipEntitlement(
-                                        item.user_id,
-                                        duration.months,
-                                        duration.permanent
-                                      ),
-                                    'VIP 預計期限已調整'
-                                  )
-                                }}
-                              >
-                                調整
-                              </Button>
+                                  {isAdjusting ? '收合' : '調整'}
+                                </Button>
+                              )}
+                            </div>
+                            {isAdjusting && (
+                              <div className="mt-3 flex flex-wrap items-center justify-end gap-2 border-t pt-3">
+                                <Select
+                                  value={adjustmentDuration}
+                                  onValueChange={setAdjustmentDuration}
+                                >
+                                  <SelectTrigger
+                                    className="w-32"
+                                    aria-label={`調整 ${displayName} 期限`}
+                                  >
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {DURATION_OPTIONS.map(option => (
+                                      <SelectItem key={option.value} value={option.value}>
+                                        {option.label}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={saving}
+                                  onClick={() => setAdjustingUserId(null)}
+                                >
+                                  取消
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  disabled={saving}
+                                  onClick={async () => {
+                                    const duration = durationPayload(adjustmentDuration)
+                                    const succeeded = await runMutation(
+                                      () =>
+                                        adjustVipEntitlement(
+                                          item.user_id,
+                                          duration.months,
+                                          duration.permanent
+                                        ),
+                                      'VIP 預計期限已調整'
+                                    )
+                                    if (succeeded) setAdjustingUserId(null)
+                                  }}
+                                >
+                                  套用
+                                </Button>
+                              </div>
                             )}
                           </div>
                         )
@@ -575,22 +565,16 @@ export function VipSettingsSheet({
                       需退款／處理
                     </h3>
                     <p className="text-label text-muted-foreground">
-                      Niibot 不會自動退款；請由實況主或 Moderator 在 Twitch 完成人工退款。
+                      請由實況主或 Moderator 在 Twitch 人工退款。
                     </p>
-                    <div className="space-y-2">
+                    <div className="divide-y rounded-md border">
                       {failures.slice(0, 10).map(item => (
-                        <div
-                          key={item.redemption_id}
-                          className="flex items-start justify-between gap-3 rounded-md border px-3 py-2 text-sub"
-                        >
-                          <div>
-                            <p className="font-medium">{item.display_name || item.user_login}</p>
-                            <p className="text-label text-muted-foreground">
-                              {item.reward_name_snapshot} ·{' '}
-                              {failureLabel(item.error_code, item.status)}
-                            </p>
-                          </div>
-                          <Badge variant="destructive">人工退款</Badge>
+                        <div key={item.redemption_id} className="px-3 py-2 text-sub">
+                          <p className="font-medium">{item.display_name || item.user_login}</p>
+                          <p className="text-label text-muted-foreground">
+                            {item.reward_name_snapshot} ·{' '}
+                            {failureLabel(item.error_code, item.status)}
+                          </p>
                         </div>
                       ))}
                     </div>
