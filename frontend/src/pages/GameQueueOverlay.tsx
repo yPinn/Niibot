@@ -2,12 +2,11 @@ import { useCallback, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 
 import { getPublicQueueState, type PublicQueueState, type QueueEntry } from '@/api/gameQueue'
+import { OVERLAY_POLL_INTERVAL_MS } from '@/config/overlayPolling'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { usePolling } from '@/hooks/usePolling'
 
 import styles from './GameQueueOverlay.module.css'
-
-const POLL_INTERVAL = 10_000
 
 function PlayerSection({ entries, label }: { entries: QueueEntry[]; label: string }) {
   if (entries.length === 0) return null
@@ -42,7 +41,11 @@ export default function GameQueueOverlay() {
     }
   }, [username])
 
-  usePolling({ fetchFn: fetchState, intervalMs: POLL_INTERVAL, enabled: !!username })
+  usePolling({
+    fetchFn: fetchState,
+    intervalMs: OVERLAY_POLL_INTERVAL_MS.gameQueue,
+    enabled: !!username,
+  })
 
   if (!username) return null
 

@@ -13,13 +13,11 @@ import {
 } from '@/api/communityOverlay'
 import { CheckinCard } from '@/components/community-overlay/CheckinCard'
 import { TarotCard } from '@/components/community-overlay/TarotCard'
+import { OVERLAY_POLL_INTERVAL_MS } from '@/config/overlayPolling'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { usePolling } from '@/hooks/usePolling'
 
 import styles from './CommunityOverlay.module.css'
-
-const POLL_INTERVAL_MS = 1_000
-const THEME_POLL_INTERVAL_MS = 5_000
 
 interface CheckinPayload extends Record<string, unknown> {
   total_days: number
@@ -189,13 +187,13 @@ function ScopedCommunityOverlay({ publicKey, preview }: { publicKey: string; pre
 
   usePolling({
     fetchFn: fetchTheme,
-    intervalMs: THEME_POLL_INTERVAL_MS,
+    intervalMs: OVERLAY_POLL_INTERVAL_MS.liveDisplayThemes,
     enabled: Boolean(publicKey),
   })
 
   usePolling({
     fetchFn: fetchEvents,
-    intervalMs: POLL_INTERVAL_MS,
+    intervalMs: OVERLAY_POLL_INTERVAL_MS.liveDisplayEvents,
     enabled: Boolean(publicKey),
   })
 

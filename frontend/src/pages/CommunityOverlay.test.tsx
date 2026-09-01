@@ -206,17 +206,24 @@ describe('CommunityOverlay', () => {
   })
 
   it('polls from the handshake cursor and renders a new event', async () => {
-    vi.mocked(getCommunityOverlayFeed)
-      .mockResolvedValueOnce({ cursor: 10, events: [] })
-      .mockResolvedValue({ cursor: 11, events: [event(11, 3)] })
+    vi.useFakeTimers()
+    try {
+      vi.mocked(getCommunityOverlayFeed)
+        .mockResolvedValueOnce({ cursor: 10, events: [] })
+        .mockResolvedValue({ cursor: 11, events: [event(11, 3)] })
 
-    renderOverlay(`#key=${KEY}`)
+      renderOverlay(`#key=${KEY}`)
+      await act(async () => Promise.resolve())
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5_000)
+      })
 
-    expect(
-      await screen.findByLabelText('Alice 的簽到集點卡', {}, { timeout: 2_500 })
-    ).toBeInTheDocument()
-    expect(getCommunityOverlayFeed).toHaveBeenNthCalledWith(1, KEY, undefined)
-    expect(getCommunityOverlayFeed).toHaveBeenNthCalledWith(2, KEY, 10)
+      expect(screen.getByLabelText('Alice 的簽到集點卡')).toBeInTheDocument()
+      expect(getCommunityOverlayFeed).toHaveBeenNthCalledWith(1, KEY, undefined)
+      expect(getCommunityOverlayFeed).toHaveBeenNthCalledWith(2, KEY, 10)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('ignores unsupported event versions instead of breaking the renderer', async () => {
@@ -254,7 +261,7 @@ describe('CommunityOverlay', () => {
       renderOverlay(`#key=${KEY}`)
       await act(async () => Promise.resolve())
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(5_000)
+        await vi.advanceTimersByTimeAsync(60_000)
       })
 
       expect(getCommunityOverlayTheme).toHaveBeenCalledTimes(4)

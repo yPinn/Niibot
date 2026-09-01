@@ -7,6 +7,7 @@ import {
   type PublicVideoQueueState,
   reportVideoMetadata,
 } from '@/api/videoQueue'
+import { OVERLAY_POLL_INTERVAL_MS } from '@/config/overlayPolling'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { usePolling } from '@/hooks/usePolling'
 
@@ -132,8 +133,6 @@ function loadTwitchEmbedAPI(): Promise<void> {
   return _twitchReadyPromise
 }
 
-const POLL_INTERVAL = 3_000
-
 function formatRemaining(elapsed: number, duration: number | null): string {
   if (!duration) return '--:--'
   const remaining = Math.max(0, duration - elapsed)
@@ -248,8 +247,11 @@ export default function VideoQueueOverlay() {
     }
   }, [username])
 
-  // Poll state every 3s
-  usePolling({ fetchFn: fetchState, intervalMs: POLL_INTERVAL, enabled: !!username })
+  usePolling({
+    fetchFn: fetchState,
+    intervalMs: OVERLAY_POLL_INTERVAL_MS.videoQueue,
+    enabled: !!username,
+  })
 
   // Auto-kickstart: if there is no current video but there is a queue, advance
   useEffect(() => {
