@@ -1,8 +1,9 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 
 import { openTwitchOAuth } from '@/api'
+import { errorMessage } from '@/api/errors'
 import rabbitBg from '@/assets/images/Rabbit.jpg'
 import { Icon, SlideUp } from '@/components/primitives'
 import { Button, Card, CardContent } from '@/components/ui'
@@ -22,6 +23,22 @@ const REASON_MESSAGES: Record<string, string> = {
 
 export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) {
   const [searchParams, setSearchParams] = useSearchParams()
+  const [isStartingOAuth, setIsStartingOAuth] = useState(false)
+
+  async function handleTwitchLogin() {
+    if (isStartingOAuth) return
+
+    setIsStartingOAuth(true)
+    try {
+      await openTwitchOAuth()
+    } catch (error) {
+      toast.error('無法啟動 Twitch 登入', {
+        description: errorMessage(error, '登入服務暫時無法使用，請稍後再試'),
+      })
+    } finally {
+      setIsStartingOAuth(false)
+    }
+  }
 
   // Process error / reason params once on mount
   useEffect(() => {
@@ -79,9 +96,14 @@ export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) 
                   <span>Discord 社群連結預覽與伺服器日誌</span>
                 </li>
               </ul>
-              <Button type="button" onClick={openTwitchOAuth} className="w-full">
+              <Button
+                type="button"
+                onClick={() => void handleTwitchLogin()}
+                disabled={isStartingOAuth}
+                className="w-full"
+              >
                 <Icon icon="fa-brands fa-twitch" className="text-lg mr-2" wrapperClassName="" />
-                使用 Twitch 登入
+                {isStartingOAuth ? '正在連接 Twitch…' : '使用 Twitch 登入'}
               </Button>
             </div>
           </form>

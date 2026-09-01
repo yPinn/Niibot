@@ -253,7 +253,30 @@ describe('AuthProvider reauth-required interceptor', () => {
     expect(mockToast.error).toHaveBeenCalledWith(
       expect.stringContaining('重新授權'),
       expect.objectContaining({
-        action: expect.objectContaining({ onClick: openTwitchOAuth }),
+        action: expect.objectContaining({ onClick: expect.any(Function) }),
+      })
+    )
+  })
+
+  it('reports a reauthorization startup failure without returning a rejected promise', async () => {
+    vi.mocked(openTwitchOAuth).mockRejectedValue(new Error('登入服務暫時無法使用，請稍後再試'))
+    const mockToast = toast as { error: ReturnType<typeof vi.fn> }
+    renderHook(() => useAuth(), { wrapper: AuthProvider })
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent('auth:reauth-required'))
+    })
+
+    const options = mockToast.error.mock.calls[0][1] as {
+      action: { onClick: () => void }
+    }
+    act(() => {
+      options.action.onClick()
+    })
+
+    await waitFor(() =>
+      expect(mockToast.error).toHaveBeenLastCalledWith('無法啟動 Twitch 登入', {
+        description: '登入服務暫時無法使用，請稍後再試',
       })
     )
   })

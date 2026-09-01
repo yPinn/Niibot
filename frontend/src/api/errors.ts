@@ -89,6 +89,18 @@ export async function parseApiError(res: Response, fallback: string): Promise<Ap
   })
 }
 
+/** Parse an already-fetched JSON response without applying global auth events. */
+export async function parseApiJsonResponse<T>(res: Response, fallback: string): Promise<T> {
+  if (!res.ok) throw await parseApiError(res, fallback)
+
+  if (res.status === 204) return undefined as T
+  try {
+    return (await res.json()) as T
+  } catch {
+    throw new ApiError({ message: fallback, status: res.status, code: PARSE_ERROR })
+  }
+}
+
 /**
  * Fetch + parse JSON, throwing a typed ApiError on failure.
  * Use for every endpoint that returns a JSON body and whose errors should
@@ -112,14 +124,7 @@ export async function apiJson<T>(
     })
   }
 
-  if (!res.ok) throw await parseApiError(res, fallback)
-
-  if (res.status === 204) return undefined as T
-  try {
-    return (await res.json()) as T
-  } catch {
-    throw new ApiError({ message: fallback, status: res.status, code: PARSE_ERROR })
-  }
+  return parseApiJsonResponse<T>(res, fallback)
 }
 
 /** Extract a user-facing message from anything thrown, with a fallback. */
