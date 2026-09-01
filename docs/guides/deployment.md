@@ -2,6 +2,9 @@
 
 三個環境、Docker Compose overlay、CI/CD 密鑰同步、版本標記。
 
+Cloudflare Pages Functions 的額度、`_routes.json`、Fail mode 與常駐 Overlay
+request budget 見 [cloudflare-pages.md](cloudflare-pages.md)。
+
 ## 分支與環境
 
 | 分支                 | 環境   | 部署方式                                                               |
