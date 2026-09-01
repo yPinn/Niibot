@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse, Response
 
 from core.config import get_settings
 from core.database import get_database_manager, init_database_manager
-from core.dependencies import close_twitch_api, require_activated
+from core.dependencies import close_twitch_api, get_community_overlay_hub, require_activated
 from core.error_handlers import log_request_failure, register_exception_handlers
 from core.logging_setup import setup_logging
 from routers import (
@@ -140,6 +140,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     _community_overlay_cleanup_task = asyncio.create_task(
         community_overlay_cleanup_loop(db_manager)
     )
+    overlay_hub = get_community_overlay_hub()
+    overlay_hub.start()
 
     yield
 
@@ -156,6 +158,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     if _community_overlay_cleanup_task:
         _community_overlay_cleanup_task.cancel()
     try:
+        await overlay_hub.stop()
         await close_twitch_api()
         await close_bots_http_client()
         await db_manager.disconnect()

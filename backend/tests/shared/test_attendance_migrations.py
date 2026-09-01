@@ -81,3 +81,16 @@ def test_read_only_checkin_redemption_expands_schema_without_manage_scope():
 
     assert "channel:read:redemptions" in BROADCASTER_SCOPES
     assert "channel:manage:redemptions" not in BROADCASTER_SCOPES
+
+
+def test_overlay_stream_notifications_are_wake_only_and_transaction_safe() -> None:
+    sql = (_VERSIONS / "104_notify_community_overlay_updates.sql").read_text(encoding="utf-8")
+
+    assert "pg_notify('community_overlay_updates'" in sql
+    assert "AFTER INSERT ON community_overlay_events" in sql
+    assert "AFTER UPDATE OF published_revision_id ON community_overlay_profiles" in sql
+    assert "AFTER UPDATE OF public_key, enabled ON community_overlay_channels" in sql
+    function_body = sql.split("CREATE OR REPLACE FUNCTION", 1)[1].split("$$ LANGUAGE", 1)[0]
+    assert "channel_id" in function_body
+    assert "public_key" not in function_body
+    assert "payload" not in function_body

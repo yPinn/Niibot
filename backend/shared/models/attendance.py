@@ -96,6 +96,14 @@ class CommunityOverlayThemePublished:
 
 
 @dataclass(frozen=True, slots=True)
+class CommunityOverlaySnapshot:
+    channel_id: str
+    cursor: int
+    events: tuple[CommunityOverlayEvent, ...]
+    themes: dict[str, CommunityOverlayThemePublished]
+
+
+@dataclass(frozen=True, slots=True)
 class CommunityOverlayThemeState:
     channel_id: str
     block_type: str

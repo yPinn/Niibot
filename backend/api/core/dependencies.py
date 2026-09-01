@@ -17,6 +17,7 @@ from services import (
 )
 from services.admission_service import AdmissionService
 from services.bot_account_service import BotAccountService
+from services.community_overlay_stream import OverlayUpdateHub
 from services.game_queue_service import GameQueueService
 from services.identity_service import IdentityService
 from services.message_trigger_service import MessageTriggerService
@@ -34,6 +35,7 @@ from shared.services.community_overlay import CommunityOverlayService
 from shared.services.vip import VipService
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
+_community_overlay_hub: OverlayUpdateHub | None = None
 
 
 def get_auth_service() -> AuthService:
@@ -113,6 +115,13 @@ def get_community_overlay_service(
     pool: asyncpg.Pool = Depends(get_db_pool),
 ) -> CommunityOverlayService:
     return CommunityOverlayService(CommunityOverlayRepository(pool))
+
+
+def get_community_overlay_hub() -> OverlayUpdateHub:
+    global _community_overlay_hub
+    if _community_overlay_hub is None:
+        _community_overlay_hub = OverlayUpdateHub(get_settings().database_url)
+    return _community_overlay_hub
 
 
 def get_vip_service(pool: asyncpg.Pool = Depends(get_db_pool)) -> VipService:

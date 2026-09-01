@@ -9,9 +9,33 @@ from uuid import UUID
 import pytest
 
 from shared.community_overlay_themes import DEFAULT_OVERLAY_THEME
+from shared.models.attendance import CommunityOverlayFeed, CommunityOverlayThemePublished
 from shared.services.community_overlay import CommunityOverlayService
 
 _NOW = datetime(2026, 8, 31, 10, 0, tzinfo=UTC)
+_KEY = UUID("11111111-1111-4111-8111-111111111111")
+
+
+@pytest.mark.asyncio
+async def test_stream_snapshot_loads_cursor_and_all_registered_themes() -> None:
+    repo = MagicMock()
+    repo.resolve_public_channel = AsyncMock(return_value="ch1")
+    repo.get_feed = AsyncMock(return_value=CommunityOverlayFeed(cursor=12, events=()))
+    repo.get_public_theme = AsyncMock(
+        side_effect=[
+            CommunityOverlayThemePublished(41, "checkin-card", 1, DEFAULT_OVERLAY_THEME, _NOW),
+            CommunityOverlayThemePublished(42, "tarot-card", 1, DEFAULT_OVERLAY_THEME, _NOW),
+        ]
+    )
+    service = CommunityOverlayService(repo)
+
+    snapshot = await service.get_stream_snapshot(_KEY, after_id=9)
+
+    assert snapshot is not None
+    assert snapshot.channel_id == "ch1"
+    assert snapshot.cursor == 12
+    assert set(snapshot.themes) == {"checkin", "tarot"}
+    assert repo.get_public_theme.await_count == 2
 
 
 @pytest.mark.asyncio
