@@ -100,8 +100,37 @@ requests_per_day = 86,400,000 ms / interval_ms
 Overlay。
 
 長期方案是 durable event table replay + PostgreSQL `NOTIFY` 喚醒 SSE；
-events 與 theme 共用可重連 stream，正常穩態不再產生週期性 Pages Function
-invocations。
+events 與 theme 共用可重連 stream，移除秒級 polling；正常穩態僅保留每 5 分鐘一次的 bounded
+stream rotation（每個常駐 source 約 288 requests／日）。
+
+### Live Display stream contract
+
+- Renderer 以 `GET /api/live-display/public/stream` 建立一條 `fetch` stream，
+  capability 僅放在 `X-Overlay-Key`，不得放進 query、log 或 SSE payload。
+- 初次 live 連線不重播舊事件；preview 使用 `after_id=0`。斷線後必須帶最後收到的 cursor，
+  由 `community_overlay_events` 補送尚未過期事件。
+- PostgreSQL `NOTIFY` 只包含 `channel_id` 與更新種類，僅作喚醒；事件與 theme body 一律重新由
+  durable tables 讀取。每個 API process 只能有一條 listener connection，不得為每個 OBS source
+  配一條資料庫連線；每個 channel 最多 10 條、每個 process 最多 1,000 條 concurrent streams，
+  超限明確回 429。
+- Pages proxy 只對上述精確 GET route 取消 15 秒上游 timeout，並組合 caller abort signal 與 5 分鐘
+  stream lease；其他 `/api/*` 仍維持 15 秒 timeout。response 必須保持 streaming，不得先 buffer
+  完整 body。lease 到期由 renderer 帶 cursor 重連，每個常駐 source 最多約 288 次 invocation／日，
+  backend generator 也實施相同的 monotonic hard lease，因此即使 Cloudflare 未送出 disconnect signal，
+  殘留 upstream／hub slot 仍由 API 自己在 5 分鐘內清除。
+- Preview 與 Production 建議啟用 Pages Functions `enable_request_signal` 相容性旗標，讓 client／OBS
+  中斷後能立刻取消 upstream fetch；它是快速清理優化，不是容量正確性的唯一保證。若 Dashboard
+  未列出該旗標，應透過先下載並完整核對的 Wrangler config 或 Pages API 管理；不要直接加入不完整
+  設定覆蓋既有環境變數或 bindings。staging 仍需驗證 client abort 與 hard lease 兩條 cleanup 路徑。
+- SSE 使用 `snapshot`、`update`、`heartbeat`；renderer 必須隔離壞 frame、依 event id 去重，並以
+  指數退避加 jitter reconnect。正常狀態不得 fallback 到週期 polling，避免故障時靜默恢復高流量。
+- Cloudflare runtime 更新或 hard lease 會中止長連線，因此「任一時刻一條 invocation」不代表
+  永不重連；驗收看的是 invocation 不再以秒級 polling 線性成長，且重連能以 cursor 補齊事件。
+
+官方依據：
+
+- [Request signal compatibility flag](https://developers.cloudflare.com/changelog/post/2025-05-22-handle-request-cancellation/)
+- [Pages Wrangler configuration](https://developers.cloudflare.com/pages/functions/wrangler-configuration/)
 
 ## Incident 檢查順序
 
