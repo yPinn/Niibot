@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { requestUrl } from '@/test/requestUrl'
 
-import { getCheckinSettings, updateCheckinSettings } from './checkin'
+import { getCheckinLeaderboard, getCheckinSettings, updateCheckinSettings } from './checkin'
 
 describe('check-in settings API', () => {
   afterEach(() => vi.unstubAllGlobals())
@@ -18,6 +18,20 @@ describe('check-in settings API', () => {
     await getCheckinSettings()
 
     expect(requestUrl(fetchMock.mock.calls[0][0]).pathname).toBe('/api/checkin/settings')
+    expect(fetchMock.mock.calls[0][1]).toEqual({ credentials: 'include' })
+  })
+
+  it('loads the authenticated tenant leaderboard', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue([]),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await getCheckinLeaderboard()
+
+    expect(requestUrl(fetchMock.mock.calls[0][0]).pathname).toBe('/api/checkin/leaderboard')
     expect(fetchMock.mock.calls[0][1]).toEqual({ credentials: 'include' })
   })
 

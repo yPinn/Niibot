@@ -205,3 +205,42 @@ class TestCheckinSettings:
             "$(user) checked in $(count)",
             "$(user) already checked in",
         ]
+
+
+@pytest.mark.asyncio
+class TestCheckinLeaderboard:
+    async def test_lists_tenant_scoped_viewer_totals_in_rank_order(self):
+        pool, conn = _pool()
+        conn.fetch.return_value = [
+            {
+                "rank": 1,
+                "user_id": "u1",
+                "username": "alice",
+                "display_name": "Alice",
+                "total_days": 12,
+                "last_checkin_date": _DAY,
+            },
+            {
+                "rank": 2,
+                "user_id": "u2",
+                "username": "bob",
+                "display_name": None,
+                "total_days": 8,
+                "last_checkin_date": _DAY,
+            },
+        ]
+        repo = AttendanceRepository(pool)
+
+        leaderboard = await repo.list_leaderboard("ch1")
+
+        assert [(entry.rank, entry.user_id, entry.total_days) for entry in leaderboard] == [
+            (1, "u1", 12),
+            (2, "u2", 8),
+        ]
+        sql, channel_id, limit = conn.fetch.await_args.args
+        normalized_sql = " ".join(sql.split())
+        assert "WHERE channel_id = $1" in normalized_sql
+        assert "PARTITION BY user_id" in normalized_sql
+        assert "ORDER BY total_days DESC" in normalized_sql
+        assert "LIMIT $2" in normalized_sql
+        assert (channel_id, limit) == ("ch1", 100)

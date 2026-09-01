@@ -7,7 +7,12 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from shared.models.attendance import CheckinResult, CheckinSettings, CheckinStatus
+from shared.models.attendance import (
+    CheckinLeaderboardEntry,
+    CheckinResult,
+    CheckinSettings,
+    CheckinStatus,
+)
 from shared.services.attendance import AttendanceService
 
 
@@ -22,6 +27,26 @@ def _settings(timezone: str = "Asia/Taipei") -> CheckinSettings:
 
 @pytest.mark.asyncio
 class TestAttendanceService:
+    async def test_get_leaderboard_uses_requested_channel(self):
+        entries = (
+            CheckinLeaderboardEntry(
+                rank=1,
+                user_id="u1",
+                username="alice",
+                display_name="Alice",
+                total_days=12,
+                last_checkin_date=date(2026, 8, 31),
+            ),
+        )
+        repo = MagicMock()
+        repo.list_leaderboard = AsyncMock(return_value=entries)
+        service = AttendanceService(repo)
+
+        result = await service.get_leaderboard("ch1")
+
+        assert result is entries
+        repo.list_leaderboard.assert_awaited_once_with("ch1")
+
     async def test_get_settings_uses_requested_channel(self):
         repo = MagicMock()
         repo.get_or_create_settings = AsyncMock(return_value=_settings())

@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from shared.checkin_templates import render_checkin_template, validate_checkin_template
 from shared.models.attendance import (
+    CheckinLeaderboardEntry,
     CheckinReply,
     CheckinResult,
     CheckinSettings,
@@ -21,6 +22,9 @@ class AttendanceService:
 
     async def get_settings(self, channel_id: str) -> CheckinSettings:
         return await self.repository.get_or_create_settings(channel_id)
+
+    async def get_leaderboard(self, channel_id: str) -> tuple[CheckinLeaderboardEntry, ...]:
+        return await self.repository.list_leaderboard(channel_id)
 
     async def update_settings(
         self,
