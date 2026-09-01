@@ -142,6 +142,7 @@ export const API_ENDPOINTS = {
     addEntry: join('/api/video-queue/entries'),
   },
   communityOverlay: {
+    stream: join('/api/live-display/public/stream'),
     events: join('/api/live-display/public/events'),
     theme: join('/api/live-display/public/theme'),
     settings: join('/api/live-display/settings'),

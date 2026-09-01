@@ -28,6 +28,7 @@ export default defineConfig({
         'src/components/ProtectedRoute.tsx',
         'src/api/user.ts',
         'src/api/communityOverlay.ts',
+        'src/api/communityOverlayStream.ts',
         'src/contexts/AuthContext.tsx',
         'src/pages/CommunityOverlay.tsx',
         'src/pages/modules/CommunityOverlaySettings.tsx',
