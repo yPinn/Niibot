@@ -23,6 +23,7 @@ vi.mock('@/api/vip', () => ({
   adoptExternalVip: vi.fn(),
   keepExternalVip: vi.fn(),
   adjustVipEntitlement: vi.fn(),
+  removeVipEntitlement: vi.fn(),
   setVipRulesEnabled: vi.fn(),
 }))
 vi.mock('@/contexts/AuthContext', () => ({
@@ -40,7 +41,8 @@ import {
   getTwitchRewards,
   updateRedemptionConfig,
 } from '@/api/events'
-import { adjustVipEntitlement, getVipState, upsertVipRule } from '@/api/vip'
+import { adjustVipEntitlement, getVipState, removeVipEntitlement, upsertVipRule } from '@/api/vip'
+import { toastApiError } from '@/lib/toast-error'
 
 import ChannelPoints from './index'
 
@@ -423,5 +425,86 @@ describe('Channel Points page', () => {
     await user.click(screen.getByRole('button', { name: '套用' }))
 
     await waitFor(() => expect(adjustVipEntitlement).toHaveBeenCalledWith('user-1', 6, false))
+  })
+
+  it('shows the Twitch VIP badge before the username and confirms manual removal', async () => {
+    const user = userEvent.setup()
+    vi.mocked(getRedemptionConfigs).mockResolvedValueOnce([VIP])
+    vi.mocked(getVipState).mockResolvedValue({
+      ...VIP_STATE,
+      entitlements: [
+        {
+          id: 1,
+          channel_id: 'channel-1',
+          user_id: 'user-1',
+          user_login: 'alice',
+          display_name: 'Alice',
+          source: 'managed',
+          status: 'active',
+          granted_at: '2026-08-31T00:00:00Z',
+          expires_at: '2099-01-01T00:00:00Z',
+          is_permanent: false,
+          last_reward_rule_id: 1,
+          last_synced_at: '2026-08-31T00:00:00Z',
+        },
+      ],
+    })
+    render(<ChannelPoints />)
+
+    await user.click(await screen.findByRole('button', { name: '管理VIP 授予設定' }))
+
+    const vipBadge = await screen.findByRole('img', { name: 'VIP' })
+    const username = screen.getByText('Alice')
+    expect(vipBadge).toHaveAttribute('width', '18')
+    expect(
+      vipBadge.compareDocumentPosition(username) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+
+    await user.click(screen.getByRole('button', { name: '移除 Alice 的 VIP' }))
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('移除 Alice 的 VIP？')
+    expect(removeVipEntitlement).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: '取消' }))
+    expect(removeVipEntitlement).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: '移除 Alice 的 VIP' }))
+    await user.click(screen.getByRole('button', { name: '移除 VIP' }))
+
+    await waitFor(() => expect(removeVipEntitlement).toHaveBeenCalledWith('user-1'))
+    await waitFor(() => expect(getVipState).toHaveBeenCalledTimes(3))
+  })
+
+  it('keeps the VIP visible when Twitch rejects manual removal', async () => {
+    const user = userEvent.setup()
+    vi.mocked(getRedemptionConfigs).mockResolvedValueOnce([VIP])
+    vi.mocked(removeVipEntitlement).mockRejectedValueOnce(new Error('offline'))
+    vi.mocked(getVipState).mockResolvedValue({
+      ...VIP_STATE,
+      entitlements: [
+        {
+          id: 1,
+          channel_id: 'channel-1',
+          user_id: 'user-1',
+          user_login: 'alice',
+          display_name: 'Alice',
+          source: 'external_event',
+          status: 'active',
+          granted_at: null,
+          expires_at: null,
+          is_permanent: false,
+          last_reward_rule_id: null,
+          last_synced_at: '2026-08-31T00:00:00Z',
+        },
+      ],
+    })
+    render(<ChannelPoints />)
+
+    await user.click(await screen.findByRole('button', { name: '管理VIP 授予設定' }))
+    await user.click(await screen.findByRole('button', { name: '移除 Alice 的 VIP' }))
+    await user.click(screen.getByRole('button', { name: '移除 VIP' }))
+
+    await waitFor(() => expect(toastApiError).toHaveBeenCalled())
+    expect(screen.getByText('Alice')).toBeInTheDocument()
+    expect(getVipState).toHaveBeenCalledTimes(2)
   })
 })

@@ -3,7 +3,7 @@
 import logging
 from typing import cast
 
-from services._twitch_api._base import _TwitchAPIBase
+from services._twitch_api._base import HELIX_BASE, _TwitchAPIBase
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -75,6 +75,25 @@ class _ChannelMixin(_TwitchAPIBase):
             cursor = body.get("pagination", {}).get("cursor")
             if not cursor:
                 return results
+
+    async def remove_vip(self, broadcaster_id: str, user_id: str, access_token: str) -> None:
+        """Remove one VIP from a channel or fail without exposing Twitch details."""
+        try:
+            response = await self._http.delete(
+                f"{HELIX_BASE}/channels/vips",
+                params={"broadcaster_id": broadcaster_id, "user_id": user_id},
+                headers=self._app_headers(access_token),
+            )
+        except Exception:
+            LOGGER.warning("Twitch VIP removal request failed for broadcaster %s", broadcaster_id)
+            raise RuntimeError("Twitch VIP removal failed") from None
+        if response.status_code != 204:
+            LOGGER.warning(
+                "Twitch VIP removal rejected for broadcaster %s with status %s",
+                broadcaster_id,
+                response.status_code,
+            )
+            raise RuntimeError("Twitch VIP removal failed")
 
     # ------------------------------------------------------------------
     # Videos / VODs

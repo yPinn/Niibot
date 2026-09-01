@@ -186,6 +186,35 @@ class TestGetVips:
             await mock.client().get_vips("channel-1", "token")
 
 
+@pytest.mark.asyncio
+class TestRemoveVip:
+    async def test_deletes_the_named_vip_with_broadcaster_token(self):
+        mock = _MockAPI().route(
+            "DELETE",
+            "/helix/channels/vips",
+            httpx.Response(204),
+        )
+
+        await mock.client().remove_vip("channel-1", "user-1", "broadcaster-token")
+
+        request = mock.requests[-1]
+        assert request.url.params["broadcaster_id"] == "channel-1"
+        assert request.url.params["user_id"] == "user-1"
+        assert request.headers["authorization"] == "Bearer broadcaster-token"
+
+    async def test_raises_without_leaking_twitch_response_when_removal_fails(self):
+        mock = _MockAPI().route(
+            "DELETE",
+            "/helix/channels/vips",
+            httpx.Response(403, json={"message": "upstream details"}),
+        )
+
+        with pytest.raises(RuntimeError, match="VIP removal failed") as error:
+            await mock.client().remove_vip("channel-1", "user-1", "token")
+
+        assert "upstream details" not in str(error.value)
+
+
 # ---------------------------------------------------------------------------
 # generate_oauth_url
 # ---------------------------------------------------------------------------

@@ -1,6 +1,7 @@
 """Timed VIP domain rules independent from Twitch transport."""
 
 from datetime import UTC, datetime
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -78,6 +79,39 @@ def test_add_calendar_months_rejects_naive_datetime():
 
 
 class TestVipService:
+    @pytest.mark.asyncio
+    async def test_requires_an_active_tenant_scoped_entitlement_before_manual_removal(self):
+        repository = MagicMock()
+        repository.get_entitlement = AsyncMock(return_value=_entitlement())
+        service = VipService(repository)
+
+        entitlement = await service.require_active_entitlement(channel_id="ch1", user_id="u1")
+
+        assert entitlement.user_id == "u1"
+        repository.get_entitlement.assert_awaited_once_with(channel_id="ch1", user_id="u1")
+
+    @pytest.mark.asyncio
+    async def test_rejects_manual_removal_when_the_entitlement_is_not_active(self):
+        repository = MagicMock()
+        repository.get_entitlement = AsyncMock(return_value=None)
+        service = VipService(repository)
+
+        with pytest.raises(ValueError, match="active VIP entitlement"):
+            await service.require_active_entitlement(channel_id="ch1", user_id="u1")
+
+    @pytest.mark.asyncio
+    async def test_records_manual_removal_after_twitch_confirms_it(self):
+        repository = MagicMock()
+        repository.mark_removed_external = AsyncMock()
+        service = VipService(repository)
+        removed_at = datetime(2026, 9, 1, tzinfo=UTC)
+
+        await service.record_manual_removal(channel_id="ch1", user_id="u1", removed_at=removed_at)
+
+        repository.mark_removed_external.assert_awaited_once_with(
+            channel_id="ch1", user_id="u1", synced_at=removed_at
+        )
+
     def test_new_rule_defaults_to_three_months(self):
         rule = VipService.build_rule(
             channel_id="ch1",

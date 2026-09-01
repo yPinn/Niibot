@@ -175,3 +175,15 @@ export function adjustVipEntitlement(
     { fallback: '調整 VIP 預計期限失敗' }
   )
 }
+
+export function removeVipEntitlement(userId: string): Promise<void> {
+  return apiJson(
+    API_ENDPOINTS.vip.entitlement(userId),
+    {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: mutationHeaders,
+    },
+    { fallback: '移除 Twitch VIP 失敗' }
+  )
+}
