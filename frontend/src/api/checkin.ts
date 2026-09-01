@@ -16,11 +16,28 @@ export interface CheckinSettingsUpdate {
   duplicate_template: string
 }
 
+export interface CheckinLeaderboardEntry {
+  rank: number
+  user_id: string
+  username: string
+  display_name: string | null
+  total_days: number
+  last_checkin_date: string
+}
+
 export function getCheckinSettings(): Promise<CheckinSettings> {
   return apiJson(
     API_ENDPOINTS.checkin.settings,
     { credentials: 'include' },
     { fallback: '載入簽到設定失敗' }
+  )
+}
+
+export function getCheckinLeaderboard(): Promise<CheckinLeaderboardEntry[]> {
+  return apiJson(
+    API_ENDPOINTS.checkin.leaderboard,
+    { credentials: 'include' },
+    { fallback: '載入簽到排行榜失敗' }
   )
 }
 

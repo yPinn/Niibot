@@ -10,6 +10,7 @@ import React, {
 import { toast } from 'sonner'
 
 import { type Channel, getCurrentUser, getTwitchMonitoredChannels, type User } from '@/api'
+import { errorMessage } from '@/api/errors'
 import { openTwitchOAuth } from '@/api/twitchOAuth'
 import { logout as apiLogout } from '@/api/user'
 import { apiCache } from '@/lib/apiCache'
@@ -76,10 +77,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Global reauth interceptor — Twitch scope missing, show persistent toast.
   useEffect(() => {
+    const startReauthorization = () => {
+      void openTwitchOAuth().catch(error => {
+        toast.error('無法啟動 Twitch 登入', {
+          description: errorMessage(error, '登入服務暫時無法使用，請稍後再試'),
+        })
+      })
+    }
+
     const handleReauthRequired = () => {
       toast.error('需要重新授權 Twitch 帳號', {
         description: '此功能需要額外的 Twitch 授權，請重新登入以繼續',
-        action: { label: '重新授權', onClick: openTwitchOAuth },
+        action: { label: '重新授權', onClick: startReauthorization },
         duration: 12000,
       })
     }

@@ -103,6 +103,7 @@ export const API_ENDPOINTS = {
   },
   checkin: {
     settings: join('/api/checkin/settings'),
+    leaderboard: join('/api/checkin/leaderboard'),
   },
   vip: {
     state: join('/api/vip/state'),

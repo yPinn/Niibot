@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 
-import { type CheckinSettings, getCheckinSettings, updateCheckinSettings } from '@/api/checkin'
+import {
+  type CheckinLeaderboardEntry,
+  type CheckinSettings,
+  getCheckinLeaderboard,
+  getCheckinSettings,
+  updateCheckinSettings,
+} from '@/api/checkin'
 import { Icon, Spinner } from '@/components/primitives'
 import {
   Alert,
@@ -23,6 +29,8 @@ import {
 import { VariableInserter } from '@/components/VariableInserter'
 import { useInputInsert } from '@/hooks/useInputInsert'
 import { toastApiError } from '@/lib/toast-error'
+
+import { CheckinLeaderboard } from './CheckinLeaderboard'
 
 interface CheckinSettingsSheetProps {
   open: boolean
@@ -84,6 +92,9 @@ export function CheckinSettingsSheet({ open, onOpenChange }: CheckinSettingsShee
   const [loadFailed, setLoadFailed] = useState(false)
   const [saving, setSaving] = useState(false)
   const [validationError, setValidationError] = useState<string | null>(null)
+  const [leaderboard, setLeaderboard] = useState<CheckinLeaderboardEntry[]>([])
+  const [leaderboardLoading, setLeaderboardLoading] = useState(false)
+  const [leaderboardLoadFailed, setLeaderboardLoadFailed] = useState(false)
 
   const loadSettings = useCallback(async () => {
     setLoading(true)
@@ -99,11 +110,24 @@ export function CheckinSettingsSheet({ open, onOpenChange }: CheckinSettingsShee
     }
   }, [])
 
+  const loadLeaderboard = useCallback(async () => {
+    setLeaderboardLoading(true)
+    setLeaderboardLoadFailed(false)
+    try {
+      setLeaderboard(await getCheckinLeaderboard())
+    } catch {
+      setLeaderboardLoadFailed(true)
+    } finally {
+      setLeaderboardLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
     if (!open) return
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadSettings()
-  }, [loadSettings, open])
+    void loadLeaderboard()
+  }, [loadLeaderboard, loadSettings, open])
 
   const updateForm = (field: keyof CheckinForm, value: string) => {
     setForm(current => ({ ...current, [field]: value }))
@@ -146,7 +170,7 @@ export function CheckinSettingsSheet({ open, onOpenChange }: CheckinSettingsShee
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="gap-section sm:max-w-lg">
+      <SheetContent className="gap-section sm:max-w-4xl">
         <SheetHeader>
           <SheetTitle>Check-in settings</SheetTitle>
           <SheetDescription>
@@ -154,94 +178,108 @@ export function CheckinSettingsSheet({ open, onOpenChange }: CheckinSettingsShee
           </SheetDescription>
         </SheetHeader>
 
-        <div className="flex flex-1 flex-col gap-card overflow-y-auto px-page">
-          {loading ? (
-            <div className="space-y-4">
-              <Skeleton className="h-16 w-full" />
-              <Skeleton className="h-48 w-full" />
-              <Skeleton className="h-48 w-full" />
-            </div>
-          ) : loadFailed ? (
-            <Alert variant="destructive">
-              <Icon icon="fa-solid fa-circle-exclamation" />
-              <AlertTitle>簽到設定載入失敗</AlertTitle>
-              <AlertDescription>
-                <Button size="sm" variant="outline" onClick={() => void loadSettings()}>
-                  重新載入
-                </Button>
-              </AlertDescription>
-            </Alert>
-          ) : (
-            <>
-              <section className="space-y-2" aria-labelledby="checkin-timezone-label">
-                <Label id="checkin-timezone-label" htmlFor="checkin-timezone">
-                  時區
-                </Label>
-                <Input
-                  id="checkin-timezone"
-                  aria-label="時區"
-                  value={form.timezone}
-                  maxLength={64}
-                  placeholder="Asia/Taipei"
-                  onChange={event => updateForm('timezone', event.target.value)}
-                />
-                <p className="text-label text-muted-foreground">
-                  使用 IANA 時區名稱；每日簽到會依此時區跨日，例如 Asia/Taipei。
-                </p>
-              </section>
-
-              <section className="space-y-3 border-t pt-card" aria-labelledby="success-label">
-                <div className="space-y-1">
-                  <Label id="success-label" htmlFor="checkin-success-template">
-                    簽到成功訊息
+        <div className="grid flex-1 items-start gap-section overflow-y-auto px-page pb-page lg:grid-cols-2">
+          <div className="space-y-card">
+            {loading ? (
+              <div className="space-y-4">
+                <Skeleton className="h-16 w-full" />
+                <Skeleton className="h-48 w-full" />
+                <Skeleton className="h-48 w-full" />
+              </div>
+            ) : loadFailed ? (
+              <Alert variant="destructive">
+                <Icon icon="fa-solid fa-circle-exclamation" />
+                <AlertTitle>簽到設定載入失敗</AlertTitle>
+                <AlertDescription>
+                  <Button size="sm" variant="outline" onClick={() => void loadSettings()}>
+                    重新載入
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            ) : (
+              <>
+                <section className="space-y-2" aria-labelledby="checkin-timezone-label">
+                  <Label id="checkin-timezone-label" htmlFor="checkin-timezone">
+                    時區
                   </Label>
-                  <p className="text-label text-muted-foreground">當今天第一次簽到成功時回覆。</p>
-                </div>
-                <Textarea
-                  id="checkin-success-template"
-                  ref={successInputRef}
-                  value={form.successTemplate}
-                  maxLength={500}
-                  rows={3}
-                  className="font-mono text-sub"
-                  onChange={event => updateForm('successTemplate', event.target.value)}
-                />
-                <VariableInserter variables={CHECKIN_VARIABLES} onInsert={insertSuccessVariable} />
-                <MessagePreview label="成功訊息" template={form.successTemplate} />
-              </section>
-
-              <section className="space-y-3 border-t pt-card" aria-labelledby="duplicate-label">
-                <div className="space-y-1">
-                  <Label id="duplicate-label" htmlFor="checkin-duplicate-template">
-                    已簽到訊息
-                  </Label>
+                  <Input
+                    id="checkin-timezone"
+                    aria-label="時區"
+                    value={form.timezone}
+                    maxLength={64}
+                    placeholder="Asia/Taipei"
+                    onChange={event => updateForm('timezone', event.target.value)}
+                  />
                   <p className="text-label text-muted-foreground">
-                    同一位觀眾在同一天重複簽到時回覆，不會增加累積天數。
+                    使用 IANA 時區名稱；每日簽到會依此時區跨日，例如 Asia/Taipei。
                   </p>
-                </div>
-                <Textarea
-                  id="checkin-duplicate-template"
-                  ref={duplicateInputRef}
-                  value={form.duplicateTemplate}
-                  maxLength={500}
-                  rows={3}
-                  className="font-mono text-sub"
-                  onChange={event => updateForm('duplicateTemplate', event.target.value)}
-                />
-                <VariableInserter
-                  variables={CHECKIN_VARIABLES}
-                  onInsert={insertDuplicateVariable}
-                />
-                <MessagePreview label="重複訊息" template={form.duplicateTemplate} />
-              </section>
+                </section>
 
-              {validationError && (
-                <p className="text-label text-destructive" role="alert">
-                  {validationError}
-                </p>
-              )}
-            </>
-          )}
+                <section className="space-y-3 border-t pt-card" aria-labelledby="success-label">
+                  <div className="space-y-1">
+                    <Label id="success-label" htmlFor="checkin-success-template">
+                      簽到成功訊息
+                    </Label>
+                    <p className="text-label text-muted-foreground">當今天第一次簽到成功時回覆。</p>
+                  </div>
+                  <Textarea
+                    id="checkin-success-template"
+                    ref={successInputRef}
+                    value={form.successTemplate}
+                    maxLength={500}
+                    rows={3}
+                    className="font-mono text-sub"
+                    onChange={event => updateForm('successTemplate', event.target.value)}
+                  />
+                  <VariableInserter
+                    variables={CHECKIN_VARIABLES}
+                    onInsert={insertSuccessVariable}
+                  />
+                  <MessagePreview label="成功訊息" template={form.successTemplate} />
+                </section>
+
+                <section className="space-y-3 border-t pt-card" aria-labelledby="duplicate-label">
+                  <div className="space-y-1">
+                    <Label id="duplicate-label" htmlFor="checkin-duplicate-template">
+                      已簽到訊息
+                    </Label>
+                    <p className="text-label text-muted-foreground">
+                      同一位觀眾在同一天重複簽到時回覆，不會增加累積天數。
+                    </p>
+                  </div>
+                  <Textarea
+                    id="checkin-duplicate-template"
+                    ref={duplicateInputRef}
+                    value={form.duplicateTemplate}
+                    maxLength={500}
+                    rows={3}
+                    className="font-mono text-sub"
+                    onChange={event => updateForm('duplicateTemplate', event.target.value)}
+                  />
+                  <VariableInserter
+                    variables={CHECKIN_VARIABLES}
+                    onInsert={insertDuplicateVariable}
+                  />
+                  <MessagePreview label="重複訊息" template={form.duplicateTemplate} />
+                </section>
+
+                {validationError && (
+                  <p className="text-label text-destructive" role="alert">
+                    {validationError}
+                  </p>
+                )}
+              </>
+            )}
+          </div>
+
+          <div className="lg:border-l lg:pl-section">
+            <CheckinLeaderboard
+              entries={leaderboard}
+              loading={leaderboardLoading}
+              loadFailed={leaderboardLoadFailed}
+              onRetry={() => void loadLeaderboard()}
+            />
+          </div>
         </div>
 
         <SheetFooter className="shrink-0 flex-row justify-end gap-2">

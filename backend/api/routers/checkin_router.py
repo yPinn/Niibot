@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Header
@@ -35,6 +35,17 @@ class CheckinSettingsResponse(BaseModel):
     updated_at: datetime | None = None
 
 
+class CheckinLeaderboardEntryResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    rank: int
+    user_id: str
+    username: str
+    display_name: str | None
+    total_days: int
+    last_checkin_date: date
+
+
 class CheckinSettingsUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
@@ -50,6 +61,15 @@ async def get_checkin_settings(
 ) -> CheckinSettingsResponse:
     settings = await service.get_settings(tenant.channel_id)
     return CheckinSettingsResponse.model_validate(settings)
+
+
+@router.get("/leaderboard", response_model=list[CheckinLeaderboardEntryResponse])
+async def get_checkin_leaderboard(
+    tenant: TenantContext = Depends(require_self_tenant_access),
+    service: AttendanceService = Depends(get_attendance_service),
+) -> list[CheckinLeaderboardEntryResponse]:
+    entries = await service.get_leaderboard(tenant.channel_id)
+    return [CheckinLeaderboardEntryResponse.model_validate(entry) for entry in entries]
 
 
 @router.patch("/settings", response_model=CheckinSettingsResponse)

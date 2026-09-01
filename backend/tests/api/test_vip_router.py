@@ -74,6 +74,8 @@ def _service() -> MagicMock:
     service.set_rules_enabled = AsyncMock(return_value=())
     service.adopt_external_redemption = AsyncMock(return_value=MagicMock())
     service.keep_external_redemption = AsyncMock()
+    service.require_active_entitlement = AsyncMock(return_value=MagicMock(user_id="u1"))
+    service.record_manual_removal = AsyncMock()
     return service
 
 
@@ -121,6 +123,68 @@ def test_patch_slot_limit_rejects_tenant_id_and_requires_action_header() -> None
     assert injected.status_code == 422
     assert missing_header.status_code == 422
     service.update_slot_limit.assert_not_awaited()
+
+
+def test_delete_entitlement_removes_twitch_vip_before_recording_local_state() -> None:
+    service = _service()
+    events: list[str] = []
+    twitch = MagicMock()
+    twitch.remove_vip = AsyncMock(side_effect=lambda *_: events.append("twitch"))
+    service.record_manual_removal = AsyncMock(side_effect=lambda **_: events.append("repository"))
+    channels = MagicMock()
+    channels.get_token_with_refresh = AsyncMock(return_value="token")
+
+    response = _client(service, twitch=twitch, channels=channels).delete(
+        "/api/vip/entitlements/u1", headers=_ACTION
+    )
+
+    assert response.status_code == 204
+    service.require_active_entitlement.assert_awaited_once_with(channel_id=CHANNEL_ID, user_id="u1")
+    twitch.remove_vip.assert_awaited_once_with(CHANNEL_ID, "u1", "token")
+    service.record_manual_removal.assert_awaited_once()
+    assert events == ["twitch", "repository"]
+
+
+def test_delete_entitlement_does_not_change_local_state_when_twitch_fails() -> None:
+    service = _service()
+    twitch = MagicMock()
+    twitch.remove_vip = AsyncMock(side_effect=RuntimeError("upstream details"))
+    channels = MagicMock()
+    channels.get_token_with_refresh = AsyncMock(return_value="token")
+
+    response = _client(service, twitch=twitch, channels=channels).delete(
+        "/api/vip/entitlements/u1", headers=_ACTION
+    )
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "VIP.REMOVE_FAILED"
+    assert "upstream details" not in response.text
+    service.record_manual_removal.assert_not_awaited()
+
+
+def test_delete_entitlement_rejects_a_user_outside_the_active_tenant_state() -> None:
+    service = _service()
+    service.require_active_entitlement = AsyncMock(side_effect=ValueError("not found"))
+    twitch = MagicMock()
+    twitch.remove_vip = AsyncMock()
+
+    response = _client(service, twitch=twitch).delete(
+        "/api/vip/entitlements/other-user", headers=_ACTION
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "VIP.ENTITLEMENT_NOT_FOUND"
+    twitch.remove_vip.assert_not_awaited()
+    service.record_manual_removal.assert_not_awaited()
+
+
+def test_delete_entitlement_requires_explicit_action_header() -> None:
+    service = _service()
+
+    response = _client(service).delete("/api/vip/entitlements/u1")
+
+    assert response.status_code == 422
+    service.require_active_entitlement.assert_not_awaited()
 
 
 def test_initialize_requires_complete_twitch_snapshot_before_writing() -> None:

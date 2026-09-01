@@ -7,7 +7,12 @@ from datetime import date, datetime, timedelta
 import asyncpg
 
 from shared.community_events import CHECKIN_RECORDED, validate_community_event
-from shared.models.attendance import CheckinResult, CheckinSettings, CheckinStatus
+from shared.models.attendance import (
+    CheckinLeaderboardEntry,
+    CheckinResult,
+    CheckinSettings,
+    CheckinStatus,
+)
 
 _CHECKIN_COLUMNS = (
     "id, channel_id, user_id, username, display_name, checkin_date, session_id, created_at"
@@ -68,6 +73,57 @@ class AttendanceRepository:
         if row is None:
             raise RuntimeError(f"Failed to update check-in settings for channel {channel_id}")
         return CheckinSettings(**dict(row))
+
+    async def list_leaderboard(
+        self, channel_id: str, *, limit: int = 100
+    ) -> tuple[CheckinLeaderboardEntry, ...]:
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                WITH ranked_checkins AS (
+                    SELECT
+                        user_id,
+                        username,
+                        display_name,
+                        checkin_date,
+                        COUNT(*) OVER (PARTITION BY user_id) AS total_days,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY user_id
+                            ORDER BY checkin_date DESC, id DESC
+                        ) AS recent_row
+                    FROM viewer_checkins
+                    WHERE channel_id = $1
+                ), viewer_totals AS (
+                    SELECT
+                        user_id,
+                        username,
+                        display_name,
+                        total_days,
+                        checkin_date AS last_checkin_date
+                    FROM ranked_checkins
+                    WHERE recent_row = 1
+                )
+                SELECT
+                    ROW_NUMBER() OVER (
+                        ORDER BY
+                            total_days DESC,
+                            last_checkin_date DESC,
+                            LOWER(COALESCE(display_name, username)),
+                            user_id
+                    ) AS rank,
+                    user_id,
+                    username,
+                    display_name,
+                    total_days,
+                    last_checkin_date
+                FROM viewer_totals
+                ORDER BY rank
+                LIMIT $2
+                """,
+                channel_id,
+                limit,
+            )
+        return tuple(CheckinLeaderboardEntry(**dict(row)) for row in rows)
 
     async def record_checkin(
         self,

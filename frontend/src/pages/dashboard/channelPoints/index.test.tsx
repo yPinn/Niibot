@@ -10,6 +10,7 @@ vi.mock('@/api/events', () => ({
   updateRedemptionConfig: vi.fn(),
 }))
 vi.mock('@/api/checkin', () => ({
+  getCheckinLeaderboard: vi.fn(),
   getCheckinSettings: vi.fn(),
   updateCheckinSettings: vi.fn(),
 }))
@@ -22,6 +23,7 @@ vi.mock('@/api/vip', () => ({
   adoptExternalVip: vi.fn(),
   keepExternalVip: vi.fn(),
   adjustVipEntitlement: vi.fn(),
+  removeVipEntitlement: vi.fn(),
   setVipRulesEnabled: vi.fn(),
 }))
 vi.mock('@/contexts/AuthContext', () => ({
@@ -31,7 +33,7 @@ vi.mock('@/hooks/useDocumentTitle', () => ({ useDocumentTitle: vi.fn() }))
 vi.mock('@/lib/toast-error', () => ({ toastApiError: vi.fn() }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
-import { getCheckinSettings, updateCheckinSettings } from '@/api/checkin'
+import { getCheckinLeaderboard, getCheckinSettings, updateCheckinSettings } from '@/api/checkin'
 import {
   getEventCatalog,
   getEventConfigs,
@@ -39,7 +41,8 @@ import {
   getTwitchRewards,
   updateRedemptionConfig,
 } from '@/api/events'
-import { adjustVipEntitlement, getVipState, upsertVipRule } from '@/api/vip'
+import { adjustVipEntitlement, getVipState, removeVipEntitlement, upsertVipRule } from '@/api/vip'
+import { toastApiError } from '@/lib/toast-error'
 
 import ChannelPoints from './index'
 
@@ -118,6 +121,25 @@ const CHECKIN_SETTINGS = {
   updated_at: '2026-08-31T00:00:00Z',
 }
 
+const CHECKIN_LEADERBOARD = [
+  {
+    rank: 1,
+    user_id: 'viewer-1',
+    username: 'alice',
+    display_name: 'Alice',
+    total_days: 12,
+    last_checkin_date: '2026-08-31',
+  },
+  {
+    rank: 2,
+    user_id: 'viewer-2',
+    username: 'bob',
+    display_name: null,
+    total_days: 8,
+    last_checkin_date: '2026-08-30',
+  },
+]
+
 const VIP_STATE = {
   settings: {
     channel_id: 'channel-1',
@@ -152,6 +174,7 @@ describe('Channel Points page', () => {
       ...update,
     }))
     vi.mocked(getCheckinSettings).mockResolvedValue(CHECKIN_SETTINGS)
+    vi.mocked(getCheckinLeaderboard).mockResolvedValue(CHECKIN_LEADERBOARD)
     vi.mocked(updateCheckinSettings).mockImplementation(async update => ({
       ...CHECKIN_SETTINGS,
       ...update,
@@ -250,11 +273,20 @@ describe('Channel Points page', () => {
     render(<ChannelPoints />)
 
     expect(getCheckinSettings).not.toHaveBeenCalled()
+    expect(getCheckinLeaderboard).not.toHaveBeenCalled()
     await user.click(await screen.findByRole('button', { name: '編輯每日簽到設定' }))
 
     expect(await screen.findByRole('heading', { name: 'Check-in settings' })).toBeInTheDocument()
     expect(screen.getByText(/聊天指令與 Twitch 點數簽到共用/)).toBeInTheDocument()
     expect(getCheckinSettings).toHaveBeenCalledOnce()
+    expect(getCheckinLeaderboard).toHaveBeenCalledOnce()
+
+    const leaderboard = screen.getByRole('region', { name: '簽到排行榜' })
+    const [firstPlace] = within(leaderboard).getAllByRole('listitem')
+    expect(firstPlace).toHaveTextContent('Alice')
+    expect(firstPlace).toHaveTextContent('@alice')
+    expect(firstPlace).toHaveTextContent('12 天')
+    expect(within(leaderboard).getByText('bob')).toBeInTheDocument()
 
     const timezone = screen.getByRole('textbox', { name: '時區' })
     await user.clear(timezone)
@@ -268,6 +300,30 @@ describe('Channel Points page', () => {
         duplicate_template: CHECKIN_SETTINGS.duplicate_template,
       })
     )
+  })
+
+  it('shows a dedicated empty state when nobody has checked in', async () => {
+    const user = userEvent.setup()
+    vi.mocked(getCheckinLeaderboard).mockResolvedValueOnce([])
+    render(<ChannelPoints />)
+
+    await user.click(await screen.findByRole('button', { name: '編輯每日簽到設定' }))
+
+    const leaderboard = await screen.findByRole('region', { name: '簽到排行榜' })
+    expect(within(leaderboard).getByText('尚無簽到紀錄')).toBeInTheDocument()
+  })
+
+  it('keeps settings editable when the leaderboard fails to load', async () => {
+    const user = userEvent.setup()
+    vi.mocked(getCheckinLeaderboard).mockRejectedValueOnce(new Error('offline'))
+    render(<ChannelPoints />)
+
+    await user.click(await screen.findByRole('button', { name: '編輯每日簽到設定' }))
+
+    expect(await screen.findByText('簽到排行榜載入失敗')).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: '時區' })).toHaveValue('Asia/Taipei')
+    await user.click(screen.getByRole('button', { name: '儲存設定' }))
+    await waitFor(() => expect(updateCheckinSettings).toHaveBeenCalledOnce())
   })
 
   it('opens the timed VIP workflow from the separate operation column', async () => {
@@ -369,5 +425,86 @@ describe('Channel Points page', () => {
     await user.click(screen.getByRole('button', { name: '套用' }))
 
     await waitFor(() => expect(adjustVipEntitlement).toHaveBeenCalledWith('user-1', 6, false))
+  })
+
+  it('shows the Twitch VIP badge before the username and confirms manual removal', async () => {
+    const user = userEvent.setup()
+    vi.mocked(getRedemptionConfigs).mockResolvedValueOnce([VIP])
+    vi.mocked(getVipState).mockResolvedValue({
+      ...VIP_STATE,
+      entitlements: [
+        {
+          id: 1,
+          channel_id: 'channel-1',
+          user_id: 'user-1',
+          user_login: 'alice',
+          display_name: 'Alice',
+          source: 'managed',
+          status: 'active',
+          granted_at: '2026-08-31T00:00:00Z',
+          expires_at: '2099-01-01T00:00:00Z',
+          is_permanent: false,
+          last_reward_rule_id: 1,
+          last_synced_at: '2026-08-31T00:00:00Z',
+        },
+      ],
+    })
+    render(<ChannelPoints />)
+
+    await user.click(await screen.findByRole('button', { name: '管理VIP 授予設定' }))
+
+    const vipBadge = await screen.findByRole('img', { name: 'VIP' })
+    const username = screen.getByText('Alice')
+    expect(vipBadge).toHaveAttribute('width', '18')
+    expect(
+      vipBadge.compareDocumentPosition(username) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+
+    await user.click(screen.getByRole('button', { name: '移除 Alice 的 VIP' }))
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('移除 Alice 的 VIP？')
+    expect(removeVipEntitlement).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: '取消' }))
+    expect(removeVipEntitlement).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: '移除 Alice 的 VIP' }))
+    await user.click(screen.getByRole('button', { name: '移除 VIP' }))
+
+    await waitFor(() => expect(removeVipEntitlement).toHaveBeenCalledWith('user-1'))
+    await waitFor(() => expect(getVipState).toHaveBeenCalledTimes(3))
+  })
+
+  it('keeps the VIP visible when Twitch rejects manual removal', async () => {
+    const user = userEvent.setup()
+    vi.mocked(getRedemptionConfigs).mockResolvedValueOnce([VIP])
+    vi.mocked(removeVipEntitlement).mockRejectedValueOnce(new Error('offline'))
+    vi.mocked(getVipState).mockResolvedValue({
+      ...VIP_STATE,
+      entitlements: [
+        {
+          id: 1,
+          channel_id: 'channel-1',
+          user_id: 'user-1',
+          user_login: 'alice',
+          display_name: 'Alice',
+          source: 'external_event',
+          status: 'active',
+          granted_at: null,
+          expires_at: null,
+          is_permanent: false,
+          last_reward_rule_id: null,
+          last_synced_at: '2026-08-31T00:00:00Z',
+        },
+      ],
+    })
+    render(<ChannelPoints />)
+
+    await user.click(await screen.findByRole('button', { name: '管理VIP 授予設定' }))
+    await user.click(await screen.findByRole('button', { name: '移除 Alice 的 VIP' }))
+    await user.click(screen.getByRole('button', { name: '移除 VIP' }))
+
+    await waitFor(() => expect(toastApiError).toHaveBeenCalled())
+    expect(screen.getByText('Alice')).toBeInTheDocument()
+    expect(getVipState).toHaveBeenCalledTimes(2)
   })
 })

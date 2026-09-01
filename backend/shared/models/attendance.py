@@ -24,6 +24,16 @@ class CheckinSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class CheckinLeaderboardEntry:
+    rank: int
+    user_id: str
+    username: str
+    display_name: str | None
+    total_days: int
+    last_checkin_date: date
+
+
+@dataclass(frozen=True, slots=True)
 class CheckinResult:
     status: CheckinStatus
     channel_id: str

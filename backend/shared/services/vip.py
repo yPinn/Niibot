@@ -97,6 +97,23 @@ class VipService:
             synced_at=synced_at,
         )
 
+    async def require_active_entitlement(self, *, channel_id: str, user_id: str) -> VipEntitlement:
+        entitlement = await self._repository().get_entitlement(
+            channel_id=channel_id, user_id=user_id
+        )
+        if entitlement is None or entitlement.status is not VipEntitlementStatus.ACTIVE:
+            raise ValueError("active VIP entitlement was not found")
+        return entitlement
+
+    async def record_manual_removal(
+        self, *, channel_id: str, user_id: str, removed_at: datetime
+    ) -> None:
+        await self._repository().mark_removed_external(
+            channel_id=channel_id,
+            user_id=user_id,
+            synced_at=removed_at,
+        )
+
     async def upsert_rule(
         self,
         *,

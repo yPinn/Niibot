@@ -12,7 +12,7 @@ os.environ.setdefault("FRONTEND_URL", "https://niibot.tv")
 os.environ.setdefault("BOT_ID", "bot-test")
 
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 from fastapi import FastAPI
@@ -22,7 +22,7 @@ from core.dependencies import get_attendance_service, require_self_tenant_access
 from core.error_handlers import register_exception_handlers
 from routers.checkin_router import router as _checkin_router
 from services.tenant_service import TenantContext
-from shared.models.attendance import CheckinSettings
+from shared.models.attendance import CheckinLeaderboardEntry, CheckinSettings
 
 CHANNEL_ID = "channel-123"
 _ACTION_HEADERS = {"X-Niibot-Action": "checkin-settings"}
@@ -46,6 +46,18 @@ def _service() -> MagicMock:
     service = MagicMock()
     service.get_settings = AsyncMock(return_value=_SETTINGS)
     service.update_settings = AsyncMock(return_value=_SETTINGS)
+    service.get_leaderboard = AsyncMock(
+        return_value=(
+            CheckinLeaderboardEntry(
+                rank=1,
+                user_id="viewer-1",
+                username="alice",
+                display_name="Alice",
+                total_days=12,
+                last_checkin_date=date(2026, 8, 31),
+            ),
+        )
+    )
     return service
 
 
@@ -71,6 +83,25 @@ def test_get_settings_uses_authenticated_tenant() -> None:
     assert response.json()["channel_id"] == CHANNEL_ID
     assert response.json()["timezone"] == "Asia/Taipei"
     service.get_settings.assert_awaited_once_with(CHANNEL_ID)
+
+
+def test_get_leaderboard_uses_authenticated_tenant() -> None:
+    service = _service()
+
+    response = _make_client(service).get("/api/checkin/leaderboard")
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "rank": 1,
+            "user_id": "viewer-1",
+            "username": "alice",
+            "display_name": "Alice",
+            "total_days": 12,
+            "last_checkin_date": "2026-08-31",
+        }
+    ]
+    service.get_leaderboard.assert_awaited_once_with(CHANNEL_ID)
 
 
 def test_patch_settings_uses_authenticated_tenant_and_action_header() -> None:

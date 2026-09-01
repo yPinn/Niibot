@@ -48,6 +48,17 @@ class VipReviewInvalidError(InvalidInputError):
     user_message = "這筆貴賓待審項目已失效或無法處理"
 
 
+class VipEntitlementNotFoundError(NotFoundError):
+    code = "VIP.ENTITLEMENT_NOT_FOUND"
+    user_message = "找不到這位使用者目前的貴賓資格"
+
+
+class VipRemovalFailedError(AppError):
+    code = "VIP.REMOVE_FAILED"
+    http_status = 503
+    user_message = "目前無法移除 Twitch 貴賓身分，請稍後再試"
+
+
 class VipSettingsResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -354,3 +365,36 @@ async def adjust_vip_entitlement(
         raise VipReviewInvalidError() from None
     LOGGER.info("managed_vip_adjusted", extra={"user_id": user_id})
     return VipEntitlementResponse.model_validate(entitlement)
+
+
+@router.delete("/entitlements/{user_id}", status_code=204)
+async def remove_vip_entitlement(
+    user_id: str,
+    _action: Literal["vip-management"] = Header(alias="X-Niibot-Action"),
+    tenant: TenantContext = Depends(require_self_tenant_access),
+    service: VipService = Depends(get_vip_service),
+    channel_service: ChannelService = Depends(get_channel_service),
+    twitch_api: TwitchAPIClient = Depends(get_twitch_api),
+) -> None:
+    try:
+        await service.require_active_entitlement(
+            channel_id=tenant.channel_id,
+            user_id=user_id,
+        )
+    except ValueError:
+        raise VipEntitlementNotFoundError() from None
+
+    token = await _token(tenant.channel_id, channel_service, twitch_api)
+    try:
+        await twitch_api.remove_vip(tenant.channel_id, user_id, token)
+    except Exception:
+        LOGGER.warning("vip_manual_removal_failed", extra={"user_id": user_id})
+        raise VipRemovalFailedError() from None
+
+    removed_at = datetime.now(UTC)
+    await service.record_manual_removal(
+        channel_id=tenant.channel_id,
+        user_id=user_id,
+        removed_at=removed_at,
+    )
+    LOGGER.info("vip_manually_removed", extra={"user_id": user_id})

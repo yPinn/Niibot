@@ -8,13 +8,15 @@ import {
   getVipState,
   initializeVipTracking,
   keepExternalVip,
+  removeVipEntitlement,
   syncVipState,
   updateVipSlotLimit,
   upsertVipRule,
   type VipEntitlement,
   type VipState,
 } from '@/api/vip'
-import { Icon, Spinner } from '@/components/primitives'
+import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog'
+import { Icon, Spinner, TwitchRoleBadge } from '@/components/primitives'
 import {
   Alert,
   AlertDescription,
@@ -130,6 +132,7 @@ export function VipSettingsSheet({
   const [ruleDuration, setRuleDuration] = useState('3')
   const [adjustingUserId, setAdjustingUserId] = useState<string | null>(null)
   const [adjustmentDuration, setAdjustmentDuration] = useState('3')
+  const [removingEntitlement, setRemovingEntitlement] = useState<VipEntitlement | null>(null)
 
   const loadState = useCallback(async () => {
     setLoading(true)
@@ -192,7 +195,10 @@ export function VipSettingsSheet({
     <Sheet
       open={open}
       onOpenChange={nextOpen => {
-        if (!nextOpen) setAdjustingUserId(null)
+        if (!nextOpen) {
+          setAdjustingUserId(null)
+          setRemovingEntitlement(null)
+        }
         onOpenChange(nextOpen)
       }}
     >
@@ -478,6 +484,7 @@ export function VipSettingsSheet({
                             <div className="flex items-start justify-between gap-3">
                               <div className="min-w-0">
                                 <div className="flex flex-wrap items-center gap-2">
+                                  <TwitchRoleBadge role="vip" label="VIP" size={18} />
                                   <p className="truncate text-sub font-medium">{displayName}</p>
                                   <Badge variant="outline">{sourceLabel(item)}</Badge>
                                 </div>
@@ -485,20 +492,33 @@ export function VipSettingsSheet({
                                   {entitlementTermLabel(item)}
                                 </p>
                               </div>
-                              {item.source === 'managed' && (
+                              <div className="flex shrink-0 items-center gap-1">
+                                {item.source === 'managed' && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    disabled={saving}
+                                    aria-label={`調整 ${displayName} 期限`}
+                                    onClick={() => {
+                                      setAdjustingUserId(isAdjusting ? null : item.user_id)
+                                      setAdjustmentDuration('3')
+                                    }}
+                                  >
+                                    {isAdjusting ? '收合' : '調整'}
+                                  </Button>
+                                )}
                                 <Button
-                                  size="sm"
+                                  size="icon-sm"
                                   variant="ghost"
                                   disabled={saving}
-                                  aria-label={`調整 ${displayName} 期限`}
-                                  onClick={() => {
-                                    setAdjustingUserId(isAdjusting ? null : item.user_id)
-                                    setAdjustmentDuration('3')
-                                  }}
+                                  aria-label={`移除 ${displayName} 的 VIP`}
+                                  title={`移除 ${displayName} 的 VIP`}
+                                  className="text-muted-foreground hover:text-destructive"
+                                  onClick={() => setRemovingEntitlement(item)}
                                 >
-                                  {isAdjusting ? '收合' : '調整'}
+                                  <Icon icon="fa-solid fa-user-xmark" wrapperClassName="size-4" />
                                 </Button>
-                              )}
+                              </div>
                             </div>
                             {isAdjusting && (
                               <div className="mt-3 flex flex-wrap items-center justify-end gap-2 border-t pt-3">
@@ -584,6 +604,26 @@ export function VipSettingsSheet({
             </div>
           )}
         </div>
+        <DeleteConfirmDialog
+          open={removingEntitlement !== null}
+          onOpenChange={nextOpen => {
+            if (!nextOpen) setRemovingEntitlement(null)
+          }}
+          title={`移除 ${
+            removingEntitlement?.display_name || removingEntitlement?.user_login || '這位使用者'
+          } 的 VIP？`}
+          description="這會立即從 Twitch 撤銷 VIP，並結束 Niibot 對目前期限的管理。之後新的有效兌換仍可再次授予 VIP。"
+          actionLabel="移除 VIP"
+          onConfirm={() => {
+            if (!removingEntitlement) return
+            const entitlement = removingEntitlement
+            const displayName = entitlement.display_name || entitlement.user_login
+            void runMutation(
+              () => removeVipEntitlement(entitlement.user_id),
+              `${displayName} 的 Twitch VIP 已移除`
+            )
+          }}
+        />
       </SheetContent>
     </Sheet>
   )

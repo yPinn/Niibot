@@ -1,11 +1,24 @@
 import { API_ENDPOINTS, assertTrustedOAuthUrl } from './config'
+import { ApiError, NETWORK_ERROR, parseApiJsonResponse } from './errors'
+
+interface TwitchOAuthResponse {
+  oauth_url: unknown
+}
 
 export async function getTwitchOAuthUrl(): Promise<string> {
-  const response = await fetch(API_ENDPOINTS.auth.twitchOAuth)
-  if (!response.ok) {
-    throw new Error('Failed to fetch OAuth URL')
+  const fallback = '登入服務暫時無法使用，請稍後再試'
+  let response: Response
+  try {
+    response = await fetch(API_ENDPOINTS.auth.twitchOAuth)
+  } catch {
+    throw new ApiError({
+      message: '網路連線出了問題，請檢查後再試',
+      status: 0,
+      code: NETWORK_ERROR,
+    })
   }
-  const data = await response.json()
+
+  const data = await parseApiJsonResponse<TwitchOAuthResponse>(response, fallback)
   return assertTrustedOAuthUrl(data.oauth_url, 'twitch')
 }
 
