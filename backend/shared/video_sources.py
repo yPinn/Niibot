@@ -10,6 +10,11 @@ bot, channel-points redemptions, and the donation webhook.
   - fetch_bilibili_info                        : Bilibili public API call
   - extract_twitch_clip_slug                   : Twitch clip URL parsing
   - fetch_twitch_clip_info                     : Twitch Helix clips API call
+
+  - resolve_video_url / fetch_video_metadata / build_watch_url : registry
+    layer composing the platform-specific functions above behind one shape,
+    for callers that just want "figure out what this URL is and fetch its
+    metadata" without repeating the per-platform cascade themselves.
 """
 
 from __future__ import annotations
@@ -17,6 +22,7 @@ from __future__ import annotations
 import logging
 import re
 import time
+from dataclasses import dataclass
 
 import aiohttp
 
@@ -230,6 +236,7 @@ async def fetch_bilibili_info(
 # Twitch Clip utilities
 # ---------------------------------------------------------------------------
 
+
 _TWITCH_CLIP_RE = re.compile(
     r"(?:https?://)?(?:clips\.twitch\.tv/|www\.twitch\.tv/\w+/clip/)([A-Za-z0-9_-]+)"
 )
@@ -343,3 +350,109 @@ async def fetch_twitch_clip_info(
     finally:
         if _own_session:
             await _session.close()
+
+
+# ---------------------------------------------------------------------------
+# Registry — resolves a URL to a platform, then fetches metadata in one shape
+# ---------------------------------------------------------------------------
+#
+# Three call sites (chat !vq, channel-points redemption, dashboard add) all
+# need "figure out which platform this URL is, then fetch its metadata" and
+# previously duplicated that cascade inline. This layer composes the
+# platform-specific functions above behind one shape so the cascade lives in
+# exactly one place. The platform-specific functions themselves are untouched
+# — they're already covered by tests and used directly where only one step
+# (e.g. just URL parsing) is needed.
+
+_WATCH_URL_BUILDERS: dict[str, str] = {
+    "youtube": "https://youtu.be/{video_id}",
+    "twitch_clip": "https://clips.twitch.tv/{video_id}",
+    "bilibili": "https://www.bilibili.com/video/{video_id}",
+}
+
+
+@dataclass
+class ResolvedVideo:
+    """A URL identified as belonging to a platform, with its platform-native ID."""
+
+    video_type: str  # 'youtube' | 'twitch_clip' | 'bilibili'
+    video_id: str
+    is_vertical: bool = False  # URL-shape hint (e.g. YouTube Shorts); refined by metadata
+
+
+@dataclass
+class VideoMetadata:
+    """Metadata fetch result, normalized to one shape across all platforms."""
+
+    title: str | None
+    duration_seconds: int | None
+    view_count: int | None
+    is_vertical: bool
+
+
+async def resolve_video_url(
+    url: str,
+    *,
+    session: aiohttp.ClientSession | None = None,
+) -> ResolvedVideo | None:
+    """Identify which platform a URL belongs to and extract its native ID.
+
+    Tries YouTube, then Twitch Clip, then Bilibili (incl. b23.tv redirects) —
+    same priority order previously duplicated across call sites. Returns None
+    if the URL doesn't match any supported platform.
+    """
+    video_id, is_vertical = extract_youtube_info(url)
+    if video_id:
+        return ResolvedVideo(video_type="youtube", video_id=video_id, is_vertical=is_vertical)
+
+    clip_slug = extract_twitch_clip_slug(url)
+    if clip_slug:
+        return ResolvedVideo(video_type="twitch_clip", video_id=clip_slug)
+
+    bvid = await resolve_bilibili_url(url, session)
+    if bvid:
+        return ResolvedVideo(video_type="bilibili", video_id=bvid)
+
+    return None
+
+
+async def fetch_video_metadata(
+    resolved: ResolvedVideo,
+    *,
+    youtube_api_key: str = "",
+    twitch_client_id: str = "",
+    twitch_client_secret: str = "",
+    session: aiohttp.ClientSession | None = None,
+) -> VideoMetadata:
+    """Fetch metadata for a resolved video, normalized to one 4-field shape.
+
+    Twitch Clip's underlying fetch has no is_vertical concept (Helix doesn't
+    report clip dimensions) — normalized to False here rather than making
+    every caller remember to supply it.
+    """
+    if resolved.video_type == "twitch_clip":
+        title, duration_seconds, view_count = await fetch_twitch_clip_info(
+            resolved.video_id, twitch_client_id, twitch_client_secret, session
+        )
+        return VideoMetadata(title, duration_seconds, view_count, is_vertical=False)
+
+    if resolved.video_type == "bilibili":
+        title, duration_seconds, view_count, is_vertical = await fetch_bilibili_info(
+            resolved.video_id, session
+        )
+        return VideoMetadata(title, duration_seconds, view_count, is_vertical)
+
+    title, duration_seconds, view_count, is_vertical_from_api = await fetch_yt_info(
+        resolved.video_id, youtube_api_key, session
+    )
+    return VideoMetadata(
+        title, duration_seconds, view_count, resolved.is_vertical or is_vertical_from_api
+    )
+
+
+def build_watch_url(video_type: str, video_id: str) -> str:
+    """Build the canonical watch URL for a queued entry, given its stored video_type."""
+    template = _WATCH_URL_BUILDERS.get(video_type)
+    if template is None:
+        raise ValueError(f"Unknown video_type: {video_type!r}")
+    return template.format(video_id=video_id)

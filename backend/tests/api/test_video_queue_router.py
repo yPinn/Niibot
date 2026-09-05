@@ -30,6 +30,7 @@ from core.error_handlers import register_exception_handlers
 from routers.video_queue_router import router as _vq_router
 from routers.video_queue_router import stream_public_video_queue
 from services.notify_stream import NotifyWakeHub
+from shared.video_sources import ResolvedVideo, VideoMetadata
 
 CHANNEL_ID = "ch-vq"
 
@@ -490,12 +491,12 @@ class TestAddVideoEntry:
     def test_add_youtube_video_returns_201(self):
         with (
             patch(
-                "routers.video_queue_router.extract_youtube_info",
-                return_value=("vid123", False),
+                "routers.video_queue_router.resolve_video_url",
+                AsyncMock(return_value=ResolvedVideo("youtube", "vid123", False)),
             ),
             patch(
-                "routers.video_queue_router.fetch_yt_info",
-                AsyncMock(return_value=("YT Title", 300, None, False)),
+                "routers.video_queue_router.fetch_video_metadata",
+                AsyncMock(return_value=VideoMetadata("YT Title", 300, None, False)),
             ),
             patch("routers.video_queue_router.VideoQueueRepository") as vqr,
             patch("routers.video_queue_router.VideoQueueSettingsRepository") as sr,
@@ -516,16 +517,12 @@ class TestAddVideoEntry:
     def test_add_twitch_clip_returns_201(self):
         with (
             patch(
-                "routers.video_queue_router.extract_youtube_info",
-                return_value=(None, False),
+                "routers.video_queue_router.resolve_video_url",
+                AsyncMock(return_value=ResolvedVideo("twitch_clip", "AwesomeClip", False)),
             ),
             patch(
-                "routers.video_queue_router.extract_twitch_clip_slug",
-                return_value="AwesomeClip",
-            ),
-            patch(
-                "routers.video_queue_router.fetch_twitch_clip_info",
-                AsyncMock(return_value=("Clip Title", 60, None)),
+                "routers.video_queue_router.fetch_video_metadata",
+                AsyncMock(return_value=VideoMetadata("Clip Title", 60, None, False)),
             ),
             patch("routers.video_queue_router.VideoQueueRepository") as vqr,
             patch("routers.video_queue_router.VideoQueueSettingsRepository") as sr,
@@ -546,20 +543,12 @@ class TestAddVideoEntry:
     def test_add_bilibili_video_returns_201(self):
         with (
             patch(
-                "routers.video_queue_router.extract_youtube_info",
-                return_value=(None, False),
+                "routers.video_queue_router.resolve_video_url",
+                AsyncMock(return_value=ResolvedVideo("bilibili", "BV1test", False)),
             ),
             patch(
-                "routers.video_queue_router.extract_twitch_clip_slug",
-                return_value=None,
-            ),
-            patch(
-                "routers.video_queue_router.resolve_bilibili_url",
-                AsyncMock(return_value="BV1test"),
-            ),
-            patch(
-                "routers.video_queue_router.fetch_bilibili_info",
-                AsyncMock(return_value=("BV Title", 200, None, True)),
+                "routers.video_queue_router.fetch_video_metadata",
+                AsyncMock(return_value=VideoMetadata("BV Title", 200, None, True)),
             ),
             patch("routers.video_queue_router.VideoQueueRepository") as vqr,
             patch("routers.video_queue_router.VideoQueueSettingsRepository") as sr,
@@ -578,19 +567,9 @@ class TestAddVideoEntry:
         assert r.status_code == 201
 
     def test_invalid_url_returns_422(self):
-        with (
-            patch(
-                "routers.video_queue_router.extract_youtube_info",
-                return_value=(None, False),
-            ),
-            patch(
-                "routers.video_queue_router.extract_twitch_clip_slug",
-                return_value=None,
-            ),
-            patch(
-                "routers.video_queue_router.resolve_bilibili_url",
-                AsyncMock(return_value=None),
-            ),
+        with patch(
+            "routers.video_queue_router.resolve_video_url",
+            AsyncMock(return_value=None),
         ):
             r = _make_auth_client().post(
                 "/api/video-queue/entries",
@@ -602,8 +581,8 @@ class TestAddVideoEntry:
     def test_queue_disabled_returns_403(self):
         with (
             patch(
-                "routers.video_queue_router.extract_youtube_info",
-                return_value=("vid123", False),
+                "routers.video_queue_router.resolve_video_url",
+                AsyncMock(return_value=ResolvedVideo("youtube", "vid123", False)),
             ),
             patch("routers.video_queue_router.VideoQueueRepository") as vqr,
             patch("routers.video_queue_router.VideoQueueSettingsRepository") as sr,
@@ -619,8 +598,8 @@ class TestAddVideoEntry:
     def test_duplicate_video_returns_409(self):
         with (
             patch(
-                "routers.video_queue_router.extract_youtube_info",
-                return_value=("vid123", False),
+                "routers.video_queue_router.resolve_video_url",
+                AsyncMock(return_value=ResolvedVideo("youtube", "vid123", False)),
             ),
             patch("routers.video_queue_router.VideoQueueRepository") as vqr,
             patch("routers.video_queue_router.VideoQueueSettingsRepository") as sr,
@@ -636,12 +615,12 @@ class TestAddVideoEntry:
     def test_repo_exception_returns_500(self):
         with (
             patch(
-                "routers.video_queue_router.extract_youtube_info",
-                return_value=("vid123", False),
+                "routers.video_queue_router.resolve_video_url",
+                AsyncMock(return_value=ResolvedVideo("youtube", "vid123", False)),
             ),
             patch(
-                "routers.video_queue_router.fetch_yt_info",
-                AsyncMock(return_value=("Title", 300, None, False)),
+                "routers.video_queue_router.fetch_video_metadata",
+                AsyncMock(return_value=VideoMetadata("Title", 300, None, False)),
             ),
             patch("routers.video_queue_router.VideoQueueRepository") as vqr,
             patch("routers.video_queue_router.VideoQueueSettingsRepository") as sr,

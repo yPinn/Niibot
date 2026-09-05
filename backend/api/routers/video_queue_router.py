@@ -33,14 +33,7 @@ from shared.repositories.video_queue import (
     VideoQueueRepository,
     VideoQueueSettingsRepository,
 )
-from shared.video_sources import (
-    extract_twitch_clip_slug,
-    extract_youtube_info,
-    fetch_bilibili_info,
-    fetch_twitch_clip_info,
-    fetch_yt_info,
-    resolve_bilibili_url,
-)
+from shared.video_sources import fetch_video_metadata, resolve_video_url
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -78,7 +71,7 @@ class VideoEntryResponse(BaseModel):
     is_vertical: bool
     requested_by: str
     source: str
-    video_type: str  # 'youtube' | 'twitch_clip'
+    video_type: str  # 'youtube' | 'twitch_clip' | 'bilibili'
     started_at: datetime | None  # for overlay seek-to-elapsed sync
 
 
@@ -556,14 +549,8 @@ async def add_video_entry(
     app_settings: Settings = Depends(get_settings),
 ) -> PublicVideoQueueState:
     """Broadcaster directly adds a video to the queue from the dashboard."""
-    video_id, is_vertical = extract_youtube_info(body.url)
-    clip_slug: str | None = None
-    bvid: str | None = None
-    if not video_id:
-        clip_slug = extract_twitch_clip_slug(body.url)
-    if not video_id and not clip_slug:
-        bvid = await resolve_bilibili_url(body.url)
-    if not video_id and not clip_slug and not bvid:
+    resolved = await resolve_video_url(body.url)
+    if resolved is None:
         raise InvalidVideoUrlError()
 
     try:
@@ -574,31 +561,16 @@ async def add_video_entry(
         if not settings.enabled:
             raise VideoQueueDisabledError()
 
-        # 422 above ensures exactly one of these is non-None.
-        active_id: str = clip_slug or bvid or video_id  # type: ignore[assignment]
-        if await repo.video_is_active(channel_id, active_id):
+        if await repo.video_is_active(channel_id, resolved.video_id):
             raise VideoAlreadyQueuedError()
 
         # Dashboard bypasses max_queue_size and min_view_count — broadcaster has full authority.
-        if clip_slug:
-            title, duration_seconds, _view_count = await fetch_twitch_clip_info(
-                clip_slug, app_settings.client_id, app_settings.client_secret
-            )
-            video_id = clip_slug
-            is_vertical = False
-            video_type = "twitch_clip"
-        elif bvid:
-            title, duration_seconds, _view_count, is_vertical = await fetch_bilibili_info(bvid)
-            video_id = bvid
-            video_type = "bilibili"
-        else:
-            if video_id is None:
-                raise InvalidVideoUrlError()
-            title, duration_seconds, _view_count, is_vertical_from_api = await fetch_yt_info(
-                video_id, app_settings.youtube_api_key
-            )
-            is_vertical = is_vertical or is_vertical_from_api
-            video_type = "youtube"
+        metadata = await fetch_video_metadata(
+            resolved,
+            youtube_api_key=app_settings.youtube_api_key,
+            twitch_client_id=app_settings.client_id,
+            twitch_client_secret=app_settings.client_secret,
+        )
 
         channel_repo = ChannelRepository(pool)
         requested_by: str = (
@@ -607,16 +579,21 @@ async def add_video_entry(
 
         await repo.add(
             channel_id=channel_id,
-            video_id=video_id,
+            video_id=resolved.video_id,
             requested_by=requested_by,
             source="dashboard",
-            title=title,
-            duration_seconds=duration_seconds,
-            is_vertical=is_vertical,
-            video_type=video_type,
+            title=metadata.title,
+            duration_seconds=metadata.duration_seconds,
+            is_vertical=metadata.is_vertical,
+            video_type=resolved.video_type,
             priority=SOURCE_PRIORITY["dashboard"],
         )
-        LOGGER.info("Channel %s added %s %s from dashboard", channel_id, video_type, video_id)
+        LOGGER.info(
+            "Channel %s added %s %s from dashboard",
+            channel_id,
+            resolved.video_type,
+            resolved.video_id,
+        )
         return await _build_public_state(channel_id, repo, settings_repo)
     except (HTTPException, AppError):
         raise

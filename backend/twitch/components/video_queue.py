@@ -27,14 +27,7 @@ from shared.repositories.video_queue import (
     VideoQueueRepository,
     VideoQueueSettingsRepository,
 )
-from shared.video_sources import (
-    extract_twitch_clip_slug,
-    extract_youtube_info,
-    fetch_bilibili_info,
-    fetch_twitch_clip_info,
-    fetch_yt_info,
-    resolve_bilibili_url,
-)
+from shared.video_sources import build_watch_url, fetch_video_metadata, resolve_video_url
 
 if TYPE_CHECKING:
     from core.bot import Bot
@@ -91,23 +84,13 @@ class VideoQueueComponent(BotComponent):
         user_name = ctx.chatter.display_name or ctx.chatter.name or ""
         user_id: str | None = ctx.chatter.id or None
 
-        # Detect URL type: try YouTube first, then Twitch clip, then Bilibili
-        video_id, is_vertical = extract_youtube_info(url_str)
-        clip_slug: str | None = None
-        bvid: str | None = None
-        if not video_id:
-            clip_slug = extract_twitch_clip_slug(url_str)
-        if not video_id and not clip_slug:
-            bvid = await resolve_bilibili_url(url_str)
-        if not video_id and not clip_slug and not bvid:
+        resolved = await resolve_video_url(url_str, session=self._session)
+        if resolved is None:
             await self._ctx_reply(ctx, "連結無效，支援 YouTube / Twitch Clip / Bilibili")
             return
 
-        # Exactly one of video_id / clip_slug / bvid is non-None here.
-        active_id: str = clip_slug or bvid or video_id  # type: ignore[assignment]
-
         # Duplicate check
-        if await self.vq_repo.video_is_active(channel_id, active_id):
+        if await self.vq_repo.video_is_active(channel_id, resolved.video_id):
             await self._ctx_reply(ctx, "該影片已在佇列中")
             return
 
@@ -136,30 +119,18 @@ class VideoQueueComponent(BotComponent):
                     await self._ctx_reply(ctx, f"冷卻中，剩餘 {time_str}")
                     return
 
-        if clip_slug:
-            title, duration_seconds, view_count = await fetch_twitch_clip_info(
-                clip_slug,
-                self._settings.twitch_client_id,
-                self._settings.twitch_client_secret,
-                self._session,
-            )
-            video_id = clip_slug
-            is_vertical = False
-            video_type = "twitch_clip"
-        elif bvid:
-            title, duration_seconds, view_count, is_vertical = await fetch_bilibili_info(
-                bvid, self._session
-            )
-            video_id = bvid
-            video_type = "bilibili"
-        else:
-            if video_id is None:
-                raise RuntimeError("video_id is None but clip_slug and bvid are also None")
-            title, duration_seconds, view_count, is_vertical_from_api = await fetch_yt_info(
-                video_id, self._settings.youtube_api_key, self._session
-            )
-            is_vertical = is_vertical or is_vertical_from_api
-            video_type = "youtube"
+        metadata = await fetch_video_metadata(
+            resolved,
+            youtube_api_key=self._settings.youtube_api_key,
+            twitch_client_id=self._settings.twitch_client_id,
+            twitch_client_secret=self._settings.twitch_client_secret,
+            session=self._session,
+        )
+        title, duration_seconds, view_count = (
+            metadata.title,
+            metadata.duration_seconds,
+            metadata.view_count,
+        )
 
         # Minimum view count filter
         if settings.min_view_count > 0:
@@ -175,7 +146,7 @@ class VideoQueueComponent(BotComponent):
 
         entry = await self.vq_repo.add_if_within_limits(
             channel_id=channel_id,
-            video_id=video_id,
+            video_id=resolved.video_id,
             requested_by=user_name,
             source="chat",
             max_queue_size=settings.max_queue_size,
@@ -183,8 +154,8 @@ class VideoQueueComponent(BotComponent):
             requested_by_id=user_id,
             title=title,
             duration_seconds=duration_seconds,
-            is_vertical=is_vertical,
-            video_type=video_type,
+            is_vertical=metadata.is_vertical,
+            video_type=resolved.video_type,
             priority=SOURCE_PRIORITY["chat"],
         )
         if entry is None:
@@ -213,11 +184,7 @@ class VideoQueueComponent(BotComponent):
             await self._ctx_reply(ctx, "目前無播放中的影片")
             return
 
-        url = (
-            f"https://clips.twitch.tv/{current.video_id}"
-            if current.video_type == "twitch_clip"
-            else f"https://youtu.be/{current.video_id}"
-        )
+        url = build_watch_url(current.video_type, current.video_id)
         title_part = f"「{current.title}」 " if current.title else ""
 
         remaining_str = ""
