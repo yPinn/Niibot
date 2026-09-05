@@ -126,6 +126,10 @@ stream rotation（每個常駐 source 約 288 requests／日）。
   指數退避加 jitter reconnect。正常狀態不得 fallback 到週期 polling，避免故障時靜默恢復高流量。
 - Cloudflare runtime 更新或 hard lease 會中止長連線，因此「任一時刻一條 invocation」不代表
   永不重連；驗收看的是 invocation 不再以秒級 polling 線性成長，且重連能以 cursor 補齊事件。
+- Dashboard 測試預覽（`&block=<type>`）是前端專用的本地過濾參數，不改變上述後端 API／查詢契約——
+  伺服器仍回傳整個 channel 的事件，只是 renderer 端多丟掉不符 block type 的事件。這條測試連線也不會
+  無限期占用前述的 per-channel／per-process 併發串流額度：Dashboard 觸發測試動畫後，會依已發布主題的
+  `display_ms` 自動在動畫播完後不久關閉該連線，不需要使用者手動操作。
 
 官方依據：
 

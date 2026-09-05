@@ -142,6 +142,35 @@ describe('CommunityOverlay stream renderer', () => {
     expect(card).toHaveStyle({ '--overlay-radius': '24px' })
   })
 
+  it('filters out other block types when a block filter is present in the URL', async () => {
+    renderOverlay(`#key=${KEY}&preview=1&block=checkin`)
+    const options = vi.mocked(openCommunityOverlayStream).mock.calls[0][0]
+    act(() =>
+      options.onMessage({
+        type: 'snapshot',
+        cursor: 30,
+        events: [tarotEvent(29), event(30)],
+        themes: {},
+      })
+    )
+    expect(await screen.findByLabelText('Alice 的簽到集點卡')).toBeInTheDocument()
+    expect(screen.queryByLabelText(/Alice 的每日塔羅/)).not.toBeInTheDocument()
+  })
+
+  it('ignores an unrecognized block filter value and shows every content type', async () => {
+    renderOverlay(`#key=${KEY}&preview=1&block=unknown`)
+    const options = vi.mocked(openCommunityOverlayStream).mock.calls[0][0]
+    act(() =>
+      options.onMessage({
+        type: 'snapshot',
+        cursor: 30,
+        events: [tarotEvent(29), event(30)],
+        themes: {},
+      })
+    )
+    expect(await screen.findByLabelText(/Alice 的每日塔羅/)).toBeInTheDocument()
+  })
+
   it('deduplicates replayed IDs and ignores unsupported event versions', async () => {
     renderOverlay(`#key=${KEY}&preview=1`)
     const options = vi.mocked(openCommunityOverlayStream).mock.calls[0][0]

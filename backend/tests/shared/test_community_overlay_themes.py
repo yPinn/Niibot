@@ -78,19 +78,16 @@ def test_theme_rejects_missing_fields() -> None:
         validate_overlay_theme(theme)
 
 
-@pytest.mark.parametrize("field", ["surface_color", "accent_color"])
-def test_theme_rejects_text_colors_below_accessible_contrast(field: str) -> None:
-    with pytest.raises(ValueError, match=rf"4\.5:1 contrast against {field}"):
-        validate_overlay_theme({**DEFAULT_OVERLAY_THEME, field: "#241B34"})
+def test_theme_accepts_low_contrast_colors_as_a_deliberate_stylistic_choice() -> None:
+    """This overlay decorates the streamer's own scene; contrast is advisory only,
+    surfaced client-side, and must never block a broadcaster's color choice here."""
+    # Identical colors give a 1:1 contrast ratio everywhere — the strictest possible
+    # case, and one the old rule rejected on all three pairs simultaneously.
+    theme = {
+        **DEFAULT_OVERLAY_THEME,
+        "surface_color": "#241B34",
+        "accent_color": "#241B34",
+        "text_color": "#241B34",
+    }
 
-
-def test_theme_rejects_accent_without_visual_separation_from_surface() -> None:
-    with pytest.raises(ValueError, match=r"3:1 contrast against surface_color"):
-        validate_overlay_theme(
-            {
-                **DEFAULT_OVERLAY_THEME,
-                "surface_color": "#FFFFFF",
-                "accent_color": "#FFFFFF",
-                "text_color": "#000000",
-            }
-        )
+    assert validate_overlay_theme(theme) == theme

@@ -378,6 +378,21 @@ class TestOverlayThemeManagement:
         assert response.status_code == 200
         service.update_theme_draft.assert_awaited_once_with("ch1", "checkin", theme, 1)
 
+    def test_update_draft_accepts_low_contrast_as_a_stylistic_choice(self):
+        """Contrast is advisory-only client-side; the API must never reject on it."""
+        service = _service()
+        theme = {**DEFAULT_OVERLAY_THEME, "surface_color": "#241B34"}
+        service.update_theme_draft = AsyncMock(return_value=_theme_state(draft=theme))
+        client = _client(service)
+
+        response = client.patch(
+            "/api/live-display/settings/blocks/checkin/theme/draft",
+            json={"theme": theme, "expected_draft_version": 1},
+        )
+
+        assert response.status_code == 200
+        service.update_theme_draft.assert_awaited_once_with("ch1", "checkin", theme, 1)
+
     @pytest.mark.parametrize(
         "theme",
         [
@@ -386,7 +401,7 @@ class TestOverlayThemeManagement:
             {**DEFAULT_OVERLAY_THEME, "radius_px": True},
             {**DEFAULT_OVERLAY_THEME, "display_ms": "5500"},
             {**DEFAULT_OVERLAY_THEME, "surface_color": "red"},
-            {**DEFAULT_OVERLAY_THEME, "surface_color": "#241B34"},
+            {**DEFAULT_OVERLAY_THEME, "placement": "center"},
         ],
     )
     def test_update_draft_rejects_unsupported_or_invalid_input(self, theme: dict):

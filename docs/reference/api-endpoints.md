@@ -89,7 +89,8 @@ Feed 與 theme 都不回傳 `channel_id` 或穩定的 actor user id、不接受 
 
 Theme schema v1 固定為 `checkin-card` allowlist：`surface_color`、`accent_color`、`text_color`、
 `placement`、`radius_px`、`display_ms`、`motion`。未知／缺漏欄位與型別轉換一律拒絕；目前不接受圖片、
-外部資源、HTML、CSS 或 JavaScript；文字色對背景／強調色皆需至少 4.5:1，強調色對背景需至少 3:1。
+外部資源、HTML、CSS 或 JavaScript。色彩對比不在後端硬性驗證範圍——這是頻道自己 OBS 畫面的裝飾配色，
+不是所有人都必須使用的介面，因此 Dashboard 僅在草稿編輯器顯示對比建議，不阻擋儲存或發布。
 草稿僅由同租戶私有端點讀寫，公開 renderer 永遠只讀已發布版本。
 新 profile 的共用預設位置為 `bottom-left`、顯示時間為 4000ms；Tarot 使用相同 schema，但 block 預設另設為
 16px 圓角與 5000ms 顯示時間。時間從事件開始播放時計算；四角位置與其他 allowlisted 欄位仍可由頻道草稿調整後發布。

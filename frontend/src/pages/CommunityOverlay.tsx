@@ -122,7 +122,13 @@ const RENDERERS: Record<CommunityOverlayContentType, string> = {
 
 const STABLE_STREAM_MS = 30_000
 
-function ScopedCommunityOverlay({ publicKey, preview }: { publicKey: string; preview: boolean }) {
+interface ScopedCommunityOverlayProps {
+  publicKey: string
+  preview: boolean
+  blockFilter?: CommunityOverlayContentType
+}
+
+function ScopedCommunityOverlay({ publicKey, preview, blockFilter }: ScopedCommunityOverlayProps) {
   const themeRevisionRef = useRef<Record<CommunityOverlayContentType, number | null>>({
     checkin: null,
     tarot: null,
@@ -160,6 +166,7 @@ function ScopedCommunityOverlay({ publicKey, preview }: { publicKey: string; pre
       }
       const incoming = message.events
         .filter((event): event is RenderableEvent => isCheckinEvent(event) || isTarotEvent(event))
+        .filter(event => !blockFilter || blockTypeForEvent(event) === blockFilter)
         .filter(event => {
           if (seenIdsRef.current.has(event.id)) return false
           seenIdsRef.current.add(event.id)
@@ -197,7 +204,7 @@ function ScopedCommunityOverlay({ publicKey, preview }: { publicKey: string; pre
       controller?.abort()
       if (reconnectTimer !== null) window.clearTimeout(reconnectTimer)
     }
-  }, [preview, publicKey])
+  }, [preview, publicKey, blockFilter])
 
   const activeBlockType = playback.active ? blockTypeForEvent(playback.active) : 'checkin'
   const activeTheme = themes[activeBlockType]
@@ -222,14 +229,26 @@ function ScopedCommunityOverlay({ publicKey, preview }: { publicKey: string; pre
   )
 }
 
+function parseBlockFilter(value: string | null): CommunityOverlayContentType | undefined {
+  return value === 'checkin' || value === 'tarot' ? value : undefined
+}
+
 export default function CommunityOverlay() {
   const location = useLocation()
   const overlayParams = new URLSearchParams(location.hash.replace(/^#/, ''))
   const publicKey = overlayParams.get('key')?.trim() || ''
   const preview = overlayParams.get('preview') === '1'
-  const scope = `${publicKey}:${preview ? 'preview' : 'live'}`
+  const blockFilter = parseBlockFilter(overlayParams.get('block'))
+  const scope = `${publicKey}:${preview ? 'preview' : 'live'}:${blockFilter ?? 'all'}`
 
   useDocumentTitle('Live Display')
 
-  return <ScopedCommunityOverlay key={scope} publicKey={publicKey} preview={preview} />
+  return (
+    <ScopedCommunityOverlay
+      key={scope}
+      publicKey={publicKey}
+      preview={preview}
+      blockFilter={blockFilter}
+    />
+  )
 }
