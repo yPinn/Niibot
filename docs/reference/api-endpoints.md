@@ -118,7 +118,8 @@ Channel Points 簽到只需 `channel:read:redemptions`。Niibot 不要求 `chann
 
 ## Daily Check-in settings
 
-- `GET /api/checkin/settings`：讀取目前登入租戶的 IANA timezone、簽到成功模板與同日重複模板。
+- `GET /api/checkin/settings`：讀取目前登入租戶的 IANA timezone、簽到成功模板、同日重複模板，
+  以及 `reply_delay_seconds`（聊天回覆延遲秒數，補償 Twitch 廣播延遲，範圍 0–30，預設 0）。
 - `PATCH /api/checkin/settings`：部分更新上述欄位；body 嚴格禁止 `channel_id` 與未知欄位，mutation 必須帶
   `X-Niibot-Action: checkin-settings`。
 

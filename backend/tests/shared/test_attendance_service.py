@@ -9,6 +9,7 @@ import pytest
 
 from shared.models.attendance import (
     CheckinLeaderboardEntry,
+    CheckinRank,
     CheckinResult,
     CheckinSettings,
     CheckinStatus,
@@ -47,6 +48,28 @@ class TestAttendanceService:
         assert result is entries
         repo.list_leaderboard.assert_awaited_once_with("ch1")
 
+    async def test_get_rank_uses_requested_channel_and_user(self):
+        rank = CheckinRank(
+            rank=3, total_days=5, last_checkin_date=date(2026, 8, 31), total_participants=42
+        )
+        repo = MagicMock()
+        repo.get_checkin_rank = AsyncMock(return_value=rank)
+        service = AttendanceService(repo)
+
+        result = await service.get_rank("ch1", "u1")
+
+        assert result is rank
+        repo.get_checkin_rank.assert_awaited_once_with("ch1", "u1")
+
+    async def test_get_rank_returns_none_when_the_viewer_has_no_checkins(self):
+        repo = MagicMock()
+        repo.get_checkin_rank = AsyncMock(return_value=None)
+        service = AttendanceService(repo)
+
+        result = await service.get_rank("ch1", "u_unknown")
+
+        assert result is None
+
     async def test_get_settings_uses_requested_channel(self):
         repo = MagicMock()
         repo.get_or_create_settings = AsyncMock(return_value=_settings())
@@ -83,6 +106,24 @@ class TestAttendanceService:
             timezone="Asia/Tokyo",
             success_template="$(@user) 第 $(count) 天",
             duplicate_template="$(@user) 今天已簽到",
+            reply_delay_seconds=0,
+        )
+
+    async def test_update_settings_updates_only_the_reply_delay(self):
+        current = _settings()
+        repo = MagicMock()
+        repo.get_or_create_settings = AsyncMock(return_value=current)
+        repo.update_settings = AsyncMock(return_value=current)
+        service = AttendanceService(repo)
+
+        await service.update_settings("ch1", reply_delay_seconds=5)
+
+        repo.update_settings.assert_awaited_once_with(
+            channel_id="ch1",
+            timezone=current.timezone,
+            success_template=current.success_template,
+            duplicate_template=current.duplicate_template,
+            reply_delay_seconds=5,
         )
 
     async def test_update_settings_rejects_invalid_timezone_before_write(self):
@@ -212,6 +253,41 @@ class TestAttendanceService:
 
         assert outcome.result is result
         assert outcome.message == expected
+
+    async def test_check_in_with_reply_carries_the_channels_configured_delay(self):
+        settings = CheckinSettings(
+            channel_id="ch1",
+            timezone="Asia/Taipei",
+            success_template="$(@user) $(count)",
+            duplicate_template="already $(count)",
+            reply_delay_seconds=7,
+        )
+        result = CheckinResult(
+            status=CheckinStatus.RECORDED,
+            channel_id="ch1",
+            user_id="u1",
+            username="alice",
+            display_name="Alice",
+            checkin_date=date(2026, 8, 31),
+            total_days=1,
+            checkin_id=1,
+            event_id=2,
+            occurred_at=datetime(2026, 8, 30, 16, 30, tzinfo=UTC),
+        )
+        repo = MagicMock()
+        repo.get_or_create_settings = AsyncMock(return_value=settings)
+        repo.record_checkin = AsyncMock(return_value=result)
+        service = AttendanceService(repo)
+
+        outcome = await service.check_in_with_reply(
+            channel_id="ch1",
+            user_id="u1",
+            username="alice",
+            display_name="Alice",
+            occurred_at=datetime(2026, 8, 30, 16, 30, tzinfo=UTC),
+        )
+
+        assert outcome.delay_seconds == 7
 
     async def test_invalid_template_fails_before_checkin_transaction(self):
         settings = CheckinSettings(

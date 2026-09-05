@@ -1,6 +1,6 @@
 """Read-only Channel Points adapter for daily check-in."""
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from twitch.components.channel_points import ChannelPointsComponent
@@ -16,7 +16,7 @@ def _make_component() -> tuple[ChannelPointsComponent, MagicMock]:
         return_value=MagicMock(action_type="checkin")
     )
     component.attendance.check_in_with_reply = AsyncMock(
-        return_value=MagicMock(message="@Viewer 簽到成功，累積 3 天！")
+        return_value=MagicMock(message="@Viewer 簽到成功，累積 3 天！", delay_seconds=0)
     )
     component._reply = AsyncMock()  # type: ignore[method-assign]
     return component, bot
@@ -65,3 +65,20 @@ async def test_unbound_reward_does_not_create_a_checkin():
 
     component.attendance.check_in_with_reply.assert_not_awaited()
     component._reply.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_configured_delay_sleeps_before_the_chat_reply():
+    component, _ = _make_component()
+    component.attendance.check_in_with_reply.return_value = MagicMock(
+        message="@Viewer 簽到成功，累積 3 天！", delay_seconds=5
+    )
+    calls: list[str] = []
+    sleep_mock = AsyncMock(side_effect=lambda _seconds: calls.append("sleep"))
+    component._reply.side_effect = lambda *_args: calls.append("reply")
+
+    with patch("twitch.components.channel_points.asyncio.sleep", sleep_mock):
+        await component._handle_redemption(_payload())
+
+    sleep_mock.assert_awaited_once_with(5)
+    assert calls == ["sleep", "reply"]

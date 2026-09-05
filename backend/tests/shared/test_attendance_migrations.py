@@ -94,3 +94,10 @@ def test_overlay_stream_notifications_are_wake_only_and_transaction_safe() -> No
     assert "channel_id" in function_body
     assert "public_key" not in function_body
     assert "payload" not in function_body
+
+
+def test_checkin_reply_delay_is_bounded_and_opt_in() -> None:
+    sql = (_VERSIONS / "105_add_checkin_reply_delay.sql").read_text(encoding="utf-8")
+
+    assert "ADD COLUMN reply_delay_seconds SMALLINT NOT NULL DEFAULT 0" in sql
+    assert "CHECK (reply_delay_seconds BETWEEN 0 AND 30)" in sql

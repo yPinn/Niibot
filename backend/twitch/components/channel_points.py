@@ -225,6 +225,8 @@ class ChannelPointsComponent(commands.Component):
                 display_name=display_name,
                 session_id=session_id,
             )
+            if outcome.delay_seconds > 0:
+                await asyncio.sleep(outcome.delay_seconds)
             await self._reply(broadcaster, outcome.message)
         except Exception:
             LOGGER.exception(

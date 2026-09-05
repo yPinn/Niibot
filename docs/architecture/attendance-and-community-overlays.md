@@ -43,6 +43,11 @@ stale session 若曾有完整 snapshot，補關閉時仍需按時間順序結算
 頻道 timezone、成功／已簽到模板與活動卡設定屬於 channel-scoped config。
 成功簽到可選擇性關聯當下 `session_id`，但不得改寫 Session Attendance、觀看分數或忠誠分層。
 
+`checkin_settings.reply_delay_seconds`（預設 0，範圍 0–30）讓頻道自行延遲聊天回覆的送出時機：
+聊天訊息走 IRC 幾乎即時，但 Live Display 動畫要透過 Twitch 廣播管線（編碼／CDN）才會出現在畫面上，
+這段延遲因頻道的直播延遲模式而異，bot 無法查詢也無法控制。這個延遲只作用在「送出訊息」這個動作，
+check-in ledger 寫入與 Overlay event 建立維持完全即時；`!checkin` 與頻道點數兌換兩個入口都套用同一個值。
+
 ### 觸發方式：聊天指令與 Twitch 頻道點數
 
 `!checkin`／`!簽到` 與 Twitch 自訂獎勵兌換都是 Daily Check-in 的 adapter，共用同一個
@@ -119,6 +124,9 @@ server 與 client 都不接受任意 HTML、CSS 或 JavaScript。圖片資產與
 
 - `!checkin`／`!簽到` 走既有 builtin command guard；成功與同日重複都回傳該頻道累積天數，
   DB／模板錯誤只回覆一般失敗訊息，不記錄假成功 usage。
+- `!rank`／`!排名` 讀取 Daily Check-in ledger 的累積簽到天數排名，與後台簽到排行榜共用同一段
+  ranking SQL，兩者排序永遠一致；查無簽到紀錄時提示先簽到。Session Attendance 的
+  `engagement_score`／`get_viewer_rank` 專供後台 Insights 分析頁使用，不再有聊天指令出口。
 - Twitch Channel Points `checkin` action 以 `(channel_id, reward_id)` 找設定，收到兌換後走相同
   Attendance service；只有 `recorded` 會新增 Overlay event。Bot 不呼叫任何 reward mutation／退款 API。
 - Dashboard 將三種責任分開：`/events` 只編輯 EventSub 回覆模板；`/channel-points` 是 reward → action

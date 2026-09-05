@@ -9,6 +9,7 @@ import pytest
 from twitch.components.attendance import AttendanceComponent
 
 from shared.models.attendance import (
+    CheckinRank,
     CheckinReply,
     CheckinResult,
     CheckinStatus,
@@ -50,6 +51,11 @@ def _component() -> AttendanceComponent:
     component.attendance.check_in_with_reply = AsyncMock(
         return_value=CheckinReply(result=_result(), message="@Alice 簽到成功，累積 3 天！")
     )
+    component.attendance.get_rank = AsyncMock(
+        return_value=CheckinRank(
+            rank=8, total_days=12, last_checkin_date=date(2026, 8, 31), total_participants=132
+        )
+    )
     component.overlay = MagicMock()
     component.overlay.publish_checkin_preview = AsyncMock(return_value=91)
     component._ctx_reply = AsyncMock()
@@ -74,6 +80,10 @@ async def _checkin(component: AttendanceComponent, ctx: MagicMock) -> None:
 
 async def _ovltest(component: AttendanceComponent, ctx: MagicMock, count: int = 7) -> None:
     await AttendanceComponent.ovltest.callback(component, ctx, count=count)  # type: ignore[attr-defined]
+
+
+async def _rank(component: AttendanceComponent, ctx: MagicMock) -> None:
+    await AttendanceComponent.rank.callback(component, ctx)  # type: ignore[attr-defined]
 
 
 @pytest.mark.asyncio
@@ -124,6 +134,88 @@ class TestCheckinCommand:
             await _checkin(component, ctx)
 
         component._ctx_reply.assert_awaited_once_with(ctx, "簽到失敗，請稍後再試")
+        component._record_command.assert_not_awaited()
+
+    async def test_configured_delay_sleeps_before_the_chat_reply(self) -> None:
+        component = _component()
+        component.attendance.check_in_with_reply.return_value = CheckinReply(
+            result=_result(), message="@Alice 簽到成功，累積 3 天！", delay_seconds=5
+        )
+        ctx = _ctx()
+        calls: list[str] = []
+        sleep_mock = AsyncMock(side_effect=lambda _seconds: calls.append("sleep"))
+        component._ctx_reply.side_effect = lambda *_args: calls.append("reply")
+        with (
+            patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())),
+            patch("twitch.components.attendance.asyncio.sleep", sleep_mock),
+        ):
+            await _checkin(component, ctx)
+
+        sleep_mock.assert_awaited_once_with(5)
+        assert calls == ["sleep", "reply"]
+
+    async def test_zero_delay_never_sleeps(self) -> None:
+        component = _component()
+        ctx = _ctx()
+        sleep_mock = AsyncMock()
+        with (
+            patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())),
+            patch("twitch.components.attendance.asyncio.sleep", sleep_mock),
+        ):
+            await _checkin(component, ctx)
+
+        sleep_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+class TestRankCommand:
+    async def test_guard_denial_does_not_touch_attendance(self) -> None:
+        component = _component()
+        with patch(PATCH_CHECK, AsyncMock(return_value=None)):
+            await _rank(component, _ctx())
+
+        component.attendance.get_rank.assert_not_awaited()
+        component._ctx_reply.assert_not_awaited()
+
+    async def test_replies_with_checkin_based_rank_and_records_usage(self) -> None:
+        component = _component()
+        ctx = _ctx()
+        with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+            await _rank(component, ctx)
+
+        component.attendance.get_rank.assert_awaited_once_with("ch1", "u1")
+        component._ctx_reply.assert_awaited_once_with(
+            ctx, "每當點名你都在！能在 132 人中排到【第 8 名】，累積簽到 12 天，絕對是真愛 GivePLZ "
+        )
+        component._record_command.assert_awaited_once_with(ctx, "rank")
+
+    async def test_broadcaster_gets_a_normal_rank_reply(self) -> None:
+        component = _component()
+        ctx = _ctx(broadcaster=True)
+        with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+            await _rank(component, ctx)
+
+        component.attendance.get_rank.assert_awaited_once_with("ch1", "ch1")
+        component._ctx_reply.assert_awaited_once()
+
+    async def test_no_checkin_history_prompts_to_check_in_and_records_usage(self) -> None:
+        component = _component()
+        component.attendance.get_rank.return_value = None
+        ctx = _ctx()
+        with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+            await _rank(component, ctx)
+
+        component._ctx_reply.assert_awaited_once_with(ctx, "還沒有簽到紀錄，先去簽到再來看排名吧")
+        component._record_command.assert_awaited_once_with(ctx, "rank")
+
+    async def test_lookup_failure_replies_without_recording_usage(self) -> None:
+        component = _component()
+        component.attendance.get_rank.side_effect = RuntimeError("db unavailable")
+        ctx = _ctx()
+        with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+            await _rank(component, ctx)
+
+        component._ctx_reply.assert_awaited_once_with(ctx, "排名查詢失敗，請稍後再試")
         component._record_command.assert_not_awaited()
 
 

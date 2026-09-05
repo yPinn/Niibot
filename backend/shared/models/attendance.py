@@ -19,6 +19,7 @@ class CheckinSettings:
     timezone: str
     success_template: str
     duplicate_template: str
+    reply_delay_seconds: int = 0
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -31,6 +32,14 @@ class CheckinLeaderboardEntry:
     display_name: str | None
     total_days: int
     last_checkin_date: date
+
+
+@dataclass(frozen=True, slots=True)
+class CheckinRank:
+    rank: int
+    total_days: int
+    last_checkin_date: date
+    total_participants: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,6 +64,7 @@ class CheckinResult:
 class CheckinReply:
     result: CheckinResult
     message: str
+    delay_seconds: int = 0
 
 
 @dataclass(frozen=True, slots=True)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING
 
@@ -20,6 +21,15 @@ if TYPE_CHECKING:
     from core.bot import Bot
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
+
+# 依語氣由輕到重排列，slot = min(int(rank / total * 5), 4)
+_RANK_TEMPLATES = [
+    "每當點名你都在！能在 {total} 人中排到【第 {rank} 名】，累積簽到 {days} 天，絕對是真愛 GivePLZ ",  # 前 20%
+    "不是吧，這也能卷？在 {total} 人中你硬是衝到【第 {rank} 名】！累積簽到 {days} 天，我就問，你不用睡覺嗎？",  # 20–40%
+    "這是真的嗎？從 {total} 人中殺出重圍奪下【第 {rank} 名】，累積簽到 {days} 天，你其實是機器人吧 MrDestructoid ",  # 40–60%
+    "何意味？在 {total} 人中才排【第 {rank} 名】喔？才累積簽到 {days} 天，就繼續愛簽不簽吧，我沒關係啦真的😍",  # 60–80%
+    "666 還有高手！你在 {total} 人中位居【第 {rank} 名】呢！累積簽到 {days} 天，這數據想低調都難 MingLee",  # 後 20%
+]
 
 
 class AttendanceComponent(BotComponent):
@@ -85,8 +95,46 @@ class AttendanceComponent(BotComponent):
             await self._ctx_reply(ctx, "簽到失敗，請稍後再試")
             return
 
+        if outcome.delay_seconds > 0:
+            await asyncio.sleep(outcome.delay_seconds)
         await self._ctx_reply(ctx, outcome.message)
         await self._record_command(ctx, "checkin")
+
+    @commands.command(aliases=["排名"])
+    async def rank(self, ctx: commands.Context) -> None:
+        """查詢累積簽到排名。
+
+        Usage: !rank, !排名
+        """
+        config = await check_command(
+            self.cmd_repo, ctx, command_name="rank", channel_repo=self.channel_repo
+        )
+        if not config:
+            return
+
+        channel_id = ctx.channel.id
+        user_id = str(ctx.chatter.id)
+        try:
+            data = await self.attendance.get_rank(channel_id, user_id)
+        except Exception:
+            LOGGER.exception(
+                "Rank lookup failed", extra={"channel_id": channel_id, "user_id": user_id}
+            )
+            await self._ctx_reply(ctx, "排名查詢失敗，請稍後再試")
+            return
+
+        if data is None:
+            await self._ctx_reply(ctx, "還沒有簽到紀錄，先去簽到再來看排名吧")
+            await self._record_command(ctx, "rank")
+            return
+
+        slot = min(int(data.rank / data.total_participants * 5), 4)
+        template = _RANK_TEMPLATES[slot]
+        await self._ctx_reply(
+            ctx,
+            template.format(rank=data.rank, total=data.total_participants, days=data.total_days),
+        )
+        await self._record_command(ctx, "rank")
 
     @commands.command(name="ovltest")
     async def ovltest(self, ctx: commands.Context, count: int = 7) -> None:

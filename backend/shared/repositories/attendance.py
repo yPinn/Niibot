@@ -9,6 +9,7 @@ import asyncpg
 from shared.community_events import CHECKIN_RECORDED, validate_community_event
 from shared.models.attendance import (
     CheckinLeaderboardEntry,
+    CheckinRank,
     CheckinResult,
     CheckinSettings,
     CheckinStatus,
@@ -18,8 +19,53 @@ _CHECKIN_COLUMNS = (
     "id, channel_id, user_id, username, display_name, checkin_date, session_id, created_at"
 )
 _SETTINGS_COLUMNS = (
-    "channel_id, timezone, success_template, duplicate_template, created_at, updated_at"
+    "channel_id, timezone, success_template, duplicate_template, "
+    "reply_delay_seconds, created_at, updated_at"
 )
+
+# Shared by list_leaderboard and get_checkin_rank so a viewer's chat-facing rank can
+# never drift from the dashboard leaderboard's ordering. $1 = channel_id.
+_RANKED_CHECKINS_CTE = """
+    WITH ranked_checkins AS (
+        SELECT
+            user_id,
+            username,
+            display_name,
+            checkin_date,
+            COUNT(*) OVER (PARTITION BY user_id) AS total_days,
+            ROW_NUMBER() OVER (
+                PARTITION BY user_id
+                ORDER BY checkin_date DESC, id DESC
+            ) AS recent_row
+        FROM viewer_checkins
+        WHERE channel_id = $1
+    ), viewer_totals AS (
+        SELECT
+            user_id,
+            username,
+            display_name,
+            total_days,
+            checkin_date AS last_checkin_date
+        FROM ranked_checkins
+        WHERE recent_row = 1
+    ), ranked AS (
+        SELECT
+            ROW_NUMBER() OVER (
+                ORDER BY
+                    total_days DESC,
+                    last_checkin_date DESC,
+                    LOWER(COALESCE(display_name, username)),
+                    user_id
+            ) AS rank,
+            COUNT(*) OVER () AS total_participants,
+            user_id,
+            username,
+            display_name,
+            total_days,
+            last_checkin_date
+        FROM viewer_totals
+    )
+"""
 
 
 class AttendanceRepository:
@@ -51,17 +97,20 @@ class AttendanceRepository:
         timezone: str,
         success_template: str,
         duplicate_template: str,
+        reply_delay_seconds: int,
     ) -> CheckinSettings:
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 f"""
                 INSERT INTO checkin_settings
-                    (channel_id, timezone, success_template, duplicate_template)
-                VALUES ($1, $2, $3, $4)
+                    (channel_id, timezone, success_template, duplicate_template,
+                     reply_delay_seconds)
+                VALUES ($1, $2, $3, $4, $5)
                 ON CONFLICT (channel_id) DO UPDATE SET
                     timezone = EXCLUDED.timezone,
                     success_template = EXCLUDED.success_template,
                     duplicate_template = EXCLUDED.duplicate_template,
+                    reply_delay_seconds = EXCLUDED.reply_delay_seconds,
                     updated_at = NOW()
                 RETURNING {_SETTINGS_COLUMNS}
                 """,
@@ -69,6 +118,7 @@ class AttendanceRepository:
                 timezone,
                 success_template,
                 duplicate_template,
+                reply_delay_seconds,
             )
         if row is None:
             raise RuntimeError(f"Failed to update check-in settings for channel {channel_id}")
@@ -79,44 +129,10 @@ class AttendanceRepository:
     ) -> tuple[CheckinLeaderboardEntry, ...]:
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
-                """
-                WITH ranked_checkins AS (
-                    SELECT
-                        user_id,
-                        username,
-                        display_name,
-                        checkin_date,
-                        COUNT(*) OVER (PARTITION BY user_id) AS total_days,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY user_id
-                            ORDER BY checkin_date DESC, id DESC
-                        ) AS recent_row
-                    FROM viewer_checkins
-                    WHERE channel_id = $1
-                ), viewer_totals AS (
-                    SELECT
-                        user_id,
-                        username,
-                        display_name,
-                        total_days,
-                        checkin_date AS last_checkin_date
-                    FROM ranked_checkins
-                    WHERE recent_row = 1
-                )
-                SELECT
-                    ROW_NUMBER() OVER (
-                        ORDER BY
-                            total_days DESC,
-                            last_checkin_date DESC,
-                            LOWER(COALESCE(display_name, username)),
-                            user_id
-                    ) AS rank,
-                    user_id,
-                    username,
-                    display_name,
-                    total_days,
-                    last_checkin_date
-                FROM viewer_totals
+                _RANKED_CHECKINS_CTE
+                + """
+                SELECT rank, user_id, username, display_name, total_days, last_checkin_date
+                FROM ranked
                 ORDER BY rank
                 LIMIT $2
                 """,
@@ -124,6 +140,21 @@ class AttendanceRepository:
                 limit,
             )
         return tuple(CheckinLeaderboardEntry(**dict(row)) for row in rows)
+
+    async def get_checkin_rank(self, channel_id: str, user_id: str) -> CheckinRank | None:
+        """A single viewer's rank against the same ordering as list_leaderboard."""
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                _RANKED_CHECKINS_CTE
+                + """
+                SELECT rank, total_days, last_checkin_date, total_participants
+                FROM ranked
+                WHERE user_id = $2
+                """,
+                channel_id,
+                user_id,
+            )
+        return CheckinRank(**dict(row)) if row is not None else None
 
     async def record_checkin(
         self,

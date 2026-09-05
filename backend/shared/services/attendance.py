@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from shared.checkin_templates import render_checkin_template, validate_checkin_template
 from shared.models.attendance import (
     CheckinLeaderboardEntry,
+    CheckinRank,
     CheckinReply,
     CheckinResult,
     CheckinSettings,
@@ -26,6 +27,9 @@ class AttendanceService:
     async def get_leaderboard(self, channel_id: str) -> tuple[CheckinLeaderboardEntry, ...]:
         return await self.repository.list_leaderboard(channel_id)
 
+    async def get_rank(self, channel_id: str, user_id: str) -> CheckinRank | None:
+        return await self.repository.get_checkin_rank(channel_id, user_id)
+
     async def update_settings(
         self,
         channel_id: str,
@@ -33,6 +37,7 @@ class AttendanceService:
         timezone: str | None = None,
         success_template: str | None = None,
         duplicate_template: str | None = None,
+        reply_delay_seconds: int | None = None,
     ) -> CheckinSettings:
         current = await self.repository.get_or_create_settings(channel_id)
         next_timezone = timezone if timezone is not None else current.timezone
@@ -42,6 +47,9 @@ class AttendanceService:
         next_duplicate = (
             duplicate_template if duplicate_template is not None else current.duplicate_template
         )
+        next_delay = (
+            reply_delay_seconds if reply_delay_seconds is not None else current.reply_delay_seconds
+        )
 
         self._validate_settings(next_timezone, next_success, next_duplicate)
         return await self.repository.update_settings(
@@ -49,6 +57,7 @@ class AttendanceService:
             timezone=next_timezone,
             success_template=next_success,
             duplicate_template=next_duplicate,
+            reply_delay_seconds=next_delay,
         )
 
     @staticmethod
@@ -115,7 +124,9 @@ class AttendanceService:
             total_days=result.total_days,
             checkin_date=result.checkin_date,
         )
-        return CheckinReply(result=result, message=message)
+        return CheckinReply(
+            result=result, message=message, delay_seconds=settings.reply_delay_seconds
+        )
 
     async def _perform_check_in(
         self,

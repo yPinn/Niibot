@@ -31,6 +31,7 @@ class CheckinSettingsResponse(BaseModel):
     timezone: str
     success_template: str
     duplicate_template: str
+    reply_delay_seconds: int
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -52,6 +53,7 @@ class CheckinSettingsUpdate(BaseModel):
     timezone: str | None = Field(default=None, min_length=1, max_length=64)
     success_template: str | None = Field(default=None, min_length=1, max_length=500)
     duplicate_template: str | None = Field(default=None, min_length=1, max_length=500)
+    reply_delay_seconds: int | None = Field(default=None, ge=0, le=30)
 
 
 @router.get("/settings", response_model=CheckinSettingsResponse)
@@ -90,6 +92,7 @@ async def update_checkin_settings(
             timezone=body.timezone,
             success_template=body.success_template,
             duplicate_template=body.duplicate_template,
+            reply_delay_seconds=body.reply_delay_seconds,
         )
     except ValueError:
         LOGGER.info("checkin_settings_validation_failed")

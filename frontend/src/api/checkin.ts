@@ -6,6 +6,7 @@ export interface CheckinSettings {
   timezone: string
   success_template: string
   duplicate_template: string
+  reply_delay_seconds: number
   created_at: string | null
   updated_at: string | null
 }
@@ -14,6 +15,7 @@ export interface CheckinSettingsUpdate {
   timezone: string
   success_template: string
   duplicate_template: string
+  reply_delay_seconds: number
 }
 
 export interface CheckinLeaderboardEntry {
