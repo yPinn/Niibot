@@ -1,4 +1,9 @@
-import { hasAlreadyEnded, startElapsedTracking, startTimerBasedEnd } from './shared'
+import {
+  BILIBILI_MAX_SECONDS,
+  hasAlreadyEnded,
+  startElapsedTracking,
+  startTimerBasedEnd,
+} from './shared'
 import type { MountContext, PlayerStrategy } from './types'
 
 function mount(ctx: MountContext): void {
@@ -21,7 +26,7 @@ function mount(ctx: MountContext): void {
   iframe.scrolling = 'no'
   containerRef.current.appendChild(iframe)
 
-  startTimerBasedEnd(ctx)
+  startTimerBasedEnd(ctx, BILIBILI_MAX_SECONDS)
 }
 
 // Bilibili is a plain iframe — no postMessage/control API to wait for, so no requiresApi.

@@ -21,9 +21,12 @@ routes that call into this layer.
 Two things about video platforms are easy to assume are true for all of them
 and are not: **every platform can tell you a video's duration before you play
 it**, and **the video's total view count is available without the viewer
-being logged in as its owner**. Both assumptions hold for YouTube, Twitch
-Clip, and Bilibili today — neither holds for TikTok, which is why it isn't
-supported yet (see "Deferred: TikTok" below).
+being logged in as its owner**. Both assumptions hold for YouTube and Twitch
+Clip (official APIs). Bilibili's metadata comes from an unofficial endpoint
+that datacenter IPs frequently can't reach (risk-control `-412`), so its
+duration is **best-effort** — the overlay must tolerate its absence (see
+"End detection" below). Neither assumption holds for TikTok, which is why it
+isn't supported yet (see "Deferred: TikTok" below).
 
 ## Three-layer model
 
@@ -45,18 +48,30 @@ YouTube → Twitch Clip → Bilibili (including `b23.tv` short-link redirects).
 | Metadata API                      | YouTube Data API v3 (`videos.list`)                                                                                                                                                    | Twitch Helix `/helix/clips`                                                                          | Public `x/web-interface/view` endpoint                                                                                                                                                                            |
 | Official?                         | Yes                                                                                                                                                                                    | Yes                                                                                                  | **No** — not part of Bilibili's official Open Platform (that's a separate, application-gated program for content distribution). This is a reverse-engineered public endpoint with a spoofed Referer/User-Agent.   |
 | Cost                              | Free, quota-based: 10,000 units/day default, `videos.list` costs 1 unit/call (~10k calls/day). No paid tier — exceeding quota requires Google's manual Audit and Quota Extension form. | Free, token-bucket rate limit: 800 points/min per client, most endpoints cost 1 point. No paid tier. | Free today, but unauthorized use of an undocumented endpoint — no SLA, no rate-limit contract, can change format or start blocking without notice. Tracked as a standing technical-debt risk, not a one-time bug. |
-| duration/view_count at queue time | Always (when API key configured)                                                                                                                                                       | Always                                                                                               | Always                                                                                                                                                                                                            |
-| Playback embed                    | YT IFrame API (`YT.Player`)                                                                                                                                                            | `Twitch.Embed` JS API                                                                                | Plain `<iframe>` — no control API                                                                                                                                                                                 |
-| End detection                     | **Event-driven**: `onStateChange` ENDED + a polling fallback                                                                                                                           | **Timer-driven**: `setTimeout` from `duration_seconds`                                               | **Timer-driven**: `setTimeout` from `duration_seconds`                                                                                                                                                            |
+| duration/view_count at queue time | Always (when API key configured)                                                                                                                                                       | Always                                                                                               | **Best-effort** — unofficial endpoint, datacenter IPs frequently hit risk-control `-412`                                                                                                                          |
+| Playback embed                    | YT IFrame API (`YT.Player`)                                                                                                                                                            | `clips.twitch.tv/embed` `<iframe>` — no JS control/events API                                        | Plain `<iframe>` — no control API                                                                                                                                                                                 |
+| End detection                     | **Event-driven**: `onStateChange` ENDED + a polling fallback                                                                                                                           | **Timer-driven**: `setTimeout` from `duration_seconds`, else a 90s ceiling                           | **Timer-driven**: `setTimeout` from `duration_seconds`, else a 600s ceiling                                                                                                                                       |
 
 The event-driven vs. timer-driven split is the one piece of platform-specific
 _behavior_ the frontend registry does not (and should not) paper over: YouTube
-mounts a real player object and reacts to its actual state; Twitch Clip and
-Bilibili have no such signal and instead trust the server-reported
+mounts a real player object and reacts to its actual state; the Twitch clip and
+Bilibili iframes have no such signal and instead trust the server-reported
 `duration_seconds` to schedule `handleVideoEnd` themselves
-(`players/shared.ts`'s `startTimerBasedEnd()`). That only works because all
-three platforms guarantee a `duration_seconds` at queue time — see the TikTok
-section below for what breaks when a platform can't.
+(`players/shared.ts`'s `startTimerBasedEnd()`). When `duration_seconds` is
+missing — always a risk for Bilibili — that helper falls back to a per-platform
+ceiling (`CLIP_MAX_SECONDS` / `BILIBILI_MAX_SECONDS`) so the queue always
+advances instead of stalling forever on one failed metadata fetch. The tradeoff
+is a Bilibili entry with no duration runs to the ceiling (or is cut short if it
+is longer), and its progress bar / countdown read `--:--`. The `!vq skip`
+command is the manual escape hatch. See the TikTok section below for the harder
+case where duration is _never_ knowable at queue time.
+
+`reportVideoMetadata` (`PATCH /api/video-queue/public/{username}/metadata/{id}`)
+is the duration backfill path: the YouTube strategy already calls it from
+`onReady` when the Data API returned null. A Bilibili equivalent (reading
+duration off the `html5mobileplayer` iframe via `postMessage`) is possible but
+deferred — the ceiling covers the "queue must not stall" requirement, and this
+would only improve timing precision.
 
 ## Deferred: donation path multi-platform support
 

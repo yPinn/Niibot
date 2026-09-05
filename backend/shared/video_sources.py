@@ -201,11 +201,15 @@ async def fetch_bilibili_info(
             timeout=aiohttp.ClientTimeout(total=5),
         ) as resp:
             if resp.status != 200:
-                LOGGER.info("[Bilibili API] Unexpected status %s for %s", resp.status, bvid)
+                LOGGER.warning("[Bilibili API] Unexpected status %s for %s", resp.status, bvid)
                 return None, None, None, False
             data = await resp.json(content_type=None)
             if data.get("code") != 0:
-                LOGGER.info(
+                # code -412 is Bilibili's risk-control block, common from
+                # datacenter IPs. The overlay falls back to a timer ceiling
+                # (players/shared.ts) so the queue still advances without a
+                # duration — but the entry loses accurate timing.
+                LOGGER.warning(
                     "[Bilibili API] Error %s for %s: %s",
                     data.get("code"),
                     bvid,

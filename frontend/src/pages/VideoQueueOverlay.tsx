@@ -12,7 +12,6 @@ import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import {
   destroyAllPlayers,
   getPlayerStrategy,
-  loadTwitchEmbedAPI,
   loadYouTubeAPI,
   type YTPlayer,
 } from './videoQueueOverlay/players'
@@ -43,7 +42,6 @@ export default function VideoQueueOverlay() {
   const [state, setState] = useState<VideoQueueStreamState | null>(null)
   const [elapsed, setElapsed] = useState(0)
   const [ytReady, setYtReady] = useState(false)
-  const [twitchReady, setTwitchReady] = useState(false)
   const [isExiting, setIsExiting] = useState(false)
 
   const playerRef = useRef<YTPlayer | null>(null)
@@ -84,15 +82,6 @@ export default function VideoQueueOverlay() {
         if (mountedRef.current) setYtReady(true)
       })
       .catch(() => {}) // onerror resets _ytReadyPromise for retry on next mount
-  }, [])
-
-  // Load Twitch Embed API once
-  useEffect(() => {
-    loadTwitchEmbedAPI()
-      .then(() => {
-        if (mountedRef.current) setTwitchReady(true)
-      })
-      .catch(() => {})
   }, [])
 
   // NOTIFY-woken SSE stream, replacing the old fixed-interval poll — see
@@ -208,10 +197,8 @@ export default function VideoQueueOverlay() {
 
     const strategy = current ? getPlayerStrategy(current.video_type) : undefined
 
-    // Each strategy declares which external API (if any) must finish loading before
-    // it can mount — YouTube needs the IFrame API, Twitch Clip needs the Twitch Embed
-    // API, Bilibili is a plain iframe and needs neither.
-    if (strategy?.requiresApi === 'twitch' && !twitchReady) return
+    // Only YouTube needs an external API (the IFrame API) ready before it can
+    // mount — the Twitch clip and Bilibili strategies are plain iframes.
     if (strategy?.requiresApi === 'youtube' && !ytReady) return
 
     destroyAllPlayers(
@@ -251,7 +238,7 @@ export default function VideoQueueOverlay() {
     // Player creation is keyed on video ID — not the full `state` object or `isPreview` —
     // so the player is only rebuilt when the actual video changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ytReady, twitchReady, state?.current?.id, username, handleVideoEnd])
+  }, [ytReady, state?.current?.id, username, handleVideoEnd])
 
   // Cleanup on unmount
   useEffect(() => {

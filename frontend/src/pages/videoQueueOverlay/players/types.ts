@@ -40,38 +40,11 @@ declare global {
   }
 }
 
-export interface TwitchEmbedOptions {
-  clip?: string
-  channel?: string
-  video?: string
-  parent: string[]
-  layout?: 'video' | 'video-with-chat'
-  autoplay?: boolean
-  muted?: boolean
-  width?: string | number
-  height?: string | number
-}
-
-export interface TwitchEmbedInstance {
-  getPlayer(): TwitchPlayerInstance
-  addEventListener(event: string, callback: () => void): void
-}
-
-export interface TwitchPlayerInstance {
-  play(): void
-  pause(): void
-  getMuted(): boolean
-  setMuted(muted: boolean): void
-}
-
 declare global {
   interface Window {
+    // Twitch clips embed via a plain clips.twitch.tv/embed iframe (no JS API).
+    // This global is only for <TwitchPlayer>, the channel live-preview component.
     Twitch?: {
-      Embed: {
-        new (container: string | HTMLElement, options: TwitchEmbedOptions): TwitchEmbedInstance
-        VIDEO_READY: string
-        VIDEO_PLAY: string
-      }
       Player?: new (
         element: HTMLElement,
         options: Record<string, unknown>
@@ -112,6 +85,6 @@ export interface MountContext {
  */
 export interface PlayerStrategy {
   /** Which external API must be ready before mount() can run; null needs none (plain iframe). */
-  requiresApi: 'youtube' | 'twitch' | null
+  requiresApi: 'youtube' | null
   mount(ctx: MountContext): (() => void) | void
 }
