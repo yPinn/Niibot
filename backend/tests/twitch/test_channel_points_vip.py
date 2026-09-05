@@ -1,10 +1,12 @@
 """Timed VIP redemption workflow contracts."""
 
+import asyncio
 from dataclasses import replace
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+import twitch.components.channel_points as channel_points
 from twitch.components.channel_points import ChannelPointsComponent
 
 from shared.models.vip import (
@@ -297,3 +299,47 @@ async def test_expiry_removes_current_twitch_vip_then_closes_entitlement(monkeyp
     component.vip_repo.finish_expiry.assert_awaited_once()
     assert component.vip_repo.finish_expiry.await_args.kwargs["externally_removed"] is False
     sleep.assert_awaited_once_with(1.05)
+
+
+@pytest.mark.asyncio
+async def test_expiry_isolates_a_failing_row_from_the_rest(monkeypatch):
+    component = _component()
+    first = replace(_due_entitlement(), id=1, user_id="viewer-1")
+    second = replace(_due_entitlement(), id=2, user_id="viewer-2")
+    component.vip_repo.claim_due_entitlements = AsyncMock(return_value=(first, second))
+    component.vip_repo.finish_expiry = AsyncMock()
+    component.vip_repo.release_expiry_claim = AsyncMock()
+    component._is_current_vip = AsyncMock(return_value=False)  # type: ignore[method-assign]
+    # First row blows up before the per-row try can catch a clean failure;
+    # the loop must still process the second row.
+    component.bot.create_partialuser.side_effect = [RuntimeError("boom"), MagicMock()]
+    monkeypatch.setattr(channel_points.asyncio, "sleep", AsyncMock())
+
+    await component._expire_due_vips()
+
+    component.vip_repo.release_expiry_claim.assert_awaited_once_with(
+        channel_id="channel-1", entitlement_id=1
+    )
+    component.vip_repo.finish_expiry.assert_awaited_once()
+    assert component.vip_repo.finish_expiry.await_args.kwargs["entitlement_id"] == 2
+
+
+@pytest.mark.asyncio
+async def test_expiry_loop_backs_off_on_sustained_failure(monkeypatch):
+    component = _component()
+    component._recover_granting_vips = AsyncMock(  # type: ignore[method-assign]
+        side_effect=RuntimeError("schema not migrated")
+    )
+    delays: list[float] = []
+
+    async def fake_sleep(delay: float) -> None:
+        delays.append(delay)
+        if len(delays) >= 3:
+            raise asyncio.CancelledError
+
+    monkeypatch.setattr(channel_points.asyncio, "sleep", fake_sleep)
+
+    with pytest.raises(asyncio.CancelledError):
+        await component._vip_expiry_loop()
+
+    assert delays == [120, 240, 480]

@@ -300,15 +300,27 @@ class ChannelPointsComponent(commands.Component):
         return False
 
     async def _vip_expiry_loop(self) -> None:
+        consecutive_failures = 0
         while True:
             try:
                 await self._recover_granting_vips()
                 await self._expire_due_vips()
+                consecutive_failures = 0
             except asyncio.CancelledError:
                 raise
             except Exception:
-                LOGGER.exception("Timed VIP expiry loop failed")
-            await asyncio.sleep(60)
+                consecutive_failures += 1
+                LOGGER.exception(
+                    "Timed VIP expiry loop failed (consecutive=%d)", consecutive_failures
+                )
+            # Steady state runs every minute. On a sustained failure (e.g. the
+            # DB schema is not migrated yet) back off exponentially up to 30
+            # minutes so a broken dependency does not flood the logs.
+            if consecutive_failures == 0:
+                delay = 60
+            else:
+                delay = min(60 * 2**consecutive_failures, 1800)
+            await asyncio.sleep(delay)
 
     async def _recover_granting_vips(self) -> None:
         """Repair Add-VIP success followed by a local persistence interruption."""
@@ -323,10 +335,10 @@ class ChannelPointsComponent(commands.Component):
                     error_code="vip_rule_missing_during_recovery",
                 )
                 continue
-            broadcaster = self.bot.create_partialuser(user_id=event.channel_id)
             lock = self._vip_channel_locks.setdefault(event.channel_id, asyncio.Lock())
             async with lock:
                 try:
+                    broadcaster = self.bot.create_partialuser(user_id=event.channel_id)
                     if not await self._is_current_vip(broadcaster, event.user_id):
                         await self.vip_repo.transition_redemption(
                             channel_id=event.channel_id,
@@ -380,10 +392,10 @@ class ChannelPointsComponent(commands.Component):
         now = datetime.now(UTC)
         due = await self.vip_repo.claim_due_entitlements(now=now, limit=50)
         for entitlement in due:
-            broadcaster = self.bot.create_partialuser(user_id=entitlement.channel_id)
             lock = self._vip_channel_locks.setdefault(entitlement.channel_id, asyncio.Lock())
             async with lock:
                 try:
+                    broadcaster = self.bot.create_partialuser(user_id=entitlement.channel_id)
                     if not await self._is_current_vip(broadcaster, entitlement.user_id):
                         await self.vip_repo.finish_expiry(
                             channel_id=entitlement.channel_id,
