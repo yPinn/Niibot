@@ -63,7 +63,7 @@
   "devDependencies": {
     "@commitlint/cli": "^19.0.0",
     "@commitlint/config-conventional": "^19.0.0",
-    "@secretlint/secretlint-rule-preset-recommend": "^11.3.1",
+    "@secretlint/secretlint-rule-preset-recommend": "^13.0.5",
     "husky": "^8.0.3",
     "lint-staged": "^15.2.0",
     "secretlint": "^11.3.1"
