@@ -6,7 +6,7 @@
     "doc": "docs"
   },
   "scripts": {
-    "prepare": "husky install",
+    "prepare": "husky",
     "dev:fe": "npm run dev --prefix frontend",
     "dev:api": "npm run _dc -- --profile api up --build --remove-orphans",
     "dev:twitch": "npm run _dc -- --profile twitch up --build --remove-orphans",
