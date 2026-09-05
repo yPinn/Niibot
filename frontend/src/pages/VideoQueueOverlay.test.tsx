@@ -44,6 +44,15 @@ function bilibiliEntry(id: number, requestedBy: string, overrides: Record<string
   }
 }
 
+function youtubeEntry(id: number, requestedBy: string, overrides: Record<string, unknown> = {}) {
+  return {
+    ...bilibiliEntry(id, requestedBy, overrides),
+    video_id: `yt${id}`,
+    video_type: 'youtube' as const,
+    ...overrides,
+  }
+}
+
 describe('VideoQueueOverlay stream renderer', () => {
   beforeEach(() => {
     vi.mocked(openVideoQueueStream).mockReset()
@@ -140,5 +149,58 @@ describe('VideoQueueOverlay stream renderer', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+// The players/ package (see backend equivalent: resolve_video_url) selects a
+// mount strategy per video_type. These two cases are the cheapest way to
+// prove dispatch actually differs by platform: Bilibili's strategy declares
+// no requiresApi and must mount synchronously; YouTube's declares
+// requiresApi: 'youtube' and must stay gated forever in jsdom, where the real
+// IFrame API script never loads and ytReady never becomes true.
+describe('VideoQueueOverlay player strategy selection', () => {
+  beforeEach(() => {
+    vi.mocked(openVideoQueueStream).mockReset()
+    vi.mocked(openVideoQueueStream).mockImplementation(() => new Promise(() => undefined))
+  })
+
+  it('mounts the Bilibili iframe immediately since its strategy needs no external API', () => {
+    const entry = bilibiliEntry(1, 'viewer')
+    const { container } = renderOverlay()
+    const options = vi.mocked(openVideoQueueStream).mock.calls[0][0]
+    act(() => {
+      options.onMessage({
+        type: 'snapshot',
+        current: entry,
+        queue: [],
+        queue_size: 0,
+        total_queued_duration: null,
+      })
+    })
+
+    const iframe = container.querySelector('iframe')
+    expect(iframe).not.toBeNull()
+    expect(iframe?.getAttribute('src')).toContain(`bvid=${entry.video_id}`)
+  })
+
+  it('never mounts a YouTube video while ytReady is false (its strategy requires the IFrame API)', () => {
+    const entry = youtubeEntry(1, 'viewer')
+    const { container } = renderOverlay()
+    const options = vi.mocked(openVideoQueueStream).mock.calls[0][0]
+    act(() => {
+      options.onMessage({
+        type: 'snapshot',
+        current: entry,
+        queue: [],
+        queue_size: 0,
+        total_queued_duration: null,
+      })
+    })
+
+    // jsdom never executes the injected `youtube.com/iframe_api` script, so
+    // ytReady never flips true and the effect must bail out before touching
+    // window.YT (which is undefined here) or writing into the container.
+    expect(container.querySelector('iframe')).toBeNull()
+    expect(container.querySelector(`[id^="twitch-embed-"]`)).toBeNull()
   })
 })

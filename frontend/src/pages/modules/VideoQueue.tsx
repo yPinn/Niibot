@@ -428,13 +428,13 @@ export default function VideoQueue() {
               <div className="flex items-center gap-element">
                 <div className="relative flex-1 sm:max-w-72">
                   <Icon
-                    icon="fa-brands fa-youtube"
+                    icon="fa-solid fa-link"
                     className="text-sub text-muted-foreground"
                     wrapperClassName="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2"
                   />
                   <Input
-                    aria-label="YouTube 連結"
-                    placeholder="貼上影片連結"
+                    aria-label="影片連結"
+                    placeholder="貼上影片連結（YouTube／Twitch Clip／Bilibili）"
                     value={addUrlInput}
                     onChange={e => setAddUrlInput(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && handleAddVideo()}

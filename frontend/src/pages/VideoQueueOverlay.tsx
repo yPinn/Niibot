@@ -1,13 +1,21 @@
-import { type RefObject, useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 
-import { advanceVideoQueue, reportVideoMetadata } from '@/api/videoQueue'
+import { advanceVideoQueue } from '@/api/videoQueue'
 import {
   openVideoQueueStream,
   type VideoQueueStreamMessage,
   type VideoQueueStreamState,
 } from '@/api/videoQueueStream'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
+
+import {
+  destroyAllPlayers,
+  getPlayerStrategy,
+  loadTwitchEmbedAPI,
+  loadYouTubeAPI,
+  type YTPlayer,
+} from './videoQueueOverlay/players'
 
 import styles from './VideoQueueOverlay.module.css'
 
@@ -20,174 +28,12 @@ const STABLE_STREAM_MS = 30_000
 // frames — see the race-protection note on advancedIdsRef below.
 const MAX_REMEMBERED_ADVANCED_IDS = 50
 
-interface YTPlayer {
-  playVideo(): void
-  pauseVideo(): void
-  destroy(): void
-  getCurrentTime(): number
-  getDuration(): number
-  seekTo(seconds: number, allowSeekAhead?: boolean): void
-  setPlaybackQuality(quality: string): void
-}
-
-interface YTPlayerOptions {
-  width?: number | string
-  height?: number | string
-  videoId?: string
-  playerVars?: {
-    autoplay?: 0 | 1
-    controls?: 0 | 1
-    rel?: 0 | 1
-    modestbranding?: 0 | 1
-    mute?: 0 | 1
-    iv_load_policy?: 1 | 3
-    cc_load_policy?: 1 | 3
-    vq?: string
-  }
-  events?: {
-    onReady?: (event: { target: YTPlayer }) => void
-    onStateChange?: (event: { target: YTPlayer; data: number }) => void
-    onError?: (event: { target: YTPlayer }) => void
-  }
-}
-
-declare global {
-  interface Window {
-    YT: { Player: new (element: string | HTMLElement, options: YTPlayerOptions) => YTPlayer }
-    onYouTubeIframeAPIReady?: () => void
-  }
-}
-
-interface TwitchEmbedOptions {
-  clip?: string
-  channel?: string
-  video?: string
-  parent: string[]
-  layout?: 'video' | 'video-with-chat'
-  autoplay?: boolean
-  muted?: boolean
-  width?: string | number
-  height?: string | number
-}
-
-interface TwitchEmbedInstance {
-  getPlayer(): TwitchPlayerInstance
-  addEventListener(event: string, callback: () => void): void
-}
-
-interface TwitchPlayerInstance {
-  play(): void
-  pause(): void
-  getMuted(): boolean
-  setMuted(muted: boolean): void
-}
-
-declare global {
-  interface Window {
-    Twitch?: {
-      Embed: {
-        new (container: string | HTMLElement, options: TwitchEmbedOptions): TwitchEmbedInstance
-        VIDEO_READY: string
-        VIDEO_PLAY: string
-      }
-      Player?: new (
-        element: HTMLElement,
-        options: Record<string, unknown>
-      ) => { destroy: () => void }
-    }
-  }
-}
-
-let _ytReadyPromise: Promise<void> | null = null
-
-function loadYouTubeAPI(): Promise<void> {
-  if (_ytReadyPromise) return _ytReadyPromise
-  _ytReadyPromise = new Promise((resolve, reject) => {
-    if (typeof window !== 'undefined' && window.YT?.Player) {
-      resolve()
-      return
-    }
-    window.onYouTubeIframeAPIReady = resolve
-    const script = document.createElement('script')
-    script.src = 'https://www.youtube.com/iframe_api'
-    script.onerror = () => {
-      _ytReadyPromise = null // allow retry on next mount
-      reject(new Error('Failed to load YouTube IFrame API'))
-    }
-    document.head.appendChild(script)
-  })
-  return _ytReadyPromise
-}
-
-let _twitchReadyPromise: Promise<void> | null = null
-
-function loadTwitchEmbedAPI(): Promise<void> {
-  if (_twitchReadyPromise) return _twitchReadyPromise
-  _twitchReadyPromise = new Promise((resolve, reject) => {
-    if (typeof window !== 'undefined' && window.Twitch?.Embed) {
-      resolve()
-      return
-    }
-    const script = document.createElement('script')
-    script.src = 'https://embed.twitch.tv/embed/v1.js'
-    script.onload = () => resolve()
-    script.onerror = () => {
-      _twitchReadyPromise = null
-      reject(new Error('Failed to load Twitch Embed API'))
-    }
-    document.head.appendChild(script)
-  })
-  return _twitchReadyPromise
-}
-
 function formatRemaining(elapsed: number, duration: number | null): string {
   if (!duration) return '--:--'
   const remaining = Math.max(0, duration - elapsed)
   const m = Math.floor(remaining / 60)
   const s = Math.floor(remaining % 60)
   return `${m}:${s.toString().padStart(2, '0')}`
-}
-
-/** Destroy all active YT players, clear the clip timer, and stop the progress interval. */
-function destroyAllPlayers(
-  refs: Array<RefObject<YTPlayer | null>>,
-  progressRef: RefObject<ReturnType<typeof setInterval> | null>,
-  clipTimerRef: RefObject<ReturnType<typeof setTimeout> | null>,
-  containerRef: RefObject<HTMLDivElement | null>,
-  setElapsed: (v: number) => void
-) {
-  for (const ref of refs) {
-    if (ref.current) {
-      try {
-        ref.current.destroy()
-      } catch {
-        /* ignore */
-      }
-      ref.current = null
-    }
-  }
-  if (progressRef.current) {
-    clearInterval(progressRef.current ?? undefined)
-    progressRef.current = null
-  }
-  if (clipTimerRef.current) {
-    clearTimeout(clipTimerRef.current)
-    clipTimerRef.current = null
-  }
-  // Clear any iframe left by a Twitch clip player
-  if (containerRef.current) {
-    containerRef.current.innerHTML = ''
-  }
-  setElapsed(0)
-}
-
-/** Create a fresh full-size mount div inside a container, clearing previous children. */
-function makeMountDiv(container: HTMLDivElement): HTMLDivElement {
-  const div = document.createElement('div')
-  div.style.cssText = 'width:100%;height:100%'
-  container.innerHTML = ''
-  container.appendChild(div)
-  return div
 }
 
 export default function VideoQueueOverlay() {
@@ -360,10 +206,13 @@ export default function VideoQueueOverlay() {
 
     if (newId === currentIdRef.current) return // same video, nothing to do
 
-    // YouTube requires the IFrame API to be loaded; Twitch clips need the Twitch Embed API;
-    // Bilibili uses a plain iframe — no external API to wait for.
-    if (current?.video_type === 'twitch_clip' && !twitchReady) return
-    if (current?.video_type === 'youtube' && !ytReady) return
+    const strategy = current ? getPlayerStrategy(current.video_type) : undefined
+
+    // Each strategy declares which external API (if any) must finish loading before
+    // it can mount — YouTube needs the IFrame API, Twitch Clip needs the Twitch Embed
+    // API, Bilibili is a plain iframe and needs neither.
+    if (strategy?.requiresApi === 'twitch' && !twitchReady) return
+    if (strategy?.requiresApi === 'youtube' && !ytReady) return
 
     destroyAllPlayers(
       [playerRef, leftPlayerRef, rightPlayerRef],
@@ -374,268 +223,31 @@ export default function VideoQueueOverlay() {
     )
     currentIdRef.current = newId
 
-    if (!current || !newId) return // queue is empty, stay transparent
-
-    const currentId = current.id
+    if (!current || !newId || !strategy) return // queue is empty, stay transparent
 
     // Compute elapsed seconds since started_at for late-joining overlays
     const joinElapsed = current.started_at
       ? (Date.now() - new Date(current.started_at).getTime()) / 1000
       : 0
 
-    // ── Twitch Clip player ──────────────────────────────────────────────
-    if (current.video_type === 'twitch_clip') {
-      // If the clip has already ended, advance immediately
-      if (current.duration_seconds && joinElapsed >= current.duration_seconds - 0.5) {
-        handleVideoEnd(currentId)
-        return
-      }
-
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setElapsed(joinElapsed) // initialise elapsed for late-joining overlays
-
-      // Start the elapsed counter immediately so the progress UI stays accurate.
-      progressRef.current = setInterval(() => {
-        setElapsed(prev => prev + 1)
-      }, 1000)
-
-      // Use Twitch.Embed JS API (not a raw iframe) so the player has a proper
-      // postMessage channel with our page — raw iframes are blocked from autoplaying
-      // because player.twitch.tv can't verify embed legitimacy without it.
-      // autoplay:false + explicit play() in VIDEO_READY avoids any visibility
-      // check during the overlayEnter animation (animation completes in ~600ms,
-      // VIDEO_READY fires after the player finishes loading, typically 1-2s).
-      if (!containerRef.current) return
-      containerRef.current.innerHTML = ''
-      // Twitch.Embed requires a string element ID as first argument
-      const mountDiv = document.createElement('div')
-      mountDiv.style.cssText = 'width:100%;height:100%'
-      const mountId = `twitch-embed-${currentId}`
-      mountDiv.id = mountId
-      containerRef.current.appendChild(mountDiv)
-      const embed = new window.Twitch!.Embed(mountId, {
-        clip: current.video_id,
-        parent: [window.location.hostname],
-        layout: 'video',
-        autoplay: false,
-        muted: isPreview,
-        width: '100%',
-        height: '100%',
-      })
-
-      embed.addEventListener(window.Twitch!.Embed.VIDEO_READY, () => {
-        // Guard: only play if this clip is still the current one
-        if (currentIdRef.current === currentId) {
-          embed.getPlayer().play()
-        }
-      })
-
-      // End detection: timer based on remaining clip duration
-      if (current.duration_seconds) {
-        const remaining = Math.max(0, current.duration_seconds - joinElapsed)
-        clipTimerRef.current = setTimeout(() => handleVideoEnd(currentId), remaining * 1000 + 500)
-      }
-      return // skip YouTube player creation below
-    }
-
-    // ── Bilibili player ─────────────────────────────────────────────────
-    if (current.video_type === 'bilibili') {
-      if (current.duration_seconds && joinElapsed >= current.duration_seconds - 0.5) {
-        handleVideoEnd(currentId)
-        return
-      }
-
-      setElapsed(joinElapsed)
-      progressRef.current = setInterval(() => {
-        setElapsed(prev => prev + 1)
-      }, 1000)
-
-      if (!containerRef.current) return
-      containerRef.current.innerHTML = ''
-      const iframe = document.createElement('iframe')
-      const startSeconds = Math.floor(joinElapsed)
-      iframe.src = `https://www.bilibili.com/blackboard/html5mobileplayer.html?bvid=${encodeURIComponent(current.video_id)}&autoplay=1&danmaku=0&hideDanmakuButton=1&noFullScreenButton=1&hideCoverInfo=1&hasMuteButton=0&t=${startSeconds}`
-      iframe.style.cssText = 'width:100%;height:100%;border:none'
-      iframe.allow = 'autoplay; fullscreen'
-      iframe.scrolling = 'no'
-      containerRef.current.appendChild(iframe)
-
-      if (current.duration_seconds) {
-        const remaining = Math.max(0, current.duration_seconds - joinElapsed)
-        clipTimerRef.current = setTimeout(() => handleVideoEnd(currentId), remaining * 1000 + 500)
-      }
-      return
-    }
-
-    // ── YouTube player ──────────────────────────────────────────────────
-    // All-ready barrier: all players hold at autoplay:0 until every onReady has fired,
-    // then startAll() calls playVideo() on all simultaneously — zero staggered delay.
-    const totalPlayers = current.is_vertical ? 3 : 1
-    let readyCount = 0
-    let allStarted = false
-    let fallbackTimer = 0 as ReturnType<typeof setTimeout>
-
-    function startAll() {
-      if (allStarted) return
-      allStarted = true
-      clearTimeout(fallbackTimer)
-      if (!current) return // narrowing: current is non-null here by construction
-
-      // If elapsed >= duration the video has already ended — advance immediately
-      // rather than creating a player that would instantly finish.
-      if (current.duration_seconds && joinElapsed >= current.duration_seconds - 0.5) {
-        clearInterval(progressRef.current ?? undefined)
-        progressRef.current = null
-        handleVideoEnd(currentId)
-        return
-      }
-
-      // Seek all players to the correct position when joining mid-video (>2s in)
-      if (joinElapsed > 2) {
-        for (const ref of [playerRef, leftPlayerRef, rightPlayerRef]) {
-          if (ref.current)
-            try {
-              ref.current.seekTo(joinElapsed, true)
-            } catch {
-              /* ignore */
-            }
-        }
-      }
-
-      for (const ref of [playerRef, leftPlayerRef, rightPlayerRef]) {
-        if (ref.current)
-          try {
-            ref.current.playVideo()
-          } catch {
-            /* ignore */
-          }
-      }
-      progressRef.current = setInterval(() => {
-        if (!playerRef.current) return
-        const t = playerRef.current.getCurrentTime()
-        setElapsed(t)
-        // Sync side players — resync if drift exceeds 0.3s
-        for (const ref of [leftPlayerRef, rightPlayerRef]) {
-          if (ref.current) {
-            try {
-              const st = ref.current.getCurrentTime()
-              if (Math.abs(st - t) > 0.3) ref.current.seekTo(t, true)
-            } catch {
-              /* ignore */
-            }
-          }
-        }
-        // ENDED fallback: polling check to catch missed onStateChange ENDED events
-        const d = playerRef.current.getDuration()
-        if (d > 0 && t >= d - 0.5) {
-          clearInterval(progressRef.current ?? undefined)
-          progressRef.current = null
-          handleVideoEnd(currentId)
-        }
-      }, 1000)
-    }
-
-    function onPlayerReady() {
-      readyCount++
-      if (readyCount >= totalPlayers) {
-        clearTimeout(fallbackTimer)
-        startAll()
-      }
-    }
-
-    // 8s fallback in case a player never fires onReady
-    fallbackTimer = setTimeout(startAll, 8000)
-
-    // Muted side player for vertical video blurred columns.
-    function createSidePlayer(
-      containerRefArg: RefObject<HTMLDivElement | null>,
-      playerRefArg: RefObject<YTPlayer | null>
-    ) {
-      if (!containerRefArg.current) {
-        onPlayerReady() // container not mounted — count as ready so barrier doesn't stall
-        return
-      }
-      playerRefArg.current = new window.YT.Player(makeMountDiv(containerRefArg.current), {
-        width: '100%',
-        height: '100%',
-        videoId: current!.video_id,
-        playerVars: {
-          autoplay: 0,
-          controls: 0,
-          rel: 0,
-          modestbranding: 1,
-          mute: 1,
-          iv_load_policy: 3,
-          vq: 'highres',
-        },
-        events: { onReady: onPlayerReady },
-      })
-    }
-
-    // Center player — pass an imperative child div so YT.Player's
-    // parentNode.replaceChild() never detaches containerRef from the DOM
-    playerRef.current = new window.YT.Player(makeMountDiv(containerRef.current), {
-      width: '100%',
-      height: '100%',
-      videoId: current.video_id,
-      playerVars: {
-        autoplay: 0,
-        controls: 0,
-        rel: 0,
-        modestbranding: 1,
-        iv_load_policy: 3,
-        cc_load_policy: 3,
-        mute: isPreview ? 1 : 0,
-        vq: 'highres',
-      },
-      events: {
-        onReady: event => {
-          event.target.setPlaybackQuality('highres')
-          const duration = event.target.getDuration()
-          // Report duration to backend (fallback for entries where API returned null)
-          if (duration > 0 && !current.duration_seconds && username) {
-            reportVideoMetadata(username, currentId, Math.round(duration)).catch(() => {})
-          }
-          onPlayerReady()
-        },
-        onStateChange: event => {
-          if (event.data === 1) {
-            // YT.PlayerState.PLAYING — sync side panels
-            for (const ref of [leftPlayerRef, rightPlayerRef]) {
-              if (ref.current)
-                try {
-                  ref.current.playVideo()
-                } catch {
-                  /* ignore */
-                }
-            }
-          }
-          if (event.data === 2) {
-            // YT.PlayerState.PAUSED — pause side panels in lockstep
-            for (const ref of [leftPlayerRef, rightPlayerRef]) {
-              if (ref.current)
-                try {
-                  ref.current.pauseVideo()
-                } catch {
-                  /* ignore */
-                }
-            }
-          }
-          if (event.data === 0) handleVideoEnd(currentId) // YT.PlayerState.ENDED
-        },
-        onError: () => handleVideoEnd(currentId),
-      },
+    return strategy.mount({
+      current,
+      currentId: current.id,
+      joinElapsed,
+      isPreview,
+      username,
+      containerRef,
+      leftContainerRef,
+      rightContainerRef,
+      playerRef,
+      leftPlayerRef,
+      rightPlayerRef,
+      progressRef,
+      clipTimerRef,
+      currentIdRef,
+      setElapsed,
+      handleVideoEnd,
     })
-
-    // Side players for vertical videos (blurred background columns)
-    if (current.is_vertical) {
-      createSidePlayer(leftContainerRef, leftPlayerRef)
-      createSidePlayer(rightContainerRef, rightPlayerRef)
-    }
-
-    return () => {
-      clearTimeout(fallbackTimer)
-    }
     // Player creation is keyed on video ID — not the full `state` object or `isPreview` —
     // so the player is only rebuilt when the actual video changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps

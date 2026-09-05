@@ -32,13 +32,17 @@ const SOURCE_CONFIG: Record<string, { label: string; className: string }> = {
   },
 }
 
-function ClipBadge() {
+const PLATFORM_BADGE_CONFIG: Record<string, { label: string; className: string }> = {
+  twitch_clip: { label: 'Clip', className: 'text-status-special border-status-special/60' },
+  bilibili: { label: 'Bilibili', className: 'text-status-info border-status-info/60' },
+}
+
+function PlatformBadge({ videoType }: { videoType: string }) {
+  const cfg = PLATFORM_BADGE_CONFIG[videoType]
+  if (!cfg) return null
   return (
-    <Badge
-      variant="outline"
-      className="shrink-0 text-label px-1 py-0 text-status-special border-status-special/60"
-    >
-      Clip
+    <Badge variant="outline" className={`shrink-0 text-label px-1 py-0 ${cfg.className}`}>
+      {cfg.label}
     </Badge>
   )
 }
@@ -96,7 +100,7 @@ export function QueueTable({
               </TableCell>
               <TableCell>
                 <div className="flex items-center gap-1.5 min-w-0">
-                  {current.video_type === 'twitch_clip' && <ClipBadge />}
+                  <PlatformBadge videoType={current.video_type} />
                   <div className="truncate font-medium" title={current.title || current.video_id}>
                     {current.title || current.video_id}
                   </div>
@@ -135,7 +139,7 @@ export function QueueTable({
               </TableCell>
               <TableCell>
                 <div className="flex items-center gap-1.5 min-w-0">
-                  {entry.video_type === 'twitch_clip' && <ClipBadge />}
+                  <PlatformBadge videoType={entry.video_type} />
                   <div className="truncate font-medium" title={entry.title || entry.video_id}>
                     {entry.title || entry.video_id}
                   </div>
