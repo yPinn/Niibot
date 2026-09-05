@@ -67,8 +67,9 @@ actor snapshot、validated payload、發生／到期時間與 idempotency key。
 同一個 Live Display 頁面可以承載多個 block，例如每日簽到、運勢或塔羅；每個 block 在 registry 定義
 自己的 `block_type`、renderer、schema、預設外觀、驗證器與測試事件。新增 block 不得沿用或覆蓋其他
 block 的外觀欄位。Overlay runtime 只負責依 cursor 讀取、排序、去重、排隊與 renderer dispatch，不回查 feature table，
-也不執行 payload 內的 HTML／CSS／JS。第一版可短輪詢；需要更低延遲時，以 durable table replay +
-PostgreSQL `NOTIFY` 喚醒 SSE，維持同一事件契約。
+也不執行 payload 內的 HTML／CSS／JS。傳輸層是 durable table replay + PostgreSQL `NOTIFY` 喚醒的 SSE
+長連線，維持同一事件契約；`NOTIFY` payload 只帶 `channel_id` 作喚醒訊號，事件與 theme body 一律重新
+由 durable table 讀取。
 
 Game Queue 與 Video Queue 是長時間存在的狀態／播放器，不塞入短事件 feed；未來只共用
 Overlay shell、公開金鑰、theme 與 transport primitives。
@@ -126,8 +127,12 @@ server 與 client 都不接受任意 HTML、CSS 或 JavaScript。圖片資產與
 - 模板只允許 `$(@user)`、`$(user)`、`$(count)`、`$(date)`，renderer 不解譯 HTML、CSS、JS
   或通用 command substitution。
 - OBS route 為 `/live-display#key=<uuid>`；capability 留在 URL fragment，不進入瀏覽器／CDN request log，
-  前端以 `X-Overlay-Key` header 呼叫公開 API。正常啟動先取得 latest cursor、不重播歷史，之後每秒讀取
-  增量 event，以 FIFO 播放 7 格循環集點卡；每 5 秒檢查 published revision，發布後不必重載 OBS。
+  前端以 `X-Overlay-Key` header 對 `GET /api/live-display/public/stream` 開一條可重連 SSE 長連線。
+  正常啟動先取得 latest cursor、不重播歷史，之後靠 PostgreSQL `NOTIFY` 喚醒送出 `update` frame
+  （event 與已變更的 theme 一併夾帶），以 FIFO 播放 7 格循環集點卡；theme 發布後隨下一次 `update`
+  送達，不必重載 OBS，也不再需要獨立輪詢 published revision。每條串流有 15 秒 heartbeat 與 5 分鐘
+  硬性 lease，到期或斷線由前端帶最後 cursor、以指數退避加 jitter 重連補齊事件，不 fallback 回週期
+  polling。
 - Dashboard 的 `Live Display` 頁位於 `/modules/live-display`，依「顯示內容、卡片樣式、
   預覽與測試、加入直播畫面」排序；每個 block 都提供不執行正式功能流程的測試動畫。頁面可啟停 feed、
   複製／輪替 capability URL、編輯／預覽／發布該 block 的頻道樣式；設定 mutation
