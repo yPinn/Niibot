@@ -1,9 +1,10 @@
-"""Contracts for the process-level Live Display update hub and SSE frames."""
+"""The Live Display `/public/stream` route: snapshot/update framing, lease,
+capacity, and cleanup. Generic NOTIFY-wake hub behaviour (fan-out, capacity,
+reconnect, multi-channel routing) lives in test_notify_stream.py."""
 
 from __future__ import annotations
 
 import asyncio
-import json
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID
@@ -11,9 +12,9 @@ from uuid import UUID
 import pytest
 from fastapi import Request
 
-import services.community_overlay_stream as stream_module
+from core.dependencies import COMMUNITY_OVERLAY_NOTIFY_CHANNEL
 from routers.community_overlay_router import stream_public_overlay
-from services.community_overlay_stream import OverlayCapacityError, OverlayUpdateHub, encode_sse
+from services.notify_stream import NotifyWakeHub
 from shared.community_overlay_themes import DEFAULT_OVERLAY_THEME
 from shared.models.attendance import (
     CommunityOverlayEvent,
@@ -22,119 +23,12 @@ from shared.models.attendance import (
 )
 
 
-def test_sse_frame_is_named_json_and_cannot_inject_lines() -> None:
-    frame = encode_sse("update", {"channel": "line1\nline2", "cursor": 12})
-
-    assert frame.startswith("event: update\n")
-    assert frame.endswith("\n\n")
-    assert (
-        "data: " + json.dumps({"channel": "line1\nline2", "cursor": 12}, separators=(",", ":"))
-        in frame
-    )
-    assert frame.count("data: ") == 1
-
-
-@pytest.mark.asyncio
-async def test_one_hub_fans_out_and_coalesces_slow_consumers() -> None:
-    hub = OverlayUpdateHub("postgresql://test:test@localhost/test", queue_size=1)
-    first = hub.subscribe("channel-1")
-    second = hub.subscribe("channel-1")
-    other = hub.subscribe("channel-2")
-
-    hub.notify("channel-1")
-    hub.notify("channel-1")
-
-    await asyncio.wait_for(first.wait(), timeout=0.1)
-    await asyncio.wait_for(second.wait(), timeout=0.1)
-    with pytest.raises(TimeoutError):
-        await asyncio.wait_for(other.wait(), timeout=0.01)
-
-    first.close()
-    second.close()
-    other.close()
-    assert hub.subscriber_count == 0
-
-
-def test_hub_bounds_concurrent_subscribers_per_channel_and_process() -> None:
-    hub = OverlayUpdateHub(
+def _hub(**kwargs: object) -> NotifyWakeHub:
+    return NotifyWakeHub(
         "postgresql://test:test@localhost/test",
-        max_subscribers_per_channel=2,
-        max_subscribers=3,
+        notify_channels=[COMMUNITY_OVERLAY_NOTIFY_CHANNEL],
+        **kwargs,
     )
-    subscriptions = [
-        hub.subscribe("channel-1"),
-        hub.subscribe("channel-1"),
-        hub.subscribe("channel-2"),
-    ]
-
-    with pytest.raises(OverlayCapacityError):
-        hub.subscribe("channel-1")
-    with pytest.raises(OverlayCapacityError):
-        hub.subscribe("channel-3")
-
-    for subscription in subscriptions:
-        subscription.close()
-
-
-@pytest.mark.asyncio
-async def test_reconnect_wakes_every_subscriber_for_cursor_replay() -> None:
-    hub = OverlayUpdateHub("postgresql://test:test@localhost/test")
-    first = hub.subscribe("channel-1")
-    second = hub.subscribe("channel-2")
-
-    hub.notify_all()
-
-    await asyncio.wait_for(first.wait(), timeout=0.1)
-    await asyncio.wait_for(second.wait(), timeout=0.1)
-    first.close()
-    second.close()
-
-
-@pytest.mark.asyncio
-async def test_listener_uses_one_connection_and_reconnects_with_replay_wake(monkeypatch) -> None:
-    drop_listener = asyncio.Event()
-
-    async def fail_keepalive_after_first_wake(_query: str) -> None:
-        await drop_listener.wait()
-        raise ConnectionError("listener dropped")
-
-    first_connection = AsyncMock()
-    first_connection.execute.side_effect = fail_keepalive_after_first_wake
-    second_connection = AsyncMock()
-    connect = AsyncMock(side_effect=[first_connection, second_connection])
-    monkeypatch.setattr(stream_module.asyncpg, "connect", connect)
-    hub = OverlayUpdateHub(
-        "postgresql://test:test@localhost/test",
-        keepalive_seconds=0.01,
-        reconnect_initial_seconds=0.01,
-    )
-    subscription = hub.subscribe("channel-1")
-
-    hub.start()
-    hub.start()
-    try:
-        await asyncio.wait_for(subscription.wait(), timeout=0.2)
-        drop_listener.set()
-        await asyncio.wait_for(subscription.wait(), timeout=1.0)
-
-        assert connect.await_count == 2
-        first_connection.add_listener.assert_awaited_once()
-        second_connection.add_listener.assert_awaited_once()
-    finally:
-        await hub.stop()
-        subscription.close()
-
-
-@pytest.mark.asyncio
-async def test_invalid_notification_does_not_wake_subscribers() -> None:
-    hub = OverlayUpdateHub("postgresql://test:test@localhost/test")
-    subscription = hub.subscribe("channel-1")
-
-    hub._on_notification(MagicMock(), 1, "community_overlay_updates", "not-json")
-
-    with pytest.raises(TimeoutError):
-        await asyncio.wait_for(subscription.wait(), timeout=0.01)
-    subscription.close()
 
 
 @pytest.mark.asyncio
@@ -142,11 +36,7 @@ async def test_stream_route_releases_capacity_when_initial_snapshot_fails() -> N
     service = MagicMock()
     service.resolve_public_channel = AsyncMock(return_value="channel-1")
     service.get_stream_snapshot = AsyncMock(side_effect=RuntimeError("database unavailable"))
-    hub = OverlayUpdateHub(
-        "postgresql://test:test@localhost/test",
-        max_subscribers_per_channel=1,
-        max_subscribers=1,
-    )
+    hub = _hub(max_subscribers_per_channel=1, max_subscribers=1)
     request = Request(
         {
             "type": "http",
@@ -181,7 +71,7 @@ async def test_stream_route_hard_lease_releases_subscription(monkeypatch) -> Non
     service = MagicMock()
     service.resolve_public_channel = AsyncMock(return_value="channel-lease")
     service.get_stream_snapshot = AsyncMock(return_value=snapshot)
-    hub = OverlayUpdateHub("postgresql://test:test@localhost/test")
+    hub = _hub()
     request = Request(
         {
             "type": "http",
@@ -246,7 +136,7 @@ async def test_stream_route_sends_protected_snapshot_and_cleans_up_disconnect() 
         themes=snapshot.themes,
     )
     service.get_stream_snapshot = AsyncMock(side_effect=[snapshot, tail])
-    hub = OverlayUpdateHub("postgresql://test:test@localhost/test")
+    hub = _hub()
     request = Request(
         {
             "type": "http",

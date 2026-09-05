@@ -4,17 +4,29 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime
+from collections.abc import AsyncGenerator
+from datetime import UTC, datetime
 
 from asyncpg import Pool
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from core.config import Settings, get_settings
-from core.dependencies import get_current_channel_id, get_db_pool, get_twitch_api, require_activated
+from core.dependencies import (
+    VIDEO_QUEUE_NOTIFY_CHANNEL,
+    get_current_channel_id,
+    get_db_pool,
+    get_notify_hub,
+    get_twitch_api,
+    require_activated,
+)
+from core.rate_limit import RateLimiter
 from services import TwitchAPIClient
+from services.notify_stream import NotifyWakeHub, StreamCapacityError, encode_sse
 from shared.cache import AsyncTTLCache
 from shared.errors import AccessDeniedError, AppError, ConflictError, InvalidInputError
+from shared.models.video_queue import VideoQueueEntry
 from shared.repositories.channel import ChannelRepository
 from shared.repositories.video_queue import (
     SOURCE_PRIORITY,
@@ -33,6 +45,13 @@ from shared.video_sources import (
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/video-queue", tags=["video-queue"])
+# Keyed on client_host alone, never client_host:username — _resolve_channel_id
+# hits the Twitch API on a cache miss, so keying by (attacker-chosen) username
+# would hand out a fresh rate-limit bucket per guessed name for free.
+_advance_limiter = RateLimiter(max_calls=30, period=60.0)
+_stream_limiter = RateLimiter(max_calls=30, period=60.0)
+_STREAM_HEARTBEAT_SECONDS = 15.0
+_STREAM_LEASE_SECONDS = 5 * 60.0
 
 
 class VideoQueueDisabledError(AccessDeniedError):
@@ -69,6 +88,22 @@ class PublicVideoQueueState(BaseModel):
     queue: list[VideoEntryResponse]
     queue_size: int
     total_queued_duration: int | None  # sum of queued entries' duration_seconds (if all known)
+
+
+class VideoQueueStreamState(BaseModel):
+    """Stream-only payload — deliberately narrower than PublicVideoQueueState.
+
+    No `enabled`: VideoQueueOverlay never reads it, video_queue_settings has no
+    NOTIFY trigger, and VideoQueueSettingsRepository caches settings for 15s
+    in-process — sending a field that can neither update in real time nor even
+    be fresh at connect time would be dishonest. REST callers keep the full
+    PublicVideoQueueState unchanged.
+    """
+
+    current: VideoEntryResponse | None
+    queue: list[VideoEntryResponse]
+    queue_size: int
+    total_queued_duration: int | None
 
 
 class VideoQueueSettingsResponse(BaseModel):
@@ -118,6 +153,27 @@ async def _resolve_channel_id(username: str, twitch_api: TwitchAPIClient) -> str
     return channel_id
 
 
+def _entry_response(entry: VideoQueueEntry, *, started_at: datetime | None) -> VideoEntryResponse:
+    return VideoEntryResponse(
+        id=entry.id,
+        video_id=entry.video_id,
+        title=entry.title,
+        duration_seconds=entry.duration_seconds,
+        is_vertical=entry.is_vertical,
+        requested_by=entry.requested_by,
+        source=entry.source,
+        video_type=entry.video_type,
+        started_at=started_at,
+    )
+
+
+def _total_queued_duration(queued: list[VideoQueueEntry]) -> int | None:
+    durations = [e.duration_seconds for e in queued]
+    if durations and all(d is not None for d in durations):
+        return sum(durations)  # type: ignore[arg-type]
+    return None
+
+
 async def _build_public_state(
     channel_id: str,
     repo: VideoQueueRepository,
@@ -129,42 +185,30 @@ async def _build_public_state(
         repo.get_queued(channel_id),
     )
 
-    durations = [e.duration_seconds for e in queued]
-    total_queued_duration: int | None = None
-    if durations and all(d is not None for d in durations):
-        total_queued_duration = sum(durations)  # type: ignore[arg-type]
-
     return PublicVideoQueueState(
         enabled=settings.enabled,
-        current=VideoEntryResponse(
-            id=current.id,
-            video_id=current.video_id,
-            title=current.title,
-            duration_seconds=current.duration_seconds,
-            is_vertical=current.is_vertical,
-            requested_by=current.requested_by,
-            source=current.source,
-            video_type=current.video_type,
-            started_at=current.started_at,
-        )
-        if current
-        else None,
-        queue=[
-            VideoEntryResponse(
-                id=e.id,
-                video_id=e.video_id,
-                title=e.title,
-                duration_seconds=e.duration_seconds,
-                is_vertical=e.is_vertical,
-                requested_by=e.requested_by,
-                source=e.source,
-                video_type=e.video_type,
-                started_at=None,
-            )
-            for e in queued
-        ],
+        current=_entry_response(current, started_at=current.started_at) if current else None,
+        queue=[_entry_response(e, started_at=None) for e in queued],
         queue_size=len(queued),
-        total_queued_duration=total_queued_duration,
+        total_queued_duration=_total_queued_duration(queued),
+    )
+
+
+async def _build_stream_state(
+    channel_id: str,
+    repo: VideoQueueRepository,
+) -> VideoQueueStreamState:
+    """Single-connection read for the stream wake path — see
+    VideoQueueRepository.get_current_and_queued for why this avoids
+    asyncio.gather-ing separate pool.acquire()s like _build_public_state does.
+    """
+    current, queued = await repo.get_current_and_queued(channel_id)
+
+    return VideoQueueStreamState(
+        current=_entry_response(current, started_at=current.started_at) if current else None,
+        queue=[_entry_response(e, started_at=None) for e in queued],
+        queue_size=len(queued),
+        total_queued_duration=_total_queued_duration(queued),
     )
 
 
@@ -187,14 +231,88 @@ async def get_public_state(
         raise HTTPException(status_code=500, detail="Failed to fetch queue state") from None
 
 
+@router.get("/public/{username}/stream")
+async def stream_public_video_queue(
+    request: Request,
+    username: str,
+    pool: Pool = Depends(get_db_pool),
+    twitch_api: TwitchAPIClient = Depends(get_twitch_api),
+    hub: NotifyWakeHub = Depends(get_notify_hub),
+) -> StreamingResponse:
+    """Stream the current video queue snapshot over one long-lived request.
+
+    Unlike Live Display's append-only event log, there is no cursor/replay
+    here: video queue state is a single current snapshot, so a reconnect just
+    gets the latest one.
+    """
+    client_host = request.client.host if request.client else "unknown"
+    _stream_limiter.require(client_host)
+
+    channel_id = await _resolve_channel_id(username, twitch_api)
+    repo = VideoQueueRepository(pool)
+    try:
+        subscription = hub.subscribe(VIDEO_QUEUE_NOTIFY_CHANNEL, channel_id)
+    except StreamCapacityError:
+        raise HTTPException(status_code=429, detail="Too many Video Queue streams") from None
+    try:
+        state = await _build_stream_state(channel_id, repo)
+    except BaseException:
+        subscription.close()
+        raise
+
+    async def frames() -> AsyncGenerator[str, None]:
+        loop = asyncio.get_running_loop()
+        lease_deadline = loop.time() + _STREAM_LEASE_SECONDS
+        last_payload = state.model_dump(mode="json")
+        try:
+            yield encode_sse("snapshot", last_payload)
+            while True:
+                remaining_lease = lease_deadline - loop.time()
+                if remaining_lease <= 0:
+                    return
+                lease_expiry_wait = remaining_lease <= _STREAM_HEARTBEAT_SECONDS
+                try:
+                    await asyncio.wait_for(
+                        subscription.wait(),
+                        timeout=min(_STREAM_HEARTBEAT_SECONDS, remaining_lease),
+                    )
+                except TimeoutError:
+                    if lease_expiry_wait:
+                        return
+                    yield encode_sse("heartbeat", {"at": datetime.now(UTC).isoformat()})
+                    continue
+
+                current_state = await _build_stream_state(channel_id, repo)
+                payload = current_state.model_dump(mode="json")
+                if payload == last_payload:
+                    continue
+                last_payload = payload
+                yield encode_sse("update", payload)
+        finally:
+            subscription.close()
+
+    return StreamingResponse(
+        frames(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-store, no-transform",
+            "Referrer-Policy": "no-referrer",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 @router.post("/public/{username}/advance", response_model=PublicVideoQueueState)
 async def advance_queue(
+    request: Request,
     username: str,
     body: AdvanceRequest,
     pool: Pool = Depends(get_db_pool),
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
 ) -> PublicVideoQueueState:
     """Unauthenticated — OBS overlay has no cookie mechanism. Only advances queue state; no destructive operations exposed."""
+    client_host = request.client.host if request.client else "unknown"
+    _advance_limiter.require(client_host)
     try:
         channel_id = await _resolve_channel_id(username, twitch_api)
         repo = VideoQueueRepository(pool)

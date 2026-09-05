@@ -17,10 +17,10 @@ from services import (
 )
 from services.admission_service import AdmissionService
 from services.bot_account_service import BotAccountService
-from services.community_overlay_stream import OverlayUpdateHub
 from services.game_queue_service import GameQueueService
 from services.identity_service import IdentityService
 from services.message_trigger_service import MessageTriggerService
+from services.notify_stream import NotifyWakeHub
 from services.tenant_service import (
     TenantContext,
     TenantService,
@@ -35,7 +35,13 @@ from shared.services.community_overlay import CommunityOverlayService
 from shared.services.vip import VipService
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
-_community_overlay_hub: OverlayUpdateHub | None = None
+
+# Notify channel names live next to their feature, not in the generic hub —
+# see services/notify_stream.py's module docstring for why this stays one hub.
+COMMUNITY_OVERLAY_NOTIFY_CHANNEL = "community_overlay_updates"
+VIDEO_QUEUE_NOTIFY_CHANNEL = "video_queue_updates"
+
+_notify_hub: NotifyWakeHub | None = None
 
 
 def get_auth_service() -> AuthService:
@@ -117,11 +123,15 @@ def get_community_overlay_service(
     return CommunityOverlayService(CommunityOverlayRepository(pool))
 
 
-def get_community_overlay_hub() -> OverlayUpdateHub:
-    global _community_overlay_hub
-    if _community_overlay_hub is None:
-        _community_overlay_hub = OverlayUpdateHub(get_settings().database_url)
-    return _community_overlay_hub
+def get_notify_hub() -> NotifyWakeHub:
+    """Process-wide singleton: one LISTEN connection for every NOTIFY-woken stream feature."""
+    global _notify_hub
+    if _notify_hub is None:
+        _notify_hub = NotifyWakeHub(
+            get_settings().database_url,
+            notify_channels=[COMMUNITY_OVERLAY_NOTIFY_CHANNEL, VIDEO_QUEUE_NOTIFY_CHANNEL],
+        )
+    return _notify_hub
 
 
 def get_vip_service(pool: asyncpg.Pool = Depends(get_db_pool)) -> VipService:

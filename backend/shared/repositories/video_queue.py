@@ -211,6 +211,36 @@ class VideoQueueRepository:
             )
             return [VideoQueueEntry(**dict(row)) for row in rows]
 
+    async def get_current_and_queued(
+        self, channel_id: str
+    ) -> tuple[VideoQueueEntry | None, list[VideoQueueEntry]]:
+        """Single-connection read combining get_current + get_queued.
+
+        Used by the stream wake path instead of asyncio.gather-ing get_current
+        and get_queued as separate pool.acquire()s: the API pool is small
+        (max_size=3) and a NOTIFY wake can fan out to up to
+        max_subscribers_per_channel overlays at once, each of which would
+        otherwise acquire 2 connections simultaneously.
+        """
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                f"SELECT {_ENTRY_COLUMNS} FROM video_queue "
+                "WHERE channel_id = $1 AND status IN ('queued', 'playing') "
+                "ORDER BY CASE status WHEN 'playing' THEN 0 ELSE 1 END, "
+                "started_at ASC, priority DESC, created_at ASC",
+                channel_id,
+            )
+        current: VideoQueueEntry | None = None
+        queued: list[VideoQueueEntry] = []
+        for row in rows:
+            entry = VideoQueueEntry(**dict(row))
+            if entry.status == "playing":
+                if current is None:  # tolerate a stale duplicate rather than crash
+                    current = entry
+            else:
+                queued.append(entry)
+        return current, queued
+
     async def get_queue_size(self, channel_id: str) -> int:
         """Count entries with status='queued'."""
         async with self.pool.acquire() as conn:
@@ -285,6 +315,15 @@ class VideoQueueRepository:
         the same transaction pattern as play_immediately.
 
         If no queued entry exists after marking done, the second UPDATE is a no-op.
+
+        The promote UPDATE also requires NOT EXISTS(status='playing') — same guard
+        as kickstart_if_idle. Without it, two overlays finishing the same done_id
+        concurrently (or an overlay finishing while a dashboard Play-Now runs) can
+        both have their first UPDATE match zero rows and their second UPDATE
+        unconditionally promote a queued entry, leaving two rows 'playing' at once.
+        That state is permanent: get_current only ever returns one of them, and
+        kickstart_if_idle's own NOT EXISTS guard then stays false until the queue
+        is cleared.
         """
         async with self.pool.acquire() as conn:
             async with conn.transaction():
@@ -300,6 +339,9 @@ class VideoQueueRepository:
                     "WHERE id = ("
                     "    SELECT id FROM video_queue "
                     "    WHERE channel_id = $1 AND status = 'queued' "
+                    "    AND NOT EXISTS ("
+                    "        SELECT 1 FROM video_queue WHERE channel_id = $1 AND status = 'playing'"
+                    "    ) "
                     "    ORDER BY priority DESC, created_at ASC LIMIT 1"
                     ")",
                     channel_id,

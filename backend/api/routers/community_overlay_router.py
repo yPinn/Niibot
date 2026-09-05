@@ -14,12 +14,13 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from core.dependencies import (
-    get_community_overlay_hub,
+    COMMUNITY_OVERLAY_NOTIFY_CHANNEL,
     get_community_overlay_service,
+    get_notify_hub,
     require_self_tenant_access,
 )
 from core.rate_limit import RateLimiter
-from services.community_overlay_stream import OverlayCapacityError, OverlayUpdateHub, encode_sse
+from services.notify_stream import NotifyWakeHub, StreamCapacityError, encode_sse
 from services.tenant_service import TenantContext
 from shared.community_overlay_blocks import get_community_overlay_block
 from shared.errors import NotFoundError
@@ -222,7 +223,7 @@ async def stream_public_overlay(
     overlay_key: str = Header(alias="X-Overlay-Key"),
     after_id: int | None = Query(default=None, ge=0),
     service: CommunityOverlayService = Depends(get_community_overlay_service),
-    hub: OverlayUpdateHub = Depends(get_community_overlay_hub),
+    hub: NotifyWakeHub = Depends(get_notify_hub),
 ) -> StreamingResponse:
     """Stream replay-safe Live Display snapshots over one long-lived request."""
     public_key = _public_key_from_header(request, overlay_key)
@@ -233,8 +234,8 @@ async def stream_public_overlay(
     if channel_id is None:
         raise CommunityOverlayNotFoundError()
     try:
-        subscription = hub.subscribe(channel_id)
-    except OverlayCapacityError:
+        subscription = hub.subscribe(COMMUNITY_OVERLAY_NOTIFY_CHANNEL, channel_id)
+    except StreamCapacityError:
         raise HTTPException(status_code=429, detail="Too many Live Display streams") from None
     try:
         snapshot = await service.get_stream_snapshot(public_key, after_id=after_id)

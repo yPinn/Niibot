@@ -486,6 +486,56 @@ class TestGetQueued:
 
 
 @pytest.mark.asyncio
+class TestGetCurrentAndQueued:
+    async def test_single_connection_acquire(self):
+        pool, conn = _make_pool(fetch=[])
+        repo = VideoQueueRepository(pool)
+
+        await repo.get_current_and_queued("ch1")
+
+        pool.acquire.assert_called_once()
+        conn.fetch.assert_called_once()
+
+    async def test_splits_playing_and_queued_rows(self):
+        playing_row = {**_ENTRY_ROW, "id": 1, "status": "playing"}
+        queued_row = {**_ENTRY_ROW, "id": 2, "status": "queued"}
+        pool, _ = _make_pool(fetch=[playing_row, queued_row])
+        repo = VideoQueueRepository(pool)
+
+        current, queued = await repo.get_current_and_queued("ch1")
+
+        assert current is not None
+        assert current.id == 1
+        assert current.status == "playing"
+        assert [e.id for e in queued] == [2]
+
+    async def test_returns_none_current_when_nothing_playing(self):
+        pool, _ = _make_pool(fetch=[{**_ENTRY_ROW, "id": 2, "status": "queued"}])
+        repo = VideoQueueRepository(pool)
+
+        current, queued = await repo.get_current_and_queued("ch1")
+
+        assert current is None
+        assert len(queued) == 1
+
+    async def test_tolerates_stale_duplicate_playing_row(self):
+        """A pre-fix duplicate 'playing' row (see advance_queue's NOT EXISTS
+        guard) must not crash the stream wake path — pick the first and move on."""
+        rows = [
+            {**_ENTRY_ROW, "id": 1, "status": "playing"},
+            {**_ENTRY_ROW, "id": 2, "status": "playing"},
+        ]
+        pool, _ = _make_pool(fetch=rows)
+        repo = VideoQueueRepository(pool)
+
+        current, queued = await repo.get_current_and_queued("ch1")
+
+        assert current is not None
+        assert current.id == 1
+        assert queued == []
+
+
+@pytest.mark.asyncio
 class TestGetQueueSize:
     async def test_returns_count(self):
         pool, _ = _make_pool(fetchval=3)
@@ -728,6 +778,21 @@ class TestAdvanceQueue:
 
         first_call_args = conn.execute.call_args_list[0][0]
         assert 99 in first_call_args
+
+    async def test_promote_guards_against_already_playing_row(self):
+        """Regression: without this guard, two overlays finishing the same
+        done_id concurrently (or an overlay finishing while a dashboard
+        Play-Now runs) can both promote a queued entry, leaving two rows
+        'playing' — a state get_current can't see and kickstart_if_idle can
+        never recover from. Same guard as kickstart_if_idle."""
+        pool, conn = _make_pool(execute="UPDATE 1")
+        repo = VideoQueueRepository(pool)
+
+        await repo.advance_queue("ch1", done_id=42)
+
+        second_call_sql: str = conn.execute.call_args_list[1][0][0]
+        assert "NOT EXISTS" in second_call_sql
+        assert "status = 'playing'" in second_call_sql
 
 
 @pytest.mark.asyncio

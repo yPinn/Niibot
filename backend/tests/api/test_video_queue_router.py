@@ -10,17 +10,26 @@ os.environ.setdefault("CLIENT_SECRET", "test-client-secret")
 os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost/test")
 os.environ.setdefault("FRONTEND_URL", "https://niibot.tv")
 
+import asyncio
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.testclient import TestClient
 
 from core.config import get_settings
-from core.dependencies import get_current_channel_id, get_db_pool, get_twitch_api, require_activated
+from core.dependencies import (
+    VIDEO_QUEUE_NOTIFY_CHANNEL,
+    get_current_channel_id,
+    get_db_pool,
+    get_twitch_api,
+    require_activated,
+)
 from core.error_handlers import register_exception_handlers
 from routers.video_queue_router import router as _vq_router
+from routers.video_queue_router import stream_public_video_queue
+from services.notify_stream import NotifyWakeHub
 
 CHANNEL_ID = "ch-vq"
 
@@ -647,3 +656,231 @@ class TestAddVideoEntry:
                 json={"url": "https://youtube.com/watch?v=vid123"},
             )
         assert r.status_code == 500
+
+
+# ── GET /api/video-queue/public/{username}/stream ─────────────────────────────
+
+
+def _make_request(host: str) -> Request:
+    return Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/api/video-queue/public/testuser/stream",
+            "headers": [],
+            "client": (host, 1234),
+        }
+    )
+
+
+def _hub(**kwargs: object) -> NotifyWakeHub:
+    return NotifyWakeHub(
+        "postgresql://test:test@localhost/test",
+        notify_channels=[VIDEO_QUEUE_NOTIFY_CHANNEL],
+        **kwargs,
+    )
+
+
+class TestStreamPublicVideoQueue:
+    def test_snapshot_frame_has_no_enabled_field(self):
+        with patch("routers.video_queue_router.VideoQueueRepository") as vqr:
+            vqr.return_value.get_current_and_queued = AsyncMock(return_value=(_make_entry(), []))
+            hub = _hub()
+
+            async def run():
+                response = await stream_public_video_queue(
+                    request=_make_request("127.0.10.1"),
+                    username="testuser",
+                    pool=AsyncMock(),
+                    twitch_api=_twitch_api_found(),
+                    hub=hub,
+                )
+                frame = await anext(response.body_iterator)
+                await response.body_iterator.aclose()
+                return response, frame
+
+            response, frame = asyncio.run(run())
+
+        assert response.media_type == "text/event-stream"
+        assert response.headers["cache-control"] == "no-store, no-transform"
+        assert response.headers["referrer-policy"] == "no-referrer"
+        assert response.headers["x-accel-buffering"] == "no"
+        assert frame.startswith("event: snapshot\n")
+        assert '"id":1' in frame
+        assert "enabled" not in frame
+
+    def test_update_frame_sent_when_state_changes(self):
+        with patch("routers.video_queue_router.VideoQueueRepository") as vqr:
+            vqr.return_value.get_current_and_queued = AsyncMock(
+                side_effect=[
+                    (_make_entry(id=1), []),
+                    (_make_entry(id=2), []),
+                ]
+            )
+            hub = _hub()
+
+            async def run():
+                response = await stream_public_video_queue(
+                    request=_make_request("127.0.10.2"),
+                    username="testuser",
+                    pool=AsyncMock(),
+                    twitch_api=_twitch_api_found(),
+                    hub=hub,
+                )
+                await anext(response.body_iterator)  # snapshot
+                hub.notify(VIDEO_QUEUE_NOTIFY_CHANNEL, CHANNEL_ID)
+                frame = await asyncio.wait_for(anext(response.body_iterator), timeout=1.0)
+                await response.body_iterator.aclose()
+                return frame
+
+            frame = asyncio.run(run())
+
+        assert frame.startswith("event: update\n")
+        assert '"id":2' in frame
+
+    def test_no_frame_sent_when_rebuild_is_identical(self):
+        """The dedup compare exists to suppress rebuild noise from unrelated
+        wakes (e.g. reconnect notify_all()) — an identical rebuild must not
+        emit a frame, only a genuinely different one should."""
+        with patch("routers.video_queue_router.VideoQueueRepository") as vqr:
+            vqr.return_value.get_current_and_queued = AsyncMock(
+                side_effect=[
+                    (_make_entry(id=1), []),
+                    (_make_entry(id=1), []),  # identical rebuild — must be suppressed
+                    (_make_entry(id=2), []),
+                ]
+            )
+            hub = _hub()
+
+            async def run():
+                response = await stream_public_video_queue(
+                    request=_make_request("127.0.10.3"),
+                    username="testuser",
+                    pool=AsyncMock(),
+                    twitch_api=_twitch_api_found(),
+                    hub=hub,
+                )
+                await anext(response.body_iterator)  # snapshot
+
+                next_frame = asyncio.ensure_future(anext(response.body_iterator))
+                hub.notify(VIDEO_QUEUE_NOTIFY_CHANNEL, CHANNEL_ID)  # identical rebuild
+                await asyncio.sleep(0.05)  # let the generator loop past the no-op
+                assert not next_frame.done()
+                hub.notify(VIDEO_QUEUE_NOTIFY_CHANNEL, CHANNEL_ID)  # real change
+                frame = await asyncio.wait_for(next_frame, timeout=1.0)
+                await response.body_iterator.aclose()
+                return frame
+
+            frame = asyncio.run(run())
+
+        assert frame.startswith("event: update\n")
+        assert '"id":2' in frame
+
+    def test_heartbeat_sent_when_idle(self, monkeypatch):
+        monkeypatch.setattr("routers.video_queue_router._STREAM_HEARTBEAT_SECONDS", 0.01)
+        with patch("routers.video_queue_router.VideoQueueRepository") as vqr:
+            vqr.return_value.get_current_and_queued = AsyncMock(return_value=(None, []))
+            hub = _hub()
+
+            async def run():
+                response = await stream_public_video_queue(
+                    request=_make_request("127.0.10.4"),
+                    username="testuser",
+                    pool=AsyncMock(),
+                    twitch_api=_twitch_api_found(),
+                    hub=hub,
+                )
+                await anext(response.body_iterator)  # snapshot
+                frame = await asyncio.wait_for(anext(response.body_iterator), timeout=1.0)
+                await response.body_iterator.aclose()
+                return frame
+
+            frame = asyncio.run(run())
+
+        assert frame.startswith("event: heartbeat\n")
+
+    def test_hard_lease_releases_subscription(self, monkeypatch):
+        monkeypatch.setattr("routers.video_queue_router._STREAM_LEASE_SECONDS", 0.01)
+        with patch("routers.video_queue_router.VideoQueueRepository") as vqr:
+            vqr.return_value.get_current_and_queued = AsyncMock(return_value=(None, []))
+            hub = _hub()
+
+            async def run():
+                response = await stream_public_video_queue(
+                    request=_make_request("127.0.10.5"),
+                    username="testuser",
+                    pool=AsyncMock(),
+                    twitch_api=_twitch_api_found(),
+                    hub=hub,
+                )
+                await anext(response.body_iterator)
+                assert hub.subscriber_count == 1
+                with pytest.raises(StopAsyncIteration):
+                    await asyncio.wait_for(anext(response.body_iterator), timeout=0.2)
+                return hub
+
+            hub = asyncio.run(run())
+
+        assert hub.subscriber_count == 0
+
+    def test_capacity_exhaustion_returns_429(self):
+        with patch("routers.video_queue_router.VideoQueueRepository") as vqr:
+            vqr.return_value.get_current_and_queued = AsyncMock(return_value=(None, []))
+            hub = _hub(max_subscribers_per_channel=1)
+            hub.subscribe(VIDEO_QUEUE_NOTIFY_CHANNEL, CHANNEL_ID)
+
+            async def run():
+                with pytest.raises(HTTPException) as exc_info:
+                    await stream_public_video_queue(
+                        request=_make_request("127.0.10.6"),
+                        username="testuser",
+                        pool=AsyncMock(),
+                        twitch_api=_twitch_api_found(),
+                        hub=hub,
+                    )
+                return exc_info.value
+
+            exc = asyncio.run(run())
+
+        assert exc.status_code == 429
+
+    def test_releases_capacity_when_initial_state_build_fails(self):
+        with patch("routers.video_queue_router.VideoQueueRepository") as vqr:
+            vqr.return_value.get_current_and_queued = AsyncMock(
+                side_effect=RuntimeError("database unavailable")
+            )
+            hub = _hub()
+
+            async def run():
+                with pytest.raises(RuntimeError, match="database unavailable"):
+                    await stream_public_video_queue(
+                        request=_make_request("127.0.10.7"),
+                        username="testuser",
+                        pool=AsyncMock(),
+                        twitch_api=_twitch_api_found(),
+                        hub=hub,
+                    )
+                return hub
+
+            hub = asyncio.run(run())
+
+        assert hub.subscriber_count == 0
+
+    def test_unknown_username_returns_404_without_subscribing(self):
+        hub = _hub()
+
+        async def run():
+            with pytest.raises(HTTPException) as exc_info:
+                await stream_public_video_queue(
+                    request=_make_request("127.0.10.8"),
+                    username="unknown",
+                    pool=AsyncMock(),
+                    twitch_api=_twitch_api_not_found(),
+                    hub=hub,
+                )
+            return exc_info.value
+
+        exc = asyncio.run(run())
+
+        assert exc.status_code == 404
+        assert hub.subscriber_count == 0
