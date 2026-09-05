@@ -129,6 +129,7 @@ export const API_ENDPOINTS = {
   },
   videoQueue: {
     public: (u: string) => join(`/api/video-queue/public/${u}`),
+    stream: (u: string) => join(`/api/video-queue/public/${u}/stream`),
     advance: (u: string) => join(`/api/video-queue/public/${u}/advance`),
     metadata: (u: string, id: number) =>
       join(`/api/video-queue/public/${u}/entries/${id}/metadata`),

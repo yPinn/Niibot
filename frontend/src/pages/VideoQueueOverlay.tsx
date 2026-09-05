@@ -1,17 +1,24 @@
 import { type RefObject, useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 
+import { advanceVideoQueue, reportVideoMetadata } from '@/api/videoQueue'
 import {
-  advanceVideoQueue,
-  getPublicVideoQueueState,
-  type PublicVideoQueueState,
-  reportVideoMetadata,
-} from '@/api/videoQueue'
-import { OVERLAY_POLL_INTERVAL_MS } from '@/config/overlayPolling'
+  openVideoQueueStream,
+  type VideoQueueStreamMessage,
+  type VideoQueueStreamState,
+} from '@/api/videoQueueStream'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
-import { usePolling } from '@/hooks/usePolling'
 
 import styles from './VideoQueueOverlay.module.css'
+
+// A stream that survives this long resets the reconnect backoff — mirrors
+// CommunityOverlay.tsx's STABLE_STREAM_MS so a flapping connection still
+// escalates its delay instead of hammering the server every second.
+const STABLE_STREAM_MS = 30_000
+
+// Bounds how many recently-finished video ids we remember to reject stale
+// frames — see the race-protection note on advancedIdsRef below.
+const MAX_REMEMBERED_ADVANCED_IDS = 50
 
 interface YTPlayer {
   playVideo(): void
@@ -187,7 +194,7 @@ export default function VideoQueueOverlay() {
   const { username } = useParams<{ username: string }>()
   const [searchParams] = useSearchParams()
   const isPreview = searchParams.get('preview') === '1'
-  const [state, setState] = useState<PublicVideoQueueState | null>(null)
+  const [state, setState] = useState<VideoQueueStreamState | null>(null)
   const [elapsed, setElapsed] = useState(0)
   const [ytReady, setYtReady] = useState(false)
   const [twitchReady, setTwitchReady] = useState(false)
@@ -202,6 +209,11 @@ export default function VideoQueueOverlay() {
   const rightContainerRef = useRef<HTMLDivElement>(null)
   const currentIdRef = useRef<number | null>(null)
   const advancingRef = useRef(false) // prevent concurrent advance calls
+  // Video ids this client has already locally advanced past. A stream frame
+  // whose `current.id` is in this set is stale (in flight from before the
+  // advance committed) and must be rejected instead of reverting the player
+  // to a video that already finished. See handleVideoEnd.
+  const advancedIdsRef = useRef<Set<number>>(new Set())
   const progressRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const clipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const usernameRef = useRef(username)
@@ -237,21 +249,48 @@ export default function VideoQueueOverlay() {
       .catch(() => {})
   }, [])
 
-  const fetchState = useCallback(async () => {
+  // NOTIFY-woken SSE stream, replacing the old fixed-interval poll — see
+  // CommunityOverlay.tsx for the reconnect pattern this mirrors. No cursor:
+  // video queue state is a single current snapshot, not an event log.
+  useEffect(() => {
     if (!username) return
-    try {
-      const data = await getPublicVideoQueueState(username)
-      setState(data)
-    } catch {
-      // silent on transient network errors
+    let active = true
+    let attempt = 0
+    let controller: AbortController | null = null
+    let reconnectTimer: number | null = null
+
+    const applyMessage = (message: VideoQueueStreamMessage) => {
+      if (!active) return
+      if (message.current && advancedIdsRef.current.has(message.current.id)) return
+      setState(message)
+    }
+
+    const connect = () => {
+      controller = new AbortController()
+      const connectedAt = Date.now()
+      void openVideoQueueStream({
+        username,
+        signal: controller.signal,
+        onMessage: applyMessage,
+      })
+        .catch(() => undefined)
+        .finally(() => {
+          if (!active || controller?.signal.aborted) return
+          if (Date.now() - connectedAt >= STABLE_STREAM_MS) attempt = 0
+          const base = Math.min(1_000 * 2 ** attempt, 30_000)
+          const delay = Math.round(base * (0.8 + Math.random() * 0.4))
+          attempt += 1
+          reconnectTimer = window.setTimeout(connect, delay)
+        })
+    }
+
+    connect()
+    return () => {
+      active = false
+      controller?.abort()
+      if (reconnectTimer !== null) window.clearTimeout(reconnectTimer)
     }
   }, [username])
-
-  usePolling({
-    fetchFn: fetchState,
-    intervalMs: OVERLAY_POLL_INTERVAL_MS.videoQueue,
-    enabled: !!username,
-  })
 
   // Auto-kickstart: if there is no current video but there is a queue, advance
   useEffect(() => {
@@ -275,6 +314,15 @@ export default function VideoQueueOverlay() {
   const handleVideoEnd = useCallback((doneId: number) => {
     if (advancingRef.current || !usernameRef.current) return
     advancingRef.current = true
+
+    // Reject any stream frame that still shows doneId as current — it was in
+    // flight before this advance committed. The POST response below is
+    // read-after-write and always applied directly via setState, bypassing
+    // this guard, so it can never be blocked by its own entry.
+    advancedIdsRef.current.add(doneId)
+    if (advancedIdsRef.current.size > MAX_REMEMBERED_ADVANCED_IDS) {
+      advancedIdsRef.current.delete(advancedIdsRef.current.values().next().value as number)
+    }
 
     if (progressRef.current) {
       clearInterval(progressRef.current ?? undefined)

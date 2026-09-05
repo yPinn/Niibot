@@ -53,4 +53,39 @@ describe('Pages API proxy', () => {
     expect(fetchMock.mock.calls[0][1]?.signal).not.toBe(controller.signal)
     fetchMock.mockRestore()
   })
+
+  it('keeps the Video Queue GET stream connected to the caller with a bounded lease', async () => {
+    const controller = new AbortController()
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('stream'))
+    const requestContext = context('/api/video-queue/public/somestreamer/stream', controller.signal)
+
+    await onRequest(requestContext)
+
+    const upstreamSignal = fetchMock.mock.calls[0][1]?.signal
+    expect(upstreamSignal).not.toBe(requestContext.request.signal)
+    expect(upstreamSignal?.aborted).toBe(false)
+    controller.abort()
+    expect(upstreamSignal?.aborted).toBe(true)
+    fetchMock.mockRestore()
+  })
+
+  it('does not carve out the non-stream Video Queue public route', async () => {
+    const controller = new AbortController()
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ ok: true }))
+
+    await onRequest(context('/api/video-queue/public/somestreamer', controller.signal))
+
+    expect(fetchMock.mock.calls[0][1]?.signal).not.toBe(controller.signal)
+    fetchMock.mockRestore()
+  })
+
+  it('does not carve out a path that merely appends past the stream segment', async () => {
+    const controller = new AbortController()
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ ok: true }))
+
+    await onRequest(context('/api/video-queue/public/somestreamer/stream/extra', controller.signal))
+
+    expect(fetchMock.mock.calls[0][1]?.signal).not.toBe(controller.signal)
+    fetchMock.mockRestore()
+  })
 })

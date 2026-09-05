@@ -5,12 +5,21 @@ interface Env {
 const MAX_BODY_BYTES = 10 * 1024 * 1024 // 10 MB
 const OVERLAY_STREAM_LEASE_MS = 5 * 60 * 1000
 
+// Anchored so a path segment cannot smuggle in an extra "/stream" suffix or
+// traverse past the intended route — exact-equality for the flat Live
+// Display route, a pattern for Video Queue's per-username route.
+const OVERLAY_STREAM_PATHS = [
+  /^\/api\/live-display\/public\/stream$/,
+  /^\/api\/video-queue\/public\/[^/]+\/stream$/,
+]
+
 export const onRequest: PagesFunction<Env> = async context => {
   const backend = context.env.API_BACKEND
   const url = new URL(context.request.url)
   const target = `${backend}${url.pathname}${url.search}`
   const isOverlayStream =
-    context.request.method === 'GET' && url.pathname === '/api/live-display/public/stream'
+    context.request.method === 'GET' &&
+    OVERLAY_STREAM_PATHS.some(pattern => pattern.test(url.pathname))
 
   try {
     const headers = new Headers(context.request.headers)

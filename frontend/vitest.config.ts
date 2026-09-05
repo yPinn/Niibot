@@ -29,6 +29,8 @@ export default defineConfig({
         'src/api/user.ts',
         'src/api/communityOverlay.ts',
         'src/api/communityOverlayStream.ts',
+        'src/api/sseStream.ts',
+        'src/api/videoQueueStream.ts',
         'src/contexts/AuthContext.tsx',
         'src/pages/CommunityOverlay.tsx',
         'src/pages/modules/CommunityOverlaySettings.tsx',
