@@ -113,10 +113,15 @@ jobs:
       - name: Ruff format check
         run: uvx ruff format --check .
 
+      - name: Install dependencies
+        run: uv sync --frozen --no-dev
+
+      # Audit the environment actually installed on this platform, not the
+      # lockfile universe. The Intel-Mac-only `cryptography>=48,<49` pin keeps
+      # 48.x in the lock; auditing the export flagged it everywhere even though
+      # Linux/CI/prod resolve to the current 50.x line.
       - name: Audit dependencies
-        run: |
-          set -o pipefail
-          uv export --frozen --no-dev | uvx pip-audit -r /dev/stdin
+        run: uv run --no-sync --with pip-audit pip-audit
 
       - name: Install dev dependencies
         run: uv sync --frozen --group dev
