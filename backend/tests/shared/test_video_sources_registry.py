@@ -14,6 +14,7 @@ import pytest
 from shared.video_sources import (
     ResolvedVideo,
     VideoMetadata,
+    YouTubeInfo,
     build_watch_url,
     fetch_video_metadata,
     resolve_video_url,
@@ -82,7 +83,11 @@ class TestFetchVideoMetadata:
         resolved = ResolvedVideo(video_type="youtube", video_id="dQw4w9WgXcQ", is_vertical=False)
         with patch(
             "shared.video_sources.fetch_yt_info",
-            new=AsyncMock(return_value=("Title", 120, 1000, False)),
+            new=AsyncMock(
+                return_value=YouTubeInfo(
+                    title="Title", duration_seconds=120, view_count=1000, is_vertical=False
+                )
+            ),
         ) as mock_fetch:
             metadata = await fetch_video_metadata(resolved, youtube_api_key="key")
         mock_fetch.assert_awaited_once_with("dQw4w9WgXcQ", "key", None)
@@ -95,10 +100,40 @@ class TestFetchVideoMetadata:
         resolved = ResolvedVideo(video_type="youtube", video_id="dQw4w9WgXcQ", is_vertical=True)
         with patch(
             "shared.video_sources.fetch_yt_info",
-            new=AsyncMock(return_value=("Title", 60, 500, False)),
+            new=AsyncMock(
+                return_value=YouTubeInfo(
+                    title="Title", duration_seconds=60, view_count=500, is_vertical=False
+                )
+            ),
         ):
             metadata = await fetch_video_metadata(resolved, youtube_api_key="key")
         assert metadata.is_vertical is True
+
+    async def test_youtube_unplayable_reason_propagates(self):
+        resolved = ResolvedVideo(video_type="youtube", video_id="dQw4w9WgXcQ")
+        with patch(
+            "shared.video_sources.fetch_yt_info",
+            new=AsyncMock(
+                return_value=YouTubeInfo(
+                    title="Restricted", playable=False, unplayable_reason="age_restricted"
+                )
+            ),
+        ):
+            metadata = await fetch_video_metadata(resolved, youtube_api_key="key")
+        assert metadata.playable is False
+        assert metadata.unplayable_reason == "age_restricted"
+
+    async def test_twitch_clip_and_bilibili_always_playable(self):
+        clip = ResolvedVideo(video_type="twitch_clip", video_id="Slug")
+        with patch(
+            "shared.video_sources.fetch_twitch_clip_info",
+            new=AsyncMock(return_value=("Clip", 30, 200)),
+        ):
+            metadata = await fetch_video_metadata(
+                clip, twitch_client_id="c", twitch_client_secret="s"
+            )
+        assert metadata.playable is True
+        assert metadata.unplayable_reason is None
 
     async def test_twitch_clip_normalizes_3tuple_to_4field_shape(self):
         resolved = ResolvedVideo(video_type="twitch_clip", video_id="SomeClipSlug")
@@ -130,12 +165,14 @@ class TestFetchVideoMetadata:
         resolved = ResolvedVideo(video_type="youtube", video_id="dQw4w9WgXcQ")
         with patch(
             "shared.video_sources.fetch_yt_info",
-            new=AsyncMock(return_value=(None, None, None, False)),
+            new=AsyncMock(return_value=YouTubeInfo()),
         ):
             metadata = await fetch_video_metadata(resolved, youtube_api_key="key")
         assert metadata == VideoMetadata(
             title=None, duration_seconds=None, view_count=None, is_vertical=False
         )
+        # A failed fetch is fail-open: never rejects a submission.
+        assert metadata.playable is True
 
 
 # ---------------------------------------------------------------------------

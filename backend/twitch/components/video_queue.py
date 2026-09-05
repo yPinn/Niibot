@@ -27,7 +27,12 @@ from shared.repositories.video_queue import (
     VideoQueueRepository,
     VideoQueueSettingsRepository,
 )
-from shared.video_sources import build_watch_url, fetch_video_metadata, resolve_video_url
+from shared.video_sources import (
+    build_watch_url,
+    fetch_video_metadata,
+    resolve_video_url,
+    unplayable_message,
+)
 
 if TYPE_CHECKING:
     from core.bot import Bot
@@ -131,6 +136,12 @@ class VideoQueueComponent(BotComponent):
             metadata.duration_seconds,
             metadata.view_count,
         )
+
+        # Playability — an un-embeddable / age-restricted video only stalls the
+        # overlay on its timer ceiling, so reject it up front.
+        if not metadata.playable:
+            await self._ctx_reply(ctx, unplayable_message(metadata.unplayable_reason))
+            return
 
         # Minimum view count filter
         if settings.min_view_count > 0:

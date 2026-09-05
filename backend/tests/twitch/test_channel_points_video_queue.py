@@ -161,6 +161,33 @@ class TestVideoQueueRedemptionPlatforms:
         component.vq_repo.add_if_within_limits.assert_not_awaited()
         component._reply.assert_awaited_once()
 
+    async def test_unplayable_video_replies_and_does_not_queue(self):
+        component = _component()
+        resolved = ResolvedVideo("youtube", "vid123", False)
+        metadata = VideoMetadata(
+            "Restricted",
+            120,
+            5000,
+            False,
+            playable=False,
+            unplayable_reason="not_embeddable",
+        )
+        with (
+            patch(
+                "twitch.components.channel_points.resolve_video_url",
+                AsyncMock(return_value=resolved),
+            ),
+            patch(
+                "twitch.components.channel_points.fetch_video_metadata",
+                AsyncMock(return_value=metadata),
+            ),
+        ):
+            await component._handle_video_queue_redemption(
+                _payload(user_input="https://youtube.com/watch?v=vid123"), "Viewer"
+            )
+        component.vq_repo.add_if_within_limits.assert_not_awaited()
+        component._reply.assert_awaited_once()
+
     async def test_redemption_disabled_does_not_resolve_url(self):
         component = _component(settings=_settings(redemption_enabled=False))
         with patch(

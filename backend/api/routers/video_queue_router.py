@@ -33,7 +33,7 @@ from shared.repositories.video_queue import (
     VideoQueueRepository,
     VideoQueueSettingsRepository,
 )
-from shared.video_sources import fetch_video_metadata, resolve_video_url
+from shared.video_sources import fetch_video_metadata, resolve_video_url, unplayable_message
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -61,6 +61,12 @@ class InvalidVideoUrlError(InvalidInputError):
     code = "VIDEO_QUEUE.INVALID_URL"
     http_status = 422
     user_message = "看不懂這個連結，支援 YouTube、Twitch 剪輯或 Bilibili"
+
+
+class VideoNotPlayableError(InvalidInputError):
+    code = "VIDEO_QUEUE.NOT_PLAYABLE"
+    http_status = 422
+    user_message = "這部影片無法播放"
 
 
 class VideoEntryResponse(BaseModel):
@@ -571,6 +577,11 @@ async def add_video_entry(
             twitch_client_id=app_settings.client_id,
             twitch_client_secret=app_settings.client_secret,
         )
+
+        # ...but playability is not a policy choice — an un-embeddable / age-restricted
+        # video would only stall the overlay on its timer ceiling, so reject it.
+        if not metadata.playable:
+            raise VideoNotPlayableError(user_message=unplayable_message(metadata.unplayable_reason))
 
         channel_repo = ChannelRepository(pool)
         requested_by: str = (
