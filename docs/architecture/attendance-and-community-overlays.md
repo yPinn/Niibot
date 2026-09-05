@@ -76,8 +76,12 @@ block 的外觀欄位。Overlay runtime 只負責依 cursor 讀取、排序、�
 長連線，維持同一事件契約；`NOTIFY` payload 只帶 `channel_id` 作喚醒訊號，事件與 theme body 一律重新
 由 durable table 讀取。
 
-Game Queue 與 Video Queue 是長時間存在的狀態／播放器，不塞入短事件 feed；未來只共用
-Overlay shell、公開金鑰、theme 與 transport primitives。
+Game Queue 與 Video Queue 是長時間存在的狀態／播放器，不塞入短事件 feed。Video Queue 已遷移到
+NOTIFY-woken SSE（`GET /api/video-queue/public/{username}/stream`），與 Live Display 共用同一個
+process-level `NotifyWakeHub`（單一 LISTEN 連線監聽多個 notify channel），但狀態模型不同：
+Video Queue 是單一目前快照覆蓋推送，沒有 cursor／事件回放。Game Queue 尚未遷移，未來要做時只共用
+Overlay shell、公開金鑰、theme 與這組 transport primitives，不會複製一份獨立的 hub。細節見
+[docs/guides/cloudflare-pages.md](../guides/cloudflare-pages.md) 的 Video Queue stream contract。
 
 ### 租戶樣式與發布模型
 

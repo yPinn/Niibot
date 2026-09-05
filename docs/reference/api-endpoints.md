@@ -2,35 +2,64 @@
 
 FastAPI 服務（`backend/api/`）提供的路由前綴。開發環境互動式文件：`http://localhost:8000/docs`。
 
-23 個 router 模組掛在 `backend/api/app.py`；前綴以各檔的 `APIRouter(prefix=...)` 為準。
+25 個 router 模組掛在 `backend/api/app.py`；前綴以各檔的 `APIRouter(prefix=...)` 為準。
+「前端頁面」欄位是這個 API 實際餵給哪個 dashboard 路由／nav 項目——用來在「從 UI 找後端」或
+「從後端找 UI」時直接對照，不必每次重新搜尋。沒有獨立頁面（被其他頁面內嵌，或純資料來源）的
+router 標記為「（無獨立頁面）」。
 
-| 前綴                            | Router                       | 功能                                                                               |
-| ------------------------------- | ---------------------------- | ---------------------------------------------------------------------------------- |
-| `/api/auth`                     | `auth_router`（掛在 `/api`） | Twitch OAuth、JWT cookie、用戶偏好                                                 |
-| `/api/tenants`                  | `tenants_router`             | 登入者可存取的工作區、role 與 capability                                           |
-| `/api/tenants/.../bot-accounts` | `bot_accounts_router`        | 租戶私有 Bot 名單、Owner invite／reauthorize 與狀態輪詢                            |
-| `/api/public/bot-invites`       | `bot_accounts_router`        | 不需登入的安全 consent summary 與 decline                                          |
-| `/api/channels`                 | `channels_router`            | 監控頻道管理、Bot 啟停                                                             |
-| `/api/commands`                 | `commands_router`            | 指令 CRUD、啟停、公開列表                                                          |
-| `/api/events`                   | `events_router`              | EventSub 事件設定、Channel Points 兌換                                             |
-| `/api/checkin`                  | `checkin_router`             | 目前租戶的每日簽到時區與回覆模板                                                   |
-| `/api/analytics`                | `analytics_router`           | 場次分析、觀眾 Profile、熱門指令統計                                               |
-| `/api/analytics/matcher`        | `matcher_router`             | 頻道觀眾重疊分析                                                                   |
-| `/api/stats`                    | `stats_router`               | 頻道統計（top chatters／commands）                                                 |
-| `/api/game-queue`               | `game_queue_router`          | 遊戲排隊                                                                           |
-| `/api/video-queue`              | `video_queue_router`         | 影片佇列                                                                           |
-| `/api/timers`                   | `timers_router`              | 定時訊息 CRUD                                                                      |
-| `/api/triggers`                 | `message_triggers_router`    | 關鍵字觸發 CRUD                                                                    |
-| `/api/crosshairs`               | `crosshairs_router`          | 準星管理、公開庫                                                                   |
-| `/api/live-display`             | `community_overlay_router`   | 公開 cursor event feed、租戶 Live Display key 啟用／輪替                           |
-| `/api/ai`                       | `ai_settings_router`         | AI 助手設定（角色、enabled、cooldown、min_role、貼圖）                             |
-| `/api/donate`                   | `donation_router`            | 贊助結帳（ECPay／OPay／NewebPay／PayPal）、webhook                                 |
-| `/api/payment-configs`          | `payment_config_router`      | 金流平台設定                                                                       |
-| `/api/bots`                     | `bots_router`                | Bot 狀態查詢                                                                       |
-| `/api/discord`                  | `discord_webhook_router`     | Discord 互動 webhook（slash command 簽章驗證）                                     |
-| `/api/releases`                 | `releases_router`            | 版本資訊查詢（`git describe`）                                                     |
-| `/api/admin`                    | `admin_router`               | 管理員工具（限 Owner）；聚合 `routers/admin/` 下 `logs`／`db`／`modules` 子 router |
-| `/health`、`/status`            | —                            | 服務健康檢查                                                                       |
+| 前綴                            | Router                       | 功能                                                                               | 前端頁面                                                           |
+| ------------------------------- | ---------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `/api/auth`                     | `auth_router`（掛在 `/api`） | Twitch OAuth、JWT cookie、用戶偏好                                                 | `/login`、`/activate`                                              |
+| `/api/tenants`                  | `tenants_router`             | 登入者可存取的工作區、role 與 capability                                           | （無獨立頁面，跨頁共用）                                           |
+| `/api/tenants/.../bot-accounts` | `bot_accounts_router`        | 租戶私有 Bot 名單、Owner invite／reauthorize 與狀態輪詢                            | `/bot-invite/:publicToken`、`/bot-auth/result`                     |
+| `/api/public/bot-invites`       | `bot_accounts_router`        | 不需登入的安全 consent summary 與 decline                                          | 同上                                                               |
+| `/api/channels`                 | `channels_router`            | 監控頻道管理、Bot 啟停                                                             | Overview（`/`）                                                    |
+| `/api/commands`                 | `commands_router`            | 指令 CRUD、啟停、公開列表                                                          | `/commands`                                                        |
+| `/api/events`                   | `events_router`              | EventSub 事件設定、Channel Points 兌換                                             | `/events`；兌換設定併入 `/channel-points`                          |
+| `/api/vip`                      | `vip_router`                 | VIP 門檻、獎勵規則與序號發放                                                       | 併入 `/channel-points`（VipSettingsSheet）                         |
+| `/api/checkin`                  | `checkin_router`             | 目前租戶的每日簽到時區與回覆模板                                                   | 併入 `/channel-points`（CheckinSettingsSheet／CheckinLeaderboard） |
+| `/api/analytics`                | `analytics_router`           | 場次分析、觀眾 Profile、熱門指令統計                                               | `/analytics/insights`                                              |
+| `/api/analytics/matcher`        | `matcher_router`             | 頻道觀眾重疊分析                                                                   | `/analytics/matcher`                                               |
+| `/api/stats`                    | `stats_router`               | 頻道統計（top chatters／commands）                                                 | Overview 小工具                                                    |
+| `/api/game-queue`               | `game_queue_router`          | 遊戲排隊                                                                           | `/modules/game-queue`、`/:username/game-queue/overlay`             |
+| `/api/video-queue`              | `video_queue_router`         | 影片佇列                                                                           | `/modules/video-queue`、`/:username/video-queue/overlay`           |
+| `/api/timers`                   | `timers_router`              | 定時訊息 CRUD                                                                      | `/timers`                                                          |
+| `/api/triggers`                 | `message_triggers_router`    | 關鍵字觸發 CRUD                                                                    | （目前 build 未掛 nav 項目）                                       |
+| `/api/crosshairs`               | `crosshairs_router`          | 準星管理、公開庫                                                                   | `/modules/crosshairs`、`/:username/crosshairs`                     |
+| `/api/live-display`             | `community_overlay_router`   | 公開 cursor event feed、租戶 Live Display key 啟用／輪替                           | `/modules/live-display`、公開 `/live-display`                      |
+| `/api/ai`                       | `ai_settings_router`         | AI 助手設定（角色、enabled、cooldown、min_role、貼圖）                             | `/modules/ai`                                                      |
+| `/api/donate`                   | `donation_router`            | 贊助結帳（ECPay／OPay／NewebPay／PayPal）、webhook                                 | `/donate/:username`                                                |
+| `/api/payment-configs`          | `payment_config_router`      | 金流平台設定                                                                       | （無獨立頁面，設定子面板）                                         |
+| `/api/bots`                     | `bots_router`                | Bot 狀態查詢                                                                       | （無獨立頁面，狀態小工具）                                         |
+| `/api/discord`                  | `discord_webhook_router`     | Discord 互動 webhook（slash command 簽章驗證）                                     | `/discord`                                                         |
+| `/api/client-errors`            | `client_errors_router`       | 前端 client-side 錯誤回報與查詢                                                    | 併入 `/admin/monitor`                                              |
+| `/api/releases`                 | `releases_router`            | 版本資訊查詢（`git describe`）                                                     | `/docs/releases`                                                   |
+| `/api/admin`                    | `admin_router`               | 管理員工具（限 Owner）；聚合 `routers/admin/` 下 `logs`／`db`／`modules` 子 router | `/admin`、`/admin/monitor`、`/admin/modules`                       |
+| `/health`、`/status`            | —                            | 服務健康檢查                                                                       | —                                                                  |
+
+## 已知的命名分歧
+
+大多數 router 的前綴／類別／table／前端頁面都同源（例如 `crosshairs_router` ↔
+`CrosshairRepository` ↔ `crosshairs` table ↔ 「Crosshair Repo」頁面），只是英翻中或單複數差異，
+不是分歧。以下 3 組是盤點後找到、值得記住但**刻意不去改**的分歧——改的成本／風險都大於「有人偶爾
+要多想一步」這個問題本身：
+
+- **`/channel-points` 頁面是 `events`／`vip`／`checkin` 三個獨立 router 拼出來的，後端沒有
+  `channel_points` 這個 module、service 或 table。** 這是刻意的關注點分離（兌換設定、VIP 制度、
+  每日簽到本來就是三個不同權責），不是命名錯誤，所以不「修」；但因為後端完全沒有對應名稱可查，
+  容易讓人從 UI 頁面回頭找程式碼時撲空，故記錄於此。
+- **`bot_accounts_router` 是唯一沒有自己專屬 prefix 的 router**，端點分散在
+  `/api/tenants/.../bot-accounts`、`/api/public/bot-invites`（未來可能還有
+  `/api/admin/bot-accounts/...`）。不改的原因：`/api/public/bot-invites/...` 這類路徑可能已經被
+  寄出去的邀請連結引用，貿然改 prefix 等於讓已發出的連結失效，風險不成比例。
+- **`game_queue_router` 對應的 table 叫 `game_queue_entries`，但 `video_queue_router` 對應的
+  table 直接叫 `video_queue`**——同類型的兩個佇列功能，table 命名慣例不一致。這純粹是內部 DB
+  命名，不影響 API 或 UI；改名需要一支 migration（`ALTER TABLE ... RENAME`）加上更新 repository
+  裡的所有查詢，屬於資料庫 schema 變更而非小改動，因此這次不順手調整，僅記錄在此供未來需要時參考。
+
+以上皆與「`ai_settings` table 對應『AI Assistant』頁面」這種情況不同——`ai_settings`／
+`checkin_settings`／`video_queue_settings` 都是「`<功能>_settings` 儲存該功能設定」的一致慣例，
+頁面顯示用功能本身的名字（AI Assistant、Daily Check-in、Video Queue）很正常，不是命名分歧。
 
 ## 安全機制
 
@@ -67,7 +96,12 @@ FastAPI 服務（`backend/api/`）提供的路由前綴。開發環境互動式�
 
 ## Community Overlay feed
 
-- `GET /api/live-display/public/events`：以 `X-Overlay-Key: <uuid>` 驗證；初次只回目前 `cursor`，不重播歷史。
+- `GET /api/live-display/public/stream`：以 `X-Overlay-Key: <uuid>` 驗證的長連線 SSE
+  (`text/event-stream`)。由 PostgreSQL `NOTIFY` 喚醒後重讀 durable table 送出 `event: snapshot`／
+  `event: update`（依 `after_id` cursor 補未過期事件）與 `event: heartbeat`；renderer 目前使用的傳輸，
+  取代下方 `events` polling 端點。5 分鐘 hard lease 到期由 client 帶 cursor 自動重連；詳見
+  [docs/guides/cloudflare-pages.md](../guides/cloudflare-pages.md) 的 Live Display stream contract。
+- `GET /api/live-display/public/events`（legacy）：以 `X-Overlay-Key: <uuid>` 驗證；初次只回目前 `cursor`，不重播歷史。
 - `GET /api/live-display/public/events?after_id=<cursor>`：同樣以 header 驗證，依 id 回傳未過期事件。
 - `GET/PATCH /api/live-display/settings`：已啟用租戶讀取 key／啟停 feed。
 - `POST /api/live-display/settings/rotate-key`：輪替 capability key，舊 OBS URL 立即失效。
@@ -96,13 +130,27 @@ Theme schema v1 固定為 `checkin-card` allowlist：`surface_color`、`accent_c
 16px 圓角與 5000ms 顯示時間。時間從事件開始播放時計算；四角位置與其他 allowlisted 欄位仍可由頻道草稿調整後發布。
 
 前端 OBS source 使用 `/live-display#key=<uuid>`，初次 handshake 不重播；只有 fragment 明確加入
-`preview=1` 才會以 `after_id=0` 讀取仍未過期事件。renderer 每 5 秒檢查 published revision，並在
-capability／preview 改變時清除 cursor、去重集合、播放佇列與 theme，舊請求不得跨租戶落地。
+`preview=1` 才會以 `after_id=0` 開啟 `stream` 連線讀取仍未過期事件。renderer 由 SSE push 更新
+published revision（不再輪詢），並在 capability／preview 改變時中止舊連線、清除 cursor、去重集合、
+播放佇列與 theme，舊連線的晚到 frame 不得跨租戶落地。
 開發環境可由 broadcaster 在聊天室輸入
 `!ovltest [1-9999]` 產生短效 preview event；此指令不修改正式簽到 ledger。
 
 登入後可從 `Live Display`（`/modules/live-display`）管理上述設定與網址；Vite development
 另有不呼叫租戶 settings API 的 `/dev/live-display` 視覺預覽，production build 會移除該路由。
+
+## Video Queue overlay stream
+
+- `GET /api/video-queue/public/{username}/stream`：無需認證的長連線 SSE（OBS overlay 用，比照公開
+  REST 端點的匿名模式）。由 PostgreSQL `NOTIFY` 喚醒後重讀目前佇列狀態，僅在重建結果與上次送出的
+  payload 不同時才送 `event: update`；無 cursor／事件回放語意——狀態是單一目前快照，重連只會拿到
+  最新一份，不像 Live Display 的事件日誌需要補送歷史。payload 不含 `enabled`（overlay 從不讀取，
+  且 `video_queue_settings` 沒有 NOTIFY trigger，送出會是不誠實的過期值）。5 分鐘 hard lease、15 秒
+  heartbeat、429 容量上限，行為與 Live Display stream 一致；詳見
+  [docs/guides/cloudflare-pages.md](../guides/cloudflare-pages.md)。
+- 既有 `GET /api/video-queue/public/{username}`、`POST .../advance`、
+  `PATCH .../entries/{id}/metadata` 等 REST 端點不變，dashboard 與 overlay 的 kickstart／advance
+  互動仍走 REST；`stream` 只是取代原本的 overlay 狀態輪詢。
 
 ## Events 與 Twitch 頻道點數
 
