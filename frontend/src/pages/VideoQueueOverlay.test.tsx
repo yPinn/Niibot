@@ -25,9 +25,9 @@ function renderOverlay() {
   )
 }
 
-// Bilibili is the only video type with no external player-API readiness gate
-// (YouTube/Twitch require ytReady/twitchReady, which never resolve in jsdom),
-// so it is the cheapest path to reach the "already ended" fast branch that
+// Bilibili and Twitch clips are plain iframes with no external player-API
+// readiness gate (only YouTube requires ytReady, which never resolves in jsdom),
+// so they are the cheapest path to reach the "already ended" fast branch that
 // calls handleVideoEnd without needing any player mocking.
 function bilibiliEntry(id: number, requestedBy: string, overrides: Record<string, unknown> = {}) {
   return {
@@ -49,6 +49,15 @@ function youtubeEntry(id: number, requestedBy: string, overrides: Record<string,
     ...bilibiliEntry(id, requestedBy, overrides),
     video_id: `yt${id}`,
     video_type: 'youtube' as const,
+    ...overrides,
+  }
+}
+
+function twitchClipEntry(id: number, requestedBy: string, overrides: Record<string, unknown> = {}) {
+  return {
+    ...bilibiliEntry(id, requestedBy, overrides),
+    video_id: `clip${id}`,
+    video_type: 'twitch_clip' as const,
     ...overrides,
   }
 }
@@ -153,20 +162,19 @@ describe('VideoQueueOverlay stream renderer', () => {
 })
 
 // The players/ package (see backend equivalent: resolve_video_url) selects a
-// mount strategy per video_type. These two cases are the cheapest way to
-// prove dispatch actually differs by platform: Bilibili's strategy declares
-// no requiresApi and must mount synchronously; YouTube's declares
-// requiresApi: 'youtube' and must stay gated forever in jsdom, where the real
-// IFrame API script never loads and ytReady never becomes true.
+// mount strategy per video_type. These cases prove dispatch actually differs by
+// platform: Bilibili and Twitch clips declare no requiresApi and must mount
+// synchronously; YouTube declares requiresApi: 'youtube' and must stay gated
+// forever in jsdom, where the real IFrame API script never loads and ytReady
+// never becomes true.
 describe('VideoQueueOverlay player strategy selection', () => {
   beforeEach(() => {
     vi.mocked(openVideoQueueStream).mockReset()
     vi.mocked(openVideoQueueStream).mockImplementation(() => new Promise(() => undefined))
+    vi.mocked(advanceVideoQueue).mockReset()
   })
 
-  it('mounts the Bilibili iframe immediately since its strategy needs no external API', () => {
-    const entry = bilibiliEntry(1, 'viewer')
-    const { container } = renderOverlay()
+  function pushCurrent(entry: ReturnType<typeof bilibiliEntry>) {
     const options = vi.mocked(openVideoQueueStream).mock.calls[0][0]
     act(() => {
       options.onMessage({
@@ -177,30 +185,67 @@ describe('VideoQueueOverlay player strategy selection', () => {
         total_queued_duration: null,
       })
     })
+  }
+
+  it('mounts the Bilibili iframe immediately since its strategy needs no external API', () => {
+    const entry = bilibiliEntry(1, 'viewer')
+    const { container } = renderOverlay()
+    pushCurrent(entry)
 
     const iframe = container.querySelector('iframe')
     expect(iframe).not.toBeNull()
     expect(iframe?.getAttribute('src')).toContain(`bvid=${entry.video_id}`)
   })
 
+  it('mounts a Twitch clip as a clips.twitch.tv/embed iframe (no Twitch.Embed JS API)', () => {
+    const entry = twitchClipEntry(1, 'viewer')
+    const { container } = renderOverlay()
+    pushCurrent(entry)
+
+    const iframe = container.querySelector('iframe')
+    expect(iframe).not.toBeNull()
+    const src = iframe?.getAttribute('src') ?? ''
+    expect(src).toContain('https://clips.twitch.tv/embed?')
+    expect(src).toContain(`clip=${entry.video_id}`)
+    expect(src).toContain('autoplay=true')
+  })
+
   it('never mounts a YouTube video while ytReady is false (its strategy requires the IFrame API)', () => {
     const entry = youtubeEntry(1, 'viewer')
     const { container } = renderOverlay()
-    const options = vi.mocked(openVideoQueueStream).mock.calls[0][0]
-    act(() => {
-      options.onMessage({
-        type: 'snapshot',
-        current: entry,
-        queue: [],
-        queue_size: 0,
-        total_queued_duration: null,
-      })
-    })
+    pushCurrent(entry)
 
     // jsdom never executes the injected `youtube.com/iframe_api` script, so
     // ytReady never flips true and the effect must bail out before touching
     // window.YT (which is undefined here) or writing into the container.
     expect(container.querySelector('iframe')).toBeNull()
-    expect(container.querySelector(`[id^="twitch-embed-"]`)).toBeNull()
+  })
+
+  it('advances via the fallback ceiling when an entry has no duration', async () => {
+    vi.useFakeTimers()
+    try {
+      const noDuration = twitchClipEntry(1, 'viewer', {
+        duration_seconds: null,
+        started_at: new Date().toISOString(),
+      })
+      vi.mocked(advanceVideoQueue).mockResolvedValue({
+        enabled: true,
+        current: null,
+        queue: [],
+        queue_size: 0,
+        total_queued_duration: null,
+      })
+
+      renderOverlay()
+      pushCurrent(noDuration)
+      expect(advanceVideoQueue).not.toHaveBeenCalled()
+
+      // CLIP_MAX_SECONDS (90s) + the exit-animation delay, then the POST settling.
+      await act(async () => vi.advanceTimersByTimeAsync(91_000 + 600))
+      await act(async () => Promise.resolve())
+      expect(advanceVideoQueue).toHaveBeenCalledWith(USERNAME, 1)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

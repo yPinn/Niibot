@@ -55,18 +55,32 @@ export function hasAlreadyEnded(ctx: Pick<MountContext, 'current' | 'joinElapsed
   return Boolean(current.duration_seconds && joinElapsed >= current.duration_seconds - 0.5)
 }
 
+// Upper bound on how long a timer-based platform holds the queue when the
+// server could not supply a duration. Without this the video would play
+// forever (recoverable only via `!vq skip`). A Twitch clip is at most 60s;
+// Bilibili has no natural cap, so this is a "something is wrong, move on" value.
+export const CLIP_MAX_SECONDS = 90
+export const BILIBILI_MAX_SECONDS = 600
+
 /**
  * End-detection strategy for platforms with no player-reported "ended" event
- * (Twitch Clip embed and the plain Bilibili iframe both only expose
+ * (the Twitch clip embed and the plain Bilibili iframe both only expose
  * duration_seconds up front, not playback state) — schedules handleVideoEnd
  * from the server-reported duration instead. Contrast with YouTube, which
  * detects end from real player events (onStateChange ENDED + a polling
  * fallback) and therefore does not use this helper.
+ *
+ * `fallbackMaxSeconds` is used when duration_seconds is missing (Bilibili's
+ * unofficial metadata endpoint fails from datacenter IPs) so the queue always
+ * advances instead of stalling on one bad fetch.
  */
-export function startTimerBasedEnd(ctx: MountContext): void {
+export function startTimerBasedEnd(ctx: MountContext, fallbackMaxSeconds: number): void {
   const { current, joinElapsed, currentId, clipTimerRef, handleVideoEnd } = ctx
-  if (!current.duration_seconds) return
-  const remaining = Math.max(0, current.duration_seconds - joinElapsed)
+  const total =
+    current.duration_seconds && current.duration_seconds > 0
+      ? current.duration_seconds
+      : fallbackMaxSeconds
+  const remaining = Math.max(0, total - joinElapsed)
   clipTimerRef.current = setTimeout(() => handleVideoEnd(currentId), remaining * 1000 + 500)
 }
 

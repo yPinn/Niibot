@@ -14,6 +14,5 @@ export function getPlayerStrategy(videoType: string): PlayerStrategy | undefined
 }
 
 export { destroyAllPlayers } from './shared'
-export { loadTwitchEmbedAPI } from './twitchClip'
-export type { MountContext, PlayerStrategy, TwitchEmbedInstance, YTPlayer } from './types'
+export type { MountContext, PlayerStrategy, YTPlayer } from './types'
 export { loadYouTubeAPI } from './youtube'
