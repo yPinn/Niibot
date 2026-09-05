@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
 import {
@@ -6,9 +6,7 @@ import {
   advanceVideoQueue,
   clearVideoQueue,
   getVideoQueueSettings,
-  getVideoQueueState,
   playVideoNow,
-  type PublicVideoQueueState,
   removeQueueEntry,
   setVideoAsNext,
   skipCurrentVideo,
@@ -31,6 +29,7 @@ import {
   CardTitle,
   Input,
   Label,
+  Progress,
   Select,
   SelectContent,
   SelectItem,
@@ -48,7 +47,7 @@ import {
 } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
-import { usePolling } from '@/hooks/usePolling'
+import { useVideoQueueStream } from '@/hooks/useVideoQueueStream'
 import { toastApiError } from '@/lib/toast-error'
 
 import { QueueTable, SourceBadge } from './videoQueue/QueueTable'
@@ -58,17 +57,20 @@ import {
   MIN_VIEW_COUNT_OPTIONS,
   REDEMPTION_DURATION_OPTIONS,
   snapToOption,
+  thumbnailUrl,
+  watchUrl,
 } from './videoQueue/utils'
-
-const POLL_INTERVAL = 5_000
 
 export default function VideoQueue() {
   useDocumentTitle('Video Queue')
 
   const { user, isAffiliate } = useAuth()
-  const [state, setState] = useState<PublicVideoQueueState | null>(null)
+  // Queue state rides the same NOTIFY-woken SSE stream as the OBS overlay;
+  // settings are fetched once (they only change from this page).
+  const { state, setState } = useVideoQueueStream(isAffiliate ? user?.name : undefined)
   const [settings, setSettings] = useState<VideoQueueSettings | null>(null)
   const [loading, setLoading] = useState(true)
+  const [now, setNow] = useState(() => Date.now())
 
   const [helpOpen, setHelpOpen] = useState(false)
   const [maxRedemptionDurationValue, setMaxRedemptionDurationValue] = useState('600')
@@ -81,17 +83,13 @@ export default function VideoQueue() {
   const [adding, setAdding] = useState(false)
   const hasInitialized = useRef(false)
 
-  const fetchData = useCallback(async () => {
+  const fetchSettings = useCallback(async () => {
     if (!isAffiliate) {
       setLoading(false)
       return
     }
     try {
-      const [queueState, queueSettings] = await Promise.all([
-        getVideoQueueState(),
-        getVideoQueueSettings(),
-      ])
-      setState(queueState)
+      const queueSettings = await getVideoQueueSettings()
       setSettings(queueSettings)
       if (!hasInitialized.current) {
         setMaxRedemptionDurationValue(
@@ -104,13 +102,34 @@ export default function VideoQueue() {
         hasInitialized.current = true
       }
     } catch {
-      // silent on poll errors
+      // silent — settings keep their last-known value
     } finally {
       setLoading(false)
     }
   }, [isAffiliate])
 
-  usePolling({ fetchFn: fetchData, intervalMs: POLL_INTERVAL })
+  // Settings: one fetch on mount, plus a refresh when the tab regains focus
+  // (the stream keeps queue state live on its own).
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => void fetchSettings(), 0)
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void fetchSettings()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      window.clearTimeout(timeoutId)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [fetchSettings])
+
+  // Advance a 1s wall-clock ticker only while something is playing; the elapsed
+  // value itself is derived from it at render time.
+  const currentStartedAt = state?.current?.started_at
+  useEffect(() => {
+    if (!currentStartedAt) return
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [currentStartedAt])
 
   const handleToggleEnabled = async (enabled: boolean) => {
     try {
@@ -275,6 +294,14 @@ export default function VideoQueue() {
   const queue = state?.queue ?? []
   const queueSize = state?.queue_size ?? 0
   const totalQueuedDuration = state?.total_queued_duration ?? null
+  const currentThumb = current ? thumbnailUrl(current.video_type, current.video_id) : null
+  const elapsed = current?.started_at
+    ? Math.max(0, (now - new Date(current.started_at).getTime()) / 1000)
+    : 0
+  const playbackProgress =
+    current?.duration_seconds && current.duration_seconds > 0
+      ? Math.min(100, (elapsed / current.duration_seconds) * 100)
+      : 0
 
   return (
     <PageMain>
@@ -489,12 +516,14 @@ export default function VideoQueue() {
               {/* Title is always fixed — only description content changes */}
               <CardTitle className="flex items-center gap-2">
                 正在播放
-                {/* Duration badge always rendered; invisible preserves height when absent */}
+                {/* Time badge always rendered; invisible preserves height when absent */}
                 <Badge
                   variant="secondary"
-                  className={`text-label tabular-nums ${current?.duration_seconds ? '' : 'invisible'}`}
+                  className={`text-label tabular-nums ${current ? '' : 'invisible'}`}
                 >
-                  {current?.duration_seconds ? formatDuration(current.duration_seconds) : '--:--'}
+                  {current
+                    ? `${formatDuration(elapsed)} / ${current.duration_seconds ? formatDuration(current.duration_seconds) : '--:--'}`
+                    : '--:--'}
                 </Badge>
               </CardTitle>
               <CardDescription className="min-w-0">
@@ -511,14 +540,44 @@ export default function VideoQueue() {
                   </span>
                 </span>
               </CardDescription>
-              <CardAction>
+              <CardAction className="flex items-center gap-1">
+                {current && (
+                  <Button size="icon-sm" variant="ghost" asChild title="在新分頁開啟">
+                    <a
+                      href={watchUrl(current.video_type, current.video_id)}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      <Icon icon="fa-solid fa-arrow-up-right-from-square" className="size-3" />
+                    </a>
+                  </Button>
+                )}
                 <Button size="sm" variant="outline" onClick={handleSkip} disabled={!current}>
                   <Icon icon="fa-solid fa-forward-step" className="mr-1.5 size-3" />
                   跳過
                 </Button>
               </CardAction>
             </CardHeader>
-            <CardContent className="pb-5">
+            <CardContent className="flex flex-col gap-element pb-5">
+              {current && (
+                <div className="flex gap-element">
+                  {currentThumb && (
+                    <img
+                      src={currentThumb}
+                      alt=""
+                      className="aspect-video w-24 shrink-0 rounded-md border object-cover"
+                    />
+                  )}
+                  <div className="flex min-w-0 flex-1 flex-col justify-center gap-1.5">
+                    <Progress segments={[{ value: playbackProgress }]} aria-label="播放進度" />
+                    <span className="text-label text-muted-foreground tabular-nums">
+                      {current.duration_seconds
+                        ? `剩餘 ${formatDuration(Math.max(0, current.duration_seconds - elapsed))}`
+                        : '長度未知'}
+                    </span>
+                  </div>
+                </div>
+              )}
               <p className="text-label text-muted-foreground">
                 {queueSize > 0
                   ? `待播 ${queueSize} 首${totalQueuedDuration ? ` · ${formatDuration(totalQueuedDuration)}` : ''}`

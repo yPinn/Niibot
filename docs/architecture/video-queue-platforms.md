@@ -73,6 +73,33 @@ duration off the `html5mobileplayer` iframe via `postMessage`) is possible but
 deferred — the ceiling covers the "queue must not stall" requirement, and this
 would only improve timing precision.
 
+## Playability precheck (YouTube only)
+
+Some videos load in the overlay but never actually play: YouTube's owner can
+disable embedding, mark a video age-restricted (an embedded iframe has no
+signed-in cookie to satisfy the gate), set it private, or the upload can be
+deleted/rejected. The timer-based end detection still fires eventually, but the
+viewer sees a dead frame until the ceiling expires.
+
+`fetch_yt_info` requests the `status` part alongside `snippet,contentDetails,
+statistics` and returns a `YouTubeInfo` dataclass carrying `playable: bool` and
+`unplayable_reason` (`not_embeddable | age_restricted | private | removed`).
+`_assess_yt_playability()` only trusts **positive** signals — a response with no
+`status` block, an empty `items` array, a non-200, or a network error all leave
+`playable = True` (fail-open), so a transient API problem never rejects a real
+submission.
+
+All three add paths — chat `!vq` (`video_queue.py`), channel-points redemption
+(`channel_points.py`), and the dashboard `POST /entries`
+(`video_queue_router.py`, raising `VideoNotPlayableError` → 422) — check
+`metadata.playable` right after the metadata fetch and reject with
+`unplayable_message(reason)` before inserting. `min_view_count` and the
+duration caps are policy toggles; playability is not, so the dashboard's
+broadcaster-authority bypass does **not** skip it.
+
+Twitch Clip and Bilibili always report `playable = True`: clips always embed,
+and Bilibili's metadata is already too unreliable (`-412`) to gate on.
+
 ## Deferred: donation path multi-platform support
 
 `backend/api/routers/donation_router.py` only imports `extract_youtube_info`

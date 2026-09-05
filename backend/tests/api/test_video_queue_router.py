@@ -578,6 +578,37 @@ class TestAddVideoEntry:
         assert r.status_code == 422
         assert r.json()["error"]["code"] == "VIDEO_QUEUE.INVALID_URL"
 
+    def test_unplayable_video_returns_422(self):
+        with (
+            patch(
+                "routers.video_queue_router.resolve_video_url",
+                AsyncMock(return_value=ResolvedVideo("youtube", "vid123", False)),
+            ),
+            patch(
+                "routers.video_queue_router.fetch_video_metadata",
+                AsyncMock(
+                    return_value=VideoMetadata(
+                        "Restricted",
+                        300,
+                        None,
+                        False,
+                        playable=False,
+                        unplayable_reason="age_restricted",
+                    )
+                ),
+            ),
+            patch("routers.video_queue_router.VideoQueueRepository") as vqr,
+            patch("routers.video_queue_router.VideoQueueSettingsRepository") as sr,
+        ):
+            vqr.return_value.video_is_active = AsyncMock(return_value=False)
+            sr.return_value.get_or_create = AsyncMock(return_value=_make_settings())
+            r = _make_auth_client().post(
+                "/api/video-queue/entries",
+                json={"url": "https://youtube.com/watch?v=vid123"},
+            )
+        assert r.status_code == 422
+        assert r.json()["error"]["code"] == "VIDEO_QUEUE.NOT_PLAYABLE"
+
     def test_queue_disabled_returns_403(self):
         with (
             patch(

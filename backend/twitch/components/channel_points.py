@@ -28,7 +28,7 @@ from shared.repositories.video_queue import (
 from shared.repositories.vip import VipRepository
 from shared.services.attendance import AttendanceService
 from shared.services.vip import VipService, add_calendar_months
-from shared.video_sources import fetch_video_metadata, resolve_video_url
+from shared.video_sources import fetch_video_metadata, resolve_video_url, unplayable_message
 from utils.mod_guard import mod_guard_notifier
 from utils.reauth import is_scope_error, reauth_notifier
 
@@ -857,6 +857,15 @@ class ChannelPointsComponent(commands.Component):
                 metadata.duration_seconds,
                 metadata.view_count,
             )
+
+            # Playability — an un-embeddable / age-restricted video only stalls the
+            # overlay on its timer ceiling, so reject it up front.
+            if not metadata.playable:
+                await self._reply(
+                    broadcaster,
+                    f"@{user_name} {unplayable_message(metadata.unplayable_reason)}",
+                )
+                return
 
             # View count check — if threshold is set and API failed to return view_count,
             # reject rather than silently bypassing the filter.

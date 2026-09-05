@@ -13,6 +13,7 @@ from shared.repositories.video_queue import (
     _settings_cache,
 )
 from shared.video_sources import (
+    YouTubeInfo,
     _app_token_cache,
     _get_twitch_app_token,
     _parse_iso8601_duration,
@@ -895,18 +896,32 @@ class TestKickstartIfIdle:
 
 
 # ---------------------------------------------------------------------------
-# fetch_yt_info — error paths must return 4-tuple (title, duration, views, is_vertical)
+# fetch_yt_info — returns YouTubeInfo; failure paths are fail-open (playable)
 # ---------------------------------------------------------------------------
+
+
+def _yt_resp(payload: dict) -> MagicMock:
+    from unittest.mock import AsyncMock
+
+    mock_resp = MagicMock()
+    mock_resp.status = 200
+    mock_resp.json = AsyncMock(return_value=payload)
+    mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+    mock_resp.__aexit__ = AsyncMock(return_value=None)
+    mock_session = MagicMock()
+    mock_session.get = MagicMock(return_value=mock_resp)
+    mock_session.close = AsyncMock(return_value=None)
+    return mock_session
 
 
 @pytest.mark.asyncio
 class TestFetchYtInfo:
-    async def test_no_api_key_returns_4tuple(self):
+    async def test_no_api_key_returns_empty_playable(self):
         result = await fetch_yt_info("dQw4w9WgXcQ", api_key="")
-        assert result == (None, None, None, False)
-        assert len(result) == 4
+        assert result == YouTubeInfo()
+        assert result.playable is True
 
-    async def test_bad_status_returns_4tuple(self):
+    async def test_bad_status_is_fail_open(self):
         from unittest.mock import AsyncMock, patch
 
         mock_resp = MagicMock()
@@ -921,36 +936,18 @@ class TestFetchYtInfo:
         with patch("aiohttp.ClientSession", return_value=mock_session):
             result = await fetch_yt_info("dQw4w9WgXcQ", api_key="fake_key")
 
-        assert len(result) == 4
-        title, duration, views, is_vertical = result
-        assert title is None
-        assert duration is None
-        assert views is None
-        assert is_vertical is False
+        assert result == YouTubeInfo()
 
-    async def test_empty_items_returns_4tuple(self):
-        from unittest.mock import AsyncMock, patch
+    async def test_empty_items_is_fail_open(self):
+        from unittest.mock import patch
 
-        mock_resp = MagicMock()
-        mock_resp.status = 200
-        mock_resp.json = AsyncMock(return_value={"items": []})
-        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
-        mock_resp.__aexit__ = AsyncMock(return_value=None)
-
-        mock_session = MagicMock()
-        mock_session.get = MagicMock(return_value=mock_resp)
-        mock_session.close = AsyncMock(return_value=None)
-
-        with patch("aiohttp.ClientSession", return_value=mock_session):
+        with patch("aiohttp.ClientSession", return_value=_yt_resp({"items": []})):
             result = await fetch_yt_info("dQw4w9WgXcQ", api_key="fake_key")
 
-        assert len(result) == 4
-        title, duration, views, is_vertical = result
-        assert title is None
-        assert is_vertical is False
+        assert result == YouTubeInfo()
 
-    async def test_network_error_returns_4tuple(self):
-        from unittest.mock import patch
+    async def test_network_error_is_fail_open(self):
+        from unittest.mock import AsyncMock, patch
 
         import aiohttp
 
@@ -962,8 +959,61 @@ class TestFetchYtInfo:
 
             result = await fetch_yt_info("dQw4w9WgXcQ", api_key="fake_key")
 
-        assert len(result) == 4
-        assert result == (None, None, None, False)
+        assert result == YouTubeInfo()
+
+    async def test_ok_video_is_playable_with_metadata(self):
+        from unittest.mock import patch
+
+        payload = {
+            "items": [
+                {
+                    "snippet": {"title": "Fine", "thumbnails": {}},
+                    "contentDetails": {"duration": "PT3M20S", "contentRating": {}},
+                    "statistics": {"viewCount": "4321"},
+                    "status": {
+                        "uploadStatus": "processed",
+                        "privacyStatus": "public",
+                        "embeddable": True,
+                    },
+                }
+            ]
+        }
+        with patch("aiohttp.ClientSession", return_value=_yt_resp(payload)):
+            result = await fetch_yt_info("dQw4w9WgXcQ", api_key="fake_key")
+
+        assert result.title == "Fine"
+        assert result.duration_seconds == 200
+        assert result.view_count == 4321
+        assert result.playable is True
+        assert result.unplayable_reason is None
+
+    @pytest.mark.parametrize(
+        ("status", "content_rating", "expected"),
+        [
+            ({"embeddable": False, "privacyStatus": "public"}, {}, "not_embeddable"),
+            ({"privacyStatus": "private"}, {}, "private"),
+            ({"uploadStatus": "deleted"}, {}, "removed"),
+            ({"privacyStatus": "public"}, {"ytRating": "ytAgeRestricted"}, "age_restricted"),
+        ],
+    )
+    async def test_disqualifying_status_sets_reason(self, status, content_rating, expected):
+        from unittest.mock import patch
+
+        payload = {
+            "items": [
+                {
+                    "snippet": {"title": "X", "thumbnails": {}},
+                    "contentDetails": {"duration": "PT1M", "contentRating": content_rating},
+                    "statistics": {"viewCount": "10"},
+                    "status": status,
+                }
+            ]
+        }
+        with patch("aiohttp.ClientSession", return_value=_yt_resp(payload)):
+            result = await fetch_yt_info("dQw4w9WgXcQ", api_key="fake_key")
+
+        assert result.playable is False
+        assert result.unplayable_reason == expected
 
 
 # ---------------------------------------------------------------------------

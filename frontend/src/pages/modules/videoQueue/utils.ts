@@ -20,6 +20,25 @@ export function snapToOption(options: readonly { value: number }[], value: numbe
   ).value
 }
 
+/** Canonical watch URL for a queued entry — frontend mirror of the backend's
+ *  `build_watch_url` (shared/video_sources.py). */
+export function watchUrl(videoType: string, videoId: string): string {
+  switch (videoType) {
+    case 'twitch_clip':
+      return `https://clips.twitch.tv/${videoId}`
+    case 'bilibili':
+      return `https://www.bilibili.com/video/${videoId}`
+    default:
+      return `https://youtu.be/${videoId}`
+  }
+}
+
+/** Thumbnail URL for a queued entry, or null when the platform has no stable
+ *  no-auth thumbnail (Bilibili, Twitch clips). */
+export function thumbnailUrl(videoType: string, videoId: string): string | null {
+  return videoType === 'youtube' ? `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg` : null
+}
+
 export function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60)
   const s = Math.floor(seconds % 60)

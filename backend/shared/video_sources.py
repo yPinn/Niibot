@@ -44,6 +44,46 @@ _YT_RE = re.compile(
 
 _ISO8601_RE = re.compile(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?")
 
+# Playability reasons the OBS overlay cannot recover from — the iframe either
+# refuses to embed or silently shows an error, and the queue only advances once
+# the timer ceiling expires. Reject these at submission instead. YouTube-only:
+# Twitch clips always embed, and Bilibili's metadata endpoint is too unreliable
+# to gate on (see docs/architecture/video-queue-platforms.md).
+UNPLAYABLE_NOT_EMBEDDABLE = "not_embeddable"
+UNPLAYABLE_AGE_RESTRICTED = "age_restricted"
+UNPLAYABLE_PRIVATE = "private"
+UNPLAYABLE_REMOVED = "removed"
+
+_UNPLAYABLE_MESSAGES: dict[str, str] = {
+    UNPLAYABLE_NOT_EMBEDDABLE: "這部影片不允許在其他網站嵌入播放",
+    UNPLAYABLE_AGE_RESTRICTED: "這部影片有年齡限制，無法在 overlay 播放",
+    UNPLAYABLE_PRIVATE: "這是私人影片，無法播放",
+    UNPLAYABLE_REMOVED: "這部影片已被移除或無法使用",
+}
+
+
+def unplayable_message(reason: str | None) -> str:
+    """Human-readable Chinese rejection message for an ``UNPLAYABLE_*`` reason."""
+    return _UNPLAYABLE_MESSAGES.get(reason or "", "這部影片無法播放")
+
+
+@dataclass
+class YouTubeInfo:
+    """Normalized result of a YouTube Data API v3 ``videos.list`` call.
+
+    Defaults are the "we couldn't tell" state: on any fetch failure the caller
+    gets a bare ``YouTubeInfo()`` (playable, no metadata) so a transient API
+    blip never rejects a submission — only a positively-returned video with a
+    disqualifying status sets ``playable = False``.
+    """
+
+    title: str | None = None
+    duration_seconds: int | None = None
+    view_count: int | None = None
+    is_vertical: bool = False
+    playable: bool = True
+    unplayable_reason: str | None = None
+
 
 def extract_youtube_id(text: str) -> str | None:
     """Extract 11-char YouTube video ID from a URL string. Returns None if not found."""
@@ -75,26 +115,47 @@ def _parse_iso8601_duration(duration: str) -> int:
     return hours * 3600 + minutes * 60 + seconds
 
 
+def _assess_yt_playability(item: dict) -> str | None:
+    """Return an ``UNPLAYABLE_*`` reason if this videos.list item can't be
+    embedded and played in the overlay, else None.
+
+    Only checks positive signals — an item missing a ``status`` block (older
+    API responses, partial data) is treated as playable.
+    """
+    status = item.get("status", {})
+    content_rating = item.get("contentDetails", {}).get("contentRating", {})
+
+    if status.get("uploadStatus") in ("deleted", "rejected", "failed"):
+        return UNPLAYABLE_REMOVED
+    # 'unlisted' still embeds fine — only 'private' is unplayable for a viewer.
+    if status.get("privacyStatus") == "private":
+        return UNPLAYABLE_PRIVATE
+    if content_rating.get("ytRating") == "ytAgeRestricted":
+        return UNPLAYABLE_AGE_RESTRICTED
+    if status.get("embeddable") is False:
+        return UNPLAYABLE_NOT_EMBEDDABLE
+    return None
+
+
 async def fetch_yt_info(
     video_id: str,
     api_key: str,
     session: aiohttp.ClientSession | None = None,
-) -> tuple[str | None, int | None, int | None, bool]:
-    """Fetch video title, duration, view count, and orientation via YouTube Data API v3.
+) -> YouTubeInfo:
+    """Fetch title, duration, view count, orientation, and playability via YouTube Data API v3.
 
     If `session` is None a temporary one-shot session is created and closed.
-    Returns (title, duration_seconds, view_count, is_vertical).
-    is_vertical is True when the API reports portrait thumbnails (e.g. YouTube Shorts).
-    title/duration/view_count are None on any failure; is_vertical defaults to False.
+    Returns a bare ``YouTubeInfo()`` (metadata None, playable) on any failure;
+    ``is_vertical`` is True when the API reports portrait thumbnails (Shorts).
     """
     if not api_key:
-        return None, None, None, False
+        return YouTubeInfo()
 
     url = "https://www.googleapis.com/youtube/v3/videos"
     # Pass api_key via params dict so it never appears as a literal URL string
     # (prevents accidental key exposure in logs, traces, or error messages).
     params = {
-        "part": "snippet,contentDetails,statistics",
+        "part": "snippet,contentDetails,statistics,status",
         "id": video_id,
         "key": api_key,
     }
@@ -104,11 +165,11 @@ async def fetch_yt_info(
         async with _session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=5)) as resp:
             if resp.status != 200:
                 LOGGER.info("[YouTube API] Unexpected status %s for %s", resp.status, video_id)
-                return None, None, None, False
+                return YouTubeInfo()
             data = await resp.json()
             items = data.get("items", [])
             if not items:
-                return None, None, None, False  # video not found / private
+                return YouTubeInfo()  # video not found / private
             item = items[0]
             title: str | None = item.get("snippet", {}).get("title")
             raw_duration: str = item.get("contentDetails", {}).get("duration", "")
@@ -120,12 +181,20 @@ async def fetch_yt_info(
             is_vertical = any(
                 (t.get("height", 0) or 0) > (t.get("width", 1) or 1) for t in thumbnails.values()
             )
-            return title, duration_seconds or None, view_count, is_vertical
+            reason = _assess_yt_playability(item)
+            return YouTubeInfo(
+                title=title,
+                duration_seconds=duration_seconds or None,
+                view_count=view_count,
+                is_vertical=is_vertical,
+                playable=reason is None,
+                unplayable_reason=reason,
+            )
     except Exception as exc:
         LOGGER.warning(
             "[YouTube API] fetch_yt_info failed for %s: %s", video_id, type(exc).__name__
         )
-        return None, None, None, False
+        return YouTubeInfo()
     finally:
         if _own_session:
             await _session.close()
@@ -386,12 +455,18 @@ class ResolvedVideo:
 
 @dataclass
 class VideoMetadata:
-    """Metadata fetch result, normalized to one shape across all platforms."""
+    """Metadata fetch result, normalized to one shape across all platforms.
+
+    ``playable`` / ``unplayable_reason`` are YouTube-only signals (see
+    ``YouTubeInfo``); Twitch Clip and Bilibili are always reported playable.
+    """
 
     title: str | None
     duration_seconds: int | None
     view_count: int | None
     is_vertical: bool
+    playable: bool = True
+    unplayable_reason: str | None = None
 
 
 async def resolve_video_url(
@@ -446,11 +521,14 @@ async def fetch_video_metadata(
         )
         return VideoMetadata(title, duration_seconds, view_count, is_vertical)
 
-    title, duration_seconds, view_count, is_vertical_from_api = await fetch_yt_info(
-        resolved.video_id, youtube_api_key, session
-    )
+    yt = await fetch_yt_info(resolved.video_id, youtube_api_key, session)
     return VideoMetadata(
-        title, duration_seconds, view_count, resolved.is_vertical or is_vertical_from_api
+        title=yt.title,
+        duration_seconds=yt.duration_seconds,
+        view_count=yt.view_count,
+        is_vertical=resolved.is_vertical or yt.is_vertical,
+        playable=yt.playable,
+        unplayable_reason=yt.unplayable_reason,
     )
 
 
