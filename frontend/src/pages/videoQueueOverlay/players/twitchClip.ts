@@ -38,9 +38,7 @@ function mount(ctx: MountContext): void {
   const iframe = document.createElement('iframe')
   iframe.src = `https://clips.twitch.tv/embed?${params.toString()}`
   iframe.style.cssText = 'width:100%;height:100%;border:none'
-  // Explicit "'src'" delegation — the bare `autoplay` shorthand is not honored
-  // by every CEF build OBS ships.
-  iframe.allow = "autoplay 'src'; fullscreen 'src'"
+  iframe.allow = 'autoplay; fullscreen'
   iframe.scrolling = 'no'
   containerRef.current.appendChild(iframe)
 
