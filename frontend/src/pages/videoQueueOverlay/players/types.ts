@@ -60,6 +60,12 @@ export interface MountContext {
   /** Seconds already elapsed since started_at — nonzero for a late-joining overlay. */
   joinElapsed: number
   isPreview: boolean
+  /**
+   * Start playback muted. Currently `= isPreview`: the OBS overlay plays with
+   * sound (OBS mixer owns audio), the dashboard preview must not blast audio at
+   * the streamer — and browsers block unmuted autoplay outside OBS anyway.
+   */
+  muted: boolean
   /** Only used by the YouTube strategy, to report duration back when the API key is missing/quota-exhausted. */
   username: string | undefined
   containerRef: RefObject<HTMLDivElement | null>

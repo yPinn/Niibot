@@ -73,6 +73,38 @@ duration off the `html5mobileplayer` iframe via `postMessage`) is possible but
 deferred — the ceiling covers the "queue must not stall" requirement, and this
 would only improve timing precision.
 
+## Autoplay and mute
+
+`MountContext.muted` (currently `= isPreview`) is the one knob: the OBS overlay
+plays **with sound** (OBS's mixer owns page audio), the dashboard preview must
+be **muted**. YouTube takes `mute` as a `playerVars` value; the Twitch clip and
+Bilibili plain iframes have no host-side mute (an `<iframe>` isn't a `<video>`),
+so it must be a player-URL param — `muted=<bool>` on both
+`clips.twitch.tv/embed` and `html5mobileplayer.html`.
+
+Autoplay is not equally reliable across the three:
+
+- **YouTube** calls `playVideo()` imperatively after `onReady` — an explicit
+  command that bypasses the player's own autoplay heuristics. Works with sound
+  in OBS, muted in preview.
+- **Twitch clip** has no such command. Twitch's player gates unmuted autoplay
+  on minimum size **and document visibility**, and OBS renders the page
+  "hidden" — so a clip can fail to autoplay with sound in OBS even though the
+  browser autoplay policy there is relaxed. There is no URL param to force it
+  and no unmute API. The iframe carries `allow="autoplay 'src'; fullscreen
+'src'"` (the bare `autoplay` shorthand is not honored by every CEF build OBS
+  ships), which is necessary but may not be sufficient. A reliable
+  sound-on-autoplay path would mean resolving the clip's signed source URL
+  (unofficial Twitch GraphQL, a Bilibili-tier dependency) and playing it in a
+  host-controlled `<video>` — deferred pending that tradeoff call.
+- **Bilibili** autoplays via `autoplay=1`; same visibility caveats apply but it
+  is already best-effort by nature.
+
+The dashboard preview is a **click-to-load poster** rather than an
+always-mounted iframe: muted autoplay isn't reliable for every platform, and
+the dashboard's "正在播放" card already carries live status, so the preview only
+needs to answer "does the layout look right".
+
 ## Playability precheck (YouTube only)
 
 Some videos load in the overlay but never actually play: YouTube's owner can

@@ -15,9 +15,9 @@ vi.mock('@/api/videoQueueStream', () => ({ openVideoQueueStream: vi.fn() }))
 
 const USERNAME = 'teststreamer'
 
-function renderOverlay() {
+function renderOverlay(search = '') {
   return render(
-    <MemoryRouter initialEntries={[`/${USERNAME}/video-queue/overlay`]}>
+    <MemoryRouter initialEntries={[`/${USERNAME}/video-queue/overlay${search}`]}>
       <Routes>
         <Route path="/:username/video-queue/overlay" element={<VideoQueueOverlay />} />
       </Routes>
@@ -194,7 +194,10 @@ describe('VideoQueueOverlay player strategy selection', () => {
 
     const iframe = container.querySelector('iframe')
     expect(iframe).not.toBeNull()
-    expect(iframe?.getAttribute('src')).toContain(`bvid=${entry.video_id}`)
+    const src = iframe?.getAttribute('src') ?? ''
+    expect(src).toContain(`bvid=${entry.video_id}`)
+    // OBS overlay (not ?preview=1) → plays with sound
+    expect(src).toContain('muted=0')
   })
 
   it('mounts a Twitch clip as a clips.twitch.tv/embed iframe (no Twitch.Embed JS API)', () => {
@@ -208,6 +211,14 @@ describe('VideoQueueOverlay player strategy selection', () => {
     expect(src).toContain('https://clips.twitch.tv/embed?')
     expect(src).toContain(`clip=${entry.video_id}`)
     expect(src).toContain('autoplay=true')
+    expect(src).toContain('muted=false')
+    expect((iframe as HTMLIFrameElement).allow).toContain("autoplay 'src'")
+  })
+
+  it('mutes the clip / bilibili iframe in the dashboard preview (?preview=1)', () => {
+    const { container } = renderOverlay('?preview=1')
+    pushCurrent(twitchClipEntry(1, 'viewer'))
+    expect(container.querySelector('iframe')?.getAttribute('src')).toContain('muted=true')
   })
 
   it('never mounts a YouTube video while ytReady is false (its strategy requires the IFrame API)', () => {
