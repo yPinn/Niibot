@@ -73,6 +73,10 @@ export default function VideoQueue() {
   const [now, setNow] = useState(() => Date.now())
 
   const [helpOpen, setHelpOpen] = useState(false)
+  // The preview loads the real overlay in an iframe. It stays a click-to-load
+  // poster by default: the overlay can't autoplay muted for every platform
+  // (Twitch clips especially), and the "正在播放" card already shows live status.
+  const [previewOpen, setPreviewOpen] = useState(false)
   const [maxRedemptionDurationValue, setMaxRedemptionDurationValue] = useState('600')
   const [maxQueueSizeInput, setMaxQueueSizeInput] = useState('')
   const [userCooldownInput, setUserCooldownInput] = useState('')
@@ -501,13 +505,37 @@ export default function VideoQueue() {
 
         <div className="flex flex-col gap-section lg:col-span-4">
           {overlayUrl && (
-            <div className="aspect-16/10 overflow-hidden rounded-lg border bg-black">
-              <iframe
-                src={`${overlayUrl}?preview=1`}
-                className="block h-full w-full"
-                title="Overlay 預覽"
-                allow="autoplay"
-              />
+            <div className="relative aspect-16/10 overflow-hidden rounded-lg border bg-black">
+              {previewOpen ? (
+                <iframe
+                  src={`${overlayUrl}?preview=1`}
+                  className="block h-full w-full"
+                  title="Overlay 預覽"
+                  allow="autoplay"
+                />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setPreviewOpen(true)}
+                  className="group absolute inset-0 flex flex-col items-center justify-center gap-2 text-white/80 hover:text-white"
+                >
+                  {currentThumb && (
+                    <img
+                      src={currentThumb}
+                      alt=""
+                      className="absolute inset-0 h-full w-full object-cover opacity-40 transition-opacity group-hover:opacity-55"
+                    />
+                  )}
+                  <Icon
+                    icon="fa-solid fa-circle-play"
+                    wrapperClassName="relative size-9"
+                    className="size-9"
+                  />
+                  <span className="relative text-sub">
+                    {current ? '載入 Overlay 預覽（靜音）' : '載入 Overlay 預覽'}
+                  </span>
+                </button>
+              )}
             </div>
           )}
 

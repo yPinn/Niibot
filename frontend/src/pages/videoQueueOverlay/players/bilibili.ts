@@ -7,7 +7,7 @@ import {
 import type { MountContext, PlayerStrategy } from './types'
 
 function mount(ctx: MountContext): void {
-  const { current, joinElapsed, currentId, containerRef, handleVideoEnd } = ctx
+  const { current, joinElapsed, currentId, muted, containerRef, handleVideoEnd } = ctx
 
   if (hasAlreadyEnded(ctx)) {
     handleVideoEnd(currentId)
@@ -20,9 +20,11 @@ function mount(ctx: MountContext): void {
   containerRef.current.innerHTML = ''
   const iframe = document.createElement('iframe')
   const startSeconds = Math.floor(joinElapsed)
-  iframe.src = `https://www.bilibili.com/blackboard/html5mobileplayer.html?bvid=${encodeURIComponent(current.video_id)}&autoplay=1&danmaku=0&hideDanmakuButton=1&noFullScreenButton=1&hideCoverInfo=1&hasMuteButton=0&t=${startSeconds}`
+  // `muted=1` in the dashboard preview — a plain iframe can't be muted from the
+  // host page, so it has to be a player URL param (html5mobileplayer supports it).
+  iframe.src = `https://www.bilibili.com/blackboard/html5mobileplayer.html?bvid=${encodeURIComponent(current.video_id)}&autoplay=1&muted=${muted ? 1 : 0}&danmaku=0&hideDanmakuButton=1&noFullScreenButton=1&hideCoverInfo=1&hasMuteButton=0&t=${startSeconds}`
   iframe.style.cssText = 'width:100%;height:100%;border:none'
-  iframe.allow = 'autoplay; fullscreen'
+  iframe.allow = "autoplay 'src'; fullscreen 'src'"
   iframe.scrolling = 'no'
   containerRef.current.appendChild(iframe)
 

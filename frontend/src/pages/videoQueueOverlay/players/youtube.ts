@@ -29,7 +29,7 @@ function mount(ctx: MountContext): () => void {
     current,
     currentId,
     joinElapsed,
-    isPreview,
+    muted,
     username,
     containerRef,
     leftContainerRef,
@@ -158,7 +158,7 @@ function mount(ctx: MountContext): () => void {
       modestbranding: 1,
       iv_load_policy: 3,
       cc_load_policy: 3,
-      mute: isPreview ? 1 : 0,
+      mute: muted ? 1 : 0,
       vq: 'highres',
     },
     events: {

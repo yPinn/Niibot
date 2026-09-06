@@ -222,6 +222,7 @@ export default function VideoQueueOverlay() {
       currentId: current.id,
       joinElapsed,
       isPreview,
+      muted: isPreview,
       username,
       containerRef,
       leftContainerRef,
