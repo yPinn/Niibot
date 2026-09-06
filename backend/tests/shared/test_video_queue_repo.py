@@ -488,6 +488,44 @@ class TestGetQueued:
 
 
 @pytest.mark.asyncio
+class TestGetHistory:
+    async def test_maps_rows_and_passes_cursor_and_limit(self):
+        done_row = {**_ENTRY_ROW, "id": 9, "status": "done", "ended_at": _NOW}
+        pool, conn = _make_pool(fetch=[done_row])
+        repo = VideoQueueRepository(pool)
+
+        result = await repo.get_history("ch1", limit=25, before=_NOW)
+
+        assert [e.id for e in result] == [9]
+        assert result[0].ended_at == _NOW
+        sql, *params = conn.fetch.call_args.args
+        assert "status = ANY($2)" in sql and "ended_at DESC" in sql
+        assert params == ["ch1", ["done", "skipped"], _NOW, 25]
+
+    async def test_empty(self):
+        pool, _ = _make_pool(fetch=[])
+        repo = VideoQueueRepository(pool)
+        assert await repo.get_history("ch1") == []
+
+
+@pytest.mark.asyncio
+class TestPruneHistory:
+    async def test_returns_deleted_count(self):
+        pool, conn = _make_pool(execute="DELETE 7")
+        repo = VideoQueueRepository(pool)
+
+        assert await repo.prune_history() == 7
+        sql, *params = conn.execute.call_args.args
+        assert "make_interval(days => $2)" in sql
+        assert params == [["done", "skipped"], 30]
+
+    async def test_zero_when_nothing_deleted(self):
+        pool, _ = _make_pool(execute="DELETE 0")
+        repo = VideoQueueRepository(pool)
+        assert await repo.prune_history() == 0
+
+
+@pytest.mark.asyncio
 class TestGetCurrentAndQueued:
     async def test_single_connection_acquire(self):
         pool, conn = _make_pool(fetch=[])

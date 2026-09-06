@@ -21,6 +21,24 @@ export interface PublicVideoQueueState {
   total_queued_duration: number | null
 }
 
+export interface VideoQueueHistoryEntry {
+  id: number
+  video_id: string
+  title: string | null
+  duration_seconds: number | null
+  requested_by: string
+  source: string
+  video_type: string
+  status: 'done' | 'skipped'
+  started_at: string | null
+  ended_at: string | null
+}
+
+export interface VideoQueueHistoryPage {
+  entries: VideoQueueHistoryEntry[]
+  next_cursor: string | null
+}
+
 export interface VideoQueueSettings {
   channel_id: string
   enabled: boolean
@@ -119,6 +137,15 @@ export async function clearVideoQueue(): Promise<PublicVideoQueueState> {
     credentials: 'include',
   })
   if (!response.ok) throw await parseApiError(response, '清空點播佇列失敗')
+  return response.json()
+}
+
+export async function getVideoQueueHistory(cursor?: string): Promise<VideoQueueHistoryPage> {
+  const url = cursor
+    ? `${API_ENDPOINTS.videoQueue.history}?cursor=${encodeURIComponent(cursor)}`
+    : API_ENDPOINTS.videoQueue.history
+  const response = await apiFetch(url, { credentials: 'include' })
+  if (!response.ok) throw await parseApiError(response, '載入播放紀錄失敗')
   return response.json()
 }
 

@@ -7,7 +7,7 @@ clips) live in ``shared.video_sources``.
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import asyncpg
 
@@ -40,8 +40,12 @@ PRIORITY_PINNED = 99
 
 _ENTRY_COLUMNS = (
     "id, channel_id, video_id, title, duration_seconds, is_vertical, requested_by, "
-    "source, status, video_type, priority, created_at, started_at, requested_by_id"
+    "source, status, video_type, priority, created_at, started_at, ended_at, requested_by_id"
 )
+
+# History = terminal entries retained for the dashboard "played" tab.
+HISTORY_STATUSES = ("done", "skipped")
+HISTORY_RETENTION_DAYS = 30
 
 _SETTINGS_COLUMNS = (
     "channel_id, enabled, redemption_enabled, "
@@ -572,6 +576,43 @@ class VideoQueueRepository:
                     requested_by,
                 )
             return VideoQueueEntry(**dict(row)) if row else None
+
+    async def get_history(
+        self,
+        channel_id: str,
+        *,
+        limit: int = 50,
+        before: datetime | None = None,
+    ) -> list[VideoQueueEntry]:
+        """Terminal entries (done/skipped) for this channel, newest first.
+
+        ``before`` is a keyset cursor on ``ended_at`` — pass the ``ended_at`` of
+        the last row from the previous page to fetch the next one.
+        """
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                f"SELECT {_ENTRY_COLUMNS} FROM video_queue "
+                "WHERE channel_id = $1 AND status = ANY($2) AND ended_at IS NOT NULL "
+                "AND ($3::timestamptz IS NULL OR ended_at < $3) "
+                "ORDER BY ended_at DESC LIMIT $4",
+                channel_id,
+                list(HISTORY_STATUSES),
+                before,
+                limit,
+            )
+            return [VideoQueueEntry(**dict(row)) for row in rows]
+
+    async def prune_history(self) -> int:
+        """Delete history rows past the retention window. Returns rows removed."""
+        async with self.pool.acquire() as conn:
+            result = await conn.execute(
+                "DELETE FROM video_queue "
+                "WHERE status = ANY($1) AND ended_at IS NOT NULL "
+                "AND ended_at < NOW() - make_interval(days => $2)",
+                list(HISTORY_STATUSES),
+                HISTORY_RETENTION_DAYS,
+            )
+            return int(result.split()[-1]) if result.startswith("DELETE") else 0
 
 
 # ---------------------------------------------------------------------------
