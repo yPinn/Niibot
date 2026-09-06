@@ -20,15 +20,16 @@ function mount(ctx: MountContext): void {
   containerRef.current.innerHTML = ''
   const iframe = document.createElement('iframe')
   const startSeconds = Math.floor(joinElapsed)
-  // The OBS overlay URL is byte-for-byte the one that plays on staging — do NOT
-  // add params here without testing in an actual OBS Browser Source, Bilibili's
-  // player throws its generic "can't play" page on anything it dislikes.
-  // `&muted=1` is appended ONLY for the muted dashboard preview (a plain iframe
-  // has no host-side mute); html5mobileplayer treats an explicit `muted=0` as
-  // "must play with sound" and errors when the browser then blocks that.
+  // `player.bilibili.com/player.html` is Bilibili's OFFICIAL embed player (the
+  // one its "share → embed" gives you), built to be iframed on third-party
+  // sites. It was swapped for `html5mobileplayer.html` in 56c4abd purely to hide
+  // player chrome — but the mobile web player has heavier anti-embed checks and
+  // throws "本视频可能由于以下原因导致无法正常播放" inside an OBS Browser Source
+  // (fresh cookie jar, no buvid3). The official embed is the better bet there;
+  // `&danmaku=0` still drops the bullet comments.
   const base =
-    `https://www.bilibili.com/blackboard/html5mobileplayer.html?bvid=${encodeURIComponent(current.video_id)}` +
-    `&autoplay=1&danmaku=0&hideDanmakuButton=1&noFullScreenButton=1&hideCoverInfo=1&hasMuteButton=0&t=${startSeconds}`
+    `https://player.bilibili.com/player.html?bvid=${encodeURIComponent(current.video_id)}` +
+    `&autoplay=1&danmaku=0&high_quality=1&t=${startSeconds}`
   iframe.src = muted ? `${base}&muted=1` : base
   iframe.style.cssText = 'width:100%;height:100%;border:none'
   iframe.allow = 'autoplay; fullscreen'

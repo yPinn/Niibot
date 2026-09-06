@@ -8,7 +8,7 @@
 
 # pages, while overlay paths override framing via their own CSP frame-ancestors \* rule below.
 
-Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-BFYoPoqqEce9Xn1iR84eJv0srIQYK8o0bOd6a5It8Ng=' https://www.youtube.com https://player.twitch.tv https://embed.twitch.tv https://static.cloudflareinsights.com; frame-src 'self' https://www.youtube.com https://player.twitch.tv https://clips.twitch.tv https://www.bilibili.com; img-src 'self' https://static-cdn.jtvnw.net https://cdn.discordapp.com data:; connect-src 'self' https://niibot-api.llazypilot.com https://cloudflareinsights.com; style-src 'self' 'unsafe-inline'; font-src 'self'; object-src 'none'; base-uri 'self'
+Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-BFYoPoqqEce9Xn1iR84eJv0srIQYK8o0bOd6a5It8Ng=' https://www.youtube.com https://player.twitch.tv https://embed.twitch.tv https://static.cloudflareinsights.com; frame-src 'self' https://www.youtube.com https://player.twitch.tv https://clips.twitch.tv https://www.bilibili.com https://player.bilibili.com; img-src 'self' https://static-cdn.jtvnw.net https://cdn.discordapp.com data:; connect-src 'self' https://niibot-api.llazypilot.com https://cloudflareinsights.com; style-src 'self' 'unsafe-inline'; font-src 'self'; object-src 'none'; base-uri 'self'
 Referrer-Policy: strict-origin-when-cross-origin
 Permissions-Policy: camera=(), microphone=(), geolocation=()
 X-Content-Type-Options: nosniff
@@ -42,10 +42,10 @@ Content-Security-Policy: default-src 'self'; script-src 'self' https://static.cl
 
 # clips-media-assets2.twitch.tv); on a media-src miss the <video> errors and falls back to the iframe.
 
-Content-Security-Policy: default-src 'self'; script-src 'self' https://www.youtube.com https://player.twitch.tv https://embed.twitch.tv https://static.cloudflareinsights.com; frame-src https://www.youtube.com https://player.twitch.tv https://clips.twitch.tv https://www.bilibili.com; frame-ancestors \*; img-src 'self' https://static-cdn.jtvnw.net https://cdn.discordapp.com data:; media-src https://*.twitchcdn.net https://clips-media-assets2.twitch.tv; connect-src 'self' https://niibot-api.llazypilot.com https://cloudflareinsights.com; style-src 'self' 'unsafe-inline'; font-src 'self'; object-src 'none'; base-uri 'self'
+Content-Security-Policy: default-src 'self'; script-src 'self' https://www.youtube.com https://player.twitch.tv https://embed.twitch.tv https://static.cloudflareinsights.com; frame-src https://www.youtube.com https://player.twitch.tv https://clips.twitch.tv https://www.bilibili.com https://player.bilibili.com; frame-ancestors \*; img-src 'self' https://static-cdn.jtvnw.net https://cdn.discordapp.com data:; media-src https://*.twitchcdn.net https://clips-media-assets2.twitch.tv; connect-src 'self' https://niibot-api.llazypilot.com https://cloudflareinsights.com; style-src 'self' 'unsafe-inline'; font-src 'self'; object-src 'none'; base-uri 'self'
 
 /\*/game-queue/overlay
 
 # Same embedding policy as video-queue overlay — see comment above.
 
-Content-Security-Policy: default-src 'self'; script-src 'self' https://www.youtube.com https://player.twitch.tv https://embed.twitch.tv https://static.cloudflareinsights.com; frame-src https://www.youtube.com https://player.twitch.tv https://clips.twitch.tv https://www.bilibili.com; frame-ancestors \*; img-src 'self' https://static-cdn.jtvnw.net https://cdn.discordapp.com data:; connect-src 'self' https://niibot-api.llazypilot.com https://cloudflareinsights.com; style-src 'self' 'unsafe-inline'; font-src 'self'; object-src 'none'; base-uri 'self'
+Content-Security-Policy: default-src 'self'; script-src 'self' https://www.youtube.com https://player.twitch.tv https://embed.twitch.tv https://static.cloudflareinsights.com; frame-src https://www.youtube.com https://player.twitch.tv https://clips.twitch.tv https://www.bilibili.com https://player.bilibili.com; frame-ancestors \*; img-src 'self' https://static-cdn.jtvnw.net https://cdn.discordapp.com data:; connect-src 'self' https://niibot-api.llazypilot.com https://cloudflareinsights.com; style-src 'self' 'unsafe-inline'; font-src 'self'; object-src 'none'; base-uri 'self'

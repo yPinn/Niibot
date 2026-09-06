@@ -200,9 +200,9 @@ describe('VideoQueueOverlay player strategy selection', () => {
     const iframe = container.querySelector('iframe')
     expect(iframe).not.toBeNull()
     const src = iframe?.getAttribute('src') ?? ''
+    expect(src).toContain('player.bilibili.com/player.html')
     expect(src).toContain(`bvid=${entry.video_id}`)
-    // OBS overlay (not ?preview=1): no `muted` param — the URL is byte-identical
-    // to the one that plays on staging (see comment in bilibili.ts).
+    // OBS overlay (not ?preview=1): no `muted` param — it plays with sound.
     expect(src).not.toContain('muted=')
   })
 
