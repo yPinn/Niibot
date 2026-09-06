@@ -80,7 +80,7 @@ plays **with sound** (OBS's mixer owns page audio), the dashboard preview must
 be **muted**. YouTube takes `mute` as a `playerVars` value; the Twitch clip and
 Bilibili plain iframes have no host-side mute (an `<iframe>` isn't a `<video>`),
 so it must be a player-URL param — `muted=<bool>` on both
-`clips.twitch.tv/embed` and `html5mobileplayer.html`.
+`clips.twitch.tv/embed` and `player.bilibili.com/player.html`.
 
 Autoplay is not equally reliable across the three. **Confirmed by OBS testing:
 only YouTube autoplays with sound in an OBS Browser Source.**
@@ -108,13 +108,18 @@ only YouTube autoplays with sound in an OBS Browser Source.**
     (`frontend/public/_headers`) needs `media-src https://*.twitchcdn.net
 https://clips-media-assets2.twitch.tv`; a media-src miss surfaces as a
     `<video>` error → iframe fallback.
-- **Bilibili** `html5mobileplayer` throws its generic "本视频可能由于以下原因导致
-  无法正常播放" page on anything it dislikes, including a blocked unmuted-autoplay
-  attempt. The OBS overlay URL is therefore kept **byte-for-byte** the form
-  that plays on staging (`autoplay=1`, no `muted` param); `&muted=1` is appended
-  **only** for the muted dashboard preview (explicit `muted=0` made the player
-  error). Bilibili has no `<video>` fallback — its stream URLs need wbi signing
-  and residential IPs (rejected, see below).
+- **Bilibili** uses `player.bilibili.com/player.html` — Bilibili's **official
+  embed player** (its "share → embed" markup), built to be iframed on
+  third-party sites. It was briefly swapped for `www.bilibili.com/blackboard/
+html5mobileplayer.html` (56c4abd) to hide player chrome, but that mobile web
+  player has heavier anti-embed checks and throws "本视频可能由于以下原因导致
+  无法正常播放" inside an OBS Browser Source (fresh cookie jar, no `buvid3`).
+  `&danmaku=0` still drops the bullet comments. `&muted=1` is appended **only**
+  for the muted dashboard preview (an explicit `muted=0` made the player error).
+  Bilibili has no `<video>` fallback — its stream URLs need `wbi` signing and
+  residential IPs (rejected, see below). **If the official embed still fails in
+  OBS, Bilibili is effectively browser/preview-only** and the queue should warn
+  on submit rather than pretend it will play.
 
 The dashboard preview is a **click-to-load poster** rather than an
 always-mounted iframe: muted autoplay isn't reliable for every platform, and
