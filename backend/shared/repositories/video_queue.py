@@ -249,6 +249,16 @@ class VideoQueueRepository:
                 channel_id,
             )
 
+    async def get_entry_for_channel(self, entry_id: int, channel_id: str) -> VideoQueueEntry | None:
+        """Fetch a single entry scoped to its channel, any status."""
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"SELECT {_ENTRY_COLUMNS} FROM video_queue WHERE id = $1 AND channel_id = $2",
+                entry_id,
+                channel_id,
+            )
+            return VideoQueueEntry(**dict(row)) if row else None
+
     async def video_is_active(self, channel_id: str, video_id: str) -> bool:
         """Return True if video_id is already queued or playing in this channel."""
         async with self.pool.acquire() as conn:

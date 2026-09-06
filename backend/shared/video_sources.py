@@ -19,10 +19,12 @@ bot, channel-points redemptions, and the donation webhook.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import time
 from dataclasses import dataclass
+from urllib.parse import quote
 
 import aiohttp
 
@@ -420,6 +422,93 @@ async def fetch_twitch_clip_info(
             "[Twitch API] fetch_twitch_clip_info failed for %s: %s", slug, type(exc).__name__
         )
         return None, None, None
+    finally:
+        if _own_session:
+            await _session.close()
+
+
+# ---------------------------------------------------------------------------
+# Twitch clip DIRECT SOURCE — unofficial GraphQL (Bilibili-tier dependency)
+# ---------------------------------------------------------------------------
+#
+# The official `clips.twitch.tv/embed` iframe cannot autoplay inside an OBS
+# Browser Source: Twitch's player gates unmuted autoplay on document
+# visibility, and OBS renders the page "hidden" (see
+# video-queue-platforms.md). The only way to autoplay a clip with sound in OBS
+# is to play its MP4 in a host-controlled <video> — but Twitch stopped serving
+# a plain MP4 off the thumbnail_url, so the URL now needs a signed token from
+# Twitch's PRIVATE GraphQL endpoint (the exact call yt-dlp makes).
+#
+# This is a second unofficial dependency of the same class as Bilibili's
+# metadata endpoint: no SLA, no rate-limit contract. Specifically:
+#   - `_TWITCH_GQL_CLIENT_ID` is yt-dlp's registered public client id (it ships
+#     in every yt-dlp install; it is NOT a secret and NOT ours).
+#   - `_TWITCH_CLIP_SOURCE_HASH` is a persisted-query hash Twitch ROTATES.
+#     When it changes this call 400s and callers fall back to the iframe.
+#     Keep it in sync with yt-dlp's `_OPERATION_HASHES['ShareClipRenderStatus']`.
+#   - The returned token carries an `expires` claim (hours). Resolve it fresh
+#     at playback time; never store it.
+_TWITCH_GQL_URL = "https://gql.twitch.tv/gql"
+_TWITCH_GQL_CLIENT_ID = "ue6666qo983tsx6so1t0vnawi233wa"
+_TWITCH_CLIP_SOURCE_HASH = "2db6a3b20eabf510bd3cf465ae2408834b59eb6b8af89ca73ab1486cacecfb63"
+
+
+async def fetch_twitch_clip_source(
+    slug: str,
+    session: aiohttp.ClientSession | None = None,
+) -> str | None:
+    """Resolve a Twitch clip slug to a directly-playable, signed MP4 URL.
+
+    UNOFFICIAL — see the module comment above. Returns the highest-quality
+    landscape source with the playback signature appended, or None on any
+    failure (callers must fall back to the clips.twitch.tv/embed iframe).
+    """
+    body = [
+        {
+            "operationName": "ShareClipRenderStatus",
+            "variables": {"slug": slug},
+            "extensions": {
+                "persistedQuery": {"version": 1, "sha256Hash": _TWITCH_CLIP_SOURCE_HASH}
+            },
+        }
+    ]
+    _own_session = session is None
+    _session: aiohttp.ClientSession = session or aiohttp.ClientSession()
+    try:
+        async with _session.post(
+            _TWITCH_GQL_URL,
+            data=json.dumps(body),
+            headers={
+                "Client-ID": _TWITCH_GQL_CLIENT_ID,
+                "Content-Type": "text/plain;charset=UTF-8",
+            },
+            timeout=aiohttp.ClientTimeout(total=5),
+        ) as resp:
+            if resp.status != 200:
+                LOGGER.warning("[Twitch GQL] clip source status %s for %s", resp.status, slug)
+                return None
+            data = await resp.json(content_type=None)
+
+        clip = (data[0] if isinstance(data, list) and data else {}).get("data", {}).get("clip")
+        if not clip:
+            return None
+        token = clip.get("playbackAccessToken") or {}
+        signature, value = token.get("signature"), token.get("value")
+        if not signature or not value:
+            return None
+        assets = clip.get("assets") or []
+        qualities = (assets[0].get("videoQualities") if assets else None) or []
+        # videoQualities is ordered highest→lowest resolution.
+        source_url = next((q["sourceURL"] for q in qualities if q.get("sourceURL")), None)
+        if not source_url:
+            return None
+        sep = "&" if "?" in source_url else "?"
+        return f"{source_url}{sep}sig={signature}&token={quote(value, safe='')}"
+    except Exception as exc:
+        LOGGER.warning(
+            "[Twitch GQL] fetch_twitch_clip_source failed for %s: %s", slug, type(exc).__name__
+        )
+        return None
     finally:
         if _own_session:
             await _session.close()

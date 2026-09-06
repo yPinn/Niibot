@@ -21,6 +21,7 @@ from shared.video_sources import (
     extract_twitch_clip_slug,
     extract_youtube_id,
     extract_youtube_info,
+    fetch_twitch_clip_source,
     fetch_yt_info,
     resolve_bilibili_url,
 )
@@ -1108,3 +1109,58 @@ class TestGetTwitchAppToken:
         assert tok_a == "tok_A"
         assert tok_b == "tok_B"
         assert session.post.call_count == 2
+
+
+def _clip_gql_ok(signature: str, value: str, source_url: str) -> dict:
+    return {
+        "data": {
+            "clip": {
+                "playbackAccessToken": {"signature": signature, "value": value},
+                "assets": [
+                    {
+                        "videoQualities": [
+                            {"quality": "1080", "sourceURL": source_url},
+                            {"quality": "720", "sourceURL": source_url + "?q=720"},
+                        ]
+                    }
+                ],
+            }
+        }
+    }
+
+
+@pytest.mark.asyncio
+class TestFetchTwitchClipSource:
+    async def test_builds_signed_url_from_top_quality(self):
+        payload = [_clip_gql_ok("sig123", "tok val/+", "https://cdn.example/clip.mp4")]
+        session = _make_session(_make_aiohttp_post_cm(200, payload))
+
+        result = await fetch_twitch_clip_source("SomeSlug", session)
+
+        assert result == "https://cdn.example/clip.mp4?sig=sig123&token=tok%20val%2F%2B"
+
+    async def test_appends_with_ampersand_when_source_has_query(self):
+        payload = [_clip_gql_ok("s", "t", "https://cdn.example/clip.mp4?x=1")]
+        session = _make_session(_make_aiohttp_post_cm(200, payload))
+
+        result = await fetch_twitch_clip_source("Slug", session)
+
+        assert result == "https://cdn.example/clip.mp4?x=1&sig=s&token=t"
+
+    async def test_non_200_returns_none(self):
+        session = _make_session(_make_aiohttp_post_cm(400, []))
+        assert await fetch_twitch_clip_source("Slug", session) is None
+
+    async def test_null_clip_returns_none(self):
+        session = _make_session(_make_aiohttp_post_cm(200, [{"data": {"clip": None}}]))
+        assert await fetch_twitch_clip_source("Slug", session) is None
+
+    async def test_missing_token_returns_none(self):
+        payload = [{"data": {"clip": {"assets": [{"videoQualities": []}]}}}]
+        session = _make_session(_make_aiohttp_post_cm(200, payload))
+        assert await fetch_twitch_clip_source("Slug", session) is None
+
+    async def test_network_error_returns_none(self):
+        session = MagicMock()
+        session.post.side_effect = RuntimeError("boom")
+        assert await fetch_twitch_clip_source("Slug", session) is None

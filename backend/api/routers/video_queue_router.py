@@ -33,7 +33,12 @@ from shared.repositories.video_queue import (
     VideoQueueRepository,
     VideoQueueSettingsRepository,
 )
-from shared.video_sources import fetch_video_metadata, resolve_video_url, unplayable_message
+from shared.video_sources import (
+    fetch_twitch_clip_source,
+    fetch_video_metadata,
+    resolve_video_url,
+    unplayable_message,
+)
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -43,6 +48,7 @@ router = APIRouter(prefix="/api/video-queue", tags=["video-queue"])
 # would hand out a fresh rate-limit bucket per guessed name for free.
 _advance_limiter = RateLimiter(max_calls=30, period=60.0)
 _stream_limiter = RateLimiter(max_calls=30, period=60.0)
+_clip_source_limiter = RateLimiter(max_calls=30, period=60.0)
 _STREAM_HEARTBEAT_SECONDS = 15.0
 _STREAM_LEASE_SECONDS = 5 * 60.0
 
@@ -349,6 +355,44 @@ async def update_entry_metadata(
     except Exception:
         LOGGER.exception("Failed to update video queue metadata")
         raise HTTPException(status_code=500, detail="Failed to update metadata") from None
+
+
+class ClipSourceResponse(BaseModel):
+    url: str
+
+
+@router.get("/public/{username}/entries/{entry_id}/clip-source", response_model=ClipSourceResponse)
+async def get_clip_source(
+    request: Request,
+    username: str,
+    entry_id: int,
+    pool: Pool = Depends(get_db_pool),
+    twitch_api: TwitchAPIClient = Depends(get_twitch_api),
+) -> ClipSourceResponse:
+    """Unauthenticated — resolve a queued Twitch clip to a signed, directly
+    playable MP4 URL so the OBS overlay can autoplay it in a `<video>` (the
+    embed iframe cannot autoplay in OBS). Scoped to an entry that is actually
+    in this channel's queue; 404s so the overlay falls back to the iframe.
+
+    See shared.video_sources.fetch_twitch_clip_source — this is an unofficial,
+    best-effort Twitch dependency.
+    """
+    client_host = request.client.host if request.client else "unknown"
+    _clip_source_limiter.require(client_host)
+    try:
+        channel_id = await _resolve_channel_id(username, twitch_api)
+        entry = await VideoQueueRepository(pool).get_entry_for_channel(entry_id, channel_id)
+        if entry is None or entry.video_type != "twitch_clip":
+            raise HTTPException(status_code=404, detail="Clip entry not found")
+        url = await fetch_twitch_clip_source(entry.video_id)
+        if not url:
+            raise HTTPException(status_code=404, detail="Clip source unavailable")
+        return ClipSourceResponse(url=url)
+    except HTTPException:
+        raise
+    except Exception:
+        LOGGER.exception("Failed to resolve twitch clip source")
+        raise HTTPException(status_code=500, detail="Failed to resolve clip source") from None
 
 
 @router.delete("/skip", status_code=200, response_model=PublicVideoQueueState)

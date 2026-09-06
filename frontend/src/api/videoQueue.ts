@@ -63,6 +63,26 @@ export async function advanceVideoQueue(
   return response.json()
 }
 
+/**
+ * Resolve a queued Twitch clip to a signed, directly-playable MP4 URL so the
+ * overlay can play it in a host-controlled `<video>` (the embed iframe cannot
+ * autoplay in OBS). Returns null on any failure — the caller falls back to the
+ * iframe.
+ */
+export async function fetchTwitchClipSource(
+  username: string,
+  entryId: number
+): Promise<string | null> {
+  try {
+    const response = await apiFetch(API_ENDPOINTS.videoQueue.clipSource(username, entryId))
+    if (!response.ok) return null
+    const data = (await response.json()) as { url?: unknown }
+    return typeof data.url === 'string' ? data.url : null
+  } catch {
+    return null
+  }
+}
+
 // Best-effort: callers swallow errors (.catch(() => {})). No response.ok check is intentional.
 export async function reportVideoMetadata(
   username: string,

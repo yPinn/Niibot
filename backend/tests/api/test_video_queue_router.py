@@ -269,6 +269,62 @@ class TestUpdateEntryMetadata:
         assert r.status_code == 500
 
 
+# ── GET /api/video-queue/public/{username}/entries/{id}/clip-source ───────────
+
+
+class TestGetClipSource:
+    _URL = "/api/video-queue/public/testuser/entries/5/clip-source"
+
+    def test_returns_signed_url(self):
+        with (
+            patch("routers.video_queue_router.VideoQueueRepository") as vqr,
+            patch(
+                "routers.video_queue_router.fetch_twitch_clip_source",
+                AsyncMock(return_value="https://cdn/clip.mp4?sig=a&token=b"),
+            ),
+        ):
+            vqr.return_value.get_entry_for_channel = AsyncMock(
+                return_value=_make_entry(id=5, video_type="twitch_clip", video_id="Slug")
+            )
+            r = _make_public_client(_twitch_api_found()).get(self._URL)
+        assert r.status_code == 200
+        assert r.json()["url"] == "https://cdn/clip.mp4?sig=a&token=b"
+
+    def test_non_clip_entry_returns_404(self):
+        with patch("routers.video_queue_router.VideoQueueRepository") as vqr:
+            vqr.return_value.get_entry_for_channel = AsyncMock(
+                return_value=_make_entry(id=5, video_type="youtube")
+            )
+            r = _make_public_client(_twitch_api_found()).get(self._URL)
+        assert r.status_code == 404
+
+    def test_entry_not_found_returns_404(self):
+        with patch("routers.video_queue_router.VideoQueueRepository") as vqr:
+            vqr.return_value.get_entry_for_channel = AsyncMock(return_value=None)
+            r = _make_public_client(_twitch_api_found()).get(self._URL)
+        assert r.status_code == 404
+
+    def test_unresolvable_source_returns_404(self):
+        with (
+            patch("routers.video_queue_router.VideoQueueRepository") as vqr,
+            patch(
+                "routers.video_queue_router.fetch_twitch_clip_source",
+                AsyncMock(return_value=None),
+            ),
+        ):
+            vqr.return_value.get_entry_for_channel = AsyncMock(
+                return_value=_make_entry(id=5, video_type="twitch_clip", video_id="Slug")
+            )
+            r = _make_public_client(_twitch_api_found()).get(self._URL)
+        assert r.status_code == 404
+
+    def test_channel_not_found_returns_404(self):
+        r = _make_public_client(_twitch_api_not_found()).get(
+            "/api/video-queue/public/unknown/entries/5/clip-source"
+        )
+        assert r.status_code == 404
+
+
 # ── DELETE /api/video-queue/skip ─────────────────────────────────────────────
 
 

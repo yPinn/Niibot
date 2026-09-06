@@ -151,6 +151,11 @@ published revision（不再輪詢），並在 capability／preview 改變時中�
 - 既有 `GET /api/video-queue/public/{username}`、`POST .../advance`、
   `PATCH .../entries/{id}/metadata` 等 REST 端點不變，dashboard 與 overlay 的 kickstart／advance
   互動仍走 REST；`stream` 只是取代原本的 overlay 狀態輪詢。
+- `GET /api/video-queue/public/{username}/entries/{id}/clip-source`（無需認證、rate-limited、
+  scoped 到該頻道佇列裡的 `twitch_clip` entry）：回 `{url}` — Twitch clip 的簽章直連 MP4，讓 overlay
+  用 `<video>` 播（embed iframe 在 OBS 無法 autoplay）。走 Twitch 私有 GraphQL（`ShareClipRenderStatus`，
+  非官方、Bilibili-tier 依賴，token 現拿不存）；失敗回 404，overlay fallback 回 iframe。
+  詳見 [docs/architecture/video-queue-platforms.md](../architecture/video-queue-platforms.md)。
 
 ## Events 與 Twitch 頻道點數
 
