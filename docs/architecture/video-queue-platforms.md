@@ -43,14 +43,14 @@ YouTube → Twitch Clip → Bilibili (including `b23.tv` short-link redirects).
 
 ## Platform reference (parsing → metadata → playback)
 
-|                                   | YouTube                                                                                                                                                                                | Twitch Clip                                                                                          | Bilibili                                                                                                                                                                                                          |
-| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Metadata API                      | YouTube Data API v3 (`videos.list`)                                                                                                                                                    | Twitch Helix `/helix/clips`                                                                          | Public `x/web-interface/view` endpoint                                                                                                                                                                            |
-| Official?                         | Yes                                                                                                                                                                                    | Yes                                                                                                  | **No** — not part of Bilibili's official Open Platform (that's a separate, application-gated program for content distribution). This is a reverse-engineered public endpoint with a spoofed Referer/User-Agent.   |
-| Cost                              | Free, quota-based: 10,000 units/day default, `videos.list` costs 1 unit/call (~10k calls/day). No paid tier — exceeding quota requires Google's manual Audit and Quota Extension form. | Free, token-bucket rate limit: 800 points/min per client, most endpoints cost 1 point. No paid tier. | Free today, but unauthorized use of an undocumented endpoint — no SLA, no rate-limit contract, can change format or start blocking without notice. Tracked as a standing technical-debt risk, not a one-time bug. |
-| duration/view_count at queue time | Always (when API key configured)                                                                                                                                                       | Always                                                                                               | **Best-effort** — unofficial endpoint, datacenter IPs frequently hit risk-control `-412`                                                                                                                          |
-| Playback embed                    | YT IFrame API (`YT.Player`)                                                                                                                                                            | `clips.twitch.tv/embed` `<iframe>` — no JS control/events API                                        | Plain `<iframe>` — no control API                                                                                                                                                                                 |
-| End detection                     | **Event-driven**: `onStateChange` ENDED + a polling fallback                                                                                                                           | **Timer-driven**: `setTimeout` from `duration_seconds`, else a 90s ceiling                           | **Timer-driven**: `setTimeout` from `duration_seconds`, else a 600s ceiling                                                                                                                                       |
+|                                   | YouTube                                                                                                                                                                                | Twitch Clip                                                                                                  | Bilibili                                                                                                                                                                                                          |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Metadata API                      | YouTube Data API v3 (`videos.list`)                                                                                                                                                    | Twitch Helix `/helix/clips`                                                                                  | Public `x/web-interface/view` endpoint                                                                                                                                                                            |
+| Official?                         | Yes                                                                                                                                                                                    | Yes                                                                                                          | **No** — not part of Bilibili's official Open Platform (that's a separate, application-gated program for content distribution). This is a reverse-engineered public endpoint with a spoofed Referer/User-Agent.   |
+| Cost                              | Free, quota-based: 10,000 units/day default, `videos.list` costs 1 unit/call (~10k calls/day). No paid tier — exceeding quota requires Google's manual Audit and Quota Extension form. | Free, token-bucket rate limit: 800 points/min per client, most endpoints cost 1 point. No paid tier.         | Free today, but unauthorized use of an undocumented endpoint — no SLA, no rate-limit contract, can change format or start blocking without notice. Tracked as a standing technical-debt risk, not a one-time bug. |
+| duration/view_count at queue time | Always (when API key configured)                                                                                                                                                       | Always                                                                                                       | **Best-effort** — unofficial endpoint, datacenter IPs frequently hit risk-control `-412`                                                                                                                          |
+| Playback embed                    | YT IFrame API (`YT.Player`)                                                                                                                                                            | Signed source MP4 in a host `<video>` (resolve via private GraphQL); `clips.twitch.tv/embed` iframe fallback | Plain `<iframe>` — no control API                                                                                                                                                                                 |
+| End detection                     | **Event-driven**: `onStateChange` ENDED + a polling fallback                                                                                                                           | **Event-driven** on the `<video>` path (`ended`); timer ceiling (90s) on the iframe fallback                 | **Timer-driven**: `setTimeout` from `duration_seconds`, else a 600s ceiling                                                                                                                                       |
 
 The event-driven vs. timer-driven split is the one piece of platform-specific
 _behavior_ the frontend registry does not (and should not) paper over: YouTube
@@ -88,14 +88,26 @@ only YouTube autoplays with sound in an OBS Browser Source.**
 - **YouTube** calls `playVideo()` imperatively after `onReady` — an explicit
   command that bypasses the player's own autoplay heuristics. Works with sound
   in OBS, muted in preview.
-- **Twitch clip** has no such command. Twitch's player gates unmuted autoplay
-  on minimum size **and document visibility**; OBS renders the page "hidden",
-  so the clip mounts showing a centered play button and never starts. There is
-  no URL param to force it and no unmute API — the `allow="autoplay 'src'"`
-  experiment (#191) changed nothing and was reverted. A reliable
-  sound-on-autoplay path means resolving the clip's signed source URL
-  (unofficial Twitch GraphQL, a Bilibili-tier dependency) and playing it in a
-  host-controlled `<video>` — pending that tradeoff call.
+- **Twitch clip** — the `clips.twitch.tv/embed` iframe cannot autoplay in OBS
+  (Twitch gates unmuted autoplay on document visibility; OBS renders the page
+  "hidden", so the clip mounts showing a centered play button and never starts;
+  the `allow="autoplay 'src'"` experiment in #191 changed nothing and was
+  reverted). `twitchClip.ts` therefore resolves the clip's **signed source
+  MP4** and plays it in a host-controlled `<video>` — `video.play()` is
+  imperative, like YouTube's `playVideo()`, so OBS's relaxed autoplay policy
+  actually honours it, and it yields real `ended` / `timeupdate` events. The
+  embed iframe stays as the fallback when the resolve fails.
+  - Resolve path: `GET /api/video-queue/public/{u}/entries/{id}/clip-source` →
+    `shared.video_sources.fetch_twitch_clip_source` → Twitch's **private
+    GraphQL** endpoint (`ShareClipRenderStatus`, the call yt-dlp makes). This is
+    a second Bilibili-tier unofficial dependency: the persisted-query hash
+    rotates, the returned token is short-lived (resolved fresh at mount, never
+    stored), the client id is yt-dlp's public one. On any failure the endpoint
+    404s and the overlay uses the iframe.
+  - The `<video>` loads directly from Twitch's clip CDN, so the overlay CSP
+    (`frontend/public/_headers`) needs `media-src https://*.twitchcdn.net
+https://clips-media-assets2.twitch.tv`; a media-src miss surfaces as a
+    `<video>` error → iframe fallback.
 - **Bilibili** `html5mobileplayer` throws its generic "本视频可能由于以下原因导致
   无法正常播放" page on anything it dislikes, including a blocked unmuted-autoplay
   attempt. The OBS overlay URL is therefore kept **byte-for-byte** the form

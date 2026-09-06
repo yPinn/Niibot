@@ -2,7 +2,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { act, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { advanceVideoQueue } from '@/api/videoQueue'
+import { advanceVideoQueue, fetchTwitchClipSource } from '@/api/videoQueue'
 import { openVideoQueueStream } from '@/api/videoQueueStream'
 
 import VideoQueueOverlay from './VideoQueueOverlay'
@@ -10,6 +10,7 @@ import VideoQueueOverlay from './VideoQueueOverlay'
 vi.mock('@/api/videoQueue', () => ({
   advanceVideoQueue: vi.fn(),
   reportVideoMetadata: vi.fn(),
+  fetchTwitchClipSource: vi.fn().mockResolvedValue(null),
 }))
 vi.mock('@/api/videoQueueStream', () => ({ openVideoQueueStream: vi.fn() }))
 
@@ -187,6 +188,10 @@ describe('VideoQueueOverlay player strategy selection', () => {
     })
   }
 
+  // The Twitch clip strategy resolves its signed source URL before mounting;
+  // flush that microtask so the <video> / fallback iframe is in the DOM.
+  const flush = () => act(async () => undefined)
+
   it('mounts the Bilibili iframe immediately since its strategy needs no external API', () => {
     const entry = bilibiliEntry(1, 'viewer')
     const { container } = renderOverlay()
@@ -201,10 +206,25 @@ describe('VideoQueueOverlay player strategy selection', () => {
     expect(src).not.toContain('muted=')
   })
 
-  it('mounts a Twitch clip as a clips.twitch.tv/embed iframe (no Twitch.Embed JS API)', () => {
+  it('plays a Twitch clip in a <video> when the signed source resolves', async () => {
+    vi.mocked(fetchTwitchClipSource).mockResolvedValueOnce('https://cdn.twitchcdn.net/c.mp4?sig=a')
+    const { container } = renderOverlay()
+    pushCurrent(twitchClipEntry(1, 'viewer'))
+    await flush()
+
+    const video = container.querySelector('video')
+    expect(video).not.toBeNull()
+    expect(video?.getAttribute('src')).toBe('https://cdn.twitchcdn.net/c.mp4?sig=a')
+    expect(container.querySelector('iframe')).toBeNull()
+    expect(fetchTwitchClipSource).toHaveBeenCalledWith(USERNAME, 1)
+  })
+
+  it('falls back to the clips.twitch.tv/embed iframe when no signed source is available', async () => {
+    vi.mocked(fetchTwitchClipSource).mockResolvedValueOnce(null)
     const entry = twitchClipEntry(1, 'viewer')
     const { container } = renderOverlay()
     pushCurrent(entry)
+    await flush()
 
     const iframe = container.querySelector('iframe')
     expect(iframe).not.toBeNull()
@@ -215,9 +235,11 @@ describe('VideoQueueOverlay player strategy selection', () => {
     expect(src).toContain('muted=false')
   })
 
-  it('mutes the clip / bilibili iframe in the dashboard preview (?preview=1)', () => {
+  it('mutes the fallback clip iframe / bilibili iframe in the dashboard preview (?preview=1)', async () => {
+    vi.mocked(fetchTwitchClipSource).mockResolvedValueOnce(null)
     const { container } = renderOverlay('?preview=1')
     pushCurrent(twitchClipEntry(1, 'viewer'))
+    await flush()
     expect(container.querySelector('iframe')?.getAttribute('src')).toContain('muted=true')
   })
 
@@ -255,6 +277,8 @@ describe('VideoQueueOverlay player strategy selection', () => {
 
       renderOverlay()
       pushCurrent(noDuration)
+      // Clip source resolves to null (default mock) → fallback iframe + timer.
+      await act(async () => undefined)
       expect(advanceVideoQueue).not.toHaveBeenCalled()
 
       // CLIP_MAX_SECONDS (90s) + the exit-animation delay, then the POST settling.

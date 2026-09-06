@@ -36,7 +36,13 @@ Content-Security-Policy: default-src 'self'; script-src 'self' https://static.cl
 
 # X-Frame-Options is intentionally omitted here; frame-ancestors takes precedence in modern browsers.
 
-Content-Security-Policy: default-src 'self'; script-src 'self' https://www.youtube.com https://player.twitch.tv https://embed.twitch.tv https://static.cloudflareinsights.com; frame-src https://www.youtube.com https://player.twitch.tv https://clips.twitch.tv https://www.bilibili.com; frame-ancestors \*; img-src 'self' https://static-cdn.jtvnw.net https://cdn.discordapp.com data:; connect-src 'self' https://niibot-api.llazypilot.com https://cloudflareinsights.com; style-src 'self' 'unsafe-inline'; font-src 'self'; object-src 'none'; base-uri 'self'
+# media-src covers the signed Twitch clip MP4 the overlay plays in a <video> (twitchClip.ts) — the
+
+# embed iframe can't autoplay in OBS. Clip CDN hosts vary (production.assets.clips.twitchcdn.net,
+
+# clips-media-assets2.twitch.tv); on a media-src miss the <video> errors and falls back to the iframe.
+
+Content-Security-Policy: default-src 'self'; script-src 'self' https://www.youtube.com https://player.twitch.tv https://embed.twitch.tv https://static.cloudflareinsights.com; frame-src https://www.youtube.com https://player.twitch.tv https://clips.twitch.tv https://www.bilibili.com; frame-ancestors \*; img-src 'self' https://static-cdn.jtvnw.net https://cdn.discordapp.com data:; media-src https://*.twitchcdn.net https://clips-media-assets2.twitch.tv; connect-src 'self' https://niibot-api.llazypilot.com https://cloudflareinsights.com; style-src 'self' 'unsafe-inline'; font-src 'self'; object-src 'none'; base-uri 'self'
 
 /\*/game-queue/overlay
 

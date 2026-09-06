@@ -133,6 +133,8 @@ export const API_ENDPOINTS = {
     advance: (u: string) => join(`/api/video-queue/public/${u}/advance`),
     metadata: (u: string, id: number) =>
       join(`/api/video-queue/public/${u}/entries/${id}/metadata`),
+    clipSource: (u: string, id: number) =>
+      join(`/api/video-queue/public/${u}/entries/${id}/clip-source`),
     state: join('/api/video-queue/state'),
     skip: join('/api/video-queue/skip'),
     clear: join('/api/video-queue/clear'),
