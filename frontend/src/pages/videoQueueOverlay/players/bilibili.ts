@@ -20,11 +20,18 @@ function mount(ctx: MountContext): void {
   containerRef.current.innerHTML = ''
   const iframe = document.createElement('iframe')
   const startSeconds = Math.floor(joinElapsed)
-  // `muted=1` in the dashboard preview — a plain iframe can't be muted from the
-  // host page, so it has to be a player URL param (html5mobileplayer supports it).
-  iframe.src = `https://www.bilibili.com/blackboard/html5mobileplayer.html?bvid=${encodeURIComponent(current.video_id)}&autoplay=1&muted=${muted ? 1 : 0}&danmaku=0&hideDanmakuButton=1&noFullScreenButton=1&hideCoverInfo=1&hasMuteButton=0&t=${startSeconds}`
+  // The OBS overlay URL is byte-for-byte the one that plays on staging — do NOT
+  // add params here without testing in an actual OBS Browser Source, Bilibili's
+  // player throws its generic "can't play" page on anything it dislikes.
+  // `&muted=1` is appended ONLY for the muted dashboard preview (a plain iframe
+  // has no host-side mute); html5mobileplayer treats an explicit `muted=0` as
+  // "must play with sound" and errors when the browser then blocks that.
+  const base =
+    `https://www.bilibili.com/blackboard/html5mobileplayer.html?bvid=${encodeURIComponent(current.video_id)}` +
+    `&autoplay=1&danmaku=0&hideDanmakuButton=1&noFullScreenButton=1&hideCoverInfo=1&hasMuteButton=0&t=${startSeconds}`
+  iframe.src = muted ? `${base}&muted=1` : base
   iframe.style.cssText = 'width:100%;height:100%;border:none'
-  iframe.allow = "autoplay 'src'; fullscreen 'src'"
+  iframe.allow = 'autoplay; fullscreen'
   iframe.scrolling = 'no'
   containerRef.current.appendChild(iframe)
 

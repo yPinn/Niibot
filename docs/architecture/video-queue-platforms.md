@@ -82,23 +82,27 @@ Bilibili plain iframes have no host-side mute (an `<iframe>` isn't a `<video>`),
 so it must be a player-URL param — `muted=<bool>` on both
 `clips.twitch.tv/embed` and `html5mobileplayer.html`.
 
-Autoplay is not equally reliable across the three:
+Autoplay is not equally reliable across the three. **Confirmed by OBS testing:
+only YouTube autoplays with sound in an OBS Browser Source.**
 
 - **YouTube** calls `playVideo()` imperatively after `onReady` — an explicit
   command that bypasses the player's own autoplay heuristics. Works with sound
   in OBS, muted in preview.
 - **Twitch clip** has no such command. Twitch's player gates unmuted autoplay
-  on minimum size **and document visibility**, and OBS renders the page
-  "hidden" — so a clip can fail to autoplay with sound in OBS even though the
-  browser autoplay policy there is relaxed. There is no URL param to force it
-  and no unmute API. The iframe carries `allow="autoplay 'src'; fullscreen
-'src'"` (the bare `autoplay` shorthand is not honored by every CEF build OBS
-  ships), which is necessary but may not be sufficient. A reliable
-  sound-on-autoplay path would mean resolving the clip's signed source URL
+  on minimum size **and document visibility**; OBS renders the page "hidden",
+  so the clip mounts showing a centered play button and never starts. There is
+  no URL param to force it and no unmute API — the `allow="autoplay 'src'"`
+  experiment (#191) changed nothing and was reverted. A reliable
+  sound-on-autoplay path means resolving the clip's signed source URL
   (unofficial Twitch GraphQL, a Bilibili-tier dependency) and playing it in a
-  host-controlled `<video>` — deferred pending that tradeoff call.
-- **Bilibili** autoplays via `autoplay=1`; same visibility caveats apply but it
-  is already best-effort by nature.
+  host-controlled `<video>` — pending that tradeoff call.
+- **Bilibili** `html5mobileplayer` throws its generic "本视频可能由于以下原因导致
+  无法正常播放" page on anything it dislikes, including a blocked unmuted-autoplay
+  attempt. The OBS overlay URL is therefore kept **byte-for-byte** the form
+  that plays on staging (`autoplay=1`, no `muted` param); `&muted=1` is appended
+  **only** for the muted dashboard preview (explicit `muted=0` made the player
+  error). Bilibili has no `<video>` fallback — its stream URLs need wbi signing
+  and residential IPs (rejected, see below).
 
 The dashboard preview is a **click-to-load poster** rather than an
 always-mounted iframe: muted autoplay isn't reliable for every platform, and
