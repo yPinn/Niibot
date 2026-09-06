@@ -29,9 +29,15 @@ function mount(ctx: MountContext): void {
   // `&danmaku=0` still drops the bullet comments.
   const base =
     `https://player.bilibili.com/player.html?bvid=${encodeURIComponent(current.video_id)}` +
-    `&autoplay=1&danmaku=0&high_quality=1&t=${startSeconds}`
+    `&autoplay=1&danmaku=0&high_quality=1&as_wide=1&t=${startSeconds}`
   iframe.src = muted ? `${base}&muted=1` : base
-  iframe.style.cssText = 'width:100%;height:100%;border:none'
+  // Bilibili's official player has no "hide chrome" params. Its transport
+  // controls auto-hide with no pointer activity (OBS has none), but the top
+  // title/关注 bar and the bottom "更高清" nag persist — oversize the iframe so
+  // `overflow: hidden` on .videoContainer clips them. Bias the crop to the top
+  // (the title bar is taller and subtitles sit low); the excess mostly eats the
+  // 16:9-in-16:10 letterbox rather than real picture. Tune per OBS screenshot.
+  iframe.style.cssText = 'position:absolute;left:-3%;top:-9%;width:106%;height:113%;border:none'
   iframe.allow = 'autoplay; fullscreen'
   iframe.scrolling = 'no'
   containerRef.current.appendChild(iframe)
