@@ -156,6 +156,11 @@ published revision（不再輪詢），並在 capability／preview 改變時中�
   用 `<video>` 播（embed iframe 在 OBS 無法 autoplay）。走 Twitch 私有 GraphQL（`ShareClipRenderStatus`，
   非官方、Bilibili-tier 依賴，token 現拿不存）；失敗回 404，overlay fallback 回 iframe。
   詳見 [docs/architecture/video-queue-platforms.md](../architecture/video-queue-platforms.md)。
+- `GET /api/video-queue/history?limit=&cursor=`（`require_activated`，租戶自身頻道）：已播／已略過的
+  entry，`ended_at` 由新到舊，keyset 分頁——`cursor` 帶上一頁最後一列的 `ended_at` ISO 字串，
+  `next_cursor` 為 `null` 代表沒有更多。無新表，紀錄一直是留在 `video_queue` 裡的 terminal row，
+  只是之前沒有讀取路徑；`idx_video_queue_channel_ended`（migration 107）建索引，超過 30 天由
+  `video_queue_history_retention_loop`（`api/app.py` lifespan，每日）刪除。
 
 ## Events 與 Twitch 頻道點數
 

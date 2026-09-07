@@ -5,12 +5,14 @@ import {
   addVideoToQueue,
   advanceVideoQueue,
   clearVideoQueue,
+  getVideoQueueHistory,
   getVideoQueueSettings,
   playVideoNow,
   removeQueueEntry,
   setVideoAsNext,
   skipCurrentVideo,
   updateVideoQueueSettings,
+  type VideoQueueHistoryEntry,
   type VideoQueueSettings,
 } from '@/api/videoQueue'
 import { AffiliateLockOverlay } from '@/components/AffiliateLockOverlay'
@@ -44,12 +46,16 @@ import {
   SheetTitle,
   Skeleton,
   Switch,
+  Tabs,
+  TabsList,
+  TabsTrigger,
 } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { useVideoQueueStream } from '@/hooks/useVideoQueueStream'
 import { toastApiError } from '@/lib/toast-error'
 
+import { HistoryTable } from './videoQueue/HistoryTable'
 import { QueueTable, SourceBadge } from './videoQueue/QueueTable'
 import {
   clampValue,
@@ -86,6 +92,38 @@ export default function VideoQueue() {
   const [addUrlInput, setAddUrlInput] = useState('')
   const [adding, setAdding] = useState(false)
   const hasInitialized = useRef(false)
+
+  const [tab, setTab] = useState<'queue' | 'history'>('queue')
+  const [history, setHistory] = useState<VideoQueueHistoryEntry[]>([])
+  const [historyCursor, setHistoryCursor] = useState<string | null>(null)
+  const [historyState, setHistoryState] = useState<'idle' | 'loading' | 'more' | 'ready'>('idle')
+
+  const loadHistory = useCallback(async (cursor?: string) => {
+    setHistoryState(cursor ? 'more' : 'loading')
+    try {
+      const page = await getVideoQueueHistory(cursor)
+      setHistory(prev => (cursor ? [...prev, ...page.entries] : page.entries))
+      setHistoryCursor(page.next_cursor)
+    } catch (e) {
+      toastApiError(e, '載入播放紀錄失敗')
+    } finally {
+      setHistoryState('ready')
+    }
+  }, [])
+
+  const handleShowHistory = () => {
+    setTab('history')
+    if (historyState === 'idle') void loadHistory()
+  }
+
+  const handleRequeue = async (entry: VideoQueueHistoryEntry) => {
+    try {
+      await addVideoToQueue(watchUrl(entry.video_type, entry.video_id))
+      toast.success('已重新加入佇列')
+    } catch (e) {
+      toastApiError(e, '重新點播失敗')
+    }
+  }
 
   const fetchSettings = useCallback(async () => {
     if (!isAffiliate) {
@@ -436,67 +474,99 @@ export default function VideoQueue() {
         <div className="lg:col-span-8">
           <Card className="h-full">
             <CardHeader>
-              <CardTitle>
-                等待佇列
-                <Badge variant="outline" className="ml-2">
-                  {queueSize}
-                  {totalQueuedDuration ? ` — ${formatDuration(totalQueuedDuration)}` : ''}
-                </Badge>
-              </CardTitle>
-              <CardAction>
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  onClick={handleClear}
-                  disabled={!current && queueSize === 0}
-                >
-                  <Icon icon="fa-solid fa-trash" wrapperClassName="mr-1.5 size-3" />
-                  清空
-                </Button>
-              </CardAction>
+              <Tabs
+                value={tab}
+                onValueChange={v => (v === 'history' ? handleShowHistory() : setTab('queue'))}
+              >
+                <TabsList>
+                  <TabsTrigger value="queue">
+                    佇列
+                    <Badge variant="outline" className="ml-1.5">
+                      {queueSize}
+                      {totalQueuedDuration ? ` · ${formatDuration(totalQueuedDuration)}` : ''}
+                    </Badge>
+                  </TabsTrigger>
+                  <TabsTrigger value="history">紀錄</TabsTrigger>
+                </TabsList>
+              </Tabs>
+              {tab === 'queue' && (
+                <CardAction>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={handleClear}
+                    disabled={!current && queueSize === 0}
+                  >
+                    <Icon icon="fa-solid fa-trash" wrapperClassName="mr-1.5 size-3" />
+                    清空
+                  </Button>
+                </CardAction>
+              )}
             </CardHeader>
             <CardContent className="flex flex-1 flex-col gap-section pt-0">
-              <div className="flex items-center gap-element">
-                <div className="relative flex-1 sm:max-w-72">
-                  <Icon
-                    icon="fa-solid fa-link"
-                    className="text-sub text-muted-foreground"
-                    wrapperClassName="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2"
+              {tab === 'queue' ? (
+                <>
+                  <div className="flex items-center gap-element">
+                    <div className="relative flex-1 sm:max-w-72">
+                      <Icon
+                        icon="fa-solid fa-link"
+                        className="text-sub text-muted-foreground"
+                        wrapperClassName="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2"
+                      />
+                      <Input
+                        aria-label="影片連結"
+                        placeholder="貼上影片連結（YouTube／Twitch Clip／Bilibili）"
+                        value={addUrlInput}
+                        onChange={e => setAddUrlInput(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && handleAddVideo()}
+                        className="pl-8"
+                      />
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={handleAddVideo}
+                      disabled={adding || !addUrlInput.trim()}
+                    >
+                      <Icon icon="fa-solid fa-plus" wrapperClassName="mr-1.5 size-3" />
+                      {adding ? (
+                        <>
+                          <Spinner className="mr-1.5" />
+                          新增中
+                        </>
+                      ) : (
+                        '新增'
+                      )}
+                    </Button>
+                  </div>
+                  <QueueTable
+                    current={current}
+                    entries={queue}
+                    onSkip={handleSkip}
+                    onSetNext={handleSetNext}
+                    onPlayNow={handlePlayNow}
+                    onRemove={handleRemove}
                   />
-                  <Input
-                    aria-label="影片連結"
-                    placeholder="貼上影片連結（YouTube／Twitch Clip／Bilibili）"
-                    value={addUrlInput}
-                    onChange={e => setAddUrlInput(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && handleAddVideo()}
-                    className="pl-8"
-                  />
-                </div>
-                <Button size="sm" onClick={handleAddVideo} disabled={adding || !addUrlInput.trim()}>
-                  <Icon icon="fa-solid fa-plus" wrapperClassName="mr-1.5 size-3" />
-                  {adding ? (
-                    <>
-                      <Spinner className="mr-1.5" />
-                      新增中
-                    </>
-                  ) : (
-                    '新增'
+                  {!current && queue.length === 0 && (
+                    <EmptyState
+                      icon="fa-solid fa-circle-play"
+                      title="佇列為空"
+                      description="貼上連結後按 Enter 或點擊「新增」"
+                    />
                   )}
-                </Button>
-              </div>
-              <QueueTable
-                current={current}
-                entries={queue}
-                onSkip={handleSkip}
-                onSetNext={handleSetNext}
-                onPlayNow={handlePlayNow}
-                onRemove={handleRemove}
-              />
-              {!current && queue.length === 0 && (
-                <EmptyState
-                  icon="fa-solid fa-circle-play"
-                  title="佇列為空"
-                  description="貼上連結後按 Enter 或點擊「新增」"
+                </>
+              ) : historyState === 'loading' ? (
+                <div className="flex flex-col gap-element">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <Skeleton key={i} className="h-10 w-full" />
+                  ))}
+                </div>
+              ) : (
+                <HistoryTable
+                  entries={history}
+                  hasMore={historyCursor !== null}
+                  loadingMore={historyState === 'more'}
+                  onLoadMore={() => historyCursor && void loadHistory(historyCursor)}
+                  onRequeue={handleRequeue}
                 />
               )}
             </CardContent>

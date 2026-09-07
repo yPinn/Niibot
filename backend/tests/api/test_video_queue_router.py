@@ -12,6 +12,7 @@ os.environ.setdefault("FRONTEND_URL", "https://niibot.tv")
 
 import asyncio
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -30,6 +31,7 @@ from core.error_handlers import register_exception_handlers
 from routers.video_queue_router import router as _vq_router
 from routers.video_queue_router import stream_public_video_queue
 from services.notify_stream import NotifyWakeHub
+from shared.models.video_queue import VideoQueueEntry
 from shared.video_sources import ResolvedVideo, VideoMetadata
 
 CHANNEL_ID = "ch-vq"
@@ -451,6 +453,60 @@ class TestGetState:
             vqr.return_value.get_current = AsyncMock(side_effect=RuntimeError)
             r = _make_auth_client().get("/api/video-queue/state")
         assert r.status_code == 500
+
+
+# ── GET /api/video-queue/history ─────────────────────────────────────────────
+
+
+def _history_entry(**kw) -> VideoQueueEntry:
+    base = dict(
+        id=1,
+        channel_id=CHANNEL_ID,
+        video_id="vid1",
+        requested_by="viewer",
+        source="chat",
+        status="done",
+        video_type="youtube",
+        title="Watched",
+        duration_seconds=120,
+        started_at=datetime(2026, 1, 1, tzinfo=UTC),
+        ended_at=datetime(2026, 1, 1, 0, 2, tzinfo=UTC),
+    )
+    base.update(kw)
+    return VideoQueueEntry(**base)
+
+
+class TestGetHistory:
+    def test_returns_entries_and_no_cursor_when_page_not_full(self):
+        with patch("routers.video_queue_router.VideoQueueRepository") as vqr:
+            vqr.return_value.get_history = AsyncMock(
+                return_value=[_history_entry(id=2, status="skipped")]
+            )
+            r = _make_auth_client().get("/api/video-queue/history?limit=50")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["entries"][0]["status"] == "skipped"
+        assert body["next_cursor"] is None
+
+    def test_full_page_yields_cursor_from_last_ended_at(self):
+        entries = [_history_entry(id=i) for i in range(2)]
+        with patch("routers.video_queue_router.VideoQueueRepository") as vqr:
+            vqr.return_value.get_history = AsyncMock(return_value=entries)
+            r = _make_auth_client().get("/api/video-queue/history?limit=2")
+        assert r.json()["next_cursor"] == entries[-1].ended_at.isoformat()
+
+    def test_invalid_cursor_returns_422(self):
+        with patch("routers.video_queue_router.VideoQueueRepository") as vqr:
+            vqr.return_value.get_history = AsyncMock(return_value=[])
+            r = _make_auth_client().get("/api/video-queue/history?cursor=not-a-date")
+        assert r.status_code == 422
+
+    def test_cursor_parsed_and_passed_through(self):
+        with patch("routers.video_queue_router.VideoQueueRepository") as vqr:
+            vqr.return_value.get_history = AsyncMock(return_value=[])
+            _make_auth_client().get("/api/video-queue/history?cursor=2026-01-01T00:00:00%2B00:00")
+            kwargs = vqr.return_value.get_history.await_args.kwargs
+            assert kwargs["before"] == datetime(2026, 1, 1, tzinfo=UTC)
 
 
 # ── POST /api/video-queue/entries/{entry_id}/set-next ────────────────────────

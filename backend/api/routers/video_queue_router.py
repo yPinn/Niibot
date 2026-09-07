@@ -144,6 +144,26 @@ class MetadataUpdate(BaseModel):
     duration_seconds: int = Field(..., ge=1)
 
 
+class VideoHistoryEntry(BaseModel):
+    id: int
+    video_id: str
+    title: str | None
+    duration_seconds: int | None
+    requested_by: str
+    source: str
+    video_type: str
+    status: str  # 'done' | 'skipped'
+    started_at: datetime | None
+    ended_at: datetime | None
+
+
+class VideoQueueHistoryResponse(BaseModel):
+    entries: list[VideoHistoryEntry]
+    #: ISO ``ended_at`` of the last row when a full page was returned — pass it
+    #: back as ``?cursor=`` for the next page; ``None`` means no more rows.
+    next_cursor: str | None
+
+
 _channel_id_cache: AsyncTTLCache = AsyncTTLCache(maxsize=256, ttl=300.0)
 
 
@@ -519,6 +539,72 @@ async def get_state(
     except Exception:
         LOGGER.exception("Failed to get video queue state")
         raise HTTPException(status_code=500, detail="Failed to fetch queue state") from None
+
+
+@router.get("/history", response_model=VideoQueueHistoryResponse)
+async def get_history(
+    limit: int = 50,
+    cursor: str | None = None,
+    _: None = Depends(require_activated),
+    channel_id: str = Depends(get_current_channel_id),
+    pool: Pool = Depends(get_db_pool),
+) -> VideoQueueHistoryResponse:
+    """Dashboard: recently played / skipped entries, newest first, keyset-paged."""
+    limit = max(1, min(limit, 100))
+    before: datetime | None = None
+    if cursor:
+        try:
+            before = datetime.fromisoformat(cursor)
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Invalid cursor") from None
+    try:
+        entries = await VideoQueueRepository(pool).get_history(
+            channel_id, limit=limit, before=before
+        )
+        next_cursor = (
+            entries[-1].ended_at.isoformat()
+            if len(entries) == limit and entries[-1].ended_at
+            else None
+        )
+        return VideoQueueHistoryResponse(
+            entries=[
+                VideoHistoryEntry(
+                    id=e.id,
+                    video_id=e.video_id,
+                    title=e.title,
+                    duration_seconds=e.duration_seconds,
+                    requested_by=e.requested_by,
+                    source=e.source,
+                    video_type=e.video_type,
+                    status=e.status,
+                    started_at=e.started_at,
+                    ended_at=e.ended_at,
+                )
+                for e in entries
+            ],
+            next_cursor=next_cursor,
+        )
+    except HTTPException:
+        raise
+    except Exception:
+        LOGGER.exception("Failed to get video queue history")
+        raise HTTPException(status_code=500, detail="Failed to fetch history") from None
+
+
+async def video_queue_history_retention_loop(db_manager) -> None:  # type: ignore[no-untyped-def]
+    """Delete video_queue history rows past the retention window, once a day."""
+    while True:
+        try:
+            await asyncio.sleep(86_400)
+            if not db_manager.is_connected:
+                continue
+            removed = await VideoQueueRepository(db_manager.pool).prune_history()
+            if removed:
+                LOGGER.info("video_queue_history_pruned", extra={"rows": removed})
+        except asyncio.CancelledError:
+            return
+        except Exception:
+            LOGGER.exception("video_queue_history_prune_failed")
 
 
 @router.post("/entries/{entry_id}/set-next", response_model=PublicVideoQueueState)
