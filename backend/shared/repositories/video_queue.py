@@ -39,8 +39,9 @@ PRIORITY_PINNED = 99
 # ---------------------------------------------------------------------------
 
 _ENTRY_COLUMNS = (
-    "id, channel_id, video_id, title, duration_seconds, is_vertical, requested_by, "
-    "source, status, video_type, priority, created_at, started_at, ended_at, requested_by_id"
+    "id, channel_id, video_id, title, duration_seconds, is_vertical, start_seconds, "
+    "requested_by, source, status, video_type, priority, "
+    "created_at, started_at, ended_at, requested_by_id"
 )
 
 # History = terminal entries retained for the dashboard "played" tab.
@@ -80,15 +81,16 @@ class VideoQueueRepository:
         video_type: str = "youtube",
         priority: int = 0,
         requested_by_id: str | None = None,
+        start_seconds: int = 0,
     ) -> VideoQueueEntry:
         """Insert a new entry with status='queued'."""
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 f"""
                 INSERT INTO video_queue
-                    (channel_id, video_id, title, duration_seconds, is_vertical,
+                    (channel_id, video_id, title, duration_seconds, is_vertical, start_seconds,
                      requested_by, source, video_type, priority, requested_by_id)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                 RETURNING {_ENTRY_COLUMNS}
                 """,
                 channel_id,
@@ -96,6 +98,7 @@ class VideoQueueRepository:
                 title,
                 duration_seconds,
                 is_vertical,
+                start_seconds,
                 requested_by,
                 source,
                 video_type,
@@ -119,6 +122,7 @@ class VideoQueueRepository:
         is_vertical: bool = False,
         video_type: str = "youtube",
         priority: int = 0,
+        start_seconds: int = 0,
     ) -> VideoQueueEntry | None:
         """Re-validate duplicate/queue-size/per-user limits and insert atomically.
 
@@ -175,9 +179,9 @@ class VideoQueueRepository:
                 row = await conn.fetchrow(
                     f"""
                     INSERT INTO video_queue
-                        (channel_id, video_id, title, duration_seconds, is_vertical,
+                        (channel_id, video_id, title, duration_seconds, is_vertical, start_seconds,
                          requested_by, source, video_type, priority, requested_by_id)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                     RETURNING {_ENTRY_COLUMNS}
                     """,
                     channel_id,
@@ -185,6 +189,7 @@ class VideoQueueRepository:
                     title,
                     duration_seconds,
                     is_vertical,
+                    start_seconds,
                     requested_by,
                     source,
                     video_type,

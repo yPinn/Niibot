@@ -168,6 +168,7 @@ class VideoQueueComponent(BotComponent):
             is_vertical=metadata.is_vertical,
             video_type=resolved.video_type,
             priority=SOURCE_PRIORITY["chat"],
+            start_seconds=resolved.start_seconds,
         )
         if entry is None:
             await self._ctx_reply(ctx, "點歌失敗，佇列狀態已變更，請重試")

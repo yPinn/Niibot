@@ -69,6 +69,7 @@ def _make_entry(**kw) -> MagicMock:
     e.title = kw.get("title", "Test Video")
     e.duration_seconds = kw.get("duration_seconds", 213)
     e.is_vertical = kw.get("is_vertical", False)
+    e.start_seconds = kw.get("start_seconds", 0)
     e.requested_by = kw.get("requested_by", "streamer")
     e.source = kw.get("source", "dashboard")
     e.video_type = kw.get("video_type", "youtube")
@@ -677,6 +678,35 @@ class TestAddVideoEntry:
                 json={"url": "https://bilibili.com/video/BV1test"},
             )
         assert r.status_code == 201
+
+    def test_add_twitch_vod_passes_start_seconds(self):
+        with (
+            patch(
+                "routers.video_queue_router.resolve_video_url",
+                AsyncMock(
+                    return_value=ResolvedVideo("twitch_vod", "v999", False, start_seconds=90)
+                ),
+            ),
+            patch(
+                "routers.video_queue_router.fetch_video_metadata",
+                AsyncMock(return_value=VideoMetadata("VOD", 600, 10, False)),
+            ),
+            patch("routers.video_queue_router.VideoQueueRepository") as vqr,
+            patch("routers.video_queue_router.VideoQueueSettingsRepository") as sr,
+            patch("routers.video_queue_router.ChannelRepository") as cr,
+        ):
+            vqr.return_value.video_is_active = AsyncMock(return_value=False)
+            vqr.return_value.add = AsyncMock()
+            vqr.return_value.get_current = AsyncMock(return_value=None)
+            vqr.return_value.get_queued = AsyncMock(return_value=[])
+            sr.return_value.get_or_create = AsyncMock(return_value=_make_settings())
+            cr.return_value.get_broadcaster_display_name = AsyncMock(return_value="S")
+            r = _make_auth_client().post(
+                "/api/video-queue/entries",
+                json={"url": "https://www.twitch.tv/videos/v999?t=1m30s"},
+            )
+        assert r.status_code == 201
+        assert vqr.return_value.add.await_args.kwargs["start_seconds"] == 90
 
     def test_invalid_url_returns_422(self):
         with patch(

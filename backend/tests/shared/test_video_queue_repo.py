@@ -16,12 +16,15 @@ from shared.video_sources import (
     YouTubeInfo,
     _app_token_cache,
     _get_twitch_app_token,
+    _parse_hms,
     _parse_iso8601_duration,
     extract_bilibili_bvid,
     extract_twitch_clip_slug,
+    extract_twitch_vod_info,
     extract_youtube_id,
     extract_youtube_info,
     fetch_twitch_clip_source,
+    fetch_twitch_vod_info,
     fetch_yt_info,
     resolve_bilibili_url,
 )
@@ -1202,3 +1205,73 @@ class TestFetchTwitchClipSource:
         session = MagicMock()
         session.post.side_effect = RuntimeError("boom")
         assert await fetch_twitch_clip_source("Slug", session) is None
+
+
+class TestParseHms:
+    def test_full(self):
+        assert _parse_hms("1h2m3s") == 3723
+
+    def test_partial(self):
+        assert _parse_hms("90m") == 5400
+        assert _parse_hms("45s") == 45
+
+    def test_bare_seconds(self):
+        assert _parse_hms("3600") == 3600
+
+    def test_garbage(self):
+        assert _parse_hms("") == 0
+        assert _parse_hms("abc") == 0
+
+
+class TestExtractTwitchVodInfo:
+    def test_plain_url(self):
+        assert extract_twitch_vod_info("https://www.twitch.tv/videos/123456789") == (
+            "123456789",
+            0,
+        )
+
+    def test_with_timestamp(self):
+        assert extract_twitch_vod_info("https://www.twitch.tv/videos/42?t=1h30m") == ("42", 5400)
+
+    def test_mobile_host(self):
+        assert extract_twitch_vod_info("https://m.twitch.tv/videos/7") == ("7", 0)
+
+    def test_not_a_vod(self):
+        assert extract_twitch_vod_info("https://www.twitch.tv/somechannel") == (None, 0)
+        assert extract_twitch_vod_info("https://clips.twitch.tv/Slug") == (None, 0)
+
+
+@pytest.mark.asyncio
+class TestFetchTwitchVodInfo:
+    def setup_method(self):
+        _app_token_cache.clear()
+
+    async def _session(self, videos_payload):
+        from unittest.mock import AsyncMock
+
+        get_resp = MagicMock()
+        get_resp.status = 200
+        get_resp.json = AsyncMock(return_value={"data": videos_payload})
+        get_cm = MagicMock()
+        get_cm.__aenter__ = AsyncMock(return_value=get_resp)
+        get_cm.__aexit__ = AsyncMock(return_value=None)
+
+        session = MagicMock()
+        session.post.return_value = _make_aiohttp_post_cm(
+            200, {"access_token": "tok", "expires_in": 3600}
+        )
+        session.get.return_value = get_cm
+        return session
+
+    async def test_parses_helix_duration(self):
+        session = await self._session(
+            [{"title": "Stream", "duration": "3h20m5s", "view_count": 42}]
+        )
+        assert await fetch_twitch_vod_info("v1", "cid", "csec", session) == ("Stream", 12005, 42)
+
+    async def test_empty_data_returns_none(self):
+        session = await self._session([])
+        assert await fetch_twitch_vod_info("v1", "cid", "csec", session) == (None, None, None)
+
+    async def test_missing_creds_returns_none(self):
+        assert await fetch_twitch_vod_info("v1", "", "", MagicMock()) == (None, None, None)

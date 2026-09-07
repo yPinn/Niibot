@@ -79,11 +79,12 @@ class VideoEntryResponse(BaseModel):
     id: int
     video_id: str
     title: str | None
-    duration_seconds: int | None
+    duration_seconds: int | None  # for twitch_vod: the capped play window
     is_vertical: bool
+    start_seconds: int  # twitch_vod seek offset; 0 otherwise
     requested_by: str
     source: str
-    video_type: str  # 'youtube' | 'twitch_clip' | 'bilibili'
+    video_type: str  # 'youtube' | 'twitch_clip' | 'twitch_vod' | 'bilibili'
     started_at: datetime | None  # for overlay seek-to-elapsed sync
 
 
@@ -185,6 +186,7 @@ def _entry_response(entry: VideoQueueEntry, *, started_at: datetime | None) -> V
         title=entry.title,
         duration_seconds=entry.duration_seconds,
         is_vertical=entry.is_vertical,
+        start_seconds=entry.start_seconds,
         requested_by=entry.requested_by,
         source=entry.source,
         video_type=entry.video_type,
@@ -728,6 +730,7 @@ async def add_video_entry(
             is_vertical=metadata.is_vertical,
             video_type=resolved.video_type,
             priority=SOURCE_PRIORITY["dashboard"],
+            start_seconds=resolved.start_seconds,
         )
         LOGGER.info(
             "Channel %s added %s %s from dashboard",

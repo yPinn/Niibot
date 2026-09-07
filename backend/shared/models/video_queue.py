@@ -16,11 +16,12 @@ class VideoQueueEntry:
     requested_by: str
     source: str  # 'chat' | 'redemption' | 'donation' | 'dashboard'
     status: str  # 'queued' | 'playing' | 'done' | 'skipped'
-    video_type: str = "youtube"  # 'youtube' | 'twitch_clip' | 'bilibili'
+    video_type: str = "youtube"  # 'youtube' | 'twitch_clip' | 'twitch_vod' | 'bilibili'
     priority: int = 0
     title: str | None = None
-    duration_seconds: int | None = None
+    duration_seconds: int | None = None  # for twitch_vod: the capped play window
     is_vertical: bool = False
+    start_seconds: int = 0  # twitch_vod: seek offset from the URL's `?t=`
     created_at: datetime | None = None
     started_at: datetime | None = None
     ended_at: datetime | None = None  # set when status moves to done/skipped

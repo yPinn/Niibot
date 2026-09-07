@@ -318,6 +318,28 @@ _TWITCH_CLIP_RE = re.compile(
 
 _TWITCH_OAUTH_URL = "https://id.twitch.tv/oauth2/token"
 _TWITCH_HELIX_CLIPS_URL = "https://api.twitch.tv/helix/clips"
+_TWITCH_HELIX_VIDEOS_URL = "https://api.twitch.tv/helix/videos"
+
+# twitch.tv/videos/{id} (also m.twitch.tv). The id is numeric.
+_TWITCH_VOD_RE = re.compile(r"(?:https?://)?(?:www\.|m\.)?twitch\.tv/videos/(\d+)")
+_HMS_RE = re.compile(r"(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?", re.IGNORECASE)
+
+# A VOD is hours long; Video Queue treats it as a "long clip" — play a window of
+# at most this many seconds from its start point (the `?t=` timestamp, else 0).
+TWITCH_VOD_WINDOW_SECONDS = 600
+
+
+def _parse_hms(text: str) -> int:
+    """Parse Twitch's `1h2m3s` / `90m` / `3600s` / bare-seconds duration to int."""
+    text = text.strip()
+    if text.isdigit():
+        return int(text)
+    m = _HMS_RE.fullmatch(text)
+    if not m or not any(m.groups()):
+        return 0
+    h, mi, s = (int(g) if g else 0 for g in m.groups())
+    return h * 3600 + mi * 60 + s
+
 
 # Module-level app token cache keyed by (client_id, client_secret).
 # Twitch app tokens are valid for ~60 days; we refresh 5 min before expiry.
@@ -333,6 +355,19 @@ def extract_twitch_clip_slug(text: str) -> str | None:
     """
     m = _TWITCH_CLIP_RE.search(text)
     return m.group(1) if m else None
+
+
+def extract_twitch_vod_info(text: str) -> tuple[str | None, int]:
+    """Extract a Twitch VOD id and its `?t=` start offset (seconds).
+
+    Returns (video_id, start_seconds); video_id is None if the URL isn't a
+    twitch.tv/videos/{id} link. start_seconds defaults to 0.
+    """
+    m = _TWITCH_VOD_RE.search(text)
+    if not m:
+        return None, 0
+    t_match = re.search(r"[?&]t=([0-9hms]+)", text, re.IGNORECASE)
+    return m.group(1), _parse_hms(t_match.group(1)) if t_match else 0
 
 
 async def _get_twitch_app_token(
@@ -420,6 +455,58 @@ async def fetch_twitch_clip_info(
     except Exception as exc:
         LOGGER.warning(
             "[Twitch API] fetch_twitch_clip_info failed for %s: %s", slug, type(exc).__name__
+        )
+        return None, None, None
+    finally:
+        if _own_session:
+            await _session.close()
+
+
+async def fetch_twitch_vod_info(
+    video_id: str,
+    client_id: str,
+    client_secret: str,
+    session: aiohttp.ClientSession | None = None,
+) -> tuple[str | None, int | None, int | None]:
+    """Fetch VOD title, duration, and view count via Twitch Helix `/videos`.
+
+    Returns (title, duration_seconds, view_count) — the full VOD duration, not
+    the capped play window (the registry applies the cap). All None on failure
+    (deleted / sub-only / expired VOD).
+    """
+    if not client_id or not client_secret:
+        return None, None, None
+
+    _own_session = session is None
+    _session: aiohttp.ClientSession = session or aiohttp.ClientSession()
+    try:
+        app_token = await _get_twitch_app_token(client_id, client_secret, _session)
+        if not app_token:
+            return None, None, None
+
+        async with _session.get(
+            _TWITCH_HELIX_VIDEOS_URL,
+            params={"id": video_id},
+            headers={"Authorization": f"Bearer {app_token}", "Client-Id": client_id},
+            timeout=aiohttp.ClientTimeout(total=5),
+        ) as resp:
+            if resp.status != 200:
+                LOGGER.info("[Twitch API] Unexpected status %s for VOD %s", resp.status, video_id)
+                return None, None, None
+            data = await resp.json()
+            videos = data.get("data", [])
+            if not videos:
+                return None, None, None
+            vod = videos[0]
+            title: str | None = vod.get("title")
+            raw_duration: str | None = vod.get("duration")  # "3h20m5s"
+            duration_seconds = _parse_hms(raw_duration) if raw_duration else None
+            view_count_raw = vod.get("view_count")
+            view_count = int(view_count_raw) if view_count_raw is not None else None
+            return title, duration_seconds or None, view_count
+    except Exception as exc:
+        LOGGER.warning(
+            "[Twitch API] fetch_twitch_vod_info failed for %s: %s", video_id, type(exc).__name__
         )
         return None, None, None
     finally:
@@ -529,6 +616,7 @@ async def fetch_twitch_clip_source(
 _WATCH_URL_BUILDERS: dict[str, str] = {
     "youtube": "https://youtu.be/{video_id}",
     "twitch_clip": "https://clips.twitch.tv/{video_id}",
+    "twitch_vod": "https://www.twitch.tv/videos/{video_id}",
     "bilibili": "https://www.bilibili.com/video/{video_id}",
 }
 
@@ -537,9 +625,10 @@ _WATCH_URL_BUILDERS: dict[str, str] = {
 class ResolvedVideo:
     """A URL identified as belonging to a platform, with its platform-native ID."""
 
-    video_type: str  # 'youtube' | 'twitch_clip' | 'bilibili'
+    video_type: str  # 'youtube' | 'twitch_clip' | 'twitch_vod' | 'bilibili'
     video_id: str
     is_vertical: bool = False  # URL-shape hint (e.g. YouTube Shorts); refined by metadata
+    start_seconds: int = 0  # twitch_vod `?t=` offset; 0 for everything else
 
 
 @dataclass
@@ -577,6 +666,10 @@ async def resolve_video_url(
     if clip_slug:
         return ResolvedVideo(video_type="twitch_clip", video_id=clip_slug)
 
+    vod_id, start_seconds = extract_twitch_vod_info(url)
+    if vod_id:
+        return ResolvedVideo(video_type="twitch_vod", video_id=vod_id, start_seconds=start_seconds)
+
     bvid = await resolve_bilibili_url(url, session)
     if bvid:
         return ResolvedVideo(video_type="bilibili", video_id=bvid)
@@ -603,6 +696,19 @@ async def fetch_video_metadata(
             resolved.video_id, twitch_client_id, twitch_client_secret, session
         )
         return VideoMetadata(title, duration_seconds, view_count, is_vertical=False)
+
+    if resolved.video_type == "twitch_vod":
+        title, vod_duration, view_count = await fetch_twitch_vod_info(
+            resolved.video_id, twitch_client_id, twitch_client_secret, session
+        )
+        # Play a bounded window from the `?t=` offset — a VOD is hours long.
+        remaining = (
+            max(0, vod_duration - resolved.start_seconds)
+            if vod_duration
+            else TWITCH_VOD_WINDOW_SECONDS
+        )
+        window = min(TWITCH_VOD_WINDOW_SECONDS, remaining) or TWITCH_VOD_WINDOW_SECONDS
+        return VideoMetadata(title, window, view_count, is_vertical=False)
 
     if resolved.video_type == "bilibili":
         title, duration_seconds, view_count, is_vertical = await fetch_bilibili_info(

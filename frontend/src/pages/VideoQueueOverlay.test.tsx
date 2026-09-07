@@ -37,10 +37,20 @@ function bilibiliEntry(id: number, requestedBy: string, overrides: Record<string
     title: `Video ${id}`,
     duration_seconds: 200,
     is_vertical: false,
+    start_seconds: 0,
     requested_by: requestedBy,
     source: 'chat',
     video_type: 'bilibili' as const,
     started_at: null,
+    ...overrides,
+  }
+}
+
+function twitchVodEntry(id: number, requestedBy: string, overrides: Record<string, unknown> = {}) {
+  return {
+    ...bilibiliEntry(id, requestedBy, overrides),
+    video_id: `${id}`,
+    video_type: 'twitch_vod' as const,
     ...overrides,
   }
 }
@@ -258,6 +268,15 @@ describe('VideoQueueOverlay player strategy selection', () => {
     // ytReady never flips true and the effect must bail out before touching
     // window.YT (which is undefined here) or writing into the container.
     expect(container.querySelector('iframe')).toBeNull()
+  })
+
+  it('never mounts a Twitch VOD while twitchReady is false (its strategy requires the embed API)', () => {
+    const { container } = renderOverlay()
+    pushCurrent(twitchVodEntry(1234, 'viewer'))
+    // jsdom never runs the injected embed/v1.js, so window.Twitch stays
+    // undefined and the effect must bail before `new Twitch.Player(...)`.
+    expect(container.querySelector('iframe')).toBeNull()
+    expect(container.querySelector('video')).toBeNull()
   })
 
   it('advances via the fallback ceiling when an entry has no duration', async () => {
