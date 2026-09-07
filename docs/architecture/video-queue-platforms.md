@@ -141,6 +141,14 @@ html5mobileplayer.html` (56c4abd) to hide player chrome, but that mobile web
   无法正常播放" inside an OBS Browser Source (fresh cookie jar, no `buvid3`).
   `&danmaku=0` still drops the bullet comments. `&muted=1` is appended **only**
   for the muted dashboard preview (an explicit `muted=0` made the player error).
+  **Player chrome (top info bar, bottom control bar, centred "更高清" promo) stays
+  visible in OBS — accepted, not a bug.** The official embed has no param to hide
+  it, the "更高清" layer is always-on, and the hover-gated bars never fade because
+  an OBS Browser Source sends the page no pointer events at all (so the
+  `mouseleave` that starts the fade timer never fires). `pointerEvents: 'none'`
+  on the iframe just keeps it in that state. A `#197` attempt to script a
+  pause→play "nudge" into the idle state did nothing and was removed; the
+  `enablejsapi=1` postMessage channel is kept only for the `ended` event.
   Bilibili has no `<video>` fallback — its stream URLs need `wbi` signing and
   residential IPs (rejected, see below). **If the official embed still fails in
   OBS, Bilibili is effectively browser/preview-only** and the queue should warn
