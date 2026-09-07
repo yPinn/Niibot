@@ -29,6 +29,19 @@ class VideoQueueEntry:
 
 
 @dataclass
+class VideoQueueBlocklistEntry:
+    """One Video Queue blocklist rule (see migration 110)."""
+
+    id: int
+    channel_id: str
+    kind: str  # 'video' | 'creator' | 'keyword' | 'user'
+    value: str  # what a submission is matched against (case-insensitive)
+    label: str | None = None  # human note for the dashboard list
+    created_by: str | None = None
+    created_at: datetime | None = None
+
+
+@dataclass
 class VideoQueueSettings:
     """Video queue settings record."""
 

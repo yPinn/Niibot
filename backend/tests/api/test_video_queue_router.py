@@ -31,7 +31,7 @@ from core.error_handlers import register_exception_handlers
 from routers.video_queue_router import router as _vq_router
 from routers.video_queue_router import stream_public_video_queue
 from services.notify_stream import NotifyWakeHub
-from shared.models.video_queue import VideoQueueEntry
+from shared.models.video_queue import VideoQueueBlocklistEntry, VideoQueueEntry
 from shared.video_sources import ResolvedVideo, VideoMetadata
 
 CHANNEL_ID = "ch-vq"
@@ -534,6 +534,70 @@ class TestGetHistory:
             assert kwargs["before"] == datetime(2026, 1, 1, tzinfo=UTC)
 
 
+# ── /api/video-queue/blocklist ──────────────────────────────────────────────
+
+
+def _blocklist_entry(**kw) -> VideoQueueBlocklistEntry:
+    return VideoQueueBlocklistEntry(
+        id=kw.get("id", 1),
+        channel_id=CHANNEL_ID,
+        kind=kw.get("kind", "video"),
+        value=kw.get("value", "vid123"),
+        label=kw.get("label", "A video"),
+        created_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+
+
+class TestBlocklistEndpoints:
+    def test_list_returns_entries(self):
+        with patch("routers.video_queue_router.VideoQueueBlocklistRepository") as bl:
+            bl.return_value.list_entries = AsyncMock(
+                return_value=[_blocklist_entry(kind="keyword", value="lofi")]
+            )
+            r = _make_auth_client().get("/api/video-queue/blocklist")
+        assert r.status_code == 200
+        assert r.json()[0] == {
+            "id": 1,
+            "kind": "keyword",
+            "value": "lofi",
+            "label": "A video",
+            "created_at": "2026-01-01T00:00:00Z",
+        }
+
+    def test_add_creates_entry(self):
+        with patch("routers.video_queue_router.VideoQueueBlocklistRepository") as bl:
+            bl.return_value.add = AsyncMock(return_value=_blocklist_entry(kind="user", value="bob"))
+            r = _make_auth_client().post(
+                "/api/video-queue/blocklist", json={"kind": "user", "value": "bob"}
+            )
+        assert r.status_code == 201
+        assert bl.return_value.add.await_args.args == (CHANNEL_ID, "user", "bob")
+
+    def test_add_rejects_unknown_kind(self):
+        r = _make_auth_client().post(
+            "/api/video-queue/blocklist", json={"kind": "channel", "value": "x"}
+        )
+        assert r.status_code == 422
+
+    def test_add_rejects_creator_kind_for_now(self):
+        r = _make_auth_client().post(
+            "/api/video-queue/blocklist", json={"kind": "creator", "value": "x"}
+        )
+        assert r.status_code == 422
+
+    def test_delete_missing_returns_404(self):
+        with patch("routers.video_queue_router.VideoQueueBlocklistRepository") as bl:
+            bl.return_value.remove = AsyncMock(return_value=False)
+            r = _make_auth_client().delete("/api/video-queue/blocklist/9")
+        assert r.status_code == 404
+
+    def test_delete_success_returns_204(self):
+        with patch("routers.video_queue_router.VideoQueueBlocklistRepository") as bl:
+            bl.return_value.remove = AsyncMock(return_value=True)
+            r = _make_auth_client().delete("/api/video-queue/blocklist/9")
+        assert r.status_code == 204
+
+
 # ── POST /api/video-queue/entries/{entry_id}/set-next ────────────────────────
 
 
@@ -625,6 +689,13 @@ class TestRemoveQueueEntry:
 
 
 class TestAddVideoEntry:
+    @pytest.fixture(autouse=True)
+    def _stub_blocklist(self):
+        """Every add path checks the blocklist; default it to "not blocked"."""
+        with patch("routers.video_queue_router.VideoQueueBlocklistRepository") as bl:
+            bl.return_value.check = AsyncMock(return_value=None)
+            yield bl
+
     def test_add_youtube_video_returns_201(self):
         with (
             patch(
@@ -798,6 +869,31 @@ class TestAddVideoEntry:
             )
         assert r.status_code == 422
         assert r.json()["error"]["code"] == "VIDEO_QUEUE.TOO_LONG"
+
+    def test_blocked_video_returns_422(self, _stub_blocklist):
+        _stub_blocklist.return_value.check = AsyncMock(
+            return_value=_blocklist_entry(kind="keyword", value="lofi")
+        )
+        with (
+            patch(
+                "routers.video_queue_router.resolve_video_url",
+                AsyncMock(return_value=ResolvedVideo("youtube", "vid123", False)),
+            ),
+            patch(
+                "routers.video_queue_router.fetch_video_metadata",
+                AsyncMock(return_value=VideoMetadata("chill lofi", 300, None, False)),
+            ),
+            patch("routers.video_queue_router.VideoQueueRepository") as vqr,
+            patch("routers.video_queue_router.VideoQueueSettingsRepository") as sr,
+        ):
+            vqr.return_value.video_is_active = AsyncMock(return_value=False)
+            sr.return_value.get_or_create = AsyncMock(return_value=_make_settings())
+            r = _make_auth_client().post(
+                "/api/video-queue/entries",
+                json={"url": "https://youtube.com/watch?v=vid123"},
+            )
+        assert r.status_code == 422
+        assert r.json()["error"]["code"] == "VIDEO_QUEUE.BLOCKED"
 
     def test_queue_disabled_returns_403(self):
         with (

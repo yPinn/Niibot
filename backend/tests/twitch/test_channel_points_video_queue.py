@@ -75,6 +75,7 @@ def _component(*, settings: VideoQueueSettings | None = None) -> ChannelPointsCo
     component.vq_repo.count_active_by_user = AsyncMock(return_value=0)
     component.vq_repo.find_last_entry_by_user = AsyncMock(return_value=None)
     component.vq_repo.add_if_within_limits = AsyncMock(return_value=_entry())
+    component.vq_blocklist_repo.check = AsyncMock(return_value=None)
     component._reply = AsyncMock()  # type: ignore[method-assign]
     return component
 
@@ -180,6 +181,27 @@ class TestVideoQueueRedemptionPlatforms:
             patch(
                 "twitch.components.channel_points.fetch_video_metadata",
                 AsyncMock(return_value=metadata),
+            ),
+        ):
+            await component._handle_video_queue_redemption(
+                _payload(user_input="https://youtube.com/watch?v=vid123"), "Viewer"
+            )
+        component.vq_repo.add_if_within_limits.assert_not_awaited()
+        component._reply.assert_awaited_once()
+
+    async def test_blocked_video_replies_and_does_not_queue(self):
+        component = _component()
+        component.vq_blocklist_repo.check = AsyncMock(
+            return_value=MagicMock(kind="keyword", value="lofi")
+        )
+        with (
+            patch(
+                "twitch.components.channel_points.resolve_video_url",
+                AsyncMock(return_value=ResolvedVideo("youtube", "vid123", False)),
+            ),
+            patch(
+                "twitch.components.channel_points.fetch_video_metadata",
+                AsyncMock(return_value=VideoMetadata("chill lofi", 120, 5000, False)),
             ),
         ):
             await component._handle_video_queue_redemption(

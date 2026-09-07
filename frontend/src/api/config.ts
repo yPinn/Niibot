@@ -144,6 +144,8 @@ export const API_ENDPOINTS = {
     playNow: (id: number) => join(`/api/video-queue/entries/${id}/play-now`),
     removeEntry: (id: number) => join(`/api/video-queue/entries/${id}`),
     addEntry: join('/api/video-queue/entries'),
+    blocklist: join('/api/video-queue/blocklist'),
+    blocklistEntry: (id: number) => join(`/api/video-queue/blocklist/${id}`),
   },
   communityOverlay: {
     stream: join('/api/live-display/public/stream'),
