@@ -245,6 +245,26 @@ The `-412` risk is **reduced, not eliminated**: Bilibili can tighten any of
 these at any time. If tier 3 also starts failing, the next step is routing
 through the `scrapling` browser sidecar.
 
+## Thumbnails
+
+`VideoMetadata.thumbnail_url` carries a poster image for the dashboard "now
+playing" / "up next" cards (`NowPlayingCard.tsx`); it is stored on the row
+(`video_queue.thumbnail_url`, migration 111) at INSERT and never updated. The
+overlay does not use it.
+
+- YouTube: `snippet.thumbnails` (`medium` → `high` → `default`).
+- Twitch Clip: Helix `thumbnail_url`.
+- Twitch VOD: Helix `thumbnail_url` with `%{width}x%{height}` → `320x180`.
+- Bilibili: the view `data`'s `pic`, upgraded to `https://`.
+
+`None` (Bilibili risk control, an unprocessed VOD, any fetch failure) just falls
+back to a placeholder. The card also renders the placeholder on an `<img>`
+`onError` — Bilibili's `i*.hdslb.com` CDN 403s a cross-site `Referer`, so the
+`<img>` sends `referrerpolicy="no-referrer"`; if a host still blocks it the
+error handler covers it. The dashboard CSP `img-src` (`frontend/public/_headers`)
+allows `i.ytimg.com`, `*.hdslb.com`, `clips-media-assets2.twitch.tv`, and
+`static-cdn.jtvnw.net`.
+
 ## Deferred: donation path multi-platform support
 
 `backend/api/routers/donation_router.py` only imports `extract_youtube_info`

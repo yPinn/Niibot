@@ -37,8 +37,9 @@ export function watchUrl(videoType: string, videoId: string): string {
   }
 }
 
-/** Thumbnail URL for a queued entry, or null when the platform has no stable
- *  no-auth thumbnail (Bilibili, Twitch clips). */
+/** Fallback thumbnail for a queued entry when the row has no stored
+ *  `thumbnail_url` (older entries). Only YouTube has a deterministic no-auth
+ *  URL; other platforms return null and the card shows a placeholder. */
 export function thumbnailUrl(videoType: string, videoId: string): string | null {
   return videoType === 'youtube' ? `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg` : null
 }

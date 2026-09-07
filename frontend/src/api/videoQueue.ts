@@ -10,6 +10,8 @@ export interface VideoQueueEntry {
   /** For twitch_vod this is the capped play window, not the full VOD length. */
   duration_seconds: number | null
   is_vertical: boolean
+  /** Poster image URL, or null — the card then shows a placeholder. */
+  thumbnail_url: string | null
   /** twitch_vod seek offset (the URL's `?t=`); 0 otherwise. */
   start_seconds: number
   requested_by: string
