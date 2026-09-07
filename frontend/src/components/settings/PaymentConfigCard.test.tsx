@@ -112,20 +112,45 @@ describe('PaymentConfigCard', () => {
     expect(screen.queryByRole('switch', { name: '啟用' })).not.toBeInTheDocument()
   })
 
-  it('clamps a below-minimum amount to 30 on save', async () => {
+  async function openEcpay(user: ReturnType<typeof userEvent.setup>) {
+    const card = (await screen.findByText('綠界 ECPay')).closest('[data-slot="card"]')!
+    await user.click(within(card).getByText('綠界 ECPay'))
+    return card as HTMLElement
+  }
+
+  it('keeps save disabled until a merchant id is entered', async () => {
     const user = userEvent.setup()
     render(<PaymentConfigCard />)
+    const card = await openEcpay(user)
 
-    const ecpayCard = (await screen.findByText('綠界 ECPay')).closest('[data-slot="card"]')!
-    await user.click(within(ecpayCard).getByText('綠界 ECPay'))
+    expect(within(card).getByRole('button', { name: '儲存' })).toBeDisabled()
+    await user.type(within(card).getByLabelText('商店代號'), '2000132')
+    expect(within(card).getByRole('button', { name: '儲存' })).toBeEnabled()
+  })
 
-    const amount = within(ecpayCard).getByRole('spinbutton')
+  it('clamps min amount to the backend bounds on save', async () => {
+    const user = userEvent.setup()
+    render(<PaymentConfigCard />)
+    const card = await openEcpay(user)
+    await user.type(within(card).getByLabelText('商店代號'), '2000132')
+
+    const amount = within(card).getByRole('spinbutton')
     await user.clear(amount)
     await user.type(amount, '0')
-    await user.click(within(ecpayCard).getByRole('button', { name: '儲存' }))
-
+    await user.click(within(card).getByRole('button', { name: '儲存' }))
     await waitFor(() =>
       expect(mockUpsert).toHaveBeenCalledWith('ecpay', expect.objectContaining({ min_amount: 30 }))
+    )
+
+    mockUpsert.mockClear()
+    await user.clear(amount)
+    await user.type(amount, '999999')
+    await user.click(within(card).getByRole('button', { name: '儲存' }))
+    await waitFor(() =>
+      expect(mockUpsert).toHaveBeenCalledWith(
+        'ecpay',
+        expect.objectContaining({ min_amount: 99999 })
+      )
     )
   })
 

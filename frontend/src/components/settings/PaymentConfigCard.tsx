@@ -30,6 +30,16 @@ import { emptyForm, type PaymentFormState, PaymentPlatformCard } from './Payment
 
 const ALL_PLATFORMS: DonationPlatform[] = ['ecpay', 'opay', 'newebpay', 'paypal']
 
+// Mirror the backend bounds (PaymentConfigUpsert: ge=1, le=99999).
+const MIN_AMOUNT_DEFAULT = 30
+const MAX_AMOUNT = 99999
+
+function clampAmount(raw: string): number {
+  const v = parseInt(raw, 10)
+  if (Number.isNaN(v) || v < 1) return MIN_AMOUNT_DEFAULT
+  return Math.min(v, MAX_AMOUNT)
+}
+
 function configToForm(c: PaymentConfigResponse): PaymentFormState {
   return {
     merchant_id: c.merchant_id,
@@ -116,10 +126,7 @@ export function PaymentConfigCard() {
         merchant_id: form.merchant_id,
         hash_key: form.hash_key || undefined,
         hash_iv: form.hash_iv || undefined,
-        min_amount: (() => {
-          const v = parseInt(form.min_amount, 10)
-          return Number.isNaN(v) || v < 1 ? 30 : v
-        })(),
+        min_amount: clampAmount(form.min_amount),
         media_share_enabled: form.media_share_enabled,
         // New platforms go live on first save; editing an existing one keeps
         // whatever the enable toggle last set.

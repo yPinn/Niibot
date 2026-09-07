@@ -34,6 +34,13 @@ export function emptyForm(minAmount = 30): PaymentFormState {
   }
 }
 
+/** Where a streamer copies their HashKey / HashIV from. */
+const PORTAL_URL: Partial<Record<DonationPlatform, string>> = {
+  ecpay: 'https://vendor.ecpay.com.tw',
+  opay: 'https://vendor.opay.tw',
+  newebpay: 'https://www.newebpay.com',
+}
+
 interface PaymentPlatformCardProps {
   platform: DonationPlatform
   form: PaymentFormState
@@ -175,6 +182,16 @@ export function PaymentPlatformCard({
                     placeholder={hasStoredHash ? '留空保留原設定' : 'HashIV'}
                   />
                 </div>
+                {PORTAL_URL[platform] && (
+                  <a
+                    href={PORTAL_URL[platform]}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-label text-muted-foreground underline-offset-2 hover:underline"
+                  >
+                    在 {label} 商店後台取得金鑰 →
+                  </a>
+                )}
               </div>
             )}
 
@@ -212,7 +229,7 @@ export function PaymentPlatformCard({
                 <Button
                   size="sm"
                   onClick={onSave}
-                  disabled={isSaving || isDeleting || locked}
+                  disabled={isSaving || isDeleting || locked || !form.merchant_id.trim()}
                   className="h-7 px-3 text-label"
                 >
                   {isSaving && <Spinner className="mr-1" />}
