@@ -55,6 +55,26 @@ class TestOfficialVectors:
         )
 
 
+class TestTildeEncoding:
+    """Regression lock for the ~ → %7e bug (donor messages contain tildes)."""
+
+    def test_tilde_is_percent_encoded(self):
+        assert ecpay_url_encode("a~b") == "a%7eb"
+
+    def test_tilde_in_value_changes_the_mac(self):
+        plain = {"MerchantID": "3002607", "CustomField2": "thanks yo", "TotalAmount": "100"}
+        tilde = {"MerchantID": "3002607", "CustomField2": "thanks ~yo~", "TotalAmount": "100"}
+        assert build_check_mac_value(plain, _AIO_KEY, _AIO_IV) != build_check_mac_value(
+            tilde, _AIO_KEY, _AIO_IV
+        )
+
+    def test_tilde_vector_is_stable(self):
+        params = {"MerchantID": "3002607", "CustomField2": "thanks ~yo~", "TotalAmount": "100"}
+        assert build_check_mac_value(params, _AIO_KEY, _AIO_IV) == (
+            "88BA5B9E9DE6DBC16F2BAC8B098085846459AC2D4579A81C0A4D13A0B991ED0B"
+        )
+
+
 class TestBuildCheckMacValue:
     def test_check_mac_value_excluded_from_calculation(self):
         with_cmv = {"MerchantID": "123", "TotalAmount": "100", "CheckMacValue": "OLD"}

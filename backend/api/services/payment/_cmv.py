@@ -33,6 +33,10 @@ _DOTNET_RESTORE: tuple[tuple[str, str], ...] = (
 def ecpay_url_encode(raw: str) -> str:
     """ECPay's bespoke URL encoding used only for CheckMacValue."""
     encoded = urllib.parse.quote_plus(raw)
+    # Python's quote_plus keeps ``~`` literal (RFC 3986 unreserved); PHP
+    # urlencode emits ``%7E``. Without this the CMV never matches ECPay when a
+    # value (e.g. a donor message) contains a tilde.
+    encoded = encoded.replace("~", "%7E")
     encoded = encoded.lower()
     for old, new in _DOTNET_RESTORE:
         encoded = encoded.replace(old, new)
