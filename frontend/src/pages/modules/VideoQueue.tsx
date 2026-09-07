@@ -88,6 +88,8 @@ export default function VideoQueue() {
   const [userCooldownInput, setUserCooldownInput] = useState('')
   const [maxPerUserInput, setMaxPerUserInput] = useState('')
   const [minViewCountValue, setMinViewCountValue] = useState('0')
+  const [maxDurationMinutesInput, setMaxDurationMinutesInput] = useState('')
+  const [replayCooldownHoursInput, setReplayCooldownHoursInput] = useState('')
   const [saving, setSaving] = useState(false)
   const [addUrlInput, setAddUrlInput] = useState('')
   const [adding, setAdding] = useState(false)
@@ -141,6 +143,8 @@ export default function VideoQueue() {
         setUserCooldownInput(String(queueSettings.user_cooldown_seconds))
         setMaxPerUserInput(String(queueSettings.max_per_user))
         setMinViewCountValue(String(queueSettings.min_view_count))
+        setMaxDurationMinutesInput(String(Math.round(queueSettings.max_duration_seconds / 60)))
+        setReplayCooldownHoursInput(String(queueSettings.replay_cooldown_hours))
         hasInitialized.current = true
       }
     } catch {
@@ -199,6 +203,8 @@ export default function VideoQueue() {
     const cooldown = parseInt(userCooldownInput, 10)
     const perUser = parseInt(maxPerUserInput, 10)
     const minViews = parseInt(minViewCountValue, 10)
+    const maxDurationMinutes = parseInt(maxDurationMinutesInput, 10)
+    const replayCooldownHours = parseInt(replayCooldownHoursInput, 10)
     if (isNaN(queueSize) || queueSize < 1 || queueSize > 100) {
       toast.error('隊列上限範圍: 1 ~ 100')
       return
@@ -211,6 +217,14 @@ export default function VideoQueue() {
       toast.error('每人上限範圍: 0 ~ 20（0 為不限制）')
       return
     }
+    if (isNaN(maxDurationMinutes) || maxDurationMinutes < 0 || maxDurationMinutes > 1440) {
+      toast.error('影片長度上限範圍: 0 ~ 1440 分鐘（0 為不限制）')
+      return
+    }
+    if (isNaN(replayCooldownHours) || replayCooldownHours < 0 || replayCooldownHours > 168) {
+      toast.error('重播冷卻範圍: 0 ~ 168 小時（0 為不限制）')
+      return
+    }
     setSaving(true)
     try {
       const updated = await updateVideoQueueSettings({
@@ -219,6 +233,8 @@ export default function VideoQueue() {
         user_cooldown_seconds: cooldown,
         max_per_user: perUser,
         min_view_count: minViews,
+        max_duration_seconds: maxDurationMinutes * 60,
+        replay_cooldown_hours: replayCooldownHours,
       })
       setSettings(updated)
       toast.success('設定已儲存')
@@ -788,6 +804,42 @@ export default function VideoQueue() {
                     className="w-20"
                   />
                   <span className="text-muted-foreground text-sub">首</span>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <Label htmlFor="max-duration-seconds" className="w-24 shrink-0">
+                    影片長度上限
+                  </Label>
+                  <Input
+                    id="max-duration-seconds"
+                    type="number"
+                    min={0}
+                    max={1440}
+                    placeholder="0"
+                    value={maxDurationMinutesInput}
+                    onChange={e => setMaxDurationMinutesInput(e.target.value)}
+                    onBlur={e => setMaxDurationMinutesInput(clampValue(e.target.value, 0, 1440))}
+                    className="w-20"
+                  />
+                  <span className="text-muted-foreground text-sub">分</span>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <Label htmlFor="replay-cooldown-hours" className="w-24 shrink-0">
+                    重播冷卻
+                  </Label>
+                  <Input
+                    id="replay-cooldown-hours"
+                    type="number"
+                    min={0}
+                    max={168}
+                    placeholder="0"
+                    value={replayCooldownHoursInput}
+                    onChange={e => setReplayCooldownHoursInput(e.target.value)}
+                    onBlur={e => setReplayCooldownHoursInput(clampValue(e.target.value, 0, 168))}
+                    className="w-20"
+                  />
+                  <span className="text-muted-foreground text-sub">時</span>
                 </div>
               </div>
             </div>

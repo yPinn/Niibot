@@ -53,6 +53,8 @@ export interface VideoQueueSettings {
   min_view_count: number
   user_cooldown_seconds: number
   max_per_user: number
+  max_duration_seconds: number
+  replay_cooldown_hours: number
 }
 
 export interface VideoQueueSettingsUpdate {
@@ -63,6 +65,8 @@ export interface VideoQueueSettingsUpdate {
   min_view_count?: number
   user_cooldown_seconds?: number
   max_per_user?: number
+  max_duration_seconds?: number
+  replay_cooldown_hours?: number
 }
 
 // ---- Public (OBS Overlay) ----

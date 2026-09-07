@@ -59,6 +59,8 @@ def _make_settings(**kw) -> MagicMock:
     s.min_view_count = kw.get("min_view_count", 0)
     s.user_cooldown_seconds = kw.get("user_cooldown_seconds", 0)
     s.max_per_user = kw.get("max_per_user", 5)
+    s.max_duration_seconds = kw.get("max_duration_seconds", 0)
+    s.replay_cooldown_hours = kw.get("replay_cooldown_hours", 0)
     return s
 
 
@@ -422,6 +424,28 @@ class TestUpdateVideoQueueSettings:
         r = _make_auth_client().put("/api/video-queue/settings", json={"max_queue_size": 101})
         assert r.status_code == 422
 
+    def test_updates_gate_fields(self):
+        with patch("routers.video_queue_router.VideoQueueSettingsRepository") as sr:
+            sr.return_value.update_settings = AsyncMock(
+                return_value=_make_settings(max_duration_seconds=900, replay_cooldown_hours=6)
+            )
+            r = _make_auth_client().put(
+                "/api/video-queue/settings",
+                json={"max_duration_seconds": 900, "replay_cooldown_hours": 6},
+            )
+        assert r.status_code == 200
+        assert r.json()["max_duration_seconds"] == 900
+        assert r.json()["replay_cooldown_hours"] == 6
+        kwargs = sr.return_value.update_settings.await_args.kwargs
+        assert kwargs["max_duration_seconds"] == 900
+        assert kwargs["replay_cooldown_hours"] == 6
+
+    def test_replay_cooldown_above_max_returns_422(self):
+        r = _make_auth_client().put(
+            "/api/video-queue/settings", json={"replay_cooldown_hours": 169}
+        )
+        assert r.status_code == 422
+
     def test_exception_returns_500(self):
         with patch("routers.video_queue_router.VideoQueueSettingsRepository") as sr:
             sr.return_value.update_settings = AsyncMock(side_effect=RuntimeError)
@@ -750,6 +774,30 @@ class TestAddVideoEntry:
             )
         assert r.status_code == 422
         assert r.json()["error"]["code"] == "VIDEO_QUEUE.NOT_PLAYABLE"
+
+    def test_over_max_duration_seconds_returns_422(self):
+        with (
+            patch(
+                "routers.video_queue_router.resolve_video_url",
+                AsyncMock(return_value=ResolvedVideo("youtube", "vid123", False)),
+            ),
+            patch(
+                "routers.video_queue_router.fetch_video_metadata",
+                AsyncMock(return_value=VideoMetadata("Long", 1200, None, False)),
+            ),
+            patch("routers.video_queue_router.VideoQueueRepository") as vqr,
+            patch("routers.video_queue_router.VideoQueueSettingsRepository") as sr,
+        ):
+            vqr.return_value.video_is_active = AsyncMock(return_value=False)
+            sr.return_value.get_or_create = AsyncMock(
+                return_value=_make_settings(max_duration_seconds=600)
+            )
+            r = _make_auth_client().post(
+                "/api/video-queue/entries",
+                json={"url": "https://youtube.com/watch?v=vid123"},
+            )
+        assert r.status_code == 422
+        assert r.json()["error"]["code"] == "VIDEO_QUEUE.TOO_LONG"
 
     def test_queue_disabled_returns_403(self):
         with (

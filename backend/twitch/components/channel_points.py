@@ -883,18 +883,32 @@ class ChannelPointsComponent(commands.Component):
                     )
                     return
 
-            if settings.max_duration_redemption > 0:
+            effective_max = settings.max_duration_redemption
+            if settings.max_duration_seconds and (
+                not effective_max or settings.max_duration_seconds < effective_max
+            ):
+                effective_max = settings.max_duration_seconds
+            if effective_max > 0:
                 if duration_seconds is None:
                     await self._reply(broadcaster, f"@{user_name} 無法驗證影片時長，請稍後再試")
                     return
-                if duration_seconds > settings.max_duration_redemption:
-                    max_m, max_s = divmod(settings.max_duration_redemption, 60)
+                if duration_seconds > effective_max:
+                    max_m, max_s = divmod(effective_max, 60)
                     vid_m, vid_s = divmod(duration_seconds, 60)
                     await self._reply(
                         broadcaster,
                         f"@{user_name} 影片長度 {vid_m}:{vid_s:02d} 超過上限 {max_m}:{max_s:02d}",
                     )
                     return
+
+            if settings.replay_cooldown_hours and await self.vq_repo.played_within(
+                channel_id, resolved.video_id, settings.replay_cooldown_hours
+            ):
+                await self._reply(
+                    broadcaster,
+                    f"@{user_name} 這部影片在 {settings.replay_cooldown_hours} 小時內播過了",
+                )
+                return
 
             entry = await self.vq_repo.add_if_within_limits(
                 channel_id=channel_id,

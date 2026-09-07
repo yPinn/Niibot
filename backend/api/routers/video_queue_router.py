@@ -26,7 +26,7 @@ from services import TwitchAPIClient
 from services.notify_stream import NotifyWakeHub, StreamCapacityError, encode_sse
 from shared.cache import AsyncTTLCache
 from shared.errors import AccessDeniedError, AppError, ConflictError, InvalidInputError
-from shared.models.video_queue import VideoQueueEntry
+from shared.models.video_queue import VideoQueueEntry, VideoQueueSettings
 from shared.repositories.channel import ChannelRepository
 from shared.repositories.video_queue import (
     SOURCE_PRIORITY,
@@ -75,6 +75,12 @@ class VideoNotPlayableError(InvalidInputError):
     user_message = "這部影片無法播放"
 
 
+class VideoTooLongError(InvalidInputError):
+    code = "VIDEO_QUEUE.TOO_LONG"
+    http_status = 422
+    user_message = "影片長度超過上限"
+
+
 class VideoEntryResponse(BaseModel):
     id: int
     video_id: str
@@ -121,6 +127,8 @@ class VideoQueueSettingsResponse(BaseModel):
     min_view_count: int
     user_cooldown_seconds: int
     max_per_user: int
+    max_duration_seconds: int  # global length cap (chat + dashboard); 0 = no limit
+    replay_cooldown_hours: int  # 0 = no limit
 
 
 class VideoQueueSettingsUpdate(BaseModel):
@@ -131,6 +139,8 @@ class VideoQueueSettingsUpdate(BaseModel):
     min_view_count: int | None = Field(default=None, ge=0)
     user_cooldown_seconds: int | None = Field(default=None, ge=0, le=3600)
     max_per_user: int | None = Field(default=None, ge=0, le=20)
+    max_duration_seconds: int | None = Field(default=None, ge=0, le=86400)
+    replay_cooldown_hours: int | None = Field(default=None, ge=0, le=168)
 
 
 class AddVideoRequest(BaseModel):
@@ -453,6 +463,21 @@ async def clear_queue(
         raise HTTPException(status_code=500, detail="Failed to clear queue") from None
 
 
+def _settings_response(s: VideoQueueSettings) -> VideoQueueSettingsResponse:
+    return VideoQueueSettingsResponse(
+        channel_id=s.channel_id,
+        enabled=s.enabled,
+        redemption_enabled=s.redemption_enabled,
+        max_duration_redemption=s.max_duration_redemption,
+        max_queue_size=s.max_queue_size,
+        min_view_count=s.min_view_count,
+        user_cooldown_seconds=s.user_cooldown_seconds,
+        max_per_user=s.max_per_user,
+        max_duration_seconds=s.max_duration_seconds,
+        replay_cooldown_hours=s.replay_cooldown_hours,
+    )
+
+
 @router.get("/settings", response_model=VideoQueueSettingsResponse)
 async def get_video_queue_settings(
     _: None = Depends(require_activated),
@@ -462,17 +487,7 @@ async def get_video_queue_settings(
     """Get video queue settings."""
     try:
         settings_repo = VideoQueueSettingsRepository(pool)
-        s = await settings_repo.get_or_create(channel_id)
-        return VideoQueueSettingsResponse(
-            channel_id=s.channel_id,
-            enabled=s.enabled,
-            redemption_enabled=s.redemption_enabled,
-            max_duration_redemption=s.max_duration_redemption,
-            max_queue_size=s.max_queue_size,
-            min_view_count=s.min_view_count,
-            user_cooldown_seconds=s.user_cooldown_seconds,
-            max_per_user=s.max_per_user,
-        )
+        return _settings_response(await settings_repo.get_or_create(channel_id))
     except Exception:
         LOGGER.exception("Failed to get video queue settings")
         raise HTTPException(status_code=500, detail="Failed to fetch settings") from None
@@ -486,18 +501,7 @@ async def update_video_queue_settings(
     pool: Pool = Depends(get_db_pool),
 ) -> VideoQueueSettingsResponse:
     """Update video queue settings."""
-    if all(
-        v is None
-        for v in [
-            body.enabled,
-            body.redemption_enabled,
-            body.max_duration_redemption,
-            body.max_queue_size,
-            body.min_view_count,
-            body.user_cooldown_seconds,
-            body.max_per_user,
-        ]
-    ):
+    if all(v is None for v in body.model_dump().values()):
         raise HTTPException(status_code=400, detail="No fields to update")
     try:
         settings_repo = VideoQueueSettingsRepository(pool)
@@ -510,18 +514,11 @@ async def update_video_queue_settings(
             min_view_count=body.min_view_count,
             user_cooldown_seconds=body.user_cooldown_seconds,
             max_per_user=body.max_per_user,
+            max_duration_seconds=body.max_duration_seconds,
+            replay_cooldown_hours=body.replay_cooldown_hours,
         )
         LOGGER.info("Channel %s updated video queue settings", channel_id)
-        return VideoQueueSettingsResponse(
-            channel_id=s.channel_id,
-            enabled=s.enabled,
-            redemption_enabled=s.redemption_enabled,
-            max_duration_redemption=s.max_duration_redemption,
-            max_queue_size=s.max_queue_size,
-            min_view_count=s.min_view_count,
-            user_cooldown_seconds=s.user_cooldown_seconds,
-            max_per_user=s.max_per_user,
-        )
+        return _settings_response(s)
     except Exception:
         LOGGER.exception("Failed to update video queue settings")
         raise HTTPException(status_code=500, detail="Failed to update settings") from None
@@ -714,6 +711,17 @@ async def add_video_entry(
         # video would only stall the overlay on its timer ceiling, so reject it.
         if not metadata.playable:
             raise VideoNotPlayableError(user_message=unplayable_message(metadata.unplayable_reason))
+
+        # The length cap applies to the dashboard too (unlike queue-size / views);
+        # the replay cooldown is a viewer-spam guard, so the broadcaster skips it.
+        if (
+            settings.max_duration_seconds
+            and metadata.duration_seconds
+            and metadata.duration_seconds > settings.max_duration_seconds
+        ):
+            raise VideoTooLongError(
+                user_message=f"影片長度超過上限（{settings.max_duration_seconds // 60} 分鐘）"
+            )
 
         channel_repo = ChannelRepository(pool)
         requested_by: str = (

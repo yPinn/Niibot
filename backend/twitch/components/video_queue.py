@@ -155,6 +155,24 @@ class VideoQueueComponent(BotComponent):
                 )
                 return
 
+        # Global length cap
+        if (
+            settings.max_duration_seconds
+            and duration_seconds
+            and duration_seconds > settings.max_duration_seconds
+        ):
+            await self._ctx_reply(
+                ctx, f"影片長度超過上限（{settings.max_duration_seconds // 60} 分鐘）"
+            )
+            return
+
+        # Replay cooldown — reject a video played again too soon
+        if settings.replay_cooldown_hours and await self.vq_repo.played_within(
+            channel_id, resolved.video_id, settings.replay_cooldown_hours
+        ):
+            await self._ctx_reply(ctx, f"這部影片在 {settings.replay_cooldown_hours} 小時內播過了")
+            return
+
         entry = await self.vq_repo.add_if_within_limits(
             channel_id=channel_id,
             video_id=resolved.video_id,
