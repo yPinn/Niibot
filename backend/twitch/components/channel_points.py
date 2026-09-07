@@ -29,7 +29,12 @@ from shared.repositories.video_queue import (
 from shared.repositories.vip import VipRepository
 from shared.services.attendance import AttendanceService
 from shared.services.vip import VipService, add_calendar_months
-from shared.video_sources import fetch_video_metadata, resolve_video_url, unplayable_message
+from shared.video_sources import (
+    fetch_video_metadata,
+    metadata_gate_unverifiable,
+    resolve_video_url,
+    unplayable_message,
+)
 from utils.mod_guard import mod_guard_notifier
 from utils.reauth import is_scope_error, reauth_notifier
 
@@ -870,13 +875,17 @@ class ChannelPointsComponent(commands.Component):
                 )
                 return
 
-            # View count check — if threshold is set and API failed to return view_count,
-            # reject rather than silently bypassing the filter.
+            # View count check — with an authoritative source, a missing view_count
+            # is a transient failure, so reject rather than silently bypass the
+            # filter. Best-effort platforms (Bilibili) can never supply it, so the
+            # gate skips instead of blocking every submission.
             if settings.min_view_count > 0:
-                if view_count is None:
+                if metadata_gate_unverifiable(
+                    view_count, best_effort=metadata.metadata_best_effort
+                ):
                     await self._reply(broadcaster, f"@{user_name} 無法驗證影片資訊，請稍後再試")
                     return
-                if view_count < settings.min_view_count:
+                if view_count is not None and view_count < settings.min_view_count:
                     await self._reply(
                         broadcaster,
                         (
@@ -892,10 +901,12 @@ class ChannelPointsComponent(commands.Component):
             ):
                 effective_max = settings.max_duration_seconds
             if effective_max > 0:
-                if duration_seconds is None:
+                if metadata_gate_unverifiable(
+                    duration_seconds, best_effort=metadata.metadata_best_effort
+                ):
                     await self._reply(broadcaster, f"@{user_name} 無法驗證影片時長，請稍後再試")
                     return
-                if duration_seconds > effective_max:
+                if duration_seconds is not None and duration_seconds > effective_max:
                     max_m, max_s = divmod(effective_max, 60)
                     vid_m, vid_s = divmod(duration_seconds, 60)
                     await self._reply(

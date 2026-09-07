@@ -186,6 +186,26 @@ broadcaster-authority bypass does **not** skip it.
 Twitch Clip and Bilibili always report `playable = True`: clips always embed,
 and Bilibili's metadata is already too unreliable (`-412`) to gate on.
 
+## Submission gates and best-effort metadata
+
+The `min_view_count` and length-cap gates need a fetched value. When that value
+is `None`, `VideoMetadata.metadata_best_effort` decides what "missing" means:
+
+- **`False`** (YouTube, Twitch — official APIs): a `None` is a transient fetch
+  failure. All three add paths (chat `!vq`, redemption, dashboard `POST
+/entries`) reject with a "請稍後再試" message so the requester can retry.
+- **`True`** (Bilibili — the unofficial `-412` endpoint): a `None` is the normal
+  state from a datacenter IP and will not resolve on retry. The gate **skips**
+  rather than rejecting — otherwise every Bilibili submission on a channel with
+  any cap set is refused, and for a channel-points redemption the points are
+  already spent with no refund path. The overlay's per-platform ceiling
+  (`BILIBILI_MAX_SECONDS`) bounds playback instead. A Bilibili entry that _does_
+  come back with a duration is still capped normally.
+
+`shared.video_sources.metadata_gate_unverifiable(value, best_effort=...)` is the
+single predicate; `fetch_video_metadata` sets `metadata_best_effort=True` only
+on the Bilibili branch.
+
 ## Deferred: donation path multi-platform support
 
 `backend/api/routers/donation_router.py` only imports `extract_youtube_info`

@@ -637,6 +637,14 @@ class VideoMetadata:
 
     ``playable`` / ``unplayable_reason`` are YouTube-only signals (see
     ``YouTubeInfo``); Twitch Clip and Bilibili are always reported playable.
+
+    ``metadata_best_effort`` is ``True`` when the values came from an unofficial
+    endpoint that datacenter IPs frequently cannot reach (Bilibili, risk-control
+    ``-412``). A ``None`` field from such a platform means "could not fetch", not
+    "genuinely absent", and it is not something the requester can retry into
+    existence — so submission gates that need a missing value skip themselves
+    instead of rejecting. Official-API platforms leave this ``False``: a ``None``
+    there is a transient failure worth a "try again later".
     """
 
     title: str | None
@@ -645,6 +653,19 @@ class VideoMetadata:
     is_vertical: bool
     playable: bool = True
     unplayable_reason: str | None = None
+    metadata_best_effort: bool = False
+
+
+def metadata_gate_unverifiable(value: int | None, *, best_effort: bool) -> bool:
+    """Whether a submission gate that needs ``value`` must reject for lack of it.
+
+    ``True`` only when the value is missing *and* the platform's metadata is
+    authoritative (a transient fetch failure — tell the requester to retry).
+    Best-effort platforms (Bilibili) return ``False``: the gate is skipped
+    rather than blocking a submission that could never satisfy it. A present
+    value always returns ``False`` — the caller then applies the real check.
+    """
+    return value is None and not best_effort
 
 
 async def resolve_video_url(
@@ -714,7 +735,9 @@ async def fetch_video_metadata(
         title, duration_seconds, view_count, is_vertical = await fetch_bilibili_info(
             resolved.video_id, session
         )
-        return VideoMetadata(title, duration_seconds, view_count, is_vertical)
+        return VideoMetadata(
+            title, duration_seconds, view_count, is_vertical, metadata_best_effort=True
+        )
 
     yt = await fetch_yt_info(resolved.video_id, youtube_api_key, session)
     return VideoMetadata(

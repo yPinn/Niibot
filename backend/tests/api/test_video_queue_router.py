@@ -756,7 +756,11 @@ class TestAddVideoEntry:
             ),
             patch(
                 "routers.video_queue_router.fetch_video_metadata",
-                AsyncMock(return_value=VideoMetadata("BV Title", 200, None, True)),
+                AsyncMock(
+                    return_value=VideoMetadata(
+                        "BV Title", 200, None, True, metadata_best_effort=True
+                    )
+                ),
             ),
             patch("routers.video_queue_router.VideoQueueRepository") as vqr,
             patch("routers.video_queue_router.VideoQueueSettingsRepository") as sr,
@@ -773,6 +777,64 @@ class TestAddVideoEntry:
                 json={"url": "https://bilibili.com/video/BV1test"},
             )
         assert r.status_code == 201
+
+    def test_bilibili_missing_duration_allowed_despite_length_cap(self):
+        # Bilibili's 412 endpoint returns no duration; the dashboard length cap
+        # must skip rather than 422 every Bilibili add on a capped channel.
+        with (
+            patch(
+                "routers.video_queue_router.resolve_video_url",
+                AsyncMock(return_value=ResolvedVideo("bilibili", "BV1FjxHzGEkQ", False)),
+            ),
+            patch(
+                "routers.video_queue_router.fetch_video_metadata",
+                AsyncMock(
+                    return_value=VideoMetadata(
+                        "BV Title", None, None, False, metadata_best_effort=True
+                    )
+                ),
+            ),
+            patch("routers.video_queue_router.VideoQueueRepository") as vqr,
+            patch("routers.video_queue_router.VideoQueueSettingsRepository") as sr,
+            patch("routers.video_queue_router.ChannelRepository") as cr,
+        ):
+            vqr.return_value.video_is_active = AsyncMock(return_value=False)
+            vqr.return_value.add = AsyncMock()
+            vqr.return_value.get_current = AsyncMock(return_value=None)
+            vqr.return_value.get_queued = AsyncMock(return_value=[])
+            sr.return_value.get_or_create = AsyncMock(
+                return_value=_make_settings(max_duration_seconds=600)
+            )
+            cr.return_value.get_broadcaster_display_name = AsyncMock(return_value=None)
+            r = _make_auth_client().post(
+                "/api/video-queue/entries",
+                json={"url": "https://bilibili.com/video/BV1FjxHzGEkQ"},
+            )
+        assert r.status_code == 201
+
+    def test_unverifiable_duration_from_authoritative_source_returns_422(self):
+        with (
+            patch(
+                "routers.video_queue_router.resolve_video_url",
+                AsyncMock(return_value=ResolvedVideo("youtube", "vid123", False)),
+            ),
+            patch(
+                "routers.video_queue_router.fetch_video_metadata",
+                AsyncMock(return_value=VideoMetadata("YT", None, None, False)),
+            ),
+            patch("routers.video_queue_router.VideoQueueRepository") as vqr,
+            patch("routers.video_queue_router.VideoQueueSettingsRepository") as sr,
+        ):
+            vqr.return_value.video_is_active = AsyncMock(return_value=False)
+            sr.return_value.get_or_create = AsyncMock(
+                return_value=_make_settings(max_duration_seconds=600)
+            )
+            r = _make_auth_client().post(
+                "/api/video-queue/entries",
+                json={"url": "https://youtube.com/watch?v=vid123"},
+            )
+        assert r.status_code == 422
+        assert r.json()["error"]["code"] == "VIDEO_QUEUE.METADATA_UNVERIFIABLE"
 
     def test_add_twitch_vod_passes_start_seconds(self):
         with (
