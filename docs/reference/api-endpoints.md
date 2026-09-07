@@ -166,6 +166,13 @@ published revision（不再輪詢），並在 capability／preview 改變時中�
   dashboard 三條加入路徑都套用（migration 109 加在 `video_queue_settings`）。`max_duration_seconds`
   與點數兌換原有的 `max_duration_redemption` 取兩者較嚴；重播冷卻查 `video_queue` 裡 `status = 'done'`
   且 `ended_at` 在區間內的 terminal row（`repo.played_within`）。
+- `GET`／`POST /api/video-queue/blocklist`、`DELETE /api/video-queue/blocklist/{id}`
+  （`require_activated`，租戶自身頻道）：Video Queue 封鎖清單（`video_queue_blocklist`，migration 110）。
+  `kind`：`video`（video_id）／`keyword`（標題不分大小寫子字串）／`user`（`requested_by_id` 優先，否則
+  小寫 login）。`creator` 已在 DB CHECK 但先不開放（要等 `creator_id` metadata，B3）。三條加入路徑
+  insert 前呼叫 `VideoQueueBlocklistRepository.check`（per-channel 30s TTL 快取，Python 比對）；
+  命中時 API 回 `VIDEO_QUEUE.BLOCKED`（422），chat／兌換回中文訊息。`POST` 對 `(channel, kind,
+lower(value))` idempotent。
 
 ## Events 與 Twitch 頻道點數
 

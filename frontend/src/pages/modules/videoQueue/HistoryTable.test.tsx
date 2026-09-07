@@ -33,6 +33,7 @@ describe('HistoryTable', () => {
         loadingMore={false}
         onLoadMore={noop}
         onRequeue={noop}
+        onBlock={noop}
       />
     )
     expect(screen.getByText('尚無播放紀錄')).toBeInTheDocument()
@@ -47,11 +48,28 @@ describe('HistoryTable', () => {
         loadingMore={false}
         onLoadMore={noop}
         onRequeue={onRequeue}
+        onBlock={noop}
       />
     )
     expect(screen.getByText('略過')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: '重新點播' }))
     expect(onRequeue).toHaveBeenCalledWith(expect.objectContaining({ id: 7 }))
+  })
+
+  it('calls onBlock with the row', async () => {
+    const onBlock = vi.fn()
+    render(
+      <HistoryTable
+        entries={[entry({ id: 9 })]}
+        hasMore={false}
+        loadingMore={false}
+        onLoadMore={noop}
+        onRequeue={noop}
+        onBlock={onBlock}
+      />
+    )
+    await userEvent.click(screen.getByRole('button', { name: '封鎖' }))
+    expect(onBlock).toHaveBeenCalledWith(expect.objectContaining({ id: 9 }))
   })
 
   it('shows "load more" only when hasMore', () => {
@@ -62,6 +80,7 @@ describe('HistoryTable', () => {
         loadingMore={false}
         onLoadMore={noop}
         onRequeue={noop}
+        onBlock={noop}
       />
     )
     expect(screen.queryByRole('button', { name: '載入更多' })).not.toBeInTheDocument()
@@ -72,6 +91,7 @@ describe('HistoryTable', () => {
         loadingMore={false}
         onLoadMore={noop}
         onRequeue={noop}
+        onBlock={noop}
       />
     )
     expect(screen.getByRole('button', { name: '載入更多' })).toBeInTheDocument()

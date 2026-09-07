@@ -57,6 +57,16 @@ export interface VideoQueueSettings {
   replay_cooldown_hours: number
 }
 
+export type BlocklistKind = 'video' | 'creator' | 'keyword' | 'user'
+
+export interface BlocklistEntry {
+  id: number
+  kind: BlocklistKind
+  value: string
+  label: string | null
+  created_at: string | null
+}
+
 export interface VideoQueueSettingsUpdate {
   enabled?: boolean
   redemption_enabled?: boolean
@@ -202,6 +212,35 @@ export async function removeQueueEntry(entryId: number): Promise<PublicVideoQueu
   })
   if (!response.ok) throw await parseApiError(response, '移除影片失敗')
   return response.json()
+}
+
+export async function getVideoQueueBlocklist(): Promise<BlocklistEntry[]> {
+  const response = await apiFetch(API_ENDPOINTS.videoQueue.blocklist, { credentials: 'include' })
+  if (!response.ok) throw await parseApiError(response, '載入封鎖清單失敗')
+  return response.json()
+}
+
+export async function addVideoQueueBlock(
+  kind: BlocklistKind,
+  value: string,
+  label?: string | null
+): Promise<BlocklistEntry> {
+  const response = await apiFetch(API_ENDPOINTS.videoQueue.blocklist, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ kind, value, label: label ?? null }),
+  })
+  if (!response.ok) throw await parseApiError(response, '加入封鎖清單失敗')
+  return response.json()
+}
+
+export async function removeVideoQueueBlock(id: number): Promise<void> {
+  const response = await apiFetch(API_ENDPOINTS.videoQueue.blocklistEntry(id), {
+    method: 'DELETE',
+    credentials: 'include',
+  })
+  if (!response.ok) throw await parseApiError(response, '移除封鎖項目失敗')
 }
 
 export function addVideoToQueue(url: string): Promise<PublicVideoQueueState> {

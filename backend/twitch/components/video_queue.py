@@ -24,6 +24,7 @@ from core.component import BotComponent
 from core.config import get_settings
 from shared.repositories.video_queue import (
     SOURCE_PRIORITY,
+    VideoQueueBlocklistRepository,
     VideoQueueRepository,
     VideoQueueSettingsRepository,
 )
@@ -46,6 +47,7 @@ class VideoQueueComponent(BotComponent):
         self._settings = get_settings()
         self.vq_repo = VideoQueueRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.vq_settings_repo = VideoQueueSettingsRepository(self.bot.token_database)  # type: ignore[attr-defined]
+        self.vq_blocklist_repo = VideoQueueBlocklistRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self._session: aiohttp.ClientSession | None = None
 
     async def component_load(self) -> None:
@@ -60,6 +62,7 @@ class VideoQueueComponent(BotComponent):
     def refresh_pool(self, pool) -> None:
         self.vq_repo.pool = pool
         self.vq_settings_repo.pool = pool
+        self.vq_blocklist_repo.pool = pool
 
     # ------------------------------------------------------------------
     # Shared: add video logic
@@ -171,6 +174,18 @@ class VideoQueueComponent(BotComponent):
             channel_id, resolved.video_id, settings.replay_cooldown_hours
         ):
             await self._ctx_reply(ctx, f"這部影片在 {settings.replay_cooldown_hours} 小時內播過了")
+            return
+
+        # Blocklist — video / title keyword / requester
+        blocked = await self.vq_blocklist_repo.check(
+            channel_id,
+            video_id=resolved.video_id,
+            title=title,
+            requested_by=user_name,
+            requested_by_id=user_id,
+        )
+        if blocked is not None:
+            await self._ctx_reply(ctx, "這部影片在封鎖清單中")
             return
 
         entry = await self.vq_repo.add_if_within_limits(

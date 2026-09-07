@@ -55,6 +55,7 @@ import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { useVideoQueueStream } from '@/hooks/useVideoQueueStream'
 import { toastApiError } from '@/lib/toast-error'
 
+import { BlocklistSection, type BlocklistSectionHandle } from './videoQueue/BlocklistSection'
 import { HistoryTable } from './videoQueue/HistoryTable'
 import { QueueTable, SourceBadge } from './videoQueue/QueueTable'
 import {
@@ -124,6 +125,17 @@ export default function VideoQueue() {
       toast.success('已重新加入佇列')
     } catch (e) {
       toastApiError(e, '重新點播失敗')
+    }
+  }
+
+  const blocklistRef = useRef<BlocklistSectionHandle>(null)
+
+  const handleBlockFromHistory = async (entry: VideoQueueHistoryEntry) => {
+    try {
+      await blocklistRef.current?.addBlock('video', entry.video_id, entry.title ?? entry.video_id)
+      toast.success('已加入封鎖清單')
+    } catch (e) {
+      toastApiError(e, '加入封鎖清單失敗')
     }
   }
 
@@ -583,6 +595,7 @@ export default function VideoQueue() {
                   loadingMore={historyState === 'more'}
                   onLoadMore={() => historyCursor && void loadHistory(historyCursor)}
                   onRequeue={handleRequeue}
+                  onBlock={handleBlockFromHistory}
                 />
               )}
             </CardContent>
@@ -886,6 +899,10 @@ export default function VideoQueue() {
                 儲存
               </Button>
             </div>
+
+            <Separator />
+
+            <BlocklistSection ref={blocklistRef} />
           </CardContent>
         </Card>
       </SlideUp>

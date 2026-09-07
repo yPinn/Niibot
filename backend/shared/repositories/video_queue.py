@@ -12,7 +12,11 @@ from datetime import datetime, timedelta
 import asyncpg
 
 from shared.cache import AsyncTTLCache, cached
-from shared.models.video_queue import VideoQueueEntry, VideoQueueSettings
+from shared.models.video_queue import (
+    VideoQueueBlocklistEntry,
+    VideoQueueEntry,
+    VideoQueueSettings,
+)
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -57,6 +61,17 @@ _SETTINGS_COLUMNS = (
 )
 
 _settings_cache = AsyncTTLCache(maxsize=32, ttl=15)
+
+_BLOCKLIST_COLUMNS = "id, channel_id, kind, value, label, created_by, created_at"
+
+# Kinds a user can create today. 'creator' is in the DB CHECK (migration 110)
+# but not offered until the creator_id metadata plumbing lands (B3).
+BLOCKLIST_KINDS = ("video", "keyword", "user")
+
+# Per-channel cache of the full blocklist, refreshed on write. The check runs on
+# every submission (three add paths) and the list is tiny, so we match in Python
+# rather than issue a query per add.
+_blocklist_cache = AsyncTTLCache(maxsize=64, ttl=30)
 
 
 # ---------------------------------------------------------------------------
@@ -711,3 +726,114 @@ class VideoQueueSettingsRepository:
             result = VideoQueueSettings(**dict(row))
             _settings_cache.invalidate(f"vq_settings:{channel_id}")
             return result
+
+
+# ---------------------------------------------------------------------------
+# VideoQueueBlocklistRepository
+# ---------------------------------------------------------------------------
+
+
+def _blocklist_match(
+    entries: list[VideoQueueBlocklistEntry],
+    *,
+    video_id: str,
+    title: str | None,
+    requested_by: str | None,
+    requested_by_id: str | None,
+) -> VideoQueueBlocklistEntry | None:
+    """First blocklist rule a submission trips, or None. Case-insensitive."""
+    title_l = (title or "").lower()
+    login_l = (requested_by or "").lower()
+    for entry in entries:
+        value_l = entry.value.lower()
+        if entry.kind in ("video", "creator") and value_l == video_id.lower():
+            return entry
+        if entry.kind == "keyword" and title_l and value_l in title_l:
+            return entry
+        if entry.kind == "user" and (
+            (login_l and value_l == login_l)
+            or (requested_by_id is not None and entry.value == requested_by_id)
+        ):
+            return entry
+    return None
+
+
+class VideoQueueBlocklistRepository:
+    """Pure SQL operations for the video_queue_blocklist table."""
+
+    def __init__(self, pool: asyncpg.Pool) -> None:
+        self.pool = pool
+
+    async def list_entries(self, channel_id: str) -> list[VideoQueueBlocklistEntry]:
+        """All blocklist rules for a channel, newest first. Cached per channel."""
+        if channel_id in _blocklist_cache:
+            return _blocklist_cache.get(channel_id)
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                f"SELECT {_BLOCKLIST_COLUMNS} FROM video_queue_blocklist "
+                "WHERE channel_id = $1 ORDER BY created_at DESC",
+                channel_id,
+            )
+        entries = [VideoQueueBlocklistEntry(**dict(row)) for row in rows]
+        _blocklist_cache.set(channel_id, entries)
+        return entries
+
+    async def add(
+        self,
+        channel_id: str,
+        kind: str,
+        value: str,
+        *,
+        label: str | None = None,
+        created_by: str | None = None,
+    ) -> VideoQueueBlocklistEntry:
+        """Insert a rule, or return the existing one for the same (channel, kind, value)."""
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                INSERT INTO video_queue_blocklist (channel_id, kind, value, label, created_by)
+                VALUES ($1, $2, $3, $4, $5)
+                ON CONFLICT (channel_id, kind, lower(value)) DO UPDATE SET
+                    label = COALESCE(EXCLUDED.label, video_queue_blocklist.label)
+                RETURNING {_BLOCKLIST_COLUMNS}
+                """,
+                channel_id,
+                kind,
+                value,
+                label,
+                created_by,
+            )
+        _blocklist_cache.invalidate(channel_id)
+        return VideoQueueBlocklistEntry(**dict(row))
+
+    async def remove(self, channel_id: str, entry_id: int) -> bool:
+        """Delete a rule scoped to its channel. Returns True if a row was removed."""
+        async with self.pool.acquire() as conn:
+            result = await conn.execute(
+                "DELETE FROM video_queue_blocklist WHERE id = $1 AND channel_id = $2",
+                entry_id,
+                channel_id,
+            )
+        _blocklist_cache.invalidate(channel_id)
+        return int(result.split()[-1]) > 0
+
+    async def check(
+        self,
+        channel_id: str,
+        *,
+        video_id: str,
+        title: str | None = None,
+        requested_by: str | None = None,
+        requested_by_id: str | None = None,
+    ) -> VideoQueueBlocklistEntry | None:
+        """Return the first blocklist rule this submission trips, or None."""
+        entries = await self.list_entries(channel_id)
+        if not entries:
+            return None
+        return _blocklist_match(
+            entries,
+            video_id=video_id,
+            title=title,
+            requested_by=requested_by,
+            requested_by_id=requested_by_id,
+        )

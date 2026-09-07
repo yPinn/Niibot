@@ -22,6 +22,7 @@ from shared.repositories.command_config import RedemptionConfigRepository
 from shared.repositories.game_queue import GameQueueRepository, GameQueueSettingsRepository
 from shared.repositories.video_queue import (
     SOURCE_PRIORITY,
+    VideoQueueBlocklistRepository,
     VideoQueueRepository,
     VideoQueueSettingsRepository,
 )
@@ -54,6 +55,7 @@ class ChannelPointsComponent(commands.Component):
         self.gq_settings_repo = GameQueueSettingsRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.vq_repo = VideoQueueRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.vq_settings_repo = VideoQueueSettingsRepository(self.bot.token_database)  # type: ignore[attr-defined]
+        self.vq_blocklist_repo = VideoQueueBlocklistRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.vip_repo = VipRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.vip_policy = VipService()
         self._session: aiohttp.ClientSession | None = None
@@ -73,6 +75,7 @@ class ChannelPointsComponent(commands.Component):
         self.gq_settings_repo.pool = pool
         self.vq_repo.pool = pool
         self.vq_settings_repo.pool = pool
+        self.vq_blocklist_repo.pool = pool
         self.vip_repo.pool = pool
 
     async def component_load(self) -> None:
@@ -908,6 +911,16 @@ class ChannelPointsComponent(commands.Component):
                     broadcaster,
                     f"@{user_name} 這部影片在 {settings.replay_cooldown_hours} 小時內播過了",
                 )
+                return
+
+            if await self.vq_blocklist_repo.check(
+                channel_id,
+                video_id=resolved.video_id,
+                title=title,
+                requested_by=user_name,
+                requested_by_id=user_id,
+            ):
+                await self._reply(broadcaster, f"@{user_name} 這部影片在封鎖清單中")
                 return
 
             entry = await self.vq_repo.add_if_within_limits(

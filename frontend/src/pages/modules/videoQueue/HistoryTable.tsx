@@ -29,12 +29,14 @@ export function HistoryTable({
   loadingMore,
   onLoadMore,
   onRequeue,
+  onBlock,
 }: {
   entries: VideoQueueHistoryEntry[]
   hasMore: boolean
   loadingMore: boolean
   onLoadMore: () => void
   onRequeue: (entry: VideoQueueHistoryEntry) => void
+  onBlock: (entry: VideoQueueHistoryEntry) => void
 }) {
   if (entries.length === 0) {
     return (
@@ -59,7 +61,7 @@ export function HistoryTable({
               <TableHead className="hidden sm:table-cell w-20 text-right tabular-nums">
                 時間
               </TableHead>
-              <TableHead className="w-10" />
+              <TableHead className="w-16" />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -99,7 +101,7 @@ export function HistoryTable({
                   {entry.ended_at ? formatRelativeTime(entry.ended_at) : '—'}
                   {entry.duration_seconds ? ` · ${formatDuration(entry.duration_seconds)}` : ''}
                 </TableCell>
-                <TableCell className="text-right">
+                <TableCell className="text-right whitespace-nowrap">
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
@@ -112,6 +114,19 @@ export function HistoryTable({
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent>重新點播</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="封鎖"
+                        onClick={() => onBlock(entry)}
+                      >
+                        <Icon icon="fa-solid fa-ban" className="size-3.5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>加入封鎖清單</TooltipContent>
                   </Tooltip>
                 </TableCell>
               </TableRow>

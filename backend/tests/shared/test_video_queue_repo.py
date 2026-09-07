@@ -7,9 +7,13 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from shared.models.video_queue import VideoQueueBlocklistEntry
 from shared.repositories.video_queue import (
+    VideoQueueBlocklistRepository,
     VideoQueueRepository,
     VideoQueueSettingsRepository,
+    _blocklist_cache,
+    _blocklist_match,
     _settings_cache,
 )
 from shared.video_sources import (
@@ -97,6 +101,19 @@ def _make_pool(
 def _clear_caches() -> None:
     _settings_cache.clear()
     _settings_cache._stale.clear()
+    _blocklist_cache.clear()
+    _blocklist_cache._stale.clear()
+
+
+_BLOCKLIST_ROW = {
+    "id": 1,
+    "channel_id": "ch1",
+    "kind": "video",
+    "value": "dQw4w9WgXcQ",
+    "label": "Never Gonna Give You Up",
+    "created_by": "ch1",
+    "created_at": _NOW,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -525,6 +542,98 @@ class TestPlayedWithin:
         pool, _ = _make_pool(fetchval=None)
         repo = VideoQueueRepository(pool)
         assert await repo.played_within("ch1", "vid", 12) is False
+
+
+def _block(kind: str, value: str, **kw) -> VideoQueueBlocklistEntry:
+    return VideoQueueBlocklistEntry(
+        id=kw.get("id", 1), channel_id="ch1", kind=kind, value=value, label=kw.get("label")
+    )
+
+
+class TestBlocklistMatch:
+    def test_video_kind_matches_video_id_case_insensitively(self):
+        entries = [_block("video", "ABCdef")]
+        assert (
+            _blocklist_match(
+                entries, video_id="abcDEF", title=None, requested_by=None, requested_by_id=None
+            )
+            is entries[0]
+        )
+
+    def test_keyword_is_a_case_insensitive_substring_of_the_title(self):
+        entries = [_block("keyword", "LoFi")]
+        assert _blocklist_match(
+            entries, video_id="v", title="Chill lofi beats", requested_by=None, requested_by_id=None
+        )
+        assert (
+            _blocklist_match(
+                entries, video_id="v", title="jazz only", requested_by=None, requested_by_id=None
+            )
+            is None
+        )
+
+    def test_user_kind_matches_login_or_id(self):
+        by_login = [_block("user", "SpamGuy")]
+        assert _blocklist_match(
+            by_login, video_id="v", title=None, requested_by="spamguy", requested_by_id="999"
+        )
+        by_id = [_block("user", "12345")]
+        assert _blocklist_match(
+            by_id, video_id="v", title=None, requested_by="anyone", requested_by_id="12345"
+        )
+
+    def test_no_rules_no_match(self):
+        assert (
+            _blocklist_match([], video_id="v", title="t", requested_by="u", requested_by_id=None)
+            is None
+        )
+
+
+@pytest.mark.asyncio
+class TestBlocklistRepository:
+    def setup_method(self):
+        _clear_caches()
+
+    async def test_list_entries_maps_rows_then_caches(self):
+        pool, conn = _make_pool(fetch=[_BLOCKLIST_ROW])
+        repo = VideoQueueBlocklistRepository(pool)
+
+        first = await repo.list_entries("ch1")
+        second = await repo.list_entries("ch1")
+
+        assert [e.value for e in first] == ["dQw4w9WgXcQ"]
+        assert first == second
+        conn.fetch.assert_awaited_once()  # second call served from cache
+
+    async def test_add_inserts_and_invalidates_cache(self):
+        pool, conn = _make_pool(fetch=[], fetchrow=_BLOCKLIST_ROW)
+        repo = VideoQueueBlocklistRepository(pool)
+        await repo.list_entries("ch1")  # warm cache
+
+        entry = await repo.add("ch1", "video", "dQw4w9WgXcQ", label="RR")
+
+        assert entry.kind == "video"
+        sql = conn.fetchrow.call_args.args[0]
+        assert "ON CONFLICT (channel_id, kind, lower(value))" in sql
+        assert "ch1" not in _blocklist_cache
+
+    async def test_remove_reports_deletion_and_invalidates(self):
+        pool, conn = _make_pool(execute="DELETE 1")
+        repo = VideoQueueBlocklistRepository(pool)
+        assert await repo.remove("ch1", 5) is True
+
+        pool2, _ = _make_pool(execute="DELETE 0")
+        assert await VideoQueueBlocklistRepository(pool2).remove("ch1", 5) is False
+
+    async def test_check_returns_matching_rule(self):
+        pool, _ = _make_pool(fetch=[_BLOCKLIST_ROW])
+        repo = VideoQueueBlocklistRepository(pool)
+
+        hit = await repo.check("ch1", video_id="dQw4w9WgXcQ", title="whatever")
+        assert hit is not None and hit.kind == "video"
+
+        miss = await repo.check("ch1", video_id="other", title="whatever")
+        assert miss is None
 
 
 @pytest.mark.asyncio

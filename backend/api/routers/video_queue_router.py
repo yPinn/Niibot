@@ -26,10 +26,16 @@ from services import TwitchAPIClient
 from services.notify_stream import NotifyWakeHub, StreamCapacityError, encode_sse
 from shared.cache import AsyncTTLCache
 from shared.errors import AccessDeniedError, AppError, ConflictError, InvalidInputError
-from shared.models.video_queue import VideoQueueEntry, VideoQueueSettings
+from shared.models.video_queue import (
+    VideoQueueBlocklistEntry,
+    VideoQueueEntry,
+    VideoQueueSettings,
+)
 from shared.repositories.channel import ChannelRepository
 from shared.repositories.video_queue import (
+    BLOCKLIST_KINDS,
     SOURCE_PRIORITY,
+    VideoQueueBlocklistRepository,
     VideoQueueRepository,
     VideoQueueSettingsRepository,
 )
@@ -79,6 +85,12 @@ class VideoTooLongError(InvalidInputError):
     code = "VIDEO_QUEUE.TOO_LONG"
     http_status = 422
     user_message = "影片長度超過上限"
+
+
+class VideoBlockedError(InvalidInputError):
+    code = "VIDEO_QUEUE.BLOCKED"
+    http_status = 422
+    user_message = "這部影片在封鎖清單中"
 
 
 class VideoEntryResponse(BaseModel):
@@ -173,6 +185,38 @@ class VideoQueueHistoryResponse(BaseModel):
     #: ISO ``ended_at`` of the last row when a full page was returned — pass it
     #: back as ``?cursor=`` for the next page; ``None`` means no more rows.
     next_cursor: str | None
+
+
+class BlocklistEntryResponse(BaseModel):
+    id: int
+    kind: str  # 'video' | 'creator' | 'keyword' | 'user'
+    value: str
+    label: str | None
+    created_at: datetime | None
+
+
+class BlocklistAddRequest(BaseModel):
+    kind: str
+    value: str = Field(min_length=1, max_length=256)
+    label: str | None = Field(default=None, max_length=256)
+
+
+_BLOCK_REASON_LABEL = {
+    "video": "這部影片",
+    "creator": "這個創作者",
+    "keyword": "標題關鍵字",
+    "user": "這位使用者",
+}
+
+
+def _blocked_message(entry: VideoQueueBlocklistEntry) -> str:
+    return f"{_BLOCK_REASON_LABEL.get(entry.kind, '這部影片')}在封鎖清單中"
+
+
+def _blocklist_response(e: VideoQueueBlocklistEntry) -> BlocklistEntryResponse:
+    return BlocklistEntryResponse(
+        id=e.id, kind=e.kind, value=e.value, label=e.label, created_at=e.created_at
+    )
 
 
 _channel_id_cache: AsyncTTLCache = AsyncTTLCache(maxsize=256, ttl=300.0)
@@ -606,6 +650,67 @@ async def video_queue_history_retention_loop(db_manager) -> None:  # type: ignor
             LOGGER.exception("video_queue_history_prune_failed")
 
 
+@router.get("/blocklist", response_model=list[BlocklistEntryResponse])
+async def list_blocklist(
+    _: None = Depends(require_activated),
+    channel_id: str = Depends(get_current_channel_id),
+    pool: Pool = Depends(get_db_pool),
+) -> list[BlocklistEntryResponse]:
+    """Dashboard: this channel's Video Queue blocklist rules, newest first."""
+    try:
+        entries = await VideoQueueBlocklistRepository(pool).list_entries(channel_id)
+        return [_blocklist_response(e) for e in entries]
+    except Exception:
+        LOGGER.exception("Failed to list video queue blocklist")
+        raise HTTPException(status_code=500, detail="Failed to fetch blocklist") from None
+
+
+@router.post("/blocklist", response_model=BlocklistEntryResponse, status_code=201)
+async def add_blocklist_entry(
+    body: BlocklistAddRequest,
+    _: None = Depends(require_activated),
+    channel_id: str = Depends(get_current_channel_id),
+    pool: Pool = Depends(get_db_pool),
+) -> BlocklistEntryResponse:
+    """Dashboard: add a blocklist rule. Idempotent per (kind, value)."""
+    if body.kind not in BLOCKLIST_KINDS:
+        raise HTTPException(status_code=422, detail=f"kind must be one of {BLOCKLIST_KINDS}")
+    try:
+        entry = await VideoQueueBlocklistRepository(pool).add(
+            channel_id,
+            body.kind,
+            body.value.strip(),
+            label=(body.label.strip() or None) if body.label else None,
+            created_by=channel_id,
+        )
+        LOGGER.info("Channel %s blocked %s %r", channel_id, body.kind, body.value)
+        return _blocklist_response(entry)
+    except HTTPException:
+        raise
+    except Exception:
+        LOGGER.exception("Failed to add video queue blocklist entry")
+        raise HTTPException(status_code=500, detail="Failed to add blocklist entry") from None
+
+
+@router.delete("/blocklist/{entry_id}", status_code=204)
+async def delete_blocklist_entry(
+    entry_id: int,
+    _: None = Depends(require_activated),
+    channel_id: str = Depends(get_current_channel_id),
+    pool: Pool = Depends(get_db_pool),
+) -> None:
+    """Dashboard: remove a blocklist rule."""
+    try:
+        removed = await VideoQueueBlocklistRepository(pool).remove(channel_id, entry_id)
+        if not removed:
+            raise HTTPException(status_code=404, detail="Blocklist entry not found")
+    except HTTPException:
+        raise
+    except Exception:
+        LOGGER.exception("Failed to delete video queue blocklist entry")
+        raise HTTPException(status_code=500, detail="Failed to delete blocklist entry") from None
+
+
 @router.post("/entries/{entry_id}/set-next", response_model=PublicVideoQueueState)
 async def set_entry_as_next(
     entry_id: int,
@@ -722,6 +827,12 @@ async def add_video_entry(
             raise VideoTooLongError(
                 user_message=f"影片長度超過上限（{settings.max_duration_seconds // 60} 分鐘）"
             )
+
+        blocked = await VideoQueueBlocklistRepository(pool).check(
+            channel_id, video_id=resolved.video_id, title=metadata.title
+        )
+        if blocked is not None:
+            raise VideoBlockedError(user_message=_blocked_message(blocked))
 
         channel_repo = ChannelRepository(pool)
         requested_by: str = (
