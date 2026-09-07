@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from core.config import Settings, get_settings
 from core.dependencies import get_current_user_id, get_db_pool, require_activated
+from services.payment import PROVIDERS
 from shared.errors import InvalidInputError, NotFoundError
 from shared.repositories.donation import DonationRepository
 
@@ -20,7 +21,8 @@ LOGGER: logging.Logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/payment-configs", tags=["payment-configs"])
 
-_VALID_PLATFORMS = {"ecpay", "opay", "paypal", "newebpay"}
+# Single source of truth for supported platforms — see services.payment.
+_VALID_PLATFORMS = set(PROVIDERS)
 
 
 class PaymentConfigNotFoundError(NotFoundError):
@@ -95,7 +97,7 @@ async def upsert_payment_config(
     hash_key = body.hash_key
     hash_iv = body.hash_iv
 
-    if platform in {"ecpay", "opay", "newebpay"} and not (hash_key and hash_iv):
+    if PROVIDERS[platform].needs_hash and not (hash_key and hash_iv):
         # Allow omitting keys on update if they're already stored.
         existing = await repo.get_config(user_id, platform)
         if not existing or not existing.hash_key or not existing.hash_iv:

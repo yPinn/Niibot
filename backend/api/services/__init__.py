@@ -11,6 +11,7 @@ from .channel_service import ChannelService
 from .command_config_service import CommandConfigService
 from .event_config_service import EventConfigService
 from .identity_service import FindOrLinkResult, IdentityService
+from .payment import PROVIDERS, CheckoutContext, PaymentProvider, WebhookResult, get_provider
 from .tenant_service import (
     TenantAccessDeniedError,
     TenantContext,
@@ -26,10 +27,15 @@ __all__ = [
     "AnalyticsService",
     "AuthService",
     "ChannelService",
+    "CheckoutContext",
     "CommandConfigService",
     "EventConfigService",
     "FindOrLinkResult",
     "IdentityService",
+    "PROVIDERS",
+    "PaymentProvider",
+    "WebhookResult",
+    "get_provider",
     "TenantAccessDeniedError",
     "TenantContext",
     "TenantNotFoundError",
