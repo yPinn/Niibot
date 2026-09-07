@@ -66,6 +66,6 @@
     "@secretlint/secretlint-rule-preset-recommend": "^13.0.5",
     "husky": "^9.1.7",
     "lint-staged": "^17.4.1",
-    "secretlint": "^11.3.1"
+    "secretlint": "^13.0.5"
   }
 }
