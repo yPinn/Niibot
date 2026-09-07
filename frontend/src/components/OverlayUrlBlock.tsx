@@ -37,19 +37,19 @@ export function OverlayUrlBlock({
         onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && copy()}
       >
         <span className="flex shrink-0 items-center gap-1.5 text-muted-foreground">
-          <Icon icon="fa-solid fa-tower-broadcast" className="text-xs" />
+          <Icon icon="fa-solid fa-tower-broadcast" className="text-label" />
         </span>
         <div className="h-4 w-px shrink-0 bg-border" />
 
         {/* URL / hint area */}
         <div className="relative min-w-0 flex-1 overflow-hidden">
           <code
-            className={`block select-none truncate text-xs transition-all ${revealed ? '' : 'blur-sm'}`}
+            className={`block select-none truncate text-label transition-all ${revealed ? '' : 'blur-sm'}`}
           >
             {url}
           </code>
           {!revealed && (
-            <span className="absolute inset-0 flex items-center justify-center text-xs font-medium">
+            <span className="absolute inset-0 flex items-center justify-center text-label font-medium">
               {copyLabel}
             </span>
           )}
@@ -68,7 +68,7 @@ export function OverlayUrlBlock({
             >
               <Icon
                 icon={revealed ? 'fa-regular fa-eye-slash' : 'fa-regular fa-eye'}
-                className="text-xs"
+                className="text-label"
               />
             </button>
           </TooltipTrigger>
@@ -82,7 +82,7 @@ export function OverlayUrlBlock({
           <Button variant="outline" size="sm" asChild>
             <a href={url} target="_blank" rel="noopener noreferrer">
               <span className="sr-only">{openLabel}</span>
-              <Icon icon="fa-solid fa-arrow-up-right-from-square" className="text-xs" />
+              <Icon icon="fa-solid fa-arrow-up-right-from-square" className="text-label" />
             </a>
           </Button>
         </TooltipTrigger>
