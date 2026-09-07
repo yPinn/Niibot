@@ -81,13 +81,14 @@ export function PaymentConfigCard() {
   const { toggle: toggleEnabled } = useOptimisticToggle<PaymentConfigResponse>({
     setState: setConfigs,
     getId: c => c.platform,
-    toggleFn: (c, enabled) =>
-      upsertPaymentConfig(c.platform, {
+    toggleFn: async (c, enabled) => {
+      await upsertPaymentConfig(c.platform, {
         merchant_id: c.merchant_id,
         min_amount: c.min_amount,
         media_share_enabled: c.media_share_enabled,
         enabled,
-      }),
+      })
+    },
     messages: { on: '已啟用', off: '已停用', error: '切換狀態失敗' },
   })
 
