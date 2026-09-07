@@ -40,5 +40,7 @@ class VideoQueueSettings:
     min_view_count: int = 0  # 0 = no restriction
     user_cooldown_seconds: int = 0  # 0 = no restriction
     max_per_user: int = 0  # 0 = no restriction
+    max_duration_seconds: int = 0  # global length cap for chat + dashboard; 0 = no limit
+    replay_cooldown_hours: int = 0  # reject a video played within N hours; 0 = no limit
     created_at: datetime | None = None
     updated_at: datetime | None = None

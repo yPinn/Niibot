@@ -161,6 +161,11 @@ published revision（不再輪詢），並在 capability／preview 改變時中�
   `next_cursor` 為 `null` 代表沒有更多。無新表，紀錄一直是留在 `video_queue` 裡的 terminal row，
   只是之前沒有讀取路徑；`idx_video_queue_channel_ended`（migration 107）建索引，超過 30 天由
   `video_queue_history_retention_loop`（`api/app.py` lifespan，每日）刪除。
+- `GET`／`PUT /api/video-queue/settings` 的 `max_duration_seconds`（全域影片長度上限，秒；0 = 不限）
+  與 `replay_cooldown_hours`（同一支影片在 N 小時內播過就拒收；0 = 不限）為投稿閘門，chat／點數兌換／
+  dashboard 三條加入路徑都套用（migration 109 加在 `video_queue_settings`）。`max_duration_seconds`
+  與點數兌換原有的 `max_duration_redemption` 取兩者較嚴；重播冷卻查 `video_queue` 裡 `status = 'done'`
+  且 `ended_at` 在區間內的 terminal row（`repo.played_within`）。
 
 ## Events 與 Twitch 頻道點數
 

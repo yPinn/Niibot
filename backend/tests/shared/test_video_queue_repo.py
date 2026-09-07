@@ -512,6 +512,22 @@ class TestGetHistory:
 
 
 @pytest.mark.asyncio
+class TestPlayedWithin:
+    async def test_true_when_a_recent_done_row_exists(self):
+        pool, conn = _make_pool(fetchval=1)
+        repo = VideoQueueRepository(pool)
+        assert await repo.played_within("ch1", "vid", 12) is True
+        sql, *params = conn.fetchval.call_args.args
+        assert "status = 'done'" in sql and "make_interval(hours => $3)" in sql
+        assert params == ["ch1", "vid", 12]
+
+    async def test_false_when_none(self):
+        pool, _ = _make_pool(fetchval=None)
+        repo = VideoQueueRepository(pool)
+        assert await repo.played_within("ch1", "vid", 12) is False
+
+
+@pytest.mark.asyncio
 class TestPruneHistory:
     async def test_returns_deleted_count(self):
         pool, conn = _make_pool(execute="DELETE 7")

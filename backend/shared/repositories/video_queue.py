@@ -52,6 +52,7 @@ _SETTINGS_COLUMNS = (
     "channel_id, enabled, redemption_enabled, "
     "max_duration_redemption, max_queue_size, "
     "min_view_count, user_cooldown_seconds, max_per_user, "
+    "max_duration_seconds, replay_cooldown_hours, "
     "created_at, updated_at"
 )
 
@@ -607,6 +608,21 @@ class VideoQueueRepository:
             )
             return [VideoQueueEntry(**dict(row)) for row in rows]
 
+    async def played_within(self, channel_id: str, video_id: str, hours: int) -> bool:
+        """True if this video finished playing (``status = 'done'``) within the
+        last ``hours`` in this channel — the replay-cooldown check."""
+        async with self.pool.acquire() as conn:
+            found = await conn.fetchval(
+                "SELECT 1 FROM video_queue "
+                "WHERE channel_id = $1 AND video_id = $2 AND status = 'done' "
+                "AND ended_at IS NOT NULL AND ended_at > NOW() - make_interval(hours => $3) "
+                "LIMIT 1",
+                channel_id,
+                video_id,
+                hours,
+            )
+            return found is not None
+
     async def prune_history(self) -> int:
         """Delete history rows past the retention window. Returns rows removed."""
         async with self.pool.acquire() as conn:
@@ -660,6 +676,8 @@ class VideoQueueSettingsRepository:
         min_view_count: int | None = None,
         user_cooldown_seconds: int | None = None,
         max_per_user: int | None = None,
+        max_duration_seconds: int | None = None,
+        replay_cooldown_hours: int | None = None,
     ) -> VideoQueueSettings:
         """Update settings. Only provided keyword args are applied."""
         async with self.pool.acquire() as conn:
@@ -674,7 +692,9 @@ class VideoQueueSettingsRepository:
                     max_queue_size           = COALESCE($5, video_queue_settings.max_queue_size),
                     min_view_count           = COALESCE($6, video_queue_settings.min_view_count),
                     user_cooldown_seconds    = COALESCE($7, video_queue_settings.user_cooldown_seconds),
-                    max_per_user             = COALESCE($8, video_queue_settings.max_per_user)
+                    max_per_user             = COALESCE($8, video_queue_settings.max_per_user),
+                    max_duration_seconds     = COALESCE($9, video_queue_settings.max_duration_seconds),
+                    replay_cooldown_hours    = COALESCE($10, video_queue_settings.replay_cooldown_hours)
                 RETURNING {_SETTINGS_COLUMNS}
                 """,
                 channel_id,
@@ -685,6 +705,8 @@ class VideoQueueSettingsRepository:
                 min_view_count,
                 user_cooldown_seconds,
                 max_per_user,
+                max_duration_seconds,
+                replay_cooldown_hours,
             )
             result = VideoQueueSettings(**dict(row))
             _settings_cache.invalidate(f"vq_settings:{channel_id}")
