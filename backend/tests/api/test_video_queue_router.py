@@ -71,6 +71,7 @@ def _make_entry(**kw) -> MagicMock:
     e.title = kw.get("title", "Test Video")
     e.duration_seconds = kw.get("duration_seconds", 213)
     e.is_vertical = kw.get("is_vertical", False)
+    e.thumbnail_url = kw.get("thumbnail_url", None)
     e.start_seconds = kw.get("start_seconds", 0)
     e.requested_by = kw.get("requested_by", "streamer")
     e.source = kw.get("source", "dashboard")

@@ -106,6 +106,7 @@ class VideoEntryResponse(BaseModel):
     title: str | None
     duration_seconds: int | None  # for twitch_vod: the capped play window
     is_vertical: bool
+    thumbnail_url: str | None  # poster image; None → dashboard shows a placeholder
     start_seconds: int  # twitch_vod seek offset; 0 otherwise
     requested_by: str
     source: str
@@ -247,6 +248,7 @@ def _entry_response(entry: VideoQueueEntry, *, started_at: datetime | None) -> V
         title=entry.title,
         duration_seconds=entry.duration_seconds,
         is_vertical=entry.is_vertical,
+        thumbnail_url=entry.thumbnail_url,
         start_seconds=entry.start_seconds,
         requested_by=entry.requested_by,
         source=entry.source,
@@ -864,6 +866,7 @@ async def add_video_entry(
             video_type=resolved.video_type,
             priority=SOURCE_PRIORITY["dashboard"],
             start_seconds=resolved.start_seconds,
+            thumbnail_url=metadata.thumbnail_url,
         )
         LOGGER.info(
             "Channel %s added %s %s from dashboard",

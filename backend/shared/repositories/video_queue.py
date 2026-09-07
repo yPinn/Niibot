@@ -43,7 +43,7 @@ PRIORITY_PINNED = 99
 # ---------------------------------------------------------------------------
 
 _ENTRY_COLUMNS = (
-    "id, channel_id, video_id, title, duration_seconds, is_vertical, start_seconds, "
+    "id, channel_id, video_id, title, duration_seconds, is_vertical, thumbnail_url, start_seconds, "
     "requested_by, source, status, video_type, priority, "
     "created_at, started_at, ended_at, requested_by_id"
 )
@@ -98,6 +98,7 @@ class VideoQueueRepository:
         priority: int = 0,
         requested_by_id: str | None = None,
         start_seconds: int = 0,
+        thumbnail_url: str | None = None,
     ) -> VideoQueueEntry:
         """Insert a new entry with status='queued'."""
         async with self.pool.acquire() as conn:
@@ -105,8 +106,8 @@ class VideoQueueRepository:
                 f"""
                 INSERT INTO video_queue
                     (channel_id, video_id, title, duration_seconds, is_vertical, start_seconds,
-                     requested_by, source, video_type, priority, requested_by_id)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                     requested_by, source, video_type, priority, requested_by_id, thumbnail_url)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
                 RETURNING {_ENTRY_COLUMNS}
                 """,
                 channel_id,
@@ -120,6 +121,7 @@ class VideoQueueRepository:
                 video_type,
                 priority,
                 requested_by_id,
+                thumbnail_url,
             )
             return VideoQueueEntry(**dict(row))
 
@@ -139,6 +141,7 @@ class VideoQueueRepository:
         video_type: str = "youtube",
         priority: int = 0,
         start_seconds: int = 0,
+        thumbnail_url: str | None = None,
     ) -> VideoQueueEntry | None:
         """Re-validate duplicate/queue-size/per-user limits and insert atomically.
 
@@ -196,8 +199,8 @@ class VideoQueueRepository:
                     f"""
                     INSERT INTO video_queue
                         (channel_id, video_id, title, duration_seconds, is_vertical, start_seconds,
-                         requested_by, source, video_type, priority, requested_by_id)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                         requested_by, source, video_type, priority, requested_by_id, thumbnail_url)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
                     RETURNING {_ENTRY_COLUMNS}
                     """,
                     channel_id,
@@ -211,6 +214,7 @@ class VideoQueueRepository:
                     video_type,
                     priority,
                     requested_by_id,
+                    thumbnail_url,
                 )
                 return VideoQueueEntry(**dict(row))
 

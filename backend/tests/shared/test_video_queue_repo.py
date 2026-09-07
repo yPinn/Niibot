@@ -1390,13 +1390,25 @@ class TestFetchTwitchVodInfo:
 
     async def test_parses_helix_duration(self):
         session = await self._session(
-            [{"title": "Stream", "duration": "3h20m5s", "view_count": 42}]
+            [
+                {
+                    "title": "Stream",
+                    "duration": "3h20m5s",
+                    "view_count": 42,
+                    "thumbnail_url": "https://x/%{width}x%{height}/thumb.jpg",
+                }
+            ]
         )
-        assert await fetch_twitch_vod_info("v1", "cid", "csec", session) == ("Stream", 12005, 42)
+        assert await fetch_twitch_vod_info("v1", "cid", "csec", session) == (
+            "Stream",
+            12005,
+            42,
+            "https://x/320x180/thumb.jpg",
+        )
 
     async def test_empty_data_returns_none(self):
         session = await self._session([])
-        assert await fetch_twitch_vod_info("v1", "cid", "csec", session) == (None, None, None)
+        assert await fetch_twitch_vod_info("v1", "cid", "csec", session) == (None, None, None, None)
 
     async def test_missing_creds_returns_none(self):
-        assert await fetch_twitch_vod_info("v1", "", "", MagicMock()) == (None, None, None)
+        assert await fetch_twitch_vod_info("v1", "", "", MagicMock()) == (None, None, None, None)
