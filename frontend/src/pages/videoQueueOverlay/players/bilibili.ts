@@ -6,7 +6,20 @@ import {
 } from './shared'
 import type { MountContext, PlayerStrategy } from './types'
 
-function mount(ctx: MountContext): void {
+// `player.bilibili.com/player.html` is Bilibili's OFFICIAL embed player (the one
+// its "share → embed" gives you), built to be iframed on third-party sites. It
+// was swapped for `html5mobileplayer.html` in 56c4abd purely to hide chrome, but
+// that mobile web player has heavier anti-embed checks and throws "本视频可能由于
+// 以下原因导致无法正常播放" inside an OBS Browser Source (fresh cookie jar, no
+// buvid3). The official embed is the better bet there.
+//
+// Its postMessage API is undocumented (`enablejsapi=1`): the parent can send
+// `setPlayer-<json>` commands and the player posts `playerOperation-<json>`
+// events back. We use it best-effort — a pause→play nudge collapses the player
+// chrome to its idle state (the manual OBS workaround, scripted), and an `ended`
+// event advances the queue precisely. Everything degrades to `pointer-events:
+// none` + the timer ceiling if the player ignores us.
+function mount(ctx: MountContext): (() => void) | void {
   const { current, joinElapsed, currentId, muted, containerRef, handleVideoEnd } = ctx
 
   if (hasAlreadyEnded(ctx)) {
@@ -18,32 +31,51 @@ function mount(ctx: MountContext): void {
 
   if (!containerRef.current) return
   containerRef.current.innerHTML = ''
+
   const iframe = document.createElement('iframe')
   const startSeconds = Math.floor(joinElapsed)
-  // `player.bilibili.com/player.html` is Bilibili's OFFICIAL embed player (the
-  // one its "share → embed" gives you), built to be iframed on third-party
-  // sites. It was swapped for `html5mobileplayer.html` in 56c4abd purely to hide
-  // player chrome — but the mobile web player has heavier anti-embed checks and
-  // throws "本视频可能由于以下原因导致无法正常播放" inside an OBS Browser Source
-  // (fresh cookie jar, no buvid3). The official embed is the better bet there;
-  // `&danmaku=0` still drops the bullet comments.
   const base =
     `https://player.bilibili.com/player.html?bvid=${encodeURIComponent(current.video_id)}` +
-    `&autoplay=1&danmaku=0&high_quality=1&as_wide=1&t=${startSeconds}`
+    `&autoplay=1&danmaku=0&high_quality=1&as_wide=1&enablejsapi=1&t=${startSeconds}`
   iframe.src = muted ? `${base}&muted=1` : base
-  // Bilibili's official player has no "hide chrome" params. Its transport
-  // controls auto-hide with no pointer activity (OBS has none), but the top
-  // title/关注 bar and the bottom "更高清" nag persist — oversize the iframe so
-  // `overflow: hidden` on .videoContainer clips them. Bias the crop to the top
-  // (the title bar is taller and subtitles sit low); the excess mostly eats the
-  // 16:9-in-16:10 letterbox rather than real picture. Tune per OBS screenshot.
-  iframe.style.cssText = 'position:absolute;left:-3%;top:-9%;width:106%;height:113%;border:none'
+  iframe.style.cssText = 'width:100%;height:100%;border:none'
+  // The overlay is display-only — never let the player see pointer activity, so
+  // its controls / title bar / "更高清" nag auto-hide a few seconds after load.
+  iframe.style.pointerEvents = 'none'
+  iframe.tabIndex = -1
   iframe.allow = 'autoplay; fullscreen'
   iframe.scrolling = 'no'
-  containerRef.current.appendChild(iframe)
 
+  const send = (type: string, value: unknown) => {
+    try {
+      iframe.contentWindow?.postMessage(`setPlayer-${JSON.stringify({ type, value })}`, '*')
+    } catch {
+      /* cross-origin — the player just ignores it */
+    }
+  }
+  iframe.addEventListener('load', () => {
+    // Nudge the chrome into its idle/collapsed state.
+    send('play', false)
+    setTimeout(() => send('play', true), 300)
+  })
+
+  const onMessage = (event: MessageEvent) => {
+    if (event.source !== iframe.contentWindow) return
+    if (typeof event.data !== 'string' || !event.data.startsWith('playerOperation-')) return
+    try {
+      const payload = JSON.parse(event.data.slice('playerOperation-'.length))
+      if (payload?.type === 'ended' || payload?.data === 'ended') handleVideoEnd(currentId)
+    } catch {
+      /* unrecognised event shape — ignore */
+    }
+  }
+  window.addEventListener('message', onMessage)
+
+  containerRef.current.appendChild(iframe)
   startTimerBasedEnd(ctx, BILIBILI_MAX_SECONDS)
+
+  return () => window.removeEventListener('message', onMessage)
 }
 
-// Bilibili is a plain iframe — no postMessage/control API to wait for, so no requiresApi.
+// Plain iframe — no external API script to preload, so no requiresApi.
 export const bilibiliStrategy: PlayerStrategy = { requiresApi: null, mount }
