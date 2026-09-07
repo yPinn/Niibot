@@ -17,8 +17,20 @@ from shared.video_sources import (
     YouTubeInfo,
     build_watch_url,
     fetch_video_metadata,
+    metadata_gate_unverifiable,
     resolve_video_url,
 )
+
+
+class TestMetadataGateUnverifiable:
+    def test_present_value_never_blocks(self):
+        assert metadata_gate_unverifiable(0, best_effort=False) is False
+        assert metadata_gate_unverifiable(100, best_effort=True) is False
+
+    def test_missing_value_blocks_only_authoritative_sources(self):
+        assert metadata_gate_unverifiable(None, best_effort=False) is True
+        assert metadata_gate_unverifiable(None, best_effort=True) is False
+
 
 # ---------------------------------------------------------------------------
 # resolve_video_url
@@ -204,8 +216,41 @@ class TestFetchVideoMetadata:
             metadata = await fetch_video_metadata(resolved)
         mock_fetch.assert_awaited_once_with("BV1xx411c7mD", None)
         assert metadata == VideoMetadata(
-            title="BV Title", duration_seconds=90, view_count=5000, is_vertical=True
+            title="BV Title",
+            duration_seconds=90,
+            view_count=5000,
+            is_vertical=True,
+            metadata_best_effort=True,
         )
+
+    async def test_bilibili_flags_best_effort_even_when_the_endpoint_fails(self):
+        # 412 risk-control → all-None; the flag must still be set so submission
+        # gates skip rather than reject a video that can never satisfy them.
+        resolved = ResolvedVideo(video_type="bilibili", video_id="BV1FjxHzGEkQ")
+        with patch(
+            "shared.video_sources.fetch_bilibili_info",
+            new=AsyncMock(return_value=(None, None, None, False)),
+        ):
+            metadata = await fetch_video_metadata(resolved)
+        assert metadata.metadata_best_effort is True
+        assert metadata.duration_seconds is None
+
+    async def test_authoritative_platforms_are_not_best_effort(self):
+        yt = ResolvedVideo(video_type="youtube", video_id="dQw4w9WgXcQ")
+        with patch(
+            "shared.video_sources.fetch_yt_info",
+            new=AsyncMock(return_value=YouTubeInfo(title="T", duration_seconds=1, view_count=1)),
+        ):
+            assert (
+                await fetch_video_metadata(yt, youtube_api_key="k")
+            ).metadata_best_effort is False
+        clip = ResolvedVideo(video_type="twitch_clip", video_id="Slug")
+        with patch(
+            "shared.video_sources.fetch_twitch_clip_info",
+            new=AsyncMock(return_value=("C", 30, 200)),
+        ):
+            meta = await fetch_video_metadata(clip, twitch_client_id="c", twitch_client_secret="s")
+        assert meta.metadata_best_effort is False
 
     async def test_fetch_failure_propagates_all_none(self):
         resolved = ResolvedVideo(video_type="youtube", video_id="dQw4w9WgXcQ")

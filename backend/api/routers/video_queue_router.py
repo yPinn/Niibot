@@ -42,6 +42,7 @@ from shared.repositories.video_queue import (
 from shared.video_sources import (
     fetch_twitch_clip_source,
     fetch_video_metadata,
+    metadata_gate_unverifiable,
     resolve_video_url,
     unplayable_message,
 )
@@ -85,6 +86,12 @@ class VideoTooLongError(InvalidInputError):
     code = "VIDEO_QUEUE.TOO_LONG"
     http_status = 422
     user_message = "影片長度超過上限"
+
+
+class VideoMetadataUnverifiableError(InvalidInputError):
+    code = "VIDEO_QUEUE.METADATA_UNVERIFIABLE"
+    http_status = 422
+    user_message = "無法驗證影片資訊，請稍後再試"
 
 
 class VideoBlockedError(InvalidInputError):
@@ -819,14 +826,21 @@ async def add_video_entry(
 
         # The length cap applies to the dashboard too (unlike queue-size / views);
         # the replay cooldown is a viewer-spam guard, so the broadcaster skips it.
-        if (
-            settings.max_duration_seconds
-            and metadata.duration_seconds
-            and metadata.duration_seconds > settings.max_duration_seconds
-        ):
-            raise VideoTooLongError(
-                user_message=f"影片長度超過上限（{settings.max_duration_seconds // 60} 分鐘）"
-            )
+        # A missing duration from an authoritative source is a transient failure
+        # (retry); a best-effort platform (Bilibili) can never supply one, so the
+        # cap skips and the overlay's per-platform ceiling bounds playback.
+        if settings.max_duration_seconds:
+            if metadata_gate_unverifiable(
+                metadata.duration_seconds, best_effort=metadata.metadata_best_effort
+            ):
+                raise VideoMetadataUnverifiableError()
+            if (
+                metadata.duration_seconds is not None
+                and metadata.duration_seconds > settings.max_duration_seconds
+            ):
+                raise VideoTooLongError(
+                    user_message=f"影片長度超過上限（{settings.max_duration_seconds // 60} 分鐘）"
+                )
 
         blocked = await VideoQueueBlocklistRepository(pool).check(
             channel_id, video_id=resolved.video_id, title=metadata.title

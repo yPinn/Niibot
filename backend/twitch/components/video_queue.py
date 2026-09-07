@@ -31,6 +31,7 @@ from shared.repositories.video_queue import (
 from shared.video_sources import (
     build_watch_url,
     fetch_video_metadata,
+    metadata_gate_unverifiable,
     resolve_video_url,
     unplayable_message,
 )
@@ -146,28 +147,32 @@ class VideoQueueComponent(BotComponent):
             await self._ctx_reply(ctx, unplayable_message(metadata.unplayable_reason))
             return
 
-        # Minimum view count filter
+        # Minimum view count filter. A missing view_count from an authoritative
+        # source is a transient failure (retry); a best-effort platform (Bilibili)
+        # can never supply it, so the gate skips rather than blocking every add.
         if settings.min_view_count > 0:
-            if view_count is None:
-                await self._ctx_reply(ctx, "無法取得影片資訊，請稍後再試")
+            if metadata_gate_unverifiable(view_count, best_effort=metadata.metadata_best_effort):
+                await self._ctx_reply(ctx, "無法驗證影片資訊，請稍後再試")
                 return
-            if view_count < settings.min_view_count:
+            if view_count is not None and view_count < settings.min_view_count:
                 await self._ctx_reply(
                     ctx,
                     f"影片觀看次數不足（{view_count:,} 次 < {settings.min_view_count:,} 次），無法加入佇列",
                 )
                 return
 
-        # Global length cap
-        if (
-            settings.max_duration_seconds
-            and duration_seconds
-            and duration_seconds > settings.max_duration_seconds
-        ):
-            await self._ctx_reply(
-                ctx, f"影片長度超過上限（{settings.max_duration_seconds // 60} 分鐘）"
-            )
-            return
+        # Global length cap — same best-effort handling as view count.
+        if settings.max_duration_seconds:
+            if metadata_gate_unverifiable(
+                duration_seconds, best_effort=metadata.metadata_best_effort
+            ):
+                await self._ctx_reply(ctx, "無法驗證影片時長，請稍後再試")
+                return
+            if duration_seconds is not None and duration_seconds > settings.max_duration_seconds:
+                await self._ctx_reply(
+                    ctx, f"影片長度超過上限（{settings.max_duration_seconds // 60} 分鐘）"
+                )
+                return
 
         # Replay cooldown — reject a video played again too soon
         if settings.replay_cooldown_hours and await self.vq_repo.played_within(

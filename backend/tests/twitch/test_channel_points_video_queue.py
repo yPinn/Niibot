@@ -50,6 +50,7 @@ def _settings(**kw) -> VideoQueueSettings:
         min_view_count=kw.get("min_view_count", 0),
         user_cooldown_seconds=kw.get("user_cooldown_seconds", 0),
         max_per_user=kw.get("max_per_user", 0),
+        max_duration_seconds=kw.get("max_duration_seconds", 0),
     )
 
 
@@ -222,13 +223,96 @@ class TestVideoQueueRedemptionPlatforms:
         mock_resolve.assert_not_awaited()
         component.vq_repo.add_if_within_limits.assert_not_awaited()
 
-    async def test_missing_view_count_rejected_when_threshold_set(self):
-        # Regression guard: min_view_count>0 with an unknown view_count must
-        # reject rather than silently bypass the filter (see inline comment
-        # at channel_points.py around the min_view_count check).
+    async def test_missing_view_count_rejected_for_authoritative_source(self):
+        # min_view_count>0 with an unknown view_count from an official API is a
+        # transient failure — reject rather than silently bypass the filter.
+        component = _component(settings=_settings(min_view_count=1000))
+        resolved = ResolvedVideo("youtube", "vid123", False)
+        metadata = VideoMetadata("YT Title", 90, None, False)  # not best-effort
+        with (
+            patch(
+                "twitch.components.channel_points.resolve_video_url",
+                AsyncMock(return_value=resolved),
+            ),
+            patch(
+                "twitch.components.channel_points.fetch_video_metadata",
+                AsyncMock(return_value=metadata),
+            ),
+        ):
+            await component._handle_video_queue_redemption(
+                _payload(user_input="https://youtube.com/watch?v=vid123"), "Viewer"
+            )
+        component.vq_repo.add_if_within_limits.assert_not_awaited()
+        component._reply.assert_awaited_once()
+
+    async def test_missing_view_count_allowed_for_best_effort_platform(self):
+        # Bilibili's unofficial endpoint (412) can never supply a view_count, so
+        # min_view_count must skip rather than reject every Bilibili redemption.
         component = _component(settings=_settings(min_view_count=1000))
         resolved = ResolvedVideo("bilibili", "BV1xx411c7mD", False)
-        metadata = VideoMetadata("BV Title", 90, None, False)
+        metadata = VideoMetadata("BV Title", None, None, False, metadata_best_effort=True)
+        with (
+            patch(
+                "twitch.components.channel_points.resolve_video_url",
+                AsyncMock(return_value=resolved),
+            ),
+            patch(
+                "twitch.components.channel_points.fetch_video_metadata",
+                AsyncMock(return_value=metadata),
+            ),
+        ):
+            await component._handle_video_queue_redemption(
+                _payload(user_input="https://www.bilibili.com/video/BV1xx411c7mD"), "Viewer"
+            )
+        component.vq_repo.add_if_within_limits.assert_awaited_once()
+
+    async def test_missing_duration_rejected_for_authoritative_source(self):
+        component = _component(settings=_settings(max_duration_redemption=600))
+        resolved = ResolvedVideo("youtube", "vid123", False)
+        metadata = VideoMetadata("YT Title", None, 5000, False)  # not best-effort
+        with (
+            patch(
+                "twitch.components.channel_points.resolve_video_url",
+                AsyncMock(return_value=resolved),
+            ),
+            patch(
+                "twitch.components.channel_points.fetch_video_metadata",
+                AsyncMock(return_value=metadata),
+            ),
+        ):
+            await component._handle_video_queue_redemption(
+                _payload(user_input="https://youtube.com/watch?v=vid123"), "Viewer"
+            )
+        component.vq_repo.add_if_within_limits.assert_not_awaited()
+        component._reply.assert_awaited_once()
+
+    async def test_missing_duration_allowed_for_best_effort_platform(self):
+        # The reported bug: every Bilibili redemption rejected once a cap is set.
+        component = _component(
+            settings=_settings(max_duration_redemption=600, max_duration_seconds=1200)
+        )
+        resolved = ResolvedVideo("bilibili", "BV1FjxHzGEkQ", False)
+        metadata = VideoMetadata("BV Title", None, None, False, metadata_best_effort=True)
+        with (
+            patch(
+                "twitch.components.channel_points.resolve_video_url",
+                AsyncMock(return_value=resolved),
+            ),
+            patch(
+                "twitch.components.channel_points.fetch_video_metadata",
+                AsyncMock(return_value=metadata),
+            ),
+        ):
+            await component._handle_video_queue_redemption(
+                _payload(user_input="https://www.bilibili.com/video/BV1FjxHzGEkQ"), "Viewer"
+            )
+        component.vq_repo.add_if_within_limits.assert_awaited_once()
+
+    async def test_known_duration_still_capped_for_best_effort_platform(self):
+        # When Bilibili *does* return a duration, the cap still applies.
+        component = _component(settings=_settings(max_duration_redemption=600))
+        resolved = ResolvedVideo("bilibili", "BV1xx411c7mD", False)
+        metadata = VideoMetadata("BV Title", 9999, 5000, False, metadata_best_effort=True)
         with (
             patch(
                 "twitch.components.channel_points.resolve_video_url",
@@ -243,6 +327,7 @@ class TestVideoQueueRedemptionPlatforms:
                 _payload(user_input="https://www.bilibili.com/video/BV1xx411c7mD"), "Viewer"
             )
         component.vq_repo.add_if_within_limits.assert_not_awaited()
+        component._reply.assert_awaited_once()
 
     async def test_title_falls_back_to_video_id_when_metadata_has_no_title(self):
         # Regression guard for the `title or resolved.video_id` log line —
