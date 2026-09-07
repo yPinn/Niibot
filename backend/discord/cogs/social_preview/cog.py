@@ -34,6 +34,7 @@ import httpx
 from discord.ext import commands
 
 from core import EmbedFactory, get_settings
+from shared.bilibili_client import bilibili_web_headers, fetch_bilibili_video_data
 
 from ._embeds import (
     build_bilibili_embed,
@@ -50,7 +51,6 @@ from ._embeds import (
 from ._ogparser import _parse_og, _twitch_clip_mp4_url  # noqa: F401  (re-exported for tests)
 from ._views import _BasePreviewView, _InstagramCarouselView, _ThreadsCarouselView
 from .constants import (
-    BILIBILI_API,
     BILIBILI_CARD_API,
     BILIBILI_LIVE_API,
     BILIBILI_LIVE_RE,
@@ -502,25 +502,17 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
                 return
 
         video_url = f"https://www.bilibili.com/video/{bvid}"
-        try:
-            resp = await self._http.get(
-                BILIBILI_API.format(bvid=bvid),
-                headers={"Referer": "https://www.bilibili.com"},
-            )
-            resp.raise_for_status()
-            body = resp.json()
-        except Exception as exc:
-            LOGGER.debug("Bilibili API failed for %s: %s", bvid, exc)
-            return
-
-        if body.get("code") != 0 or not body.get("data"):
+        # Shared client: browser headers + buvid3/bili_ticket cookie + WBI /
+        # webpage fallbacks. The bare API call here used to 412 from the bot's IP.
+        data = await fetch_bilibili_video_data(bvid)
+        if not data:
             return
 
         await self._send_preview(
             message,
             build_bilibili_embed(
                 self._embed,
-                body["data"],
+                data,
                 video_url,
                 sender_avatar_url=str(message.author.display_avatar.url),
             ),
@@ -532,10 +524,7 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
         try:
             resp = await self._http.get(
                 BILIBILI_CARD_API.format(mid=mid),
-                headers={
-                    "Referer": "https://www.bilibili.com",
-                    "User-Agent": _UA,
-                },
+                headers=await bilibili_web_headers(),
             )
             resp.raise_for_status()
             body = resp.json()
@@ -556,7 +545,7 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
         try:
             resp = await self._http.get(
                 BILIBILI_LIVE_API.format(room_id=room_id),
-                headers={"Referer": "https://live.bilibili.com"},
+                headers=await bilibili_web_headers(),
             )
             resp.raise_for_status()
             body = resp.json()
@@ -575,7 +564,7 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
             try:
                 card_resp = await self._http.get(
                     BILIBILI_CARD_API.format(mid=uid),
-                    headers={"Referer": "https://www.bilibili.com"},
+                    headers=await bilibili_web_headers(),
                 )
                 card_resp.raise_for_status()
                 card_body = card_resp.json()
