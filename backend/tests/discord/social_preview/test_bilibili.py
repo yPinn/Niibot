@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
 import pytest
@@ -470,60 +470,53 @@ class TestBuildBilibiliLiveEmbed:
 
 
 class TestCogBilibili:
-    def _api_response(self) -> dict:
-        return {
-            "code": 0,
-            "data": {
-                "title": "My BV Video",
-                "desc": "Some description",
-                "pic": "https://img.com/v.jpg",
-                "owner": {"name": "Uploader", "face": "https://img.com/a.jpg"},
-                "stat": {"view": 5000, "like": 200, "coin": 50, "favorite": 100},
-            },
-        }
+    """The video handler now delegates to shared.bilibili_client; patch that."""
 
-    def _make_resp(self, data: dict) -> MagicMock:
-        resp = MagicMock()
-        resp.raise_for_status = MagicMock()
-        resp.json = MagicMock(return_value=data)
-        return resp
+    _VIDEO_DATA = {
+        "bvid": "BV1xx411c7mD",
+        "title": "My BV Video",
+        "desc": "Some description",
+        "pic": "https://img.com/v.jpg",
+        "owner": {"name": "Uploader", "face": "https://img.com/a.jpg"},
+        "stat": {"view": 5000, "like": 200, "coin": 50, "favorite": 100},
+    }
+
+    @staticmethod
+    def _patch_client(return_value):
+        return patch(
+            "discord.cogs.social_preview.cog.fetch_bilibili_video_data",
+            AsyncMock(return_value=return_value),
+        )
 
     @pytest.mark.asyncio
     async def test_sends_embed_on_success(self, cog: SocialPreviewCog) -> None:
-        cog._http.get = AsyncMock(return_value=self._make_resp(self._api_response()))
         msg = _make_message("https://www.bilibili.com/video/BV1xx411c7mD")
-        await cog.on_message(msg)
+        with self._patch_client(self._VIDEO_DATA):
+            await cog.on_message(msg)
 
         msg.channel.send.assert_awaited_once()
         embed = msg.channel.send.call_args.kwargs["embed"]
         assert embed.title == "My BV Video"
 
     @pytest.mark.asyncio
-    async def test_no_send_on_api_error_code(self, cog: SocialPreviewCog) -> None:
-        cog._http.get = AsyncMock(return_value=self._make_resp({"code": -404, "data": None}))
+    async def test_no_send_when_client_returns_none(self, cog: SocialPreviewCog) -> None:
         msg = _make_message("https://www.bilibili.com/video/BV1xx411c7mD")
-        await cog.on_message(msg)
+        with self._patch_client(None):
+            await cog.on_message(msg)
         msg.channel.send.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_deletes_original_message(self, cog: SocialPreviewCog) -> None:
-        cog._http.get = AsyncMock(return_value=self._make_resp(self._api_response()))
         msg = _make_message("https://www.bilibili.com/video/BV1xx411c7mD")
-        await cog.on_message(msg)
+        with self._patch_client(self._VIDEO_DATA):
+            await cog.on_message(msg)
         msg.delete.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_no_send_on_http_error(self, cog: SocialPreviewCog) -> None:
-        cog._http.get = AsyncMock(side_effect=Exception("timeout"))
-        msg = _make_message("https://www.bilibili.com/video/BV1xx411c7mD")
-        await cog.on_message(msg)
-        msg.channel.send.assert_not_awaited()
-
-    @pytest.mark.asyncio
     async def test_embed_thumbnail_is_sender_avatar(self, cog: SocialPreviewCog) -> None:
-        cog._http.get = AsyncMock(return_value=self._make_resp(self._api_response()))
         msg = _make_message("https://www.bilibili.com/video/BV1xx411c7mD")
-        await cog.on_message(msg)
+        with self._patch_client(self._VIDEO_DATA):
+            await cog.on_message(msg)
         embed = msg.channel.send.call_args.kwargs["embed"]
         assert embed.thumbnail.url == SENDER_AVATAR_URL
 

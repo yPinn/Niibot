@@ -7,7 +7,8 @@ bot, channel-points redemptions, and the donation webhook.
   - extract_youtube_id / extract_youtube_info : pure YouTube URL parsing
   - fetch_yt_info                              : YouTube Data API v3 call
   - extract_bilibili_bvid / resolve_bilibili_url : Bilibili BV parsing (+ b23.tv)
-  - fetch_bilibili_info                        : Bilibili public API call
+  - fetch_bilibili_info                        : Bilibili metadata (via
+    shared.bilibili_client — three risk-control-aware tiers)
   - extract_twitch_clip_slug                   : Twitch clip URL parsing
   - fetch_twitch_clip_info                     : Twitch Helix clips API call
 
@@ -27,6 +28,8 @@ from dataclasses import dataclass
 from urllib.parse import quote
 
 import aiohttp
+
+from shared.bilibili_client import fetch_bilibili_video_data
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -254,57 +257,26 @@ async def fetch_bilibili_info(
     bvid: str,
     session: aiohttp.ClientSession | None = None,
 ) -> tuple[str | None, int | None, int | None, bool]:
-    """Fetch video title, duration, view count, and orientation via Bilibili public API.
+    """Fetch video title, duration, view count, and orientation from Bilibili.
 
-    Returns (title, duration_seconds, view_count, is_vertical).
-    All values are None/False on any failure.
+    Returns ``(title, duration_seconds, view_count, is_vertical)``. All values are
+    None/False when every tier of :mod:`shared.bilibili_client` is blocked or the
+    video is unavailable — Bilibili has no official metadata API and a datacenter
+    IP is often risk-controlled, so callers must treat this as "unknown", not
+    "reject" (see ``metadata_best_effort`` on :class:`VideoMetadata`).
     """
-    _own_session = session is None
-    _session: aiohttp.ClientSession = session or aiohttp.ClientSession()
-    try:
-        async with _session.get(
-            "https://api.bilibili.com/x/web-interface/view",
-            params={"bvid": bvid},
-            headers={
-                "Referer": "https://www.bilibili.com",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            },
-            timeout=aiohttp.ClientTimeout(total=5),
-        ) as resp:
-            if resp.status != 200:
-                LOGGER.warning("[Bilibili API] Unexpected status %s for %s", resp.status, bvid)
-                return None, None, None, False
-            data = await resp.json(content_type=None)
-            if data.get("code") != 0:
-                # code -412 is Bilibili's risk-control block, common from
-                # datacenter IPs. The overlay falls back to a timer ceiling
-                # (players/shared.ts) so the queue still advances without a
-                # duration — but the entry loses accurate timing.
-                LOGGER.warning(
-                    "[Bilibili API] Error %s for %s: %s",
-                    data.get("code"),
-                    bvid,
-                    data.get("message"),
-                )
-                return None, None, None, False
-            video_data = data.get("data", {})
-            title: str | None = video_data.get("title")
-            duration_seconds: int | None = video_data.get("duration")
-            view_count_raw = video_data.get("stat", {}).get("view")
-            view_count: int | None = int(view_count_raw) if view_count_raw is not None else None
-            dimension = video_data.get("dimension", {})
-            width = dimension.get("width") or 0
-            height = dimension.get("height") or 0
-            is_vertical = height > width if width > 0 and height > 0 else False
-            return title, duration_seconds, view_count, is_vertical
-    except Exception as exc:
-        LOGGER.warning(
-            "[Bilibili API] fetch_bilibili_info failed for %s: %s", bvid, type(exc).__name__
-        )
+    data = await fetch_bilibili_video_data(bvid, session=session)
+    if not data:
         return None, None, None, False
-    finally:
-        if _own_session:
-            await _session.close()
+    title: str | None = data.get("title")
+    duration_seconds: int | None = data.get("duration")
+    view_count_raw = (data.get("stat") or {}).get("view")
+    view_count: int | None = int(view_count_raw) if view_count_raw is not None else None
+    dimension = data.get("dimension") or {}
+    width = dimension.get("width") or 0
+    height = dimension.get("height") or 0
+    is_vertical = height > width if width > 0 and height > 0 else False
+    return title, duration_seconds, view_count, is_vertical
 
 
 # ---------------------------------------------------------------------------
