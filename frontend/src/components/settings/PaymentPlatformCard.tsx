@@ -22,7 +22,6 @@ export interface PaymentFormState {
   hash_iv: string
   min_amount: string
   media_share_enabled: boolean
-  enabled: boolean
 }
 
 export function emptyForm(minAmount = 30): PaymentFormState {
@@ -32,7 +31,6 @@ export function emptyForm(minAmount = 30): PaymentFormState {
     hash_iv: '',
     min_amount: String(minAmount),
     media_share_enabled: false,
-    enabled: false,
   }
 }
 
@@ -41,6 +39,8 @@ interface PaymentPlatformCardProps {
   form: PaymentFormState
   hasExisting: boolean
   hasStoredHash: boolean
+  /** Server-truth enabled state; only meaningful once hasExisting. */
+  enabled: boolean
   isSaving: boolean
   isDeleting: boolean
   locked: boolean
@@ -48,6 +48,7 @@ interface PaymentPlatformCardProps {
   revealed: boolean
   onToggleOpen: () => void
   onToggleReveal: () => void
+  onToggleEnabled: () => void
   onPatch: (patch: Partial<PaymentFormState>) => void
   onSave: () => void
   onRequestDelete: () => void
@@ -58,6 +59,7 @@ export function PaymentPlatformCard({
   form,
   hasExisting,
   hasStoredHash,
+  enabled,
   isSaving,
   isDeleting,
   locked,
@@ -65,6 +67,7 @@ export function PaymentPlatformCard({
   revealed,
   onToggleOpen,
   onToggleReveal,
+  onToggleEnabled,
   onPatch,
   onSave,
   onRequestDelete,
@@ -104,17 +107,16 @@ export function PaymentPlatformCard({
                 )}
               </Button>
             )}
-            <Switch
-              id={`${platform}-enabled`}
-              aria-label="啟用"
-              checked={form.enabled}
-              disabled={locked}
-              onCheckedChange={checked => {
-                onPatch({ enabled: checked })
-                if (checked && !isOpen) onToggleOpen()
-              }}
-              onClick={e => e.stopPropagation()}
-            />
+            {hasExisting && (
+              <Switch
+                id={`${platform}-enabled`}
+                aria-label="啟用"
+                checked={enabled}
+                disabled={locked || isSaving || isDeleting}
+                onCheckedChange={onToggleEnabled}
+                onClick={e => e.stopPropagation()}
+              />
+            )}
             <Icon
               icon="fa-solid fa-chevron-down"
               wrapperClassName="size-3.5"

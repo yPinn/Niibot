@@ -23,6 +23,7 @@ import {
 } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTenant } from '@/contexts/TenantContext'
+import { useOptimisticToggle } from '@/hooks/useOptimisticToggle'
 import { toastApiError } from '@/lib/toast-error'
 
 import { emptyForm, type PaymentFormState, PaymentPlatformCard } from './PaymentPlatformCard'
@@ -36,7 +37,6 @@ function configToForm(c: PaymentConfigResponse): PaymentFormState {
     hash_iv: '',
     min_amount: String(c.min_amount),
     media_share_enabled: c.media_share_enabled,
-    enabled: c.enabled,
   }
 }
 
@@ -67,6 +67,19 @@ export function PaymentConfigCard() {
   const patchForm = useCallback((platform: DonationPlatform, patch: Partial<PaymentFormState>) => {
     setForms(prev => ({ ...prev, [platform]: { ...prev[platform], ...patch } }))
   }, [])
+
+  const { toggle: toggleEnabled } = useOptimisticToggle<PaymentConfigResponse>({
+    setState: setConfigs,
+    getId: c => c.platform,
+    toggleFn: (c, enabled) =>
+      upsertPaymentConfig(c.platform, {
+        merchant_id: c.merchant_id,
+        min_amount: c.min_amount,
+        media_share_enabled: c.media_share_enabled,
+        enabled,
+      }),
+    messages: { on: '已啟用', off: '已停用', error: '切換狀態失敗' },
+  })
 
   const fetchConfigs = useCallback(async () => {
     try {
@@ -108,7 +121,9 @@ export function PaymentConfigCard() {
           return Number.isNaN(v) || v < 1 ? 30 : v
         })(),
         media_share_enabled: form.media_share_enabled,
-        enabled: form.enabled,
+        // New platforms go live on first save; editing an existing one keeps
+        // whatever the enable toggle last set.
+        enabled: configs.find(c => c.platform === platform)?.enabled ?? true,
       })
       toast.success(`已儲存 ${PLATFORM_LABELS[platform]} 設定`)
       await fetchConfigs()
@@ -176,6 +191,7 @@ export function PaymentConfigCard() {
                       form={forms[platform]}
                       hasExisting={!!existing}
                       hasStoredHash={!!existing?.has_hash}
+                      enabled={existing?.enabled ?? false}
                       isSaving={saving === platform}
                       isDeleting={deleting === platform}
                       locked={locked}
@@ -183,6 +199,7 @@ export function PaymentConfigCard() {
                       revealed={revealed[platform]}
                       onToggleOpen={() => setOpen(p => ({ ...p, [platform]: !p[platform] }))}
                       onToggleReveal={() => setRevealed(p => ({ ...p, [platform]: !p[platform] }))}
+                      onToggleEnabled={() => existing && void toggleEnabled(existing)}
                       onPatch={patch => patchForm(platform, patch)}
                       onSave={() => void handleSave(platform)}
                       onRequestDelete={() => setPendingDelete(platform)}

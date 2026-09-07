@@ -79,6 +79,39 @@ describe('PaymentConfigCard', () => {
     expect(await screen.findByText('已設定')).toBeInTheDocument()
   })
 
+  const existingEcpay = {
+    platform: 'ecpay' as const,
+    merchant_id: '2000132',
+    has_hash: true,
+    min_amount: 50,
+    media_share_enabled: false,
+    enabled: true,
+    updated_at: null,
+  }
+
+  it('persists the enable toggle immediately and reverts on failure', async () => {
+    const user = userEvent.setup()
+    mockGet.mockResolvedValue([existingEcpay])
+    mockUpsert.mockRejectedValueOnce(new Error('boom'))
+    render(<PaymentConfigCard />)
+
+    const toggle = await screen.findByRole('switch', { name: '啟用' })
+    expect(toggle).toBeChecked()
+
+    await user.click(toggle)
+    await waitFor(() =>
+      expect(mockUpsert).toHaveBeenCalledWith('ecpay', expect.objectContaining({ enabled: false }))
+    )
+    // API rejected → optimistic flip is rolled back
+    await waitFor(() => expect(screen.getByRole('switch', { name: '啟用' })).toBeChecked())
+  })
+
+  it('does not show an enable toggle before the platform is saved', async () => {
+    render(<PaymentConfigCard />)
+    await screen.findByText('綠界 ECPay')
+    expect(screen.queryByRole('switch', { name: '啟用' })).not.toBeInTheDocument()
+  })
+
   it('clamps a below-minimum amount to 30 on save', async () => {
     const user = userEvent.setup()
     render(<PaymentConfigCard />)
