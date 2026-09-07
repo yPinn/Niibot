@@ -34,12 +34,37 @@ isn't supported yet (see "Deferred: TikTok" below).
 | -------------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
 | URL parsing    | `shared/video_sources.py`: `extract_*` functions, composed by `resolve_video_url()`         | Regex shape only                                                      |
 | Metadata fetch | `shared/video_sources.py`: `fetch_*_info` functions, normalized by `fetch_video_metadata()` | API used, auth, whether duration/view_count are available at all      |
-| Playback       | `frontend/.../videoQueueOverlay/players/{youtube,twitchClip,bilibili}.ts`                   | Embed mechanism, and whether "video ended" is a real event or a guess |
+| Playback       | `frontend/.../videoQueueOverlay/players/{youtube,twitchClip,twitchVod,bilibili}.ts`         | Embed mechanism, and whether "video ended" is a real event or a guess |
 
 Adding a platform means: one URL regex, one fetch function, one entry in the
 `_WATCH_URL_BUILDERS` map (`video_sources.py`), and one `PlayerStrategy` in
 `players/index.ts`. `resolve_video_url()` tries platforms in this order:
-YouTube → Twitch Clip → Bilibili (including `b23.tv` short-link redirects).
+YouTube → Twitch Clip → Twitch VOD → Bilibili (including `b23.tv` short-link
+redirects).
+
+## Twitch VOD (`twitch.tv/videos/{id}`)
+
+Added later, and the **best-behaved** of the four: Twitch's official embed
+player JS API (`embed.twitch.tv` / `player.twitch.tv/js/embed/v1.js`) accepts a
+`video` param — unlike clips — so `players/twitchVod.ts` gets a real player.
+`autoplay` + `.play()` are imperative (OBS honours them, like YouTube's
+`playVideo()`), `controls: false` hides the chrome, and the `ENDED` event gives
+real end detection.
+
+A VOD is hours long, so Video Queue treats it as a **long clip**:
+
+- `extract_twitch_vod_info()` also parses the URL's `?t=1h2m3s` into
+  `start_seconds` (a new `video_queue.start_seconds` column, migration 108).
+- `fetch_video_metadata()` stores `duration_seconds =
+min(TWITCH_VOD_WINDOW_SECONDS, vod_duration - start_seconds)` — the **capped
+  play window**, not the VOD length. When Helix can't return the VOD duration
+  (deleted / sub-only / expired) it falls back to the full window.
+- The overlay seeks to `start_seconds + joinElapsed` and advances when
+  `getCurrentTime() - start_seconds` reaches `duration_seconds`, or on `ENDED`.
+
+`fetch_twitch_vod_info()` uses Helix `/videos` with the same app token as
+clips; the duration string (`"3h20m5s"`) is parsed by `_parse_hms()`, shared
+with the `?t=` parser.
 
 ## Platform reference (parsing → metadata → playback)
 

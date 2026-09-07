@@ -1,15 +1,20 @@
 import { API_ENDPOINTS, apiFetch } from './config'
 import { apiJson, parseApiError } from './errors'
 
+export type VideoType = 'youtube' | 'twitch_clip' | 'twitch_vod' | 'bilibili'
+
 export interface VideoQueueEntry {
   id: number
   video_id: string
   title: string | null
+  /** For twitch_vod this is the capped play window, not the full VOD length. */
   duration_seconds: number | null
   is_vertical: boolean
+  /** twitch_vod seek offset (the URL's `?t=`); 0 otherwise. */
+  start_seconds: number
   requested_by: string
   source: string
-  video_type: 'youtube' | 'twitch_clip' | 'bilibili'
+  video_type: VideoType
   started_at: string | null
 }
 

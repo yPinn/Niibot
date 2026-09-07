@@ -40,16 +40,44 @@ declare global {
   }
 }
 
+/** The subset of Twitch's embed player (`embed.twitch.tv/embed/v1.js`) the VOD
+ *  strategy uses. Clips are NOT playable through this API — only `video`,
+ *  `channel` and `collection` — so `twitchClip.ts` stays on its own path. */
+export interface TwitchPlayerInstance {
+  play(): void
+  pause(): void
+  seek(seconds: number): void
+  setMuted(muted: boolean): void
+  getCurrentTime(): number
+  getDuration(): number
+  getEnded(): boolean
+  addEventListener(event: string, cb: () => void): void
+  destroy(): void
+}
+
+interface TwitchPlayerCtor {
+  new (
+    element: HTMLElement | string,
+    options: {
+      video?: string
+      channel?: string
+      parent?: string[]
+      width?: number | string
+      height?: number | string
+      autoplay?: boolean
+      muted?: boolean
+      time?: string
+      controls?: boolean
+    }
+  ): TwitchPlayerInstance
+  PLAYING: string
+  ENDED: string
+  PAUSE: string
+}
+
 declare global {
   interface Window {
-    // Twitch clips embed via a plain clips.twitch.tv/embed iframe (no JS API).
-    // This global is only for <TwitchPlayer>, the channel live-preview component.
-    Twitch?: {
-      Player?: new (
-        element: HTMLElement,
-        options: Record<string, unknown>
-      ) => { destroy: () => void }
-    }
+    Twitch?: { Player?: TwitchPlayerCtor }
   }
 }
 
@@ -91,6 +119,6 @@ export interface MountContext {
  */
 export interface PlayerStrategy {
   /** Which external API must be ready before mount() can run; null needs none (plain iframe). */
-  requiresApi: 'youtube' | null
+  requiresApi: 'youtube' | 'twitch' | null
   mount(ctx: MountContext): (() => void) | void
 }

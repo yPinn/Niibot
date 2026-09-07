@@ -45,6 +45,16 @@ class TestResolveVideoUrl:
             video_type="twitch_clip", video_id="SomeClipSlug", is_vertical=False
         )
 
+    async def test_twitch_vod_url(self):
+        resolved = await resolve_video_url("https://www.twitch.tv/videos/123456789")
+        assert resolved == ResolvedVideo(video_type="twitch_vod", video_id="123456789")
+
+    async def test_twitch_vod_url_with_timestamp(self):
+        resolved = await resolve_video_url("https://www.twitch.tv/videos/123?t=1h2m3s")
+        assert resolved == ResolvedVideo(
+            video_type="twitch_vod", video_id="123", start_seconds=3723
+        )
+
     async def test_bilibili_full_url(self):
         resolved = await resolve_video_url("https://www.bilibili.com/video/BV1xx411c7mD")
         assert resolved == ResolvedVideo(
@@ -149,6 +159,42 @@ class TestFetchVideoMetadata:
             title="Clip Title", duration_seconds=30, view_count=200, is_vertical=False
         )
 
+    async def test_twitch_vod_caps_the_play_window_from_the_offset(self):
+        # 2h VOD, start 1h50m in → 10min remains, capped at the 600s window.
+        resolved = ResolvedVideo(video_type="twitch_vod", video_id="123", start_seconds=6600)
+        with patch(
+            "shared.video_sources.fetch_twitch_vod_info",
+            new=AsyncMock(return_value=("VOD Title", 7200, 5000)),
+        ):
+            metadata = await fetch_video_metadata(
+                resolved, twitch_client_id="c", twitch_client_secret="s"
+            )
+        assert metadata == VideoMetadata(
+            title="VOD Title", duration_seconds=600, view_count=5000, is_vertical=False
+        )
+
+    async def test_twitch_vod_shorter_remainder_wins_over_the_cap(self):
+        resolved = ResolvedVideo(video_type="twitch_vod", video_id="123", start_seconds=7100)
+        with patch(
+            "shared.video_sources.fetch_twitch_vod_info",
+            new=AsyncMock(return_value=("VOD", 7200, 1)),
+        ):
+            metadata = await fetch_video_metadata(
+                resolved, twitch_client_id="c", twitch_client_secret="s"
+            )
+        assert metadata.duration_seconds == 100
+
+    async def test_twitch_vod_unknown_duration_falls_back_to_the_window(self):
+        resolved = ResolvedVideo(video_type="twitch_vod", video_id="123")
+        with patch(
+            "shared.video_sources.fetch_twitch_vod_info",
+            new=AsyncMock(return_value=(None, None, None)),
+        ):
+            metadata = await fetch_video_metadata(
+                resolved, twitch_client_id="c", twitch_client_secret="s"
+            )
+        assert metadata.duration_seconds == 600
+
     async def test_bilibili_delegates_and_preserves_shape(self):
         resolved = ResolvedVideo(video_type="bilibili", video_id="BV1xx411c7mD")
         with patch(
@@ -187,6 +233,11 @@ class TestBuildWatchUrl:
     def test_twitch_clip(self):
         assert (
             build_watch_url("twitch_clip", "SomeClipSlug") == "https://clips.twitch.tv/SomeClipSlug"
+        )
+
+    def test_twitch_vod(self):
+        assert (
+            build_watch_url("twitch_vod", "123456789") == "https://www.twitch.tv/videos/123456789"
         )
 
     def test_bilibili(self):
