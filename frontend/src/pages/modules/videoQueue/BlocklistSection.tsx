@@ -55,7 +55,14 @@ export interface BlocklistSectionHandle {
   addBlock: (kind: BlocklistKind, value: string, label?: string | null) => Promise<void>
 }
 
-export function BlocklistSection({ ref }: { ref?: React.Ref<BlocklistSectionHandle> }) {
+export function BlocklistSection({
+  ref,
+  hideHeader = false,
+}: {
+  ref?: React.Ref<BlocklistSectionHandle>
+  /** Omit the built-in title/description when a parent Card already supplies them. */
+  hideHeader?: boolean
+}) {
   const [entries, setEntries] = useState<BlocklistEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [kind, setKind] = useState<BlocklistKind>('keyword')
@@ -113,13 +120,15 @@ export function BlocklistSection({ ref }: { ref?: React.Ref<BlocklistSectionHand
   }
 
   return (
-    <div className="flex flex-col gap-3">
-      <div>
-        <p className="text-sub text-muted-foreground">封鎖清單</p>
-        <p className="text-label text-muted-foreground">
-          符合的影片、標題關鍵字或點播者會被所有點播管道拒絕
-        </p>
-      </div>
+    <div className="flex flex-col gap-card">
+      {!hideHeader && (
+        <div>
+          <p className="text-sub text-muted-foreground">封鎖清單</p>
+          <p className="text-label text-muted-foreground">
+            符合的影片、標題關鍵字或點播者會被所有點播管道拒絕
+          </p>
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-2">
         <Select value={kind} onValueChange={v => setKind(v as BlocklistKind)}>

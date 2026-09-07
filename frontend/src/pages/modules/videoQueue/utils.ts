@@ -6,12 +6,16 @@ export const MIN_VIEW_COUNT_OPTIONS = [
   { value: 10_000, label: '10,000+' },
 ] as const
 
-// redemption (channel points): starts at 1 video, up to 3 videos
+// redemption (channel points) length cap — default 10 分鐘
 export const REDEMPTION_DURATION_OPTIONS = [
   { value: 300, label: '5 分鐘' },
   { value: 600, label: '10 分鐘' },
   { value: 900, label: '15 分鐘' },
+  { value: 1200, label: '20 分鐘' },
 ] as const
+
+/** How many rows each tab of the queue card shows per page. */
+export const QUEUE_PAGE_SIZE = 10
 
 /** Snap a raw seconds value to the nearest option in the list. */
 export function snapToOption(options: readonly { value: number }[], value: number): number {

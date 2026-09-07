@@ -1,9 +1,9 @@
 import type { VideoQueueEntry } from '@/api/videoQueue'
 import { Icon } from '@/components/primitives'
+import { TableShell } from '@/components/TableShell'
 import {
   Badge,
   Button,
-  Table,
   TableBody,
   TableCell,
   TableHead,
@@ -37,7 +37,7 @@ const PLATFORM_BADGE_CONFIG: Record<string, { label: string; className: string }
   bilibili: { label: 'Bilibili', className: 'text-status-info border-status-info/60' },
 }
 
-function PlatformBadge({ videoType }: { videoType: string }) {
+export function PlatformBadge({ videoType }: { videoType: string }) {
   const cfg = PLATFORM_BADGE_CONFIG[videoType]
   if (!cfg) return null
   return (
@@ -57,156 +57,102 @@ export function SourceBadge({ source }: { source: string }) {
 }
 
 export function QueueTable({
-  current,
   entries,
-  onSkip,
+  startIndex = 0,
   onSetNext,
   onPlayNow,
   onRemove,
 }: {
-  current?: VideoQueueEntry | null
   entries: VideoQueueEntry[]
-  onSkip?: () => void
+  /** Position of the first row in the full queue (for page 2+ numbering). */
+  startIndex?: number
   onSetNext?: (id: number) => void
   onPlayNow?: (id: number) => void
   onRemove?: (id: number) => void
 }) {
   const hasActions = !!(onSetNext || onPlayNow || onRemove)
-  if (!current && entries.length === 0) return null
+  if (entries.length === 0) return null
 
   return (
-    <div className="overflow-x-auto">
+    <TableShell>
       {/* table-fixed: column widths are enforced by <th> — dynamic content can't shift fixed cols */}
-      <Table className="table-fixed">
-        <TableHeader>
-          <TableRow>
-            <TableHead className="w-10" />
-            <TableHead>影片</TableHead>
-            <TableHead className="w-20 sm:w-28">點播者</TableHead>
-            <TableHead className="hidden sm:table-cell w-20 text-center">來源</TableHead>
-            <TableHead className="w-16 tabular-nums">長度</TableHead>
-            {(hasActions || onSkip) && <TableHead className="w-28" />}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {current && (
-            <TableRow className="bg-primary/10">
-              <TableCell>
-                <Icon
-                  icon="fa-solid fa-play"
-                  className="size-3 text-primary"
-                  wrapperClassName="mx-auto"
-                />
-              </TableCell>
-              <TableCell>
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <PlatformBadge videoType={current.video_type} />
-                  <div className="truncate font-medium" title={current.title || current.video_id}>
-                    {current.title || current.video_id}
-                  </div>
+      <TableHeader>
+        <TableRow>
+          <TableHead className="w-10 text-center">#</TableHead>
+          <TableHead>影片</TableHead>
+          <TableHead className="w-20 sm:w-28">點播者</TableHead>
+          <TableHead className="hidden sm:table-cell w-20 text-center">來源</TableHead>
+          <TableHead className="w-16 tabular-nums">長度</TableHead>
+          {hasActions && <TableHead className="w-28" />}
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {entries.map((entry, idx) => (
+          <TableRow key={entry.id}>
+            <TableCell className="text-center">
+              <Badge variant="outline">{startIndex + idx + 1}</Badge>
+            </TableCell>
+            <TableCell>
+              <div className="flex items-center gap-1.5 min-w-0">
+                <PlatformBadge videoType={entry.video_type} />
+                <div className="truncate font-medium" title={entry.title || entry.video_id}>
+                  {entry.title || entry.video_id}
                 </div>
-              </TableCell>
-              <TableCell className="text-muted-foreground text-sub">
-                <span className="block truncate">{current.requested_by}</span>
-              </TableCell>
-              <TableCell className="hidden sm:table-cell text-center">
-                <SourceBadge source={current.source} />
-              </TableCell>
-              <TableCell className="text-muted-foreground text-sub tabular-nums">
-                {current.duration_seconds ? formatDuration(current.duration_seconds) : '--:--'}
-              </TableCell>
-              {(hasActions || onSkip) && (
-                <TableCell className="text-right">
-                  {onSkip && (
+              </div>
+            </TableCell>
+            <TableCell className="text-muted-foreground text-sub">
+              <span className="block truncate">{entry.requested_by}</span>
+            </TableCell>
+            <TableCell className="hidden sm:table-cell text-center">
+              <SourceBadge source={entry.source} />
+            </TableCell>
+            <TableCell className="text-muted-foreground text-sub tabular-nums">
+              {entry.duration_seconds ? formatDuration(entry.duration_seconds) : '--:--'}
+            </TableCell>
+            {hasActions && (
+              <TableCell className="text-right">
+                <div className="flex justify-end gap-1">
+                  {onSetNext && (
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button variant="ghost" size="icon-sm" onClick={onSkip}>
-                          <Icon icon="fa-solid fa-forward-step" className="size-3.5" />
+                        <Button variant="ghost" size="icon-sm" onClick={() => onSetNext(entry.id)}>
+                          <Icon icon="fa-solid fa-arrow-up-to-line" className="size-3.5" />
                         </Button>
                       </TooltipTrigger>
-                      <TooltipContent>跳過當前影片</TooltipContent>
+                      <TooltipContent side="left">排到最前面</TooltipContent>
                     </Tooltip>
                   )}
-                </TableCell>
-              )}
-            </TableRow>
-          )}
-
-          {entries.map((entry, idx) => (
-            <TableRow key={entry.id}>
-              <TableCell className="text-center">
-                <Badge variant="outline">{idx + 1}</Badge>
-              </TableCell>
-              <TableCell>
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <PlatformBadge videoType={entry.video_type} />
-                  <div className="truncate font-medium" title={entry.title || entry.video_id}>
-                    {entry.title || entry.video_id}
-                  </div>
+                  {onPlayNow && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant="ghost" size="icon-sm" onClick={() => onPlayNow(entry.id)}>
+                          <Icon icon="fa-solid fa-play" className="size-3.5" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="left">馬上播這部</TooltipContent>
+                    </Tooltip>
+                  )}
+                  {onRemove && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={() => onRemove(entry.id)}
+                          className="border border-destructive/30 text-muted-foreground hover:border-destructive/60 hover:text-destructive"
+                        >
+                          <Icon icon="fa-solid fa-xmark" className="size-3.5" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="left">移除</TooltipContent>
+                    </Tooltip>
+                  )}
                 </div>
               </TableCell>
-              <TableCell className="text-muted-foreground text-sub">
-                <span className="block truncate">{entry.requested_by}</span>
-              </TableCell>
-              <TableCell className="hidden sm:table-cell text-center">
-                <SourceBadge source={entry.source} />
-              </TableCell>
-              <TableCell className="text-muted-foreground text-sub tabular-nums">
-                {entry.duration_seconds ? formatDuration(entry.duration_seconds) : '--:--'}
-              </TableCell>
-              {(hasActions || onSkip) && (
-                <TableCell className="text-right">
-                  <div className="flex justify-end gap-1">
-                    {onSetNext && (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            onClick={() => onSetNext(entry.id)}
-                          >
-                            <Icon icon="fa-solid fa-arrow-up-to-line" className="size-3.5" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>排定為下一首</TooltipContent>
-                      </Tooltip>
-                    )}
-                    {onPlayNow && (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            onClick={() => onPlayNow(entry.id)}
-                          >
-                            <Icon icon="fa-solid fa-play" className="size-3.5" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>直接插播</TooltipContent>
-                      </Tooltip>
-                    )}
-                    {onRemove && (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            onClick={() => onRemove(entry.id)}
-                            className="border border-destructive/30 text-muted-foreground hover:border-destructive/60 hover:text-destructive"
-                          >
-                            <Icon icon="fa-solid fa-xmark" className="size-3.5" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>移除</TooltipContent>
-                      </Tooltip>
-                    )}
-                  </div>
-                </TableCell>
-              )}
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
+            )}
+          </TableRow>
+        ))}
+      </TableBody>
+    </TableShell>
   )
 }
