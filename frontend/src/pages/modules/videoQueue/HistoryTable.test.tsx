@@ -26,16 +26,7 @@ const noop = () => {}
 
 describe('HistoryTable', () => {
   it('shows the empty state with no entries', () => {
-    render(
-      <HistoryTable
-        entries={[]}
-        hasMore={false}
-        loadingMore={false}
-        onLoadMore={noop}
-        onRequeue={noop}
-        onBlock={noop}
-      />
-    )
+    render(<HistoryTable entries={[]} onRequeue={noop} onBlock={noop} />)
     expect(screen.getByText('尚無播放紀錄')).toBeInTheDocument()
   })
 
@@ -44,9 +35,6 @@ describe('HistoryTable', () => {
     render(
       <HistoryTable
         entries={[entry({ id: 7, status: 'skipped', title: 'Skipped one' })]}
-        hasMore={false}
-        loadingMore={false}
-        onLoadMore={noop}
         onRequeue={onRequeue}
         onBlock={noop}
       />
@@ -58,42 +46,8 @@ describe('HistoryTable', () => {
 
   it('calls onBlock with the row', async () => {
     const onBlock = vi.fn()
-    render(
-      <HistoryTable
-        entries={[entry({ id: 9 })]}
-        hasMore={false}
-        loadingMore={false}
-        onLoadMore={noop}
-        onRequeue={noop}
-        onBlock={onBlock}
-      />
-    )
+    render(<HistoryTable entries={[entry({ id: 9 })]} onRequeue={noop} onBlock={onBlock} />)
     await userEvent.click(screen.getByRole('button', { name: '封鎖' }))
     expect(onBlock).toHaveBeenCalledWith(expect.objectContaining({ id: 9 }))
-  })
-
-  it('shows "load more" only when hasMore', () => {
-    const { rerender } = render(
-      <HistoryTable
-        entries={[entry()]}
-        hasMore={false}
-        loadingMore={false}
-        onLoadMore={noop}
-        onRequeue={noop}
-        onBlock={noop}
-      />
-    )
-    expect(screen.queryByRole('button', { name: '載入更多' })).not.toBeInTheDocument()
-    rerender(
-      <HistoryTable
-        entries={[entry()]}
-        hasMore
-        loadingMore={false}
-        onLoadMore={noop}
-        onRequeue={noop}
-        onBlock={noop}
-      />
-    )
-    expect(screen.getByRole('button', { name: '載入更多' })).toBeInTheDocument()
   })
 })

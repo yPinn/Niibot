@@ -4,6 +4,7 @@ import { PageHeader } from '@/components/layout/PageHeader'
 import { PageMain } from '@/components/layout/PageMain'
 import { OverlayUrlBlock } from '@/components/OverlayUrlBlock'
 import { Icon, OptionPicker, SlideUp } from '@/components/primitives'
+import { GuideValue, type SetupStep, SetupSteps } from '@/components/SetupSteps'
 import {
   Button,
   Card,
@@ -39,6 +40,46 @@ import {
 } from './chatOverlay/options'
 import { StepSlider } from './chatOverlay/SettingsControls'
 import { type ChatCssSettings, generateCss, loadSettings, saveSettings } from './chatOverlayCss'
+
+const HELP_STEPS: SetupStep[] = [
+  {
+    icon: 'fa-solid fa-palette',
+    title: '調整樣式',
+    description: '右側調整，左側即時預覽。',
+    items: [
+      '外觀：背景、訊息樣式、對齊方向',
+      '文字：字型大小與行間距',
+      '顯示：標題列、徽章、文字陰影',
+      '動畫：進場方向',
+    ],
+  },
+  {
+    icon: 'fa-solid fa-code',
+    title: '複製 CSS',
+    description: '產生的 CSS 要貼進 OBS。',
+    items: [
+      <>
+        切換到 <GuideValue>CSS</GuideValue> 分頁
+      </>,
+      '點「複製 CSS」',
+    ],
+  },
+  {
+    icon: 'fa-solid fa-display',
+    title: 'OBS 加入畫面',
+    description: '透明疊在直播畫面上。',
+    items: [
+      'OBS 加「瀏覽器」來源',
+      'URL 填下方的聊天室連結',
+      <>
+        CSS 貼進 <GuideValue>自訂 CSS</GuideValue> 欄位
+      </>,
+      <>
+        建議尺寸 <GuideValue>360 × 640</GuideValue>
+      </>,
+    ],
+  },
+]
 
 export default function ChatOverlayModule() {
   useDocumentTitle('Chat Overlay')
@@ -95,97 +136,8 @@ export default function ChatOverlayModule() {
             <SheetTitle>Chat Overlay 使用說明</SheetTitle>
             <SheetDescription>如何在 OBS 套用自訂聊天室樣式</SheetDescription>
           </SheetHeader>
-          <SheetSection className="flex flex-col flex-1 overflow-y-auto">
-            {/* Step 1 — 調整樣式 */}
-            <div className="flex gap-3">
-              <div className="flex flex-col items-center">
-                <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10 ring-1 ring-primary/20">
-                  <Icon
-                    icon="fa-solid fa-palette"
-                    wrapperClassName="size-3.5"
-                    className="text-label text-primary"
-                  />
-                </div>
-                <div className="mt-1 w-px flex-1 bg-border" />
-              </div>
-              <div className="flex flex-col gap-element pb-6">
-                <p className="text-content font-semibold">調整樣式</p>
-                <p className="text-sub text-muted-foreground">
-                  在右側設定面板調整外觀，左側預覽即時更新。
-                </p>
-                <ul className="flex flex-col gap-1">
-                  {[
-                    '外觀：背景透明或自訂色、訊息樣式、對齊方向',
-                    '文字：字型大小與行間距',
-                    '顯示：隱藏標題列、徽章、文字陰影',
-                    '動畫：進場方向',
-                  ].map(item => (
-                    <li key={item} className="flex items-start gap-1.5">
-                      <span className="mt-1.25 size-1 shrink-0 rounded-full bg-muted-foreground/50" />
-                      <span className="text-label text-muted-foreground">{item}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-
-            {/* Step 2 — 複製 CSS */}
-            <div className="flex gap-3">
-              <div className="flex flex-col items-center">
-                <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10 ring-1 ring-primary/20">
-                  <Icon
-                    icon="fa-solid fa-code"
-                    wrapperClassName="size-3.5"
-                    className="text-label text-primary"
-                  />
-                </div>
-                <div className="mt-1 w-px flex-1 bg-border" />
-              </div>
-              <div className="flex flex-col gap-element pb-6">
-                <p className="text-content font-semibold">複製 CSS</p>
-                <p className="text-sub text-muted-foreground">取得產生的樣式表貼入 OBS。</p>
-                <ul className="flex flex-col gap-1">
-                  {['切換到「CSS」分頁', '點擊「複製 CSS」按鈕'].map(item => (
-                    <li key={item} className="flex items-start gap-1.5">
-                      <span className="mt-1.25 size-1 shrink-0 rounded-full bg-muted-foreground/50" />
-                      <span className="text-label text-muted-foreground">{item}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-
-            {/* Step 3 — OBS 設定 */}
-            <div className="flex gap-3">
-              <div className="flex flex-col items-center">
-                <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10 ring-1 ring-primary/20">
-                  <Icon
-                    icon="fa-solid fa-display"
-                    wrapperClassName="size-3.5"
-                    className="text-label text-primary"
-                  />
-                </div>
-              </div>
-              <div className="flex flex-col gap-element pb-2">
-                <p className="text-content font-semibold">OBS 加入 Browser Source</p>
-                <p className="text-sub text-muted-foreground">
-                  將聊天室以透明 overlay 疊加到畫面上。
-                </p>
-                <ul className="flex flex-col gap-1">
-                  {[
-                    'OBS 新增瀏覽器來源',
-                    'URL 填入下方 Twitch 聊天室連結',
-                    '將複製的 CSS 貼入「自訂 CSS」欄位',
-                    '建議尺寸 360 × 640 px',
-                  ].map(item => (
-                    <li key={item} className="flex items-start gap-1.5">
-                      <span className="mt-1.25 size-1 shrink-0 rounded-full bg-muted-foreground/50" />
-                      <span className="text-label text-muted-foreground">{item}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
+          <SheetSection title="設定步驟" className="flex-1 overflow-y-auto">
+            <SetupSteps steps={HELP_STEPS} />
           </SheetSection>
         </SheetContent>
       </Sheet>
