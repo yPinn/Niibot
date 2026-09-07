@@ -1,8 +1,9 @@
 import { DiscordHelpBanner } from '@/components/DiscordHelpBanner'
+import { FeatureCard } from '@/components/FeatureCard'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { PageMain } from '@/components/layout/PageMain'
 import { Icon, SlideUp, Stagger, StaggerItem } from '@/components/primitives'
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle } from '@/components/ui'
+import { Button, Card, CardContent } from '@/components/ui'
 import { WarningBanner } from '@/components/WarningBanner'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
@@ -103,27 +104,14 @@ export default function DiscordDashboard() {
         <h2 className="text-section-title font-semibold">功能介紹</h2>
         <Stagger inView className="grid gap-section sm:grid-cols-2 lg:grid-cols-3">
           {FEATURES.map(f => (
-            <StaggerItem key={f.title}>
-              <Card className="h-full py-section">
-                <CardHeader className="px-section pb-element">
-                  <CardTitle className="flex items-center gap-element text-card-title">
-                    <Icon icon={f.icon} size="md" wrapperClassName="text-discord" />
-                    {f.title}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="flex flex-col gap-element px-section">
-                  <p className="text-sub leading-relaxed text-muted-foreground">{f.desc}</p>
-                  {f.tags.length > 0 && (
-                    <div className="flex flex-wrap gap-1">
-                      {f.tags.map(tag => (
-                        <Badge key={tag} variant="secondary" className="text-label">
-                          {tag}
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
+            <StaggerItem key={f.title} className="h-full">
+              <FeatureCard
+                icon={f.icon}
+                title={f.title}
+                description={f.desc}
+                tags={f.tags}
+                iconClassName="text-discord"
+              />
             </StaggerItem>
           ))}
         </Stagger>
