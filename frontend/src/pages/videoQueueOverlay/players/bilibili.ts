@@ -8,17 +8,24 @@ import type { MountContext, PlayerStrategy } from './types'
 
 // `player.bilibili.com/player.html` is Bilibili's OFFICIAL embed player (the one
 // its "share → embed" gives you), built to be iframed on third-party sites. It
-// was swapped for `html5mobileplayer.html` in 56c4abd purely to hide chrome, but
-// that mobile web player has heavier anti-embed checks and throws "本视频可能由于
-// 以下原因导致无法正常播放" inside an OBS Browser Source (fresh cookie jar, no
+// was swapped for `html5mobileplayer.html` in 56c4abd to hide chrome, but that
+// mobile web player has heavier anti-embed checks and throws "本视频可能由于以下
+// 原因导致无法正常播放" inside an OBS Browser Source (fresh cookie jar, no
 // buvid3). The official embed is the better bet there.
 //
-// Its postMessage API is undocumented (`enablejsapi=1`): the parent can send
-// `setPlayer-<json>` commands and the player posts `playerOperation-<json>`
-// events back. We use it best-effort — a pause→play nudge collapses the player
-// chrome to its idle state (the manual OBS workaround, scripted), and an `ended`
-// event advances the queue precisely. Everything degrades to `pointer-events:
-// none` + the timer ceiling if the player ignores us.
+// The player chrome (top info bar, bottom control bar, centred "更高清" promo)
+// stays visible in OBS and we've accepted that — see
+// docs/architecture/video-queue-platforms.md. The official embed has no param to
+// hide it, the "更高清" layer is always-on, and the hover-gated bars never get
+// the mouseleave that would fade them because OBS sends the page no pointer
+// events at all. `pointerEvents = 'none'` just keeps it that way (a stray click
+// would only pause the video).
+//
+// The undocumented postMessage API (`enablejsapi=1`) is still worth wiring for
+// one thing: the player posts a `playerOperation-<json>` `ended` event, which
+// advances the queue precisely instead of waiting out the timer ceiling.
+// Bilibili's `-412` risk-control block means we usually have no real duration,
+// so that ceiling is otherwise the only thing that ends a Bilibili entry.
 function mount(ctx: MountContext): (() => void) | void {
   const { current, joinElapsed, currentId, muted, containerRef, handleVideoEnd } = ctx
 
@@ -39,25 +46,10 @@ function mount(ctx: MountContext): (() => void) | void {
     `&autoplay=1&danmaku=0&high_quality=1&as_wide=1&enablejsapi=1&t=${startSeconds}`
   iframe.src = muted ? `${base}&muted=1` : base
   iframe.style.cssText = 'width:100%;height:100%;border:none'
-  // The overlay is display-only — never let the player see pointer activity, so
-  // its controls / title bar / "更高清" nag auto-hide a few seconds after load.
   iframe.style.pointerEvents = 'none'
   iframe.tabIndex = -1
   iframe.allow = 'autoplay; fullscreen'
   iframe.scrolling = 'no'
-
-  const send = (type: string, value: unknown) => {
-    try {
-      iframe.contentWindow?.postMessage(`setPlayer-${JSON.stringify({ type, value })}`, '*')
-    } catch {
-      /* cross-origin — the player just ignores it */
-    }
-  }
-  iframe.addEventListener('load', () => {
-    // Nudge the chrome into its idle/collapsed state.
-    send('play', false)
-    setTimeout(() => send('play', true), 300)
-  })
 
   const onMessage = (event: MessageEvent) => {
     if (event.source !== iframe.contentWindow) return
