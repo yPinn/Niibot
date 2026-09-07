@@ -374,7 +374,11 @@ export default function VideoQueue() {
         />
       </SlideUp>
 
-      <SlideUp inView className="grid grid-cols-1 gap-section lg:grid-cols-12 lg:items-stretch">
+      <SlideUp
+        inView
+        delay={0.05}
+        className="grid grid-cols-1 gap-section lg:grid-cols-12 lg:items-stretch"
+      >
         <div className="lg:col-span-8">
           <QueueCard
             tab={tab}
@@ -407,7 +411,11 @@ export default function VideoQueue() {
         </div>
       </SlideUp>
 
-      <SlideUp inView className="grid grid-cols-1 gap-section lg:grid-cols-12 lg:items-start">
+      <SlideUp
+        inView
+        delay={0.1}
+        className="grid grid-cols-1 gap-section lg:grid-cols-12 lg:items-start"
+      >
         <div className="lg:col-span-8">
           <RulesCard
             draft={draft}
