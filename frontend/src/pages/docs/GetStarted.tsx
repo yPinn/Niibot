@@ -78,7 +78,7 @@ function TwitchChatMockup({
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card text-foreground">
       <div className="flex items-center gap-element border-b border-border bg-background px-page py-2.5">
-        <i className="fa-brands fa-twitch text-section-title text-primary" />
+        <Icon icon="fa-brands fa-twitch" size="lg" wrapperClassName="text-primary" />
         <span className="text-sub font-semibold text-foreground">{channel}</span>
         <span className="ml-auto text-label text-muted-foreground">聊天室</span>
       </div>
@@ -115,7 +115,11 @@ function TwitchChatMockup({
 
       <div className="border-t border-border px-3 py-2.5">
         <div className="flex items-center gap-3 rounded bg-muted px-3 py-2">
-          <i className="fa-regular fa-face-smile text-section-title text-muted-foreground" />
+          <Icon
+            icon="fa-regular fa-face-smile"
+            size="lg"
+            wrapperClassName="text-muted-foreground"
+          />
           {command ? (
             <>
               <code className="flex-1 select-text font-mono text-label text-foreground">
@@ -123,12 +127,11 @@ function TwitchChatMockup({
               </code>
               <button
                 onClick={handleCopy}
-                className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
+                className={`shrink-0 transition-colors ${copied ? 'text-status-success' : 'text-muted-foreground hover:text-foreground'}`}
                 title="複製"
+                aria-label="複製指令"
               >
-                <i
-                  className={`text-card-title ${copied ? 'fa-solid fa-check text-status-success' : 'fa-regular fa-copy'}`}
-                />
+                <Icon icon={copied ? 'fa-solid fa-check' : 'fa-regular fa-copy'} size="lg" />
               </button>
             </>
           ) : (
@@ -136,7 +139,11 @@ function TwitchChatMockup({
               <span className="flex-1 text-label text-muted-foreground">
                 在 {channel} 的聊天室發言…
               </span>
-              <i className="fa-regular fa-paper-plane text-section-title text-muted-foreground" />
+              <Icon
+                icon="fa-regular fa-paper-plane"
+                size="lg"
+                wrapperClassName="text-muted-foreground"
+              />
             </>
           )}
         </div>
@@ -209,7 +216,7 @@ const MODULE_FEATURES = [
   {
     icon: 'fa-solid fa-film',
     title: '影片排隊',
-    desc: '觀眾投稿影片連結排隊，支援 YouTube、Bilibili、Twitch Clip。',
+    desc: '觀眾點播影片排隊，自動播到直播畫面，支援 YouTube、Twitch、Bilibili。',
     href: '/modules/video-queue',
     badge: 'OBS',
   },
@@ -306,7 +313,7 @@ export default function GetStarted() {
                                 />
                               ))}
                           </div>
-                          <p className="text-label leading-relaxed text-muted-foreground mt-0.5">
+                          <p className="text-sub leading-relaxed text-muted-foreground mt-0.5">
                             {item.desc}
                           </p>
                         </div>
@@ -366,7 +373,7 @@ export default function GetStarted() {
                                 </Badge>
                               )}
                             </div>
-                            <p className="text-label leading-relaxed text-muted-foreground">
+                            <p className="text-sub leading-relaxed text-muted-foreground">
                               {item.desc}
                             </p>
                           </div>
@@ -379,7 +386,9 @@ export default function GetStarted() {
             </Card>
           </SlideUp>
 
-          <DiscordHelpBanner />
+          <SlideUp inView delay={0.15}>
+            <DiscordHelpBanner />
+          </SlideUp>
         </div>
 
         <div className="order-first lg:order-last">
@@ -423,7 +432,7 @@ export default function GetStarted() {
                         />
                         <div className="flex flex-col gap-element">
                           <p className="text-sub font-medium">{method.title}</p>
-                          <p className="text-label leading-relaxed text-muted-foreground">
+                          <p className="text-sub leading-relaxed text-muted-foreground">
                             {method.desc}
                           </p>
                         </div>
