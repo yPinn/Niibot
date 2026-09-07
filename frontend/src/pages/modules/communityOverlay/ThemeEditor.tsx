@@ -7,6 +7,7 @@ import { CheckinCard } from '@/components/community-overlay/CheckinCard'
 import { TarotCard } from '@/components/community-overlay/TarotCard'
 import { Icon, Spinner } from '@/components/primitives'
 import { Button, Input } from '@/components/ui'
+import { WarningBanner } from '@/components/WarningBanner'
 
 const SAMPLE_CHECKIN_EVENT = {
   actor_display_name: 'NiibotFan',
@@ -178,41 +179,28 @@ export function ThemeEditor({
     (surfaceContrast !== null && surfaceContrast < 4.5) ||
     (accentContrast !== null && accentContrast < 4.5)
   const lowAccentSeparation = accentSurfaceContrast !== null && accentSurfaceContrast < 3
-  const themeValid =
-    colorsValid &&
-    surfaceContrast !== null &&
-    surfaceContrast >= 4.5 &&
-    accentContrast !== null &&
-    accentContrast >= 4.5 &&
-    accentSurfaceContrast !== null &&
-    accentSurfaceContrast >= 3
   return (
     <div className="grid gap-card xl:grid-cols-[minmax(20rem,0.82fr)_minmax(32rem,1.18fr)]">
       <div className="min-w-0 xl:col-start-2 xl:row-start-1">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-1 rounded-lg bg-muted p-1">
-            <Button
-              type="button"
-              size="sm"
-              variant={previewMode === 'draft' ? 'secondary' : 'ghost'}
-              aria-pressed={previewMode === 'draft'}
-              onClick={() => onPreviewModeChange('draft')}
-            >
-              草稿預覽
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={previewMode === 'live' ? 'secondary' : 'ghost'}
-              aria-pressed={previewMode === 'live'}
-              onClick={() => onPreviewModeChange('live')}
-            >
-              實際播放
-            </Button>
-          </div>
-          <p className="text-label text-muted-foreground">
-            {previewMode === 'draft' ? '示意 1920 × 1080 安全區' : '顯示目前已發布版本'}
+          <p className="text-label font-semibold">
+            {previewMode === 'draft' ? '草稿預覽' : '實際播放'}
           </p>
+          <div className="flex items-center gap-2">
+            <p className="text-label text-muted-foreground">
+              {previewMode === 'draft' ? '示意 1920 × 1080 安全區' : '顯示目前已發布版本'}
+            </p>
+            {previewMode === 'live' && (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => onPreviewModeChange('draft')}
+              >
+                返回草稿預覽
+              </Button>
+            )}
+          </div>
         </div>
 
         {previewMode === 'draft' ? (
@@ -298,16 +286,14 @@ export function ThemeEditor({
             />
           </div>
           {lowContrast && (
-            <div role="status" className="flex items-start gap-2 text-label text-destructive">
-              <Icon icon="fa-solid fa-circle-exclamation" className="mt-0.5" />
-              文字色需與背景色及強調色皆達 4.5:1 對比，調整後才能儲存。
-            </div>
+            <WarningBanner>
+              文字色與背景色、強調色的對比偏低，觀眾可能不易閱讀（僅供參考，不影響儲存）。
+            </WarningBanner>
           )}
           {lowAccentSeparation && (
-            <div role="status" className="flex items-start gap-2 text-label text-destructive">
-              <Icon icon="fa-solid fa-circle-exclamation" className="mt-0.5" />
-              強調色與背景色需達 3:1 對比，調整後才能儲存。
-            </div>
+            <WarningBanner>
+              強調色與背景色的對比偏低，重點可能不易辨識（僅供參考，不影響儲存）。
+            </WarningBanner>
           )}
         </fieldset>
 
@@ -386,29 +372,36 @@ export function ThemeEditor({
           </div>
         </fieldset>
 
-        <div className="flex flex-wrap gap-2 border-t pt-section">
-          <Button type="button" disabled={disabled || !localDirty || !themeValid} onClick={onSave}>
-            {busy === 'save' && <Spinner className="mr-1.5" />}
-            儲存草稿
-          </Button>
-          <Button
-            type="button"
-            variant="secondary"
-            disabled={disabled || localDirty || !hasUnpublishedChanges}
-            onClick={onPublish}
-          >
-            {busy === 'publish' && <Spinner className="mr-1.5" />}
-            發布至 OBS
-          </Button>
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-section">
           <Button
             type="button"
             variant="ghost"
+            size="sm"
             disabled={disabled || (!localDirty && !hasUnpublishedChanges)}
             onClick={onReset}
           >
             {busy === 'reset' && <Spinner className="mr-1.5" />}
             還原已發布版本
           </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              disabled={disabled || !localDirty || !colorsValid}
+              onClick={onSave}
+            >
+              {busy === 'save' && <Spinner className="mr-1.5" />}
+              儲存草稿
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={disabled || localDirty || !hasUnpublishedChanges}
+              onClick={onPublish}
+            >
+              {busy === 'publish' && <Spinner className="mr-1.5" />}
+              發布至 OBS
+            </Button>
+          </div>
         </div>
       </div>
     </div>

@@ -117,6 +117,7 @@ const CHECKIN_SETTINGS = {
   timezone: 'Asia/Taipei',
   success_template: '$(@user) 簽到成功，累積 $(count) 天！',
   duplicate_template: '$(@user) 今天已經簽到過了，目前累積 $(count) 天！',
+  reply_delay_seconds: 0,
   created_at: '2026-08-31T00:00:00Z',
   updated_at: '2026-08-31T00:00:00Z',
 }
@@ -298,6 +299,7 @@ describe('Channel Points page', () => {
         timezone: 'Asia/Tokyo',
         success_template: CHECKIN_SETTINGS.success_template,
         duplicate_template: CHECKIN_SETTINGS.duplicate_template,
+        reply_delay_seconds: CHECKIN_SETTINGS.reply_delay_seconds,
       })
     )
   })

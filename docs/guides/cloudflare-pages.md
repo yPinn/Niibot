@@ -100,8 +100,85 @@ requests_per_day = 86,400,000 ms / interval_ms
 Overlay。
 
 長期方案是 durable event table replay + PostgreSQL `NOTIFY` 喚醒 SSE；
-events 與 theme 共用可重連 stream，正常穩態不再產生週期性 Pages Function
-invocations。
+events 與 theme 共用可重連 stream，移除秒級 polling；正常穩態僅保留每 5 分鐘一次的 bounded
+stream rotation（每個常駐 source 約 288 requests／日）。
+
+### 現況（Live Display 與 Video Queue 已遷移，Game Queue 仍輪詢）
+
+| Source                   | Transport        | Requests/day |
+| ------------------------ | ---------------- | -----------: |
+| Live Display             | NOTIFY-woken SSE |          288 |
+| Video Queue Overlay      | NOTIFY-woken SSE |          288 |
+| Game Queue Overlay state | 30 s polling     |        2,880 |
+| **合計**                 |                  |    **3,456** |
+
+比事故前的 158,400 降低 97.8%。Video Queue 沒有事件日誌／cursor 回放需求（狀態是單一目前快照，
+不是 append-only feed），因此比 Live Display 的 stream 更簡單，細節見下方 Video Queue stream
+contract。Game Queue 尚未遷移——它與 Video Queue 同屬「長時間存在的狀態／播放器」，不塞入短事件
+feed，未來只共用 Overlay shell、公開金鑰、theme 與 transport primitives（見
+[docs/architecture/attendance-and-community-overlays.md](../architecture/attendance-and-community-overlays.md)），
+真的要做時才比照 Video Queue 的作法遷移，不要為它現在還沒發生的需求先做抽象。
+
+### Live Display stream contract
+
+- Renderer 以 `GET /api/live-display/public/stream` 建立一條 `fetch` stream，
+  capability 僅放在 `X-Overlay-Key`，不得放進 query、log 或 SSE payload。
+- 初次 live 連線不重播舊事件；preview 使用 `after_id=0`。斷線後必須帶最後收到的 cursor，
+  由 `community_overlay_events` 補送尚未過期事件。
+- PostgreSQL `NOTIFY` 只包含 `channel_id` 與更新種類，僅作喚醒；事件與 theme body 一律重新由
+  durable tables 讀取。每個 API process 只能有一條 listener connection，不得為每個 OBS source
+  配一條資料庫連線；每個 channel 最多 10 條、每個 process 最多 1,000 條 concurrent streams，
+  超限明確回 429。這條唯一的 listener connection 由 Live Display 與 Video Queue **共用**
+  （單一 `NotifyWakeHub`，同一條連線 `LISTEN` 多個 notify channel，以 `(notify_channel, channel_id)`
+  區分訂閱者）——新增第三個 NOTIFY-woken stream 時，擴充這個 hub 監聽的 channel 清單，不要另開一條連線。
+- Pages proxy 對 `/api/live-display/public/stream` 與 `/api/video-queue/public/<username>/stream`
+  兩條 GET route（後者含動態 username 段，以 anchored pattern 比對，不是精確字串相等）取消 15 秒
+  上游 timeout，並組合 caller abort signal 與 5 分鐘 stream lease；其他 `/api/*` 仍維持 15 秒
+  timeout。response 必須保持 streaming，不得先 buffer 完整 body。lease 到期由 renderer 帶 cursor
+  （Video Queue 無 cursor，直接重連取得最新快照）重連，每個常駐 source 最多約 288 次 invocation／日，
+  backend generator 也實施相同的 monotonic hard lease，因此即使 Cloudflare 未送出 disconnect signal，
+  殘留 upstream／hub slot 仍由 API 自己在 5 分鐘內清除。
+- Preview 與 Production 建議啟用 Pages Functions `enable_request_signal` 相容性旗標，讓 client／OBS
+  中斷後能立刻取消 upstream fetch；它是快速清理優化，不是容量正確性的唯一保證。若 Dashboard
+  未列出該旗標，應透過先下載並完整核對的 Wrangler config 或 Pages API 管理；不要直接加入不完整
+  設定覆蓋既有環境變數或 bindings。staging 仍需驗證 client abort 與 hard lease 兩條 cleanup 路徑。
+- SSE 使用 `snapshot`、`update`、`heartbeat`；renderer 必須隔離壞 frame、依 event id 去重，並以
+  指數退避加 jitter reconnect。正常狀態不得 fallback 到週期 polling，避免故障時靜默恢復高流量。
+- Cloudflare runtime 更新或 hard lease 會中止長連線，因此「任一時刻一條 invocation」不代表
+  永不重連；驗收看的是 invocation 不再以秒級 polling 線性成長，且重連能以 cursor 補齊事件。
+- Dashboard 測試預覽（`&block=<type>`）是前端專用的本地過濾參數，不改變上述後端 API／查詢契約——
+  伺服器仍回傳整個 channel 的事件，只是 renderer 端多丟掉不符 block type 的事件。這條測試連線也不會
+  無限期占用前述的 per-channel／per-process 併發串流額度：Dashboard 觸發測試動畫後，會依已發布主題的
+  `display_ms` 自動在動畫播完後不久關閉該連線，不需要使用者手動操作。
+
+### Video Queue stream contract
+
+Video Queue overlay 的狀態是「單一目前快照」（current + queue），不是 append-only 事件日誌，因此
+比 Live Display 的 stream 簡單——不需要 cursor、不需要回放歷史：
+
+- `GET /api/video-queue/public/{username}/stream` 無需認證（比照既有 REST 端點，OBS overlay 沒有
+  cookie 機制）。連線建立時先送 `event: snapshot`，之後每次被 NOTIFY 喚醒就重建目前狀態，**只有
+  重建結果與上次送出的 payload 不同才送 `event: update`**；這個比對主要是為了壓掉監聽重連時
+  `notify_all()` 造成的喚醒風暴，不是效能優化。
+- Payload 刻意比 REST 的 `PublicVideoQueueState` 窄：不含 `enabled`。renderer 從不讀這個欄位，
+  `video_queue_settings` 也沒有 NOTIFY trigger（只有 `video_queue` 表有），送出一個永遠不會更新、
+  還可能因為 in-process 15 秒 cache 而過期的欄位是不誠實的。
+- rate limiter 以 `client_host` 單獨為 key，不加 username——`_resolve_channel_id` 在 cache miss 時
+  會打 Twitch API，用 username 當 key 的一部分等於讓攻擊者每猜一個新 username 就換到一個全新額度。
+- Listener 斷線時的重連退避上限是 **5 秒**（Live Display 早期版本是 30 秒；30 秒對簽到動畫只是
+  美觀問題，但對點播 overlay 而言，主播加入影片到空佇列卻收不到喚醒，等於直播上出現最多 30 秒
+  死畫面，所以收斂上限調低，兩個 NOTIFY-woken stream 共用同一個 hub 也一併受益）。
+- Overlay 端以「已完成 id」集合防止競態，而不是丟棄訊息：本地影片播完會先記住該 entry id，之後任何
+  stream frame 只要 `current.id` 落在這個集合裡就拒絕套用，避免舊快照在 advance 的 POST 回應之間
+  的空檔把畫面退回已播完的影片；advance POST 的回應本身一律直接套用（read-after-write，不會比任何
+  frame 舊），不受此集合限制。
+- 其餘機制（`text/event-stream` header、15 秒 heartbeat、5 分鐘 hard lease、`event: heartbeat`
+  格式）與 Live Display 完全一致，見上方 Live Display stream contract。
+
+官方依據：
+
+- [Request signal compatibility flag](https://developers.cloudflare.com/changelog/post/2025-05-22-handle-request-cancellation/)
+- [Pages Wrangler configuration](https://developers.cloudflare.com/pages/functions/wrangler-configuration/)
 
 ## Incident 檢查順序
 

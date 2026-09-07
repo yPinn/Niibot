@@ -123,7 +123,7 @@ export function BotAccountsCard() {
             <Skeleton className="h-14 w-full" />
           </div>
         ) : accounts.length === 0 ? (
-          <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+          <p className="rounded-lg border border-dashed p-section text-sub text-muted-foreground">
             尚未設定可用的 Bot 帳號。
           </p>
         ) : (

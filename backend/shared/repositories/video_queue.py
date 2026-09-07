@@ -7,12 +7,16 @@ clips) live in ``shared.video_sources``.
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import asyncpg
 
 from shared.cache import AsyncTTLCache, cached
-from shared.models.video_queue import VideoQueueEntry, VideoQueueSettings
+from shared.models.video_queue import (
+    VideoQueueBlocklistEntry,
+    VideoQueueEntry,
+    VideoQueueSettings,
+)
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -39,18 +43,35 @@ PRIORITY_PINNED = 99
 # ---------------------------------------------------------------------------
 
 _ENTRY_COLUMNS = (
-    "id, channel_id, video_id, title, duration_seconds, is_vertical, requested_by, "
-    "source, status, video_type, priority, created_at, started_at, requested_by_id"
+    "id, channel_id, video_id, title, duration_seconds, is_vertical, start_seconds, "
+    "requested_by, source, status, video_type, priority, "
+    "created_at, started_at, ended_at, requested_by_id"
 )
+
+# History = terminal entries retained for the dashboard "played" tab.
+HISTORY_STATUSES = ("done", "skipped")
+HISTORY_RETENTION_DAYS = 30
 
 _SETTINGS_COLUMNS = (
     "channel_id, enabled, redemption_enabled, "
     "max_duration_redemption, max_queue_size, "
     "min_view_count, user_cooldown_seconds, max_per_user, "
+    "max_duration_seconds, replay_cooldown_hours, "
     "created_at, updated_at"
 )
 
 _settings_cache = AsyncTTLCache(maxsize=32, ttl=15)
+
+_BLOCKLIST_COLUMNS = "id, channel_id, kind, value, label, created_by, created_at"
+
+# Kinds a user can create today. 'creator' is in the DB CHECK (migration 110)
+# but not offered until the creator_id metadata plumbing lands (B3).
+BLOCKLIST_KINDS = ("video", "keyword", "user")
+
+# Per-channel cache of the full blocklist, refreshed on write. The check runs on
+# every submission (three add paths) and the list is tiny, so we match in Python
+# rather than issue a query per add.
+_blocklist_cache = AsyncTTLCache(maxsize=64, ttl=30)
 
 
 # ---------------------------------------------------------------------------
@@ -76,15 +97,16 @@ class VideoQueueRepository:
         video_type: str = "youtube",
         priority: int = 0,
         requested_by_id: str | None = None,
+        start_seconds: int = 0,
     ) -> VideoQueueEntry:
         """Insert a new entry with status='queued'."""
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 f"""
                 INSERT INTO video_queue
-                    (channel_id, video_id, title, duration_seconds, is_vertical,
+                    (channel_id, video_id, title, duration_seconds, is_vertical, start_seconds,
                      requested_by, source, video_type, priority, requested_by_id)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                 RETURNING {_ENTRY_COLUMNS}
                 """,
                 channel_id,
@@ -92,6 +114,7 @@ class VideoQueueRepository:
                 title,
                 duration_seconds,
                 is_vertical,
+                start_seconds,
                 requested_by,
                 source,
                 video_type,
@@ -115,6 +138,7 @@ class VideoQueueRepository:
         is_vertical: bool = False,
         video_type: str = "youtube",
         priority: int = 0,
+        start_seconds: int = 0,
     ) -> VideoQueueEntry | None:
         """Re-validate duplicate/queue-size/per-user limits and insert atomically.
 
@@ -171,9 +195,9 @@ class VideoQueueRepository:
                 row = await conn.fetchrow(
                     f"""
                     INSERT INTO video_queue
-                        (channel_id, video_id, title, duration_seconds, is_vertical,
+                        (channel_id, video_id, title, duration_seconds, is_vertical, start_seconds,
                          requested_by, source, video_type, priority, requested_by_id)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                     RETURNING {_ENTRY_COLUMNS}
                     """,
                     channel_id,
@@ -181,6 +205,7 @@ class VideoQueueRepository:
                     title,
                     duration_seconds,
                     is_vertical,
+                    start_seconds,
                     requested_by,
                     source,
                     video_type,
@@ -211,6 +236,36 @@ class VideoQueueRepository:
             )
             return [VideoQueueEntry(**dict(row)) for row in rows]
 
+    async def get_current_and_queued(
+        self, channel_id: str
+    ) -> tuple[VideoQueueEntry | None, list[VideoQueueEntry]]:
+        """Single-connection read combining get_current + get_queued.
+
+        Used by the stream wake path instead of asyncio.gather-ing get_current
+        and get_queued as separate pool.acquire()s: the API pool is small
+        (max_size=3) and a NOTIFY wake can fan out to up to
+        max_subscribers_per_channel overlays at once, each of which would
+        otherwise acquire 2 connections simultaneously.
+        """
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                f"SELECT {_ENTRY_COLUMNS} FROM video_queue "
+                "WHERE channel_id = $1 AND status IN ('queued', 'playing') "
+                "ORDER BY CASE status WHEN 'playing' THEN 0 ELSE 1 END, "
+                "started_at ASC, priority DESC, created_at ASC",
+                channel_id,
+            )
+        current: VideoQueueEntry | None = None
+        queued: list[VideoQueueEntry] = []
+        for row in rows:
+            entry = VideoQueueEntry(**dict(row))
+            if entry.status == "playing":
+                if current is None:  # tolerate a stale duplicate rather than crash
+                    current = entry
+            else:
+                queued.append(entry)
+        return current, queued
+
     async def get_queue_size(self, channel_id: str) -> int:
         """Count entries with status='queued'."""
         async with self.pool.acquire() as conn:
@@ -218,6 +273,16 @@ class VideoQueueRepository:
                 "SELECT COUNT(*) FROM video_queue WHERE channel_id = $1 AND status = 'queued'",
                 channel_id,
             )
+
+    async def get_entry_for_channel(self, entry_id: int, channel_id: str) -> VideoQueueEntry | None:
+        """Fetch a single entry scoped to its channel, any status."""
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"SELECT {_ENTRY_COLUMNS} FROM video_queue WHERE id = $1 AND channel_id = $2",
+                entry_id,
+                channel_id,
+            )
+            return VideoQueueEntry(**dict(row)) if row else None
 
     async def video_is_active(self, channel_id: str, video_id: str) -> bool:
         """Return True if video_id is already queued or playing in this channel."""
@@ -285,6 +350,15 @@ class VideoQueueRepository:
         the same transaction pattern as play_immediately.
 
         If no queued entry exists after marking done, the second UPDATE is a no-op.
+
+        The promote UPDATE also requires NOT EXISTS(status='playing') — same guard
+        as kickstart_if_idle. Without it, two overlays finishing the same done_id
+        concurrently (or an overlay finishing while a dashboard Play-Now runs) can
+        both have their first UPDATE match zero rows and their second UPDATE
+        unconditionally promote a queued entry, leaving two rows 'playing' at once.
+        That state is permanent: get_current only ever returns one of them, and
+        kickstart_if_idle's own NOT EXISTS guard then stays false until the queue
+        is cleared.
         """
         async with self.pool.acquire() as conn:
             async with conn.transaction():
@@ -300,6 +374,9 @@ class VideoQueueRepository:
                     "WHERE id = ("
                     "    SELECT id FROM video_queue "
                     "    WHERE channel_id = $1 AND status = 'queued' "
+                    "    AND NOT EXISTS ("
+                    "        SELECT 1 FROM video_queue WHERE channel_id = $1 AND status = 'playing'"
+                    "    ) "
                     "    ORDER BY priority DESC, created_at ASC LIMIT 1"
                     ")",
                     channel_id,
@@ -521,6 +598,58 @@ class VideoQueueRepository:
                 )
             return VideoQueueEntry(**dict(row)) if row else None
 
+    async def get_history(
+        self,
+        channel_id: str,
+        *,
+        limit: int = 50,
+        before: datetime | None = None,
+    ) -> list[VideoQueueEntry]:
+        """Terminal entries (done/skipped) for this channel, newest first.
+
+        ``before`` is a keyset cursor on ``ended_at`` — pass the ``ended_at`` of
+        the last row from the previous page to fetch the next one.
+        """
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                f"SELECT {_ENTRY_COLUMNS} FROM video_queue "
+                "WHERE channel_id = $1 AND status = ANY($2) AND ended_at IS NOT NULL "
+                "AND ($3::timestamptz IS NULL OR ended_at < $3) "
+                "ORDER BY ended_at DESC LIMIT $4",
+                channel_id,
+                list(HISTORY_STATUSES),
+                before,
+                limit,
+            )
+            return [VideoQueueEntry(**dict(row)) for row in rows]
+
+    async def played_within(self, channel_id: str, video_id: str, hours: int) -> bool:
+        """True if this video finished playing (``status = 'done'``) within the
+        last ``hours`` in this channel — the replay-cooldown check."""
+        async with self.pool.acquire() as conn:
+            found = await conn.fetchval(
+                "SELECT 1 FROM video_queue "
+                "WHERE channel_id = $1 AND video_id = $2 AND status = 'done' "
+                "AND ended_at IS NOT NULL AND ended_at > NOW() - make_interval(hours => $3) "
+                "LIMIT 1",
+                channel_id,
+                video_id,
+                hours,
+            )
+            return found is not None
+
+    async def prune_history(self) -> int:
+        """Delete history rows past the retention window. Returns rows removed."""
+        async with self.pool.acquire() as conn:
+            result = await conn.execute(
+                "DELETE FROM video_queue "
+                "WHERE status = ANY($1) AND ended_at IS NOT NULL "
+                "AND ended_at < NOW() - make_interval(days => $2)",
+                list(HISTORY_STATUSES),
+                HISTORY_RETENTION_DAYS,
+            )
+            return int(result.split()[-1]) if result.startswith("DELETE") else 0
+
 
 # ---------------------------------------------------------------------------
 # VideoQueueSettingsRepository
@@ -562,6 +691,8 @@ class VideoQueueSettingsRepository:
         min_view_count: int | None = None,
         user_cooldown_seconds: int | None = None,
         max_per_user: int | None = None,
+        max_duration_seconds: int | None = None,
+        replay_cooldown_hours: int | None = None,
     ) -> VideoQueueSettings:
         """Update settings. Only provided keyword args are applied."""
         async with self.pool.acquire() as conn:
@@ -576,7 +707,9 @@ class VideoQueueSettingsRepository:
                     max_queue_size           = COALESCE($5, video_queue_settings.max_queue_size),
                     min_view_count           = COALESCE($6, video_queue_settings.min_view_count),
                     user_cooldown_seconds    = COALESCE($7, video_queue_settings.user_cooldown_seconds),
-                    max_per_user             = COALESCE($8, video_queue_settings.max_per_user)
+                    max_per_user             = COALESCE($8, video_queue_settings.max_per_user),
+                    max_duration_seconds     = COALESCE($9, video_queue_settings.max_duration_seconds),
+                    replay_cooldown_hours    = COALESCE($10, video_queue_settings.replay_cooldown_hours)
                 RETURNING {_SETTINGS_COLUMNS}
                 """,
                 channel_id,
@@ -587,7 +720,120 @@ class VideoQueueSettingsRepository:
                 min_view_count,
                 user_cooldown_seconds,
                 max_per_user,
+                max_duration_seconds,
+                replay_cooldown_hours,
             )
             result = VideoQueueSettings(**dict(row))
             _settings_cache.invalidate(f"vq_settings:{channel_id}")
             return result
+
+
+# ---------------------------------------------------------------------------
+# VideoQueueBlocklistRepository
+# ---------------------------------------------------------------------------
+
+
+def _blocklist_match(
+    entries: list[VideoQueueBlocklistEntry],
+    *,
+    video_id: str,
+    title: str | None,
+    requested_by: str | None,
+    requested_by_id: str | None,
+) -> VideoQueueBlocklistEntry | None:
+    """First blocklist rule a submission trips, or None. Case-insensitive."""
+    title_l = (title or "").lower()
+    login_l = (requested_by or "").lower()
+    for entry in entries:
+        value_l = entry.value.lower()
+        if entry.kind in ("video", "creator") and value_l == video_id.lower():
+            return entry
+        if entry.kind == "keyword" and title_l and value_l in title_l:
+            return entry
+        if entry.kind == "user" and (
+            (login_l and value_l == login_l)
+            or (requested_by_id is not None and entry.value == requested_by_id)
+        ):
+            return entry
+    return None
+
+
+class VideoQueueBlocklistRepository:
+    """Pure SQL operations for the video_queue_blocklist table."""
+
+    def __init__(self, pool: asyncpg.Pool) -> None:
+        self.pool = pool
+
+    async def list_entries(self, channel_id: str) -> list[VideoQueueBlocklistEntry]:
+        """All blocklist rules for a channel, newest first. Cached per channel."""
+        if channel_id in _blocklist_cache:
+            return _blocklist_cache.get(channel_id)
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                f"SELECT {_BLOCKLIST_COLUMNS} FROM video_queue_blocklist "
+                "WHERE channel_id = $1 ORDER BY created_at DESC",
+                channel_id,
+            )
+        entries = [VideoQueueBlocklistEntry(**dict(row)) for row in rows]
+        _blocklist_cache.set(channel_id, entries)
+        return entries
+
+    async def add(
+        self,
+        channel_id: str,
+        kind: str,
+        value: str,
+        *,
+        label: str | None = None,
+        created_by: str | None = None,
+    ) -> VideoQueueBlocklistEntry:
+        """Insert a rule, or return the existing one for the same (channel, kind, value)."""
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                INSERT INTO video_queue_blocklist (channel_id, kind, value, label, created_by)
+                VALUES ($1, $2, $3, $4, $5)
+                ON CONFLICT (channel_id, kind, lower(value)) DO UPDATE SET
+                    label = COALESCE(EXCLUDED.label, video_queue_blocklist.label)
+                RETURNING {_BLOCKLIST_COLUMNS}
+                """,
+                channel_id,
+                kind,
+                value,
+                label,
+                created_by,
+            )
+        _blocklist_cache.invalidate(channel_id)
+        return VideoQueueBlocklistEntry(**dict(row))
+
+    async def remove(self, channel_id: str, entry_id: int) -> bool:
+        """Delete a rule scoped to its channel. Returns True if a row was removed."""
+        async with self.pool.acquire() as conn:
+            result = await conn.execute(
+                "DELETE FROM video_queue_blocklist WHERE id = $1 AND channel_id = $2",
+                entry_id,
+                channel_id,
+            )
+        _blocklist_cache.invalidate(channel_id)
+        return int(result.split()[-1]) > 0
+
+    async def check(
+        self,
+        channel_id: str,
+        *,
+        video_id: str,
+        title: str | None = None,
+        requested_by: str | None = None,
+        requested_by_id: str | None = None,
+    ) -> VideoQueueBlocklistEntry | None:
+        """Return the first blocklist rule this submission trips, or None."""
+        entries = await self.list_entries(channel_id)
+        if not entries:
+            return None
+        return _blocklist_match(
+            entries,
+            video_id=video_id,
+            title=title,
+            requested_by=requested_by,
+            requested_by_id=requested_by_id,
+        )

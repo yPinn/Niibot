@@ -2,11 +2,8 @@ import { MemoryRouter, useNavigate } from 'react-router-dom'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import {
-  DEFAULT_COMMUNITY_OVERLAY_THEME,
-  getCommunityOverlayFeed,
-  getCommunityOverlayTheme,
-} from '@/api/communityOverlay'
+import { DEFAULT_COMMUNITY_OVERLAY_THEME } from '@/api/communityOverlay'
+import { openCommunityOverlayStream } from '@/api/communityOverlayStream'
 
 import CommunityOverlay from './CommunityOverlay'
 
@@ -29,11 +26,11 @@ vi.mock('@/api/communityOverlay', () => ({
     display_ms: 5000,
     motion: 'standard',
   },
-  getCommunityOverlayFeed: vi.fn(),
-  getCommunityOverlayTheme: vi.fn(),
 }))
+vi.mock('@/api/communityOverlayStream', () => ({ openCommunityOverlayStream: vi.fn() }))
 
 const KEY = '11111111-1111-4111-8111-111111111111'
+const SECOND_KEY = '22222222-2222-4222-8222-222222222222'
 
 function event(id: number, totalDays = 8, actor = 'Alice') {
   return {
@@ -59,7 +56,7 @@ function tarotEvent(id: number, actor = 'Alice') {
       card_id: '0',
       card_name: '愚者',
       card_name_en: 'The Fool',
-      orientation: 'upright',
+      orientation: 'upright' as const,
       orientation_label: '正位',
       category: 'general',
       category_label: '綜合',
@@ -75,30 +72,30 @@ function tarotEvent(id: number, actor = 'Alice') {
   }
 }
 
-function renderOverlay(query: string) {
+const checkinTheme = (
+  revisionId: number,
+  placement: 'bottom-left' | 'top-left' = 'bottom-left'
+) => ({
+  revision_id: revisionId,
+  renderer: 'checkin-card',
+  schema_version: 1,
+  theme: { ...DEFAULT_COMMUNITY_OVERLAY_THEME, placement },
+  created_at: '2026-08-31T10:00:00Z',
+})
+
+function renderOverlay(hash: string) {
   return render(
-    <MemoryRouter initialEntries={[`/live-display${query}`]}>
+    <MemoryRouter initialEntries={[`/live-display${hash}`]}>
       <CommunityOverlay />
     </MemoryRouter>
   )
-}
-
-function deferred<T>() {
-  let resolve!: (value: T) => void
-  const promise = new Promise<T>(done => {
-    resolve = done
-  })
-  return { promise, resolve }
 }
 
 function SwitchingOverlay() {
   const navigate = useNavigate()
   return (
     <>
-      <button
-        type="button"
-        onClick={() => navigate('/live-display#key=22222222-2222-4222-8222-222222222222&preview=1')}
-      >
+      <button type="button" onClick={() => navigate(`/live-display#key=${SECOND_KEY}&preview=1`)}>
         切換租戶
       </button>
       <CommunityOverlay />
@@ -106,193 +103,186 @@ function SwitchingOverlay() {
   )
 }
 
-describe('CommunityOverlay', () => {
+describe('CommunityOverlay stream renderer', () => {
   beforeEach(() => {
-    vi.mocked(getCommunityOverlayFeed).mockReset()
-    vi.mocked(getCommunityOverlayTheme).mockReset()
-    vi.mocked(getCommunityOverlayTheme).mockResolvedValue({
-      revision_id: 41,
-      renderer: 'checkin-card',
-      schema_version: 1,
-      theme: DEFAULT_COMMUNITY_OVERLAY_THEME,
-      created_at: '2026-08-31T10:00:00Z',
-    })
+    vi.mocked(openCommunityOverlayStream).mockReset()
+    vi.mocked(openCommunityOverlayStream).mockImplementation(() => new Promise(() => undefined))
   })
 
-  it('stays transparent and does not poll without a capability key', () => {
+  it('stays transparent and opens no transport without a capability key', () => {
     renderOverlay('')
-
-    expect(getCommunityOverlayFeed).not.toHaveBeenCalled()
-    expect(getCommunityOverlayTheme).not.toHaveBeenCalled()
+    expect(openCommunityOverlayStream).not.toHaveBeenCalled()
     expect(document.querySelector('[data-overlay-card]')).not.toBeInTheDocument()
   })
 
-  it('applies the tenant published colors, placement, radius, and motion contract', async () => {
-    vi.mocked(getCommunityOverlayTheme).mockResolvedValue({
-      revision_id: 42,
-      renderer: 'checkin-card',
-      schema_version: 1,
-      theme: {
-        ...DEFAULT_COMMUNITY_OVERLAY_THEME,
-        surface_color: '#112233',
-        accent_color: '#355070',
-        text_color: '#F0F1F2',
-        placement: 'top-left',
-        radius_px: 8,
-        motion: 'none',
-      },
-      created_at: '2026-08-31T10:05:00Z',
-    })
-    vi.mocked(getCommunityOverlayFeed).mockResolvedValue({ cursor: 21, events: [event(21)] })
-
-    renderOverlay(`#key=${KEY}&preview=1`)
-
-    const card = await screen.findByLabelText('Alice 的簽到集點卡')
-    expect(getCommunityOverlayTheme).toHaveBeenCalledWith(KEY, 'checkin')
-    expect(card.closest('main')).toHaveAttribute('data-placement', 'top-left')
-    expect(card).toHaveStyle({
-      '--overlay-surface': '#112233',
-      '--overlay-accent': '#355070',
-      '--overlay-text': '#F0F1F2',
-      '--overlay-radius': '8px',
-    })
-    expect(card).toHaveAttribute('data-motion', 'none')
-  })
-
-  it('uses a no-replay handshake for a normal OBS source', async () => {
-    vi.mocked(getCommunityOverlayFeed).mockResolvedValue({ cursor: 20, events: [] })
-
+  it('uses no-replay for live and cursor zero only for explicit preview', () => {
     renderOverlay(`#key=${KEY}`)
-
-    await waitFor(() => expect(getCommunityOverlayFeed).toHaveBeenCalledWith(KEY, undefined))
-    expect(document.querySelector('[data-overlay-card]')).not.toBeInTheDocument()
-  })
-
-  it('replays unexpired events only when preview mode is explicit', async () => {
-    vi.mocked(getCommunityOverlayFeed).mockResolvedValue({ cursor: 21, events: [event(21, 8)] })
-
-    renderOverlay(`#key=${KEY}&preview=1`)
-
-    expect(await screen.findByLabelText('Alice 的簽到集點卡')).toBeInTheDocument()
-    expect(getCommunityOverlayFeed).toHaveBeenCalledWith(KEY, 0)
-    expect(screen.getByLabelText('累積第 8 天')).toBeInTheDocument()
-    expect(screen.getAllByTestId('checkin-stamp')).toHaveLength(7)
-    expect(
-      screen.getAllByTestId('checkin-stamp').filter(node => node.dataset.filled === 'true')
-    ).toHaveLength(1)
-  })
-
-  it('renders a Tarot event from the same ordered feed with its own published theme', async () => {
-    vi.mocked(getCommunityOverlayTheme).mockImplementation(async (_key, blockType) => ({
-      revision_id: 42,
-      renderer: blockType === 'tarot' ? 'tarot-card' : 'checkin-card',
-      schema_version: 1,
-      theme: DEFAULT_COMMUNITY_OVERLAY_THEME,
-      created_at: '2026-08-31T10:05:00Z',
-    }))
-    vi.mocked(getCommunityOverlayFeed).mockResolvedValue({
-      cursor: 22,
-      events: [tarotEvent(22)],
-    })
-
-    renderOverlay(`#key=${KEY}&preview=1`)
-
-    expect(await screen.findByLabelText('Alice 的每日塔羅：愚者正位')).toBeInTheDocument()
-    expect(getCommunityOverlayTheme).toHaveBeenCalledWith(KEY, 'tarot')
-    expect(screen.getByRole('img', { name: '愚者正位' })).toHaveAttribute(
-      'src',
-      tarotEvent(22).payload.image_path
+    expect(openCommunityOverlayStream).toHaveBeenCalledWith(
+      expect.objectContaining({ publicKey: KEY, afterId: undefined })
+    )
+    renderOverlay(`#key=${SECOND_KEY}&preview=1`)
+    expect(openCommunityOverlayStream).toHaveBeenLastCalledWith(
+      expect.objectContaining({ publicKey: SECOND_KEY, afterId: 0 })
     )
   })
 
-  it('polls from the handshake cursor and renders a new event', async () => {
-    vi.useFakeTimers()
-    try {
-      vi.mocked(getCommunityOverlayFeed)
-        .mockResolvedValueOnce({ cursor: 10, events: [] })
-        .mockResolvedValue({ cursor: 11, events: [event(11, 3)] })
-
-      renderOverlay(`#key=${KEY}`)
-      await act(async () => Promise.resolve())
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(5_000)
-      })
-
-      expect(screen.getByLabelText('Alice 的簽到集點卡')).toBeInTheDocument()
-      expect(getCommunityOverlayFeed).toHaveBeenNthCalledWith(1, KEY, undefined)
-      expect(getCommunityOverlayFeed).toHaveBeenNthCalledWith(2, KEY, 10)
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('ignores unsupported event versions instead of breaking the renderer', async () => {
-    vi.mocked(getCommunityOverlayFeed).mockResolvedValue({
-      cursor: 30,
-      events: [{ ...event(30), schema_version: 2 }],
-    })
-
+  it('applies snapshot theme and renders ordered valid events', async () => {
     renderOverlay(`#key=${KEY}&preview=1`)
-
-    await waitFor(() => expect(getCommunityOverlayFeed).toHaveBeenCalled())
-    expect(document.querySelector('[data-overlay-card]')).not.toBeInTheDocument()
+    const options = vi.mocked(openCommunityOverlayStream).mock.calls[0][0]
+    act(() =>
+      options.onMessage({
+        type: 'snapshot',
+        cursor: 22,
+        events: [event(21), tarotEvent(22)],
+        themes: { checkin: checkinTheme(42, 'top-left') },
+      })
+    )
+    const card = await screen.findByLabelText('Alice 的簽到集點卡')
+    expect(card.closest('main')).toHaveAttribute('data-placement', 'top-left')
+    expect(card).toHaveStyle({ '--overlay-radius': '24px' })
   })
 
-  it('refreshes a newly published theme without remounting the OBS page', async () => {
+  it('filters out other block types when a block filter is present in the URL', async () => {
+    renderOverlay(`#key=${KEY}&preview=1&block=checkin`)
+    const options = vi.mocked(openCommunityOverlayStream).mock.calls[0][0]
+    act(() =>
+      options.onMessage({
+        type: 'snapshot',
+        cursor: 30,
+        events: [tarotEvent(29), event(30)],
+        themes: {},
+      })
+    )
+    expect(await screen.findByLabelText('Alice 的簽到集點卡')).toBeInTheDocument()
+    expect(screen.queryByLabelText(/Alice 的每日塔羅/)).not.toBeInTheDocument()
+  })
+
+  it('ignores an unrecognized block filter value and shows every content type', async () => {
+    renderOverlay(`#key=${KEY}&preview=1&block=unknown`)
+    const options = vi.mocked(openCommunityOverlayStream).mock.calls[0][0]
+    act(() =>
+      options.onMessage({
+        type: 'snapshot',
+        cursor: 30,
+        events: [tarotEvent(29), event(30)],
+        themes: {},
+      })
+    )
+    expect(await screen.findByLabelText(/Alice 的每日塔羅/)).toBeInTheDocument()
+  })
+
+  it('deduplicates replayed IDs and ignores unsupported event versions', async () => {
+    renderOverlay(`#key=${KEY}&preview=1`)
+    const options = vi.mocked(openCommunityOverlayStream).mock.calls[0][0]
+    act(() => {
+      options.onMessage({
+        type: 'snapshot',
+        cursor: 30,
+        events: [{ ...event(29), schema_version: 2 }, event(30)],
+        themes: {},
+      })
+      options.onMessage({ type: 'update', cursor: 30, events: [event(30)], themes: {} })
+    })
+    expect(await screen.findByLabelText('Alice 的簽到集點卡')).toBeInTheDocument()
+    expect(screen.getAllByLabelText('Alice 的簽到集點卡')).toHaveLength(1)
+  })
+
+  it('hot-updates a published theme without remounting', () => {
+    renderOverlay(`#key=${KEY}`)
+    const options = vi.mocked(openCommunityOverlayStream).mock.calls[0][0]
+    act(() => {
+      options.onMessage({
+        type: 'snapshot',
+        cursor: 1,
+        events: [],
+        themes: { checkin: checkinTheme(41) },
+      })
+      options.onMessage({
+        type: 'update',
+        cursor: 1,
+        events: [],
+        themes: { checkin: checkinTheme(42, 'top-left') },
+      })
+    })
+    expect(document.querySelector('main')).toHaveAttribute('data-placement', 'top-left')
+  })
+
+  it('does not create periodic API requests while a stream remains open', async () => {
     vi.useFakeTimers()
     try {
-      vi.mocked(getCommunityOverlayTheme)
-        .mockResolvedValueOnce({
-          revision_id: 41,
-          renderer: 'checkin-card',
-          schema_version: 1,
-          theme: DEFAULT_COMMUNITY_OVERLAY_THEME,
-          created_at: '2026-08-31T10:00:00Z',
-        })
-        .mockResolvedValue({
-          revision_id: 42,
-          renderer: 'checkin-card',
-          schema_version: 1,
-          theme: { ...DEFAULT_COMMUNITY_OVERLAY_THEME, placement: 'top-left' },
-          created_at: '2026-08-31T10:05:00Z',
-        })
-      vi.mocked(getCommunityOverlayFeed).mockResolvedValue({ cursor: 20, events: [] })
-
       renderOverlay(`#key=${KEY}`)
-      await act(async () => Promise.resolve())
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(60_000)
-      })
-
-      expect(getCommunityOverlayTheme).toHaveBeenCalledTimes(4)
-      expect(getCommunityOverlayTheme).toHaveBeenCalledWith(KEY, 'checkin')
-      expect(getCommunityOverlayTheme).toHaveBeenCalledWith(KEY, 'tarot')
-      expect(document.querySelector('main')).toHaveAttribute('data-placement', 'top-left')
+      await act(async () => vi.advanceTimersByTimeAsync(120_000))
+      expect(openCommunityOverlayStream).toHaveBeenCalledTimes(1)
     } finally {
       vi.useRealTimers()
     }
   })
 
-  it('drops old tenant state and ignores an in-flight response after key changes', async () => {
-    const oldFeed = deferred<{ cursor: number; events: ReturnType<typeof event>[] }>()
-    vi.mocked(getCommunityOverlayFeed).mockImplementation(async key => {
-      if (key === KEY) return oldFeed.promise
-      return { cursor: 22, events: [event(22, 4, 'Bob')] }
-    })
+  it('reconnects with the last cursor after disconnect', async () => {
+    vi.useFakeTimers()
+    vi.spyOn(Math, 'random').mockReturnValue(0.5)
+    try {
+      vi.mocked(openCommunityOverlayStream).mockImplementationOnce(async options => {
+        options.onMessage({ type: 'snapshot', cursor: 10, events: [], themes: {} })
+      })
+      renderOverlay(`#key=${KEY}`)
+      await act(async () => Promise.resolve())
+      await act(async () => vi.advanceTimersByTimeAsync(1_000))
+      expect(openCommunityOverlayStream).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ publicKey: KEY, afterId: 10 })
+      )
+    } finally {
+      vi.mocked(Math.random).mockRestore()
+      vi.useRealTimers()
+    }
+  })
 
+  it('keeps exponential backoff when short streams send a snapshot then disconnect', async () => {
+    vi.useFakeTimers()
+    vi.spyOn(Math, 'random').mockReturnValue(0.5)
+    try {
+      vi.mocked(openCommunityOverlayStream).mockImplementation(async options => {
+        options.onMessage({ type: 'snapshot', cursor: 10, events: [], themes: {} })
+      })
+      renderOverlay(`#key=${KEY}`)
+      await act(async () => Promise.resolve())
+
+      await act(async () => vi.advanceTimersByTimeAsync(1_000))
+      expect(openCommunityOverlayStream).toHaveBeenCalledTimes(2)
+
+      await act(async () => vi.advanceTimersByTimeAsync(1_000))
+      expect(openCommunityOverlayStream).toHaveBeenCalledTimes(2)
+
+      await act(async () => vi.advanceTimersByTimeAsync(1_000))
+      expect(openCommunityOverlayStream).toHaveBeenCalledTimes(3)
+    } finally {
+      vi.mocked(Math.random).mockRestore()
+      vi.useRealTimers()
+    }
+  })
+
+  it('aborts the old tenant stream and ignores its late frame after key changes', async () => {
     render(
       <MemoryRouter initialEntries={[`/live-display#key=${KEY}&preview=1`]}>
         <SwitchingOverlay />
       </MemoryRouter>
     )
-
+    const oldOptions = vi.mocked(openCommunityOverlayStream).mock.calls[0][0]
     fireEvent.click(screen.getByRole('button', { name: '切換租戶' }))
+    await waitFor(() => expect(openCommunityOverlayStream).toHaveBeenCalledTimes(2))
+    expect(oldOptions.signal.aborted).toBe(true)
+    const nextOptions = vi.mocked(openCommunityOverlayStream).mock.calls[1][0]
+    act(() => {
+      oldOptions.onMessage({ type: 'update', cursor: 21, events: [event(21)], themes: {} })
+      nextOptions.onMessage({
+        type: 'snapshot',
+        cursor: 22,
+        events: [event(22, 4, 'Bob')],
+        themes: {},
+      })
+    })
     expect(await screen.findByLabelText('Bob 的簽到集點卡')).toBeInTheDocument()
-
-    oldFeed.resolve({ cursor: 21, events: [event(21, 3, 'Alice')] })
-    await act(async () => Promise.resolve())
-
     expect(screen.queryByLabelText('Alice 的簽到集點卡')).not.toBeInTheDocument()
-    expect(screen.getByLabelText('Bob 的簽到集點卡')).toBeInTheDocument()
   })
 })

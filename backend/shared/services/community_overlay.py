@@ -6,10 +6,11 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 from shared.community_events import CHECKIN_RECORDED, TAROT_DRAWN, validate_community_event
-from shared.community_overlay_blocks import get_community_overlay_block
+from shared.community_overlay_blocks import COMMUNITY_OVERLAY_BLOCKS, get_community_overlay_block
 from shared.models.attendance import (
     CommunityOverlayAccess,
     CommunityOverlayFeed,
+    CommunityOverlaySnapshot,
     CommunityOverlayThemePublished,
     CommunityOverlayThemeState,
 )
@@ -71,6 +72,37 @@ class CommunityOverlayService:
     ) -> CommunityOverlayThemePublished | None:
         self._require_theme_block(block_type)
         return await self.repository.get_public_theme(public_key, block_type)
+
+    async def resolve_public_channel(self, public_key: UUID) -> str | None:
+        return await self.repository.resolve_public_channel(public_key)
+
+    async def get_stream_snapshot(
+        self, public_key: UUID, *, after_id: int | None
+    ) -> CommunityOverlaySnapshot | None:
+        """Load replayable events and every published block theme for one capability."""
+        channel_id = await self.repository.resolve_public_channel(public_key)
+        if channel_id is None:
+            return None
+        feed = await self.repository.get_feed(
+            public_key,
+            after_id=after_id,
+            limit=100,
+            now=datetime.now(UTC),
+        )
+        if feed is None:
+            return None
+        themes: dict[str, CommunityOverlayThemePublished] = {}
+        for block_type in COMMUNITY_OVERLAY_BLOCKS:
+            published = await self.repository.get_public_theme(public_key, block_type)
+            if published is None:
+                return None
+            themes[block_type] = published
+        return CommunityOverlaySnapshot(
+            channel_id=channel_id,
+            cursor=feed.cursor,
+            events=feed.events,
+            themes=themes,
+        )
 
     async def publish_preview(
         self,

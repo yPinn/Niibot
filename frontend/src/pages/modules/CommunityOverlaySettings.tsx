@@ -50,9 +50,6 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
   Skeleton,
   Switch,
 } from '@/components/ui'
@@ -198,11 +195,20 @@ export default function CommunityOverlaySettings({
   const themeMutationLocked = useRef(false)
   const [previewMutation, setPreviewMutation] = useState<CommunityOverlayContentType | null>(null)
   const previewMutationLocked = useRef(false)
+  const previewAutoCloseTimers = useRef<Partial<Record<CommunityOverlayContentType, number>>>({})
+
+  useEffect(() => {
+    const timers = previewAutoCloseTimers.current
+    return () => {
+      for (const timerId of Object.values(timers)) {
+        if (timerId !== undefined) window.clearTimeout(timerId)
+      }
+    }
+  }, [])
   const [expandedBlock, setExpandedBlock] = useState<CommunityOverlayContentType | null>('checkin')
   const [previewModes, setPreviewModes] = useState<
     Record<CommunityOverlayContentType, 'draft' | 'live'>
   >({ checkin: 'draft', tarot: 'draft' })
-  const [connectionOpen, setConnectionOpen] = useState(false)
   const [checkinConfig, setCheckinConfig] = useState<RedemptionConfig | null>(
     preview ? DEV_PREVIEW_CHECKIN_CONFIG : null
   )
@@ -307,7 +313,6 @@ export default function CommunityOverlaySettings({
         : undefined,
     [access]
   )
-  const previewUrl = overlayUrl ? `${overlayUrl}&preview=1` : undefined
   const handleEnabledChange = async (enabled: boolean) => {
     if (!access || mutationLocked.current) return
     mutationLocked.current = true
@@ -457,6 +462,25 @@ export default function CommunityOverlaySettings({
     }
   }
 
+  const clearPreviewAutoClose = (blockType: CommunityOverlayContentType) => {
+    const timerId = previewAutoCloseTimers.current[blockType]
+    if (timerId !== undefined) {
+      window.clearTimeout(timerId)
+      previewAutoCloseTimers.current[blockType] = undefined
+    }
+  }
+
+  const schedulePreviewAutoClose = (blockType: CommunityOverlayContentType) => {
+    clearPreviewAutoClose(blockType)
+    // The iframe shows the *published* theme, so its actual on-screen duration
+    // follows that revision's display_ms, not an unsaved draft's.
+    const displayMs = themeStates[blockType]?.published.theme.display_ms ?? 4_000
+    previewAutoCloseTimers.current[blockType] = window.setTimeout(() => {
+      previewAutoCloseTimers.current[blockType] = undefined
+      setPreviewModes(current => ({ ...current, [blockType]: 'draft' }))
+    }, displayMs + 1_500)
+  }
+
   const handlePreview = async (blockType: CommunityOverlayContentType) => {
     if (previewMutationLocked.current) return
     previewMutationLocked.current = true
@@ -465,6 +489,7 @@ export default function CommunityOverlaySettings({
     try {
       if (!preview) await triggerCommunityOverlayPreview(blockType)
       toast.success('測試動畫已送出')
+      schedulePreviewAutoClose(blockType)
     } catch (error) {
       toastApiError(error, '測試動畫送出失敗')
       setPreviewModes(current => ({ ...current, [blockType]: 'draft' }))
@@ -488,6 +513,7 @@ export default function CommunityOverlaySettings({
   const renderThemeEditor = (blockType: CommunityOverlayContentType) => {
     const { themeState, localDirty } = getThemePresentation(blockType)
     if (!themeState) return null
+    const scopedPreviewUrl = overlayUrl ? `${overlayUrl}&preview=1&block=${blockType}` : undefined
     return (
       <ThemeEditor
         contentType={blockType}
@@ -495,12 +521,13 @@ export default function CommunityOverlaySettings({
         localDirty={localDirty}
         hasUnpublishedChanges={themeState.has_unpublished_changes}
         busy={themeMutation?.blockType === blockType ? themeMutation.action : null}
-        previewUrl={previewUrl}
+        previewUrl={scopedPreviewUrl}
         previewMode={previewModes[blockType]}
         onChange={next => setDraftThemes(current => ({ ...current, [blockType]: next }))}
-        onPreviewModeChange={mode =>
+        onPreviewModeChange={mode => {
+          clearPreviewAutoClose(blockType)
           setPreviewModes(current => ({ ...current, [blockType]: mode }))
-        }
+        }}
         onSave={() => void handleSaveTheme(blockType)}
         onPublish={() => void handlePublishTheme(blockType)}
         onReset={() => void handleResetTheme(blockType)}
@@ -527,6 +554,74 @@ export default function CommunityOverlaySettings({
         </Alert>
       ) : (
         <div className="flex min-w-0 flex-col gap-8">
+          <section
+            aria-labelledby="live-display-connection-title"
+            className="flex min-w-0 flex-col gap-3"
+          >
+            <SlideUp>
+              <Card className="min-w-0">
+                <CardHeader className="has-data-[slot=card-action]:grid-cols-1 sm:has-data-[slot=card-action]:grid-cols-[1fr_auto]">
+                  <CardTitle className="flex flex-wrap items-center gap-2">
+                    <h2 id="live-display-connection-title">OBS 連線</h2>
+                    <Badge variant={access.enabled ? 'default' : 'outline'}>
+                      {access.enabled ? '已啟用' : '已停用'}
+                    </Badge>
+                  </CardTitle>
+                  <CardDescription>
+                    加入直播畫面：把此連結加入 OBS Browser Source；建議 1920 ×
+                    1080、透明背景，通常只需設定一次。
+                  </CardDescription>
+                  <CardAction>
+                    <Switch
+                      aria-label="啟用直播畫面顯示"
+                      checked={access.enabled}
+                      disabled={mutation !== null}
+                      onCheckedChange={value => void handleEnabledChange(value)}
+                    />
+                  </CardAction>
+                </CardHeader>
+                <CardContent className="flex min-w-0 flex-col gap-3 border-t pt-card sm:flex-row sm:items-center">
+                  <OverlayUrlBlock
+                    url={overlayUrl}
+                    copyLabel="點擊以複製 OBS 顯示連結"
+                    openLabel="開啟 OBS 顯示畫面"
+                  />
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="shrink-0"
+                        disabled={mutation !== null}
+                      >
+                        {mutation === 'key' ? (
+                          <Spinner className="mr-1.5" />
+                        ) : (
+                          <Icon icon="fa-solid fa-key" className="mr-1.5 text-label" />
+                        )}
+                        更新連結
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>更新 OBS 顯示連結？</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          舊連結會立即失效。完成後請把新連結貼回 OBS Browser Source。
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>取消</AlertDialogCancel>
+                        <AlertDialogAction onClick={() => void handleRotateKey()}>
+                          確認更新
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </CardContent>
+              </Card>
+            </SlideUp>
+          </section>
+
           <section
             aria-labelledby="live-display-content-title"
             className="flex min-w-0 flex-col gap-3"
@@ -572,109 +667,6 @@ export default function CommunityOverlaySettings({
                   {renderThemeEditor('tarot')}
                 </TarotBlockCard>
               </div>
-            </SlideUp>
-          </section>
-
-          <section
-            aria-labelledby="live-display-connection-title"
-            className="flex min-w-0 flex-col gap-3"
-          >
-            <SettingsSectionHeader
-              id="live-display-connection-title"
-              title="加入直播畫面"
-              description="初次使用時，將頻道專屬連結加入 OBS Browser Source。"
-            />
-            <SlideUp>
-              <Collapsible open={connectionOpen} onOpenChange={setConnectionOpen}>
-                <Card className="min-w-0">
-                  <CardHeader className="has-data-[slot=card-action]:grid-cols-1 sm:has-data-[slot=card-action]:grid-cols-[1fr_auto]">
-                    <CardTitle className="flex flex-wrap items-center gap-2">
-                      OBS 連線
-                      <Badge variant={access.enabled ? 'default' : 'outline'}>
-                        {access.enabled ? '已啟用' : '已停用'}
-                      </Badge>
-                    </CardTitle>
-                    <CardDescription>
-                      所有互動卡片共用這個透明畫面來源；通常只需設定一次。
-                    </CardDescription>
-                    <CardAction className="col-start-1 row-span-1 row-start-3 flex flex-wrap items-center justify-start gap-2 justify-self-stretch sm:col-start-2 sm:row-span-2 sm:row-start-1 sm:justify-end sm:justify-self-end">
-                      <Switch
-                        aria-label="啟用直播畫面顯示"
-                        checked={access.enabled}
-                        disabled={mutation !== null}
-                        onCheckedChange={value => void handleEnabledChange(value)}
-                      />
-                      <CollapsibleTrigger asChild>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          aria-label={connectionOpen ? '收合 OBS 連線設定' : '顯示 OBS 連線設定'}
-                        >
-                          <Icon
-                            icon="fa-solid fa-chevron-down"
-                            className={`text-label transition-transform ${connectionOpen ? 'rotate-180' : ''}`}
-                          />
-                          {connectionOpen ? '收合設定' : '連線設定'}
-                        </Button>
-                      </CollapsibleTrigger>
-                    </CardAction>
-                  </CardHeader>
-                  <CollapsibleContent>
-                    <CardContent className="grid min-w-0 gap-section border-t pt-card xl:grid-cols-[minmax(0,1.35fr)_minmax(18rem,0.65fr)] xl:items-start">
-                      <div className="flex min-w-0 flex-col gap-2">
-                        <p className="text-content font-semibold">頻道專屬網址</p>
-                        <p className="text-sub text-muted-foreground">
-                          建議設為 1920 × 1080 並保持透明背景。此連結只供 OBS 使用，請勿公開分享。
-                        </p>
-                        <OverlayUrlBlock
-                          url={overlayUrl}
-                          copyLabel="點擊以複製 OBS 顯示連結"
-                          openLabel="開啟 OBS 顯示畫面"
-                        />
-                      </div>
-
-                      <div className="flex min-w-0 flex-col gap-2 rounded-lg bg-muted p-section sm:flex-row sm:items-center sm:justify-between">
-                        <div className="min-w-0">
-                          <p className="text-content font-semibold">需要撤銷舊連結？</p>
-                          <p className="text-label text-muted-foreground">
-                            更新後，OBS 內的舊連結會立即停止顯示內容。
-                          </p>
-                        </div>
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button
-                              variant="outline"
-                              className="shrink-0 self-start sm:self-auto"
-                              disabled={mutation !== null}
-                            >
-                              {mutation === 'key' ? (
-                                <Spinner className="mr-1.5" />
-                              ) : (
-                                <Icon icon="fa-solid fa-key" className="mr-1.5 text-label" />
-                              )}
-                              更新 OBS 顯示連結
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>更新 OBS 顯示連結？</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                舊連結會立即失效。完成後請把新連結貼回 OBS Browser Source。
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>取消</AlertDialogCancel>
-                              <AlertDialogAction onClick={() => void handleRotateKey()}>
-                                確認更新
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      </div>
-                    </CardContent>
-                  </CollapsibleContent>
-                </Card>
-              </Collapsible>
             </SlideUp>
           </section>
         </div>

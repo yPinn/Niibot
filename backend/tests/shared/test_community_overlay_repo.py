@@ -148,6 +148,16 @@ class TestCommunityOverlayFeed:
 
 @pytest.mark.asyncio
 class TestCommunityOverlayAccess:
+    async def test_resolves_only_an_enabled_public_capability(self):
+        pool, conn = _pool()
+        conn.fetchval.return_value = "ch1"
+        repo = CommunityOverlayRepository(pool)
+
+        assert await repo.resolve_public_channel(_KEY) == "ch1"
+        sql = conn.fetchval.await_args.args[0]
+        assert "public_key = $1" in sql
+        assert "enabled = TRUE" in sql
+
     async def test_get_or_create_is_channel_scoped(self):
         pool, conn = _pool()
         conn.fetchrow.return_value = _access()

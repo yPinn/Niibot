@@ -129,10 +129,14 @@ export const API_ENDPOINTS = {
   },
   videoQueue: {
     public: (u: string) => join(`/api/video-queue/public/${u}`),
+    stream: (u: string) => join(`/api/video-queue/public/${u}/stream`),
     advance: (u: string) => join(`/api/video-queue/public/${u}/advance`),
     metadata: (u: string, id: number) =>
       join(`/api/video-queue/public/${u}/entries/${id}/metadata`),
+    clipSource: (u: string, id: number) =>
+      join(`/api/video-queue/public/${u}/entries/${id}/clip-source`),
     state: join('/api/video-queue/state'),
+    history: join('/api/video-queue/history'),
     skip: join('/api/video-queue/skip'),
     clear: join('/api/video-queue/clear'),
     settings: join('/api/video-queue/settings'),
@@ -140,8 +144,11 @@ export const API_ENDPOINTS = {
     playNow: (id: number) => join(`/api/video-queue/entries/${id}/play-now`),
     removeEntry: (id: number) => join(`/api/video-queue/entries/${id}`),
     addEntry: join('/api/video-queue/entries'),
+    blocklist: join('/api/video-queue/blocklist'),
+    blocklistEntry: (id: number) => join(`/api/video-queue/blocklist/${id}`),
   },
   communityOverlay: {
+    stream: join('/api/live-display/public/stream'),
     events: join('/api/live-display/public/events'),
     theme: join('/api/live-display/public/theme'),
     settings: join('/api/live-display/settings'),

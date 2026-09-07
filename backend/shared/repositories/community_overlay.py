@@ -90,6 +90,16 @@ class CommunityOverlayRepository:
     def __init__(self, pool: asyncpg.Pool) -> None:
         self.pool = pool
 
+    async def resolve_public_channel(self, public_key: UUID) -> str | None:
+        """Resolve an enabled capability without returning or logging the key."""
+        async with self.pool.acquire() as conn:
+            channel_id = await conn.fetchval(
+                "SELECT channel_id FROM community_overlay_channels "
+                "WHERE public_key = $1 AND enabled = TRUE",
+                public_key,
+            )
+        return str(channel_id) if channel_id is not None else None
+
     async def get_or_create_channel(self, channel_id: str) -> CommunityOverlayAccess:
         async with self.pool.acquire() as conn:
             async with conn.transaction():

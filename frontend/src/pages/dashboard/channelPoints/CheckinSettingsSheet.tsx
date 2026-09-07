@@ -41,12 +41,14 @@ interface CheckinForm {
   timezone: string
   successTemplate: string
   duplicateTemplate: string
+  replyDelaySeconds: number
 }
 
 const EMPTY_FORM: CheckinForm = {
   timezone: '',
   successTemplate: '',
   duplicateTemplate: '',
+  replyDelaySeconds: 0,
 }
 
 const CHECKIN_VARIABLES = [
@@ -68,6 +70,7 @@ function toForm(settings: CheckinSettings): CheckinForm {
     timezone: settings.timezone,
     successTemplate: settings.success_template,
     duplicateTemplate: settings.duplicate_template,
+    replyDelaySeconds: settings.reply_delay_seconds,
   }
 }
 
@@ -129,8 +132,13 @@ export function CheckinSettingsSheet({ open, onOpenChange }: CheckinSettingsShee
     void loadLeaderboard()
   }, [loadLeaderboard, loadSettings, open])
 
-  const updateForm = (field: keyof CheckinForm, value: string) => {
+  const updateForm = (field: keyof Omit<CheckinForm, 'replyDelaySeconds'>, value: string) => {
     setForm(current => ({ ...current, [field]: value }))
+    setValidationError(null)
+  }
+
+  const updateReplyDelay = (value: number) => {
+    setForm(current => ({ ...current, replyDelaySeconds: value }))
     setValidationError(null)
   }
 
@@ -149,6 +157,14 @@ export function CheckinSettingsSheet({ open, onOpenChange }: CheckinSettingsShee
       setValidationError('時區與兩種訊息模板都不可留空。')
       return
     }
+    if (
+      !Number.isInteger(form.replyDelaySeconds) ||
+      form.replyDelaySeconds < 0 ||
+      form.replyDelaySeconds > 30
+    ) {
+      setValidationError('回覆延遲需為 0 到 30 之間的整數秒數。')
+      return
+    }
 
     setSaving(true)
     setValidationError(null)
@@ -157,6 +173,7 @@ export function CheckinSettingsSheet({ open, onOpenChange }: CheckinSettingsShee
         timezone,
         success_template: form.successTemplate,
         duplicate_template: form.duplicateTemplate,
+        reply_delay_seconds: form.replyDelaySeconds,
       })
       setForm(toForm(updated))
       toast.success('Check-in settings 已儲存')
@@ -212,6 +229,29 @@ export function CheckinSettingsSheet({ open, onOpenChange }: CheckinSettingsShee
                   />
                   <p className="text-label text-muted-foreground">
                     使用 IANA 時區名稱；每日簽到會依此時區跨日，例如 Asia/Taipei。
+                  </p>
+                </section>
+
+                <section
+                  className="space-y-2 border-t pt-card"
+                  aria-labelledby="checkin-reply-delay-label"
+                >
+                  <Label id="checkin-reply-delay-label" htmlFor="checkin-reply-delay">
+                    回覆延遲（秒）
+                  </Label>
+                  <Input
+                    id="checkin-reply-delay"
+                    aria-label="簽到回覆延遲秒數"
+                    type="number"
+                    min={0}
+                    max={30}
+                    step={1}
+                    value={form.replyDelaySeconds}
+                    onChange={event => updateReplyDelay(Number(event.target.value))}
+                  />
+                  <p className="text-label text-muted-foreground">
+                    聊天訊息幾乎即時送出，但畫面要經過 Twitch 編碼／CDN
+                    才會顯示，實際延遲依你目前的直播延遲模式而定；預設 0 秒（不延遲）。
                   </p>
                 </section>
 

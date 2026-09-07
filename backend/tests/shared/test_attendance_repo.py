@@ -163,6 +163,7 @@ class TestCheckinSettings:
             "timezone": "Asia/Taipei",
             "success_template": "$(@user) 簽到成功，累積 $(count) 天！",
             "duplicate_template": "$(@user) 今天已經簽到過了！",
+            "reply_delay_seconds": 0,
             "created_at": _NOW,
             "updated_at": _NOW,
         }
@@ -182,6 +183,7 @@ class TestCheckinSettings:
             "timezone": "Asia/Tokyo",
             "success_template": "$(user) checked in $(count)",
             "duplicate_template": "$(user) already checked in",
+            "reply_delay_seconds": 5,
             "created_at": _NOW,
             "updated_at": _NOW,
         }
@@ -192,9 +194,11 @@ class TestCheckinSettings:
             timezone="Asia/Tokyo",
             success_template="$(user) checked in $(count)",
             duplicate_template="$(user) already checked in",
+            reply_delay_seconds=5,
         )
 
         assert settings.channel_id == "ch1"
+        assert settings.reply_delay_seconds == 5
         sql, *args = conn.fetchrow.await_args.args
         assert "INSERT INTO checkin_settings" in sql
         assert "ON CONFLICT (channel_id)" in sql
@@ -204,6 +208,7 @@ class TestCheckinSettings:
             "Asia/Tokyo",
             "$(user) checked in $(count)",
             "$(user) already checked in",
+            5,
         ]
 
 
@@ -244,3 +249,36 @@ class TestCheckinLeaderboard:
         assert "ORDER BY total_days DESC" in normalized_sql
         assert "LIMIT $2" in normalized_sql
         assert (channel_id, limit) == ("ch1", 100)
+
+
+@pytest.mark.asyncio
+class TestCheckinRank:
+    async def test_returns_rank_using_the_same_ordering_as_the_leaderboard(self):
+        pool, conn = _pool()
+        conn.fetchrow.return_value = {
+            "rank": 3,
+            "total_days": 5,
+            "last_checkin_date": _DAY,
+            "total_participants": 42,
+        }
+        repo = AttendanceRepository(pool)
+
+        rank = await repo.get_checkin_rank("ch1", "u1")
+
+        assert rank is not None
+        assert (rank.rank, rank.total_days, rank.total_participants) == (3, 5, 42)
+        sql, channel_id, user_id = conn.fetchrow.await_args.args
+        normalized_sql = " ".join(sql.split())
+        assert "WHERE channel_id = $1" in normalized_sql
+        assert "ORDER BY total_days DESC" in normalized_sql
+        assert "WHERE user_id = $2" in normalized_sql
+        assert (channel_id, user_id) == ("ch1", "u1")
+
+    async def test_returns_none_when_the_viewer_has_no_checkins(self):
+        pool, conn = _pool()
+        conn.fetchrow.return_value = None
+        repo = AttendanceRepository(pool)
+
+        rank = await repo.get_checkin_rank("ch1", "u_unknown")
+
+        assert rank is None

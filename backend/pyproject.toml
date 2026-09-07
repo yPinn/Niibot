@@ -1,6 +1,6 @@
 [project]
 name = "niibot-backend"
-version = "1.14"
+version = "1.15"
 description = "FastAPI backend for Discord and Twitch bots"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -17,12 +17,12 @@ dependencies = [
     # other platform (Linux prod, CI, Apple Silicon) tracks the latest.
     "cryptography>=48,<49; sys_platform == 'darwin' and platform_machine == 'x86_64'",
     "cryptography>=50,<51; sys_platform != 'darwin' or platform_machine != 'x86_64'",
-    "openai>=2.44.0,<3.0.0",
+    "openai>=2.44.0,<4.0.0",
     "pydantic-settings>=2.13.0,<3.0.0",
     "python-dotenv>=1.2.0,<2.0.0",
     "python-multipart>=0.0.18,<1.0.0",
     "rich>=14.0.0,<16.0.0",
-    "structlog>=25.0.0,<26.0.0",
+    "structlog>=25.0.0,<27.0.0",
     "twitchio>=3.3.0,<4.0.0",
     "tzdata>=2025.2",
     "uvicorn[standard]>=0.51.0,<1.0.0",

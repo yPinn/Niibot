@@ -46,6 +46,7 @@ describe('check-in settings API', () => {
       timezone: 'Asia/Tokyo',
       success_template: '$(@user) 第 $(count) 天',
       duplicate_template: '$(@user) 今天已簽到',
+      reply_delay_seconds: 5,
     }
 
     await updateCheckinSettings(update)

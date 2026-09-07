@@ -104,13 +104,6 @@ export const PLATFORM_LABELS: Record<DonationPlatform, string> = {
   newebpay: '藍新金流 NewebPay',
 }
 
-export const PLATFORM_COLORS: Record<DonationPlatform, string> = {
-  ecpay: '#00a651',
-  opay: '#ff6600',
-  paypal: '#003087',
-  newebpay: '#0070c0',
-}
-
 export const NEEDS_HASH: Record<DonationPlatform, boolean> = {
   ecpay: true,
   opay: true,

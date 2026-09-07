@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse, Response
 
 from core.config import get_settings
 from core.database import get_database_manager, init_database_manager
-from core.dependencies import close_twitch_api, require_activated
+from core.dependencies import close_twitch_api, get_notify_hub, require_activated
 from core.error_handlers import log_request_failure, register_exception_handlers
 from core.logging_setup import setup_logging
 from routers import (
@@ -47,6 +47,7 @@ from routers import (
 )
 from routers.bots_router import close_bots_http_client
 from routers.client_errors_router import client_error_retention_loop
+from routers.video_queue_router import video_queue_history_retention_loop
 from shared.database import pool_heartbeat_loop
 from shared.errors import build_envelope
 from shared.log_context import bind_log_context, clear_log_context
@@ -63,6 +64,7 @@ _db_retry_task: asyncio.Task | None = None
 _client_error_retention_task: asyncio.Task | None = None
 _activation_cleanup_task: asyncio.Task | None = None
 _community_overlay_cleanup_task: asyncio.Task | None = None
+_video_queue_history_task: asyncio.Task | None = None
 _APP_VERSION = os.getenv("APP_VERSION", "dev")
 _REQUEST_TIMEOUT = 30.0
 
@@ -94,6 +96,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Handle startup and shutdown"""
     global _start_time, _started_at, _pool_heartbeat_task, _db_retry_task
     global _client_error_retention_task, _activation_cleanup_task, _community_overlay_cleanup_task
+    global _video_queue_history_task
     _start_time = time.time()
     _started_at = datetime.now(UTC).isoformat()
 
@@ -141,6 +144,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         community_overlay_cleanup_loop(db_manager)
     )
 
+    # Daily prune of video_queue history (done/skipped) past its retention window.
+    _video_queue_history_task = asyncio.create_task(video_queue_history_retention_loop(db_manager))
+
+    notify_hub = get_notify_hub()
+    notify_hub.start()
+
     yield
 
     # Shutdown
@@ -155,7 +164,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         _activation_cleanup_task.cancel()
     if _community_overlay_cleanup_task:
         _community_overlay_cleanup_task.cancel()
+    if _video_queue_history_task:
+        _video_queue_history_task.cancel()
     try:
+        await notify_hub.stop()
         await close_twitch_api()
         await close_bots_http_client()
         await db_manager.disconnect()

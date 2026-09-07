@@ -43,6 +43,11 @@ stale session 若曾有完整 snapshot，補關閉時仍需按時間順序結算
 頻道 timezone、成功／已簽到模板與活動卡設定屬於 channel-scoped config。
 成功簽到可選擇性關聯當下 `session_id`，但不得改寫 Session Attendance、觀看分數或忠誠分層。
 
+`checkin_settings.reply_delay_seconds`（預設 0，範圍 0–30）讓頻道自行延遲聊天回覆的送出時機：
+聊天訊息走 IRC 幾乎即時，但 Live Display 動畫要透過 Twitch 廣播管線（編碼／CDN）才會出現在畫面上，
+這段延遲因頻道的直播延遲模式而異，bot 無法查詢也無法控制。這個延遲只作用在「送出訊息」這個動作，
+check-in ledger 寫入與 Overlay event 建立維持完全即時；`!checkin` 與頻道點數兌換兩個入口都套用同一個值。
+
 ### 觸發方式：聊天指令與 Twitch 頻道點數
 
 `!checkin`／`!簽到` 與 Twitch 自訂獎勵兌換都是 Daily Check-in 的 adapter，共用同一個
@@ -67,11 +72,16 @@ actor snapshot、validated payload、發生／到期時間與 idempotency key。
 同一個 Live Display 頁面可以承載多個 block，例如每日簽到、運勢或塔羅；每個 block 在 registry 定義
 自己的 `block_type`、renderer、schema、預設外觀、驗證器與測試事件。新增 block 不得沿用或覆蓋其他
 block 的外觀欄位。Overlay runtime 只負責依 cursor 讀取、排序、去重、排隊與 renderer dispatch，不回查 feature table，
-也不執行 payload 內的 HTML／CSS／JS。第一版可短輪詢；需要更低延遲時，以 durable table replay +
-PostgreSQL `NOTIFY` 喚醒 SSE，維持同一事件契約。
+也不執行 payload 內的 HTML／CSS／JS。傳輸層是 durable table replay + PostgreSQL `NOTIFY` 喚醒的 SSE
+長連線，維持同一事件契約；`NOTIFY` payload 只帶 `channel_id` 作喚醒訊號，事件與 theme body 一律重新
+由 durable table 讀取。
 
-Game Queue 與 Video Queue 是長時間存在的狀態／播放器，不塞入短事件 feed；未來只共用
-Overlay shell、公開金鑰、theme 與 transport primitives。
+Game Queue 與 Video Queue 是長時間存在的狀態／播放器，不塞入短事件 feed。Video Queue 已遷移到
+NOTIFY-woken SSE（`GET /api/video-queue/public/{username}/stream`），與 Live Display 共用同一個
+process-level `NotifyWakeHub`（單一 LISTEN 連線監聽多個 notify channel），但狀態模型不同：
+Video Queue 是單一目前快照覆蓋推送，沒有 cursor／事件回放。Game Queue 尚未遷移，未來要做時只共用
+Overlay shell、公開金鑰、theme 與這組 transport primitives，不會複製一份獨立的 hub。細節見
+[docs/guides/cloudflare-pages.md](../guides/cloudflare-pages.md) 的 Video Queue stream contract。
 
 ### 租戶樣式與發布模型
 
@@ -118,6 +128,9 @@ server 與 client 都不接受任意 HTML、CSS 或 JavaScript。圖片資產與
 
 - `!checkin`／`!簽到` 走既有 builtin command guard；成功與同日重複都回傳該頻道累積天數，
   DB／模板錯誤只回覆一般失敗訊息，不記錄假成功 usage。
+- `!rank`／`!排名` 讀取 Daily Check-in ledger 的累積簽到天數排名，與後台簽到排行榜共用同一段
+  ranking SQL，兩者排序永遠一致；查無簽到紀錄時提示先簽到。Session Attendance 的
+  `engagement_score`／`get_viewer_rank` 專供後台 Insights 分析頁使用，不再有聊天指令出口。
 - Twitch Channel Points `checkin` action 以 `(channel_id, reward_id)` 找設定，收到兌換後走相同
   Attendance service；只有 `recorded` 會新增 Overlay event。Bot 不呼叫任何 reward mutation／退款 API。
 - Dashboard 將三種責任分開：`/events` 只編輯 EventSub 回覆模板；`/channel-points` 是 reward → action
@@ -126,8 +139,12 @@ server 與 client 都不接受任意 HTML、CSS 或 JavaScript。圖片資產與
 - 模板只允許 `$(@user)`、`$(user)`、`$(count)`、`$(date)`，renderer 不解譯 HTML、CSS、JS
   或通用 command substitution。
 - OBS route 為 `/live-display#key=<uuid>`；capability 留在 URL fragment，不進入瀏覽器／CDN request log，
-  前端以 `X-Overlay-Key` header 呼叫公開 API。正常啟動先取得 latest cursor、不重播歷史，之後每秒讀取
-  增量 event，以 FIFO 播放 7 格循環集點卡；每 5 秒檢查 published revision，發布後不必重載 OBS。
+  前端以 `X-Overlay-Key` header 對 `GET /api/live-display/public/stream` 開一條可重連 SSE 長連線。
+  正常啟動先取得 latest cursor、不重播歷史，之後靠 PostgreSQL `NOTIFY` 喚醒送出 `update` frame
+  （event 與已變更的 theme 一併夾帶），以 FIFO 播放 7 格循環集點卡；theme 發布後隨下一次 `update`
+  送達，不必重載 OBS，也不再需要獨立輪詢 published revision。每條串流有 15 秒 heartbeat 與 5 分鐘
+  硬性 lease，到期或斷線由前端帶最後 cursor、以指數退避加 jitter 重連補齊事件，不 fallback 回週期
+  polling。
 - Dashboard 的 `Live Display` 頁位於 `/modules/live-display`，依「顯示內容、卡片樣式、
   預覽與測試、加入直播畫面」排序；每個 block 都提供不執行正式功能流程的測試動畫。頁面可啟停 feed、
   複製／輪替 capability URL、編輯／預覽／發布該 block 的頻道樣式；設定 mutation

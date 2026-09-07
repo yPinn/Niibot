@@ -22,20 +22,14 @@ from shared.repositories.command_config import RedemptionConfigRepository
 from shared.repositories.game_queue import GameQueueRepository, GameQueueSettingsRepository
 from shared.repositories.video_queue import (
     SOURCE_PRIORITY,
+    VideoQueueBlocklistRepository,
     VideoQueueRepository,
     VideoQueueSettingsRepository,
 )
 from shared.repositories.vip import VipRepository
 from shared.services.attendance import AttendanceService
 from shared.services.vip import VipService, add_calendar_months
-from shared.video_sources import (
-    extract_twitch_clip_slug,
-    extract_youtube_info,
-    fetch_bilibili_info,
-    fetch_twitch_clip_info,
-    fetch_yt_info,
-    resolve_bilibili_url,
-)
+from shared.video_sources import fetch_video_metadata, resolve_video_url, unplayable_message
 from utils.mod_guard import mod_guard_notifier
 from utils.reauth import is_scope_error, reauth_notifier
 
@@ -61,6 +55,7 @@ class ChannelPointsComponent(commands.Component):
         self.gq_settings_repo = GameQueueSettingsRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.vq_repo = VideoQueueRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.vq_settings_repo = VideoQueueSettingsRepository(self.bot.token_database)  # type: ignore[attr-defined]
+        self.vq_blocklist_repo = VideoQueueBlocklistRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.vip_repo = VipRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.vip_policy = VipService()
         self._session: aiohttp.ClientSession | None = None
@@ -80,6 +75,7 @@ class ChannelPointsComponent(commands.Component):
         self.gq_settings_repo.pool = pool
         self.vq_repo.pool = pool
         self.vq_settings_repo.pool = pool
+        self.vq_blocklist_repo.pool = pool
         self.vip_repo.pool = pool
 
     async def component_load(self) -> None:
@@ -225,6 +221,8 @@ class ChannelPointsComponent(commands.Component):
                 display_name=display_name,
                 session_id=session_id,
             )
+            if outcome.delay_seconds > 0:
+                await asyncio.sleep(outcome.delay_seconds)
             await self._reply(broadcaster, outcome.message)
         except Exception:
             LOGGER.exception(
@@ -305,15 +303,27 @@ class ChannelPointsComponent(commands.Component):
         return False
 
     async def _vip_expiry_loop(self) -> None:
+        consecutive_failures = 0
         while True:
             try:
                 await self._recover_granting_vips()
                 await self._expire_due_vips()
+                consecutive_failures = 0
             except asyncio.CancelledError:
                 raise
             except Exception:
-                LOGGER.exception("Timed VIP expiry loop failed")
-            await asyncio.sleep(60)
+                consecutive_failures += 1
+                LOGGER.exception(
+                    "Timed VIP expiry loop failed (consecutive=%d)", consecutive_failures
+                )
+            # Steady state runs every minute. On a sustained failure (e.g. the
+            # DB schema is not migrated yet) back off exponentially up to 30
+            # minutes so a broken dependency does not flood the logs.
+            if consecutive_failures == 0:
+                delay = 60
+            else:
+                delay = min(60 * 2**consecutive_failures, 1800)
+            await asyncio.sleep(delay)
 
     async def _recover_granting_vips(self) -> None:
         """Repair Add-VIP success followed by a local persistence interruption."""
@@ -328,10 +338,10 @@ class ChannelPointsComponent(commands.Component):
                     error_code="vip_rule_missing_during_recovery",
                 )
                 continue
-            broadcaster = self.bot.create_partialuser(user_id=event.channel_id)
             lock = self._vip_channel_locks.setdefault(event.channel_id, asyncio.Lock())
             async with lock:
                 try:
+                    broadcaster = self.bot.create_partialuser(user_id=event.channel_id)
                     if not await self._is_current_vip(broadcaster, event.user_id):
                         await self.vip_repo.transition_redemption(
                             channel_id=event.channel_id,
@@ -385,10 +395,10 @@ class ChannelPointsComponent(commands.Component):
         now = datetime.now(UTC)
         due = await self.vip_repo.claim_due_entitlements(now=now, limit=50)
         for entitlement in due:
-            broadcaster = self.bot.create_partialuser(user_id=entitlement.channel_id)
             lock = self._vip_channel_locks.setdefault(entitlement.channel_id, asyncio.Lock())
             async with lock:
                 try:
+                    broadcaster = self.bot.create_partialuser(user_id=entitlement.channel_id)
                     if not await self._is_current_vip(broadcaster, entitlement.user_id):
                         await self.vip_repo.finish_expiry(
                             channel_id=entitlement.channel_id,
@@ -796,23 +806,15 @@ class ChannelPointsComponent(commands.Component):
                 await self._reply(broadcaster, f"@{user_name} 影片佇列目前已關閉")
                 return
 
-            video_id, is_vertical = extract_youtube_info(user_input)
-            clip_slug: str | None = None
-            bvid: str | None = None
-            if not video_id:
-                clip_slug = extract_twitch_clip_slug(user_input)
-            if not video_id and not clip_slug:
-                bvid = await resolve_bilibili_url(user_input)
-            if not video_id and not clip_slug and not bvid:
+            resolved = await resolve_video_url(user_input, session=self._session)
+            if resolved is None:
                 await self._reply(
                     broadcaster,
                     f"@{user_name} 請在兌換時輸入有效的 YouTube、Twitch Clip 或 Bilibili 連結",
                 )
                 return
 
-            active_id: str = clip_slug or bvid or video_id  # type: ignore[assignment]
-
-            if await self.vq_repo.video_is_active(channel_id, active_id):
+            if await self.vq_repo.video_is_active(channel_id, resolved.video_id):
                 await self._reply(broadcaster, f"@{user_name} 該影片已在佇列中")
                 return
 
@@ -846,31 +848,27 @@ class ChannelPointsComponent(commands.Component):
                         )
                         return
 
-            if clip_slug:
-                title, duration_seconds, view_count = await fetch_twitch_clip_info(
-                    clip_slug,
-                    self.settings.twitch_client_id,
-                    self.settings.twitch_client_secret,
-                    self._session,
+            metadata = await fetch_video_metadata(
+                resolved,
+                youtube_api_key=self.settings.youtube_api_key,
+                twitch_client_id=self.settings.twitch_client_id,
+                twitch_client_secret=self.settings.twitch_client_secret,
+                session=self._session,
+            )
+            title, duration_seconds, view_count = (
+                metadata.title,
+                metadata.duration_seconds,
+                metadata.view_count,
+            )
+
+            # Playability — an un-embeddable / age-restricted video only stalls the
+            # overlay on its timer ceiling, so reject it up front.
+            if not metadata.playable:
+                await self._reply(
+                    broadcaster,
+                    f"@{user_name} {unplayable_message(metadata.unplayable_reason)}",
                 )
-                video_id = clip_slug
-                is_vertical = False
-                video_type = "twitch_clip"
-            elif bvid:
-                title, duration_seconds, view_count, is_vertical = await fetch_bilibili_info(
-                    bvid, self._session
-                )
-                video_id = bvid
-                video_type = "bilibili"
-            else:
-                assert video_id is not None
-                title, duration_seconds, view_count, is_vertical_from_api = await fetch_yt_info(
-                    video_id,
-                    self.settings.youtube_api_key,
-                    self._session,
-                )
-                is_vertical = is_vertical or is_vertical_from_api
-                video_type = "youtube"
+                return
 
             # View count check — if threshold is set and API failed to return view_count,
             # reject rather than silently bypassing the filter.
@@ -888,12 +886,17 @@ class ChannelPointsComponent(commands.Component):
                     )
                     return
 
-            if settings.max_duration_redemption > 0:
+            effective_max = settings.max_duration_redemption
+            if settings.max_duration_seconds and (
+                not effective_max or settings.max_duration_seconds < effective_max
+            ):
+                effective_max = settings.max_duration_seconds
+            if effective_max > 0:
                 if duration_seconds is None:
                     await self._reply(broadcaster, f"@{user_name} 無法驗證影片時長，請稍後再試")
                     return
-                if duration_seconds > settings.max_duration_redemption:
-                    max_m, max_s = divmod(settings.max_duration_redemption, 60)
+                if duration_seconds > effective_max:
+                    max_m, max_s = divmod(effective_max, 60)
                     vid_m, vid_s = divmod(duration_seconds, 60)
                     await self._reply(
                         broadcaster,
@@ -901,9 +904,28 @@ class ChannelPointsComponent(commands.Component):
                     )
                     return
 
+            if settings.replay_cooldown_hours and await self.vq_repo.played_within(
+                channel_id, resolved.video_id, settings.replay_cooldown_hours
+            ):
+                await self._reply(
+                    broadcaster,
+                    f"@{user_name} 這部影片在 {settings.replay_cooldown_hours} 小時內播過了",
+                )
+                return
+
+            if await self.vq_blocklist_repo.check(
+                channel_id,
+                video_id=resolved.video_id,
+                title=title,
+                requested_by=user_name,
+                requested_by_id=user_id,
+            ):
+                await self._reply(broadcaster, f"@{user_name} 這部影片在封鎖清單中")
+                return
+
             entry = await self.vq_repo.add_if_within_limits(
                 channel_id=channel_id,
-                video_id=video_id,  # type: ignore[arg-type]
+                video_id=resolved.video_id,
                 requested_by=user_name,
                 source="redemption",
                 max_queue_size=settings.max_queue_size,
@@ -911,9 +933,10 @@ class ChannelPointsComponent(commands.Component):
                 requested_by_id=user_id,
                 title=title,
                 duration_seconds=duration_seconds,
-                is_vertical=is_vertical,
-                video_type=video_type,
+                is_vertical=metadata.is_vertical,
+                video_type=resolved.video_type,
                 priority=SOURCE_PRIORITY["redemption"],
+                start_seconds=resolved.start_seconds,
             )
             if entry is None:
                 await self._reply(broadcaster, f"@{user_name} 點歌失敗，佇列狀態已變更，請重試")
@@ -934,7 +957,7 @@ class ChannelPointsComponent(commands.Component):
                 "[%s] VideoQueue: %s added '%s' (position %s)",
                 broadcaster.name,
                 user_name,
-                title or video_id,
+                title or resolved.video_id,
                 position,
             )
 

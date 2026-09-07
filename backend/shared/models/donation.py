@@ -26,10 +26,10 @@ class PaymentConfig:
     """Per-streamer, per-platform merchant configuration."""
 
     user_id: str
-    platform: str  # ecpay | opay | paypal
-    merchant_id: str  # MerchantID (ECPay/OPay) or PayPal URL/email
-    hash_key: str | None  # ECPay/OPay only
-    hash_iv: str | None  # ECPay/OPay only
+    platform: str  # ecpay | opay | newebpay | paypal
+    merchant_id: str  # MerchantID (ECPay/OPay/NewebPay) or PayPal URL/email
+    hash_key: str | None  # ECPay/OPay/NewebPay only
+    hash_iv: str | None  # ECPay/OPay/NewebPay only
     min_amount: int = 30
     media_share_enabled: bool = False
     enabled: bool = True

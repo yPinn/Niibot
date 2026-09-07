@@ -77,7 +77,7 @@ BUILTIN_DEFS: list[dict] = [
         "aliases": "訂閱資訊",
         "enabled": False,
     },
-    # rank 語意獨特（觀看時數＋留言活躍度，非點數排名）→ 預設開。
+    # rank 讀取每日簽到 ledger 的累積天數排名，與後台簽到排行榜同一套排序 → 預設開。
     {"command_name": "rank", "category": "viewer", "cooldown": 15, "aliases": "排名"},
     {
         "command_name": "bits",
@@ -165,7 +165,7 @@ BUILTIN_DESCRIPTIONS: dict[str, str] = {
     "condemn": "頻道反惡意言論聲明",
     "roll": "聊天室共用輪盤，中彈 timeout 60 秒",
     "choose": "從選項中隨機挑選一個",
-    "rank": "查詢本月個人活躍度排名",
+    "rank": "查詢累積簽到排名",
     "followage": "查詢自己追隨頻道多久",
     "subage": "查詢自己的累積訂閱月數與目前方案",
     "subcount": "供實況主查詢頻道訂閱總數",
@@ -224,7 +224,7 @@ BUILTIN_DETAILS: dict[str, str] = {
     "ping": "回覆 Pong 與觸發者名稱，用來快速確認 Niibot 是否在線並能正常處理聊天室訊息。",
     "followage": "查詢觸發者是否追隨此頻道；已追隨時回覆從追隨日期至今的時間。",
     "subage": "查詢觸發者目前的訂閱狀態，並回覆累積訂閱月數、訂閱 Tier，以及是否為禮物訂閱。",
-    "rank": "依本月觀看與聊天室活躍資料，回覆觸發者在此頻道的個人活躍度排名。",
+    "rank": "依觸發者在此頻道的累積簽到天數，回覆其在每日簽到排行榜上的名次；與後台簽到排行榜同一套排序。",
     "bits": "查詢觸發者在此頻道累積投出的 Bits，並回覆其全期間排名與總額。",
     "fortune": "為觸發者產生一則當日運勢結果，適合一般聊天室娛樂互動。",
     "tarot": "抽取每日塔羅並依主題解讀；同一主題當天結果固定，可選綜合、感情、事業或財運。",
@@ -258,7 +258,7 @@ BUILTIN_PREVIEWS: dict[str, dict[str, str]] = {
         "input": "!subage",
         "output": "@小霓 累積訂閱 14 個月，目前是 T2 訂閱者。",
     },
-    "rank": {"input": "!rank", "output": "@小霓 本月活躍度排名第 8 名。"},
+    "rank": {"input": "!rank", "output": "@小霓 在 132 人中排到【第 8 名】，累積簽到 12 天！"},
     "bits": {
         "input": "!bits",
         "output": "@小霓 累積贊助 1,250 Bits，目前排名第 6 名。",
@@ -301,7 +301,7 @@ PUBLIC_DESCRIPTIONS: dict[str, str] = {
     "tarot": "每日塔羅；同一主題當天結果固定。用法：!塔羅 [綜合/感情/事業/財運]",
     "roll": "誰是下一個？抽中禁言 60 秒，用法：!roll",
     "choose": "隨機選擇，用法：!choose 選項1 選項2 ...",
-    "rank": "查詢本月個人活躍度排名",
+    "rank": "查詢累積簽到排名",
     "followage": "查詢自己追隨頻道多久，用法：!followage",
     "subage": "查詢自己的累積訂閱月數與目前方案，用法：!subage",
     "bits": "查詢自己的小奇點排名與總額，用法：!bits",

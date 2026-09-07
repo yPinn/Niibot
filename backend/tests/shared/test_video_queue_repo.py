@@ -7,19 +7,28 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from shared.models.video_queue import VideoQueueBlocklistEntry
 from shared.repositories.video_queue import (
+    VideoQueueBlocklistRepository,
     VideoQueueRepository,
     VideoQueueSettingsRepository,
+    _blocklist_cache,
+    _blocklist_match,
     _settings_cache,
 )
 from shared.video_sources import (
+    YouTubeInfo,
     _app_token_cache,
     _get_twitch_app_token,
+    _parse_hms,
     _parse_iso8601_duration,
     extract_bilibili_bvid,
     extract_twitch_clip_slug,
+    extract_twitch_vod_info,
     extract_youtube_id,
     extract_youtube_info,
+    fetch_twitch_clip_source,
+    fetch_twitch_vod_info,
     fetch_yt_info,
     resolve_bilibili_url,
 )
@@ -92,6 +101,19 @@ def _make_pool(
 def _clear_caches() -> None:
     _settings_cache.clear()
     _settings_cache._stale.clear()
+    _blocklist_cache.clear()
+    _blocklist_cache._stale.clear()
+
+
+_BLOCKLIST_ROW = {
+    "id": 1,
+    "channel_id": "ch1",
+    "kind": "video",
+    "value": "dQw4w9WgXcQ",
+    "label": "Never Gonna Give You Up",
+    "created_by": "ch1",
+    "created_at": _NOW,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -486,6 +508,202 @@ class TestGetQueued:
 
 
 @pytest.mark.asyncio
+class TestGetHistory:
+    async def test_maps_rows_and_passes_cursor_and_limit(self):
+        done_row = {**_ENTRY_ROW, "id": 9, "status": "done", "ended_at": _NOW}
+        pool, conn = _make_pool(fetch=[done_row])
+        repo = VideoQueueRepository(pool)
+
+        result = await repo.get_history("ch1", limit=25, before=_NOW)
+
+        assert [e.id for e in result] == [9]
+        assert result[0].ended_at == _NOW
+        sql, *params = conn.fetch.call_args.args
+        assert "status = ANY($2)" in sql and "ended_at DESC" in sql
+        assert params == ["ch1", ["done", "skipped"], _NOW, 25]
+
+    async def test_empty(self):
+        pool, _ = _make_pool(fetch=[])
+        repo = VideoQueueRepository(pool)
+        assert await repo.get_history("ch1") == []
+
+
+@pytest.mark.asyncio
+class TestPlayedWithin:
+    async def test_true_when_a_recent_done_row_exists(self):
+        pool, conn = _make_pool(fetchval=1)
+        repo = VideoQueueRepository(pool)
+        assert await repo.played_within("ch1", "vid", 12) is True
+        sql, *params = conn.fetchval.call_args.args
+        assert "status = 'done'" in sql and "make_interval(hours => $3)" in sql
+        assert params == ["ch1", "vid", 12]
+
+    async def test_false_when_none(self):
+        pool, _ = _make_pool(fetchval=None)
+        repo = VideoQueueRepository(pool)
+        assert await repo.played_within("ch1", "vid", 12) is False
+
+
+def _block(kind: str, value: str, **kw) -> VideoQueueBlocklistEntry:
+    return VideoQueueBlocklistEntry(
+        id=kw.get("id", 1), channel_id="ch1", kind=kind, value=value, label=kw.get("label")
+    )
+
+
+class TestBlocklistMatch:
+    def test_video_kind_matches_video_id_case_insensitively(self):
+        entries = [_block("video", "ABCdef")]
+        assert (
+            _blocklist_match(
+                entries, video_id="abcDEF", title=None, requested_by=None, requested_by_id=None
+            )
+            is entries[0]
+        )
+
+    def test_keyword_is_a_case_insensitive_substring_of_the_title(self):
+        entries = [_block("keyword", "LoFi")]
+        assert _blocklist_match(
+            entries, video_id="v", title="Chill lofi beats", requested_by=None, requested_by_id=None
+        )
+        assert (
+            _blocklist_match(
+                entries, video_id="v", title="jazz only", requested_by=None, requested_by_id=None
+            )
+            is None
+        )
+
+    def test_user_kind_matches_login_or_id(self):
+        by_login = [_block("user", "SpamGuy")]
+        assert _blocklist_match(
+            by_login, video_id="v", title=None, requested_by="spamguy", requested_by_id="999"
+        )
+        by_id = [_block("user", "12345")]
+        assert _blocklist_match(
+            by_id, video_id="v", title=None, requested_by="anyone", requested_by_id="12345"
+        )
+
+    def test_no_rules_no_match(self):
+        assert (
+            _blocklist_match([], video_id="v", title="t", requested_by="u", requested_by_id=None)
+            is None
+        )
+
+
+@pytest.mark.asyncio
+class TestBlocklistRepository:
+    def setup_method(self):
+        _clear_caches()
+
+    async def test_list_entries_maps_rows_then_caches(self):
+        pool, conn = _make_pool(fetch=[_BLOCKLIST_ROW])
+        repo = VideoQueueBlocklistRepository(pool)
+
+        first = await repo.list_entries("ch1")
+        second = await repo.list_entries("ch1")
+
+        assert [e.value for e in first] == ["dQw4w9WgXcQ"]
+        assert first == second
+        conn.fetch.assert_awaited_once()  # second call served from cache
+
+    async def test_add_inserts_and_invalidates_cache(self):
+        pool, conn = _make_pool(fetch=[], fetchrow=_BLOCKLIST_ROW)
+        repo = VideoQueueBlocklistRepository(pool)
+        await repo.list_entries("ch1")  # warm cache
+
+        entry = await repo.add("ch1", "video", "dQw4w9WgXcQ", label="RR")
+
+        assert entry.kind == "video"
+        sql = conn.fetchrow.call_args.args[0]
+        assert "ON CONFLICT (channel_id, kind, lower(value))" in sql
+        assert "ch1" not in _blocklist_cache
+
+    async def test_remove_reports_deletion_and_invalidates(self):
+        pool, conn = _make_pool(execute="DELETE 1")
+        repo = VideoQueueBlocklistRepository(pool)
+        assert await repo.remove("ch1", 5) is True
+
+        pool2, _ = _make_pool(execute="DELETE 0")
+        assert await VideoQueueBlocklistRepository(pool2).remove("ch1", 5) is False
+
+    async def test_check_returns_matching_rule(self):
+        pool, _ = _make_pool(fetch=[_BLOCKLIST_ROW])
+        repo = VideoQueueBlocklistRepository(pool)
+
+        hit = await repo.check("ch1", video_id="dQw4w9WgXcQ", title="whatever")
+        assert hit is not None and hit.kind == "video"
+
+        miss = await repo.check("ch1", video_id="other", title="whatever")
+        assert miss is None
+
+
+@pytest.mark.asyncio
+class TestPruneHistory:
+    async def test_returns_deleted_count(self):
+        pool, conn = _make_pool(execute="DELETE 7")
+        repo = VideoQueueRepository(pool)
+
+        assert await repo.prune_history() == 7
+        sql, *params = conn.execute.call_args.args
+        assert "make_interval(days => $2)" in sql
+        assert params == [["done", "skipped"], 30]
+
+    async def test_zero_when_nothing_deleted(self):
+        pool, _ = _make_pool(execute="DELETE 0")
+        repo = VideoQueueRepository(pool)
+        assert await repo.prune_history() == 0
+
+
+@pytest.mark.asyncio
+class TestGetCurrentAndQueued:
+    async def test_single_connection_acquire(self):
+        pool, conn = _make_pool(fetch=[])
+        repo = VideoQueueRepository(pool)
+
+        await repo.get_current_and_queued("ch1")
+
+        pool.acquire.assert_called_once()
+        conn.fetch.assert_called_once()
+
+    async def test_splits_playing_and_queued_rows(self):
+        playing_row = {**_ENTRY_ROW, "id": 1, "status": "playing"}
+        queued_row = {**_ENTRY_ROW, "id": 2, "status": "queued"}
+        pool, _ = _make_pool(fetch=[playing_row, queued_row])
+        repo = VideoQueueRepository(pool)
+
+        current, queued = await repo.get_current_and_queued("ch1")
+
+        assert current is not None
+        assert current.id == 1
+        assert current.status == "playing"
+        assert [e.id for e in queued] == [2]
+
+    async def test_returns_none_current_when_nothing_playing(self):
+        pool, _ = _make_pool(fetch=[{**_ENTRY_ROW, "id": 2, "status": "queued"}])
+        repo = VideoQueueRepository(pool)
+
+        current, queued = await repo.get_current_and_queued("ch1")
+
+        assert current is None
+        assert len(queued) == 1
+
+    async def test_tolerates_stale_duplicate_playing_row(self):
+        """A pre-fix duplicate 'playing' row (see advance_queue's NOT EXISTS
+        guard) must not crash the stream wake path — pick the first and move on."""
+        rows = [
+            {**_ENTRY_ROW, "id": 1, "status": "playing"},
+            {**_ENTRY_ROW, "id": 2, "status": "playing"},
+        ]
+        pool, _ = _make_pool(fetch=rows)
+        repo = VideoQueueRepository(pool)
+
+        current, queued = await repo.get_current_and_queued("ch1")
+
+        assert current is not None
+        assert current.id == 1
+        assert queued == []
+
+
+@pytest.mark.asyncio
 class TestGetQueueSize:
     async def test_returns_count(self):
         pool, _ = _make_pool(fetchval=3)
@@ -729,6 +947,21 @@ class TestAdvanceQueue:
         first_call_args = conn.execute.call_args_list[0][0]
         assert 99 in first_call_args
 
+    async def test_promote_guards_against_already_playing_row(self):
+        """Regression: without this guard, two overlays finishing the same
+        done_id concurrently (or an overlay finishing while a dashboard
+        Play-Now runs) can both promote a queued entry, leaving two rows
+        'playing' — a state get_current can't see and kickstart_if_idle can
+        never recover from. Same guard as kickstart_if_idle."""
+        pool, conn = _make_pool(execute="UPDATE 1")
+        repo = VideoQueueRepository(pool)
+
+        await repo.advance_queue("ch1", done_id=42)
+
+        second_call_sql: str = conn.execute.call_args_list[1][0][0]
+        assert "NOT EXISTS" in second_call_sql
+        assert "status = 'playing'" in second_call_sql
+
 
 @pytest.mark.asyncio
 class TestSkipCurrentAtomic:
@@ -830,18 +1063,32 @@ class TestKickstartIfIdle:
 
 
 # ---------------------------------------------------------------------------
-# fetch_yt_info — error paths must return 4-tuple (title, duration, views, is_vertical)
+# fetch_yt_info — returns YouTubeInfo; failure paths are fail-open (playable)
 # ---------------------------------------------------------------------------
+
+
+def _yt_resp(payload: dict) -> MagicMock:
+    from unittest.mock import AsyncMock
+
+    mock_resp = MagicMock()
+    mock_resp.status = 200
+    mock_resp.json = AsyncMock(return_value=payload)
+    mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+    mock_resp.__aexit__ = AsyncMock(return_value=None)
+    mock_session = MagicMock()
+    mock_session.get = MagicMock(return_value=mock_resp)
+    mock_session.close = AsyncMock(return_value=None)
+    return mock_session
 
 
 @pytest.mark.asyncio
 class TestFetchYtInfo:
-    async def test_no_api_key_returns_4tuple(self):
+    async def test_no_api_key_returns_empty_playable(self):
         result = await fetch_yt_info("dQw4w9WgXcQ", api_key="")
-        assert result == (None, None, None, False)
-        assert len(result) == 4
+        assert result == YouTubeInfo()
+        assert result.playable is True
 
-    async def test_bad_status_returns_4tuple(self):
+    async def test_bad_status_is_fail_open(self):
         from unittest.mock import AsyncMock, patch
 
         mock_resp = MagicMock()
@@ -856,36 +1103,18 @@ class TestFetchYtInfo:
         with patch("aiohttp.ClientSession", return_value=mock_session):
             result = await fetch_yt_info("dQw4w9WgXcQ", api_key="fake_key")
 
-        assert len(result) == 4
-        title, duration, views, is_vertical = result
-        assert title is None
-        assert duration is None
-        assert views is None
-        assert is_vertical is False
+        assert result == YouTubeInfo()
 
-    async def test_empty_items_returns_4tuple(self):
-        from unittest.mock import AsyncMock, patch
+    async def test_empty_items_is_fail_open(self):
+        from unittest.mock import patch
 
-        mock_resp = MagicMock()
-        mock_resp.status = 200
-        mock_resp.json = AsyncMock(return_value={"items": []})
-        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
-        mock_resp.__aexit__ = AsyncMock(return_value=None)
-
-        mock_session = MagicMock()
-        mock_session.get = MagicMock(return_value=mock_resp)
-        mock_session.close = AsyncMock(return_value=None)
-
-        with patch("aiohttp.ClientSession", return_value=mock_session):
+        with patch("aiohttp.ClientSession", return_value=_yt_resp({"items": []})):
             result = await fetch_yt_info("dQw4w9WgXcQ", api_key="fake_key")
 
-        assert len(result) == 4
-        title, duration, views, is_vertical = result
-        assert title is None
-        assert is_vertical is False
+        assert result == YouTubeInfo()
 
-    async def test_network_error_returns_4tuple(self):
-        from unittest.mock import patch
+    async def test_network_error_is_fail_open(self):
+        from unittest.mock import AsyncMock, patch
 
         import aiohttp
 
@@ -897,8 +1126,61 @@ class TestFetchYtInfo:
 
             result = await fetch_yt_info("dQw4w9WgXcQ", api_key="fake_key")
 
-        assert len(result) == 4
-        assert result == (None, None, None, False)
+        assert result == YouTubeInfo()
+
+    async def test_ok_video_is_playable_with_metadata(self):
+        from unittest.mock import patch
+
+        payload = {
+            "items": [
+                {
+                    "snippet": {"title": "Fine", "thumbnails": {}},
+                    "contentDetails": {"duration": "PT3M20S", "contentRating": {}},
+                    "statistics": {"viewCount": "4321"},
+                    "status": {
+                        "uploadStatus": "processed",
+                        "privacyStatus": "public",
+                        "embeddable": True,
+                    },
+                }
+            ]
+        }
+        with patch("aiohttp.ClientSession", return_value=_yt_resp(payload)):
+            result = await fetch_yt_info("dQw4w9WgXcQ", api_key="fake_key")
+
+        assert result.title == "Fine"
+        assert result.duration_seconds == 200
+        assert result.view_count == 4321
+        assert result.playable is True
+        assert result.unplayable_reason is None
+
+    @pytest.mark.parametrize(
+        ("status", "content_rating", "expected"),
+        [
+            ({"embeddable": False, "privacyStatus": "public"}, {}, "not_embeddable"),
+            ({"privacyStatus": "private"}, {}, "private"),
+            ({"uploadStatus": "deleted"}, {}, "removed"),
+            ({"privacyStatus": "public"}, {"ytRating": "ytAgeRestricted"}, "age_restricted"),
+        ],
+    )
+    async def test_disqualifying_status_sets_reason(self, status, content_rating, expected):
+        from unittest.mock import patch
+
+        payload = {
+            "items": [
+                {
+                    "snippet": {"title": "X", "thumbnails": {}},
+                    "contentDetails": {"duration": "PT1M", "contentRating": content_rating},
+                    "statistics": {"viewCount": "10"},
+                    "status": status,
+                }
+            ]
+        }
+        with patch("aiohttp.ClientSession", return_value=_yt_resp(payload)):
+            result = await fetch_yt_info("dQw4w9WgXcQ", api_key="fake_key")
+
+        assert result.playable is False
+        assert result.unplayable_reason == expected
 
 
 # ---------------------------------------------------------------------------
@@ -993,3 +1275,128 @@ class TestGetTwitchAppToken:
         assert tok_a == "tok_A"
         assert tok_b == "tok_B"
         assert session.post.call_count == 2
+
+
+def _clip_gql_ok(signature: str, value: str, source_url: str) -> dict:
+    return {
+        "data": {
+            "clip": {
+                "playbackAccessToken": {"signature": signature, "value": value},
+                "assets": [
+                    {
+                        "videoQualities": [
+                            {"quality": "1080", "sourceURL": source_url},
+                            {"quality": "720", "sourceURL": source_url + "?q=720"},
+                        ]
+                    }
+                ],
+            }
+        }
+    }
+
+
+@pytest.mark.asyncio
+class TestFetchTwitchClipSource:
+    async def test_builds_signed_url_from_top_quality(self):
+        payload = [_clip_gql_ok("sig123", "tok val/+", "https://cdn.example/clip.mp4")]
+        session = _make_session(_make_aiohttp_post_cm(200, payload))
+
+        result = await fetch_twitch_clip_source("SomeSlug", session)
+
+        assert result == "https://cdn.example/clip.mp4?sig=sig123&token=tok%20val%2F%2B"
+
+    async def test_appends_with_ampersand_when_source_has_query(self):
+        payload = [_clip_gql_ok("s", "t", "https://cdn.example/clip.mp4?x=1")]
+        session = _make_session(_make_aiohttp_post_cm(200, payload))
+
+        result = await fetch_twitch_clip_source("Slug", session)
+
+        assert result == "https://cdn.example/clip.mp4?x=1&sig=s&token=t"
+
+    async def test_non_200_returns_none(self):
+        session = _make_session(_make_aiohttp_post_cm(400, []))
+        assert await fetch_twitch_clip_source("Slug", session) is None
+
+    async def test_null_clip_returns_none(self):
+        session = _make_session(_make_aiohttp_post_cm(200, [{"data": {"clip": None}}]))
+        assert await fetch_twitch_clip_source("Slug", session) is None
+
+    async def test_missing_token_returns_none(self):
+        payload = [{"data": {"clip": {"assets": [{"videoQualities": []}]}}}]
+        session = _make_session(_make_aiohttp_post_cm(200, payload))
+        assert await fetch_twitch_clip_source("Slug", session) is None
+
+    async def test_network_error_returns_none(self):
+        session = MagicMock()
+        session.post.side_effect = RuntimeError("boom")
+        assert await fetch_twitch_clip_source("Slug", session) is None
+
+
+class TestParseHms:
+    def test_full(self):
+        assert _parse_hms("1h2m3s") == 3723
+
+    def test_partial(self):
+        assert _parse_hms("90m") == 5400
+        assert _parse_hms("45s") == 45
+
+    def test_bare_seconds(self):
+        assert _parse_hms("3600") == 3600
+
+    def test_garbage(self):
+        assert _parse_hms("") == 0
+        assert _parse_hms("abc") == 0
+
+
+class TestExtractTwitchVodInfo:
+    def test_plain_url(self):
+        assert extract_twitch_vod_info("https://www.twitch.tv/videos/123456789") == (
+            "123456789",
+            0,
+        )
+
+    def test_with_timestamp(self):
+        assert extract_twitch_vod_info("https://www.twitch.tv/videos/42?t=1h30m") == ("42", 5400)
+
+    def test_mobile_host(self):
+        assert extract_twitch_vod_info("https://m.twitch.tv/videos/7") == ("7", 0)
+
+    def test_not_a_vod(self):
+        assert extract_twitch_vod_info("https://www.twitch.tv/somechannel") == (None, 0)
+        assert extract_twitch_vod_info("https://clips.twitch.tv/Slug") == (None, 0)
+
+
+@pytest.mark.asyncio
+class TestFetchTwitchVodInfo:
+    def setup_method(self):
+        _app_token_cache.clear()
+
+    async def _session(self, videos_payload):
+        from unittest.mock import AsyncMock
+
+        get_resp = MagicMock()
+        get_resp.status = 200
+        get_resp.json = AsyncMock(return_value={"data": videos_payload})
+        get_cm = MagicMock()
+        get_cm.__aenter__ = AsyncMock(return_value=get_resp)
+        get_cm.__aexit__ = AsyncMock(return_value=None)
+
+        session = MagicMock()
+        session.post.return_value = _make_aiohttp_post_cm(
+            200, {"access_token": "tok", "expires_in": 3600}
+        )
+        session.get.return_value = get_cm
+        return session
+
+    async def test_parses_helix_duration(self):
+        session = await self._session(
+            [{"title": "Stream", "duration": "3h20m5s", "view_count": 42}]
+        )
+        assert await fetch_twitch_vod_info("v1", "cid", "csec", session) == ("Stream", 12005, 42)
+
+    async def test_empty_data_returns_none(self):
+        session = await self._session([])
+        assert await fetch_twitch_vod_info("v1", "cid", "csec", session) == (None, None, None)
+
+    async def test_missing_creds_returns_none(self):
+        assert await fetch_twitch_vod_info("v1", "", "", MagicMock()) == (None, None, None)

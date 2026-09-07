@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
+import { useEffect, useReducer, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { AnimatePresence } from 'motion/react'
 
@@ -8,14 +8,14 @@ import {
   type CommunityOverlayTheme,
   DEFAULT_COMMUNITY_OVERLAY_THEME,
   DEFAULT_TAROT_OVERLAY_THEME,
-  getCommunityOverlayFeed,
-  getCommunityOverlayTheme,
 } from '@/api/communityOverlay'
+import {
+  type CommunityOverlayStreamMessage,
+  openCommunityOverlayStream,
+} from '@/api/communityOverlayStream'
 import { CheckinCard } from '@/components/community-overlay/CheckinCard'
 import { TarotCard } from '@/components/community-overlay/TarotCard'
-import { OVERLAY_POLL_INTERVAL_MS } from '@/config/overlayPolling'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
-import { usePolling } from '@/hooks/usePolling'
 
 import styles from './CommunityOverlay.module.css'
 
@@ -120,10 +120,15 @@ const RENDERERS: Record<CommunityOverlayContentType, string> = {
   tarot: 'tarot-card',
 }
 
-function ScopedCommunityOverlay({ publicKey, preview }: { publicKey: string; preview: boolean }) {
-  const cursorRef = useRef<number | undefined>(preview ? 0 : undefined)
-  const fetchingRef = useRef(false)
-  const themeFetchingRef = useRef(false)
+const STABLE_STREAM_MS = 30_000
+
+interface ScopedCommunityOverlayProps {
+  publicKey: string
+  preview: boolean
+  blockFilter?: CommunityOverlayContentType
+}
+
+function ScopedCommunityOverlay({ publicKey, preview, blockFilter }: ScopedCommunityOverlayProps) {
   const themeRevisionRef = useRef<Record<CommunityOverlayContentType, number | null>>({
     checkin: null,
     tarot: null,
@@ -135,67 +140,71 @@ function ScopedCommunityOverlay({ publicKey, preview }: { publicKey: string; pre
     tarot: DEFAULT_TAROT_OVERLAY_THEME,
   })
 
-  const fetchTheme = useCallback(async () => {
-    if (!publicKey || themeFetchingRef.current) return
-    themeFetchingRef.current = true
-    try {
-      const blockTypes: CommunityOverlayContentType[] = ['checkin', 'tarot']
-      const results = await Promise.allSettled(
-        blockTypes.map(blockType => getCommunityOverlayTheme(publicKey, blockType))
-      )
-      results.forEach((result, index) => {
-        if (result.status !== 'fulfilled') return
-        const blockType = blockTypes[index]
-        const published = result.value
+  useEffect(() => {
+    if (!publicKey) return
+    let active = true
+    let cursor: number | undefined = preview ? 0 : undefined
+    let attempt = 0
+    let controller: AbortController | null = null
+    let reconnectTimer: number | null = null
+
+    const applyMessage = (message: CommunityOverlayStreamMessage) => {
+      if (!active) return
+      cursor = message.cursor
+      for (const blockType of Object.keys(message.themes) as CommunityOverlayContentType[]) {
+        const published = message.themes[blockType]
         if (
+          !published ||
           published.renderer !== RENDERERS[blockType] ||
           published.schema_version !== 1 ||
           published.revision_id === themeRevisionRef.current[blockType]
         ) {
-          return
+          continue
         }
         themeRevisionRef.current[blockType] = published.revision_id
         setThemes(current => ({ ...current, [blockType]: published.theme }))
-      })
-    } catch {
-      // Keep the renderer usable and retry after transient API/network failures.
-    } finally {
-      themeFetchingRef.current = false
-    }
-  }, [publicKey])
-
-  const fetchEvents = useCallback(async () => {
-    if (!publicKey || fetchingRef.current) return
-    fetchingRef.current = true
-    try {
-      const feed = await getCommunityOverlayFeed(publicKey, cursorRef.current)
-      cursorRef.current = feed.cursor
-      const incoming = feed.events
+      }
+      const incoming = message.events
         .filter((event): event is RenderableEvent => isCheckinEvent(event) || isTarotEvent(event))
+        .filter(event => !blockFilter || blockTypeForEvent(event) === blockFilter)
         .filter(event => {
           if (seenIdsRef.current.has(event.id)) return false
           seenIdsRef.current.add(event.id)
+          if (seenIdsRef.current.size > 1_000) {
+            seenIdsRef.current.delete(seenIdsRef.current.values().next().value as number)
+          }
           return true
         })
       if (incoming.length) dispatch({ type: 'enqueue', events: incoming })
-    } catch {
-      // OBS sources stay transparent during transient API/network failures.
-    } finally {
-      fetchingRef.current = false
     }
-  }, [publicKey])
 
-  usePolling({
-    fetchFn: fetchTheme,
-    intervalMs: OVERLAY_POLL_INTERVAL_MS.liveDisplayThemes,
-    enabled: Boolean(publicKey),
-  })
+    const connect = () => {
+      controller = new AbortController()
+      const connectedAt = Date.now()
+      void openCommunityOverlayStream({
+        publicKey,
+        afterId: cursor,
+        signal: controller.signal,
+        onMessage: applyMessage,
+      })
+        .catch(() => undefined)
+        .finally(() => {
+          if (!active || controller?.signal.aborted) return
+          if (Date.now() - connectedAt >= STABLE_STREAM_MS) attempt = 0
+          const base = Math.min(1_000 * 2 ** attempt, 30_000)
+          const delay = Math.round(base * (0.8 + Math.random() * 0.4))
+          attempt += 1
+          reconnectTimer = window.setTimeout(connect, delay)
+        })
+    }
 
-  usePolling({
-    fetchFn: fetchEvents,
-    intervalMs: OVERLAY_POLL_INTERVAL_MS.liveDisplayEvents,
-    enabled: Boolean(publicKey),
-  })
+    connect()
+    return () => {
+      active = false
+      controller?.abort()
+      if (reconnectTimer !== null) window.clearTimeout(reconnectTimer)
+    }
+  }, [preview, publicKey, blockFilter])
 
   const activeBlockType = playback.active ? blockTypeForEvent(playback.active) : 'checkin'
   const activeTheme = themes[activeBlockType]
@@ -220,14 +229,26 @@ function ScopedCommunityOverlay({ publicKey, preview }: { publicKey: string; pre
   )
 }
 
+function parseBlockFilter(value: string | null): CommunityOverlayContentType | undefined {
+  return value === 'checkin' || value === 'tarot' ? value : undefined
+}
+
 export default function CommunityOverlay() {
   const location = useLocation()
   const overlayParams = new URLSearchParams(location.hash.replace(/^#/, ''))
   const publicKey = overlayParams.get('key')?.trim() || ''
   const preview = overlayParams.get('preview') === '1'
-  const scope = `${publicKey}:${preview ? 'preview' : 'live'}`
+  const blockFilter = parseBlockFilter(overlayParams.get('block'))
+  const scope = `${publicKey}:${preview ? 'preview' : 'live'}:${blockFilter ?? 'all'}`
 
   useDocumentTitle('Live Display')
 
-  return <ScopedCommunityOverlay key={scope} publicKey={publicKey} preview={preview} />
+  return (
+    <ScopedCommunityOverlay
+      key={scope}
+      publicKey={publicKey}
+      preview={preview}
+      blockFilter={blockFilter}
+    />
+  )
 }

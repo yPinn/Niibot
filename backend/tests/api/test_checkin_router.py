@@ -122,6 +122,26 @@ def test_patch_settings_uses_authenticated_tenant_and_action_header() -> None:
         timezone="Asia/Tokyo",
         success_template="$(@user) 第 $(count) 天",
         duplicate_template="$(@user) 今天已簽到",
+        reply_delay_seconds=None,
+    )
+
+
+def test_patch_settings_forwards_the_configured_reply_delay() -> None:
+    service = _service()
+
+    response = _make_client(service).patch(
+        "/api/checkin/settings",
+        json={"reply_delay_seconds": 5},
+        headers=_ACTION_HEADERS,
+    )
+
+    assert response.status_code == 200
+    service.update_settings.assert_awaited_once_with(
+        CHANNEL_ID,
+        timezone=None,
+        success_template=None,
+        duplicate_template=None,
+        reply_delay_seconds=5,
     )
 
 
@@ -180,6 +200,32 @@ def test_patch_rejects_oversized_template_before_service() -> None:
     response = _make_client(service).patch(
         "/api/checkin/settings",
         json={"success_template": "x" * 501},
+        headers=_ACTION_HEADERS,
+    )
+
+    assert response.status_code == 422
+    service.update_settings.assert_not_awaited()
+
+
+def test_patch_rejects_reply_delay_above_the_cap() -> None:
+    service = _service()
+
+    response = _make_client(service).patch(
+        "/api/checkin/settings",
+        json={"reply_delay_seconds": 31},
+        headers=_ACTION_HEADERS,
+    )
+
+    assert response.status_code == 422
+    service.update_settings.assert_not_awaited()
+
+
+def test_patch_rejects_negative_reply_delay() -> None:
+    service = _service()
+
+    response = _make_client(service).patch(
+        "/api/checkin/settings",
+        json={"reply_delay_seconds": -1},
         headers=_ACTION_HEADERS,
     )
 

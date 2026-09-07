@@ -10,13 +10,21 @@ bot, channel-points redemptions, and the donation webhook.
   - fetch_bilibili_info                        : Bilibili public API call
   - extract_twitch_clip_slug                   : Twitch clip URL parsing
   - fetch_twitch_clip_info                     : Twitch Helix clips API call
+
+  - resolve_video_url / fetch_video_metadata / build_watch_url : registry
+    layer composing the platform-specific functions above behind one shape,
+    for callers that just want "figure out what this URL is and fetch its
+    metadata" without repeating the per-platform cascade themselves.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import time
+from dataclasses import dataclass
+from urllib.parse import quote
 
 import aiohttp
 
@@ -37,6 +45,46 @@ _YT_RE = re.compile(
 )
 
 _ISO8601_RE = re.compile(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?")
+
+# Playability reasons the OBS overlay cannot recover from — the iframe either
+# refuses to embed or silently shows an error, and the queue only advances once
+# the timer ceiling expires. Reject these at submission instead. YouTube-only:
+# Twitch clips always embed, and Bilibili's metadata endpoint is too unreliable
+# to gate on (see docs/architecture/video-queue-platforms.md).
+UNPLAYABLE_NOT_EMBEDDABLE = "not_embeddable"
+UNPLAYABLE_AGE_RESTRICTED = "age_restricted"
+UNPLAYABLE_PRIVATE = "private"
+UNPLAYABLE_REMOVED = "removed"
+
+_UNPLAYABLE_MESSAGES: dict[str, str] = {
+    UNPLAYABLE_NOT_EMBEDDABLE: "這部影片不允許在其他網站嵌入播放",
+    UNPLAYABLE_AGE_RESTRICTED: "這部影片有年齡限制，無法在 overlay 播放",
+    UNPLAYABLE_PRIVATE: "這是私人影片，無法播放",
+    UNPLAYABLE_REMOVED: "這部影片已被移除或無法使用",
+}
+
+
+def unplayable_message(reason: str | None) -> str:
+    """Human-readable Chinese rejection message for an ``UNPLAYABLE_*`` reason."""
+    return _UNPLAYABLE_MESSAGES.get(reason or "", "這部影片無法播放")
+
+
+@dataclass
+class YouTubeInfo:
+    """Normalized result of a YouTube Data API v3 ``videos.list`` call.
+
+    Defaults are the "we couldn't tell" state: on any fetch failure the caller
+    gets a bare ``YouTubeInfo()`` (playable, no metadata) so a transient API
+    blip never rejects a submission — only a positively-returned video with a
+    disqualifying status sets ``playable = False``.
+    """
+
+    title: str | None = None
+    duration_seconds: int | None = None
+    view_count: int | None = None
+    is_vertical: bool = False
+    playable: bool = True
+    unplayable_reason: str | None = None
 
 
 def extract_youtube_id(text: str) -> str | None:
@@ -69,26 +117,47 @@ def _parse_iso8601_duration(duration: str) -> int:
     return hours * 3600 + minutes * 60 + seconds
 
 
+def _assess_yt_playability(item: dict) -> str | None:
+    """Return an ``UNPLAYABLE_*`` reason if this videos.list item can't be
+    embedded and played in the overlay, else None.
+
+    Only checks positive signals — an item missing a ``status`` block (older
+    API responses, partial data) is treated as playable.
+    """
+    status = item.get("status", {})
+    content_rating = item.get("contentDetails", {}).get("contentRating", {})
+
+    if status.get("uploadStatus") in ("deleted", "rejected", "failed"):
+        return UNPLAYABLE_REMOVED
+    # 'unlisted' still embeds fine — only 'private' is unplayable for a viewer.
+    if status.get("privacyStatus") == "private":
+        return UNPLAYABLE_PRIVATE
+    if content_rating.get("ytRating") == "ytAgeRestricted":
+        return UNPLAYABLE_AGE_RESTRICTED
+    if status.get("embeddable") is False:
+        return UNPLAYABLE_NOT_EMBEDDABLE
+    return None
+
+
 async def fetch_yt_info(
     video_id: str,
     api_key: str,
     session: aiohttp.ClientSession | None = None,
-) -> tuple[str | None, int | None, int | None, bool]:
-    """Fetch video title, duration, view count, and orientation via YouTube Data API v3.
+) -> YouTubeInfo:
+    """Fetch title, duration, view count, orientation, and playability via YouTube Data API v3.
 
     If `session` is None a temporary one-shot session is created and closed.
-    Returns (title, duration_seconds, view_count, is_vertical).
-    is_vertical is True when the API reports portrait thumbnails (e.g. YouTube Shorts).
-    title/duration/view_count are None on any failure; is_vertical defaults to False.
+    Returns a bare ``YouTubeInfo()`` (metadata None, playable) on any failure;
+    ``is_vertical`` is True when the API reports portrait thumbnails (Shorts).
     """
     if not api_key:
-        return None, None, None, False
+        return YouTubeInfo()
 
     url = "https://www.googleapis.com/youtube/v3/videos"
     # Pass api_key via params dict so it never appears as a literal URL string
     # (prevents accidental key exposure in logs, traces, or error messages).
     params = {
-        "part": "snippet,contentDetails,statistics",
+        "part": "snippet,contentDetails,statistics,status",
         "id": video_id,
         "key": api_key,
     }
@@ -98,11 +167,11 @@ async def fetch_yt_info(
         async with _session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=5)) as resp:
             if resp.status != 200:
                 LOGGER.info("[YouTube API] Unexpected status %s for %s", resp.status, video_id)
-                return None, None, None, False
+                return YouTubeInfo()
             data = await resp.json()
             items = data.get("items", [])
             if not items:
-                return None, None, None, False  # video not found / private
+                return YouTubeInfo()  # video not found / private
             item = items[0]
             title: str | None = item.get("snippet", {}).get("title")
             raw_duration: str = item.get("contentDetails", {}).get("duration", "")
@@ -114,12 +183,20 @@ async def fetch_yt_info(
             is_vertical = any(
                 (t.get("height", 0) or 0) > (t.get("width", 1) or 1) for t in thumbnails.values()
             )
-            return title, duration_seconds or None, view_count, is_vertical
+            reason = _assess_yt_playability(item)
+            return YouTubeInfo(
+                title=title,
+                duration_seconds=duration_seconds or None,
+                view_count=view_count,
+                is_vertical=is_vertical,
+                playable=reason is None,
+                unplayable_reason=reason,
+            )
     except Exception as exc:
         LOGGER.warning(
             "[YouTube API] fetch_yt_info failed for %s: %s", video_id, type(exc).__name__
         )
-        return None, None, None, False
+        return YouTubeInfo()
     finally:
         if _own_session:
             await _session.close()
@@ -195,11 +272,15 @@ async def fetch_bilibili_info(
             timeout=aiohttp.ClientTimeout(total=5),
         ) as resp:
             if resp.status != 200:
-                LOGGER.info("[Bilibili API] Unexpected status %s for %s", resp.status, bvid)
+                LOGGER.warning("[Bilibili API] Unexpected status %s for %s", resp.status, bvid)
                 return None, None, None, False
             data = await resp.json(content_type=None)
             if data.get("code") != 0:
-                LOGGER.info(
+                # code -412 is Bilibili's risk-control block, common from
+                # datacenter IPs. The overlay falls back to a timer ceiling
+                # (players/shared.ts) so the queue still advances without a
+                # duration — but the entry loses accurate timing.
+                LOGGER.warning(
                     "[Bilibili API] Error %s for %s: %s",
                     data.get("code"),
                     bvid,
@@ -230,12 +311,35 @@ async def fetch_bilibili_info(
 # Twitch Clip utilities
 # ---------------------------------------------------------------------------
 
+
 _TWITCH_CLIP_RE = re.compile(
     r"(?:https?://)?(?:clips\.twitch\.tv/|www\.twitch\.tv/\w+/clip/)([A-Za-z0-9_-]+)"
 )
 
 _TWITCH_OAUTH_URL = "https://id.twitch.tv/oauth2/token"
 _TWITCH_HELIX_CLIPS_URL = "https://api.twitch.tv/helix/clips"
+_TWITCH_HELIX_VIDEOS_URL = "https://api.twitch.tv/helix/videos"
+
+# twitch.tv/videos/{id} (also m.twitch.tv). The id is numeric.
+_TWITCH_VOD_RE = re.compile(r"(?:https?://)?(?:www\.|m\.)?twitch\.tv/videos/(\d+)")
+_HMS_RE = re.compile(r"(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?", re.IGNORECASE)
+
+# A VOD is hours long; Video Queue treats it as a "long clip" — play a window of
+# at most this many seconds from its start point (the `?t=` timestamp, else 0).
+TWITCH_VOD_WINDOW_SECONDS = 600
+
+
+def _parse_hms(text: str) -> int:
+    """Parse Twitch's `1h2m3s` / `90m` / `3600s` / bare-seconds duration to int."""
+    text = text.strip()
+    if text.isdigit():
+        return int(text)
+    m = _HMS_RE.fullmatch(text)
+    if not m or not any(m.groups()):
+        return 0
+    h, mi, s = (int(g) if g else 0 for g in m.groups())
+    return h * 3600 + mi * 60 + s
+
 
 # Module-level app token cache keyed by (client_id, client_secret).
 # Twitch app tokens are valid for ~60 days; we refresh 5 min before expiry.
@@ -251,6 +355,19 @@ def extract_twitch_clip_slug(text: str) -> str | None:
     """
     m = _TWITCH_CLIP_RE.search(text)
     return m.group(1) if m else None
+
+
+def extract_twitch_vod_info(text: str) -> tuple[str | None, int]:
+    """Extract a Twitch VOD id and its `?t=` start offset (seconds).
+
+    Returns (video_id, start_seconds); video_id is None if the URL isn't a
+    twitch.tv/videos/{id} link. start_seconds defaults to 0.
+    """
+    m = _TWITCH_VOD_RE.search(text)
+    if not m:
+        return None, 0
+    t_match = re.search(r"[?&]t=([0-9hms]+)", text, re.IGNORECASE)
+    return m.group(1), _parse_hms(t_match.group(1)) if t_match else 0
 
 
 async def _get_twitch_app_token(
@@ -343,3 +460,276 @@ async def fetch_twitch_clip_info(
     finally:
         if _own_session:
             await _session.close()
+
+
+async def fetch_twitch_vod_info(
+    video_id: str,
+    client_id: str,
+    client_secret: str,
+    session: aiohttp.ClientSession | None = None,
+) -> tuple[str | None, int | None, int | None]:
+    """Fetch VOD title, duration, and view count via Twitch Helix `/videos`.
+
+    Returns (title, duration_seconds, view_count) — the full VOD duration, not
+    the capped play window (the registry applies the cap). All None on failure
+    (deleted / sub-only / expired VOD).
+    """
+    if not client_id or not client_secret:
+        return None, None, None
+
+    _own_session = session is None
+    _session: aiohttp.ClientSession = session or aiohttp.ClientSession()
+    try:
+        app_token = await _get_twitch_app_token(client_id, client_secret, _session)
+        if not app_token:
+            return None, None, None
+
+        async with _session.get(
+            _TWITCH_HELIX_VIDEOS_URL,
+            params={"id": video_id},
+            headers={"Authorization": f"Bearer {app_token}", "Client-Id": client_id},
+            timeout=aiohttp.ClientTimeout(total=5),
+        ) as resp:
+            if resp.status != 200:
+                LOGGER.info("[Twitch API] Unexpected status %s for VOD %s", resp.status, video_id)
+                return None, None, None
+            data = await resp.json()
+            videos = data.get("data", [])
+            if not videos:
+                return None, None, None
+            vod = videos[0]
+            title: str | None = vod.get("title")
+            raw_duration: str | None = vod.get("duration")  # "3h20m5s"
+            duration_seconds = _parse_hms(raw_duration) if raw_duration else None
+            view_count_raw = vod.get("view_count")
+            view_count = int(view_count_raw) if view_count_raw is not None else None
+            return title, duration_seconds or None, view_count
+    except Exception as exc:
+        LOGGER.warning(
+            "[Twitch API] fetch_twitch_vod_info failed for %s: %s", video_id, type(exc).__name__
+        )
+        return None, None, None
+    finally:
+        if _own_session:
+            await _session.close()
+
+
+# ---------------------------------------------------------------------------
+# Twitch clip DIRECT SOURCE — unofficial GraphQL (Bilibili-tier dependency)
+# ---------------------------------------------------------------------------
+#
+# The official `clips.twitch.tv/embed` iframe cannot autoplay inside an OBS
+# Browser Source: Twitch's player gates unmuted autoplay on document
+# visibility, and OBS renders the page "hidden" (see
+# video-queue-platforms.md). The only way to autoplay a clip with sound in OBS
+# is to play its MP4 in a host-controlled <video> — but Twitch stopped serving
+# a plain MP4 off the thumbnail_url, so the URL now needs a signed token from
+# Twitch's PRIVATE GraphQL endpoint (the exact call yt-dlp makes).
+#
+# This is a second unofficial dependency of the same class as Bilibili's
+# metadata endpoint: no SLA, no rate-limit contract. Specifically:
+#   - `_TWITCH_GQL_CLIENT_ID` is yt-dlp's registered public client id (it ships
+#     in every yt-dlp install; it is NOT a secret and NOT ours).
+#   - `_TWITCH_CLIP_SOURCE_HASH` is a persisted-query hash Twitch ROTATES.
+#     When it changes this call 400s and callers fall back to the iframe.
+#     Keep it in sync with yt-dlp's `_OPERATION_HASHES['ShareClipRenderStatus']`.
+#   - The returned token carries an `expires` claim (hours). Resolve it fresh
+#     at playback time; never store it.
+_TWITCH_GQL_URL = "https://gql.twitch.tv/gql"
+_TWITCH_GQL_CLIENT_ID = "ue6666qo983tsx6so1t0vnawi233wa"
+_TWITCH_CLIP_SOURCE_HASH = "2db6a3b20eabf510bd3cf465ae2408834b59eb6b8af89ca73ab1486cacecfb63"
+
+
+async def fetch_twitch_clip_source(
+    slug: str,
+    session: aiohttp.ClientSession | None = None,
+) -> str | None:
+    """Resolve a Twitch clip slug to a directly-playable, signed MP4 URL.
+
+    UNOFFICIAL — see the module comment above. Returns the highest-quality
+    landscape source with the playback signature appended, or None on any
+    failure (callers must fall back to the clips.twitch.tv/embed iframe).
+    """
+    body = [
+        {
+            "operationName": "ShareClipRenderStatus",
+            "variables": {"slug": slug},
+            "extensions": {
+                "persistedQuery": {"version": 1, "sha256Hash": _TWITCH_CLIP_SOURCE_HASH}
+            },
+        }
+    ]
+    _own_session = session is None
+    _session: aiohttp.ClientSession = session or aiohttp.ClientSession()
+    try:
+        async with _session.post(
+            _TWITCH_GQL_URL,
+            data=json.dumps(body),
+            headers={
+                "Client-ID": _TWITCH_GQL_CLIENT_ID,
+                "Content-Type": "text/plain;charset=UTF-8",
+            },
+            timeout=aiohttp.ClientTimeout(total=5),
+        ) as resp:
+            if resp.status != 200:
+                LOGGER.warning("[Twitch GQL] clip source status %s for %s", resp.status, slug)
+                return None
+            data = await resp.json(content_type=None)
+
+        clip = (data[0] if isinstance(data, list) and data else {}).get("data", {}).get("clip")
+        if not clip:
+            return None
+        token = clip.get("playbackAccessToken") or {}
+        signature, value = token.get("signature"), token.get("value")
+        if not signature or not value:
+            return None
+        assets = clip.get("assets") or []
+        qualities = (assets[0].get("videoQualities") if assets else None) or []
+        # videoQualities is ordered highest→lowest resolution.
+        source_url = next((q["sourceURL"] for q in qualities if q.get("sourceURL")), None)
+        if not source_url:
+            return None
+        sep = "&" if "?" in source_url else "?"
+        return f"{source_url}{sep}sig={signature}&token={quote(value, safe='')}"
+    except Exception as exc:
+        LOGGER.warning(
+            "[Twitch GQL] fetch_twitch_clip_source failed for %s: %s", slug, type(exc).__name__
+        )
+        return None
+    finally:
+        if _own_session:
+            await _session.close()
+
+
+# ---------------------------------------------------------------------------
+# Registry — resolves a URL to a platform, then fetches metadata in one shape
+# ---------------------------------------------------------------------------
+#
+# Three call sites (chat !vq, channel-points redemption, dashboard add) all
+# need "figure out which platform this URL is, then fetch its metadata" and
+# previously duplicated that cascade inline. This layer composes the
+# platform-specific functions above behind one shape so the cascade lives in
+# exactly one place. The platform-specific functions themselves are untouched
+# — they're already covered by tests and used directly where only one step
+# (e.g. just URL parsing) is needed.
+
+_WATCH_URL_BUILDERS: dict[str, str] = {
+    "youtube": "https://youtu.be/{video_id}",
+    "twitch_clip": "https://clips.twitch.tv/{video_id}",
+    "twitch_vod": "https://www.twitch.tv/videos/{video_id}",
+    "bilibili": "https://www.bilibili.com/video/{video_id}",
+}
+
+
+@dataclass
+class ResolvedVideo:
+    """A URL identified as belonging to a platform, with its platform-native ID."""
+
+    video_type: str  # 'youtube' | 'twitch_clip' | 'twitch_vod' | 'bilibili'
+    video_id: str
+    is_vertical: bool = False  # URL-shape hint (e.g. YouTube Shorts); refined by metadata
+    start_seconds: int = 0  # twitch_vod `?t=` offset; 0 for everything else
+
+
+@dataclass
+class VideoMetadata:
+    """Metadata fetch result, normalized to one shape across all platforms.
+
+    ``playable`` / ``unplayable_reason`` are YouTube-only signals (see
+    ``YouTubeInfo``); Twitch Clip and Bilibili are always reported playable.
+    """
+
+    title: str | None
+    duration_seconds: int | None
+    view_count: int | None
+    is_vertical: bool
+    playable: bool = True
+    unplayable_reason: str | None = None
+
+
+async def resolve_video_url(
+    url: str,
+    *,
+    session: aiohttp.ClientSession | None = None,
+) -> ResolvedVideo | None:
+    """Identify which platform a URL belongs to and extract its native ID.
+
+    Tries YouTube, then Twitch Clip, then Bilibili (incl. b23.tv redirects) —
+    same priority order previously duplicated across call sites. Returns None
+    if the URL doesn't match any supported platform.
+    """
+    video_id, is_vertical = extract_youtube_info(url)
+    if video_id:
+        return ResolvedVideo(video_type="youtube", video_id=video_id, is_vertical=is_vertical)
+
+    clip_slug = extract_twitch_clip_slug(url)
+    if clip_slug:
+        return ResolvedVideo(video_type="twitch_clip", video_id=clip_slug)
+
+    vod_id, start_seconds = extract_twitch_vod_info(url)
+    if vod_id:
+        return ResolvedVideo(video_type="twitch_vod", video_id=vod_id, start_seconds=start_seconds)
+
+    bvid = await resolve_bilibili_url(url, session)
+    if bvid:
+        return ResolvedVideo(video_type="bilibili", video_id=bvid)
+
+    return None
+
+
+async def fetch_video_metadata(
+    resolved: ResolvedVideo,
+    *,
+    youtube_api_key: str = "",
+    twitch_client_id: str = "",
+    twitch_client_secret: str = "",
+    session: aiohttp.ClientSession | None = None,
+) -> VideoMetadata:
+    """Fetch metadata for a resolved video, normalized to one 4-field shape.
+
+    Twitch Clip's underlying fetch has no is_vertical concept (Helix doesn't
+    report clip dimensions) — normalized to False here rather than making
+    every caller remember to supply it.
+    """
+    if resolved.video_type == "twitch_clip":
+        title, duration_seconds, view_count = await fetch_twitch_clip_info(
+            resolved.video_id, twitch_client_id, twitch_client_secret, session
+        )
+        return VideoMetadata(title, duration_seconds, view_count, is_vertical=False)
+
+    if resolved.video_type == "twitch_vod":
+        title, vod_duration, view_count = await fetch_twitch_vod_info(
+            resolved.video_id, twitch_client_id, twitch_client_secret, session
+        )
+        # Play a bounded window from the `?t=` offset — a VOD is hours long.
+        remaining = (
+            max(0, vod_duration - resolved.start_seconds)
+            if vod_duration
+            else TWITCH_VOD_WINDOW_SECONDS
+        )
+        window = min(TWITCH_VOD_WINDOW_SECONDS, remaining) or TWITCH_VOD_WINDOW_SECONDS
+        return VideoMetadata(title, window, view_count, is_vertical=False)
+
+    if resolved.video_type == "bilibili":
+        title, duration_seconds, view_count, is_vertical = await fetch_bilibili_info(
+            resolved.video_id, session
+        )
+        return VideoMetadata(title, duration_seconds, view_count, is_vertical)
+
+    yt = await fetch_yt_info(resolved.video_id, youtube_api_key, session)
+    return VideoMetadata(
+        title=yt.title,
+        duration_seconds=yt.duration_seconds,
+        view_count=yt.view_count,
+        is_vertical=resolved.is_vertical or yt.is_vertical,
+        playable=yt.playable,
+        unplayable_reason=yt.unplayable_reason,
+    )
+
+
+def build_watch_url(video_type: str, video_id: str) -> str:
+    """Build the canonical watch URL for a queued entry, given its stored video_type."""
+    template = _WATCH_URL_BUILDERS.get(video_type)
+    if template is None:
+        raise ValueError(f"Unknown video_type: {video_type!r}")
+    return template.format(video_id=video_id)

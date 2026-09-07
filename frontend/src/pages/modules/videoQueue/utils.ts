@@ -6,18 +6,41 @@ export const MIN_VIEW_COUNT_OPTIONS = [
   { value: 10_000, label: '10,000+' },
 ] as const
 
-// redemption (channel points): starts at 1 video, up to 3 videos
+// redemption (channel points) length cap — default 10 分鐘
 export const REDEMPTION_DURATION_OPTIONS = [
   { value: 300, label: '5 分鐘' },
   { value: 600, label: '10 分鐘' },
   { value: 900, label: '15 分鐘' },
+  { value: 1200, label: '20 分鐘' },
 ] as const
+
+/** How many rows each tab of the queue card shows per page. */
+export const QUEUE_PAGE_SIZE = 10
 
 /** Snap a raw seconds value to the nearest option in the list. */
 export function snapToOption(options: readonly { value: number }[], value: number): number {
   return options.reduce((prev, curr) =>
     Math.abs(curr.value - value) < Math.abs(prev.value - value) ? curr : prev
   ).value
+}
+
+/** Canonical watch URL for a queued entry — frontend mirror of the backend's
+ *  `build_watch_url` (shared/video_sources.py). */
+export function watchUrl(videoType: string, videoId: string): string {
+  switch (videoType) {
+    case 'twitch_clip':
+      return `https://clips.twitch.tv/${videoId}`
+    case 'bilibili':
+      return `https://www.bilibili.com/video/${videoId}`
+    default:
+      return `https://youtu.be/${videoId}`
+  }
+}
+
+/** Thumbnail URL for a queued entry, or null when the platform has no stable
+ *  no-auth thumbnail (Bilibili, Twitch clips). */
+export function thumbnailUrl(videoType: string, videoId: string): string | null {
+  return videoType === 'youtube' ? `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg` : null
 }
 
 export function formatDuration(seconds: number): string {

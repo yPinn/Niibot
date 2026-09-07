@@ -6,7 +6,7 @@
     "doc": "docs"
   },
   "scripts": {
-    "prepare": "husky install",
+    "prepare": "husky",
     "dev:fe": "npm run dev --prefix frontend",
     "dev:api": "npm run _dc -- --profile api up --build --remove-orphans",
     "dev:twitch": "npm run _dc -- --profile twitch up --build --remove-orphans",
@@ -61,11 +61,11 @@
     ]
   },
   "devDependencies": {
-    "@commitlint/cli": "^19.0.0",
-    "@commitlint/config-conventional": "^19.0.0",
-    "@secretlint/secretlint-rule-preset-recommend": "^11.3.1",
-    "husky": "^8.0.3",
-    "lint-staged": "^15.2.0",
+    "@commitlint/cli": "^21.2.2",
+    "@commitlint/config-conventional": "^21.2.2",
+    "@secretlint/secretlint-rule-preset-recommend": "^13.0.5",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.4.1",
     "secretlint": "^11.3.1"
   }
 }
