@@ -12,6 +12,44 @@ export interface CommunityOverlayEvent {
   expires_at: string | null
 }
 
+export interface CheckinCollectionArtworkSnapshot {
+  portrait_url: string | null
+  square_url: string | null
+  backdrop_url: string | null
+}
+
+export interface CheckinCollectionSnapshot {
+  draw_id: number
+  pool_revision_id: number
+  algorithm_version: string
+  card: {
+    id: number
+    revision_id: number
+    key: string
+    number: string
+    name: string
+    artwork: CheckinCollectionArtworkSnapshot
+  }
+  set: {
+    id: number
+    key: string
+    name: string
+  }
+  rarity: {
+    key: string
+    label: string
+    rank: number
+    effect_intensity: number
+  }
+  is_new: boolean
+  copy_count: number
+  progress: {
+    owned_copies: number
+    unique_cards: number
+    total_cards: number
+  }
+}
+
 export interface CommunityOverlayFeed {
   cursor: number
   events: CommunityOverlayEvent[]
@@ -43,7 +81,7 @@ export const DEFAULT_COMMUNITY_OVERLAY_THEME: CommunityOverlayTheme = {
   text_color: '#241B34',
   placement: 'bottom-left',
   radius_px: 24,
-  display_ms: 4_000,
+  display_ms: 5_000,
   motion: 'standard',
 }
 

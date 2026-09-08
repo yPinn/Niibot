@@ -3,38 +3,15 @@ import type {
   CommunityOverlayPlacement,
   CommunityOverlayTheme,
 } from '@/api/communityOverlay'
-import { CheckinCard } from '@/components/community-overlay/CheckinCard'
+import { CollectionBinder } from '@/components/community-overlay/CollectionBinder'
+import {
+  SAMPLE_COLLECTION_BINDER_EVENT,
+  SAMPLE_TAROT_CARD_EVENT,
+} from '@/components/community-overlay/previewFixtures'
 import { TarotCard } from '@/components/community-overlay/TarotCard'
 import { Icon, Spinner } from '@/components/primitives'
 import { Button, Input } from '@/components/ui'
 import { WarningBanner } from '@/components/WarningBanner'
-
-const SAMPLE_CHECKIN_EVENT = {
-  actor_display_name: 'NiibotFan',
-  payload: {
-    total_days: 8,
-    checkin_date: '2026-08-31',
-  },
-}
-
-const SAMPLE_TAROT_EVENT = {
-  actor_display_name: 'NiibotFan',
-  payload: {
-    card_id: '0',
-    card_name: '愚者',
-    card_name_en: 'The Fool',
-    orientation: 'upright' as const,
-    orientation_label: '正位',
-    category: 'general',
-    category_label: '綜合',
-    keywords: ['新開始', '冒險', '自由'],
-    meaning: '進入全新階段，無限可能正在展開。',
-    advice: '保持開放心態，先踏出真誠的一步。',
-    image_path: '/images/tarot/decks/rider-waite-smith-pkt/v1/cards/major-00-the-fool.jpg',
-    deck_id: 'rider-waite-smith-pkt',
-    deck_version: 1,
-  },
-}
 
 const PLACEMENTS: Array<{ value: CommunityOverlayPlacement; label: string }> = [
   { value: 'top-left', label: '左上' },
@@ -178,7 +155,7 @@ export function ThemeEditor({
   const lowContrast =
     (surfaceContrast !== null && surfaceContrast < 4.5) ||
     (accentContrast !== null && accentContrast < 4.5)
-  const lowAccentSeparation = accentSurfaceContrast !== null && accentSurfaceContrast < 3
+  const lowAccentSeparation = accentSurfaceContrast !== null && accentSurfaceContrast < 4.5
   return (
     <div className="grid gap-card xl:grid-cols-[minmax(20rem,0.82fr)_minmax(32rem,1.18fr)]">
       <div className="min-w-0 xl:col-start-2 xl:row-start-1">
@@ -210,19 +187,21 @@ export function ThemeEditor({
             className={`flex h-72 overflow-hidden rounded-xl bg-muted/40 p-4 sm:h-auto sm:aspect-video sm:min-h-72 sm:p-6 ${PREVIEW_ALIGNMENT[theme.placement]}`}
           >
             <div
-              className={`${PREVIEW_ORIGIN[theme.placement]} scale-[0.68] sm:scale-[0.78] lg:scale-[0.84] 2xl:scale-100`}
+              data-preview-content
+              className={`${PREVIEW_ORIGIN[theme.placement]} scale-100 sm:scale-[0.86] lg:scale-[0.9] 2xl:scale-100`}
             >
               {contentType === 'checkin' ? (
-                <CheckinCard
+                <CollectionBinder
                   key={theme.motion}
-                  event={SAMPLE_CHECKIN_EVENT}
+                  event={SAMPLE_COLLECTION_BINDER_EVENT}
                   theme={theme}
                   previewLabel="草稿預覽"
+                  staticPreview
                 />
               ) : (
                 <TarotCard
                   key={theme.motion}
-                  event={SAMPLE_TAROT_EVENT}
+                  event={SAMPLE_TAROT_CARD_EVENT}
                   theme={theme}
                   previewLabel="草稿預覽"
                 />
@@ -252,7 +231,7 @@ export function ThemeEditor({
           {previewMode === 'draft'
             ? '修改會先顯示在這裡，儲存並發布後才影響 OBS。'
             : contentType === 'checkin'
-              ? '測試只播放動畫，不會執行簽到或增加累積天數。'
+              ? '測試只播放動畫，不會執行簽到、抽卡或增加累積天數。'
               : '測試只播放動畫，不會產生或覆寫觀眾的每日抽牌紀錄。'}
         </p>
       </div>
@@ -292,7 +271,7 @@ export function ThemeEditor({
           )}
           {lowAccentSeparation && (
             <WarningBanner>
-              強調色與背景色的對比偏低，重點可能不易辨識（僅供參考，不影響儲存）。
+              強調色與背景色的對比偏低（低於 4.5:1），小字重點可能不易閱讀（僅供參考，不影響儲存）。
             </WarningBanner>
           )}
         </fieldset>

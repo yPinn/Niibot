@@ -1,0 +1,552 @@
+.scene {
+  position: relative;
+  width: min(660px, calc(100vw - 40px));
+  max-width: 100%;
+  box-sizing: border-box;
+  color: var(--overlay-text);
+  font-family: 'Gen Sen Rounded', system-ui, sans-serif;
+  perspective: 1200px;
+  pointer-events: none;
+  isolation: isolate;
+}
+
+.book {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1.65;
+  transform-style: preserve-3d;
+  filter: drop-shadow(0 26px 30px rgb(0 0 0 / 0.38));
+  will-change: transform;
+}
+
+.leafStack {
+  position: absolute;
+  inset: 3.5% 1.5% 2.5% 50%;
+  transform: rotateX(2deg);
+  transform-style: preserve-3d;
+}
+
+.pages {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+  border: 7px solid color-mix(in srgb, var(--overlay-text) 82%, black);
+  border-radius: min(var(--overlay-radius), 22px);
+  background: color-mix(in srgb, var(--overlay-text) 86%, black);
+  box-shadow:
+    inset 0 0 0 2px color-mix(in srgb, var(--overlay-accent) 52%, white),
+    inset 0 0 28px rgb(0 0 0 / 0.38);
+  transform-style: preserve-3d;
+}
+
+.page {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: clamp(14px, 3.1vw, 28px);
+  background:
+    linear-gradient(90deg, rgb(0 0 0 / 0.1), transparent 15%),
+    radial-gradient(
+      circle at 86% 12%,
+      color-mix(in srgb, var(--overlay-accent) 13%, transparent),
+      transparent 34%
+    ),
+    color-mix(in srgb, var(--overlay-surface) 92%, #f2dfaa);
+}
+
+.leftPage {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) minmax(42px, auto);
+  gap: clamp(10px, 2vw, 18px);
+  border-right: 1px solid color-mix(in srgb, var(--overlay-text) 23%, transparent);
+  box-shadow: inset -18px 0 24px rgb(0 0 0 / 0.09);
+}
+
+.rightPage {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  place-items: center;
+  border-radius: max(6px, calc(min(var(--overlay-radius), 22px) - 7px));
+  box-shadow: inset 18px 0 24px rgb(0 0 0 / 0.1);
+}
+
+.identity {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.identity strong {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: clamp(17px, 3vw, 27px);
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.identity > span:last-child {
+  font-family: 'Fira Code', monospace;
+  font-size: clamp(11px, 1.8vw, 14px);
+  letter-spacing: 0.08em;
+}
+
+.slotGrid {
+  display: grid;
+  min-height: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: clamp(6px, 1.5vw, 12px);
+  overflow: hidden;
+}
+
+.miniSlot {
+  position: relative;
+  width: auto;
+  max-width: 100%;
+  height: 100%;
+  max-height: 100%;
+  min-width: 0;
+  min-height: 0;
+  box-sizing: border-box;
+  aspect-ratio: 0.7;
+  place-self: stretch center;
+  border: 1px solid color-mix(in srgb, var(--overlay-text) 30%, transparent);
+  border-radius: 4px;
+  background:
+    radial-gradient(
+      circle,
+      color-mix(in srgb, var(--overlay-text) 18%, transparent) 0 8%,
+      transparent 9%
+    ),
+    color-mix(in srgb, var(--overlay-surface) 72%, var(--overlay-text));
+  box-shadow: inset 0 2px 8px rgb(0 0 0 / 0.13);
+}
+
+.targetSlot {
+  border-color: color-mix(in srgb, var(--overlay-accent) 72%, var(--overlay-text));
+  background:
+    radial-gradient(
+      circle,
+      color-mix(in srgb, var(--overlay-accent) 28%, transparent) 0 8%,
+      transparent 9%
+    ),
+    color-mix(in srgb, var(--overlay-surface) 78%, var(--overlay-text));
+  box-shadow:
+    inset 0 2px 8px rgb(0 0 0 / 0.16),
+    0 0 12px color-mix(in srgb, var(--overlay-accent) 24%, transparent);
+}
+
+.slotCard {
+  position: absolute;
+  z-index: 1;
+  inset: 3px;
+  display: grid;
+  box-sizing: border-box;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--overlay-accent) 58%, var(--overlay-text));
+  border-radius: 3px;
+  background:
+    radial-gradient(
+      circle,
+      color-mix(in srgb, var(--overlay-accent) 30%, transparent),
+      transparent 54%
+    ),
+    color-mix(in srgb, var(--overlay-text) 90%, black);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--overlay-surface) 36%, transparent);
+  will-change: opacity;
+}
+
+.slotCard::after {
+  width: 28%;
+  aspect-ratio: 1;
+  border: 1px solid color-mix(in srgb, var(--overlay-accent) 72%, white);
+  content: '';
+  transform: rotate(45deg);
+}
+
+.progress {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  gap: 2px 8px;
+  border-top: 1px solid color-mix(in srgb, var(--overlay-text) 22%, transparent);
+  padding-top: 8px;
+  font-size: clamp(11px, 1.7vw, 13px);
+}
+
+.progress strong {
+  grid-row: span 2;
+  color: var(--overlay-accent);
+  font-family: 'Fira Code', monospace;
+  font-size: clamp(15px, 2.8vw, 24px);
+}
+
+.pageRule {
+  position: absolute;
+  inset: 8% 7%;
+  border: 1px solid color-mix(in srgb, var(--overlay-text) 16%, transparent);
+  border-radius: calc(min(var(--overlay-radius), 22px) / 2);
+  pointer-events: none;
+}
+
+.cardSlot {
+  position: relative;
+  display: grid;
+  width: min(68%, 206px);
+  aspect-ratio: 0.68;
+  place-items: center;
+  border: 2px solid color-mix(in srgb, var(--overlay-text) 38%, transparent);
+  border-radius: min(var(--overlay-radius), 12px);
+  background: color-mix(in srgb, var(--overlay-surface) 76%, var(--overlay-text));
+  box-shadow:
+    inset 0 4px 14px rgb(0 0 0 / 0.18),
+    0 1px 0 rgb(255 255 255 / 0.55);
+  perspective: 800px;
+}
+
+.printAura {
+  position: absolute;
+  z-index: 0;
+  width: 130%;
+  aspect-ratio: 1;
+  border: 2px solid color-mix(in srgb, var(--overlay-accent) 72%, white);
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--overlay-accent) 34%, white),
+    transparent 64%
+  );
+  box-shadow: 0 0 34px color-mix(in srgb, var(--overlay-accent) 58%, transparent);
+}
+
+.collectionCard {
+  position: absolute;
+  border-radius: max(4px, min(calc(var(--overlay-radius) - 5px), 9px));
+  transform-style: preserve-3d;
+  will-change: opacity, transform;
+}
+
+.cardOrigin {
+  position: absolute;
+  inset: 4px;
+}
+
+.flightCard {
+  z-index: 8;
+  transform-origin: center;
+}
+
+.cardFlipper,
+.cardFace {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+}
+
+.cardFace {
+  box-sizing: border-box;
+  overflow: hidden;
+  border: 2px solid color-mix(in srgb, var(--overlay-accent) 54%, var(--overlay-text));
+  border-radius: max(4px, min(calc(var(--overlay-radius) - 5px), 9px));
+  backface-visibility: hidden;
+  background: color-mix(in srgb, var(--overlay-text) 88%, black);
+}
+
+.cardBack {
+  transform: rotateY(0deg);
+}
+
+.cardFront {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  gap: 4px;
+  padding: 6px;
+  color: var(--overlay-text);
+  background: linear-gradient(
+    145deg,
+    var(--overlay-surface),
+    color-mix(in srgb, var(--overlay-surface) 78%, var(--overlay-accent))
+  );
+  transform: rotateY(180deg);
+}
+
+.collectionCard[data-rarity='common'] .cardFace {
+  border-color: color-mix(in srgb, var(--overlay-text) 38%, var(--overlay-surface));
+}
+
+.collectionCard[data-rarity='rare'] .cardFace {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--overlay-accent) 74%, white);
+}
+
+.collectionCard[data-rarity='legendary'] .cardFace {
+  border-color: color-mix(in srgb, var(--overlay-accent) 66%, #ffe481);
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 0.64),
+    0 0 20px color-mix(in srgb, var(--overlay-accent) 52%, transparent);
+}
+
+.cardHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  font-family: 'Fira Code', monospace;
+  font-size: clamp(10px, 1.45vw, 12px);
+  font-weight: 700;
+}
+
+.rarity {
+  overflow: hidden;
+  max-width: 56%;
+  padding: 2px 4px;
+  border-radius: 999px;
+  color: var(--overlay-surface);
+  background: var(--overlay-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.artworkFrame {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--overlay-text) 22%, transparent);
+  border-radius: max(3px, min(calc(var(--overlay-radius) - 8px), 7px));
+  background: color-mix(in srgb, var(--overlay-text) 84%, black);
+}
+
+.artwork,
+.artworkPlaceholder {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  object-fit: cover;
+}
+
+.artworkPlaceholder {
+  color: color-mix(in srgb, var(--overlay-accent) 64%, white);
+  background:
+    radial-gradient(
+      circle,
+      color-mix(in srgb, var(--overlay-accent) 28%, transparent),
+      transparent 55%
+    ),
+    color-mix(in srgb, var(--overlay-text) 90%, black);
+  font-size: clamp(24px, 5vw, 46px);
+}
+
+.cardName,
+.setName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cardName {
+  font-size: clamp(12px, 1.9vw, 16px);
+  line-height: 1.1;
+}
+
+.setName {
+  font-size: clamp(10px, 1.45vw, 12px);
+}
+
+.result {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 7px;
+  padding-bottom: 4px;
+  font-size: clamp(10px, 1.6vw, 13px);
+}
+
+.result strong {
+  color: color-mix(in srgb, var(--overlay-accent) 76%, var(--overlay-text));
+  font-family: 'Fira Code', monospace;
+  font-size: clamp(14px, 2.8vw, 22px);
+}
+
+.spine {
+  position: absolute;
+  z-index: 6;
+  top: 4%;
+  bottom: 3%;
+  left: 50%;
+  width: 10px;
+  border-right: 1px solid rgb(255 255 255 / 0.18);
+  border-left: 1px solid rgb(0 0 0 / 0.42);
+  background: color-mix(in srgb, var(--overlay-text) 86%, black);
+  box-shadow: 0 0 16px rgb(0 0 0 / 0.34);
+  transform: translateX(-50%) rotateX(3deg);
+}
+
+.cover {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  transform-origin: left center;
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+
+.coverFace {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  overflow: hidden;
+  box-sizing: border-box;
+  border: 7px solid color-mix(in srgb, var(--overlay-text) 82%, black);
+  border-radius: min(var(--overlay-radius), 22px);
+  background: color-mix(in srgb, var(--overlay-text) 86%, black);
+  backface-visibility: hidden;
+  transform-style: preserve-3d;
+}
+
+.coverOuter {
+  place-content: center;
+  place-items: center;
+  gap: 10px;
+  color: color-mix(in srgb, var(--overlay-surface) 76%, white);
+  background:
+    linear-gradient(
+      135deg,
+      transparent 46%,
+      color-mix(in srgb, var(--overlay-accent) 30%, transparent) 47% 53%,
+      transparent 54%
+    ),
+    color-mix(in srgb, var(--overlay-text) 86%, #151326);
+  box-shadow:
+    inset 0 0 0 2px color-mix(in srgb, var(--overlay-accent) 54%, white),
+    inset 0 0 42px rgb(0 0 0 / 0.5),
+    0 12px 28px rgb(0 0 0 / 0.32);
+}
+
+.coverInner {
+  transform: rotateY(180deg) translateZ(1px);
+}
+
+.coverOuter::after {
+  position: absolute;
+  inset: 12px;
+  content: '';
+  border: 1px solid color-mix(in srgb, var(--overlay-accent) 52%, white);
+  border-radius: max(6px, calc(min(var(--overlay-radius), 22px) - 8px));
+}
+
+.coverSigil {
+  position: relative;
+  display: grid;
+  width: clamp(56px, 12vw, 98px);
+  aspect-ratio: 1;
+  place-items: center;
+  border: 2px solid var(--overlay-accent);
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 8px color-mix(in srgb, var(--overlay-accent) 20%, transparent),
+    0 0 24px color-mix(in srgb, var(--overlay-accent) 45%, transparent);
+}
+
+.coverSigil::before,
+.coverSigil::after,
+.coverSigil span {
+  position: absolute;
+  width: 54%;
+  aspect-ratio: 1;
+  box-sizing: border-box;
+  content: '';
+  border: 1px solid color-mix(in srgb, var(--overlay-surface) 70%, white);
+  transform: rotate(45deg);
+}
+
+.coverSigil::after {
+  width: 26%;
+  border-radius: 50%;
+  background: var(--overlay-accent);
+  transform: none;
+}
+
+.coverSigil span {
+  width: 78%;
+  border-radius: 50%;
+  transform: none;
+}
+
+.coverOuter strong,
+.coverOuter small {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+  letter-spacing: 0.14em;
+}
+
+.coverOuter strong {
+  font-family: 'Fira Code', monospace;
+  font-size: clamp(12px, 2.2vw, 19px);
+}
+
+.coverOuter small {
+  font-size: clamp(10px, 1.45vw, 12px);
+}
+
+.previewBadge {
+  position: absolute;
+  z-index: 10;
+  top: 8px;
+  right: 12px;
+  padding: 4px 7px;
+  border: 1px solid rgb(255 255 255 / 0.32);
+  border-radius: 999px;
+  color: white;
+  background: rgb(15 13 22 / 0.76);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+@media (max-width: 520px) {
+  .scene {
+    width: calc(100vw - 32px);
+  }
+
+  .pages {
+    border-width: 4px;
+  }
+
+  .page {
+    padding: 12px;
+  }
+
+  .miniSlot:nth-child(n + 4) {
+    display: none;
+  }
+
+  .slotGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+  }
+
+  .leftPage {
+    gap: 8px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scene,
+  .book,
+  .cover,
+  .collectionCard,
+  .cardFlipper,
+  .printAura {
+    animation: none !important;
+    transition: none !important;
+  }
+}

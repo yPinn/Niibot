@@ -76,87 +76,6 @@
     );
 }
 
-.backField {
-  position: absolute;
-  inset: 10px;
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--overlay-accent) 58%, white);
-  border-radius: max(5px, min(calc(var(--overlay-radius) - 8px), 10px));
-  background:
-    linear-gradient(
-      45deg,
-      transparent 0 42%,
-      color-mix(in srgb, var(--overlay-accent) 18%, transparent) 43% 57%,
-      transparent 58% 100%
-    ),
-    linear-gradient(
-      -45deg,
-      transparent 0 42%,
-      color-mix(in srgb, var(--overlay-surface) 12%, transparent) 43% 57%,
-      transparent 58% 100%
-    ),
-    color-mix(in srgb, var(--overlay-text) 92%, black);
-  background-size: 28px 28px;
-  box-shadow: inset 0 0 30px rgb(0 0 0 / 0.42);
-}
-
-.backField::before,
-.backField::after,
-.backOrbit {
-  position: absolute;
-  width: 58%;
-  aspect-ratio: 1;
-  box-sizing: border-box;
-  content: '';
-  border: 1px solid color-mix(in srgb, var(--overlay-accent) 68%, white);
-  transform: rotate(45deg);
-}
-
-.backField::after {
-  width: 38%;
-  border-color: color-mix(in srgb, var(--overlay-surface) 74%, white);
-  transform: rotate(45deg);
-  box-shadow: 0 0 18px color-mix(in srgb, var(--overlay-accent) 34%, transparent);
-}
-
-.backOrbit {
-  width: 18%;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--overlay-accent) 58%, var(--overlay-text));
-  transform: none;
-}
-
-.hologram {
-  position: absolute;
-  inset: 6px;
-  border-radius: max(5px, min(calc(var(--overlay-radius) - 6px), 12px));
-  background:
-    radial-gradient(circle at 15% 18%, rgb(255 255 255 / 0.7), transparent 24%),
-    linear-gradient(
-      115deg,
-      transparent 12%,
-      rgb(77 226 255 / 0.42) 31%,
-      rgb(255 122 224 / 0.4) 45%,
-      rgb(255 234 128 / 0.46) 57%,
-      transparent 76%
-    );
-  background-position:
-    115% -20%,
-    120% -25%;
-  background-size:
-    170% 170%,
-    220% 220%;
-  mix-blend-mode: screen;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.scene[data-virtual-pointer='scripted'] .hologram {
-  animation: hologram-sweep 1.14s 1.02s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
 .previewBadge {
   position: absolute;
   z-index: 3;
@@ -175,41 +94,8 @@
   letter-spacing: 0.06em;
 }
 
-@keyframes hologram-sweep {
-  0% {
-    background-position:
-      115% -20%,
-      120% -25%;
-    opacity: 0;
-  }
-
-  26% {
-    opacity: 0.52;
-  }
-
-  68% {
-    background-position:
-      36% 58%,
-      42% 52%;
-    opacity: 0.34;
-  }
-
-  100% {
-    background-position:
-      -25% 120%,
-      -30% 125%;
-    opacity: 0;
-  }
-}
-
 @media (max-width: 360px) {
   .scene {
     width: min(156px, calc(100vw - 24px));
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .scene[data-virtual-pointer='scripted'] .hologram {
-    animation: none;
   }
 }
