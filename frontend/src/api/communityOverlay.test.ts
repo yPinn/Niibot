@@ -22,7 +22,7 @@ describe('Live Display defaults', () => {
     expect(DEFAULT_COMMUNITY_OVERLAY_THEME).toMatchObject({
       placement: 'bottom-left',
       radius_px: 24,
-      display_ms: 4_000,
+      display_ms: 5_000,
       motion: 'standard',
     })
     expect(DEFAULT_TAROT_OVERLAY_THEME).toEqual({

@@ -114,6 +114,12 @@ router 標記為「（無獨立頁面）」。
   重設目前租戶草稿。
 - `GET /api/live-display/public/theme`：以 `X-Overlay-Key: <uuid>` 只回啟用中的已發布樣式。
 
+Daily Check-in 成功時仍送出 `event_type = checkin.recorded`、`schema_version = 1`。新事件的 payload
+可額外包含 validated `collection` snapshot：draw／pool／algorithm、card revision、set、rarity、同源 artwork
+derivatives、`is_new`、`copy_count` 與進度。欄位是 additive optional contract，沒有該欄位的舊事件仍合法；
+前端遇到缺漏或 malformed collection 會顯示 legacy 簽到卡。現階段沒有租戶 cards／pool 管理 API，也沒有
+viewer collection 查詢端點。
+
 OBS URL 將 public key 放在 fragment，瀏覽器不會把 fragment 傳到 server；公開 API 再以
 `X-Overlay-Key` header 驗證，避免 key 出現在 request path、query、history referrer 與一般 access log。
 Feed 與 theme 都不回傳 `channel_id` 或穩定的 actor user id、不接受 client 指定 tenant，且回應使用
@@ -126,8 +132,10 @@ Theme schema v1 固定為 `checkin-card` allowlist：`surface_color`、`accent_c
 外部資源、HTML、CSS 或 JavaScript。色彩對比不在後端硬性驗證範圍——這是頻道自己 OBS 畫面的裝飾配色，
 不是所有人都必須使用的介面，因此 Dashboard 僅在草稿編輯器顯示對比建議，不阻擋儲存或發布。
 草稿僅由同租戶私有端點讀寫，公開 renderer 永遠只讀已發布版本。
-新 profile 的共用預設位置為 `bottom-left`、顯示時間為 4000ms；Tarot 使用相同 schema，但 block 預設另設為
-16px 圓角與 5000ms 顯示時間。時間從事件開始播放時計算；四角位置與其他 allowlisted 欄位仍可由頻道草稿調整後發布。
+新 profile 的共用預設位置為 `bottom-left`、顯示時間為 5000ms；既有已發布的 4000ms revision 不會被改寫。
+Tarot 使用相同 schema，block 預設另設為 16px 圓角與 5000ms 顯示時間。時間從事件開始播放時計算；
+四角位置與其他 allowlisted 欄位仍可由頻道草稿調整後發布。Collection binder 在單筆 budget 內依序完成
+開書、印卡、入槽／重複合併與關書；FIFO 提升下一筆前會重新檢查 expiry，且每筆事件保留入列時的 theme。
 
 前端 OBS source 使用 `/live-display#key=<uuid>`，初次 handshake 不重播；只有 fragment 明確加入
 `preview=1` 才會以 `after_id=0` 開啟 `stream` 連線讀取仍未過期事件。renderer 由 SSE push 更新
@@ -196,6 +204,8 @@ Channel Points 簽到只需 `channel:read:redemptions`。Niibot 不要求 `chann
 
 模板只接受 `$(@user)`、`$(user)`、`$(count)`、`$(date)`；server 會同時驗證未知變數與 Twitch
 500 字元的最壞輸出長度。聊天指令與 Channel Points `checkin` adapter 共用同一份 tenant 設定。
+只有確實建立 check-in、draw 與 Overlay event 的 `recorded` 結果套用 reply delay；`duplicate` 沒有 draw／event
+且立即回覆。延遲是 in-process best-effort 校準，不等待或要求 Overlay ACK；OBS 離線也不會回滾已提交資料。
 前端 `/events` 只管理 EventSub 回覆；`/channel-points` 管理 reward → action 映射，並由每日簽到列開啟
 獨立的 `Check-in settings` 編輯面。`Community Overlay` 只顯示目前 reward 綁定摘要並導向
 `/channel-points`，不提供第二個 mutation 入口。

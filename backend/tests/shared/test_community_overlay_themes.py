@@ -11,7 +11,7 @@ from shared.tarot_overlay_themes import DEFAULT_TAROT_OVERLAY_THEME
 def test_default_theme_is_a_valid_complete_schema() -> None:
     assert validate_overlay_theme(DEFAULT_OVERLAY_THEME) == DEFAULT_OVERLAY_THEME
     assert DEFAULT_OVERLAY_THEME["placement"] == "bottom-left"
-    assert DEFAULT_OVERLAY_THEME["display_ms"] == 4_000
+    assert DEFAULT_OVERLAY_THEME["display_ms"] == 5_000
     assert set(DEFAULT_OVERLAY_THEME) == {
         "surface_color",
         "accent_color",

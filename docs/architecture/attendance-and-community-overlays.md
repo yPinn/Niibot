@@ -43,16 +43,25 @@ stale session 若曾有完整 snapshot，補關閉時仍需按時間順序結算
 頻道 timezone、成功／已簽到模板與活動卡設定屬於 channel-scoped config。
 成功簽到可選擇性關聯當下 `session_id`，但不得改寫 Session Attendance、觀看分數或忠誠分層。
 
-`checkin_settings.reply_delay_seconds`（預設 0，範圍 0–30）讓頻道自行延遲聊天回覆的送出時機：
+`checkin_settings.reply_delay_seconds`（預設 0，範圍 0–30）讓頻道自行延遲成功聊天回覆的送出時機：
 聊天訊息走 IRC 幾乎即時，但 Live Display 動畫要透過 Twitch 廣播管線（編碼／CDN）才會出現在畫面上，
-這段延遲因頻道的直播延遲模式而異，bot 無法查詢也無法控制。這個延遲只作用在「送出訊息」這個動作，
-check-in ledger 寫入與 Overlay event 建立維持完全即時；`!checkin` 與頻道點數兌換兩個入口都套用同一個值。
+這段延遲因頻道的直播延遲模式而異，bot 無法查詢也無法控制。這個延遲只作用在 `recorded` 的「送出訊息」
+動作；check-in ledger、抽卡與 Overlay event 維持立即原子提交。同日 `duplicate` 沒有動畫，因此立即回覆。
+`!checkin` 與頻道點數兌換兩個入口都使用同一設定。
+
+這項延遲只是 best-effort 的人工校準值，不是 Overlay 播放確認。系統不等待 OBS client ACK：OBS 可能離線、
+同時開啟多個實例或只開 preview，而且 browser 開始播放仍不代表 Twitch 觀眾已看到該畫面。現行實作使用
+in-process async delay；bot 若在等待期間重啟，可能漏送聊天回覆，但已提交的 check-in、draw 與 event 不會回滾或重抽。
 
 ### 觸發方式：聊天指令與 Twitch 頻道點數
 
 `!checkin`／`!簽到` 與 Twitch 自訂獎勵兌換都是 Daily Check-in 的 adapter，共用同一個
-`AttendanceService`、頻道 timezone、每日唯一鍵、回覆模板與成功 Overlay transaction。兩種入口可同時啟用；
+`AttendanceService`、頻道 timezone、每日唯一鍵、回覆模板與成功 transaction。兩種入口可同時啟用；
 同一使用者同日從任一入口成功後，另一入口只會得到 duplicate 結果，不會增加 count 或再次發 Overlay。
+
+每筆 `recorded` check-in 恰好建立一筆 `viewer_card_draws`，並與 `viewer_checkins`、`community_overlay_events`
+在同一個資料庫 transaction 寫入。抽卡失敗時整筆 transaction 回滾，不留下「簽到成功但沒有卡」的半成品；
+duplicate 則不建立 draw 或 event。頻道尚未指定 pool 時使用已發布、不可變的官方 fallback pool。
 
 頻道點數採平台管理、Niibot 唯讀的權限模型：實況主在 Twitch 建立獎勵並設定成本、每人每場上限、
 全頻道單場上限與是否略過請求佇列；Niibot 只以 `channel:read:redemptions` 讀取並監聽，不要求
@@ -76,6 +85,11 @@ block 的外觀欄位。Overlay runtime 只負責依 cursor 讀取、排序、�
 長連線，維持同一事件契約；`NOTIFY` payload 只帶 `channel_id` 作喚醒訊號，事件與 theme body 一律重新
 由 durable table 讀取。
 
+`checkin.recorded` 維持 `schema_version = 1`，並以 optional `payload.collection` 加入抽卡 snapshot。snapshot
+已包含 draw／pool／algorithm、logical card 與 revision、set、rarity、artwork derivatives、`is_new`、
+`copy_count` 與冊別進度，renderer 不必回查可變 catalog。這是相容性擴充：舊 OBS bundle 會忽略新增欄位；
+新版遇到合法 snapshot 會顯示集卡冊，欄位缺漏或格式不合法則退回既有七格簽到卡，而不是丟棄整筆事件。
+
 Game Queue 與 Video Queue 是長時間存在的狀態／播放器，不塞入短事件 feed。Video Queue 已遷移到
 NOTIFY-woken SSE（`GET /api/video-queue/public/{username}/stream`），與 Live Display 共用同一個
 process-level `NotifyWakeHub`（單一 LISTEN 連線監聽多個 notify channel），但狀態模型不同：
@@ -91,12 +105,52 @@ Live Display 樣式以 `(channel_id, block_type)` 隔離。後台編輯的是該
 重設草稿只複製目前已發布版本，不會刪除歷史 revision。每次草稿 mutation 都攜帶
 `expected_draft_version`；舊分頁遇到版本不符回 409 並重新載入，避免覆蓋較新的草稿或發布錯誤快照。
 
-目前 `checkin` block 的 schema v1 固定 renderer 為 `checkin-card`，只允許三個色票、四角位置、圓角、顯示秒數與動態強度；
-server 與 client 都不接受任意 HTML、CSS 或 JavaScript。圖片資產與整包匯入／匯出留待後續版本，
+目前 `checkin` block 的已發布 theme schema v1 仍固定 renderer id 為 `checkin-card`，只允許三個色票、四角位置、
+圓角、顯示秒數與動態強度。event registry 依 optional collection snapshot 在同一個 block 內選擇集卡冊或 legacy
+renderer，不需要遷移既有 theme revision。server 與 client 都不接受任意 HTML、CSS 或 JavaScript。
+圖片資產與整包匯入／匯出留待後續版本，
 屆時需先定義媒體儲存、掃描、配額與相容性契約，不能把外部 URL 或自訂程式碼直接塞入 theme JSON。
 新 block 預設放在左下角，避開直播常見的右下視訊區；頻道仍可在四角位置中自行調整。一般 Live Display
-預設顯示 4 秒；`tarot` block 預設顯示 5 秒、牌框圓角 16px。約 2.2 秒的揭牌動畫包含在顯示時間內，
-完成後仍保留約 2.8 秒辨識牌面，同時避免連續事件在播放佇列累積過久。
+新 profile 預設顯示 5 秒；既有已發布 revision 保留當時的 4 秒設定，不做破壞性改寫。`tarot` block 預設同為
+5 秒、牌框圓角 16px。集卡冊把開書、印卡、入槽／重複合併、結果停留與關書限制在單一 5 秒 budget 內；
+reduced-motion 或靜態編輯預覽直接呈現結果狀態。
+
+### 簽到收藏與抽選模型
+
+收藏核心與顯示主題分離；每次 draw 直接保存 card revision、pool revision、algorithm version 與 16-byte
+entropy 對應的 rarity／card roll audit data，並透過不可變 references 固定 logical card、set 與 rarity revision。
+Inventory 初期直接聚合 draw ledger，同一 logical card 可重複並累積 `copy_count`；新寫入路徑因此保證每筆
+recorded check-in 對應一張 copy。冊別的 `total_cards` 隨已發布 set revision 固定，後續擴池以新 set／revision
+表達，不讓既有冊別完成度倒退。既有歷史 check-in 必須另行執行 deterministic backfill；工具已提供，但不會
+隨 migration 或服務啟動自動修改正式資料。
+
+官方 starter pool 為原創「初途秘典」九張卡，rarity 採 common／rare／legendary，權重固定 70／25／5；
+抽選演算法先依 rarity 權重選 bucket，再在該 bucket 內等機率選卡。catalog、rarity、set、card revision、
+已發布 pool 與 draw audit 均由資料庫約束不可原地修改。Starter artwork 目前為空，renderer 使用內建原創符號
+placeholder；租戶上傳、媒體處理、pool 管理 API 與動態素材仍是後續工作。
+
+### 歷史簽到補卡
+
+`backend/scripts/backfill_checkin_collections.py` 只補缺少 `viewer_card_draws` 的既有成功簽到，固定使用已發布的
+`official-starter` revision 1，不讀取日後可能改變的 channel active pool 或 system fallback pointer。卡片選擇以
+版本化 seed 加上 channel、viewer、簽到日期與 check-in id 產生 deterministic entropy；重跑不會換卡，也不建立
+歷史 `community_overlay_events`。
+
+CLI 預設為 report-only dry-run；寫入必須明確加上 `--apply`，且任何環境都需互動確認或 `--yes`，避免已注入的
+`DATABASE_URL` 與 `--env` 標籤不同時繞過保護。作業依
+channel、viewer、簽到日期、id 排序，以單一 viewer 為鎖定單位、可調 batch 大小分段 transaction。單一 batch
+失敗會完整 rollback 並保留給下次續跑，最後回報 scanned、inserted、skipped、remaining 與 failures。正式 rollout
+應先套用 migrations 112／113 並部署可讀 optional collection snapshot 的 frontend，再執行 dry-run、apply 與
+`successful check-ins = draws = inventory copies` 對帳；此 repository 只交付工具，不代表已對正式環境執行。
+
+### Viewer-isolated FIFO 播放
+
+每個事件只代表一位 viewer 的獨立卡冊：完整開書、印卡、入槽或重複合併、關書後，FIFO 才播放下一筆。
+不同 viewer 不會被合併成同一本 binder session。事件入列時會凍結當下已發布 theme，避免等待期間換版導致
+動畫中途換皮；從 queue 推進下一筆前會再次檢查 `expires_at`，已過期事件直接略過，draw ledger 不受影響。
+
+第一版刻意保留每筆約 5 秒的完整演出。尚未實作 queue ceiling、簽到摘要、跨 block 公平排程或 compact／parallel
+模式；只有觀測到真實單頻道尖峰後才評估，而且任何後續壓縮仍須保持 viewer collection 隔離。
 
 每日塔羅以 Twitch 使用者、UTC 日期與正規化主題組成 deterministic slot。未填主題使用綜合；綜合、感情、
 事業與財運各自保存當天穩定結果，因此重複查詢同一主題不會重抽，不同主題則可得到不同牌面與對應牌義。
@@ -107,14 +161,21 @@ server 與 client 都不接受任意 HTML、CSS 或 JavaScript。圖片資產與
 1. 修正 Session Attendance observation completeness、stale close 與 streak eligibility。
 2. 建立多租戶 Daily Check-in ledger、聊天回覆與設定。
 3. 建立 durable community event feed 與 check-in 集點卡 renderer。
-4. 第二種社群 activity 出現後，再抽取共用 activity service；不預先建立通用規則引擎。
+4. 在相容的 v1 event 上加入原子抽卡與 viewer-isolated 集卡冊 renderer。
+5. 交付固定首發卡池的 deterministic 歷史補卡工具，與 schema migration 分離且不補播 Overlay 事件。
+6. 租戶上傳與 viewer collection surface 另案交付；第二種社群 activity 出現後再抽取共用
+   activity service，不預先建立通用規則引擎。
 
 ## 已落地的 infra
 
 - `viewer_checkins` 以 `(channel_id, user_id, checkin_date)` 保證每日一次；`checkin_settings`
   保存頻道 IANA timezone 與兩種聊天室模板。
-- successful check-in 與 `checkin.recorded` event 在同一 transaction 寫入；duplicate 不發 event，
-  optional `session_id` 會先驗證屬於相同 channel。
+- successful check-in、`viewer_card_draws` 與 `checkin.recorded` event 在同一 transaction 寫入；
+  duplicate 不抽卡、不發 event 並立即回覆，optional `session_id` 會先驗證屬於相同 channel。
+- migration 112 建立 immutable collection catalog、set／card／rarity revisions、published pool、fallback pointer
+  與 draw audit ledger；migration 113 發布九張原創 starter cards 與 70／25／5 的官方 fallback pool。
+- 歷史補卡 CLI 固定 official starter revision 1，支援 dry-run、bounded batch、production confirmation、失敗續跑
+  與結束對帳；不建立歷史 Live Display event，且尚未對正式資料執行。
 - `community_overlay_channels.public_key` 是可輪替 UUID capability；feed 初次只取得最新 cursor，
   增量讀取限制 100 筆、略過過期事件，並以每日 cleanup 刪除已過期視覺事件。
 - `community_overlay_profiles` 以 `(channel_id, block_type)` 保存租戶草稿、draft version 與已發布指標；
@@ -123,6 +184,8 @@ server 與 client 都不接受任意 HTML、CSS 或 JavaScript。圖片資產與
   直接刪除 revision 會被 trigger 拒絕；刪除整個 channel 時仍允許 FK cascade 清理該租戶資料（migration 097）。
 - event type／schema version／renderer payload 經 shared catalog allowlist；feature ledger 不因視覺事件
   到期或清除而受影響。
+- `checkin.recorded.v1` 的 collection snapshot 是 additive optional 欄位；舊 payload 或不合法 snapshot 仍由
+  legacy renderer 顯示，避免前後端 staggered rollout 遺失事件。
 
 ## 目前可用鏈路
 
@@ -141,8 +204,9 @@ server 與 client 都不接受任意 HTML、CSS 或 JavaScript。圖片資產與
 - OBS route 為 `/live-display#key=<uuid>`；capability 留在 URL fragment，不進入瀏覽器／CDN request log，
   前端以 `X-Overlay-Key` header 對 `GET /api/live-display/public/stream` 開一條可重連 SSE 長連線。
   正常啟動先取得 latest cursor、不重播歷史，之後靠 PostgreSQL `NOTIFY` 喚醒送出 `update` frame
-  （event 與已變更的 theme 一併夾帶），以 FIFO 播放 7 格循環集點卡；theme 發布後隨下一次 `update`
-  送達，不必重載 OBS，也不再需要獨立輪詢 published revision。每條串流有 15 秒 heartbeat 與 5 分鐘
+  （event 與已變更的 theme 一併夾帶），以 viewer-isolated FIFO 播放 collection binder；沒有合法 collection
+  snapshot 的舊事件仍顯示七格循環集點卡。theme 發布後隨下一次 `update` 送達，不必重載 OBS；每筆入列時
+  凍結自己的 theme，queued event 在輪到播放前會再檢查 expiry。每條串流有 15 秒 heartbeat 與 5 分鐘
   硬性 lease，到期或斷線由前端帶最後 cursor、以指數退避加 jitter 重連補齊事件，不 fallback 回週期
   polling。
 - Dashboard 的 `Live Display` 頁位於 `/modules/live-display`，依「顯示內容、卡片樣式、

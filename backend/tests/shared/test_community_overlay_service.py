@@ -60,11 +60,12 @@ class TestPublishCheckinPreview:
         assert kwargs["source"] == "system"
         assert kwargs["actor_user_id"] == "owner1"
         assert kwargs["actor_display_name"] == "測試觀眾"
-        assert kwargs["payload"] == {
-            "total_days": 8,
-            "checkin_date": "2026-08-31",
-            "preview": True,
-        }
+        assert kwargs["payload"]["total_days"] == 8
+        assert kwargs["payload"]["checkin_date"] == "2026-08-31"
+        assert kwargs["payload"]["preview"] is True
+        assert kwargs["payload"]["collection"]["card"]["key"] == "astral-compass"
+        assert kwargs["payload"]["collection"]["rarity"]["key"] == "common"
+        assert kwargs["payload"]["collection"]["is_new"] is False
         assert kwargs["idempotency_key"].startswith("preview-checkin:")
 
     async def test_generic_preview_rejects_unregistered_content(self) -> None:
@@ -129,10 +130,14 @@ class TestPublishCheckinPreview:
         assert kwargs["event_type"] == "checkin.recorded"
         assert kwargs["schema_version"] == 1
         assert kwargs["source"] == "system"
-        assert kwargs["payload"] == {
-            "total_days": 8,
-            "checkin_date": "2026-08-31",
-            "preview": True,
+        assert kwargs["payload"]["total_days"] == 8
+        assert kwargs["payload"]["checkin_date"] == "2026-08-31"
+        assert kwargs["payload"]["preview"] is True
+        assert kwargs["payload"]["collection"]["copy_count"] == 2
+        assert kwargs["payload"]["collection"]["progress"] == {
+            "owned_copies": 8,
+            "unique_cards": 7,
+            "total_cards": 9,
         }
         assert kwargs["expires_at"] == _NOW + timedelta(minutes=10)
         assert kwargs["idempotency_key"].startswith("preview-checkin:")

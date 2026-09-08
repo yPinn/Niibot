@@ -6,7 +6,11 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 from shared.community_events import CHECKIN_RECORDED, TAROT_DRAWN, validate_community_event
-from shared.community_overlay_blocks import COMMUNITY_OVERLAY_BLOCKS, get_community_overlay_block
+from shared.community_overlay_blocks import (
+    COMMUNITY_OVERLAY_BLOCKS,
+    build_checkin_preview_payload,
+    get_community_overlay_block,
+)
 from shared.models.attendance import (
     CommunityOverlayAccess,
     CommunityOverlayFeed,
@@ -152,11 +156,7 @@ class CommunityOverlayService:
         if now.tzinfo is None or now.utcoffset() is None:
             raise ValueError("occurred_at must be timezone-aware")
 
-        payload = {
-            "total_days": total_days,
-            "checkin_date": now.date().isoformat(),
-            "preview": True,
-        }
+        payload = build_checkin_preview_payload(now, total_days=total_days)
         validate_community_event(
             CHECKIN_RECORDED.event_type,
             CHECKIN_RECORDED.schema_version,

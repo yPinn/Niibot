@@ -115,7 +115,7 @@ functions/          # CF Pages Functions — /api/*、/health、/status 反向�
   /donate/:username              DonatePage
   /:username/game-queue/overlay  GameQueueOverlay（OBS browser source）
   /:username/video-queue/overlay VideoQueueOverlay（OBS browser source）
-  /live-display                 CommunityOverlay（Live Display OBS browser source）
+  /live-display                  CommunityOverlay（Live Display OBS browser source）
   /activate                      ActivatePage（啟用碼）
   /support                       Support（贊助頁）
   /login                         LoginPage（PublicOnlyRoute，已登入者重導）
@@ -131,7 +131,7 @@ ProtectedRoute → SidebarLayout（需登入）
   /timers                        Timers
   /modules/game-queue            GameQueue（遊戲排隊管理）
   /modules/video-queue           VideoQueue（YouTube 點播管理）
-  /modules/live-display          Live Display（簽到／Tarot 卡片、樣式與 OBS 設定）
+  /modules/live-display          Live Display（簽到集卡冊／Tarot、樣式與 OBS 設定）
   /modules/crosshairs            CrosshairModule（準星管理）
   /modules/ai                    AIModule（AI 助手設定）
   /discord                       DiscordDashboard
@@ -145,6 +145,12 @@ OwnerRoute（限擁有者）
 
 /dev/typography                  TypographyDemo（僅開發用）
 ```
+
+Live Display 的 `checkin.recorded.v1` 可帶 optional collection snapshot。合法 snapshot 由
+`CollectionBinder` 以單一 viewer、5 秒 FIFO 演出；舊事件或 malformed collection 由 `CheckinCard` 相容顯示。
+播放項目在入列時凍結 theme，輪到播放前重新檢查 expiry。Dashboard 草稿預覽直接使用正式 binder renderer；
+後端已提供獨立、預設 dry-run 的歷史補卡工具，但尚未對正式資料執行。租戶圖片上傳與 viewer collection 頁
+仍未提供。
 
 ## 部署
 
