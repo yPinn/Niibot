@@ -251,6 +251,7 @@ jobs:
               aquasec/trivy:latest image \
               --exit-code 1 \
               --severity CRITICAL \
+              --scanners vuln \
               --ignore-status affected,will_not_fix,fix_deferred \
               --no-progress \
               "${IMG}" || FAIL=true
@@ -323,14 +324,33 @@ jobs:
           done
           echo "API liveness: OK"
 
-          if ! curl -sf "http://localhost:${API_PORT}/status" | python3 -c \
+          STATUS=$(curl -sf "http://localhost:${API_PORT}/status") || {
+            echo "ERROR: API status endpoint is unavailable"
+            $COMPOSE_CMD logs api --tail=30
+            exit 1
+          }
+
+          if ! echo "$STATUS" | python3 -c \
             "import sys, json; d=json.load(sys.stdin); sys.exit(0 if d.get('db_connected') else 1)"; then
             echo "ERROR: API is up but db_connected=false"
-            curl -s "http://localhost:${API_PORT}/status"
+            echo "$STATUS"
             $COMPOSE_CMD logs api --tail=30
             exit 1
           fi
           echo "API db_connected: OK"
+
+          if [ "${{ steps.changes.outputs.api }}" = "true" ]; then
+            EXPECTED_COMMIT="${{ steps.meta.outputs.commit }}"
+            if ! echo "$STATUS" | EXPECTED_COMMIT="$EXPECTED_COMMIT" python3 -c \
+              "import os,sys,json; d=json.load(sys.stdin); expected=os.environ['EXPECTED_COMMIT']; sys.exit(0 if d.get('git_commit') == expected else 1)"; then
+              ACTUAL_COMMIT=$(echo "$STATUS" | python3 -c \
+                "import sys,json; print(json.load(sys.stdin).get('git_commit', 'missing'))")
+              echo "ERROR: API revision mismatch (expected=$EXPECTED_COMMIT actual=$ACTUAL_COMMIT)"
+              $COMPOSE_CMD logs api --tail=30
+              exit 1
+            fi
+            echo "API revision: OK ($EXPECTED_COMMIT)"
+          fi
 
           curl -sf http://localhost:8080/health && echo "discord-bot: OK" || echo "WARN: discord-bot not responding"
           curl -sf http://localhost:4344/health && echo "twitch-bot:  OK" || echo "WARN: twitch-bot not responding"

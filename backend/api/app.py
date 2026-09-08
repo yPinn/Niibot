@@ -66,6 +66,7 @@ _activation_cleanup_task: asyncio.Task | None = None
 _community_overlay_cleanup_task: asyncio.Task | None = None
 _video_queue_history_task: asyncio.Task | None = None
 _APP_VERSION = os.getenv("APP_VERSION", "dev")
+_GIT_COMMIT = os.getenv("GIT_COMMIT", "unknown")
 _REQUEST_TIMEOUT = 30.0
 
 
@@ -362,6 +363,7 @@ def create_app() -> FastAPI:
         return {
             "service": "nb-api",
             "version": _APP_VERSION,
+            "git_commit": _GIT_COMMIT,
             "started_at": _started_at,
             "environment": settings.environment,
             "uptime_seconds": int(time.time() - _start_time),
