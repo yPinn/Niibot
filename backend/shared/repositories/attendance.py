@@ -14,6 +14,8 @@ from shared.models.attendance import (
     CheckinSettings,
     CheckinStatus,
 )
+from shared.models.collection import CollectionDraw
+from shared.repositories.collection import CollectionRepository
 
 _CHECKIN_COLUMNS = (
     "id, channel_id, user_id, username, display_name, checkin_date, session_id, created_at"
@@ -71,8 +73,14 @@ _RANKED_CHECKINS_CTE = """
 class AttendanceRepository:
     """Atomic check-in ledger and its successful overlay projection."""
 
-    def __init__(self, pool: asyncpg.Pool) -> None:
+    def __init__(
+        self,
+        pool: asyncpg.Pool,
+        *,
+        collection_repository: CollectionRepository | None = None,
+    ) -> None:
         self.pool = pool
+        self.collection_repository = collection_repository or CollectionRepository()
 
     async def get_or_create_settings(self, channel_id: str) -> CheckinSettings:
         async with self.pool.acquire() as conn:
@@ -228,10 +236,19 @@ class AttendanceRepository:
                 )
 
                 event_id: int | None = None
+                collection: CollectionDraw | None = None
                 if recorded:
+                    collection = await self.collection_repository.draw_for_checkin(
+                        conn,
+                        channel_id=channel_id,
+                        user_id=user_id,
+                        checkin_id=int(row["id"]),
+                        drawn_at=occurred_at,
+                    )
                     payload = {
                         "total_days": total_days,
                         "checkin_date": checkin_date.isoformat(),
+                        "collection": collection.to_event_snapshot(),
                     }
                     validate_community_event(
                         CHECKIN_RECORDED.event_type,
@@ -275,4 +292,5 @@ class AttendanceRepository:
             checkin_id=int(row["id"]),
             event_id=event_id,
             occurred_at=occurred_at,
+            collection=collection,
         )

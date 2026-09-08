@@ -38,11 +38,44 @@ class CommunityOverlayBlockDefinition:
     build_preview_payload: Callable[[datetime], dict[str, object]]
 
 
-def _checkin_preview_payload(now: datetime) -> dict[str, object]:
+def build_checkin_preview_payload(now: datetime, *, total_days: int = 8) -> dict[str, object]:
+    """Build a synthetic binder event without touching the check-in/draw ledger."""
+    copy_count = 1 if total_days == 1 else 2
     return {
-        "total_days": 8,
+        "total_days": total_days,
         "checkin_date": now.date().isoformat(),
         "preview": True,
+        "collection": {
+            "draw_id": 1,
+            "pool_revision_id": 1,
+            "algorithm_version": "weighted-rarity-v1",
+            "card": {
+                "id": 1,
+                "revision_id": 1,
+                "key": "astral-compass",
+                "number": "001",
+                "name": "星羅羅盤",
+                "artwork": {
+                    "portrait_url": None,
+                    "square_url": None,
+                    "backdrop_url": None,
+                },
+            },
+            "set": {"id": 1, "key": "first-path", "name": "初途秘典"},
+            "rarity": {
+                "key": "common",
+                "label": "普通",
+                "rank": 10,
+                "effect_intensity": 20,
+            },
+            "is_new": total_days == 1,
+            "copy_count": copy_count,
+            "progress": {
+                "owned_copies": total_days,
+                "unique_cards": min(total_days - copy_count + 1, 9),
+                "total_cards": 9,
+            },
+        },
     }
 
 
@@ -75,7 +108,7 @@ COMMUNITY_OVERLAY_BLOCKS = {
         preview_event_type=CHECKIN_RECORDED.event_type,
         preview_event_schema_version=CHECKIN_RECORDED.schema_version,
         preview_actor_display_name="測試觀眾",
-        build_preview_payload=_checkin_preview_payload,
+        build_preview_payload=build_checkin_preview_payload,
     ),
     "tarot": CommunityOverlayBlockDefinition(
         block_type="tarot",

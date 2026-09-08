@@ -149,7 +149,7 @@ class TestFetchVideoMetadata:
         clip = ResolvedVideo(video_type="twitch_clip", video_id="Slug")
         with patch(
             "shared.video_sources.fetch_twitch_clip_info",
-            new=AsyncMock(return_value=("Clip", 30, 200)),
+            new=AsyncMock(return_value=("Clip", 30, 200, None)),
         ):
             metadata = await fetch_video_metadata(
                 clip, twitch_client_id="c", twitch_client_secret="s"
@@ -157,18 +157,22 @@ class TestFetchVideoMetadata:
         assert metadata.playable is True
         assert metadata.unplayable_reason is None
 
-    async def test_twitch_clip_normalizes_3tuple_to_4field_shape(self):
+    async def test_twitch_clip_normalizes_to_video_metadata(self):
         resolved = ResolvedVideo(video_type="twitch_clip", video_id="SomeClipSlug")
         with patch(
             "shared.video_sources.fetch_twitch_clip_info",
-            new=AsyncMock(return_value=("Clip Title", 30, 200)),
+            new=AsyncMock(return_value=("Clip Title", 30, 200, "https://clips-media/x.jpg")),
         ) as mock_fetch:
             metadata = await fetch_video_metadata(
                 resolved, twitch_client_id="cid", twitch_client_secret="secret"
             )
         mock_fetch.assert_awaited_once_with("SomeClipSlug", "cid", "secret", None)
         assert metadata == VideoMetadata(
-            title="Clip Title", duration_seconds=30, view_count=200, is_vertical=False
+            title="Clip Title",
+            duration_seconds=30,
+            view_count=200,
+            is_vertical=False,
+            thumbnail_url="https://clips-media/x.jpg",
         )
 
     async def test_twitch_vod_caps_the_play_window_from_the_offset(self):
@@ -176,20 +180,26 @@ class TestFetchVideoMetadata:
         resolved = ResolvedVideo(video_type="twitch_vod", video_id="123", start_seconds=6600)
         with patch(
             "shared.video_sources.fetch_twitch_vod_info",
-            new=AsyncMock(return_value=("VOD Title", 7200, 5000)),
+            new=AsyncMock(
+                return_value=("VOD Title", 7200, 5000, "https://static-cdn.jtvnw.net/t.jpg")
+            ),
         ):
             metadata = await fetch_video_metadata(
                 resolved, twitch_client_id="c", twitch_client_secret="s"
             )
         assert metadata == VideoMetadata(
-            title="VOD Title", duration_seconds=600, view_count=5000, is_vertical=False
+            title="VOD Title",
+            duration_seconds=600,
+            view_count=5000,
+            is_vertical=False,
+            thumbnail_url="https://static-cdn.jtvnw.net/t.jpg",
         )
 
     async def test_twitch_vod_shorter_remainder_wins_over_the_cap(self):
         resolved = ResolvedVideo(video_type="twitch_vod", video_id="123", start_seconds=7100)
         with patch(
             "shared.video_sources.fetch_twitch_vod_info",
-            new=AsyncMock(return_value=("VOD", 7200, 1)),
+            new=AsyncMock(return_value=("VOD", 7200, 1, None)),
         ):
             metadata = await fetch_video_metadata(
                 resolved, twitch_client_id="c", twitch_client_secret="s"
@@ -200,7 +210,7 @@ class TestFetchVideoMetadata:
         resolved = ResolvedVideo(video_type="twitch_vod", video_id="123")
         with patch(
             "shared.video_sources.fetch_twitch_vod_info",
-            new=AsyncMock(return_value=(None, None, None)),
+            new=AsyncMock(return_value=(None, None, None, None)),
         ):
             metadata = await fetch_video_metadata(
                 resolved, twitch_client_id="c", twitch_client_secret="s"
@@ -211,7 +221,7 @@ class TestFetchVideoMetadata:
         resolved = ResolvedVideo(video_type="bilibili", video_id="BV1xx411c7mD")
         with patch(
             "shared.video_sources.fetch_bilibili_info",
-            new=AsyncMock(return_value=("BV Title", 90, 5000, True)),
+            new=AsyncMock(return_value=("BV Title", 90, 5000, True, "https://i0.hdslb.com/x.jpg")),
         ) as mock_fetch:
             metadata = await fetch_video_metadata(resolved)
         mock_fetch.assert_awaited_once_with("BV1xx411c7mD", None)
@@ -221,6 +231,7 @@ class TestFetchVideoMetadata:
             view_count=5000,
             is_vertical=True,
             metadata_best_effort=True,
+            thumbnail_url="https://i0.hdslb.com/x.jpg",
         )
 
     async def test_bilibili_flags_best_effort_even_when_the_endpoint_fails(self):
@@ -229,7 +240,7 @@ class TestFetchVideoMetadata:
         resolved = ResolvedVideo(video_type="bilibili", video_id="BV1FjxHzGEkQ")
         with patch(
             "shared.video_sources.fetch_bilibili_info",
-            new=AsyncMock(return_value=(None, None, None, False)),
+            new=AsyncMock(return_value=(None, None, None, False, None)),
         ):
             metadata = await fetch_video_metadata(resolved)
         assert metadata.metadata_best_effort is True
@@ -247,7 +258,7 @@ class TestFetchVideoMetadata:
         clip = ResolvedVideo(video_type="twitch_clip", video_id="Slug")
         with patch(
             "shared.video_sources.fetch_twitch_clip_info",
-            new=AsyncMock(return_value=("C", 30, 200)),
+            new=AsyncMock(return_value=("C", 30, 200, None)),
         ):
             meta = await fetch_video_metadata(clip, twitch_client_id="c", twitch_client_secret="s")
         assert meta.metadata_best_effort is False

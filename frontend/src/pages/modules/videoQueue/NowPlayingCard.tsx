@@ -17,9 +17,22 @@ import { PlatformBadge, SourceBadge } from './QueueTable'
 import { formatDuration, thumbnailUrl, watchUrl } from './utils'
 
 function Thumb({ entry, className }: { entry: VideoQueueEntry; className?: string }) {
-  const src = thumbnailUrl(entry.video_type, entry.video_id)
-  if (src) {
-    return <img src={src} alt="" className={`rounded-md border object-cover ${className ?? ''}`} />
+  const [failed, setFailed] = useState(false)
+  // Prefer the fetched poster (all platforms); fall back to YouTube's deterministic
+  // thumbnail for older rows with no stored URL.
+  const src = entry.thumbnail_url ?? thumbnailUrl(entry.video_type, entry.video_id)
+  if (src && !failed) {
+    return (
+      <img
+        src={src}
+        alt=""
+        loading="lazy"
+        // Bilibili's image CDN 403s a cross-site Referer; send none.
+        referrerPolicy="no-referrer"
+        onError={() => setFailed(true)}
+        className={`rounded-md border bg-muted object-cover ${className ?? ''}`}
+      />
+    )
   }
   return (
     <div
@@ -56,7 +69,7 @@ export function NowPlayingCard({
       <p className="text-label font-medium text-muted-foreground">接下來</p>
       {next ? (
         <div className="flex items-center gap-element min-w-0">
-          <Thumb entry={next} className="aspect-video w-16 shrink-0" />
+          <Thumb key={next.video_id} entry={next} className="aspect-video w-16 shrink-0" />
           <div className="flex min-w-0 flex-col">
             <span className="truncate text-sub font-medium" title={next.title || next.video_id}>
               {next.title || next.video_id}
@@ -125,7 +138,11 @@ export function NowPlayingCard({
       </CardHeader>
       <CardContent className="flex flex-col gap-card lg:flex-row">
         <div className="flex flex-1 gap-card min-w-0">
-          <Thumb entry={current} className="aspect-video w-32 shrink-0 sm:w-44" />
+          <Thumb
+            key={current.video_id}
+            entry={current}
+            className="aspect-video w-32 shrink-0 sm:w-44"
+          />
           <div className="flex min-w-0 flex-1 flex-col justify-center gap-element">
             <div className="flex items-center gap-1.5 min-w-0">
               <PlatformBadge videoType={current.video_type} />

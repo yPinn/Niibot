@@ -17,7 +17,7 @@ DEFAULT_OVERLAY_THEME: Final[dict[str, object]] = {
     "text_color": "#241B34",
     "placement": "bottom-left",
     "radius_px": 24,
-    "display_ms": 4_000,
+    "display_ms": 5_000,
     "motion": "standard",
 }
 

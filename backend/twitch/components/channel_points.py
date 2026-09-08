@@ -945,6 +945,7 @@ class ChannelPointsComponent(commands.Component):
                 title=title,
                 duration_seconds=duration_seconds,
                 is_vertical=metadata.is_vertical,
+                thumbnail_url=metadata.thumbnail_url,
                 video_type=resolved.video_type,
                 priority=SOURCE_PRIORITY["redemption"],
                 start_seconds=resolved.start_seconds,

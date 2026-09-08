@@ -9,7 +9,7 @@ vi.mock('@/api/communityOverlay', () => ({
     text_color: '#241B34',
     placement: 'bottom-left',
     radius_px: 24,
-    display_ms: 4000,
+    display_ms: 5000,
     motion: 'standard',
   },
   DEFAULT_TAROT_OVERLAY_THEME: {
@@ -176,6 +176,19 @@ describe('CommunityOverlaySettings', () => {
     expect(screen.getByText('已停用')).toBeInTheDocument()
   })
 
+  it('routes the development check-in test to the real binder sample renderer', async () => {
+    const user = userEvent.setup()
+    render(<CommunityOverlaySettings preview />)
+
+    await user.click(screen.getByRole('button', { name: '測試每日簽到動畫' }))
+
+    expect(screen.getByTitle('每日簽到實際播放')).toHaveAttribute(
+      'src',
+      `${window.location.origin}/live-display#key=${KEY}&preview=1&block=checkin&sample=checkin`
+    )
+    expect(triggerCommunityOverlayPreview).not.toHaveBeenCalled()
+  })
+
   it('uses left-bottom defaults and explains the Tarot topic slots', async () => {
     const user = userEvent.setup()
     render(<CommunityOverlaySettings preview />)
@@ -184,7 +197,7 @@ describe('CommunityOverlaySettings', () => {
       'data-placement',
       'bottom-left'
     )
-    expect(screen.getByText('4 秒')).toBeInTheDocument()
+    expect(screen.getByText('5 秒')).toBeInTheDocument()
     fireEvent.change(screen.getByRole('slider', { name: '顯示時間' }), {
       target: { value: '4500' },
     })
@@ -211,7 +224,7 @@ describe('CommunityOverlaySettings', () => {
     await user.type(accent, '#112233')
     await user.click(screen.getByRole('button', { name: '左上' }))
 
-    const card = screen.getByLabelText('NiibotFan 的簽到集點卡')
+    const card = screen.getByLabelText('NiibotFan 的卡冊：獲得普通卡星路羅盤')
     expect(card).toHaveStyle({ '--overlay-accent': '#112233' })
     expect(card.closest('[data-theme-preview]')).toHaveAttribute('data-placement', 'top-left')
     expect(screen.getByText('尚未儲存')).toBeInTheDocument()
@@ -244,14 +257,39 @@ describe('CommunityOverlaySettings', () => {
     expect(screen.getByRole('button', { name: '儲存草稿' })).toBeEnabled()
   })
 
-  it('replays the sample animation when motion strength changes', async () => {
+  it('warns when small accent text falls below 4.5:1 against the surface', async () => {
     const user = userEvent.setup()
     render(<CommunityOverlaySettings />)
 
-    const originalCard = await screen.findByLabelText('NiibotFan 的簽到集點卡')
+    const surface = await screen.findByLabelText('背景色')
+    const accent = screen.getByLabelText('強調色')
+    const text = screen.getByLabelText('文字色')
+    await user.clear(surface)
+    await user.type(surface, '#FFFFFF')
+    await user.clear(accent)
+    await user.type(accent, '#777777')
+    await user.clear(text)
+    await user.type(text, '#000000')
+
+    expect(screen.getByText(/強調色與背景色的對比偏低.*4.5:1/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '儲存草稿' })).toBeEnabled()
+  })
+
+  it('remounts the static final-state sample when motion strength changes', async () => {
+    const user = userEvent.setup()
+    render(<CommunityOverlaySettings />)
+
+    const originalCard = await screen.findByLabelText('NiibotFan 的卡冊：獲得普通卡星路羅盤')
+    expect(originalCard).toHaveAttribute('data-motion-state', 'final')
+    expect(document.querySelector('[data-preview-content]')).toHaveClass(
+      'scale-100',
+      'sm:scale-[0.86]'
+    )
     await user.click(screen.getByRole('button', { name: '柔和' }))
 
-    expect(screen.getByLabelText('NiibotFan 的簽到集點卡')).not.toBe(originalCard)
+    const remountedCard = screen.getByLabelText('NiibotFan 的卡冊：獲得普通卡星路羅盤')
+    expect(remountedCard).not.toBe(originalCard)
+    expect(remountedCard).toHaveAttribute('data-motion-state', 'final')
   })
 
   it('saves a complete draft before allowing publish', async () => {
@@ -319,7 +357,7 @@ describe('CommunityOverlaySettings', () => {
     )
 
     await user.click(screen.getByRole('button', { name: '返回草稿預覽' }))
-    expect(screen.getByLabelText('NiibotFan 的簽到集點卡')).toBeInTheDocument()
+    expect(screen.getByLabelText('NiibotFan 的卡冊：獲得普通卡星路羅盤')).toBeInTheDocument()
     expect(screen.queryByTitle('每日簽到實際播放')).not.toBeInTheDocument()
 
     expect(screen.getByRole('link', { name: '開啟 OBS 顯示畫面' })).toHaveAttribute(
@@ -339,11 +377,11 @@ describe('CommunityOverlaySettings', () => {
     const user = userEvent.setup()
     const originalSetTimeout = window.setTimeout
     let autoCloseCallback: (() => void) | null = null
-    // Default checkin theme's display_ms (4000) plus the auto-close buffer (1500).
+    // Default checkin theme's display_ms (5000) plus the auto-close buffer (1500).
     const setTimeoutSpy = vi
       .spyOn(window, 'setTimeout')
       .mockImplementation((handler: TimerHandler, timeout?: number, ...args: unknown[]) => {
-        if (timeout === 5_500) {
+        if (timeout === 6_500) {
           autoCloseCallback = handler as () => void
           return 0 as unknown as ReturnType<typeof window.setTimeout>
         }
@@ -416,7 +454,7 @@ describe('CommunityOverlaySettings', () => {
     expect(screen.getByRole('button', { name: '收合每日塔羅設定' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '展開每日簽到設定' })).toBeInTheDocument()
     expect(screen.getByLabelText('NiibotFan 的每日塔羅：愚者正位')).toBeInTheDocument()
-    expect(screen.queryByLabelText('NiibotFan 的簽到集點卡')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('NiibotFan 的卡冊：獲得普通卡星路羅盤')).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: '測試每日塔羅動畫' }))
     await waitFor(() => expect(triggerCommunityOverlayPreview).toHaveBeenCalledWith('tarot'))

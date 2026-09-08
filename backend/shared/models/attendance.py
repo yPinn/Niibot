@@ -7,6 +7,8 @@ from datetime import date, datetime
 from enum import StrEnum
 from uuid import UUID
 
+from shared.models.collection import CollectionDraw
+
 
 class CheckinStatus(StrEnum):
     RECORDED = "recorded"
@@ -54,6 +56,7 @@ class CheckinResult:
     checkin_id: int
     event_id: int | None
     occurred_at: datetime
+    collection: CollectionDraw | None = None
 
     @property
     def recorded(self) -> bool:

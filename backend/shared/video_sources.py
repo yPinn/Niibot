@@ -7,7 +7,8 @@ bot, channel-points redemptions, and the donation webhook.
   - extract_youtube_id / extract_youtube_info : pure YouTube URL parsing
   - fetch_yt_info                              : YouTube Data API v3 call
   - extract_bilibili_bvid / resolve_bilibili_url : Bilibili BV parsing (+ b23.tv)
-  - fetch_bilibili_info                        : Bilibili public API call
+  - fetch_bilibili_info                        : Bilibili metadata (via
+    shared.bilibili_client — three risk-control-aware tiers)
   - extract_twitch_clip_slug                   : Twitch clip URL parsing
   - fetch_twitch_clip_info                     : Twitch Helix clips API call
 
@@ -27,6 +28,8 @@ from dataclasses import dataclass
 from urllib.parse import quote
 
 import aiohttp
+
+from shared.bilibili_client import fetch_bilibili_video_data
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -85,6 +88,7 @@ class YouTubeInfo:
     is_vertical: bool = False
     playable: bool = True
     unplayable_reason: str | None = None
+    thumbnail_url: str | None = None
 
 
 def extract_youtube_id(text: str) -> str | None:
@@ -104,6 +108,14 @@ def extract_youtube_info(text: str) -> tuple[str | None, bool]:
         return (m.group(1) if m else None, True)
     m = _YT_RE.search(text)
     return (m.group(1) if m else None, False)
+
+
+def _https(url: str | None) -> str | None:
+    """Upgrade an `http://` asset URL to `https://` (Bilibili `pic` is often plain
+    http, which a secure page won't load). Returns None for a falsy input."""
+    if not url:
+        return None
+    return "https://" + url[7:] if url.startswith("http://") else url
 
 
 def _parse_iso8601_duration(duration: str) -> int:
@@ -183,6 +195,7 @@ async def fetch_yt_info(
             is_vertical = any(
                 (t.get("height", 0) or 0) > (t.get("width", 1) or 1) for t in thumbnails.values()
             )
+            thumb = thumbnails.get("medium") or thumbnails.get("high") or thumbnails.get("default")
             reason = _assess_yt_playability(item)
             return YouTubeInfo(
                 title=title,
@@ -191,6 +204,7 @@ async def fetch_yt_info(
                 is_vertical=is_vertical,
                 playable=reason is None,
                 unplayable_reason=reason,
+                thumbnail_url=_https(thumb.get("url")) if isinstance(thumb, dict) else None,
             )
     except Exception as exc:
         LOGGER.warning(
@@ -253,58 +267,27 @@ async def resolve_bilibili_url(
 async def fetch_bilibili_info(
     bvid: str,
     session: aiohttp.ClientSession | None = None,
-) -> tuple[str | None, int | None, int | None, bool]:
-    """Fetch video title, duration, view count, and orientation via Bilibili public API.
+) -> tuple[str | None, int | None, int | None, bool, str | None]:
+    """Fetch title, duration, view count, orientation, and cover image from Bilibili.
 
-    Returns (title, duration_seconds, view_count, is_vertical).
-    All values are None/False on any failure.
+    Returns ``(title, duration_seconds, view_count, is_vertical, thumbnail_url)``.
+    All values are None/False when every tier of :mod:`shared.bilibili_client` is
+    blocked or the video is unavailable — Bilibili has no official metadata API
+    and a datacenter IP is often risk-controlled, so callers must treat this as
+    "unknown", not "reject" (see ``metadata_best_effort`` on :class:`VideoMetadata`).
     """
-    _own_session = session is None
-    _session: aiohttp.ClientSession = session or aiohttp.ClientSession()
-    try:
-        async with _session.get(
-            "https://api.bilibili.com/x/web-interface/view",
-            params={"bvid": bvid},
-            headers={
-                "Referer": "https://www.bilibili.com",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            },
-            timeout=aiohttp.ClientTimeout(total=5),
-        ) as resp:
-            if resp.status != 200:
-                LOGGER.warning("[Bilibili API] Unexpected status %s for %s", resp.status, bvid)
-                return None, None, None, False
-            data = await resp.json(content_type=None)
-            if data.get("code") != 0:
-                # code -412 is Bilibili's risk-control block, common from
-                # datacenter IPs. The overlay falls back to a timer ceiling
-                # (players/shared.ts) so the queue still advances without a
-                # duration — but the entry loses accurate timing.
-                LOGGER.warning(
-                    "[Bilibili API] Error %s for %s: %s",
-                    data.get("code"),
-                    bvid,
-                    data.get("message"),
-                )
-                return None, None, None, False
-            video_data = data.get("data", {})
-            title: str | None = video_data.get("title")
-            duration_seconds: int | None = video_data.get("duration")
-            view_count_raw = video_data.get("stat", {}).get("view")
-            view_count: int | None = int(view_count_raw) if view_count_raw is not None else None
-            dimension = video_data.get("dimension", {})
-            width = dimension.get("width") or 0
-            height = dimension.get("height") or 0
-            is_vertical = height > width if width > 0 and height > 0 else False
-            return title, duration_seconds, view_count, is_vertical
-    except Exception as exc:
-        LOGGER.warning(
-            "[Bilibili API] fetch_bilibili_info failed for %s: %s", bvid, type(exc).__name__
-        )
-        return None, None, None, False
-    finally:
-        if _own_session:
-            await _session.close()
+    data = await fetch_bilibili_video_data(bvid, session=session)
+    if not data:
+        return None, None, None, False, None
+    title: str | None = data.get("title")
+    duration_seconds: int | None = data.get("duration")
+    view_count_raw = (data.get("stat") or {}).get("view")
+    view_count: int | None = int(view_count_raw) if view_count_raw is not None else None
+    dimension = data.get("dimension") or {}
+    width = dimension.get("width") or 0
+    height = dimension.get("height") or 0
+    is_vertical = height > width if width > 0 and height > 0 else False
+    return title, duration_seconds, view_count, is_vertical, _https(data.get("pic"))
 
 
 # ---------------------------------------------------------------------------
@@ -413,23 +396,23 @@ async def fetch_twitch_clip_info(
     client_id: str,
     client_secret: str,
     session: aiohttp.ClientSession | None = None,
-) -> tuple[str | None, int | None, int | None]:
-    """Fetch clip title, duration, and view count via Twitch Helix API.
+) -> tuple[str | None, int | None, int | None, str | None]:
+    """Fetch clip title, duration, view count, and thumbnail via Twitch Helix API.
 
     Reuses a cached app access token (valid ~60 days); only fetches a new
     token when the cached one is missing or within 5 min of expiry.
-    Returns (title, duration_seconds, view_count).
+    Returns (title, duration_seconds, view_count, thumbnail_url).
     All values are None on any failure.
     """
     if not client_id or not client_secret:
-        return None, None, None
+        return None, None, None, None
 
     _own_session = session is None
     _session: aiohttp.ClientSession = session or aiohttp.ClientSession()
     try:
         app_token = await _get_twitch_app_token(client_id, client_secret, _session)
         if not app_token:
-            return None, None, None
+            return None, None, None, None
 
         # Fetch clip metadata
         async with _session.get(
@@ -440,23 +423,23 @@ async def fetch_twitch_clip_info(
         ) as resp:
             if resp.status != 200:
                 LOGGER.info("[Twitch API] Unexpected status %s for clip %s", resp.status, slug)
-                return None, None, None
+                return None, None, None, None
             data = await resp.json()
             clips = data.get("data", [])
             if not clips:
-                return None, None, None  # clip not found or deleted
+                return None, None, None, None  # clip not found or deleted
             clip = clips[0]
             title: str | None = clip.get("title")
             duration_raw = clip.get("duration")
             duration_seconds = int(round(float(duration_raw))) if duration_raw is not None else None
             view_count_raw = clip.get("view_count")
             view_count = int(view_count_raw) if view_count_raw is not None else None
-            return title, duration_seconds, view_count
+            return title, duration_seconds, view_count, _https(clip.get("thumbnail_url"))
     except Exception as exc:
         LOGGER.warning(
             "[Twitch API] fetch_twitch_clip_info failed for %s: %s", slug, type(exc).__name__
         )
-        return None, None, None
+        return None, None, None, None
     finally:
         if _own_session:
             await _session.close()
@@ -467,22 +450,22 @@ async def fetch_twitch_vod_info(
     client_id: str,
     client_secret: str,
     session: aiohttp.ClientSession | None = None,
-) -> tuple[str | None, int | None, int | None]:
-    """Fetch VOD title, duration, and view count via Twitch Helix `/videos`.
+) -> tuple[str | None, int | None, int | None, str | None]:
+    """Fetch VOD title, duration, view count, and thumbnail via Twitch Helix `/videos`.
 
-    Returns (title, duration_seconds, view_count) — the full VOD duration, not
-    the capped play window (the registry applies the cap). All None on failure
-    (deleted / sub-only / expired VOD).
+    Returns (title, duration_seconds, view_count, thumbnail_url) — the full VOD
+    duration, not the capped play window (the registry applies the cap). All None
+    on failure (deleted / sub-only / expired VOD).
     """
     if not client_id or not client_secret:
-        return None, None, None
+        return None, None, None, None
 
     _own_session = session is None
     _session: aiohttp.ClientSession = session or aiohttp.ClientSession()
     try:
         app_token = await _get_twitch_app_token(client_id, client_secret, _session)
         if not app_token:
-            return None, None, None
+            return None, None, None, None
 
         async with _session.get(
             _TWITCH_HELIX_VIDEOS_URL,
@@ -492,23 +475,31 @@ async def fetch_twitch_vod_info(
         ) as resp:
             if resp.status != 200:
                 LOGGER.info("[Twitch API] Unexpected status %s for VOD %s", resp.status, video_id)
-                return None, None, None
+                return None, None, None, None
             data = await resp.json()
             videos = data.get("data", [])
             if not videos:
-                return None, None, None
+                return None, None, None, None
             vod = videos[0]
             title: str | None = vod.get("title")
             raw_duration: str | None = vod.get("duration")  # "3h20m5s"
             duration_seconds = _parse_hms(raw_duration) if raw_duration else None
             view_count_raw = vod.get("view_count")
             view_count = int(view_count_raw) if view_count_raw is not None else None
-            return title, duration_seconds or None, view_count
+            # thumbnail_url has %{width}x%{height} placeholders; empty while the
+            # VOD is still processing.
+            raw_thumb: str = vod.get("thumbnail_url") or ""
+            thumb = (
+                raw_thumb.replace("%{width}", "320").replace("%{height}", "180")
+                if "%{width}" in raw_thumb
+                else (raw_thumb or None)
+            )
+            return title, duration_seconds or None, view_count, thumb
     except Exception as exc:
         LOGGER.warning(
             "[Twitch API] fetch_twitch_vod_info failed for %s: %s", video_id, type(exc).__name__
         )
-        return None, None, None
+        return None, None, None, None
     finally:
         if _own_session:
             await _session.close()
@@ -654,6 +645,7 @@ class VideoMetadata:
     playable: bool = True
     unplayable_reason: str | None = None
     metadata_best_effort: bool = False
+    thumbnail_url: str | None = None
 
 
 def metadata_gate_unverifiable(value: int | None, *, best_effort: bool) -> bool:
@@ -713,13 +705,15 @@ async def fetch_video_metadata(
     every caller remember to supply it.
     """
     if resolved.video_type == "twitch_clip":
-        title, duration_seconds, view_count = await fetch_twitch_clip_info(
+        title, duration_seconds, view_count, thumbnail_url = await fetch_twitch_clip_info(
             resolved.video_id, twitch_client_id, twitch_client_secret, session
         )
-        return VideoMetadata(title, duration_seconds, view_count, is_vertical=False)
+        return VideoMetadata(
+            title, duration_seconds, view_count, is_vertical=False, thumbnail_url=thumbnail_url
+        )
 
     if resolved.video_type == "twitch_vod":
-        title, vod_duration, view_count = await fetch_twitch_vod_info(
+        title, vod_duration, view_count, thumbnail_url = await fetch_twitch_vod_info(
             resolved.video_id, twitch_client_id, twitch_client_secret, session
         )
         # Play a bounded window from the `?t=` offset — a VOD is hours long.
@@ -729,14 +723,21 @@ async def fetch_video_metadata(
             else TWITCH_VOD_WINDOW_SECONDS
         )
         window = min(TWITCH_VOD_WINDOW_SECONDS, remaining) or TWITCH_VOD_WINDOW_SECONDS
-        return VideoMetadata(title, window, view_count, is_vertical=False)
+        return VideoMetadata(
+            title, window, view_count, is_vertical=False, thumbnail_url=thumbnail_url
+        )
 
     if resolved.video_type == "bilibili":
-        title, duration_seconds, view_count, is_vertical = await fetch_bilibili_info(
+        title, duration_seconds, view_count, is_vertical, thumbnail_url = await fetch_bilibili_info(
             resolved.video_id, session
         )
         return VideoMetadata(
-            title, duration_seconds, view_count, is_vertical, metadata_best_effort=True
+            title,
+            duration_seconds,
+            view_count,
+            is_vertical,
+            metadata_best_effort=True,
+            thumbnail_url=thumbnail_url,
         )
 
     yt = await fetch_yt_info(resolved.video_id, youtube_api_key, session)
@@ -747,6 +748,7 @@ async def fetch_video_metadata(
         is_vertical=resolved.is_vertical or yt.is_vertical,
         playable=yt.playable,
         unplayable_reason=yt.unplayable_reason,
+        thumbnail_url=yt.thumbnail_url,
     )
 
 

@@ -21,6 +21,7 @@ class VideoQueueEntry:
     title: str | None = None
     duration_seconds: int | None = None  # for twitch_vod: the capped play window
     is_vertical: bool = False
+    thumbnail_url: str | None = None  # poster/cover image; None → card placeholder
     start_seconds: int = 0  # twitch_vod: seek offset from the URL's `?t=`
     created_at: datetime | None = None
     started_at: datetime | None = None

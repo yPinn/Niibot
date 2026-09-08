@@ -4,6 +4,7 @@
 
 Cloudflare Pages Functions 的額度、`_routes.json`、Fail mode 與常駐 Overlay
 request budget 見 [cloudflare-pages.md](cloudflare-pages.md)。
+GitHub Actions 的共用額度、事件矩陣與安全節流規則見 [ci-policy.md](ci-policy.md)。
 
 ## 分支與環境
 
@@ -22,7 +23,9 @@ request budget 見 [cloudflare-pages.md](cloudflare-pages.md)。
 一般流程：`feature/xxx` ──PR──▶ `staging` ──(QA)──PR──▶ `main`。
 Hotfix：`hotfix/xxx` ──PR──▶ `main` ──PR──▶ `staging`（backport）。
 
-分支保護（於 GitHub 設定）：`main` 需 PR + 1 approval、禁止直推；`staging` 需 PR、允許 solo 直推。
+期望分支規則：`main` 需 PR + 1 approval、禁止直推；`staging` 需 PR、允許 solo 直推。
+截至 2026-09-08，此 private Repo 使用 GitHub Free，GitHub API 回覆 branch protection 需升級方案或公開
+Repo，因此目前以「CI 紅燈不得合併」的人工作業維持；方案支援後再把上述規則設為平台強制。
 
 ## Docker Compose overlay
 

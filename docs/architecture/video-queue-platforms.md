@@ -22,11 +22,12 @@ Two things about video platforms are easy to assume are true for all of them
 and are not: **every platform can tell you a video's duration before you play
 it**, and **the video's total view count is available without the viewer
 being logged in as its owner**. Both assumptions hold for YouTube and Twitch
-Clip (official APIs). Bilibili's metadata comes from an unofficial endpoint
-that datacenter IPs frequently can't reach (risk-control `-412`), so its
-duration is **best-effort** — the overlay must tolerate its absence (see
-"End detection" below). Neither assumption holds for TikTok, which is why it
-isn't supported yet (see "Deferred: TikTok" below).
+Clip (official APIs). Bilibili has no official metadata API at all — the client
+in `shared/bilibili_client.py` works around the risk control that answers a
+datacenter IP with HTTP 412 (see "Bilibili metadata" below), but it can still
+come back empty, so its duration is **best-effort** and the overlay must
+tolerate its absence (see "End detection" below). Neither assumption holds for
+TikTok, which is why it isn't supported yet (see "Deferred: TikTok" below).
 
 ## Three-layer model
 
@@ -70,7 +71,7 @@ with the `?t=` parser.
 
 |                                   | YouTube                                                                                                                                                                                | Twitch Clip                                                                                                  | Bilibili                                                                                                                                                                                                          |
 | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Metadata API                      | YouTube Data API v3 (`videos.list`)                                                                                                                                                    | Twitch Helix `/helix/clips`                                                                                  | Public `x/web-interface/view` endpoint                                                                                                                                                                            |
+| Metadata API                      | YouTube Data API v3 (`videos.list`)                                                                                                                                                    | Twitch Helix `/helix/clips`                                                                                  | `shared/bilibili_client.py`: `x/web-interface/view` → WBI `wbi/view` → webpage `__INITIAL_STATE__` (see "Bilibili metadata")                                                                                      |
 | Official?                         | Yes                                                                                                                                                                                    | Yes                                                                                                          | **No** — not part of Bilibili's official Open Platform (that's a separate, application-gated program for content distribution). This is a reverse-engineered public endpoint with a spoofed Referer/User-Agent.   |
 | Cost                              | Free, quota-based: 10,000 units/day default, `videos.list` costs 1 unit/call (~10k calls/day). No paid tier — exceeding quota requires Google's manual Audit and Quota Extension form. | Free, token-bucket rate limit: 800 points/min per client, most endpoints cost 1 point. No paid tier.         | Free today, but unauthorized use of an undocumented endpoint — no SLA, no rate-limit contract, can change format or start blocking without notice. Tracked as a standing technical-debt risk, not a one-time bug. |
 | duration/view_count at queue time | Always (when API key configured)                                                                                                                                                       | Always                                                                                                       | **Best-effort** — unofficial endpoint, datacenter IPs frequently hit risk-control `-412`                                                                                                                          |
@@ -205,6 +206,64 @@ is `None`, `VideoMetadata.metadata_best_effort` decides what "missing" means:
 `shared.video_sources.metadata_gate_unverifiable(value, best_effort=...)` is the
 single predicate; `fetch_video_metadata` sets `metadata_best_effort=True` only
 on the Bilibili branch.
+
+## Bilibili metadata (`shared/bilibili_client.py`)
+
+Bilibili is not part of any official Open-Platform read API — every path here is
+a reverse-engineered web endpoint with no SLA (same dependency class as the
+Twitch clip GraphQL call). For a year Niibot sent a bare
+`GET x/web-interface/view?bvid=…` with only a `Referer`; Bilibili's WAF now
+answers that with **HTTP 412** from a container / datacenter egress IP, so
+`duration` and `view_count` came back empty and every capped channel rejected
+every Bilibili submission (fixed defensively — see "Submission gates" above).
+
+`fetch_bilibili_video_data(bvid)` returns the raw `data` object (the
+`x/web-interface/view` shape, also consumed by the Discord `social_preview`
+cog) through three tiers, each a fallback for the one before:
+
+1. **`x/web-interface/view`** (non-WBI) with a real Chrome `User-Agent`, a
+   `.bilibili.com` `Referer`/`Origin`, a self-generated `buvid3` cookie
+   (`f"{uuid4()}infoc"`, like yt-dlp — no `finger/spi` call), and a cached
+   `bili_ticket` (a 3-day HMAC-signed JWT, `POST GenWebTicket`, that "lowers
+   risk-control probability").
+2. **`x/web-interface/wbi/view`** — same request plus a WBI `w_rid`/`wts`
+   signature. `_MIXIN_KEY_ENC_TAB` is a constant Bilibili has not changed since
+   WBI shipped in 2023; the daily `img_key`/`sub_key` come from
+   `x/web-interface/nav` (or the `bili_ticket` response) and are cached ~1 h.
+3. **Webpage scrape** — `GET https://www.bilibili.com/video/<bvid>`, read
+   `window.__INITIAL_STATE__.videoData`. This is yt-dlp's primary path and the
+   most 412-resistant.
+
+Every tier fails open: exhaustion returns `None`, and the `metadata_best_effort`
+handling keeps the video queueable. Credentials are cached at module scope as
+plain strings, so they survive the throwaway `aiohttp` session that a caller
+without a shared one creates. Reference vectors for the WBI mixin key / `w_rid`
+and the `bili_ticket` HMAC are locked in `tests/shared/test_bilibili_client.py`.
+No login (`SESSDATA`) — members-only / restricted videos stay unfetchable.
+
+The `-412` risk is **reduced, not eliminated**: Bilibili can tighten any of
+these at any time. If tier 3 also starts failing, the next step is routing
+through the `scrapling` browser sidecar.
+
+## Thumbnails
+
+`VideoMetadata.thumbnail_url` carries a poster image for the dashboard "now
+playing" / "up next" cards (`NowPlayingCard.tsx`); it is stored on the row
+(`video_queue.thumbnail_url`, migration 111) at INSERT and never updated. The
+overlay does not use it.
+
+- YouTube: `snippet.thumbnails` (`medium` → `high` → `default`).
+- Twitch Clip: Helix `thumbnail_url`.
+- Twitch VOD: Helix `thumbnail_url` with `%{width}x%{height}` → `320x180`.
+- Bilibili: the view `data`'s `pic`, upgraded to `https://`.
+
+`None` (Bilibili risk control, an unprocessed VOD, any fetch failure) just falls
+back to a placeholder. The card also renders the placeholder on an `<img>`
+`onError` — Bilibili's `i*.hdslb.com` CDN 403s a cross-site `Referer`, so the
+`<img>` sends `referrerpolicy="no-referrer"`; if a host still blocks it the
+error handler covers it. The dashboard CSP `img-src` (`frontend/public/_headers`)
+allows `i.ytimg.com`, `*.hdslb.com`, `clips-media-assets2.twitch.tv`, and
+`static-cdn.jtvnw.net`.
 
 ## Deferred: donation path multi-platform support
 

@@ -25,6 +25,7 @@ import {
   type RedemptionConfig,
   type TwitchReward,
 } from '@/api/events'
+import { getCollectionBinderChoreographyDurationMs } from '@/components/community-overlay/collectionBinderMotion'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { PageMain } from '@/components/layout/PageMain'
 import { OverlayUrlBlock } from '@/components/OverlayUrlBlock'
@@ -472,9 +473,13 @@ export default function CommunityOverlaySettings({
 
   const schedulePreviewAutoClose = (blockType: CommunityOverlayContentType) => {
     clearPreviewAutoClose(blockType)
-    // The iframe shows the *published* theme, so its actual on-screen duration
-    // follows that revision's display_ms, not an unsaved draft's.
-    const displayMs = themeStates[blockType]?.published.theme.display_ms ?? 4_000
+    // The iframe shows the published revision. Collection previews also honor
+    // the binder's five-second choreography floor before returning to the draft.
+    const configuredDisplayMs = themeStates[blockType]?.published.theme.display_ms ?? 5_000
+    const displayMs =
+      blockType === 'checkin'
+        ? getCollectionBinderChoreographyDurationMs(configuredDisplayMs)
+        : configuredDisplayMs
     previewAutoCloseTimers.current[blockType] = window.setTimeout(() => {
       previewAutoCloseTimers.current[blockType] = undefined
       setPreviewModes(current => ({ ...current, [blockType]: 'draft' }))
@@ -513,7 +518,10 @@ export default function CommunityOverlaySettings({
   const renderThemeEditor = (blockType: CommunityOverlayContentType) => {
     const { themeState, localDirty } = getThemePresentation(blockType)
     if (!themeState) return null
-    const scopedPreviewUrl = overlayUrl ? `${overlayUrl}&preview=1&block=${blockType}` : undefined
+    const developmentSample = preview ? `&sample=${blockType}` : ''
+    const scopedPreviewUrl = overlayUrl
+      ? `${overlayUrl}&preview=1&block=${blockType}${developmentSample}`
+      : undefined
     return (
       <ThemeEditor
         contentType={blockType}

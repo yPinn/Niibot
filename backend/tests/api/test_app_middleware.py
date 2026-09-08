@@ -17,6 +17,7 @@ os.environ.setdefault("CLIENT_SECRET", "test-client-secret")
 os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost/test")
 os.environ.setdefault("FRONTEND_URL", "https://niibot.tv")
 os.environ.setdefault("BOT_ID", "bot-test")
+os.environ.setdefault("GIT_COMMIT", "test-build-commit")
 
 import logging
 
@@ -96,6 +97,14 @@ class TestSecurityHeaders:
     def test_permissions_policy(self, client: TestClient):
         r = client.get("/_test/ok")
         assert r.headers["Permissions-Policy"] == "camera=(), microphone=(), geolocation=()"
+
+
+class TestBuildStatus:
+    def test_status_exposes_deployed_git_commit(self, client: TestClient):
+        r = client.get("/status")
+
+        assert r.status_code == 200
+        assert r.json()["git_commit"] == "test-build-commit"
 
 
 # ── Request ID middleware ─────────────────────────────────────────────────────

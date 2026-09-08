@@ -76,7 +76,6 @@ TWITCH_CHANNEL_RE = re.compile(
 
 # ── External APIs ─────────────────────────────────────────────────────────────
 
-BILIBILI_API = "https://api.bilibili.com/x/web-interface/view?bvid={bvid}"
 BILIBILI_CARD_API = "https://api.bilibili.com/x/web-interface/card?mid={mid}"
 BILIBILI_SPACE_URL = "https://space.bilibili.com/{mid}"
 BILIBILI_LIVE_API = "https://api.live.bilibili.com/room/v1/Room/get_info?room_id={room_id}"

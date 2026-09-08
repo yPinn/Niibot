@@ -8,6 +8,14 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from shared.models.attendance import CheckinStatus
+from shared.models.collection import (
+    CollectionCardRevision,
+    CollectionDraw,
+    CollectionProgress,
+    CollectionSet,
+    DrawSelection,
+    RarityRevision,
+)
 from shared.repositories.attendance import AttendanceRepository
 
 _NOW = datetime(2026, 8, 30, 10, 0, tzinfo=UTC)
@@ -39,13 +47,54 @@ def _checkin_row() -> dict:
     }
 
 
+def _collection_draw() -> CollectionDraw:
+    rarity = RarityRevision(21, "common", "普通", 10, 20)
+    collection_set = CollectionSet(11, "first-path", "初途秘典", 9)
+    card = CollectionCardRevision(
+        card_id=31,
+        revision_id=41,
+        key="astral-compass",
+        number="001",
+        name="星羅羅盤",
+        description=None,
+        collection_set=collection_set,
+        rarity=rarity,
+        portrait_url=None,
+        square_url=None,
+        backdrop_url=None,
+    )
+    return CollectionDraw(
+        id=61,
+        selection=DrawSelection(
+            pool_revision_id=51,
+            algorithm_version="weighted-rarity-v1",
+            card=card,
+            entropy=bytes(16),
+            rarity_roll=0,
+            rarity_weight_total=100,
+            card_roll=0,
+            card_bucket_size=5,
+        ),
+        is_new=True,
+        copy_count=1,
+        progress=CollectionProgress(owned_copies=1, unique_cards=1, total_cards=9),
+    )
+
+
+def _collection_repo(draw: CollectionDraw | None = None) -> MagicMock:
+    repository = MagicMock()
+    repository.draw_for_checkin = AsyncMock(return_value=draw or _collection_draw())
+    return repository
+
+
 @pytest.mark.asyncio
 class TestRecordCheckin:
     async def test_success_writes_checkin_and_event_in_one_transaction(self):
         pool, conn = _pool()
         conn.fetchrow.side_effect = [_checkin_row(), {"id": 90}]
         conn.fetchval.return_value = 1
-        repo = AttendanceRepository(pool)
+        collection_repo = _collection_repo()
+        repo = AttendanceRepository(pool, collection_repository=collection_repo)
 
         result = await repo.record_checkin(
             channel_id="ch1",
@@ -61,19 +110,30 @@ class TestRecordCheckin:
         assert result.status is CheckinStatus.RECORDED
         assert result.total_days == 1
         assert result.event_id == 90
+        assert result.collection == _collection_draw()
         conn.transaction.assert_called_once_with()
+        collection_repo.draw_for_checkin.assert_awaited_once_with(
+            conn,
+            channel_id="ch1",
+            user_id="u1",
+            checkin_id=7,
+            drawn_at=_NOW,
+        )
         event_call = conn.fetchrow.await_args_list[1]
         assert "INSERT INTO community_overlay_events" in event_call.args[0]
         assert event_call.args[1:6] == ("ch1", "checkin.recorded", 1, "twitch", "u1")
         assert event_call.args[7]["total_days"] == 1
         assert event_call.args[7]["checkin_date"] == "2026-08-30"
+        assert event_call.args[7]["collection"]["draw_id"] == 61
+        assert event_call.args[7]["collection"]["card"]["name"] == "星羅羅盤"
         assert event_call.args[10] == "checkin:7"
 
     async def test_duplicate_returns_existing_count_without_new_event(self):
         pool, conn = _pool()
         conn.fetchrow.side_effect = [None, _checkin_row()]
         conn.fetchval.return_value = 4
-        repo = AttendanceRepository(pool)
+        collection_repo = _collection_repo()
+        repo = AttendanceRepository(pool, collection_repository=collection_repo)
 
         result = await repo.record_checkin(
             channel_id="ch1",
@@ -87,6 +147,8 @@ class TestRecordCheckin:
         assert result.status is CheckinStatus.ALREADY_CHECKED_IN
         assert result.total_days == 4
         assert result.event_id is None
+        assert result.collection is None
+        collection_repo.draw_for_checkin.assert_not_awaited()
         assert conn.fetchrow.await_count == 2
         assert all(
             "community_overlay_events" not in call.args[0] for call in conn.fetchrow.await_args_list
@@ -119,7 +181,7 @@ class TestRecordCheckin:
         pool, conn = _pool()
         conn.fetchrow.side_effect = [_checkin_row(), RuntimeError("event write failed")]
         conn.fetchval.return_value = 1
-        repo = AttendanceRepository(pool)
+        repo = AttendanceRepository(pool, collection_repository=_collection_repo())
 
         with pytest.raises(RuntimeError, match="event write failed"):
             await repo.record_checkin(
@@ -131,6 +193,28 @@ class TestRecordCheckin:
                 occurred_at=_NOW,
             )
 
+        conn.transaction.assert_called_once_with()
+
+    async def test_draw_failure_prevents_overlay_event_and_rolls_back_with_checkin(self):
+        pool, conn = _pool()
+        conn.fetchrow.return_value = _checkin_row()
+        conn.fetchval.return_value = 1
+        collection_repo = _collection_repo()
+        collection_repo.draw_for_checkin.side_effect = RuntimeError("draw failed")
+        repo = AttendanceRepository(pool, collection_repository=collection_repo)
+
+        with pytest.raises(RuntimeError, match="draw failed"):
+            await repo.record_checkin(
+                channel_id="ch1",
+                user_id="u1",
+                username="alice",
+                display_name=None,
+                checkin_date=_DAY,
+                occurred_at=_NOW,
+            )
+
+        assert conn.fetchrow.await_count == 1
+        assert "viewer_checkins" in conn.fetchrow.await_args.args[0]
         conn.transaction.assert_called_once_with()
 
     async def test_rejects_session_from_another_channel(self):

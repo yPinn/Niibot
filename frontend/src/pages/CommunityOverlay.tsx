@@ -4,7 +4,6 @@ import { AnimatePresence } from 'motion/react'
 
 import {
   type CommunityOverlayContentType,
-  type CommunityOverlayEvent,
   type CommunityOverlayTheme,
   DEFAULT_COMMUNITY_OVERLAY_THEME,
   DEFAULT_TAROT_OVERLAY_THEME,
@@ -13,111 +12,74 @@ import {
   type CommunityOverlayStreamMessage,
   openCommunityOverlayStream,
 } from '@/api/communityOverlayStream'
-import { CheckinCard } from '@/components/community-overlay/CheckinCard'
-import { TarotCard } from '@/components/community-overlay/TarotCard'
+import { getOverlayPlaybackLifetimeMs } from '@/components/community-overlay/collectionBinderMotion'
+import { buildCommunityOverlayPreviewEvent } from '@/components/community-overlay/previewFixtures'
+import {
+  OverlayEventRenderer,
+  type ResolvedOverlayEvent,
+  resolveOverlayEvent,
+  supportsPublishedRenderer,
+} from '@/components/community-overlay/rendererRegistry'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
 import styles from './CommunityOverlay.module.css'
 
-interface CheckinPayload extends Record<string, unknown> {
-  total_days: number
-  checkin_date: string
-  preview?: boolean
+interface PlaybackItem {
+  resolved: ResolvedOverlayEvent
+  theme: CommunityOverlayTheme
 }
-
-interface CheckinEvent extends CommunityOverlayEvent {
-  event_type: 'checkin.recorded'
-  schema_version: 1
-  payload: CheckinPayload
-}
-
-interface TarotPayload extends Record<string, unknown> {
-  card_id: string
-  card_name: string
-  card_name_en: string
-  orientation: 'upright' | 'reversed'
-  orientation_label: string
-  category: string
-  category_label: string
-  keywords: string[]
-  meaning: string
-  advice: string
-  image_path: string
-  deck_id: string
-  deck_version: number
-  preview?: boolean
-}
-
-interface TarotEvent extends CommunityOverlayEvent {
-  event_type: 'tarot.drawn'
-  schema_version: 1
-  payload: TarotPayload
-}
-
-type RenderableEvent = CheckinEvent | TarotEvent
 
 interface PlaybackState {
-  active: RenderableEvent | null
-  queue: RenderableEvent[]
+  active: PlaybackItem | null
+  queue: PlaybackItem[]
+  stageTheme: CommunityOverlayTheme | null
+  exiting: boolean
 }
 
-type PlaybackAction = { type: 'enqueue'; events: RenderableEvent[] } | { type: 'advance' }
+type PlaybackAction =
+  | { type: 'enqueue'; items: PlaybackItem[]; now: number }
+  | { type: 'beginExit' }
+  | { type: 'exitComplete'; now: number }
+
+function isPlayableAt(item: PlaybackItem, now: number): boolean {
+  const { expires_at: expiresAt } = item.resolved.event
+  if (expiresAt === null) return true
+  const expiresAtMs = Date.parse(expiresAt)
+  return Number.isFinite(expiresAtMs) && expiresAtMs > now
+}
+
+function promoteNext(
+  queue: PlaybackItem[],
+  now: number,
+  stageTheme: CommunityOverlayTheme | null
+): PlaybackState {
+  const nextIndex = queue.findIndex(item => isPlayableAt(item, now))
+  if (nextIndex < 0) return { active: null, queue: [], stageTheme, exiting: false }
+  const active = queue[nextIndex]
+  return {
+    active,
+    queue: queue.slice(nextIndex + 1),
+    stageTheme: active.theme,
+    exiting: false,
+  }
+}
 
 function playbackReducer(state: PlaybackState, action: PlaybackAction): PlaybackState {
   if (action.type === 'enqueue') {
-    if (action.events.length === 0) return state
-    if (!state.active) {
-      const [active, ...remaining] = action.events
-      return { active, queue: [...state.queue, ...remaining] }
+    if (action.items.length === 0) return state
+    if (!state.active && !state.exiting) {
+      return promoteNext([...state.queue, ...action.items], action.now, state.stageTheme)
     }
-    return { ...state, queue: [...state.queue, ...action.events] }
+    return { ...state, queue: [...state.queue, ...action.items] }
   }
 
-  const [active = null, ...queue] = state.queue
-  return { active, queue }
-}
+  if (action.type === 'beginExit') {
+    if (!state.active) return state
+    return { ...state, active: null, exiting: true }
+  }
 
-function isCheckinEvent(event: CommunityOverlayEvent): event is CheckinEvent {
-  return (
-    event.event_type === 'checkin.recorded' &&
-    event.schema_version === 1 &&
-    Number.isInteger(event.payload.total_days) &&
-    Number(event.payload.total_days) > 0 &&
-    typeof event.payload.checkin_date === 'string'
-  )
-}
-
-function isTarotEvent(event: CommunityOverlayEvent): event is TarotEvent {
-  const { payload } = event
-  return (
-    event.event_type === 'tarot.drawn' &&
-    event.schema_version === 1 &&
-    typeof payload.card_id === 'string' &&
-    typeof payload.card_name === 'string' &&
-    typeof payload.card_name_en === 'string' &&
-    (payload.orientation === 'upright' || payload.orientation === 'reversed') &&
-    typeof payload.orientation_label === 'string' &&
-    typeof payload.category === 'string' &&
-    typeof payload.category_label === 'string' &&
-    Array.isArray(payload.keywords) &&
-    payload.keywords.every(keyword => typeof keyword === 'string') &&
-    typeof payload.meaning === 'string' &&
-    typeof payload.advice === 'string' &&
-    typeof payload.image_path === 'string' &&
-    payload.image_path.startsWith('/images/tarot/decks/') &&
-    typeof payload.deck_id === 'string' &&
-    Number.isInteger(payload.deck_version) &&
-    Number(payload.deck_version) > 0
-  )
-}
-
-function blockTypeForEvent(event: RenderableEvent): CommunityOverlayContentType {
-  return event.event_type === 'tarot.drawn' ? 'tarot' : 'checkin'
-}
-
-const RENDERERS: Record<CommunityOverlayContentType, string> = {
-  checkin: 'checkin-card',
-  tarot: 'tarot-card',
+  if (!state.exiting) return state
+  return promoteNext(state.queue, action.now, state.stageTheme)
 }
 
 const STABLE_STREAM_MS = 30_000
@@ -126,19 +88,31 @@ interface ScopedCommunityOverlayProps {
   publicKey: string
   preview: boolean
   blockFilter?: CommunityOverlayContentType
+  developmentSample?: CommunityOverlayContentType
 }
 
-function ScopedCommunityOverlay({ publicKey, preview, blockFilter }: ScopedCommunityOverlayProps) {
+function ScopedCommunityOverlay({
+  publicKey,
+  preview,
+  blockFilter,
+  developmentSample,
+}: ScopedCommunityOverlayProps) {
   const themeRevisionRef = useRef<Record<CommunityOverlayContentType, number | null>>({
     checkin: null,
     tarot: null,
   })
   const seenIdsRef = useRef(new Set<number>())
-  const [playback, dispatch] = useReducer(playbackReducer, { active: null, queue: [] })
+  const [playback, dispatch] = useReducer(playbackReducer, {
+    active: null,
+    queue: [],
+    stageTheme: null,
+    exiting: false,
+  })
   const [themes, setThemes] = useState<Record<CommunityOverlayContentType, CommunityOverlayTheme>>({
     checkin: DEFAULT_COMMUNITY_OVERLAY_THEME,
     tarot: DEFAULT_TAROT_OVERLAY_THEME,
   })
+  const themesRef = useRef(themes)
 
   useEffect(() => {
     if (!publicKey) return
@@ -151,31 +125,40 @@ function ScopedCommunityOverlay({ publicKey, preview, blockFilter }: ScopedCommu
     const applyMessage = (message: CommunityOverlayStreamMessage) => {
       if (!active) return
       cursor = message.cursor
-      for (const blockType of Object.keys(message.themes) as CommunityOverlayContentType[]) {
+      let nextThemes = themesRef.current
+      for (const blockType of Object.keys(message.themes)) {
+        if (blockType !== 'checkin' && blockType !== 'tarot') continue
         const published = message.themes[blockType]
         if (
           !published ||
-          published.renderer !== RENDERERS[blockType] ||
-          published.schema_version !== 1 ||
+          !supportsPublishedRenderer(blockType, published.renderer, published.schema_version) ||
           published.revision_id === themeRevisionRef.current[blockType]
         ) {
           continue
         }
         themeRevisionRef.current[blockType] = published.revision_id
-        setThemes(current => ({ ...current, [blockType]: published.theme }))
+        nextThemes = { ...nextThemes, [blockType]: published.theme }
       }
+      if (nextThemes !== themesRef.current) {
+        themesRef.current = nextThemes
+        setThemes(nextThemes)
+      }
+      const now = Date.now()
       const incoming = message.events
-        .filter((event): event is RenderableEvent => isCheckinEvent(event) || isTarotEvent(event))
-        .filter(event => !blockFilter || blockTypeForEvent(event) === blockFilter)
+        .map(resolveOverlayEvent)
+        .filter((event): event is ResolvedOverlayEvent => event !== null)
+        .filter(event => !blockFilter || event.blockType === blockFilter)
+        .filter(event => isPlayableAt({ resolved: event, theme: nextThemes[event.blockType] }, now))
         .filter(event => {
-          if (seenIdsRef.current.has(event.id)) return false
-          seenIdsRef.current.add(event.id)
+          if (seenIdsRef.current.has(event.event.id)) return false
+          seenIdsRef.current.add(event.event.id)
           if (seenIdsRef.current.size > 1_000) {
             seenIdsRef.current.delete(seenIdsRef.current.values().next().value as number)
           }
           return true
         })
-      if (incoming.length) dispatch({ type: 'enqueue', events: incoming })
+        .map(resolved => ({ resolved, theme: nextThemes[resolved.blockType] }))
+      if (incoming.length) dispatch({ type: 'enqueue', items: incoming, now })
     }
 
     const connect = () => {
@@ -198,31 +181,48 @@ function ScopedCommunityOverlay({ publicKey, preview, blockFilter }: ScopedCommu
         })
     }
 
-    connect()
+    if (developmentSample) {
+      const sampleEvent = buildCommunityOverlayPreviewEvent(developmentSample)
+      applyMessage({
+        type: 'snapshot',
+        cursor: sampleEvent.id,
+        events: [sampleEvent],
+        themes: {},
+      })
+    } else {
+      connect()
+    }
     return () => {
       active = false
       controller?.abort()
       if (reconnectTimer !== null) window.clearTimeout(reconnectTimer)
     }
-  }, [preview, publicKey, blockFilter])
+  }, [preview, publicKey, blockFilter, developmentSample])
 
-  const activeBlockType = playback.active ? blockTypeForEvent(playback.active) : 'checkin'
-  const activeTheme = themes[activeBlockType]
+  const activeTheme = playback.stageTheme ?? themes.checkin
 
   useEffect(() => {
     if (!playback.active) return
-    const timeout = window.setTimeout(() => dispatch({ type: 'advance' }), activeTheme.display_ms)
+    const playbackDurationMs = getOverlayPlaybackLifetimeMs(
+      playback.active.resolved.rendererId,
+      playback.active.theme.display_ms
+    )
+    const timeout = window.setTimeout(() => dispatch({ type: 'beginExit' }), playbackDurationMs)
     return () => window.clearTimeout(timeout)
-  }, [activeTheme.display_ms, playback.active])
+  }, [playback.active])
 
   return (
     <main className={styles.stage} data-placement={activeTheme.placement} aria-live="polite">
-      <AnimatePresence mode="wait">
-        {playback.active?.event_type === 'checkin.recorded' && (
-          <CheckinCard key={playback.active.id} event={playback.active} theme={activeTheme} />
-        )}
-        {playback.active?.event_type === 'tarot.drawn' && (
-          <TarotCard key={playback.active.id} event={playback.active} theme={activeTheme} />
+      <AnimatePresence
+        mode="wait"
+        onExitComplete={() => dispatch({ type: 'exitComplete', now: Date.now() })}
+      >
+        {playback.active && (
+          <OverlayEventRenderer
+            key={playback.active.resolved.event.id}
+            resolved={playback.active.resolved}
+            theme={playback.active.theme}
+          />
         )}
       </AnimatePresence>
     </main>
@@ -239,7 +239,9 @@ export default function CommunityOverlay() {
   const publicKey = overlayParams.get('key')?.trim() || ''
   const preview = overlayParams.get('preview') === '1'
   const blockFilter = parseBlockFilter(overlayParams.get('block'))
-  const scope = `${publicKey}:${preview ? 'preview' : 'live'}:${blockFilter ?? 'all'}`
+  const developmentSample =
+    import.meta.env.DEV && preview ? parseBlockFilter(overlayParams.get('sample')) : undefined
+  const scope = `${publicKey}:${preview ? 'preview' : 'live'}:${blockFilter ?? 'all'}:${developmentSample ?? 'stream'}`
 
   useDocumentTitle('Live Display')
 
@@ -249,6 +251,7 @@ export default function CommunityOverlay() {
       publicKey={publicKey}
       preview={preview}
       blockFilter={blockFilter}
+      developmentSample={developmentSample}
     />
   )
 }
