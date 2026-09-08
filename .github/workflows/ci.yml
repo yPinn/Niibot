@@ -194,5 +194,8 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
     uses: ./.github/workflows/_deploy.yml
     with:
+      # Staging is an integration target, so its API must represent the full
+      # branch HEAD even when an earlier deploy was skipped or failed.
       environment: staging
+      force_all: true
     secrets: inherit
