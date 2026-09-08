@@ -13,6 +13,98 @@ def test_accepts_known_complete_payload():
     )
 
 
+def test_accepts_checkin_payload_with_a_complete_collection_snapshot():
+    validate_community_event(
+        "checkin.recorded",
+        1,
+        {
+            "total_days": 3,
+            "checkin_date": "2026-08-30",
+            "collection": {
+                "draw_id": 61,
+                "pool_revision_id": 51,
+                "algorithm_version": "weighted-rarity-v1",
+                "card": {
+                    "id": 31,
+                    "revision_id": 41,
+                    "key": "first-step",
+                    "number": "001",
+                    "name": "第一步",
+                    "artwork": {
+                        "portrait_url": None,
+                        "square_url": "/images/collections/first-step-square.webp",
+                        "backdrop_url": None,
+                    },
+                },
+                "set": {"id": 11, "key": "starter", "name": "起始收藏"},
+                "rarity": {
+                    "key": "common",
+                    "label": "普通",
+                    "rank": 10,
+                    "effect_intensity": 10,
+                },
+                "is_new": False,
+                "copy_count": 2,
+                "progress": {"owned_copies": 4, "unique_cards": 3, "total_cards": 9},
+            },
+        },
+    )
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda snapshot: snapshot.pop("draw_id"),
+        lambda snapshot: snapshot.__setitem__("copy_count", 0),
+        lambda snapshot: snapshot["card"].__setitem__("name", ""),
+        lambda snapshot: snapshot["rarity"].__setitem__("rank", True),
+        lambda snapshot: snapshot["progress"].__setitem__("unique_cards", 10),
+        lambda snapshot: snapshot["progress"].__setitem__("unique_cards", 4),
+        lambda snapshot: snapshot["progress"].__setitem__("owned_copies", 1),
+        lambda snapshot: snapshot.__setitem__("is_new", True),
+        lambda snapshot: snapshot["card"]["artwork"].__setitem__(
+            "portrait_url", "https://untrusted.example/card.webp"
+        ),
+    ],
+)
+def test_rejects_malformed_optional_collection_snapshot(mutate):
+    snapshot = {
+        "draw_id": 61,
+        "pool_revision_id": 51,
+        "algorithm_version": "weighted-rarity-v1",
+        "card": {
+            "id": 31,
+            "revision_id": 41,
+            "key": "first-step",
+            "number": "001",
+            "name": "第一步",
+            "artwork": {
+                "portrait_url": None,
+                "square_url": "/images/collections/first-step-square.webp",
+                "backdrop_url": None,
+            },
+        },
+        "set": {"id": 11, "key": "starter", "name": "起始收藏"},
+        "rarity": {
+            "key": "common",
+            "label": "普通",
+            "rank": 10,
+            "effect_intensity": 10,
+        },
+        "is_new": False,
+        "copy_count": 2,
+        "progress": {"owned_copies": 4, "unique_cards": 3, "total_cards": 9},
+    }
+    mutate(snapshot)
+
+    with pytest.raises(ValueError, match="collection"):
+        validate_community_event(
+            "checkin.recorded",
+            1,
+            {"total_days": 3, "checkin_date": "2026-08-30", "collection": snapshot},
+        )
+
+
 def test_accepts_complete_tarot_payload():
     validate_community_event(
         "tarot.drawn",

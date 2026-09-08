@@ -11,6 +11,16 @@ from .attendance import (
 )
 from .birthday import Birthday, BirthdaySettings
 from .channel import Channel, DiscordUser, Token
+from .collection import (
+    CollectionCardRevision,
+    CollectionDraw,
+    CollectionProgress,
+    CollectionSet,
+    DrawPoolRarity,
+    DrawPoolRevision,
+    DrawSelection,
+    RarityRevision,
+)
 
 __all__ = [
     "Birthday",
@@ -20,9 +30,17 @@ __all__ = [
     "CheckinSettings",
     "CheckinStatus",
     "Channel",
+    "CollectionCardRevision",
+    "CollectionDraw",
+    "CollectionProgress",
+    "CollectionSet",
     "CommunityOverlayAccess",
     "CommunityOverlayEvent",
     "CommunityOverlayFeed",
     "DiscordUser",
+    "DrawPoolRarity",
+    "DrawPoolRevision",
+    "DrawSelection",
+    "RarityRevision",
     "Token",
 ]

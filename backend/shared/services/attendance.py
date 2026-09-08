@@ -125,7 +125,11 @@ class AttendanceService:
             checkin_date=result.checkin_date,
         )
         return CheckinReply(
-            result=result, message=message, delay_seconds=settings.reply_delay_seconds
+            result=result,
+            message=message,
+            delay_seconds=(
+                settings.reply_delay_seconds if result.status is CheckinStatus.RECORDED else 0
+            ),
         )
 
     async def _perform_check_in(

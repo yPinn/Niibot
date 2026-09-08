@@ -2,21 +2,171 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 import os
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from uuid import uuid4
 
 import asyncpg
 import pytest
 
+from shared.models.attendance import CheckinStatus
 from shared.repositories.attendance import AttendanceRepository
+from shared.repositories.collection import CollectionRepository
 
 _DATABASE_URL = os.getenv("NIIBOT_TEST_DATABASE_URL")
 
 
+async def _register_json_codecs(conn: asyncpg.Connection) -> None:
+    for type_name in ("jsonb", "json"):
+        await conn.set_type_codec(
+            type_name,
+            encoder=json.dumps,
+            decoder=json.loads,
+            schema="pg_catalog",
+        )
+
+
+async def _create_pool(*, max_size: int) -> asyncpg.Pool:
+    assert _DATABASE_URL is not None
+    return await asyncpg.create_pool(
+        _DATABASE_URL,
+        min_size=1,
+        max_size=max_size,
+        init=_register_json_codecs,
+    )
+
+
+def _decode_jsonb(value: object) -> dict[str, object]:
+    if isinstance(value, str):
+        decoded = json.loads(value)
+        assert isinstance(decoded, dict)
+        return decoded
+    assert isinstance(value, dict)
+    return value
+
+
+@pytest.mark.skipif(not _DATABASE_URL, reason="NIIBOT_TEST_DATABASE_URL is not configured")
+async def test_checkin_draw_and_overlay_event_commit_as_one_fact() -> None:
+    pool = await _create_pool(max_size=2)
+    channel_id = f"test-collection-checkin-{uuid4().hex}"
+    occurred_at = datetime(2026, 9, 8, 12, 0, tzinfo=UTC)
+    repository = AttendanceRepository(
+        pool,
+        collection_repository=CollectionRepository(entropy_source=lambda _: bytes(16)),
+    )
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "INSERT INTO channels (channel_id, channel_name) VALUES ($1, $1)",
+                channel_id,
+            )
+
+        first, second = await asyncio.gather(
+            *(
+                repository.record_checkin(
+                    channel_id=channel_id,
+                    user_id="viewer-1",
+                    username="viewer",
+                    display_name="Viewer One",
+                    checkin_date=occurred_at.date(),
+                    occurred_at=occurred_at,
+                )
+                for _ in range(2)
+            )
+        )
+        recorded = first if first.status is CheckinStatus.RECORDED else second
+        duplicate = second if recorded is first else first
+
+        assert recorded.collection is not None
+        assert recorded.collection.copy_count == 1
+        assert recorded.collection.is_new is True
+        assert duplicate.status is CheckinStatus.ALREADY_CHECKED_IN
+        assert duplicate.collection is None
+        assert duplicate.event_id is None
+
+        async with pool.acquire() as conn:
+            counts = await conn.fetchrow(
+                """
+                SELECT
+                    (SELECT COUNT(*) FROM viewer_checkins WHERE channel_id = $1) AS checkins,
+                    (SELECT COUNT(*) FROM viewer_card_draws WHERE channel_id = $1) AS draws,
+                    (SELECT COUNT(*) FROM community_overlay_events WHERE channel_id = $1) AS events
+                """,
+                channel_id,
+            )
+            event = await conn.fetchrow(
+                """
+                SELECT schema_version, payload
+                FROM community_overlay_events
+                WHERE channel_id = $1
+                """,
+                channel_id,
+            )
+        assert counts is not None
+        assert tuple(counts) == (1, 1, 1)
+        assert event is not None
+        assert event["schema_version"] == 1
+        payload = _decode_jsonb(event["payload"])
+        collection = payload["collection"]
+        assert isinstance(collection, dict)
+        assert collection["draw_id"] == recorded.collection.id
+        assert collection["copy_count"] == 1
+        assert collection["is_new"] is True
+    finally:
+        async with pool.acquire() as conn:
+            await conn.execute("DELETE FROM channels WHERE channel_id = $1", channel_id)
+        await pool.close()
+
+
+@pytest.mark.skipif(not _DATABASE_URL, reason="NIIBOT_TEST_DATABASE_URL is not configured")
+async def test_collection_failure_rolls_back_the_enclosing_checkin_transaction() -> None:
+    pool = await _create_pool(max_size=1)
+    channel_id = f"test-collection-rollback-{uuid4().hex}"
+    occurred_at = datetime(2026, 9, 8, 12, 0, tzinfo=UTC)
+    repository = AttendanceRepository(
+        pool,
+        collection_repository=CollectionRepository(entropy_source=lambda _: b"invalid"),
+    )
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "INSERT INTO channels (channel_id, channel_name) VALUES ($1, $1)",
+                channel_id,
+            )
+
+        with pytest.raises(RuntimeError, match="entropy source"):
+            await repository.record_checkin(
+                channel_id=channel_id,
+                user_id="viewer-1",
+                username="viewer",
+                display_name=None,
+                checkin_date=occurred_at.date(),
+                occurred_at=occurred_at,
+            )
+
+        async with pool.acquire() as conn:
+            counts = await conn.fetchrow(
+                """
+                SELECT
+                    (SELECT COUNT(*) FROM viewer_checkins WHERE channel_id = $1) AS checkins,
+                    (SELECT COUNT(*) FROM viewer_card_draws WHERE channel_id = $1) AS draws,
+                    (SELECT COUNT(*) FROM community_overlay_events WHERE channel_id = $1) AS events
+                """,
+                channel_id,
+            )
+        assert counts is not None
+        assert tuple(counts) == (0, 0, 0)
+    finally:
+        async with pool.acquire() as conn:
+            await conn.execute("DELETE FROM channels WHERE channel_id = $1", channel_id)
+        await pool.close()
+
+
 @pytest.mark.skipif(not _DATABASE_URL, reason="NIIBOT_TEST_DATABASE_URL is not configured")
 async def test_leaderboard_aggregates_and_ranks_inside_one_tenant() -> None:
-    pool = await asyncpg.create_pool(_DATABASE_URL, min_size=1, max_size=2)
+    pool = await _create_pool(max_size=2)
     suffix = uuid4().hex
     channel_id = f"test-leaderboard-a-{suffix}"
     other_channel_id = f"test-leaderboard-b-{suffix}"
@@ -102,7 +252,7 @@ async def test_leaderboard_aggregates_and_ranks_inside_one_tenant() -> None:
 @pytest.mark.skipif(not _DATABASE_URL, reason="NIIBOT_TEST_DATABASE_URL is not configured")
 async def test_get_checkin_rank_matches_leaderboard_ordering_past_the_limit() -> None:
     """A viewer's chat-facing !rank must never drift from the dashboard leaderboard."""
-    pool = await asyncpg.create_pool(_DATABASE_URL, min_size=1, max_size=2)
+    pool = await _create_pool(max_size=2)
     suffix = uuid4().hex
     channel_id = f"test-rank-a-{suffix}"
     other_channel_id = f"test-rank-b-{suffix}"
@@ -176,4 +326,69 @@ async def test_get_checkin_rank_matches_leaderboard_ordering_past_the_limit() ->
                 "DELETE FROM channels WHERE channel_id = ANY($1::text[])",
                 [channel_id, other_channel_id],
             )
+        await pool.close()
+
+
+@pytest.mark.skipif(not _DATABASE_URL, reason="NIIBOT_TEST_DATABASE_URL is not configured")
+async def test_record_checkin_draws_once_and_embeds_the_immutable_event_snapshot() -> None:
+    """Exercise the real pool loader, draw insert, aggregate, and event SQL together."""
+    pool = await _create_pool(max_size=2)
+    suffix = uuid4().hex
+    channel_id = f"test-checkin-collection-{suffix}"
+    occurred_at = datetime(2026, 9, 8, 8, 0, tzinfo=UTC)
+
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "INSERT INTO channels (channel_id, channel_name) VALUES ($1, $1)",
+                channel_id,
+            )
+
+        repository = AttendanceRepository(pool)
+        first = await repository.record_checkin(
+            channel_id=channel_id,
+            user_id="viewer-1",
+            username="viewer",
+            display_name="Viewer",
+            checkin_date=occurred_at.date(),
+            occurred_at=occurred_at,
+        )
+        duplicate = await repository.record_checkin(
+            channel_id=channel_id,
+            user_id="viewer-1",
+            username="viewer",
+            display_name="Viewer",
+            checkin_date=occurred_at.date(),
+            occurred_at=occurred_at,
+        )
+
+        assert first.recorded is True
+        assert first.collection is not None
+        assert first.collection.selection.algorithm_version == "weighted-rarity-v1"
+        assert len(first.collection.selection.entropy) == 16
+        assert first.collection.copy_count == 1
+        assert first.collection.progress.owned_copies == 1
+        assert duplicate.recorded is False
+        assert duplicate.collection is None
+        assert duplicate.event_id is None
+
+        async with pool.acquire() as conn:
+            draw_count = await conn.fetchval(
+                "SELECT COUNT(*) FROM viewer_card_draws WHERE channel_id = $1",
+                channel_id,
+            )
+            events = await conn.fetch(
+                """
+                SELECT payload
+                FROM community_overlay_events
+                WHERE channel_id = $1 AND event_type = 'checkin.recorded'
+                """,
+                channel_id,
+            )
+        assert draw_count == 1
+        assert len(events) == 1
+        assert events[0]["payload"]["collection"] == first.collection.to_event_snapshot()
+    finally:
+        async with pool.acquire() as conn:
+            await conn.execute("DELETE FROM channels WHERE channel_id = $1", channel_id)
         await pool.close()

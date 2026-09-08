@@ -289,6 +289,41 @@ class TestAttendanceService:
 
         assert outcome.delay_seconds == 7
 
+    async def test_duplicate_reply_is_immediate_even_when_channel_delay_is_configured(self):
+        settings = CheckinSettings(
+            channel_id="ch1",
+            timezone="Asia/Taipei",
+            success_template="$(@user) $(count)",
+            duplicate_template="already $(count)",
+            reply_delay_seconds=7,
+        )
+        result = CheckinResult(
+            status=CheckinStatus.ALREADY_CHECKED_IN,
+            channel_id="ch1",
+            user_id="u1",
+            username="alice",
+            display_name="Alice",
+            checkin_date=date(2026, 8, 31),
+            total_days=1,
+            checkin_id=1,
+            event_id=None,
+            occurred_at=datetime(2026, 8, 30, 16, 30, tzinfo=UTC),
+        )
+        repo = MagicMock()
+        repo.get_or_create_settings = AsyncMock(return_value=settings)
+        repo.record_checkin = AsyncMock(return_value=result)
+        service = AttendanceService(repo)
+
+        outcome = await service.check_in_with_reply(
+            channel_id="ch1",
+            user_id="u1",
+            username="alice",
+            display_name="Alice",
+            occurred_at=datetime(2026, 8, 30, 16, 30, tzinfo=UTC),
+        )
+
+        assert outcome.delay_seconds == 0
+
     async def test_invalid_template_fails_before_checkin_transaction(self):
         settings = CheckinSettings(
             channel_id="ch1",
