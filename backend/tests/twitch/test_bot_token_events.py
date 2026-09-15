@@ -148,6 +148,18 @@ class TestEventSubscriptionRevoked:
         await revoked_bot.event_subscription_revoked(_make_revoked_payload("authorization_revoked"))
         revoked_bot._mark_reauth_required.assert_awaited_once_with("ch1")
 
+    async def test_authorization_revoked_clears_subscription_state(self, revoked_bot):
+        # Without this, is_subscribed() keeps returning True for a token Twitch
+        # already killed, so a later reauth's subscribe() call becomes a no-op
+        # and the channel never gets its EventSub subscriptions back.
+        revoked_bot.subs._subscribed = {"ch1"}
+        revoked_bot.subs._sub_ids = {"ch1": ["sub-a"]}
+
+        await revoked_bot.event_subscription_revoked(_make_revoked_payload("authorization_revoked"))
+
+        assert not revoked_bot.subs.is_subscribed("ch1")
+        assert "ch1" not in revoked_bot.subs._sub_ids
+
     async def test_raid_condition_key_resolves_channel(self, revoked_bot):
         payload = _make_revoked_payload(
             "authorization_revoked", condition={"to_broadcaster_user_id": "ch2"}

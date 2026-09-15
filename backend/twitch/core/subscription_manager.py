@@ -92,6 +92,16 @@ class SubscriptionManager:
     def is_subscribed(self, channel_id: str) -> bool:
         return channel_id in self._subscribed
 
+    def mark_revoked(self, channel_id: str) -> None:
+        """Drop local state after Twitch revokes the channel's subscriptions
+        out-of-band (e.g. authorization_revoked). Without this, is_subscribed()
+        keeps returning True for a token Twitch already killed, so a later
+        reauth's ``if not is_subscribed(): subscribe()`` guard treats the
+        channel as already subscribed and never recreates the subscriptions.
+        """
+        self._subscribed.discard(channel_id)
+        self._sub_ids.pop(channel_id, None)
+
     # ------------------------------------------------------------------
     # Subscribe / unsubscribe
     # ------------------------------------------------------------------

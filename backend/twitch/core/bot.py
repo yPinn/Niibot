@@ -285,6 +285,7 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
         log("EventSub subscription revoked: %s type=%s reason=%s", ch, payload.type, reason)
 
         if reason == "authorization_revoked" and channel_id and channel_id != self._bot_id:
+            self.subs.mark_revoked(channel_id)
             await self._mark_reauth_required(channel_id)
 
     async def event_oauth_authorized(

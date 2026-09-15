@@ -149,6 +149,24 @@ class TestUnsubscribe:
         mgr._delete_subscription.assert_not_awaited()
 
 
+class TestMarkRevoked:
+    def test_clears_subscribed_state_without_calling_twitch(self):
+        mgr = _make_manager()
+        mgr._subscribed = {"123"}
+        mgr._sub_ids = {"123": ["a", "b"]}
+
+        mgr.mark_revoked("123")
+
+        assert not mgr.is_subscribed("123")
+        assert "123" not in mgr._sub_ids
+        mgr._delete_subscription.assert_not_awaited()
+
+    def test_noop_when_not_subscribed(self):
+        mgr = _make_manager()
+        mgr.mark_revoked("999")
+        assert not mgr.is_subscribed("999")
+
+
 class TestNameRegistry:
     def test_ch_formats_known_and_unknown(self):
         mgr = _make_manager()
