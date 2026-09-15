@@ -2,6 +2,7 @@
 
 import logging
 from datetime import datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
@@ -155,6 +156,8 @@ class RedemptionConfigResponse(BaseModel):
     reward_name: str
     reward_id: str | None = None
     enabled: bool
+    first_message: str
+    first_announce_color: str
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -163,6 +166,11 @@ class RedemptionConfigUpdate(BaseModel):
     reward_name: str = Field(max_length=256)
     reward_id: str | None = Field(default=None, min_length=1, max_length=128)
     enabled: bool
+
+
+class FirstSettingsUpdate(BaseModel):
+    message: str = Field(min_length=1, max_length=300)
+    announce_color: Literal["blue", "green", "orange", "purple", "primary"] = "primary"
 
 
 @router.get("/catalog", response_model=list[EventDefinitionResponse])
@@ -278,4 +286,22 @@ async def update_redemption_config(
             user_message="找不到這個兑換設定", context={"action_type": action_type}
         )
     LOGGER.info("redemption_updated", extra={"action_type": action_type})
+    return RedemptionConfigResponse(**cfg)
+
+
+@router.put("/redemptions/first/settings", response_model=RedemptionConfigResponse)
+async def update_first_settings(
+    body: FirstSettingsUpdate,
+    channel_id: str = Depends(get_current_channel_id),
+    service: CommandConfigService = Depends(get_command_config_service),
+) -> RedemptionConfigResponse:
+    """Update the 頭香 (first-of-the-day) redemption's announcement text/color."""
+    cfg = await service.update_first_settings(
+        channel_id, message=body.message, announce_color=body.announce_color
+    )
+    if cfg is None:
+        raise EventConfigNotFoundError(
+            user_message="找不到這個兑換設定", context={"action_type": "first"}
+        )
+    LOGGER.info("first_settings_updated")
     return RedemptionConfigResponse(**cfg)

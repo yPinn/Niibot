@@ -116,6 +116,8 @@ const DEV_PREVIEW_CHECKIN_CONFIG: RedemptionConfig = {
   reward_name: '每日簽到',
   reward_id: 'preview-checkin-reward',
   enabled: true,
+  first_message: '$(@user) 恭喜你搶到沙發！',
+  first_announce_color: 'primary',
 }
 
 const DEV_PREVIEW_CHECKIN_REWARD: TwitchReward = {

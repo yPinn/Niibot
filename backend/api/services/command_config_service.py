@@ -226,3 +226,12 @@ class CommandConfigService:
             reward_id=reward_id,
         )
         return asdict(cfg)
+
+    async def update_first_settings(
+        self, channel_id: str, *, message: str, announce_color: str
+    ) -> dict | None:
+        """Update the 'first' redemption's custom announcement text/color."""
+        cfg = await self.redemption_repo.update_first_settings(
+            channel_id, message=message, announce_color=announce_color
+        )
+        return asdict(cfg) if cfg else None

@@ -53,6 +53,7 @@ interface ChannelPointActionsTableProps {
   onToggle: (redemption: RedemptionConfig) => void
   onRewardSelect: (redemption: RedemptionConfig, rewardId: string) => void
   onEditCheckinSettings: () => void
+  onEditFirstSettings: () => void
   onEditVipSettings: () => void
   vipRules: VipRewardRule[]
   onToggleVip: () => void
@@ -68,6 +69,7 @@ export function ChannelPointActionsTable({
   onToggle,
   onRewardSelect,
   onEditCheckinSettings,
+  onEditFirstSettings,
   onEditVipSettings,
   vipRules,
   onToggleVip,
@@ -218,6 +220,16 @@ export function ChannelPointActionsTable({
                             size="sm"
                             aria-label={`編輯${actionLabel}設定`}
                             onClick={onEditCheckinSettings}
+                          >
+                            設定
+                          </Button>
+                        )}
+                        {redemption.action_type === 'first' && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            aria-label={`編輯${actionLabel}設定`}
+                            onClick={onEditFirstSettings}
                           >
                             設定
                           </Button>

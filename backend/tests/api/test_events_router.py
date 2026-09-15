@@ -45,6 +45,8 @@ _REDEMPTION = {
     "reward_name": "VIP for a day",
     "reward_id": "r-1",
     "enabled": True,
+    "first_message": "$(@user) 恭喜你搶到沙發！",
+    "first_announce_color": "primary",
     "created_at": None,
     "updated_at": None,
 }
@@ -407,5 +409,79 @@ class TestUpdateRedemptionConfig:
             r = _make_client().put(
                 "/api/events/redemptions/vip",
                 json={"reward_name": "test", "enabled": True},
+            )
+        assert r.status_code == 500
+
+
+# ── PUT /api/events/redemptions/first/settings ──
+
+
+class TestUpdateFirstSettings:
+    def test_updates_first_settings(self):
+        import services.command_config_service as m
+
+        updated = {
+            **_REDEMPTION,
+            "action_type": "first",
+            "first_message": "$(user) 手速真快！",
+            "first_announce_color": "green",
+        }
+        with patch.object(
+            m.CommandConfigService, "update_first_settings", AsyncMock(return_value=updated)
+        ) as service_mock:
+            r = _make_client().put(
+                "/api/events/redemptions/first/settings",
+                json={"message": "$(user) 手速真快！", "announce_color": "green"},
+            )
+        assert r.status_code == 200
+        assert r.json()["first_message"] == "$(user) 手速真快！"
+        assert r.json()["first_announce_color"] == "green"
+
+        service_mock.assert_awaited_once_with(
+            CHANNEL_ID, message="$(user) 手速真快！", announce_color="green"
+        )
+
+    def test_rejects_oversized_message(self):
+        r = _make_client().put(
+            "/api/events/redemptions/first/settings",
+            json={"message": "x" * 301, "announce_color": "primary"},
+        )
+        assert r.status_code == 422
+
+    def test_rejects_empty_message(self):
+        r = _make_client().put(
+            "/api/events/redemptions/first/settings",
+            json={"message": "", "announce_color": "primary"},
+        )
+        assert r.status_code == 422
+
+    def test_rejects_unknown_color(self):
+        r = _make_client().put(
+            "/api/events/redemptions/first/settings",
+            json={"message": "hi", "announce_color": "rainbow"},
+        )
+        assert r.status_code == 422
+
+    def test_not_found_returns_404(self):
+        import services.command_config_service as m
+
+        with patch.object(
+            m.CommandConfigService, "update_first_settings", AsyncMock(return_value=None)
+        ):
+            r = _make_client().put(
+                "/api/events/redemptions/first/settings",
+                json={"message": "hi", "announce_color": "primary"},
+            )
+        assert r.status_code == 404
+
+    def test_service_exception_returns_500(self):
+        import services.command_config_service as m
+
+        with patch.object(
+            m.CommandConfigService, "update_first_settings", AsyncMock(side_effect=RuntimeError)
+        ):
+            r = _make_client().put(
+                "/api/events/redemptions/first/settings",
+                json={"message": "hi", "announce_color": "primary"},
             )
         assert r.status_code == 500

@@ -63,12 +63,19 @@ export interface RedemptionConfig {
   reward_name: string
   reward_id: string | null
   enabled: boolean
+  first_message: string
+  first_announce_color: string
 }
 
 export interface RedemptionConfigUpdate {
   reward_name: string
   reward_id?: string | null
   enabled: boolean
+}
+
+export interface FirstSettingsUpdate {
+  message: string
+  announce_color: string
 }
 
 export function getEventCatalog(): Promise<EventDefinition[]> {
@@ -158,5 +165,20 @@ export function updateRedemptionConfig(
       body: JSON.stringify(data),
     },
     { fallback: '更新兌換設定失敗' }
+  )
+}
+
+export function updateFirstRedemptionSettings(
+  data: FirstSettingsUpdate
+): Promise<RedemptionConfig> {
+  return apiJson(
+    API_ENDPOINTS.events.updateFirstSettings,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(data),
+    },
+    { fallback: '更新頭香公告設定失敗' }
   )
 }

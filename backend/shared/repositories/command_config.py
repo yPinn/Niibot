@@ -488,7 +488,7 @@ class RedemptionConfigRepository:
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(
                     "SELECT id, channel_id, action_type, reward_name, reward_id, enabled, "
-                    "created_at, updated_at "
+                    "first_message, first_announce_color, created_at, updated_at "
                     "FROM redemption_configs WHERE channel_id = $1 ORDER BY id",
                     channel_id,
                 )
@@ -520,7 +520,7 @@ class RedemptionConfigRepository:
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
                 "SELECT id, channel_id, action_type, reward_name, reward_id, enabled, "
-                "created_at, updated_at "
+                "first_message, first_announce_color, created_at, updated_at "
                 "FROM redemption_configs WHERE channel_id = $1 AND enabled = TRUE",
                 channel_id,
             )
@@ -566,7 +566,7 @@ class RedemptionConfigRepository:
                             reward_id = EXCLUDED.reward_id,
                             enabled = EXCLUDED.enabled
                         RETURNING id, channel_id, action_type, reward_name, reward_id, enabled,
-                                  created_at, updated_at
+                                  first_message, first_announce_color, created_at, updated_at
                         """,
                         channel_id,
                         action_type,
@@ -583,6 +583,37 @@ class RedemptionConfigRepository:
                     if e.constraint_name == "uq_redemption_configs_channel_reward_id":
                         raise RewardAlreadyBoundError() from e
                     raise
+                result = RedemptionConfig(**dict(row))
+                self.invalidate_channel(channel_id)
+                return result
+
+        return await _retry_on_db_error(_query)
+
+    async def update_first_settings(
+        self, channel_id: str, *, message: str, announce_color: str
+    ) -> RedemptionConfig | None:
+        """Update the 'first' redemption's custom announcement text/color.
+
+        Only touches the row's own action_type — reward binding and enabled
+        state are managed separately via upsert_config.
+        """
+
+        async def _query():
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    """
+                    UPDATE redemption_configs
+                    SET first_message = $2, first_announce_color = $3
+                    WHERE channel_id = $1 AND action_type = 'first'
+                    RETURNING id, channel_id, action_type, reward_name, reward_id, enabled,
+                              first_message, first_announce_color, created_at, updated_at
+                    """,
+                    channel_id,
+                    message,
+                    announce_color,
+                )
+                if row is None:
+                    return None
                 result = RedemptionConfig(**dict(row))
                 self.invalidate_channel(channel_id)
                 return result

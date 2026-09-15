@@ -673,6 +673,48 @@ class TestRedemptionUpsertConfig:
         assert conn.fetchrow.call_count == 2
 
 
+@pytest.mark.asyncio
+class TestRedemptionUpdateFirstSettings:
+    async def test_returns_updated_config(self):
+        row = {
+            **_REDEMPTION_ROW,
+            "action_type": "first",
+            "first_message": "$(user) 手速真快！",
+            "first_announce_color": "green",
+        }
+        pool, conn = _make_pool(fetchrow=row)
+        repo = RedemptionConfigRepository(pool)
+
+        result = await repo.update_first_settings(
+            "ch1", message="$(user) 手速真快！", announce_color="green"
+        )
+
+        assert result is not None
+        assert result.first_message == "$(user) 手速真快！"
+        assert result.first_announce_color == "green"
+        assert "'first'" in conn.fetchrow.call_args.args[0]
+
+    async def test_returns_none_when_no_first_row_exists(self):
+        pool, _ = _make_pool(fetchrow=None)
+        repo = RedemptionConfigRepository(pool)
+
+        result = await repo.update_first_settings("ch1", message="hi", announce_color="primary")
+
+        assert result is None
+
+    async def test_invalidates_channel_cache_on_success(self):
+        _redemption_cache.set("redemption:ch1:first", _REDEMPTION_ROW)
+        row = {**_REDEMPTION_ROW, "action_type": "first"}
+        pool, _ = _make_pool(fetchrow=row)
+        repo = RedemptionConfigRepository(pool)
+
+        await repo.update_first_settings("ch1", message="hi", announce_color="primary")
+
+        from shared.cache import _MISSING
+
+        assert _redemption_cache.get("redemption:ch1:first") is _MISSING
+
+
 class TestRedemptionInvalidateChannel:
     def test_removes_matching_channel_keys_from_cache(self):
         from shared.cache import _MISSING

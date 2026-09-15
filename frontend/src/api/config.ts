@@ -100,6 +100,7 @@ export const API_ENDPOINTS = {
     twitchRewards: join('/api/events/twitch-rewards'),
     redemptions: join('/api/events/redemptions'),
     updateRedemption: (actionType: string) => join(`/api/events/redemptions/${actionType}`),
+    updateFirstSettings: join('/api/events/redemptions/first/settings'),
   },
   checkin: {
     settings: join('/api/checkin/settings'),
