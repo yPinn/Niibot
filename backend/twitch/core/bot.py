@@ -113,6 +113,7 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
             prefix="!",
             subscriptions=subs,
             force_subscribe=True,
+            case_insensitive=True,
         )
         if conduit_id:
             init_kwargs["conduit_id"] = conduit_id
@@ -460,12 +461,6 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
                 ),
             )
             return
-
-        if payload.text and payload.text.startswith("!"):
-            parts = payload.text.split(maxsplit=1)
-            if parts:
-                parts[0] = parts[0].lower()
-                payload.text = " ".join(parts)
 
         handled = await self._handle_custom_command(payload)
         if handled:

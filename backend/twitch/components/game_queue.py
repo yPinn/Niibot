@@ -46,7 +46,7 @@ class GameQueueComponent(BotComponent):
         pull_size = max(1, group_size - 1)
         return [entries[i : i + pull_size] for i in range(0, len(entries), pull_size)]
 
-    @commands.group(name="gq")
+    @commands.group(name="gq", case_insensitive=True)
     async def gq(self, ctx: commands.Context["Bot"]) -> None:
         """Game queue commands."""
         if ctx.invoked_subcommand is not None:
