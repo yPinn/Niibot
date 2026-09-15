@@ -695,7 +695,10 @@ class ChannelPointsComponent(commands.Component):
         platform_user_id = str(payload.user.id)
 
         try:
-            code = await self.activation_repo.create_channel_points_grant(
+            # Grant still needs to be recorded — activate_if_entitled() consumes
+            # it by platform_user_id on login. The returned code is unused: with
+            # auto-activation, redeemers never need to enter it manually.
+            await self.activation_repo.create_channel_points_grant(
                 platform_user_id,
                 redemption_id=str(payload.id),
                 channel_id=str(payload.broadcaster.id),
@@ -710,18 +713,13 @@ class ChannelPointsComponent(commands.Component):
             return
 
         try:
-            await self._reply(
-                broadcaster, f"@{user_name} 登入 Niibot 即可啟用！啟用碼也已私訊給你。"
-            )
+            await self._reply(broadcaster, f"@{user_name} 登入 Niibot 即可啟用！")
             LOGGER.info("[%s] Niibot auth: confirmation sent to %s", channel_name, user_name)
         except Exception as e:
             LOGGER.warning("[%s] Niibot auth: failed to send public message: %s", channel_name, e)
 
         frontend_url = self.settings.frontend_url
-        whisper_message = (
-            f"前往 {frontend_url} 用 Twitch 登入即會自動啟用。"
-            f"若未生效，可於啟用頁輸入啟用碼： {code}（72 小時內有效）"
-        )
+        whisper_message = f"前往 {frontend_url} 用 Twitch 登入即可自動啟用！"
         try:
             bot_user = self.bot.create_partialuser(user_id=self.bot.bot_id)
             await bot_user.send_whisper(
@@ -740,7 +738,7 @@ class ChannelPointsComponent(commands.Component):
             try:
                 await self._reply(
                     broadcaster,
-                    f"@{user_name} 私訊發送失敗，請聯繫 @llazypilot 獲取啟用碼！",
+                    f"@{user_name} 私訊發送失敗，請聯繫 @llazypilot 協助啟用！",
                 )
             except Exception as fallback_error:
                 LOGGER.error(
