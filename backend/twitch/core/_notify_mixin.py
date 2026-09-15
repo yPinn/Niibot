@@ -3,7 +3,7 @@
 Depends on attributes defined in Bot.__init__:
     self._bot_id, self.owner_id, self.subs, self.sessions
     self.channels, self.command_configs, self.redemption_configs
-    self.timer_configs, self.message_trigger_configs
+    self.timer_configs, self.message_trigger_configs, self.video_queue
 Uses self._ch() defined on Bot.
 """
 
@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 import twitchio
 
 from core.config import get_settings
+from shared.repositories.video_queue import format_now_playing
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -291,6 +292,28 @@ class _NotifyMixin:
             await self._refresh_channel_cache(channel_id)  # type: ignore[attr-defined]
         except Exception as e:
             LOGGER.warning(f"[NOTIFY] Error handling config_change: {e}")
+
+    async def _handle_video_queue_now_playing(self, connection, pid, channel, payload) -> None:
+        """Announce in chat once when a Video Queue entry starts playing."""
+        try:
+            data = json.loads(payload)
+            channel_id = data.get("channel_id")
+            if not channel_id or not self.subs.is_subscribed(channel_id):  # type: ignore[attr-defined]
+                return
+
+            entry = await self.video_queue.get_current(channel_id)  # type: ignore[attr-defined]
+            if entry is None:
+                return
+
+            users = await self.fetch_users(ids=[channel_id])  # type: ignore[attr-defined]
+            if not users:
+                return
+            await users[0].send_message(
+                message=format_now_playing(entry),
+                sender=self._bot_id,  # type: ignore[attr-defined]
+            )
+        except Exception as e:
+            LOGGER.warning(f"[NOTIFY] Failed to announce now-playing: {e}")
 
     # ------------------------------------------------------------------
     # Cache management

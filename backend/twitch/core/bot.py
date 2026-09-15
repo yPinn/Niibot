@@ -32,6 +32,7 @@ from shared.repositories.command_config import (
 from shared.repositories.event_config import EventConfigRepository
 from shared.repositories.message_trigger import MessageTriggerRepository
 from shared.repositories.timer import TimerConfigRepository
+from shared.repositories.video_queue import VideoQueueRepository
 from utils.mod_guard import mod_guard_notifier
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -83,6 +84,7 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
         self.redemption_configs = RedemptionConfigRepository(token_database)
         self.event_configs = EventConfigRepository(token_database)
         self.timer_configs = TimerConfigRepository(token_database)
+        self.video_queue = VideoQueueRepository(token_database)
         self.message_trigger_configs = MessageTriggerRepository(token_database)
         # Strong references to background tasks to prevent GC collection
         self._background_tasks: set[asyncio.Task] = set()
@@ -226,6 +228,11 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
             ),
             pg_listen(self._database_url, "channel_toggle", self._handle_channel_toggle),
             pg_listen(self._database_url, "config_change", self._handle_config_change),
+            pg_listen(
+                self._database_url,
+                "video_queue_now_playing",
+                self._handle_video_queue_now_playing,
+            ),
             self._pool_heartbeat_loop(),
             self._periodic_cache_refresh(),
         ):
@@ -768,6 +775,7 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
         self.event_configs.pool = pool
         self.timer_configs.pool = pool
         self.message_trigger_configs.pool = pool
+        self.video_queue.pool = pool
         for comp in self._components.values():
             if hasattr(comp, "refresh_pool"):
                 comp.refresh_pool(pool)
