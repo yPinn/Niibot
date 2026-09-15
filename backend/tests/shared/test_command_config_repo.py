@@ -631,6 +631,47 @@ class TestRedemptionUpsertConfig:
 
         assert _redemption_cache.get("redemption:ch2:vip") == _REDEMPTION_ROW
 
+    async def test_reward_bound_to_other_action_raises_clean_conflict(self):
+        """ON CONFLICT (channel_id, action_type) only dedupes that constraint.
+        Reassigning a reward_id that's already bound to a *different*
+        action_type hits uq_redemption_configs_channel_reward_id instead,
+        which asyncpg surfaces as a raw UniqueViolationError — must be
+        translated into RewardAlreadyBoundError, not bubble as a 500."""
+        import asyncpg
+
+        from shared.repositories.command_config import RewardAlreadyBoundError
+
+        pool, conn = _make_pool()
+        err = asyncpg.exceptions.UniqueViolationError(
+            "duplicate key value violates unique constraint"
+            ' "uq_redemption_configs_channel_reward_id"'
+        )
+        err.constraint_name = "uq_redemption_configs_channel_reward_id"
+        conn.fetchrow.side_effect = err
+        repo = RedemptionConfigRepository(pool)
+
+        with pytest.raises(RewardAlreadyBoundError):
+            await repo.upsert_config("ch1", "video_queue", "reward", reward_id="shared-reward")
+
+        # Domain rejection, not a transient failure — must not be retried.
+        assert conn.fetchrow.call_count == 1
+
+    async def test_unrelated_unique_violation_still_propagates(self):
+        """Only the known reward-conflict constraint gets translated; any other
+        UniqueViolationError must still surface (and still gets retried)."""
+        import asyncpg
+
+        pool, conn = _make_pool()
+        err = asyncpg.exceptions.UniqueViolationError("duplicate key value violates constraint")
+        err.constraint_name = "some_other_constraint"
+        conn.fetchrow.side_effect = err
+        repo = RedemptionConfigRepository(pool)
+
+        with pytest.raises(asyncpg.exceptions.UniqueViolationError):
+            await repo.upsert_config("ch1", "vip", "vip")
+
+        assert conn.fetchrow.call_count == 2
+
 
 class TestRedemptionInvalidateChannel:
     def test_removes_matching_channel_keys_from_cache(self):

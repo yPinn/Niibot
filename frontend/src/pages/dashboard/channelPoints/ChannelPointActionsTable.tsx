@@ -30,6 +30,17 @@ import type { SortState } from '@/hooks/useSortState'
 
 import { ACTION_TYPE_DESCRIPTIONS, ACTION_TYPE_LABELS } from './constants'
 
+/** reward_id -> the other action_type it's already bound to on this channel. */
+function buildRewardBindings(redemptions: RedemptionConfig[]): Map<string, string> {
+  const bindings = new Map<string, string>()
+  for (const redemption of redemptions) {
+    if (redemption.reward_id) {
+      bindings.set(redemption.reward_id, redemption.action_type)
+    }
+  }
+  return bindings
+}
+
 export type ChannelPointSortKey = 'action_type' | 'reward_name' | 'enabled'
 
 interface ChannelPointActionsTableProps {
@@ -61,6 +72,8 @@ export function ChannelPointActionsTable({
   vipRules,
   onToggleVip,
 }: ChannelPointActionsTableProps) {
+  const rewardBindings = buildRewardBindings(redemptions)
+
   return (
     <Card className="relative w-full max-w-7xl overflow-hidden">
       {!isAffiliate && (
@@ -158,11 +171,24 @@ export function ChannelPointActionsTable({
                               <SelectItem value="__none__" className="text-muted-foreground">
                                 未選擇
                               </SelectItem>
-                              {twitchRewards.map(reward => (
-                                <SelectItem key={reward.id} value={reward.id}>
-                                  {reward.title} ({reward.cost.toLocaleString()} 點)
-                                </SelectItem>
-                              ))}
+                              {twitchRewards.map(reward => {
+                                const boundTo = rewardBindings.get(reward.id)
+                                const takenByOther = Boolean(
+                                  boundTo && boundTo !== redemption.action_type
+                                )
+                                return (
+                                  <SelectItem
+                                    key={reward.id}
+                                    value={reward.id}
+                                    disabled={takenByOther}
+                                  >
+                                    {reward.title} ({reward.cost.toLocaleString()} 點)
+                                    {boundTo &&
+                                      boundTo !== redemption.action_type &&
+                                      ` — 已用於「${ACTION_TYPE_LABELS[boundTo] ?? boundTo}」`}
+                                  </SelectItem>
+                                )
+                              })}
                             </SelectContent>
                           </Select>
                         )}

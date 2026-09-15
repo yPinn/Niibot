@@ -10,9 +10,21 @@ import asyncpg
 
 from shared.builtin_commands import BUILTIN_ALIAS_MAP, BUILTIN_DEFS, BUILTIN_MAP
 from shared.cache import AsyncTTLCache, cached
+from shared.errors import AppError, ConflictError
 from shared.models.command_config import CommandConfig, RedemptionConfig
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
+
+
+class RewardAlreadyBoundError(ConflictError):
+    """The Twitch reward is already bound to a different action_type on this
+    channel — uq_redemption_configs_channel_reward_id forbids one reward
+    dispatching two Niibot actions (migration 098).
+    """
+
+    code = "REDEMPTION.REWARD_ALREADY_BOUND"
+    user_message = "這個獎勵已經綁定其他功能了，請先解除該綁定再試一次"
+
 
 # In-process caches — long TTL for memory-first reads.
 # Freshness is maintained by pg_notify (instant) + periodic refresh (5 min safety net).
@@ -98,6 +110,11 @@ async def _retry_on_db_error(func, max_retries: int = 2):
         try:
             return await func()
         except asyncio.CancelledError:
+            raise
+        except AppError:
+            # Domain-level rejection (e.g. a unique-constraint conflict we
+            # translated on purpose) — not a transient DB failure, so retrying
+            # would just reproduce the same rejection.
             raise
         except Exception as e:
             if attempt < max_retries:
@@ -538,24 +555,34 @@ class RedemptionConfigRepository:
 
         async def _query():
             async with self.pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    """
-                    INSERT INTO redemption_configs
-                        (channel_id, action_type, reward_name, reward_id, enabled)
-                    VALUES ($1, $2, $3, $4, $5)
-                    ON CONFLICT (channel_id, action_type) DO UPDATE SET
-                        reward_name = EXCLUDED.reward_name,
-                        reward_id = EXCLUDED.reward_id,
-                        enabled = EXCLUDED.enabled
-                    RETURNING id, channel_id, action_type, reward_name, reward_id, enabled,
-                              created_at, updated_at
-                    """,
-                    channel_id,
-                    action_type,
-                    reward_name,
-                    reward_id.strip() if reward_id and reward_id.strip() else None,
-                    enabled,
-                )
+                try:
+                    row = await conn.fetchrow(
+                        """
+                        INSERT INTO redemption_configs
+                            (channel_id, action_type, reward_name, reward_id, enabled)
+                        VALUES ($1, $2, $3, $4, $5)
+                        ON CONFLICT (channel_id, action_type) DO UPDATE SET
+                            reward_name = EXCLUDED.reward_name,
+                            reward_id = EXCLUDED.reward_id,
+                            enabled = EXCLUDED.enabled
+                        RETURNING id, channel_id, action_type, reward_name, reward_id, enabled,
+                                  created_at, updated_at
+                        """,
+                        channel_id,
+                        action_type,
+                        reward_name,
+                        reward_id.strip() if reward_id and reward_id.strip() else None,
+                        enabled,
+                    )
+                except asyncpg.exceptions.UniqueViolationError as e:
+                    # ON CONFLICT (channel_id, action_type) only dedupes on that
+                    # constraint. uq_redemption_configs_channel_reward_id (098)
+                    # is a separate constraint — the same reward_id bound to a
+                    # *different* action_type hits it instead and isn't caught
+                    # by the ON CONFLICT clause at all.
+                    if e.constraint_name == "uq_redemption_configs_channel_reward_id":
+                        raise RewardAlreadyBoundError() from e
+                    raise
                 result = RedemptionConfig(**dict(row))
                 self.invalidate_channel(channel_id)
                 return result
