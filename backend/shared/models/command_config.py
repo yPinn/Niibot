@@ -35,5 +35,7 @@ class RedemptionConfig:
     reward_name: str
     reward_id: str | None = None
     enabled: bool = True
+    first_message: str = "$(@user) 恭喜你搶到沙發！"
+    first_announce_color: str = "primary"
     created_at: datetime | None = None
     updated_at: datetime | None = None

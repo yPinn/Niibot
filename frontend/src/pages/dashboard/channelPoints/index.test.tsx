@@ -8,6 +8,7 @@ vi.mock('@/api/events', () => ({
   getRedemptionConfigs: vi.fn(),
   getTwitchRewards: vi.fn(),
   updateRedemptionConfig: vi.fn(),
+  updateFirstRedemptionSettings: vi.fn(),
 }))
 vi.mock('@/api/checkin', () => ({
   getCheckinLeaderboard: vi.fn(),
@@ -39,6 +40,7 @@ import {
   getEventConfigs,
   getRedemptionConfigs,
   getTwitchRewards,
+  updateFirstRedemptionSettings,
   updateRedemptionConfig,
 } from '@/api/events'
 import { adjustVipEntitlement, getVipState, removeVipEntitlement, upsertVipRule } from '@/api/vip'
@@ -53,6 +55,8 @@ const CHECKIN = {
   reward_name: '每日簽到',
   reward_id: 'reward-checkin',
   enabled: true,
+  first_message: '$(@user) 恭喜你搶到沙發！',
+  first_announce_color: 'primary',
 }
 
 const GAME_QUEUE = {
@@ -173,6 +177,11 @@ describe('Channel Points page', () => {
     vi.mocked(updateRedemptionConfig).mockImplementation(async (actionType, update) => ({
       ...(actionType === 'checkin' ? CHECKIN : GAME_QUEUE),
       ...update,
+    }))
+    vi.mocked(updateFirstRedemptionSettings).mockImplementation(async update => ({
+      ...FIRST,
+      first_message: update.message,
+      first_announce_color: update.announce_color,
     }))
     vi.mocked(getCheckinSettings).mockResolvedValue(CHECKIN_SETTINGS)
     vi.mocked(getCheckinLeaderboard).mockResolvedValue(CHECKIN_LEADERBOARD)
@@ -300,6 +309,29 @@ describe('Channel Points page', () => {
         success_template: CHECKIN_SETTINGS.success_template,
         duplicate_template: CHECKIN_SETTINGS.duplicate_template,
         reply_delay_seconds: CHECKIN_SETTINGS.reply_delay_seconds,
+      })
+    )
+  })
+
+  it('edits the 頭香 announcement message separately from the reward mapping', async () => {
+    const user = userEvent.setup()
+    vi.mocked(getRedemptionConfigs).mockResolvedValueOnce([FIRST, CHECKIN])
+    render(<ChannelPoints />)
+
+    const firstRow = await screen.findByRole('row', { name: /本日頭香/ })
+    await user.click(within(firstRow).getByRole('button', { name: '編輯本日頭香設定' }))
+
+    expect(await screen.findByRole('heading', { name: '本日頭香設定' })).toBeInTheDocument()
+
+    const message = screen.getByRole('textbox')
+    await user.clear(message)
+    await user.type(message, '$(@user) 手速真快！')
+    await user.click(screen.getByRole('button', { name: '儲存設定' }))
+
+    await waitFor(() =>
+      expect(updateFirstRedemptionSettings).toHaveBeenCalledWith({
+        message: '$(@user) 手速真快！',
+        announce_color: 'primary',
       })
     )
   })

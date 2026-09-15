@@ -46,7 +46,7 @@ class OwnerCommandsComponent(BotComponent):
             raise NotOwnerError
         return True
 
-    @commands.group(name="comp")
+    @commands.group(name="comp", case_insensitive=True)
     async def comp(self, ctx: commands.Context[Bot]) -> None:
         """Component management group. Lists loaded modules by default."""
         if ctx.invoked_subcommand is None:

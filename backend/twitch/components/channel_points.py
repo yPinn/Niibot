@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal, cast
 
 import aiohttp
 import asyncpg
@@ -10,6 +10,7 @@ from cachetools import TTLCache  # type: ignore[import-untyped]
 from twitchio.ext import commands
 
 from core.config import get_settings
+from shared.models.command_config import RedemptionConfig
 from shared.models.vip import (
     VipRedemptionDecision,
     VipRedemptionStatus,
@@ -35,6 +36,7 @@ from shared.video_sources import (
     resolve_video_url,
     unplayable_message,
 )
+from utils.event_render import mention_vars, render_template
 from utils.mod_guard import mod_guard_notifier
 from utils.reauth import is_scope_error, reauth_notifier
 
@@ -196,7 +198,7 @@ class ChannelPointsComponent(commands.Component):
                     "[%s] %s attempted niibot_auth on non-owner channel", channel_name, user_name
                 )
         elif config.action_type == "first" and user_name:
-            await self._handle_first_redemption(payload, user_name)
+            await self._handle_first_redemption(payload, user_name, config)
         elif config.action_type == "vip":
             await self._handle_vip_redemption(payload, user_name)
         elif config.action_type == "game_queue" and user_name:
@@ -659,22 +661,30 @@ class ChannelPointsComponent(commands.Component):
         self,
         payload: twitchio.ChannelPointsRedemptionAdd,
         user_name: str,
+        config: RedemptionConfig,
     ) -> None:
         """處理搶第一遊戲兌換"""
         channel_name = payload.broadcaster.name
         broadcaster = payload.broadcaster
+        message = render_template(config.first_message, mention_vars("user", user_name))[:500]
         try:
             try:
+                # DB CHECK (migration 115) + the router's Literal validation
+                # already restrict this to the 5 colors twitchio accepts.
+                color = cast(
+                    "Literal['blue', 'green', 'orange', 'purple', 'primary']",
+                    config.first_announce_color,
+                )
                 await broadcaster.send_announcement(
-                    message=f"@{user_name} 恭喜你搶到沙發！",
+                    message=message,
                     moderator=self.bot.bot_id,
-                    color="primary",
+                    color=color,
                 )
                 LOGGER.info("[%s] First claimed by %s", channel_name, user_name)
             except Exception as e:
                 LOGGER.error("[%s] First announcement failed, falling back: %s", channel_name, e)
                 try:
-                    await self._reply(broadcaster, f"@{user_name} 恭喜你搶到第一！")
+                    await self._reply(broadcaster, message)
                     LOGGER.info("[%s] First fallback message sent to %s", channel_name, user_name)
                 except Exception as fallback_error:
                     LOGGER.error(
@@ -695,7 +705,10 @@ class ChannelPointsComponent(commands.Component):
         platform_user_id = str(payload.user.id)
 
         try:
-            code = await self.activation_repo.create_channel_points_grant(
+            # Grant still needs to be recorded — activate_if_entitled() consumes
+            # it by platform_user_id on login. The returned code is unused: with
+            # auto-activation, redeemers never need to enter it manually.
+            await self.activation_repo.create_channel_points_grant(
                 platform_user_id,
                 redemption_id=str(payload.id),
                 channel_id=str(payload.broadcaster.id),
@@ -710,18 +723,13 @@ class ChannelPointsComponent(commands.Component):
             return
 
         try:
-            await self._reply(
-                broadcaster, f"@{user_name} 登入 Niibot 即可啟用！啟用碼也已私訊給你。"
-            )
+            await self._reply(broadcaster, f"@{user_name} 登入 Niibot 即可啟用！")
             LOGGER.info("[%s] Niibot auth: confirmation sent to %s", channel_name, user_name)
         except Exception as e:
             LOGGER.warning("[%s] Niibot auth: failed to send public message: %s", channel_name, e)
 
         frontend_url = self.settings.frontend_url
-        whisper_message = (
-            f"前往 {frontend_url} 用 Twitch 登入即會自動啟用。"
-            f"若未生效，可於啟用頁輸入啟用碼： {code}（72 小時內有效）"
-        )
+        whisper_message = f"前往 {frontend_url} 用 Twitch 登入即可自動啟用！"
         try:
             bot_user = self.bot.create_partialuser(user_id=self.bot.bot_id)
             await bot_user.send_whisper(
@@ -740,7 +748,7 @@ class ChannelPointsComponent(commands.Component):
             try:
                 await self._reply(
                     broadcaster,
-                    f"@{user_name} 私訊發送失敗，請聯繫 @llazypilot 獲取啟用碼！",
+                    f"@{user_name} 私訊發送失敗，請聯繫 @llazypilot 協助啟用！",
                 )
             except Exception as fallback_error:
                 LOGGER.error(

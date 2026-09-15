@@ -60,8 +60,8 @@ UNPLAYABLE_PRIVATE = "private"
 UNPLAYABLE_REMOVED = "removed"
 
 _UNPLAYABLE_MESSAGES: dict[str, str] = {
-    UNPLAYABLE_NOT_EMBEDDABLE: "這部影片不允許在其他網站嵌入播放",
-    UNPLAYABLE_AGE_RESTRICTED: "這部影片有年齡限制，無法在 overlay 播放",
+    UNPLAYABLE_NOT_EMBEDDABLE: "這部影片不開放外部播放",
+    UNPLAYABLE_AGE_RESTRICTED: "這部影片有年齡限制，無法播放",
     UNPLAYABLE_PRIVATE: "這是私人影片，無法播放",
     UNPLAYABLE_REMOVED: "這部影片已被移除或無法使用",
 }

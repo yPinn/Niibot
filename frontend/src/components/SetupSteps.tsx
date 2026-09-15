@@ -8,6 +8,8 @@ export interface SetupStep {
   description?: string
   /** Ordered sub-steps. Plain strings, or JSX with <GuideValue> for literals. */
   items: React.ReactNode[]
+  /** Optional CTA rendered below the items, unnumbered — e.g. a link to the page the step describes. */
+  action?: React.ReactNode
 }
 
 /**
@@ -59,6 +61,7 @@ export function SetupSteps({ steps }: { steps: SetupStep[] }) {
                 </li>
               ))}
             </ol>
+            {step.action && <div className="pt-0.5">{step.action}</div>}
           </div>
         </li>
       ))}

@@ -102,7 +102,9 @@ class TestChatAddMetadataGates:
         with p1, p2:
             await component._handle_add_inner(_ctx(), "https://youtube.com/watch?v=vid123")
         component.vq_repo.add_if_within_limits.assert_not_awaited()
-        assert component._ctx_reply.await_args.args[1] == "無法驗證影片資訊，請稍後再試"
+        assert (
+            component._ctx_reply.await_args.args[1] == "目前無法確認影片資訊，請稍後再試 BloodTrail"
+        )
 
     async def test_missing_view_count_allowed_for_best_effort_platform(self):
         component = _component(settings=_settings(min_view_count=1000))

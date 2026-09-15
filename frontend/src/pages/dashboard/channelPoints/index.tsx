@@ -23,6 +23,7 @@ import { toastApiError } from '@/lib/toast-error'
 import { ChannelPointActionsTable, type ChannelPointSortKey } from './ChannelPointActionsTable'
 import { CheckinSettingsSheet } from './CheckinSettingsSheet'
 import { ACTION_TYPE_DEFAULT_ORDER, ACTION_TYPE_LABELS } from './constants'
+import { FirstSettingsSheet } from './FirstSettingsSheet'
 import { VipSettingsSheet } from './VipSettingsSheet'
 
 const ACTION_TYPE_ORDER = new Map<string, number>(
@@ -38,6 +39,7 @@ export default function ChannelPoints() {
   const [rewardsLoading, setRewardsLoading] = useState(true)
   const [loadFailed, setLoadFailed] = useState(false)
   const [checkinSettingsOpen, setCheckinSettingsOpen] = useState(false)
+  const [firstSettingsOpen, setFirstSettingsOpen] = useState(false)
   const [vipSettingsOpen, setVipSettingsOpen] = useState(false)
   const [vipRules, setVipRules] = useState<VipRewardRule[]>([])
   const sort = useSortState<ChannelPointSortKey>('action_type')
@@ -143,6 +145,12 @@ export default function ChannelPoints() {
     }
   }
 
+  const handleFirstSettingsSaved = (updated: RedemptionConfig) => {
+    setRedemptions(current =>
+      current.map(item => (item.action_type === updated.action_type ? updated : item))
+    )
+  }
+
   const handleVipToggle = async () => {
     const nextEnabled = !vipRules.some(rule => rule.enabled)
     const previous = vipRules
@@ -186,6 +194,7 @@ export default function ChannelPoints() {
           onToggle={handleToggle}
           onRewardSelect={(redemption, rewardId) => void handleRewardSelect(redemption, rewardId)}
           onEditCheckinSettings={() => setCheckinSettingsOpen(true)}
+          onEditFirstSettings={() => setFirstSettingsOpen(true)}
           onEditVipSettings={() => setVipSettingsOpen(true)}
           vipRules={vipRules}
           onToggleVip={() => void handleVipToggle()}
@@ -193,6 +202,12 @@ export default function ChannelPoints() {
       </SlideUp>
 
       <CheckinSettingsSheet open={checkinSettingsOpen} onOpenChange={setCheckinSettingsOpen} />
+      <FirstSettingsSheet
+        open={firstSettingsOpen}
+        onOpenChange={setFirstSettingsOpen}
+        config={redemptions.find(item => item.action_type === 'first')}
+        onSaved={handleFirstSettingsSaved}
+      />
       <VipSettingsSheet
         open={vipSettingsOpen}
         onOpenChange={setVipSettingsOpen}
