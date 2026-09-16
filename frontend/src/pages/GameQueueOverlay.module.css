@@ -60,6 +60,7 @@
 /* Preview mode — simulate dark stream background, widget in top-left */
 
 .previewWrapper {
+  position: relative;
   display: flex;
   align-items: flex-start;
   justify-content: flex-start;
@@ -71,6 +72,7 @@
 }
 
 .previewEmpty {
+  position: relative;
   width: 100%;
   height: 100dvh;
   background: rgba(10, 10, 20, 0.9);

@@ -37,9 +37,11 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui'
+import { WarningBanner } from '@/components/WarningBanner'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { usePolling } from '@/hooks/usePolling'
+import { reportSilent } from '@/lib/clientErrorReporter'
 import { toastApiError } from '@/lib/toast-error'
 
 const POLL_INTERVAL = 30_000
@@ -143,6 +145,10 @@ export default function GameQueue() {
   const [groupSizeInput, setGroupSizeInput] = useState('')
   const [saving, setSaving] = useState(false)
   const hasInitialized = useRef(false)
+  // 2+ consecutive poll failures (not just one blip) before showing the
+  // staleness banner — avoids flickering it on a single dropped request.
+  const consecutiveFailuresRef = useRef(0)
+  const [isStale, setIsStale] = useState(false)
 
   const fetchState = useCallback(async () => {
     if (!isAffiliate) {
@@ -156,8 +162,12 @@ export default function GameQueue() {
         setGroupSizeInput(String(data.group_size))
         hasInitialized.current = true
       }
-    } catch {
-      // silent on poll errors
+      consecutiveFailuresRef.current = 0
+      setIsStale(false)
+    } catch (e) {
+      consecutiveFailuresRef.current += 1
+      if (consecutiveFailuresRef.current >= 2) setIsStale(true)
+      reportSilent(e)
     } finally {
       setLoading(false)
     }
@@ -266,6 +276,8 @@ export default function GameQueue() {
       <PageHeader title="Game Queue" description="管理遊戲排隊系統" />
 
       {!isAffiliate && <AffiliateLockOverlay message="取得資格後可使用遊戲排隊功能" fullPage />}
+
+      {isStale && <WarningBanner>即時更新暫時中斷，重新連線中…畫面可能不是最新狀態</WarningBanner>}
 
       {/* Row 1: Full Queue (col-8) + sidebar (col-4) */}
       <SlideUp inView className="grid grid-cols-1 gap-section lg:grid-cols-12 lg:items-stretch">

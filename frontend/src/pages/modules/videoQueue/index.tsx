@@ -30,6 +30,7 @@ import {
   Skeleton,
   Switch,
 } from '@/components/ui'
+import { WarningBanner } from '@/components/WarningBanner'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { useVideoQueueStream } from '@/hooks/useVideoQueueStream'
@@ -59,7 +60,11 @@ export default function VideoQueue() {
   const { user, isAffiliate } = useAuth()
   // Queue state rides the same NOTIFY-woken SSE stream as the OBS overlay;
   // settings are fetched once (they only change from this page).
-  const { state, setState } = useVideoQueueStream(isAffiliate ? user?.name : undefined)
+  const {
+    state,
+    setState,
+    status: streamStatus,
+  } = useVideoQueueStream(isAffiliate ? user?.name : undefined)
   const [settings, setSettings] = useState<VideoQueueSettings | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -363,6 +368,10 @@ export default function VideoQueue() {
       <SetupGuideSheet open={helpOpen} onOpenChange={setHelpOpen} />
 
       {!isAffiliate && <AffiliateLockOverlay message="取得資格後可使用影片佇列功能" fullPage />}
+
+      {streamStatus === 'reconnecting' && (
+        <WarningBanner>即時更新暫時中斷，重新連線中…畫面可能不是最新狀態</WarningBanner>
+      )}
 
       <SlideUp inView>
         <NowPlayingCard
