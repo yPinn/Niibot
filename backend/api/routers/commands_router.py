@@ -20,7 +20,9 @@ from shared.errors import ChannelNotFoundError, InvalidInputError, NotFoundError
 from shared.repositories.command_config import UNSET as _UNSET
 
 # Cache username → user_info for 60 s to avoid a Twitch API call on every page load
-_user_lookup_cache: AsyncTTLCache = AsyncTTLCache(maxsize=256, ttl=60.0)
+_user_lookup_cache: AsyncTTLCache = AsyncTTLCache(
+    maxsize=256, ttl=60.0, name="commands_router.user_lookup"
+)
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 

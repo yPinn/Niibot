@@ -16,7 +16,9 @@ from shared.repositories.crosshair import VALID_GAMES, CrosshairRepository
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
-_user_lookup_cache: AsyncTTLCache = AsyncTTLCache(maxsize=256, ttl=60.0)
+_user_lookup_cache: AsyncTTLCache = AsyncTTLCache(
+    maxsize=256, ttl=60.0, name="crosshairs_router.user_lookup"
+)
 
 router = APIRouter(prefix="/api/crosshairs", tags=["crosshairs"])
 

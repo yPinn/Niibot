@@ -80,7 +80,7 @@ _SETTINGS_COLUMNS = (
     "created_at, updated_at"
 )
 
-_settings_cache = AsyncTTLCache(maxsize=32, ttl=15)
+_settings_cache = AsyncTTLCache(maxsize=32, ttl=15, name="video_queue.settings")
 
 _BLOCKLIST_COLUMNS = "id, channel_id, kind, value, label, created_by, created_at"
 
@@ -91,7 +91,7 @@ BLOCKLIST_KINDS = ("video", "keyword", "user")
 # Per-channel cache of the full blocklist, refreshed on write. The check runs on
 # every submission (three add paths) and the list is tiny, so we match in Python
 # rather than issue a query per add.
-_blocklist_cache = AsyncTTLCache(maxsize=64, ttl=30)
+_blocklist_cache = AsyncTTLCache(maxsize=64, ttl=30, name="video_queue.blocklist")
 
 
 # ---------------------------------------------------------------------------

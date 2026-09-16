@@ -14,11 +14,18 @@ from shared.twitch_token_crypto import decrypt_twitch_token, encrypt_twitch_toke
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 # --- In-process caches ---
-# Long TTL for memory-first reads; freshness via pg_notify + periodic refresh.
-_token_cache = AsyncTTLCache(maxsize=64, ttl=3600)
-_channel_cache = AsyncTTLCache(maxsize=64, ttl=3600)
-_enabled_channels_cache = AsyncTTLCache(maxsize=1, ttl=3600)
-_discord_user_cache = AsyncTTLCache(maxsize=64, ttl=300)
+# Long TTL for memory-first reads. Freshness: `_channel_cache` /
+# `_enabled_channels_cache` are invalidated on `channel_toggle`/`config_change`
+# pg_notify (both twitch and api processes listen — see core/_notify_mixin.py
+# and api/app.py) plus a periodic full-clear safety net. `_token_cache` has its
+# own `new_token`/`token_reauth` notify flow and is NOT part of that safety net.
+_token_cache = AsyncTTLCache(maxsize=64, ttl=3600, name="channel.token")
+_channel_cache = AsyncTTLCache(maxsize=64, ttl=3600, name="channel.channel")
+_enabled_channels_cache = AsyncTTLCache(maxsize=1, ttl=3600, name="channel.enabled_channels")
+_discord_user_cache = AsyncTTLCache(maxsize=64, ttl=300, name="channel.discord_user")
+# Short TTL: only feeds the log viewer's id -> login resolution, where a few
+# minutes of staleness costs nothing but a rename showing late.
+_channel_name_cache = AsyncTTLCache(maxsize=1, ttl=300, name="channel.name_map")
 
 
 class ChannelRepository:
@@ -227,6 +234,20 @@ class ChannelRepository:
         for ch in channels:
             _channel_cache.set(f"channel:{ch.channel_id}", ch)
         return len(channels)
+
+    @cached(cache=_channel_name_cache, key_func=lambda self: "channel_names")
+    async def get_channel_name_map(self) -> dict[str, str]:
+        """``channel_id -> channel_name`` for every channel, disabled included —
+        a suspended channel is exactly when you need to know whose it is.
+
+        Resolves the numeric channel ids that appear in log lines back to
+        logins (see ``api/routers/admin/logs.py``). Deliberately its own
+        narrow query rather than reusing ``list_all_channels()`` so the log
+        viewer never pulls whole Channel rows it has no use for.
+        """
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch("SELECT channel_id, channel_name FROM channels")
+            return {r["channel_id"]: r["channel_name"] for r in rows if r["channel_name"]}
 
     async def list_all_channels(self) -> list[Channel]:
         """Return all channels (including disabled)."""

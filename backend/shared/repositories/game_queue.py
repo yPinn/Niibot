@@ -18,7 +18,7 @@ _ENTRY_COLUMNS = (
 _SETTINGS_COLUMNS = "id, channel_id, group_size, enabled, created_at, updated_at"
 
 # Short TTL cache for settings only (entries change too frequently)
-_settings_cache = AsyncTTLCache(maxsize=32, ttl=300)
+_settings_cache = AsyncTTLCache(maxsize=32, ttl=300, name="game_queue.settings")
 
 
 class GameQueueRepository:

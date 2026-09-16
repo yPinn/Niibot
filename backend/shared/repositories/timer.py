@@ -7,7 +7,7 @@ import asyncpg
 from shared.cache import AsyncTTLCache, cached
 from shared.models.timer import TimerConfig
 
-_timer_list_cache = AsyncTTLCache(maxsize=32, ttl=3600)
+_timer_list_cache = AsyncTTLCache(maxsize=32, ttl=3600, name="timer.timer_list")
 
 _COLUMNS = (
     "id, channel_id, timer_name, interval_seconds, min_lines, "

@@ -8,7 +8,7 @@ import asyncpg
 
 from shared.cache import AsyncTTLCache, cached
 
-_ai_settings_cache = AsyncTTLCache(maxsize=64, ttl=300)
+_ai_settings_cache = AsyncTTLCache(maxsize=64, ttl=300, name="ai_settings")
 
 # ── Defaults ────────────────────────────────────────────────────────────────
 

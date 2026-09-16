@@ -14,8 +14,8 @@ from shared.models.event_config import EventConfig
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 # In-process cache for bot-side lookups — long TTL for memory-first reads.
-_config_cache = AsyncTTLCache(maxsize=64, ttl=3600)
-_config_list_cache = AsyncTTLCache(maxsize=16, ttl=3600)
+_config_cache = AsyncTTLCache(maxsize=64, ttl=3600, name="event_config.config")
+_config_list_cache = AsyncTTLCache(maxsize=16, ttl=3600, name="event_config.config_list")
 _seeded_events: set[str] = set()
 
 # Seed values for a channel's event_configs rows. Derived from the catalog so

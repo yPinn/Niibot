@@ -7,7 +7,7 @@ import asyncpg
 from shared.cache import AsyncTTLCache, cached
 from shared.models.message_trigger import MessageTriggerConfig
 
-_trigger_list_cache = AsyncTTLCache(maxsize=32, ttl=3600)
+_trigger_list_cache = AsyncTTLCache(maxsize=32, ttl=3600, name="message_trigger.trigger_list")
 
 _COLUMNS_BASE = (
     "id, channel_id, trigger_name, match_type, pattern, case_sensitive, "
