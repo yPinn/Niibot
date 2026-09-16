@@ -81,6 +81,10 @@ class SubscriptionManager:
     def forget(self, channel_id: str) -> None:
         self._names.pop(channel_id, None)
 
+    @property
+    def names_count(self) -> int:
+        return len(self._names)
+
     # ------------------------------------------------------------------
     # Subscription state
     # ------------------------------------------------------------------

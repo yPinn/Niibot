@@ -4,6 +4,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from shared.ai_provider import get_primary_model_label
+from shared.gauges import collect_runtime_gauges
 from shared.health_server_base import BaseHealthServer
 
 from .config import get_settings
@@ -28,10 +29,17 @@ class HealthCheckServer(BaseHealthServer):
 
     async def get_metrics(self) -> dict:
         s = get_settings()
+        gauges: dict = {"db_pool": None, "caches": {}}
+        memory: dict[str, int] = {}
+        if self.bot is not None:
+            gauges = collect_runtime_gauges(self.bot._db_manager)
+            memory = self.bot.memory_gauges()
         return {
             "bot_id": self.bot.bot_id if self.bot else None,
             "connected_channels": len(self.bot.subs.subscribed) if self.bot else 0,
             "components": len(self.bot._components) if self.bot else 0,
+            "memory": memory,
+            **gauges,
             "ai_model": get_primary_model_label(
                 groq_api_key=s.groq_api_key,
                 groq_model=s.groq_model,

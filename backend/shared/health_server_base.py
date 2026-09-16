@@ -89,18 +89,25 @@ class BaseHealthServer(ABC):
     # ── Heartbeat ────────────────────────────────────────────────────────
 
     async def _heartbeat_loop(self) -> None:
-        """Log uptime/status every 5 minutes."""
+        """Log uptime/status + memory gauges every 5 minutes.
+
+        INFO (not DEBUG) so this survives production log filtering — it's
+        the only periodic signal of memory trends for services that don't
+        run their own dedicated gauge-log loop.
+        """
         while True:
             await asyncio.sleep(300)
             uptime = int(time.time() - self._start_time)
             ready = await self.get_ready()
             metrics = await self.get_metrics()
-            LOGGER.debug(
-                "Heartbeat: service=%s uptime=%ds ready=%s %s",
-                self.SERVICE_NAME,
-                uptime,
-                ready,
-                metrics,
+            LOGGER.info(
+                "runtime_gauges",
+                extra={
+                    "code": "RUNTIME.GAUGES",
+                    "uptime_seconds": uptime,
+                    "ready": ready,
+                    **metrics,
+                },
             )
 
     # ── Lifecycle ────────────────────────────────────────────────────────
