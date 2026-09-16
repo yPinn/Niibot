@@ -107,3 +107,25 @@ export function trimChannelPrefix(message: string, channel: string | null): stri
   }
   return message
 }
+
+// ── event_class classification (常駐/偶發, see the stability-log-audit work) ──
+
+export type EventClass = 'persistent' | 'occasional'
+
+export function parseEventClass(value: unknown): EventClass | null {
+  return value === 'persistent' || value === 'occasional' ? value : null
+}
+
+/** persistent gets the "own module" cyan treatment already used elsewhere in
+ *  this viewer, since both mark "part of this service's own long-running
+ *  machinery" — occasional reuses the plain neutral chip style, since most
+ *  log lines are request/connection-scoped by nature and don't need to stand out. */
+export function eventClassLabel(cls: EventClass): string {
+  return cls === 'persistent' ? '常駐' : '偶發'
+}
+
+export function eventClassPillClass(cls: EventClass): string {
+  return cls === 'persistent'
+    ? 'bg-cyan-400/10 text-cyan-400/80'
+    : 'bg-muted-foreground/15 text-muted-foreground'
+}

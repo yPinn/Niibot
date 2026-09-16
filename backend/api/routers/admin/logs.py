@@ -4,6 +4,7 @@ import json
 import logging
 import re
 import struct
+from collections.abc import Mapping
 from typing import Any, Literal
 
 import aiohttp
@@ -11,7 +12,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from core.config import get_settings
+from core.database import get_database_manager
 from core.dependencies import require_owner
+from shared.repositories.channel import ChannelRepository
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -68,6 +71,11 @@ class LogRecordOut(BaseModel):
     service: str = ""
     request_id: str | None = None
     channel: str | None = None
+    #: Login resolved from a numeric `channel`, so reading a log doesn't
+    #: require a manual SQL lookup to find out whose channel broke. Only set
+    #: when `channel` is a numeric id we could resolve; `channel` itself is
+    #: left untouched so the id is still available.
+    channel_name: str | None = None
     code: str | None = None
     pid: str | None = None
     exception: str | None = None
@@ -279,7 +287,11 @@ def _record_from_line(line: LogLine) -> LogRecordOut:
 
 
 def _to_records(
-    lines: list[LogLine], *, level: str = "ALL", q: str | None = None
+    lines: list[LogLine],
+    *,
+    level: str = "ALL",
+    q: str | None = None,
+    name_map: Mapping[str, str] | None = None,
 ) -> list[LogRecordOut]:
     threshold = _LEVEL_ORDER.get(level.upper()) if level.upper() != "ALL" else None
     needle = q.lower() if q else None
@@ -291,10 +303,37 @@ def _to_records(
             # unrecognised level (traceback continuations, third-party) always shows
             if rank is not None and rank < threshold:
                 continue
-        if needle and needle not in rec.message.lower() and needle not in rec.raw.lower():
+        # Resolve before the search filter so searching a login also matches
+        # lines that only carry the numeric id.
+        if name_map and rec.channel and rec.channel.isdigit():
+            rec.channel_name = name_map.get(rec.channel)
+        if needle and not (
+            needle in rec.message.lower()
+            or needle in rec.raw.lower()
+            or (rec.channel_name and needle in rec.channel_name.lower())
+        ):
             continue
         out.append(rec)
     return out
+
+
+async def _channel_name_map() -> Mapping[str, str]:
+    """Best-effort ``channel_id -> login`` for resolving log lines.
+
+    Never raises and never gates the response: reading logs *because the DB
+    is down* is this endpoint's most important use case, so a missing map
+    just means the viewer falls back to showing the raw numeric id. (This is
+    also why the pool isn't taken via ``Depends(get_db_pool)`` — that
+    dependency 503s when the DB is unavailable.)
+    """
+    try:
+        db_manager = get_database_manager()
+        if not db_manager.is_connected:
+            return {}
+        return await ChannelRepository(db_manager.pool).get_channel_name_map()
+    except Exception as e:
+        LOGGER.debug("Channel name resolution unavailable: %s", e)
+        return {}
 
 
 @router.get("/logs/containers", response_model=list[LogContainerInfo])
@@ -366,5 +405,5 @@ async def get_container_logs(
     lines = _parse_docker_stream(raw)
     return ContainerLogsResponse(
         container=container,
-        records=_to_records(lines, level=level, q=q),
+        records=_to_records(lines, level=level, q=q, name_map=await _channel_name_map()),
     )

@@ -159,3 +159,38 @@ class TestToRecordsFiltering:
         recs = _to_records(self._lines(), q="warning")
         # matches the raw json text of line c (contains "warning")
         assert any(r.message == "c" for r in recs)
+
+
+class TestChannelNameResolution:
+    """Numeric channel ids resolve to logins so reading a log doesn't need a
+    manual SQL lookup to find out whose channel broke."""
+
+    def _line_with(self, **fields):
+        return _line(TS + json.dumps({"event": "boom", "level": "error", **fields}))
+
+    def test_numeric_channel_resolved_to_login(self):
+        recs = _to_records([self._line_with(channel_id="999")], name_map={"999": "alice"})
+        assert recs[0].channel == "999"  # the id is still there
+        assert recs[0].channel_name == "alice"
+
+    def test_unknown_id_left_unresolved(self):
+        recs = _to_records([self._line_with(channel_id="404")], name_map={"999": "alice"})
+        assert recs[0].channel == "404"
+        assert recs[0].channel_name is None
+
+    def test_already_named_channel_not_touched(self):
+        recs = _to_records([self._line_with(channel="bob")], name_map={"999": "alice"})
+        assert recs[0].channel == "bob"
+        assert recs[0].channel_name is None
+
+    def test_without_a_map_records_are_unchanged(self):
+        # The DB being down must not break the viewer — it just stops resolving.
+        recs = _to_records([self._line_with(channel_id="999")])
+        assert recs[0].channel == "999"
+        assert recs[0].channel_name is None
+
+    def test_search_matches_the_resolved_login(self):
+        # "alice" appears nowhere in the raw line — only via resolution.
+        lines = [self._line_with(channel_id="999"), self._line_with(channel_id="123")]
+        recs = _to_records(lines, q="alice", name_map={"999": "alice", "123": "bob"})
+        assert [r.channel for r in recs] == ["999"]

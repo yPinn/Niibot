@@ -108,6 +108,22 @@ describe('LogRecordRow', () => {
     expect(screen.getByText('#foo')).toBeInTheDocument()
   })
 
+  it('shows the resolved login instead of a numeric channel id, id on hover', () => {
+    render(<LogRecordRow record={{ ...base, channel: '999', channel_name: 'alice' }} index={0} />)
+    const chip = screen.getByText('#alice')
+    expect(chip).toBeInTheDocument()
+    // the numeric id stays reachable — it's what you'd paste into a query
+    expect(chip).toHaveAttribute('title', '999')
+    expect(screen.queryByText('#999')).not.toBeInTheDocument()
+  })
+
+  it('falls back to the raw channel value when nothing was resolved', () => {
+    render(<LogRecordRow record={{ ...base, channel: '999' }} index={0} />)
+    const chip = screen.getByText('#999')
+    expect(chip).toBeInTheDocument()
+    expect(chip).not.toHaveAttribute('title')
+  })
+
   it('renders a console-source record as structured (no ANSI decode)', () => {
     render(
       <LogRecordRow

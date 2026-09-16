@@ -6,31 +6,38 @@ import { sanitizeAnsiHtml } from '@/lib/sanitize'
 
 import {
   ansiConverter,
+  type EventClass,
+  eventClassLabel,
+  eventClassPillClass,
   formatLogTime,
   hasAnsi,
   levelColor,
   levelMessageColor,
   levelRowClass,
+  parseEventClass,
   stripAnsi,
   trimChannelPrefix,
 } from './logParsers'
 
-/** Split `extra` into `key=value` chips (primitives) and the keys we can't
- *  chip (objects / arrays) so nothing is silently dropped. */
+/** Split `extra` into `event_class` (own pill, see below), `key=value` chips
+ *  (primitives), and the keys we can't chip (objects / arrays) so nothing is
+ *  silently dropped. */
 function partitionExtra(extra: Record<string, unknown>): {
+  eventClass: EventClass | null
   chips: [string, string][]
   complex: string[]
 } {
+  const { event_class, ...rest } = extra
   const chips: [string, string][] = []
   const complex: string[] = []
-  for (const [k, v] of Object.entries(extra)) {
+  for (const [k, v] of Object.entries(rest)) {
     if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
       chips.push([k, String(v)])
     } else {
       complex.push(k)
     }
   }
-  return { chips, complex }
+  return { eventClass: parseEventClass(event_class), chips, complex }
 }
 
 export function LogRecordRow({ record, index }: { record: LogRecord; index: number }) {
@@ -51,13 +58,14 @@ export function LogRecordRow({ record, index }: { record: LogRecord; index: numb
     message = trimChannelPrefix(record.message, record.channel)
   }
 
-  const { chips, complex } = partitionExtra(record.extra)
+  const { eventClass, chips, complex } = partitionExtra(record.extra)
   const time = formatLogTime(record.ts)
   const modTitle = [record.logger, record.service].filter(Boolean).join(' · ') || undefined
   const hasMeta = Boolean(
     record.channel ||
     record.request_id ||
     record.code ||
+    eventClass ||
     record.exception ||
     chips.length ||
     complex.length
@@ -122,13 +130,23 @@ export function LogRecordRow({ record, index }: { record: LogRecord; index: numb
         {hasMeta && (
           <div className="flex flex-wrap items-center gap-1.5 text-label">
             {record.channel && (
-              <span className="rounded bg-muted-foreground/10 px-1.5 font-mono text-muted-foreground/70">
-                #{record.channel}
+              <span
+                className="rounded bg-muted-foreground/10 px-1.5 font-mono text-muted-foreground/70"
+                // When the login was resolved from a numeric id, keep the id
+                // reachable on hover — it's what you'd paste into a query.
+                title={record.channel_name ? record.channel : undefined}
+              >
+                #{record.channel_name ?? record.channel}
               </span>
             )}
             {record.code && (
               <span className="rounded bg-muted-foreground/15 px-1.5 text-muted-foreground">
                 {record.code}
+              </span>
+            )}
+            {eventClass && (
+              <span className={`rounded px-1.5 ${eventClassPillClass(eventClass)}`}>
+                {eventClassLabel(eventClass)}
               </span>
             )}
             {chips.map(([k, v]) => (

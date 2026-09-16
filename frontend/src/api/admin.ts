@@ -256,6 +256,9 @@ export interface LogRecord {
   service: string
   request_id: string | null
   channel: string | null
+  /** Login resolved server-side from a numeric `channel`; null when `channel`
+   *  is already a name or the id couldn't be resolved. */
+  channel_name?: string | null
   code: string | null
   pid: string | null
   exception: string | null
