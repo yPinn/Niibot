@@ -21,6 +21,7 @@ from core.dependencies import (
     get_twitch_api,
     require_activated,
 )
+from core.error_handlers import log_request_failure
 from core.rate_limit import RateLimiter
 from services import TwitchAPIClient
 from services.notify_stream import NotifyWakeHub, StreamCapacityError, encode_sse
@@ -227,7 +228,9 @@ def _blocklist_response(e: VideoQueueBlocklistEntry) -> BlocklistEntryResponse:
     )
 
 
-_channel_id_cache: AsyncTTLCache = AsyncTTLCache(maxsize=256, ttl=300.0)
+_channel_id_cache: AsyncTTLCache = AsyncTTLCache(
+    maxsize=256, ttl=300.0, name="video_queue_router.channel_id"
+)
 
 
 async def _resolve_channel_id(username: str, twitch_api: TwitchAPIClient) -> str:
@@ -372,7 +375,23 @@ async def stream_public_video_queue(
                     yield encode_sse("heartbeat", {"at": datetime.now(UTC).isoformat()})
                     continue
 
-                current_state = await _build_stream_state(channel_id, repo)
+                try:
+                    current_state = await _build_stream_state(channel_id, repo)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    log_request_failure(
+                        request,
+                        code="STREAM.ITERATION_FAILED",
+                        status=500,
+                        exc=exc,
+                        context={"channel_id": channel_id, "event_class": "occasional"},
+                    )
+                    # Lets the client tell "we failed mid-stream" apart from the
+                    # routine lease-expiry reconnect below — both otherwise look
+                    # identical (a clean end of the response body).
+                    yield encode_sse("stream_error", {"code": "STREAM.ITERATION_FAILED"})
+                    return
                 payload = current_state.model_dump(mode="json")
                 if payload == last_payload:
                     continue
