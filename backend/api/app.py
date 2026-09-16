@@ -1,6 +1,7 @@
 """FastAPI application factory"""
 
 import asyncio
+import json
 import logging
 import os
 import time
@@ -48,9 +49,17 @@ from routers import (
 from routers.bots_router import close_bots_http_client
 from routers.client_errors_router import client_error_retention_loop
 from routers.video_queue_router import video_queue_history_retention_loop
+from shared.cache_invalidation import (
+    clear_config_caches,
+    invalidate_channel_caches,
+    invalidate_channel_config,
+    invalidate_module_config,
+)
 from shared.database import pool_heartbeat_loop
 from shared.errors import build_envelope
+from shared.gauges import collect_runtime_gauges
 from shared.log_context import bind_log_context, clear_log_context
+from shared.pg_listener import pg_listen
 from shared.repositories.activation_code import activation_grant_cleanup_loop
 from shared.repositories.community_overlay import community_overlay_cleanup_loop
 
@@ -65,9 +74,15 @@ _client_error_retention_task: asyncio.Task | None = None
 _activation_cleanup_task: asyncio.Task | None = None
 _community_overlay_cleanup_task: asyncio.Task | None = None
 _video_queue_history_task: asyncio.Task | None = None
+_config_change_listener_task: asyncio.Task | None = None
+_channel_toggle_listener_task: asyncio.Task | None = None
+_cache_clear_task: asyncio.Task | None = None
+_gauge_log_task: asyncio.Task | None = None
 _APP_VERSION = os.getenv("APP_VERSION", "dev")
 _GIT_COMMIT = os.getenv("GIT_COMMIT", "unknown")
 _REQUEST_TIMEOUT = 30.0
+_CACHE_CLEAR_INTERVAL = 600.0  # 10 min safety net for pg_notify misses (see cache_invalidation.py)
+_GAUGE_LOG_INTERVAL = 300.0  # 5 min, matches the twitch bot's heartbeat cadence
 
 
 async def _db_retry_loop(db_manager) -> None:
@@ -92,12 +107,83 @@ async def _db_retry_loop(db_manager) -> None:
             delay = min(delay * 2, max_delay)
 
 
+async def _handle_config_change_notify(connection, pid, channel, payload) -> None:
+    """Invalidate in-process config caches on `config_change` NOTIFY.
+
+    Mirrors the twitch bot's own listener (`twitch/core/_notify_mixin.py`) so
+    both processes' caches stay in sync with DB writes made by either one —
+    without this, an API-side cache (TTL up to 3600s) could serve stale data
+    for up to an hour after a change made by the bot or another API replica.
+    """
+    try:
+        data = json.loads(payload)
+        table = data.get("table", "")
+        if table == "module_config":
+            invalidate_module_config()
+            LOGGER.info("config_change_invalidated", extra={"table": table})
+            return
+        channel_id = data.get("channel_id")
+        if not channel_id:
+            return
+        invalidate_channel_config(channel_id)
+        LOGGER.info(
+            "config_change_invalidated",
+            extra={"channel_id": channel_id, "table": table},
+        )
+    except Exception as e:
+        LOGGER.warning(f"Error handling config_change notify: {e}")
+
+
+async def _handle_channel_toggle_notify(connection, pid, channel, payload) -> None:
+    """Invalidate `_channel_cache`/`_enabled_channels_cache` on `channel_toggle` NOTIFY."""
+    try:
+        data = json.loads(payload)
+        channel_id = data.get("channel_id")
+        if not channel_id:
+            return
+        invalidate_channel_caches(channel_id)
+        LOGGER.info("channel_toggle_invalidated", extra={"channel_id": channel_id})
+    except Exception as e:
+        LOGGER.warning(f"Error handling channel_toggle notify: {e}")
+
+
+async def _cache_clear_loop() -> None:
+    """Periodic full-clear safety net for config caches (see cache_invalidation.py)."""
+    while True:
+        try:
+            await asyncio.sleep(_CACHE_CLEAR_INTERVAL)
+            clear_config_caches()
+            LOGGER.debug("Periodic cache clear complete")
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            LOGGER.warning(f"Periodic cache clear error: {e}")
+
+
+async def _gauge_log_loop(db_manager) -> None:
+    """Log DB pool + cache size gauges periodically so memory trends are
+    visible without polling `/status`."""
+    while True:
+        try:
+            await asyncio.sleep(_GAUGE_LOG_INTERVAL)
+            LOGGER.info(
+                "runtime_gauges",
+                extra={"code": "RUNTIME.GAUGES", **collect_runtime_gauges(db_manager)},
+            )
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            LOGGER.warning(f"Gauge log error: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Handle startup and shutdown"""
     global _start_time, _started_at, _pool_heartbeat_task, _db_retry_task
     global _client_error_retention_task, _activation_cleanup_task, _community_overlay_cleanup_task
     global _video_queue_history_task
+    global _config_change_listener_task, _channel_toggle_listener_task
+    global _cache_clear_task, _gauge_log_task
     _start_time = time.time()
     _started_at = datetime.now(UTC).isoformat()
 
@@ -148,6 +234,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Daily prune of video_queue history (done/skipped) past its retention window.
     _video_queue_history_task = asyncio.create_task(video_queue_history_retention_loop(db_manager))
 
+    # Cache invalidation on DB writes from any process (this one, twitch, or
+    # another API replica) — see shared/cache_invalidation.py. Dedicated
+    # connections, independent of the pool, so they can start before it's ready.
+    _config_change_listener_task = asyncio.create_task(
+        pg_listen(settings.database_url, "config_change", _handle_config_change_notify)
+    )
+    _channel_toggle_listener_task = asyncio.create_task(
+        pg_listen(settings.database_url, "channel_toggle", _handle_channel_toggle_notify)
+    )
+    # Safety net for pg_notify misses (dropped LISTEN connection, or a table
+    # with no NOTIFY trigger at all — coverage is currently partial).
+    _cache_clear_task = asyncio.create_task(_cache_clear_loop())
+    _gauge_log_task = asyncio.create_task(_gauge_log_loop(db_manager))
+
     notify_hub = get_notify_hub()
     notify_hub.start()
 
@@ -155,18 +255,24 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # Shutdown
     LOGGER.info("Shutting down Niibot API server")
-    if _db_retry_task:
-        _db_retry_task.cancel()
-    if _pool_heartbeat_task:
-        _pool_heartbeat_task.cancel()
-    if _client_error_retention_task:
-        _client_error_retention_task.cancel()
-    if _activation_cleanup_task:
-        _activation_cleanup_task.cancel()
-    if _community_overlay_cleanup_task:
-        _community_overlay_cleanup_task.cancel()
-    if _video_queue_history_task:
-        _video_queue_history_task.cancel()
+    _background_tasks = [
+        _db_retry_task,
+        _pool_heartbeat_task,
+        _client_error_retention_task,
+        _activation_cleanup_task,
+        _community_overlay_cleanup_task,
+        _video_queue_history_task,
+        _config_change_listener_task,
+        _channel_toggle_listener_task,
+        _cache_clear_task,
+        _gauge_log_task,
+    ]
+    for task in _background_tasks:
+        if task:
+            task.cancel()
+    # Wait for cancellation to actually finish (e.g. pg_listen's connection.close())
+    # before tearing down the pool it might still be touching.
+    await asyncio.gather(*(t for t in _background_tasks if t), return_exceptions=True)
     try:
         await notify_hub.stop()
         await close_twitch_api()
@@ -351,12 +457,15 @@ def create_app() -> FastAPI:
     # Detailed status endpoint (includes DB health)
     @app.get("/status")
     async def status():
-        """Readiness / status endpoint — includes DB health and build metadata."""
+        """Readiness / status endpoint — includes DB health, build metadata,
+        and runtime gauges (DB pool utilization + in-process cache sizes)."""
         db_ok = False
+        gauges: dict = {"db_pool": None, "caches": {}}
         try:
             db_manager = get_database_manager()
             if db_manager.is_connected:
                 db_ok = await db_manager.check_health()
+            gauges = collect_runtime_gauges(db_manager)
         except RuntimeError:
             pass  # DB manager not yet initialized
 
@@ -368,6 +477,7 @@ def create_app() -> FastAPI:
             "environment": settings.environment,
             "uptime_seconds": int(time.time() - _start_time),
             "db_connected": db_ok,
+            **gauges,
         }
 
     # Ping endpoint
