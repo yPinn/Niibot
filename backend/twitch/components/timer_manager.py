@@ -41,6 +41,12 @@ class TimerManagerComponent(commands.Component):
 
     COMMANDS: list[dict] = []
 
+    # Sweep for deleted-timer/unsubscribed-channel fire-state every N polls
+    # (~30 min at the 60s cadence) rather than every tick — a full
+    # all-subscribed-channels DB pass every 60s would be wasteful, and these
+    # dicts only grow slowly (one entry per timer/channel ever seen).
+    _PRUNE_INTERVAL_POLLS = 30
+
     def __init__(self, bot: Bot) -> None:
         self.bot = bot
         # timer_id → datetime of last fire (DB timers)
@@ -51,6 +57,7 @@ class TimerManagerComponent(commands.Component):
         self._builtin_last_fire: dict[tuple[str, str], datetime] = {}
         # (channel_id, timer_name) → line count snapshot at last fire (builtin timers)
         self._builtin_last_fire_lines: dict[tuple[str, str], int] = {}
+        self._poll_count = 0
 
     async def component_load(self) -> None:
         self._timer_poll_loop.start()
@@ -60,6 +67,12 @@ class TimerManagerComponent(commands.Component):
         # cancel(), not stop(): stop() blocks teardown for up to one interval (60s).
         self._timer_poll_loop.cancel()
         LOGGER.info("TimerManager component unloaded")
+
+    def memory_gauges(self) -> dict[str, int]:
+        return {
+            "timer_last_fire": len(self._timer_last_fire),
+            "builtin_last_fire": len(self._builtin_last_fire),
+        }
 
     @routines.routine(delta=timedelta(seconds=60), wait_first=True)
     async def _timer_poll_loop(self) -> None:
@@ -125,6 +138,49 @@ class TimerManagerComponent(commands.Component):
                 if current_lines - lines_at_last < bt.min_lines:
                     continue
                 await self._fire_builtin_timer(channel_id, bt, current_lines, now, bkey)
+
+        self._poll_count += 1
+        if self._poll_count % self._PRUNE_INTERVAL_POLLS == 0:
+            await self._prune_stale_timer_state(subscribed)
+
+    async def _prune_stale_timer_state(self, subscribed_channels: frozenset[str]) -> None:
+        """Drop fire-state for timers/channels that no longer exist.
+
+        Without this, `_timer_last_fire`/`_timer_last_fire_lines` (keyed by
+        DB timer id) and the builtin equivalents (keyed by channel_id) grow
+        for as long as the process runs — a deleted timer or unsubscribed
+        channel's entry is never otherwise removed.
+        """
+        valid_timer_ids: set[int] = set()
+        for channel_id in subscribed_channels:
+            try:
+                timers = await self.bot.timer_configs.list_enabled(channel_id)
+            except Exception as e:
+                # Can't tell which timer ids are still valid without a full
+                # sweep — skip pruning this round rather than risk dropping
+                # state for a channel we just failed to query.
+                LOGGER.warning(
+                    f"[timer-prune] Failed to load timers for {channel_id}, skipping this round: {e}"
+                )
+                return
+            valid_timer_ids.update(t.id for t in timers)
+
+        stale_ids = [tid for tid in self._timer_last_fire if tid not in valid_timer_ids]
+        for tid in stale_ids:
+            self._timer_last_fire.pop(tid, None)
+            self._timer_last_fire_lines.pop(tid, None)
+
+        stale_bkeys = [
+            bkey for bkey in self._builtin_last_fire if bkey[0] not in subscribed_channels
+        ]
+        for bkey in stale_bkeys:
+            self._builtin_last_fire.pop(bkey, None)
+            self._builtin_last_fire_lines.pop(bkey, None)
+
+        if stale_ids or stale_bkeys:
+            LOGGER.info(
+                f"[timer-prune] Dropped {len(stale_ids)} timer + {len(stale_bkeys)} builtin fire-state entries"
+            )
 
     @commands.Component.listener()
     async def event_message(self, message: twitchio.ChatMessage) -> None:
