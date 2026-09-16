@@ -1,3 +1,6 @@
+import { useState } from 'react'
+
+import type { CacheGauge, DbPoolGauge } from '@/api/bots'
 import { Icon } from '@/components/primitives'
 import { Badge, Separator, Skeleton } from '@/components/ui'
 
@@ -63,6 +66,62 @@ export function FieldRow({
         {loading ? <Skeleton className="h-4 w-20" /> : offline ? DASH : value}
       </div>
     </div>
+  )
+}
+
+/** DB pool + cache occupancy for one service — the full breakdown (25+
+ * caches, twitch's per-channel memory dict) is too much for a compact
+ * FieldRow, so it's collapsed behind an expand toggle. The same JSON
+ * pretty-print is what `RUNTIME.GAUGES` log lines show, so the two stay
+ * cross-referenceable. */
+export function GaugeDetails({
+  dbPool,
+  caches,
+  memory,
+}: {
+  dbPool?: DbPoolGauge
+  caches?: Record<string, CacheGauge>
+  memory?: Record<string, number>
+}) {
+  const [open, setOpen] = useState(false)
+  if (!dbPool && !caches && !memory) return null
+
+  const warmCaches = caches ? Object.values(caches).filter(c => c.size > 0).length : 0
+  const totalCaches = caches ? Object.keys(caches).length : 0
+
+  return (
+    <>
+      {dbPool && (
+        <>
+          <Separator className="opacity-40" />
+          <FieldRow
+            label="db pool"
+            value={`${dbPool.size}/${dbPool.max_size}（閒置 ${dbPool.idle}）`}
+          />
+        </>
+      )}
+      {caches && (
+        <>
+          <Separator className="opacity-40" />
+          <FieldRow
+            label="caches"
+            value={
+              <button
+                onClick={() => setOpen(o => !o)}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                {warmCaches}/{totalCaches} 有資料 {open ? '收起' : '展開'}
+              </button>
+            }
+          />
+        </>
+      )}
+      {open && (
+        <pre className="mt-1 max-h-64 overflow-auto rounded bg-black/30 p-2 text-sub text-muted-foreground/80">
+          {JSON.stringify({ ...(caches && { caches }), ...(memory && { memory }) }, null, 2)}
+        </pre>
+      )}
+    </>
   )
 }
 

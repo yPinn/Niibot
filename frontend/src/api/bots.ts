@@ -1,5 +1,20 @@
 import { API_ENDPOINTS, apiFetch } from './config'
 
+/** DB connection-pool gauge — same shape from every service's /status. */
+export interface DbPoolGauge {
+  size: number
+  idle: number
+  min_size: number
+  max_size: number
+}
+
+/** One in-process AsyncTTLCache's occupancy — keyed by cache name in `caches`. */
+export interface CacheGauge {
+  size: number
+  stale: number
+  maxsize: number
+}
+
 export interface BotStatus {
   online: boolean
   service?: string
@@ -18,6 +33,11 @@ export interface BotStatus {
   ws_latency_ms?: number
   // AI
   ai_model?: string
+  // Runtime gauges (twitch only — memory is per-channel in-process state, has
+  // no API-side equivalent)
+  db_pool?: DbPoolGauge
+  caches?: Record<string, CacheGauge>
+  memory?: Record<string, number>
 }
 
 export interface ApiServerStatus {
@@ -29,6 +49,8 @@ export interface ApiServerStatus {
   uptime_seconds?: number
   db_connected?: boolean
   environment?: string
+  db_pool?: DbPoolGauge
+  caches?: Record<string, CacheGauge>
 }
 
 export async function getTwitchBotStatus(): Promise<BotStatus> {
@@ -56,5 +78,7 @@ export async function getApiServerStatus(): Promise<ApiServerStatus> {
     uptime_seconds: data.uptime_seconds,
     db_connected: data.db_connected,
     environment: data.environment,
+    db_pool: data.db_pool,
+    caches: data.caches,
   }
 }

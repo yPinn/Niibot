@@ -38,7 +38,7 @@ import {
   levelPillClass,
 } from './monitor/logParsers'
 import { LogRecordRow } from './monitor/LogRecordRow'
-import { EnvBadge, FieldRow, StatusBadge, VersionText } from './monitor/StatusCards'
+import { EnvBadge, FieldRow, GaugeDetails, StatusBadge, VersionText } from './monitor/StatusCards'
 
 // ── Fetch state ───────────────────────────────────────────────────────────────
 
@@ -231,6 +231,9 @@ export default function AdminMonitor() {
         icon: 'fa-solid fa-server',
         online: api.online,
         ready: undefined as boolean | undefined,
+        dbPool: api.db_pool,
+        caches: api.caches,
+        memory: undefined,
         fields: [
           {
             label: 'version',
@@ -258,6 +261,9 @@ export default function AdminMonitor() {
         icon: 'fa-brands fa-twitch',
         online: twitch.online,
         ready: twitch.ready,
+        dbPool: twitch.db_pool,
+        caches: twitch.caches,
+        memory: twitch.memory,
         fields: [
           {
             label: 'version',
@@ -277,6 +283,9 @@ export default function AdminMonitor() {
         icon: 'fa-brands fa-discord',
         online: discord.online,
         ready: discord.ready,
+        dbPool: discord.db_pool,
+        caches: discord.caches,
+        memory: discord.memory,
         fields: [
           {
             label: 'version',
@@ -428,6 +437,13 @@ export default function AdminMonitor() {
                         />
                       </div>
                     ))}
+                    {!initialLoading && service.online && (
+                      <GaugeDetails
+                        dbPool={service.dbPool}
+                        caches={service.caches}
+                        memory={service.memory}
+                      />
+                    )}
                   </CardContent>
                 </Card>
               ))}
