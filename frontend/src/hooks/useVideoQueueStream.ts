@@ -1,15 +1,11 @@
-import { type Dispatch, type SetStateAction, useEffect, useState } from 'react'
+import { type Dispatch, type SetStateAction, useCallback, useState } from 'react'
 
+import { openVideoQueueStream, type VideoQueueStreamState } from '@/api/videoQueueStream'
 import {
-  openVideoQueueStream,
-  type VideoQueueStreamMessage,
-  type VideoQueueStreamState,
-} from '@/api/videoQueueStream'
-
-// A stream that survives this long resets the reconnect backoff — mirrors
-// VideoQueueOverlay.tsx / CommunityOverlay.tsx so a flapping connection still
-// escalates its delay instead of reconnecting every second.
-const STABLE_STREAM_MS = 30_000
+  type StreamHelpers,
+  type StreamStatus,
+  useReconnectingStream,
+} from '@/hooks/useReconnectingStream'
 
 interface UseVideoQueueStreamResult {
   /** Latest queue snapshot, or null before the first frame arrives. */
@@ -20,13 +16,15 @@ interface UseVideoQueueStreamResult {
    * trigger — reconciles it, so this only bridges the round-trip gap.
    */
   setState: Dispatch<SetStateAction<VideoQueueStreamState | null>>
+  /** 'reconnecting' once the connection has been down past the grace window
+   * — drive a stale-data indicator off this rather than off `state` alone. */
+  status: StreamStatus
 }
 
 /**
  * Subscribe the dashboard to the same NOTIFY-woken SSE stream the OBS overlay
- * uses, replacing fixed-interval polling. Reconnect/backoff mirrors
- * VideoQueueOverlay.tsx: a stream alive past STABLE_STREAM_MS resets the
- * attempt counter; otherwise jittered exponential up to 30s.
+ * uses, replacing fixed-interval polling. Reconnect/backoff/status tracking
+ * lives in useReconnectingStream, shared with VideoQueueOverlay.tsx.
  *
  * The stream payload is deliberately narrower than the REST state (no
  * `enabled`) — callers read that from the one-shot settings fetch.
@@ -34,41 +32,29 @@ interface UseVideoQueueStreamResult {
 export function useVideoQueueStream(username: string | undefined): UseVideoQueueStreamResult {
   const [state, setState] = useState<VideoQueueStreamState | null>(null)
 
-  useEffect(() => {
+  const connect = useCallback(
+    (signal: AbortSignal, { notifyLive, notifyStreamError }: StreamHelpers) => {
+      if (!username) return Promise.resolve()
+      return openVideoQueueStream({
+        username,
+        signal,
+        onMessage: message => {
+          notifyLive()
+          setState(message)
+        },
+        onStreamError: () => notifyStreamError(),
+      })
+    },
+    [username]
+  )
+
+  const { status } = useReconnectingStream({
     // No username (signed out / not an affiliate): nothing to subscribe to.
     // Any stale snapshot sits behind the page's own gate until unmount.
-    if (!username) return
-    let active = true
-    let attempt = 0
-    let controller: AbortController | null = null
-    let reconnectTimer: number | null = null
+    enabled: !!username,
+    label: 'video-queue-stream',
+    connect,
+  })
 
-    const onMessage = (message: VideoQueueStreamMessage) => {
-      if (active) setState(message)
-    }
-
-    const connect = () => {
-      controller = new AbortController()
-      const connectedAt = Date.now()
-      void openVideoQueueStream({ username, signal: controller.signal, onMessage })
-        .catch(() => undefined)
-        .finally(() => {
-          if (!active || controller?.signal.aborted) return
-          if (Date.now() - connectedAt >= STABLE_STREAM_MS) attempt = 0
-          const base = Math.min(1_000 * 2 ** attempt, 30_000)
-          const delay = Math.round(base * (0.8 + Math.random() * 0.4))
-          attempt += 1
-          reconnectTimer = window.setTimeout(connect, delay)
-        })
-    }
-
-    connect()
-    return () => {
-      active = false
-      controller?.abort()
-      if (reconnectTimer !== null) window.clearTimeout(reconnectTimer)
-    }
-  }, [username])
-
-  return { state, setState }
+  return { state, setState, status }
 }

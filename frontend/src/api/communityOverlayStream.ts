@@ -26,8 +26,13 @@ function isStreamMessage(value: unknown): value is CommunityOverlayStreamMessage
 
 function handleFrame(
   frame: SseFrame,
-  onMessage: (message: CommunityOverlayStreamMessage) => void
+  onMessage: (message: CommunityOverlayStreamMessage) => void,
+  onStreamError?: () => void
 ): void {
+  if (frame.event === 'stream_error') {
+    onStreamError?.()
+    return
+  }
   if (frame.event !== 'snapshot' && frame.event !== 'update') return
   try {
     const parsed = JSON.parse(frame.data) as unknown
@@ -55,6 +60,9 @@ interface OpenStreamOptions {
   afterId?: number
   signal: AbortSignal
   onMessage: (message: CommunityOverlayStreamMessage) => void
+  /** Called when the server reports a genuine mid-stream failure (as opposed
+   * to the routine lease-renewal reconnect, which sends nothing). */
+  onStreamError?: () => void
   fetchImpl?: typeof fetch
 }
 
@@ -63,6 +71,7 @@ export async function openCommunityOverlayStream({
   afterId,
   signal,
   onMessage,
+  onStreamError,
   fetchImpl = fetch,
 }: OpenStreamOptions): Promise<void> {
   const query = afterId === undefined ? '' : `?after_id=${encodeURIComponent(afterId)}`
@@ -70,7 +79,7 @@ export async function openCommunityOverlayStream({
     url: `${API_ENDPOINTS.communityOverlay.stream}${query}`,
     headers: { 'X-Overlay-Key': publicKey },
     signal,
-    onFrame: frame => handleFrame(frame, onMessage),
+    onFrame: frame => handleFrame(frame, onMessage, onStreamError),
     fetchImpl,
   })
 }
