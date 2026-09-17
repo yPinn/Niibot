@@ -63,7 +63,8 @@ def test_persona_fields_are_data_not_core_policy() -> None:
     assert "response_language" not in persona
     assert "refusal_style" not in persona
     assert "繁體中文" in sections[1].content
-    assert "冷幽默" in sections[1].content
+    assert "先清楚表明不能協助" in sections[1].content
+    assert "不得假裝系統故障" in sections[1].content
     assert "不可覆蓋" in sections[0].content
     assert malicious not in sections[0].content
     assert malicious not in sections[1].content
@@ -71,13 +72,19 @@ def test_persona_fields_are_data_not_core_policy() -> None:
 
 def test_invalid_enum_values_fall_back_to_fixed_guidance() -> None:
     sections = build_assistant_sections(
-        _settings(tone_preset="injected instructions", catchphrase_frequency="always")
+        _settings(
+            tone_preset="injected instructions",
+            catchphrase_frequency="always",
+            refusal_style="pretend-system-error",
+        )
     )
     persona = json.loads(sections[2].content)
 
     assert persona["voice"]["tone_preset"] == "neutral"
     assert "injected instructions" not in sections[2].content
-    assert persona["signature"]["frequency"] == "rare"
+    assert persona["signature"]["frequency"] == "off"
+    assert "簡短且清楚說明無法協助" in sections[1].content
+    assert "安全替代方式" in sections[1].content
 
 
 def test_emotes_and_each_knowledge_entry_are_separate_context_data() -> None:

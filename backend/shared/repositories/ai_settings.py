@@ -21,15 +21,15 @@ DEFAULT_AI_SETTINGS: Final[dict[str, object]] = {
     "audience_reference": "大家",
     "tone_preset": "neutral",
     "catchphrase": "",
-    "catchphrase_frequency": "rare",
+    "catchphrase_frequency": "off",
     "example_replies": [],
     "response_lang": "zh-tw",
-    "refusal_style": "humorous",
+    "refusal_style": "polite",
     "max_tokens": 250,
     "enabled_emotes": [],
     "enabled": False,
     "memory_enabled": False,
-    "cooldown": 15,
+    "cooldown": 30,
     "min_role": "everyone",
 }
 
@@ -41,11 +41,10 @@ _LANG_TEXT: dict[str, str] = {
 
 _REFUSAL_TEXT: dict[str, str] = {
     "humorous": (
-        "遇此類請求請用冷幽默方式婉拒"
-        "（例如假裝系統錯誤、自稱腦袋當機、或用無辜語氣說做不到），"
-        "不要直接說「我無法回答」"
+        "遇此類請求先清楚表明不能協助，再用簡短、輕鬆且不嘲諷的語氣收尾；"
+        "不得假裝系統故障、服務錯誤或能力異常"
     ),
-    "polite": "遇此類請求請禮貌說無法協助，不必解釋原因",
+    "polite": ("遇此類請求請簡短且清楚說明無法協助；若合適，可提供安全替代方式，不必展開冗長說教"),
 }
 
 _TONE_TEXT: dict[str, str] = {
@@ -118,18 +117,16 @@ def build_assistant_sections(
     if tone_preset not in _TONE_TEXT:
         tone_preset = "neutral"
     catchphrase = (settings.get("catchphrase") or "").strip()
-    catchphrase_frequency = settings.get("catchphrase_frequency", "rare")
+    catchphrase_frequency = settings.get("catchphrase_frequency", "off")
     if catchphrase_frequency not in _CATCHPHRASE_FREQUENCY_TEXT:
-        catchphrase_frequency = "rare"
+        catchphrase_frequency = "off"
     examples = [
         item.strip()
         for item in (settings.get("example_replies") or [])[:3]
         if isinstance(item, str) and item.strip()
     ]
     lang = _LANG_TEXT.get(settings.get("response_lang", "zh-tw"), _LANG_TEXT["zh-tw"])
-    refusal = _REFUSAL_TEXT.get(
-        settings.get("refusal_style", "humorous"), _REFUSAL_TEXT["humorous"]
-    )
+    refusal = _REFUSAL_TEXT.get(settings.get("refusal_style", "polite"), _REFUSAL_TEXT["polite"])
     emotes: list[str] = settings.get("enabled_emotes") or []
 
     persona_data = json.dumps(

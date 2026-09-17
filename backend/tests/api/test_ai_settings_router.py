@@ -38,10 +38,10 @@ _DEFAULT_SETTINGS = {
     "audience_reference": "大家",
     "tone_preset": "neutral",
     "catchphrase": "嗨！",
-    "catchphrase_frequency": "rare",
+    "catchphrase_frequency": "off",
     "example_replies": [],
     "response_lang": "zh-tw",
-    "refusal_style": "humorous",
+    "refusal_style": "polite",
     "max_tokens": 200,
     "enabled_emotes": [],
     "enabled": True,
@@ -240,6 +240,10 @@ class TestResetAISettings:
                 r = _make_client().post("/api/ai/settings/reset")
         assert r.status_code == 200
         assert r.json()["bot_name"] == "Niibot"
+        reset = repo.return_value.upsert.await_args.kwargs
+        assert reset["catchphrase_frequency"] == "off"
+        assert reset["refusal_style"] == "polite"
+        assert reset["cooldown"] == 30
 
     def test_exception_returns_500(self):
         with patch("routers.ai_settings_router.AISettingsRepository") as repo:

@@ -265,7 +265,7 @@ class AIComponent(BotComponent):
         if not has_role(ctx.chatter, ai_settings.get("min_role", "everyone")):
             return
         if is_on_cooldown(
-            ctx.channel.id, "ai", _Cooldown(cooldown=ai_settings.get("cooldown", 15))
+            ctx.channel.id, "ai", _Cooldown(cooldown=ai_settings.get("cooldown", 30))
         ):
             return
 

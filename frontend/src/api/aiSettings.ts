@@ -27,15 +27,15 @@ export const AI_SETTINGS_DEFAULT: AISettings = {
   audience_reference: '大家',
   tone_preset: 'neutral',
   catchphrase: '',
-  catchphrase_frequency: 'rare',
+  catchphrase_frequency: 'off',
   example_replies: [],
   response_lang: 'zh-tw',
-  refusal_style: 'humorous',
+  refusal_style: 'polite',
   max_tokens: 250,
   enabled_emotes: [],
   enabled: false,
   memory_enabled: false,
-  cooldown: 15,
+  cooldown: 30,
   min_role: 'everyone',
 }
 

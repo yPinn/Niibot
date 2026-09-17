@@ -58,6 +58,14 @@ Twitch 的單則回覆只有 100 字，因此預設採低強度角色表現：�
 角色標記，例如特殊自稱、觀眾稱呼、口頭禪或 emote；這些欄位都是可選偏好，不要求每則出現。示例只描述語氣與節奏，
 不得當成固定台詞、事實或回答模板。
 
+### Factory defaults 與角色範本邊界
+
+新頻道與使用者主動執行「重設預設值」時採用保守設定：`catchphrase_frequency=off`、
+`refusal_style=polite`、`cooldown=30`。這可降低免費模型過度重複口頭禪、把婉拒誤演成系統故障，以及短時間內大量請求的風險。
+
+角色範本只覆蓋 identity／voice／signature／examples，不修改婉拒方式、短期記憶、啟用狀態、冷卻時間或最低使用身份。
+Migration `123_ai_settings_default_preferences.sql` 只變更資料庫未來的 column defaults，不回填既有資料；已儲存的頻道選擇保持不變。
+
 Prompt JSON 將自稱寫成帶條件的 `self_reference_when_needed`，而非看似每則必用的裸欄位。對全體聊天室喊話是另一種
 互動意圖，不應把群體稱呼放進每個單一提問者的 prompt。
 

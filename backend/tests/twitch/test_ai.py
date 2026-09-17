@@ -104,6 +104,18 @@ async def _ai(component: AIComponent, ctx: MagicMock, message: str | None = None
 
 class TestCooldownOrdering:
     @pytest.mark.asyncio
+    async def test_missing_cooldown_uses_conservative_default(self) -> None:
+        comp = _make_component(ai_settings={"enabled": True})
+        with (
+            patch(PATCH_ON_COOLDOWN, return_value=True) as mock_on_cooldown,
+            patch(PATCH_RECORD_COOLDOWN),
+        ):
+            await _ai(comp, _make_ctx(), message="hello")
+
+        cooldown = mock_on_cooldown.call_args.args[2]
+        assert cooldown.cooldown == 30
+
+    @pytest.mark.asyncio
     async def test_empty_message_does_not_record_cooldown(self) -> None:
         comp = _make_component()
         with (

@@ -73,7 +73,7 @@ export default function AIModule() {
           audience_reference: s.audience_reference ?? '大家',
           tone_preset: s.tone_preset ?? 'neutral',
           catchphrase: s.catchphrase ?? '',
-          catchphrase_frequency: s.catchphrase_frequency ?? 'rare',
+          catchphrase_frequency: s.catchphrase_frequency ?? 'off',
           example_replies: s.example_replies ?? [],
           enabled_emotes: s.enabled_emotes ?? [],
           memory_enabled: s.memory_enabled ?? false,
@@ -284,7 +284,12 @@ export default function AIModule() {
             <CardContent className="flex flex-col gap-section">
               {/* Presets */}
               <div className="flex flex-col gap-element">
-                <Label>懶人包</Label>
+                <div className="flex flex-col gap-0.5">
+                  <Label>角色範本</Label>
+                  <p className="text-label text-muted-foreground">
+                    套用後仍可微調下方欄位；不會改變婉拒方式。
+                  </p>
+                </div>
                 <div className="flex gap-2 overflow-x-auto pb-0.5">
                   {PERSONA_PRESETS.map(preset => (
                     <button
@@ -350,7 +355,7 @@ export default function AIModule() {
                   />
                 </div>
                 <div className="flex flex-col gap-element">
-                  <Label>使用頻率</Label>
+                  <Label>口頭禪頻率</Label>
                   <OptionPicker
                     options={CATCHPHRASE_FREQUENCY_OPTIONS}
                     value={draft.catchphrase_frequency}
@@ -358,7 +363,7 @@ export default function AIModule() {
                     disabled={disabled || !draft.catchphrase.trim()}
                   />
                   <p className="text-label text-muted-foreground">
-                    這是模型的使用傾向，不保證精準比例；想要最自然請選「不用」。
+                    這是使用傾向，不是精準比例；需要自然回覆時建議選「不使用」。
                   </p>
                 </div>
               </div>
@@ -412,10 +417,10 @@ export default function AIModule() {
               </div>
 
               <Separator />
-              <p className="text-sub font-medium">說話方式</p>
+              <p className="text-sub font-medium">回覆方式</p>
 
               <div className="flex flex-col gap-element">
-                <Label>基礎語氣</Label>
+                <Label>回覆語氣</Label>
                 <OptionPicker
                   options={TONE_OPTIONS}
                   value={draft.tone_preset}
@@ -424,7 +429,7 @@ export default function AIModule() {
                 />
               </div>
 
-              <SettingRow title="語言" description="「自動」會跟著觀眾的語言切換">
+              <SettingRow title="回覆語言" description="「跟隨提問」會依每次問題使用的語言回答">
                 <OptionPicker
                   options={LANG_OPTIONS}
                   value={draft.response_lang}
@@ -434,7 +439,7 @@ export default function AIModule() {
               </SettingRow>
 
               <div className="flex flex-col gap-element">
-                <Label>拒絕風格</Label>
+                <Label>婉拒方式</Label>
                 <OptionPicker
                   options={REFUSAL_OPTIONS}
                   value={draft.refusal_style}
@@ -554,10 +559,10 @@ export default function AIModule() {
                   </span>
                 </div>
               </div>
-              <SettingRow title="冷卻時間">
+              <SettingRow title="頻道冷卻時間" description="任一觀眾使用後，全頻道需等待的時間。">
                 <div className="flex items-center gap-2">
                   <Input
-                    aria-label="冷卻時間（秒）"
+                    aria-label="頻道冷卻時間（秒）"
                     type="number"
                     min={5}
                     max={300}
@@ -574,7 +579,7 @@ export default function AIModule() {
                 </div>
               </SettingRow>
               <div className="flex flex-col gap-element">
-                <Label>最低身份</Label>
+                <Label>誰可以使用</Label>
                 <OptionPicker
                   options={ROLE_OPTIONS}
                   value={draft.min_role}

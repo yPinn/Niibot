@@ -27,9 +27,11 @@ async def test_missing_row_returns_conservative_persona_v2_defaults() -> None:
 
     assert settings["audience_reference"] == "大家"
     assert settings["tone_preset"] == "neutral"
-    assert settings["catchphrase_frequency"] == "rare"
+    assert settings["catchphrase_frequency"] == "off"
     assert settings["example_replies"] == []
+    assert settings["refusal_style"] == "polite"
     assert settings["memory_enabled"] is False
+    assert settings["cooldown"] == 30
 
 
 @pytest.mark.asyncio

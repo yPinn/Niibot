@@ -81,4 +81,40 @@ describe('AI persona and short-term memory settings', () => {
     expect(screen.getByText(/模型只參考語氣與節奏，不會把示例當成固定台詞/)).toBeInTheDocument()
     expect(screen.queryByLabelText('對全體稱呼')).not.toBeInTheDocument()
   })
+
+  it('uses outcome-based setting labels and explains channel-wide cooldown', async () => {
+    render(<AIModule />)
+
+    expect(await screen.findByText('角色範本')).toBeInTheDocument()
+    expect(screen.getByText(/套用後仍可微調下方欄位；不會改變婉拒方式/)).toBeInTheDocument()
+    expect(screen.getByText('口頭禪頻率')).toBeInTheDocument()
+    expect(screen.getByText('回覆語氣')).toBeInTheDocument()
+    expect(screen.getByText('回覆語言')).toBeInTheDocument()
+    expect(screen.getByText('婉拒方式')).toBeInTheDocument()
+    expect(screen.getByText('頻道冷卻時間')).toBeInTheDocument()
+    expect(screen.getByText(/任一觀眾使用後，全頻道需等待/)).toBeInTheDocument()
+    expect(screen.getByText('誰可以使用')).toBeInTheDocument()
+    expect(screen.getByLabelText('頻道冷卻時間（秒）')).toHaveValue(30)
+  })
+
+  it('keeps refusal behavior independent when applying a persona preset', async () => {
+    vi.mocked(getAISettings).mockResolvedValue({
+      ...AI_SETTINGS_DEFAULT,
+      refusal_style: 'humorous',
+    })
+    const user = userEvent.setup()
+    render(<AIModule />)
+
+    await user.click(await screen.findByRole('button', { name: '元氣明快親切，適度鼓勵' }))
+    await user.click(screen.getAllByRole('button', { name: '儲存' })[0])
+
+    await waitFor(() => {
+      expect(patchAISettings).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tone_preset: 'energetic',
+          refusal_style: 'humorous',
+        })
+      )
+    })
+  })
 })
