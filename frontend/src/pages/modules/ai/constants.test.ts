@@ -14,4 +14,23 @@ describe('AI persona presets', () => {
       expect(preset.values.example_replies.every(reply => reply.length <= 120)).toBe(true)
     }
   })
+
+  it('defaults to restrained character signals for short Twitch replies', () => {
+    expect(PERSONA_PRESETS.map(preset => preset.name)).toEqual([
+      '預設',
+      '機智吐槽',
+      '元氣',
+      '傲嬌',
+      '穩重',
+    ])
+
+    for (const preset of PERSONA_PRESETS) {
+      expect(preset.values.persona).not.toMatch(/每個問題|每句|絕不|總是|習慣/)
+      expect(preset.values.catchphrase_frequency).not.toBe('occasional')
+      expect(preset.values.example_replies.length).toBeLessThanOrEqual(1)
+      expect(preset.values.self_pronoun).toBe('我')
+      expect(preset.values).not.toHaveProperty('audience_reference')
+      expect(preset.values.catchphrase).toBe('')
+    }
+  })
 })

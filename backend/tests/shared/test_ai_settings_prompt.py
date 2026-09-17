@@ -51,9 +51,9 @@ def test_persona_fields_are_data_not_core_policy() -> None:
 
     assert persona["identity"] == {
         "display_name": "妮寶",
-        "self_reference": "我",
-        "audience_reference": "各位",
+        "self_reference_when_needed": "我",
     }
+    assert "各位" not in sections[2].content
     assert persona["voice"]["tone_preset"] == "energetic"
     assert persona["voice"]["tone_guidance"]
     assert persona["voice"]["style_notes"] == malicious
@@ -106,3 +106,23 @@ def test_empty_optional_context_is_omitted() -> None:
         InputSectionKind.PRODUCT_CONTRACT,
         InputSectionKind.CHANNEL_PERSONA,
     ]
+
+
+def test_twitch_contract_prioritizes_answer_over_character_performance() -> None:
+    sections = build_assistant_sections(_settings())
+    contract = sections[1].content
+
+    assert "先回答問題，再自然帶入角色語氣" in contract
+    assert "至多選一種明顯角色標記" in contract
+    assert "自稱、觀眾稱呼、口頭禪或 emote" in contract
+    assert "不必每則都使用" in contract
+    assert "只有句意需要時才使用自稱" in contract
+    assert "只有確實對全體說話時才使用觀眾稱呼" in contract
+
+
+def test_twitch_contract_treats_examples_as_style_reference_not_templates() -> None:
+    sections = build_assistant_sections(_settings())
+    contract = sections[1].content
+
+    assert "示例回覆只供語氣與節奏參考" in contract
+    assert "不可照抄成固定模板" in contract

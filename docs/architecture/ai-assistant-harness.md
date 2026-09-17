@@ -40,7 +40,7 @@ current user input 再以獨立 JSON message 傳遞。persona、知識與歷史�
 
 | 分組        | 欄位                                                          | Prompt 位置        |
 | ----------- | ------------------------------------------------------------- | ------------------ |
-| Identity    | `bot_name`、`self_pronoun`、`audience_reference`              | `channel_persona`  |
+| Identity    | `bot_name`、`self_pronoun`                                    | `channel_persona`  |
 | Voice       | `tone_preset`、既有 `persona` 進階補充                        | `channel_persona`  |
 | Signature   | `catchphrase`、`catchphrase_frequency`                        | `channel_persona`  |
 | Examples    | 最多 3 則、每則最多 120 字的 assistant-only `example_replies` | `channel_persona`  |
@@ -49,6 +49,31 @@ current user input 再以獨立 JSON message 傳遞。persona、知識與歷史�
 
 `tone_preset` 與口頭禪頻率由固定 enum 對應程式內 guidance；未知值一律回退保守預設，不能把任意文字提升為高權威指令。
 所有頻道可編輯文字仍序列化為 `CONTEXT_DATA`。既有 `persona` 欄位保留，因此 migration 不會破壞已儲存的人設。
+`audience_reference` 暫留在 DB/API 作向後相容，但不再注入 prompt 或顯示於設定頁；實測顯示免費模型會把裸露的群體稱呼
+當成每則必用的台詞，與 `!ai` 的單一提問者互動不符。
+
+### Persona 自然度契約
+
+Twitch 的單則回覆只有 100 字，因此預設採低強度角色表現：答案本身優先，角色只作修飾。每則回覆至多使用一種明顯
+角色標記，例如特殊自稱、觀眾稱呼、口頭禪或 emote；這些欄位都是可選偏好，不要求每則出現。示例只描述語氣與節奏，
+不得當成固定台詞、事實或回答模板。
+
+Prompt JSON 將自稱寫成帶條件的 `self_reference_when_needed`，而非看似每則必用的裸欄位。對全體聊天室喊話是另一種
+互動意圖，不應把群體稱呼放進每個單一提問者的 prompt。
+
+內建 preset 不預載口頭禪，避免無狀態模型把 `rare` 誤解成「這次就使用」。自訂口頭禪仍可使用，但頻率 enum 是模型的
+語氣提示，不是精準機率或跨請求計數器；需要嚴格比例或禁止連續出現時，應在應用層加入有界 cadence state。
+內建 preset 也統一使用自然的「我」；強自稱仍可自訂，但不作為辨識角色的主要手段。
+
+自然度回歸以四類合成情境評估：知識問答、錯誤更正、日常閒聊，以及要求攻擊他人的拒答情境。成功輸出必須同時符合：
+
+- 先回答或處理當前意圖，角色語氣不延遲答案。
+- 不連續重複自稱、受眾稱呼、口頭禪或相同示例句。
+- 機智不變成人身攻擊，傲嬌不變成冷落，元氣不讓每句都成為感嘆句，沉穩不強塞人生感悟。
+- 維持 100 字、1–2 句、單段與既有安全政策。
+
+目前不另增 `style_intensity` 欄位：固定的低強度契約加上 `tone_preset`／自由文字已能覆蓋 Twitch 的短回覆需求。
+只有實際輸出評估顯示多數頻道需要在同一 persona 間穩定切換強弱，才加入有界 enum，而非再增加自由文字層。
 
 ## Twitch 短期對話記憶
 

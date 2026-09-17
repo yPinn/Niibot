@@ -51,9 +51,9 @@ describe('AI persona and short-term memory settings', () => {
     expect(memory).not.toBeChecked()
     expect(screen.getByText(/最近 2 輪，10 分鐘後失效/)).toBeInTheDocument()
 
-    const audience = screen.getByLabelText('觀眾稱呼')
-    await user.clear(audience)
-    await user.type(audience, '聊天室')
+    const selfPronoun = screen.getByLabelText('自稱')
+    await user.clear(selfPronoun)
+    await user.type(selfPronoun, '本機器人')
     await user.type(screen.getByLabelText('示例回覆 1'), '簡單來說，答案是這個。')
     await user.click(memory)
 
@@ -63,11 +63,22 @@ describe('AI persona and short-term memory settings', () => {
     await waitFor(() => {
       expect(patchAISettings).toHaveBeenCalledWith(
         expect.objectContaining({
-          audience_reference: '聊天室',
+          self_pronoun: '本機器人',
           example_replies: ['簡單來說，答案是這個。'],
           memory_enabled: true,
         })
       )
     })
+    expect(vi.mocked(patchAISettings).mock.calls[0][0]).not.toHaveProperty('audience_reference')
+  })
+
+  it('explains that persona fields are optional style references', async () => {
+    render(<AIModule />)
+
+    expect(
+      await screen.findByText(/先把答案說清楚，再自然帶入角色；避免要求每句都表演/)
+    ).toBeInTheDocument()
+    expect(screen.getByText(/模型只參考語氣與節奏，不會把示例當成固定台詞/)).toBeInTheDocument()
+    expect(screen.queryByLabelText('對全體稱呼')).not.toBeInTheDocument()
   })
 })

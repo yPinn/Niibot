@@ -101,7 +101,6 @@ export default function AIModule() {
     draft.bot_name !== saved.bot_name ||
     draft.persona !== saved.persona ||
     draft.self_pronoun !== saved.self_pronoun ||
-    draft.audience_reference !== saved.audience_reference ||
     draft.tone_preset !== saved.tone_preset ||
     draft.catchphrase !== saved.catchphrase ||
     draft.catchphrase_frequency !== saved.catchphrase_frequency ||
@@ -116,7 +115,6 @@ export default function AIModule() {
     draft.bot_name === AI_SETTINGS_DEFAULT.bot_name &&
     draft.persona === AI_SETTINGS_DEFAULT.persona &&
     draft.self_pronoun === AI_SETTINGS_DEFAULT.self_pronoun &&
-    draft.audience_reference === AI_SETTINGS_DEFAULT.audience_reference &&
     draft.tone_preset === AI_SETTINGS_DEFAULT.tone_preset &&
     draft.catchphrase === AI_SETTINGS_DEFAULT.catchphrase &&
     draft.catchphrase_frequency === AI_SETTINGS_DEFAULT.catchphrase_frequency &&
@@ -163,7 +161,6 @@ export default function AIModule() {
         bot_name: draft.bot_name,
         persona: draft.persona,
         self_pronoun: draft.self_pronoun,
-        audience_reference: draft.audience_reference,
         tone_preset: draft.tone_preset,
         catchphrase: draft.catchphrase,
         catchphrase_frequency: draft.catchphrase_frequency,
@@ -312,7 +309,7 @@ export default function AIModule() {
               </div>
 
               {/* Identity — same field family, same grid so widths stay consistent */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-section">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-section">
                 <div className="flex flex-col gap-element">
                   <Label htmlFor="bot-name">Bot 名稱</Label>
                   <Input
@@ -335,18 +332,10 @@ export default function AIModule() {
                     disabled={disabled}
                   />
                 </div>
-                <div className="flex flex-col gap-element">
-                  <Label htmlFor="audience-reference">觀眾稱呼</Label>
-                  <Input
-                    id="audience-reference"
-                    value={draft.audience_reference}
-                    onChange={e => patch('audience_reference', e.target.value)}
-                    maxLength={20}
-                    placeholder="大家"
-                    disabled={disabled}
-                  />
-                </div>
               </div>
+              <p className="text-label text-muted-foreground">
+                自稱只在句意需要時使用，不會要求每則回覆固定出現。
+              </p>
 
               <div className="grid grid-cols-1 sm:grid-cols-[1fr_1.35fr] gap-section">
                 <div className="flex flex-col gap-element">
@@ -368,6 +357,9 @@ export default function AIModule() {
                     onChange={v => patch('catchphrase_frequency', v)}
                     disabled={disabled || !draft.catchphrase.trim()}
                   />
+                  <p className="text-label text-muted-foreground">
+                    這是模型的使用傾向，不保證精準比例；想要最自然請選「不用」。
+                  </p>
                 </div>
               </div>
 
@@ -378,13 +370,16 @@ export default function AIModule() {
                     {(draft.persona ?? '').length} / 300
                   </span>
                 </div>
+                <p className="text-label text-muted-foreground">
+                  先把答案說清楚，再自然帶入角色；避免要求每句都表演。
+                </p>
                 <Textarea
                   id="persona"
                   value={draft.persona ?? ''}
                   onChange={e => patch('persona', e.target.value)}
                   maxLength={300}
                   rows={3}
-                  placeholder="幽默風趣、愛開玩笑…（留空代表無特別個性，描述越詳細我就越能扮好）"
+                  placeholder="例如：反應俐落，先回答；情境輕鬆時偶爾善意吐槽"
                   disabled={disabled}
                   className="resize-none leading-relaxed"
                 />
@@ -394,7 +389,7 @@ export default function AIModule() {
                 <div className="flex flex-col gap-0.5">
                   <Label>示例回覆</Label>
                   <p className="text-label text-muted-foreground">
-                    最多三句理想答案，只教說話方式，不放規則或觀眾資料
+                    最多三句不同情境的理想回答；模型只參考語氣與節奏，不會把示例當成固定台詞
                   </p>
                 </div>
                 <div className="grid gap-2">
@@ -473,7 +468,6 @@ export default function AIModule() {
                         bot_name: saved.bot_name,
                         persona: saved.persona,
                         self_pronoun: saved.self_pronoun,
-                        audience_reference: saved.audience_reference,
                         tone_preset: saved.tone_preset,
                         catchphrase: saved.catchphrase,
                         catchphrase_frequency: saved.catchphrase_frequency,
