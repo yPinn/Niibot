@@ -1,6 +1,6 @@
 [project]
 name = "niibot-backend"
-version = "1.15"
+version = "1.16"
 description = "FastAPI backend for Discord and Twitch bots"
 readme = "README.md"
 requires-python = ">=3.12"
