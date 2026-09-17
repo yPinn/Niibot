@@ -403,14 +403,15 @@ export async function getMatcherSummaries(days: number = 30): Promise<MatcherCha
 
 export async function getPotentialViewers(
   partnerChannelId: string,
+  days: number = 30,
   limit: number = 50,
   offset: number = 0
 ): Promise<MatcherViewersResponse> {
   return apiCache.fetch(
-    CACHE_KEYS.MATCHER_VIEWERS(partnerChannelId, limit, offset),
+    CACHE_KEYS.MATCHER_VIEWERS(partnerChannelId, days, limit, offset),
     async () => {
       const response = await apiFetch(
-        `/api/analytics/matcher/${partnerChannelId}/viewers?limit=${limit}&offset=${offset}`,
+        `/api/analytics/matcher/${partnerChannelId}/viewers?days=${days}&limit=${limit}&offset=${offset}`,
         { credentials: 'include' }
       )
       if (!response.ok) throw await parseApiError(response, '載入潛在觀眾失敗')

@@ -158,16 +158,17 @@ class _AnalyticsOverlapMixin:
         if not viewer_rows:
             return
 
-        # Upsert viewers
+        # Upsert viewers — keyed per window_days so switching windows doesn't
+        # clobber another window's already-computed viewer detail.
         await conn.executemany(
             """
             INSERT INTO channel_overlap_viewers (
                 home_channel_id, partner_channel_id, user_id,
                 username, display_name,
                 partner_sessions, partner_messages, partner_watch_sec, partner_last_seen,
-                home_sessions, home_messages, potential_score, computed_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
-            ON CONFLICT (home_channel_id, partner_channel_id, user_id) DO UPDATE SET
+                home_sessions, home_messages, potential_score, window_days, computed_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
+            ON CONFLICT (home_channel_id, partner_channel_id, user_id, window_days) DO UPDATE SET
                 username          = EXCLUDED.username,
                 display_name      = EXCLUDED.display_name,
                 partner_sessions  = EXCLUDED.partner_sessions,
@@ -193,6 +194,7 @@ class _AnalyticsOverlapMixin:
                     r["home_sessions"],
                     r["home_messages"],
                     r["potential_score"],
+                    days,
                 )
                 for r in viewer_rows
             ],
@@ -332,6 +334,7 @@ class _AnalyticsOverlapMixin:
         self,
         home_channel_id: str,
         partner_channel_id: str,
+        days: int = 30,
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[int, list[dict]]:
@@ -341,7 +344,7 @@ class _AnalyticsOverlapMixin:
                 """
                 SELECT COUNT(*)
                 FROM channel_overlap_viewers
-                WHERE home_channel_id = $1 AND partner_channel_id = $2
+                WHERE home_channel_id = $1 AND partner_channel_id = $2 AND window_days = $3
                   AND user_id != $1
                   AND user_id != $2
                   AND user_id NOT IN (SELECT user_id FROM known_bots)
@@ -349,6 +352,7 @@ class _AnalyticsOverlapMixin:
                 """,
                 home_channel_id,
                 partner_channel_id,
+                days,
             )
             rows = await conn.fetch(
                 """
@@ -357,16 +361,17 @@ class _AnalyticsOverlapMixin:
                     partner_sessions, partner_messages, partner_watch_sec, partner_last_seen,
                     home_sessions, home_messages, potential_score, computed_at
                 FROM channel_overlap_viewers
-                WHERE home_channel_id = $1 AND partner_channel_id = $2
+                WHERE home_channel_id = $1 AND partner_channel_id = $2 AND window_days = $3
                   AND user_id != $1
                   AND user_id != $2
                   AND user_id NOT IN (SELECT user_id FROM known_bots)
                   AND user_id NOT IN (SELECT channel_id FROM channels)
                 ORDER BY potential_score DESC
-                LIMIT $3 OFFSET $4
+                LIMIT $4 OFFSET $5
                 """,
                 home_channel_id,
                 partner_channel_id,
+                days,
                 limit,
                 offset,
             )

@@ -76,10 +76,15 @@ class AnalyticsService:
         return await self.repo.get_matcher_summaries(home_channel_id, days)
 
     async def get_potential_viewers(
-        self, home_channel_id: str, partner_channel_id: str, limit: int = 50, offset: int = 0
+        self,
+        home_channel_id: str,
+        partner_channel_id: str,
+        days: int = 30,
+        limit: int = 50,
+        offset: int = 0,
     ) -> tuple[int, list[dict]]:
         return await self.repo.get_potential_viewers(
-            home_channel_id, partner_channel_id, limit, offset
+            home_channel_id, partner_channel_id, days, limit, offset
         )
 
     async def bulk_upsert_follow_dates(self, channel_id: str, followers: list[dict]) -> int:

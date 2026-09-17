@@ -1306,6 +1306,38 @@ class TestSyncKnownBots:
 
 
 # ---------------------------------------------------------------------------
+# Overlap mixin — _compute_channel_overlap window isolation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestComputeChannelOverlapWindowIsolation:
+    async def test_different_windows_upsert_distinct_window_days(self):
+        """Two refreshes for the same partner with different `days` must not
+        clobber each other's viewer rows — each upsert has to carry its own
+        window_days so the 7d and 30d potential-viewer tables coexist."""
+        conn = AsyncMock()
+        conn.fetch.return_value = [_VIEWER_ROW]
+        conn.fetchval.return_value = 100
+        pool = _make_pool_with_conn(conn)
+        repo = AnalyticsRepository(pool)
+
+        await repo._compute_channel_overlap(conn, "home1", "partner1", 7)
+        await repo._compute_channel_overlap(conn, "home1", "partner1", 30)
+
+        assert conn.executemany.await_count == 2
+        first_sql, first_rows = conn.executemany.await_args_list[0].args
+        second_sql, second_rows = conn.executemany.await_args_list[1].args
+
+        assert "window_days" in first_sql
+        assert (
+            "ON CONFLICT (home_channel_id, partner_channel_id, user_id, window_days)" in first_sql
+        )
+        assert first_rows[0][-1] == 7
+        assert second_rows[0][-1] == 30
+
+
+# ---------------------------------------------------------------------------
 # Overlap mixin — get_matcher_summaries
 # ---------------------------------------------------------------------------
 
@@ -1481,6 +1513,26 @@ class TestGetPotentialViewers:
         total, rows = await repo.get_potential_viewers("home1", "p1")
 
         assert total == 0
+
+    async def test_days_is_passed_to_both_queries(self):
+        """The selected window must scope both the count and the row query —
+        otherwise switching windows in the UI would silently read another
+        window's viewer detail."""
+        conn = AsyncMock()
+        conn.fetchval.return_value = 0
+        conn.fetch.return_value = []
+        pool = _make_pool_with_conn(conn)
+
+        repo = AnalyticsRepository(pool)
+        await repo.get_potential_viewers("home1", "p1", days=7, limit=10, offset=0)
+
+        fetchval_sql, *fetchval_args = conn.fetchval.await_args.args
+        assert "window_days = $3" in fetchval_sql
+        assert fetchval_args == ["home1", "p1", 7]
+
+        fetch_sql, *fetch_args = conn.fetch.await_args.args
+        assert "window_days = $3" in fetch_sql
+        assert fetch_args == ["home1", "p1", 7, 10, 0]
 
 
 # ---------------------------------------------------------------------------

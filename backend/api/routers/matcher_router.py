@@ -158,13 +158,14 @@ async def get_matcher_summaries(
 async def get_potential_viewers(
     partner_channel_id: str,
     response: Response,
+    days: Annotated[int, Query(ge=1, le=365)] = 30,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
     channel_id: str = Depends(get_current_channel_id),
     service: AnalyticsService = Depends(get_analytics_service),
 ) -> MatcherViewersResponse:
     total, viewers = await service.get_potential_viewers(
-        channel_id, partner_channel_id, limit, offset
+        channel_id, partner_channel_id, days, limit, offset
     )
     response.headers["Cache-Control"] = "private, max-age=300"
     return MatcherViewersResponse(
