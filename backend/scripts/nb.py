@@ -13,6 +13,7 @@ still run standalone; nb lazy-imports one per invocation so the api/twitch/disco
 from __future__ import annotations
 
 import argparse
+import shutil
 import subprocess
 import sys
 
@@ -22,12 +23,44 @@ utf8_stdio()  # covers every lazy-imported script; standalone scripts call it th
 
 # ── subprocess groups (bash / root-level python) ─────────────────────────────
 
-_ENV_SH_CMDS = {"init", "snapshot", "backup", "restore", "diff", "list", "clean"}
 _GEN_ENV_CMDS = {"gen", "check", "print"}
+
+# Descriptions mirror the usage block in scripts/env.sh and scripts/staging.sh;
+# anything not in _GEN_ENV_CMDS is dispatched to env.sh.
+_ENV_CMDS: dict[str, str] = {
+    "gen": "regenerate templates, docs and manifest from env.registry.toml",
+    "check": "fail if any generated env file is out of sync",
+    "print": "print one resolved KEY",
+    "init": "copy every *.env.example → *.env (-f overwrites)",
+    "snapshot": "snapshot live env files to data/env/YYYYMMDD/",
+    "backup": "snapshot + compress to data/env-YYYYMMDD.tar.gz",
+    "restore": "restore from a snapshot or .tar.gz (-f overwrites)",
+    "diff": "diff current env files against a snapshot",
+    "list": "list available snapshots and backups",
+    "clean": "delete old snapshots/backups (default: keep 3)",
+}
+
+_STAGING_CMDS: dict[str, str] = {
+    "up": "start staging (default profile: full)",
+    "down": "stop containers, keep volumes",
+    "reset": "stop and wipe volumes (postgres data included)",
+    "build": "build one service, or all when none given",
+    "logs": "stream logs; pass a service to tail just that one",
+    "ps": "show this project's containers and health",
+    "restart": "restart running containers without rebuilding",
+    "migrate": "run migrations as a one-shot container",
+    "exec": "run a command inside a staging container",
+}
 
 
 def _sh(*parts: str, passthrough: list[str] | None = None) -> int:
     cmd = list(parts) + (passthrough or [])
+    # Resolve the executable through PATH ourselves. Windows CreateProcess
+    # searches System32 before PATH, so a bare "bash" picks up the WSL stub
+    # there instead of Git Bash and dies with execvpe(/bin/bash) — which broke
+    # every env.sh and staging.sh command behind `npm run nb`.
+    if resolved := shutil.which(cmd[0]):
+        cmd[0] = resolved
     return subprocess.run(cmd, cwd=REPO_ROOT).returncode
 
 
@@ -68,12 +101,22 @@ def _run_py(module_name: str):
 
 
 def _add_passthrough_group(
-    sub_parsers, name: str, help_text: str, choices: list[str], handler
+    sub_parsers, name: str, help_text: str, commands: dict[str, str], handler
 ) -> None:
-    p = sub_parsers.add_parser(name, help=help_text)
-    p.add_argument("sub", choices=choices, help="subcommand")
-    p.add_argument("rest", nargs=argparse.REMAINDER, help="args passed through verbatim")
-    p.set_defaults(_handler=handler)
+    """Add a group that forwards its subcommand to a shell/root script.
+
+    Takes {subcommand: description} rather than a bare name list so these
+    groups describe themselves like the natively-parsed ones do — otherwise
+    `nb env --help` prints only a set of names and sends the reader to the
+    README to find out what any of them do.
+    """
+    grp = sub_parsers.add_parser(name, help=help_text).add_subparsers(
+        dest="sub", required=True, metavar="<command>"
+    )
+    for cmd, desc in commands.items():
+        p = grp.add_parser(cmd, help=desc)
+        p.add_argument("rest", nargs=argparse.REMAINDER, help="args passed through verbatim")
+        p.set_defaults(_handler=handler)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -154,20 +197,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(_handler=_run_py("models_update"))
 
     # env / staging / badges (passthrough) -----------------------------------
-    _add_passthrough_group(
-        groups,
-        "env",
-        "env file management",
-        sorted(_ENV_SH_CMDS | _GEN_ENV_CMDS),
-        _run_env,
-    )
-    _add_passthrough_group(
-        groups,
-        "staging",
-        "staging docker compose",
-        ["up", "down", "reset", "build", "logs", "ps", "restart", "migrate", "exec"],
-        _run_staging,
-    )
+    _add_passthrough_group(groups, "env", "env file management", _ENV_CMDS, _run_env)
+    _add_passthrough_group(groups, "staging", "staging docker compose", _STAGING_CMDS, _run_staging)
     p = groups.add_parser("badges", help="download Twitch role badge images")
     p.add_argument("rest", nargs=argparse.REMAINDER)
     p.set_defaults(_handler=_run_badges)

@@ -50,6 +50,8 @@ live (secret-filled) files under `data/`.
 ## Not wrapped by `nb` (CI / one-off only)
 
 - `scripts/ci_write_env.sh` — CI writes runner env files from `env.manifest.json`
+- `scripts/ci_changed_paths.py` — classifies changed paths so CI can skip suites
+  a change cannot affect; unrecognised paths deliberately run everything
 - `backend/scripts/migrate_runtime_data.sh` — one-off `data/` → `runtime/` move (deploy workflow)
 
 ## Adding a command
