@@ -21,6 +21,8 @@ import {
   Skeleton,
 } from '@/components/ui'
 
+import { BlockInfoGrid } from './BlockInfoGrid'
+
 interface CheckinBlockCardProps {
   config: RedemptionConfig | null
   rewards: TwitchReward[]
@@ -128,33 +130,38 @@ export function CheckinBlockCard({
               </AlertDescription>
             </Alert>
           ) : (
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-              <div className="grid min-w-0 gap-3 sm:grid-cols-2">
-                <div className="space-y-1">
-                  <p className="text-label text-muted-foreground">聊天指令</p>
-                  <p className="text-content font-semibold">!簽到</p>
-                  <p className="text-label text-muted-foreground">每天每人記錄一次</p>
-                </div>
-                <div className="space-y-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-label text-muted-foreground">頻道點數</p>
-                    <Badge variant={config?.enabled && bindingLabel ? 'default' : 'outline'}>
-                      {statusLabel}
-                    </Badge>
-                  </div>
-                  <p className="text-content font-semibold">
-                    {bindingLabel ?? '尚未綁定'}
-                    {boundReward && (
-                      <span className="font-normal text-muted-foreground">
-                        {' '}
-                        · {boundReward.cost.toLocaleString()} 點
-                      </span>
-                    )}
-                  </p>
-                  <p className="text-label text-muted-foreground">由 Twitch 管理獎勵</p>
-                </div>
-              </div>
-              <Button asChild size="sm" variant="outline" className="self-start sm:self-auto">
+            <div className="flex flex-col gap-4">
+              <BlockInfoGrid
+                className="sm:grid-cols-2"
+                cells={[
+                  {
+                    label: '聊天指令',
+                    value: '!簽到',
+                    note: '每天每人記錄一次',
+                  },
+                  {
+                    label: '頻道點數',
+                    badge: (
+                      <Badge variant={config?.enabled && bindingLabel ? 'default' : 'outline'}>
+                        {statusLabel}
+                      </Badge>
+                    ),
+                    value: (
+                      <>
+                        {bindingLabel ?? '尚未綁定'}
+                        {boundReward && (
+                          <span className="font-normal text-muted-foreground">
+                            {' '}
+                            · {boundReward.cost.toLocaleString()} 點
+                          </span>
+                        )}
+                      </>
+                    ),
+                    note: '由 Twitch 管理獎勵',
+                  },
+                ]}
+              />
+              <Button asChild size="sm" variant="outline" className="self-start">
                 <a href="/channel-points">管理簽到入口</a>
               </Button>
             </div>
