@@ -65,6 +65,8 @@ App 憑證走 `shared.env`。
 | `JWT_ALGORITHM`          | (選用) 預設 HS256                                                       |
 | `JWT_EXPIRE_DAYS`        | (選用) 預設 7                                                           |
 | `JWT_SECRET_KEY`         | JWT 簽章密鑰                                                            |
+| `NIGHTBOT_CLIENT_ID`     | (選用) Nightbot 指令匯入；未設定時該來源不會出現在後台                  |
+| `NIGHTBOT_CLIENT_SECRET` | (選用) Nightbot 指令匯入用的 client secret                              |
 | `PAYMENT_ENCRYPTION_KEY` | 金流設定加密（Fernet key）                                              |
 | `RELEASES_GITHUB_TOKEN`  | (選用) 讀 private repo release，read:contents scope                     |
 
@@ -122,6 +124,23 @@ build 時注入。Cloudflare Pages 另需在專案設定加 `API_BACKEND`（後�
 | `VITE_SUPPORT_ECPAY_URL`      | 贊助頁 ECPay 連結                                   |
 
 <!-- env:end -->
+
+## Nightbot 指令匯入
+
+後台 Commands 頁的「匯入」可以把使用者在其他機器人上的自訂指令搬過來。
+
+- **StreamElements** 不需要任何設定，指令與各頻道的啟用狀態都是公開可讀的。
+- **Nightbot** 需要 OAuth。它的未授權讀取會把變數塗銷（`$(user)` 變成 `[user]`）且
+  無法還原，實測約四分之一的指令會受影響，所以這個來源一律走授權流程。
+
+設定步驟：
+
+1. 到 <https://nightbot.tv/account/applications> 建立應用程式
+2. Redirect URI 填 `<API_URL>/api/commands/import/nightbot/callback`（必須完全相符）
+3. 產生 client secret，把兩個值填進 `NIGHTBOT_CLIENT_ID` / `NIGHTBOT_CLIENT_SECRET`
+
+取得的 access token 不會存進資料庫：在處理 callback 的那一個 request 內換取、使用、
+撤銷，與 `auth_router` 的 collaborator 流程相同。
 
 ## Staging
 
