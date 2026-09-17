@@ -7,7 +7,7 @@ clips) live in ``shared.video_sources``.
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 import asyncpg
 
@@ -23,22 +23,15 @@ LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 def format_now_playing(entry: VideoQueueEntry) -> str:
-    """Render a 'now playing' chat line for a playing entry.
+    """Render the !np chat line for the currently playing entry.
 
-    Shared by the !np chat command and the auto-announce-on-start notifier so
-    both always say the same thing.
+    No remaining time: it is stale the moment the message is sent, and a
+    viewer reading it seconds later is told the wrong number. The overlay
+    already shows a live countdown for anyone who needs one.
     """
     url = build_watch_url(entry.video_type, entry.video_id)
     title_part = f"「{entry.title}」 " if entry.title else " "
-
-    remaining_str = ""
-    if entry.started_at and entry.duration_seconds:
-        elapsed = (datetime.now(UTC) - entry.started_at).total_seconds()
-        remaining = max(0, entry.duration_seconds - int(elapsed))
-        m, s = divmod(remaining, 60)
-        remaining_str = f" | 剩餘 {m}:{s:02d}"
-
-    return f"▶{title_part}{url}{remaining_str} | 點播者：{entry.requested_by}"
+    return f"▶{title_part}{url} | 點播者：{entry.requested_by}"
 
 
 # ---------------------------------------------------------------------------

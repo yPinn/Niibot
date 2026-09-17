@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from shared.models.video_queue import VideoQueueBlocklistEntry
+from shared.models.video_queue import VideoQueueBlocklistEntry, VideoQueueEntry
 from shared.repositories.video_queue import (
     VideoQueueBlocklistRepository,
     VideoQueueRepository,
@@ -15,6 +15,7 @@ from shared.repositories.video_queue import (
     _blocklist_cache,
     _blocklist_match,
     _settings_cache,
+    format_now_playing,
 )
 from shared.video_sources import (
     YouTubeInfo,
@@ -119,6 +120,41 @@ _BLOCKLIST_ROW = {
 # ---------------------------------------------------------------------------
 # Pure utility functions
 # ---------------------------------------------------------------------------
+
+
+class TestFormatNowPlaying:
+    @staticmethod
+    def _entry(**overrides) -> VideoQueueEntry:
+        base = {
+            "id": 1,
+            "channel_id": "ch1",
+            "video_id": "dQw4w9WgXcQ",
+            "requested_by": "viewer",
+            "source": "chat",
+            "status": "playing",
+            "video_type": "youtube",
+            "title": "Never Gonna Give You Up",
+            "duration_seconds": 213,
+            "started_at": datetime(2026, 1, 1, tzinfo=UTC),
+        }
+        return VideoQueueEntry(**{**base, **overrides})
+
+    def test_includes_title_link_and_requester(self):
+        line = format_now_playing(self._entry())
+        assert "「Never Gonna Give You Up」" in line
+        assert "dQw4w9WgXcQ" in line
+        assert "點播者：viewer" in line
+
+    def test_omits_remaining_time(self):
+        # A countdown is stale the moment the message is sent — a viewer
+        # reading it seconds later would be told the wrong number.
+        line = format_now_playing(self._entry())
+        assert "剩餘" not in line
+
+    def test_untitled_entry_still_renders(self):
+        line = format_now_playing(self._entry(title=None))
+        assert "「" not in line
+        assert "點播者：viewer" in line
 
 
 class TestExtractYoutubeId:

@@ -3,7 +3,7 @@
 Public (all users):
     !vq list        Show current + next 3 queued titles
     !vq remove      Remove caller's own most recent queued entry
-    !np / !影片      Now playing: title, link, remaining time, requester
+    !np / !影片      Now playing: title, link, requester
 
 Moderator+ only:
     !vq <URL>       Add a video to the queue (YouTube or Twitch Clip)
