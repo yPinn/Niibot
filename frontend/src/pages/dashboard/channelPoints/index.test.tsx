@@ -298,9 +298,8 @@ describe('Channel Points page', () => {
     expect(firstPlace).toHaveTextContent('12 天')
     expect(within(leaderboard).getByText('bob')).toBeInTheDocument()
 
-    const timezone = screen.getByRole('textbox', { name: '時區' })
-    await user.clear(timezone)
-    await user.type(timezone, 'Asia/Tokyo')
+    await user.click(screen.getByRole('combobox', { name: '時區' }))
+    await user.click(screen.getByRole('option', { name: /東京/ }))
     await user.click(screen.getByRole('button', { name: '儲存設定' }))
 
     await waitFor(() =>
@@ -355,7 +354,7 @@ describe('Channel Points page', () => {
     await user.click(await screen.findByRole('button', { name: '編輯每日簽到設定' }))
 
     expect(await screen.findByText('簽到排行榜載入失敗')).toBeInTheDocument()
-    expect(screen.getByRole('textbox', { name: '時區' })).toHaveValue('Asia/Taipei')
+    expect(screen.getByRole('combobox', { name: '時區' })).toHaveTextContent('台北')
     await user.click(screen.getByRole('button', { name: '儲存設定' }))
     await waitFor(() => expect(updateCheckinSettings).toHaveBeenCalledOnce())
   })

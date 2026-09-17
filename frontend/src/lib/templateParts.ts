@@ -17,8 +17,10 @@ export interface TemplatePart {
   kind: TemplatePartKind
 }
 
-/** Split plain text on `$(var)` tokens into literal / var parts. */
-function tokenizeVars(text: string, variables: Record<string, string>): TemplatePart[] {
+/** Split plain text on `$(var)` tokens into literal / var parts. Exported for
+ * templates that only support flat `$(var)` substitution (no `[[ ]]`
+ * segments), e.g. check-in's stricter `render_checkin_template`. */
+export function tokenizeVars(text: string, variables: Record<string, string>): TemplatePart[] {
   const parts: TemplatePart[] = []
   let last = 0
   for (const m of text.matchAll(VAR_RE)) {

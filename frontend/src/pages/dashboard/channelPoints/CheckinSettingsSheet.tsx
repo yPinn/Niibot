@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 
 import {
@@ -9,6 +9,7 @@ import {
   updateCheckinSettings,
 } from '@/api/checkin'
 import { Icon, Spinner } from '@/components/primitives'
+import { TemplatePartsPreview } from '@/components/TemplatePartsPreview'
 import {
   Alert,
   AlertDescription,
@@ -16,6 +17,11 @@ import {
   Button,
   Input,
   Label,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   Sheet,
   SheetClose,
   SheetContent,
@@ -24,13 +30,45 @@ import {
   SheetHeader,
   SheetTitle,
   Skeleton,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
   Textarea,
 } from '@/components/ui'
 import { VariableInserter } from '@/components/VariableInserter'
 import { useInputInsert } from '@/hooks/useInputInsert'
+import { tokenizeVars } from '@/lib/templateParts'
 import { toastApiError } from '@/lib/toast-error'
 
 import { CheckinLeaderboard } from './CheckinLeaderboard'
+
+// Curated IANA zones, not a free-text field — a typo here silently breaks
+// the daily check-in boundary. Picking from a list also keeps DST handling
+// correct (ZoneInfo), which a raw UTC-offset number can't do.
+const TIMEZONE_OPTIONS: { value: string; label: string }[] = [
+  { value: 'Asia/Taipei', label: '台北（UTC+8）' },
+  { value: 'Asia/Hong_Kong', label: '香港（UTC+8）' },
+  { value: 'Asia/Shanghai', label: '上海（UTC+8）' },
+  { value: 'Asia/Singapore', label: '新加坡（UTC+8）' },
+  { value: 'Asia/Manila', label: '馬尼拉（UTC+8）' },
+  { value: 'Asia/Tokyo', label: '東京（UTC+9）' },
+  { value: 'Asia/Seoul', label: '首爾（UTC+9）' },
+  { value: 'Asia/Bangkok', label: '曼谷（UTC+7）' },
+  { value: 'Asia/Kolkata', label: '新德里（UTC+5:30）' },
+  { value: 'Asia/Dubai', label: '杜拜（UTC+4）' },
+  { value: 'Europe/Moscow', label: '莫斯科（UTC+3）' },
+  { value: 'Europe/Berlin', label: '柏林（UTC+1/+2）' },
+  { value: 'Europe/Paris', label: '巴黎（UTC+1/+2）' },
+  { value: 'Europe/London', label: '倫敦（UTC+0/+1）' },
+  { value: 'UTC', label: 'UTC（UTC+0）' },
+  { value: 'America/New_York', label: '紐約（UTC-5/-4）' },
+  { value: 'America/Chicago', label: '芝加哥（UTC-6/-5）' },
+  { value: 'America/Denver', label: '丹佛（UTC-7/-6）' },
+  { value: 'America/Los_Angeles', label: '洛杉磯（UTC-8/-7）' },
+  { value: 'Australia/Sydney', label: '雪梨（UTC+10/+11）' },
+  { value: 'Pacific/Auckland', label: '奧克蘭（UTC+12/+13）' },
+]
 
 interface CheckinSettingsSheetProps {
   open: boolean
@@ -74,20 +112,15 @@ function toForm(settings: CheckinSettings): CheckinForm {
   }
 }
 
-function renderPreview(template: string): string {
-  return template.replace(/\$\(([^)]+)\)/g, (token, name: string) => PREVIEW_VALUES[name] ?? token)
-}
+const TWITCH_MESSAGE_LIMIT = 500
 
-function MessagePreview({ label, template }: { label: string; template: string }) {
-  return (
-    <div className="space-y-1.5">
-      <p className="text-label text-muted-foreground">{label}預覽</p>
-      <div className="rounded-md border bg-muted/40 px-3 py-2 text-sub wrap-break-word">
-        {template ? renderPreview(template) : '（訊息模板為空）'}
-      </div>
-    </div>
-  )
-}
+// Check-in's backend renderer (render_checkin_template) only does flat
+// $(var) substitution — no [[ ]] segments — so no "dropped" legend needed.
+const PREVIEW_LEGEND = (
+  <>
+    <span className="text-primary">紫色</span>為變數代入值。
+  </>
+)
 
 export function CheckinSettingsSheet({ open, onOpenChange }: CheckinSettingsSheetProps) {
   const [form, setForm] = useState<CheckinForm>(EMPTY_FORM)
@@ -98,6 +131,16 @@ export function CheckinSettingsSheet({ open, onOpenChange }: CheckinSettingsShee
   const [leaderboard, setLeaderboard] = useState<CheckinLeaderboardEntry[]>([])
   const [leaderboardLoading, setLeaderboardLoading] = useState(false)
   const [leaderboardLoadFailed, setLeaderboardLoadFailed] = useState(false)
+
+  // Existing settings may hold an IANA zone outside the curated list (typed
+  // in before this became a dropdown) — keep it selectable instead of
+  // silently resetting the field to blank.
+  const timezoneOptions = useMemo(() => {
+    if (!form.timezone || TIMEZONE_OPTIONS.some(option => option.value === form.timezone)) {
+      return TIMEZONE_OPTIONS
+    }
+    return [{ value: form.timezone, label: form.timezone }, ...TIMEZONE_OPTIONS]
+  }, [form.timezone])
 
   const loadSettings = useCallback(async () => {
     setLoading(true)
@@ -151,6 +194,15 @@ export function CheckinSettingsSheet({ open, onOpenChange }: CheckinSettingsShee
       updateForm('duplicateTemplate', value)
     )
 
+  const successPreviewParts = useMemo(
+    () => tokenizeVars(form.successTemplate, PREVIEW_VALUES),
+    [form.successTemplate]
+  )
+  const duplicatePreviewParts = useMemo(
+    () => tokenizeVars(form.duplicateTemplate, PREVIEW_VALUES),
+    [form.duplicateTemplate]
+  )
+
   const handleSave = async () => {
     const timezone = form.timezone.trim()
     if (!timezone || !form.successTemplate.trim() || !form.duplicateTemplate.trim()) {
@@ -200,6 +252,7 @@ export function CheckinSettingsSheet({ open, onOpenChange }: CheckinSettingsShee
             {loading ? (
               <div className="space-y-4">
                 <Skeleton className="h-16 w-full" />
+                <Skeleton className="h-16 w-full" />
                 <Skeleton className="h-48 w-full" />
                 <Skeleton className="h-48 w-full" />
               </div>
@@ -219,17 +272,22 @@ export function CheckinSettingsSheet({ open, onOpenChange }: CheckinSettingsShee
                   <Label id="checkin-timezone-label" htmlFor="checkin-timezone">
                     時區
                   </Label>
-                  <Input
-                    id="checkin-timezone"
-                    aria-label="時區"
+                  <Select
                     value={form.timezone}
-                    maxLength={64}
-                    placeholder="Asia/Taipei"
-                    onChange={event => updateForm('timezone', event.target.value)}
-                  />
-                  <p className="text-label text-muted-foreground">
-                    使用 IANA 時區名稱；每日簽到會依此時區跨日，例如 Asia/Taipei。
-                  </p>
+                    onValueChange={value => updateForm('timezone', value)}
+                  >
+                    <SelectTrigger id="checkin-timezone" aria-label="時區" className="w-full">
+                      <SelectValue placeholder="選擇時區" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {timezoneOptions.map(option => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-label text-muted-foreground">決定每日簽到跨日的時間點。</p>
                 </section>
 
                 <section
@@ -250,57 +308,65 @@ export function CheckinSettingsSheet({ open, onOpenChange }: CheckinSettingsShee
                     onChange={event => updateReplyDelay(Number(event.target.value))}
                   />
                   <p className="text-label text-muted-foreground">
-                    聊天訊息幾乎即時送出，但畫面要經過 Twitch 編碼／CDN
-                    才會顯示，實際延遲依你目前的直播延遲模式而定；預設 0 秒（不延遲）。
+                    補償畫面比聊天室晚顯示的秒數；預設 0 秒（不延遲）。
                   </p>
                 </section>
 
-                <section className="space-y-3 border-t pt-card" aria-labelledby="success-label">
-                  <div className="space-y-1">
-                    <Label id="success-label" htmlFor="checkin-success-template">
-                      簽到成功訊息
-                    </Label>
-                    <p className="text-label text-muted-foreground">當今天第一次簽到成功時回覆。</p>
-                  </div>
-                  <Textarea
-                    id="checkin-success-template"
-                    ref={successInputRef}
-                    value={form.successTemplate}
-                    maxLength={500}
-                    rows={3}
-                    className="font-mono text-sub"
-                    onChange={event => updateForm('successTemplate', event.target.value)}
-                  />
-                  <VariableInserter
-                    variables={CHECKIN_VARIABLES}
-                    onInsert={insertSuccessVariable}
-                  />
-                  <MessagePreview label="成功訊息" template={form.successTemplate} />
-                </section>
-
-                <section className="space-y-3 border-t pt-card" aria-labelledby="duplicate-label">
-                  <div className="space-y-1">
-                    <Label id="duplicate-label" htmlFor="checkin-duplicate-template">
-                      已簽到訊息
-                    </Label>
-                    <p className="text-label text-muted-foreground">
-                      同一位觀眾在同一天重複簽到時回覆，不會增加累積天數。
-                    </p>
-                  </div>
-                  <Textarea
-                    id="checkin-duplicate-template"
-                    ref={duplicateInputRef}
-                    value={form.duplicateTemplate}
-                    maxLength={500}
-                    rows={3}
-                    className="font-mono text-sub"
-                    onChange={event => updateForm('duplicateTemplate', event.target.value)}
-                  />
-                  <VariableInserter
-                    variables={CHECKIN_VARIABLES}
-                    onInsert={insertDuplicateVariable}
-                  />
-                  <MessagePreview label="重複訊息" template={form.duplicateTemplate} />
+                <section className="space-y-3 border-t pt-card">
+                  <Tabs defaultValue="success">
+                    <TabsList className="grid w-full grid-cols-2">
+                      <TabsTrigger value="success">成功訊息</TabsTrigger>
+                      <TabsTrigger value="duplicate">已簽到訊息</TabsTrigger>
+                    </TabsList>
+                    <TabsContent value="success" className="space-y-3">
+                      <p className="text-label text-muted-foreground">
+                        當今天第一次簽到成功時回覆。
+                      </p>
+                      <Textarea
+                        id="checkin-success-template"
+                        aria-label="簽到成功訊息"
+                        ref={successInputRef}
+                        value={form.successTemplate}
+                        maxLength={500}
+                        rows={3}
+                        className="font-mono text-sub"
+                        onChange={event => updateForm('successTemplate', event.target.value)}
+                      />
+                      <VariableInserter
+                        variables={CHECKIN_VARIABLES}
+                        onInsert={insertSuccessVariable}
+                      />
+                      <TemplatePartsPreview
+                        parts={successPreviewParts}
+                        limit={TWITCH_MESSAGE_LIMIT}
+                        legend={PREVIEW_LEGEND}
+                      />
+                    </TabsContent>
+                    <TabsContent value="duplicate" className="space-y-3">
+                      <p className="text-label text-muted-foreground">
+                        同一位觀眾在同一天重複簽到時回覆，不會增加累積天數。
+                      </p>
+                      <Textarea
+                        id="checkin-duplicate-template"
+                        aria-label="已簽到訊息"
+                        ref={duplicateInputRef}
+                        value={form.duplicateTemplate}
+                        maxLength={500}
+                        rows={3}
+                        className="font-mono text-sub"
+                        onChange={event => updateForm('duplicateTemplate', event.target.value)}
+                      />
+                      <VariableInserter
+                        variables={CHECKIN_VARIABLES}
+                        onInsert={insertDuplicateVariable}
+                      />
+                      <TemplatePartsPreview
+                        parts={duplicatePreviewParts}
+                        limit={TWITCH_MESSAGE_LIMIT}
+                        legend={PREVIEW_LEGEND}
+                      />
+                    </TabsContent>
+                  </Tabs>
                 </section>
 
                 {validationError && (
