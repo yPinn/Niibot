@@ -758,12 +758,14 @@ async def fetch_video_metadata(
 
     if resolved.video_type == "instagram_reel":
         reel_info = await fetch_instagram_reel_info(resolved.video_id, instafix_host, session)
-        # No duration/view_count from InstaFix's OG data — permanently unknown
-        # at queue time (unlike Bilibili, where a tier fallback can still
-        # succeed). metadata_best_effort=True skips the min_view_count /
-        # duration-cap gates instead of rejecting an unwinnable submission.
-        # duration_seconds is backfilled client-side once the resolved
-        # <video> starts playing (reportVideoMetadata, same as Twitch Clip).
+        # view_count is permanently unavailable from InstaFix's OG data —
+        # metadata_best_effort=True keeps the min_view_count gate skipping
+        # rather than rejecting an unwinnable submission. duration_seconds
+        # *is* usually available now (see shared.instafix_client's
+        # _extract_duration_seconds — rides along in the same video redirect
+        # fetch_instagram_reel_source() resolves at play time); when it
+        # isn't (that redirect failed), it falls back to the same
+        # reportVideoMetadata client-side backfill Twitch Clip uses.
         # is_vertical=True unconditionally — every Reel is 9:16, unlike YouTube
         # where only Shorts are — so the overlay always gives it the same
         # blurred-side-column treatment as a YouTube Short (players/
@@ -771,7 +773,7 @@ async def fetch_video_metadata(
         # instances, into the same left/right containers).
         return VideoMetadata(
             title=reel_info.title,
-            duration_seconds=None,
+            duration_seconds=reel_info.duration_seconds,
             view_count=None,
             is_vertical=True,
             metadata_best_effort=True,

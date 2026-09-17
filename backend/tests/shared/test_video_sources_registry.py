@@ -259,6 +259,10 @@ class TestFetchVideoMetadata:
         assert metadata.duration_seconds is None
 
     async def test_instagram_reel_delegates_and_preserves_shape(self):
+        # duration_seconds now rides along in the same video-redirect fetch
+        # that resolves the play-time mp4 URL (see shared.instafix_client's
+        # _extract_duration_seconds) — no longer permanently None like
+        # view_count.
         resolved = ResolvedVideo(video_type="instagram_reel", video_id="Cabc123")
         with patch(
             "shared.video_sources.fetch_instagram_reel_info",
@@ -266,7 +270,7 @@ class TestFetchVideoMetadata:
                 return_value=InstagramReelInfo(
                     title="Alice",
                     thumbnail_url="https://cdn.example/thumb.jpg",
-                    duration_seconds=None,
+                    duration_seconds=16,
                 )
             ),
         ) as mock_fetch:
@@ -274,7 +278,7 @@ class TestFetchVideoMetadata:
         mock_fetch.assert_awaited_once_with("Cabc123", "instafix:3000", None)
         assert metadata == VideoMetadata(
             title="Alice",
-            duration_seconds=None,
+            duration_seconds=16,
             view_count=None,
             # Every Reel is 9:16 — always True, unlike YouTube where only
             # Shorts are vertical — so the overlay gives it the same
@@ -285,9 +289,10 @@ class TestFetchVideoMetadata:
         )
 
     async def test_instagram_reel_always_best_effort_even_when_resolve_fails(self):
-        # No duration/view_count field exists in InstaFix's OG data at all —
-        # unlike Bilibili's -412, this is permanent, not transient, so the
-        # flag must be set even on a "successful" (all-None) fetch.
+        # view_count has no field in InstaFix's OG data at all — unlike
+        # Bilibili's -412, this is permanent, not transient, so the flag
+        # must be set even on a "successful" (all-None) fetch. duration_seconds
+        # can independently be None too (e.g. the video-redirect fetch failed).
         resolved = ResolvedVideo(video_type="instagram_reel", video_id="Cabc123")
         with patch(
             "shared.video_sources.fetch_instagram_reel_info",
