@@ -64,12 +64,11 @@ describe('Landing', () => {
     expect(slides).toHaveLength(4)
     for (const slide of slides) expect(slide).toHaveClass('min-h-full', 'snap-start')
 
-    expect(slides.map(slide => slide.querySelector('h1, h2')?.textContent)).toEqual([
-      'Niibot',
-      'Video Queue',
-      '聊天室互動',
-      '其他功能',
-    ])
+    const headings = slides.map(slide => slide.querySelector('h1, h2')?.textContent)
+    expect(headings[0]).toBe('Niibot')
+    expect(headings[1]).toBe('聊天室互動')
+    expect(headings[2]).toContain('影片點播管理')
+    expect(headings[3]).toBe('依需求加入的工具')
   })
 
   it('keeps the character introduction concise and factual', () => {
@@ -80,7 +79,10 @@ describe('Landing', () => {
     )
 
     expect(screen.getByRole('heading', { level: 1, name: 'Niibot' })).toBeInTheDocument()
-    expect(screen.getByText('Twitch 直播小幫手｜泥爸')).toBeInTheDocument()
+    expect(screen.getByText('Twitch 直播聊天室的小幫手｜泥爸')).toBeInTheDocument()
+    expect(
+      screen.getByText('先設定指令與自動回覆；其他直播與 Discord 工具可依需求加入。')
+    ).toBeInTheDocument()
     expect(screen.getByText('沒有勞基法保障的虛擬社畜。')).toHaveClass('block')
     expect(screen.getByText('沒有薪水，沒有休假，只有一個使命：')).toHaveClass('block')
     const mission = screen.getByText('讓你的聊天室繼續活著。')
@@ -103,20 +105,25 @@ describe('Landing', () => {
       </MemoryRouter>
     )
 
-    const showcase = screen.getByRole('region', { name: 'Video Queue 功能展示' })
-    expect(within(showcase).getByRole('heading', { name: 'Video Queue' })).toBeInTheDocument()
-    expect(within(showcase).getByText('觀眾投稿')).toBeInTheDocument()
-    expect(within(showcase).getByText('Dashboard 管理')).toBeInTheDocument()
-    expect(within(showcase).getByText('OBS 播放')).toBeInTheDocument()
+    const showcase = screen.getByRole('region', { name: '影片點播管理功能展示' })
+    expect(within(showcase).getByRole('heading', { name: '影片點播管理' })).toBeInTheDocument()
+    expect(within(showcase).getByText('觀眾點播')).toBeInTheDocument()
+    expect(within(showcase).getByText('管理播放順序')).toBeInTheDocument()
+    expect(within(showcase).getByText('顯示在直播畫面')).toBeInTheDocument()
+    expect(
+      within(showcase).getByText(
+        '需要時再啟用：觀眾可透過聊天室連結或忠誠點數點播影片；你可調整播放順序並顯示在直播畫面。'
+      )
+    ).toBeInTheDocument()
     expect(within(showcase).getByText('YouTube')).toBeInTheDocument()
     expect(within(showcase).getByText('Bilibili')).toBeInTheDocument()
     expect(within(showcase).getByText('Twitch Clip')).toBeInTheDocument()
 
-    const overlayPreview = within(showcase).getByLabelText('OBS Overlay 外觀示意')
+    const overlayPreview = within(showcase).getByLabelText('直播畫面顯示範例')
     expect(within(overlayPreview).getByText('@ momo')).toBeInTheDocument()
     expect(within(overlayPreview).getByLabelText('剩餘時間 03:42')).toBeInTheDocument()
     expect(
-      within(overlayPreview).getByRole('img', { name: 'OBS Overlay 影片內容示意' })
+      within(overlayPreview).getByRole('img', { name: '直播畫面上的影片內容示意' })
     ).toBeInTheDocument()
     expect(showcase.querySelector('iframe')).not.toBeInTheDocument()
   })
@@ -128,7 +135,7 @@ describe('Landing', () => {
       </MemoryRouter>
     )
 
-    const showcase = screen.getByRole('region', { name: 'Video Queue 功能展示' })
+    const showcase = screen.getByRole('region', { name: '影片點播管理功能展示' })
     expect(within(showcase).getByTestId('video-queue-layout')).toHaveClass(
       'lg:grid-cols-[minmax(0,1.2fr)_minmax(22rem,0.8fr)]'
     )
@@ -145,7 +152,7 @@ describe('Landing', () => {
     expect(commandRow).toHaveClass('items-baseline')
   })
 
-  it('groups the remaining capabilities by need without inventing template imports', () => {
+  it('presents Twitch chat as the core and other tools as extensions', () => {
     render(
       <MemoryRouter>
         <Landing />
@@ -153,10 +160,27 @@ describe('Landing', () => {
     )
 
     expect(screen.getByRole('heading', { level: 2, name: '聊天室互動' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: '其他功能' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: '直播流程' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: '社群延伸' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '依需求加入的工具' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Twitch 聊天室' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '直播工具' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Discord 社群' })).toBeInTheDocument()
     expect(screen.queryByText(/模板匯入/)).not.toBeInTheDocument()
+  })
+
+  it('explains Twitch chat automation with everyday language', () => {
+    render(
+      <MemoryRouter>
+        <Landing />
+      </MemoryRouter>
+    )
+
+    expect(
+      screen.getByText('設定指令回覆，也可在追隨、訂閱、突襲或忠誠點數兌換時自動回覆。')
+    ).toBeInTheDocument()
+    expect(screen.getByText('指令回覆')).toBeInTheDocument()
+    expect(screen.getByText('最低權限')).toBeInTheDocument()
+    expect(screen.getByText('冷卻')).toBeInTheDocument()
+    expect(screen.getByText('事件回覆')).toBeInTheDocument()
   })
 
   it('exposes an accessible theme control and legal links', async () => {

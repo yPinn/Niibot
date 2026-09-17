@@ -67,7 +67,7 @@ export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) 
               <div className="flex flex-col items-center gap-2 text-center">
                 <h1 className="text-page-title font-bold">歡迎使用 Niibot</h1>
                 <p className="text-muted-foreground text-balance text-sub">
-                  Twitch 直播 × Discord 社群的機器人助手
+                  先用 Twitch 登入，開始設定你的直播聊天室。
                 </p>
               </div>
               <ul className="text-muted-foreground my-4 space-y-2 text-sub sm:my-6">
@@ -77,7 +77,7 @@ export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) 
                     className="text-primary mt-0.5"
                     wrapperClassName=""
                   />
-                  <span>自訂指令、觸發詞與定時訊息</span>
+                  <span>設定聊天室指令與自動回覆</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <Icon
@@ -85,7 +85,7 @@ export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) 
                     className="text-primary mt-0.5"
                     wrapperClassName=""
                   />
-                  <span>遊戲 / 影片排隊與 OBS 疊加層</span>
+                  <span>在追隨、訂閱、突襲與忠誠點數兌換時自動回覆</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <Icon
@@ -93,7 +93,7 @@ export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) 
                     className="text-primary mt-0.5"
                     wrapperClassName=""
                   />
-                  <span>Discord 社群連結預覽與伺服器日誌</span>
+                  <span>依需求加入排隊、直播畫面與 Discord 工具</span>
                 </li>
               </ul>
               <Button
@@ -105,6 +105,9 @@ export function LoginForm({ className, ...props }: React.ComponentProps<'div'>) 
                 <Icon icon="fa-brands fa-twitch" className="text-lg mr-2" wrapperClassName="" />
                 {isStartingOAuth ? '正在連接 Twitch…' : '使用 Twitch 登入'}
               </Button>
+              <p className="text-label text-center text-muted-foreground">
+                會前往 Twitch 完成登入，再回到 Niibot。
+              </p>
             </div>
           </form>
           <div className="bg-muted relative hidden min-h-72 select-none md:block">

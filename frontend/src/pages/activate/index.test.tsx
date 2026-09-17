@@ -52,31 +52,31 @@ describe('ActivatePage', () => {
     )
 
     expect(screen.getByRole('heading', { name: '啟用你的帳號' })).toBeInTheDocument()
-    expect(screen.getByText('選擇以下一種方式完成啟用。')).toBeInTheDocument()
+    expect(screen.getByText('使用 Twitch 獎勵或啟用碼完成啟用。')).toBeInTheDocument()
 
-    const creatorBlock = screen.getByRole('region', { name: 'Twitch 兌換' })
+    const creatorBlock = screen.getByRole('region', { name: 'Twitch 獎勵啟用' })
     expect(within(creatorBlock).getByText('皮先森ツ')).toBeInTheDocument()
     expect(within(creatorBlock).getByText('@llazypilot · Niibot 作者')).toBeInTheDocument()
     expect(
-      within(creatorBlock).getByText('Twitch 兌換「Niibot」獎勵後回來確認。')
+      within(creatorBlock).getByText('在 Twitch 兌換「Niibot」獎勵後，回到這裡確認。')
     ).toBeInTheDocument()
     expect(within(creatorBlock).queryByText(/啟用資格在我的/)).not.toBeInTheDocument()
 
-    const twitchLink = within(creatorBlock).getByRole('link', { name: '前往兌換' })
+    const twitchLink = within(creatorBlock).getByRole('link', { name: '前往 Twitch 兌換' })
     expect(twitchLink).toHaveAttribute('href', 'https://www.twitch.tv/llazypilot')
 
     expect(creatorBlock.querySelector('[data-slot="avatar"]')).toBeInTheDocument()
     expect(twitchLink).toHaveAttribute('data-slot', 'button')
     expect(
-      within(creatorBlock).getByText('Discord 社群').closest('[data-slot="button"]')
+      within(creatorBlock).getByText('需要協助？前往 Discord 社群').closest('[data-slot="button"]')
     ).toBeTruthy()
-    expect(within(creatorBlock).getByRole('button', { name: '重新確認' })).toBeInTheDocument()
+    expect(within(creatorBlock).getByRole('button', { name: '確認是否已啟用' })).toBeInTheDocument()
 
     const codeBlock = screen.getByRole('region', { name: '啟用碼' })
     expect(codeBlock.parentElement).toHaveClass('pb-card')
     expect(codeBlock).toHaveClass('bg-muted', 'rounded-lg')
     expect(creatorBlock).toHaveClass('bg-muted', 'rounded-lg')
-    expect(within(codeBlock).getByText('輸入作者提供的 6 位啟用碼。')).toBeInTheDocument()
+    expect(within(codeBlock).getByText('輸入作者提供的 6 位數啟用碼。')).toBeInTheDocument()
     expect(within(codeBlock).getByRole('button', { name: '使用啟用碼' })).toBeInTheDocument()
     expect(screen.getByText('或')).toBeInTheDocument()
     expect(mockGetActivationRequestStatus).not.toHaveBeenCalled()

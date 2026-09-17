@@ -20,21 +20,21 @@ import overlayStyles from './VideoQueueOverlay.module.css'
 const CAPABILITY_GROUPS = [
   {
     icon: 'fa-solid fa-terminal',
-    title: '聊天室互動',
-    description: '處理觀眾指令與自動回應。',
-    items: ['自訂指令與觸發器', '事件自動回應', '定時訊息', 'AI 聊天助理'],
+    title: 'Twitch 聊天室',
+    description: '設定指令與自動回覆，讓聊天室互動更省心。',
+    items: ['自訂指令', '自動回覆', '定時訊息', 'AI 聊天助理'],
   },
   {
     icon: 'fa-solid fa-gamepad',
-    title: '直播流程',
-    description: '管理直播中會反覆使用的工具。',
+    title: '直播工具',
+    description: '需要時再加入遊戲、影片等直播工具。',
     items: ['遊戲排隊', '互動數據分析', '準星收藏', '贊助斗內'],
   },
   {
     icon: 'fa-brands fa-discord',
-    title: '社群延伸',
-    description: '讓 Discord 在直播之外繼續運作。',
-    items: ['社群連結預覽', '伺服器事件日誌', '生日提醒與抽獎', '娛樂與占卜'],
+    title: 'Discord 社群',
+    description: '需要時，讓 Discord 協助社群互動。',
+    items: ['連結預覽', '社群活動紀錄', '生日提醒與抽獎', '娛樂與占卜'],
   },
 ]
 
@@ -67,7 +67,7 @@ function OverlayPreview() {
   const remaining = '03:42'
 
   return (
-    <div aria-label="OBS Overlay 外觀示意" className="min-w-0">
+    <div aria-label="直播畫面顯示範例" className="min-w-0">
       <div className={overlayStyles.overlay} style={{ width: '100%', animation: 'none' }}>
         <div className={overlayStyles.titleBar} style={{ animation: 'none' }}>
           <div className={overlayStyles.titleLeft}>
@@ -91,7 +91,7 @@ function OverlayPreview() {
           </div>
           <img
             src="/images/valorant_map.jpg"
-            alt="OBS Overlay 影片內容示意"
+            alt="直播畫面上的影片內容示意"
             className={`${overlayStyles.videoContainer} h-full w-full object-cover`}
           />
           <div className={overlayStyles.sunkenOverlay} />
@@ -106,7 +106,7 @@ function VideoQueueSlide() {
     <section
       id="video-queue"
       data-testid="landing-slide"
-      aria-label="Video Queue 功能展示"
+      aria-label="影片點播管理功能展示"
       className={`${SLIDE_CLASS} flex items-center border-t`}
     >
       <div className="mx-auto w-full max-w-6xl px-page py-card sm:py-empty lg:px-page-lg">
@@ -115,10 +115,14 @@ function VideoQueueSlide() {
           className="grid gap-section md:grid-cols-[minmax(0,1fr)_auto] md:items-end"
         >
           <div>
-            <h2 className="text-marketing-title font-semibold tracking-tight">Video Queue</h2>
+            <h2
+              aria-label="影片點播管理"
+              className="text-marketing-title font-semibold tracking-tight"
+            >
+              影片點播管理 <span aria-hidden="true">（Video Queue）</span>
+            </h2>
             <p className="mt-element max-w-[65ch] text-content leading-relaxed text-muted-foreground">
-              觀眾可透過聊天連結、忠誠點數兌換或由主播手動加入影片。Dashboard 負責排序與限制，OBS
-              overlay 依序播放。
+              需要時再啟用：觀眾可透過聊天室連結或忠誠點數點播影片；你可調整播放順序並顯示在直播畫面。
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-element md:justify-end">
@@ -130,9 +134,9 @@ function VideoQueueSlide() {
 
         <SlideUpSm inView delay={0.05} className="mt-card">
           <ol className="grid grid-cols-3 gap-element border-y py-section sm:gap-card">
-            <FlowItem icon="fa-solid fa-bolt" title="觀眾投稿" />
-            <FlowItem icon="fa-solid fa-sliders" title="Dashboard 管理" />
-            <FlowItem icon="fa-solid fa-display" title="OBS 播放" />
+            <FlowItem icon="fa-solid fa-bolt" title="觀眾點播" />
+            <FlowItem icon="fa-solid fa-sliders" title="管理播放順序" />
+            <FlowItem icon="fa-solid fa-display" title="顯示在直播畫面" />
           </ol>
         </SlideUpSm>
 
@@ -205,13 +209,13 @@ function ChatSlide() {
         <SlideUpSm inView>
           <h2 className="text-marketing-title font-semibold tracking-tight">聊天室互動</h2>
           <p className="mt-element max-w-[60ch] text-content leading-relaxed text-muted-foreground">
-            設定自訂指令、關鍵字與事件回應。追蹤、訂閱、突襲或點數兌換發生時，Bot 依照設定內容回覆。
+            設定指令回覆，也可在追隨、訂閱、突襲或忠誠點數兌換時自動回覆。
           </p>
           <div className="mt-section flex flex-wrap gap-element">
-            <Badge variant="outline">使用間隔</Badge>
-            <Badge variant="outline">開放對象</Badge>
-            <Badge variant="outline">事件模板</Badge>
-            <Badge variant="outline">AI 人設</Badge>
+            <Badge variant="outline">指令回覆</Badge>
+            <Badge variant="outline">最低權限</Badge>
+            <Badge variant="outline">冷卻</Badge>
+            <Badge variant="outline">事件回覆</Badge>
           </div>
         </SlideUpSm>
 
@@ -256,9 +260,9 @@ function OtherFeaturesSlide() {
       <div className="mx-auto flex w-full max-w-6xl flex-1 items-center px-page py-card sm:py-empty lg:px-page-lg">
         <div className="w-full">
           <SlideUpSm inView>
-            <h2 className="text-marketing-title font-semibold tracking-tight">其他功能</h2>
+            <h2 className="text-marketing-title font-semibold tracking-tight">依需求加入的工具</h2>
             <p className="mt-element max-w-[60ch] text-content leading-relaxed text-muted-foreground">
-              依頻道需求啟用，不需要一次設定全部。
+              先設定 Twitch 聊天室，再依需求加入直播與 Discord 工具。
             </p>
           </SlideUpSm>
 
@@ -369,7 +373,10 @@ export default function Landing() {
               <SlideUp className="max-w-2xl">
                 <h1 className="text-display font-bold tracking-tight">Niibot</h1>
                 <p className="mt-element text-section-title text-muted-foreground">
-                  Twitch 直播小幫手｜泥爸
+                  Twitch 直播聊天室的小幫手｜泥爸
+                </p>
+                <p className="mt-1 text-content text-muted-foreground">
+                  先設定指令與自動回覆；其他直播與 Discord 工具可依需求加入。
                 </p>
                 <p className="mt-card max-w-[46ch] text-content leading-relaxed text-muted-foreground sm:text-card-title">
                   <span className="block">沒有勞基法保障的虛擬社畜。</span>
@@ -399,8 +406,8 @@ export default function Landing() {
             </div>
           </section>
 
-          <VideoQueueSlide />
           <ChatSlide />
+          <VideoQueueSlide />
           <OtherFeaturesSlide />
         </main>
       </div>
