@@ -532,7 +532,7 @@ class VipRepository:
             rows = await conn.fetch(
                 f"SELECT {_EVENT_COLUMNS} FROM vip_redemption_events "
                 "WHERE status = 'granting' "
-                "AND processed_at < $1 - INTERVAL '1 minute' "
+                "AND processed_at < $1::timestamptz - INTERVAL '1 minute' "
                 "ORDER BY processed_at, id LIMIT $2",
                 now,
                 limit,
